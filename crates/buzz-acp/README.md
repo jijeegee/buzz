@@ -204,7 +204,7 @@ A dispatcher is a router-only agent that listens to every channel it belongs to 
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--dispatcher` | `BUZZ_ACP_DISPATCHER` | `false` | Enable dispatcher mode. |
-| `--dispatcher-config` | `BUZZ_ACP_DISPATCHER_CONFIG` | — | JSON per-channel policy: `{"<channel_uuid>": {"humans": ["<hex>", ...], "ais": ["<hex>", ...]}}`. Both arrays are optional; ignored without `--dispatcher`. |
+| `--dispatcher-config` | `BUZZ_ACP_DISPATCHER_CONFIG` | — | JSON per-channel policy: `{"<channel_uuid>": {"humans": ["<hex>", ...], "ais": ["<hex>", ...]}}`. Both arrays are optional; ignored without `--dispatcher`. Pubkeys must be 64-character hex (`npub` is not accepted); channel keys must be UUIDs; a duplicated channel key is last-wins. |
 
 What changes when `--dispatcher` is set:
 
@@ -212,10 +212,10 @@ What changes when `--dispatcher` is set:
 - **Author gate.** For non-DM channel events the `--respond-to` policy is replaced (the owner-plus-siblings rule is deliberately not inherited; `nobody` remains absolute). An event is forwarded only when all of the following hold:
   1. it is not the dispatcher's own message;
   2. it is a human-authored kind:9 stream message — edits, approvals, reminders, relay-signed and delegated workflow traffic are dropped;
-  3. the author is in the channel's `ais` list, **or** the author is in the channel's `humans` list (when that list is empty or the channel has no entry: the author is an owner/admin in the channel's kind:39001 admins event) **and** the author's kind:0 profile does not carry a valid NIP-OA `auth` tag (a verified tag means the author is an agent; no profile means human);
-  4. the message does not already `p`-mention another agent — it has an assignee. Mentions of the dispatcher itself are still routed.
-  Admin and profile lookups are cached briefly (60 s / 5 min). A failed lookup drops the event rather than guessing.
-- **Prompt.** The compiled-in base prompt is replaced by a short router prompt (`src/dispatcher_base_prompt.md`) unless `--base-prompt-file` is given, and every new non-DM channel session receives a `<channel-roster>` standing section listing members from kind:39002 with their 39001 role, kind:0 `display_name`/`name` and `about`, an agent/human flag, and pubkey so the agent can `buzz messages send --mention <hex>`.
+  3. the author is in the channel's `ais` list, **or** the author is in the channel's `humans` list (when that list is empty or the channel has no entry: the author is an owner/admin in the channel's kind:39001 admins event, or the dispatcher's own owner) **and** the author is not an agent — agents are members holding the kind:39002 `bot` role or whose kind:0 profile carries a valid NIP-OA `auth` tag. An author with no kind:0 profile at all is not trusted (every Buzz human has one);
+  4. the message does not already `p`-mention another agent (`bot` role or agent profile) — it has an assignee. Mentions of the dispatcher itself are still routed. Only 64-hex `p` values are considered; a message carrying more than 16 distinct mentions is dropped rather than looked up.
+  Admin, bot-role and profile lookups are cached briefly (60 s / 60 s / 5 min); mention profiles are fetched in one batched query. A failed lookup drops the event rather than guessing.
+- **Prompt.** The compiled-in base prompt is replaced by a short router prompt (`src/dispatcher_base_prompt.md`) unless `--base-prompt-file` is given, and every non-DM channel session receives a `<channel-roster>` standing section listing members from kind:39002 with their role (39001 owner/admin, else 39002 `bot`/`member`), kind:0 `display_name`/`name` and `about`, an agent/human flag, and pubkey so the agent can `buzz messages send --mention <hex>`. The roster is re-fetched after 5 minutes; when it changed, the idle channel session is rotated so the next `session/new` carries the new roster. If no roster can be fetched for a channel that has none cached yet, the turn is not started (no session is created) and the batch is requeued.
 - **Context.** `--context-message-limit` defaults to `4` instead of `12` unless set explicitly.
 
 ```bash
