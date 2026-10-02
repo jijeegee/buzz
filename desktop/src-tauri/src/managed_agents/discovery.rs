@@ -1045,6 +1045,9 @@ fn discover_acp_runtime_phase1(runtime: &'static KnownAcpRuntime, force: bool) -
             effort_canonical_values: runtime
                 .effort_normalization
                 .map(|norm| norm.canonical.iter().map(|s| s.to_string()).collect()),
+            effort_fallback_values: runtime
+                .effort_fallback_values
+                .map(|values| values.iter().map(|s| s.to_string()).collect()),
             max_tokens_env_var: runtime.max_tokens_env_var.map(str::to_string),
             context_limit_env_var: runtime.context_limit_env_var.map(str::to_string),
             max_rounds_env_var: runtime.max_rounds_env_var.map(str::to_string),
@@ -1185,6 +1188,7 @@ pub fn discover_acp_runtimes_from(
                 provider_env_var: None,
                 thinking_env_var: None,
                 effort_canonical_values: None,
+                effort_fallback_values: None,
                 max_tokens_env_var: None,
                 context_limit_env_var: None,
                 max_rounds_env_var: None,

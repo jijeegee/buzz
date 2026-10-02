@@ -122,7 +122,6 @@ pub async fn save_custom_harness(
     // `save_and_warm` holds the persist mutex for the write + registry-warm pair
     // so concurrent saves never produce a stale registry snapshot (B-6).
     custom_harnesses::save_and_warm(&custom_dir, &definition, rename_old_id.as_deref())?;
-
     // Resolve availability for the returned catalog entry.
     let (availability, command_opt, binary_path) =
         match crate::managed_agents::find_command(&definition.command) {
@@ -150,6 +149,7 @@ pub async fn save_custom_harness(
         provider_env_var: None,
         thinking_env_var: None,
         effort_canonical_values: None,
+        effort_fallback_values: None,
         max_tokens_env_var: None,
         context_limit_env_var: None,
         max_rounds_env_var: None,

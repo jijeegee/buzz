@@ -47,6 +47,17 @@ pub(crate) static GOOSE_EFFORT_NORMALIZATION: EffortNormalization = EffortNormal
 pub(crate) static BUZZ_AGENT_EFFORT_VALUES: &[&str] =
     &["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
+/// Effort values the picker offers for an ACP `thought_level` harness before
+/// any session has advertised its real option list — the safe subset every
+/// current Claude Code (`effort`) and Codex (`reasoning_effort`) model accepts.
+/// Model-dependent extremes (`minimal`, `xhigh`, `max`) are deliberately
+/// absent: a rejected startup value is logged and ignored by the adapter, so
+/// the fallback must never promise a level the model may refuse.
+///
+/// Display-only; spawn still routes the saved column through
+/// `BUZZ_ACP_EFFORT_LEVEL` unfiltered (see `effort_fallback_values`).
+pub(crate) static ACP_THOUGHT_LEVEL_FALLBACK_VALUES: &[&str] = &["low", "medium", "high"];
+
 impl EffortNormalization {
     /// Normalize `raw` to canonical form. `None` → invalid for this harness;
     /// the caller must treat it as absent (skip-as-absent policy).
@@ -142,6 +153,21 @@ pub(crate) struct KnownAcpRuntime {
     /// `effort_normalization`; Claude/Codex and unknown/custom runtimes accept
     /// any string over the `BUZZ_ACP_EFFORT_LEVEL` transport.
     pub effort_accepted_values: Option<&'static [&'static str]>,
+    /// Effort values the write control (`EffortPickerField`) offers before a
+    /// running session has discovered the harness's real `thought_level`
+    /// option — so a Claude Code / Codex agent can be created or edited with
+    /// an effort on day one. Discovered options always win when present.
+    ///
+    /// `Some(list)` only for harnesses whose adapter advertises effort as an
+    /// ACP `thought_level` config option that `apply_startup_effort` can set.
+    /// `None` for Goose (its own env knob + `effort_normalization`), buzz-agent
+    /// (its native env knob outranks the saved column, so a picker would be
+    /// ignored), and unknown/custom runtimes.
+    ///
+    /// Display-only: this list is NOT a validation or canonicalization
+    /// contract. Do not reuse `effort_normalization` / `effort_canonical_values`
+    /// here — those filter at spawn and drive the Goose auto-clear.
+    pub effort_fallback_values: Option<&'static [&'static str]>,
     /// Env var for normalizing `max_output_tokens`. `None` when the harness
     /// does not have a first-class env var for this field (config-file only).
     pub max_tokens_env_var: Option<&'static str>,

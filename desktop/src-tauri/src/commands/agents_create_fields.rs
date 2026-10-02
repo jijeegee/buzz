@@ -24,6 +24,26 @@ pub(super) fn normalize_relay_mesh(
     }))
 }
 
+/// Normalize the create-time thinking effort: trim, treat blank as "adapter
+/// default" (`None`), and refuse an explicit value for a non-local backend —
+/// the same boundary `ensure_effort_change_supported` enforces on update,
+/// because remote effort is set at deploy time via `policy_env`.
+pub(super) fn normalize_create_effort_level(
+    effort_level: Option<&str>,
+    backend: &BackendKind,
+) -> Result<Option<String>, String> {
+    let Some(level) = effort_level.and_then(trim_to_optional_string) else {
+        return Ok(None);
+    };
+    if backend != &BackendKind::Local {
+        return Err(
+            "thinking effort can only be chosen for a local agent; remote effort is set at deploy time"
+                .to_string(),
+        );
+    }
+    Ok(Some(level))
+}
+
 pub(super) fn trim_to_optional_string(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {

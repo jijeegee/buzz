@@ -1031,8 +1031,7 @@ mod tests {
 
     // ── cli_login_requirements: resolve_command integration ─────────────
 
-    /// Construct a minimal `KnownAcpRuntime` stub for testing cli_login_requirements.
-    /// `commands` are the adapter binaries; `underlying_cli` is the CLI name.
+    /// Minimal `KnownAcpRuntime` stub for cli_login_requirements: adapter `commands` + CLI name.
     fn make_cli_runtime(
         commands: &'static [&'static str],
         underlying_cli: Option<&'static str>,
@@ -1065,6 +1064,7 @@ mod tests {
             thinking_env_var: None,
             effort_normalization: None,
             effort_accepted_values: None,
+            effort_fallback_values: None,
             max_tokens_env_var: None,
             context_limit_env_var: None,
             max_rounds_env_var: None,
@@ -1074,9 +1074,8 @@ mod tests {
         }
     }
 
-    /// Returns the absolute path of the currently-running test binary as a `&'static str`.
-    /// Host-portable stand-in for a "present" binary: absolute path so `find_command` resolves
-    /// it via `path.exists()`. Leaked allocation is intentional — process exits after tests.
+    /// Absolute path of the running test binary as `&'static str`: a host-portable "present"
+    /// binary `find_command` resolves via `path.exists()`. Leaked on purpose — tests exit.
     fn present_binary_str() -> &'static str {
         let path = std::env::current_exe().expect("current_exe must be available in tests");
         Box::leak(path.to_string_lossy().into_owned().into_boxed_str())
@@ -1259,6 +1258,7 @@ mod tests {
             thinking_env_var: None,
             effort_normalization: None,
             effort_accepted_values: None,
+            effort_fallback_values: None,
             max_tokens_env_var: None,
             context_limit_env_var: None,
             max_rounds_env_var: None,

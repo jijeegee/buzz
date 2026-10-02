@@ -793,3 +793,59 @@ fn owner_only_access_deploy_payload_clamps_stale_access() {
         "owner-only-access deploy payload retained a stale allowlist"
     );
 }
+
+// ── Create-time effort: trim, blank → adapter default, local-only ────────────
+
+#[test]
+fn normalize_create_effort_level_trims_and_keeps_local_value() {
+    assert_eq!(
+        normalize_create_effort_level(Some("  high \t"), &BackendKind::Local).unwrap(),
+        Some("high".to_string())
+    );
+}
+
+#[test]
+fn normalize_create_effort_level_maps_blank_and_absent_to_adapter_default() {
+    let remote = BackendKind::Provider {
+        id: "blox".to_string(),
+        config: serde_json::json!({}),
+    };
+    for backend in [&BackendKind::Local, &remote] {
+        assert_eq!(normalize_create_effort_level(None, backend).unwrap(), None);
+        assert_eq!(
+            normalize_create_effort_level(Some(""), backend).unwrap(),
+            None
+        );
+        assert_eq!(
+            normalize_create_effort_level(Some("  \t "), backend).unwrap(),
+            None,
+            "a blank effort must never be rejected, even for a remote backend"
+        );
+    }
+}
+
+#[test]
+fn normalize_create_effort_level_rejects_explicit_value_for_non_local_backend() {
+    // Mirrors `ensure_effort_change_supported` on update: remote effort is set
+    // at deploy time via `policy_env`, so the create boundary refuses it too.
+    let backend = BackendKind::Provider {
+        id: "blox".to_string(),
+        config: serde_json::json!({}),
+    };
+    let error = normalize_create_effort_level(Some("high"), &backend).unwrap_err();
+    assert!(error.contains("local agent"), "{error}");
+}
+
+#[test]
+fn create_request_effort_level_is_optional_on_the_wire() {
+    let absent: CreateManagedAgentRequest =
+        serde_json::from_value(serde_json::json!({ "name": "Reviewer" })).expect("legacy request");
+    assert_eq!(absent.effort_level, None);
+
+    let present: CreateManagedAgentRequest = serde_json::from_value(serde_json::json!({
+        "name": "Reviewer",
+        "effortLevel": "medium"
+    }))
+    .expect("request with effort");
+    assert_eq!(present.effort_level.as_deref(), Some("medium"));
+}

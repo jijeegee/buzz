@@ -204,6 +204,12 @@ pub struct CreateManagedAgentRequest {
     pub respond_to_allowlist: Vec<String>,
     #[serde(default)]
     pub relay_mesh: Option<RelayMeshConfig>,
+    /// Initial thinking effort for the new instance's canonical
+    /// `effort_level` column. Trimmed; empty/absent = adapter default. Only a
+    /// local backend may carry one — remote effort is set at deploy time via
+    /// `policy_env`, mirroring `ensure_effort_change_supported` on update.
+    #[serde(default)]
+    pub effort_level: Option<String>,
 }
 
 /// Patch request for updating a managed agent's mutable fields.

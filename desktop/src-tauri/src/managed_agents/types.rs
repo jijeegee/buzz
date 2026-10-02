@@ -697,6 +697,13 @@ pub struct AcpRuntimeCatalogEntry {
     /// other valid Goose values are always present when this is Goose, so
     /// `useEffortAutoClear` never incorrectly deletes a valid saved value.
     pub effort_canonical_values: Option<Vec<String>>,
+    /// Effort values the picker offers before a running session has
+    /// discovered the harness's `thought_level` option. Serialized from
+    /// `KnownAcpRuntime::effort_fallback_values` / `PresetHarness`: `Some` for
+    /// Claude Code and Codex (`low`, `medium`, `high`), `None` for Goose,
+    /// buzz-agent, presets, and custom runtimes. Display-only — not a
+    /// validation contract; discovered options win when present.
+    pub effort_fallback_values: Option<Vec<String>>,
     pub max_tokens_env_var: Option<String>,
     pub context_limit_env_var: Option<String>,
     pub max_rounds_env_var: Option<String>,

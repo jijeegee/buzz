@@ -6,6 +6,7 @@ use crate::managed_agents::{
 };
 
 use super::normalize_agent_args;
+use super::runtime_metadata::ACP_THOUGHT_LEVEL_FALLBACK_VALUES;
 
 /// Static data for a well-known tier-2 ACP harness.
 pub(super) struct PresetHarness {
@@ -17,6 +18,12 @@ pub(super) struct PresetHarness {
     install_hint: &'static str,
     /// Vendor CLI the ACP command wraps, when the preset is an adapter.
     underlying_cli: Option<&'static str>,
+    /// Pre-discovery effort values for the picker; see
+    /// `KnownAcpRuntime::effort_fallback_values`. `Some` only for Hermes, whose
+    /// `hermes-acp` adapter advertises a `thought_level` select
+    /// (`reasoning_effort`) and applies it via `session/set_config_option`;
+    /// the other presets advertise no option Buzz can rely on before a session.
+    effort_fallback_values: Option<&'static [&'static str]>,
     /// State-specific setup guidance for the wrapped vendor CLI.
     underlying_cli_install_hint: Option<&'static str>,
     underlying_cli_install_instructions_url: Option<&'static str>,
@@ -83,6 +90,9 @@ pub(super) fn preset_catalog_entry(
         provider_env_var: None,
         thinking_env_var: None,
         effort_canonical_values: None,
+        effort_fallback_values: def
+            .effort_fallback_values
+            .map(|values| values.iter().map(|s| s.to_string()).collect()),
         max_tokens_env_var: None,
         context_limit_env_var: None,
         max_rounds_env_var: None,
@@ -112,6 +122,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://github.com/salman1993/buzz-pi-acp",
         install_hint: "Requires Node.js 22 or newer. Install the Pi ACP adapter with `npm install -g --install-links=true 'git+https://github.com/salman1993/buzz-pi-acp.git#86b201e'`. Make sure `buzz-pi-acp` is on PATH, then restart Buzz.",
         underlying_cli: Some("pi"),
+        effort_fallback_values: None,
         underlying_cli_install_hint: Some(
             "Install Pi with `npm install -g @earendil-works/pi-coding-agent`, then run `pi` to configure its model provider.",
         ),
@@ -127,6 +138,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://docs.devin.ai/cli",
         install_hint: "Buzz talks to Devin through the official Devin CLI's ACP mode (devin acp).",
         underlying_cli: None,
+        effort_fallback_values: None,
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -138,6 +150,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://cursor.com/downloads",
         install_hint: "Buzz talks to Cursor through the cursor-agent CLI's ACP mode.",
         underlying_cli: None,
+        effort_fallback_values: None,
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -149,6 +162,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://omp.sh/",
         install_hint: "Buzz talks to Oh My Pi through its CLI's ACP mode (omp acp).",
         underlying_cli: None,
+        effort_fallback_values: None,
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -160,6 +174,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://docs.x.ai/build/overview",
         install_hint: "Buzz talks to Grok Build through its CLI's agent stdio mode.",
         underlying_cli: None,
+        effort_fallback_values: None,
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -171,6 +186,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://opencode.ai/docs",
         install_hint: "Buzz talks to OpenCode through its CLI's ACP mode (opencode acp).",
         underlying_cli: None,
+        effort_fallback_values: None,
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -182,6 +198,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://kimi.ai/download",
         install_hint: "Buzz talks to Kimi Code through its CLI's ACP mode (kimi acp).",
         underlying_cli: None,
+        effort_fallback_values: None,
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -193,6 +210,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://github.com/tao12345666333/amp-acp",
         install_hint: "Buzz talks to the Amp CLI through the amp-acp adapter. Follow the setup guide to install the adapter so the amp-acp command is on your PATH.",
         underlying_cli: Some("amp"),
+        effort_fallback_values: None,
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -204,6 +222,9 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_instructions_url: "https://hermes-agent.nousresearch.com",
         install_hint: "Buzz talks to Hermes Agent through its hermes-acp command.",
         underlying_cli: None,
+        // hermes-acp `reasoning_effort` thought_level option (minimal…ultra);
+        // the picker offers the safe common subset until a session discovers it.
+        effort_fallback_values: Some(ACP_THOUGHT_LEVEL_FALLBACK_VALUES),
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -222,6 +243,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
             needs BUZZ_* credentials at execution time, set them on the \
             Gateway's own environment separately.",
         underlying_cli: None,
+        effort_fallback_values: None,
         underlying_cli_install_hint: None,
         underlying_cli_install_instructions_url: None,
     },
@@ -340,6 +362,7 @@ mod tests {
         install_instructions_url: "https://example.com/install",
         install_hint: "Install the amp-acp npm adapter.",
         underlying_cli: Some("amp"),
+        effort_fallback_values: None,
         underlying_cli_install_hint: Some("Install the Amp Test CLI."),
         underlying_cli_install_instructions_url: Some("https://example.com/amp"),
     };
@@ -586,6 +609,76 @@ mod tests {
             "available OpenClaw must carry max_parallelism {}",
             crate::managed_agents::parallelism::OPENCLAW_MAX_PARALLELISM
         );
+    }
+
+    // ── Catalog effort_fallback_values: pre-discovery picker vocabulary ─────
+
+    /// The picker's pre-discovery vocabulary is a catalog fact: the ACP
+    /// `thought_level` harnesses (Claude Code, Codex, Hermes) expose the safe
+    /// common subset; Goose (own env knob), buzz-agent (env knob outranks the
+    /// column), the other presets, and custom harnesses expose none. Pinned
+    /// through the real catalog constructors — not the static tables — so a
+    /// projection that drops the field fails here.
+    #[test]
+    fn catalog_exposes_effort_fallback_values_only_for_acp_thought_level_harnesses() {
+        use crate::managed_agents::custom_harnesses::{registry_test_lock, save_and_warm};
+
+        // Discovery touches process-global command resolution and the loaded
+        // harness registry. Serialize with the other discovery tests.
+        let _path_guard = crate::managed_agents::lock_path_mutex();
+        let _registry_guard = registry_test_lock();
+
+        let expected = Some(vec![
+            "low".to_string(),
+            "medium".to_string(),
+            "high".to_string(),
+        ]);
+
+        let builtin = |id: &str| {
+            let runtime = super::super::known_acp_runtime_exact(id)
+                .unwrap_or_else(|| panic!("{id} must be a builtin runtime"));
+            super::super::discover_acp_runtime_phase1(runtime, true)
+                .entry
+                .effort_fallback_values
+        };
+        assert_eq!(builtin("claude"), expected, "claude-agent-acp `effort`");
+        assert_eq!(builtin("codex"), expected, "codex-acp `reasoning_effort`");
+        assert_eq!(builtin("goose"), None, "goose effort is its own env knob");
+        assert_eq!(
+            builtin("buzz-agent"),
+            None,
+            "buzz-agent's env knob outranks the saved column"
+        );
+
+        let preset = |id: &str| {
+            let def = PRESET_HARNESSES
+                .iter()
+                .find(|preset| preset.id == id)
+                .unwrap_or_else(|| panic!("{id} preset must be present"));
+            // Availability-independent: an uninstalled harness still publishes
+            // its vocabulary so the picker can be offered before setup completes.
+            preset_catalog_entry(def, |_| None).effort_fallback_values
+        };
+        assert_eq!(preset("hermes"), expected, "hermes-acp `reasoning_effort`");
+        assert_eq!(preset("devin"), None, "no thought_level option to rely on");
+
+        // Custom harnesses are plain ACP with no effort knob at all.
+        let dir = tempfile::tempdir().unwrap();
+        let def = crate::managed_agents::custom_harnesses::HarnessDefinition {
+            id: "effort-fallback-custom".to_string(),
+            label: "Effort Fallback Custom".to_string(),
+            command: "effort-fallback-custom-acp".to_string(),
+            args: vec![],
+            env: Default::default(),
+            install_instructions_url: String::new(),
+            install_hint: String::new(),
+        };
+        save_and_warm(dir.path(), &def, None).unwrap();
+        let custom = super::super::discover_acp_runtimes_from(Some(dir.path()), true)
+            .into_iter()
+            .find(|entry| entry.id == "effort-fallback-custom")
+            .expect("custom harness should appear in the runtime catalog");
+        assert_eq!(custom.effort_fallback_values, None);
     }
 
     /// Uncapped preset (devin): max_parallelism must be None.

@@ -56,7 +56,10 @@ pub(super) fn summarize_from_disk(
 
 #[path = "agents_create_fields.rs"]
 mod create_fields;
-use create_fields::{normalize_relay_mesh, resolve_created_avatar_url, trim_to_optional_string};
+use create_fields::{
+    normalize_create_effort_level, normalize_relay_mesh, resolve_created_avatar_url,
+    trim_to_optional_string,
+};
 
 #[cfg(feature = "mesh-llm")]
 async fn ensure_relay_mesh_for_record<R: tauri::Runtime>(
@@ -481,6 +484,8 @@ pub async fn create_managed_agent(
     }
 
     let relay_mesh = normalize_relay_mesh(input.relay_mesh.as_ref(), &input.backend)?;
+    let effort_level =
+        normalize_create_effort_level(input.effort_level.as_deref(), &input.backend)?;
 
     // ── Phase 2: compute NIP-OA auth tag (sync) ──────────────────────────────
     // Agents authenticate via the auth tag in their kind:0 profile event.
@@ -741,7 +746,7 @@ pub async fn create_managed_agent(
             } else {
                 relay_mesh.clone()
             },
-            effort_level: None,
+            effort_level,
         };
 
         records.push(record);
