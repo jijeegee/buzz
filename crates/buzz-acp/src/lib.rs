@@ -2743,6 +2743,7 @@ async fn run_harness(
         );
         std::sync::Arc::new(dispatcher::DispatcherGate::new(
             config.dispatcher_config.clone(),
+            resolve_agent_owner(config),
         ))
     });
     let mut author_gate_ctx =
@@ -7178,8 +7179,9 @@ mod author_gate_tests {
         nip11_scripted_server(std::collections::VecDeque::from([Ok(document)])).await
     }
 
-    /// Serve scripted NIP-11 responses. `Err(())` returns HTTP 500.
-    async fn nip11_scripted_server(
+    /// Serve scripted NIP-11 responses. `Err(())` returns HTTP 500. The last
+    /// successful document is repeated once the script is exhausted.
+    pub(super) async fn nip11_scripted_server(
         responses: std::collections::VecDeque<Result<serde_json::Value, ()>>,
     ) -> (relay::RestClient, tokio::task::JoinHandle<()>) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -9940,10 +9942,18 @@ async fn resolve_dynamic_listener_filter(
     channel_info: &pool::ChannelInfoResolver,
 ) -> Option<config::ChannelFilter> {
     let channel_type = if config.dispatcher {
-        channel_info
+        let channel_type = channel_info
             .resolve_channel_metadata(channel_id)
             .await
-            .map(|info| info.channel_type)
+            .map(|info| info.channel_type);
+        if channel_type.is_none() {
+            tracing::warn!(
+                channel_id = %channel_id,
+                "dispatcher: channel type unresolved on join — keeping the mention filter; \
+                 unmentioned requests in this channel will not be routed until restart"
+            );
+        }
+        channel_type
     } else {
         None
     };
@@ -10107,9 +10117,10 @@ mod dispatcher_admission_tests {
     }
 
     /// The listener gate hands non-DM channel events to the dispatcher policy
-    /// and leaves DMs on the ordinary author policy. The scripted NIP-11
-    /// server answers every later `/query` with the same document, which the
-    /// dispatcher reads as "no admins event, no agent profile".
+    /// and leaves DMs on the ordinary author policy. After the NIP-11
+    /// document, the scripted server answers every `/query` with the human's
+    /// unattested kind-0 profile, which the dispatcher reads as "no bot-role
+    /// members, a human author".
     #[tokio::test]
     async fn dispatcher_gate_replaces_author_policy_for_channel_events_only() {
         let relay_hex = Keys::generate().public_key().to_hex();
@@ -10117,8 +10128,15 @@ mod dispatcher_admission_tests {
         let human = Keys::generate();
         let human_hex = human.public_key().to_hex();
         let stranger = Keys::generate();
+        let human_profile = EventBuilder::metadata(&nostr::Metadata::new().name("alice"))
+            .sign_with_keys(&human)
+            .expect("signed profile");
         let (rest_client, server) =
-            author_gate_tests::nip11_server(serde_json::json!({ "self": relay_hex })).await;
+            author_gate_tests::nip11_scripted_server(std::collections::VecDeque::from([
+                Ok(serde_json::json!({ "self": relay_hex })),
+                Ok(serde_json::json!([human_profile])),
+            ]))
+            .await;
         let channel_id = Uuid::new_v4();
         let dm_id = Uuid::new_v4();
 
@@ -10128,6 +10146,7 @@ mod dispatcher_admission_tests {
         };
         let dispatcher = std::sync::Arc::new(dispatcher::DispatcherGate::new(
             DispatcherConfig::from_channels(HashMap::from([(channel_id, policy)])),
+            None,
         ));
         let mut gate = InboundAuthorGate::connect(&rest_client, &agent, "test")
             .await

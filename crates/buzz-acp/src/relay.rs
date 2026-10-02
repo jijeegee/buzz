@@ -298,13 +298,29 @@ pub(crate) fn parse_channel_admin_roles(json: &Value) -> HashMap<String, String>
         .collect()
 }
 
-/// Parse member pubkeys from the newest kind-39002 members event, in tag order.
-pub(crate) fn parse_channel_member_pubkeys(json: &Value) -> Vec<String> {
+/// One `["p", pubkey, role]` entry of a kind-39002 members event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ChannelMember {
+    pub pubkey: String,
+    /// Membership role as published by the relay (`member`, `bot`, ...);
+    /// `member` when the tag carries none.
+    pub role: String,
+}
+
+/// Parse members from the newest kind-39002 members event, in tag order.
+pub(crate) fn parse_channel_members(json: &Value) -> Vec<ChannelMember> {
     let mut seen = HashSet::new();
     newest_event_p_tags(json)
         .into_iter()
-        .map(|(pubkey, _)| pubkey)
-        .filter(|pubkey| seen.insert(pubkey.clone()))
+        .filter(|(pubkey, _)| seen.insert(pubkey.clone()))
+        .map(|(pubkey, rest)| ChannelMember {
+            pubkey,
+            role: rest
+                .into_iter()
+                .next()
+                .filter(|role| !role.is_empty())
+                .unwrap_or_else(|| "member".to_string()),
+        })
         .collect()
 }
 
@@ -635,18 +651,21 @@ impl RestClient {
         Ok(parse_channel_admin_roles(&json))
     }
 
-    /// Fetch the channel's member pubkeys from its kind-39002 members event.
+    /// Fetch the channel's members and roles from its kind-39002 members event.
     ///
     /// Returns the newest snapshot's `p` tags in order. Empty when the relay
     /// has no members event for the channel.
-    pub async fn fetch_channel_members(&self, channel_id: Uuid) -> Result<Vec<String>, RelayError> {
+    pub async fn fetch_channel_members(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<Vec<ChannelMember>, RelayError> {
         let json = self
             .query(&[addressable_channel_filter(
                 buzz_core::kind::KIND_NIP29_GROUP_MEMBERS,
                 channel_id,
             )])
             .await?;
-        Ok(parse_channel_member_pubkeys(&json))
+        Ok(parse_channel_members(&json))
     }
 
     /// Count events via the HTTP bridge: `POST /count` with NIP-98 auth.
@@ -4308,14 +4327,34 @@ mod tests {
     }
 
     #[test]
-    fn channel_member_pubkeys_preserve_order_and_dedup() {
+    fn channel_members_preserve_order_dedup_and_keep_roles() {
         let a = "aa".repeat(32);
         let b = "bb".repeat(32);
+        let c = "cc".repeat(32);
         let json = json!([{
             "created_at": 5,
-            "tags": [["d", "x"], ["p", b, "member"], ["p", a], ["p", b.to_uppercase()], ["e", a]]
+            "tags": [
+                ["d", "x"],
+                ["p", b, "bot"],
+                ["p", a],
+                ["p", c, ""],
+                ["p", b.to_uppercase(), "member"],
+                ["e", a]
+            ]
         }]);
-        assert_eq!(parse_channel_member_pubkeys(&json), vec![b, a]);
+        let member = |pubkey: &str, role: &str| ChannelMember {
+            pubkey: pubkey.to_string(),
+            role: role.to_string(),
+        };
+        assert_eq!(
+            parse_channel_members(&json),
+            vec![
+                member(&b, "bot"),
+                member(&a, "member"),
+                member(&c, "member")
+            ],
+            "first occurrence wins and a missing or empty role is `member`"
+        );
     }
 
     async fn nip11_test_client(
