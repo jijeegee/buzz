@@ -346,8 +346,8 @@ fn effective_prompt_author(
 /// dropping the load inside it fails the construction regressions.
 mod inbound_author_gate {
     use super::{
-        effective_prompt_author, is_dm_channel, is_owner_or_sibling, pool, refresh_relay_self,
-        relay, OwnerCache, RespondTo,
+        dm_from_channel_type, effective_prompt_author, is_owner_or_sibling, pool,
+        refresh_relay_self, relay, OwnerCache, RespondTo,
     };
     use std::collections::HashSet;
 
@@ -507,32 +507,61 @@ mod inbound_author_gate {
                     self.refreshed_generation = Some(buzz_event.connection_generation);
                 }
             }
-            let is_dm = is_dm_channel(buzz_event.channel_id, channel_info).await;
-            if let (Some(dispatcher), false) = (self.dispatcher.as_ref(), is_dm) {
-                let effective_author = effective_prompt_author(
-                    &buzz_event.event,
-                    self.relay_self.as_deref(),
-                    &self.agent_pubkey_hex,
+            let channel_type = channel_info
+                .resolve_channel_metadata(buzz_event.channel_id)
+                .await
+                .map(|info| info.channel_type);
+            if let (Some(dispatcher), Some(channel_type)) =
+                (self.dispatcher.as_ref(), channel_type.as_deref())
+            {
+                if channel_type == "dm" {
+                    // DMs stay on the ordinary author policy below.
+                } else {
+                    let effective_author = effective_prompt_author(
+                        &buzz_event.event,
+                        self.relay_self.as_deref(),
+                        &self.agent_pubkey_hex,
+                    );
+                    // `nobody` remains absolute; every other mode defers to the
+                    // dispatcher policy, which never inherits owner+sibling trust.
+                    let allowed = !matches!(respond_to, RespondTo::Nobody)
+                        && dispatcher
+                            .allows(
+                                &buzz_event.event,
+                                &effective_author,
+                                buzz_event.channel_id,
+                                self.relay_self.as_deref(),
+                                &self.agent_pubkey_hex,
+                                rest_client,
+                            )
+                            .await;
+                    return InboundAuthorGateDecision {
+                        effective_author,
+                        allowed,
+                        is_dm: false,
+                    };
+                }
+            } else if self.dispatcher.is_some() {
+                // Unresolved channel type in dispatcher mode: the DM fallback
+                // below would apply owner+sibling trust, which is exactly what
+                // a dispatcher must never do — a sibling's "@Dispatcher done"
+                // would be admitted. Drop the event; a later event retries the
+                // metadata fetch because unresolved results are not cached.
+                tracing::warn!(
+                    channel_id = %buzz_event.channel_id,
+                    "dispatcher: channel type unresolved — dropping event (fail closed)"
                 );
-                // `nobody` remains absolute; every other mode defers to the
-                // dispatcher policy, which never inherits owner+sibling trust.
-                let allowed = !matches!(respond_to, RespondTo::Nobody)
-                    && dispatcher
-                        .allows(
-                            &buzz_event.event,
-                            &effective_author,
-                            buzz_event.channel_id,
-                            self.relay_self.as_deref(),
-                            &self.agent_pubkey_hex,
-                            rest_client,
-                        )
-                        .await;
                 return InboundAuthorGateDecision {
-                    effective_author,
-                    allowed,
-                    is_dm,
+                    effective_author: effective_prompt_author(
+                        &buzz_event.event,
+                        self.relay_self.as_deref(),
+                        &self.agent_pubkey_hex,
+                    ),
+                    allowed: false,
+                    is_dm: true,
                 };
             }
+            let is_dm = dm_from_channel_type(buzz_event.channel_id, channel_type.as_deref());
             self.evaluate_with_channel_trust(
                 &buzz_event.event,
                 respond_to,
@@ -841,6 +870,46 @@ async fn refresh_relay_self(
     }
 }
 
+/// Short label for a turn outcome, for logs and telemetry.
+fn outcome_label(outcome: &PromptOutcome) -> &'static str {
+    match outcome {
+        PromptOutcome::Ok(_) => "ok",
+        PromptOutcome::Error(_) => "error",
+        PromptOutcome::ProjectContextIndeterminate(_) => "project_context_indeterminate",
+        PromptOutcome::RosterUnavailable(_) => "roster_unavailable",
+        PromptOutcome::Timeout(TimeoutKind::Idle) => "idle_timeout",
+        PromptOutcome::Timeout(TimeoutKind::Hard { .. }) => "hard_timeout",
+        PromptOutcome::AgentExited => "exited",
+        PromptOutcome::Cancelled => "cancelled",
+        PromptOutcome::CancelDrainTimeout(_) => "cancel_drain_timeout",
+    }
+}
+
+/// The channel notice posted when a batch is dead-lettered after
+/// `MAX_RETRIES`, or `None` when the dead-letter must stay silent.
+///
+/// A dispatcher sees every human message in its channels, so a relay outage
+/// that makes the roster unavailable would otherwise produce one public
+/// "couldn't process" notice per message after the retries run out. Those
+/// batches are logged and dropped without a channel post; the operator sees
+/// the outage in the activity feed (`turn_error`) and the harness logs.
+fn retry_exhausted_notice(outcome: &PromptOutcome) -> Option<String> {
+    let reason = match outcome {
+        PromptOutcome::RosterUnavailable(_) => return None,
+        PromptOutcome::Timeout(TimeoutKind::Idle) => "the turn timed out".to_string(),
+        PromptOutcome::Timeout(TimeoutKind::Hard { .. }) => {
+            "the turn exceeded the maximum duration".to_string()
+        }
+        PromptOutcome::AgentExited => "the agent process exited".to_string(),
+        PromptOutcome::Error(e) => format!("{e}"),
+        PromptOutcome::ProjectContextIndeterminate(reason) => reason.clone(),
+        _ => "repeated failures".to_string(),
+    };
+    Some(format!(
+        "⚠️ I couldn't process the last request after multiple retries ({reason}). Please re-send if it's still needed."
+    ))
+}
+
 /// Resolve whether `channel_id` is a DM, for the inbound author gate.
 ///
 /// Resolution order:
@@ -858,8 +927,18 @@ pub(crate) async fn is_dm_channel(
     channel_id: Uuid,
     channel_info: &pool::ChannelInfoResolver,
 ) -> bool {
-    match channel_info.resolve_channel_metadata(channel_id).await {
-        Some(info) => info.channel_type == "dm",
+    let channel_type = channel_info
+        .resolve_channel_metadata(channel_id)
+        .await
+        .map(|info| info.channel_type);
+    dm_from_channel_type(channel_id, channel_type.as_deref())
+}
+
+/// DM classification from a resolved channel type; see [`is_dm_channel`] for
+/// the fail-closed rule applied to an unresolved (`None`) type.
+fn dm_from_channel_type(channel_id: Uuid, channel_type: Option<&str>) -> bool {
+    match channel_type {
+        Some(channel_type) => channel_type == "dm",
         None => {
             tracing::warn!(
                 channel_id = %channel_id,
@@ -5197,21 +5276,15 @@ fn handle_prompt_result(
                     .to_string();
                 spawn_failure_notice(rest_client, &batch, content);
             } else if let Some(dead) = queue.requeue(batch) {
-                let reason = match &result.outcome {
-                    PromptOutcome::Timeout(TimeoutKind::Idle) => "the turn timed out".to_string(),
-                    PromptOutcome::Timeout(TimeoutKind::Hard { .. }) => {
-                        "the turn exceeded the maximum duration".to_string()
-                    }
-                    PromptOutcome::AgentExited => "the agent process exited".to_string(),
-                    PromptOutcome::Error(e) => format!("{e}"),
-                    PromptOutcome::ProjectContextIndeterminate(reason)
-                    | PromptOutcome::RosterUnavailable(reason) => reason.clone(),
-                    _ => "repeated failures".to_string(),
-                };
-                let content = format!(
-                    "⚠️ I couldn't process the last request after multiple retries ({reason}). Please re-send if it's still needed."
-                );
-                spawn_failure_notice(rest_client, &dead, content);
+                match retry_exhausted_notice(&result.outcome) {
+                    Some(content) => spawn_failure_notice(rest_client, &dead, content),
+                    None => tracing::warn!(
+                        channel_id = %dead.channel_id,
+                        events = dead.events.len(),
+                        outcome = outcome_label(&result.outcome),
+                        "dead-lettered batch silently — no channel notice for this outcome"
+                    ),
+                }
             }
         } else {
             tracing::debug!(
@@ -5235,17 +5308,7 @@ fn handle_prompt_result(
         result.agent.state.invalidate_channel(ch);
     }
 
-    let outcome_label = match &result.outcome {
-        PromptOutcome::Ok(_) => "ok",
-        PromptOutcome::Error(_) => "error",
-        PromptOutcome::ProjectContextIndeterminate(_) => "project_context_indeterminate",
-        PromptOutcome::RosterUnavailable(_) => "roster_unavailable",
-        PromptOutcome::Timeout(TimeoutKind::Idle) => "idle_timeout",
-        PromptOutcome::Timeout(TimeoutKind::Hard { .. }) => "hard_timeout",
-        PromptOutcome::AgentExited => "exited",
-        PromptOutcome::Cancelled => "cancelled",
-        PromptOutcome::CancelDrainTimeout(_) => "cancel_drain_timeout",
-    };
+    let outcome_label = outcome_label(&result.outcome);
     let agent_index = result.agent.index;
     // Capture the spawn-time configured model and our PID before the agent is
     // moved into match arms below. `desired_model` reflects the config/persona
@@ -10157,7 +10220,7 @@ mod dispatcher_admission_tests {
         ));
         let mut gate = InboundAuthorGate::connect(&rest_client, &agent, "test")
             .await
-            .with_dispatcher(Some(dispatcher));
+            .with_dispatcher(Some(dispatcher.clone()));
 
         let channel_info = pool::ChannelInfoResolver::new(
             HashMap::from([
@@ -10250,7 +10313,122 @@ mod dispatcher_admission_tests {
             !nobody.allowed,
             "`nobody` remains absolute in dispatcher mode"
         );
+
         server.abort();
+
+        // A channel whose kind-39000 metadata cannot be resolved (joined via a
+        // membership notification, relay answering without it) must not fall
+        // through to the DM policy: with `anyone` that policy would admit the
+        // sibling agent's "@Dispatcher done" and loop. This relay answers every
+        // `/query` with the NIP-11 object, which is not an event array, so no
+        // channel can be resolved and nothing is in the startup cache.
+        let (unresolved_rest, unresolved_server) =
+            author_gate_tests::nip11_server(serde_json::json!({ "self": relay_hex })).await;
+        let mut unresolved_gate = InboundAuthorGate::connect(&unresolved_rest, &agent, "test")
+            .await
+            .with_dispatcher(Some(dispatcher));
+        let unresolved_info =
+            pool::ChannelInfoResolver::new(HashMap::new(), unresolved_rest.clone());
+        let unresolved_id = Uuid::new_v4();
+        let sibling = Keys::generate();
+        owner_cache.cache_sibling(sibling.public_key().to_hex(), true);
+        for (respond_to, label) in [
+            (RespondTo::Anyone, "anyone"),
+            (RespondTo::OwnerOnly, "owner-only (sibling)"),
+        ] {
+            let decision = unresolved_gate
+                .evaluate_listener_event(
+                    &buzz_event(unresolved_id, &sibling),
+                    &respond_to,
+                    &HashSet::new(),
+                    &owner_cache,
+                    &unresolved_info,
+                    &unresolved_rest,
+                )
+                .await;
+            assert!(
+                !decision.allowed,
+                "{label}: an unresolved channel is dropped in dispatcher mode, never trusted as a DM"
+            );
+            assert!(
+                decision.is_dm,
+                "{label}: unresolved stays classified fail-closed"
+            );
+        }
+        let human_in_unresolved = unresolved_gate
+            .evaluate_listener_event(
+                &buzz_event(unresolved_id, &human),
+                &RespondTo::Anyone,
+                &HashSet::new(),
+                &owner_cache,
+                &unresolved_info,
+                &unresolved_rest,
+            )
+            .await;
+        assert!(
+            !human_in_unresolved.allowed,
+            "even a configured human is dropped until the channel type resolves"
+        );
+        // Without dispatcher mode the same unresolved channel takes the
+        // fail-closed DM path, where the owner's sibling is admitted — the
+        // exact fallback the dispatcher must not inherit.
+        let mut plain_gate = InboundAuthorGate::connect(&unresolved_rest, &agent, "test").await;
+        let plain = plain_gate
+            .evaluate_listener_event(
+                &buzz_event(unresolved_id, &sibling),
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &unresolved_info,
+                &unresolved_rest,
+            )
+            .await;
+        assert!(
+            plain.allowed && plain.is_dm,
+            "control: the ordinary gate admits a sibling on an unresolved channel"
+        );
+        unresolved_server.abort();
+    }
+}
+
+#[cfg(test)]
+mod dead_letter_notice_tests {
+    use super::*;
+    use crate::pool::{PromptOutcome, TimeoutKind};
+
+    /// Every retry-exhausted outcome posts a channel notice except a
+    /// dispatcher roster outage, which would otherwise produce one public
+    /// notice per human message seen during the outage.
+    #[test]
+    fn roster_unavailable_dead_letters_silently() {
+        assert_eq!(
+            retry_exhausted_notice(&PromptOutcome::RosterUnavailable(
+                "channel roster for x is unavailable".into()
+            )),
+            None
+        );
+        let posted = [
+            PromptOutcome::Timeout(TimeoutKind::Idle),
+            PromptOutcome::Timeout(TimeoutKind::Hard {
+                recently_active: true,
+            }),
+            PromptOutcome::AgentExited,
+            PromptOutcome::Error(acp::AcpError::IdleTimeout(std::time::Duration::from_secs(
+                1,
+            ))),
+            PromptOutcome::ProjectContextIndeterminate("project context is indeterminate".into()),
+        ];
+        for outcome in posted {
+            let notice = retry_exhausted_notice(&outcome)
+                .unwrap_or_else(|| panic!("{} must post a notice", outcome_label(&outcome)));
+            assert!(notice
+                .starts_with("⚠️ I couldn't process the last request after multiple retries ("));
+        }
+        assert!(
+            retry_exhausted_notice(&PromptOutcome::ProjectContextIndeterminate("why".into()))
+                .is_some_and(|n| n.contains("(why)")),
+            "the reason is quoted"
+        );
     }
 }
 

@@ -35,6 +35,14 @@ const ROSTER_ABOUT_MAX_CHARS: usize = 200;
 /// How long a session's `<channel-roster>` is used before the member list is
 /// re-read, so agents who joined mid-session become routable.
 pub(crate) const ROSTER_REFRESH_INTERVAL: Duration = Duration::from_secs(300);
+/// Refresh interval for a roster rendered while a sub-lookup (39001 roles or
+/// kind-0 profiles) was unavailable: retry sooner so the complete roster
+/// replaces the degraded one.
+pub(crate) const ROSTER_DEGRADED_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+/// How long a failed relay lookup is remembered. Events arriving during a relay
+/// outage are dropped from this cache instead of re-issuing the same lookups,
+/// so the listener loop is not stalled by `LOOKUP_TIMEOUT` per event.
+const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(10);
 
 /// Most `p` mentions a request can carry before the gate stops looking them
 /// up and drops the event instead of issuing a large profile query inline.
@@ -101,6 +109,18 @@ pub(crate) struct DispatcherGate {
     admins: Mutex<HashMap<Uuid, Cached<HashSet<String>>>>,
     bots: Mutex<HashMap<Uuid, Cached<HashSet<String>>>>,
     profiles: Mutex<HashMap<String, Cached<ProfileKind>>>,
+    /// Recently failed lookups (negative cache, `NEGATIVE_CACHE_TTL`). A
+    /// failure here never becomes a verdict: the gate still fails closed, it
+    /// just does so without waiting on the relay again.
+    failed: Mutex<HashMap<FailedLookup, Instant>>,
+}
+
+/// Key of a failed relay lookup in the gate's negative cache.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum FailedLookup {
+    Admins(Uuid),
+    Bots(Uuid),
+    Profile(String),
 }
 
 impl DispatcherGate {
@@ -111,6 +131,40 @@ impl DispatcherGate {
             admins: Mutex::new(HashMap::new()),
             bots: Mutex::new(HashMap::new()),
             profiles: Mutex::new(HashMap::new()),
+            failed: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Whether `key` failed within `NEGATIVE_CACHE_TTL`.
+    fn recently_failed(&self, key: &FailedLookup) -> bool {
+        self.failed.lock().ok().is_some_and(|failed| {
+            failed
+                .get(key)
+                .is_some_and(|at| at.elapsed() < NEGATIVE_CACHE_TTL)
+        })
+    }
+
+    fn record_failures(&self, keys: impl IntoIterator<Item = FailedLookup>) {
+        if let Ok(mut failed) = self.failed.lock() {
+            let now = Instant::now();
+            failed.retain(|_, at| at.elapsed() < NEGATIVE_CACHE_TTL);
+            for key in keys {
+                if failed.len() >= CACHE_CAP {
+                    failed.clear();
+                }
+                failed.insert(key, now);
+            }
+        }
+    }
+
+    /// Test-only: age every negative-cache entry past `NEGATIVE_CACHE_TTL`.
+    #[cfg(test)]
+    fn expire_negative_cache(&self) {
+        if let Ok(mut failed) = self.failed.lock() {
+            let expired = Instant::now() - NEGATIVE_CACHE_TTL;
+            for at in failed.values_mut() {
+                *at = expired;
+            }
         }
     }
 
@@ -260,10 +314,23 @@ impl DispatcherGate {
         }) {
             return Some(cached);
         }
-        let fetched = if bots {
-            lookup.channel_bots(channel_id).await?
+        let key = if bots {
+            FailedLookup::Bots(channel_id)
         } else {
-            lookup.channel_admins(channel_id).await?
+            FailedLookup::Admins(channel_id)
+        };
+        if self.recently_failed(&key) {
+            tracing::debug!(channel_id = %channel_id, ?key, "dispatcher lookup recently failed — not retrying yet");
+            return None;
+        }
+        let fetched = if bots {
+            lookup.channel_bots(channel_id).await
+        } else {
+            lookup.channel_admins(channel_id).await
+        };
+        let Some(fetched) = fetched else {
+            self.record_failures([key]);
+            return None;
         };
         if let Ok(mut cache) = cache.lock() {
             if cache.len() >= CACHE_CAP {
@@ -307,7 +374,20 @@ impl DispatcherGate {
         if uncached.is_empty() {
             return Some(verdicts);
         }
-        let fetched = lookup.profiles(&uncached).await?;
+        if uncached
+            .iter()
+            .any(|pubkey| self.recently_failed(&FailedLookup::Profile(pubkey.clone())))
+        {
+            tracing::debug!(
+                count = uncached.len(),
+                "dispatcher profile lookup recently failed — not retrying yet"
+            );
+            return None;
+        }
+        let Some(fetched) = lookup.profiles(&uncached).await else {
+            self.record_failures(uncached.into_iter().map(FailedLookup::Profile));
+            return None;
+        };
         let now = Instant::now();
         let mut cache = self.profiles.lock().ok()?;
         if cache.len() + uncached.len() > CACHE_CAP {
@@ -500,6 +580,17 @@ impl TrustLookup for RelayLookup<'_> {
 
 // ── channel roster ──────────────────────────────────────────────────────────
 
+/// A freshly rendered `<channel-roster>` body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RosterFetch {
+    pub body: String,
+    /// `false` when the 39001 roles or the kind-0 profiles could not be read,
+    /// so the body carries `member` roles or bare pubkeys for some entries.
+    /// The member list itself is always present (its absence is a failed
+    /// fetch, not a degraded one).
+    pub complete: bool,
+}
+
 /// A rendered `<channel-roster>` body together with the time it was fetched.
 ///
 /// The pool keeps one per dispatcher channel session; once the entry is
@@ -509,25 +600,59 @@ impl TrustLookup for RelayLookup<'_> {
 pub(crate) struct RosterSection {
     pub body: String,
     pub fetched_at: Instant,
+    /// See [`RosterFetch::complete`]. A degraded roster is refreshed sooner.
+    pub complete: bool,
 }
 
 impl RosterSection {
-    pub(crate) fn new(body: String) -> Self {
+    pub(crate) fn new(fetch: RosterFetch) -> Self {
         Self {
-            body,
+            body: fetch.body,
             fetched_at: Instant::now(),
+            complete: fetch.complete,
         }
     }
 
     /// Whether the roster is old enough to be re-read from the relay.
     pub(crate) fn due_for_refresh(&self) -> bool {
-        self.fetched_at.elapsed() >= ROSTER_REFRESH_INTERVAL
+        let interval = if self.complete {
+            ROSTER_REFRESH_INTERVAL
+        } else {
+            ROSTER_DEGRADED_REFRESH_INTERVAL
+        };
+        self.fetched_at.elapsed() >= interval
     }
 
     /// Record a refresh attempt so a degraded relay is not re-queried on every
     /// turn; the cached body stays in use either way.
     pub(crate) fn mark_refreshed(&mut self) {
         self.fetched_at = Instant::now();
+    }
+}
+
+/// What a roster refresh should do to the session it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RosterRefresh {
+    /// Keep the cached roster (and the session). Chosen when the fetch failed,
+    /// was degraded, or rendered the same body.
+    Keep,
+    /// The complete, refreshed roster differs: rotate the session so the
+    /// replacement carries it.
+    Rotate(RosterFetch),
+}
+
+/// Decide whether a refreshed roster replaces the cached one. Only a complete
+/// roster may replace an existing roster: a degraded fetch (bare pubkeys,
+/// `member` roles) always renders differently from a complete one, and letting
+/// it rotate the session would mislabel the roster and then rotate straight
+/// back on the next refresh.
+pub(crate) fn plan_roster_refresh(
+    cached: &RosterSection,
+    fetched: Option<RosterFetch>,
+) -> RosterRefresh {
+    match fetched {
+        Some(fetch) if fetch.complete && fetch.body != cached.body => RosterRefresh::Rotate(fetch),
+        _ => RosterRefresh::Keep,
     }
 }
 
@@ -591,12 +716,15 @@ fn parse_roster_profiles(json: &serde_json::Value) -> HashMap<String, RosterProf
 /// Fetch the channel's members (39002), roles (39001) and profiles (kind 0)
 /// and render them as the `<channel-roster>` body. `None` when the member
 /// list is unavailable; a missing admins snapshot or profile set degrades to
-/// `member` roles and bare pubkeys rather than failing the turn.
+/// `member` roles and bare pubkeys (`complete == false`) rather than failing
+/// the turn — a new session may start on a degraded roster, but a refresh
+/// only replaces a roster with a complete one (see [`plan_roster_refresh`]).
 pub(crate) async fn fetch_channel_roster_section(
     channel_id: Uuid,
     agent_pubkey_hex: &str,
     rest: &RestClient,
-) -> Option<String> {
+) -> Option<RosterFetch> {
+    let mut complete = true;
     let members = match timeout(LOOKUP_TIMEOUT, rest.fetch_channel_members(channel_id)).await {
         Ok(Ok(members)) => members,
         Ok(Err(e)) => {
@@ -615,6 +743,7 @@ pub(crate) async fn fetch_channel_roster_section(
         Ok(Ok(roles)) => roles,
         _ => {
             tracing::debug!(channel_id = %channel_id, "roster admins lookup unavailable — rendering without roles");
+            complete = false;
             HashMap::new()
         }
     };
@@ -632,6 +761,7 @@ pub(crate) async fn fetch_channel_roster_section(
             Ok(Ok(json)) => parse_roster_profiles(&json),
             _ => {
                 tracing::debug!(channel_id = %channel_id, "roster profile lookup unavailable — rendering without names");
+                complete = false;
                 HashMap::new()
             }
         }
@@ -653,7 +783,10 @@ pub(crate) async fn fetch_channel_roster_section(
             }
         })
         .collect();
-    Some(render_channel_roster(&roster, agent_pubkey_hex))
+    Some(RosterFetch {
+        body: render_channel_roster(&roster, agent_pubkey_hex),
+        complete,
+    })
 }
 
 fn role_rank(role: &str) -> u8 {
@@ -733,16 +866,23 @@ mod tests {
         fail: bool,
         fail_profiles_containing: Option<String>,
         profile_batches: Mutex<Vec<Vec<String>>>,
+        /// Number of admins + bots lookups issued.
+        channel_lookups: Mutex<u32>,
     }
 
     impl StaticLookup {
         fn profile_batches(&self) -> Vec<Vec<String>> {
             self.profile_batches.lock().expect("batches").clone()
         }
+
+        fn channel_lookups(&self) -> u32 {
+            *self.channel_lookups.lock().expect("lookups")
+        }
     }
 
     impl TrustLookup for StaticLookup {
         async fn channel_admins(&self, channel_id: Uuid) -> Option<HashSet<String>> {
+            *self.channel_lookups.lock().expect("lookups") += 1;
             if self.fail {
                 return None;
             }
@@ -750,6 +890,7 @@ mod tests {
         }
 
         async fn channel_bots(&self, channel_id: Uuid) -> Option<HashSet<String>> {
+            *self.channel_lookups.lock().expect("lookups") += 1;
             if self.fail {
                 return None;
             }
@@ -1383,7 +1524,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lookup_failures_fail_closed_and_are_not_cached() {
+    async fn lookup_failures_fail_closed_and_never_become_verdicts() {
         let fx = fixture();
         let gate = make_gate(DispatcherConfig::default());
         let failing = StaticLookup {
@@ -1395,11 +1536,77 @@ mod tests {
             verdict(&gate, &failing, &fx, &event).await,
             DispatcherVerdict::LookupFailed
         );
-        // Once the relay answers, the same gate admits the owner: nothing
-        // negative was cached by the failure.
+        // Within the negative-cache window the relay is not asked again, so
+        // the verdict stays closed even though the relay has recovered.
         let healthy = fx.owner_lookup();
         assert_eq!(
             verdict(&gate, &healthy, &fx, &event).await,
+            DispatcherVerdict::LookupFailed
+        );
+        assert_eq!(healthy.channel_lookups(), 0);
+        // Once the window passes, the same gate admits the owner: the failure
+        // was never cached as a verdict.
+        gate.expire_negative_cache();
+        assert_eq!(
+            verdict(&gate, &healthy, &fx, &event).await,
+            DispatcherVerdict::Allow
+        );
+    }
+
+    /// During a relay outage every event would otherwise wait on the full
+    /// lookup timeouts inline on the listener loop. After one failure, further
+    /// events are dropped without issuing the failed lookup again.
+    #[tokio::test]
+    async fn repeated_events_during_an_outage_skip_the_failed_lookups() {
+        let fx = fixture();
+        let event = message(&fx.human, KIND_STREAM_MESSAGE, &[]);
+
+        // Channel-set lookup (bots is the first lookup the gate makes).
+        let gate = make_gate(DispatcherConfig::default());
+        let failing = StaticLookup {
+            fail: true,
+            ..Default::default()
+        };
+        for _ in 0..3 {
+            assert_eq!(
+                verdict(&gate, &failing, &fx, &event).await,
+                DispatcherVerdict::LookupFailed
+            );
+        }
+        assert_eq!(
+            failing.channel_lookups(),
+            1,
+            "only the first event reached the relay"
+        );
+
+        // Profile lookup: channel sets are healthy, the author's profile
+        // batch fails.
+        let gate = make_gate(DispatcherConfig::default());
+        let profiles_down = StaticLookup {
+            admins: HashMap::from([(fx.channel, HashSet::from([fx.human_hex.clone()]))]),
+            fail_profiles_containing: Some(fx.human_hex.clone()),
+            ..Default::default()
+        };
+        for _ in 0..3 {
+            assert_eq!(
+                verdict(&gate, &profiles_down, &fx, &event).await,
+                DispatcherVerdict::LookupFailed
+            );
+        }
+        assert_eq!(
+            profiles_down.profile_batches().len(),
+            1,
+            "only the first event issued the profile query"
+        );
+        // A different, unaffected pubkey is still looked up normally.
+        let other = Keys::generate();
+        let other_event = message(&other, KIND_STREAM_MESSAGE, &[]);
+        let gate_for_other = make_gate(channel_config(
+            fx.channel,
+            policy(&[&other.public_key().to_hex()], &[]),
+        ));
+        assert_eq!(
+            verdict(&gate_for_other, &profiles_down, &fx, &other_event).await,
             DispatcherVerdict::Allow
         );
     }
@@ -1490,10 +1697,29 @@ mod tests {
         assert_eq!(mentioned_pubkeys(&event), vec![a.to_ascii_lowercase(), b]);
     }
 
+    fn complete(body: &str) -> RosterFetch {
+        RosterFetch {
+            body: body.into(),
+            complete: true,
+        }
+    }
+
+    fn degraded(body: &str) -> RosterFetch {
+        RosterFetch {
+            body: body.into(),
+            complete: false,
+        }
+    }
+
     #[test]
     fn roster_section_is_due_for_refresh_after_the_interval() {
-        let mut section = RosterSection::new("Members of this channel (1).".into());
+        let mut section = RosterSection::new(complete("Members of this channel (1)."));
         assert!(!section.due_for_refresh(), "a fresh roster is not re-read");
+        section.fetched_at = Instant::now() - ROSTER_DEGRADED_REFRESH_INTERVAL;
+        assert!(
+            !section.due_for_refresh(),
+            "a complete roster waits for the full interval"
+        );
         section.fetched_at = Instant::now() - ROSTER_REFRESH_INTERVAL;
         assert!(section.due_for_refresh());
         section.mark_refreshed();
@@ -1502,6 +1728,49 @@ mod tests {
             "a refresh attempt resets the clock even when the body is unchanged"
         );
         assert_eq!(section.body, "Members of this channel (1).");
+
+        let mut partial = RosterSection::new(degraded("Members of this channel (1)."));
+        assert!(!partial.due_for_refresh());
+        partial.fetched_at = Instant::now() - ROSTER_DEGRADED_REFRESH_INTERVAL;
+        assert!(
+            partial.due_for_refresh(),
+            "a degraded roster is retried on the short interval"
+        );
+    }
+
+    #[test]
+    fn only_a_complete_and_different_roster_rotates_the_session() {
+        let cached = RosterSection::new(complete("old"));
+        assert_eq!(
+            plan_roster_refresh(&cached, Some(complete("new"))),
+            RosterRefresh::Rotate(complete("new"))
+        );
+        assert_eq!(
+            plan_roster_refresh(&cached, Some(complete("old"))),
+            RosterRefresh::Keep,
+            "an unchanged roster keeps the session"
+        );
+        assert_eq!(
+            plan_roster_refresh(&cached, None),
+            RosterRefresh::Keep,
+            "a failed fetch keeps the cached roster"
+        );
+        assert_eq!(
+            plan_roster_refresh(&cached, Some(degraded("new-but-bare"))),
+            RosterRefresh::Keep,
+            "a degraded fetch never replaces a roster, even when it differs"
+        );
+        // A degraded cached roster is upgraded by a complete one, but not
+        // swapped for a different degraded one.
+        let partial = RosterSection::new(degraded("bare"));
+        assert_eq!(
+            plan_roster_refresh(&partial, Some(complete("named"))),
+            RosterRefresh::Rotate(complete("named"))
+        );
+        assert_eq!(
+            plan_roster_refresh(&partial, Some(degraded("other-bare"))),
+            RosterRefresh::Keep
+        );
     }
 
     #[test]

@@ -213,6 +213,45 @@ impl SessionState {
         self.sessions.remove(scope).is_some()
     }
 
+    /// Dispatcher mode: whether the live session for `scope` carries a roster
+    /// that is due to be re-read. Scopes without a session (or without a
+    /// roster — DMs) never refresh; they fetch at creation instead.
+    pub(crate) fn roster_refresh_due(&self, scope: &SessionScope) -> bool {
+        self.sessions.contains_key(scope)
+            && self
+                .roster_sections
+                .get(scope)
+                .is_some_and(|cached| cached.due_for_refresh())
+    }
+
+    /// Dispatcher mode: apply the result of a roster re-read to `scope`.
+    ///
+    /// A complete roster that differs from the cached one rotates the session
+    /// (see [`rotate_scope_session`](Self::rotate_scope_session)) and is
+    /// returned so the caller carries it into the replacement `session/new`.
+    /// Anything else — unchanged, degraded, or failed fetch — keeps the cached
+    /// roster and resets its refresh clock; a complete fetch of the same body
+    /// also upgrades a degraded entry so it moves to the long interval.
+    pub(crate) fn apply_roster_refresh(
+        &mut self,
+        scope: &SessionScope,
+        fetched: Option<crate::dispatcher::RosterFetch>,
+    ) -> Option<crate::dispatcher::RosterFetch> {
+        let cached = self.roster_sections.get_mut(scope)?;
+        let upgraded = fetched.as_ref().is_some_and(|fetch| fetch.complete);
+        match crate::dispatcher::plan_roster_refresh(cached, fetched) {
+            crate::dispatcher::RosterRefresh::Rotate(fetch) => {
+                self.rotate_scope_session(scope);
+                Some(fetch)
+            }
+            crate::dispatcher::RosterRefresh::Keep => {
+                cached.mark_refreshed();
+                cached.complete |= upgraded;
+                None
+            }
+        }
+    }
+
     /// Invalidate every session scope belonging to `channel_id` (channel-wide
     /// cleanup, e.g. when the agent is removed from a channel). Returns the
     /// number of scopes that had an active session.
@@ -2675,7 +2714,7 @@ pub async fn run_prompt_task(
     // is due for refresh re-reads the member list first: when the rendered
     // roster changed (an agent joined or left mid-session) the session is
     // rotated so the replacement's `session/new` carries the new roster.
-    let mut pending_roster: Option<(SessionScope, String)> = None;
+    let mut pending_roster: Option<(SessionScope, crate::dispatcher::RosterFetch)> = None;
     let mut huddle_instructions: Option<String> = None;
     // Channel name for the session title, from the same single resolve the
     // canvas DM check uses — see `resolve_new_session_channel_context`.
@@ -2683,47 +2722,28 @@ pub async fn run_prompt_task(
     let mut origin_channel_type: Option<String> = None;
     if let PromptSource::Channel(scope) = &source {
         let cid = scope.channel_id();
-        if ctx.dispatcher && agent.state.sessions.contains_key(scope) {
-            // Only non-DM scopes ever hold a roster, so no DM check is needed.
-            let stale_roster = agent
-                .state
-                .roster_sections
-                .get(scope)
-                .filter(|cached| cached.due_for_refresh())
-                .map(|cached| cached.body.clone());
-            if let Some(cached_body) = stale_roster {
-                let refreshed = crate::dispatcher::fetch_channel_roster_section(
-                    cid,
-                    &ctx.agent_keys.public_key().to_hex(),
-                    &ctx.rest_client,
-                )
-                .await;
-                match refreshed {
-                    Some(section) if section != cached_body => {
-                        tracing::info!(
-                            target: "pool::session",
-                            channel = %cid,
-                            scope = %scope.telemetry_label(),
-                            "channel roster changed — rotating dispatcher session"
-                        );
-                        agent.state.rotate_scope_session(scope);
-                        pending_roster = Some((scope.clone(), section));
-                    }
-                    Some(_) => {
-                        if let Some(cached) = agent.state.roster_sections.get_mut(scope) {
-                            cached.mark_refreshed();
-                        }
-                    }
-                    None => {
-                        tracing::debug!(
-                            channel = %cid,
-                            "channel roster refresh unavailable — keeping the cached roster"
-                        );
-                        if let Some(cached) = agent.state.roster_sections.get_mut(scope) {
-                            cached.mark_refreshed();
-                        }
-                    }
-                }
+        // Only non-DM scopes ever hold a roster, so no DM check is needed here.
+        if ctx.dispatcher && agent.state.roster_refresh_due(scope) {
+            let fetched = crate::dispatcher::fetch_channel_roster_section(
+                cid,
+                &ctx.agent_keys.public_key().to_hex(),
+                &ctx.rest_client,
+            )
+            .await;
+            if fetched.is_none() {
+                tracing::debug!(
+                    channel = %cid,
+                    "channel roster refresh unavailable — keeping the cached roster"
+                );
+            }
+            if let Some(fetch) = agent.state.apply_roster_refresh(scope, fetched) {
+                tracing::info!(
+                    target: "pool::session",
+                    channel = %cid,
+                    scope = %scope.telemetry_label(),
+                    "channel roster changed — rotating dispatcher session"
+                );
+                pending_roster = Some((scope.clone(), fetch));
             }
         }
         let is_new_channel_session = !agent.state.sessions.contains_key(scope);
@@ -2803,7 +2823,7 @@ pub async fn run_prompt_task(
             .roster_sections
             .get(scope)
             .map(|cached| cached.body.clone())
-            .or_else(|| pending_roster.as_ref().map(|(_, s)| s.clone())),
+            .or_else(|| pending_roster.as_ref().map(|(_, fetch)| fetch.body.clone())),
         PromptSource::Heartbeat => None,
     };
 
@@ -8172,6 +8192,223 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         assert!(delivery.hydrated_thread_roots.is_empty());
     }
 
+    fn roster(body: &str, complete: bool) -> crate::dispatcher::RosterFetch {
+        crate::dispatcher::RosterFetch {
+            body: body.into(),
+            complete,
+        }
+    }
+
+    /// Seed a live dispatcher session whose roster was fetched `age` ago.
+    fn seeded_roster_state(
+        scope: &SessionScope,
+        body: &str,
+        complete: bool,
+        age: Duration,
+    ) -> SessionState {
+        let mut state = SessionState::default();
+        state.sessions.insert(scope.clone(), "live-session".into());
+        state.turn_counts.insert(scope.clone(), 2);
+        state.set_scope_owner_generation(scope.clone(), 3);
+        let mut section = crate::dispatcher::RosterSection::new(roster(body, complete));
+        section.fetched_at = std::time::Instant::now() - age;
+        state.roster_sections.insert(scope.clone(), section);
+        state
+    }
+
+    /// The production refresh seam (`run_prompt_task` → `roster_refresh_due`
+    /// → fetch → `apply_roster_refresh`): a stale roster is only re-read for a
+    /// live session, and a changed complete roster rotates that session.
+    #[test]
+    fn stale_roster_on_a_live_session_is_due_and_a_changed_roster_rotates_it() {
+        let scope = conv(Uuid::new_v4());
+        let stale = crate::dispatcher::ROSTER_REFRESH_INTERVAL;
+
+        let fresh = seeded_roster_state(&scope, "old", true, Duration::ZERO);
+        assert!(
+            !fresh.roster_refresh_due(&scope),
+            "a fresh roster is not re-read"
+        );
+
+        let mut state = seeded_roster_state(&scope, "old", true, stale);
+        assert!(state.roster_refresh_due(&scope));
+        let mut no_session = seeded_roster_state(&scope, "old", true, stale);
+        no_session.sessions.clear();
+        assert!(
+            !no_session.roster_refresh_due(&scope),
+            "without a session the creation path fetches instead"
+        );
+
+        // Changed, complete → rotate: the session is gone, the new roster is
+        // handed back for the replacement, ownership is kept.
+        let rotated = state.apply_roster_refresh(&scope, Some(roster("new", true)));
+        assert_eq!(rotated, Some(roster("new", true)));
+        assert!(!state.sessions.contains_key(&scope));
+        assert!(!state.roster_sections.contains_key(&scope));
+        assert!(!state.turn_counts.contains_key(&scope));
+        assert_eq!(state.scope_owner_generations.get(&scope), Some(&3));
+        assert!(
+            !state.roster_refresh_due(&scope),
+            "nothing left to refresh until the replacement session commits"
+        );
+    }
+
+    #[test]
+    fn unchanged_degraded_or_failed_refresh_keeps_the_session_and_resets_the_clock() {
+        let scope = conv(Uuid::new_v4());
+        let stale = crate::dispatcher::ROSTER_REFRESH_INTERVAL;
+        for (label, fetched) in [
+            ("unchanged", Some(roster("old", true))),
+            ("degraded but different", Some(roster("old-bare", false))),
+            ("failed", None),
+        ] {
+            let mut state = seeded_roster_state(&scope, "old", true, stale);
+            assert_eq!(
+                state.apply_roster_refresh(&scope, fetched),
+                None,
+                "{label}: no rotation"
+            );
+            assert_eq!(
+                state.sessions.get(&scope).map(String::as_str),
+                Some("live-session"),
+                "{label}: session kept"
+            );
+            let cached = &state.roster_sections[&scope];
+            assert_eq!(cached.body, "old", "{label}: cached body kept");
+            assert!(cached.complete, "{label}: completeness kept");
+            assert!(
+                !state.roster_refresh_due(&scope),
+                "{label}: the refresh clock was reset"
+            );
+        }
+
+        // A degraded cached roster is upgraded in place by an identical
+        // complete fetch, and replaced by a different complete one.
+        let short = crate::dispatcher::ROSTER_DEGRADED_REFRESH_INTERVAL;
+        let mut state = seeded_roster_state(&scope, "bare", false, short);
+        assert!(
+            state.roster_refresh_due(&scope),
+            "degraded rosters refresh sooner"
+        );
+        assert_eq!(
+            state.apply_roster_refresh(&scope, Some(roster("bare", true))),
+            None
+        );
+        assert!(
+            state.roster_sections[&scope].complete,
+            "upgraded to complete"
+        );
+        let mut state = seeded_roster_state(&scope, "bare", false, short);
+        assert_eq!(
+            state.apply_roster_refresh(&scope, Some(roster("named", true))),
+            Some(roster("named", true))
+        );
+        assert!(!state.sessions.contains_key(&scope));
+
+        // No roster for the scope (DM or never created): nothing happens.
+        let mut state = SessionState::default();
+        state.sessions.insert(scope.clone(), "dm-session".into());
+        assert_eq!(
+            state.apply_roster_refresh(&scope, Some(roster("x", true))),
+            None
+        );
+        assert!(state.sessions.contains_key(&scope));
+    }
+
+    /// Dispatcher mode through the production turn: when the roster for a new
+    /// channel session cannot be fetched, no ACP session is created and the
+    /// batch comes back as `RosterUnavailable` for requeue.
+    #[tokio::test]
+    async fn dispatcher_turn_without_a_roster_is_requeued_before_session_creation() {
+        let channel_id = Uuid::new_v4();
+        let acp = AcpClient::spawn("cat", &[], &[], false)
+            .await
+            .expect("spawn cat as inert agent");
+        let agent = OwnedAgent {
+            index: 0,
+            acp,
+            state: SessionState::default(),
+            model_capabilities: None,
+            desired_model: None,
+            model_overridden: false,
+            desired_model_request_id: None,
+            desired_model_pending_ack: false,
+            startup_effort: None,
+            agent_name: "dispatcher-test-agent".into(),
+            goose_system_prompt_supported: None,
+            protocol_version: 1,
+        };
+        let event = EventBuilder::new(Kind::Custom(9), "can someone ship this?")
+            .sign_with_keys(&Keys::generate())
+            .unwrap();
+        let event_id = event.id.to_hex();
+        let batch = FlushBatch {
+            channel_id,
+            scope: conv(channel_id),
+            events: vec![crate::queue::BatchEvent {
+                edit: None,
+                event,
+                prompt_tag: "dispatch".into(),
+                received_at: std::time::Instant::now(),
+            }],
+            cancelled_events: vec![],
+            cancel_reason: None,
+        };
+
+        let mut ctx = make_prompt_context_no_owner();
+        ctx.dispatcher = true;
+        ctx.dedup_mode = DedupMode::Queue;
+        // The relay is unreachable: the metadata refresh falls back to the
+        // startup cache, the project lookup is served from a fresh cache
+        // entry, and the roster fetch fails.
+        ctx.channel_info = ChannelInfoResolver::new(
+            HashMap::from([(
+                channel_id,
+                crate::relay::ChannelInfo {
+                    name: "general".into(),
+                    channel_type: "stream".into(),
+                    description: None,
+                },
+            )]),
+            ctx.rest_client.clone(),
+        );
+        ctx.channel_info.projects.write().unwrap().insert(
+            channel_id,
+            CachedProjectInfo {
+                fetched_at: std::time::Instant::now(),
+                value: None,
+            },
+        );
+        let (result_tx, mut result_rx) = mpsc::unbounded_channel();
+        run_prompt_task(
+            agent,
+            Some(batch),
+            None,
+            Arc::new(ctx),
+            result_tx,
+            None,
+            "roster-unavailable-turn".into(),
+        )
+        .await;
+
+        let mut result = result_rx.recv().await.expect("prompt result");
+        assert!(
+            matches!(result.outcome, PromptOutcome::RosterUnavailable(_)),
+            "a roster-less dispatcher turn must end as RosterUnavailable"
+        );
+        let retry = result
+            .batch
+            .take()
+            .expect("roster-less turn must hand the batch back for requeue");
+        assert_eq!(retry.events[0].event.id.to_hex(), event_id);
+        assert!(
+            result.agent.state.sessions.is_empty(),
+            "no session may be created without a roster"
+        );
+        assert!(result.agent.state.roster_sections.is_empty());
+        result.agent.acp.shutdown().await;
+    }
+
     /// A dispatcher roster rotation runs inside the owning turn: the session
     /// and its derived sections go, but the scope ownership generation stays so
     /// the replacement session survives `return_agent`'s ownership check.
@@ -8186,7 +8423,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         state.canvas_sections.insert(scope.clone(), "canvas".into());
         state.roster_sections.insert(
             scope.clone(),
-            crate::dispatcher::RosterSection::new("old roster".into()),
+            crate::dispatcher::RosterSection::new(roster("old roster", true)),
         );
         state.mark_scope_delivery_success(scope.clone(), true, ["e1".to_string()], []);
         state.set_scope_owner_generation(scope.clone(), 7);
