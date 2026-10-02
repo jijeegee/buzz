@@ -635,6 +635,9 @@ struct QueuedNormalListenerEvent {
     /// The admitted event as a native steer would render it, including an
     /// edit's resolved original-message routing.
     steer_event: queue::BatchEvent,
+    /// DM status used to derive `scope`; a native steer's `<context>` uses it
+    /// to route replies the way dispatch would.
+    is_dm: bool,
 }
 
 impl QueuedNormalListenerEvent {
@@ -669,6 +672,7 @@ impl QueuedNormalListenerEvent {
                 queue,
                 self.scope.clone(),
                 self.steer_event,
+                self.is_dm,
                 steer_ack_tx,
             );
         if !native_attempted {
@@ -707,6 +711,7 @@ impl NormalListenerIngress {
         self,
         queue: &mut EventQueue,
         session_scope: scope::SessionScope,
+        is_dm: bool,
     ) -> QueuedNormalListenerEvent {
         let Self {
             buzz_event,
@@ -737,6 +742,7 @@ impl NormalListenerIngress {
             effective_author,
             reaction_target_id,
             steer_event,
+            is_dm,
         }
     }
 }
@@ -3514,14 +3520,13 @@ async fn run_harness(
                             // channel-keyed routing. Telemetry only for now —
                             // queue/pool partitioning by scope lands in a
                             // follow-up (see ticket outline steps 2–4).
-                            let session_scope = ingress.session_scope(
-                                config.session_policy,
-                                is_dm_channel(
-                                    ingress.buzz_event.channel_id,
-                                    &ctx.channel_info,
-                                )
-                                .await,
-                            );
+                            let is_dm = is_dm_channel(
+                                ingress.buzz_event.channel_id,
+                                &ctx.channel_info,
+                            )
+                            .await;
+                            let session_scope =
+                                ingress.session_scope(config.session_policy, is_dm);
                             tracing::debug!(
                                 channel_id = %session_scope.channel_id(),
                                 scope = %session_scope.telemetry_label(),
@@ -3530,7 +3535,7 @@ async fn run_harness(
                                 policy = %config.session_policy,
                                 "admitted event — resolved session scope"
                             );
-                            let queued = ingress.push(&mut queue, session_scope);
+                            let queued = ingress.push(&mut queue, session_scope, is_dm);
                             // 👀 — immediate "seen" reaction, only if the event
                             // was actually queued (not dropped by DedupMode::Drop).
                             // Fire-and-forget: on rare fast-failure paths the
@@ -4327,6 +4332,7 @@ fn try_native_steer(
     queue: &mut EventQueue,
     scope: scope::SessionScope,
     be: queue::BatchEvent,
+    is_dm: bool,
     steer_ack_tx: &mpsc::UnboundedSender<SteerAckEvent>,
 ) -> bool {
     let channel_id = scope.channel_id();
@@ -4343,10 +4349,12 @@ fn try_native_steer(
     // channel context and the actor's profile in the original prompt,
     // duplicating it here would defeat the point of non-cancelling
     // steering (which is to inject only what's new).
-    // An edit's block carries its resolved original-message routing, so a
-    // steered edit is anchored exactly as a dispatched one would be.
+    //
+    // The delta does carry its own `<context>`: the steered message may
+    // belong to a different thread than the running turn (channel policy),
+    // and `<context>` is the agent's authoritative reply destination.
     let event_id_hex = be.event.id.to_hex();
-    let body = native_steer_body(channel_id, &be);
+    let body = native_steer_body(&scope, &be, is_dm);
 
     let (ack_tx, ack_rx) = tokio::sync::oneshot::channel::<pool::SteerAck>();
     let request = pool::SteerRequest {
@@ -4414,16 +4422,20 @@ fn try_native_steer(
 }
 
 /// Render the prompt delta sent by [`try_native_steer`].
-fn native_steer_body(channel_id: Uuid, be: &queue::BatchEvent) -> String {
+///
+/// The `<context>` section routes replies to the steered message, superseding
+/// the running turn's reply destination, as a cancel+merge re-prompt would.
+fn native_steer_body(scope: &scope::SessionScope, be: &queue::BatchEvent, is_dm: bool) -> String {
     let (tag, closing) = queue::native_steer_framing();
-    let event_block = queue::format_event_block(channel_id, None, be, None);
+    let context = queue::native_steer_context(scope, be, is_dm);
+    let event_block = queue::format_event_block(scope.channel_id(), None, be, None);
     let new_message = prompt_framing::semantic_section(tag, "");
     let event_section = prompt_framing::semantic_section_with_attributes(
         "buzz-event",
         &[("type", be.prompt_tag.as_str())],
         &event_block,
     );
-    format!("{new_message}\n\n{event_section}\n\n{closing}")
+    format!("{new_message}\n\n{context}\n\n{event_section}\n\n{closing}")
 }
 
 // ── try_native_steer fallback-log tests ───────────────────────────────────────
@@ -4600,6 +4612,7 @@ mod try_native_steer_fallback_log_tests {
                     received_at: std::time::Instant::now(),
                     edit: None,
                 },
+                false,
                 &steer_ack_tx,
             )
         });
@@ -9974,7 +9987,10 @@ mod edit_native_steer_tests {
                 target_thread_tags: queue::parse_thread_tags(&original),
             }),
         };
-        let body = native_steer_body(Uuid::new_v4(), &be);
+        let scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let body = native_steer_body(&scope, &be, false);
         assert!(
             body.contains(&format!("Edit of: {}", original.id.to_hex())),
             "{body}"
@@ -10004,14 +10020,16 @@ mod edit_native_steer_tests {
         };
         let scope = ingress.session_scope(scope::SessionPolicy::Channel, false);
         let mut queue = EventQueue::new(config::DedupMode::Queue);
-        let queued = ingress.push(&mut queue, scope);
+        let queued = ingress.push(&mut queue, scope, false);
         assert_eq!(queued.steer_event.edit, Some(resolved));
         assert_eq!(queued.reaction_target_id, original.id.to_hex());
     }
 
-    /// End to end through the listener's steer decision: a routed edit that
-    /// arrives during a running turn goes out as a native steer carrying the
-    /// original's route, and the running turn is not cancelled.
+    /// End to end through the listener's steer decision: under the channel
+    /// policy, a turn started from thread A is running when an edit whose
+    /// original is in thread B arrives. The edit goes out as a native steer
+    /// whose authoritative `<context>` replies to B, never to A, and the
+    /// running turn is not cancelled.
     #[tokio::test]
     async fn routed_edit_steers_running_turn_with_original_route() {
         let root = "ab".repeat(32);
@@ -10031,9 +10049,11 @@ mod edit_native_steer_tests {
 
         // A turn is already running in the scope.
         let mut queue = EventQueue::new(config::DedupMode::Queue);
-        let running = ingress(message(None), None);
+        let running_event = message(None);
+        let thread_a = running_event.id.to_hex();
+        let running = ingress(running_event, None);
         let scope = running.session_scope(scope::SessionPolicy::Channel, false);
-        running.push(&mut queue, scope.clone());
+        running.push(&mut queue, scope.clone(), false);
         queue.flush_next().expect("running turn");
         assert!(queue.is_scope_in_flight(&scope));
 
@@ -10067,7 +10087,7 @@ mod edit_native_steer_tests {
         );
         let (ack_tx, _ack_rx) = mpsc::unbounded_channel();
         edit_ingress
-            .push(&mut queue, scope.clone())
+            .push(&mut queue, scope.clone(), false)
             .steer_or_interrupt(
                 MultipleEventHandling::Steer,
                 None,
@@ -10083,6 +10103,17 @@ mod edit_native_steer_tests {
             "{body}"
         );
         assert!(body.contains(&format!("root={root}")), "{body}");
+        let context = body
+            .split("<context>")
+            .nth(1)
+            .and_then(|rest| rest.split("</context>").next())
+            .unwrap_or_else(|| panic!("steer carries a <context> section: {body}"));
+        assert!(
+            context.contains(&format!("Thread root: {root}")),
+            "{context}"
+        );
+        assert!(context.contains(&format!("--reply-to {root}")), "{context}");
+        assert!(!body.contains(&thread_a), "thread A must not route: {body}");
         assert!(
             matches!(
                 control_rx.try_recv(),

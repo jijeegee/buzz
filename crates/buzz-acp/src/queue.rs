@@ -2133,10 +2133,6 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
             return Vec::new();
         }
     };
-    // An edit routes through its original message: the edit's own bare `e`
-    // tag is not a thread link, and the edit event is not a visible row.
-    let thread_tags = last_event.routing_thread_tags();
-    let routing_event_id = last_event.routing_event_id();
     let is_dm = args
         .channel_info
         .map(|ci| ci.channel_type == "dm")
@@ -2164,37 +2160,17 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
     }
 
     // 2. Context hints (with a human-aware reply anchor).
-    //
-    // Human-facing turns are anchored so replies stay readable at layer 1:
-    //   - in a thread  → anchor to the thread ROOT (no depth-2 nesting)
-    //   - top-level     → anchor to the triggering event (it becomes the root)
-    // Agent↔agent turns get no forced anchor — deep nesting is intentional
-    // there. DMs are always 1:1 with a human, so they always anchor.
-    let sender_pubkey = last_event.event.pubkey.to_hex();
-    let reply_anchor = if is_dm {
-        thread_tags
-            .root_event_id
-            .is_some()
-            .then(|| routing_event_id.clone())
-    } else {
-        resolve_reply_anchor(
-            &sender_pubkey,
-            &thread_tags,
-            &routing_event_id,
-            args.profile_lookup,
-        )
-    };
-    sections.push(format_context_hints(
+    sections.push(format_routed_context(
         &batch.scope,
         args.channel_info,
-        &thread_tags,
+        last_event,
         is_dm,
         conversation_context_status(
             batch,
             args.conversation_context,
             args.conversation_context_had_session_events,
         ),
-        reply_anchor.as_deref(),
+        args.profile_lookup,
     ));
 
     // 3. Conversation context (thread or DM).
@@ -2328,6 +2304,76 @@ impl MergeFraming {
             },
         }
     }
+}
+
+/// Format the `<context>` section that routes replies to `event`.
+///
+/// One owner for turn routing: both a dispatched prompt (its last event) and a
+/// native steer delta (its single event) derive the thread, the routing event,
+/// and the human-aware reply anchor here, so a message steered into a running
+/// turn replaces that turn's reply destination exactly as a dispatched or
+/// cancel+merged one would.
+///
+/// Human-facing turns are anchored so replies stay readable at layer 1:
+///   - in a thread  → anchor to the thread ROOT (no depth-2 nesting)
+///   - top-level     → anchor to the triggering event (it becomes the root)
+///
+/// Agent↔agent turns get no forced anchor — deep nesting is intentional
+/// there. DMs are always 1:1 with a human, so they always anchor.
+fn format_routed_context(
+    scope: &SessionScope,
+    channel_info: Option<&PromptChannelInfo>,
+    event: &BatchEvent,
+    is_dm: bool,
+    conversation_context_status: ConversationContextStatus,
+    profile_lookup: Option<&PromptProfileLookup>,
+) -> String {
+    // An edit routes through its original message: the edit's own bare `e`
+    // tag is not a thread link, and the edit event is not a visible row.
+    let thread_tags = event.routing_thread_tags();
+    let routing_event_id = event.routing_event_id();
+    let sender_pubkey = event.event.pubkey.to_hex();
+    let reply_anchor = if is_dm {
+        thread_tags
+            .root_event_id
+            .is_some()
+            .then(|| routing_event_id.clone())
+    } else {
+        resolve_reply_anchor(
+            &sender_pubkey,
+            &thread_tags,
+            &routing_event_id,
+            profile_lookup,
+        )
+    };
+    format_context_hints(
+        scope,
+        channel_info,
+        &thread_tags,
+        is_dm,
+        conversation_context_status,
+        reply_anchor.as_deref(),
+    )
+}
+
+/// The `<context>` section for a native steer delta.
+///
+/// A steer carries no channel metadata, fetched conversation context, or
+/// profiles. Without profiles the sender counts as human (the same fail-open
+/// rule as dispatch), so the steered message always gets a reply anchor.
+pub(crate) fn native_steer_context(
+    scope: &SessionScope,
+    event: &BatchEvent,
+    is_dm: bool,
+) -> String {
+    format_routed_context(
+        scope,
+        None,
+        event,
+        is_dm,
+        ConversationContextStatus::Absent,
+        None,
+    )
 }
 
 /// Framing strings for the goose-native steer path (lib.rs mode-gate),
