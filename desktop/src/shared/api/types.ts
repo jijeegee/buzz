@@ -369,6 +369,15 @@ export type ManagedAgent = {
    * `"allowlist"`. Preserved across mode toggles.
    */
   respondToAllowlist: string[];
+  /**
+   * The stored `effort_level` column, verbatim — NOT the effective effort.
+   * The effective value (`AgentConfigSurface.normalized.thinkingEffort`) is
+   * resolved across env tiers under the current runtime's contract; this is
+   * what an ACP thought-level runtime (Claude Code / Codex / Hermes, no native
+   * env knob) launches as `BUZZ_ACP_EFFORT_LEVEL`. The Edit dialog's picker
+   * reads it after an in-dialog runtime switch. `null` = adapter default.
+   */
+  effortLevel: string | null;
 };
 
 /** Inbound author gate mode. Mirrors buzz-acp's --respond-to CLI flag. */

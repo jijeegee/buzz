@@ -320,6 +320,17 @@ export function AgentInstanceEditDialog({
   const prospectiveRuntime = runtimes.find(
     (r) => r.id === prospectiveRuntimeId,
   );
+  // The effort the NEXT spawn launches, which is what the picker shows and
+  // what an explicit pick is diffed against (`originalEffortLevel`). Before a
+  // runtime switch that is the config surface's effective `thinkingEffort`
+  // (resolved across env tiers under the running runtime's contract). After a
+  // switch the surface is the OLD runtime's resolution — a Goose
+  // `GOOSE_THINKING_EFFORT` tier would be shown for a runtime that never reads
+  // it — so it is the stored column (`agent.effortLevel`), the only tier an
+  // ACP thought-level runtime launches (`BUZZ_ACP_EFFORT_LEVEL`).
+  const launchEffortLevel = runtimeTouched.current
+    ? agent.effortLevel
+    : (configSurfaceQuery.data?.normalized.thinkingEffort?.value ?? null);
   const runtimeCatalogStatus = runtimesQuery.isLoading
     ? ("loading" as const)
     : runtimesQuery.isError
@@ -749,8 +760,7 @@ export function AgentInstanceEditDialog({
       // snapshot and launch the NEW effort value atomically.
       const effortSubmission = resolveEffortSubmission({
         effortLevel,
-        originalEffortLevel:
-          configSurfaceQuery.data?.normalized.thinkingEffort?.value ?? null,
+        originalEffortLevel: launchEffortLevel,
         inheritTransition: agentCommandUpdate === "",
       });
       // Include effort in the locked update when touched (tri-state: absent =
@@ -1105,7 +1115,7 @@ export function AgentInstanceEditDialog({
             <EffortPickerField
               backend={agent.backend}
               // Post-switch: options from the prospective runtime's catalog
-              // fallback, but the value stays the saved column (what launches).
+              // fallback, value from the stored column (see launchEffortLevel).
               config={
                 runtimeTouched.current ? undefined : configSurfaceQuery.data
               }
@@ -1115,12 +1125,7 @@ export function AgentInstanceEditDialog({
                 setEffortLevel(level);
               }}
               runtime={prospectiveRuntime}
-              value={
-                effortTouched.current
-                  ? effortLevel
-                  : (configSurfaceQuery.data?.normalized.thinkingEffort
-                      ?.value ?? null)
-              }
+              value={effortTouched.current ? effortLevel : launchEffortLevel}
             />
 
             <AgentAiDefaultsNotice

@@ -283,7 +283,7 @@ function installEffortIpc({ deferUpdate = false, failUpdate = false } = {}) {
   };
 }
 
-function renderDialog(onOpenChange) {
+function renderDialog(onOpenChange, agentOverrides = {}) {
   const client = new QueryClient({
     defaultOptions: {
       mutations: { gcTime: 0 },
@@ -299,7 +299,7 @@ function renderDialog(onOpenChange) {
         QueryClientProvider,
         { client },
         createElement(AgentInstanceEditDialog, {
-          agent: { ...toCamelAgent(rawAgent()) },
+          agent: { ...toCamelAgent(rawAgent(agentOverrides)) },
           open: true,
           onOpenChange,
           onUpdated: () => {},
@@ -353,6 +353,7 @@ function toCamelAgent(raw) {
     backendAgentId: raw.backend_agent_id,
     respondTo: raw.respond_to,
     respondToAllowlist: raw.respond_to_allowlist,
+    effortLevel: raw.effort_level ?? null,
   };
 }
 
@@ -889,7 +890,9 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
   installEffortIpc();
   const set = (cmd, handler) => ipcHandlers.set(cmd, handler);
   // Override the config surface with a non-null pinned effort so the original
-  // value is "low" — the critical case for the effortTouched guard.
+  // value is "low" — the critical case for the effortTouched guard. The
+  // surface reports it from the record column (`origin: "agentRecord"`), so
+  // the agent's stored column carries the same "low".
   set("get_agent_config_surface", () =>
     Promise.resolve({
       ...effortConfigSurface(),
@@ -911,7 +914,7 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
     return Promise.resolve({ agent: rawAgent(), profile_sync_error: null });
   });
   await act(async () => {
-    renderDialog(() => {});
+    renderDialog(() => {}, { effort_level: "low" });
   });
 
   // Select an effort level while the effort picker is visible (goose session).
@@ -952,13 +955,13 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
     ),
     "fallback-sourced options must carry the model-dependence hint",
   );
-  // The saved column ("low") survives a runtime switch and is what the next
+  // The stored column ("low") survives a runtime switch and is what the next
   // spawn launches as BUZZ_ACP_EFFORT_LEVEL, so the picker must keep showing it
   // — never "Adapter default" or the pre-switch "High" pick.
   assert.equal(
     effortTrigger.textContent?.trim(),
     "Low",
-    "post-switch picker must show the saved column value, the effort that will actually launch",
+    "post-switch picker must show the stored column value, the effort that will actually launch",
   );
 
   // Save — the runtime changed, so effortTouched must have been cleared.
@@ -972,6 +975,93 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
     0,
     "no effortLevel must appear in update_managed_agent after a runtime switch — the config surface vocab belongs to the running session, not the prospective one",
   );
+});
+
+test("after a runtime switch the picker shows the stored column, not the old runtime's effective tier, so an equal pick still persists", async () => {
+  // The config surface's `thinkingEffort` is the OLD runtime's effective
+  // resolution across env tiers (record env > column > legacy > ACP > persona
+  // > global > …). Here Goose inherits "high" from GOOSE_THINKING_EFFORT in
+  // the global env while the stored column is empty. Claude never reads that
+  // env knob — it launches only the column — so after switching the picker
+  // must show "Adapter default", and an explicit "High" pick must be a real
+  // change that reaches update_managed_agent (not collapsed as "unchanged"
+  // against the stale effective value).
+  installEffortIpc();
+  const set = (cmd, handler) => ipcHandlers.set(cmd, handler);
+  set("get_agent_config_surface", () =>
+    Promise.resolve({
+      ...effortConfigSurface(),
+      normalized: {
+        ...effortConfigSurface().normalized,
+        thinkingEffort: {
+          value: "high",
+          origin: "globalEnv",
+          writeVia: "standalone",
+          overriddenValue: null,
+          overriddenOrigin: null,
+          isRequired: false,
+        },
+      },
+    }),
+  );
+  set("update_managed_agent", (args) => {
+    ipcCalls.push({ cmd: "update_managed_agent", args });
+    return Promise.resolve({ agent: rawAgent(), profile_sync_error: null });
+  });
+  await act(async () => {
+    // Column empty: the "high" above is inherited, not stored.
+    renderDialog(() => {}, { effort_level: null });
+  });
+
+  // Pre-switch the picker shows the effective value for the RUNNING runtime.
+  assert.equal(
+    dom.window.document
+      .getElementById("edit-agent-effort")
+      ?.textContent?.trim(),
+    "High",
+    "before a switch the picker shows the running runtime's effective effort",
+  );
+
+  const runtimeTrigger =
+    dom.window.document.getElementById("edit-agent-runtime");
+  assert.ok(runtimeTrigger, "runtime dropdown trigger must be present");
+  await act(async () => {
+    fireEvent.pointerDown(
+      runtimeTrigger,
+      new dom.window.MouseEvent("pointerdown", { bubbles: true, button: 0 }),
+    );
+    fireEvent.click(runtimeTrigger);
+  });
+  const claudeItem = [
+    ...dom.window.document.querySelectorAll('[role="menuitemradio"]'),
+  ].find((node) => node.textContent?.trim() === "claude");
+  assert.ok(claudeItem, "claude runtime option must appear in the dropdown");
+  await act(async () => {
+    fireEvent.click(claudeItem);
+  });
+
+  assert.equal(
+    dom.window.document
+      .getElementById("edit-agent-effort")
+      ?.textContent?.trim(),
+    "Adapter default",
+    "post-switch the picker must show the stored column (empty), not the old runtime's inherited env tier",
+  );
+
+  // Equal to the stale effective value — must still be a real write.
+  await selectEffort("High");
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+
+  const effort = effortCalls();
+  assert.equal(
+    effort.length,
+    1,
+    "a pick equal to the old runtime's effective-but-unstored effort must persist after a switch",
+  );
+  assert.equal(effort[0].args.input.effortLevel, "high");
 });
 
 test("runtime switch to a fallback-capable runtime lets a fresh pick save from the catalog vocabulary", async () => {

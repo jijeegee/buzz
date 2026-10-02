@@ -54,6 +54,11 @@ const ipcHandlers = new Map();
 const OWNER_PK = "a".repeat(64);
 const AGENT_PK = "d".repeat(64);
 
+// The saved global default harness; a test can flip it mid-dialog to model the
+// in-dialog "Edit defaults" save, which the create dialog observes through the
+// same global-config query refetch.
+let globalPreferredRuntime = "claude";
+
 function rawRuntime(id, overrides = {}) {
   return {
     id,
@@ -161,6 +166,9 @@ function installIpc() {
     Promise.resolve([
       rawRuntime("claude", { effort_thought_level: CLAUDE_THOUGHT_LEVEL }),
       rawRuntime("goose"),
+      // A harness with no effort vocabulary and no provider/model requirement,
+      // so re-seeding onto it leaves Create submittable in "Use defaults".
+      rawRuntime("cursor"),
     ]),
   );
   // Claude Code is the global default harness, so Create opens on it in
@@ -170,7 +178,7 @@ function installIpc() {
       env_vars: {},
       provider: null,
       model: null,
-      preferred_runtime: "claude",
+      preferred_runtime: globalPreferredRuntime,
     }),
   );
   set("get_baked_build_env", () => Promise.resolve([]));
@@ -359,6 +367,7 @@ before(async () => {
 });
 
 afterEach(() => {
+  globalPreferredRuntime = "claude";
   cleanup?.();
   for (const client of clients.splice(0)) {
     client.cancelQueries();
@@ -412,5 +421,46 @@ test("Create: an untouched effort picker sends no effortLevel", async () => {
     "effortLevel" in input,
     false,
     "no pick must mean the key is absent — the record column stays adapter default",
+  );
+});
+
+test("Create: a pick made before saved defaults re-seed a no-effort harness is dropped", async () => {
+  // Create opens auto-seeded on Claude; the user picks High, then saves new
+  // global defaults in the in-dialog defaults editor that make Cursor the
+  // default harness. The runtime re-seeds to Cursor (no catalog
+  // effortThoughtLevel, so the picker hides) and the stale "high" must not
+  // ride along in create_managed_agent — Cursor never advertised that
+  // vocabulary. Modeled through the production seam the in-dialog save uses:
+  // the global-config query refetches with the new preferred runtime.
+  installIpc();
+  const nameInput = await openCreateDialog();
+  await act(async () => {
+    fireEvent.change(nameInput, { target: { value: "Re-seeded" } });
+  });
+  await selectEffort("High");
+
+  globalPreferredRuntime = "cursor";
+  const client = clients[clients.length - 1];
+  await act(async () => {
+    await client.invalidateQueries();
+  });
+  await settle(50);
+
+  assert.equal(
+    dom.window.document.getElementById("persona-effort"),
+    null,
+    "the picker must hide once the seeded harness publishes no effort vocabulary",
+  );
+
+  const input = await submitCreate();
+  assert.equal(
+    input.agentCommand,
+    "cursor-cmd",
+    "the re-seeded harness is Cursor",
+  );
+  assert.equal(
+    "effortLevel" in input,
+    false,
+    "the pre-re-seed pick must not travel for a harness the picker was hidden for",
   );
 });

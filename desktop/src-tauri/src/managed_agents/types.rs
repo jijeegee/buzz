@@ -609,6 +609,15 @@ pub struct ManagedAgentSummary {
     pub log_path: String,
     pub respond_to: RespondTo,
     pub respond_to_allowlist: Vec<String>,
+    /// The stored `effort_level` column, verbatim (`ManagedAgentRecord::effort_level`).
+    /// Not the effective value — the config surface's `thinkingEffort` resolves
+    /// that across env tiers under the CURRENT runtime's contract. The Edit
+    /// dialog reads this after an in-dialog runtime switch, because an ACP
+    /// thought-level runtime (no native env knob) launches exactly this column
+    /// as `BUZZ_ACP_EFFORT_LEVEL`, so the picker can show what will launch and
+    /// `resolveEffortSubmission` can diff an explicit pick against it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort_level: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

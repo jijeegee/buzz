@@ -268,12 +268,22 @@ with a TypeScript lookup table or an id comparison in a component.
    the "Options may vary by model." hint, and a saved value outside the
    fallback stays selectable under its raw name rather than being misreported
    as the adapter default. **The picker never shows a value other than what
-   the next spawn launches:** after an in-dialog runtime switch the edit picker
-   drops the old session's option list for the new runtime's fallback, but its
-   value (and `originalEffortLevel`) stay sourced from the saved column via the
-   config surface's `normalized.thinkingEffort` — the column survives the
-   switch and is what `BUZZ_ACP_EFFORT_LEVEL` carries (the effort reset on
-   switch stays, so an untouched Save writes nothing). Local-only is
+   the next spawn launches.** Before a runtime switch that is the config
+   surface's `normalized.thinkingEffort` — the effective value the reader
+   resolves across env tiers under the running runtime's contract. After an
+   in-dialog runtime switch that surface is the OLD runtime's resolution (a
+   Goose `GOOSE_THINKING_EFFORT` tier is meaningless to Claude), so the edit
+   picker drops the old session's option list for the new runtime's fallback
+   AND sources its value and `originalEffortLevel` from the stored column,
+   `ManagedAgent.effortLevel` (`ManagedAgentSummary.effort_level`, the record
+   column verbatim) — the only tier an ACP thought-level runtime launches as
+   `BUZZ_ACP_EFFORT_LEVEL`. An explicit post-switch pick is therefore diffed
+   against the column, never collapsed as "unchanged" against a stale
+   effective value (the effort reset on switch stays, so an untouched Save
+   writes nothing). In Create, a pick travels only while the picker is
+   rendered for a runtime whose catalog entry publishes `effortThoughtLevel`;
+   both the dropdown switch and the saved-defaults re-seed reset the pick, so
+   a harness without the vocabulary never receives one. Local-only is
    load-bearing, not cosmetic — both Rust
    commands reject non-local backends (`ensure_effort_change_supported`,
    `normalize_create_effort_level`) because remote effort is set at deploy time
@@ -436,11 +446,14 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   provider regression is pinned: the write control must never render for a
   provider backend. `ui/agentInstanceEditCancelSafety.test.mjs` pins the edit
   dialog's runtime switch (picker stays visible on the new runtime's fallback
-  and keeps showing the saved column; untouched Save writes nothing; a
-  post-switch pick is dispatched). `ui/agentCreateEffort.test.mjs` mounts the
-  real `RequestedAgentCreateDialogs` → `usePersonaActions` seam and pins that
-  a Create pick reaches `create_managed_agent` as `input.effortLevel` while an
-  untouched picker sends none. `lib/instanceInputForDefinition.test.mjs` pins
+  and shows the stored column — not the old runtime's effective env tier, so a
+  pick equal to that stale value still persists; untouched Save writes
+  nothing; a post-switch pick is dispatched). `ui/agentCreateEffort.test.mjs`
+  mounts the real `RequestedAgentCreateDialogs` → `usePersonaActions` seam and
+  pins that a Create pick reaches `create_managed_agent` as
+  `input.effortLevel`, an untouched picker sends none, and a pick made before
+  saved defaults re-seed a no-effort harness is dropped.
+  `lib/instanceInputForDefinition.test.mjs` pins
   that the create-time `effortLevel` override rides the local mapping only.
   Rust: `catalog_exposes_effort_thought_level_only_for_acp_thought_level_harnesses`
   (presets tests) pins which harnesses publish the option id + fallback, and

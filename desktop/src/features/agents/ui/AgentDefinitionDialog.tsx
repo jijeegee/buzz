@@ -285,7 +285,13 @@ export function AgentDefinitionDialog({
     ) {
       return;
     }
-    if (runtime !== defaultRuntime.id) setRuntime(defaultRuntime.id);
+    if (runtime !== defaultRuntime.id) {
+      setRuntime(defaultRuntime.id);
+      // Same rule as handleRuntimeDropdownChange: the effort vocabulary
+      // belongs to the harness, so a re-seed from in-dialog saved defaults
+      // never carries a pick across to the new one.
+      setEffortLevel(null);
+    }
     isRuntimeAutoSeededRef.current = true;
     hasSeededForOpenRef.current = true;
   }, [
@@ -394,8 +400,14 @@ export function AgentDefinitionDialog({
     await onSubmit(baseInput, {
       publishCatalogUpdates: false,
       // Only a rendered, explicit pick travels — never a stale value from a
-      // runtime or Run-on the picker was hidden for.
-      ...(effortFieldVisible && effortLevel ? { effortLevel } : {}),
+      // runtime or Run-on the picker was hidden for. The runtime gate mirrors
+      // `effortPickerState`'s vocabulary check: no catalog `effortThoughtLevel`
+      // means the picker was not offered for this harness.
+      ...(effortFieldVisible &&
+      selectedRuntime?.effortThoughtLevel &&
+      effortLevel
+        ? { effortLevel }
+        : {}),
     });
   }
 

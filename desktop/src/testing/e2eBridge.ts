@@ -992,6 +992,8 @@ type RawManagedAgent = {
   backend_agent_id: string | null;
   respond_to: "owner-only" | "allowlist" | "anyone";
   respond_to_allowlist: string[];
+  /** Stored effort column; omitted/null = adapter default (mirrors Rust). */
+  effort_level?: string | null;
 };
 
 type RawCreateManagedAgentResponse = {
@@ -9630,7 +9632,7 @@ async function handleCreateManagedAgent(
         | { type: "provider"; id: string; config: Record<string, unknown> };
       respondTo?: "owner-only" | "allowlist" | "anyone";
       respondToAllowlist?: string[];
-      /** Accepted for wire parity with the Rust command; the mock keeps no effort column. */
+      /** Stored on the mock record's `effort_level` column, like the Rust command. */
       effortLevel?: string;
     };
   },
@@ -9719,6 +9721,7 @@ async function handleCreateManagedAgent(
     backend_agent_id: null,
     respond_to: mintRespondTo,
     respond_to_allowlist: [...mintRespondToAllowlist],
+    effort_level: args.input.effortLevel?.trim() || null,
     private_key_nsec: `nsec1mock${pubkey.slice(0, 20)}`,
     log_lines: [
       `buzz-acp starting: relay=${args.input.relayUrl ?? DEFAULT_RELAY_WS_URL} agent_pubkey=${pubkey} parallelism=${mintParallelism}`,

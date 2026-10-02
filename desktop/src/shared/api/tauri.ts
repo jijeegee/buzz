@@ -155,6 +155,8 @@ export type RawManagedAgent = {
   // Pre-feature fixtures may omit these; mapped to "owner-only"/[] in fromRawManagedAgent.
   respond_to?: ManagedAgent["respondTo"];
   respond_to_allowlist?: string[];
+  // Stored `effort_level` column; Rust omits it when None, fixtures may omit it.
+  effort_level?: string | null;
 };
 
 type RawCreateManagedAgentResponse = {
@@ -648,6 +650,7 @@ export function fromRawManagedAgent(agent: RawManagedAgent): ManagedAgent {
     backendAgentId: agent.backend_agent_id,
     respondTo: agent.respond_to ?? "owner-only",
     respondToAllowlist: agent.respond_to_allowlist ?? [],
+    effortLevel: agent.effort_level ?? null,
   };
 }
 
