@@ -197,6 +197,34 @@ buzz-acp --respond-to anyone
 buzz-acp --respond-to nobody --heartbeat-interval 300
 ```
 
+### Dispatcher Mode
+
+A dispatcher is a router-only agent that listens to every channel it belongs to without being mentioned, and hands each human request to the best-fit agent with an `@mention`. It never does the work itself.
+
+| Flag | Env Var | Default | Description |
+|------|---------|---------|-------------|
+| `--dispatcher` | `BUZZ_ACP_DISPATCHER` | `false` | Enable dispatcher mode. |
+| `--dispatcher-config` | `BUZZ_ACP_DISPATCHER_CONFIG` | — | JSON per-channel policy: `{"<channel_uuid>": {"humans": ["<hex>", ...], "ais": ["<hex>", ...]}}`. Both arrays are optional; ignored without `--dispatcher`. |
+
+What changes when `--dispatcher` is set:
+
+- **Subscriptions.** Every non-DM channel the agent is a member of (discovered at startup or joined later) is subscribed with `require_mention = false` and the default stream kinds; `--channels` and `--kinds` still apply. DM channels keep the ordinary mention rules. Matching events reach the agent with prompt tag `dispatch`; direct mentions keep `@mention`. This override applies in the default `--subscribe mentions` mode (`all` already drops the mention filter; `config` mode keeps its operator rules).
+- **Author gate.** For non-DM channel events the `--respond-to` policy is replaced (the owner-plus-siblings rule is deliberately not inherited; `nobody` remains absolute). An event is forwarded only when all of the following hold:
+  1. it is not the dispatcher's own message;
+  2. it is a human-authored kind:9 stream message — edits, approvals, reminders, relay-signed and delegated workflow traffic are dropped;
+  3. the author is in the channel's `ais` list, **or** the author is in the channel's `humans` list (when that list is empty or the channel has no entry: the author is an owner/admin in the channel's kind:39001 admins event) **and** the author's kind:0 profile does not carry a valid NIP-OA `auth` tag (a verified tag means the author is an agent; no profile means human);
+  4. the message does not already `p`-mention another agent — it has an assignee. Mentions of the dispatcher itself are still routed.
+  Admin and profile lookups are cached briefly (60 s / 5 min). A failed lookup drops the event rather than guessing.
+- **Prompt.** The compiled-in base prompt is replaced by a short router prompt (`src/dispatcher_base_prompt.md`) unless `--base-prompt-file` is given, and every new non-DM channel session receives a `<channel-roster>` standing section listing members from kind:39002 with their 39001 role, kind:0 `display_name`/`name` and `about`, an agent/human flag, and pubkey so the agent can `buzz messages send --mention <hex>`.
+- **Context.** `--context-message-limit` defaults to `4` instead of `12` unless set explicitly.
+
+```bash
+# Route requests from the channel owners/admins by default; in one channel,
+# listen to two specific people and also accept requests from one agent.
+buzz-acp --dispatcher --dispatcher-config \
+  '{"6f1c...uuid": {"humans": ["abc...64hex", "def...64hex"], "ais": ["789...64hex"]}}'
+```
+
 ### Host-controlled launch wrapper
 
 On Unix, a trusted host can set `BUZZ_ACP_LAUNCH_PREFIX` to a JSON argument array, for
