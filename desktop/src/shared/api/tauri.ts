@@ -197,6 +197,7 @@ export type RawAcpRuntimeCatalogEntry = {
   definition_env?: Record<string, string>;
   max_parallelism?: number;
   effort_canonical_values?: string[] | null;
+  effort_fallback_values?: string[] | null;
 };
 
 export type {
@@ -676,6 +677,7 @@ export function fromRawAcpRuntimeCatalogEntry(
     source: entry.source,
     definitionEnv: entry.definition_env ?? {},
     effortCanonicalValues: entry.effort_canonical_values ?? null,
+    effortFallbackValues: entry.effort_fallback_values ?? null,
     ...(entry.max_parallelism !== undefined && {
       maxParallelism: entry.max_parallelism,
     }),
@@ -785,6 +787,7 @@ export async function createManagedAgent(input: CreateManagedAgentInput) {
         respondTo: input.respondTo,
         respondToAllowlist: input.respondToAllowlist,
         relayMesh: input.relayMesh,
+        effortLevel: input.effortLevel,
       },
     },
   );

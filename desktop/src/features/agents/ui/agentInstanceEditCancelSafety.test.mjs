@@ -187,7 +187,14 @@ function configSurface() {
 function installIpc() {
   const set = (cmd, handler) => ipcHandlers.set(cmd, handler);
   set("discover_acp_providers", () =>
-    Promise.resolve([rawRuntime("claude"), rawRuntime("goose")]),
+    Promise.resolve([
+      // Claude Code publishes a pre-discovery effort vocabulary from the Rust
+      // catalog; Goose does not (its effort is its own env knob).
+      rawRuntime("claude", {
+        effort_fallback_values: ["low", "medium", "high"],
+      }),
+      rawRuntime("goose"),
+    ]),
   );
   set("list_personas", () => Promise.resolve([rawPersona()]));
   set("get_agent_config_surface", () => Promise.resolve(configSurface()));
@@ -928,12 +935,18 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
     fireEvent.click(claudeItem);
   });
 
-  // The picker must disappear once runtimeTouched is set — its config surface
-  // is only valid for the running session, not the prospective runtime.
-  assert.equal(
+  // Once runtimeTouched is set the running session's config surface no longer
+  // applies, so the picker must switch to the PROSPECTIVE runtime's catalog
+  // fallback (claude publishes one) instead of hiding — and say so.
+  assert.ok(
     dom.window.document.getElementById("edit-agent-effort"),
-    null,
-    "effort picker must be hidden after a runtime switch — its options are unknown for the prospective runtime",
+    "effort picker must stay visible after a runtime switch, fed by the new runtime's catalog fallback",
+  );
+  assert.ok(
+    dom.window.document.body.textContent?.includes(
+      "Options may vary by model.",
+    ),
+    "fallback-sourced options must carry the model-dependence hint",
   );
 
   // Save — the runtime changed, so effortTouched must have been cleared.
@@ -946,6 +959,60 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
     effortCalls().length,
     0,
     "no effortLevel must appear in update_managed_agent after a runtime switch — the config surface vocab belongs to the running session, not the prospective one",
+  );
+});
+
+test("runtime switch to a fallback-capable runtime lets a fresh pick save from the catalog vocabulary", async () => {
+  // Day-one edit for a never-run runtime: after switching to claude (no
+  // session, no discovered options) the picker offers the catalog fallback,
+  // and a pick made AFTER the switch is dispatched in the locked update.
+  installEffortIpc();
+  const set = (cmd, handler) => ipcHandlers.set(cmd, handler);
+  set("update_managed_agent", (args) => {
+    ipcCalls.push({ cmd: "update_managed_agent", args });
+    return Promise.resolve({ agent: rawAgent(), profile_sync_error: null });
+  });
+  await act(async () => {
+    renderDialog(() => {});
+  });
+
+  const runtimeTrigger =
+    dom.window.document.getElementById("edit-agent-runtime");
+  assert.ok(runtimeTrigger, "runtime dropdown trigger must be present");
+  await act(async () => {
+    fireEvent.pointerDown(
+      runtimeTrigger,
+      new dom.window.MouseEvent("pointerdown", { bubbles: true, button: 0 }),
+    );
+    fireEvent.click(runtimeTrigger);
+  });
+  const claudeItem = [
+    ...dom.window.document.querySelectorAll('[role="menuitemradio"]'),
+  ].find((node) => node.textContent?.trim() === "claude");
+  assert.ok(claudeItem, "claude runtime option must appear in the dropdown");
+  await act(async () => {
+    fireEvent.click(claudeItem);
+  });
+
+  // "Medium" exists only in the catalog fallback — the goose session's
+  // discovered list was Low/High — so picking it proves the vocabulary source.
+  await selectEffort("Medium");
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+
+  const effort = effortCalls();
+  assert.equal(
+    effort.length,
+    1,
+    "the post-switch pick must be dispatched once",
+  );
+  assert.equal(
+    effort[0].args.input.effortLevel,
+    "medium",
+    "the fallback-sourced pick must travel in the locked update payload",
   );
 });
 

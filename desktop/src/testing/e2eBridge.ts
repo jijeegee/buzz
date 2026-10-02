@@ -9614,6 +9614,8 @@ async function handleCreateManagedAgent(
         | { type: "provider"; id: string; config: Record<string, unknown> };
       respondTo?: "owner-only" | "allowlist" | "anyone";
       respondToAllowlist?: string[];
+      /** Accepted for wire parity with the Rust command; the mock keeps no effort column. */
+      effortLevel?: string;
     };
   },
   config: E2eConfig | undefined,

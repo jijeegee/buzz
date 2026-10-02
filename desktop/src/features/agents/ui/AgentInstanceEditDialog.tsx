@@ -153,11 +153,8 @@ export function AgentInstanceEditDialog({
   const [envVars, setEnvVars] = React.useState<EnvVarsValue>(agent.envVars);
   const [autoRestartOnConfigChange, setAutoRestartOnConfigChange] =
     React.useState(agent.autoRestartOnConfigChange);
-  // Effort picker is Save-gated: hold the pending selection in dialog state and
-  // embed it in the locked update payload on Save alone (see
-  // resolveEffortSubmission / handleSubmit — PR #4625), never on selection.
-  // `effortTouched` distinguishes "user picked a value" from "showing the
-  // config-surface effective value", so an untouched Save writes nothing.
+  // Effort picker is Save-gated (resolveEffortSubmission / handleSubmit, PR
+  // #4625); `effortTouched` = user picked, so an untouched Save writes nothing.
   const [effortLevel, setEffortLevel] = React.useState<string | null>(null);
   const effortTouched = React.useRef(false);
   const personasQuery = usePersonasQuery();
@@ -323,6 +320,10 @@ export function AgentInstanceEditDialog({
   const prospectiveRuntime = runtimes.find(
     (r) => r.id === prospectiveRuntimeId,
   );
+  // Post-switch the surface is the OLD session's: use the catalog fallback.
+  const effortConfigSurface = runtimeTouched.current
+    ? undefined
+    : configSurfaceQuery.data;
   const runtimeCatalogStatus = runtimesQuery.isLoading
     ? ("loading" as const)
     : runtimesQuery.isError
@@ -1106,21 +1107,20 @@ export function AgentInstanceEditDialog({
             />
 
             <EffortPickerField
-              agent={agent}
-              config={
-                runtimeTouched.current ? undefined : configSurfaceQuery.data
-              }
+              backend={agent.backend}
+              config={effortConfigSurface}
               disabled={isSaving}
-              value={
-                effortTouched.current
-                  ? effortLevel
-                  : (configSurfaceQuery.data?.normalized.thinkingEffort
-                      ?.value ?? null)
-              }
               onChange={(level) => {
                 effortTouched.current = true;
                 setEffortLevel(level);
               }}
+              runtime={prospectiveRuntime}
+              value={
+                effortTouched.current
+                  ? effortLevel
+                  : (effortConfigSurface?.normalized.thinkingEffort?.value ??
+                    null)
+              }
             />
 
             <AgentAiDefaultsNotice

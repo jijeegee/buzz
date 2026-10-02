@@ -428,6 +428,13 @@ export type CreateManagedAgentInput = {
    */
   respondToAllowlist?: string[];
   relayMesh?: RelayMeshConfig;
+  /**
+   * Initial thinking effort for the new instance (`effort_level` column).
+   * Omitted = adapter default. Local backend only — the Rust command rejects
+   * an explicit value for a provider backend (remote effort is deploy-time
+   * `policy_env`), mirroring the update boundary.
+   */
+  effortLevel?: string;
 };
 
 export type CreateManagedAgentResponse = {
@@ -508,6 +515,17 @@ export type AcpRuntimeCatalogEntry = {
    * Null for buzz-agent (provider/model catalog), Claude/Codex/unknown runtimes.
    */
   effortCanonicalValues: string[] | null;
+  /**
+   * Effort values the write control offers before a running session has
+   * discovered the harness's `thought_level` option — so a Claude Code / Codex
+   * agent can pick an effort in Create and in Edit before its first session.
+   *
+   * Non-null only for ACP `thought_level` harnesses (Claude Code and Codex:
+   * `["low","medium","high"]`, the subset every current model accepts). Null
+   * for Goose, buzz-agent, presets, and custom runtimes. Display-only: never a
+   * validation contract, and discovered `effortOptions` win when present.
+   */
+  effortFallbackValues: string[] | null;
   maxTokensEnvVar: string | null;
   contextLimitEnvVar: string | null;
   maxRoundsEnvVar: string | null;

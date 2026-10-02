@@ -11,6 +11,8 @@ import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
 import { AgentCreationPreview } from "./AgentCreationPreview";
 import { AgentIdentityFields } from "./AgentDescriptionField";
+import { useAgentRunLocation } from "./AgentRunLocationContext";
+import { EffortPickerField } from "./EffortPickerField";
 import { PersonaDropdownField } from "./PersonaDropdownField";
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import { PersonaAdvancedFields } from "./PersonaAdvancedFields";
@@ -121,6 +123,13 @@ type AgentDefinitionDialogProps = {
 };
 export type AgentDefinitionSubmitOptions = {
   publishCatalogUpdates: boolean;
+  /**
+   * Create mode only: the initial thinking effort for the instance started
+   * from the new definition. Instance state, not a definition field — it never
+   * lands in the persona. Present only when the picker was rendered (local
+   * Run-on, Customize) and the user chose an explicit level.
+   */
+  effortLevel?: string;
 };
 export function AgentDefinitionDialog({
   open,
@@ -153,6 +162,9 @@ export function AgentDefinitionDialog({
   const [model, setModel] = React.useState("");
   const [isCustomModelEditing, setIsCustomModelEditing] = React.useState(false);
   const [provider, setProvider] = React.useState("");
+  // Instance-only: the started instance's initial effort (null = adapter
+  // default). Reset with the runtime, since the vocabulary is per harness.
+  const [effortLevel, setEffortLevel] = React.useState<string | null>(null);
   const [aiConfigurationMode, setAiConfigurationMode] =
     React.useState<AgentAiConfigurationMode>("defaults");
   const [isCustomProviderEditing, setIsCustomProviderEditing] =
@@ -216,6 +228,7 @@ export function AgentDefinitionDialog({
     setModel(initialValues.model ?? "");
     setIsCustomModelEditing(false);
     setProvider(initialValues.provider ?? "");
+    setEffortLevel(null);
     setAiConfigurationMode(initialAgentAiConfigurationMode(initialValues));
     setIsCustomProviderEditing(false);
     const nextNamePoolText =
@@ -306,6 +319,7 @@ export function AgentDefinitionDialog({
       setModel("");
       setIsCustomModelEditing(false);
       setProvider("");
+      setEffortLevel(null);
       setAiConfigurationMode("defaults");
       setIsCustomProviderEditing(false);
       setNamePoolText("");
@@ -377,7 +391,12 @@ export function AgentDefinitionDialog({
       );
       return;
     }
-    await onSubmit(baseInput, { publishCatalogUpdates: false });
+    await onSubmit(baseInput, {
+      publishCatalogUpdates: false,
+      // Only a rendered, explicit pick travels — never a stale value from a
+      // runtime or Run-on the picker was hidden for.
+      ...(effortFieldVisible && effortLevel ? { effortLevel } : {}),
+    });
   }
 
   function handleSubmitForm(event: React.FormEvent<HTMLFormElement>) {
@@ -476,6 +495,17 @@ export function AgentDefinitionDialog({
     aiConfigurationMode === "custom" && runtimeCanChooseLlmProvider;
   const modelFieldVisible =
     runtime.trim().length > 0 || blankRuntimeModelProviderEditable;
+  // Effort is instance state, so only Create offers it, beside the Customize
+  // model block, and only for a local Run-on: the Rust create command rejects
+  // an effort for a provider backend (remote effort is deploy-time policy_env).
+  // The field itself stays hidden for runtimes whose catalog entry publishes no
+  // effortFallbackValues (Goose, buzz-agent, presets, custom).
+  const runLocation = useAgentRunLocation();
+  const effortFieldVisible =
+    isCreateMode &&
+    aiConfigurationMode === "custom" &&
+    modelFieldVisible &&
+    runLocation === "local";
   // Only provider-selection harnesses (Buzz Agent / Goose) need an explicit
   // model in Customize — the backend readiness gate requires the pair for
   // them. Every other harness owns its default model, so an empty model is a
@@ -686,6 +716,8 @@ export function AgentDefinitionDialog({
     // The user made an explicit choice — no longer auto-seeded.
     isRuntimeAutoSeededRef.current = false;
     setRuntime(nextRuntime);
+    // Effort vocabulary belongs to the harness: never carry a pick across.
+    setEffortLevel(null);
     applySelection(
       selectionOnRuntimeChange(selection, {
         previousRuntime: runtime,
@@ -916,6 +948,22 @@ export function AgentDefinitionDialog({
               />
             ) : null}
           </AnimatePresence>
+
+          {effortFieldVisible ? (
+            <EffortPickerField
+              // effortFieldVisible already requires a local Run-on.
+              backend={{ type: "local" }}
+              config={undefined}
+              disabled={isPending}
+              id="persona-effort"
+              onChange={(level) => {
+                setHasUserChanges(true);
+                setEffortLevel(level);
+              }}
+              runtime={selectedRuntime}
+              value={effortLevel}
+            />
+          ) : null}
 
           {aiConfigurationMode === "defaults" ? (
             <AgentCreateAiDefaultsSummary

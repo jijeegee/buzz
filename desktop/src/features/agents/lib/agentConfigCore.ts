@@ -92,7 +92,7 @@ export type AgentConfigFieldDescriptor =
 
 export type AgentConfigOmission = {
   kind: "effort";
-  reason: "ownedByModelId" | "unsupportedByHarness";
+  reason: "unsupportedByHarness";
 };
 
 /**
@@ -230,25 +230,27 @@ export function deriveAgentConfigFieldModel({
       render: "control",
       value: valueFromEnv(config, persistenceKey),
     });
-  } else if (runtime?.id === "claude") {
+  } else if (runtime?.id === "claude" || runtime?.id === "codex") {
+    // Both adapters advertise effort as an ACP `thought_level` config option
+    // (claude-agent-acp: `effort`; codex-acp 2.x: `reasoning_effort`) applied
+    // once at session start from the record column. The generic renderer still
+    // defers — the per-agent write control is `EffortPickerField`, fed by the
+    // catalog's `effortFallbackValues` until the session discovers the real
+    // option list.
     fields.push({
       kind: "effort",
       optionSource: "harnessNative",
       currentPersistence: { kind: "unavailable" },
       targetApplication: {
         kind: "acpConfigOption",
-        id: "effort",
+        id: runtime.id === "codex" ? "reasoning_effort" : "effort",
         category: "thought_level",
       },
       render: "deferredUntilNativeOptionsAvailable",
       value: null,
     });
   } else {
-    omissions.push({
-      kind: "effort",
-      reason:
-        runtime?.id === "codex" ? "ownedByModelId" : "unsupportedByHarness",
-    });
+    omissions.push({ kind: "effort", reason: "unsupportedByHarness" });
   }
 
   // Numeric fields — derived from the shared helper, then value-populated

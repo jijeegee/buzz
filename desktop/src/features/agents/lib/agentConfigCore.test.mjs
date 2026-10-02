@@ -191,7 +191,10 @@ test("Claude models effort as a deferred native ACP option", () => {
   });
 });
 
-test("Codex omits separate effort because model IDs own it", () => {
+test("Codex models effort as a deferred native ACP option (codex-acp 2.x reasoning_effort)", () => {
+  // codex-acp 2.x advertises `reasoning_effort` as a thought_level option, so
+  // effort is no longer "owned by the model id": same shape as Claude, with
+  // the adapter's own option id.
   const model = deriveAgentConfigFieldModel({
     config,
     runtime: runtime("codex"),
@@ -200,10 +203,33 @@ test("Codex omits separate effort because model IDs own it", () => {
 
   assert.deepEqual(
     model.fields.map((item) => item.kind),
+    ["model", "effort"],
+  );
+  assert.deepEqual(model.omissions, []);
+  assert.equal(
+    field(model, "effort").render,
+    "deferredUntilNativeOptionsAvailable",
+  );
+  assert.deepEqual(field(model, "effort").targetApplication, {
+    kind: "acpConfigOption",
+    id: "reasoning_effort",
+    category: "thought_level",
+  });
+});
+
+test("a harness with no effort knob omits effort with the unsupported reason", () => {
+  const model = deriveAgentConfigFieldModel({
+    config,
+    runtime: runtime("devin"),
+    scope: "global",
+  });
+
+  assert.deepEqual(
+    model.fields.map((item) => item.kind),
     ["model"],
   );
   assert.deepEqual(model.omissions, [
-    { kind: "effort", reason: "ownedByModelId" },
+    { kind: "effort", reason: "unsupportedByHarness" },
   ]);
 });
 
