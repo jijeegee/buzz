@@ -41,6 +41,7 @@ fn minimal_record() -> ManagedAgentRecord {
             m
         },
         start_on_app_launch: true,
+        is_default_ai: false,
         auto_restart_on_config_change: true,
         runtime_pid: Some(12345), // MUST NOT appear
         backend: BackendKind::Provider {

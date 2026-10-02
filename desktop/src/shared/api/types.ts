@@ -359,6 +359,12 @@ export type ManagedAgent = {
   lastErrorCode: number | null;
   logPath: string;
   startOnAppLaunch: boolean;
+  /**
+   * `true` for the one agent the user starred as this desktop's default AI.
+   * Rust (`set_default_ai`) enforces that at most one record carries it; the
+   * UI only reads it.
+   */
+  isDefaultAi: boolean;
   autoRestartOnConfigChange: boolean;
   backend: ManagedAgentBackend;
   backendAgentId: string | null;

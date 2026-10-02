@@ -15,6 +15,7 @@ export type AgentGroupRowsProps = {
   selectedLogAgentPubkey: string | null;
   onOpenProfile: (pubkey: string) => void;
   onSelectLogAgent: (pubkey: string | null) => void;
+  onToggleDefaultAi?: (pubkey: string, isDefaultAi: boolean) => void;
 };
 
 export function AgentGroupRows({
@@ -30,6 +31,7 @@ export function AgentGroupRows({
   selectedLogAgentPubkey,
   onOpenProfile,
   onSelectLogAgent,
+  onToggleDefaultAi,
 }: AgentGroupRowsProps) {
   return (
     <div className="divide-y divide-border/50 border-t border-border/50">
@@ -50,6 +52,7 @@ export function AgentGroupRows({
           presenceLookup={presenceLookup}
           onOpenProfile={onOpenProfile}
           onSelectLogAgent={onSelectLogAgent}
+          onToggleDefaultAi={onToggleDefaultAi}
         />
       ))}
     </div>

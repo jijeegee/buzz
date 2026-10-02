@@ -49,6 +49,7 @@ pub(super) fn record() -> ManagedAgentRecord {
         model: None,
         env_vars: BTreeMap::new(),
         start_on_app_launch: false,
+        is_default_ai: false,
         auto_restart_on_config_change: true,
         runtime_pid: None,
         backend: crate::managed_agents::types::BackendKind::Local,

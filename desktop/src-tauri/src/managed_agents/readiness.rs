@@ -668,10 +668,9 @@ fn goose_requirements(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::*;
     use crate::managed_agents::discovery::known_acp_runtime_exact;
+    use std::collections::BTreeMap;
 
     /// Build a minimal `EffectiveAgentEnv` with the given env map and command.
     fn make_env(command: &str, env: BTreeMap<String, String>) -> EffectiveAgentEnv {
@@ -1516,6 +1515,7 @@ mod tests {
             persona_source_version: None,
             env_vars,
             start_on_app_launch: false,
+            is_default_ai: false,
             auto_restart_on_config_change: true,
             runtime_pid: None,
             backend: Default::default(),

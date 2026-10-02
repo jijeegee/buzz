@@ -234,6 +234,7 @@ fn record_with(
         provider: None,
         persona_source_version: None,
         start_on_app_launch: false,
+        is_default_ai: false,
         auto_restart_on_config_change: true,
         runtime_pid: None,
         backend: Default::default(),
@@ -271,7 +272,6 @@ fn record_with(
         effort_level: None,
     }
 }
-
 #[test]
 fn record_agent_command_own_runtime_wins_over_persona() {
     // A record with its own runtime never consults the persona list.

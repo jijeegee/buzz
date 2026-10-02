@@ -381,6 +381,25 @@ with a TypeScript lookup table or an id comparison in a component.
     for resets; owner replay of a redacted head preserves only a nonportable
     local override. That local path is not synchronized through catalog heads.
 
+20. **The default AI is one starred record, chosen in Rust.**
+    `ManagedAgentRecord.is_default_ai` (`#[serde(default,
+    skip_serializing_if = "std::ops::Not::not")]`) marks at most one managed
+    agent per desktop as the user's default AI. The single-selection rule lives
+    in exactly one place, the pure `set_default_ai` in `managed_agents/types.rs`,
+    which unstars every other record in the same pass, rejects key-less
+    definition records (empty `pubkey`), and is the only mutator the
+    `set_default_managed_agent` command calls. That command returns the whole
+    summary list because starring one agent unstars another. The frontend only
+    reads `ManagedAgent.isDefaultAi` (`lib/defaultAi.ts`: `findDefaultAi`,
+    `isDefaultAiEligible`, `defaultAiSelectionFor`) and never keeps a rival
+    "current default" copy or picks a default on its own. Star controls own one
+    accessible name each: the row star is `aria-label="Set as default AI"` with
+    `aria-pressed`; the profile menu row uses the labelled Switch. Starring the
+    current default clears the selection (`null`), it does not no-op. Spawn-time
+    consequences (dispatcher env), channel auto-join, and composer preference are
+    deliberately **not** part of this field; they land as separate changes that
+    read the flag.
+
 ## Channel-only runtime controls
 
 Desktop observer controls identify a channel, not a thread session. The harness

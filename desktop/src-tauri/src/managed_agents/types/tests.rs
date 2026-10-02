@@ -1,4 +1,4 @@
-use super::{AgentDefinition, CatalogSource, ManagedAgentRecord};
+use super::{set_default_ai, AgentDefinition, CatalogSource, ManagedAgentRecord};
 use crate::managed_agents::AcpSessionPolicy;
 use std::path::PathBuf;
 
@@ -497,6 +497,117 @@ fn sample_agent_record() -> ManagedAgentRecord {
     .expect("sample record")
 }
 
+// ── Default AI star ──────────────────────────────────────────────────────────
+
+/// Stores written before the field existed carry no `is_default_ai`; they
+/// must load as "not the default" and — while still false — serialize without
+/// the key so an untouched record round-trips byte-identically.
+#[test]
+fn is_default_ai_defaults_false_and_is_omitted_while_false() {
+    let record = sample_agent_record();
+    assert!(!record.is_default_ai);
+
+    let json = serde_json::to_string(&record).expect("serialize");
+    assert!(
+        !json.contains("is_default_ai"),
+        "false star must be skipped from JSON, got: {json}"
+    );
+}
+
+#[test]
+fn is_default_ai_true_round_trips() {
+    let mut record = sample_agent_record();
+    record.is_default_ai = true;
+
+    let json = serde_json::to_string(&record).expect("serialize");
+    assert!(json.contains(r#""is_default_ai":true"#), "got: {json}");
+
+    let back: ManagedAgentRecord = serde_json::from_str(&json).expect("deserialize");
+    assert!(back.is_default_ai);
+}
+
+fn keyed_record(pubkey: &str) -> ManagedAgentRecord {
+    let mut record = sample_agent_record();
+    record.pubkey = pubkey.to_string();
+    record
+}
+
+#[test]
+fn set_default_ai_unsets_every_other_record() {
+    let mut records = vec![keyed_record("aa"), keyed_record("bb"), keyed_record("cc")];
+    records[0].is_default_ai = true;
+
+    let changed = set_default_ai(&mut records, Some("bb")).expect("star bb");
+
+    assert_eq!(changed, vec!["aa".to_string(), "bb".to_string()]);
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.is_default_ai)
+            .collect::<Vec<_>>(),
+        vec![false, true, false]
+    );
+}
+
+#[test]
+fn set_default_ai_is_idempotent_for_the_current_default() {
+    let mut records = vec![keyed_record("aa"), keyed_record("bb")];
+    records[1].is_default_ai = true;
+
+    let changed = set_default_ai(&mut records, Some("bb")).expect("re-star bb");
+
+    assert!(changed.is_empty(), "nothing changed, nothing to stamp");
+    assert!(records[1].is_default_ai);
+}
+
+#[test]
+fn set_default_ai_none_clears_every_record() {
+    let mut records = vec![keyed_record("aa"), keyed_record("bb")];
+    records[0].is_default_ai = true;
+    records[1].is_default_ai = true; // a corrupted store must still be healed
+
+    let changed = set_default_ai(&mut records, None).expect("clear");
+
+    assert_eq!(changed, vec!["aa".to_string(), "bb".to_string()]);
+    assert!(records.iter().all(|record| !record.is_default_ai));
+}
+
+#[test]
+fn set_default_ai_rejects_keyless_definition_records() {
+    let mut records = vec![keyed_record(""), keyed_record("bb")];
+    records[1].is_default_ai = true;
+
+    let error = set_default_ai(&mut records, Some("")).expect_err("keyless rejected");
+
+    assert!(
+        error.contains("key"),
+        "error must name the missing key: {error}"
+    );
+    assert!(
+        records[1].is_default_ai,
+        "a rejected request must not touch the current default"
+    );
+}
+
+#[test]
+fn set_default_ai_rejects_unknown_pubkeys_without_mutating() {
+    let mut records = vec![keyed_record("aa")];
+    records[0].is_default_ai = true;
+
+    let error = set_default_ai(&mut records, Some("zz")).expect_err("unknown rejected");
+
+    assert!(error.contains("zz not found"), "got: {error}");
+    assert!(records[0].is_default_ai);
+}
+
+#[test]
+fn summary_always_carries_is_default_ai_on_the_wire() {
+    // Unlike the record, the summary never skips the key: the frontend reads
+    // it as a plain boolean and must not have to infer absence.
+    let wire = serde_json::to_value(summary_fixture(Vec::new())).expect("summary serializes");
+    assert_eq!(wire.get("is_default_ai"), Some(&serde_json::json!(false)));
+}
+
 // ── AgentDefinition ↔ ManagedAgentRecord fold mapping (Phase 1A) ─────────────────────
 
 fn sample_persona() -> AgentDefinition {
@@ -788,6 +899,7 @@ fn summary_fixture(
         last_error: None,
         last_error_code: None,
         start_on_app_launch: false,
+        is_default_ai: false,
         auto_restart_on_config_change: false,
         log_path: String::new(),
         respond_to: RespondTo::OwnerOnly,

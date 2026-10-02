@@ -63,6 +63,7 @@ fn make_agent(name: &str, persona_id: Option<&str>) -> ManagedAgentRecord {
         provider: None,
         persona_source_version: None,
         start_on_app_launch: false,
+        is_default_ai: false,
         auto_restart_on_config_change: true,
         runtime_pid: None,
         backend: BackendKind::default(),

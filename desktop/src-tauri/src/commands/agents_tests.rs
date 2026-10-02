@@ -33,6 +33,7 @@ fn bare_agent_record(
         persona_source_version: None,
         env_vars: BTreeMap::new(),
         start_on_app_launch: false,
+        is_default_ai: false,
         runtime_pid: None,
         backend: BackendKind::Local,
         backend_agent_id: None,

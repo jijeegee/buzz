@@ -6,8 +6,10 @@ import {
   Download,
   Power,
   Settings,
+  Star,
 } from "lucide-react";
 
+import { isDefaultAiEligible } from "@/features/agents/lib/defaultAi";
 import type { IdentityArchiveActions } from "@/features/identity-archive/hooks";
 import { ArchiveConfirmDialog } from "@/features/profile/ui/ArchiveConfirmDialog";
 import type { ManagedAgent } from "@/shared/api/types";
@@ -29,6 +31,7 @@ export function UserProfileAgentSettingsMenu({
   onDuplicatePersona,
   onExportPersona,
   onToggleAutoStart,
+  onToggleDefaultAi,
   personaActionKey,
 }: {
   archiveActions?: IdentityArchiveActions;
@@ -38,6 +41,7 @@ export function UserProfileAgentSettingsMenu({
   onDuplicatePersona?: () => void;
   onExportPersona?: () => void;
   onToggleAutoStart?: () => void;
+  onToggleDefaultAi?: () => void;
   personaActionKey?: string;
 }) {
   const [archiveConfirmOpen, setArchiveConfirmOpen] = React.useState(false);
@@ -48,12 +52,22 @@ export function UserProfileAgentSettingsMenu({
     managedAgent.backend.type === "local" &&
     onToggleAutoStart !== undefined;
   const autoStartSwitchId = `user-profile-agent-auto-start-${actionKey}`;
+  // Backend-agnostic on purpose: the star only marks a record; Rust rejects
+  // key-less definitions itself, this gate just hides the dead affordance.
+  const canToggleDefaultAi =
+    managedAgent !== undefined &&
+    onToggleDefaultAi !== undefined &&
+    isDefaultAiEligible(managedAgent);
+  const defaultAiSwitchId = `user-profile-agent-default-ai-${actionKey}`;
   const hasPrimaryActions = Boolean(onDuplicatePersona || onExportPersona);
   const hasArchiveAction =
     archiveActions?.canArchive === true &&
     archiveActions.isArchived !== undefined;
   const hasActions =
-    canToggleAutoStart || hasPrimaryActions || hasArchiveAction;
+    canToggleAutoStart ||
+    canToggleDefaultAi ||
+    hasPrimaryActions ||
+    hasArchiveAction;
 
   if (!hasActions) {
     return null;
@@ -105,6 +119,30 @@ export function UserProfileAgentSettingsMenu({
               />
             </DropdownMenuItem>
           ) : null}
+          {canToggleDefaultAi ? (
+            <DropdownMenuItem
+              className="gap-3 pr-2"
+              disabled={isPending}
+              onSelect={(event) => {
+                event.preventDefault();
+                onToggleDefaultAi();
+              }}
+            >
+              <Star className="h-4 w-4 text-muted-foreground" />
+              <span className="min-w-0 flex-1 text-sm font-medium">
+                Default AI
+              </span>
+              <Switch
+                aria-label="Default AI"
+                checked={managedAgent.isDefaultAi}
+                data-testid={defaultAiSwitchId}
+                disabled={isPending}
+                id={defaultAiSwitchId}
+                onCheckedChange={onToggleDefaultAi}
+                onClick={(event) => event.stopPropagation()}
+              />
+            </DropdownMenuItem>
+          ) : null}
           {onDuplicatePersona ? (
             <DropdownMenuItem
               data-testid={`user-profile-persona-duplicate-${personaKey}`}
@@ -125,7 +163,8 @@ export function UserProfileAgentSettingsMenu({
               Export
             </DropdownMenuItem>
           ) : null}
-          {hasArchiveAction && (canToggleAutoStart || hasPrimaryActions) ? (
+          {hasArchiveAction &&
+          (canToggleAutoStart || canToggleDefaultAi || hasPrimaryActions) ? (
             <DropdownMenuSeparator />
           ) : null}
           {hasArchiveAction && archiveActions ? (
@@ -177,6 +216,7 @@ export function UserProfileAgentSettingsMenuSlot({
   onDuplicatePersona,
   onExportPersona,
   onToggleAutoStart,
+  onToggleDefaultAi,
   personaActionKey,
   viewerIsOwner,
 }: {
@@ -189,6 +229,7 @@ export function UserProfileAgentSettingsMenuSlot({
   onDuplicatePersona: () => void;
   onExportPersona: () => void;
   onToggleAutoStart: () => void;
+  onToggleDefaultAi: () => void;
   personaActionKey?: string;
   viewerIsOwner: boolean;
 }) {
@@ -212,6 +253,7 @@ export function UserProfileAgentSettingsMenuSlot({
         {...sharedProps}
         managedAgent={managedAgent}
         onToggleAutoStart={onToggleAutoStart}
+        onToggleDefaultAi={onToggleDefaultAi}
       />
     );
   }

@@ -129,6 +129,8 @@ export type MockManagedAgentSeed = {
   needsRestart?: boolean;
   restartDiff?: Array<{ field: string; change: unknown }>;
   autoRestartOnConfigChange?: boolean;
+  /** Seed this agent as the starred default AI (at most one per fixture). */
+  isDefaultAi?: boolean;
   respondTo?: RawManagedAgent["respond_to"];
   respondToAllowlist?: string[];
   /** Per-agent env vars seeded into the mock store. */
@@ -985,6 +987,7 @@ type RawManagedAgent = {
   restart_diff?: Array<{ field: string; change: unknown }>;
   log_path: string;
   start_on_app_launch: boolean;
+  is_default_ai?: boolean;
   auto_restart_on_config_change?: boolean;
   backend:
     | { type: "local" }
@@ -1997,6 +2000,7 @@ function cloneManagedAgent(agent: MockManagedAgent): RawManagedAgent {
     restart_diff: agent.restart_diff ? [...agent.restart_diff] : [],
     log_path: agent.log_path,
     start_on_app_launch: agent.start_on_app_launch,
+    is_default_ai: agent.is_default_ai ?? false,
     auto_restart_on_config_change: agent.auto_restart_on_config_change ?? true,
     backend: agent.backend ?? { type: "local" as const },
     backend_agent_id: agent.backend_agent_id ?? null,
@@ -2557,6 +2561,7 @@ function buildSeededManagedAgent(seed: MockManagedAgentSeed): MockManagedAgent {
     restart_diff: seed.restartDiff ?? [],
     log_path: `/tmp/mock-agent-${seed.pubkey}.log`,
     start_on_app_launch: true,
+    is_default_ai: seed.isDefaultAi ?? false,
     auto_restart_on_config_change: seed.autoRestartOnConfigChange ?? true,
     backend: seed.backend ?? { type: "local" },
     backend_agent_id: null,
@@ -9716,6 +9721,7 @@ async function handleCreateManagedAgent(
     last_error_code: null,
     log_path: `/tmp/mock-agent-${pubkey}.log`,
     start_on_app_launch: args.input.startOnAppLaunch ?? true,
+    is_default_ai: false,
     auto_restart_on_config_change: true,
     backend: args.input.backend ?? { type: "local" as const },
     backend_agent_id: null,
@@ -9963,6 +9969,29 @@ async function handleSetManagedAgentStartOnAppLaunch(args: {
   agent.start_on_app_launch = args.startOnAppLaunch;
   agent.updated_at = new Date().toISOString();
   return cloneManagedAgent(agent);
+}
+
+/**
+ * Mirrors the native `set_default_managed_agent`: at most one agent carries
+ * the star, `null` clears it, and the whole list comes back because starring
+ * one agent unstars the previous default.
+ */
+async function handleSetDefaultManagedAgent(args: {
+  pubkey: string | null;
+}): Promise<RawManagedAgent[]> {
+  if (args.pubkey !== null) {
+    // Throws for an unknown pubkey before anything is mutated.
+    getMockManagedAgent(args.pubkey);
+  }
+  const now = new Date().toISOString();
+  for (const agent of mockManagedAgents) {
+    const next = args.pubkey !== null && agent.pubkey === args.pubkey;
+    if ((agent.is_default_ai ?? false) !== next) {
+      agent.is_default_ai = next;
+      agent.updated_at = now;
+    }
+  }
+  return mockManagedAgents.map(cloneManagedAgent);
 }
 
 async function handleSetManagedAgentAutoRestart(args: {
@@ -14171,6 +14200,10 @@ export function maybeInstallE2eTauriMocks() {
       case "set_managed_agent_auto_restart":
         return handleSetManagedAgentAutoRestart(
           payload as Parameters<typeof handleSetManagedAgentAutoRestart>[0],
+        );
+      case "set_default_managed_agent":
+        return handleSetDefaultManagedAgent(
+          payload as Parameters<typeof handleSetDefaultManagedAgent>[0],
         );
       case "set_managed_agent_start_on_app_launch":
         return handleSetManagedAgentStartOnAppLaunch(

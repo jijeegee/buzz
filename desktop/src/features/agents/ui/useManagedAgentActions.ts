@@ -11,6 +11,7 @@ import {
   useManagedAgentLogQuery,
   useManagedAgentsQuery,
   useRelayAgentsQuery,
+  useSetDefaultManagedAgentMutation,
   useSetManagedAgentStartOnAppLaunchMutation,
   useStartManagedAgentMutation,
   useStopManagedAgentMutation,
@@ -39,6 +40,7 @@ import {
   buildInstanceInputForDefinition,
   resolveStartRuntimeForDefinition,
 } from "../lib/instanceInputForDefinition";
+import { defaultAiSelectionFor } from "../lib/defaultAi";
 
 export function useManagedAgentActions() {
   const queryClient = useQueryClient();
@@ -54,6 +56,7 @@ export function useManagedAgentActions() {
   const createAgentMutation = useCreateManagedAgentMutation();
   const availableRuntimesQuery = useAvailableAcpRuntimes();
   const startOnLaunchMutation = useSetManagedAgentStartOnAppLaunchMutation();
+  const defaultAiMutation = useSetDefaultManagedAgentMutation();
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   const [agentToAddToChannel, setAgentToAddToChannel] =
     React.useState<ManagedAgent | null>(null);
@@ -374,6 +377,36 @@ export function useManagedAgentActions() {
     }
   }
 
+  /**
+   * Star (`isDefaultAi: true`) or un-star (`false`) one agent as the default
+   * AI. Un-starring sends `null`, which clears the selection outright; the
+   * backend unstars any previous default itself, so there is no client-side
+   * bookkeeping of "the other" agent here.
+   */
+  async function handleToggleDefaultAi(pubkey: string, isDefaultAi: boolean) {
+    clearFeedback();
+    try {
+      const updated = await defaultAiMutation.mutateAsync(
+        defaultAiSelectionFor(pubkey, isDefaultAi),
+      );
+      const name =
+        updated.find((agent) => agent.pubkey === pubkey)?.name ??
+        managedAgents.find((agent) => agent.pubkey === pubkey)?.name ??
+        "This agent";
+      setActionNoticeMessage(
+        isDefaultAi
+          ? `${name} is now your default AI.`
+          : `${name} is no longer your default AI.`,
+      );
+    } catch (error) {
+      setActionErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to update the default AI.",
+      );
+    }
+  }
+
   function handleAddedToChannel(
     channel: Channel,
     result: AttachManagedAgentToChannelResult,
@@ -439,6 +472,7 @@ export function useManagedAgentActions() {
     startMutation.isPending ||
     stopMutation.isPending ||
     startOnLaunchMutation.isPending ||
+    defaultAiMutation.isPending ||
     deleteMutation.isPending;
   const startingAgentPubkey =
     startMutation.isPending && typeof startMutation.variables === "string"
@@ -475,6 +509,7 @@ export function useManagedAgentActions() {
     handleStop,
     handleDelete,
     handleToggleStartOnAppLaunch,
+    handleToggleDefaultAi,
     handleAddedToChannel,
     handleBulkStopRunning,
     refetchManagedAgents: () => void managedAgentsQuery.refetch(),

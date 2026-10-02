@@ -145,6 +145,7 @@ impl AgentDefinition {
             persona_source_version: None,
             env_vars: self.env_vars,
             start_on_app_launch: false,
+            is_default_ai: false,
             auto_restart_on_config_change: true,
             runtime_pid: None,
             backend: BackendKind::default(),
@@ -224,6 +225,42 @@ impl ManagedAgentRecord {
             updated_at: self.updated_at.clone(),
         })
     }
+}
+
+/// Star exactly one managed agent as this desktop's default AI, or clear the
+/// star with `None`.
+///
+/// This is the single place the "at most one default" rule lives: every
+/// other record is unstarred in the same pass, so the store can never hold
+/// two defaults regardless of which command called it. A key-less definition
+/// record (empty `pubkey`) cannot be the default — it has no identity to
+/// join a channel or spawn with — and an unknown pubkey is rejected before
+/// anything is mutated.
+///
+/// Returns the pubkeys whose flag actually changed so callers can stamp
+/// `updated_at` on exactly those records.
+pub fn set_default_ai(
+    records: &mut [ManagedAgentRecord],
+    pubkey: Option<&str>,
+) -> Result<Vec<String>, String> {
+    if let Some(target) = pubkey {
+        if target.is_empty() {
+            return Err("The default AI must be a deployed agent with its own key.".to_string());
+        }
+        if !records.iter().any(|record| record.pubkey == target) {
+            return Err(format!("agent {target} not found"));
+        }
+    }
+
+    let mut changed = Vec::new();
+    for record in records.iter_mut() {
+        let next = pubkey.is_some_and(|target| record.pubkey == target);
+        if record.is_default_ai != next {
+            record.is_default_ai = next;
+            changed.push(record.pubkey.clone());
+        }
+    }
+    Ok(changed)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -345,6 +382,13 @@ pub struct ManagedAgentRecord {
     pub env_vars: BTreeMap<String, String>,
     #[serde(default = "default_start_on_app_launch")]
     pub start_on_app_launch: bool,
+    /// `true` for the one managed agent the user starred as this desktop's
+    /// default AI. Single selection is enforced by [`set_default_ai`], never
+    /// by serde. Absent in stores written before the field existed and
+    /// omitted from the wire while `false`, so untouched records round-trip
+    /// byte-identically.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_default_ai: bool,
     /// Auto-restart this agent when its effective spawn config drifts from
     /// the running process (Chunk F). Default ON; the policy loop in the
     /// frontend only fires when the agent is idle, connected, and local.
@@ -605,6 +649,9 @@ pub struct ManagedAgentSummary {
     pub last_error: Option<String>,
     pub last_error_code: Option<i64>,
     pub start_on_app_launch: bool,
+    /// Mirror of `ManagedAgentRecord.is_default_ai`. Always present on the
+    /// wire (unlike the record) so the UI never has to infer absence.
+    pub is_default_ai: bool,
     pub auto_restart_on_config_change: bool,
     pub log_path: String,
     pub respond_to: RespondTo,

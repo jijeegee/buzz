@@ -149,6 +149,8 @@ export type RawManagedAgent = {
   last_error_code: number | null;
   log_path: string;
   start_on_app_launch: boolean;
+  /** Rust always emits it; pre-feature fixtures may omit it (mapped to false). */
+  is_default_ai?: boolean;
   auto_restart_on_config_change?: boolean;
   backend: ManagedAgentBackend;
   backend_agent_id: string | null;
@@ -645,6 +647,7 @@ export function fromRawManagedAgent(agent: RawManagedAgent): ManagedAgent {
     lastErrorCode: agent.last_error_code ?? null,
     logPath: agent.log_path,
     startOnAppLaunch: agent.start_on_app_launch,
+    isDefaultAi: agent.is_default_ai ?? false,
     autoRestartOnConfigChange: agent.auto_restart_on_config_change ?? true,
     backend: agent.backend,
     backendAgentId: agent.backend_agent_id,

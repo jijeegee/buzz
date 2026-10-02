@@ -16,6 +16,7 @@ import {
   useRelayAgentsQuery,
   useManagedAgentsQuery,
   usePersonasQuery,
+  useSetDefaultManagedAgentMutation,
   useSetManagedAgentStartOnAppLaunchMutation,
   useSetPersonaActiveMutation,
   useStartManagedAgentMutation,
@@ -30,6 +31,7 @@ import {
   buildInstanceInputForDefinition,
   resolveStartRuntimeForDefinition,
 } from "@/features/agents/lib/instanceInputForDefinition";
+import { defaultAiSelectionFor } from "@/features/agents/lib/defaultAi";
 import { describeLogFile } from "@/features/agents/ui/agentUi";
 import { useAgentLifecycleActions } from "@/features/profile/ui/useAgentLifecycleActions";
 import {
@@ -244,6 +246,7 @@ export function UserProfilePanel({
   const stopAgentMutation = useStopManagedAgentMutation();
   const deleteAgentMutation = useDeleteManagedAgentMutation();
   const startOnLaunchMutation = useSetManagedAgentStartOnAppLaunchMutation();
+  const defaultAiMutation = useSetDefaultManagedAgentMutation();
   const createPersonaMutation = useCreatePersonaMutation();
   const updatePersonaMutation = useUpdatePersonaMutation();
   const deletePersonaMutation = useDeletePersonaMutation();
@@ -340,6 +343,7 @@ export function UserProfilePanel({
     stopAgentMutation.isPending ||
     deleteAgentMutation.isPending ||
     startOnLaunchMutation.isPending ||
+    defaultAiMutation.isPending ||
     createPersonaMutation.isPending ||
     updatePersonaMutation.isPending ||
     deletePersonaMutation.isPending ||
@@ -503,6 +507,28 @@ export function UserProfilePanel({
       );
     }
   }, [managedAgent, startOnLaunchMutation.mutateAsync]);
+
+  const handleToggleAgentDefaultAi = React.useCallback(async () => {
+    if (!managedAgent) return;
+
+    const nextIsDefaultAi = !managedAgent.isDefaultAi;
+    try {
+      await defaultAiMutation.mutateAsync(
+        defaultAiSelectionFor(managedAgent.pubkey, nextIsDefaultAi),
+      );
+      toast.success(
+        nextIsDefaultAi
+          ? `${managedAgent.name} is now your default AI.`
+          : `${managedAgent.name} is no longer your default AI.`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to update the default AI.",
+      );
+    }
+  }, [managedAgent, defaultAiMutation.mutateAsync]);
 
   const handleDeleteAgent = React.useCallback(async () => {
     if (!managedAgent) return;
@@ -731,6 +757,7 @@ export function UserProfilePanel({
       onDuplicatePersona={handleDuplicatePersona}
       onExportPersona={handleExportPersona}
       onToggleAutoStart={handleToggleAgentAutoStart}
+      onToggleDefaultAi={handleToggleAgentDefaultAi}
       personaActionKey={resolvedPersona?.id}
       viewerIsOwner={viewerIsOwner}
     />
