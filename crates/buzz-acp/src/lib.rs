@@ -5204,7 +5204,8 @@ fn handle_prompt_result(
                     }
                     PromptOutcome::AgentExited => "the agent process exited".to_string(),
                     PromptOutcome::Error(e) => format!("{e}"),
-                    PromptOutcome::ProjectContextIndeterminate(reason) => reason.clone(),
+                    PromptOutcome::ProjectContextIndeterminate(reason)
+                    | PromptOutcome::RosterUnavailable(reason) => reason.clone(),
                     _ => "repeated failures".to_string(),
                 };
                 let content = format!(
@@ -5238,6 +5239,7 @@ fn handle_prompt_result(
         PromptOutcome::Ok(_) => "ok",
         PromptOutcome::Error(_) => "error",
         PromptOutcome::ProjectContextIndeterminate(_) => "project_context_indeterminate",
+        PromptOutcome::RosterUnavailable(_) => "roster_unavailable",
         PromptOutcome::Timeout(TimeoutKind::Idle) => "idle_timeout",
         PromptOutcome::Timeout(TimeoutKind::Hard { .. }) => "hard_timeout",
         PromptOutcome::AgentExited => "exited",
@@ -5396,12 +5398,17 @@ fn handle_prompt_result(
             );
             pool.return_agent(result.agent);
         }
-        PromptOutcome::ProjectContextIndeterminate(reason) => {
+        // Relay-side context the turn needs (project authority, dispatcher
+        // roster) could not be established before any ACP call was made: the
+        // pipe is intact and no session was created, so the agent goes back
+        // to the pool and the requeued batch retries with backoff.
+        PromptOutcome::ProjectContextIndeterminate(reason)
+        | PromptOutcome::RosterUnavailable(reason) => {
             tracing::warn!(
                 agent = agent_index,
                 outcome = outcome_label,
                 reason,
-                "agent_returned (local project context indeterminate — pipe intact)"
+                "agent_returned (local channel context unavailable — pipe intact)"
             );
             emit_turn_error(&reason, None);
             pool.return_agent(result.agent);

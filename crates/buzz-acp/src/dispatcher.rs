@@ -32,6 +32,10 @@ const LOOKUP_TIMEOUT: Duration = Duration::from_millis(2000);
 const CACHE_CAP: usize = 256;
 /// Longest `about` excerpt rendered per roster member.
 const ROSTER_ABOUT_MAX_CHARS: usize = 200;
+/// How long a session's `<channel-roster>` is used before the member list is
+/// re-read, so agents who joined mid-session become routable.
+pub(crate) const ROSTER_REFRESH_INTERVAL: Duration = Duration::from_secs(300);
+
 /// Most `p` mentions a request can carry before the gate stops looking them
 /// up and drops the event instead of issuing a large profile query inline.
 const MAX_MENTION_LOOKUPS: usize = 16;
@@ -495,6 +499,37 @@ impl TrustLookup for RelayLookup<'_> {
 }
 
 // ── channel roster ──────────────────────────────────────────────────────────
+
+/// A rendered `<channel-roster>` body together with the time it was fetched.
+///
+/// The pool keeps one per dispatcher channel session; once the entry is
+/// [`due_for_refresh`](Self::due_for_refresh) the member list is re-read and
+/// the session is rotated when the rendered roster changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RosterSection {
+    pub body: String,
+    pub fetched_at: Instant,
+}
+
+impl RosterSection {
+    pub(crate) fn new(body: String) -> Self {
+        Self {
+            body,
+            fetched_at: Instant::now(),
+        }
+    }
+
+    /// Whether the roster is old enough to be re-read from the relay.
+    pub(crate) fn due_for_refresh(&self) -> bool {
+        self.fetched_at.elapsed() >= ROSTER_REFRESH_INTERVAL
+    }
+
+    /// Record a refresh attempt so a degraded relay is not re-queried on every
+    /// turn; the cached body stays in use either way.
+    pub(crate) fn mark_refreshed(&mut self) {
+        self.fetched_at = Instant::now();
+    }
+}
 
 /// One channel member as rendered in the `<channel-roster>` section.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1453,6 +1488,20 @@ mod tests {
             .sign_with_keys(&keys)
             .unwrap();
         assert_eq!(mentioned_pubkeys(&event), vec![a.to_ascii_lowercase(), b]);
+    }
+
+    #[test]
+    fn roster_section_is_due_for_refresh_after_the_interval() {
+        let mut section = RosterSection::new("Members of this channel (1).".into());
+        assert!(!section.due_for_refresh(), "a fresh roster is not re-read");
+        section.fetched_at = Instant::now() - ROSTER_REFRESH_INTERVAL;
+        assert!(section.due_for_refresh());
+        section.mark_refreshed();
+        assert!(
+            !section.due_for_refresh(),
+            "a refresh attempt resets the clock even when the body is unchanged"
+        );
+        assert_eq!(section.body, "Members of this channel (1).");
     }
 
     #[test]
