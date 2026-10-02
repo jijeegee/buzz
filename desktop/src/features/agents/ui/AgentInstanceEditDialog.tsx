@@ -320,10 +320,6 @@ export function AgentInstanceEditDialog({
   const prospectiveRuntime = runtimes.find(
     (r) => r.id === prospectiveRuntimeId,
   );
-  // Post-switch the surface is the OLD session's: use the catalog fallback.
-  const effortConfigSurface = runtimeTouched.current
-    ? undefined
-    : configSurfaceQuery.data;
   const runtimeCatalogStatus = runtimesQuery.isLoading
     ? ("loading" as const)
     : runtimesQuery.isError
@@ -1108,7 +1104,11 @@ export function AgentInstanceEditDialog({
 
             <EffortPickerField
               backend={agent.backend}
-              config={effortConfigSurface}
+              // Post-switch: options from the prospective runtime's catalog
+              // fallback, but the value stays the saved column (what launches).
+              config={
+                runtimeTouched.current ? undefined : configSurfaceQuery.data
+              }
               disabled={isSaving}
               onChange={(level) => {
                 effortTouched.current = true;
@@ -1118,8 +1118,8 @@ export function AgentInstanceEditDialog({
               value={
                 effortTouched.current
                   ? effortLevel
-                  : (effortConfigSurface?.normalized.thinkingEffort?.value ??
-                    null)
+                  : (configSurfaceQuery.data?.normalized.thinkingEffort
+                      ?.value ?? null)
               }
             />
 

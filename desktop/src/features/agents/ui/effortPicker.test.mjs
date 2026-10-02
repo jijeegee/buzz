@@ -15,7 +15,8 @@ const options = [
   { value: "high", displayName: "High" },
 ];
 // What the Rust catalog publishes for Claude Code / Codex / Hermes
-// (`effort_fallback_values`) before any session has discovered the real list.
+// (`effort_thought_level.fallback_values`) before any session has discovered
+// the real list.
 const fallback = ["low", "medium", "high"];
 
 // ── Gating: discovered configId (pre-existing contract) ─────────────────────
@@ -64,7 +65,8 @@ test("effort picker is hidden for a local backend with neither a configId nor a 
 
 test("effort picker is visible with catalog fallback options before any session has run", () => {
   // Pre-first-session / post-restart / post-runtime-switch: no configId, but
-  // the prospective runtime's catalog entry publishes effortFallbackValues.
+  // the prospective runtime's catalog entry publishes
+  // effortThoughtLevel.fallbackValues.
   const state = effortPickerState({
     backend: localBackend,
     effortConfigId: undefined,

@@ -5,8 +5,8 @@
 //! in the parent.
 
 use super::runtime_metadata::{
-    KnownAcpRuntime, ACP_THOUGHT_LEVEL_FALLBACK_VALUES, BUZZ_AGENT_EFFORT_VALUES,
-    GOOSE_EFFORT_NORMALIZATION,
+    KnownAcpRuntime, BUZZ_AGENT_EFFORT_VALUES, CLAUDE_THOUGHT_LEVEL_OPTION,
+    CODEX_THOUGHT_LEVEL_OPTION, GOOSE_EFFORT_NORMALIZATION,
 };
 use super::{BUZZ_AGENT_AVATAR_URL, CLAUDE_CODE_AVATAR_URL, CODEX_AVATAR_URL, GOOSE_AVATAR_URL};
 
@@ -41,7 +41,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         thinking_env_var: Some("GOOSE_THINKING_EFFORT"),
         effort_normalization: Some(&GOOSE_EFFORT_NORMALIZATION),
         effort_accepted_values: None, // goose: validated via effort_normalization
-        effort_fallback_values: None, // goose: effort is its own env knob, not an ACP thought_level option
+        effort_thought_level: None, // goose: effort is its own env knob, not an ACP thought_level option
         max_tokens_env_var: Some("GOOSE_MAX_TOKENS"),
         context_limit_env_var: Some("GOOSE_CONTEXT_LIMIT"),
         max_rounds_env_var: None,
@@ -77,7 +77,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         thinking_env_var: None,
         effort_normalization: None, // claude: canonical routes through BUZZ_ACP_EFFORT_LEVEL (ACP startup)
         effort_accepted_values: None, // claude: adapter accepts any value over BUZZ_ACP_EFFORT_LEVEL
-        effort_fallback_values: Some(ACP_THOUGHT_LEVEL_FALLBACK_VALUES), // claude-agent-acp `effort` thought_level option
+        effort_thought_level: Some(&CLAUDE_THOUGHT_LEVEL_OPTION), // claude-agent-acp `effort` thought_level option
         max_tokens_env_var: None,
         context_limit_env_var: None,
         max_rounds_env_var: None,
@@ -113,7 +113,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         thinking_env_var: None,
         effort_normalization: None, // codex: canonical routes through BUZZ_ACP_EFFORT_LEVEL (ACP startup)
         effort_accepted_values: None, // codex: adapter accepts any value over BUZZ_ACP_EFFORT_LEVEL
-        effort_fallback_values: Some(ACP_THOUGHT_LEVEL_FALLBACK_VALUES), // codex-acp 2.x `reasoning_effort` thought_level option
+        effort_thought_level: Some(&CODEX_THOUGHT_LEVEL_OPTION), // codex-acp 2.x `reasoning_effort` thought_level option
         max_tokens_env_var: None,
         context_limit_env_var: None,
         max_rounds_env_var: None,
@@ -150,7 +150,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         thinking_env_var: Some("BUZZ_AGENT_THINKING_EFFORT"),
         effort_normalization: None, // buzz-agent: per-model catalog; see getProviderEffortConfig() in TS
         effort_accepted_values: Some(BUZZ_AGENT_EFFORT_VALUES), // buzz-agent: parse_thinking_effort's accepted set
-        effort_fallback_values: None, // buzz-agent: native env knob outranks the saved column; picker would be ignored
+        effort_thought_level: None, // buzz-agent: native env knob outranks the saved column; picker would be ignored
         max_tokens_env_var: Some("BUZZ_AGENT_MAX_OUTPUT_TOKENS"),
         context_limit_env_var: Some("BUZZ_AGENT_MAX_CONTEXT_TOKENS"),
         max_rounds_env_var: Some("BUZZ_AGENT_MAX_ROUNDS"),

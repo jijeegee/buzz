@@ -191,7 +191,10 @@ function installIpc() {
       // Claude Code publishes a pre-discovery effort vocabulary from the Rust
       // catalog; Goose does not (its effort is its own env knob).
       rawRuntime("claude", {
-        effort_fallback_values: ["low", "medium", "high"],
+        effort_thought_level: {
+          config_option_id: "effort",
+          fallback_values: ["low", "medium", "high"],
+        },
       }),
       rawRuntime("goose"),
     ]),
@@ -938,8 +941,9 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
   // Once runtimeTouched is set the running session's config surface no longer
   // applies, so the picker must switch to the PROSPECTIVE runtime's catalog
   // fallback (claude publishes one) instead of hiding — and say so.
+  const effortTrigger = dom.window.document.getElementById("edit-agent-effort");
   assert.ok(
-    dom.window.document.getElementById("edit-agent-effort"),
+    effortTrigger,
     "effort picker must stay visible after a runtime switch, fed by the new runtime's catalog fallback",
   );
   assert.ok(
@@ -947,6 +951,14 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
       "Options may vary by model.",
     ),
     "fallback-sourced options must carry the model-dependence hint",
+  );
+  // The saved column ("low") survives a runtime switch and is what the next
+  // spawn launches as BUZZ_ACP_EFFORT_LEVEL, so the picker must keep showing it
+  // — never "Adapter default" or the pre-switch "High" pick.
+  assert.equal(
+    effortTrigger.textContent?.trim(),
+    "Low",
+    "post-switch picker must show the saved column value, the effort that will actually launch",
   );
 
   // Save — the runtime changed, so effortTouched must have been cleared.

@@ -19,10 +19,10 @@ import { PersonaDropdownField } from "./PersonaDropdownField";
  * the control renders only for a local backend AND when it has a vocabulary to
  * offer: the running session's advertised `thought_level` option (`config`), or
  * — before any session, after a restart, or for a freshly picked runtime — the
- * prospective runtime's catalog `effortFallbackValues` (`runtime`). Discovered
- * options win; fallback-sourced options carry a "may vary by model" hint. The
- * read-only configured-vs-running two-facts display lives in `AgentConfigPanel`;
- * this is the write control.
+ * prospective runtime's catalog `effortThoughtLevel.fallbackValues`
+ * (`runtime`). Discovered options win; fallback-sourced options carry a "may
+ * vary by model" hint. The read-only configured-vs-running two-facts display
+ * lives in `AgentConfigPanel`; this is the write control.
  *
  * Save-gated, not direct-write: the control is fully controlled by the parent
  * dialog (`value`/`onChange`) and owns no mutation. The edit dialog persists the
@@ -49,7 +49,7 @@ export function EffortPickerField({
   id?: string;
   onChange: (level: string | null) => void;
   /** Prospective runtime's catalog entry — supplies the pre-discovery fallback. */
-  runtime: Pick<AcpRuntimeCatalogEntry, "effortFallbackValues"> | undefined;
+  runtime: Pick<AcpRuntimeCatalogEntry, "effortThoughtLevel"> | undefined;
   /** The pending persisted effort form (`null` = adapter default). */
   value: string | null;
 }) {
@@ -57,7 +57,7 @@ export function EffortPickerField({
     backend,
     effortConfigId: config?.effortConfigId,
     effortOptions: config?.effortOptions,
-    fallbackValues: runtime?.effortFallbackValues,
+    fallbackValues: runtime?.effortThoughtLevel?.fallbackValues,
     currentEffort: value,
   });
 

@@ -491,6 +491,14 @@ export type AuthStatus =
   | { status: "not_applicable" }
   | { status: "unknown" };
 
+/** See `AcpRuntimeCatalogEntry.effortThoughtLevel`. */
+export type EffortThoughtLevelOption = {
+  /** The adapter's `thought_level` config option id (`effort`, `reasoning_effort`). */
+  configOptionId: string;
+  /** Pre-discovery picker vocabulary, in display order. */
+  fallbackValues: string[];
+};
+
 export type AcpRuntimeCatalogEntry = {
   id: string;
   label: string;
@@ -516,16 +524,19 @@ export type AcpRuntimeCatalogEntry = {
    */
   effortCanonicalValues: string[] | null;
   /**
-   * Effort values the write control offers before a running session has
-   * discovered the harness's `thought_level` option — so a Claude Code / Codex
-   * agent can pick an effort in Create and in Edit before its first session.
+   * The harness's ACP `thought_level` effort option, when its adapter
+   * advertises one: the option id the deferred effort descriptor targets, and
+   * the vocabulary the write control offers before a running session has
+   * discovered the real list — so a Claude Code / Codex / Hermes agent can pick
+   * an effort in Create and in Edit before its first session.
    *
-   * Non-null only for ACP `thought_level` harnesses (Claude Code and Codex:
-   * `["low","medium","high"]`, the subset every current model accepts). Null
-   * for Goose, buzz-agent, presets, and custom runtimes. Display-only: never a
-   * validation contract, and discovered `effortOptions` win when present.
+   * Non-null only for ACP thought-level harnesses (Claude Code `effort`, Codex
+   * and Hermes `reasoning_effort`, each with `["low","medium","high"]`, the
+   * subset every current model accepts). Null for Goose, buzz-agent, the other
+   * presets, and custom runtimes. Display-only: never a validation contract,
+   * and discovered `effortOptions` win when present.
    */
-  effortFallbackValues: string[] | null;
+  effortThoughtLevel: EffortThoughtLevelOption | null;
   maxTokensEnvVar: string | null;
   contextLimitEnvVar: string | null;
   maxRoundsEnvVar: string | null;

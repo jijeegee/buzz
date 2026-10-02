@@ -47,16 +47,55 @@ pub(crate) static GOOSE_EFFORT_NORMALIZATION: EffortNormalization = EffortNormal
 pub(crate) static BUZZ_AGENT_EFFORT_VALUES: &[&str] =
     &["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-/// Effort values the picker offers for an ACP `thought_level` harness before
-/// any session has advertised its real option list — the safe subset every
-/// current Claude Code (`effort`) and Codex (`reasoning_effort`) model accepts.
-/// Model-dependent extremes (`minimal`, `xhigh`, `max`) are deliberately
-/// absent: a rejected startup value is logged and ignored by the adapter, so
-/// the fallback must never promise a level the model may refuse.
+/// A harness's ACP `thought_level` config option — the one effort fact the
+/// picker needs before a session has advertised the real option list.
 ///
-/// Display-only; spawn still routes the saved column through
-/// `BUZZ_ACP_EFFORT_LEVEL` unfiltered (see `effort_fallback_values`).
+/// `config_option_id` is the adapter's option id (`apply_startup_effort` sets
+/// it via `session/set_config_option`); the frontend core projects it into the
+/// deferred effort descriptor instead of inferring it from a runtime id.
+/// `fallback_values` is the display-only vocabulary the picker offers until
+/// discovery: the safe subset every current model of that harness accepts.
+/// Model-dependent extremes (`minimal`, `xhigh`, `max`, `ultra`) are
+/// deliberately absent — a rejected startup value is logged and ignored by the
+/// adapter, so the fallback must never promise a level the model may refuse.
+/// Spawn still routes the saved column through `BUZZ_ACP_EFFORT_LEVEL`
+/// unfiltered; this is not a validation contract.
+pub(crate) struct AcpThoughtLevelOption {
+    pub config_option_id: &'static str,
+    pub fallback_values: &'static [&'static str],
+}
+
+impl AcpThoughtLevelOption {
+    /// Project onto the IPC catalog entry.
+    pub fn to_catalog(&self) -> crate::managed_agents::EffortThoughtLevelOption {
+        crate::managed_agents::EffortThoughtLevelOption {
+            config_option_id: self.config_option_id.to_string(),
+            fallback_values: self.fallback_values.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+}
+
+/// The common pre-discovery subset shared by every ACP thought-level harness.
 pub(crate) static ACP_THOUGHT_LEVEL_FALLBACK_VALUES: &[&str] = &["low", "medium", "high"];
+
+/// claude-agent-acp advertises effort as the `effort` thought_level option.
+pub(crate) static CLAUDE_THOUGHT_LEVEL_OPTION: AcpThoughtLevelOption = AcpThoughtLevelOption {
+    config_option_id: "effort",
+    fallback_values: ACP_THOUGHT_LEVEL_FALLBACK_VALUES,
+};
+
+/// codex-acp 2.x advertises effort as the `reasoning_effort` thought_level option.
+pub(crate) static CODEX_THOUGHT_LEVEL_OPTION: AcpThoughtLevelOption = AcpThoughtLevelOption {
+    config_option_id: "reasoning_effort",
+    fallback_values: ACP_THOUGHT_LEVEL_FALLBACK_VALUES,
+};
+
+/// hermes-acp advertises effort as the `reasoning_effort` thought_level option
+/// (`minimal…ultra`) and applies it via `session/set_config_option`.
+pub(crate) static HERMES_THOUGHT_LEVEL_OPTION: AcpThoughtLevelOption = AcpThoughtLevelOption {
+    config_option_id: "reasoning_effort",
+    fallback_values: ACP_THOUGHT_LEVEL_FALLBACK_VALUES,
+};
 
 impl EffortNormalization {
     /// Normalize `raw` to canonical form. `None` → invalid for this harness;
@@ -153,21 +192,21 @@ pub(crate) struct KnownAcpRuntime {
     /// `effort_normalization`; Claude/Codex and unknown/custom runtimes accept
     /// any string over the `BUZZ_ACP_EFFORT_LEVEL` transport.
     pub effort_accepted_values: Option<&'static [&'static str]>,
-    /// Effort values the write control (`EffortPickerField`) offers before a
-    /// running session has discovered the harness's real `thought_level`
-    /// option — so a Claude Code / Codex agent can be created or edited with
-    /// an effort on day one. Discovered options always win when present.
+    /// The harness's ACP `thought_level` effort option, when its adapter
+    /// advertises one that `apply_startup_effort` can set: the option id plus
+    /// the display-only vocabulary the write control (`EffortPickerField`)
+    /// offers before a running session has discovered the real list — so a
+    /// Claude Code / Codex / Hermes agent can be created or edited with an
+    /// effort on day one. Discovered options always win when present.
     ///
-    /// `Some(list)` only for harnesses whose adapter advertises effort as an
-    /// ACP `thought_level` config option that `apply_startup_effort` can set.
     /// `None` for Goose (its own env knob + `effort_normalization`), buzz-agent
     /// (its native env knob outranks the saved column, so a picker would be
     /// ignored), and unknown/custom runtimes.
     ///
-    /// Display-only: this list is NOT a validation or canonicalization
-    /// contract. Do not reuse `effort_normalization` / `effort_canonical_values`
-    /// here — those filter at spawn and drive the Goose auto-clear.
-    pub effort_fallback_values: Option<&'static [&'static str]>,
+    /// Not a validation or canonicalization contract. Do not reuse
+    /// `effort_normalization` / `effort_canonical_values` here — those filter
+    /// at spawn and drive the Goose auto-clear.
+    pub effort_thought_level: Option<&'static AcpThoughtLevelOption>,
     /// Env var for normalizing `max_output_tokens`. `None` when the harness
     /// does not have a first-class env var for this field (config-file only).
     pub max_tokens_env_var: Option<&'static str>,

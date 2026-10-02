@@ -31,10 +31,11 @@ export const EFFORT_FALLBACK_HELPER_TEXT = "Options may vary by model.";
  *   1. the running session's discovered `thought_level` option
  *      (`effortConfigId` + `effortOptions`, absent pre-first-session and for
  *      runtimes/models without effort support);
- *   2. the prospective runtime's catalog `effortFallbackValues` — the safe
- *      common subset the Rust catalog publishes for ACP thought-level
- *      harnesses (Claude Code, Codex), so an effort can be picked before the
- *      first session, after a restart, or right after a runtime switch.
+ *   2. the prospective runtime's catalog `effortThoughtLevel.fallbackValues` —
+ *      the safe common subset the Rust catalog publishes for ACP thought-level
+ *      harnesses (Claude Code, Codex, Hermes), so an effort can be picked
+ *      before the first session, after a restart, or right after a runtime
+ *      switch.
  *
  * `visible` is the single gate the dialogs render on: local backend AND
  * (a discovered `effortConfigId` OR a non-empty fallback list).
@@ -49,7 +50,7 @@ export function effortPickerState({
   backend: ManagedAgentBackend;
   effortConfigId: string | undefined;
   effortOptions: readonly AcpConfigOptionValue[] | undefined;
-  /** `effortFallbackValues` of the prospective runtime's catalog entry. */
+  /** `effortThoughtLevel.fallbackValues` of the prospective runtime's catalog entry. */
   fallbackValues: readonly string[] | null | undefined;
   currentEffort: string | null;
 }): {

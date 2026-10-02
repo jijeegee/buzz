@@ -669,6 +669,16 @@ pub enum HarnessSource {
     Custom,
 }
 
+/// IPC projection of a harness's ACP `thought_level` effort option; see
+/// `AcpRuntimeCatalogEntry::effort_thought_level`.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EffortThoughtLevelOption {
+    /// The adapter's config option id (`effort`, `reasoning_effort`).
+    pub config_option_id: String,
+    /// Pre-discovery picker vocabulary, in display order.
+    pub fallback_values: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AcpRuntimeCatalogEntry {
     pub id: String,
@@ -697,13 +707,15 @@ pub struct AcpRuntimeCatalogEntry {
     /// other valid Goose values are always present when this is Goose, so
     /// `useEffortAutoClear` never incorrectly deletes a valid saved value.
     pub effort_canonical_values: Option<Vec<String>>,
-    /// Effort values the picker offers before a running session has
-    /// discovered the harness's `thought_level` option. Serialized from
-    /// `KnownAcpRuntime::effort_fallback_values` / `PresetHarness`: `Some` for
-    /// Claude Code and Codex (`low`, `medium`, `high`), `None` for Goose,
-    /// buzz-agent, presets, and custom runtimes. Display-only — not a
-    /// validation contract; discovered options win when present.
-    pub effort_fallback_values: Option<Vec<String>>,
+    /// The harness's ACP `thought_level` effort option, serialized from
+    /// `KnownAcpRuntime::effort_thought_level` / `PresetHarness`: `Some` for
+    /// Claude Code (`effort`), Codex and Hermes (`reasoning_effort`), each with
+    /// the `low`/`medium`/`high` pre-discovery vocabulary; `None` for Goose,
+    /// buzz-agent, the other presets, and custom runtimes. The frontend core
+    /// reads the option id from here instead of inferring it from the runtime
+    /// id, and the picker offers the fallback until a session discovers the
+    /// real list. Display-only — not a validation contract.
+    pub effort_thought_level: Option<EffortThoughtLevelOption>,
     pub max_tokens_env_var: Option<String>,
     pub context_limit_env_var: Option<String>,
     pub max_rounds_env_var: Option<String>,

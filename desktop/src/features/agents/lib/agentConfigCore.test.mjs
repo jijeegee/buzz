@@ -38,8 +38,14 @@ function runtime(id, metadata = {}) {
     nodeRequired: false,
     authStatus: { status: "not_applicable" },
     loginHint: null,
+    effortThoughtLevel: null,
     ...metadata,
   };
+}
+
+/** What the Rust catalog publishes for an ACP thought-level harness. */
+function thoughtLevel(configOptionId) {
+  return { configOptionId, fallbackValues: ["low", "medium", "high"] };
 }
 
 function field(model, kind) {
@@ -169,7 +175,7 @@ for (const scope of ["definition", "instance"]) {
 test("Claude models effort as a deferred native ACP option", () => {
   const model = deriveAgentConfigFieldModel({
     config,
-    runtime: runtime("claude"),
+    runtime: runtime("claude", { effortThoughtLevel: thoughtLevel("effort") }),
     scope: "global",
   });
 
@@ -197,7 +203,9 @@ test("Codex models effort as a deferred native ACP option (codex-acp 2.x reasoni
   // the adapter's own option id.
   const model = deriveAgentConfigFieldModel({
     config,
-    runtime: runtime("codex"),
+    runtime: runtime("codex", {
+      effortThoughtLevel: thoughtLevel("reasoning_effort"),
+    }),
     scope: "global",
   });
 
@@ -215,6 +223,33 @@ test("Codex models effort as a deferred native ACP option (codex-acp 2.x reasoni
     id: "reasoning_effort",
     category: "thought_level",
   });
+});
+
+test("the deferred effort descriptor is gated on the catalog fact, never on the runtime id", () => {
+  // Rule 1: harness facts come from the Rust catalog. A Hermes preset entry
+  // that publishes effortThoughtLevel gets the same deferred descriptor with
+  // its own option id; a "claude" id WITHOUT the catalog fact gets nothing.
+  const hermes = deriveAgentConfigFieldModel({
+    config,
+    runtime: runtime("hermes", {
+      effortThoughtLevel: thoughtLevel("reasoning_effort"),
+    }),
+    scope: "global",
+  });
+  assert.deepEqual(field(hermes, "effort").targetApplication, {
+    kind: "acpConfigOption",
+    id: "reasoning_effort",
+    category: "thought_level",
+  });
+
+  const claudeWithoutCatalogFact = deriveAgentConfigFieldModel({
+    config,
+    runtime: runtime("claude"),
+    scope: "global",
+  });
+  assert.deepEqual(claudeWithoutCatalogFact.omissions, [
+    { kind: "effort", reason: "unsupportedByHarness" },
+  ]);
 });
 
 test("a harness with no effort knob omits effort with the unsupported reason", () => {
@@ -355,7 +390,7 @@ test("Goose derives two numeric descriptors and no maxRounds", () => {
 test("Claude derives no numeric descriptors", () => {
   const model = deriveAgentConfigFieldModel({
     config,
-    runtime: runtime("claude"),
+    runtime: runtime("claude", { effortThoughtLevel: thoughtLevel("effort") }),
     scope: "global",
   });
 
@@ -548,7 +583,7 @@ test("structuredEnvKeys_deferred_effort_excluded_from_result", () => {
   // its key to the hidden set — the value has no editor on this surface.
   const claudeModel = deriveAgentConfigFieldModel({
     config,
-    runtime: runtime("claude"),
+    runtime: runtime("claude", { effortThoughtLevel: thoughtLevel("effort") }),
     scope: "global",
   });
 

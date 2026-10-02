@@ -230,20 +230,20 @@ export function deriveAgentConfigFieldModel({
       render: "control",
       value: valueFromEnv(config, persistenceKey),
     });
-  } else if (runtime?.id === "claude" || runtime?.id === "codex") {
-    // Both adapters advertise effort as an ACP `thought_level` config option
-    // (claude-agent-acp: `effort`; codex-acp 2.x: `reasoning_effort`) applied
-    // once at session start from the record column. The generic renderer still
-    // defers — the per-agent write control is `EffortPickerField`, fed by the
-    // catalog's `effortFallbackValues` until the session discovers the real
-    // option list.
+  } else if (runtime?.effortThoughtLevel) {
+    // The catalog says this adapter advertises effort as an ACP `thought_level`
+    // config option (claude-agent-acp `effort`, codex-acp 2.x and hermes-acp
+    // `reasoning_effort`), applied once at session start from the record
+    // column. The generic renderer still defers — the per-agent write control
+    // is `EffortPickerField`, fed by the same catalog fact's `fallbackValues`
+    // until the session discovers the real option list.
     fields.push({
       kind: "effort",
       optionSource: "harnessNative",
       currentPersistence: { kind: "unavailable" },
       targetApplication: {
         kind: "acpConfigOption",
-        id: runtime.id === "codex" ? "reasoning_effort" : "effort",
+        id: runtime.effortThoughtLevel.configOptionId,
         category: "thought_level",
       },
       render: "deferredUntilNativeOptionsAvailable",

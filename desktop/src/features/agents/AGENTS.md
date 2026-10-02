@@ -49,13 +49,15 @@ with a TypeScript lookup table or an id comparison in a component.
    *should* receive it. They intentionally differ until PR 2.7 migrates
    Goose/Claude — do not "fix" one to match the other without doing the
    migration work.
-3. **Field absence has a named reason, not a boolean.** Claude Code and Codex
-   effort are `deferredUntilNativeOptionsAvailable` in the generic renderer:
-   both adapters advertise effort as an ACP `thought_level` option
-   (claude-agent-acp `effort`, codex-acp 2.x `reasoning_effort`) and the
-   per-agent write control is `EffortPickerField` (rule 14). A harness with no
-   effort knob is omitted as `unsupportedByHarness`. New absences get new
-   named reasons in `AgentConfigOmission` / `render` — never a `showX` prop.
+3. **Field absence has a named reason, not a boolean.** A harness whose
+   catalog entry publishes `effortThoughtLevel` (Claude Code `effort`, Codex
+   and Hermes `reasoning_effort` — the adapter advertises effort as an ACP
+   `thought_level` option) gets a `deferredUntilNativeOptionsAvailable` effort
+   descriptor whose option id comes from that catalog fact, never from a
+   runtime-id comparison; its per-agent write control is `EffortPickerField`
+   (rule 14). A harness without it is omitted as `unsupportedByHarness`. New
+   absences get new named reasons in `AgentConfigOmission` / `render` — never
+   a `showX` prop.
 4. **The clearing policy is the named types.** `onContextChange:
    "resetDependentValues"` (user changed harness/provider → dependent values
    reset everywhere) vs `onCatalogMismatch: "explainOnly" | "onboardingCleanup"`
@@ -237,9 +239,10 @@ with a TypeScript lookup table or an id comparison in a component.
    read-only two-facts DISPLAY.** The write control is `EffortPickerField`
    (`ui/EffortPickerField.tsx`), a self-contained section component mounted
    beside the Model block in **both** `AgentInstanceEditDialog` and the Create
-   mode of `AgentDefinitionDialog` (Customize section, local Run-on only). It
-   takes a `backend` plus the prospective `runtime` catalog entry — never a
-   whole `ManagedAgent`. It is **Save-gated, not direct-write**: the control is
+   mode of `AgentDefinitionDialog` (in "Use defaults" as well as "Customize" —
+   effort is instance state, not part of the provider/model pair — and only
+   for a local Run-on). It takes a `backend` plus the prospective `runtime`
+   catalog entry — never a whole `ManagedAgent`. It is **Save-gated, not direct-write**: the control is
    fully controlled by the parent dialog (`value`/`onChange`) and owns no
    mutation. Edit persists the selection by embedding `effortLevel` in the
    locked `update_managed_agent` IPC call, so the effort write is atomic with
@@ -253,20 +256,25 @@ with a TypeScript lookup table or an id comparison in a component.
    pure helper `ui/effortPicker.ts` (`effortPickerState`): the picker renders
    only when the backend is local **AND** it has a vocabulary — either a
    `thought_level` `effortConfigId` discovered from the running session, or the
-   prospective runtime's catalog `effortFallbackValues`. That fallback is a
-   Rust catalog fact (`KnownAcpRuntime` / `PresetHarness`
-   `effort_fallback_values`): the safe `low | medium | high` subset for the ACP
-   thought-level harnesses Claude Code, Codex, and Hermes; `None` for Goose
-   (own env knob), buzz-agent (its env knob outranks the saved column), the
-   other presets, and custom harnesses. It is display-only — never reuse
-   `effort_normalization` / `effort_canonical_values` for it (those filter at
-   spawn and drive the Goose auto-clear). Discovered options always win;
-   fallback-sourced options carry the "Options may vary by model." hint, and a
-   saved value outside the fallback stays selectable under its raw name rather
-   than being misreported as the adapter default. After an in-dialog runtime
-   switch the edit picker drops the old session's surface and shows the new
-   runtime's fallback (the effort reset on switch stays, so an untouched Save
-   writes nothing). Local-only is load-bearing, not cosmetic — both Rust
+   prospective runtime's catalog `effortThoughtLevel.fallbackValues`. That is
+   one Rust catalog fact (`KnownAcpRuntime` / `PresetHarness`
+   `effort_thought_level`: the adapter's option id plus the safe
+   `low | medium | high` subset) for the ACP thought-level harnesses Claude
+   Code, Codex, and Hermes; `None` for Goose (own env knob), buzz-agent (its
+   env knob outranks the saved column), the other presets, and custom
+   harnesses. It is display-only — never reuse `effort_normalization` /
+   `effort_canonical_values` for it (those filter at spawn and drive the Goose
+   auto-clear). Discovered options always win; fallback-sourced options carry
+   the "Options may vary by model." hint, and a saved value outside the
+   fallback stays selectable under its raw name rather than being misreported
+   as the adapter default. **The picker never shows a value other than what
+   the next spawn launches:** after an in-dialog runtime switch the edit picker
+   drops the old session's option list for the new runtime's fallback, but its
+   value (and `originalEffortLevel`) stay sourced from the saved column via the
+   config surface's `normalized.thinkingEffort` — the column survives the
+   switch and is what `BUZZ_ACP_EFFORT_LEVEL` carries (the effort reset on
+   switch stays, so an untouched Save writes nothing). Local-only is
+   load-bearing, not cosmetic — both Rust
    commands reject non-local backends (`ensure_effort_change_supported`,
    `normalize_create_effort_level`) because remote effort is set at deploy time
    via `policy_env`. Because the edit control reads its inputs from the config
@@ -427,12 +435,15 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   `effortSelectionToPersistedValue` sentinel → null. This is where the v4
   provider regression is pinned: the write control must never render for a
   provider backend. `ui/agentInstanceEditCancelSafety.test.mjs` pins the edit
-  dialog's runtime switch (picker stays visible on the new runtime's fallback;
-  untouched Save writes nothing; a post-switch pick is dispatched), and
-  `lib/instanceInputForDefinition.test.mjs` pins that the create-time
-  `effortLevel` override rides the local mapping only. Rust:
-  `catalog_exposes_effort_fallback_values_only_for_acp_thought_level_harnesses`
-  (presets tests) pins which harnesses publish a fallback, and
+  dialog's runtime switch (picker stays visible on the new runtime's fallback
+  and keeps showing the saved column; untouched Save writes nothing; a
+  post-switch pick is dispatched). `ui/agentCreateEffort.test.mjs` mounts the
+  real `RequestedAgentCreateDialogs` → `usePersonaActions` seam and pins that
+  a Create pick reaches `create_managed_agent` as `input.effortLevel` while an
+  untouched picker sends none. `lib/instanceInputForDefinition.test.mjs` pins
+  that the create-time `effortLevel` override rides the local mapping only.
+  Rust: `catalog_exposes_effort_thought_level_only_for_acp_thought_level_harnesses`
+  (presets tests) pins which harnesses publish the option id + fallback, and
   `normalize_create_effort_level_*` (agents tests) pins the create boundary.
 - `desktop/tests/e2e/onboarding-agent-defaults.spec.ts` — onboarding behavior
   acceptance coverage for readiness, failure states, defaults, session-draft

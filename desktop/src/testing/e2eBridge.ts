@@ -8486,6 +8486,22 @@ function withMockRuntimeConfigMetadata(
           : runtime.id === "goose"
             ? "GOOSE_THINKING_EFFORT"
             : null,
+    // Mirrors the Rust catalog's `effort_thought_level` (ACP thought-level
+    // harnesses publish their option id + pre-discovery vocabulary).
+    effort_thought_level:
+      "effort_thought_level" in runtime
+        ? runtime.effort_thought_level
+        : runtime.id === "claude"
+          ? {
+              config_option_id: "effort",
+              fallback_values: ["low", "medium", "high"],
+            }
+          : runtime.id === "codex" || runtime.id === "hermes"
+            ? {
+                config_option_id: "reasoning_effort",
+                fallback_values: ["low", "medium", "high"],
+              }
+            : null,
     max_tokens_env_var:
       "max_tokens_env_var" in runtime
         ? runtime.max_tokens_env_var

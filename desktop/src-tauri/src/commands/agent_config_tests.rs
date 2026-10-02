@@ -57,7 +57,7 @@ fn goose_runtime() -> &'static KnownAcpRuntime {
         thinking_env_var: Some("GOOSE_THINKING_EFFORT"),
         effort_normalization: Some(&crate::managed_agents::GOOSE_EFFORT_NORMALIZATION),
         effort_accepted_values: None,
-        effort_fallback_values: None,
+        effort_thought_level: None,
         max_tokens_env_var: Some("GOOSE_MAX_TOKENS"),
         context_limit_env_var: Some("GOOSE_CONTEXT_LIMIT"),
         max_rounds_env_var: None,

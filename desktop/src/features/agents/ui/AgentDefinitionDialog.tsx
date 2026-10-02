@@ -127,7 +127,7 @@ export type AgentDefinitionSubmitOptions = {
    * Create mode only: the initial thinking effort for the instance started
    * from the new definition. Instance state, not a definition field — it never
    * lands in the persona. Present only when the picker was rendered (local
-   * Run-on, Customize) and the user chose an explicit level.
+   * Run-on, either AI-configuration mode) and the user chose an explicit level.
    */
   effortLevel?: string;
 };
@@ -495,17 +495,15 @@ export function AgentDefinitionDialog({
     aiConfigurationMode === "custom" && runtimeCanChooseLlmProvider;
   const modelFieldVisible =
     runtime.trim().length > 0 || blankRuntimeModelProviderEditable;
-  // Effort is instance state, so only Create offers it, beside the Customize
-  // model block, and only for a local Run-on: the Rust create command rejects
-  // an effort for a provider backend (remote effort is deploy-time policy_env).
-  // The field itself stays hidden for runtimes whose catalog entry publishes no
-  // effortFallbackValues (Goose, buzz-agent, presets, custom).
+  // Effort is instance state — not part of the provider/model pair — so only
+  // Create offers it, in BOTH "Use defaults" and "Customize", and only for a
+  // local Run-on: the Rust create command rejects an effort for a provider
+  // backend (remote effort is deploy-time policy_env). The field itself stays
+  // hidden for runtimes whose catalog entry publishes no effortThoughtLevel
+  // (Goose, buzz-agent, most presets, custom).
   const runLocation = useAgentRunLocation();
   const effortFieldVisible =
-    isCreateMode &&
-    aiConfigurationMode === "custom" &&
-    modelFieldVisible &&
-    runLocation === "local";
+    isCreateMode && modelFieldVisible && runLocation === "local";
   // Only provider-selection harnesses (Buzz Agent / Goose) need an explicit
   // model in Customize — the backend readiness gate requires the pair for
   // them. Every other harness owns its default model, so an empty model is a
@@ -949,6 +947,19 @@ export function AgentDefinitionDialog({
             ) : null}
           </AnimatePresence>
 
+          {aiConfigurationMode === "defaults" ? (
+            <AgentCreateAiDefaultsSummary
+              canChooseProvider={runtimeCanChooseLlmProvider}
+              harness={runtimeSummaryLabel}
+              inheritedModel={inheritedModelDefault}
+              inheritedProvider={inheritedProviderDefault}
+              isConfigured={localModeGate.satisfied}
+              model={runtimeFileConfig?.model}
+              onEditDefaults={() => setAiDefaultsOpen(true)}
+              triggerRef={aiDefaultsTriggerRef}
+            />
+          ) : null}
+
           {effortFieldVisible ? (
             <EffortPickerField
               // effortFieldVisible already requires a local Run-on.
@@ -962,19 +973,6 @@ export function AgentDefinitionDialog({
               }}
               runtime={selectedRuntime}
               value={effortLevel}
-            />
-          ) : null}
-
-          {aiConfigurationMode === "defaults" ? (
-            <AgentCreateAiDefaultsSummary
-              canChooseProvider={runtimeCanChooseLlmProvider}
-              harness={runtimeSummaryLabel}
-              inheritedModel={inheritedModelDefault}
-              inheritedProvider={inheritedProviderDefault}
-              isConfigured={localModeGate.satisfied}
-              model={runtimeFileConfig?.model}
-              onEditDefaults={() => setAiDefaultsOpen(true)}
-              triggerRef={aiDefaultsTriggerRef}
             />
           ) : null}
         </div>
