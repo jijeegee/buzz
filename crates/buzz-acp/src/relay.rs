@@ -240,6 +240,64 @@ pub(crate) fn merge_discovered_channels(
     map
 }
 
+/// Filter for one channel's addressable NIP-29 snapshot (`#d` = channel UUID).
+fn addressable_channel_filter(kind: u32, channel_id: Uuid) -> nostr::Filter {
+    use nostr::{Alphabet, SingleLetterTag};
+    nostr::Filter::new()
+        .kind(Kind::Custom(kind as u16))
+        .custom_tags(
+            SingleLetterTag::lowercase(Alphabet::D),
+            [channel_id.to_string()],
+        )
+}
+
+/// The newest event's `p` tags from a `/query` response, as `(pubkey, rest)`.
+///
+/// Addressable snapshots are replaced in place, but a relay may still return
+/// more than one; the highest `created_at` wins.
+fn newest_event_p_tags(json: &Value) -> Vec<(String, Vec<String>)> {
+    let Some(events) = json.as_array() else {
+        return Vec::new();
+    };
+    let Some(newest) = events
+        .iter()
+        .max_by_key(|ev| ev.get("created_at").and_then(Value::as_u64).unwrap_or(0))
+    else {
+        return Vec::new();
+    };
+    newest
+        .get("tags")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tag| {
+            let parts = tag.as_array()?;
+            if parts.first().and_then(Value::as_str) != Some("p") {
+                return None;
+            }
+            let pubkey = parts.get(1).and_then(Value::as_str)?;
+            if pubkey.len() != 64 || !pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
+            let rest = parts[2..]
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect();
+            Some((pubkey.to_ascii_lowercase(), rest))
+        })
+        .collect()
+}
+
+/// Parse `["p", pubkey, role]` tags from the newest kind-39001 admins event
+/// into `pubkey → role`. Tags without a role are ignored.
+pub(crate) fn parse_channel_admin_roles(json: &Value) -> HashMap<String, String> {
+    newest_event_p_tags(json)
+        .into_iter()
+        .filter_map(|(pubkey, rest)| rest.into_iter().next().map(|role| (pubkey, role)))
+        .collect()
+}
+
 /// Lightweight HTTP client for pre-prompt context fetches via the Nostr HTTP bridge.
 ///
 /// Extracted from `HarnessRelay` fields so it can be shared (via `Arc`) with
@@ -548,6 +606,23 @@ impl RestClient {
                 return Ok(events);
             }
         }
+    }
+
+    /// Fetch the channel's owner/admin roles from its kind-39001 admins event.
+    ///
+    /// Returns `pubkey → role` for the newest snapshot (`["p", pk, role]`
+    /// tags). Empty when the relay has no admins event for the channel.
+    pub async fn fetch_channel_admins(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<HashMap<String, String>, RelayError> {
+        let json = self
+            .query(&[addressable_channel_filter(
+                buzz_core::kind::KIND_NIP29_GROUP_ADMINS,
+                channel_id,
+            )])
+            .await?;
+        Ok(parse_channel_admin_roles(&json))
     }
 
     /// Count events via the HTTP bridge: `POST /count` with NIP-98 auth.
@@ -4181,6 +4256,32 @@ mod recovery_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn channel_admin_roles_come_from_the_newest_snapshot() {
+        let owner = "aa".repeat(32);
+        let admin = "bb".repeat(32);
+        let stale = "cc".repeat(32);
+        let json = json!([
+            { "created_at": 10, "tags": [["d", "x"], ["p", stale, "owner"]] },
+            {
+                "created_at": 20,
+                "tags": [
+                    ["d", "x"],
+                    ["p", owner.to_uppercase(), "owner"],
+                    ["p", admin, "admin"],
+                    ["p", "not-hex", "admin"],
+                    ["p", "dd".repeat(32)]
+                ]
+            }
+        ]);
+        let roles = parse_channel_admin_roles(&json);
+        assert_eq!(roles.len(), 2);
+        assert_eq!(roles[&owner], "owner");
+        assert_eq!(roles[&admin], "admin");
+        assert!(parse_channel_admin_roles(&json!([])).is_empty());
+        assert!(parse_channel_admin_roles(&json!({})).is_empty());
+    }
 
     async fn nip11_test_client(
         responses: HashMap<String, (u16, String)>,

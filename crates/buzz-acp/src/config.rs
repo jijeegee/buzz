@@ -386,10 +386,11 @@ pub struct CliArgs {
     pub no_ignore_self: bool,
 
     /// Maximum number of context messages to include for thread replies and DMs.
-    /// Set to 0 to disable automatic context fetching. Max 100.
-    #[arg(long, env = "BUZZ_ACP_CONTEXT_MESSAGE_LIMIT", default_value_t = 12,
+    /// Set to 0 to disable automatic context fetching. Max 100. Defaults to 12,
+    /// or 4 in dispatcher mode (`--dispatcher`).
+    #[arg(long, env = "BUZZ_ACP_CONTEXT_MESSAGE_LIMIT",
           value_parser = clap::value_parser!(u32).range(0..=100))]
-    pub context_message_limit: u32,
+    pub context_message_limit: Option<u32>,
 
     /// Maximum turns per session before proactive rotation. 0 = disabled
     /// (rotate only on MaxTokens / MaxTurnRequests).
@@ -498,6 +499,19 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_ALLOWED_RESPOND_TO", value_delimiter = ',')]
     pub allowed_respond_to: Option<Vec<String>>,
 
+    /// Run as a channel dispatcher: subscribe to every non-DM channel without
+    /// the mention filter, admit only human-authored requests (see
+    /// `--dispatcher-config`), and use the short dispatcher base prompt.
+    #[arg(long, env = "BUZZ_ACP_DISPATCHER", default_value_t = false)]
+    pub dispatcher: bool,
+
+    /// Per-channel dispatcher policy as JSON:
+    /// `{"<channel_uuid>": {"humans": ["<hex>", ...], "ais": ["<hex>", ...]}}`.
+    /// Both arrays are optional. An empty or missing `humans` list admits the
+    /// channel's kind-39001 owners/admins; `ais` lists agent pubkeys to admit.
+    #[arg(long, env = "BUZZ_ACP_DISPATCHER_CONFIG")]
+    pub dispatcher_config: Option<String>,
+
     /// Team-owned instructions layered after `<agent-instructions>` and before agent memory.
     #[arg(long, env = "BUZZ_ACP_TEAM_INSTRUCTIONS")]
     pub team_instructions: Option<String>,
@@ -530,6 +544,101 @@ pub struct CliArgs {
     /// ignored (the watermark stays at startup time).
     #[arg(long, env = "BUZZ_ACP_REPLAY_FLOOR")]
     pub replay_floor: Option<u64>,
+}
+
+/// Default `--context-message-limit` for ordinary agents.
+pub const DEFAULT_CONTEXT_MESSAGE_LIMIT: u32 = 12;
+/// Default `--context-message-limit` in dispatcher mode: a router needs only
+/// the request and its immediate thread, not the channel's recent history.
+pub const DISPATCHER_CONTEXT_MESSAGE_LIMIT: u32 = 4;
+
+/// Who a dispatcher listens to in one channel.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DispatcherChannelPolicy {
+    /// Human pubkeys (lowercase hex) whose requests are routed. Empty means
+    /// "the channel's kind-39001 owners and admins".
+    pub humans: HashSet<String>,
+    /// Agent pubkeys (lowercase hex) admitted despite their agent profile.
+    pub ais: HashSet<String>,
+}
+
+/// Parsed `--dispatcher-config` / `BUZZ_ACP_DISPATCHER_CONFIG`.
+#[derive(Debug, Clone, Default)]
+pub struct DispatcherConfig {
+    channels: HashMap<Uuid, DispatcherChannelPolicy>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawDispatcherChannelPolicy {
+    #[serde(default)]
+    humans: Vec<String>,
+    #[serde(default)]
+    ais: Vec<String>,
+}
+
+impl DispatcherConfig {
+    /// Parse the JSON document. Channel keys must be UUIDs and every pubkey
+    /// must be 64 hex characters; pubkeys are normalized to lowercase.
+    pub fn parse(json: &str) -> Result<Self, ConfigError> {
+        let raw: HashMap<String, RawDispatcherChannelPolicy> =
+            serde_json::from_str(json).map_err(|e| {
+                ConfigError::ConfigFile(format!("invalid --dispatcher-config JSON: {e}"))
+            })?;
+        let mut channels = HashMap::with_capacity(raw.len());
+        for (channel, policy) in raw {
+            let channel_id = channel.trim().parse::<Uuid>().map_err(|_| {
+                ConfigError::ConfigFile(format!(
+                    "invalid channel id in --dispatcher-config: '{channel}' (must be a UUID)"
+                ))
+            })?;
+            channels.insert(
+                channel_id,
+                DispatcherChannelPolicy {
+                    humans: validate_dispatcher_pubkeys(&policy.humans, "humans")?,
+                    ais: validate_dispatcher_pubkeys(&policy.ais, "ais")?,
+                },
+            );
+        }
+        Ok(Self { channels })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_channels(channels: HashMap<Uuid, DispatcherChannelPolicy>) -> Self {
+        Self { channels }
+    }
+
+    /// The policy configured for a channel, if any.
+    pub fn channel(&self, channel_id: Uuid) -> Option<&DispatcherChannelPolicy> {
+        self.channels.get(&channel_id)
+    }
+
+    /// Number of channels with an explicit policy.
+    pub fn channel_count(&self) -> usize {
+        self.channels.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.channels.is_empty()
+    }
+}
+
+fn validate_dispatcher_pubkeys(
+    entries: &[String],
+    field: &str,
+) -> Result<HashSet<String>, ConfigError> {
+    let mut validated = HashSet::new();
+    for entry in entries {
+        let trimmed = entry.trim().to_ascii_lowercase();
+        if trimmed.len() != 64 || !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(ConfigError::ConfigFile(format!(
+                "invalid pubkey in --dispatcher-config {field}: '{entry}' \
+                 (must be exactly 64 hex characters)"
+            )));
+        }
+        validated.insert(trimmed);
+    }
+    Ok(validated)
 }
 
 /// Merged NIP-01 subscription filter for a single channel.
@@ -632,8 +741,13 @@ pub struct Config {
     pub no_base_prompt: bool,
     /// Resolved content from `--base-prompt-file`, read and validated in
     /// `from_cli()`. `None` when using the compiled-in default or when
-    /// `--no-base-prompt` is set.
+    /// `--no-base-prompt` is set. In dispatcher mode without an explicit file
+    /// this holds the compiled-in dispatcher base prompt.
     pub base_prompt_content: Option<String>,
+    /// Whether this harness runs as a channel dispatcher (`--dispatcher`).
+    pub dispatcher: bool,
+    /// Per-channel dispatcher author policy (`--dispatcher-config`).
+    pub dispatcher_config: DispatcherConfig,
 }
 
 /// Maximum length, in characters, of a session title sent to the adapter.
@@ -983,9 +1097,33 @@ impl Config {
                 )));
             }
             Some(content)
+        } else if args.dispatcher {
+            // A dispatcher only routes, so it gets the short router prompt
+            // unless the operator supplied their own base prompt file.
+            Some(include_str!("dispatcher_base_prompt.md").to_string())
         } else {
             None
         };
+
+        let dispatcher_config = match args.dispatcher_config.as_deref() {
+            Some(json) if args.dispatcher => DispatcherConfig::parse(json)?,
+            Some(_) => {
+                tracing::warn!("--dispatcher-config is ignored without --dispatcher");
+                DispatcherConfig::default()
+            }
+            None => DispatcherConfig::default(),
+        };
+        if args.dispatcher && !matches!(args.subscribe, SubscribeMode::Mentions) {
+            tracing::warn!(
+                "--dispatcher overrides channel subscriptions only in --subscribe=mentions mode; \
+                 the configured subscribe mode keeps its own filters"
+            );
+        }
+        let context_message_limit = args.context_message_limit.unwrap_or(if args.dispatcher {
+            DISPATCHER_CONTEXT_MESSAGE_LIMIT
+        } else {
+            DEFAULT_CONTEXT_MESSAGE_LIMIT
+        });
 
         if matches!(args.subscribe, SubscribeMode::Config) {
             if args.kinds.is_some() {
@@ -1184,7 +1322,7 @@ impl Config {
             channels_override: args.channels,
             no_mention_filter: args.no_mention_filter,
             config_path: args.config,
-            context_message_limit: args.context_message_limit,
+            context_message_limit,
             max_turns_per_session: args.max_turns_per_session,
             presence_enabled: !args.no_presence,
             typing_enabled: !args.no_typing,
@@ -1209,6 +1347,8 @@ impl Config {
             agent_owner: args.agent_owner.map(|s| s.trim().to_ascii_lowercase()),
             no_base_prompt: args.no_base_prompt,
             base_prompt_content,
+            dispatcher: args.dispatcher,
+            dispatcher_config,
         };
 
         Ok(config)
@@ -1522,6 +1662,66 @@ pub fn resolve_dynamic_channel_filter(
     }
 }
 
+/// Subscription used for every non-DM channel in dispatcher mode: the default
+/// stream kinds, with no mention requirement.
+pub(crate) fn dispatcher_channel_filter(config: &Config) -> ChannelFilter {
+    ChannelFilter {
+        kinds: Some(
+            config
+                .kinds_override
+                .clone()
+                .unwrap_or_else(default_mention_kinds),
+        ),
+        require_mention: false,
+    }
+}
+
+/// Whether dispatcher mode replaces the subscription for a channel of this
+/// type. Only confirmed non-DM channels qualify: DMs keep their rules, and
+/// unresolved metadata fails closed to the ordinary mention filter. The
+/// override applies to the default mentions mode only; `all` already drops
+/// the mention filter and `config` mode is operator-owned.
+pub(crate) fn dispatcher_subscribes_channel_type(config: &Config, channel_type: &str) -> bool {
+    config.dispatcher
+        && config.subscribe_mode == SubscribeMode::Mentions
+        && channel_type != "dm"
+        && channel_type != "unknown"
+}
+
+/// [`resolve_channel_filters`] over discovered channels, with the dispatcher
+/// override applied to every in-scope non-DM channel.
+pub fn resolve_startup_channel_filters(
+    config: &Config,
+    channels: &HashMap<Uuid, crate::relay::ChannelInfo>,
+    rules: &[SubscriptionRule],
+) -> HashMap<Uuid, ChannelFilter> {
+    let channel_ids: Vec<Uuid> = channels.keys().copied().collect();
+    let mut filters = resolve_channel_filters(config, &channel_ids, rules);
+    for (channel_id, info) in channels {
+        if dispatcher_subscribes_channel_type(config, &info.channel_type) {
+            if let Some(filter) = filters.get_mut(channel_id) {
+                *filter = dispatcher_channel_filter(config);
+            }
+        }
+    }
+    filters
+}
+
+/// [`resolve_dynamic_channel_filter`] with the dispatcher override for a
+/// channel whose type was resolved (`None` = unresolved, fails closed).
+pub fn resolve_dynamic_channel_filter_for_type(
+    config: &Config,
+    channel_id: Uuid,
+    channel_type: Option<&str>,
+    rules: &[crate::filter::SubscriptionRule],
+) -> Option<ChannelFilter> {
+    let filter = resolve_dynamic_channel_filter(config, channel_id, rules)?;
+    if dispatcher_subscribes_channel_type(config, channel_type.unwrap_or("unknown")) {
+        return Some(dispatcher_channel_filter(config));
+    }
+    Some(filter)
+}
+
 fn rule_applies_to_channel(rule: &SubscriptionRule, channel_id: Uuid) -> bool {
     use crate::filter::ChannelScope;
     match &rule.channels {
@@ -1587,6 +1787,8 @@ mod tests {
             agent_owner: None,
             no_base_prompt: false,
             base_prompt_content: None,
+            dispatcher: false,
+            dispatcher_config: DispatcherConfig::default(),
         }
     }
 
@@ -3212,5 +3414,242 @@ channels = "ALL"
             "Found secret-bearing env args without hide_env_values=true. \
              Add `hide_env_values = true` to each: {violations:?}"
         );
+    }
+
+    // --- dispatcher mode ---
+
+    fn from_cli(extra: &[&str]) -> Result<Config, ConfigError> {
+        let mut argv = vec!["buzz-acp", "--private-key", TEST_PRIVATE_KEY];
+        argv.extend_from_slice(extra);
+        Config::from_args(CliArgs::try_parse_from(argv).expect("clap should parse args"))
+    }
+
+    #[test]
+    fn dispatcher_config_parses_channels_and_normalizes_pubkeys() {
+        let ch = Uuid::new_v4();
+        let human = "AB".repeat(32);
+        let ai = "cd".repeat(32);
+        let json = format!(
+            r#"{{"{ch}": {{"humans": [" {human} "], "ais": ["{ai}"]}}, "{}": {{}}}}"#,
+            Uuid::nil()
+        );
+        let cfg = DispatcherConfig::parse(&json).expect("valid config");
+        assert_eq!(cfg.channel_count(), 2);
+        let policy = cfg.channel(ch).expect("channel policy");
+        assert_eq!(policy.humans, HashSet::from([human.to_ascii_lowercase()]));
+        assert_eq!(policy.ais, HashSet::from([ai]));
+        assert_eq!(
+            cfg.channel(Uuid::nil()),
+            Some(&DispatcherChannelPolicy::default()),
+            "both arrays are optional"
+        );
+        assert!(cfg.channel(Uuid::new_v4()).is_none());
+        assert!(DispatcherConfig::parse("{}")
+            .expect("empty object")
+            .is_empty());
+    }
+
+    #[test]
+    fn dispatcher_config_rejects_bad_json_channel_ids_and_pubkeys() {
+        let cases: Vec<(String, &str)> = vec![
+            ("not json".into(), "invalid --dispatcher-config JSON"),
+            ("[]".into(), "invalid --dispatcher-config JSON"),
+            (r#"{"nope": {}}"#.into(), "invalid channel id"),
+            (
+                format!(r#"{{"{}": {{"humans": ["abc"]}}}}"#, Uuid::nil()),
+                "invalid pubkey in --dispatcher-config humans",
+            ),
+            (
+                format!(
+                    r#"{{"{}": {{"ais": ["{}"]}}}}"#,
+                    Uuid::nil(),
+                    "zz".repeat(32)
+                ),
+                "invalid pubkey in --dispatcher-config ais",
+            ),
+        ];
+        for (json, needle) in cases {
+            let err = DispatcherConfig::parse(&json)
+                .expect_err("must be rejected")
+                .to_string();
+            assert!(err.contains(needle), "{json}: {err}");
+        }
+    }
+
+    #[test]
+    fn dispatcher_flag_defaults_off_and_flows_through_from_args() {
+        let plain = from_cli(&[]).expect("plain config");
+        assert!(!plain.dispatcher);
+        assert!(plain.dispatcher_config.is_empty());
+        assert_eq!(plain.context_message_limit, DEFAULT_CONTEXT_MESSAGE_LIMIT);
+        assert!(
+            plain.base_prompt_content.is_none(),
+            "ordinary agents use the compiled-in base prompt"
+        );
+
+        let ch = Uuid::new_v4();
+        let human = "ab".repeat(32);
+        let json = format!(r#"{{"{ch}": {{"humans": ["{human}"]}}}}"#);
+        let dispatcher =
+            from_cli(&["--dispatcher", "--dispatcher-config", &json]).expect("dispatcher config");
+        assert!(dispatcher.dispatcher);
+        assert_eq!(
+            dispatcher.dispatcher_config.channel(ch).unwrap().humans,
+            HashSet::from([human])
+        );
+        assert_eq!(
+            dispatcher.context_message_limit,
+            DISPATCHER_CONTEXT_MESSAGE_LIMIT
+        );
+
+        let explicit = from_cli(&["--dispatcher", "--context-message-limit", "20"]).unwrap();
+        assert_eq!(
+            explicit.context_message_limit, 20,
+            "an explicit limit wins over the dispatcher default"
+        );
+
+        let invalid = from_cli(&["--dispatcher", "--dispatcher-config", r#"{"x": {}}"#]);
+        assert!(invalid.is_err(), "invalid policy must fail startup");
+
+        let ignored = from_cli(&["--dispatcher-config", r#"{"x": {}}"#]).unwrap();
+        assert!(
+            !ignored.dispatcher && ignored.dispatcher_config.is_empty(),
+            "without --dispatcher the policy is ignored, not parsed"
+        );
+    }
+
+    #[test]
+    fn dispatcher_base_prompt_replaces_default_unless_file_given() {
+        let dispatcher = from_cli(&["--dispatcher"]).unwrap();
+        let prompt = dispatcher
+            .base_prompt_content
+            .as_deref()
+            .expect("dispatcher base prompt");
+        assert_eq!(prompt, include_str!("dispatcher_base_prompt.md"));
+        assert!(prompt.contains("router only"));
+        assert!(prompt.contains("<channel-roster>"));
+        assert!(prompt.contains("--mention <agent-pubkey-hex>"));
+        assert!(
+            prompt.len() < include_str!("base_prompt.md").len() / 4,
+            "dispatcher prompt must stay short"
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("base.md");
+        std::fs::write(&path, "custom base").unwrap();
+        let explicit =
+            from_cli(&["--dispatcher", "--base-prompt-file", path.to_str().unwrap()]).unwrap();
+        assert_eq!(
+            explicit.base_prompt_content.as_deref(),
+            Some("custom base"),
+            "an explicit base prompt file wins"
+        );
+
+        let none = from_cli(&["--dispatcher", "--no-base-prompt"]).unwrap();
+        assert!(none.base_prompt_content.is_none());
+    }
+
+    fn channel_map(entries: &[(Uuid, &str)]) -> HashMap<Uuid, crate::relay::ChannelInfo> {
+        entries
+            .iter()
+            .map(|(id, channel_type)| {
+                (
+                    *id,
+                    crate::relay::ChannelInfo {
+                        name: "ch".into(),
+                        channel_type: channel_type.to_string(),
+                        description: None,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn dispatcher_mode_subscribes_non_dm_channels_without_mention_filter() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.dispatcher = true;
+        let stream = Uuid::new_v4();
+        let private = Uuid::new_v4();
+        let dm = Uuid::new_v4();
+        let unknown = Uuid::new_v4();
+        let channels = channel_map(&[
+            (stream, "stream"),
+            (private, "private"),
+            (dm, "dm"),
+            (unknown, "unknown"),
+        ]);
+        let filters = resolve_startup_channel_filters(&config, &channels, &[]);
+        assert_eq!(filters.len(), 4);
+        for id in [stream, private] {
+            assert!(
+                !filters[&id].require_mention,
+                "non-DM channels drop the mention filter"
+            );
+            assert_eq!(filters[&id].kinds, Some(default_mention_kinds()));
+        }
+        for id in [dm, unknown] {
+            assert!(
+                filters[&id].require_mention,
+                "DM and unresolved channels keep the mention filter"
+            );
+        }
+
+        config.dispatcher = false;
+        let filters = resolve_startup_channel_filters(&config, &channels, &[]);
+        assert!(filters.values().all(|f| f.require_mention));
+    }
+
+    #[test]
+    fn dispatcher_mode_respects_channel_scope_and_kinds_override() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.dispatcher = true;
+        let in_scope = Uuid::new_v4();
+        let out_of_scope = Uuid::new_v4();
+        config.channels_override = Some(vec![in_scope.to_string()]);
+        config.kinds_override = Some(vec![KIND_STREAM_MESSAGE]);
+        let channels = channel_map(&[(in_scope, "stream"), (out_of_scope, "stream")]);
+        let filters = resolve_startup_channel_filters(&config, &channels, &[]);
+        assert_eq!(
+            filters.len(),
+            1,
+            "--channels still bounds the subscription set"
+        );
+        assert!(!filters[&in_scope].require_mention);
+        assert_eq!(filters[&in_scope].kinds, Some(vec![KIND_STREAM_MESSAGE]));
+        assert!(resolve_dynamic_channel_filter_for_type(
+            &config,
+            out_of_scope,
+            Some("stream"),
+            &[]
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn dispatcher_dynamic_filter_follows_channel_type() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.dispatcher = true;
+        let ch = Uuid::new_v4();
+        let stream =
+            resolve_dynamic_channel_filter_for_type(&config, ch, Some("stream"), &[]).unwrap();
+        assert!(!stream.require_mention);
+        assert_eq!(stream.kinds, Some(default_mention_kinds()));
+        for channel_type in [Some("dm"), Some("unknown"), None] {
+            let filter =
+                resolve_dynamic_channel_filter_for_type(&config, ch, channel_type, &[]).unwrap();
+            assert!(
+                filter.require_mention,
+                "{channel_type:?} keeps the mention filter"
+            );
+        }
+
+        // `all` already has no mention filter; the dispatcher leaves its wildcard kinds alone.
+        let mut all = test_config(SubscribeMode::All);
+        all.dispatcher = true;
+        let filter =
+            resolve_dynamic_channel_filter_for_type(&all, ch, Some("stream"), &[]).unwrap();
+        assert!(!filter.require_mention);
+        assert!(filter.kinds.is_none());
     }
 }

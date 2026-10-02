@@ -6,6 +6,7 @@ mod git_runtime_tests;
 
 mod acp;
 mod config;
+mod dispatcher;
 mod edit_routing;
 mod engram_fetch;
 mod filter;
@@ -428,6 +429,9 @@ mod inbound_author_gate {
         relay_self: Option<String>,
         // None means no authoritative NIP-11 result yet, including at startup.
         refreshed_generation: Option<u64>,
+        /// Dispatcher policy for non-DM channel events; replaces the
+        /// `respond_to` policy there when set (`--dispatcher`).
+        dispatcher: Option<std::sync::Arc<crate::dispatcher::DispatcherGate>>,
     }
 
     pub(crate) fn refresh_needed(refreshed_generation: Option<u64>, event_generation: u64) -> bool {
@@ -446,7 +450,19 @@ mod inbound_author_gate {
                 agent_pubkey_hex: agent_pubkey_hex.to_string(),
                 relay_self,
                 refreshed_generation: completed.then_some(0),
+                dispatcher: None,
             }
+        }
+
+        /// Attach the dispatcher policy. Non-DM channel events are then
+        /// decided by [`crate::dispatcher::DispatcherGate`] instead of the
+        /// owner/allowlist policy; DMs and `nobody` keep their behavior.
+        pub(crate) fn with_dispatcher(
+            mut self,
+            dispatcher: Option<std::sync::Arc<crate::dispatcher::DispatcherGate>>,
+        ) -> Self {
+            self.dispatcher = dispatcher;
+            self
         }
 
         /// Whether delegated workflow attribution is currently available.
@@ -492,6 +508,31 @@ mod inbound_author_gate {
                 }
             }
             let is_dm = is_dm_channel(buzz_event.channel_id, channel_info).await;
+            if let (Some(dispatcher), false) = (self.dispatcher.as_ref(), is_dm) {
+                let effective_author = effective_prompt_author(
+                    &buzz_event.event,
+                    self.relay_self.as_deref(),
+                    &self.agent_pubkey_hex,
+                );
+                // `nobody` remains absolute; every other mode defers to the
+                // dispatcher policy, which never inherits owner+sibling trust.
+                let allowed = !matches!(respond_to, RespondTo::Nobody)
+                    && dispatcher
+                        .allows(
+                            &buzz_event.event,
+                            &effective_author,
+                            buzz_event.channel_id,
+                            self.relay_self.as_deref(),
+                            &self.agent_pubkey_hex,
+                            rest_client,
+                        )
+                        .await;
+                return InboundAuthorGateDecision {
+                    effective_author,
+                    allowed,
+                    is_dm,
+                };
+            }
             self.evaluate_with_channel_trust(
                 &buzz_event.event,
                 respond_to,
@@ -2695,8 +2736,19 @@ async fn run_harness(
     tracing::info!("connected to relay at {}", config.relay_url);
 
     let relay_rest_client = relay.rest_client();
+    let dispatcher_gate = config.dispatcher.then(|| {
+        tracing::info!(
+            channel_policies = config.dispatcher_config.channel_count(),
+            "dispatcher mode enabled — routing human requests in every non-DM channel"
+        );
+        std::sync::Arc::new(dispatcher::DispatcherGate::new(
+            config.dispatcher_config.clone(),
+        ))
+    });
     let mut author_gate_ctx =
-        InboundAuthorGate::connect(&relay_rest_client, &pubkey_hex, "startup").await;
+        InboundAuthorGate::connect(&relay_rest_client, &pubkey_hex, "startup")
+            .await
+            .with_dispatcher(dispatcher_gate);
 
     relay
         .subscribe_membership_notifications()
@@ -2777,11 +2829,11 @@ async fn run_harness(
         .map_err(|e| anyhow::anyhow!("channel discovery error: {e}"))?;
 
     tracing::info!("discovered {} channel(s)", channel_info_map.len());
-    let channel_ids: Vec<Uuid> = channel_info_map.keys().copied().collect();
 
     let rules = startup_subscription_rules(config)?;
 
-    let channel_filters = config::resolve_channel_filters(config, &channel_ids, &rules);
+    let channel_filters =
+        config::resolve_startup_channel_filters(config, &channel_info_map, &rules);
     if channel_filters.is_empty() {
         tracing::warn!("no channel subscriptions resolved — agent will sit idle");
     }
@@ -3276,7 +3328,7 @@ async fn run_harness(
 
                                     if subscribed_channel_ids.contains(&ch) {
                                         tracing::debug!(channel_id = %ch, "membership notification: channel already subscribed");
-                                    } else if let Some(filter) = config::resolve_dynamic_channel_filter(config, ch, &rules) {
+                                    } else if let Some(filter) = resolve_dynamic_listener_filter(config, ch, &rules, &ctx.channel_info).await {
                                         tracing::info!(channel_id = %ch, "membership notification: subscribing to new channel");
                                         if let Err(e) = relay.subscribe_channel_from(ch, filter, Some(ts)).await {
                                             tracing::warn!("failed to subscribe to new channel {ch}: {e}");
@@ -9520,6 +9572,8 @@ mod build_mcp_servers_tests {
             agent_owner: None,
             no_base_prompt: false,
             base_prompt_content: None,
+            dispatcher: false,
+            dispatcher_config: config::DispatcherConfig::default(),
         }
     }
 
@@ -9876,25 +9930,67 @@ mod build_mcp_servers_tests {
     }
 }
 
+/// Resolve a dynamically joined channel's subscription. Dispatcher mode needs
+/// the channel type so DMs keep the mention filter; unresolved metadata fails
+/// closed to the ordinary filter (see `config::resolve_dynamic_channel_filter_for_type`).
+async fn resolve_dynamic_listener_filter(
+    config: &Config,
+    channel_id: Uuid,
+    rules: &[SubscriptionRule],
+    channel_info: &pool::ChannelInfoResolver,
+) -> Option<config::ChannelFilter> {
+    let channel_type = if config.dispatcher {
+        channel_info
+            .resolve_channel_metadata(channel_id)
+            .await
+            .map(|info| info.channel_type)
+    } else {
+        None
+    };
+    config::resolve_dynamic_channel_filter_for_type(
+        config,
+        channel_id,
+        channel_type.as_deref(),
+        rules,
+    )
+}
+
 /// Local admission rules for the normal listener. The relay subscription is
 /// derived separately (`config::resolve_channel_filters`); an event must pass
 /// both, so each default kind has to be present here too.
 fn startup_subscription_rules(config: &Config) -> Result<Vec<SubscriptionRule>> {
     let rules = match config.subscribe_mode {
         SubscribeMode::Mentions => {
-            vec![SubscriptionRule {
+            let kinds = config
+                .kinds_override
+                .clone()
+                .unwrap_or_else(config::default_mention_kinds);
+            let mut rules = vec![SubscriptionRule {
                 name: "mentions".into(),
                 channels: filter::ChannelScope::All("all".into()),
-                kinds: config
-                    .kinds_override
-                    .clone()
-                    .unwrap_or_else(config::default_mention_kinds),
+                kinds: kinds.clone(),
                 require_mention: !config.no_mention_filter,
                 filter: None,
                 compiled_filter: None,
                 consecutive_timeouts: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
                 prompt_tag: Some("@mention".into()),
-            }]
+            }];
+            if config.dispatcher {
+                // Unmentioned channel traffic reaches a dispatcher as
+                // `dispatch`; the mentions rule above still wins for events
+                // that address it directly, including DMs.
+                rules.push(SubscriptionRule {
+                    name: "dispatch".into(),
+                    channels: filter::ChannelScope::All("all".into()),
+                    kinds,
+                    require_mention: false,
+                    filter: None,
+                    compiled_filter: None,
+                    consecutive_timeouts: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                    prompt_tag: Some("dispatch".into()),
+                });
+            }
+            rules
         }
         SubscribeMode::All => {
             vec![SubscriptionRule {
@@ -9946,6 +10042,189 @@ mod edit_mention_admission_tests {
                 .is_none(),
             "an edit that does not mention the agent must not wake it"
         );
+    }
+}
+
+#[cfg(test)]
+mod dispatcher_admission_tests {
+    use super::*;
+    use crate::config::{DispatcherChannelPolicy, DispatcherConfig};
+    use nostr::{EventBuilder, Keys, Kind, Tag};
+
+    fn stream_message(signer: &Keys, p_tags: &[&str]) -> nostr::Event {
+        let tags: Vec<Tag> = p_tags
+            .iter()
+            .map(|pk| Tag::parse(["p", pk]).expect("p tag"))
+            .collect();
+        EventBuilder::new(
+            Kind::Custom(KIND_STREAM_MESSAGE as u16),
+            "can someone ship this?",
+        )
+        .tags(tags)
+        .sign_with_keys(signer)
+        .expect("signed event")
+    }
+
+    /// Dispatcher mode adds a local `dispatch` rule so unmentioned channel
+    /// messages are admitted; direct mentions still match the mentions rule.
+    #[tokio::test]
+    async fn dispatcher_rules_admit_unmentioned_stream_messages_as_dispatch() {
+        let mut config = build_mcp_servers_tests::test_config();
+        config.subscribe_mode = SubscribeMode::Mentions;
+        config.dispatcher = true;
+        let agent = config.keys.public_key().to_hex();
+        let channel_id = Uuid::new_v4();
+        let human = Keys::generate();
+        let plain = stream_message(&human, &[]);
+        let mentioned = stream_message(&human, &[agent.as_str()]);
+
+        let rules = startup_subscription_rules(&config).expect("dispatcher rules");
+        assert_eq!(rules.len(), 2);
+        assert_eq!(
+            filter::match_event(&plain, channel_id, &rules, &agent)
+                .await
+                .expect("the dispatch rule admits unmentioned messages")
+                .prompt_tag,
+            "dispatch"
+        );
+        assert_eq!(
+            filter::match_event(&mentioned, channel_id, &rules, &agent)
+                .await
+                .expect("mentions still match")
+                .prompt_tag,
+            "@mention"
+        );
+
+        config.dispatcher = false;
+        let rules = startup_subscription_rules(&config).expect("mentions rules");
+        assert_eq!(rules.len(), 1);
+        assert!(
+            filter::match_event(&plain, channel_id, &rules, &agent)
+                .await
+                .is_none(),
+            "without dispatcher mode an unmentioned message is dropped"
+        );
+    }
+
+    /// The listener gate hands non-DM channel events to the dispatcher policy
+    /// and leaves DMs on the ordinary author policy. The scripted NIP-11
+    /// server answers every later `/query` with the same document, which the
+    /// dispatcher reads as "no admins event, no agent profile".
+    #[tokio::test]
+    async fn dispatcher_gate_replaces_author_policy_for_channel_events_only() {
+        let relay_hex = Keys::generate().public_key().to_hex();
+        let agent = Keys::generate().public_key().to_hex();
+        let human = Keys::generate();
+        let human_hex = human.public_key().to_hex();
+        let stranger = Keys::generate();
+        let (rest_client, server) =
+            author_gate_tests::nip11_server(serde_json::json!({ "self": relay_hex })).await;
+        let channel_id = Uuid::new_v4();
+        let dm_id = Uuid::new_v4();
+
+        let policy = DispatcherChannelPolicy {
+            humans: HashSet::from([human_hex.clone()]),
+            ais: HashSet::new(),
+        };
+        let dispatcher = std::sync::Arc::new(dispatcher::DispatcherGate::new(
+            DispatcherConfig::from_channels(HashMap::from([(channel_id, policy)])),
+        ));
+        let mut gate = InboundAuthorGate::connect(&rest_client, &agent, "test")
+            .await
+            .with_dispatcher(Some(dispatcher));
+
+        let channel_info = pool::ChannelInfoResolver::new(
+            HashMap::from([
+                (
+                    channel_id,
+                    relay::ChannelInfo {
+                        name: "general".into(),
+                        channel_type: "stream".into(),
+                        description: None,
+                    },
+                ),
+                (
+                    dm_id,
+                    relay::ChannelInfo {
+                        name: "dm".into(),
+                        channel_type: "dm".into(),
+                        description: None,
+                    },
+                ),
+            ]),
+            rest_client.clone(),
+        );
+        // The human is neither the owner nor a sibling.
+        let owner_cache = OwnerCache::new(Some(Keys::generate().public_key().to_hex()));
+        owner_cache.cache_sibling(human_hex.clone(), false);
+        owner_cache.cache_sibling(stranger.public_key().to_hex(), false);
+        let buzz_event = |channel_id: Uuid, signer: &Keys| relay::BuzzEvent {
+            connection_generation: 0,
+            channel_id,
+            event: stream_message(signer, &[]),
+        };
+
+        let channel = gate
+            .evaluate_listener_event(
+                &buzz_event(channel_id, &human),
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            channel.allowed && !channel.is_dm,
+            "a configured human is admitted in a channel even though owner-only would drop them"
+        );
+        assert_eq!(channel.effective_author, human_hex);
+
+        let dm = gate
+            .evaluate_listener_event(
+                &buzz_event(dm_id, &human),
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            !dm.allowed && dm.is_dm,
+            "DMs keep the ordinary author policy, which drops a non-owner"
+        );
+
+        let open = gate
+            .evaluate_listener_event(
+                &buzz_event(channel_id, &stranger),
+                &RespondTo::Anyone,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            !open.allowed,
+            "the dispatcher policy, not `anyone`, decides channel events"
+        );
+
+        let nobody = gate
+            .evaluate_listener_event(
+                &buzz_event(channel_id, &human),
+                &RespondTo::Nobody,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            !nobody.allowed,
+            "`nobody` remains absolute in dispatcher mode"
+        );
+        server.abort();
     }
 }
 
@@ -10024,6 +10303,8 @@ mod error_outcome_emission_tests {
             agent_owner: None,
             no_base_prompt: false,
             base_prompt_content: None,
+            dispatcher: false,
+            dispatcher_config: config::DispatcherConfig::default(),
         }
     }
 
