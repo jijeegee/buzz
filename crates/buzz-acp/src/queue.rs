@@ -2011,6 +2011,9 @@ pub struct FormatPromptArgs<'a> {
     /// For modern agents (protocol_version >= 2) the section is delivered via
     /// the system role in session/new; omit here to avoid duplication.
     pub agent_canvas: Option<&'a str>,
+    /// Rendered `<channel-roster>` body for legacy agents in dispatcher mode;
+    /// delivered via the system role for modern agents, like the canvas.
+    pub channel_roster: Option<&'a str>,
     /// Set once this session's standing context has already been delivered —
     /// see [`StandingContext`]. Only meaningful for legacy agents; modern
     /// agents are gated by `has_system_prompt_support` regardless.
@@ -2040,12 +2043,14 @@ pub(crate) struct StandingContext<'a> {
     pub agent_core: Option<&'a str>,
     pub huddle_instructions: Option<&'a str>,
     pub agent_canvas: Option<&'a str>,
+    /// Channel members with roles and agent flags — dispatcher mode only.
+    pub channel_roster: Option<&'a str>,
 }
 
 impl StandingContext<'_> {
     /// Render the sections in the order legacy agents have always seen them.
     pub(crate) fn sections(&self) -> Vec<String> {
-        let mut sections = Vec::with_capacity(6);
+        let mut sections = Vec::with_capacity(7);
         if let Some(bp) = self.base_prompt {
             sections.push(base_section(bp));
         }
@@ -2087,6 +2092,13 @@ impl StandingContext<'_> {
                 "channel-canvas",
                 "Channel Canvas",
                 canvas,
+            ));
+        }
+        if let Some(roster) = self.channel_roster {
+            sections.push(crate::prompt_framing::normalize_semantic_section(
+                "channel-roster",
+                "Channel Roster",
+                roster,
             ));
         }
         sections
@@ -2158,6 +2170,7 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
                 agent_core: args.agent_core,
                 huddle_instructions: args.huddle_instructions,
                 agent_canvas: args.agent_canvas,
+                channel_roster: args.channel_roster,
             }
             .sections(),
         );
@@ -2902,6 +2915,27 @@ mod tests {
         // Both the original and new content must survive the merge.
         assert!(prompt.contains("the original task"));
         assert!(prompt.contains("the new message"));
+    }
+
+    #[test]
+    fn standing_context_renders_channel_roster_after_canvas() {
+        let standing = StandingContext {
+            base_prompt: Some("route things"),
+            agent_canvas: Some("canvas body"),
+            channel_roster: Some("Members of this channel (1).\n- Coder (member, agent) pubkey=ab"),
+            ..Default::default()
+        };
+        let sections = standing.sections();
+        assert_eq!(sections.len(), 3);
+        assert!(sections[1].starts_with("<channel-canvas>"));
+        assert_eq!(
+            sections[2],
+            "<channel-roster>\nMembers of this channel (1).\n- Coder (member, agent) pubkey=ab\n</channel-roster>"
+        );
+        assert!(
+            StandingContext::default().sections().is_empty(),
+            "no roster, no section"
+        );
     }
 
     #[test]

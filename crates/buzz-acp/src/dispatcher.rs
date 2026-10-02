@@ -1,4 +1,5 @@
-//! Channel dispatcher mode: the human-only author gate.
+//! Channel dispatcher mode: the human-only author gate and the channel roster
+//! section a dispatcher needs to route requests.
 //!
 //! A dispatcher listens to every non-DM channel it belongs to without being
 //! mentioned, so it must not inherit the normal author policy: the
@@ -29,6 +30,8 @@ const PROFILE_CACHE_TTL: Duration = Duration::from_secs(300);
 const LOOKUP_TIMEOUT: Duration = Duration::from_millis(2000);
 /// Cap on cached entries per table to prevent unbounded growth.
 const CACHE_CAP: usize = 256;
+/// Longest `about` excerpt rendered per roster member.
+const ROSTER_ABOUT_MAX_CHARS: usize = 200;
 
 /// Relay lookups the dispatcher gate depends on. `None` means the lookup
 /// failed (timeout, transport, malformed response) and the gate fails closed;
@@ -335,6 +338,188 @@ impl TrustLookup for RelayLookup<'_> {
             }
         }
     }
+}
+
+// ── channel roster ──────────────────────────────────────────────────────────
+
+/// One channel member as rendered in the `<channel-roster>` section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RosterMember {
+    pub pubkey: String,
+    /// `owner`, `admin`, or `member` (from kind 39001; everyone else is a member).
+    pub role: String,
+    pub name: Option<String>,
+    pub about: Option<String>,
+    /// Shape-only NIP-OA hint from the kind-0 profile (same heuristic as the
+    /// prompt profile lookup) — a routing aid, not a trust decision.
+    pub is_agent: bool,
+}
+
+#[derive(Default)]
+struct RosterProfile {
+    name: Option<String>,
+    about: Option<String>,
+    is_agent: bool,
+}
+
+fn parse_roster_profiles(json: &serde_json::Value) -> HashMap<String, RosterProfile> {
+    let mut profiles = HashMap::new();
+    let Some(events) = json.as_array() else {
+        return profiles;
+    };
+    for ev in events {
+        let (Some(pubkey), Some(content)) = (
+            ev.get("pubkey").and_then(|v| v.as_str()),
+            ev.get("content").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        let Ok(profile) = serde_json::from_str::<serde_json::Value>(content) else {
+            continue;
+        };
+        let text = |key: &str| {
+            profile
+                .get(key)
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        };
+        profiles.insert(
+            pubkey.to_ascii_lowercase(),
+            RosterProfile {
+                name: text("display_name").or_else(|| text("name")),
+                about: text("about"),
+                is_agent: crate::pool::profile_event_is_agent(ev),
+            },
+        );
+    }
+    profiles
+}
+
+/// Fetch the channel's members (39002), roles (39001) and profiles (kind 0)
+/// and render them as the `<channel-roster>` body. `None` when the member
+/// list is unavailable; a missing admins snapshot or profile set degrades to
+/// `member` roles and bare pubkeys rather than failing the turn.
+pub(crate) async fn fetch_channel_roster_section(
+    channel_id: Uuid,
+    agent_pubkey_hex: &str,
+    rest: &RestClient,
+) -> Option<String> {
+    let members = match timeout(LOOKUP_TIMEOUT, rest.fetch_channel_members(channel_id)).await {
+        Ok(Ok(members)) => members,
+        Ok(Err(e)) => {
+            tracing::debug!(channel_id = %channel_id, "roster members lookup failed: {e}");
+            return None;
+        }
+        Err(_) => {
+            tracing::debug!(channel_id = %channel_id, "roster members lookup timed out");
+            return None;
+        }
+    };
+    if members.is_empty() {
+        return None;
+    }
+    let roles = match timeout(LOOKUP_TIMEOUT, rest.fetch_channel_admins(channel_id)).await {
+        Ok(Ok(roles)) => roles,
+        _ => {
+            tracing::debug!(channel_id = %channel_id, "roster admins lookup unavailable — rendering without roles");
+            HashMap::new()
+        }
+    };
+    let authors: Vec<nostr::PublicKey> = members
+        .iter()
+        .filter_map(|pk| nostr::PublicKey::from_hex(pk).ok())
+        .collect();
+    let profiles = if authors.is_empty() {
+        HashMap::new()
+    } else {
+        let filter = nostr::Filter::new()
+            .kind(nostr::Kind::Metadata)
+            .authors(authors);
+        match timeout(LOOKUP_TIMEOUT, rest.query(std::slice::from_ref(&filter))).await {
+            Ok(Ok(json)) => parse_roster_profiles(&json),
+            _ => {
+                tracing::debug!(channel_id = %channel_id, "roster profile lookup unavailable — rendering without names");
+                HashMap::new()
+            }
+        }
+    };
+    let roster: Vec<RosterMember> = members
+        .iter()
+        .map(|pubkey| {
+            let pubkey = pubkey.to_ascii_lowercase();
+            let profile = profiles.get(&pubkey);
+            RosterMember {
+                role: roles
+                    .get(&pubkey)
+                    .cloned()
+                    .unwrap_or_else(|| "member".to_string()),
+                name: profile.and_then(|p| p.name.clone()),
+                about: profile.and_then(|p| p.about.clone()),
+                is_agent: profile.is_some_and(|p| p.is_agent),
+                pubkey,
+            }
+        })
+        .collect();
+    Some(render_channel_roster(&roster, agent_pubkey_hex))
+}
+
+fn role_rank(role: &str) -> u8 {
+    match role {
+        "owner" => 0,
+        "admin" => 1,
+        _ => 2,
+    }
+}
+
+/// Render the roster body: owners and admins first, then by name. Names and
+/// descriptions are untrusted member-supplied text, so they are escaped.
+pub(crate) fn render_channel_roster(members: &[RosterMember], agent_pubkey_hex: &str) -> String {
+    let mut sorted: Vec<&RosterMember> = members.iter().collect();
+    sorted.sort_by_key(|m| {
+        (
+            role_rank(&m.role),
+            m.name.as_deref().unwrap_or("").to_ascii_lowercase(),
+            m.pubkey.clone(),
+        )
+    });
+    let mut body = format!(
+        "Members of this channel ({}). Address an agent with its exact name and pass its pubkey with `--mention`.",
+        members.len()
+    );
+    for member in sorted {
+        let name = member
+            .name
+            .as_deref()
+            .map(collapse_whitespace)
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "(unnamed)".to_string());
+        let kind = if member.is_agent { "agent" } else { "human" };
+        let you = if member.pubkey.eq_ignore_ascii_case(agent_pubkey_hex) {
+            ", you"
+        } else {
+            ""
+        };
+        body.push_str(&format!(
+            "\n- {} ({}, {kind}{you}) pubkey={}",
+            crate::prompt_framing::escape_semantic_text(&name),
+            crate::prompt_framing::escape_semantic_text(&member.role),
+            member.pubkey
+        ));
+        if let Some(about) = member.about.as_deref().map(collapse_whitespace) {
+            if !about.is_empty() {
+                let about: String = about.chars().take(ROSTER_ABOUT_MAX_CHARS).collect();
+                body.push_str(" — ");
+                body.push_str(&crate::prompt_framing::escape_semantic_text(&about));
+            }
+        }
+    }
+    body
+}
+
+fn collapse_whitespace(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -766,5 +951,99 @@ mod tests {
             .sign_with_keys(&keys)
             .unwrap();
         assert_eq!(mentioned_pubkeys(&event), vec![a.to_ascii_lowercase(), b]);
+    }
+
+    #[test]
+    fn roster_renders_roles_names_about_and_agent_flags() {
+        let me = "aa".repeat(32);
+        let members = vec![
+            RosterMember {
+                pubkey: "bb".repeat(32),
+                role: "member".into(),
+                name: Some("Coder".into()),
+                about: Some("  Writes   and\nreviews code ".into()),
+                is_agent: true,
+            },
+            RosterMember {
+                pubkey: "cc".repeat(32),
+                role: "owner".into(),
+                name: Some("Alice <Smith>".into()),
+                about: None,
+                is_agent: false,
+            },
+            RosterMember {
+                pubkey: me.clone(),
+                role: "member".into(),
+                name: Some("Dispatcher".into()),
+                about: None,
+                is_agent: true,
+            },
+            RosterMember {
+                pubkey: "dd".repeat(32),
+                role: "member".into(),
+                name: None,
+                about: None,
+                is_agent: false,
+            },
+        ];
+        let body = render_channel_roster(&members, &me);
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(
+            lines[0],
+            "Members of this channel (4). Address an agent with its exact name and pass its pubkey with `--mention`."
+        );
+        assert_eq!(
+            lines[1],
+            format!(
+                "- Alice &lt;Smith&gt; (owner, human) pubkey={}",
+                "cc".repeat(32)
+            ),
+            "owner first, untrusted name escaped"
+        );
+        assert_eq!(
+            lines[2],
+            format!("- (unnamed) (member, human) pubkey={}", "dd".repeat(32)),
+            "unnamed members sort before named ones by empty name"
+        );
+        assert_eq!(
+            lines[3],
+            format!(
+                "- Coder (member, agent) pubkey={} — Writes and reviews code",
+                "bb".repeat(32)
+            ),
+            "about is whitespace-collapsed"
+        );
+        assert_eq!(
+            lines[4],
+            format!("- Dispatcher (member, agent, you) pubkey={me}"),
+            "the dispatcher is marked as itself"
+        );
+    }
+
+    #[test]
+    fn roster_profiles_parse_display_name_name_about_and_agent_hint() {
+        let json = serde_json::json!([
+            {
+                "pubkey": "AA",
+                "content": "{\"name\":\"coder\",\"display_name\":\"Coder\",\"about\":\"Builds things\"}",
+                "tags": [["auth", "owner", "", "sig"]]
+            },
+            {
+                "pubkey": "bb",
+                "content": "{\"name\":\"alice\",\"about\":\"   \"}",
+                "tags": []
+            },
+            { "pubkey": "cc", "content": "not json", "tags": [] }
+        ]);
+        let profiles = parse_roster_profiles(&json);
+        let coder = &profiles["aa"];
+        assert_eq!(coder.name.as_deref(), Some("Coder"));
+        assert_eq!(coder.about.as_deref(), Some("Builds things"));
+        assert!(coder.is_agent);
+        let alice = &profiles["bb"];
+        assert_eq!(alice.name.as_deref(), Some("alice"));
+        assert_eq!(alice.about, None);
+        assert!(!alice.is_agent);
+        assert!(!profiles.contains_key("cc"));
     }
 }

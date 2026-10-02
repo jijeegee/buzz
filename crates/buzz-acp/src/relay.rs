@@ -298,6 +298,16 @@ pub(crate) fn parse_channel_admin_roles(json: &Value) -> HashMap<String, String>
         .collect()
 }
 
+/// Parse member pubkeys from the newest kind-39002 members event, in tag order.
+pub(crate) fn parse_channel_member_pubkeys(json: &Value) -> Vec<String> {
+    let mut seen = HashSet::new();
+    newest_event_p_tags(json)
+        .into_iter()
+        .map(|(pubkey, _)| pubkey)
+        .filter(|pubkey| seen.insert(pubkey.clone()))
+        .collect()
+}
+
 /// Lightweight HTTP client for pre-prompt context fetches via the Nostr HTTP bridge.
 ///
 /// Extracted from `HarnessRelay` fields so it can be shared (via `Arc`) with
@@ -623,6 +633,20 @@ impl RestClient {
             )])
             .await?;
         Ok(parse_channel_admin_roles(&json))
+    }
+
+    /// Fetch the channel's member pubkeys from its kind-39002 members event.
+    ///
+    /// Returns the newest snapshot's `p` tags in order. Empty when the relay
+    /// has no members event for the channel.
+    pub async fn fetch_channel_members(&self, channel_id: Uuid) -> Result<Vec<String>, RelayError> {
+        let json = self
+            .query(&[addressable_channel_filter(
+                buzz_core::kind::KIND_NIP29_GROUP_MEMBERS,
+                channel_id,
+            )])
+            .await?;
+        Ok(parse_channel_member_pubkeys(&json))
     }
 
     /// Count events via the HTTP bridge: `POST /count` with NIP-98 auth.
@@ -4281,6 +4305,17 @@ mod tests {
         assert_eq!(roles[&admin], "admin");
         assert!(parse_channel_admin_roles(&json!([])).is_empty());
         assert!(parse_channel_admin_roles(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn channel_member_pubkeys_preserve_order_and_dedup() {
+        let a = "aa".repeat(32);
+        let b = "bb".repeat(32);
+        let json = json!([{
+            "created_at": 5,
+            "tags": [["d", "x"], ["p", b, "member"], ["p", a], ["p", b.to_uppercase()], ["e", a]]
+        }]);
+        assert_eq!(parse_channel_member_pubkeys(&json), vec![b, a]);
     }
 
     async fn nip11_test_client(
