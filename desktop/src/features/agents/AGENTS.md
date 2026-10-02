@@ -103,6 +103,15 @@ with a TypeScript lookup table or an id comparison in a component.
    harnesses always keep the field. Gate: `defaults hides model when optional
    harness has empty discovery` (and the failed-discovery counterpart) in
    `onboarding-agent-defaults.spec.ts`.
+   **An optional-model harness never requires a model in Customize either.**
+   The persona Create/Edit "Customize for this agent" section requires the
+   provider+model pair only for provider-selection harnesses (Buzz Agent /
+   Goose — the ones the backend `required_normalized_fields` gate refuses to
+   spawn without it). For every other harness an empty model is the
+   "harness default" choice: Save stays enabled, the picker keeps a blank
+   `HARNESS_DEFAULT_MODEL_OPTION` row above the discovered models so the user
+   can return to it, and spawn omits `BUZZ_ACP_MODEL` so the harness runs on
+   its own configured model. Gate: `agentAiConfigurationPolicy.test.mjs`.
 9. **The defaults modal is progressively disclosed.** An unset global config
    starts on the Buzz Agent-first deployment fallback and carries that visible
    harness into the next saved edit. The `progressive-defaults` disclosure

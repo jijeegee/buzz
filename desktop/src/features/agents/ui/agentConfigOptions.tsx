@@ -137,7 +137,12 @@ const PROVIDER_CREDENTIAL_CONFIG: Partial<
   },
 };
 
-const DEFAULT_MODEL_OPTION: PersonaModelOption = {
+/**
+ * The blank "use the harness's own default" model row. Surfaces whose option
+ * list comes from ACP discovery (which never carries a blank entry) prepend it
+ * for optional-model harnesses so an empty model stays selectable.
+ */
+export const HARNESS_DEFAULT_MODEL_OPTION: PersonaModelOption = {
   id: "",
   label: "Default model",
 };
@@ -156,16 +161,20 @@ const PERSONA_MODEL_OPTIONS_BY_RUNTIME: Record<
   string,
   readonly PersonaModelOption[]
 > = {
-  goose: [DEFAULT_MODEL_OPTION],
-  "buzz-agent": [DEFAULT_MODEL_OPTION],
-  claude: [DEFAULT_MODEL_OPTION],
-  codex: [DEFAULT_MODEL_OPTION],
+  goose: [HARNESS_DEFAULT_MODEL_OPTION],
+  "buzz-agent": [HARNESS_DEFAULT_MODEL_OPTION],
+  claude: [HARNESS_DEFAULT_MODEL_OPTION],
+  codex: [HARNESS_DEFAULT_MODEL_OPTION],
 };
 
 export function getRuntimePersonaModelOptions(
   runtimeId: string,
 ): readonly PersonaModelOption[] {
-  return PERSONA_MODEL_OPTIONS_BY_RUNTIME[runtimeId] ?? [DEFAULT_MODEL_OPTION];
+  return (
+    PERSONA_MODEL_OPTIONS_BY_RUNTIME[runtimeId] ?? [
+      HARNESS_DEFAULT_MODEL_OPTION,
+    ]
+  );
 }
 
 function isKnownLlmProvider(

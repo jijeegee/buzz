@@ -72,7 +72,7 @@ test("incomplete Customize explains why Save remains disabled", () => {
       { provider: "", model: "" },
       false,
     ),
-    "Choose a model to save custom AI configuration.",
+    null,
   );
   assert.equal(
     agentAiConfigurationSubmitBlockReason("defaults", {
@@ -83,7 +83,7 @@ test("incomplete Customize explains why Save remains disabled", () => {
   );
 });
 
-test("Codex/Claude Customize needs only a model, not the hidden provider", () => {
+test("Codex/Claude/Hermes Customize needs neither the hidden provider nor a model", () => {
   // needsProviderSelection=false → the intentionally hidden provider must not
   // gate Save (the create/edit "Save stays disabled" regression).
   assert.equal(
@@ -94,14 +94,16 @@ test("Codex/Claude Customize needs only a model, not the hidden provider", () =>
     ),
     true,
   );
-  // Still needs a model even when the provider is hidden.
+  // An empty model is the harness's own default — the spawn omits
+  // BUZZ_ACP_MODEL and the harness picks (e.g. Hermes config.yaml's model,
+  // which may be a subscription-gated id the discovered picker never lists).
   assert.equal(
     agentAiConfigurationModeSatisfied(
       "custom",
       { provider: "", model: "" },
       false,
     ),
-    false,
+    true,
   );
 });
 

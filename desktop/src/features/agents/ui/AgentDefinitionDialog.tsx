@@ -43,6 +43,7 @@ import {
   getPersonaProviderOptions,
   getProviderApiKeyLabel,
   getRuntimePersonaModelOptions,
+  HARNESS_DEFAULT_MODEL_OPTION,
   NO_RUNTIME_DROPDOWN_VALUE,
   runtimeSupportsLlmProviderSelection,
   type PersonaDropdownOption,
@@ -475,7 +476,12 @@ export function AgentDefinitionDialog({
     aiConfigurationMode === "custom" && runtimeCanChooseLlmProvider;
   const modelFieldVisible =
     runtime.trim().length > 0 || blankRuntimeModelProviderEditable;
-  const isExplicitModelRequired = aiConfigurationMode === "custom";
+  // Only provider-selection harnesses (Buzz Agent / Goose) need an explicit
+  // model in Customize — the backend readiness gate requires the pair for
+  // them. Every other harness owns its default model, so an empty model is a
+  // valid "harness default" choice (see agentAiConfigurationPolicy).
+  const isExplicitModelRequired =
+    aiConfigurationMode === "custom" && runtimeCanChooseLlmProvider;
   const customAiPairSatisfied = agentAiConfigurationModeSatisfied(
     aiConfigurationMode,
     { provider, model },
@@ -586,16 +592,28 @@ export function AgentDefinitionDialog({
       })),
     { label: "Custom provider...", value: CUSTOM_PROVIDER_DROPDOWN_VALUE },
   ];
+  // Discovered (ACP) catalogs carry no blank entry, so an optional-model
+  // harness gets an explicit "Default model" row to pick — and to return to
+  // after choosing a concrete model. Required-model harnesses never offer it.
+  const modelOptionsForDropdown =
+    isExplicitModelRequired ||
+    isRelayMesh ||
+    modelOptions.some((option) => option.id.trim().length === 0)
+      ? modelOptions
+      : [HARNESS_DEFAULT_MODEL_OPTION, ...modelOptions];
   const modelDropdownOptions: PersonaDropdownOption[] =
     buildModelDropdownOptions({
       allowCustom: !isRelayMesh,
       globalModel: undefined,
       loading: modelDiscoveryLoading && discoveredModelOptions === null,
       loadingValue: MODEL_DISCOVERY_LOADING_VALUE,
-      options: modelOptions,
+      options: modelOptionsForDropdown,
     })
       .filter(
-        (option) => isRelayMesh || option.value !== AUTO_MODEL_DROPDOWN_VALUE,
+        (option) =>
+          isRelayMesh ||
+          !isExplicitModelRequired ||
+          option.value !== AUTO_MODEL_DROPDOWN_VALUE,
       )
       .map((option) =>
         isRelayMesh && option.value === AUTO_MODEL_DROPDOWN_VALUE
