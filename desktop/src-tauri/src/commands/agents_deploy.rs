@@ -80,6 +80,9 @@ fn build_launch_block_for_policy(
         crate::managed_agents::acp_agents_value(&descriptor.command, record.parallelism),
     );
     crate::managed_agents::insert_acp_session_policy_env(&mut policy_env, session_policy);
+    // Dispatcher mode follows the default-AI star — same record field, same
+    // decision as the local spawn path, so both launch paths agree.
+    crate::managed_agents::insert_dispatcher_env(&mut policy_env, record.is_default_ai);
 
     if let Some(value) = effective_prompt {
         policy_env.insert("BUZZ_ACP_SYSTEM_PROMPT".into(), value.to_string());
@@ -362,7 +365,31 @@ mod tests {
         assert_eq!(launch["policy_env"]["BUZZ_ACP_MAX_TURN_DURATION"], "23");
         assert_eq!(launch["policy_env"]["BUZZ_ACP_AGENTS"], "4");
         assert_eq!(launch["policy_env"]["BUZZ_ACP_SESSION_POLICY"], "channel");
+        assert!(
+            launch["policy_env"]["BUZZ_ACP_DISPATCHER"].is_null(),
+            "an unstarred agent must not deploy as a dispatcher"
+        );
+        assert!(launch["policy_env"]["BUZZ_ACP_DISPATCHER_CONFIG"].is_null());
         assert_eq!(launch["owner_pubkey"], "owner-hex");
+    }
+
+    #[test]
+    fn launch_block_deploys_the_default_ai_as_a_dispatcher_on_the_default_gate() {
+        let mut record = record();
+        record.is_default_ai = true;
+        let descriptor = EffectiveHarnessDescriptor {
+            command: "goose".into(),
+            args: vec![],
+            env: BTreeMap::new(),
+        };
+
+        let launch = build_launch_block(&record, &descriptor, &[], None, None, "owner-hex");
+
+        assert_eq!(launch["policy_env"]["BUZZ_ACP_DISPATCHER"], "true");
+        assert!(
+            launch["policy_env"]["BUZZ_ACP_DISPATCHER_CONFIG"].is_null(),
+            "phase 1 leaves the harness on its default gate"
+        );
     }
 
     #[test]

@@ -786,6 +786,11 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Resolve once and stamp the same value onto the environment and snapshot.
     let acp_session_policy = super::effective_acp_session_policy(record, &personas);
     super::apply_acp_session_policy_env(&mut command, acp_session_policy);
+    // Dispatcher mode follows the default-AI star. Written after the
+    // `descriptor.env` loop like the session policy (both keys are reserved,
+    // so user env can neither enable nor configure it) and stamped into the
+    // snapshot below from the same record field.
+    super::apply_dispatcher_env(&mut command, record.is_default_ai);
 
     crate::build_identity::apply_demo_config_home(&mut command)?;
     // Publish-first replay floor: written AFTER the `descriptor.env` loop, the
@@ -837,6 +842,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             provider: effective_provider.as_deref(),
             enforced_owner_only: super::owner_only_access_build(),
             session_policy: acp_session_policy,
+            dispatcher: record.is_default_ai,
         },
     );
 

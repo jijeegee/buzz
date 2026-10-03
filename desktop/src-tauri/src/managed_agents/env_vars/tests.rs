@@ -183,6 +183,24 @@ fn reserved_keys_include_desktop_acp_session_policy() {
 }
 
 #[test]
+fn reserved_keys_include_dispatcher_mode_and_its_gate_config() {
+    // Dispatcher mode follows the default-AI star; a saved env var must not be
+    // able to promote an ordinary agent to a router (save-time rejection) or
+    // slip a custom per-channel gate past the desktop (spawn-time strip).
+    for key in ["BUZZ_ACP_DISPATCHER", "BUZZ_ACP_DISPATCHER_CONFIG"] {
+        assert!(is_reserved_env_key(key), "{key} should be reserved");
+    }
+    let agent = map(&[
+        ("BUZZ_ACP_DISPATCHER", "true"),
+        ("buzz_acp_dispatcher_config", "{}"),
+    ]);
+    assert!(merged_user_env(&BTreeMap::new(), &agent).is_empty());
+    let error =
+        validate_user_env_keys(&agent).expect_err("saving a dispatcher key must be rejected");
+    assert!(error.contains("BUZZ_ACP_DISPATCHER"), "got: {error}");
+}
+
+#[test]
 fn reserved_keys_include_code_execution_surface() {
     // The agent/MCP command + args are what Buzz actually exec's.
     // Overriding lets the user run arbitrary code as the agent.

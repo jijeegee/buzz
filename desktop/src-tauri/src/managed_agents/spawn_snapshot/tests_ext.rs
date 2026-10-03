@@ -423,6 +423,45 @@ fn policy_transition_diff(
     )
 }
 
+/// Prospective snapshot for a definition-less record with the default-AI star
+/// set or cleared.
+fn snapshot_with_star(is_default_ai: bool) -> SpawnConfigSnapshot {
+    let mut record = record();
+    record.is_default_ai = is_default_ai;
+    prospective_spawn_config_snapshot(
+        &record,
+        &[],
+        &[],
+        "wss://ws.example",
+        &Default::default(),
+        false,
+    )
+}
+
+#[test]
+fn toggling_the_default_ai_star_while_running_requires_restart() {
+    // The harness reads BUZZ_ACP_DISPATCHER only at launch, so starring or
+    // un-starring a running agent must light exactly the `dispatcher` entry on
+    // the real badge path — and nothing when the star is unchanged.
+    let plain = snapshot_with_star(false);
+    let starred = snapshot_with_star(true);
+
+    let forward = policy_transition_diff(&plain, &starred);
+    assert_eq!(
+        forward.iter().map(|e| e.field.as_str()).collect::<Vec<_>>(),
+        vec!["dispatcher"],
+    );
+    let reverse = policy_transition_diff(&starred, &plain);
+    assert_eq!(
+        reverse.iter().map(|e| e.field.as_str()).collect::<Vec<_>>(),
+        vec!["dispatcher"],
+    );
+    assert!(
+        policy_transition_diff(&starred, &snapshot_with_star(true)).is_empty(),
+        "an unchanged star must not badge"
+    );
+}
+
 #[test]
 fn toggling_session_policy_while_running_requires_restart() {
     // A definition edit must reach the real config-drift path. The harness

@@ -19,6 +19,7 @@ pub(crate) mod config_bridge;
 pub(crate) mod custom_harnesses;
 mod definition_validation;
 mod discovery;
+mod dispatcher_env;
 pub(crate) mod effective_config;
 mod env_vars;
 pub(crate) mod git_bash;
@@ -81,6 +82,7 @@ pub(crate) use definition_validation::{
     validate_managed_agent_definition_text, validate_visible_text,
 };
 pub use discovery::*;
+pub(crate) use dispatcher_env::{apply_dispatcher_env, insert_dispatcher_env};
 pub use env_vars::*;
 #[cfg(windows)]
 pub(crate) use git_bash::git_bash_available;

@@ -80,6 +80,9 @@ pub(crate) struct SpawnConfigInputs<'a> {
     /// boundary; captured here so editing the definition while an agent runs
     /// drives the existing restart-required path.
     pub session_policy: AcpSessionPolicy,
+    /// Whether the launch runs in dispatcher mode (`BUZZ_ACP_DISPATCHER`),
+    /// i.e. whether the record carried the default-AI star at spawn time.
+    pub dispatcher: bool,
 }
 
 /// The effective spawn configuration of one managed-agent process.
@@ -151,6 +154,13 @@ pub(crate) struct SpawnConfigSnapshot {
     /// via layered env), so it must be captured explicitly rather than read back
     /// out of `env`.
     pub session_policy: String,
+    /// Whether this launch ran as a channel dispatcher (`BUZZ_ACP_DISPATCHER`).
+    /// Driven by the record's default-AI star, which the harness reads only at
+    /// launch, so moving or clearing the star while an agent runs raises the
+    /// restart-required badge. Written directly on the spawn `Command` and
+    /// reserved from user env, so it is captured explicitly like
+    /// `session_policy` rather than read back out of `env`.
+    pub dispatcher: bool,
 }
 
 /// The startup effort a spawn actually applied, read from the single effort key
@@ -190,6 +200,7 @@ impl SpawnConfigSnapshot {
             provider,
             enforced_owner_only,
             session_policy,
+            dispatcher,
         } = inputs;
         let (respond_to, respond_to_allowlist) =
             super::projected_access_with_policy(record, enforced_owner_only);
@@ -257,6 +268,7 @@ impl SpawnConfigSnapshot {
             // what launched regardless of which tier supplied the value.
             effort_level: effective_effort(descriptor),
             session_policy: session_policy.as_str().to_string(),
+            dispatcher,
         }
     }
 
@@ -348,6 +360,7 @@ pub(crate) fn prospective_spawn_config_snapshot(
         provider: provider.as_deref(),
         enforced_owner_only,
         session_policy: record.session_policy,
+        dispatcher: record.is_default_ai,
     })
 }
 

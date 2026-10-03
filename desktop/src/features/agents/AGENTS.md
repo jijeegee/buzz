@@ -395,8 +395,22 @@ with a TypeScript lookup table or an id comparison in a component.
     "current default" copy or picks a default on its own. Star controls own one
     accessible name each: the row star is `aria-label="Set as default AI"` with
     `aria-pressed`; the profile menu row uses the labelled Switch. Starring the
-    current default clears the selection (`null`), it does not no-op. Spawn-time
-    consequences (dispatcher env), channel auto-join, and composer preference are
+    current default clears the selection (`null`), it does not no-op.
+    **The star's only spawn consequence is dispatcher mode.** Local spawn
+    (`runtime.rs`, after the `descriptor.env` loop beside the session policy)
+    and remote deploy (`agents_deploy.rs` `policy_env`) both call
+    `managed_agents/dispatcher_env.rs` with `record.is_default_ai`: starred →
+    `BUZZ_ACP_DISPATCHER=true` (clap `bool` spelling, same as
+    `BUZZ_ACP_LAZY_POOL`); unstarred → the key is removed. The desktop never
+    sets `BUZZ_ACP_DISPATCHER_CONFIG` — the harness default gate (channel
+    owner/admin + the agent's owner, no AI authors) is what runs — and both
+    keys are reserved env keys so a saved value can neither promote an
+    ordinary agent to a router nor hand it a custom gate. The dispatcher base
+    prompt is compiled into the harness; the desktop injects nothing beyond the
+    flag, and the persona `BUZZ_ACP_SYSTEM_PROMPT` layers on top as usual.
+    `SpawnConfigSnapshot.dispatcher` captures the same field so moving or
+    clearing the star on a running agent raises the restart badge (`dispatcher`
+    entry, rendered plain). Channel auto-join and composer preference are
     deliberately **not** part of this field; they land as separate changes that
     read the flag.
 

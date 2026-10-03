@@ -67,6 +67,12 @@ pub(crate) const RESERVED_ENV_KEYS: &[&str] = &[
     // threads receive independent ACP sessions.
     "BUZZ_ACP_SESSION_POLICY",
     "BUZZ_ACP_NO_PRESENCE",
+    // Dispatcher mode follows the default-AI star on the record. User env must
+    // not turn an agent the UI shows as ordinary into a channel router, nor
+    // hand a per-channel gate policy to a harness the desktop launched on the
+    // default gate (channel owner/admin + the agent's owner, no AI authors).
+    "BUZZ_ACP_DISPATCHER",
+    "BUZZ_ACP_DISPATCHER_CONFIG",
     // Readiness handoff: desktop is the ONLY readiness source. A saved or
     // ambient env var must not be able to forge setup mode (NotReady) on a
     // Ready agent or suppress it (empty/stale payload) on a NotReady one.

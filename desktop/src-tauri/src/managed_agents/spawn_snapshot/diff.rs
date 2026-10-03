@@ -108,6 +108,7 @@ fn policy_for(path: &str) -> MaskPolicy {
         //   idle_timeout_seconds / max_turn_duration_seconds / parallelism
         //                                       — numeric limits
         //   adapter_availability                — an enum variant name
+        //   dispatcher                          — a boolean (default-AI star)
         _ => MaskPolicy::Plain,
     }
 }
