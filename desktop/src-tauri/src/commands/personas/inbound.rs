@@ -459,6 +459,11 @@ fn validate_inbound_persona_definition(persona: &AgentDefinition) -> Result<(), 
     )
     .map_err(|error| format!("Inbound persona definition is unsafe: {error}"))?;
     crate::managed_agents::validate_agent_description_text(persona.description.as_deref())
+        .map_err(|error| format!("Inbound persona definition is unsafe: {error}"))?;
+    // The definition effort is emitted verbatim into every linked instance's
+    // env (`BUZZ_ACP_EFFORT_LEVEL`) and bypasses the env-var sanitizer, so a
+    // relay-supplied control character or oversize value rejects the event.
+    crate::managed_agents::validate_effort_level_text(persona.effort_level.as_deref())
         .map_err(|error| format!("Inbound persona definition is unsafe: {error}"))
 }
 

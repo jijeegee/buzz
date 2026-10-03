@@ -199,7 +199,7 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
             persona.runtime = runtime;
             persona.model = model;
             persona.provider = provider;
-            apply_persona_effort_level(persona, input.effort_level);
+            apply_persona_effort_level(persona, input.effort_level)?;
             persona.name_pool = input
                 .name_pool
                 .into_iter()

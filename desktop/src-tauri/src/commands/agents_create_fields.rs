@@ -26,8 +26,10 @@ pub(super) fn normalize_relay_mesh(
 
 /// Normalize the create-time thinking effort: trim, treat blank as "adapter
 /// default" (`None`), and refuse an explicit value for a non-local backend —
-/// the same boundary `ensure_effort_change_supported` enforces on update,
-/// because remote effort is set at deploy time via `policy_env`.
+/// the same boundary `ensure_effort_change_supported` enforces on update. The
+/// instance column is a local-only override; a remote instance launches the
+/// effort its definition (or the global default) resolves to, projected into
+/// the deploy `launch.env` by `effort_launch_projection`.
 pub(super) fn normalize_create_effort_level(
     effort_level: Option<&str>,
     backend: &BackendKind,
@@ -37,7 +39,7 @@ pub(super) fn normalize_create_effort_level(
     };
     if backend != &BackendKind::Local {
         return Err(
-            "thinking effort can only be chosen for a local agent; remote effort is set at deploy time"
+            "an instance-level thinking effort can only be chosen for a local agent; a remote instance launches its definition's default effort (or the global default)"
                 .to_string(),
         );
     }

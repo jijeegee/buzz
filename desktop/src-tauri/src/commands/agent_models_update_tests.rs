@@ -83,7 +83,7 @@ fn non_local_set_is_rejected_and_record_not_mutated() {
     let err = apply_record_field_updates(&mut record, None, false, Some(Some("high".to_string())))
         .expect_err("non-local record must reject effort writes");
     assert!(
-        err.contains("remote effort is set at deploy time"),
+        err.contains("an instance-level effort override is local-only"),
         "error must explain why non-local effort writes are rejected: {err}"
     );
     // Column must not be touched — the rejection is before mutation.
@@ -100,7 +100,7 @@ fn non_local_clear_is_rejected_and_record_not_mutated() {
     let mut record = provider_record(false);
     let err = apply_record_field_updates(&mut record, None, false, Some(None))
         .expect_err("non-local record effort clear must also be rejected");
-    assert!(err.contains("remote effort is set at deploy time"));
+    assert!(err.contains("an instance-level effort override is local-only"));
     assert_eq!(
         record.effort_level, None,
         "non-local record column must be unchanged after a rejected clear"

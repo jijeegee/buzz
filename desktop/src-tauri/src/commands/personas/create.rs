@@ -35,8 +35,10 @@ pub async fn create_persona(
         let runtime = trim_optional(input.runtime);
         let model = trim_optional(input.model);
         let provider = trim_optional(input.provider);
-        // Definition-level default; blank = adapter default, like `model`.
+        // Definition-level default; blank = adapter default, like `model`. The
+        // value is emitted verbatim into the child's env, so it is validated.
         let effort_level = trim_optional(input.effort_level);
+        crate::managed_agents::validate_effort_level_text(effort_level.as_deref())?;
         // Normalized before the store is touched: a coordinate that can't match
         // a publication is worse than no coordinate, because it silently
         // re-enables the duplicate add it exists to prevent.

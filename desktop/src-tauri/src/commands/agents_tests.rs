@@ -829,7 +829,7 @@ fn normalize_create_effort_level_maps_blank_and_absent_to_adapter_default() {
 #[test]
 fn normalize_create_effort_level_rejects_explicit_value_for_non_local_backend() {
     // Mirrors `ensure_effort_change_supported` on update: remote effort is set
-    // at deploy time via `policy_env`, so the create boundary refuses it too.
+    // through the deploy launch.env (definition/global default), so the create boundary refuses an instance override too.
     let backend = BackendKind::Provider {
         id: "blox".to_string(),
         config: serde_json::json!({}),

@@ -60,6 +60,36 @@ pub(crate) fn validate_agent_description_text(description: Option<&str>) -> Resu
     validate_visible_text(description, "Description", false)
 }
 
+/// Cap for a thinking-effort level. Adapter option ids are short tokens
+/// (`low`, `medium`, `xhigh`, `max`); anything longer is not a level.
+pub(crate) const MAX_EFFORT_LEVEL_CHARS: usize = 64;
+
+/// Validate a thinking-effort level at every boundary that can write one:
+/// definition create/update, the inbound kind:30175 content, the community
+/// catalog parser, and the global defaults. The value is emitted verbatim into
+/// the child's env (`BUZZ_ACP_EFFORT_LEVEL`) and bypasses the env-var
+/// sanitizer, so NUL and other control characters are rejected here, blank is
+/// rejected (callers normalize blank to "unset" first), and the
+/// [`MAX_EFFORT_LEVEL_CHARS`] cap keeps a relay-supplied blob out of `cmd.env`.
+pub(crate) fn validate_effort_level_text(effort_level: Option<&str>) -> Result<(), String> {
+    let Some(level) = effort_level else {
+        return Ok(());
+    };
+    if level.trim().is_empty() {
+        return Err("Thinking effort must not be blank".to_string());
+    }
+    let level_chars = level.chars().count();
+    if level_chars > MAX_EFFORT_LEVEL_CHARS {
+        return Err(format!(
+            "Thinking effort is too long ({level_chars} characters, max {MAX_EFFORT_LEVEL_CHARS})"
+        ));
+    }
+    if level.chars().any(char::is_control) {
+        return Err("Thinking effort must not contain control characters".to_string());
+    }
+    Ok(())
+}
+
 /// Validate the human-reviewed definition text carried by a managed agent.
 ///
 /// Definition-linked agents resolve their executable prompt through the
@@ -182,6 +212,35 @@ fn is_default_ignorable(character: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn effort_level_accepts_adapter_tokens_and_rejects_unsafe_values() {
+        assert!(validate_effort_level_text(None).is_ok());
+        for level in ["low", "xhigh", "max", "ultra-think_2"] {
+            assert!(validate_effort_level_text(Some(level)).is_ok(), "{level}");
+        }
+        assert!(validate_effort_level_text(Some("")).is_err(), "blank");
+        assert!(
+            validate_effort_level_text(Some("   ")).is_err(),
+            "whitespace"
+        );
+        assert!(validate_effort_level_text(Some("hi\0gh")).is_err(), "NUL");
+        assert!(
+            validate_effort_level_text(Some("high\n")).is_err(),
+            "newline"
+        );
+        assert!(
+            validate_effort_level_text(Some("hi\u{7f}gh")).is_err(),
+            "DEL"
+        );
+        let at_cap = "x".repeat(MAX_EFFORT_LEVEL_CHARS);
+        assert!(validate_effort_level_text(Some(&at_cap)).is_ok(), "at cap");
+        let over_cap = "x".repeat(MAX_EFFORT_LEVEL_CHARS + 1);
+        assert!(
+            validate_effort_level_text(Some(&over_cap)).is_err(),
+            "over cap"
+        );
+    }
 
     #[test]
     fn accepts_plain_multiline_instructions() {

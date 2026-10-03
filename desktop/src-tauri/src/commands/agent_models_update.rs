@@ -45,7 +45,7 @@ fn ensure_effort_change_supported(
 ) -> Result<(), String> {
     if effort_level.is_some() && record.backend != crate::managed_agents::BackendKind::Local {
         return Err(format!(
-            "agent {} is not a local agent; remote effort is set at deploy time",
+            "agent {} is not a local agent; an instance-level effort override is local-only — a remote instance launches its definition's default effort (or the global default)",
             record.pubkey
         ));
     }

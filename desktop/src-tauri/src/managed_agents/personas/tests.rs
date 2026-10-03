@@ -423,3 +423,41 @@ fn fizz_builtin_resolves_to_buzz_agent() {
         "Fizz must resolve to buzz-agent specifically"
     );
 }
+
+/// A persona store written before the definition effort existed must load with
+/// the field unset — no migration, no parse failure, and `into_agent_record`
+/// keeps it unset on the way back to disk.
+#[test]
+fn pre_effort_persona_store_loads_with_effort_unset() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("personas.json");
+    std::fs::write(
+        &path,
+        r#"[{
+            "id": "legacy-1",
+            "display_name": "Legacy",
+            "avatar_url": null,
+            "system_prompt": "Be helpful.",
+            "runtime": "claude",
+            "model": "opus",
+            "is_builtin": false,
+            "is_active": true,
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }]"#,
+    )
+    .unwrap();
+
+    let personas = super::load_personas_from_path(&path).unwrap();
+    assert_eq!(personas.len(), 1);
+    assert_eq!(personas[0].effort_level, None);
+    assert_eq!(personas[0].model.as_deref(), Some("opus"));
+
+    let record = personas[0].clone().into_agent_record();
+    assert_eq!(record.effort_level, None);
+    let json = serde_json::to_string(&record).unwrap();
+    assert!(
+        !json.contains("effort_level"),
+        "unset effort stays off the disk bytes: {json}"
+    );
+}

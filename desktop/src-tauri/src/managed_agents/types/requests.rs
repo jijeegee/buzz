@@ -82,17 +82,22 @@ pub fn apply_persona_behavior(
 /// absent (`None`) = leave the stored default alone, so callers that never
 /// learned the field (team import, profile panel) cannot wipe it; `Some(None)`
 /// = clear back to the adapter default; `Some(value)` = set, trimmed, with a
-/// blank value treated as clear.
+/// blank value treated as clear. A set value passes
+/// `validate_effort_level_text` (no control characters, capped length) because
+/// it is emitted verbatim into the child's env.
 pub fn apply_persona_effort_level(
     record: &mut AgentDefinition,
     effort_level: Option<Option<String>>,
-) {
+) -> Result<(), String> {
     if let Some(next) = effort_level {
-        record.effort_level = next.and_then(|value| {
+        let next = next.and_then(|value| {
             let trimmed = value.trim();
             (!trimmed.is_empty()).then(|| trimmed.to_string())
         });
+        super::super::validate_effort_level_text(next.as_deref())?;
+        record.effort_level = next;
     }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -547,7 +552,7 @@ mod tests {
         // effortLevel and must not wipe the definition default.
         let mut record = record_without_quad();
         record.effort_level = Some("high".to_string());
-        apply_persona_effort_level(&mut record, None);
+        apply_persona_effort_level(&mut record, None).unwrap();
         assert_eq!(record.effort_level.as_deref(), Some("high"));
     }
 
@@ -555,17 +560,34 @@ mod tests {
     fn null_effort_level_clears_to_adapter_default() {
         let mut record = record_without_quad();
         record.effort_level = Some("high".to_string());
-        apply_persona_effort_level(&mut record, Some(None));
+        apply_persona_effort_level(&mut record, Some(None)).unwrap();
         assert_eq!(record.effort_level, None);
     }
 
     #[test]
     fn explicit_effort_level_is_trimmed_and_blank_clears() {
         let mut record = record_without_quad();
-        apply_persona_effort_level(&mut record, Some(Some("  medium \t".to_string())));
+        apply_persona_effort_level(&mut record, Some(Some("  medium \t".to_string()))).unwrap();
         assert_eq!(record.effort_level.as_deref(), Some("medium"));
-        apply_persona_effort_level(&mut record, Some(Some("   ".to_string())));
+        apply_persona_effort_level(&mut record, Some(Some("   ".to_string()))).unwrap();
         assert_eq!(record.effort_level, None);
+    }
+
+    #[test]
+    fn unsafe_effort_level_is_rejected_and_leaves_the_stored_default() {
+        let mut record = record_without_quad();
+        record.effort_level = Some("high".to_string());
+        for unsafe_level in ["lo\0w", "hi\ngh", &"x".repeat(65)] {
+            let error =
+                apply_persona_effort_level(&mut record, Some(Some(unsafe_level.to_string())))
+                    .unwrap_err();
+            assert!(error.contains("Thinking effort"), "{error}");
+            assert_eq!(
+                record.effort_level.as_deref(),
+                Some("high"),
+                "{unsafe_level:?}"
+            );
+        }
     }
 
     #[test]

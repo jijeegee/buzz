@@ -994,3 +994,36 @@ fn shared_transport_redaction_preserves_local_override_but_explicit_stock_resets
     apply_inbound_persona(&mut personas, persona_from_event(&clear).unwrap());
     assert_eq!(personas[0].acp_command, None);
 }
+
+#[test]
+fn inbound_persona_carries_the_definition_effort_onto_the_matched_record() {
+    let mut personas = vec![local_in_app()];
+    let mut inbound = inbound_for(UUID, "Remote");
+    inbound.effort_level = Some("high".to_string());
+    apply_inbound_persona(&mut personas, inbound);
+    assert_eq!(personas[0].effort_level.as_deref(), Some("high"));
+
+    // A later publication that drops the effort clears the local copy too —
+    // the publisher is authoritative for the projected fields.
+    apply_inbound_persona(&mut personas, inbound_for(UUID, "Remote"));
+    assert_eq!(personas[0].effort_level, None);
+}
+
+#[test]
+fn inbound_persona_with_unsafe_effort_is_rejected_before_retention() {
+    let mut inbound = inbound_for(UUID, "Remote");
+    inbound.effort_level = Some("hi\0gh".to_string());
+    let error = validate_inbound_persona_definition(&inbound).unwrap_err();
+    assert!(
+        error.starts_with("Inbound persona definition is unsafe:"),
+        "{error}"
+    );
+
+    let mut oversize = inbound_for(UUID, "Remote");
+    oversize.effort_level = Some("x".repeat(65));
+    assert!(validate_inbound_persona_definition(&oversize).is_err());
+
+    let mut safe = inbound_for(UUID, "Remote");
+    safe.effort_level = Some("xhigh".to_string());
+    validate_inbound_persona_definition(&safe).unwrap();
+}

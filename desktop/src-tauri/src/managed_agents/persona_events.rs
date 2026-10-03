@@ -257,7 +257,11 @@ pub fn persona_from_event(event: &nostr::Event) -> Result<AgentDefinition, Strin
     let created_at = event.created_at.to_human_datetime();
 
     Ok(AgentDefinition {
-        effort_level: content.effort_level,
+        // Blank is "unset" on the wire; unsafe values are rejected by
+        // `validate_inbound_persona_definition` before retention.
+        effort_level: content
+            .effort_level
+            .filter(|level| !level.trim().is_empty()),
         id: d_tag.clone(),
         display_name: content.display_name,
         avatar_url: content.avatar_url,
