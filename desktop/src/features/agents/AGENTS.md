@@ -397,8 +397,10 @@ with a TypeScript lookup table or an id comparison in a component.
     **Runtime tab, Activity group, directly under "Start on launch"**
     (`profile/ui/UserProfilePanelTabs.tsx` `ProfileRuntimeTabContent`,
     `data-testid="user-profile-default-ai"`, one accessible name
-    `aria-label="Default AI"`). `UserProfilePanelSections` passes
-    `onToggleDefaultAi` only for the owner of an eligible managed agent; it is
+    `aria-label="Default AI"`). `UserProfilePanelSections` offers the tab and
+    the row through the pure gates in `profile/lib/profileRuntimeGates.ts`
+    (`shouldShowRuntimeTab`, `defaultAiToggleFor`: owner + eligible managed
+    agent, any backend); the handler is
     `UserProfilePanel.handleToggleAgentDefaultAi`, which goes through
     `useSetDefaultManagedAgentMutation` with `defaultAiSelectionFor` and
     reports the stored result with `defaultAiToggleNotice`. Do **not** put the

@@ -28,6 +28,7 @@ export function AddDefaultAiRow({
   onCheckedChange: (value: boolean) => void;
 }) {
   const switchId = `${idPrefix}-add-default-ai`;
+  const hintId = `${switchId}-hint`;
   const hasDefaultAi = defaultAi !== null;
 
   return (
@@ -45,13 +46,14 @@ export function AddDefaultAiRow({
         >
           Add your default AI
         </label>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground" id={hintId}>
           {defaultAi
             ? `${defaultAi.name} joins ${joinTarget} as a bot`
             : NO_DEFAULT_AI_HINT}
         </p>
       </div>
       <Switch
+        aria-describedby={hintId}
         checked={hasDefaultAi && checked}
         data-testid={switchId}
         disabled={disabled || !hasDefaultAi}

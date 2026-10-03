@@ -1,6 +1,7 @@
 import { Star } from "lucide-react";
 import * as React from "react";
 
+import { cn } from "@/shared/lib/cn";
 import { Switch } from "@/shared/ui/switch";
 
 /**
@@ -29,7 +30,10 @@ export function ProfileDefaultAiRow({
       aria-checked={checked}
       aria-disabled={pending}
       aria-label="Default AI"
-      className="flex min-h-16 cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className={cn(
+        "flex min-h-16 items-center gap-3 px-4 py-3 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        !pending && "cursor-pointer hover:bg-muted/40",
+      )}
       data-testid="user-profile-default-ai"
       onClick={handleToggle}
       onKeyDown={(event) => {

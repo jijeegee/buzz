@@ -47,6 +47,7 @@ test("the row is one labelled switch that mirrors the star", async () => {
   assert.equal(row().getAttribute("aria-checked"), "true");
   assert.equal(row().getAttribute("aria-disabled"), "false");
   assert.equal(row().getAttribute("tabindex"), "0");
+  assert.ok(row().classList.contains("cursor-pointer"));
   assert.ok(row().textContent.includes("Default AI"));
   // The visual switch is decorative; the row carries the accessible name.
   assert.equal(toggle().getAttribute("aria-hidden"), "true");
@@ -90,6 +91,10 @@ test("while an agent action is pending the row ignores toggles and its switch is
 
   assert.equal(row().getAttribute("aria-disabled"), "true");
   assert.equal(toggle().hasAttribute("disabled"), true);
+  // Matches the Start on launch row: no pointer or hover affordance while
+  // the action is in flight.
+  assert.equal(row().classList.contains("cursor-pointer"), false);
+  assert.equal(row().classList.contains("hover:bg-muted/40"), false);
   await act(async () => {
     fireEvent.click(row());
   });

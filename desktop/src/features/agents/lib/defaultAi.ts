@@ -49,8 +49,8 @@ export function findDefaultAi<T extends DefaultAiCandidate>(
 
 /**
  * What a create form submits as `addDefaultAi`: the switch value, forced to
- * `false` whenever no agent is starred (the switch is hidden then, but the
- * stored preference may still be on).
+ * `false` whenever no agent is starred (the row is shown disabled and off
+ * then, but the stored preference may still be on).
  */
 export function resolveAddDefaultAi(
   defaultAi: DefaultAiCandidate | null | undefined,
@@ -71,8 +71,8 @@ export function defaultAiSelectionFor(
 }
 
 /**
- * The one-line confirmation the profile settings menu shows after a
- * successful default-AI toggle.
+ * The one-line toast the Runtime tab's "Default AI" row shows after a
+ * successful toggle.
  */
 export function defaultAiToggleNotice(
   name: string,

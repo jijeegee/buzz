@@ -56,6 +56,12 @@ test("with a starred agent the row is a live switch that names the agent", async
   assert.ok(row().textContent.includes("Scout joins this channel as a bot"));
   assert.equal(switchEl().getAttribute("aria-checked"), "true");
   assert.equal(switchEl().hasAttribute("disabled"), false);
+  // The sub-copy is the switch's accessible description.
+  const hintId = switchEl().getAttribute("aria-describedby");
+  assert.equal(hintId, "create-channel-add-default-ai-hint");
+  assert.ok(
+    document.getElementById(hintId).textContent.includes("Scout joins"),
+  );
 
   await act(async () => {
     fireEvent.click(switchEl());
@@ -75,6 +81,12 @@ test("without a starred agent the row stays visible but disabled, off, and expla
   assert.equal(row().getAttribute("data-default-ai"), "missing");
   assert.ok(row().textContent.includes("Add your default AI"));
   assert.ok(row().textContent.includes(NO_DEFAULT_AI_HINT));
+  assert.ok(
+    document
+      .getElementById(switchEl().getAttribute("aria-describedby"))
+      .textContent.includes(NO_DEFAULT_AI_HINT),
+    "the hint is what the disabled switch is described by",
+  );
   // The stored preference may be on, but the switch mirrors the payload
   // `resolveAddDefaultAi` will send: false.
   assert.equal(switchEl().getAttribute("aria-checked"), "false");

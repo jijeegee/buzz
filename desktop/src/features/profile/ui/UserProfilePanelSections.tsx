@@ -1,7 +1,6 @@
 import * as React from "react";
 import { ChevronDown, ChevronUp, Pencil } from "lucide-react";
 
-import { isDefaultAiEligible } from "@/features/agents/lib/defaultAi";
 import { OtherSetupAgentMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
 import { useIsOtherSetupAgent } from "@/features/agents/useKnownAgentPubkeys";
 import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
@@ -16,6 +15,10 @@ import type { IdentityArchiveActions } from "@/features/identity-archive/hooks";
 import { getPresenceLabel } from "@/features/presence/lib/presence";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import type { ProfileActivityAgent } from "@/features/profile/lib/profileActivityAgent";
+import {
+  defaultAiToggleFor,
+  shouldShowRuntimeTab,
+} from "@/features/profile/lib/profileRuntimeGates";
 import type {
   useFollowMutation,
   useUnfollowMutation,
@@ -227,16 +230,16 @@ export function ProfileSummaryView({
     ...runtimeConfigurationFields,
     ...runtimeSettingsFields,
   ];
-  const showRuntimeTab =
-    isOwner === true &&
-    isBot &&
-    (managedAgent !== undefined ||
-      runtimeConfigurationFields.length > 0 ||
-      runtimeSettingsFields.length > 0 ||
-      instanceBuckets.live.length > 0 ||
-      instanceBuckets.archived.length > 0 ||
-      diagnosticsFields.length > 0 ||
-      canOpenAgentLogs);
+  const showRuntimeTab = shouldShowRuntimeTab({
+    canOpenAgentLogs,
+    diagnosticsFieldCount: diagnosticsFields.length,
+    instanceCount:
+      instanceBuckets.live.length + instanceBuckets.archived.length,
+    isBot,
+    isOwner,
+    managedAgent,
+    runtimeFieldCount: runtimeFields.length,
+  });
   const showDiagnosticsIngress =
     diagnosticsFields.some((field) => field.label !== "Status") ||
     canOpenAgentLogs;
@@ -560,13 +563,11 @@ export function ProfileSummaryView({
                     ) : undefined
                   }
                   needsRestart={managedAgent?.needsRestart ?? false}
-                  onToggleDefaultAi={
-                    isOwner === true &&
-                    managedAgent !== undefined &&
-                    isDefaultAiEligible(managedAgent)
-                      ? handleToggleAgentDefaultAi
-                      : undefined
-                  }
+                  onToggleDefaultAi={defaultAiToggleFor({
+                    handler: handleToggleAgentDefaultAi,
+                    isOwner,
+                    managedAgent,
+                  })}
                   onToggleStartOnLaunch={
                     managedAgent?.backend.type === "local"
                       ? handleToggleAgentAutoStart
