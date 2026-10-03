@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   EFFORT_DEFAULT_DROPDOWN_VALUE,
+  EFFORT_DEFAULT_LABEL,
   EFFORT_FALLBACK_HELPER_TEXT,
+  EFFORT_TEMPLATE_DEFAULT_LABEL,
   effortPickerState,
   effortSelectionToPersistedValue,
+  effortSentinelLabel,
 } from "./effortPicker.ts";
 
 const localBackend = { type: "local" };
@@ -218,4 +221,43 @@ test("the sentinel selection persists as null (clear to adapter default)", () =>
 
 test("a concrete selection persists as its explicit effort level", () => {
   assert.equal(effortSelectionToPersistedValue("high"), "high");
+});
+
+// ── Sentinel label ──────────────────────────────────────────────────────────
+
+test("the sentinel row reads 'Adapter default' unless the surface names the tier it falls back to", () => {
+  const adapter = effortPickerState({
+    backend: localBackend,
+    effortConfigId: undefined,
+    effortOptions: undefined,
+    fallbackValues: fallback,
+    currentEffort: null,
+  });
+  assert.equal(adapter.options[0].label, EFFORT_DEFAULT_LABEL);
+  assert.equal(EFFORT_DEFAULT_LABEL, "Adapter default");
+
+  // A linked instance clearing its own column inherits the template default,
+  // so the row must not promise the adapter default.
+  const linked = effortPickerState({
+    backend: localBackend,
+    effortConfigId: undefined,
+    effortOptions: undefined,
+    fallbackValues: fallback,
+    currentEffort: null,
+    defaultLabel: EFFORT_TEMPLATE_DEFAULT_LABEL,
+  });
+  assert.deepEqual(linked.options[0], {
+    label: "Template default",
+    value: EFFORT_DEFAULT_DROPDOWN_VALUE,
+  });
+  assert.equal(
+    linked.selectValue,
+    EFFORT_DEFAULT_DROPDOWN_VALUE,
+    "the label is presentation only — the sentinel value (and its null persistence) is unchanged",
+  );
+});
+
+test("effortSentinelLabel names the template tier only for a linked instance", () => {
+  assert.equal(effortSentinelLabel(true), EFFORT_TEMPLATE_DEFAULT_LABEL);
+  assert.equal(effortSentinelLabel(false), EFFORT_DEFAULT_LABEL);
 });

@@ -18,6 +18,27 @@ export const EFFORT_DEFAULT_DROPDOWN_VALUE = "__effort_default__";
  */
 export const EFFORT_FALLBACK_HELPER_TEXT = "Options may vary by model.";
 
+/** Default label of the sentinel row — "no explicit effort". */
+export const EFFORT_DEFAULT_LABEL = "Adapter default";
+
+/**
+ * Sentinel label for a linked instance: clearing its own column falls back to
+ * the definition ("template" in the dialogs) default, not straight to the
+ * adapter.
+ */
+export const EFFORT_TEMPLATE_DEFAULT_LABEL = "Template default";
+
+/**
+ * Sentinel label for a surface: a linked instance (`inheritsFromTemplate`)
+ * names the template tier its cleared column falls back to; everything else
+ * clears straight to the adapter default.
+ */
+export function effortSentinelLabel(inheritsFromTemplate: boolean): string {
+  return inheritsFromTemplate
+    ? EFFORT_TEMPLATE_DEFAULT_LABEL
+    : EFFORT_DEFAULT_LABEL;
+}
+
 /**
  * Pure gating + option compute for the effort write control.
  *
@@ -46,6 +67,7 @@ export function effortPickerState({
   effortOptions,
   fallbackValues,
   currentEffort,
+  defaultLabel = EFFORT_DEFAULT_LABEL,
 }: {
   backend: ManagedAgentBackend;
   effortConfigId: string | undefined;
@@ -53,6 +75,12 @@ export function effortPickerState({
   /** `effortThoughtLevel.fallbackValues` of the prospective runtime's catalog entry. */
   fallbackValues: readonly string[] | null | undefined;
   currentEffort: string | null;
+  /**
+   * Label of the sentinel row. Defaults to "Adapter default"; a linked
+   * instance names the tier that clearing its own column actually falls back
+   * to (the definition's `effortLevel`), so the row is not a false promise.
+   */
+  defaultLabel?: string;
 }): {
   visible: boolean;
   options: PersonaDropdownOption[];
@@ -90,7 +118,7 @@ export function effortPickerState({
       : EFFORT_DEFAULT_DROPDOWN_VALUE;
 
   const options: PersonaDropdownOption[] = [
-    { label: "Adapter default", value: EFFORT_DEFAULT_DROPDOWN_VALUE },
+    { label: defaultLabel, value: EFFORT_DEFAULT_DROPDOWN_VALUE },
     ...values.map((option) => ({
       label: option.displayName ?? option.value,
       value: option.value,
