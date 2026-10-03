@@ -516,10 +516,20 @@ export function UserProfilePanel({
 
     const nextIsDefaultAi = !managedAgent.isDefaultAi;
     try {
-      await defaultAiMutation.mutateAsync(
+      const updated = await defaultAiMutation.mutateAsync(
         defaultAiSelectionFor(managedAgent.pubkey, nextIsDefaultAi),
       );
-      toast.success(defaultAiToggleNotice(managedAgent.name, nextIsDefaultAi));
+      // The command returns the whole list; report this agent's stored
+      // state like the auto-start handler does rather than the requested one.
+      const updatedAgent = updated.find(
+        (agent) => agent.pubkey === managedAgent.pubkey,
+      );
+      toast.success(
+        defaultAiToggleNotice(
+          updatedAgent?.name ?? managedAgent.name,
+          updatedAgent?.isDefaultAi ?? nextIsDefaultAi,
+        ),
+      );
     } catch (error) {
       toast.error(
         error instanceof Error

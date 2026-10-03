@@ -392,16 +392,17 @@ with a TypeScript lookup table or an id comparison in a component.
     summary list because starring one agent unstars another. The frontend only
     reads `ManagedAgent.isDefaultAi` (`lib/defaultAi.ts`: `findDefaultAi`,
     `isDefaultAiEligible`, `defaultAiSelectionFor`) and never keeps a rival
-    "current default" copy or picks a default on its own. The only
-    user-reachable control is the labelled "Default AI" Switch in the profile
-    settings menu (`profile/ui/UserProfileAgentActions.tsx`, beside
-    Auto-start), which owns one accessible name (`aria-label="Default AI"`);
-    `ManagedAgentRow`/`AgentGroupRows` are not wired into any route, so they
-    carry no star and must not grow one. Both toggle paths
-    (`UserProfilePanel.handleToggleAgentDefaultAi` and
-    `useManagedAgentActions.handleToggleDefaultAi`) go through
-    `useSetDefaultManagedAgentMutation` and `defaultAiSelectionFor`. Starring
-    the current default clears the selection (`null`), it does not no-op.
+    "current default" copy or picks a default on its own. There is exactly
+    one toggle path: the labelled "Default AI" Switch in the profile settings
+    menu (`profile/ui/UserProfileAgentActions.tsx`, beside Auto-start, one
+    accessible name `aria-label="Default AI"`) calls
+    `UserProfilePanel.handleToggleAgentDefaultAi`, which goes through
+    `useSetDefaultManagedAgentMutation` with `defaultAiSelectionFor` and
+    reports the stored result with `defaultAiToggleNotice`. Do not add a
+    second toggle elsewhere (`useManagedAgentActions` has none;
+    `ManagedAgentRow`/`AgentGroupRows` are not wired into any route and carry
+    no star). Starring the current default clears the selection (`null`), it
+    does not no-op.
     **The star's only spawn consequence is dispatcher mode.** Local spawn
     (`runtime.rs`, after the `descriptor.env` loop beside the session policy)
     and remote deploy (`agents_deploy.rs` `policy_env`) both call

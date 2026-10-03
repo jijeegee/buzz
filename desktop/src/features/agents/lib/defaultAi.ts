@@ -39,8 +39,8 @@ export function defaultAiSelectionFor(
 }
 
 /**
- * The one-line confirmation every default-AI control shows after a successful
- * toggle, so the profile menu and the agents actions hook cannot drift apart.
+ * The one-line confirmation the profile settings menu shows after a
+ * successful default-AI toggle.
  */
 export function defaultAiToggleNotice(
   name: string,
