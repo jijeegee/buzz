@@ -249,6 +249,7 @@ fn serialized_catalog_matches_the_typescript_contract() {
         source_persona_id: "persona-1".into(),
         created_at: 42,
         agent: CatalogAgentProjection {
+            effort_level: None,
             acp_command: Some("buzz-janet-acp".into()),
             display_name: "Ada".into(),
             avatar_url: Some("https://example.com/a.png".into()),
@@ -343,4 +344,38 @@ fn shared_persona_publication_is_portable_and_catalog_readable() {
             "publication must not mutate local state"
         );
     }
+}
+
+#[test]
+fn parser_carries_the_definition_effort_and_rejects_unsafe_values() {
+    let mut content = valid_content("Reviewer");
+    assert_eq!(
+        parse_agent(&content.to_string()).unwrap().effort_level,
+        None,
+        "absent effort projects as None"
+    );
+    content["effort_level"] = serde_json::json!("high");
+    assert_eq!(
+        parse_agent(&content.to_string())
+            .unwrap()
+            .effort_level
+            .as_deref(),
+        Some("high")
+    );
+    content["effort_level"] = serde_json::json!("  ");
+    assert_eq!(
+        parse_agent(&content.to_string()).unwrap().effort_level,
+        None,
+        "blank is unset, not a value"
+    );
+    content["effort_level"] = serde_json::json!("hi\u{0}gh");
+    assert!(
+        parse_agent(&content.to_string()).is_none(),
+        "a control character rejects the entry like an unsafe description"
+    );
+    content["effort_level"] = serde_json::json!("x".repeat(65));
+    assert!(
+        parse_agent(&content.to_string()).is_none(),
+        "oversize rejects the entry"
+    );
 }

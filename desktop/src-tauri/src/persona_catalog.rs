@@ -57,6 +57,11 @@ struct CatalogAgentProjection {
     acp_command: Option<String>,
     model: Option<String>,
     provider: Option<String>,
+    /// Definition-level thinking effort, carried so a copy added from the
+    /// catalog launches with the publisher's default. Omitted while unset so
+    /// the serialized contract is unchanged for publishers without one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effort_level: Option<String>,
     name_pool: Vec<String>,
     respond_to: Option<String>,
     parallelism: Option<u64>,
@@ -246,6 +251,10 @@ fn parse_agent(content: &str) -> Option<CatalogAgentProjection> {
         _ => return None,
     };
     crate::managed_agents::validate_portable_acp_command(acp_command.as_deref()).ok()?;
+    // Same untrusted-boundary policy as the description: an unsafe effort
+    // (control characters, oversize) rejects the whole entry.
+    let effort_level = optional_string(object.get("effort_level"));
+    crate::managed_agents::validate_effort_level_text(effort_level.as_deref()).ok()?;
 
     let respond_to = match object.get("respond_to").and_then(Value::as_str) {
         Some("allowlist") => Some("owner-only".to_string()),
@@ -285,6 +294,7 @@ fn parse_agent(content: &str) -> Option<CatalogAgentProjection> {
         acp_command,
         model: optional_string(object.get("model")),
         provider: optional_string(object.get("provider")),
+        effort_level,
         name_pool,
         respond_to,
         parallelism,

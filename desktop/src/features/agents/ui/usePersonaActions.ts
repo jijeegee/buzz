@@ -326,6 +326,7 @@ export function usePersonaActions() {
             runtime: persona.runtime ?? undefined,
             model: persona.model ?? undefined,
             provider: persona.provider ?? undefined,
+            effortLevel: persona.effortLevel ?? undefined,
             namePool: persona.namePool,
             behavior: {
               respondTo:

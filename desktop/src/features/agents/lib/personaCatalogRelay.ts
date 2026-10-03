@@ -18,6 +18,8 @@ type CatalogAgentProjection = {
   runtime: string | null;
   model: string | null;
   provider: string | null;
+  /** Definition-level thinking effort; Rust omits it while unset. */
+  effortLevel?: string | null;
   namePool: string[];
   respondTo: RespondToMode | null;
   parallelism: number | null;
@@ -80,10 +82,9 @@ function publicationToPersona(
     runtime: publication.agent.runtime,
     model: publication.agent.model,
     provider: publication.agent.provider,
-    // Catalog browsing projects display fields only; a copy added from the
-    // catalog receives the publisher's effort through the inbound kind:30175
-    // content (`persona_from_event`), not through this projection.
-    effortLevel: null,
+    // Carried so "Add" mints the copy with the publisher's default effort —
+    // the copy has a fresh local id, so no later inbound event patches it.
+    effortLevel: publication.agent.effortLevel ?? null,
     namePool: publication.agent.namePool,
     isBuiltIn: false,
     isActive: localPersona?.isActive ?? false,

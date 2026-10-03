@@ -171,3 +171,26 @@ test("test_own_publication_still_resolves_by_local_id", () => {
   assert.equal(personas[0].id, "reviewer");
   assert.equal(personas[0].catalogSource.isOwn, true);
 });
+
+test("the catalog projection carries the publisher's definition effort for Add", () => {
+  // A copy minted from the catalog has a fresh local id, so no later inbound
+  // kind:30175 event ever patches it — the Add payload is the only chance to
+  // carry the publisher's default effort onto the copy.
+  const [withEffort] = catalogPersonasFromPublications(
+    [
+      publication({
+        agent: { ...publication().agent, effortLevel: "high" },
+      }),
+    ],
+    [],
+    BOB,
+  );
+  assert.equal(withEffort.effortLevel, "high");
+
+  const [without] = catalogPersonasFromPublications([publication()], [], BOB);
+  assert.equal(
+    without.effortLevel,
+    null,
+    "absent on the wire → unset, not undefined",
+  );
+});
