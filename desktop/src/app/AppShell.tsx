@@ -90,6 +90,7 @@ import {
 } from "@/features/communities/communityNavigationStorage";
 import { useAddCommunityDialogState } from "@/features/communities/addCommunityPrefill";
 import { useApplyTemplate } from "@/features/channel-templates/useApplyTemplate";
+import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
 import { relayClient } from "@/shared/api/relayClient";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useRelayAutoHeal } from "@/shared/api/useRelayAutoHeal";
@@ -508,6 +509,22 @@ export function AppShell() {
   const createChannelMutation = useCreateChannelMutation(),
     createForumMutation = useCreateChannelMutation();
   const { applyCanvas, applyAgents } = useApplyTemplate();
+  const { attachDefaultAi } = useAttachDefaultAi();
+  // Default-AI attach and template agents both rewrite the channel's
+  // replaceable membership event, so they run in sequence (default AI first)
+  // after navigation; each reports its own failures.
+  const addAgentsAfterCreate = React.useCallback(
+    (
+      channelId: string,
+      templateId: string | undefined,
+      addDefaultAi: boolean,
+    ) =>
+      void (async () => {
+        if (addDefaultAi) await attachDefaultAi(channelId);
+        await applyAgents(templateId, channelId);
+      })(),
+    [applyAgents, attachDefaultAi],
+  );
   const openDmMutation = useOpenDmMutation();
   const hideDmMutation = useHideDmMutation();
   useDmResurfaceFromMessages({
@@ -546,12 +563,14 @@ export function AppShell() {
         visibility,
         ttlSeconds,
         templateId,
+        addDefaultAi = false,
       }: {
         name: string;
         description?: string;
         visibility: ChannelVisibility;
         ttlSeconds?: number;
         templateId?: string;
+        addDefaultAi?: boolean;
       },
       onCreated?: (channelId: string) => void,
     ) => {
@@ -566,9 +585,9 @@ export function AppShell() {
       await applyCanvas(templateId, createdChannel.id, name);
       await goChannel(createdChannel.id);
       onCreated?.(createdChannel.id);
-      void applyAgents(templateId, createdChannel.id);
+      addAgentsAfterCreate(createdChannel.id, templateId, addDefaultAi);
     },
-    [applyAgents, applyCanvas, createChannelMutation, goChannel],
+    [addAgentsAfterCreate, applyCanvas, createChannelMutation, goChannel],
   );
   const handleCreateForum = React.useCallback(
     async ({
@@ -577,12 +596,14 @@ export function AppShell() {
       visibility,
       ttlSeconds,
       templateId,
+      addDefaultAi = false,
     }: {
       name: string;
       description?: string;
       visibility: ChannelVisibility;
       ttlSeconds?: number;
       templateId?: string;
+      addDefaultAi?: boolean;
     }) => {
       const createdForum = await createForumMutation.mutateAsync({
         name,
@@ -594,9 +615,9 @@ export function AppShell() {
 
       await applyCanvas(templateId, createdForum.id, name);
       await goChannel(createdForum.id);
-      void applyAgents(templateId, createdForum.id);
+      addAgentsAfterCreate(createdForum.id, templateId, addDefaultAi);
     },
-    [applyAgents, applyCanvas, createForumMutation, goChannel],
+    [addAgentsAfterCreate, applyCanvas, createForumMutation, goChannel],
   );
 
   // The channel browser can create either a stream or a forum depending on
@@ -608,6 +629,7 @@ export function AppShell() {
       visibility: ChannelVisibility;
       ttlSeconds?: number;
       templateId?: string;
+      addDefaultAi?: boolean;
     }) => {
       if (browseDialogType === "forum") {
         await handleCreateForum(input);

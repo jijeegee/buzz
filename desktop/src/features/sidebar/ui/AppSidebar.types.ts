@@ -59,6 +59,7 @@ export type AppSidebarProps = {
     visibility: ChannelVisibility;
     ttlSeconds?: number;
     templateId?: string;
+    addDefaultAi?: boolean;
   }) => Promise<void>;
   onCreateForum: (input: {
     name: string;
@@ -66,6 +67,7 @@ export type AppSidebarProps = {
     visibility: ChannelVisibility;
     ttlSeconds?: number;
     templateId?: string;
+    addDefaultAi?: boolean;
   }) => Promise<void>;
   onOpenAddCommunity: () => void;
   onSendFeedback?: () => void;

@@ -1,5 +1,9 @@
 import { AgentDefaultsSettingsCard } from "./AgentDefaultsSettingsCard";
 import {
+  setDefaultAiAutoJoin,
+  useDefaultAiAutoJoin,
+} from "@/features/agents/lib/defaultAiPreferences";
+import {
   setKeepMentionedAgentsPinned,
   useKeepMentionedAgentsPinned,
 } from "@/features/messages/lib/autoPinMentionedAgentsPreference";
@@ -15,6 +19,7 @@ import { SettingsSectionHeader } from "./SettingsSectionHeader";
 
 export function AgentsSettingsPanel() {
   const automaticallyMentionAgents = useKeepMentionedAgentsPinned();
+  const addDefaultAiToNewChannels = useDefaultAiAutoJoin();
 
   return (
     <section className="min-w-0" data-testid="settings-agents">
@@ -45,6 +50,29 @@ export function AgentsSettingsPanel() {
               checked={automaticallyMentionAgents}
               id="settings-automatic-agent-mentions-switch"
               onCheckedChange={setKeepMentionedAgentsPinned}
+            />
+          </SettingsOptionRow>
+          <SettingsOptionRow data-testid="settings-default-ai-auto-join">
+            <div className="min-w-0">
+              <label
+                className="font-medium text-foreground"
+                htmlFor="settings-default-ai-auto-join-switch"
+              >
+                Add default AI to new channels
+              </label>
+              <p
+                className="mt-0.5 text-sm text-muted-foreground/70"
+                data-settings-subcopy
+              >
+                Channels, forums, and project channels you create start with
+                your default AI as a bot. Each create form can still opt out.
+              </p>
+            </div>
+            <Switch
+              checked={addDefaultAiToNewChannels}
+              data-testid="settings-default-ai-auto-join-switch"
+              id="settings-default-ai-auto-join-switch"
+              onCheckedChange={setDefaultAiAutoJoin}
             />
           </SettingsOptionRow>
         </SettingsOptionGroup>

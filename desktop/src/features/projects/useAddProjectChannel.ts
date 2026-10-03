@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
 import {
   channelsQueryKey,
   upsertCachedChannel,
@@ -19,6 +20,7 @@ import type { Channel, ChannelVisibility } from "@/shared/api/types";
 import { KIND_PROJECT_ANNOUNCEMENT } from "@/shared/constants/kinds";
 
 export type AddProjectChannelInput = {
+  addDefaultAi?: boolean;
   description?: string;
   name: string;
   ownerControlAgentPubkey?: string;
@@ -40,6 +42,8 @@ export async function addProjectChannel(
       channelId: string,
       channelName: string,
     ) => Promise<void>;
+    /** Never rejects; reports its own failure. Omitted = no default AI step. */
+    attachDefaultAi?: (channelId: string) => Promise<void>;
     createChannel: ReturnType<typeof useCreateChannelMutation>["mutateAsync"];
     deleteChannel?: typeof deleteChannelApi;
     fetchEvents?: typeof relayClient.fetchEvents;
@@ -50,6 +54,7 @@ export async function addProjectChannel(
   const {
     applyAgents,
     applyCanvas,
+    attachDefaultAi,
     createChannel,
     deleteChannel = deleteChannelApi,
     fetchEvents = relayClient.fetchEvents.bind(relayClient),
@@ -159,7 +164,14 @@ export async function addProjectChannel(
   }
 
   await applyCanvas(input.templateId, channel.id, input.name);
-  void applyAgents(input.templateId, channel.id);
+  // Both steps rewrite the channel's replaceable membership event, so they
+  // run in sequence (default AI first) and stay off the mutation's result.
+  void (async () => {
+    if (input.addDefaultAi && attachDefaultAi) {
+      await attachDefaultAi(channel.id);
+    }
+    await applyAgents(input.templateId, channel.id);
+  })();
 
   return {
     channel,
@@ -175,12 +187,14 @@ export function useAddProjectChannelMutation() {
   const queryClient = useQueryClient();
   const createChannelMutation = useCreateChannelMutation();
   const { applyAgents, applyCanvas } = useApplyTemplate();
+  const { attachDefaultAi } = useAttachDefaultAi();
 
   return useMutation({
     mutationFn: (input: AddProjectChannelInput) =>
       addProjectChannel(input, {
         applyAgents,
         applyCanvas,
+        attachDefaultAi,
         createChannel: createChannelMutation.mutateAsync,
       }),
     onSuccess: ({ channel, project }) => {

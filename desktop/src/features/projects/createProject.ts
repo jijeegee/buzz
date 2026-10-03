@@ -34,6 +34,8 @@ export type CreateProjectInput = {
   projectVisibility?: ProjectListingVisibility;
   agents?: readonly CreateChannelManagedAgentInput[];
   templateId?: string;
+  /** Add the starred default AI to the project home as a bot (mutation-side). */
+  addDefaultAi?: boolean;
 };
 
 export type CreateProjectResult = {

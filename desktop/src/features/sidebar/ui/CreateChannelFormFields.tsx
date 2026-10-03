@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { Input } from "@/shared/ui/input";
+import { Switch } from "@/shared/ui/switch";
 import { Textarea } from "@/shared/ui/textarea";
 
 import {
@@ -220,6 +221,32 @@ export function CreateChannelFormFields({
         >
           {selectedTemplateSummary}
         </p>
+      ) : null}
+
+      {form.defaultAi ? (
+        <div
+          className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-input bg-background px-3 py-3"
+          data-testid="create-channel-default-ai-container"
+        >
+          <div className={cn("min-w-0", isCreating && "opacity-50")}>
+            <label
+              className="text-sm font-medium text-foreground"
+              htmlFor="create-channel-add-default-ai"
+            >
+              Add your default AI
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {form.defaultAi.name} joins this {kindLabel} as a bot
+            </p>
+          </div>
+          <Switch
+            checked={form.addDefaultAi}
+            data-testid="create-channel-add-default-ai"
+            disabled={isCreating}
+            id="create-channel-add-default-ai"
+            onCheckedChange={form.setAddDefaultAi}
+          />
+        </div>
       ) : null}
 
       {form.errorMessage ? (

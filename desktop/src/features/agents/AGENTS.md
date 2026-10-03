@@ -421,6 +421,31 @@ with a TypeScript lookup table or an id comparison in a component.
     deliberately **not** part of this field; they land as separate changes that
     read the flag.
 
+21. **The default AI joins channels you create through one attach path.**
+    Every create form (channel/forum dialog and browser via
+    `sidebar/lib/useCreateChannelForm`, project home via
+    `projects/ui/useCreateProjectFormSettings`, project channels via the same
+    channel dialog) shows an "Add your default AI" switch only while
+    `useDefaultAi()` returns a starred agent, seeded from the desktop-local
+    preference `lib/defaultAiPreferences.ts` (localStorage
+    `buzz-default-ai-auto-join`, default on, broken JSON reads as the default;
+    the global switch lives in the Agents settings panel). It is **not** a
+    `GlobalAgentConfig` field — saving that config restarts every local agent.
+    The submitted `addDefaultAi` is `false` whenever no default AI exists.
+    The four creation points (`app/AppShell.tsx` channel + forum handlers,
+    `projects/useCreateProject.ts`, `projects/useAddProjectChannel.ts`) call
+    `useAttachDefaultAi().attachDefaultAi(channelId)` after the channel id is
+    known. That hook is the only path: it reuses
+    `channelAgents.attachManagedAgentToChannel(channelId, { agent, role:
+    "bot", ensureRunning: true })` (membership write, then start only when the
+    agent is not running/deployed), invalidates the same query keys as
+    `useApplyTemplate.applyAgents`, is a no-op without a starred agent, and
+    never rejects — a failure surfaces as `toast.warning`, never silently. It
+    runs **before** template agents in each path because both rewrite the
+    replaceable membership event; do not fire the two concurrently. Do not
+    mint a new agent for this (`applyAgents` is for template personas) and do
+    not auto-join channels the user did not create.
+
 ## Channel-only runtime controls
 
 Desktop observer controls identify a channel, not a thread session. The harness

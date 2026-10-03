@@ -7,11 +7,13 @@ import {
   useTeamsQuery,
 } from "@/features/agents/hooks";
 import { getActivePersonas } from "@/features/agents/lib/catalog";
+import { getDefaultAiAutoJoin } from "@/features/agents/lib/defaultAiPreferences";
 import { resolvePersonaRuntime } from "@/features/agents/lib/resolvePersonaRuntime";
 import {
   getUsableTeams,
   resolveTeamPersonas,
 } from "@/features/agents/lib/teamPersonas";
+import { useDefaultAi } from "@/features/agents/useDefaultAi";
 import { useChannelTemplatesQuery } from "@/features/channel-templates/hooks";
 import {
   PROJECT_HOME_CHANNEL_TEMPLATE,
@@ -91,6 +93,8 @@ export function useCreateProjectFormSettings(
   const runtimesQuery = useAvailableAcpRuntimes({ enabled: active });
   const teamsQuery = useTeamsQuery();
   const templatesQuery = useChannelTemplatesQuery();
+  const { defaultAi } = useDefaultAi();
+  const [addDefaultAi, setAddDefaultAi] = React.useState(getDefaultAiAutoJoin);
   const [channelVisibility, setChannelVisibility] =
     React.useState<ChannelVisibility>("open");
   const [projectVisibility, setProjectVisibility] =
@@ -124,6 +128,7 @@ export function useCreateProjectFormSettings(
     setAgentPersonaId("");
     setTeamId("");
     setTemplateId(PROJECT_HOME_TEMPLATE_ID);
+    setAddDefaultAi(getDefaultAiAutoJoin());
   }, [active]);
 
   React.useEffect(() => {
@@ -185,14 +190,18 @@ export function useCreateProjectFormSettings(
   );
 
   return {
+    /** `false` whenever no default AI exists, whatever the stored preference. */
+    addDefaultAi: defaultAi !== null && addDefaultAi,
     agentPersonaId,
     buildAgents,
     channelVisibility,
+    defaultAi,
     handleTemplateCreated: applyTemplate,
     handleTemplateChange,
     personas,
     projectVisibility,
     runtimesAvailable: runtimesQuery.data.length > 0,
+    setAddDefaultAi,
     setAgentPersonaId,
     setChannelVisibility,
     setProjectVisibility,

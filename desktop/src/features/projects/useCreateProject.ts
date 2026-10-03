@@ -6,6 +6,7 @@ import {
   channelsQueryKey,
   upsertCachedChannel,
 } from "@/features/channels/hooks";
+import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
 import { useApplyTemplate } from "@/features/channel-templates/useApplyTemplate";
 import { type Project, projectsQueryKey } from "@/features/projects/hooks";
 import {
@@ -29,6 +30,7 @@ export type { CreateProjectInput, CreateProjectResult };
 export function useCreateProjectMutation() {
   const queryClient = useQueryClient();
   const { applyAgents, applyCanvas } = useApplyTemplate();
+  const { attachDefaultAi } = useAttachDefaultAi();
   const resumeRef = React.useRef<CreateProjectResumeState>({
     channels: new Map(),
     projectIds: new Set(),
@@ -85,6 +87,9 @@ export function useCreateProjectMutation() {
             applyAgents(input.templateId, channel.id),
           ]);
         }
+        // After the awaited template/requested agents so the membership
+        // writes never race; not awaited so navigation is not held up.
+        if (input.addDefaultAi) void attachDefaultAi(channel.id);
       }
       void queryClient.invalidateQueries({ queryKey: projectsQueryKey });
     },

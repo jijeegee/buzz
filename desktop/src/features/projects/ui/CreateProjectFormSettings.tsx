@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { Switch } from "@/shared/ui/switch";
 import { cn } from "@/shared/lib/cn";
 
 const NONE_AGENT_VALUE = "__none__";
@@ -24,13 +25,16 @@ const SETTINGS_ROW_CLASS =
   "flex min-h-12 items-center justify-between gap-4 rounded-xl border border-input bg-background px-3 py-3";
 
 export function CreateProjectFormSettings({
+  addDefaultAi,
   agentPersonaId,
+  defaultAi,
   disabled,
   handleTemplateChange,
   handleTemplateCreated,
   personas,
   projectVisibility,
   runtimesAvailable,
+  setAddDefaultAi,
   setAgentPersonaId,
   setChannelVisibility,
   setProjectVisibility,
@@ -260,6 +264,32 @@ export function CreateProjectFormSettings({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {defaultAi ? (
+        <div
+          className={SETTINGS_ROW_CLASS}
+          data-testid="create-project-default-ai-container"
+        >
+          <div className={cn("min-w-0", disabled && "opacity-50")}>
+            <label
+              className="text-sm font-medium text-foreground"
+              htmlFor="create-project-add-default-ai"
+            >
+              Add your default AI
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {defaultAi.name} joins the project home as a bot
+            </p>
+          </div>
+          <Switch
+            checked={addDefaultAi}
+            data-testid="create-project-add-default-ai"
+            disabled={disabled}
+            id="create-project-add-default-ai"
+            onCheckedChange={setAddDefaultAi}
+          />
+        </div>
+      ) : null}
     </>
   );
 }

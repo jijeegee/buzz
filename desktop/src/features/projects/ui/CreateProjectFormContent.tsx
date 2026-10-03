@@ -64,6 +64,7 @@ export function CreateProjectFormContent({
         projectVisibility: settings.projectVisibility,
         agents: settings.buildAgents(),
         templateId: settings.templateId,
+        addDefaultAi: settings.addDefaultAi,
       });
       onCreated();
     } catch (error) {

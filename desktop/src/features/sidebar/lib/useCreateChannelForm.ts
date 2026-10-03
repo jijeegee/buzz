@@ -1,8 +1,14 @@
 import * as React from "react";
 
+import { getDefaultAiAutoJoin } from "@/features/agents/lib/defaultAiPreferences";
+import { useDefaultAi } from "@/features/agents/useDefaultAi";
 import { useChannelTemplatesQuery } from "@/features/channel-templates/hooks";
 import { DEFAULT_EPHEMERAL_TTL_SECONDS } from "@/features/channels/lib/ephemeralChannel";
-import type { ChannelTemplate, ChannelVisibility } from "@/shared/api/types";
+import type {
+  ChannelTemplate,
+  ChannelVisibility,
+  ManagedAgent,
+} from "@/shared/api/types";
 
 export type CreateChannelKind = "stream" | "forum";
 
@@ -12,6 +18,11 @@ export type CreateChannelInput = {
   visibility: ChannelVisibility;
   ttlSeconds?: number;
   templateId?: string;
+  /**
+   * Add the starred default AI to the new channel as a bot. Always `false`
+   * when no default AI exists, whatever the stored preference says.
+   */
+  addDefaultAi?: boolean;
 };
 
 type UseCreateChannelFormOptions = {
@@ -41,6 +52,10 @@ export type CreateChannelFormState = {
   setEphemeral: (value: boolean) => void;
   ttlSeconds: number;
   setTtlSeconds: (value: number) => void;
+  /** The starred default AI; the add-default-AI row renders only when set. */
+  defaultAi: ManagedAgent | null;
+  addDefaultAi: boolean;
+  setAddDefaultAi: (value: boolean) => void;
   errorMessage: string | null;
   selectedTemplateId: string | null;
   handleTemplateChange: (templateId: string) => void;
@@ -73,6 +88,8 @@ export function useCreateChannelForm({
   const [ttlSeconds, setTtlSeconds] = React.useState(
     DEFAULT_EPHEMERAL_TTL_SECONDS,
   );
+  const { defaultAi } = useDefaultAi();
+  const [addDefaultAi, setAddDefaultAi] = React.useState(getDefaultAiAutoJoin);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = React.useState<
     string | null
@@ -92,6 +109,7 @@ export function useCreateChannelForm({
     setVisibility("open");
     setEphemeral(false);
     setTtlSeconds(DEFAULT_EPHEMERAL_TTL_SECONDS);
+    setAddDefaultAi(getDefaultAiAutoJoin());
     setErrorMessage(null);
     setSelectedTemplateId(null);
     visibilityTouchedRef.current = false;
@@ -161,6 +179,7 @@ export function useCreateChannelForm({
             visibility,
             ttlSeconds: ephemeral ? ttlSeconds : undefined,
             templateId: selectedTemplateId ?? undefined,
+            addDefaultAi: defaultAi !== null && addDefaultAi,
           });
           onCreated?.();
         } catch (error) {
@@ -173,6 +192,8 @@ export function useCreateChannelForm({
       })();
     },
     [
+      addDefaultAi,
+      defaultAi,
       description,
       ephemeral,
       kindLabel,
@@ -207,6 +228,9 @@ export function useCreateChannelForm({
     setEphemeral,
     ttlSeconds,
     setTtlSeconds,
+    defaultAi,
+    addDefaultAi,
+    setAddDefaultAi,
     errorMessage,
     selectedTemplateId,
     handleTemplateChange,

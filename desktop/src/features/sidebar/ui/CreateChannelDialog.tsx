@@ -29,6 +29,7 @@ type CreateChannelDialogProps = {
     visibility: ChannelVisibility;
     ttlSeconds?: number;
     templateId?: string;
+    addDefaultAi?: boolean;
   }) => Promise<void>;
   testId?: string;
   title?: string;
