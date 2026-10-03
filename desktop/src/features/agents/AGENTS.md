@@ -433,8 +433,11 @@ with a TypeScript lookup table or an id comparison in a component.
     Every create form (channel/forum dialog and browser via
     `sidebar/lib/useCreateChannelForm`, project home via
     `projects/ui/useCreateProjectFormSettings`, project channels via the same
-    channel dialog) shows an "Add your default AI" switch only while
-    `useDefaultAi()` returns a starred agent, seeded from the desktop-local
+    channel dialog) renders the shared `ui/AddDefaultAiRow` ("Add your
+    default AI"): a live switch while `useDefaultAi()` returns a starred
+    agent, otherwise the same row disabled and off with `NO_DEFAULT_AI_HINT`
+    (never hidden — a hidden row made the Agents setting look like a no-op).
+    The switch is seeded from the desktop-local
     preference `lib/defaultAiPreferences.ts` (localStorage
     `buzz-default-ai-auto-join`, default on, broken JSON reads as the default;
     the global switch lives in the Agents settings panel). It is **not** a

@@ -3,6 +3,26 @@ import type { ManagedAgent } from "@/shared/api/types";
 type DefaultAiCandidate = Pick<ManagedAgent, "pubkey" | "isDefaultAi">;
 
 /**
+ * Shown wherever a default-AI affordance has nothing to act on. Names the one
+ * place the star lives (the agent profile's Runtime tab) so the empty state
+ * is a pointer, not a dead end.
+ */
+export const NO_DEFAULT_AI_HINT =
+  "No default AI yet — open an agent's profile and turn on Default AI under Runtime";
+
+/**
+ * One-line status for the Agents settings panel: which agent is starred, or
+ * the hint above when none is.
+ */
+export function defaultAiStatusCopy(
+  defaultAi: Pick<ManagedAgent, "name"> | null,
+): string {
+  return defaultAi
+    ? `Current default AI: ${defaultAi.name}.`
+    : `${NO_DEFAULT_AI_HINT}.`;
+}
+
+/**
  * A key-less definition record has no identity to star. This mirrors the
  * gate in Rust's `set_default_ai` only so the UI can hide the affordance;
  * Rust remains the enforcer and rejects such a request regardless.

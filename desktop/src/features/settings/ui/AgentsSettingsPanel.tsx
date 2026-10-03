@@ -1,8 +1,10 @@
 import { AgentDefaultsSettingsCard } from "./AgentDefaultsSettingsCard";
+import { defaultAiStatusCopy } from "@/features/agents/lib/defaultAi";
 import {
   setDefaultAiAutoJoin,
   useDefaultAiAutoJoin,
 } from "@/features/agents/lib/defaultAiPreferences";
+import { useDefaultAi } from "@/features/agents/useDefaultAi";
 import {
   setKeepMentionedAgentsPinned,
   useKeepMentionedAgentsPinned,
@@ -20,6 +22,7 @@ import { SettingsSectionHeader } from "./SettingsSectionHeader";
 export function AgentsSettingsPanel() {
   const automaticallyMentionAgents = useKeepMentionedAgentsPinned();
   const addDefaultAiToNewChannels = useDefaultAiAutoJoin();
+  const { defaultAi, isLoading: isDefaultAiLoading } = useDefaultAi();
 
   return (
     <section className="min-w-0" data-testid="settings-agents">
@@ -67,6 +70,15 @@ export function AgentsSettingsPanel() {
                 Channels, forums, and project channels you create start with
                 your default AI as a bot. Each create form can still opt out.
               </p>
+              {isDefaultAiLoading ? null : (
+                <p
+                  className="mt-0.5 text-sm text-muted-foreground/70"
+                  data-settings-subcopy
+                  data-testid="settings-default-ai-current"
+                >
+                  {defaultAiStatusCopy(defaultAi)}
+                </p>
+              )}
             </div>
             <Switch
               checked={addDefaultAiToNewChannels}

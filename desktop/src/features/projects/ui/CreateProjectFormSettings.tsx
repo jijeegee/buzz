@@ -1,6 +1,7 @@
 import { ChevronDown, Plus } from "lucide-react";
 import * as React from "react";
 
+import { AddDefaultAiRow } from "@/features/agents/ui/AddDefaultAiRow";
 import { ChannelPermissionsSettings } from "@/features/channels/ui/ChannelPermissionsSettings";
 import type { CreateProjectFormSettingsState } from "@/features/projects/ui/useCreateProjectFormSettings";
 import { TemplateFormDialog } from "@/features/settings/ui/ChannelTemplatesSettingsCard";
@@ -14,7 +15,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import { Switch } from "@/shared/ui/switch";
 import { cn } from "@/shared/lib/cn";
 
 const NONE_AGENT_VALUE = "__none__";
@@ -265,31 +265,14 @@ export function CreateProjectFormSettings({
         </DropdownMenu>
       </div>
 
-      {defaultAi ? (
-        <div
-          className={cn(SETTINGS_ROW_CLASS, disabled && "opacity-50")}
-          data-testid="create-project-default-ai-container"
-        >
-          <div className="min-w-0">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="create-project-add-default-ai"
-            >
-              Add your default AI
-            </label>
-            <p className="text-xs text-muted-foreground">
-              {defaultAi.name} joins the project home as a bot
-            </p>
-          </div>
-          <Switch
-            checked={addDefaultAi}
-            data-testid="create-project-add-default-ai"
-            disabled={disabled}
-            id="create-project-add-default-ai"
-            onCheckedChange={setAddDefaultAi}
-          />
-        </div>
-      ) : null}
+      <AddDefaultAiRow
+        checked={addDefaultAi}
+        defaultAi={defaultAi}
+        disabled={disabled}
+        idPrefix="create-project"
+        joinTarget="the project home"
+        onCheckedChange={setAddDefaultAi}
+      />
     </>
   );
 }
