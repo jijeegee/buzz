@@ -22,7 +22,6 @@ import {
   availableRuntimesForStart,
   buildInstanceInputForDefinition,
   type BackendIntent,
-  type InstanceInputOverrides,
 } from "./lib/instanceInputForDefinition";
 import { useCreatedAgentChannelAttachment } from "./useCreatedAgentChannelAttachment";
 import { classifyAgentManagementOrigin } from "./agentManagementBuffer";
@@ -157,7 +156,6 @@ export function useAgentManagement() {
     input: CreatePersonaInput | UpdatePersonaInput,
     intent: AgentCreateIntent,
     backendIntent: BackendIntent | null,
-    instanceOverrides?: InstanceInputOverrides,
   ): Promise<boolean> {
     if (request?.action !== "create" || "id" in input) {
       return false;
@@ -190,7 +188,6 @@ export function useAgentManagement() {
             runtime,
             undefined,
             backendIntent ?? undefined,
-            instanceOverrides,
           ),
         );
         if (created.spawnError) throw new Error(created.spawnError);

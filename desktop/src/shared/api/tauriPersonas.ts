@@ -17,6 +17,8 @@ export type RawPersona = {
   runtime?: string | null;
   model?: string | null;
   provider?: string | null;
+  /** Definition-level thinking effort; Rust omits it while unset. */
+  effort_level?: string | null;
   name_pool?: string[];
   is_builtin: boolean;
   is_active?: boolean;
@@ -50,6 +52,7 @@ export function fromRawPersona(persona: RawPersona): AgentPersona {
     runtime: persona.runtime ?? null,
     model: persona.model ?? null,
     provider: persona.provider ?? null,
+    effortLevel: persona.effort_level ?? null,
     namePool: persona.name_pool ?? [],
     isBuiltIn: persona.is_builtin,
     isActive: persona.is_active ?? true,
@@ -105,6 +108,7 @@ export async function createPersona(
         runtime: input.runtime,
         model: input.model,
         provider: input.provider,
+        effortLevel: input.effortLevel,
         namePool: input.namePool ?? [],
         envVars: input.envVars ?? {},
         behavior: input.behavior,
@@ -126,6 +130,9 @@ function updatePersonaPayload(input: UpdatePersonaInput) {
     runtime: input.runtime,
     model: input.model,
     provider: input.provider,
+    // Tri-state: `undefined` is dropped from the JSON payload (don't touch),
+    // `null` travels as an explicit clear, a string sets the default.
+    effortLevel: input.effortLevel,
     namePool: input.namePool ?? [],
     // Send envVars only when caller explicitly provided it; omitting
     // tells the backend "don't touch the stored env vars" so editing

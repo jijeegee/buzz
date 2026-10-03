@@ -50,14 +50,8 @@ export function RequestedAgentCreateDialogs() {
               setTargetChannel(null);
             }
           }}
-          onSubmitDefinition={(input, intent, backendIntent, overrides) =>
-            personas.handleSubmit(
-              input,
-              intent,
-              backendIntent,
-              targetChannel,
-              overrides,
-            )
+          onSubmitDefinition={(input, intent, backendIntent) =>
+            personas.handleSubmit(input, intent, backendIntent, targetChannel)
           }
           runtimes={personas.acpRuntimesQuery.data ?? []}
           runtimeCatalogStatus={

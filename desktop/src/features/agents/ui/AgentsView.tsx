@@ -480,14 +480,8 @@ export function AgentsView() {
               onOpenChange={(open) => {
                 if (!open) onRequestClose();
               }}
-              onSubmitDefinition={(input, intent, backendIntent, overrides) =>
-                personas.handleSubmit(
-                  input,
-                  intent,
-                  backendIntent,
-                  null,
-                  overrides,
-                )
+              onSubmitDefinition={(input, intent, backendIntent) =>
+                personas.handleSubmit(input, intent, backendIntent, null)
               }
               runtimes={personas.acpRuntimesQuery.data ?? []}
               runtimeCatalogStatus={

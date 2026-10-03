@@ -21,6 +21,14 @@ export type AgentPersona = {
   model: string | null;
   /** LLM inference provider (e.g. "databricks", "anthropic"). Injected as the runtime's provider env var at spawn time. */
   provider: string | null;
+  /**
+   * Definition-level thinking effort (`effort_level`): the default every
+   * linked instance launches with unless its own `effortLevel` column
+   * overrides it. Set by the effort picker beside the model control for ACP
+   * thought-level harnesses (Claude Code, Codex, Hermes). `null` = adapter
+   * default.
+   */
+  effortLevel: string | null;
   namePool: string[];
   isBuiltIn: boolean;
   isActive: boolean;
@@ -77,6 +85,8 @@ export type CreatePersonaInput = {
   runtime?: string;
   model?: string;
   provider?: string;
+  /** Definition-level thinking effort; omitted/blank = adapter default. */
+  effortLevel?: string;
   namePool?: string[];
   envVars?: Record<string, string>;
   behavior?: PersonaBehaviorInput;
@@ -98,6 +108,12 @@ export type UpdatePersonaInput = {
   runtime?: string;
   model?: string;
   provider?: string;
+  /**
+   * Definition-level thinking effort. Tri-state like the instance column:
+   * absent = don't touch the stored default; `null` = clear back to the
+   * adapter default; `string` = set.
+   */
+  effortLevel?: string | null;
   namePool?: string[];
   envVars?: Record<string, string>;
   behavior?: PersonaBehaviorInput;

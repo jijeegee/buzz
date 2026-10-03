@@ -82,6 +82,7 @@ test("duplicatePersonaDialogState copies persona fields into a new draft", () =>
     runtime: "provider-a",
     model: "model-a",
     provider: null,
+    effortLevel: "high",
     isBuiltIn: false,
     isActive: true,
     createdAt: "2025-01-01T00:00:00Z",
@@ -97,6 +98,7 @@ test("duplicatePersonaDialogState copies persona fields into a new draft", () =>
     runtime: "provider-a",
     model: "model-a",
     provider: undefined,
+    effortLevel: "high",
     namePool: [],
     envVars: {},
   });
@@ -139,6 +141,7 @@ test("editPersonaDialogState preserves the persona id for updates", () => {
     runtime: null,
     model: null,
     provider: null,
+    effortLevel: null,
     isBuiltIn: true,
     isActive: true,
     createdAt: "2025-01-01T00:00:00Z",
@@ -158,6 +161,7 @@ test("editPersonaDialogState preserves the persona id for updates", () => {
     runtime: undefined,
     model: undefined,
     provider: undefined,
+    effortLevel: undefined,
     namePool: [],
     envVars: {},
   });

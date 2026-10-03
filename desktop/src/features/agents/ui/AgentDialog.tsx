@@ -11,10 +11,7 @@ import {
   runLocationForRunOn,
 } from "../lib/agentAccessWarning";
 import { AgentRunLocationProvider } from "./AgentRunLocationContext";
-import type {
-  BackendIntent,
-  InstanceInputOverrides,
-} from "../lib/instanceInputForDefinition";
+import type { BackendIntent } from "../lib/instanceInputForDefinition";
 import type { AgentCreateIntent } from "./agentCreateIntent";
 import type { EditAgentFocusTarget } from "@/features/agents/openEditAgentEvent";
 import { AgentInstanceEditDialog } from "./AgentInstanceEditDialog";
@@ -45,8 +42,6 @@ type AgentDialogCreateProps = {
     input: CreatePersonaInput | UpdatePersonaInput,
     intent: AgentCreateIntent,
     backendIntent: BackendIntent | null,
-    /** Instance-only picks (initial effort) for the started instance. */
-    instanceOverrides?: InstanceInputOverrides,
   ) => Promise<boolean>;
 };
 
@@ -170,12 +165,11 @@ function AgentCreateDialogRouter({
         isPending={isDefinitionPending}
         onDirtyChange={onDirtyChange}
         onOpenChange={onOpenChange}
-        onSubmit={async (input, options) => {
+        onSubmit={async (input) => {
           const submitted = await onSubmitDefinition(
             input,
             "definition_start",
             resolveBackendIntent(runDraft),
-            { effortLevel: options.effortLevel },
           );
           if (submitted) {
             onDirtyChange?.(false);

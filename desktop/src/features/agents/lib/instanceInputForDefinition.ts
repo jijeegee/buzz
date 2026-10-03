@@ -89,17 +89,6 @@ export type BackendIntent = {
 };
 
 /**
- * Instance-only choices the create dialog makes beside the definition fields.
- * `effortLevel` is the initial thinking effort for the new instance's
- * `effort_level` column; it applies to the local mapping only, because the
- * Rust create command rejects an effort for a provider backend (remote effort
- * is deploy-time `policy_env`).
- */
-export type InstanceInputOverrides = {
-  effortLevel?: string;
-};
-
-/**
  * The single definition→instance mapping (Phase 1B.3.5 rows 2–4). Every
  * surface that creates a running instance from a definition builds its
  * CreateManagedAgentInput here so the mapping cannot drift per-site.
@@ -117,13 +106,15 @@ export type InstanceInputOverrides = {
  *   later definition edits made before the first spawn. (Mesh preset env is
  *   the deliberate exception: it is instance-override state, not
  *   definition env.)
+ * - effortLevel is never seeded either: the create dialog's pick is the
+ *   definition's `effortLevel` default, which spawn resolves live beneath the
+ *   instance column, so a later definition edit propagates on restart.
  */
 export async function buildInstanceInputForDefinition(
   persona: AgentPersona,
   runtime: AcpRuntime,
   upload?: UploadMediaBytes,
   backendIntent?: BackendIntent,
-  overrides?: InstanceInputOverrides,
 ): Promise<CreateManagedAgentInput> {
   const avatarUrl = await resolveManagedAgentAvatarUrl(
     persona.avatarUrl,
@@ -169,8 +160,5 @@ export async function buildInstanceInputForDefinition(
     spawnAfterCreate: true,
     startOnAppLaunch: true,
     backend: { type: "local" },
-    // Only an explicit pick travels; absent stays absent so the record column
-    // is "adapter default" rather than an empty string the backend must strip.
-    ...(overrides?.effortLevel ? { effortLevel: overrides.effortLevel } : {}),
   };
 }

@@ -70,6 +70,7 @@ export function duplicatePersonaDialogState(
       runtime: persona.runtime ?? undefined,
       model: persona.model ?? undefined,
       provider: persona.provider ?? undefined,
+      effortLevel: persona.effortLevel ?? undefined,
       // Carry envVars and namePool into the duplicate. Without this, a
       // duplicated persona that relies on an API key in env_vars would
       // silently fail at spawn until the user re-entered every credential.
@@ -135,6 +136,9 @@ export function editPersonaDialogState(
       runtime: persona.runtime ?? undefined,
       model: persona.model ?? undefined,
       provider: persona.provider ?? undefined,
+      // Seeds the effort picker beside the model control; the dialog submits
+      // it tri-state (value / null to clear / absent when not offered).
+      effortLevel: persona.effortLevel ?? undefined,
       // Seed both namePool and envVars from the loaded persona so editing
       // unrelated fields doesn't submit an empty value that wipes them.
       // (Persona update treats Some(empty) as "clear all" intentionally;

@@ -1047,6 +1047,8 @@ type RawPersona = {
   runtime?: string | null;
   model?: string | null;
   provider?: string | null;
+  /** Definition-level thinking effort, like the Rust `effort_level` column. */
+  effort_level?: string | null;
   name_pool?: string[];
   is_builtin: boolean;
   is_active: boolean;
@@ -8989,6 +8991,7 @@ async function handleCreatePersona(args: {
     runtime?: string;
     model?: string;
     provider?: string;
+    effortLevel?: string;
     envVars?: Record<string, string>;
     behavior?: PersonaBehaviorInput;
     catalogSource?: { ownerPubkey: string; personaId: string };
@@ -9005,6 +9008,7 @@ async function handleCreatePersona(args: {
     runtime: args.input.runtime?.trim() || null,
     model: args.input.model?.trim() || null,
     provider: args.input.provider?.trim() || null,
+    effort_level: args.input.effortLevel?.trim() || null,
     is_builtin: false,
     is_active: true,
     shared: false,
@@ -9040,6 +9044,8 @@ type MockUpdatePersonaInput = {
   runtime?: string;
   model?: string;
   provider?: string;
+  /** Tri-state like the Rust request: absent = keep, null = clear, string = set. */
+  effortLevel?: string | null;
   envVars?: Record<string, string>;
   behavior?: PersonaBehaviorInput;
 };
@@ -9075,6 +9081,10 @@ async function applyMockPersonaUpdate(
   persona.runtime = input.runtime?.trim() || null;
   persona.model = input.model?.trim() || null;
   persona.provider = input.provider?.trim() || null;
+  if (input.effortLevel !== undefined) {
+    // Absent = preserve; null/blank = clear; string = set (matches Rust).
+    persona.effort_level = input.effortLevel?.trim() || null;
+  }
   if (input.envVars !== undefined) {
     // Absent = preserve; present = replace entirely (matches Rust handler).
     persona.env_vars = { ...input.envVars };

@@ -63,7 +63,6 @@ import { resolveManagedAgentAvatarUrl } from "./managedAgentAvatar";
 import {
   buildInstanceInputForDefinition,
   type BackendIntent,
-  type InstanceInputOverrides,
 } from "../lib/instanceInputForDefinition";
 
 type PersonaFeedbackSurface = "catalog" | "library";
@@ -178,7 +177,7 @@ export function usePersonaActions() {
     intent?: AgentCreateIntent,
     backendIntent?: BackendIntent | null,
     targetChannel?: Pick<Channel, "id" | "name"> | null,
-    options?: { publishCatalogUpdates?: boolean } & InstanceInputOverrides,
+    options?: { publishCatalogUpdates?: boolean },
   ): Promise<boolean> {
     if (isPersonaSubmitPending) {
       return false;
@@ -243,7 +242,6 @@ export function usePersonaActions() {
           runtime,
           undefined,
           startIntent ?? undefined,
-          { effortLevel: options?.effortLevel },
         );
 
         try {

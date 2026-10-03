@@ -549,6 +549,12 @@ export function useUpdatePersonaMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: personasQueryKey }),
         queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),
+        // The definition's effort/model/provider are tiers of every linked
+        // instance's config surface (and the launch effort the Edit dialog's
+        // picker shows), so refresh them instead of waiting out staleTime.
+        queryClient.invalidateQueries({
+          predicate: (query) => query.queryKey[0] === "agent-config-surface",
+        }),
         // Persona avatar changes re-sync linked agents' relay profiles;
         // invalidate cached user-profile and users-batch queries so the UI
         // picks up the updated kind:0 picture without waiting for staleTime

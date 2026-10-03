@@ -3,22 +3,24 @@
  *
  * The create-time effort travels a long way: `EffortPickerField` (fed by the
  * runtime catalog's `effortThoughtLevel.fallbackValues`, since no session has
- * run yet) → `AgentDefinitionDialog.handleSubmit` →
- * `AgentDefinitionSubmitOptions.effortLevel` → `AgentDialog`'s create router →
- * `usePersonaActions.handleSubmit` → `buildInstanceInputForDefinition(...,
- * overrides)` → `createManagedAgent` → the `create_managed_agent` IPC payload.
- * A hand-written miniature cannot catch a regression at any one of those hops,
- * so these tests mount the real `RequestedAgentCreateDialogs` (the app-level
- * Create entry point, which owns the real `usePersonaActions`), open it through
- * the real `requestOpenCreateAgent` event, drive the REAL effort dropdown and
- * the REAL "Create agent" button, and assert what reaches the mocked IPC
- * boundary:
- *   - a picked effort lands as `input.effortLevel` on `create_managed_agent`;
+ * run yet, paired with the model control by `ModelEffortFields`) →
+ * `AgentDefinitionDialog.handleSubmit` → the `CreatePersonaInput` →
+ * `AgentDialog`'s create router → `usePersonaActions.handleSubmit` →
+ * `createPersona` → the `create_persona` IPC payload. A hand-written
+ * miniature cannot catch a regression at any one of those hops, so these tests
+ * mount the real `RequestedAgentCreateDialogs` (the app-level Create entry
+ * point, which owns the real `usePersonaActions`), open it through the real
+ * `requestOpenCreateAgent` event, drive the REAL effort dropdown and the REAL
+ * "Create agent" button, and assert what reaches the mocked IPC boundary:
+ *   - a picked effort lands as `input.effortLevel` on `create_persona` — the
+ *     definition-level default every linked instance launches with — and is
+ *     NOT copied onto `create_managed_agent`, whose column would freeze it and
+ *     mask every later definition edit;
  *   - an untouched picker sends no `effortLevel` at all (absent, not "").
  *
  * The harness is the global-default Claude Code runtime in "Use defaults"
- * mode, which also pins that effort is offered outside Customize (it is
- * instance state, not part of the provider/model pair).
+ * mode, which also pins that effort is offered outside Customize: it rides
+ * with whatever model choice is shown, inherited defaults included.
  */
 
 import assert from "node:assert/strict";
@@ -98,6 +100,7 @@ function rawPersona(input) {
     runtime: input.runtime ?? null,
     model: input.model ?? null,
     provider: input.provider ?? null,
+    effort_level: input.effortLevel ?? null,
     name_pool: [],
     is_builtin: false,
     is_active: true,
@@ -297,7 +300,13 @@ async function submitCreate() {
     1,
     `Create must dispatch exactly one create_managed_agent (unmocked: ${unmocked.join(", ") || "none"})`,
   );
-  return creates[0].args.input;
+  const personas = ipcCalls.filter((c) => c.cmd === "create_persona");
+  assert.equal(
+    personas.length,
+    1,
+    "Create must dispatch exactly one create_persona",
+  );
+  return { persona: personas[0].args.input, instance: creates[0].args.input };
 }
 
 before(async () => {
@@ -380,7 +389,7 @@ afterEach(() => {
 
 after(() => dom.window.close());
 
-test("Create: a picked effort reaches create_managed_agent as input.effortLevel", async () => {
+test("Create: a picked effort reaches create_persona as the definition default, never the instance column", async () => {
   installIpc();
   const nameInput = await openCreateDialog();
   await act(async () => {
@@ -391,17 +400,22 @@ test("Create: a picked effort reaches create_managed_agent as input.effortLevel"
   // is no discovered option list to pick from.
   await selectEffort("High");
 
-  const input = await submitCreate();
+  const { persona, instance } = await submitCreate();
   assert.equal(
-    input.agentCommand,
+    persona.effortLevel,
+    "high",
+    "the Create pick must travel in the create_persona payload",
+  );
+  assert.equal(
+    instance.agentCommand,
     "claude-cmd",
     "the picked harness is Claude",
   );
-  assert.deepEqual(input.backend, { type: "local" });
+  assert.deepEqual(instance.backend, { type: "local" });
   assert.equal(
-    input.effortLevel,
-    "high",
-    "the Create pick must travel in the create_managed_agent payload",
+    "effortLevel" in instance,
+    false,
+    "the instance column stays unset so the definition default applies at spawn and later edits propagate",
   );
 });
 
@@ -416,12 +430,16 @@ test("Create: an untouched effort picker sends no effortLevel", async () => {
     "the picker is offered (so its absence from the payload is a choice, not a missing control)",
   );
 
-  const input = await submitCreate();
+  const { persona, instance } = await submitCreate();
+  // The mock sees the raw payload object; Tauri's JSON serialization drops
+  // an undefined value, which is the "absent" the Rust request reads as
+  // "adapter default".
   assert.equal(
-    "effortLevel" in input,
-    false,
-    "no pick must mean the key is absent — the record column stays adapter default",
+    persona.effortLevel,
+    undefined,
+    "no pick must mean the key is absent — the definition default stays adapter default",
   );
+  assert.equal("effortLevel" in instance, false);
 });
 
 test("Create: a pick made before saved defaults re-seed a no-effort harness is dropped", async () => {
@@ -452,15 +470,15 @@ test("Create: a pick made before saved defaults re-seed a no-effort harness is d
     "the picker must hide once the seeded harness publishes no effort vocabulary",
   );
 
-  const input = await submitCreate();
+  const { persona, instance } = await submitCreate();
   assert.equal(
-    input.agentCommand,
+    instance.agentCommand,
     "cursor-cmd",
     "the re-seeded harness is Cursor",
   );
   assert.equal(
-    "effortLevel" in input,
-    false,
+    persona.effortLevel,
+    undefined,
     "the pre-re-seed pick must not travel for a harness the picker was hidden for",
   );
 });

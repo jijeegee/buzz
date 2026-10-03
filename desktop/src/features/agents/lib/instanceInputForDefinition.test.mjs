@@ -338,57 +338,27 @@ test("item-13: no runtimes available — refuses with actionable error", () => {
   );
 });
 
-// ── Instance overrides: create-time effort ──────────────────────────────────
+// ── Definition-level effort is never seeded onto the instance ───────────────
 //
-// The create dialog's effort pick is instance state (the record's effort_level
-// column), not a definition field. It rides the local mapping only: the Rust
-// create command rejects an effort for a provider backend.
+// The create dialog's effort pick is the definition's `effortLevel` default,
+// which spawn resolves live beneath the instance column. Copying it onto the
+// instance would freeze it there and mask every later definition edit.
 
-test("effortLevel override lands on the local create input", async () => {
-  const input = await buildInstanceInputForDefinition(
-    persona({ runtime: "claude" }),
-    claudeRuntime,
+test("the instance input never carries an effortLevel, even when the definition has one", async () => {
+  for (const backendIntent of [
     undefined,
-    undefined,
-    { effortLevel: "high" },
-  );
-  assert.equal(input.effortLevel, "high");
-  assert.deepEqual(input.backend, { type: "local" });
-});
-
-test("an absent or blank effortLevel override leaves the key off the create input", async () => {
-  for (const overrides of [
-    undefined,
-    {},
-    { effortLevel: undefined },
-    { effortLevel: "" },
+    { type: "provider", id: "blox", config: {} },
   ]) {
     const input = await buildInstanceInputForDefinition(
-      persona({ runtime: "claude" }),
+      { ...persona({ runtime: "claude" }), effortLevel: "high" },
       claudeRuntime,
       undefined,
-      undefined,
-      overrides,
+      backendIntent,
     );
     assert.equal(
       "effortLevel" in input,
       false,
-      `no explicit pick (${JSON.stringify(overrides)}) must mean "adapter default", not an empty string`,
+      "the instance column must stay unset so the definition default applies at spawn",
     );
   }
-});
-
-test("effortLevel override never reaches a provider-backend create input", async () => {
-  const input = await buildInstanceInputForDefinition(
-    persona({ runtime: "claude" }),
-    claudeRuntime,
-    undefined,
-    { type: "provider", id: "blox", config: {} },
-    { effortLevel: "high" },
-  );
-  assert.equal(
-    "effortLevel" in input,
-    false,
-    "remote effort is deploy-time policy_env; the create command would reject it",
-  );
 });

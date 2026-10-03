@@ -80,6 +80,10 @@ function publicationToPersona(
     runtime: publication.agent.runtime,
     model: publication.agent.model,
     provider: publication.agent.provider,
+    // Catalog browsing projects display fields only; a copy added from the
+    // catalog receives the publisher's effort through the inbound kind:30175
+    // content (`persona_from_event`), not through this projection.
+    effortLevel: null,
     namePool: publication.agent.namePool,
     isBuiltIn: false,
     isActive: localPersona?.isActive ?? false,

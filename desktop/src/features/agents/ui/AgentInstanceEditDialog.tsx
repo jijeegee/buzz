@@ -29,7 +29,7 @@ import { ChooserDialogContent } from "@/shared/ui/chooser-dialog-content";
 import { Dialog } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 import { setManagedAgentAutoRestart } from "@/shared/api/tauriManagedAgents";
-import { EffortPickerField } from "./EffortPickerField";
+import { effortSentinelLabel } from "./effortPicker";
 import { EditAgentAdvancedFields } from "./EditAgentAdvancedFields";
 import {
   ADVANCED_FIELDS_MOTION_TRANSITION,
@@ -1078,9 +1078,24 @@ export function AgentInstanceEditDialog({
                 </div>
               </div>
             ) : null}
-            {/* LLM provider + provider API key + model */}
+            {/* LLM provider + provider API key + model (+ effort companion) */}
             <EditAgentProviderModelFields
               disabled={isSaving}
+              effort={{
+                backend: agent.backend,
+                // Post-switch: options from the prospective runtime's catalog
+                // fallback, value from the stored column (see launchEffortLevel).
+                config: runtimeTouched.current
+                  ? undefined
+                  : configSurfaceQuery.data,
+                defaultLabel: effortSentinelLabel(linkedPersona != null),
+                onChange: (level) => {
+                  effortTouched.current = true;
+                  setEffortLevel(level);
+                },
+                runtime: prospectiveRuntime,
+                value: effortTouched.current ? effortLevel : launchEffortLevel,
+              }}
               llmProviderFieldVisible={llmProviderFieldVisible}
               providerRequired={providerRequired}
               providerDropdownOptions={providerDropdownOptions}
@@ -1110,22 +1125,6 @@ export function AgentInstanceEditDialog({
               model={model}
               onModelChange={setModel}
               modelStatusMessage={modelStatusMessage}
-            />
-
-            <EffortPickerField
-              backend={agent.backend}
-              // Post-switch: options from the prospective runtime's catalog
-              // fallback, value from the stored column (see launchEffortLevel).
-              config={
-                runtimeTouched.current ? undefined : configSurfaceQuery.data
-              }
-              disabled={isSaving}
-              onChange={(level) => {
-                effortTouched.current = true;
-                setEffortLevel(level);
-              }}
-              runtime={prospectiveRuntime}
-              value={effortTouched.current ? effortLevel : launchEffortLevel}
             />
 
             <AgentAiDefaultsNotice

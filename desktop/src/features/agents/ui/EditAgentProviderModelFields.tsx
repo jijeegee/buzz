@@ -8,6 +8,10 @@ import {
   getProviderApiKeyLabel,
   type PersonaDropdownOption,
 } from "./agentConfigOptions";
+import {
+  ModelEffortFields,
+  type ModelEffortCompanion,
+} from "./ModelEffortFields";
 import { PersonaDropdownField } from "./PersonaDropdownField";
 import { PersonaProviderApiKeyField } from "./PersonaProviderApiKeyField";
 
@@ -18,10 +22,12 @@ import { PersonaProviderApiKeyField } from "./PersonaProviderApiKeyField";
  * provider selection, the top-level API-key pseudo-field that appears for
  * secret-requiring providers, and the model picker that depends on the chosen
  * provider. Purely presentational — all state and handlers are owned by the
- * dialog and passed in; the render is byte-identical to the inlined version.
+ * dialog and passed in. The model picker renders through `ModelEffortFields`,
+ * so the thinking-effort companion (`effort`, required) always follows it.
  */
 export function EditAgentProviderModelFields({
   disabled,
+  effort,
   llmProviderFieldVisible,
   providerRequired,
   providerDropdownOptions,
@@ -48,6 +54,8 @@ export function EditAgentProviderModelFields({
   modelStatusMessage,
 }: {
   disabled: boolean;
+  /** Effort companion for the model picker; see `ModelEffortFields`. */
+  effort: ModelEffortCompanion;
   llmProviderFieldVisible: boolean;
   providerRequired: boolean;
   providerDropdownOptions: PersonaDropdownOption[];
@@ -137,55 +145,59 @@ export function EditAgentProviderModelFields({
         />
       ) : null}
 
-      {/* Model */}
-      <div className="space-y-1.5">
-        <label
-          className="text-sm font-medium text-foreground"
-          htmlFor="edit-agent-model"
-        >
-          Model
-          {modelRequired ? (
-            <span className="ml-1 text-destructive" aria-hidden="true">
-              *
-            </span>
-          ) : (
-            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
-          )}
-        </label>
-        <PersonaDropdownField
-          disabled={disabled || modelDiscoveryLoading}
-          id="edit-agent-model"
-          onValueChange={onModelDropdownChange}
-          options={modelDropdownOptions}
-          placeholder="Default model"
-          value={modelSelectValue}
-        />
-        {showCustomModelInput ? (
-          <div
-            className={cn(
-              "mt-2 flex min-h-11 items-center px-3",
-              PERSONA_FIELD_SHELL_CLASS,
-            )}
+      {/* Model + its effort companion */}
+      <ModelEffortFields disabled={disabled} effort={effort}>
+        <div className="space-y-1.5">
+          <label
+            className="text-sm font-medium text-foreground"
+            htmlFor="edit-agent-model"
           >
-            <Input
-              aria-label="Custom model ID"
-              autoCorrect="off"
+            Model
+            {modelRequired ? (
+              <span className="ml-1 text-destructive" aria-hidden="true">
+                *
+              </span>
+            ) : (
+              <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
+            )}
+          </label>
+          <PersonaDropdownField
+            disabled={disabled || modelDiscoveryLoading}
+            id="edit-agent-model"
+            onValueChange={onModelDropdownChange}
+            options={modelDropdownOptions}
+            placeholder="Default model"
+            value={modelSelectValue}
+          />
+          {showCustomModelInput ? (
+            <div
               className={cn(
-                "h-8 px-0 py-0 leading-6",
-                PERSONA_FIELD_CONTROL_CLASS,
+                "mt-2 flex min-h-11 items-center px-3",
+                PERSONA_FIELD_SHELL_CLASS,
               )}
-              disabled={disabled}
-              id="edit-agent-custom-model"
-              onChange={(event) => onModelChange(event.target.value)}
-              placeholder="Custom model ID"
-              value={model}
-            />
-          </div>
-        ) : null}
-        {modelStatusMessage ? (
-          <p className="text-xs text-muted-foreground">{modelStatusMessage}</p>
-        ) : null}
-      </div>
+            >
+              <Input
+                aria-label="Custom model ID"
+                autoCorrect="off"
+                className={cn(
+                  "h-8 px-0 py-0 leading-6",
+                  PERSONA_FIELD_CONTROL_CLASS,
+                )}
+                disabled={disabled}
+                id="edit-agent-custom-model"
+                onChange={(event) => onModelChange(event.target.value)}
+                placeholder="Custom model ID"
+                value={model}
+              />
+            </div>
+          ) : null}
+          {modelStatusMessage ? (
+            <p className="text-xs text-muted-foreground">
+              {modelStatusMessage}
+            </p>
+          ) : null}
+        </div>
+      </ModelEffortFields>
     </>
   );
 }
