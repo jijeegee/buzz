@@ -16,9 +16,11 @@ import { PersonaDropdownField } from "./PersonaDropdownField";
  * Thinking-effort write control, shared by every model-selection surface
  * through `ModelEffortFields`.
  *
- * Local-only by construction: the Rust backend rejects effort writes for
- * non-local backends (remote effort is set at deploy time via `policy_env`). So
- * the control renders only for a local backend AND when it has a vocabulary to
+ * The per-instance override is local-only: the Rust backend rejects an
+ * instance effort write for a non-local backend (a remote instance launches its
+ * definition's or the global default through the deploy `launch.env`). So on an
+ * instance the control renders only for a local backend; a definition or
+ * global surface passes no `backend`. Either way it needs a vocabulary to
  * offer: the running session's advertised `thought_level` option (`config`), or
  * — before any session, after a restart, or for a freshly picked runtime — the
  * prospective runtime's catalog `effortThoughtLevel.fallbackValues`
@@ -35,7 +37,8 @@ import { PersonaDropdownField } from "./PersonaDropdownField";
  * or survive a Cancel/failed Save.
  */
 export type EffortPickerFieldProps = {
-  backend: ManagedAgentBackend;
+  /** The instance's backend; omit on a definition or global-defaults surface. */
+  backend?: ManagedAgentBackend;
   /** Running-session surface, when one is valid for the prospective runtime. */
   config:
     | Pick<RuntimeConfigSurface, "effortConfigId" | "effortOptions">

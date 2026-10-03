@@ -29,12 +29,15 @@ export const EFFORT_DEFAULT_LABEL = "Adapter default";
 export const EFFORT_TEMPLATE_DEFAULT_LABEL = "Template default";
 
 /**
- * Sentinel label for a surface: a linked instance (`inheritsFromTemplate`)
- * names the template tier its cleared column falls back to; everything else
+ * Sentinel label for an instance surface: when the linked template actually
+ * sets an effort, clearing the instance column falls back to it, so the row
+ * names that tier; an unlinked instance or a template without an effort
  * clears straight to the adapter default.
  */
-export function effortSentinelLabel(inheritsFromTemplate: boolean): string {
-  return inheritsFromTemplate
+export function effortSentinelLabel(
+  template: { effortLevel: string | null } | null | undefined,
+): string {
+  return template?.effortLevel != null
     ? EFFORT_TEMPLATE_DEFAULT_LABEL
     : EFFORT_DEFAULT_LABEL;
 }
@@ -58,8 +61,12 @@ export function effortSentinelLabel(inheritsFromTemplate: boolean): string {
  *      before the first session, after a restart, or right after a runtime
  *      switch.
  *
- * `visible` is the single gate the dialogs render on: local backend AND
- * (a discovered `effortConfigId` OR a non-empty fallback list).
+ * `visible` is the single gate every surface renders on: (no instance OR a
+ * local instance) AND (a discovered `effortConfigId` OR a non-empty fallback
+ * list). `backend` is absent on the definition and global-defaults surfaces —
+ * their default applies to every instance, remote ones included, through the
+ * deploy `launch.env` — and present on the instance dialog, where the
+ * per-instance override is local-only.
  */
 export function effortPickerState({
   backend,
@@ -69,7 +76,8 @@ export function effortPickerState({
   currentEffort,
   defaultLabel = EFFORT_DEFAULT_LABEL,
 }: {
-  backend: ManagedAgentBackend;
+  /** The instance's backend; omit for a definition or global default. */
+  backend?: ManagedAgentBackend;
   effortConfigId: string | undefined;
   effortOptions: readonly AcpConfigOptionValue[] | undefined;
   /** `effortThoughtLevel.fallbackValues` of the prospective runtime's catalog entry. */
@@ -90,7 +98,7 @@ export function effortPickerState({
 } {
   const fallback = fallbackValues ?? [];
   const visible =
-    backend.type === "local" &&
+    (backend === undefined || backend.type === "local") &&
     (effortConfigId !== undefined || fallback.length > 0);
 
   const discovered = effortOptions ?? [];

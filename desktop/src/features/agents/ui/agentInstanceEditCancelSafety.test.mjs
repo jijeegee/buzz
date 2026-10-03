@@ -957,7 +957,7 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
   );
   // The stored column ("low") survives a runtime switch and is what the next
   // spawn launches as BUZZ_ACP_EFFORT_LEVEL, so the picker must keep showing it
-  // — never the sentinel or the pre-switch "High" pick.
+  // — never "Adapter default" or the pre-switch "High" pick.
   assert.equal(
     effortTrigger.textContent?.trim(),
     "Low",
@@ -983,7 +983,7 @@ test("after a runtime switch the picker shows the stored column, not the old run
   // > global > …). Here Goose inherits "high" from GOOSE_THINKING_EFFORT in
   // the global env while the stored column is empty. Claude never reads that
   // env knob — it launches only the column — so after switching the picker
-  // must show the sentinel ("Template default" for a linked instance), and an explicit "High" pick must be a real
+  // must show "Adapter default" (the linked template sets no effort), and an explicit "High" pick must be a real
   // change that reaches update_managed_agent (not collapsed as "unchanged"
   // against the stale effective value).
   installEffortIpc();
@@ -1044,7 +1044,7 @@ test("after a runtime switch the picker shows the stored column, not the old run
     dom.window.document
       .getElementById("edit-agent-effort")
       ?.textContent?.trim(),
-    "Template default",
+    "Adapter default",
     "post-switch the picker must show the stored column (empty), not the old runtime's inherited env tier",
   );
 

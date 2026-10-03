@@ -257,7 +257,37 @@ test("the sentinel row reads 'Adapter default' unless the surface names the tier
   );
 });
 
-test("effortSentinelLabel names the template tier only for a linked instance", () => {
-  assert.equal(effortSentinelLabel(true), EFFORT_TEMPLATE_DEFAULT_LABEL);
-  assert.equal(effortSentinelLabel(false), EFFORT_DEFAULT_LABEL);
+test("effortSentinelLabel names the template tier only when the linked template sets an effort", () => {
+  assert.equal(
+    effortSentinelLabel({ effortLevel: "high" }),
+    EFFORT_TEMPLATE_DEFAULT_LABEL,
+  );
+  // A template without an effort of its own: clearing really is adapter default.
+  assert.equal(
+    effortSentinelLabel({ effortLevel: null }),
+    EFFORT_DEFAULT_LABEL,
+  );
+  assert.equal(effortSentinelLabel(null), EFFORT_DEFAULT_LABEL);
+  assert.equal(effortSentinelLabel(undefined), EFFORT_DEFAULT_LABEL);
+});
+
+// ── No instance (definition / global surfaces) ──────────────────────────────
+
+test("without a backend the picker gates on vocabulary alone", () => {
+  // A definition or global default has no instance: its effort applies to
+  // every instance (remote included), so there is no local gate to pass.
+  const withVocabulary = effortPickerState({
+    effortConfigId: undefined,
+    effortOptions: undefined,
+    fallbackValues: fallback,
+    currentEffort: null,
+  });
+  assert.equal(withVocabulary.visible, true);
+  const withoutVocabulary = effortPickerState({
+    effortConfigId: undefined,
+    effortOptions: undefined,
+    fallbackValues: [],
+    currentEffort: null,
+  });
+  assert.equal(withoutVocabulary.visible, false);
 });

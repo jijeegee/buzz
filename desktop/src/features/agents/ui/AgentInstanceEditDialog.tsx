@@ -1088,7 +1088,7 @@ export function AgentInstanceEditDialog({
                 config: runtimeTouched.current
                   ? undefined
                   : configSurfaceQuery.data,
-                defaultLabel: effortSentinelLabel(linkedPersona != null),
+                defaultLabel: effortSentinelLabel(linkedPersona),
                 onChange: (level) => {
                   effortTouched.current = true;
                   setEffortLevel(level);

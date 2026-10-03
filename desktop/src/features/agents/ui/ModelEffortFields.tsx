@@ -21,8 +21,9 @@ export type ModelEffortCompanion = Omit<EffortPickerFieldProps, "disabled">;
  * pairing is what keeps a new model surface from shipping without effort.
  *
  * The companion still decides its own visibility through `effortPickerState`
- * (local backend AND a vocabulary: the running session's `thought_level`
- * option or the runtime catalog's `effortThoughtLevel.fallbackValues`), so a
+ * (no instance or a local one, AND a vocabulary: the running session's
+ * `thought_level` option or the runtime catalog's
+ * `effortThoughtLevel.fallbackValues`), so a
  * harness without an ACP effort option (Goose, buzz-agent, custom) shows only
  * the model control. `effort: null` means the surface has no model selection
  * to pair with (nothing chosen yet) and renders the children alone.

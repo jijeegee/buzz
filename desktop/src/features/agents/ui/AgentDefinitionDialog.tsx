@@ -11,6 +11,7 @@ import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
 import { AgentCreationPreview } from "./AgentCreationPreview";
 import { AgentIdentityFields } from "./AgentDescriptionField";
+import { effortPickerState } from "./effortPicker";
 import { ModelEffortFields } from "./ModelEffortFields";
 import { PersonaDropdownField } from "./PersonaDropdownField";
 import type { EnvVarsValue } from "./EnvVarsEditor";
@@ -379,10 +380,16 @@ export function AgentDefinitionDialog({
       ),
     };
     // Effort travels only when its picker was actually offered: the field is
-    // paired with the model control AND the harness publishes a catalog
-    // `effortThoughtLevel` (the vocabulary gate inside `effortPickerState`).
+    // paired with the model control AND `effortPickerState` — the one gate
+    // the picker itself renders on — has a vocabulary for this harness.
     const effortOffered =
-      effortFieldVisible && selectedRuntime?.effortThoughtLevel != null;
+      effortFieldVisible &&
+      effortPickerState({
+        effortConfigId: undefined,
+        effortOptions: undefined,
+        fallbackValues: selectedRuntime?.effortThoughtLevel?.fallbackValues,
+        currentEffort: effortLevel,
+      }).visible;
     if ("id" in initialValues) {
       // Tri-state like the instance column. An offered picker submits its
       // value (null clears to the adapter default). A hidden picker clears
@@ -517,9 +524,11 @@ export function AgentDefinitionDialog({
     runtime.trim().length > 0 || blankRuntimeModelProviderEditable;
   // Effort is the model choice's companion: offered wherever a model is
   // chosen — Create and Edit, in BOTH "Use defaults" and "Customize" — as the
-  // definition-level default every linked instance launches with (and a
-  // remote deploy projects into `policy_env`), so no Run-on gate applies. The
-  // field itself stays hidden for runtimes whose catalog entry publishes no
+  // definition-level default every linked instance launches with. That default
+  // reaches remote instances too (the deploy `launch.env` carries the same
+  // projection as a local spawn), so no Run-on gate applies; only the
+  // per-instance override in the instance dialog is local-only. The field
+  // itself stays hidden for runtimes whose catalog entry publishes no
   // effortThoughtLevel (Goose, buzz-agent, most presets, custom).
   const effortFieldVisible = modelFieldVisible;
   // Only provider-selection harnesses (Buzz Agent / Goose) need an explicit
@@ -952,10 +961,8 @@ export function AgentDefinitionDialog({
             effort={
               effortFieldVisible
                 ? {
-                    // A definition has no backend; its default applies to
-                    // every instance, so the picker's local gate is satisfied
-                    // by construction.
-                    backend: { type: "local" },
+                    // No `backend`: a definition has no instance, and its
+                    // default applies to every instance it mints.
                     config: undefined,
                     id: "persona-effort",
                     onChange: (level) => {

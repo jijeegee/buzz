@@ -190,3 +190,22 @@ test("the companion shows the current effort, honours the surface's sentinel lab
     `the stored effort preselects its option; got "${seeded.effort.textContent}"`,
   );
 });
+
+test("a definition or global surface passes no backend and gates on vocabulary alone", async () => {
+  const { effort } = await mount({
+    effort: effortFor({ backend: undefined }),
+  });
+  assert.ok(
+    effort,
+    "no instance → no local gate; the catalog vocabulary is enough",
+  );
+  cleanup();
+  const bare = await mount({
+    effort: effortFor({ backend: undefined, runtime: gooseRuntime }),
+  });
+  assert.equal(
+    bare.effort,
+    null,
+    "…but still nothing to pick without a vocabulary",
+  );
+});
