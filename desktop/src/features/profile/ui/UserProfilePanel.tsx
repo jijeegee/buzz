@@ -31,7 +31,10 @@ import {
   buildInstanceInputForDefinition,
   resolveStartRuntimeForDefinition,
 } from "@/features/agents/lib/instanceInputForDefinition";
-import { defaultAiSelectionFor } from "@/features/agents/lib/defaultAi";
+import {
+  defaultAiSelectionFor,
+  defaultAiToggleNotice,
+} from "@/features/agents/lib/defaultAi";
 import { describeLogFile } from "@/features/agents/ui/agentUi";
 import { useAgentLifecycleActions } from "@/features/profile/ui/useAgentLifecycleActions";
 import {
@@ -516,11 +519,7 @@ export function UserProfilePanel({
       await defaultAiMutation.mutateAsync(
         defaultAiSelectionFor(managedAgent.pubkey, nextIsDefaultAi),
       );
-      toast.success(
-        nextIsDefaultAi
-          ? `${managedAgent.name} is now your default AI.`
-          : `${managedAgent.name} is no longer your default AI.`,
-      );
+      toast.success(defaultAiToggleNotice(managedAgent.name, nextIsDefaultAi));
     } catch (error) {
       toast.error(
         error instanceof Error

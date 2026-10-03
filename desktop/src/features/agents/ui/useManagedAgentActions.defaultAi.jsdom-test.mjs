@@ -145,8 +145,9 @@ test("un-starring the current default clears the selection with null", async () 
   const scout = latest.managedAgents.find((agent) => agent.pubkey === STARRED);
   assert.equal(scout.isDefaultAi, true, "fixture starts starred");
 
-  // The row toggles with `!agent.isDefaultAi`, so the starred agent asks
-  // for `false`, which must become a `null` selection, not a re-star.
+  // The profile switch toggles with `!agent.isDefaultAi`, so the starred
+  // agent asks for `false`, which must become a `null` selection, not a
+  // re-star.
   await act(async () => {
     await latest.handleToggleDefaultAi(scout.pubkey, !scout.isDefaultAi);
   });

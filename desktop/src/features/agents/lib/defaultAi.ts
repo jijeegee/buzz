@@ -37,3 +37,16 @@ export function defaultAiSelectionFor(
 ): string | null {
   return isDefaultAi ? pubkey : null;
 }
+
+/**
+ * The one-line confirmation every default-AI control shows after a successful
+ * toggle, so the profile menu and the agents actions hook cannot drift apart.
+ */
+export function defaultAiToggleNotice(
+  name: string,
+  isDefaultAi: boolean,
+): string {
+  return isDefaultAi
+    ? `${name} is now your default AI.`
+    : `${name} is no longer your default AI.`;
+}

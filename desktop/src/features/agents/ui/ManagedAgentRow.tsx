@@ -1,9 +1,8 @@
 import * as React from "react";
 
-import { AlertTriangle, ChevronDown, ChevronRight, Star } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
-import { isDefaultAiEligible } from "@/features/agents/lib/defaultAi";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import { Badge } from "@/shared/ui/badge";
 import { AgentStatusBadge } from "@/features/agents/ui/AgentStatusBadge";
@@ -39,7 +38,6 @@ export function ManagedAgentRow({
   presenceLookup,
   onOpenProfile,
   onSelectLogAgent,
-  onToggleDefaultAi,
 }: {
   agent: ManagedAgent;
   channelIdToName: Record<string, string>;
@@ -53,8 +51,6 @@ export function ManagedAgentRow({
   presenceLookup: PresenceLookup;
   onOpenProfile: (pubkey: string) => void;
   onSelectLogAgent: (pubkey: string | null) => void;
-  /** Star/un-star this agent as the default AI; absent hides the star. */
-  onToggleDefaultAi?: (pubkey: string, isDefaultAi: boolean) => void;
 }) {
   const isLocal = agent.backend.type === "local";
   const runtimeSource =
@@ -169,31 +165,6 @@ export function ManagedAgentRow({
               restartDiff={agent.restartDiff}
             />
           ) : null}
-          {onToggleDefaultAi && isDefaultAiEligible(agent) ? (
-            // The star owns exactly one accessible name (aria-label); its
-            // pressed state carries the "is default" fact, so no title or
-            // tooltip is layered on top.
-            <Button
-              aria-label="Set as default AI"
-              aria-pressed={agent.isDefaultAi}
-              data-testid={`managed-agent-default-ai-${agent.pubkey}`}
-              onClick={() =>
-                onToggleDefaultAi(agent.pubkey, !agent.isDefaultAi)
-              }
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Star
-                className={cn(
-                  "h-4 w-4",
-                  agent.isDefaultAi
-                    ? "fill-current text-amber-500"
-                    : "text-muted-foreground",
-                )}
-              />
-            </Button>
-          ) : null}
           <Button
             onClick={() => onOpenProfile(agent.pubkey)}
             size="sm"
@@ -273,16 +244,6 @@ function AgentSummary({
               <Badge variant="secondary">{personaLabel}</Badge>
             ) : null}
             <AgentOriginBadge agent={agent} />
-            {agent.isDefaultAi ? (
-              <Badge
-                className="gap-1"
-                data-testid={`managed-agent-default-ai-badge-${agent.pubkey}`}
-                variant="default"
-              >
-                <Star className="h-3 w-3 fill-current" />
-                Default AI
-              </Badge>
-            ) : null}
             {agent.personaOrphaned ? (
               <Badge className="gap-1" variant="warning">
                 <AlertTriangle className="h-3 w-3" />

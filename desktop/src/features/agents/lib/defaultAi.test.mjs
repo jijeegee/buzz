@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   defaultAiSelectionFor,
+  defaultAiToggleNotice,
   findDefaultAi,
   isDefaultAiEligible,
 } from "./defaultAi.ts";
@@ -43,4 +44,15 @@ test("a key-less record is never eligible and is ignored even if flagged", () =>
 test("starring sends the pubkey and un-starring the current default clears it", () => {
   assert.equal(defaultAiSelectionFor(KEYED, true), KEYED);
   assert.equal(defaultAiSelectionFor(KEYED, false), null);
+});
+
+test("the toggle notice names the agent and the new state", () => {
+  assert.equal(
+    defaultAiToggleNotice("Scout", true),
+    "Scout is now your default AI.",
+  );
+  assert.equal(
+    defaultAiToggleNotice("Scout", false),
+    "Scout is no longer your default AI.",
+  );
 });

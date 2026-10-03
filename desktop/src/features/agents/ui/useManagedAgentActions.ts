@@ -40,7 +40,7 @@ import {
   buildInstanceInputForDefinition,
   resolveStartRuntimeForDefinition,
 } from "../lib/instanceInputForDefinition";
-import { defaultAiSelectionFor } from "../lib/defaultAi";
+import { defaultAiSelectionFor, defaultAiToggleNotice } from "../lib/defaultAi";
 
 export function useManagedAgentActions() {
   const queryClient = useQueryClient();
@@ -393,11 +393,7 @@ export function useManagedAgentActions() {
         updated.find((agent) => agent.pubkey === pubkey)?.name ??
         managedAgents.find((agent) => agent.pubkey === pubkey)?.name ??
         "This agent";
-      setActionNoticeMessage(
-        isDefaultAi
-          ? `${name} is now your default AI.`
-          : `${name} is no longer your default AI.`,
-      );
+      setActionNoticeMessage(defaultAiToggleNotice(name, isDefaultAi));
     } catch (error) {
       setActionErrorMessage(
         error instanceof Error
