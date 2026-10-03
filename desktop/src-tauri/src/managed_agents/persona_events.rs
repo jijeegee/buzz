@@ -106,6 +106,12 @@ pub struct PersonaEventContent {
     /// order and omitted for the default channel behavior.
     #[serde(default, skip_serializing_if = "super::AcpSessionPolicy::is_channel")]
     pub session_policy: super::AcpSessionPolicy,
+    /// Definition-level thinking effort (see `AgentDefinition::effort_level`).
+    /// Spawn-relevant like `model`, so it IS part of `persona_content_hash`:
+    /// an effort edit must badge linked instances for a restart. Appended and
+    /// omitted while unset so pre-existing content bytes are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort_level: Option<String>,
 }
 
 /// Derive the d-tag (persona slug) from a `AgentDefinition`.
@@ -251,6 +257,7 @@ pub fn persona_from_event(event: &nostr::Event) -> Result<AgentDefinition, Strin
     let created_at = event.created_at.to_human_datetime();
 
     Ok(AgentDefinition {
+        effort_level: content.effort_level,
         id: d_tag.clone(),
         display_name: content.display_name,
         avatar_url: content.avatar_url,
@@ -541,6 +548,7 @@ pub fn persona_content_hash(content: &PersonaEventContent) -> String {
 /// added in exactly one place.
 pub fn persona_event_content(record: &AgentDefinition) -> PersonaEventContent {
     PersonaEventContent {
+        effort_level: record.effort_level.clone(),
         display_name: record.display_name.clone(),
         avatar_url: record.avatar_url.clone(),
         // Always Some — including for an empty prompt — so pre-revision

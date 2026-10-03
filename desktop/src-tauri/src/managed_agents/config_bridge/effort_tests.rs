@@ -99,6 +99,7 @@ fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 fn persona(id: &str, env_vars: BTreeMap<String, String>) -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         acp_command: None,
         session_policy: Default::default(),
         id: id.to_string(),
@@ -703,3 +704,119 @@ fn apply_strips_mixed_case_effort_keys() {
 #[cfg(test)]
 #[path = "effort_cmd_tests.rs"]
 mod cmd_tests;
+
+// --------------------------------------------------------------------------
+// Definition-level effort: the persona's structured `effort_level` column
+// --------------------------------------------------------------------------
+
+fn persona_with_column(
+    id: &str,
+    effort: &str,
+    env_vars: BTreeMap<String, String>,
+) -> AgentDefinition {
+    let mut p = persona(id, env_vars);
+    p.effort_level = Some(effort.to_string());
+    p
+}
+
+#[test]
+fn persona_column_launches_for_linked_claude_record_without_column() {
+    // The owner's case: a Claude instance linked to a definition whose dialog
+    // set effort "high"; the instance itself has no column. Claude has no
+    // native key, so without the persona column no tier could supply a value.
+    let mut r = record();
+    r.persona_id = Some("p".into());
+    let personas = vec![persona_with_column("p", "high", BTreeMap::new())];
+    let launch = effort_launch_projection(
+        &r,
+        Some(claude()),
+        &personas,
+        Some("p"),
+        &BTreeMap::new(),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(launch.value.as_deref(), Some("high"));
+    assert_eq!(launch.key, ACP_KEY);
+}
+
+#[test]
+fn record_column_outranks_persona_column() {
+    // The instance's own pick is an override of the definition default.
+    let mut r = record();
+    r.persona_id = Some("p".into());
+    r.effort_level = Some("low".into());
+    let personas = vec![persona_with_column("p", "high", BTreeMap::new())];
+    let launch = effort_launch_projection(
+        &r,
+        Some(claude()),
+        &personas,
+        Some("p"),
+        &BTreeMap::new(),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(launch.value.as_deref(), Some("low"));
+}
+
+#[test]
+fn persona_column_sits_between_persona_native_and_legacy_env_for_goose() {
+    // Same shape as the record tier: native env > column > legacy alias.
+    let mut r = record();
+    r.persona_id = Some("p".into());
+
+    let native_and_column = vec![persona_with_column("p", "high", env(&[(GOOSE_KEY, "low")]))];
+    let launch = effort_launch_projection(
+        &r,
+        Some(goose()),
+        &native_and_column,
+        Some("p"),
+        &BTreeMap::new(),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(
+        launch.value.as_deref(),
+        Some("low"),
+        "persona native env outranks the column"
+    );
+
+    let column_and_legacy = vec![persona_with_column(
+        "p",
+        "high",
+        env(&[(BUZZ_AGENT_KEY, "low")]),
+    )];
+    let launch = effort_launch_projection(
+        &r,
+        Some(goose()),
+        &column_and_legacy,
+        Some("p"),
+        &BTreeMap::new(),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(
+        launch.value.as_deref(),
+        Some("high"),
+        "the column outranks the legacy alias"
+    );
+}
+
+#[test]
+fn invalid_persona_column_skips_to_lower_tier_for_contract_runtime() {
+    // Goose canonicalizes through its contract: a value it rejects is absent,
+    // so the global tier can still win.
+    let mut r = record();
+    r.persona_id = Some("p".into());
+    let personas = vec![persona_with_column("p", "minimal", BTreeMap::new())];
+    let launch = effort_launch_projection(
+        &r,
+        Some(goose()),
+        &personas,
+        Some("p"),
+        &env(&[(GOOSE_KEY, "max")]),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(launch.value.as_deref(), Some("max"));
+}

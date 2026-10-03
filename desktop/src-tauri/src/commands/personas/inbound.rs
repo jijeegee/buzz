@@ -710,6 +710,7 @@ fn apply_inbound_persona(personas: &mut Vec<AgentDefinition>, inbound: AgentDefi
             local.runtime = inbound.runtime;
             local.model = inbound.model;
             local.provider = inbound.provider;
+            local.effort_level = inbound.effort_level;
             local.name_pool = inbound.name_pool;
             local.respond_to = inbound.respond_to;
             local.respond_to_allowlist = inbound.respond_to_allowlist;

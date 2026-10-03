@@ -559,6 +559,7 @@ pub async fn confirm_agent_snapshot_import(
         let persona_id = uuid::Uuid::new_v4().to_string();
         // Build persona from snapshot definition.
         let persona = AgentDefinition {
+            effort_level: None,
             id: persona_id.clone(),
             display_name: display_name.clone(),
             avatar_url: effective_avatar.clone(),

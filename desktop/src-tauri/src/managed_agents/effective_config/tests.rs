@@ -8,6 +8,7 @@ fn definition(
     prompt: &str,
 ) -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: id.to_string(),

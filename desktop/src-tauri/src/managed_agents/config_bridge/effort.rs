@@ -8,9 +8,15 @@
 //!
 //! ```text
 //! record native(valid) > canonical column(valid) > record legacy(valid)
-//!   > persona(native, then legacy) > global(native) > definition(native)
-//!   > baked(native)
+//!   > persona native(valid) > persona column(valid) > persona legacy(valid)
+//!   > global(native) > definition(native) > baked(native)
 //! ```
+//!
+//! The persona tier mirrors the record tier's shape: the definition's structured
+//! `effort_level` column (the definition dialog's picker) sits between the
+//! persona's native env key and its legacy alias, so a linked instance with no
+//! column of its own launches the definition default — for Claude/Codex/Hermes
+//! (no native key) the two columns are the only authorities.
 //!
 //! (The reader adds the live-ACP tier between column and persona and the config
 //! file tier at the bottom; the launch projection has neither — a spawn reads
@@ -443,12 +449,30 @@ fn resolve_effective_effort(
             }
         }
     }
+    // 4. persona — same shape as the record tier: native env strictly above
+    //    the structured column, legacy alias strictly below it. The env map is
+    //    sanitized like the layered spawn env. The column needs no native key,
+    //    so it is the definition-level authority for Claude/Codex/Hermes.
+    let persona_env = merged_user_env(&BTreeMap::new(), &live_persona_env(personas, persona_id));
+    if let Some(nk) = native_key {
+        if let Some(raw) = get_ci(&persona_env, nk) {
+            if let Some(v) = norm(raw) {
+                return Some(v);
+            }
+        }
+    }
+    if let Some(raw) = persona_id
+        .and_then(|pid| personas.iter().find(|p| p.id == pid))
+        .and_then(|p| p.effort_level.as_deref())
+    {
+        if let Some(v) = norm(raw) {
+            return Some(v);
+        }
+    }
     // Env tiers below require a native key to read.
     let nk = native_key?;
-
-    // 4. persona (native, then legacy) — sanitized like the layered spawn env.
-    let persona_env = merged_user_env(&BTreeMap::new(), &live_persona_env(personas, persona_id));
     if let Some(v) = effort_tier_alias(&persona_env, nk, norm, true) {
+        // Native was already checked above; this resolves the legacy alias.
         return Some(v);
     }
     // 5. global (native only).

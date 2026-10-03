@@ -132,6 +132,7 @@ mod tests {
     ) -> crate::managed_agents::types::AgentDefinition {
         use crate::managed_agents::types::AgentDefinition;
         AgentDefinition {
+            effort_level: None,
             session_policy: Default::default(),
             description: None,
             id: id.to_string(),

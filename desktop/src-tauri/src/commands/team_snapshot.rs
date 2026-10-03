@@ -119,6 +119,7 @@ fn definition_from_snapshot(
         .then(|| behavior.respond_to.as_str().to_string());
 
     Ok(AgentDefinition {
+        effort_level: None,
         id: Uuid::new_v4().to_string(),
         display_name: member.profile.display_name.trim().to_string(),
         avatar_url: effective_avatar(member),

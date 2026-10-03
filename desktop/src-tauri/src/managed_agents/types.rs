@@ -42,6 +42,17 @@ pub struct AgentDefinition {
     /// falls back to auto-detection (e.g., goose config file or available credentials).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
+    /// Definition-level thinking effort — the default every linked instance
+    /// launches with unless its own `effort_level` column overrides it. Sits
+    /// directly below the instance column and above the persona env tier in
+    /// `config_bridge::effort` (launch) and `config_bridge::reader` (display),
+    /// so a definition edit propagates on the next spawn exactly like `model`.
+    /// Written by the definition dialog's effort picker for ACP thought-level
+    /// harnesses (Claude Code, Codex, Hermes); `None` = adapter default.
+    /// Omitted from storage and the public kind:30175 content while unset so
+    /// pre-existing records and their `persona_content_hash` are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort_level: Option<String>,
     /// Pool of short, thematic names for bot instances created from this persona.
     /// When a new copy is added to a channel, a random unused name is picked from this pool.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -181,7 +192,9 @@ impl AgentDefinition {
             definition_respond_to_allowlist: self.respond_to_allowlist,
             definition_parallelism: self.parallelism,
             relay_mesh: None,
-            effort_level: None,
+            // Definition records keep their default effort on the shared
+            // column; `to_definition_view` projects it back.
+            effort_level: self.effort_level,
         }
     }
 }
@@ -194,6 +207,7 @@ impl ManagedAgentRecord {
     pub fn to_definition_view(&self) -> Option<AgentDefinition> {
         let slug = self.slug.clone()?;
         Some(AgentDefinition {
+            effort_level: self.effort_level.clone(),
             id: slug,
             display_name: self
                 .display_name

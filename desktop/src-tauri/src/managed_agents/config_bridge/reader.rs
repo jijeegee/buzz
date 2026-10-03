@@ -588,7 +588,8 @@ fn build_thinking_field(
     // plus the two reader-only tiers the projection has no input for — live ACP
     // and the on-disk config file):
     //   record native > canonical column > record legacy > ACP >
-    //   persona > global > definition > config file.
+    //   persona native > persona column > persona legacy > global >
+    //   definition > config file.
     //
     // Every candidate is normalized through the runtime's declared contract
     // (`effort_norm`) before validity, precedence, override tracking, and the B
@@ -613,10 +614,20 @@ fn build_thinking_field(
         .and_then(|_| super::effort::get_ci(&record.env_vars, LEGACY_THINKING_EFFORT_KEY))
         .and_then(|v| norm(v));
 
-    // Inherited env tiers: persona resolves native-then-legacy; global and
-    // definition are native-only (legacy alias excluded), matching the launch
-    // projection's per-tier alias policy.
-    let pers = thinking_env_var.and_then(|k| effort_tier_alias(&tiers.persona_env, k, norm, true));
+    // Persona tiers, split like the record tiers: native env strictly above
+    // the definition's structured `effort_level` column, legacy alias strictly
+    // below it. The column needs no native key — for Claude/Codex/Hermes it is
+    // the definition-level authority. Global and definition are native-only
+    // (legacy alias excluded), matching the launch projection's per-tier alias
+    // policy.
+    let pers_native = thinking_env_var
+        .and_then(|k| super::effort::get_ci(&tiers.persona_env, k))
+        .and_then(|v| norm(v));
+    let pers_column = tiers.persona_effort.as_deref().and_then(&norm);
+    let pers_legacy = thinking_env_var
+        .filter(|k| *k != LEGACY_THINKING_EFFORT_KEY)
+        .and_then(|_| super::effort::get_ci(&tiers.persona_env, LEGACY_THINKING_EFFORT_KEY))
+        .and_then(|v| norm(v));
     let glob = thinking_env_var.and_then(|k| effort_tier_alias(&tiers.global_env, k, norm, false));
     let def =
         thinking_env_var.and_then(|k| effort_tier_alias(&tiers.definition_env, k, norm, false));
@@ -643,7 +654,9 @@ fn build_thinking_field(
     // present it wins over ACP anyway, so ACP stays only for override tracking.
     let record_present = rec_native.is_some() || column.is_some() || rec_legacy.is_some();
     let baseline_first = [
-        pers.as_deref(),
+        pers_native.as_deref(),
+        pers_column.as_deref(),
+        pers_legacy.as_deref(),
         glob.as_deref(),
         def.as_deref(),
         file.as_deref(),
@@ -661,7 +674,9 @@ fn build_thinking_field(
         (column.as_deref(), ConfigOrigin::BuzzExplicit),
         (rec_legacy.as_deref(), ConfigOrigin::BuzzExplicit),
         (acp_for_list, ConfigOrigin::AcpConfigOption),
-        (pers.as_deref(), ConfigOrigin::PersonaDefault),
+        (pers_native.as_deref(), ConfigOrigin::PersonaDefault),
+        (pers_column.as_deref(), ConfigOrigin::PersonaDefault),
+        (pers_legacy.as_deref(), ConfigOrigin::PersonaDefault),
         (glob.as_deref(), ConfigOrigin::GlobalDefault),
         (def.as_deref(), ConfigOrigin::HarnessDefault),
         (file.as_deref(), ConfigOrigin::ConfigFile),

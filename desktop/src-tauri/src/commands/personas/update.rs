@@ -7,9 +7,10 @@ use tauri::AppHandle;
 use crate::{
     app_state::AppState,
     managed_agents::{
-        apply_persona_behavior, effective_agent_command, load_managed_agents, load_personas,
-        managed_agent_avatar_url, save_managed_agents, save_personas, try_regenerate_nest,
-        validate_agent_definition_text, AgentDefinition, ManagedAgentRecord, UpdatePersonaRequest,
+        apply_persona_behavior, apply_persona_effort_level, effective_agent_command,
+        load_managed_agents, load_personas, managed_agent_avatar_url, save_managed_agents,
+        save_personas, try_regenerate_nest, validate_agent_definition_text, AgentDefinition,
+        ManagedAgentRecord, UpdatePersonaRequest,
     },
     util::now_iso,
 };
@@ -198,6 +199,7 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
             persona.runtime = runtime;
             persona.model = model;
             persona.provider = provider;
+            apply_persona_effort_level(persona, input.effort_level);
             persona.name_pool = input
                 .name_pool
                 .into_iter()

@@ -93,6 +93,7 @@ fn build_inherited_tiers(
     let persona_model = persona.and_then(|p| non_blank(p.model.as_deref()));
     let persona_provider = persona.and_then(|p| non_blank(p.provider.as_deref()));
     let persona_prompt = persona.and_then(|p| non_blank(Some(&p.system_prompt)));
+    let persona_effort = persona.and_then(|p| non_blank(p.effort_level.as_deref()));
     let global_model = non_blank(global.model.as_deref());
     let global_provider = non_blank(global.provider.as_deref());
 
@@ -103,6 +104,7 @@ fn build_inherited_tiers(
         persona_model,
         persona_provider,
         persona_prompt,
+        persona_effort,
         global_model,
         global_provider,
     }

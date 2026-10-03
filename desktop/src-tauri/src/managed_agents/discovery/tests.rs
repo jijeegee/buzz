@@ -17,7 +17,6 @@ fn resolves_known_avatar_for_bare_command() {
 
     assert_eq!(avatar_url, GOOSE_AVATAR_URL);
 }
-
 #[test]
 fn resolves_known_avatar_for_command_paths_and_aliases() {
     assert_eq!(
@@ -168,6 +167,7 @@ fn classifies_cli_missing_when_adapter_found_but_cli_absent() {
 }
 fn persona_with_runtime(id: &str, runtime: Option<&str>) -> crate::managed_agents::AgentDefinition {
     crate::managed_agents::AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: id.to_string(),

@@ -134,6 +134,7 @@ fn agent_record() -> ManagedAgentRecord {
 
 fn persona_with_model(model: &str) -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: "persona-1".to_string(),

@@ -456,6 +456,7 @@ const D_TAG: &str = "my-team";
 
 fn catalog_copy(id: &str, owner: &str, d_tag: &str) -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         id: id.to_string(),
         display_name: id.to_string(),
@@ -698,6 +699,7 @@ fn test_ref_check_preserves_copy_used_by_a_standalone_managed_agent() {
 
 fn catalog_persona(id: &str, owner: &str, d_tag: &str) -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         id: id.to_string(),
         display_name: id.to_string(),

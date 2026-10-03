@@ -35,6 +35,8 @@ pub async fn create_persona(
         let runtime = trim_optional(input.runtime);
         let model = trim_optional(input.model);
         let provider = trim_optional(input.provider);
+        // Definition-level default; blank = adapter default, like `model`.
+        let effort_level = trim_optional(input.effort_level);
         // Normalized before the store is touched: a coordinate that can't match
         // a publication is worse than no coordinate, because it silently
         // re-enables the duplicate add it exists to prevent.
@@ -57,6 +59,7 @@ pub async fn create_persona(
             .collect();
         crate::managed_agents::validate_user_env_keys(&input.env_vars)?;
         let mut persona = AgentDefinition {
+            effort_level,
             id: Uuid::new_v4().to_string(),
             display_name,
             avatar_url,

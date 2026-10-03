@@ -57,6 +57,7 @@ fn snapshot(members: Vec<AgentSnapshot>) -> TeamSnapshot {
 fn team_export_round_trip_preserves_team_and_excludes_member_memory() {
     let definitions = vec![
         AgentDefinition {
+            effort_level: None,
             session_policy: Default::default(),
             description: Some("A careful reviewer.".to_string()),
             id: "alice".to_string(),
@@ -83,6 +84,7 @@ fn team_export_round_trip_preserves_team_and_excludes_member_memory() {
             updated_at: "now".to_string(),
         },
         AgentDefinition {
+            effort_level: None,
             session_policy: Default::default(),
             description: None,
             id: "bob".to_string(),
@@ -163,6 +165,7 @@ fn team_export_round_trip_preserves_team_and_excludes_member_memory() {
 #[test]
 fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
     let definitions = vec![AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: "alice".to_string(),

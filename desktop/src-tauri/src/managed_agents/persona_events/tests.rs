@@ -147,6 +147,7 @@ fn preview_passes_through_unchanged_when_persona_missing() {
 
 pub(super) fn sample_persona() -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: "test-persona".to_string(),
@@ -327,6 +328,7 @@ fn content_matches_nip_ap_vector() {
     const VECTOR: &str = r#"{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"]}"#;
 
     let content = PersonaEventContent {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         display_name: "Test Agent".to_string(),
@@ -393,6 +395,7 @@ fn content_matches_nip_ap_vector() {
     // signed content, so a second implementer following the spec computes
     // the same NIP-01 id.
     let record = AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: "test-agent".to_string(),
@@ -428,6 +431,7 @@ fn content_matches_nip_ap_vector() {
 #[test]
 fn round_trip_minimal_persona() {
     let record = AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: "minimal".to_string(),
@@ -529,6 +533,7 @@ fn behavioral_defaults_survive_record_round_trip() {
 #[test]
 fn quad_absent_definition_hash_stable_across_activation() {
     let record = AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: "quad-absent".to_string(),
@@ -557,6 +562,7 @@ fn quad_absent_definition_hash_stable_across_activation() {
     let live = persona_event_content(&record);
     // The reserved-era projection: identical fields, quad hardcoded off.
     let reserved_era = PersonaEventContent {
+        effort_level: None,
         session_policy: Default::default(),
         respond_to: None,
         respond_to_allowlist: Vec::new(),
@@ -578,6 +584,7 @@ fn quad_absent_definition_hash_stable_across_activation() {
 /// way `persona_from_event` maps fields, without needing a signed event.
 fn persona_from_event_content_for_test(content: PersonaEventContent) -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: content.session_policy,
         description: content.description,
         id: "staged".to_string(),
@@ -608,6 +615,7 @@ fn persona_from_event_content_for_test(content: PersonaEventContent) -> AgentDef
 #[test]
 fn persona_content_hash_is_deterministic() {
     let content = PersonaEventContent {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         display_name: "Test".to_string(),
@@ -631,6 +639,7 @@ fn persona_content_hash_is_deterministic() {
 #[test]
 fn persona_content_hash_changes_on_edit() {
     let content1 = PersonaEventContent {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         display_name: "Test".to_string(),
@@ -709,6 +718,7 @@ fn channel_policy_stays_wire_compatible_when_absent() {
 #[test]
 fn description_change_does_not_change_content_hash() {
     let without = PersonaEventContent {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         display_name: "Test".to_string(),
@@ -799,6 +809,7 @@ fn snapshot_runtime_verbatim_from_persona() {
 /// Helper: a persona with no model/provider configured.
 fn blank_model_persona() -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         model: None,
         provider: None,
@@ -1100,4 +1111,40 @@ mod flush_barrier {
             "unrelated row marked synced"
         );
     }
+}
+
+/// The definition effort is spawn-relevant config, so unlike `description` it
+/// MUST move the content hash: a definition effort edit has to badge linked
+/// instances for the restart that applies it.
+#[test]
+fn effort_level_change_changes_content_hash() {
+    let without = persona_event_content(&sample_persona());
+    let mut with = without.clone();
+    with.effort_level = Some("high".to_string());
+    assert_ne!(persona_content_hash(&without), persona_content_hash(&with));
+}
+
+/// Pre-existing definitions never carried an effort, so an unset effort must
+/// serialize byte-identically to the pre-field era — otherwise every stored
+/// hash and published event id would flip on upgrade.
+#[test]
+fn absent_effort_level_is_omitted_from_content_bytes() {
+    let content = persona_event_content(&sample_persona());
+    let json = serde_json::to_string(&content).unwrap();
+    assert!(
+        !json.contains("effort_level"),
+        "unset effort must not appear in the content bytes: {json}"
+    );
+}
+
+#[test]
+fn effort_level_round_trips_through_the_persona_event() {
+    let mut record = sample_persona();
+    record.effort_level = Some("high".to_string());
+    let builder = build_persona_event(&record).unwrap();
+    let keys = nostr::Keys::generate();
+    let event = builder.sign_with_keys(&keys).unwrap();
+
+    let restored = persona_from_event(&event).unwrap();
+    assert_eq!(restored.effort_level.as_deref(), Some("high"));
 }

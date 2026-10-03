@@ -11,6 +11,7 @@ const TEST_RELAY: &str = "ws://example.com:3000";
 
 fn make_persona(id: &str, display_name: &str) -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: id.to_string(),

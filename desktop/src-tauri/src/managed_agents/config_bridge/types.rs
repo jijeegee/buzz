@@ -31,6 +31,10 @@ pub struct InheritedConfigTiers {
     pub persona_provider: Option<String>,
     /// Structured system_prompt from the linked persona (non-blank only).
     pub persona_prompt: Option<String>,
+    /// Structured thinking effort from the linked persona (non-blank only):
+    /// `AgentDefinition::effort_level`, the definition-level default the launch
+    /// projection applies when the record has no column of its own.
+    pub persona_effort: Option<String>,
     /// Structured model from global config (non-blank only).
     pub global_model: Option<String>,
     /// Structured provider from global config (non-blank only).

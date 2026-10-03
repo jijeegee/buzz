@@ -76,6 +76,25 @@ pub fn apply_persona_behavior(
     Ok(())
 }
 
+/// Apply an `UpdatePersonaRequest::effort_level` patch to a definition.
+///
+/// Tri-state, mirroring the instance column on `UpdateManagedAgentRequest`:
+/// absent (`None`) = leave the stored default alone, so callers that never
+/// learned the field (team import, profile panel) cannot wipe it; `Some(None)`
+/// = clear back to the adapter default; `Some(value)` = set, trimmed, with a
+/// blank value treated as clear.
+pub fn apply_persona_effort_level(
+    record: &mut AgentDefinition,
+    effort_level: Option<Option<String>>,
+) {
+    if let Some(next) = effort_level {
+        record.effort_level = next.and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        });
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatePersonaRequest {
@@ -93,6 +112,11 @@ pub struct CreatePersonaRequest {
     pub model: Option<String>,
     #[serde(default)]
     pub provider: Option<String>,
+    /// Definition-level thinking effort for ACP thought-level harnesses.
+    /// Trimmed; empty/absent = adapter default (`None`). Linked instances
+    /// launch it unless their own `effort_level` column overrides it.
+    #[serde(default)]
+    pub effort_level: Option<String>,
     #[serde(default)]
     pub name_pool: Vec<String>,
     /// Environment variables for agents created from this persona.
@@ -126,6 +150,11 @@ pub struct UpdatePersonaRequest {
     pub model: Option<String>,
     #[serde(default)]
     pub provider: Option<String>,
+    /// Definition-level thinking effort. Absent = don't touch the stored
+    /// default; `null` = clear (adapter default); `"value"` = set. See
+    /// [`apply_persona_effort_level`].
+    #[serde(default, deserialize_with = "crate::util::double_option")]
+    pub effort_level: Option<Option<String>>,
     #[serde(default)]
     pub name_pool: Vec<String>,
     /// Environment variables for agents created from this persona.
@@ -301,6 +330,7 @@ mod tests {
 
     fn record_without_quad() -> AgentDefinition {
         AgentDefinition {
+            effort_level: None,
             session_policy: Default::default(),
             description: None,
             id: "p-1".to_string(),
@@ -507,5 +537,65 @@ mod tests {
         )
         .expect("a create payload without provenance should deserialize");
         assert_eq!(request.catalog_source, None);
+    }
+
+    // ── Definition-level effort: tri-state patch + wire contract ─────────────
+
+    #[test]
+    fn absent_effort_level_leaves_stored_default_untouched() {
+        // Legacy update_persona callers (team import, profile panel) send no
+        // effortLevel and must not wipe the definition default.
+        let mut record = record_without_quad();
+        record.effort_level = Some("high".to_string());
+        apply_persona_effort_level(&mut record, None);
+        assert_eq!(record.effort_level.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn null_effort_level_clears_to_adapter_default() {
+        let mut record = record_without_quad();
+        record.effort_level = Some("high".to_string());
+        apply_persona_effort_level(&mut record, Some(None));
+        assert_eq!(record.effort_level, None);
+    }
+
+    #[test]
+    fn explicit_effort_level_is_trimmed_and_blank_clears() {
+        let mut record = record_without_quad();
+        apply_persona_effort_level(&mut record, Some(Some("  medium \t".to_string())));
+        assert_eq!(record.effort_level.as_deref(), Some("medium"));
+        apply_persona_effort_level(&mut record, Some(Some("   ".to_string())));
+        assert_eq!(record.effort_level, None);
+    }
+
+    #[test]
+    fn update_request_effort_level_is_tri_state_on_the_wire() {
+        let base = |extra: &str| {
+            format!(r#"{{"id":"p-1","displayName":"Test","systemPrompt":"prompt"{extra}}}"#)
+        };
+        let absent: UpdatePersonaRequest = serde_json::from_str(&base("")).unwrap();
+        assert_eq!(absent.effort_level, None, "absent = don't touch");
+        let cleared: UpdatePersonaRequest =
+            serde_json::from_str(&base(r#","effortLevel":null"#)).unwrap();
+        assert_eq!(cleared.effort_level, Some(None), "null = clear");
+        let set: UpdatePersonaRequest =
+            serde_json::from_str(&base(r#","effortLevel":"high""#)).unwrap();
+        assert_eq!(
+            set.effort_level,
+            Some(Some("high".to_string())),
+            "string = set"
+        );
+    }
+
+    #[test]
+    fn create_request_effort_level_is_optional_on_the_wire() {
+        let absent: CreatePersonaRequest =
+            serde_json::from_str(r#"{"displayName":"Test","systemPrompt":"prompt"}"#).unwrap();
+        assert_eq!(absent.effort_level, None);
+        let present: CreatePersonaRequest = serde_json::from_str(
+            r#"{"displayName":"Test","systemPrompt":"prompt","effortLevel":"low"}"#,
+        )
+        .unwrap();
+        assert_eq!(present.effort_level.as_deref(), Some("low"));
     }
 }

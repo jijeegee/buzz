@@ -146,6 +146,7 @@ mod tests {
 
     fn persona() -> AgentDefinition {
         AgentDefinition {
+            effort_level: None,
             session_policy: Default::default(),
             description: None,
             id: "catalog-reviewer".to_string(),

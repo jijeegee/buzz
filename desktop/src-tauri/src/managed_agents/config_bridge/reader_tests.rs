@@ -970,3 +970,65 @@ mod ext;
 
 #[path = "reader_tests_ext2.rs"]
 mod ext2;
+
+// ── Definition-level effort: the persona's structured `effort_level` tier ────
+
+fn claude_runtime() -> &'static KnownAcpRuntime {
+    crate::managed_agents::discovery::known_acp_runtime_exact("claude")
+        .expect("claude runtime in catalog")
+}
+
+#[test]
+fn persona_effort_tier_produces_persona_default_origin() {
+    // A linked Claude instance with no column of its own shows the definition
+    // default as the effective effort — the same fact the launch projection
+    // emits — attributed to the persona.
+    let record = test_record(); // no effort_level column
+    let tiers = InheritedConfigTiers {
+        persona_effort: Some("high".to_string()),
+        ..Default::default()
+    };
+
+    let surface = read_config_surface(&record, Some(claude_runtime()), None, &tiers, None);
+
+    let field = surface.normalized.thinking_effort.unwrap();
+    assert_eq!(field.value.as_deref(), Some("high"));
+    assert_eq!(field.origin, ConfigOrigin::PersonaDefault);
+}
+
+#[test]
+fn record_effort_column_overrides_persona_effort_tier() {
+    let mut record = test_record();
+    record.effort_level = Some("low".to_string());
+    let tiers = InheritedConfigTiers {
+        persona_effort: Some("high".to_string()),
+        ..Default::default()
+    };
+
+    let surface = read_config_surface(&record, Some(claude_runtime()), None, &tiers, None);
+
+    let field = surface.normalized.thinking_effort.unwrap();
+    assert_eq!(field.value.as_deref(), Some("low"));
+    assert_eq!(field.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(field.overridden_value.as_deref(), Some("high"));
+    assert_eq!(field.overridden_origin, Some(ConfigOrigin::PersonaDefault));
+}
+
+#[test]
+fn persona_native_env_outranks_persona_effort_tier_for_goose() {
+    // Mirrors the launch projection's persona-tier shape (native > column).
+    let record = test_record();
+    let mut persona_env = BTreeMap::new();
+    persona_env.insert("GOOSE_THINKING_EFFORT".to_string(), "low".to_string());
+    let tiers = InheritedConfigTiers {
+        persona_env,
+        persona_effort: Some("high".to_string()),
+        ..Default::default()
+    };
+
+    let surface = read_config_surface(&record, Some(test_runtime()), None, &tiers, None);
+
+    let field = surface.normalized.thinking_effort.unwrap();
+    assert_eq!(field.value.as_deref(), Some("low"));
+    assert_eq!(field.origin, ConfigOrigin::PersonaDefault);
+}

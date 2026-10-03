@@ -612,6 +612,7 @@ fn summary_always_carries_is_default_ai_on_the_wire() {
 
 fn sample_persona() -> AgentDefinition {
     AgentDefinition {
+        effort_level: None,
         session_policy: Default::default(),
         description: None,
         id: "custom:helper".to_string(),
@@ -944,4 +945,22 @@ fn summary_with_drift_serializes_restart_diff_entries() {
             "change": { "kind": "value", "before": "gpt-5", "after": "claude-4" },
         }]))
     );
+}
+
+#[test]
+fn persona_effort_level_survives_the_agent_store_fold() {
+    // The definition default lives on the unified record's `effort_level`
+    // column and must come back out of `to_definition_view`; dropping it in
+    // either direction would silently reset every linked instance's effort on
+    // the next launch.
+    let mut persona = sample_persona();
+    persona.effort_level = Some("high".to_string());
+
+    let record = persona.clone().into_agent_record();
+    assert_eq!(record.effort_level.as_deref(), Some("high"));
+
+    let view = record
+        .to_definition_view()
+        .expect("slugged record must present a persona view");
+    assert_eq!(view.effort_level.as_deref(), Some("high"));
 }
