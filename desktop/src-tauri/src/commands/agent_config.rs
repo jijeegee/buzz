@@ -541,12 +541,16 @@ fn parse_models(raw: Option<&serde_json::Value>) -> (Vec<AcpModelEntry>, Option<
 /// Atomically set the record's canonical effort column and strip every stale
 /// record-scope effort env alias. Split from the Tauri command so the invariant
 /// — no leftover alias can outrank the just-set column — is directly testable.
+/// The value passes the shared effort gate first (it is emitted verbatim into
+/// the child's env); a rejected value leaves the record untouched.
 pub(crate) fn apply_picker_effort_level(
     record: &mut ManagedAgentRecord,
     effort_level: Option<String>,
-) {
+) -> Result<(), String> {
+    crate::managed_agents::validate_effort_level_text(effort_level.as_deref())?;
     record.effort_level = effort_level;
     crate::managed_agents::remove_record_effort_aliases(&mut record.env_vars);
+    Ok(())
 }
 
 #[cfg(test)]

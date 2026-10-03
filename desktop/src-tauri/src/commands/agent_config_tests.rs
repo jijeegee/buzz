@@ -652,7 +652,7 @@ fn picker_write_sweeps_stale_record_native_effort_alias() {
         .env_vars
         .insert("GOOSE_THINKING_EFFORT".to_string(), "low".to_string());
 
-    super::apply_picker_effort_level(&mut record, Some("high".to_string()));
+    super::apply_picker_effort_level(&mut record, Some("high".to_string())).unwrap();
 
     // The stale record-native alias is gone; only the column carries the value.
     assert!(
@@ -775,4 +775,29 @@ fn live_switch_null_models_parses_to_no_current_model() {
         "Null models must not surface any current model"
     );
     assert!(available.is_empty());
+}
+
+#[test]
+fn apply_picker_effort_level_rejects_unsafe_values_and_leaves_the_record_untouched() {
+    let mut record = agent_record();
+    record.effort_level = Some("high".to_string());
+    record
+        .env_vars
+        .insert("BUZZ_AGENT_THINKING_EFFORT".to_string(), "low".to_string());
+    for unsafe_level in ["lo\0w", "hi\ngh", &"x".repeat(65)] {
+        let error = super::apply_picker_effort_level(&mut record, Some(unsafe_level.to_string()))
+            .unwrap_err();
+        assert!(error.contains("Thinking effort"), "{error}");
+        assert_eq!(record.effort_level.as_deref(), Some("high"));
+        assert_eq!(
+            record
+                .env_vars
+                .get("BUZZ_AGENT_THINKING_EFFORT")
+                .map(String::as_str),
+            Some("low"),
+            "a rejected write must not run the alias sweep either"
+        );
+    }
+    super::apply_picker_effort_level(&mut record, None).unwrap();
+    assert_eq!(record.effort_level, None);
 }

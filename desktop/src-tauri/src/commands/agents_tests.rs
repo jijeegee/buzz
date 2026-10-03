@@ -851,3 +851,19 @@ fn create_request_effort_level_is_optional_on_the_wire() {
     .expect("request with effort");
     assert_eq!(present.effort_level.as_deref(), Some("medium"));
 }
+
+#[test]
+fn normalize_create_effort_level_rejects_unsafe_values_for_a_local_backend() {
+    for unsafe_level in ["lo\0w", "hi\ngh", &"x".repeat(65)] {
+        let error =
+            normalize_create_effort_level(Some(unsafe_level), &BackendKind::Local).unwrap_err();
+        assert!(
+            error.contains("Thinking effort"),
+            "{unsafe_level:?}: {error}"
+        );
+    }
+    assert_eq!(
+        normalize_create_effort_level(Some("xhigh"), &BackendKind::Local).unwrap(),
+        Some("xhigh".to_string())
+    );
+}

@@ -265,9 +265,13 @@ with a TypeScript lookup table or an id comparison in a component.
    ```text
    record native > column > record legacy
      > persona native > persona column > persona legacy
-     > global column > global native > definition(native) > baked(native)
+     > global native > global column > definition(native) > baked(native)
    ```
 
+   Every tier has the same shape — native env key above its structured column —
+   so a Goose/buzz-agent knob set in Global AI Defaults is never outranked by a
+   global column that dialog could not show for that harness (and
+   `resetConfigForHarnessChange` clears the column on a harness switch anyway).
    The env tiers need the runtime's native key; the three columns do not, so
    for the ACP thought-level harnesses (Claude Code, Codex, Hermes — no native
    knob) the columns are the only authorities and the resolved value rides the
@@ -294,8 +298,9 @@ with a TypeScript lookup table or an id comparison in a component.
    chars): `apply_persona_effort_level`, `create_persona`,
    `validate_inbound_persona_definition` (an unsafe inbound effort rejects the
    event, like an unsafe name), the community-catalog parser (rejects the
-   entry), and `validate_global_config` — the value is emitted verbatim into
-   the child's env and bypasses the env-var sanitizer.
+   entry), `validate_global_config`, and the instance column's two writers
+   (`apply_picker_effort_level`, `normalize_create_effort_level`) — the value
+   is emitted verbatim into the child's env and bypasses the env-var sanitizer.
 
    **Gating** lives in the pure helper `ui/effortPicker.ts`
    (`effortPickerState`): visible iff (no `backend` **or** a local one) **and**

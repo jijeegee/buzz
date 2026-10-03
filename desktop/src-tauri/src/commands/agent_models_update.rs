@@ -59,7 +59,7 @@ fn apply_effort_update(
 ) -> Result<(), String> {
     ensure_effort_change_supported(record, &effort_level)?;
     if let Some(effort_override) = effort_level {
-        crate::commands::agent_config::apply_picker_effort_level(record, effort_override);
+        crate::commands::agent_config::apply_picker_effort_level(record, effort_override)?;
     }
     Ok(())
 }

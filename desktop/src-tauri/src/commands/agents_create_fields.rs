@@ -37,6 +37,8 @@ pub(super) fn normalize_create_effort_level(
     let Some(level) = effort_level.and_then(trim_to_optional_string) else {
         return Ok(None);
     };
+    // Emitted verbatim into the child's env: the shared effort gate applies.
+    crate::managed_agents::validate_effort_level_text(Some(&level))?;
     if backend != &BackendKind::Local {
         return Err(
             "an instance-level thinking effort can only be chosen for a local agent; a remote instance launches its definition's default effort (or the global default)"
