@@ -235,69 +235,113 @@ with a TypeScript lookup table or an id comparison in a component.
    hosting location, availability, or permission. Keep all identity surfaces on
    the shared provenance context, without per-row directory subscriptions. See
    [the provenance contract](../../../../docs/agent-management-provenance.md).
-14. **Thinking effort has two surfaces: a local-only WRITE control and a
-   read-only two-facts DISPLAY.** The write control is `EffortPickerField`
-   (`ui/EffortPickerField.tsx`), a self-contained section component mounted
-   beside the Model block in **both** `AgentInstanceEditDialog` and the Create
-   mode of `AgentDefinitionDialog` (in "Use defaults" as well as "Customize" —
-   effort is instance state, not part of the provider/model pair — and only
-   for a local Run-on). It takes a `backend` plus the prospective `runtime`
-   catalog entry — never a whole `ManagedAgent`. It is **Save-gated, not direct-write**: the control is
-   fully controlled by the parent dialog (`value`/`onChange`) and owns no
-   mutation. Edit persists the selection by embedding `effortLevel` in the
-   locked `update_managed_agent` IPC call, so the effort write is atomic with
-   any access-policy change and can never race or survive a Cancel or failed
-   Save. Create embeds it in `create_managed_agent`
-   (`CreateManagedAgentRequest.effort_level`), threaded as instance state —
-   never a persona field — through `AgentDefinitionSubmitOptions.effortLevel`
-   → `AgentDialog` → `buildInstanceInputForDefinition`'s `overrides` (local
-   mapping only; the other callers pass none). There is no standalone
-   `persistAgentEffortLevel` setter. Its gating and option compute live in the
-   pure helper `ui/effortPicker.ts` (`effortPickerState`): the picker renders
-   only when the backend is local **AND** it has a vocabulary — either a
-   `thought_level` `effortConfigId` discovered from the running session, or the
-   prospective runtime's catalog `effortThoughtLevel.fallbackValues`. That is
-   one Rust catalog fact (`KnownAcpRuntime` / `PresetHarness`
-   `effort_thought_level`: the adapter's option id plus the safe
-   `low | medium | high` subset) for the ACP thought-level harnesses Claude
-   Code, Codex, and Hermes; `None` for Goose (own env knob), buzz-agent (its
-   env knob outranks the saved column), the other presets, and custom
-   harnesses. It is display-only — never reuse `effort_normalization` /
-   `effort_canonical_values` for it (those filter at spawn and drive the Goose
-   auto-clear). Discovered options always win; fallback-sourced options carry
-   the "Options may vary by model." hint, and a saved value outside the
-   fallback stays selectable under its raw name rather than being misreported
-   as the adapter default. **The picker never shows a value other than what
-   the next spawn launches.** Before a runtime switch that is the config
-   surface's `normalized.thinkingEffort` — the effective value the reader
-   resolves across env tiers under the running runtime's contract. After an
-   in-dialog runtime switch that surface is the OLD runtime's resolution (a
-   Goose `GOOSE_THINKING_EFFORT` tier is meaningless to Claude), so the edit
-   picker drops the old session's option list for the new runtime's fallback
-   AND sources its value and `originalEffortLevel` from the stored column,
-   `ManagedAgent.effortLevel` (`ManagedAgentSummary.effort_level`, the record
-   column verbatim) — the only tier an ACP thought-level runtime launches as
-   `BUZZ_ACP_EFFORT_LEVEL`. An explicit post-switch pick is therefore diffed
-   against the column, never collapsed as "unchanged" against a stale
-   effective value (the effort reset on switch stays, so an untouched Save
-   writes nothing). In Create, a pick travels only while the picker is
-   rendered for a runtime whose catalog entry publishes `effortThoughtLevel`;
-   both the dropdown switch and the saved-defaults re-seed reset the pick, so
-   a harness without the vocabulary never receives one. Local-only is
-   load-bearing, not cosmetic — both Rust
-   commands reject non-local backends (`ensure_effort_change_supported`,
-   `normalize_create_effort_level`) because remote effort is set at deploy time
-   via `policy_env`. Because the edit control reads its inputs from the config
-   surface the dialog already fetches (`useAgentConfigSurface`), it integrates
-   into the dialog's existing field group without additional IPC. The
-   read-only display is the `thinkingEffort`
-   normalized field rendered by `AgentConfigPanel` via `NormalizedRow`, which
-   already shows both facts — `field.value` (canonical, the effort the next
-   spawn will launch with) and, when a running ACP session differs,
-   `field.overriddenValue` struck through (the live session's current effort).
-   No component owns "configured vs current" logic; the reader's canonical tier
-   ordering feeds both facts. Do not add a second effort write path or restate
-   the two-facts logic in a component.
+14. **Thinking effort is the model choice's companion: three persisted
+   columns, one launch projection, one write control, one read-only
+   display.** Any surface that selects a model renders effort through
+   `ui/ModelEffortFields.tsx` — the model control as `children`, the shared
+   `EffortPickerField` (`ui/EffortPickerField.tsx`) beneath it. Today that is
+   `AgentDefinitionDialog` (Create **and** Edit, in "Use defaults" as well as
+   "Customize"), `EditAgentProviderModelFields` inside `AgentInstanceEditDialog`
+   (a required `effort` prop), and `AgentConfigFields` (Global AI Defaults,
+   settings card, onboarding) for the default model. Do not add a model picker
+   without routing it through `ModelEffortFields`, and do not render the picker
+   outside it. The picker is **Save-gated, not direct-write**: fully controlled
+   by its parent (`value`/`onChange`), owning no mutation, so a Cancel or a
+   failed Save never writes effort.
+
+   **Three columns, one order.** Effort lives on three records, each with the
+   same `effort_level: Option<String>` shape (serde default,
+   `skip_serializing_if = "Option::is_none"`, so pre-field stores, event bytes
+   and `persona_content_hash` are byte-identical while unset):
+   `ManagedAgentRecord.effort_level` (the per-instance override),
+   `AgentDefinition.effort_level` (the definition default — a persona field,
+   published in the kind:30175 content and hashed, so an edit badges linked
+   instances for restart), and `GlobalAgentConfig.effort_level` (the global
+   default). `config_bridge::effort::effort_launch_projection` resolves them with
+   the env tiers in one CLEAR order, mirrored by the reader's
+   `build_thinking_field` (`InheritedConfigTiers.persona_effort` /
+   `global_effort`, origins `PersonaDefault` / `GlobalDefault`):
+
+   ```text
+   record native > column > record legacy
+     > persona native > persona column > persona legacy
+     > global column > global native > definition(native) > baked(native)
+   ```
+
+   The env tiers need the runtime's native key; the three columns do not, so
+   for the ACP thought-level harnesses (Claude Code, Codex, Hermes — no native
+   knob) the columns are the only authorities and the resolved value rides the
+   retained transport key `BUZZ_ACP_EFFORT_LEVEL`. Goose and buzz-agent keep
+   their native env knob (`GOOSE_THINKING_EFFORT` / `BUZZ_AGENT_THINKING_EFFORT`)
+   and its `EffortSelectField`; the catalog's `effort_thought_level` is `None`
+   for them, so the column picker hides.
+
+   **Where each write goes.** Create embeds the pick in `create_persona`
+   (`CreatePersonaRequest.effort_level`, trimmed, blank = unset) — the
+   definition default — and deliberately never on `create_managed_agent`
+   (`buildInstanceInputForDefinition` seeds no effort), so the instance
+   inherits live and a later definition edit propagates on restart like
+   model/provider. Edit of a definition sends `UpdatePersonaRequest.effort_level`
+   tri-state (absent = keep, `null` = clear, string = set; a harness switch
+   clears, a hidden picker on an unchanged harness sends nothing). The instance
+   dialog embeds `effortLevel` tri-state in the locked `update_managed_agent`
+   (PR #4625), atomic with any access-policy restart; its sentinel reads
+   "Template default" only when the linked template actually sets one
+   (`effortSentinelLabel`). Global AI Defaults writes
+   `GlobalAgentConfig.effort_level` through `set_global_agent_config`. Every
+   boundary that can write a level validates it with
+   `validate_effort_level_text` (no blank, no control/NUL characters, ≤ 64
+   chars): `apply_persona_effort_level`, `create_persona`,
+   `validate_inbound_persona_definition` (an unsafe inbound effort rejects the
+   event, like an unsafe name), the community-catalog parser (rejects the
+   entry), and `validate_global_config` — the value is emitted verbatim into
+   the child's env and bypasses the env-var sanitizer.
+
+   **Gating** lives in the pure helper `ui/effortPicker.ts`
+   (`effortPickerState`): visible iff (no `backend` **or** a local one) **and**
+   a vocabulary — a `thought_level` `effortConfigId` discovered from the running
+   session, or the prospective runtime's catalog `effortThoughtLevel.fallbackValues`
+   (one Rust catalog fact, `KnownAcpRuntime` / `PresetHarness`
+   `effort_thought_level`: option id plus the safe `low | medium | high`
+   subset). `backend` is absent on the definition and global surfaces: there is
+   no instance, and their default applies to every instance. The definition
+   dialog derives "was the picker offered" from the same `effortPickerState(...)
+   .visible`, never from a second gate. Discovered options win; fallback-sourced
+   options carry the "Options may vary by model." hint, and a saved value
+   outside the fallback stays selectable under its raw name. Never reuse
+   `effort_normalization` / `effort_canonical_values` for the picker (those
+   filter at spawn and drive the Goose auto-clear). **The picker never shows a
+   value other than what the next spawn launches**: the instance dialog seeds
+   from the config surface's `normalized.thinkingEffort` (which now includes the
+   persona and global columns), and after an in-dialog runtime switch from the
+   stored column `ManagedAgent.effortLevel`, diffing an explicit pick against
+   that so it is never collapsed as "unchanged" against a stale effective value.
+
+   **Remote semantics.** The definition and global defaults apply to every
+   instance, remote ones included: the deploy path builds its launch block from
+   the same `effort_launch_projection` (`launch.env`, not a separate
+   `policy_env` authority), so the Run-on never gates the definition or global
+   picker. Only the **instance** column write is local-only
+   (`ensure_effort_change_supported`, `normalize_create_effort_level`): a
+   remote instance launches its definition's or the global default and offers
+   no per-instance override. Showing that inherited value read-only in the
+   remote instance dialog is deferred.
+
+   **Deliberate exclusions.** Team adopt (`teams/adopt/apply.rs`), the team
+   catalog projection (`team_catalog.rs`), and agent snapshot export/import
+   (`agent_snapshot.rs`, `personas/snapshot/import.rs`) keep their portable
+   schemas: copies start at the adapter default. Community-catalog copies DO
+   carry the publisher's effort (`CatalogAgentProjection.effort_level` →
+   `publicationToPersona` → the Add payload) because a copy's fresh local id is
+   never patched by a later inbound event.
+
+   The read-only display is the `thinkingEffort` normalized field rendered by
+   `AgentConfigPanel` via `NormalizedRow`, which shows both facts —
+   `field.value` (the effort the next spawn launches) and, when a running ACP
+   session differs, `field.overriddenValue` struck through. No component owns
+   "configured vs current" logic; the reader's tier order feeds both facts. Do
+   not add a second effort write path or restate the two-facts logic in a
+   component.
 
    **Cut invariant — live mid-conversation effort machinery was deliberately
    removed.** Effort is spawn-scoped only: the worker holds one `startup_effort`
