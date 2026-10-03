@@ -35,6 +35,10 @@ pub struct InheritedConfigTiers {
     /// `AgentDefinition::effort_level`, the definition-level default the launch
     /// projection applies when the record has no column of its own.
     pub persona_effort: Option<String>,
+    /// Structured thinking effort from global config (non-blank only):
+    /// `GlobalAgentConfig::effort_level`, read below the persona tier and
+    /// above the global native env key.
+    pub global_effort: Option<String>,
     /// Structured model from global config (non-blank only).
     pub global_model: Option<String>,
     /// Structured provider from global config (non-blank only).

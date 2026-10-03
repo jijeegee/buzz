@@ -956,6 +956,14 @@ export type GlobalAgentConfig = {
   model: string | null;
   /** Preferred ACP runtime for agents without a persona-specific runtime. */
   preferred_runtime: string | null;
+  /**
+   * Global default thinking effort for ACP thought-level harnesses (Claude
+   * Code, Codex, Hermes): the effort companion beside the default model in
+   * Global AI Defaults. Launches below the definition default and above the
+   * global native env key; Rust omits it while unset. Null/absent = adapter
+   * default.
+   */
+  effort_level?: string | null;
 };
 
 /**

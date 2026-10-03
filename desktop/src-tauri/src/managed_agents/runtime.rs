@@ -446,6 +446,7 @@ pub(crate) struct EffortApplied(());
 /// `apply_spawn_effort_env` below turns the production-sequence tests RED.
 /// Outer-seam: the returned token is consumed by `spawn_with_effort_proof`;
 /// deleting this call leaves `effort` undefined at the spawn site.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_effort_to_spawn_command(
     cmd: &mut std::process::Command,
     record: &crate::managed_agents::types::ManagedAgentRecord,
@@ -453,10 +454,18 @@ pub(crate) fn apply_effort_to_spawn_command(
     personas: &[crate::managed_agents::types::AgentDefinition],
     persona_id: Option<&str>,
     global_env: &std::collections::BTreeMap<String, String>,
+    global_effort: Option<&str>,
     baked_env: &std::collections::BTreeMap<String, String>,
 ) -> EffortApplied {
     super::config_bridge::effort::apply_spawn_effort_env(
-        cmd, record, runtime, personas, persona_id, global_env, baked_env,
+        cmd,
+        record,
+        runtime,
+        personas,
+        persona_id,
+        global_env,
+        global_effort,
+        baked_env,
     );
     EffortApplied(())
 }
@@ -728,6 +737,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         &personas,
         record.persona_id.as_deref(),
         &global.env_vars,
+        global.effort_level.as_deref(),
         &super::agent_env::baked_build_env(),
     );
     if let Some(meta) = runtime_meta {

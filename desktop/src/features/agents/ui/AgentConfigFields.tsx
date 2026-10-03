@@ -62,6 +62,7 @@ import {
 import { SettingsOptionGroup } from "@/features/settings/ui/SettingsOptionGroup";
 import { AdvancedRequiredBadge } from "./AdvancedRequiredBadge";
 import { CardMintKeyCue } from "./CardMintKeyCue";
+import { ModelEffortFields } from "./ModelEffortFields";
 import { getGlobalAgentCredentialState } from "./globalAgentCredentialState";
 
 export const EMPTY_GLOBAL_CONFIG: GlobalAgentConfig = {
@@ -645,6 +646,25 @@ export function AgentConfigFields({
     ? (config.env_vars[effortPersistenceKey] ?? "")
     : "";
   const effortFieldVisible = showEffortField && effortField !== undefined;
+  // ACP thought-level harnesses (Claude Code, Codex, Hermes) have no native
+  // env knob, so their global default is the structured `effort_level`
+  // column, offered as the default model's companion through the same
+  // ModelEffortFields/effortPickerState path as the per-agent dialogs (the
+  // picker hides itself when the catalog publishes no vocabulary). The
+  // env-var EffortSelectField above stays the Goose/buzz-agent control.
+  const thoughtLevelEffort =
+    showEffortField &&
+    !dependentFieldsDisabled &&
+    selectedRuntime?.effortThoughtLevel != null
+      ? {
+          config: undefined,
+          id: "global-agent-effort",
+          onChange: (level: string | null) =>
+            onConfigChange({ ...config, effort_level: level }),
+          runtime: selectedRuntime,
+          value: config.effort_level ?? null,
+        }
+      : null;
   const apiKeyCredentialPresent =
     apiKeyValue.trim().length > 0 || apiKeyInherited;
   const apiKeyValidationRequired =
@@ -799,59 +819,66 @@ export function AgentConfigFields({
 
   const modelAndEffortFields = (
     <>
-      {/* Model field — omitted only after confirmed successful empty discovery */}
+      {/* Model field — omitted only after confirmed successful empty discovery.
+          Its thought-level effort companion (the global `effort_level`
+          column) renders beneath it through ModelEffortFields. */}
       {modelControlVisible ? (
-        <div className={showDescriptions ? fieldClassName : undefined}>
-          <AgentModelField
-            allowDefaultModel={fallbackModel !== null}
-            defaultModelLabel={
-              fallbackModel
-                ? `Default model (${resolveModelLabel(fallbackModel, undefined, effectiveProvider || undefined)})`
-                : undefined
-            }
-            disableSelectDuringDiscovery={disableModelSelectDuringDiscovery}
-            disabled={dependentFieldsDisabled}
-            discoveredModelOptions={
-              dependentFieldsDisabled ? null : discoveredModelOptions
-            }
-            globalModel={fallbackModel ?? undefined}
-            id="global-agent-model"
-            isCustomModelEditing={isCustomModelEditing}
-            isRequired={
-              showRequiredIndicators &&
-              !modelIsOptional &&
-              fallbackModel === null &&
-              !dependentFieldsDisabled
-            }
-            model={dependentFieldsDisabled ? "" : (config.model ?? "")}
-            modelDiscoveryLoading={
-              dependentFieldsDisabled ? false : modelDiscoveryLoading
-            }
-            modelDiscoveryStatus={
-              dependentFieldsDisabled ? null : modelDiscoveryStatus
-            }
-            onIsCustomModelEditingChange={onCustomModelEditingChange}
-            onModelChange={handleModelChange}
-            placeholderClassName={placeholderClassName}
-            placeholder="Select a model"
-            provider={providerForDiscovery}
-            fieldClassName={unstyled ? fieldClassName : undefined}
-            labelClassName={fieldLabelClassName}
-            selectClassName={selectClassName}
-            showCustomModelOption={showCustomModelOption}
-            showStatusMessage={shouldShowModelStatusMessage(
-              showDescriptions,
-              dependentFieldsDisabled ? null : modelDiscoveryStatus,
-            )}
-            testId="global-agent-model"
-            useCustomSelect={useCustomSelect}
-            useChevronIcon={useChevronSelectIcon}
-            usePersonaInputStyle={progressiveDefaults}
-          />
-        </div>
+        <ModelEffortFields
+          disabled={dependentFieldsDisabled}
+          effort={thoughtLevelEffort}
+        >
+          <div className={showDescriptions ? fieldClassName : undefined}>
+            <AgentModelField
+              allowDefaultModel={fallbackModel !== null}
+              defaultModelLabel={
+                fallbackModel
+                  ? `Default model (${resolveModelLabel(fallbackModel, undefined, effectiveProvider || undefined)})`
+                  : undefined
+              }
+              disableSelectDuringDiscovery={disableModelSelectDuringDiscovery}
+              disabled={dependentFieldsDisabled}
+              discoveredModelOptions={
+                dependentFieldsDisabled ? null : discoveredModelOptions
+              }
+              globalModel={fallbackModel ?? undefined}
+              id="global-agent-model"
+              isCustomModelEditing={isCustomModelEditing}
+              isRequired={
+                showRequiredIndicators &&
+                !modelIsOptional &&
+                fallbackModel === null &&
+                !dependentFieldsDisabled
+              }
+              model={dependentFieldsDisabled ? "" : (config.model ?? "")}
+              modelDiscoveryLoading={
+                dependentFieldsDisabled ? false : modelDiscoveryLoading
+              }
+              modelDiscoveryStatus={
+                dependentFieldsDisabled ? null : modelDiscoveryStatus
+              }
+              onIsCustomModelEditingChange={onCustomModelEditingChange}
+              onModelChange={handleModelChange}
+              placeholderClassName={placeholderClassName}
+              placeholder="Select a model"
+              provider={providerForDiscovery}
+              fieldClassName={unstyled ? fieldClassName : undefined}
+              labelClassName={fieldLabelClassName}
+              selectClassName={selectClassName}
+              showCustomModelOption={showCustomModelOption}
+              showStatusMessage={shouldShowModelStatusMessage(
+                showDescriptions,
+                dependentFieldsDisabled ? null : modelDiscoveryStatus,
+              )}
+              testId="global-agent-model"
+              useCustomSelect={useCustomSelect}
+              useChevronIcon={useChevronSelectIcon}
+              usePersonaInputStyle={progressiveDefaults}
+            />
+          </div>
+        </ModelEffortFields>
       ) : null}
 
-      {/* Thinking / Effort */}
+      {/* Thinking / Effort (native env knob: Goose, buzz-agent) */}
       {effortFieldVisible ? (
         <div className={blockClassName}>
           <EffortSelectField

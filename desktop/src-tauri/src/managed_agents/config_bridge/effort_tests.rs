@@ -151,6 +151,7 @@ fn project_record_only(
         None,
         &BTreeMap::new(),
         None,
+        None,
         &BTreeMap::new(),
     )
 }
@@ -236,6 +237,7 @@ fn canonical_column_wins_when_no_record_native() {
         Some("p"),
         &BTreeMap::new(),
         None,
+        None,
         &BTreeMap::new(),
     );
     assert_eq!(launch.value.as_deref(), Some("high"));
@@ -255,6 +257,7 @@ fn record_legacy_alias_wins_over_persona_for_goose() {
         &personas,
         Some("p"),
         &BTreeMap::new(),
+        None,
         None,
         &BTreeMap::new(),
     );
@@ -276,6 +279,7 @@ fn persona_then_global_then_definition_then_baked_fall_through() {
         Some("p"),
         &global,
         None,
+        None,
         &BTreeMap::new(),
     );
     assert_eq!(
@@ -293,6 +297,7 @@ fn persona_then_global_then_definition_then_baked_fall_through() {
         Some("p"),
         &global,
         None,
+        None,
         &BTreeMap::new(),
     );
     assert_eq!(
@@ -309,6 +314,7 @@ fn persona_then_global_then_definition_then_baked_fall_through() {
         &personas,
         Some("p"),
         &BTreeMap::new(),
+        None,
         Some(&def),
         &BTreeMap::new(),
     );
@@ -326,6 +332,7 @@ fn persona_then_global_then_definition_then_baked_fall_through() {
         &personas,
         Some("p"),
         &BTreeMap::new(),
+        None,
         None,
         &baked,
     );
@@ -358,6 +365,7 @@ fn invalid_goose_column_skips_and_falls_through_to_persona() {
         &personas,
         Some("p"),
         &BTreeMap::new(),
+        None,
         None,
         &BTreeMap::new(),
     );
@@ -734,6 +742,7 @@ fn persona_column_launches_for_linked_claude_record_without_column() {
         Some("p"),
         &BTreeMap::new(),
         None,
+        None,
         &BTreeMap::new(),
     );
     assert_eq!(launch.value.as_deref(), Some("high"));
@@ -754,6 +763,7 @@ fn record_column_outranks_persona_column() {
         Some("p"),
         &BTreeMap::new(),
         None,
+        None,
         &BTreeMap::new(),
     );
     assert_eq!(launch.value.as_deref(), Some("low"));
@@ -772,6 +782,7 @@ fn persona_column_sits_between_persona_native_and_legacy_env_for_goose() {
         &native_and_column,
         Some("p"),
         &BTreeMap::new(),
+        None,
         None,
         &BTreeMap::new(),
     );
@@ -792,6 +803,7 @@ fn persona_column_sits_between_persona_native_and_legacy_env_for_goose() {
         &column_and_legacy,
         Some("p"),
         &BTreeMap::new(),
+        None,
         None,
         &BTreeMap::new(),
     );
@@ -816,7 +828,104 @@ fn invalid_persona_column_skips_to_lower_tier_for_contract_runtime() {
         Some("p"),
         &env(&[(GOOSE_KEY, "max")]),
         None,
+        None,
         &BTreeMap::new(),
     );
     assert_eq!(launch.value.as_deref(), Some("max"));
+}
+
+// --------------------------------------------------------------------------
+// Global default effort: the structured `GlobalAgentConfig::effort_level` column
+// --------------------------------------------------------------------------
+
+#[test]
+fn global_column_launches_for_claude_when_no_record_or_persona_authority() {
+    let mut r = record();
+    r.persona_id = Some("p".into());
+    let personas = vec![persona("p", BTreeMap::new())];
+    let launch = effort_launch_projection(
+        &r,
+        Some(claude()),
+        &personas,
+        Some("p"),
+        &BTreeMap::new(),
+        Some("medium"),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(launch.value.as_deref(), Some("medium"));
+    assert_eq!(launch.key, ACP_KEY);
+}
+
+#[test]
+fn persona_column_outranks_global_column() {
+    let mut r = record();
+    r.persona_id = Some("p".into());
+    let personas = vec![persona_with_column("p", "high", BTreeMap::new())];
+    let launch = effort_launch_projection(
+        &r,
+        Some(claude()),
+        &personas,
+        Some("p"),
+        &BTreeMap::new(),
+        Some("low"),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(launch.value.as_deref(), Some("high"));
+}
+
+#[test]
+fn global_column_sits_below_persona_legacy_and_above_global_native_def_and_baked_for_goose() {
+    let mut r = record();
+    r.persona_id = Some("p".into());
+
+    // persona legacy alias > global column
+    let legacy = vec![persona("p", env(&[(BUZZ_AGENT_KEY, "low")]))];
+    let launch = effort_launch_projection(
+        &r,
+        Some(goose()),
+        &legacy,
+        Some("p"),
+        &BTreeMap::new(),
+        Some("high"),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(
+        launch.value.as_deref(),
+        Some("low"),
+        "persona legacy outranks the global column"
+    );
+
+    // global column > global native > definition > baked
+    let none = vec![persona("p", BTreeMap::new())];
+    let launch = effort_launch_projection(
+        &r,
+        Some(goose()),
+        &none,
+        Some("p"),
+        &env(&[(GOOSE_KEY, "low")]),
+        Some("high"),
+        Some(&harness_def(env(&[(GOOSE_KEY, "medium")]))),
+        &env(&[(GOOSE_KEY, "max")]),
+    );
+    assert_eq!(
+        launch.value.as_deref(),
+        Some("high"),
+        "the global column outranks every lower tier"
+    );
+
+    // An invalid global column skips to global native for a contract runtime.
+    let launch = effort_launch_projection(
+        &r,
+        Some(goose()),
+        &none,
+        Some("p"),
+        &env(&[(GOOSE_KEY, "low")]),
+        Some("minimal"),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(launch.value.as_deref(), Some("low"));
 }

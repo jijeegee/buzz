@@ -70,6 +70,15 @@ pub struct GlobalAgentConfig {
     /// Preferred ACP runtime for definitions without an explicit runtime.
     #[serde(default)]
     pub preferred_runtime: Option<String>,
+
+    /// Global default thinking effort for ACP thought-level harnesses (Claude
+    /// Code, Codex, Hermes), set by the effort companion beside the default
+    /// model in Global AI Defaults. The launch projection reads it below the
+    /// persona tier and above the global native env key
+    /// (`config_bridge::effort`). `None` = adapter default; omitted from the
+    /// file while unset so existing configs round-trip byte-identically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort_level: Option<String>,
 }
 
 /// Validate a `GlobalAgentConfig` before persisting it.
@@ -116,6 +125,18 @@ pub fn validate_global_config(config: &GlobalAgentConfig) -> Result<(), String> 
              not as env vars: {}",
             derived.join(", ")
         ));
+    }
+
+    // The global effort is emitted verbatim into the child's env for
+    // thought-level harnesses, so it gets the shared effort gate (blank is
+    // normalized to None at save time and skipped here).
+    if let Some(level) = config
+        .effort_level
+        .as_deref()
+        .filter(|level| !level.trim().is_empty())
+    {
+        super::validate_effort_level_text(Some(level))
+            .map_err(|error| format!("global config `effort_level`: {error}"))?;
     }
 
     // Validate the structured provider and model fields.
@@ -170,6 +191,11 @@ pub fn normalize_global_config_fields(config: &mut GlobalAgentConfig) {
     if let Some(v) = &config.model {
         if v.trim().is_empty() {
             config.model = None;
+        }
+    }
+    if let Some(v) = &config.effort_level {
+        if v.trim().is_empty() {
+            config.effort_level = None;
         }
     }
 }

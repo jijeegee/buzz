@@ -9,14 +9,18 @@
 //! ```text
 //! record native(valid) > canonical column(valid) > record legacy(valid)
 //!   > persona native(valid) > persona column(valid) > persona legacy(valid)
-//!   > global(native) > definition(native) > baked(native)
+//!   > global column(valid) > global(native) > definition(native) > baked(native)
 //! ```
 //!
 //! The persona tier mirrors the record tier's shape: the definition's structured
 //! `effort_level` column (the definition dialog's picker) sits between the
-//! persona's native env key and its legacy alias, so a linked instance with no
-//! column of its own launches the definition default — for Claude/Codex/Hermes
-//! (no native key) the two columns are the only authorities.
+//! persona's native env key and its legacy alias. The global tier puts its
+//! structured column (`GlobalAgentConfig::effort_level`, the Global AI Defaults
+//! picker) above its native env key. Neither column needs a native key, so for
+//! Claude/Codex/Hermes the three columns (instance > definition > global) are
+//! the only authorities — and the definition/global defaults apply to EVERY
+//! instance, remote ones included, through the deploy `launch.env`; only the
+//! instance column write is local-only.
 //!
 //! (The reader adds the live-ACP tier between column and persona and the config
 //! file tier at the bottom; the launch projection has neither — a spawn reads
@@ -144,6 +148,7 @@ pub(crate) fn apply_launch_effort(
     runtime: Option<&KnownAcpRuntime>,
     personas: &[AgentDefinition],
     global_env: &BTreeMap<String, String>,
+    global_effort: Option<&str>,
     harness_def: Option<&HarnessDefinition>,
     baked_env: &BTreeMap<String, String>,
 ) {
@@ -153,6 +158,7 @@ pub(crate) fn apply_launch_effort(
         personas,
         record.persona_id.as_deref(),
         global_env,
+        global_effort,
         harness_def,
         baked_env,
     )
@@ -336,16 +342,19 @@ pub(crate) fn snapshot_suppress_keys(runtime: Option<&KnownAcpRuntime>) -> Vec<&
 
 /// Build the single effective-effort projection for a launch.
 ///
-/// `global_env`, `persona_id`+`personas`, `harness_def`, and `baked_env` supply
-/// the same per-tier inputs the layered spawn env is built from; the projection
-/// re-reads them so an invalid high-tier value skips as absent and a lower tier
-/// can win (which a merged last-wins env map cannot express).
+/// `global_env`+`global_effort` (`GlobalAgentConfig::env_vars` /
+/// `::effort_level`), `persona_id`+`personas`, `harness_def`, and `baked_env`
+/// supply the same per-tier inputs the layered spawn env is built from; the
+/// projection re-reads them so an invalid high-tier value skips as absent and a
+/// lower tier can win (which a merged last-wins env map cannot express).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn effort_launch_projection(
     record: &ManagedAgentRecord,
     runtime: Option<&KnownAcpRuntime>,
     personas: &[AgentDefinition],
     persona_id: Option<&str>,
     global_env: &BTreeMap<String, String>,
+    global_effort: Option<&str>,
     harness_def: Option<&HarnessDefinition>,
     baked_env: &BTreeMap<String, String>,
 ) -> EffortLaunch {
@@ -395,6 +404,7 @@ pub(crate) fn effort_launch_projection(
         personas,
         persona_id,
         global_env,
+        global_effort,
         harness_def,
         baked_env,
     );
@@ -416,6 +426,7 @@ fn resolve_effective_effort(
     personas: &[AgentDefinition],
     persona_id: Option<&str>,
     global_env: &BTreeMap<String, String>,
+    global_effort: Option<&str>,
     harness_def: Option<&HarnessDefinition>,
     baked_env: &BTreeMap<String, String>,
 ) -> Option<String> {
@@ -469,13 +480,25 @@ fn resolve_effective_effort(
             return Some(v);
         }
     }
+    //    Persona legacy alias — only when the native key differs from it.
+    if let Some(nk) = native_key {
+        if nk != LEGACY_THINKING_EFFORT_KEY {
+            if let Some(raw) = get_ci(&persona_env, LEGACY_THINKING_EFFORT_KEY) {
+                if let Some(v) = norm(raw) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    // 5. global — the structured column (Global AI Defaults picker; needs no
+    //    native key) above the native env key.
+    if let Some(raw) = global_effort {
+        if let Some(v) = norm(raw) {
+            return Some(v);
+        }
+    }
     // Env tiers below require a native key to read.
     let nk = native_key?;
-    if let Some(v) = effort_tier_alias(&persona_env, nk, norm, true) {
-        // Native was already checked above; this resolves the legacy alias.
-        return Some(v);
-    }
-    // 5. global (native only).
     let global = merged_user_env(&BTreeMap::new(), global_env);
     if let Some(v) = effort_tier_alias(&global, nk, norm, false) {
         return Some(v);
@@ -509,6 +532,7 @@ fn resolve_effective_effort(
 /// Deleting the outer `apply_effort_to_spawn_command` call from `spawn_agent_child`
 /// is a compile error — `spawn_with_effort_proof` consumes the returned `EffortApplied`
 /// token, so removing the binding leaves `effort` undefined at the spawn site.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_spawn_effort_env(
     cmd: &mut std::process::Command,
     record: &ManagedAgentRecord,
@@ -516,11 +540,19 @@ pub(crate) fn apply_spawn_effort_env(
     personas: &[AgentDefinition],
     persona_id: Option<&str>,
     global_env: &BTreeMap<String, String>,
+    global_effort: Option<&str>,
     baked_env: &BTreeMap<String, String>,
 ) {
     crate::managed_agents::agent_env::build_buzz_agent_provider_defaults(cmd);
     let launch = effort_launch_projection(
-        record, runtime, personas, persona_id, global_env, None, baked_env,
+        record,
+        runtime,
+        personas,
+        persona_id,
+        global_env,
+        global_effort,
+        None,
+        baked_env,
     );
     apply_effort_launch_to_command(cmd, &launch);
 }

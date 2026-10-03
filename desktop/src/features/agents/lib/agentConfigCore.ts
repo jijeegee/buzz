@@ -233,10 +233,12 @@ export function deriveAgentConfigFieldModel({
   } else if (runtime?.effortThoughtLevel) {
     // The catalog says this adapter advertises effort as an ACP `thought_level`
     // config option (claude-agent-acp `effort`, codex-acp 2.x and hermes-acp
-    // `reasoning_effort`), applied once at session start from the record
-    // column. The generic renderer still defers — the per-agent write control
-    // is `EffortPickerField`, fed by the same catalog fact's `fallbackValues`
-    // until the session discovers the real option list.
+    // `reasoning_effort`), applied once at session start from the resolved
+    // column (instance > definition > global `effort_level`). The generic
+    // env-var renderer still defers — the write control is `EffortPickerField`
+    // through `ModelEffortFields`, fed by the same catalog fact's
+    // `fallbackValues` until a session discovers the real option list;
+    // `AgentConfigFields` renders it for the global column beside the model.
     fields.push({
       kind: "effort",
       optionSource: "harnessNative",

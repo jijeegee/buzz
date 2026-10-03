@@ -263,6 +263,7 @@ fn default_config_is_all_none_empty() {
 #[test]
 fn roundtrip_serialization() {
     let config = GlobalAgentConfig {
+        effort_level: None,
         env_vars: BTreeMap::from([("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string())]),
         provider: Some("anthropic".to_string()),
         model: Some("claude-opus-4".to_string()),
@@ -689,6 +690,7 @@ fn resolve_each_field_resolves_independently_through_tiers() {
 #[test]
 fn populated_global_config_round_trips() {
     let original = GlobalAgentConfig {
+        effort_level: None,
         env_vars: [("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string())]
             .into_iter()
             .collect(),
@@ -756,4 +758,41 @@ fn record_runtime_wins_over_persona_runtime_for_command_resolution() {
         cmd, "claude-agent-acp",
         "record runtime must override persona runtime in command resolution"
     );
+}
+
+// ── Global default thinking effort ────────────────────────────────────────────
+
+#[test]
+fn effort_level_is_omitted_from_the_file_while_unset() {
+    let json = serde_json::to_string(&GlobalAgentConfig::default()).unwrap();
+    assert!(
+        !json.contains("effort_level"),
+        "an unset effort must keep pre-field configs byte-identical: {json}"
+    );
+    let legacy: GlobalAgentConfig = serde_json::from_str(
+        r#"{"env_vars":{},"provider":null,"model":null,"preferred_runtime":"claude"}"#,
+    )
+    .unwrap();
+    assert_eq!(legacy.effort_level, None);
+}
+
+#[test]
+fn effort_level_validates_through_the_shared_gate_and_normalizes_blank() {
+    let mut config = GlobalAgentConfig {
+        effort_level: Some("high".to_string()),
+        ..Default::default()
+    };
+    validate_global_config(&config).unwrap();
+
+    config.effort_level = Some("hi\0gh".to_string());
+    let error = validate_global_config(&config).unwrap_err();
+    assert!(error.contains("effort_level"), "{error}");
+
+    config.effort_level = Some("x".repeat(65));
+    assert!(validate_global_config(&config).is_err());
+
+    config.effort_level = Some("   ".to_string());
+    validate_global_config(&config).expect("blank is normalized away, not rejected");
+    normalize_global_config_fields(&mut config);
+    assert_eq!(config.effort_level, None);
 }

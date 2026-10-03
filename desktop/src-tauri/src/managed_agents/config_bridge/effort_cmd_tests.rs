@@ -184,6 +184,7 @@ fn production_sequence_goose_inherited_collision_resolved_in_child() {
         &[],
         None,
         &BTreeMap::new(),
+        None,
         &BTreeMap::new(),
     );
     let child_env = run_env_cmd(&mut cmd);
@@ -236,6 +237,7 @@ fn production_sequence_arbitrary_mixedcase_collision_absent_from_child_windows()
         &[],
         None,
         &BTreeMap::new(),
+        None,
         &BTreeMap::new(),
     );
     let child_env = run_env_cmd(&mut cmd);
@@ -268,6 +270,7 @@ fn production_sequence_custom_passthrough_survives() {
         &[],
         None,
         &BTreeMap::new(),
+        None,
         &BTreeMap::new(),
     );
     let child_env = run_env_cmd(&mut cmd);
@@ -296,6 +299,7 @@ fn production_sequence_custom_inherited_goose_key_survives() {
         &[],
         None,
         &BTreeMap::new(),
+        None,
         &BTreeMap::new(),
     );
     let child_env = run_env_cmd(&mut cmd);
@@ -319,6 +323,7 @@ fn production_sequence_custom_inherited_acp_sentinel_survives() {
         &[],
         None,
         &BTreeMap::new(),
+        None,
         &BTreeMap::new(),
     );
     let child_env = run_env_cmd(&mut cmd);
@@ -344,6 +349,7 @@ fn production_sequence_custom_passthrough_survives() {
         &[],
         None,
         &BTreeMap::new(),
+        None,
         &BTreeMap::new(),
     );
     let child_env = run_env_cmd(&mut cmd);

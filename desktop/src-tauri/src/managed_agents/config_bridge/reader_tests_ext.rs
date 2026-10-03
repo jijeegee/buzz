@@ -548,6 +548,7 @@ fn projection_value(
         None,
         global_env,
         None,
+        None,
         &BTreeMap::new(),
     )
     .value

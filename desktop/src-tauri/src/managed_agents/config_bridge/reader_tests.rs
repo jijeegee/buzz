@@ -1032,3 +1032,28 @@ fn persona_native_env_outranks_persona_effort_tier_for_goose() {
     assert_eq!(field.value.as_deref(), Some("low"));
     assert_eq!(field.origin, ConfigOrigin::PersonaDefault);
 }
+
+#[test]
+fn global_effort_tier_produces_global_default_origin_below_the_persona_column() {
+    let record = test_record();
+    let tiers = InheritedConfigTiers {
+        global_effort: Some("medium".to_string()),
+        ..Default::default()
+    };
+    let surface = read_config_surface(&record, Some(claude_runtime()), None, &tiers, None);
+    let field = surface.normalized.thinking_effort.unwrap();
+    assert_eq!(field.value.as_deref(), Some("medium"));
+    assert_eq!(field.origin, ConfigOrigin::GlobalDefault);
+
+    let tiers = InheritedConfigTiers {
+        persona_effort: Some("high".to_string()),
+        global_effort: Some("medium".to_string()),
+        ..Default::default()
+    };
+    let surface = read_config_surface(&record, Some(claude_runtime()), None, &tiers, None);
+    let field = surface.normalized.thinking_effort.unwrap();
+    assert_eq!(field.value.as_deref(), Some("high"));
+    assert_eq!(field.origin, ConfigOrigin::PersonaDefault);
+    assert_eq!(field.overridden_value.as_deref(), Some("medium"));
+    assert_eq!(field.overridden_origin, Some(ConfigOrigin::GlobalDefault));
+}

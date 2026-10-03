@@ -102,7 +102,6 @@ pub(crate) struct EffectiveHarnessDescriptor {
     /// env → global → persona → agent.
     pub env: BTreeMap<String, String>,
 }
-
 /// Resolve the complete harness descriptor from a record + context — the single
 /// authoritative path for command, args, and env.
 ///
@@ -279,6 +278,7 @@ fn resolve_effective_agent_env_with_def(
         runtime,
         personas,
         &global.env_vars,
+        global.effort_level.as_deref(),
         harness_def.as_deref(),
         &baked_build_env(),
     );

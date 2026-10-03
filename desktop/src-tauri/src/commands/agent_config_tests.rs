@@ -686,6 +686,7 @@ fn picker_write_sweeps_stale_record_native_effort_alias() {
         None,
         &std::collections::BTreeMap::new(),
         None,
+        None,
         &std::collections::BTreeMap::new(),
     );
     assert_eq!(launch.value.as_deref(), Some("high"));
