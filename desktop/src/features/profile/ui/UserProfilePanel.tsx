@@ -766,7 +766,6 @@ export function UserProfilePanel({
       onDuplicatePersona={handleDuplicatePersona}
       onExportPersona={handleExportPersona}
       onToggleAutoStart={handleToggleAgentAutoStart}
-      onToggleDefaultAi={handleToggleAgentDefaultAi}
       personaActionKey={resolvedPersona?.id}
       viewerIsOwner={viewerIsOwner}
     />
@@ -837,6 +836,7 @@ export function UserProfilePanel({
           handleAgentRestart={handleAgentRestart}
           handleEditAgent={handleEditAgent}
           handleToggleAgentAutoStart={handleToggleAgentAutoStart}
+          handleToggleAgentDefaultAi={handleToggleAgentDefaultAi}
           handleEditPersona={canManagePersona ? handleEditPersona : undefined}
           handleHuddle={canHuddle ? handleHuddle : undefined}
           handleInstantiateAgent={handleInstantiateAgent}

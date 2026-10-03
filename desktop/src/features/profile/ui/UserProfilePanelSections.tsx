@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ChevronDown, ChevronUp, Pencil } from "lucide-react";
 
+import { isDefaultAiEligible } from "@/features/agents/lib/defaultAi";
 import { OtherSetupAgentMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
 import { useIsOtherSetupAgent } from "@/features/agents/useKnownAgentPubkeys";
 import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
@@ -76,6 +77,7 @@ export type ProfileSummaryViewProps = {
   handleAgentRestart: () => void;
   handleEditAgent: () => void;
   handleToggleAgentAutoStart: () => void;
+  handleToggleAgentDefaultAi: () => void;
   handleEditPersona?: () => void;
   handleHuddle?: () => void;
   handleInstantiateAgent: () => void;
@@ -152,6 +154,7 @@ export function ProfileSummaryView({
   handleAgentRestart,
   handleEditAgent,
   handleToggleAgentAutoStart,
+  handleToggleAgentDefaultAi,
   handleEditPersona,
   handleHuddle,
   handleInstantiateAgent,
@@ -539,6 +542,8 @@ export function ProfileSummaryView({
                     managedAgent?.autoRestartOnConfigChange ?? false
                   }
                   currentPubkey={pubkey}
+                  defaultAiEnabled={managedAgent?.isDefaultAi ?? false}
+                  defaultAiPending={isAgentActionPending}
                   diagnosticsFields={diagnosticsFields}
                   diagnosticsSummary={diagnosticsTrailing}
                   configurationFields={runtimeFields}
@@ -555,6 +560,13 @@ export function ProfileSummaryView({
                     ) : undefined
                   }
                   needsRestart={managedAgent?.needsRestart ?? false}
+                  onToggleDefaultAi={
+                    isOwner === true &&
+                    managedAgent !== undefined &&
+                    isDefaultAiEligible(managedAgent)
+                      ? handleToggleAgentDefaultAi
+                      : undefined
+                  }
                   onToggleStartOnLaunch={
                     managedAgent?.backend.type === "local"
                       ? handleToggleAgentAutoStart
