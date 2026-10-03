@@ -6,6 +6,7 @@ import {
   channelsQueryKey,
   upsertCachedChannel,
 } from "@/features/channels/hooks";
+import { joinAgentsAfterCreate } from "@/features/agents/lib/joinAgentsAfterCreate";
 import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
 import { useApplyTemplate } from "@/features/channel-templates/useApplyTemplate";
 import { type Project, projectsQueryKey } from "@/features/projects/hooks";
@@ -82,14 +83,21 @@ export function useCreateProjectMutation() {
             );
           }
         } else if (input.templateId) {
-          await Promise.all([
-            applyCanvas(input.templateId, channel.id, channel.name),
-            applyAgents(input.templateId, channel.id),
-          ]);
+          await applyCanvas(input.templateId, channel.id, channel.name);
         }
-        // After the awaited template/requested agents so the membership
-        // writes never race; not awaited so navigation is not held up.
-        if (input.addDefaultAi) void attachDefaultAi(channel.id);
+        // Same order as the channel/forum/project-channel paths: default AI
+        // first, then template personas (deduped against members). The
+        // form-requested agents were already added inside `createProject`,
+        // before this resolved. Fired after the canvas so navigation is not
+        // held up by a spawn.
+        void joinAgentsAfterCreate(
+          { attachDefaultAi, applyAgents },
+          {
+            channelId: channel.id,
+            templateId: useProjectHomeTemplate ? undefined : input.templateId,
+            addDefaultAi: input.addDefaultAi,
+          },
+        );
       }
       void queryClient.invalidateQueries({ queryKey: projectsQueryKey });
     },

@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { resolveAddDefaultAi } from "@/features/agents/lib/defaultAi";
 import { getDefaultAiAutoJoin } from "@/features/agents/lib/defaultAiPreferences";
 import { useDefaultAi } from "@/features/agents/useDefaultAi";
 import { useChannelTemplatesQuery } from "@/features/channel-templates/hooks";
@@ -179,7 +180,7 @@ export function useCreateChannelForm({
             visibility,
             ttlSeconds: ephemeral ? ttlSeconds : undefined,
             templateId: selectedTemplateId ?? undefined,
-            addDefaultAi: defaultAi !== null && addDefaultAi,
+            addDefaultAi: resolveAddDefaultAi(defaultAi, addDefaultAi),
           });
           onCreated?.();
         } catch (error) {

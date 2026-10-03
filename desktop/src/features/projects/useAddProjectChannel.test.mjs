@@ -117,6 +117,70 @@ test("addProjectChannel removes its channel and does not publish when the projec
   assert.equal(publishCalls, 0);
 });
 
+function successDeps(events) {
+  const liveHead = makeLiveHead(100);
+  let releaseAttach = () => {};
+  return {
+    deps: {
+      applyAgents: async (templateId, channelId) => {
+        events.push(`apply:${templateId ?? "none"}:${channelId}`);
+      },
+      applyCanvas: async () => {},
+      attachDefaultAi: (channelId) => {
+        events.push(`attach:start:${channelId}`);
+        return new Promise((resolve) => {
+          releaseAttach = () => {
+            events.push("attach:done");
+            resolve();
+          };
+        });
+      },
+      createChannel: async () => ({ id: CREATED_CHANNEL, name: "Engineering" }),
+      fetchEvents: async () => [liveHead],
+      publishOwnerAnnouncement: async () => ({ event: { created_at: 101 } }),
+    },
+    releaseAttach: () => releaseAttach(),
+  };
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("addProjectChannel joins the default AI before applying template agents", async () => {
+  const events = [];
+  const { deps, releaseAttach } = successDeps(events);
+
+  const result = await addProjectChannel(
+    { ...input(), addDefaultAi: true, templateId: "tpl-1" },
+    deps,
+  );
+  assert.equal(result.channel.id, CREATED_CHANNEL);
+  await settle();
+  // The attach is in flight; the template must wait for it.
+  assert.deepEqual(events, [`attach:start:${CREATED_CHANNEL}`]);
+
+  releaseAttach();
+  await settle();
+  assert.deepEqual(events, [
+    `attach:start:${CREATED_CHANNEL}`,
+    "attach:done",
+    `apply:tpl-1:${CREATED_CHANNEL}`,
+  ]);
+});
+
+test("addProjectChannel still applies template agents when the default AI is not requested", async () => {
+  for (const addDefaultAi of [false, undefined]) {
+    const events = [];
+    const { deps } = successDeps(events);
+
+    await addProjectChannel(
+      { ...input(), addDefaultAi, templateId: "tpl-1" },
+      deps,
+    );
+    await settle();
+    assert.deepEqual(events, [`apply:tpl-1:${CREATED_CHANNEL}`]);
+  }
+});
+
 test("addProjectChannel removes its channel when project publication fails", async () => {
   const liveHead = makeLiveHead(100);
   const deleted = [];

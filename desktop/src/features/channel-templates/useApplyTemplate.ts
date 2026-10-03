@@ -132,7 +132,11 @@ export function useApplyTemplate() {
     if (inputs.length === 0) return;
 
     try {
-      const result = await createChannelManagedAgents(channelId, inputs);
+      // A persona already in the channel (e.g. the starred default AI, which
+      // joins before the template is applied) is satisfied, not duplicated.
+      const result = await createChannelManagedAgents(channelId, inputs, {
+        skipPersonasAlreadyInChannel: true,
+      });
       if (result.failures.length > 0) {
         const { toast } = await import("sonner");
         toast.warning(

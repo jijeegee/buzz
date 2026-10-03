@@ -1,5 +1,6 @@
 import {
   commandsMatch,
+  dropPersonasAlreadyInChannel,
   findReusableGenericAgent,
   findReusablePersonaAgent,
   pickPreferredManagedAgent,
@@ -122,6 +123,17 @@ export type CreateChannelManagedAgentBatchFailure = {
 export type CreateChannelManagedAgentsResult = {
   successes: CreateChannelManagedAgentResult[];
   failures: CreateChannelManagedAgentBatchFailure[];
+};
+
+export type CreateChannelManagedAgentsOptions = {
+  /**
+   * Treat a persona that already has an instance in the channel as satisfied
+   * and skip its input (unless `forceNewInstance`). Template application sets
+   * this so a channel that already holds the starred default AI's persona
+   * does not gain a second instance; the deploy dialog leaves it unset to
+   * keep its deliberate "another instance" behaviour.
+   */
+  skipPersonasAlreadyInChannel?: boolean;
 };
 
 type ChannelAgentReuseContext = {
@@ -449,8 +461,10 @@ export async function createChannelManagedAgent(
 
 export async function createChannelManagedAgents(
   channelId: string,
-  inputs: readonly CreateChannelManagedAgentInput[],
+  requestedInputs: readonly CreateChannelManagedAgentInput[],
+  options?: CreateChannelManagedAgentsOptions,
 ): Promise<CreateChannelManagedAgentsResult> {
+  let inputs = requestedInputs;
   // Fetch managed agents and channel members once for smart reuse checks.
   const needsPersonaPolicy = inputs.some(
     (input) =>
@@ -469,6 +483,13 @@ export async function createChannelManagedAgents(
     members.map((m) => normalizePubkey(m.pubkey)),
   );
   const context = { managedAgents, channelMemberPubkeys, personas };
+  if (options?.skipPersonasAlreadyInChannel) {
+    inputs = dropPersonasAlreadyInChannel(
+      inputs,
+      managedAgents,
+      channelMemberPubkeys,
+    );
+  }
 
   // Sequential loop: each agent must be fully created and its relay membership
   // written before the next starts. Concurrent writes to the replaceable

@@ -6,10 +6,20 @@ import {
   defaultAiToggleNotice,
   findDefaultAi,
   isDefaultAiEligible,
+  resolveAddDefaultAi,
 } from "./defaultAi.ts";
 
 const KEYED = "ab".repeat(32);
 const OTHER = "cd".repeat(32);
+
+test("a create form submits addDefaultAi only when an agent is starred and the switch is on", () => {
+  const starred = { pubkey: KEYED, isDefaultAi: true };
+  assert.equal(resolveAddDefaultAi(starred, true), true);
+  assert.equal(resolveAddDefaultAi(starred, false), false);
+  // Preference on, but nothing to add: forced false.
+  assert.equal(resolveAddDefaultAi(null, true), false);
+  assert.equal(resolveAddDefaultAi(undefined, true), false);
+});
 
 test("no starred agent yields null", () => {
   assert.equal(findDefaultAi([]), null);

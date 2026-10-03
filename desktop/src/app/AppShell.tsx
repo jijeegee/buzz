@@ -91,6 +91,7 @@ import {
 import { useAddCommunityDialogState } from "@/features/communities/addCommunityPrefill";
 import { useApplyTemplate } from "@/features/channel-templates/useApplyTemplate";
 import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
+import { joinAgentsAfterCreate } from "@/features/agents/lib/joinAgentsAfterCreate";
 import { relayClient } from "@/shared/api/relayClient";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useRelayAutoHeal } from "@/shared/api/useRelayAutoHeal";
@@ -510,19 +511,18 @@ export function AppShell() {
     createForumMutation = useCreateChannelMutation();
   const { applyCanvas, applyAgents } = useApplyTemplate();
   const { attachDefaultAi } = useAttachDefaultAi();
-  // Default-AI attach and template agents both rewrite the channel's
-  // replaceable membership event, so they run in sequence (default AI first)
-  // after navigation; each reports its own failures.
+  // Fired after navigation; the shared sequence (default AI, then template
+  // personas) owns the ordering and each step reports its own failures.
   const addAgentsAfterCreate = React.useCallback(
     (
       channelId: string,
       templateId: string | undefined,
       addDefaultAi: boolean,
     ) =>
-      void (async () => {
-        if (addDefaultAi) await attachDefaultAi(channelId);
-        await applyAgents(templateId, channelId);
-      })(),
+      void joinAgentsAfterCreate(
+        { attachDefaultAi, applyAgents },
+        { channelId, templateId, addDefaultAi },
+      ),
     [applyAgents, attachDefaultAi],
   );
   const openDmMutation = useOpenDmMutation();

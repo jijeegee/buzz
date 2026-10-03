@@ -24,12 +24,14 @@ export function useAttachDefaultAi() {
 
   const attachDefaultAi = React.useCallback(
     async (channelId: string) => {
-      // Prefer the freshest cached record: the hook value can lag a status
-      // poll, and the attach uses `status` to decide whether to start.
+      // Resolve the star from the cache at call time only — never from the
+      // render closure. A stale closure could attach a record that has since
+      // been un-starred or deleted as a ghost member, and the cache also
+      // carries the fresh `status` the attach uses to decide on a start.
       const cached = queryClient.getQueryData<ManagedAgent[]>(
         managedAgentsQueryKey,
       );
-      const agent = (cached ? findDefaultAi(cached) : null) ?? defaultAi;
+      const agent = cached ? findDefaultAi(cached) : null;
       if (!agent) return;
 
       try {
@@ -55,7 +57,7 @@ export function useAttachDefaultAi() {
         ]);
       }
     },
-    [defaultAi, queryClient],
+    [queryClient],
   );
 
   return { attachDefaultAi, hasDefaultAi: defaultAi !== null };

@@ -7,6 +7,7 @@ import {
   useTeamsQuery,
 } from "@/features/agents/hooks";
 import { getActivePersonas } from "@/features/agents/lib/catalog";
+import { resolveAddDefaultAi } from "@/features/agents/lib/defaultAi";
 import { getDefaultAiAutoJoin } from "@/features/agents/lib/defaultAiPreferences";
 import { resolvePersonaRuntime } from "@/features/agents/lib/resolvePersonaRuntime";
 import {
@@ -191,7 +192,7 @@ export function useCreateProjectFormSettings(
 
   return {
     /** `false` whenever no default AI exists, whatever the stored preference. */
-    addDefaultAi: defaultAi !== null && addDefaultAi,
+    addDefaultAi: resolveAddDefaultAi(defaultAi, addDefaultAi),
     agentPersonaId,
     buildAgents,
     channelVisibility,

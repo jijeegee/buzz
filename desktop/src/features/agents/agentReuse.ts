@@ -50,6 +50,50 @@ export function pickPreferredManagedAgent(agents: ManagedAgent[]) {
   })[0];
 }
 
+/**
+ * True when some managed agent linked to `personaId` is already a member of
+ * the channel. `findReusablePersonaAgent` deliberately looks past members (a
+ * deploy dialog may want a second instance), so a template/batch caller that
+ * wants "one instance per persona" checks this first.
+ */
+export function isPersonaRepresentedInChannel(
+  agents: readonly Pick<ManagedAgent, "pubkey" | "personaId">[],
+  personaId: string,
+  channelMemberPubkeys: ReadonlySet<string>,
+): boolean {
+  return agents.some(
+    (agent) =>
+      agent.personaId === personaId &&
+      channelMemberPubkeys.has(normalizePubkey(agent.pubkey)),
+  );
+}
+
+/**
+ * Drops persona-backed inputs whose persona already has an instance in the
+ * channel (unless the input forces a fresh instance). Generic (persona-less)
+ * inputs pass through untouched. Used by template application so a channel
+ * that already holds, e.g., the starred default AI's persona does not gain a
+ * second instance of it.
+ */
+export function dropPersonasAlreadyInChannel<
+  T extends { personaId?: string | null; forceNewInstance?: boolean },
+>(
+  inputs: readonly T[],
+  agents: readonly Pick<ManagedAgent, "pubkey" | "personaId">[],
+  channelMemberPubkeys: ReadonlySet<string>,
+): T[] {
+  return inputs.filter(
+    (input) =>
+      !input.personaId ||
+      input.forceNewInstance ||
+      !isPersonaRepresentedInChannel(
+        agents,
+        input.personaId,
+        channelMemberPubkeys,
+      ),
+  );
+}
+
 export function findReusablePersonaAgent(
   agents: ManagedAgent[],
   personaId: string,

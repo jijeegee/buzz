@@ -267,10 +267,10 @@ export function CreateProjectFormSettings({
 
       {defaultAi ? (
         <div
-          className={SETTINGS_ROW_CLASS}
+          className={cn(SETTINGS_ROW_CLASS, disabled && "opacity-50")}
           data-testid="create-project-default-ai-container"
         >
-          <div className={cn("min-w-0", disabled && "opacity-50")}>
+          <div className="min-w-0">
             <label
               className="text-sm font-medium text-foreground"
               htmlFor="create-project-add-default-ai"

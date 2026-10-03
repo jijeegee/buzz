@@ -433,18 +433,32 @@ with a TypeScript lookup table or an id comparison in a component.
     `GlobalAgentConfig` field — saving that config restarts every local agent.
     The submitted `addDefaultAi` is `false` whenever no default AI exists.
     The four creation points (`app/AppShell.tsx` channel + forum handlers,
-    `projects/useCreateProject.ts`, `projects/useAddProjectChannel.ts`) call
-    `useAttachDefaultAi().attachDefaultAi(channelId)` after the channel id is
-    known. That hook is the only path: it reuses
-    `channelAgents.attachManagedAgentToChannel(channelId, { agent, role:
-    "bot", ensureRunning: true })` (membership write, then start only when the
-    agent is not running/deployed), invalidates the same query keys as
-    `useApplyTemplate.applyAgents`, is a no-op without a starred agent, and
-    never rejects — a failure surfaces as `toast.warning`, never silently. It
-    runs **before** template agents in each path because both rewrite the
-    replaceable membership event; do not fire the two concurrently. Do not
-    mint a new agent for this (`applyAgents` is for template personas) and do
-    not auto-join channels the user did not create.
+    `projects/useCreateProject.ts`, `projects/useAddProjectChannel.ts`) all
+    run the one post-create sequence `lib/joinAgentsAfterCreate.ts` after the
+    channel id is known and navigation is done: the default AI joins first,
+    then `useApplyTemplate.applyAgents`. (For a project home the
+    form-requested persona/team agents are created inside `createProject`
+    before the mutation resolves, so they precede both.) The join itself is
+    `useAttachDefaultAi().attachDefaultAi(channelId)`, the only path: it
+    resolves the star from the managed-agents **cache at call time** (never
+    the render closure, which could attach an un-starred or deleted record as
+    a ghost member), reuses `channelAgents.attachManagedAgentToChannel(
+    channelId, { agent, role: "bot", ensureRunning: true })` (membership
+    write, then start only when the agent is not running/deployed),
+    invalidates the same query keys as `applyAgents`, is a no-op without a
+    starred agent, and never rejects — a failure surfaces as `toast.warning`,
+    never silently. The two steps must never run concurrently (both rewrite
+    the replaceable membership event), and because the default AI is already
+    a member when the template applies, `applyAgents` passes
+    `skipPersonasAlreadyInChannel` to `createChannelManagedAgents`
+    (`agentReuse.dropPersonasAlreadyInChannel`) so a template listing the
+    default AI's persona reuses it instead of minting a second instance;
+    the deploy dialog does not set that flag and keeps its deliberate
+    "another instance" behaviour. Do not mint a new agent for the join
+    (`applyAgents` is for template personas) and do not auto-join channels the
+    user did not create: agent-initiated project channels
+    (`projects/useProjectChannelRequests.ts`) intentionally never pass
+    `addDefaultAi`.
 
 ## Channel-only runtime controls
 

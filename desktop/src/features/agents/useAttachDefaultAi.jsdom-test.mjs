@@ -88,6 +88,7 @@ const { QueryClient, QueryClientProvider } = await import(
 );
 const { toast } = await import("sonner");
 const { useAttachDefaultAi } = await import("./useAttachDefaultAi.ts");
+const { managedAgentsQueryKey } = await import("./hooks.ts");
 
 const warnings = [];
 toast.warning = (message, options) => {
@@ -133,7 +134,10 @@ async function mount() {
   });
   return {
     attach: (channelId) => act(() => handle.current.attachDefaultAi(channelId)),
+    /** The callback as rendered right now — captured to test staleness. */
+    attachFn: () => handle.current.attachDefaultAi,
     hasDefaultAi: () => handle.current.hasDefaultAi,
+    queryClient,
     unmount: () => act(async () => root.unmount()),
   };
 }
@@ -200,6 +204,23 @@ test("without a starred agent the attach is a no-op", async () => {
   assert.equal(harness.hasDefaultAi(), false);
 
   await harness.attach(CHANNEL);
+
+  assert.deepEqual(commandNames(), []);
+  assert.equal(warnings.length, 0);
+  await harness.unmount();
+});
+
+test("a callback captured while an agent was starred attaches nothing once the cache no longer stars it", async () => {
+  agents = [rawAgent({ status: "stopped" })];
+  const harness = await mount();
+  assert.equal(harness.hasDefaultAi(), true);
+  const staleAttach = harness.attachFn();
+
+  // The star moves away / the record is deleted: the cache is the truth.
+  await act(async () => {
+    harness.queryClient.setQueryData(managedAgentsQueryKey, []);
+  });
+  await act(() => staleAttach(CHANNEL));
 
   assert.deepEqual(commandNames(), []);
   assert.equal(warnings.length, 0);

@@ -28,6 +28,18 @@ export function findDefaultAi<T extends DefaultAiCandidate>(
 }
 
 /**
+ * What a create form submits as `addDefaultAi`: the switch value, forced to
+ * `false` whenever no agent is starred (the switch is hidden then, but the
+ * stored preference may still be on).
+ */
+export function resolveAddDefaultAi(
+  defaultAi: DefaultAiCandidate | null | undefined,
+  requested: boolean,
+): boolean {
+  return Boolean(defaultAi) && requested;
+}
+
+/**
  * The `set_default_managed_agent` argument for a star toggle: starring sends
  * the agent's pubkey, un-starring the current default clears the selection.
  */

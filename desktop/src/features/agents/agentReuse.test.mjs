@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   commandsMatch,
+  dropPersonasAlreadyInChannel,
+  isPersonaRepresentedInChannel,
   parseTimestamp,
   pickPreferredManagedAgent,
   findReusablePersonaAgent,
@@ -394,5 +396,54 @@ test("resolveReusableAgentAccessPolicy uses explicit, persona, then safe default
       persona,
     ),
     { respondTo: "owner-only", respondToAllowlist: [] },
+  );
+});
+
+// Template application runs after the starred default AI has joined the new
+// channel. A template that lists the default AI's persona must treat that
+// member as satisfied rather than reusing another instance or minting one.
+test("a persona already represented by a channel member is detected case-insensitively", () => {
+  const members = new Set([PUB_A]);
+  const agents = [
+    makeAgent({ pubkey: PUB_A.toUpperCase(), personaId: "persona-p" }),
+    makeAgent({ pubkey: PUB_B, personaId: "persona-q" }),
+  ];
+  assert.equal(
+    isPersonaRepresentedInChannel(agents, "persona-p", members),
+    true,
+  );
+  assert.equal(
+    isPersonaRepresentedInChannel(agents, "persona-q", members),
+    false,
+  );
+  assert.equal(
+    isPersonaRepresentedInChannel(agents, "persona-p", new Set()),
+    false,
+  );
+});
+
+test("dropPersonasAlreadyInChannel skips persona inputs already in the channel but keeps forced and generic ones", () => {
+  const members = new Set([PUB_A]);
+  const agents = [
+    makeAgent({ pubkey: PUB_A, personaId: "persona-p" }),
+    // A second instance of P exists but is NOT in the channel: still satisfied.
+    makeAgent({ pubkey: PUB_C, personaId: "persona-p" }),
+    makeAgent({ pubkey: PUB_B, personaId: "persona-q" }),
+  ];
+  const inputs = [
+    { name: "P", personaId: "persona-p" },
+    { name: "P again", personaId: "persona-p", forceNewInstance: true },
+    { name: "Q", personaId: "persona-q" },
+    { name: "generic", personaId: null },
+    { name: "unset" },
+  ];
+  assert.deepEqual(
+    dropPersonasAlreadyInChannel(inputs, agents, members).map((i) => i.name),
+    ["P again", "Q", "generic", "unset"],
+  );
+  // Nothing in the channel yet: everything passes through, in order.
+  assert.deepEqual(
+    dropPersonasAlreadyInChannel(inputs, agents, new Set()).map((i) => i.name),
+    ["P", "P again", "Q", "generic", "unset"],
   );
 });

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { joinAgentsAfterCreate } from "@/features/agents/lib/joinAgentsAfterCreate";
 import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
 import {
   channelsQueryKey,
@@ -164,14 +165,19 @@ export async function addProjectChannel(
   }
 
   await applyCanvas(input.templateId, channel.id, input.name);
-  // Both steps rewrite the channel's replaceable membership event, so they
-  // run in sequence (default AI first) and stay off the mutation's result.
-  void (async () => {
-    if (input.addDefaultAi && attachDefaultAi) {
-      await attachDefaultAi(channel.id);
-    }
-    await applyAgents(input.templateId, channel.id);
-  })();
+  // Shared post-create sequence (default AI first, then template personas);
+  // stays off the mutation's result like the template step always did.
+  void joinAgentsAfterCreate(
+    {
+      attachDefaultAi: attachDefaultAi ?? (async () => {}),
+      applyAgents,
+    },
+    {
+      channelId: channel.id,
+      templateId: input.templateId,
+      addDefaultAi: input.addDefaultAi,
+    },
+  );
 
   return {
     channel,
