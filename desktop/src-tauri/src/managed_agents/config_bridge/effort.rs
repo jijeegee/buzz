@@ -9,14 +9,16 @@
 //! ```text
 //! record native(valid) > canonical column(valid) > record legacy(valid)
 //!   > persona native(valid) > persona column(valid) > persona legacy(valid)
-//!   > global column(valid) > global(native) > definition(native) > baked(native)
+//!   > global native(valid) > global column(valid) > definition(native) > baked(native)
 //! ```
 //!
-//! The persona tier mirrors the record tier's shape: the definition's structured
-//! `effort_level` column (the definition dialog's picker) sits between the
-//! persona's native env key and its legacy alias. The global tier puts its
-//! structured column (`GlobalAgentConfig::effort_level`, the Global AI Defaults
-//! picker) above its native env key. Neither column needs a native key, so for
+//! Every tier has the same shape — native env key above the structured
+//! `effort_level` column: the definition's column (the definition dialog's
+//! picker) sits between the persona's native key and its legacy alias, and the
+//! global column (`GlobalAgentConfig::effort_level`, the Global AI Defaults
+//! picker) sits below the global native key, so a Goose/buzz-agent knob set in
+//! Global AI Defaults is never outranked by a column the same dialog could not
+//! show for that harness. Neither column needs a native key, so for
 //! Claude/Codex/Hermes the three columns (instance > definition > global) are
 //! the only authorities — and the definition/global defaults apply to EVERY
 //! instance, remote ones included, through the deploy `launch.env`; only the
@@ -490,8 +492,15 @@ fn resolve_effective_effort(
             }
         }
     }
-    // 5. global — the structured column (Global AI Defaults picker; needs no
-    //    native key) above the native env key.
+    // 5. global — same shape as the record and persona tiers: the native env
+    //    key above the structured column (Global AI Defaults picker). The
+    //    column needs no native key, so it still resolves for Claude/Codex/Hermes.
+    if let Some(nk) = native_key {
+        let global = merged_user_env(&BTreeMap::new(), global_env);
+        if let Some(v) = effort_tier_alias(&global, nk, norm, false) {
+            return Some(v);
+        }
+    }
     if let Some(raw) = global_effort {
         if let Some(v) = norm(raw) {
             return Some(v);
@@ -499,10 +508,6 @@ fn resolve_effective_effort(
     }
     // Env tiers below require a native key to read.
     let nk = native_key?;
-    let global = merged_user_env(&BTreeMap::new(), global_env);
-    if let Some(v) = effort_tier_alias(&global, nk, norm, false) {
-        return Some(v);
-    }
     // 6. definition (native only) — author-controlled; reserved keys stripped.
     if let Some(def) = harness_def {
         let def_env: BTreeMap<String, String> = def

@@ -225,6 +225,11 @@ export function resetConfigForHarnessChange(
     ...config,
     env_vars: nextEnvVars,
     model: null,
+    // The effort vocabulary belongs to the harness: a thought-level column
+    // picked for Claude must not survive onto Goose, whose dialog cannot show
+    // it (the native knob outranks it at launch, but a stale value would still
+    // read as the global default everywhere else).
+    effort_level: null,
     preferred_runtime: runtimeId || null,
     provider:
       runtimeSupportsLlmProviderSelection(runtimeId) &&

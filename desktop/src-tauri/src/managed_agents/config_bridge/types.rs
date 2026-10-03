@@ -36,8 +36,8 @@ pub struct InheritedConfigTiers {
     /// projection applies when the record has no column of its own.
     pub persona_effort: Option<String>,
     /// Structured thinking effort from global config (non-blank only):
-    /// `GlobalAgentConfig::effort_level`, read below the persona tier and
-    /// above the global native env key.
+    /// `GlobalAgentConfig::effort_level`, read below the global native env
+    /// key (same shape as the record and persona tiers: native > column).
     pub global_effort: Option<String>,
     /// Structured model from global config (non-blank only).
     pub global_model: Option<String>,

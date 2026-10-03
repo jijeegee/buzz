@@ -588,8 +588,8 @@ fn build_thinking_field(
     // plus the two reader-only tiers the projection has no input for — live ACP
     // and the on-disk config file):
     //   record native > canonical column > record legacy > ACP >
-    //   persona native > persona column > persona legacy > global column >
-    //   global native > definition > config file.
+    //   persona native > persona column > persona legacy > global native >
+    //   global column > definition > config file.
     //
     // Every candidate is normalized through the runtime's declared contract
     // (`effort_norm`) before validity, precedence, override tracking, and the B
@@ -658,8 +658,8 @@ fn build_thinking_field(
         pers_native.as_deref(),
         pers_column.as_deref(),
         pers_legacy.as_deref(),
-        glob_column.as_deref(),
         glob.as_deref(),
+        glob_column.as_deref(),
         def.as_deref(),
         file.as_deref(),
     ]
@@ -679,8 +679,8 @@ fn build_thinking_field(
         (pers_native.as_deref(), ConfigOrigin::PersonaDefault),
         (pers_column.as_deref(), ConfigOrigin::PersonaDefault),
         (pers_legacy.as_deref(), ConfigOrigin::PersonaDefault),
-        (glob_column.as_deref(), ConfigOrigin::GlobalDefault),
         (glob.as_deref(), ConfigOrigin::GlobalDefault),
+        (glob_column.as_deref(), ConfigOrigin::GlobalDefault),
         (def.as_deref(), ConfigOrigin::HarnessDefault),
         (file.as_deref(), ConfigOrigin::ConfigFile),
     ];

@@ -158,9 +158,25 @@ test("resetConfigForHarnessChange clears harness-specific values", () => {
   assert.deepEqual(resetConfigForHarnessChange(config, "claude"), {
     env_vars: { KEEP_ME: "yes" },
     model: null,
+    effort_level: null,
     preferred_runtime: "claude",
     provider: null,
   });
+});
+
+test("resetConfigForHarnessChange clears a thought-level effort column picked for another harness", () => {
+  // Repro: Global Defaults = Claude + effort High → switch to Goose. The
+  // column cannot be shown for Goose, so it must not survive the switch.
+  const config = {
+    env_vars: {},
+    model: "opus",
+    preferred_runtime: "claude",
+    provider: null,
+    effort_level: "high",
+  };
+  const next = resetConfigForHarnessChange(config, "goose");
+  assert.equal(next.effort_level, null);
+  assert.equal(next.preferred_runtime, "goose");
 });
 
 test("resetConfigForHarnessChange preserves compatible provider selection", () => {
@@ -174,6 +190,7 @@ test("resetConfigForHarnessChange preserves compatible provider selection", () =
   assert.deepEqual(resetConfigForHarnessChange(config, "goose"), {
     env_vars: { KEEP_ME: "yes" },
     model: null,
+    effort_level: null,
     preferred_runtime: "goose",
     provider: "anthropic",
   });

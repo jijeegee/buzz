@@ -1057,3 +1057,24 @@ fn global_effort_tier_produces_global_default_origin_below_the_persona_column() 
     assert_eq!(field.overridden_value.as_deref(), Some("medium"));
     assert_eq!(field.overridden_origin, Some(ConfigOrigin::GlobalDefault));
 }
+
+#[test]
+fn global_native_env_outranks_global_effort_tier_for_goose() {
+    // Mirrors the launch projection's global tier shape (native > column), so
+    // the panel never shows a stale column over the knob the dialog shows.
+    let record = test_record();
+    let mut global_env = BTreeMap::new();
+    global_env.insert("GOOSE_THINKING_EFFORT".to_string(), "low".to_string());
+    let tiers = InheritedConfigTiers {
+        global_env,
+        global_effort: Some("high".to_string()),
+        ..Default::default()
+    };
+
+    let surface = read_config_surface(&record, Some(test_runtime()), None, &tiers, None);
+
+    let field = surface.normalized.thinking_effort.unwrap();
+    assert_eq!(field.value.as_deref(), Some("low"));
+    assert_eq!(field.origin, ConfigOrigin::GlobalDefault);
+    assert_eq!(field.overridden_value.as_deref(), Some("high"));
+}

@@ -876,7 +876,7 @@ fn persona_column_outranks_global_column() {
 }
 
 #[test]
-fn global_column_sits_below_persona_legacy_and_above_global_native_def_and_baked_for_goose() {
+fn global_column_sits_below_persona_legacy_and_global_native_but_above_def_and_baked_for_goose() {
     let mut r = record();
     r.persona_id = Some("p".into());
 
@@ -898,7 +898,9 @@ fn global_column_sits_below_persona_legacy_and_above_global_native_def_and_baked
         "persona legacy outranks the global column"
     );
 
-    // global column > global native > definition > baked
+    // global native > global column: the Goose knob set in Global AI Defaults
+    // must never lose to a column that dialog could not show for Goose (a
+    // stale pick from a previous Claude selection).
     let none = vec![persona("p", BTreeMap::new())];
     let launch = effort_launch_projection(
         &r,
@@ -912,20 +914,37 @@ fn global_column_sits_below_persona_legacy_and_above_global_native_def_and_baked
     );
     assert_eq!(
         launch.value.as_deref(),
-        Some("high"),
-        "the global column outranks every lower tier"
+        Some("low"),
+        "the global native knob outranks the global column"
     );
 
-    // An invalid global column skips to global native for a contract runtime.
+    // global column > definition > baked
     let launch = effort_launch_projection(
         &r,
         Some(goose()),
         &none,
         Some("p"),
-        &env(&[(GOOSE_KEY, "low")]),
+        &BTreeMap::new(),
+        Some("high"),
+        Some(&harness_def(env(&[(GOOSE_KEY, "medium")]))),
+        &env(&[(GOOSE_KEY, "max")]),
+    );
+    assert_eq!(
+        launch.value.as_deref(),
+        Some("high"),
+        "the global column outranks definition and baked"
+    );
+
+    // An invalid global column skips to the definition tier for a contract runtime.
+    let launch = effort_launch_projection(
+        &r,
+        Some(goose()),
+        &none,
+        Some("p"),
+        &BTreeMap::new(),
         Some("minimal"),
-        None,
+        Some(&harness_def(env(&[(GOOSE_KEY, "medium")]))),
         &BTreeMap::new(),
     );
-    assert_eq!(launch.value.as_deref(), Some("low"));
+    assert_eq!(launch.value.as_deref(), Some("medium"));
 }

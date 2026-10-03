@@ -74,8 +74,9 @@ pub struct GlobalAgentConfig {
     /// Global default thinking effort for ACP thought-level harnesses (Claude
     /// Code, Codex, Hermes), set by the effort companion beside the default
     /// model in Global AI Defaults. The launch projection reads it below the
-    /// persona tier and above the global native env key
-    /// (`config_bridge::effort`). `None` = adapter default; omitted from the
+    /// persona tier and below the global native env key — native > column,
+    /// like every tier — so a Goose/buzz-agent knob set in the same dialog is
+    /// never outranked by a stale column (`config_bridge::effort`). `None` = adapter default; omitted from the
     /// file while unset so existing configs round-trip byte-identically.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort_level: Option<String>,
