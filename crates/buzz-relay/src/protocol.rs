@@ -36,6 +36,22 @@ pub enum ClientMessage {
     },
     /// An AUTH message responding to a NIP-42 challenge.
     Auth(Event),
+    /// `["AUTH", {"token": "…"}]` — centralized-identity token AUTH. Only
+    /// produced when [`ParseMode::token_auth`] is set.
+    AuthToken(buzz_auth::TokenSecret),
+    /// An EVENT body from a token-authenticated connection: an unsigned
+    /// draft the server stamps. Only produced when [`ParseMode::drafts`] is set.
+    EventDraft(Value),
+}
+
+/// Which centralized-identity frame shapes [`ClientMessage::parse_with`]
+/// recognises. The default (all off) parses exactly like the key-auth relay.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ParseMode {
+    /// Recognise `["AUTH", {"token": "…"}]` (token auth enabled).
+    pub token_auth: bool,
+    /// Treat every EVENT body as a draft (connection authenticated by token).
+    pub drafts: bool,
 }
 
 /// Artifact queries are HTTP-only; reject rather than silently drop their
@@ -59,6 +75,12 @@ fn reject_artifact_query_filters(filters: &[serde_json::Value]) -> Result<()> {
 impl ClientMessage {
     /// Parse a raw JSON WebSocket frame into a [`ClientMessage`].
     pub fn parse(raw: &str) -> Result<Self> {
+        Self::parse_with(raw, ParseMode::default())
+    }
+
+    /// Parse a frame, additionally recognising the token-auth shapes enabled
+    /// in `mode`.
+    pub fn parse_with(raw: &str, mode: ParseMode) -> Result<Self> {
         let value: Value = serde_json::from_str(raw)
             .map_err(|e| RelayError::InvalidMessage(format!("JSON parse error: {e}")))?;
 
@@ -80,6 +102,9 @@ impl ClientMessage {
                     return Err(RelayError::InvalidMessage(
                         "EVENT requires event object".to_string(),
                     ));
+                }
+                if mode.drafts {
+                    return Ok(ClientMessage::EventDraft(arr[1].clone()));
                 }
                 let event: Event = serde_json::from_value(arr[1].clone())
                     .map_err(|e| RelayError::InvalidMessage(format!("invalid event: {e}")))?;
@@ -219,6 +244,20 @@ impl ClientMessage {
                     return Err(RelayError::InvalidMessage(
                         "AUTH requires event object".to_string(),
                     ));
+                }
+                if mode.token_auth {
+                    if let Some(token) = arr[1]
+                        .as_object()
+                        .filter(|obj| !obj.contains_key("kind"))
+                        .and_then(|obj| obj.get("token"))
+                    {
+                        let token = token.as_str().ok_or_else(|| {
+                            RelayError::InvalidMessage("AUTH token must be a string".to_string())
+                        })?;
+                        return Ok(ClientMessage::AuthToken(buzz_auth::TokenSecret::new(
+                            token.to_owned(),
+                        )));
+                    }
                 }
                 let event: Event = serde_json::from_value(arr[1].clone())
                     .map_err(|e| RelayError::InvalidMessage(format!("invalid auth event: {e}")))?;

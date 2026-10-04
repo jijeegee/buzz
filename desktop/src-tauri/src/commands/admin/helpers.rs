@@ -12,15 +12,18 @@ pub(super) async fn fetch_admin_json(
     cap: u64,
     state: &tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<Vec<u8>, String> {
-    use crate::relay::build_nip98_auth_header_for_keys;
-
-    let keys = state.signing_keys()?;
+    let keys = state.user_credential()?;
     let http_client = client::ADMIN_CLIENT
         .get()
         .ok_or_else(|| "admin client not initialised".to_string())?;
 
-    let auth_header = build_nip98_auth_header_for_keys(&keys, &reqwest::Method::GET, url, &[])
-        .map_err(|e| format!("nip98 build failed: {e}"))?;
+    let auth_header = crate::auth::credential::RelaySigner::relay_http_auth(
+        &keys,
+        &reqwest::Method::GET,
+        url,
+        &[],
+    )
+    .map_err(|e| format!("nip98 build failed: {e}"))?;
 
     let resp = http_client
         .get(url)
@@ -31,8 +34,13 @@ pub(super) async fn fetch_admin_json(
 
     // One retry on 401 with a fresh NIP-98 event (new nonce).
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-        let auth_header2 = build_nip98_auth_header_for_keys(&keys, &reqwest::Method::GET, url, &[])
-            .map_err(|e| format!("nip98 build failed on retry: {e}"))?;
+        let auth_header2 = crate::auth::credential::RelaySigner::relay_http_auth(
+            &keys,
+            &reqwest::Method::GET,
+            url,
+            &[],
+        )
+        .map_err(|e| format!("nip98 build failed on retry: {e}"))?;
         let resp2 = http_client
             .get(url)
             .header(reqwest::header::AUTHORIZATION, auth_header2)
@@ -108,7 +116,7 @@ pub(super) async fn mutation_admin_json(
     cap: u64,
     state: &tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<Vec<u8>, AdminMutationError> {
-    let keys = state.signing_keys()?;
+    let keys = state.user_credential()?;
     send_admin_mutation(&keys, method, url, body, cap).await
 }
 
@@ -117,7 +125,7 @@ pub(super) async fn mutation_admin_json(
 /// active identity. The body passes the key-backup egress guard before any
 /// request is built, so free-text admin fields cannot carry an `ncryptsec`.
 pub(super) async fn send_admin_mutation(
-    keys: &nostr::Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
     method: reqwest::Method,
     url: &str,
     body: Option<&[u8]>,
@@ -167,14 +175,18 @@ pub(super) async fn send_admin_mutation(
 /// a running Tauri app.
 pub(super) fn build_admin_mutation_request(
     http_client: &reqwest::Client,
-    keys: &nostr::Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
     method: &reqwest::Method,
     url: &str,
     body: Option<&[u8]>,
 ) -> Result<reqwest::RequestBuilder, String> {
-    let auth_header =
-        crate::relay::build_nip98_auth_header_for_keys(keys, method, url, body.unwrap_or(&[]))
-            .map_err(|e| format!("nip98 build failed: {e}"))?;
+    let auth_header = crate::auth::credential::RelaySigner::relay_http_auth(
+        keys,
+        method,
+        url,
+        body.unwrap_or(&[]),
+    )
+    .map_err(|e| format!("nip98 build failed: {e}"))?;
 
     let mut req = http_client
         .request(method.clone(), url)

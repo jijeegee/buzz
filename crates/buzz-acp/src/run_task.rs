@@ -1,6 +1,6 @@
 //! Local version-1 task input and terminal CLI contract. No service startup.
 use crate::{
-    config::{CliArgs, Config},
+    config::CliArgs,
     isolated_execution::{self, Outcome},
     runtime::{AgentRuntime, SessionMode},
 };
@@ -167,12 +167,13 @@ pub(crate) async fn run() -> i32 {
     // This worker only builds configuration; it cannot spawn an agent or create
     // runtime resources. On cancellation/timeout the CLI's bounded runtime
     // shutdown and process exit also retire a still-blocked read.
-    let configuration = tokio::task::spawn_blocking(move || Config::from_args(args.launch));
+    // Token mode resolves the bot principal (`GET /auth/me`) first.
+    let configuration = crate::load_config(args.launch);
     let config = tokio::select! {
         biased;
         code = &mut signal_rx => return emit(Terminal::new("cancelled", None), code.unwrap_or(1)),
         result = tokio::time::timeout(INPUT_TIMEOUT, configuration) => match result {
-            Ok(Ok(Ok(config))) if config.max_turn_duration_secs > 0 => config,
+            Ok(Ok(config)) if config.max_turn_duration_secs > 0 => config,
             Err(_) => {
                 signal_task.abort();
                 return emit(Terminal::new("invalid", Some("configuration_timeout")), 2);
@@ -201,6 +202,20 @@ pub(crate) async fn run() -> i32 {
         terminal.error = Some("agent_identity_mismatch");
         signal_task.abort();
         return emit(terminal, 2);
+    }
+    // Token mode: the adapter reaches the bot token only through the loopback
+    // broker (as in the harness); without it the child would get no
+    // credentials at all.
+    if let Some(token) = config.keys.bot_token() {
+        if crate::token_broker::start_global(token.clone())
+            .await
+            .is_err()
+        {
+            terminal.status = "failed";
+            terminal.error = Some("runtime_setup_failed");
+            signal_task.abort();
+            return emit(terminal, 1);
+        }
     }
     // Keep signing material alive until execution has drained and reaped the adapter.
     let runtime = match AgentRuntime::prepare(config) {

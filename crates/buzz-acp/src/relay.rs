@@ -78,7 +78,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// values used), while `try_autonomous_reconnect` skips the sleep after its
 /// final attempt (5 attempts total, only the first 4 values used) — so
 /// "shared values," not "identical schedule."
-const STARTUP_CONNECT_BACKOFFS: [Duration; 5] = [
+pub(crate) const STARTUP_CONNECT_BACKOFFS: [Duration; 5] = [
     Duration::from_secs(1),
     Duration::from_secs(2),
     Duration::from_secs(4),
@@ -121,9 +121,13 @@ use buzz_core::kind::{
     KIND_TYPING_INDICATOR,
 };
 use futures_util::{SinkExt, StreamExt};
-use nostr::{Event, EventBuilder, Keys, Kind, RelayUrl, Tag};
+use nostr::{Event, EventBuilder, Kind, RelayUrl, Tag};
+
+use crate::identity::{AgentIdentity, BotToken};
+#[cfg(test)]
+use nostr::Keys;
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::{debug, info, warn};
@@ -335,7 +339,9 @@ pub(crate) fn parse_channel_members(json: &Value) -> Vec<ChannelMember> {
 pub struct RestClient {
     pub http: reqwest::Client,
     pub base_url: String,
-    pub keys: Keys,
+    /// The harness identity. Key mode signs NIP-98; token mode sends
+    /// `Authorization: Bearer` with the current bot token.
+    pub keys: AgentIdentity,
     /// Optional NIP-OA auth tag JSON for `x-auth-tag` header (relay membership delegation).
     pub auth_tag_json: Option<String>,
 }
@@ -459,22 +465,30 @@ impl RestClient {
             tags.push(payload_tag);
         }
 
+        let keys = self
+            .keys
+            .secret_keys("NIP-98")
+            .map_err(|e| RelayError::Http(e.to_string()))?;
         let event = EventBuilder::new(Kind::HttpAuth, "")
             .tags(tags)
-            .sign_with_keys(&self.keys)
+            .sign_with_keys(keys)
             .map_err(|e| RelayError::Http(format!("NIP-98 sign error: {e}")))?;
         let event_json = serde_json::to_string(&event)
             .map_err(|e| RelayError::Http(format!("NIP-98 serialize error: {e}")))?;
         Ok(base64::engine::general_purpose::STANDARD.encode(event_json))
     }
 
-    /// Build the full `Authorization` header value: `Nostr <base64>`.
+    /// Build the full `Authorization` header value: `Nostr <base64>` in key
+    /// mode, `Bearer <current bot token>` in token mode.
     fn nip98_header(
         &self,
         method: &str,
         url: &str,
         body: Option<&[u8]>,
     ) -> Result<String, RelayError> {
+        if let Some(token) = self.keys.bot_token() {
+            return Ok(token.bearer_header().to_string());
+        }
         Ok(format!("Nostr {}", self.sign_nip98(method, url, body)?))
     }
 
@@ -800,6 +814,13 @@ enum RelayCommand {
     PublishEvent { event: Box<Event> },
     /// Floor `since` for membership notification replay; events before startup are never re-delivered.
     SetStartupWatermark { ts: u64 },
+    /// Token mode: re-AUTH the live connection with the current bot token
+    /// (after an exchange). `ack` resolves on the relay's `OK auth`. While
+    /// disconnected it resolves `Ok` at once: the reconnect authenticates with
+    /// the current token anyway.
+    Reauth {
+        ack: oneshot::Sender<Result<(), String>>,
+    },
 }
 
 type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
@@ -822,8 +843,8 @@ pub struct HarnessRelay {
     http: reqwest::Client,
     /// WebSocket URL of the relay.
     relay_url: String,
-    /// Keys used for NIP-42 signing and NIP-98 HTTP auth.
-    keys: Keys,
+    /// Identity used for NIP-42/NIP-98 (key mode) or token AUTH/Bearer (token mode).
+    keys: AgentIdentity,
     /// Optional NIP-OA auth tag for relay membership delegation.
     auth_tag: Option<nostr::Tag>,
     /// Handle to the background task (for clean shutdown).
@@ -868,14 +889,62 @@ impl RelayEventPublisher {
     }
 }
 
+/// Cloneable handle that asks the relay background task to re-AUTH the live
+/// connection with the current bot token (token mode, after an exchange).
+#[derive(Clone)]
+pub struct RelayReauthHandle {
+    cmd_tx: mpsc::Sender<RelayCommand>,
+}
+
+impl RelayReauthHandle {
+    /// Re-AUTH and wait for the relay's `OK auth`. `Err` carries the relay's
+    /// rejection message (or a closed-channel note).
+    pub async fn reauth(&self) -> Result<(), String> {
+        let (ack, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(RelayCommand::Reauth { ack })
+            .await
+            .map_err(|_| "relay task stopped".to_string())?;
+        match tokio::time::timeout(AUTH_TIMEOUT, rx).await {
+            Ok(result) => result.map_err(|_| "relay task dropped the re-AUTH".to_string())?,
+            Err(_) => Err("re-AUTH timed out waiting for OK auth".to_string()),
+        }
+    }
+
+    /// Test-only handle: every re-AUTH request is forwarded to the returned
+    /// receiver, which answers it.
+    #[cfg(test)]
+    pub(crate) fn test_pair() -> (Self, mpsc::Receiver<oneshot::Sender<Result<(), String>>>) {
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<RelayCommand>(8);
+        let (tx, rx) = mpsc::channel(8);
+        tokio::spawn(async move {
+            while let Some(cmd) = cmd_rx.recv().await {
+                if let RelayCommand::Reauth { ack } = cmd {
+                    if tx.send(ack).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+        (Self { cmd_tx }, rx)
+    }
+}
+
 impl HarnessRelay {
+    /// A handle for same-connection token re-AUTH.
+    pub fn reauth_handle(&self) -> RelayReauthHandle {
+        RelayReauthHandle {
+            cmd_tx: self.cmd_tx.clone(),
+        }
+    }
+
     /// Connect to relay and authenticate via NIP-42.
     ///
     /// `auth_tag` is an optional NIP-OA owner attestation included in the AUTH
     /// event for relay membership delegation.
     pub async fn connect(
         relay_url: &str,
-        keys: &Keys,
+        keys: &AgentIdentity,
         agent_pubkey_hex: &str,
         auth_tag: Option<nostr::Tag>,
     ) -> Result<Self, RelayError> {
@@ -1143,9 +1212,10 @@ impl HarnessRelay {
                     .map_err(|e| RelayError::AuthFailed(e.to_string()))?,
             );
         }
-        let event = EventBuilder::new(Kind::Custom(KIND_TYPING_INDICATOR as u16), "")
-            .tags(tags)
-            .sign_with_keys(&self.keys)?;
+        let event = self
+            .keys
+            .sign(EventBuilder::new(Kind::Custom(KIND_TYPING_INDICATOR as u16), "").tags(tags))
+            .map_err(|e| RelayError::AuthFailed(e.to_string()))?;
         Ok(event)
     }
 
@@ -1254,6 +1324,10 @@ impl TwoGenDedup {
 
 /// State maintained by the background WebSocket task.
 struct BgState {
+    /// Token mode: the bot token the connection authenticates with.
+    bot_token: Option<BotToken>,
+    /// Token mode: the in-flight same-connection re-AUTH awaiting `OK auth`.
+    pending_reauth: Option<oneshot::Sender<Result<(), String>>>,
     /// Active subscriptions: channel_id → subscription_id string.
     active_subscriptions: HashMap<Uuid, String>,
     /// Most recent `created_at` timestamp seen per channel (for `since` filter).
@@ -1344,6 +1418,8 @@ struct BgState {
 impl BgState {
     fn new() -> Self {
         Self {
+            bot_token: None,
+            pending_reauth: None,
             active_subscriptions: HashMap::new(),
             last_seen: HashMap::new(),
             seen_ids: TwoGenDedup::new(SEEN_ID_LIMIT),
@@ -1366,6 +1442,17 @@ impl BgState {
             resubscribe_retry: HashSet::new(),
             connection_generation: 0,
             backoff_step: 0,
+        }
+    }
+
+    /// A reconnect replaced the socket: bump the connection generation and
+    /// settle any re-AUTH sent on the old socket. Its `OK auth` can never
+    /// arrive; the new connection's handshake already authenticated with the
+    /// current bot token, so the waiter is told the binding is current.
+    fn begin_new_connection(&mut self) {
+        self.connection_generation = self.connection_generation.saturating_add(1);
+        if let Some(ack) = self.pending_reauth.take() {
+            let _ = ack.send(Ok(()));
         }
     }
 
@@ -1608,6 +1695,10 @@ fn apply_command_to_state(state: &mut BgState, cmd: RelayCommand) {
         }
         // Already reconnecting — redundant.
         RelayCommand::Reconnect => {}
+        // The reconnect authenticates with the current token.
+        RelayCommand::Reauth { ack } => {
+            let _ = ack.send(Ok(()));
+        }
         // Callers MUST handle Shutdown before calling this function.
         RelayCommand::Shutdown => {
             debug_assert!(
@@ -1835,6 +1926,33 @@ async fn execute_connected_command(
             debug!("startup watermark set to {ts}");
             true
         }
+        RelayCommand::Reauth { ack } => {
+            let Some(token) = state.bot_token.clone() else {
+                let _ = ack.send(Err("re-AUTH requires token mode".into()));
+                return true;
+            };
+            // A newer re-AUTH supersedes an unanswered one; the relay answers
+            // in order, so the older waiter learns the newer outcome's fate
+            // through the bound token anyway.
+            if let Some(previous) = state.pending_reauth.take() {
+                let _ = previous.send(Err("superseded by a newer re-AUTH".into()));
+            }
+            let frame = token.auth_frame();
+            if ws_send_timeout(
+                ws,
+                Message::Text(frame.as_str().to_owned().into()),
+                WS_SEND_TIMEOUT_SECS,
+            )
+            .await
+            .is_err()
+            {
+                // The reconnect will authenticate with the current token.
+                let _ = ack.send(Ok(()));
+                return false;
+            }
+            state.pending_reauth = Some(ack);
+            true
+        }
         // Control-flow commands — callers handle these before dispatching.
         RelayCommand::Shutdown | RelayCommand::Reconnect => {
             debug_assert!(
@@ -1857,12 +1975,13 @@ async fn run_background_task(
     event_tx: mpsc::Sender<Option<BuzzEvent>>,
     observer_control_tx: mpsc::Sender<Event>,
     mut cmd_rx: mpsc::Receiver<RelayCommand>,
-    keys: Keys,
+    keys: AgentIdentity,
     relay_url: String,
     agent_pubkey_hex: String,
     auth_tag: Option<nostr::Tag>,
 ) {
     let mut state = BgState::new();
+    state.bot_token = keys.bot_token().cloned();
 
     let handshake_ok = process_handshake_buffer(
         &mut ws,
@@ -2294,7 +2413,7 @@ async fn handle_ws_message(
     event_tx: &mpsc::Sender<Option<BuzzEvent>>,
     observer_control_tx: &mpsc::Sender<Event>,
     state: &mut BgState,
-    keys: &Keys,
+    keys: &AgentIdentity,
     relay_url: &str,
     agent_pubkey_hex: &str,
     auth_tag: Option<&nostr::Tag>,
@@ -2620,6 +2739,10 @@ async fn handle_ws_message(
                         warn!("CLOSED for unknown subscription {subscription_id} — ignoring");
                     }
                 }
+                RelayMessage::Auth { .. } if keys.is_token() => {
+                    // Token connections never answer NIP-42 challenges.
+                    debug!("ignoring NIP-42 challenge on a token-authenticated connection");
+                }
                 RelayMessage::Auth { challenge } => {
                     // AUTH send failure must trigger reconnect.
                     debug!("received mid-session AUTH challenge — re-authenticating");
@@ -2635,6 +2758,9 @@ async fn handle_ws_message(
                     accepted,
                     message,
                 } => {
+                    if keys.is_token() && event_id == crate::token_refresh::TOKEN_AUTH_OK_ID {
+                        return handle_token_auth_ok(state, accepted, &message);
+                    }
                     if !accepted && message.starts_with("auth") {
                         // AUTH OK with accepted=false means auth was rejected.
                         warn!("mid-session AUTH rejected (event {event_id}): {message} — triggering reconnect");
@@ -2694,7 +2820,7 @@ async fn process_handshake_buffer(
     event_tx: &mpsc::Sender<Option<BuzzEvent>>,
     observer_control_tx: &mpsc::Sender<Event>,
     state: &mut BgState,
-    keys: &Keys,
+    keys: &AgentIdentity,
     relay_url: &str,
     agent_pubkey_hex: &str,
     auth_tag: Option<&nostr::Tag>,
@@ -3192,7 +3318,7 @@ async fn try_autonomous_reconnect(
     ws: &mut WsStream,
     cmd_rx: &mut mpsc::Receiver<RelayCommand>,
     state: &mut BgState,
-    keys: &Keys,
+    keys: &AgentIdentity,
     relay_url: &str,
     agent_pubkey_hex: &str,
     event_tx: &mpsc::Sender<Option<BuzzEvent>>,
@@ -3222,7 +3348,7 @@ async fn try_autonomous_reconnect(
         match do_connect(relay_url, keys, auth_tag).await {
             Ok((new_ws, handshake_buffer)) => {
                 *ws = new_ws;
-                state.connection_generation = state.connection_generation.saturating_add(1);
+                state.begin_new_connection();
                 info!("autonomous reconnect succeeded (attempt {})", attempt + 1);
                 let handshake_ok = process_handshake_buffer(
                     ws,
@@ -3322,7 +3448,7 @@ async fn wait_for_reconnect(
     ws: &mut WsStream,
     cmd_rx: &mut mpsc::Receiver<RelayCommand>,
     state: &mut BgState,
-    keys: &Keys,
+    keys: &AgentIdentity,
     relay_url: &str,
     agent_pubkey_hex: &str,
     event_tx: &mpsc::Sender<Option<BuzzEvent>>,
@@ -3361,7 +3487,7 @@ async fn wait_for_reconnect(
         match do_connect(relay_url, keys, auth_tag).await {
             Ok((new_ws, handshake_buffer)) => {
                 *ws = new_ws;
-                state.connection_generation = state.connection_generation.saturating_add(1);
+                state.begin_new_connection();
                 info!("relay reconnected to {relay_url}");
                 let handshake_ok = process_handshake_buffer(
                     ws,
@@ -3726,6 +3852,33 @@ fn extract_h_tag_uuid(event: &nostr::Event) -> Option<Uuid> {
     })
 }
 
+/// Token mode: settle a pending re-AUTH on the relay's `OK auth` reply.
+///
+/// A rejection with a terminal code ends the process with
+/// [`crate::identity::EXIT_AUTH_TERMINAL`]; any other rejection leaves the
+/// previous binding in force (the relay keeps it) and the connection open.
+/// Returns whether the connection should stay up.
+fn handle_token_auth_ok(state: &mut BgState, accepted: bool, message: &str) -> bool {
+    let outcome = if accepted {
+        Ok(())
+    } else {
+        Err(message.to_owned())
+    };
+    if let Some(ack) = state.pending_reauth.take() {
+        let _ = ack.send(outcome.clone());
+    }
+    if let Err(message) = outcome {
+        if crate::token_refresh::is_terminal_auth_message(&message) {
+            crate::token_refresh::auth_terminal(&format!("token re-AUTH rejected: {message}"));
+            return false;
+        }
+        warn!("token re-AUTH rejected ({message}); previous binding stays in force");
+    } else {
+        debug!("token re-AUTH accepted");
+    }
+    true
+}
+
 /// Build and send a NIP-42 AUTH response event.
 ///
 /// If `auth_tag` is provided (NIP-OA owner attestation), it is included in the
@@ -3734,11 +3887,14 @@ async fn send_auth_response(
     ws: &mut WsStream,
     challenge: &str,
     relay_url: &str,
-    keys: &Keys,
+    keys: &AgentIdentity,
     auth_tag: Option<&nostr::Tag>,
 ) -> Result<(), RelayError> {
     let relay_nostr_url = RelayUrl::parse(relay_url)
         .map_err(|e| RelayError::Http(format!("invalid relay URL: {e}")))?;
+    let keys = keys
+        .secret_keys("NIP-42 AUTH")
+        .map_err(|e| RelayError::AuthFailed(e.to_string()))?;
 
     let auth_event = if let Some(tag) = auth_tag {
         // Cannot use EventBuilder::auth() shortcut — it doesn't accept extra tags.
@@ -4124,7 +4280,7 @@ where
 /// Returns `(ws, buffer)` on success.
 async fn do_connect(
     relay_url: &str,
-    keys: &Keys,
+    keys: &AgentIdentity,
     auth_tag: Option<&nostr::Tag>,
 ) -> Result<(WsStream, VecDeque<RelayMessage>), RelayError> {
     let parsed = relay_url
@@ -4139,6 +4295,31 @@ async fn do_connect(
 
     let mut ws = ws;
     let mut buffer: VecDeque<RelayMessage> = VecDeque::new();
+
+    if let Some(token) = keys.bot_token() {
+        // Token AUTH needs no challenge. The relay's NIP-42 challenge (still
+        // sent in Phases 0-2) is dropped from the replay buffer below.
+        let frame = token.auth_frame();
+        ws_send_timeout(
+            &mut ws,
+            Message::Text(frame.as_str().to_owned().into()),
+            WS_SEND_TIMEOUT_SECS,
+        )
+        .await?;
+        let ok = wait_for_any_ok(&mut ws, &mut buffer, AUTH_TIMEOUT).await?;
+        buffer.retain(|message| !matches!(message, RelayMessage::Auth { .. }));
+        if !ok.accepted {
+            if crate::token_refresh::is_terminal_auth_message(&ok.message) {
+                crate::token_refresh::auth_terminal(&format!(
+                    "token AUTH rejected: {}",
+                    ok.message
+                ));
+            }
+            return Err(RelayError::AuthFailed(ok.message));
+        }
+        debug!("token authentication successful");
+        return Ok((ws, buffer));
+    }
 
     let challenge = wait_for_auth_challenge(&mut ws, &mut buffer, AUTH_TIMEOUT).await?;
 
@@ -4297,6 +4478,9 @@ mod recovery;
 mod recovery_tests;
 
 #[cfg(test)]
+mod token_auth_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -4410,7 +4594,7 @@ mod tests {
         let client = RestClient {
             http: reqwest::Client::new(),
             base_url,
-            keys: Keys::generate(),
+            keys: Keys::generate().into(),
             auth_tag_json: None,
         };
         (client, requests, server)
@@ -4952,7 +5136,7 @@ mod tests {
             event_tx,
             observer_control_tx,
             state,
-            &keys,
+            &crate::identity::AgentIdentity::from(keys.clone()),
             "wss://relay.example.com",
             &agent_pubkey_hex,
             None,
@@ -6322,9 +6506,13 @@ mod tests {
     #[tokio::test]
     async fn do_connect_wrong_scheme_is_terminal() {
         let keys = nostr::Keys::generate();
-        let err = do_connect("https://example.com", &keys, None)
-            .await
-            .unwrap_err();
+        let err = do_connect(
+            "https://example.com",
+            &crate::identity::AgentIdentity::from(keys.clone()),
+            None,
+        )
+        .await
+        .unwrap_err();
         assert!(
             is_terminal_connect_error(&err),
             "wrong-scheme URL should be terminal, got: {err}"
@@ -6594,7 +6782,7 @@ mod tests {
             &event_tx,
             &observer_control_tx,
             &mut state,
-            &keys,
+            &crate::identity::AgentIdentity::from(keys.clone()),
             "wss://relay.test",
             "agent-pubkey",
             None,
@@ -6681,7 +6869,7 @@ mod tests {
             &event_tx,
             &observer_control_tx,
             &mut state,
-            &keys,
+            &crate::identity::AgentIdentity::from(keys.clone()),
             "wss://relay.test",
             "agent-pubkey",
             None,

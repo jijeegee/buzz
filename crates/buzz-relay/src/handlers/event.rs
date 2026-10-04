@@ -15,7 +15,6 @@ use buzz_core::observer::{
     OBSERVER_FRAME_TELEMETRY,
 };
 use buzz_core::tenant::TenantContext;
-use buzz_core::verification::verify_event;
 use buzz_core::CommunityId;
 use buzz_pubsub::EventTopic;
 use nostr::{Event, PublicKey};
@@ -626,7 +625,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
     )
     .increment(1);
 
-    let (conn_id, pubkey_bytes, auth_pubkey, scopes, channel_ids) = {
+    let (conn_id, pubkey_bytes, auth_pubkey, scopes, channel_ids, server_stamped) = {
         match conn.auth_state_snapshot() {
             AuthState::Authenticated(ctx) => (
                 conn.conn_id,
@@ -634,6 +633,9 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                 ctx.pubkey,
                 ctx.scopes.clone(),
                 ctx.channel_ids.clone(),
+                // Token connections only ever dispatch server-stamped drafts
+                // (see `handle_text_message`), never client-signed events.
+                ctx.auth_method == buzz_auth::AuthMethod::Token,
             ),
             _ => {
                 reject("auth");
@@ -728,7 +730,8 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                 return;
             }
         };
-        handle_agent_observer_event(event, conn_id, &event_id_hex, conn, state).await;
+        handle_agent_observer_event(event, conn_id, &event_id_hex, server_stamped, conn, state)
+            .await;
         return;
     }
 
@@ -795,6 +798,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
             conn_id,
             pubkey_bytes,
             auth_pubkey,
+            server_stamped,
             Arc::clone(&conn),
             state,
         )
@@ -825,11 +829,19 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
         return;
     }
 
-    let ingest_auth = IngestAuth::Nip42 {
-        pubkey: auth_pubkey,
-        scopes,
-        channel_ids,
-        conn_id,
+    let ingest_auth = if server_stamped {
+        IngestAuth::Token {
+            pubkey: auth_pubkey,
+            scopes,
+            conn_id: Some(conn_id),
+        }
+    } else {
+        IngestAuth::Nip42 {
+            pubkey: auth_pubkey,
+            scopes,
+            channel_ids,
+            conn_id,
+        }
     };
 
     // B2: acquire effect permit immediately before the persistent ingest call.
@@ -896,17 +908,22 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
 /// while [`IngestError::Internal`] is a backend failure — e.g. a Redis
 /// presence-storage outage — which the dispatcher counts as `error`. Every
 /// message is a fixed, sanitized string that is forwarded verbatim.
+#[allow(clippy::too_many_arguments)]
 async fn handle_ephemeral_event(
     event: Event,
     conn_id: uuid::Uuid,
     pubkey_bytes: Vec<u8>,
     auth_pubkey: nostr::PublicKey,
+    server_stamped: bool,
     conn: Arc<ConnectionState>,
     state: Arc<AppState>,
 ) -> Result<(), IngestError> {
     let event_clone = event.clone();
     let event_id = event.id.to_hex();
-    let verify_result = tokio::task::spawn_blocking(move || verify_event(&event_clone)).await;
+    let verify_result = tokio::task::spawn_blocking(move || {
+        super::ingest::verify_event_for_auth(&event_clone, server_stamped)
+    })
+    .await;
 
     match verify_result {
         Ok(Ok(())) => {}
@@ -1090,11 +1107,15 @@ async fn handle_agent_observer_event(
     event: Event,
     conn_id: uuid::Uuid,
     event_id_hex: &str,
+    server_stamped: bool,
     conn: Arc<ConnectionState>,
     state: Arc<AppState>,
 ) {
     let event_clone = event.clone();
-    let verify_result = tokio::task::spawn_blocking(move || verify_event(&event_clone)).await;
+    let verify_result = tokio::task::spawn_blocking(move || {
+        super::ingest::verify_event_for_auth(&event_clone, server_stamped)
+    })
+    .await;
     match verify_result {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
@@ -1539,6 +1560,7 @@ mod tests {
                     channel_ids: None,
                     auth_method: buzz_auth::AuthMethod::Nip42,
                     agent_owner_pubkey: None,
+                    token: None,
                 },
             )),
             subscriptions: Arc::new(Mutex::new(HashMap::new())),
@@ -1562,6 +1584,7 @@ mod tests {
             event.clone(),
             conn.conn_id,
             &event.id.to_hex(),
+            false,
             conn,
             state,
         )
@@ -1626,6 +1649,7 @@ mod tests {
                         channel_ids: None,
                         auth_method: buzz_auth::AuthMethod::Nip42,
                         agent_owner_pubkey: None,
+                        token: None,
                     },
                 )),
                 subscriptions: Arc::new(Mutex::new(HashMap::new())),
@@ -1787,6 +1811,7 @@ mod tests {
                         channel_ids: None,
                         auth_method: buzz_auth::AuthMethod::Nip42,
                         agent_owner_pubkey: None,
+                        token: None,
                     },
                 )),
                 subscriptions: Arc::new(Mutex::new(HashMap::new())),
@@ -3214,6 +3239,7 @@ mod tests {
                         channel_ids: None,
                         auth_method: buzz_auth::AuthMethod::Nip42,
                         agent_owner_pubkey: None,
+                        token: None,
                     },
                 )),
                 subscriptions: std::sync::Arc::new(tokio::sync::Mutex::new(
@@ -3394,6 +3420,7 @@ mod tests {
                         channel_ids: None,
                         auth_method: buzz_auth::AuthMethod::Nip42,
                         agent_owner_pubkey: None,
+                        token: None,
                     },
                 )),
                 subscriptions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -3589,6 +3616,7 @@ mod tests {
                         // Fast path: session owner matches the event's target owner,
                         // so `handle_agent_observer_event` skips the DB ownership lookup.
                         agent_owner_pubkey: Some(owner_keys.public_key()),
+                        token: None,
                     },
                 )),
                 subscriptions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),

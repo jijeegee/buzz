@@ -111,10 +111,28 @@ fn prepare_linked_profile_update(
     }
 }
 
+/// How a linked agent's profile reaches the relay.
+pub(crate) enum ProfileSyncTarget {
+    /// Key agent: publish kind:0 signed with its key.
+    Keys(nostr::Keys),
+    /// Server bot (token mode): `PATCH /auth/bots/{id}/profile`.
+    Bot(String),
+}
+
+/// The sync target for `record`; `None` when it has neither (unreadable key).
+pub(crate) fn profile_sync_target(record: &ManagedAgentRecord) -> Option<ProfileSyncTarget> {
+    if record.bot_origin.is_some() {
+        return Some(ProfileSyncTarget::Bot(record.pubkey.clone()));
+    }
+    nostr::Keys::parse(&record.private_key_nsec)
+        .ok()
+        .map(ProfileSyncTarget::Keys)
+}
+
 /// Profile sync params collected under the store lock for async relay publish:
-/// (agent keys, relay url, display name, avatar url, kind:0 about, auth tag).
+/// (sync target, relay url, display name, avatar url, kind:0 about, auth tag).
 type ProfileSyncParams = Vec<(
-    nostr::Keys,
+    ProfileSyncTarget,
     String,
     String,
     Option<String>,
@@ -260,13 +278,13 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
 
                     agents_modified = agents_modified || update.record_changed;
                     if update.profile_sync_required {
-                        if let Ok(agent_keys) = nostr::Keys::parse(&record.private_key_nsec) {
+                        if let Some(target) = profile_sync_target(record) {
                             let relay_url = crate::relay::effective_agent_relay_url(
                                 &record.relay_url,
                                 &workspace_relay,
                             );
                             params.push((
-                                agent_keys,
+                                target,
                                 relay_url,
                                 record.name.clone(),
                                 update.profile_avatar,
@@ -308,20 +326,31 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
     // sees the fresh relay profile. Best-effort — failures are logged, not surfaced.
     if !profile_sync_params.is_empty() {
         let state = app.state::<AppState>();
-        for (agent_keys, relay_url, display_name, avatar_url, about, auth_tag) in
-            profile_sync_params
-        {
-            if let Err(e) = crate::relay::sync_managed_agent_profile(
-                &state,
-                &relay_url,
-                &agent_keys,
-                &display_name,
-                avatar_url.as_deref(),
-                about.as_deref(),
-                auth_tag.as_deref(),
-            )
-            .await
-            {
+        for (target, relay_url, display_name, avatar_url, about, auth_tag) in profile_sync_params {
+            let synced = match &target {
+                ProfileSyncTarget::Keys(agent_keys) => {
+                    crate::relay::sync_managed_agent_profile(
+                        &state,
+                        &relay_url,
+                        agent_keys,
+                        &display_name,
+                        avatar_url.as_deref(),
+                        about.as_deref(),
+                        auth_tag.as_deref(),
+                    )
+                    .await
+                }
+                ProfileSyncTarget::Bot(bot_id) => crate::auth::bots::sync_bot_profile(
+                    &state,
+                    bot_id,
+                    &relay_url,
+                    &display_name,
+                    avatar_url.as_deref(),
+                )
+                .await
+                .map(|_| ()),
+            };
+            if let Err(e) = synced {
                 eprintln!("buzz-desktop: relay profile sync failed after persona update: {e}");
             }
         }

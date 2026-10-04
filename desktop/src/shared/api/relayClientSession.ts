@@ -1,9 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import {
-  createAuthEvent,
-  getRelayWsUrl,
-  signRelayEvent,
-} from "@/shared/api/tauri";
+import { buildRelayAuthFrame } from "@/shared/api/relayAuthFrame";
+import { getRelayWsUrl, signRelayEvent } from "@/shared/api/tauri";
 import type { PresenceStatus, RelayEvent } from "@/shared/api/types";
 import {
   KIND_STREAM_MESSAGE,
@@ -951,7 +948,8 @@ export class RelayClient {
       this.relayUrl = await getRelayWsUrl();
     }
 
-    const event = await createAuthEvent({
+    // Token AUTH in a Google-session community, NIP-42 otherwise.
+    const frame = await buildRelayAuthFrame({
       challenge,
       relayUrl: this.relayUrl,
     });
@@ -960,8 +958,8 @@ export class RelayClient {
       return;
     }
 
-    this.authRequest.pendingEventId = event.id;
-    await this.sendRaw(["AUTH", event]);
+    this.authRequest.pendingEventId = frame.pendingId;
+    await this.sendRaw(["AUTH", frame.payload]);
   }
 
   private handleEvent(subId: string, event: RelayEvent, generation: number) {

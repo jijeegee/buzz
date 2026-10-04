@@ -98,4 +98,24 @@ void main() {
       isNot(contains(EventKind.systemMessage)),
     );
   });
+
+  test('NostrEvent parses a server-stamped event without sig', () {
+    final event = NostrEvent.fromJson({
+      'id': 'a' * 64,
+      'pubkey': 'b' * 64,
+      'created_at': 1760000000,
+      'kind': 40002,
+      'tags': [
+        ['h', 'c0ffee00-0000-0000-0000-000000000000'],
+      ],
+      'content': 'hi',
+    });
+    expect(event.sig, isNull);
+    expect(event.content, 'hi');
+    expect(event.toJson().containsKey('sig'), isFalse);
+
+    final signed = NostrEvent.fromJson({...event.toJson(), 'sig': 'c' * 128});
+    expect(signed.sig, 'c' * 128);
+    expect(signed.toJson()['sig'], 'c' * 128);
+  });
 }

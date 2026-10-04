@@ -287,7 +287,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         );
         (runtime, current)
     });
-    let restart_diff = crate::managed_agents::spawn_snapshot::eligible_restart_diff(
+    let mut restart_diff = crate::managed_agents::spawn_snapshot::eligible_restart_diff(
         persona_orphaned,
         tracked_spawn.as_ref().map(|(runtime, current)| {
             crate::managed_agents::spawn_snapshot::TrackedSpawnState {
@@ -298,6 +298,21 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
             }
         }),
     );
+    // A key agent still running on its local key after this community was
+    // signed in with Google moves onto its server bot only on restart: say so.
+    let signed_in_here = pair_key.as_ref().is_some_and(|key| {
+        matches!(
+            app.state::<crate::app_state::AppState>()
+                .token_auth
+                .mode(&crate::auth::origin_for(&key.relay_url)),
+            crate::auth::CredentialMode::Token(_)
+        )
+    });
+    restart_diff.extend(crate::auth::bots::key_agent_move_pending(
+        record,
+        pair_runtime.is_some(),
+        signed_in_here,
+    ));
     // One vector is the whole truth: badge on ⟺ there is a diff to show.
     let needs_restart = !restart_diff.is_empty();
 
@@ -364,7 +379,14 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         last_started_at: record.last_started_at.clone(),
         last_stopped_at: record.last_stopped_at.clone(),
         last_exit_code: record.last_exit_code,
-        last_error: record.last_error.clone(),
+        // An agent parked after repeated auth-terminal exits (token mode)
+        // reports why it stopped; pressing Start resets it (Rule 6).
+        last_error: app
+            .state::<crate::app_state::AppState>()
+            .token_auth
+            .bots
+            .auth_failed(&record.pubkey)
+            .or_else(|| record.last_error.clone()),
         last_error_code: record.last_error_code,
         start_on_app_launch: record.start_on_app_launch,
         is_default_ai: record.is_default_ai,
@@ -380,9 +402,12 @@ pub fn find_managed_agent_mut<'a>(
     records: &'a mut [ManagedAgentRecord],
     pubkey: &str,
 ) -> Result<&'a mut ManagedAgentRecord, String> {
+    // An agent that moved onto its server bot is still found by the pubkey a
+    // UI action captured before the move.
+    let current = crate::auth::bots::current_agent_pubkey(pubkey);
     records
         .iter_mut()
-        .find(|record| record.pubkey == pubkey)
+        .find(|record| record.pubkey == pubkey || record.pubkey == current)
         .ok_or_else(|| format!("agent {pubkey} not found"))
 }
 
@@ -492,6 +517,27 @@ pub(crate) fn spawn_with_effort_proof(
 /// publishes the triggering message before this spawn and passes its send
 /// timestamp here so the harness's first REQ replays past that message no
 /// matter how long the spawn takes. buzz-acp clamps stale floors to ~15 min.
+/// Decide and apply the child's relay credential: the record's key (and NIP-OA
+/// tag) in key mode, the bot token prepared before the locks in token mode,
+/// with every Desktop-owned token variable stripped first. `spawn_agent_child`
+/// calls this and also uses the returned decision, so the call cannot be
+/// dropped from the spawn path.
+pub(crate) fn apply_child_relay_auth(
+    state: &crate::app_state::AppState,
+    command: &mut std::process::Command,
+    record: &ManagedAgentRecord,
+    relay_url: &str,
+) -> Result<crate::auth::bots::SpawnAuth, String> {
+    let spawn_auth = crate::auth::bots::spawn_auth(state, record, relay_url)?;
+    crate::auth::bots::apply_spawn_auth(
+        command,
+        &spawn_auth,
+        &record.private_key_nsec,
+        record.auth_tag.as_deref(),
+    );
+    Ok(spawn_auth)
+}
+
 pub fn spawn_agent_child<R: tauri::Runtime>(
     app: &AppHandle<R>,
     record: &ManagedAgentRecord,
@@ -636,7 +682,15 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         command.env("PATH", path);
     }
     command.env("RUST_LOG", child_rust_log_filter());
-    command.env("BUZZ_PRIVATE_KEY", &record.private_key_nsec);
+    // Key auth injects the agent's key; a community signed in with Google
+    // injects the bot token prepared before the locks (`auth::bots`) and
+    // never the key. Every Desktop-owned token variable is stripped first.
+    let spawn_auth = apply_child_relay_auth(
+        &app.state::<crate::app_state::AppState>(),
+        &mut command,
+        record,
+        &effective_relay_url,
+    )?;
     command.env("BUZZ_RELAY_URL", &effective_relay_url);
     command.env("BUZZ_ACP_LAZY_POOL", if lazy { "true" } else { "false" });
     command.env("BUZZ_ACP_IDLE_POOL_SLEEP", idle_pool_sleep_env(lazy));
@@ -770,12 +824,6 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     command.env_remove("BUZZ_ACP_API_TOKEN");
     command.env_remove("BUZZ_API_TOKEN");
 
-    if let Some(ref auth_tag) = record.auth_tag {
-        command.env("BUZZ_AUTH_TAG", auth_tag);
-    } else {
-        command.env_remove("BUZZ_AUTH_TAG");
-    }
-
     // Inbound author gate: who is this agent allowed to respond to?
     // Validation is strict here — a malformed allowlist on disk fails before
     // we spawn anything (the harness would also reject it, but we'd rather
@@ -793,7 +841,9 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // buzz-acp owns Git identity, scoped credentials, signing and key cleanup.
     // An advanced custom ACP command bypasses that harness, so retain the
     // earlier Desktop credential setup for that supported override.
-    if record.acp_command != super::DEFAULT_ACP_COMMAND {
+    if record.acp_command != super::DEFAULT_ACP_COMMAND
+        && matches!(spawn_auth, crate::auth::bots::SpawnAuth::Keys)
+    {
         apply_custom_acp_git_credentials(
             &mut command,
             &record.acp_command,

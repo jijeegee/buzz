@@ -209,9 +209,20 @@ pub async fn authorize(
 
     // Credential check first: an unauthenticated caller learns nothing about
     // which Host or Origin the deployment expects.
-    let (principal, nip98_event_id) = match &config.auth {
-        AdminAuth::Disabled => (None, None),
-        AdminAuth::Nip98 => {
+    //
+    // Centralized-identity Bearer (plan §4.4) is an alternative credential
+    // for `Nip98` mode only, chosen by header scheme. `Disabled` mode is
+    // always read-only, so a Bearer header there resolves no principal and
+    // mutations stay 403. It is inert unless `AUTH_TOKEN_ENABLED`.
+    let bearer = if state.identity.enabled() && matches!(config.auth, AdminAuth::Nip98) {
+        bearer_admin_token(headers)?
+    } else {
+        None
+    };
+    let (principal, nip98_event_id) = match (bearer, &config.auth) {
+        (Some(token), AdminAuth::Nip98) => (Some(authorize_bearer(state, &token).await?), None),
+        (_, AdminAuth::Disabled) => (None, None),
+        (None, AdminAuth::Nip98) => {
             let full_path = format!("{ADMIN_API_PREFIX}{path_and_query}");
             let (pubkey_bytes, event_id) =
                 authorize_nip98(config, headers, &full_path, method, raw_body).await?;
@@ -243,6 +254,53 @@ pub async fn authorize(
     }
 
     Ok(principal)
+}
+
+/// The access token from a single `Authorization: Bearer <token>` header.
+///
+/// `Ok(None)` when the header is absent or uses another scheme (the NIP-98
+/// path then runs as before). More than one `Authorization` header with a
+/// Bearer among them is a uniform 401.
+fn bearer_admin_token(headers: &HeaderMap) -> Result<Option<buzz_auth::TokenSecret>, ApiError> {
+    let mut values = headers.get_all(header::AUTHORIZATION).iter();
+    let (first, second) = (values.next(), values.next());
+    let is_bearer = |value: &axum::http::HeaderValue| {
+        value
+            .to_str()
+            .ok()
+            .and_then(|v| v.split_once(' '))
+            .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+    };
+    match (first, second) {
+        (Some(value), None) if is_bearer(value) => crate::api::auth::bearer_token(headers)
+            .map(Some)
+            .ok_or_else(ApiError::unauthorized),
+        (Some(first), Some(second)) if is_bearer(first) || is_bearer(second) => {
+            Err(ApiError::unauthorized())
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Authenticate an admin request by access token and resolve its roster
+/// grant through the same [`resolve_admin_principal`] as NIP-98 (config
+/// operators, then `relay_operators`). Only human session tokens qualify; a
+/// bot token is refused even if its id were rostered. Any token failure is a
+/// uniform 401 (no oracle); an unrostered principal is a 403.
+async fn authorize_bearer(
+    state: &AppState,
+    token: &buzz_auth::TokenSecret,
+) -> Result<AdminPrincipal, ApiError> {
+    let binding = crate::identity::verify_access_token(state, token)
+        .await
+        .map_err(|rejection| match rejection {
+            crate::identity::TokenRejection::Unavailable => ApiError::internal(),
+            _ => ApiError::unauthorized(),
+        })?;
+    if binding.kind != buzz_core::principal::AccessTokenKind::User {
+        return Err(ApiError::forbidden());
+    }
+    resolve_admin_principal(state, binding.principal.as_public_key().to_bytes()).await
 }
 
 /// Resolve a 32-byte pubkey to an `AdminPrincipal` using config + DB.

@@ -1,0 +1,18 @@
+[package]
+name = "git-credential-buzz"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Git credential helper that supplies Buzz bearer tokens for Buzz's git server"
+
+[lib]
+name = "git_credential_buzz"
+path = "src/lib.rs"
+
+[[bin]]
+name = "git-credential-buzz"
+path = "src/main.rs"
+
+[dependencies]
+buzz-token-broker = { workspace = true }

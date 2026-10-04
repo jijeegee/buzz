@@ -2,6 +2,7 @@
 mod app_menu;
 mod app_state;
 mod archive;
+mod auth;
 mod build_identity;
 mod builderlab;
 mod channel_head_cache;
@@ -315,6 +316,10 @@ pub fn run() {
             if let Err(e) = backfill_persona_snapshots(&app_handle) {
                 eprintln!("buzz-desktop: persona-snapshot backfill failed: {e}");
             }
+            // Settle agent moves onto server bots a crash interrupted (Hermes
+            // profile follows the record, leftover local keys removed) before
+            // any agent starts. Best-effort and local only.
+            crate::auth::bots::sweep_adoption_journal(&app_handle);
 
             // Warm the loaded-harness registry BEFORE restore so cold-launch
             // agent spawns can resolve custom/preset runtime ids without
@@ -335,6 +340,9 @@ pub fn run() {
             if let Ok(mut guard) = state.app_handle.lock() {
                 *guard = Some(app_handle.clone());
             }
+            // Centralized identity: restart agents whose bot token became
+            // unusable (exit 78), within the restart cap. Inert in key mode.
+            tauri::async_runtime::spawn(crate::auth::watchdog::run(app_handle.clone()));
 
             let (tts_settings, tts_settings_load_error) =
                 huddle::tts_settings::load_for_app(&app_handle);
@@ -622,6 +630,17 @@ pub fn run() {
             decrypt_observer_event,
             build_observer_control_event,
             create_auth_event,
+            auth::commands::get_token_auth_status,
+            auth::commands::login_with_google,
+            auth::commands::logout,
+            auth::commands::get_ws_auth_frame,
+            auth::commands::list_devices,
+            auth::commands::revoke_device,
+            auth::commands::revoke_other_sessions,
+            auth::commands::revoke_all_bot_tokens,
+            auth::commands::delete_account,
+            auth::commands::update_global_profile,
+            auth::commands::take_token_auth_notices,
             nip44_encrypt_to_self,
             nip44_decrypt_from_self,
             get_channels,

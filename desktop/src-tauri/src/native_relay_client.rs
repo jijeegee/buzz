@@ -136,7 +136,12 @@ impl NativeRelayClient {
     /// slot. Destructive on entry, so every caller must already hold proof it
     /// is the current owner — today that is
     /// [`crate::archive::sync::ArchiveOwnership`].
-    async fn ensure_session(&self, relay_url: String, keys: Keys) -> Arc<RelaySession> {
+    async fn ensure_session(
+        &self,
+        relay_url: String,
+        keys: impl Into<NativeAuth>,
+    ) -> Arc<RelaySession> {
+        let keys = keys.into();
         let scope = (relay_url.clone(), keys.public_key().to_hex());
         let mut current = self.current.lock().await;
         if let Some(managed) = current.as_ref().filter(|managed| managed.scope == scope) {
@@ -176,7 +181,12 @@ impl NativeRelayClient {
     /// Filling an empty slot is deliberate: at startup the catalog fetch
     /// commonly precedes archive sync, and installing here means the archive
     /// start that follows reuses this socket instead of opening a second one.
-    pub(crate) async fn session(&self, relay_url: String, keys: Keys) -> SessionLease {
+    pub(crate) async fn session(
+        &self,
+        relay_url: String,
+        keys: impl Into<NativeAuth>,
+    ) -> SessionLease {
+        let keys = keys.into();
         let scope = (relay_url.clone(), keys.public_key().to_hex());
         let mut current = self.current.lock().await;
         if let Some(managed) = current.as_ref() {
@@ -216,7 +226,7 @@ impl NativeRelayClient {
     pub(crate) async fn archive_session(
         &self,
         relay_url: String,
-        keys: Keys,
+        keys: impl Into<NativeAuth>,
         _ownership: &crate::archive::sync::ArchiveOwnership<'_>,
     ) -> (Arc<RelaySession>, mpsc::Receiver<MatchedEvent>) {
         let session = self.ensure_session(relay_url, keys).await;
@@ -427,6 +437,66 @@ impl RelaySession {
     }
 }
 
+/// How a native session authenticates.
+#[derive(Clone)]
+pub(crate) enum NativeAuth {
+    /// NIP-42 with the identity key.
+    Keys(Keys),
+    /// Centralized-identity token auth as `principal`. The current access token
+    /// is read from `auth` at every (re)connect, so a refreshed token is used
+    /// after the relay closes a socket at the old token's expiry.
+    Token {
+        principal: nostr::PublicKey,
+        origin: String,
+        auth: Arc<crate::auth::TokenAuthState>,
+    },
+}
+
+impl NativeAuth {
+    /// The identity the session is scoped to.
+    pub(crate) fn public_key(&self) -> nostr::PublicKey {
+        match self {
+            Self::Keys(keys) => keys.public_key(),
+            Self::Token { principal, .. } => *principal,
+        }
+    }
+}
+
+impl From<Keys> for NativeAuth {
+    fn from(keys: Keys) -> Self {
+        Self::Keys(keys)
+    }
+}
+
+async fn connect_with(
+    relay_url: &str,
+    auth: &NativeAuth,
+    auth_tag: Option<&nostr::Tag>,
+) -> Result<NostrWsConnection, buzz_ws_client_pkg::WsClientError> {
+    match auth {
+        NativeAuth::Keys(keys) => {
+            NostrWsConnection::connect_authenticated(relay_url, keys, auth_tag).await
+        }
+        NativeAuth::Token {
+            principal,
+            origin,
+            auth,
+        } => {
+            let token = match auth.mode(origin) {
+                crate::auth::CredentialMode::Token(session) if session.principal == *principal => {
+                    session.access
+                }
+                _ => {
+                    return Err(buzz_ws_client_pkg::WsClientError::AuthFailed(
+                        "not signed in for this community".into(),
+                    ))
+                }
+            };
+            NostrWsConnection::connect_with_token(relay_url, &token).await
+        }
+    }
+}
+
 /// Starts a session against `relay_url` authenticated as `keys`.
 ///
 /// Returns the handle plus the receiver for matched events. The session
@@ -439,12 +509,16 @@ pub(crate) async fn start(
     keys: Keys,
     auth_tag: Option<nostr::Tag>,
 ) -> (Arc<RelaySession>, mpsc::Receiver<MatchedEvent>) {
-    let session = start_managed(relay_url, keys, auth_tag);
+    let session = start_managed(relay_url, NativeAuth::Keys(keys), auth_tag);
     let events = session.attach_archive().await;
     (session, events)
 }
 
-fn start_managed(relay_url: String, keys: Keys, auth_tag: Option<nostr::Tag>) -> Arc<RelaySession> {
+fn start_managed(
+    relay_url: String,
+    keys: NativeAuth,
+    auth_tag: Option<nostr::Tag>,
+) -> Arc<RelaySession> {
     let (wake, wake_rx) = mpsc::channel(1);
     let session = Arc::new(RelaySession {
         state: Arc::new(Mutex::new(SessionState::default())),
@@ -467,7 +541,7 @@ fn start_managed(relay_url: String, keys: Keys, auth_tag: Option<nostr::Tag>) ->
 
 async fn run_session(
     relay_url: String,
-    keys: Keys,
+    keys: NativeAuth,
     auth_tag: Option<nostr::Tag>,
     session: Arc<RelaySession>,
     mut wake_rx: mpsc::Receiver<()>,
@@ -478,8 +552,7 @@ async fn run_session(
             return;
         }
 
-        let connecting =
-            NostrWsConnection::connect_authenticated(&relay_url, &keys, auth_tag.as_ref());
+        let connecting = connect_with(&relay_url, &keys, auth_tag.as_ref());
         tokio::pin!(connecting);
         let connected = loop {
             tokio::select! {

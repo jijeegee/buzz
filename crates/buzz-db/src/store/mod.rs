@@ -24,6 +24,8 @@ pub mod event;
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
 pub mod git_repo;
+/// Centralized identity: principals, devices, sessions, bots, access tokens.
+pub mod identity;
 /// Community moderation: reports, bans/timeouts, audit actions.
 pub mod moderation;
 /// Deployment-global operator-listener mention registrations and delivery queues.

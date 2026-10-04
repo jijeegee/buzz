@@ -366,7 +366,7 @@ async fn publish_issue_assignment_operation(
         owner: repo_owner.to_string(),
         id: repo_id.to_string(),
     };
-    let signer = client.keys().public_key().to_hex();
+    let signer = client.pubkey().to_hex();
     let is_self_service = assignees.len() == 1
         && assignees[0].eq_ignore_ascii_case(&signer)
         && !signer.eq_ignore_ascii_case(repo_owner);

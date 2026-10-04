@@ -64,6 +64,7 @@ fn agent(persona_id: &str, name: &str, display_name: Option<&str>) -> ManagedAge
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        bot_origin: None,
     }
 }
 
@@ -209,4 +210,25 @@ fn test_rename_renames_all_matching_instances_in_one_pass() {
     assert_eq!(records[0].name, "Duncan Idaho");
     assert_eq!(records[1].name, "Duncan Idaho");
     assert_eq!(records[2].name, "Birch", "pool-named instance untouched");
+}
+
+#[test]
+fn bot_records_sync_their_profile_through_the_bot_api() {
+    // A server bot has no key: it must still get a sync target (the bot
+    // profile PATCH), not be skipped as an unparseable key.
+    let mut bot = agent("p", "Scout", None);
+    bot.pubkey = "b".repeat(64);
+    bot.bot_origin = Some("http://o.test".into());
+    assert!(matches!(
+        profile_sync_target(&bot),
+        Some(ProfileSyncTarget::Bot(id)) if id == bot.pubkey
+    ));
+    let keys = nostr::Keys::generate();
+    let mut keyed = agent("p", "Keyed", None);
+    keyed.private_key_nsec = nostr::ToBech32::to_bech32(keys.secret_key()).unwrap();
+    assert!(matches!(
+        profile_sync_target(&keyed),
+        Some(ProfileSyncTarget::Keys(k)) if k.public_key() == keys.public_key()
+    ));
+    assert!(profile_sync_target(&agent("p", "Broken", None)).is_none());
 }

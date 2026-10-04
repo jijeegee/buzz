@@ -47,7 +47,7 @@ async fn cmd_add_channel_draft(
     let owner = PublicKey::parse(&owner_hex)
         .map_err(|error| CliError::Auth(format!("invalid owner attestation: {error}")))?;
     let built = build_project_channel(
-        client.keys(),
+        client.keys("project channel drafts (NIP-44 encrypted to the owner)")?,
         &owner,
         CreateProjectChannelDraft {
             home_channel_id: home_channel,
@@ -173,7 +173,7 @@ pub async fn add_repos_to_own_project(
     repos: &[String],
 ) -> Result<String, CliError> {
     validate_project_slug(slug)?;
-    let caller_pubkey = client.keys().public_key().to_hex();
+    let caller_pubkey = client.pubkey().to_hex();
 
     let new_members: Vec<ProjectMemberCoord> = repos
         .iter()
@@ -233,7 +233,7 @@ pub async fn try_add_own_repo_to_channel_project(
     repo_id: &str,
 ) -> Result<(), CliError> {
     let projects = fetch_projects_for_channel(client, channel).await?;
-    let caller = client.keys().public_key().to_hex();
+    let caller = client.pubkey().to_hex();
     let Some(event) = projects.iter().find(|candidate| {
         candidate.pubkey.to_hex().eq_ignore_ascii_case(&caller) && !project_is_unlisted(candidate)
     }) else {
@@ -259,7 +259,7 @@ async fn fetch_project(
             crate::validate::validate_hex64(pk)?;
             pk.to_string()
         }
-        None => client.keys().public_key().to_hex(),
+        None => client.pubkey().to_hex(),
     };
     let filter = serde_json::json!({
         "kinds": [KIND_PROJECT],
@@ -369,7 +369,7 @@ pub async fn cmd_create(
     // ── Local validation (all checks before any .await) ───────────────────
     validate_project_slug(slug)?;
 
-    let caller_pubkey = client.keys().public_key().to_hex();
+    let caller_pubkey = client.pubkey().to_hex();
 
     // Expand and validate repo coordinates.
     let mut members: Vec<ProjectMemberCoord> = repos
@@ -492,7 +492,7 @@ pub async fn cmd_list(
             crate::validate::validate_hex64(pk)?;
             pk.to_string()
         }
-        None => client.keys().public_key().to_hex(),
+        None => client.pubkey().to_hex(),
     };
     let mut filter = serde_json::json!({
         "kinds": [KIND_PROJECT],
@@ -525,7 +525,7 @@ pub async fn cmd_remove_repo(
     repos: &[String],
 ) -> Result<(), CliError> {
     validate_project_slug(slug)?;
-    let caller_pubkey = client.keys().public_key().to_hex();
+    let caller_pubkey = client.pubkey().to_hex();
 
     // ── Local validation before any .await ────────────────────────────────
     let to_remove: Vec<ProjectMemberCoord> = repos
@@ -697,7 +697,7 @@ pub async fn cmd_delete(client: &BuzzClient, slug: &str) -> Result<(), CliError>
         .ok_or_else(|| CliError::NotFound(format!("project {slug:?} not found")))?;
     let next_ts = next_timestamp(&head, Timestamp::now())?;
 
-    let pubkey_hex = client.keys().public_key().to_hex();
+    let pubkey_hex = client.pubkey().to_hex();
     let tombstone = build_delete_addressable(KIND_PROJECT, &pubkey_hex, slug)
         .map_err(|e| CliError::Other(format!("failed to build delete event: {e}")))?
         .custom_created_at(next_ts);

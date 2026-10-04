@@ -17,16 +17,16 @@ pub async fn submit_signed_event_at_with_keys(
     event: &nostr::Event,
     state: &AppState,
     api_base_url: &str,
-    keys: &nostr::Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
 ) -> Result<SubmitEventResponse, String> {
-    if event.pubkey != keys.public_key() {
+    if event.pubkey != keys.signer_pubkey() {
         return Err("signed event does not match the publishing identity".to_string());
     }
     crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/events", api_base_url.trim_end_matches('/'));
     let body_bytes = event.as_json().into_bytes();
     crate::egress_guard::assert_no_key_backup_bytes(&body_bytes, "relay event submit")?;
-    let auth_header = build_nip98_auth_header_for_keys(keys, &Method::POST, &url, &body_bytes)?;
+    let auth_header = keys.relay_http_auth(&Method::POST, &url, &body_bytes)?;
 
     let response = build_authenticated_relay_request(
         &state.http_client,
@@ -62,11 +62,9 @@ pub async fn submit_event_at_with_keys(
     builder: nostr::EventBuilder,
     state: &AppState,
     api_base_url: &str,
-    keys: &nostr::Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
 ) -> Result<SubmitEventResponse, String> {
-    let event = builder
-        .sign_with_keys(keys)
-        .map_err(|e| format!("failed to sign event: {e}"))?;
+    let event = keys.sign_builder(builder)?;
     submit_signed_event_at_with_keys(&event, state, api_base_url, keys).await
 }
 
@@ -76,8 +74,9 @@ pub async fn submit_event(
     state: &AppState,
 ) -> Result<SubmitEventResponse, String> {
     let api_base_url = relay_api_base_url_with_override(state);
-    let keys = state.signing_keys()?;
-    submit_event_at_with_keys(builder, state, &api_base_url, &keys).await
+    // The user's credential: key auth, or the Google session in token mode.
+    let credential = state.user_credential()?;
+    submit_event_at_with_keys(builder, state, &api_base_url, &credential).await
 }
 
 /// Sign with an explicit identity, submit to an explicit HTTP API base URL,
@@ -101,11 +100,9 @@ pub async fn submit_event_at_created_at(
     builder: nostr::EventBuilder,
     state: &AppState,
     api_base_url: &str,
-    keys: &nostr::Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
 ) -> Result<(SubmitEventResponse, i64), String> {
-    let event = builder
-        .sign_with_keys(keys)
-        .map_err(|e| format!("failed to sign event: {e}"))?;
+    let event = keys.sign_builder(builder)?;
     let created_at = event.created_at.as_secs() as i64;
     let result = submit_signed_event_at_with_keys(&event, state, api_base_url, keys).await?;
     Ok((result, created_at))
@@ -116,12 +113,10 @@ pub async fn submit_event_at_created_at(
 pub async fn submit_event_with_keys_created_at(
     builder: nostr::EventBuilder,
     state: &AppState,
-    keys: &nostr::Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
     auth_tag: Option<&str>,
 ) -> Result<(SubmitEventResponse, i64), String> {
-    let event = builder
-        .sign_with_keys(keys)
-        .map_err(|e| format!("failed to sign event: {e}"))?;
+    let event = keys.sign_builder(builder)?;
     let created_at = event.created_at.as_secs() as i64;
     let result = super::submit_signed_event_with_keys(&event, state, keys, auth_tag).await?;
     Ok((result, created_at))

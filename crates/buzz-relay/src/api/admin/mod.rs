@@ -38,6 +38,19 @@ pub(crate) fn is_admin_host(state: &crate::state::AppState, headers: &HeaderMap)
 /// the advertised origin without reaching into the private `auth` module.
 pub(crate) use auth::admin_api_origin;
 
+/// Whether `pubkey` resolves to an effective deployment Operator with the same
+/// precedence the admin API uses (config, owner fallback, then DB roster).
+/// `Err` when the roster cannot be read — callers fail closed.
+pub(crate) async fn is_effective_operator(
+    state: &crate::state::AppState,
+    pubkey: [u8; 32],
+) -> Result<bool, ()> {
+    match auth::lookup_admin_principal(state, pubkey).await {
+        Ok(principal) => Ok(principal.is_some_and(|p| p.role == AdminRole::Operator)),
+        Err(_) => Err(()),
+    }
+}
+
 /// Build the deployment-admin routes.
 ///
 /// Read routes are available in all auth modes.
@@ -1432,7 +1445,7 @@ async fn untimeout_member(
 /// empty, an owner-fallback operator. This is the request-time snapshot the
 /// last-operator invariant is computed against: while it holds, the DB roster
 /// can be emptied freely because config still guarantees an operator.
-fn config_operator_exists(config: &crate::config::Config) -> bool {
+pub(crate) fn config_operator_exists(config: &crate::config::Config) -> bool {
     !config.relay_operator_pubkeys.is_empty() || config.relay_owner_pubkey.is_some()
 }
 

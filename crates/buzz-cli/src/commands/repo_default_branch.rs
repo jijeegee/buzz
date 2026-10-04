@@ -52,7 +52,7 @@ pub(super) async fn dispatch(
         } => (id, owner, Some((branch, expected_manifest))),
     };
     crate::validate::validate_repo_id(&id)?;
-    let owner = owner.unwrap_or_else(|| client.keys().public_key().to_hex());
+    let owner = owner.unwrap_or_else(|| client.pubkey().to_hex());
     crate::validate::validate_hex64(&owner)?;
     let path = format!("/git/{owner}/{id}/default-branch");
     let result = match update {

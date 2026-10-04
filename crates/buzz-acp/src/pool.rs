@@ -988,9 +988,9 @@ pub struct PromptContext {
     pub max_turns_per_session: u32,
     /// Permission mode to apply after session creation. `Default` = skip.
     pub permission_mode: PermissionMode,
-    /// Agent identity — used to derive the NIP-AE conversation key at
-    /// session creation for core injection.
-    pub agent_keys: nostr::Keys,
+    /// Agent identity — signs (or, in token mode, drafts) events and, in key
+    /// mode, derives the NIP-AE conversation key for core injection.
+    pub agent_keys: crate::identity::AgentIdentity,
     /// Owner pubkey (hex), if resolved at startup. When unset, NIP-AE core
     /// injection is skipped entirely (no owner = no `(agent, owner)` pair).
     pub agent_owner_pubkey: Option<nostr::PublicKey>,
@@ -3982,7 +3982,8 @@ fn huddle_instructions_from_query_response(
 ) -> Option<String> {
     let raw = events.first()?;
     let event = serde_json::from_value::<nostr::Event>(raw.clone()).ok()?;
-    event.verify().ok()?;
+    // Relay-served: token-authored (server-stamped) events carry no signature.
+    buzz_core::draft::verify_served_event(&event).then_some(())?;
     let channel_id = channel_id.to_string();
     if event.pubkey != *owner
         || event.kind.as_u16() as u32 != buzz_core::kind::KIND_HUDDLE_GUIDELINES
@@ -4092,12 +4093,13 @@ pub(crate) fn canvas_section_from_query_response(
 
     // Verify the event's id and signature agree with its content.
     // A structurally complete but tampered event must not supply trusted metadata.
-    if let Err(err) = event.verify() {
+    // Relay-served: a server-stamped (token-authored) canvas has a valid id
+    // and the sentinel signature; anything else must verify.
+    if !buzz_core::draft::verify_served_event(&event) {
         tracing::warn!(
             target: "canvas::fetch",
             channel = %channel_uuid,
-            %err,
-            "canvas event failed signature verification — emitting no section",
+            "canvas event failed id/signature verification — emitting no section",
         );
         return None;
     }
@@ -5544,8 +5546,12 @@ async fn publish_agent_turn_metric(
         stop_reason,
         pricing_identity: usage.pricing_identity.clone(),
     };
+    // NIP-AM metrics are NIP-44 encrypted to the owner: key mode only.
+    let Ok(metric_keys) = ctx.agent_keys.secret_keys("NIP-AM turn metrics") else {
+        return;
+    };
     let ciphertext = match buzz_core::agent_turn_metric::encrypt_agent_turn_metric(
-        &ctx.agent_keys,
+        metric_keys,
         owner_pk,
         &payload,
     ) {
@@ -5570,7 +5576,7 @@ async fn publish_agent_turn_metric(
         Tag::parse(["p", &owner_hex]).expect("p tag"),
         Tag::parse(["agent", &agent_hex]).expect("agent tag"),
     ])
-    .sign_with_keys(&ctx.agent_keys)
+    .sign_with_keys(metric_keys)
     {
         Ok(e) => e,
         Err(e) => {
@@ -5645,7 +5651,7 @@ pub(crate) async fn reaction_add(rest: &crate::relay::RestClient, event_id: &str
             return;
         }
     };
-    let event = match builder.sign_with_keys(&rest.keys) {
+    let event = match rest.keys.sign(builder) {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!(event_id, emoji, "reaction add: sign failed: {e}");
@@ -5682,7 +5688,7 @@ pub(crate) async fn post_failure_notice(
 
 /// Build the signed failure-notice event published by [`post_failure_notice`].
 pub(crate) fn build_failure_notice_event(
-    keys: &nostr::Keys,
+    keys: &crate::identity::AgentIdentity,
     channel_id: Uuid,
     thread_tags: &ThreadTags,
     content: &str,
@@ -5714,7 +5720,7 @@ pub(crate) fn build_failure_notice_event(
             return None;
         }
     };
-    match builder.sign_with_keys(keys) {
+    match keys.sign(builder) {
         Ok(e) => Some(e),
         Err(e) => {
             tracing::warn!(channel = %channel_id, "failure notice: sign failed: {e}");
@@ -5790,7 +5796,7 @@ pub(crate) async fn reaction_remove(rest: &crate::relay::RestClient, event_id: &
             return;
         }
     };
-    let event = match builder.sign_with_keys(&rest.keys) {
+    let event = match rest.keys.sign(builder) {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!(event_id, emoji, "reaction remove: sign failed: {e}");
@@ -5843,6 +5849,15 @@ mod tests {
     use super::*;
     use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
     use serde_json::json;
+
+    /// A capture path for a `bash` script's single-quoted string. Forward
+    /// slashes, because bash keeps Windows `\` literally and the file would
+    /// land in the crate directory under a mangled name.
+    fn shell_quoted_path(path: &std::path::Path) -> String {
+        path.to_string_lossy()
+            .replace('\\', "/")
+            .replace('\'', "'\\''")
+    }
 
     /// Conversation scope for a channel — the scope these pool tests exercise
     /// (equivalent to the pre-thread-scoping channel key).
@@ -7361,7 +7376,7 @@ mod tests {
             "buzz-acp-standing-lifecycle-{}.ndjson",
             Uuid::new_v4()
         ));
-        let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
+        let quoted_capture = shell_quoted_path(&capture);
         let script = format!(
             r#"count=0
 while IFS= read -r line; do
@@ -7460,7 +7475,7 @@ done"#
             "buzz-acp-channel-delivery-lifecycle-{}.ndjson",
             Uuid::new_v4()
         ));
-        let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
+        let quoted_capture = shell_quoted_path(&capture);
         let script = format!(
             r#"count=0
 while IFS= read -r line; do
@@ -7649,7 +7664,7 @@ done"#
             "buzz-acp-hydrated-thread-wire-{}.ndjson",
             Uuid::new_v4()
         ));
-        let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
+        let quoted_capture = shell_quoted_path(&capture);
         let script = format!(
             r#"count=0
 while IFS= read -r line; do
@@ -7704,7 +7719,7 @@ done"#
                 RestClient {
                     http: reqwest::Client::new(),
                     base_url: base_url.clone(),
-                    keys: agent_keys.clone(),
+                    keys: agent_keys.clone().into(),
                     auth_tag_json: None,
                 },
             );
@@ -7866,7 +7881,7 @@ done"#
             "buzz-acp-merged-delivery-wire-{}.ndjson",
             Uuid::new_v4()
         ));
-        let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
+        let quoted_capture = shell_quoted_path(&capture);
         let script = format!(
             r#"count=0
 while IFS= read -r line; do
@@ -8024,7 +8039,7 @@ done"#
             "buzz-acp-late-steer-wire-{}.ndjson",
             Uuid::new_v4()
         ));
-        let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
+        let quoted_capture = shell_quoted_path(&capture);
         let script = format!(
             r#"IFS= read -r line
 printf '%s\n' "$line" > '{quoted_capture}'
@@ -10874,7 +10889,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             rest_client: RestClient {
                 http: reqwest::Client::new(),
                 base_url: "http://127.0.0.1:0".to_string(),
-                keys: agent_keys.clone(),
+                keys: agent_keys.clone().into(),
                 auth_tag_json: None,
             },
             channel_info: ChannelInfoResolver::new(
@@ -10882,14 +10897,14 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 RestClient {
                     http: reqwest::Client::new(),
                     base_url: "http://127.0.0.1:0".to_string(),
-                    keys: agent_keys.clone(),
+                    keys: agent_keys.clone().into(),
                     auth_tag_json: None,
                 },
             ),
             context_message_limit: 0,
             max_turns_per_session: 0,
             permission_mode: PermissionMode::Default,
-            agent_keys: agent_keys.clone(),
+            agent_keys: agent_keys.clone().into(),
             agent_owner_pubkey: owner_pubkey,
             memory_enabled: false,
             harness_name: "goose".to_string(),
@@ -11305,7 +11320,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         let rest = crate::relay::RestClient {
             http: reqwest::Client::new(),
             base_url,
-            keys: nostr::Keys::generate(),
+            keys: nostr::Keys::generate().into(),
             auth_tag_json: None,
         };
         (
@@ -11364,7 +11379,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             crate::relay::RestClient {
                 http: reqwest::Client::new(),
                 base_url,
-                keys: nostr::Keys::generate(),
+                keys: nostr::Keys::generate().into(),
                 auth_tag_json: None,
             },
         );
@@ -11421,7 +11436,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             crate::relay::RestClient {
                 http: reqwest::Client::new(),
                 base_url,
-                keys: nostr::Keys::generate(),
+                keys: nostr::Keys::generate().into(),
                 auth_tag_json: None,
             },
         );
@@ -11502,7 +11517,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             "buzz-acp-indeterminate-project-wire-{}.ndjson",
             Uuid::new_v4()
         ));
-        let quoted_capture = capture.to_string_lossy().replace('\'', "'\\''");
+        let quoted_capture = shell_quoted_path(&capture);
         let script = format!(
             r#"while IFS= read -r line; do
   printf '%s\n' "$line" >> '{quoted_capture}'
@@ -11666,7 +11681,7 @@ done"#
             crate::relay::RestClient {
                 http: reqwest::Client::new(),
                 base_url,
-                keys: nostr::Keys::generate(),
+                keys: nostr::Keys::generate().into(),
                 auth_tag_json: None,
             },
         );
@@ -11764,7 +11779,7 @@ done"#
             crate::relay::RestClient {
                 http: reqwest::Client::new(),
                 base_url,
-                keys: nostr::Keys::generate(),
+                keys: nostr::Keys::generate().into(),
                 auth_tag_json: None,
             },
         );

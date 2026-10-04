@@ -6,6 +6,10 @@ import {
   buildWelcomeKickoffCloser,
   buildWelcomeKickoffOpener,
   buildWelcomeKickoffOpenerSendInput,
+  buildWelcomeKickoffProviderSendInput,
+  reportWelcomeKickoffFailure,
+  sendWelcomeKickoffCloser,
+  WELCOME_KICKOFF_PROVIDER_MESSAGE,
   classifyWelcomeKickoffResolution,
   createWelcomeKickoffCoordinator,
   mergeKickoffEvents,
@@ -467,4 +471,110 @@ test("merging the opener subtree never double-counts an already-visible reply", 
 test("merging with no subtree replies leaves the channel events untouched", () => {
   const channelEvents = [kickoffOpener];
   assert.equal(mergeKickoffEvents(channelEvents, []), channelEvents);
+});
+
+test("token mode: the opener carries a user-voiced fallback that mentions the lead and closes the kickoff", () => {
+  const input = buildWelcomeKickoffOpenerSendInput(
+    { lead: fizz, teammates: [honey, pollen] },
+    [honey, pollen],
+    "channel-1",
+  );
+  assert.ok(input.userFallback, "the opener must not be dropped in token mode");
+  assert.match(input.userFallback.content, /^@Fizz /);
+  assert.match(input.userFallback.content, /@Honey and @Pollen/);
+  assert.doesNotMatch(input.userFallback.content, /I'm Fizz/);
+  // The lead-authored closer cannot be posted in token mode, so the user
+  // opener resolves the kickoff itself.
+  assert.deepEqual(input.userFallback.additionalMarkers, [
+    "buzz-welcome-kickoff.closer.v1",
+  ]);
+  // Key mode is unchanged: the agent-voiced opener and markers.
+  assert.match(input.content, /I'm Fizz/);
+  assert.deepEqual(input.additionalMarkers, []);
+});
+
+test("token mode: a degraded opener does not repeat the closer marker", () => {
+  const input = buildWelcomeKickoffOpenerSendInput(
+    { lead: fizz, teammates: [honey, pollen] },
+    [],
+    "channel-1",
+  );
+  assert.equal(
+    input.userFallback.content,
+    "@Fizz Hi! I just joined Buzz. Could you help me get oriented?",
+  );
+  assert.deepEqual(input.additionalMarkers, ["buzz-welcome-kickoff.closer.v1"]);
+  assert.deepEqual(input.userFallback.additionalMarkers, []);
+});
+
+test("token mode: the provider notice carries a user-voiced fallback mentioning the lead", () => {
+  const input = buildWelcomeKickoffProviderSendInput(fizz, "channel-1");
+  assert.equal(input.content, WELCOME_KICKOFF_PROVIDER_MESSAGE);
+  assert.equal(input.agentPubkey, fizz.pubkey);
+  assert.equal(input.marker, "buzz-welcome-kickoff.provider-required.v1");
+  assert.match(input.userFallback.content, /^@Fizz /);
+  assert.match(input.userFallback.content, /AI provider in Settings/);
+});
+
+test("kickoff failures are reported to the UI, not only the console", () => {
+  const notices = [];
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    reportWelcomeKickoffFailure(
+      "Couldn't start the Welcome team kickoff.",
+      new Error("relay refused"),
+      (message, options) => notices.push({ message, options }),
+    );
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepEqual(notices, [
+    {
+      message: "Couldn't start the Welcome team kickoff.",
+      options: { description: "relay refused" },
+    },
+  ]);
+});
+
+test("token mode: the closer carries a user-voiced fallback so a mid-kickoff sign-in still posts it", async () => {
+  const sent = [];
+  await sendWelcomeKickoffCloser(
+    {
+      agentSet: { lead: fizz, teammates: [] },
+      channelId: "welcome-1",
+      failedNames: ["Buzz"],
+      delayedNames: [],
+      opener: { id: "opener-1" },
+    },
+    {
+      closerExists: async () => false,
+      send: async (input) => {
+        sent.push(input);
+        return { eventId: "closer-1" };
+      },
+    },
+  );
+  assert.equal(sent.length, 1);
+  const [input] = sent;
+  assert.equal(input.agentPubkey, fizz.pubkey);
+  assert.equal(input.marker, "buzz-welcome-kickoff.closer.v1");
+  assert.equal(input.parentEventId, "opener-1");
+  assert.equal(input.content, buildWelcomeKickoffCloser(["Buzz"]));
+  assert.match(input.userFallback.content, /^@Fizz /);
+  assert.match(input.userFallback.content, /Buzz seems to be having trouble/);
+});
+
+test("the closer is not re-posted once its marker exists", async () => {
+  const sent = [];
+  await sendWelcomeKickoffCloser(
+    {
+      agentSet: { lead: fizz, teammates: [] },
+      channelId: "welcome-1",
+      failedNames: [],
+      opener: { id: "opener-1" },
+    },
+    { closerExists: async () => true, send: async (input) => sent.push(input) },
+  );
+  assert.equal(sent.length, 0);
 });

@@ -18,7 +18,7 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
         } => {
             let owner = require_owner(client)?;
             let built = build_create(
-                client.keys(),
+                client.keys("owner-reviewed agent drafts (NIP-44 encrypted to the owner)")?,
                 &owner,
                 CreateAgentDraft {
                     channel_id: channel,
@@ -55,7 +55,7 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
         } => {
             let owner = require_owner(client)?;
             let built = build_update(
-                client.keys(),
+                client.keys("owner-reviewed agent drafts (NIP-44 encrypted to the owner)")?,
                 &owner,
                 UpdateAgentDraft {
                     channel_id: channel,
@@ -93,7 +93,7 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
             admin,
         } => {
             validate_hex64(&target_pubkey)?;
-            let signer_hex = client.keys().public_key().to_hex();
+            let signer_hex = client.pubkey().to_hex();
             let auth = resolve_auth(
                 client,
                 &target_pubkey,
@@ -132,7 +132,7 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
             admin,
         } => {
             validate_hex64(&target_pubkey)?;
-            let signer_hex = client.keys().public_key().to_hex();
+            let signer_hex = client.pubkey().to_hex();
             let auth = resolve_auth(
                 client,
                 &target_pubkey,
@@ -503,11 +503,13 @@ fn verify_archived_event<'a>(
         )));
     }
 
-    event.verify().map_err(|e| {
-        CliError::Other(format!(
-            "archived-identities event failed cryptographic verification: {e}"
-        ))
-    })?;
+    // Served by the relay: a key-signed event must verify, a server-stamped
+    // one (sentinel signature) must carry its NIP-01 id.
+    if !buzz_core::draft::verify_served_event(event) {
+        return Err(CliError::Other(
+            "archived-identities event failed integrity verification".into(),
+        ));
+    }
 
     let archived: Vec<&str> = event
         .tags

@@ -406,6 +406,7 @@ mod tests {
                     channel_ids: None,
                     auth_method: buzz_auth::AuthMethod::Nip42,
                     agent_owner_pubkey: None,
+                    token: None,
                 },
             )),
             subscriptions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),

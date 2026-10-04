@@ -269,6 +269,7 @@ fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
         effort_level: None,
         runtime: None,
         name_pool: vec![],
+        bot_origin: None,
     };
 
     let mut memory_map = std::collections::HashMap::new();

@@ -35,9 +35,18 @@ rules, and goals across sessions). Ask your user about yourself.";
 ///   memory is empty.
 pub async fn build_core_section(
     rest: &RestClient,
-    agent_keys: &Keys,
+    agent: &crate::identity::AgentIdentity,
     owner: &PublicKey,
 ) -> Option<String> {
+    // NIP-AE core memory is NIP-44 encrypted to (agent, owner); a token-mode
+    // agent has no secret key, so it starts without a core section.
+    let Ok(agent_keys) = agent.secret_keys("NIP-AE core memory") else {
+        static LOGGED: std::sync::Once = std::sync::Once::new();
+        LOGGED.call_once(|| {
+            tracing::info!(target: "engram::core", "core memory skipped: unavailable with a bot token");
+        });
+        return None;
+    };
     match fetch_core_body(rest, agent_keys, owner).await {
         Ok(Some(profile)) => Some(crate::prompt_framing::semantic_section(
             "core-memory",

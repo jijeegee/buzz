@@ -596,6 +596,34 @@ pub(crate) fn delete_profile_for_deleted_agent(pubkey: &str) {
     }
 }
 
+/// Keep a Hermes agent's profile (memory, sessions, seeded `.env`) when its
+/// pubkey changes because it moved onto its server bot (`auth::bots::adopt`):
+/// rename `buzz-<old>` to `buzz-<new>`. Best-effort — on failure the next
+/// start creates a fresh profile for the new pubkey and the old one stays.
+pub(crate) fn move_profile_for_new_pubkey(from: &str, to: &str) {
+    let moved = HermesProfile::for_pubkey(from)
+        .and_then(|old| HermesProfile::for_pubkey(to).map(|new| (old, new)))
+        .and_then(|(old, new)| move_profile_dir(&old, &new));
+    if let Err(error) = moved {
+        eprintln!("buzz-desktop: keeping a new Hermes profile for moved agent {to}: {error}");
+    }
+}
+
+/// Rename `from`'s profile directory to `to`'s. `Ok(false)` when there is
+/// nothing to move or `to` already exists (never overwritten).
+pub(crate) fn move_profile_dir(from: &HermesProfile, to: &HermesProfile) -> Result<bool, String> {
+    let _guard = PROFILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if !from.dir.is_dir() || to.dir.exists() {
+        return Ok(false);
+    }
+    if !is_buzz_profile_dir(&from.root, &from.dir) || !is_buzz_profile_dir(&to.root, &to.dir) {
+        return Err("not a Buzz-owned Hermes profile directory".into());
+    }
+    std::fs::rename(&from.dir, &to.dir)
+        .map(|()| true)
+        .map_err(|error| format!("rename {}: {error}", from.dir.display()))
+}
+
 /// The `hermes` CLI to manage profiles with: the sibling of the resolved Hermes
 /// agent command (the installer puts `hermes` and `hermes-acp` side by side,
 /// and a custom-path install may not be on PATH), else `hermes` on PATH.

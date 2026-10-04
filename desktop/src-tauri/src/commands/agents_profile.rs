@@ -287,6 +287,20 @@ pub(crate) async fn reconcile_profile_at(
     {
         return Ok(ProfileReconcileOutcome::SkippedDisabled);
     }
+    // A server bot has no key: in its signed-in community its profile is the
+    // relay's (`PATCH /auth/bots/{id}/profile`), never a signed kind:0.
+    if data.private_key_nsec.is_empty()
+        && crate::auth::bots::sync_bot_profile(
+            state,
+            &data.pubkey,
+            relay_url,
+            &data.name,
+            expected_avatar,
+        )
+        .await?
+    {
+        return Ok(ProfileReconcileOutcome::Reconciled);
+    }
     let agent_keys = Keys::parse(&data.private_key_nsec)
         .map_err(|e| format!("failed to parse agent keys: {e}"))?;
     let expected_avatar = crate::relay::profile_avatar::localize_avatar(

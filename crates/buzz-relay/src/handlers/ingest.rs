@@ -277,14 +277,33 @@ pub enum IngestAuth {
         /// How the HTTP request was authenticated.
         auth_method: HttpAuthMethod,
     },
+    /// Centralized-identity access token (WS token AUTH or HTTP `Bearer`).
+    /// The event is a server-stamped draft: `pubkey` is the principal and the
+    /// signature is the sentinel, so only the recomputed id is verified.
+    Token {
+        /// The authenticated principal (as a public key, Phase 0–3).
+        pubkey: nostr::PublicKey,
+        /// Permission scopes granted to this principal.
+        scopes: Vec<Scope>,
+        /// WebSocket connection id; `None` for an HTTP `Bearer` request.
+        conn_id: Option<Uuid>,
+    },
 }
 
 impl IngestAuth {
     /// The authenticated public key.
     pub fn pubkey(&self) -> &nostr::PublicKey {
         match self {
-            Self::Nip42 { pubkey, .. } | Self::Http { pubkey, .. } => pubkey,
+            Self::Nip42 { pubkey, .. } | Self::Http { pubkey, .. } | Self::Token { pubkey, .. } => {
+                pubkey
+            }
         }
+    }
+
+    /// Whether the event was stamped by the server rather than signed by the
+    /// client (token auth): verification checks the id, not the signature.
+    pub fn is_server_stamped(&self) -> bool {
+        matches!(self, Self::Token { .. })
     }
 
     /// Pubkey used for principal-scoped accounting and policy lookups.
@@ -295,7 +314,9 @@ impl IngestAuth {
     /// Permission scopes for this auth context.
     pub fn scopes(&self) -> &[Scope] {
         match self {
-            Self::Nip42 { scopes, .. } | Self::Http { scopes, .. } => scopes,
+            Self::Nip42 { scopes, .. } | Self::Http { scopes, .. } | Self::Token { scopes, .. } => {
+                scopes
+            }
         }
     }
 
@@ -303,6 +324,7 @@ impl IngestAuth {
     pub fn conn_id(&self) -> Option<Uuid> {
         match self {
             Self::Nip42 { conn_id, .. } => Some(*conn_id),
+            Self::Token { conn_id, .. } => *conn_id,
             Self::Http { .. } => None,
         }
     }
@@ -322,7 +344,7 @@ impl IngestAuth {
 
     /// Whether this auth context is an HTTP request (not WebSocket).
     pub fn is_http(&self) -> bool {
-        matches!(self, Self::Http { .. })
+        matches!(self, Self::Http { .. } | Self::Token { conn_id: None, .. })
     }
 }
 
@@ -340,6 +362,35 @@ fn emit_product_feedback_success(
         },
         state_for_request(tenant, auth.pubkey()),
     );
+}
+
+/// Verify an incoming event for its auth path. Client-signed events (key
+/// auth) need a valid id **and** Schnorr signature. Server-stamped events
+/// (token auth) were built by the relay with the authenticated principal as
+/// `pubkey`; only their recomputed id is checked — their sentinel signature
+/// is never valid by construction.
+pub(crate) fn verify_event_for_auth(
+    event: &Event,
+    server_stamped: bool,
+) -> Result<(), buzz_core::VerificationError> {
+    if !server_stamped {
+        return verify_event(event);
+    }
+    if event.verify_id() {
+        Ok(())
+    } else {
+        Err(buzz_core::VerificationError::InvalidId {
+            computed: nostr::EventId::new(
+                &event.pubkey,
+                &event.created_at,
+                &event.kind,
+                &event.tags,
+                &event.content,
+            )
+            .to_hex(),
+            got: event.id.to_hex(),
+        })
+    }
 }
 
 /// Increment the rejection counter with a bounded reason and transport label.
@@ -2404,7 +2455,11 @@ async fn ingest_event_inner(
     // the original event without ever having copied it.
     let event = std::sync::Arc::new(event);
     let event_for_verify = std::sync::Arc::clone(&event);
-    let verify_result = tokio::task::spawn_blocking(move || verify_event(&event_for_verify)).await;
+    let server_stamped = auth.is_server_stamped();
+    let verify_result = tokio::task::spawn_blocking(move || {
+        verify_event_for_auth(&event_for_verify, server_stamped)
+    })
+    .await;
     match verify_result {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {

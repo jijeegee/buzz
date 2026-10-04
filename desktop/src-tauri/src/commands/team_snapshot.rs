@@ -632,6 +632,7 @@ pub async fn confirm_team_snapshot_import(
             effort_level: None,
             runtime: member.definition.runtime.clone(),
             name_pool: member.definition.name_pool.clone(),
+            bot_origin: None,
         };
 
         minted.push(MintedMember {

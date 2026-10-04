@@ -9,6 +9,8 @@
 pub mod agent_turn_metric;
 /// Channel and membership enums shared across crates.
 pub mod channel;
+/// Server-side sender stamping of unsigned event drafts (centralized identity).
+pub mod draft;
 /// NIP-AE Agent Engrams — slug grammar, conversation key, d-tag derivation,
 /// body parse/serialize, envelope build/validate, head selection.
 pub mod engram;
@@ -34,6 +36,8 @@ pub mod observer;
 pub mod pairing;
 /// Presence status types shared across crates.
 pub mod presence;
+/// Server-issued principal identities (centralized identity).
+pub mod principal;
 /// NIP-PMA owner-encrypted private managed-agent wire codec.
 pub mod private_managed_agent;
 /// Canonical relay runtime identities.

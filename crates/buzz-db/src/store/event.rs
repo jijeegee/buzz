@@ -885,7 +885,12 @@ pub(crate) fn row_to_stored_event(row: sqlx::postgres::PgRow) -> Result<Option<S
     let kind_i32: i32 = row.try_get("kind")?;
     let tags_json: serde_json::Value = row.try_get("tags")?;
     let content: String = row.try_get("content")?;
-    let sig_bytes: Vec<u8> = row.try_get("sig")?;
+    // `sig` is nullable since migration 0057 (server-stamped events). A NULL
+    // or sentinel signature reconstructs with the all-zero sentinel so the row
+    // never silently disappears from REQ, /query, push or workflow reads.
+    let sig_bytes: Vec<u8> = row
+        .try_get::<Option<Vec<u8>>, _>("sig")?
+        .unwrap_or_else(|| buzz_core::draft::SENTINEL_SIG.to_vec());
     let received_at: DateTime<Utc> = row.try_get("received_at")?;
 
     let channel_id: Option<Uuid> = row.try_get("channel_id")?;

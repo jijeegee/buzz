@@ -1,6 +1,8 @@
 use crate::managed_agents::known_acp_runtime;
 #[path = "cli_tests.rs"]
 mod cli_tests;
+#[path = "spawn_auth_tests.rs"]
+mod spawn_auth_tests;
 
 // ── desktop binary name tests ───────────────────────────────────────────
 
@@ -1282,4 +1284,58 @@ fn make_pair_runtime_placeholder() -> crate::managed_agents::ManagedAgentPairRun
         job: None,
     };
     crate::managed_agents::ManagedAgentPairRuntime::starting(process)
+}
+
+/// The production process sync queues a harness that exited 78 (bot token
+/// unusable) for the auth watchdog, and only that exit code.
+#[test]
+fn sync_queues_auth_terminal_exit_for_the_watchdog() {
+    use std::process::{Command, Stdio};
+    let relay = "ws://auth-exit-78.test";
+    let spawn = |code: i32| {
+        #[cfg(unix)]
+        let mut command = {
+            let mut c = Command::new("/bin/sh");
+            c.args(["-c", &format!("exit {code}")]);
+            c
+        };
+        #[cfg(windows)]
+        let mut command = {
+            let mut c = Command::new("cmd");
+            c.args(["/C", &format!("exit {code}")]);
+            c
+        };
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn exiting child");
+        while child.try_wait().expect("try_wait").is_none() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let mut runtime = make_pair_runtime_placeholder();
+        runtime.child = child;
+        runtime
+    };
+    let auth_agent = "a7".repeat(32);
+    let crash_agent = "a8".repeat(32);
+    let mut records = vec![minimal_record(&auth_agent), minimal_record(&crash_agent)];
+    let mut runtimes = std::collections::HashMap::new();
+    runtimes.insert(
+        crate::managed_agents::ManagedAgentRuntimeKey::new(auth_agent.clone(), relay).unwrap(),
+        spawn(78),
+    );
+    runtimes.insert(
+        crate::managed_agents::ManagedAgentRuntimeKey::new(crash_agent.clone(), relay).unwrap(),
+        spawn(1),
+    );
+    let (_, exited) =
+        crate::managed_agents::sync_managed_agent_processes(&mut records, &mut runtimes, "test");
+    assert_eq!(exited.len(), 2);
+    let queued = crate::auth::bots::take_exits_matching(|entry| {
+        entry.0 == auth_agent || entry.0 == crash_agent
+    });
+    assert_eq!(queued.len(), 1, "only the exit-78 harness is queued");
+    assert_eq!(queued[0].0, auth_agent);
 }

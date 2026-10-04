@@ -78,7 +78,7 @@ pub(crate) async fn fetch_persona_catalog(
     state: State<'_, AppState>,
     relay_client: State<'_, NativeRelayClient>,
 ) -> Result<Vec<PersonaCatalogPublication>, String> {
-    let keys = state.signing_keys()?;
+    let keys = state.native_auth()?;
     let owner = keys.public_key().to_hex();
     let relay_url = crate::relay::relay_ws_url_with_override(&state);
     let session = relay_client.session(relay_url.clone(), keys).await;
@@ -99,7 +99,7 @@ pub(crate) async fn fetch_persona_catalog(
         // async executor (and therefore off Tauri command scheduling).
         let verified = tauri::async_runtime::spawn_blocking(move || {
             page.into_iter()
-                .filter(|event| event.verify().is_ok())
+                .filter(buzz_core_pkg::draft::verify_served_event)
                 .collect::<Vec<_>>()
         })
         .await
@@ -112,7 +112,7 @@ pub(crate) async fn fetch_persona_catalog(
         }
     }
 
-    let current_keys = state.signing_keys()?;
+    let current_keys = state.native_auth()?;
     if current_keys.public_key().to_hex() != owner
         || crate::relay::relay_ws_url_with_override(&state) != relay_url
     {

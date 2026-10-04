@@ -221,6 +221,9 @@ pub struct AcpClient {
     standard_usage: StandardUsageTracker,
     /// Known adapter identity for prompt-response usage mapping.
     standard_adapter: Option<StandardAdapterKind>,
+    /// Token mode: this agent process's broker secret. Its MCP servers reuse
+    /// it; dropping the client (child exit, respawn, shutdown) unregisters it.
+    broker_lease: Option<crate::token_broker::BrokerLease>,
 }
 
 /// Recursively merge `overlay` into `base`, with `overlay` winning on scalar/shape
@@ -448,6 +451,8 @@ impl AcpClient {
             Ok(Err(e)) => tracing::debug!("child wait error after kill: {e}"),
             Err(_) => tracing::warn!("child did not exit within 5s after SIGKILL — abandoning"),
         }
+        // The child is gone: its broker secret must stop working now.
+        self.broker_lease = None;
     }
 
     /// Spawn the agent binary as a subprocess and connect to its stdio pipes.
@@ -475,6 +480,27 @@ impl AcpClient {
         extra_env: &[(String, String)],
         has_generated_codex_config: bool,
         launch_env: &[(String, String)],
+    ) -> Result<Self, AcpError> {
+        Self::spawn_with_broker(
+            command,
+            args,
+            extra_env,
+            has_generated_codex_config,
+            launch_env,
+            crate::token_broker::global(),
+        )
+        .await
+    }
+
+    /// [`spawn_with_env`](Self::spawn_with_env) with an explicit token broker
+    /// (the process broker in production; a local one in tests).
+    async fn spawn_with_broker(
+        command: &str,
+        args: &[String],
+        extra_env: &[(String, String)],
+        has_generated_codex_config: bool,
+        launch_env: &[(String, String)],
+        broker: Option<&std::sync::Arc<crate::token_broker::TokenBroker>>,
     ) -> Result<Self, AcpError> {
         use std::process::Stdio;
 
@@ -589,6 +615,10 @@ impl AcpClient {
             };
         cmd.envs(launch_env.iter().cloned());
         cmd.env_remove(launch::PREFIX_ENV);
+        // Last word on credentials: no bot token reaches the agent; in token
+        // mode it gets per-spawn broker credentials instead.
+        let broker_lease = crate::token_broker::apply_child_credentials(&mut cmd, broker)
+            .map_err(|error| AcpError::Protocol(error.to_string()))?;
         let mut child = cmd.spawn().map_err(|error| {
             std::io::Error::new(
                 error.kind(),
@@ -623,6 +653,7 @@ impl AcpClient {
             goose_usage: UsageTracker::default(),
             standard_usage: StandardUsageTracker::default(),
             standard_adapter,
+            broker_lease,
         })
     }
 
@@ -717,6 +748,8 @@ impl AcpClient {
         system_prompt: Option<SystemPromptTransport<'_>>,
         session_title: Option<&str>,
     ) -> Result<SessionNewResponse, AcpError> {
+        let mut mcp_servers = mcp_servers;
+        crate::token_broker::apply_mcp_credentials(&mut mcp_servers, self.broker_lease.as_ref());
         let mut params = serde_json::json!({
             "cwd": cwd,
             "mcpServers": mcp_servers,
@@ -3555,6 +3588,106 @@ mod tests {
         );
     }
 
+    /// Token mode, production spawn seam: the agent child gets its own broker
+    /// secret (and no token/private key), its MCP servers get that same
+    /// secret on `session/new`, and dropping the client unregisters it.
+    #[tokio::test]
+    async fn token_mode_spawn_leases_a_broker_secret_for_the_child_and_its_mcp() {
+        let broker = crate::token_broker::TokenBroker::start(crate::identity::BotToken::new(
+            "bzb_spawn".into(),
+            9,
+        ))
+        .await
+        .expect("broker");
+        // A fake agent that reports its credential env on `initialize` and
+        // echoes `session/new`. PowerShell on Windows (no portable bash).
+        let (program, args): (&str, Vec<String>) = if cfg!(windows) {
+            use base64::Engine as _;
+            let script = r#"$null = [Console]::In.ReadLine()
+[Console]::Out.WriteLine('{"jsonrpc":"2.0","id":0,"result":{"secret":"' + $env:BUZZ_TOKEN_BROKER_SECRET + '","token":"' + $env:BUZZ_BOT_TOKEN + '","key":"' + $env:BUZZ_PRIVATE_KEY + '"}}')
+[Console]::Out.Flush()
+$req = [Console]::In.ReadLine()
+[Console]::Out.WriteLine('{"jsonrpc":"2.0","id":1,"result":{"sessionId":"ses_t","_receivedRequest":' + $req + '}}')
+[Console]::Out.Flush()
+Start-Sleep -Seconds 1"#;
+            let utf16: Vec<u8> = script
+                .encode_utf16()
+                .flat_map(|unit| unit.to_le_bytes())
+                .collect();
+            (
+                "powershell",
+                vec![
+                    "-NoProfile".into(),
+                    "-NonInteractive".into(),
+                    "-EncodedCommand".into(),
+                    base64::engine::general_purpose::STANDARD.encode(utf16),
+                ],
+            )
+        } else {
+            let script = r#"
+            read -t 5 _init
+            echo '{"jsonrpc":"2.0","id":0,"result":{"secret":"'"$BUZZ_TOKEN_BROKER_SECRET"'","token":"'"$BUZZ_BOT_TOKEN"'","key":"'"$BUZZ_PRIVATE_KEY"'"}}'
+            read -t 5 REQ
+            echo '{"jsonrpc":"2.0","id":1,"result":{"sessionId":"ses_t","_receivedRequest":'"$REQ"'}}'
+            sleep 1
+        "#;
+            ("bash", vec!["-c".into(), script.into()])
+        };
+        let mut client = AcpClient::spawn_with_broker(
+            program,
+            &args,
+            &[],
+            false,
+            &[
+                ("BUZZ_BOT_TOKEN".into(), "bzb_spawn".into()),
+                ("BUZZ_PRIVATE_KEY".into(), "nsec_stale".into()),
+            ],
+            Some(&broker),
+        )
+        .await
+        .expect("spawn");
+        assert_eq!(broker.live_secrets(), 1, "one secret per agent process");
+        let init = client.initialize().await.expect("initialize");
+        let secret = init["secret"].as_str().unwrap_or_default().to_owned();
+        assert_eq!(secret.len(), 64, "child got a broker secret: {init}");
+        assert_eq!(init["token"], "", "bot token never reaches the child");
+        assert_eq!(init["key"], "", "no private key in token mode");
+
+        let server = McpServer {
+            name: "buzz".into(),
+            command: "buzz-mcp".into(),
+            args: vec![],
+            env: vec![EnvVar {
+                name: "BUZZ_TOKEN_BROKER_SECRET".into(),
+                value: "forged".into(),
+            }],
+        };
+        let resp = client
+            .session_new_full("/tmp", vec![server], None, None)
+            .await
+            .expect("session/new");
+        let env = &resp.raw["_receivedRequest"]["params"]["mcpServers"][0]["env"];
+        let secrets: Vec<&str> = env
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|var| var["name"] == "BUZZ_TOKEN_BROKER_SECRET")
+            .filter_map(|var| var["value"].as_str())
+            .collect();
+        assert_eq!(
+            secrets,
+            vec![secret.as_str()],
+            "MCP shares the agent's secret"
+        );
+
+        client.shutdown().await;
+        assert_eq!(
+            broker.live_secrets(),
+            0,
+            "child exit unregisters the secret"
+        );
+    }
+
     #[tokio::test]
     async fn goose_system_prompt_request_uses_set_contract() {
         let script = r#"
@@ -3991,9 +4124,11 @@ mod tests {
         response: &str,
     ) -> AcpClient {
         let script = format!(
-            "read -r line; printf '%s' \"$line\" > {capture}; \
+            "read -r line; printf '%s' \"$line\" > '{capture}'; \
              printf '%s\\n' '{response}'; sleep 10",
-            capture = capture_path.display(),
+            // Forward slashes: bash would treat Windows `\` as escapes and
+            // write a mangled file into the crate directory.
+            capture = capture_path.to_string_lossy().replace('\\', "/"),
             response = response,
         );
         spawn_script(&script).await

@@ -342,6 +342,14 @@ pub(crate) async fn run_setup_listener(config: Config, payload: SetupPayload) ->
         HarnessRelay::connect(&config.relay_url, &config.keys, &pubkey_hex, relay_auth_tag)
             .await
             .map_err(|e| anyhow::anyhow!("setup-mode relay connect error: {e}"))?;
+    // Token mode: keep the bot token fresh while the setup listener waits.
+    let _token_refresh_task = config.keys.bot_token().map(|token| {
+        crate::token_refresh::spawn_refresh_task(
+            token.clone(),
+            &config.relay_url,
+            relay.reauth_handle(),
+        )
+    });
 
     if let Err(e) = relay.set_startup_watermark(startup_watermark).await {
         tracing::warn!("setup-mode: failed to set startup watermark: {e}");
@@ -490,7 +498,7 @@ async fn nudge_authorized_event(
     nudged_event_ids: &mut HashSet<EventId>,
     publisher: &RelayEventPublisher,
     rest_client: &relay::RestClient,
-    keys: &nostr::Keys,
+    keys: &crate::identity::AgentIdentity,
     payload: &SetupPayload,
 ) -> bool {
     let (buzz_event, effective_author) = authorized_event.into_parts();
@@ -665,7 +673,7 @@ async fn handle_setup_membership(
 /// nudge posts at top level. P-tags the verified effective asker.
 async fn publish_setup_nudge(
     publisher: &RelayEventPublisher,
-    keys: &nostr::Keys,
+    keys: &crate::identity::AgentIdentity,
     channel_id: Uuid,
     triggering_event: &nostr::Event,
     edit: Option<&crate::queue::ResolvedEdit>,
@@ -689,7 +697,7 @@ async fn publish_setup_nudge(
 
 /// Build the signed nudge published by [`publish_setup_nudge`].
 fn build_setup_nudge_event(
-    keys: &nostr::Keys,
+    keys: &crate::identity::AgentIdentity,
     channel_id: Uuid,
     triggering_event: &nostr::Event,
     edit: Option<&crate::queue::ResolvedEdit>,
@@ -725,8 +733,7 @@ fn build_setup_nudge_event(
     )
     .map_err(|e| anyhow::anyhow!("failed to build setup nudge: {e}"))?;
 
-    event_builder
-        .sign_with_keys(keys)
+    keys.sign(event_builder)
         .map_err(|e| anyhow::anyhow!("failed to sign setup nudge: {e}"))
 }
 
@@ -864,7 +871,7 @@ mod tests {
                 &mut HashSet::new(),
                 &publisher,
                 &rest_client,
-                &agent_keys,
+                &crate::identity::AgentIdentity::from(agent_keys.clone()),
                 &payload,
             )
             .await
@@ -970,7 +977,7 @@ mod tests {
                 &mut HashSet::new(),
                 &publisher,
                 &query_rest,
-                &agent_keys,
+                &crate::identity::AgentIdentity::from(agent_keys.clone()),
                 &payload,
             )
             .await

@@ -6,7 +6,7 @@ use crate::validate::{parse_uuid, sdk_err, validate_hex64};
 
 /// List DM conversations by querying kind:41001 (relay-confirmed DMs) filtered by our pubkey.
 pub async fn cmd_list_dms(client: &BuzzClient, limit: Option<u32>) -> Result<(), CliError> {
-    let my_pk = client.keys().public_key().to_hex();
+    let my_pk = client.pubkey().to_hex();
     let limit = limit.unwrap_or(50).min(200);
     let filter = serde_json::json!({
         "kinds": [41001],

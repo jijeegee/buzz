@@ -36,7 +36,7 @@ pub async fn cmd_list_channels(
     let effective_limit = limit.unwrap_or(500);
     let events = if member == Some(true) {
         // Step 1: find channel IDs where we're a member (kind:39002)
-        let my_pk = client.keys().public_key().to_hex();
+        let my_pk = client.pubkey().to_hex();
         let member_filter = serde_json::json!({
             "kinds": [39002],
             "#p": [my_pk],
@@ -1451,7 +1451,7 @@ pub async fn cmd_create_channel_from_template(
     // be selected.
     let owner = client
         .auth_tag_owner_hex()
-        .unwrap_or_else(|| client.keys().public_key().to_hex());
+        .unwrap_or_else(|| client.pubkey().to_hex());
 
     let resolved = build_roster_resolution(client, &owner, &template.agents).await?;
 

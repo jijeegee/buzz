@@ -106,6 +106,45 @@ cargo clippy -p buzz-cli -- -D warnings
 
 ---
 
+## 5a. Token Mode (centralized identity, Phase 1)
+
+With a relay running `AUTH_TOKEN_ENABLED=true`, the CLI authenticates with a
+bearer token instead of `BUZZ_PRIVATE_KEY`. Sources, highest first:
+
+1. `BUZZ_BOT_TOKEN` (`bzb_…`, injected into Desktop-hosted agents' `buzz-acp`)
+2. `BUZZ_ACCESS_TOKEN` (`bzs_…` user session or `bzk_…` headless bot token)
+3. `BUZZ_TOKEN_BROKER_URL` + `BUZZ_TOKEN_BROKER_SECRET` (the `buzz-acp`
+   loopback broker; this is what `buzz` sees inside a hosted agent)
+4. otherwise key mode: `BUZZ_PRIVATE_KEY` (+ optional `BUZZ_AUTH_TAG`)
+
+Tokens are env-only; there is no argv flag that would expose one in the
+process list. An explicit `--private-key` on the command line always selects
+key mode, even when a token env var is set. A rate-limited or unreachable
+broker is a retryable relay error (exit 2); a rejected token or broker secret
+is an auth error (exit 3).
+
+On startup the CLI calls `GET /auth/me` with the token to learn its principal
+id; events are then sent as drafts (`pubkey` = principal, all-zero `sig`) that
+the relay stamps, and every bridge call carries `Authorization: Bearer`.
+
+```bash
+unset BUZZ_PRIVATE_KEY
+export BUZZ_ACCESS_TOKEN=bzs_...   # from /auth/oidc/complete (dev: AUTH_OIDC_FAKE=1)
+./target/release/buzz --format compact channels list
+# Expected: same output as key mode, authored by the principal id
+
+BUZZ_ACCESS_TOKEN=bzs_revoked ./target/release/buzz channels list; echo "exit=$?"
+# Expected: {"error":"auth_error","message":"auth error: access token rejected: ..."} exit=3
+```
+
+Token-mode limits until Phase 2: `buzz upload` / `buzz media` (Blossom is
+still NIP-98) and commands that need a secret key (`buzz mem`, `buzz gifs`,
+owner-reviewed `agents draft-*` and project channel drafts, which NIP-44
+encrypt to the owner) fail with exit 1 and a message naming the reason.
+Unit coverage lives in `src/client_token_tests.rs`.
+
+---
+
 ## 6. Live Testing — Command by Command
 
 Run each command, verify exit code 0 and check output. Most commands

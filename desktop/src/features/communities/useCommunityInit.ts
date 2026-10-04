@@ -15,6 +15,12 @@ import {
   setAgentAvatarCommunities,
 } from "@/shared/api/tauriWorkspace";
 import { getIdentity } from "@/shared/api/tauriIdentity";
+import {
+  getTokenAuthStatus,
+  identityReload,
+  onTokenAuthChanged,
+  tokenIdentityChanged,
+} from "@/shared/api/tokenAuth";
 import { clearTrayAgentActivity } from "@/shared/api/trayMenu";
 import { getOverrides } from "@/shared/features";
 import { resetMediaCaches } from "@/shared/lib/mediaUrl";
@@ -182,6 +188,7 @@ export function useCommunityInit(
   // biome-ignore lint/correctness/useExhaustiveDependencies: we intentionally depend on specific properties (id/relayUrl/token/reposDir) — depending on the whole object would trigger resets on name-only changes
   useEffect(() => {
     let cancelled = false;
+    let unlistenTokenAuth: (() => void) | undefined;
 
     async function init() {
       if (!activeCommunity) {
@@ -387,6 +394,45 @@ export function useCommunityInit(
         return;
       }
 
+      // Centralized identity: restore this community's Google session (if
+      // any) now that its relay is applied and before anything connects, so
+      // the relay socket and "me" use the account principal, not the key.
+      // The status call awaits any restore already in flight (single-flight
+      // on the Rust side), so it reads a settled state.
+      try {
+        const tokenAuth = await getTokenAuthStatus();
+        if (tokenAuth.state === "active") {
+          identityPubkey = (await getIdentity()).pubkey;
+          appliedPubkeyRef.current = identityPubkey;
+        }
+        if (tokenAuth.supported && !cancelled) {
+          // If the account identity changes after init (a restore that was
+          // still retrying completes, or another path signs in), every
+          // identity-scoped store must restart under it, as sign-in does.
+          const appliedPrincipal =
+            tokenAuth.state === "active" ? tokenAuth.principal : null;
+          void onTokenAuthChanged(() => {
+            if (cancelled) return;
+            void getTokenAuthStatus()
+              .then((next) => {
+                if (
+                  !cancelled &&
+                  tokenIdentityChanged(appliedPrincipal, next)
+                ) {
+                  identityReload.reload();
+                }
+              })
+              .catch(() => {});
+          }).then((unlisten) => {
+            if (cancelled) unlisten();
+            else unlistenTokenAuth = unlisten;
+          });
+        }
+      } catch (error) {
+        console.error("[useCommunityInit] token auth status failed:", error);
+      }
+      if (cancelled) return;
+
       if (!cancelled) {
         // Refresh relay-derived media state only after the backend has installed
         // this community's relay override. On cold launch, mediaUrl.ts may have
@@ -423,6 +469,7 @@ export function useCommunityInit(
 
     return () => {
       cancelled = true;
+      unlistenTokenAuth?.();
     };
   }, [
     activeCommunity?.id,

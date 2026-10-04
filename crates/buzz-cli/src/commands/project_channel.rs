@@ -34,7 +34,7 @@ pub async fn resolve_or_ensure_repo_for_channel(
         return Ok(repo);
     }
 
-    let caller = client.keys().public_key().to_hex();
+    let caller = client.pubkey().to_hex();
     if let Some(repo) = repos.iter().find_map(|event| {
         event
             .pubkey
@@ -201,7 +201,7 @@ async fn ensure_default_repo(
     let repo_id = repo_id_from_project_slug(&slug)?;
     let name = project_name(project).unwrap_or_else(|| slug.clone());
     let name = truncate_repo_name(&name);
-    let caller = client.keys().public_key().to_hex();
+    let caller = client.pubkey().to_hex();
 
     if let Some(existing) =
         crate::commands::repos::fetch_own_repo_announcement(client, &repo_id).await?

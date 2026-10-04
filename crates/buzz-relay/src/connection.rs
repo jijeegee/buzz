@@ -186,6 +186,32 @@ impl ConnectionState {
         self.transition_pending_auth(AuthState::Authenticated(auth_context), AuthOutcome::Success)
     }
 
+    /// Swap the token binding of a token-authenticated connection on a
+    /// same-principal re-AUTH. Subscriptions and in-flight work are untouched.
+    /// Returns `false` (no change) unless the connection is authenticated by
+    /// token as the same principal.
+    pub(crate) fn rebind_token(&self, binding: buzz_auth::TokenBinding) -> bool {
+        let mut auth = self.lock_auth_state();
+        match &mut *auth {
+            AuthState::Authenticated(ctx)
+                if ctx
+                    .token
+                    .as_ref()
+                    .is_some_and(|bound| bound.principal == binding.principal) =>
+            {
+                ctx.token = Some(Box::new(binding));
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether the connection is authenticated by an access token (its EVENT
+    /// frames are drafts the server stamps).
+    pub(crate) fn is_token_authenticated(&self) -> bool {
+        matches!(&*self.lock_auth_state(), AuthState::Authenticated(ctx) if ctx.token.is_some())
+    }
+
     /// Atomically finish the initial challenge with a bounded denial.
     pub(crate) fn reject_auth(&self, outcome: AuthOutcome) -> bool {
         debug_assert!(!matches!(outcome, AuthOutcome::Success));
@@ -756,6 +782,7 @@ async fn handle_active_connection(
 
     crate::handlers::close::release_connection_subscriptions(&conn, &state).await;
     state.conn_manager.deregister(conn.conn_id);
+    state.identity.sessions.remove(conn.conn_id);
     if let Some(auth_ctx) = authenticated {
         if !state.conn_manager.has_admitted_connection(
             conn.tenant.community(),
@@ -1192,12 +1219,33 @@ async fn handle_text_message(text: String, conn: Arc<ConnectionState>, state: Ar
         return;
     }
 
-    let msg = match ClientMessage::parse(&text) {
+    // Token-auth frames are only recognised while AUTH_TOKEN_ENABLED; with the
+    // flag off parsing is byte-identical to the key-auth relay.
+    let parse_mode = crate::protocol::ParseMode {
+        token_auth: state.identity.enabled(),
+        drafts: state.identity.enabled() && conn.is_token_authenticated(),
+    };
+    let msg = match ClientMessage::parse_with(&text, parse_mode) {
         Ok(m) => m,
         Err(e) => {
             conn.send(RelayMessage::notice(&format!("invalid message: {e}")));
             return;
         }
+    };
+    // Token connections send drafts; the server stamps the sender here, before
+    // admission and dispatch, so every downstream path sees a normal event.
+    let msg = match msg {
+        ClientMessage::EventDraft(draft) => {
+            match crate::identity::ws::stamp_ws_draft(&conn, &draft) {
+                Ok(event) => ClientMessage::Event(event),
+                Err((event_id, message)) => {
+                    crate::handlers::ingest::reject_with_transport("ws", "invalid");
+                    conn.send(RelayMessage::ok(&event_id, false, &message));
+                    return;
+                }
+            }
+        }
+        other => other,
     };
 
     if !enforce_ws_admission(&msg, &conn, &state).await {
@@ -1205,6 +1253,16 @@ async fn handle_text_message(text: String, conn: Arc<ConnectionState>, state: Ar
     }
 
     match msg {
+        ClientMessage::AuthToken(token) => {
+            let span = tracing::info_span!("ws.auth_token", conn_id = %conn.conn_id);
+            tokio::select! {
+                biased;
+                _ = conn.cancel.cancelled() => {}
+                _ = crate::identity::ws::handle_token_auth(token, Arc::clone(&conn), Arc::clone(&state))
+                    .instrument(span) => {}
+            }
+        }
+        ClientMessage::EventDraft(_) => {}
         ClientMessage::Auth(event) => {
             // AUTH remains inline so only one frame can race the connection's
             // pending lifecycle, but cancellation can preempt dependency waits.
@@ -1390,6 +1448,7 @@ pub(crate) mod tests {
             channel_ids: None,
             auth_method: AuthMethod::Nip42,
             agent_owner_pubkey: None,
+            token: None,
         }
     }
 
@@ -1916,6 +1975,58 @@ pub(crate) mod tests {
         assert_eq!(frame[1], event_id);
         assert_eq!(frame[2], false);
         assert_eq!(frame[3], "rate-limited: too many concurrent requests");
+    }
+
+    async fn state_with_token_auth(enabled: bool) -> Arc<AppState> {
+        let mut state = crate::state::tests::test_state_with_database_url(
+            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz", // sadscan:disable np.postgres.1 -- closed port
+        )
+        .await;
+        let mut config = crate::identity::AuthTokenConfig::disabled("ws://localhost:3000");
+        config.enabled = enabled;
+        Arc::get_mut(&mut state).expect("sole reference").identity =
+            Arc::new(crate::identity::IdentityRuntime::new(config));
+        state
+    }
+
+    /// With `AUTH_TOKEN_ENABLED=false` a `["AUTH", {"token"}]` frame parses
+    /// exactly as on the key-auth relay — an invalid AUTH event — and never
+    /// reaches the token handler; the challenge stays pending.
+    #[tokio::test]
+    async fn token_auth_frame_is_refused_when_token_auth_disabled() {
+        let state = state_with_token_auth(false).await;
+        let (conn, mut rx) = test_conn_with_auth(pending_state());
+        let raw =
+            serde_json::json!(["AUTH", {"token": format!("bzs_{}", "a".repeat(43))}]).to_string();
+        handle_text_message(raw, Arc::clone(&conn), Arc::clone(&state)).await;
+        let frame = read_frame(&mut rx);
+        assert_eq!(frame[0], "NOTICE");
+        assert!(
+            frame[1].as_str().is_some_and(
+                |m| m.starts_with("invalid message:") && m.contains("invalid auth event")
+            ),
+            "{frame}"
+        );
+        assert!(matches!(
+            conn.auth_state_snapshot(),
+            AuthState::Pending { .. }
+        ));
+    }
+
+    /// With the flag on the same frame reaches the token handler: a malformed
+    /// token is refused with the stable `invalid_token` code on the `auth` OK.
+    #[tokio::test]
+    async fn token_auth_frame_reaches_token_handler_when_enabled() {
+        let state = state_with_token_auth(true).await;
+        let (conn, mut rx) = test_conn_with_auth(pending_state());
+        let raw = serde_json::json!(["AUTH", {"token": "bzs_malformed"}]).to_string();
+        handle_text_message(raw, Arc::clone(&conn), Arc::clone(&state)).await;
+        let frame = read_frame(&mut rx);
+        assert_eq!(
+            frame,
+            serde_json::json!(["OK", "auth", false, "auth-required: invalid_token"])
+        );
+        assert!(matches!(conn.auth_state_snapshot(), AuthState::Failed));
     }
 
     /// The REQ arm of the same branch still settles on CLOSED.

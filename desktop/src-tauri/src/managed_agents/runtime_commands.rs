@@ -243,6 +243,17 @@ pub fn start_managed_agent_runtime(
     start_managed_agent_runtime_pair_lazy(pubkey, relay_url, &admission, app)
 }
 
+/// Restart a pair after `buzz-acp` exited 78 (bot token unusable). Goes
+/// through the normal start, which reissues the bot token before any lock.
+pub(crate) fn start_pair_after_auth_exit(
+    pubkey: String,
+    relay_url: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    let admission = super::AdmissionSnapshot::capture(&app.state::<AppState>());
+    start_pair(pubkey, relay_url, false, None, &admission, app).map(|_| ())
+}
+
 fn start_pair<R: tauri::Runtime>(
     pubkey: String,
     relay_url: String,
@@ -264,9 +275,23 @@ fn start_pair<R: tauri::Runtime>(
             .into_iter()
             .find(|record| record.pubkey == pubkey)
     };
-    if let Some(record) = snapshot {
-        super::hermes_profile::prepare_for_start(&app, &record)?;
-    }
+    // Token-mode community: the record may move onto its server bot here;
+    // the rest of the start follows the pubkey it now carries.
+    let pubkey = match snapshot {
+        Some(mut record) => {
+            let moved = crate::auth::bots::prepare_for_start(&app, &record, &relay_url)?;
+            if moved != record.pubkey {
+                crate::auth::bots::adopt_record_identity(
+                    &mut record,
+                    &moved,
+                    &crate::auth::origin_for(&relay_url),
+                );
+            }
+            super::hermes_profile::prepare_for_start(&app, &record)?;
+            moved
+        }
+        None => pubkey,
+    };
     let transition = state
         .managed_agent_runtime_transition
         .lock()
@@ -456,6 +481,11 @@ async fn probe_agent_relay_access(
     requested_relay_url: String,
 ) -> Result<(super::ManagedAgentRecord, ManagedAgentRuntimeKey, String), String> {
     let key = ManagedAgentRuntimeKey::new(record.pubkey.clone(), &requested_relay_url)?;
+    // A server bot has no key to probe with; whether it may run on this relay
+    // is decided by `auth::bots::spawn_auth` (its own community, signed in).
+    if record.bot_origin.is_some() {
+        return Ok((record, key, requested_relay_url));
+    }
     let keys = nostr::Keys::parse(record.private_key_nsec.trim())
         .map_err(|error| format!("invalid managed-agent key: {error}"))?;
     let api_base = crate::relay::relay_http_base_url(&key.relay_url);

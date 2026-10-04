@@ -76,7 +76,9 @@ where
         return None;
     };
     match serde_json::from_value::<Event>(raw.clone()) {
-        Ok(original) if original.id == target_id && original.verify().is_ok() => {
+        Ok(original)
+            if original.id == target_id && buzz_core::draft::verify_served_event(&original) =>
+        {
             Some(ResolvedEdit {
                 target_event_id,
                 target_thread_tags: parse_thread_tags(&original),

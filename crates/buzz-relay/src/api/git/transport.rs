@@ -87,6 +87,26 @@ impl axum::extract::FromRequestParts<Arc<AppState>> for GitAuth {
     ) -> Result<Self, Self::Rejection> {
         let method = parts.method.as_str();
 
+        // Centralized identity (plan §4.4, B6): `Basic token:<token>` (what git
+        // sends through `git-credential-buzz`) or `Bearer <token>`. Only when
+        // token auth is on and NIP-FI is off; otherwise the NIP-98 path below
+        // runs exactly as before.
+        let mode = state.config.nip_fi.mode;
+        if state.identity.enabled() && matches!(mode, buzz_auth::NipFiMode::Off) {
+            match git_token_credential(&parts.headers) {
+                GitTokenCredential::Token(token) => {
+                    return authenticate_git_token(state, parts, &token).await;
+                }
+                GitTokenCredential::Malformed => {
+                    return Err(git_token_challenge(method, "invalid token credential"));
+                }
+                GitTokenCredential::Missing => {
+                    return Err(git_token_challenge(method, "missing Authorization header"));
+                }
+                GitTokenCredential::OtherScheme => {}
+            }
+        }
+
         // Off mode: parse and validate the Authorization header BEFORE tenant
         // lookup.  [FI-INV-15] — Off mode preserves pre-NIP-FI error precedence:
         // missing credentials → 401 + WWW-Authenticate challenge;
@@ -101,7 +121,6 @@ impl axum::extract::FromRequestParts<Arc<AppState>> for GitAuth {
         // admission (immediately after this block) because the signed `u` tag
         // must be verified against the tenant-bound host, not a process-global
         // domain.
-        let mode = state.config.nip_fi.mode;
         if matches!(mode, buzz_auth::NipFiMode::Off) {
             parse_git_auth_header(&parts.headers, method)?;
         }
@@ -259,6 +278,138 @@ impl axum::extract::FromRequestParts<Arc<AppState>> for GitAuth {
 
         Ok(GitAuth { pubkey, tenant })
     }
+}
+
+/// What a git request's `Authorization` header holds, from the token-auth view.
+enum GitTokenCredential {
+    /// A token from `Bearer <t>` or `Basic base64(token:<t>)`.
+    Token(buzz_auth::TokenSecret),
+    /// A Basic/Bearer header that does not decode to a token.
+    Malformed,
+    /// No `Authorization` header.
+    Missing,
+    /// Another scheme (`Nostr`): the NIP-98 path handles it.
+    OtherScheme,
+}
+
+/// Classify the git `Authorization` header for token auth. Git's Basic
+/// credential uses the fixed username [`GIT_TOKEN_USERNAME`].
+fn git_token_credential(headers: &axum::http::HeaderMap) -> GitTokenCredential {
+    let Some(value) = headers.get(header::AUTHORIZATION) else {
+        return GitTokenCredential::Missing;
+    };
+    let Some((scheme, rest)) = value.to_str().ok().and_then(|v| v.split_once(' ')) else {
+        return GitTokenCredential::OtherScheme;
+    };
+    let rest = rest.trim();
+    if scheme.eq_ignore_ascii_case("bearer") {
+        return if rest.is_empty() {
+            GitTokenCredential::Malformed
+        } else {
+            GitTokenCredential::Token(buzz_auth::TokenSecret::new(rest.to_owned()))
+        };
+    }
+    if !scheme.eq_ignore_ascii_case("basic") {
+        return GitTokenCredential::OtherScheme;
+    }
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(rest)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok());
+    match decoded.as_deref().and_then(|pair| pair.split_once(':')) {
+        Some((GIT_TOKEN_USERNAME, token)) if !token.is_empty() => {
+            GitTokenCredential::Token(buzz_auth::TokenSecret::new(token.to_owned()))
+        }
+        _ => GitTokenCredential::Malformed,
+    }
+}
+
+/// Fixed Basic-auth username for token credentials (`git-credential-buzz`).
+const GIT_TOKEN_USERNAME: &str = "token";
+
+/// 401 offering both credential schemes, so git asks whichever helper is
+/// configured (`git-credential-nostr` answers `Nostr`, `git-credential-buzz`
+/// answers `Basic`).
+fn git_token_challenge(method: &str, message: &'static str) -> Response {
+    let mut response = (StatusCode::UNAUTHORIZED, message).into_response();
+    let headers = response.headers_mut();
+    if let Ok(nostr) =
+        axum::http::HeaderValue::from_str(&format!("Nostr realm=\"buzz\", method=\"{method}\""))
+    {
+        headers.append(header::WWW_AUTHENTICATE, nostr);
+    }
+    headers.append(
+        header::WWW_AUTHENTICATE,
+        axum::http::HeaderValue::from_static("Basic realm=\"buzz\""),
+    );
+    response
+}
+
+/// Token-authenticated git request: verify the token, bind the tenant, then
+/// the same relay-membership and ban gates as the NIP-98 path. A bot inherits
+/// its owner's ban (server-side `bots.owner_principal_id` replaces NIP-OA).
+async fn authenticate_git_token(
+    state: &Arc<AppState>,
+    parts: &axum::http::request::Parts,
+    token: &buzz_auth::TokenSecret,
+) -> Result<GitAuth, Response> {
+    let method = parts.method.as_str();
+    let binding = match crate::identity::verify_access_token(state, token).await {
+        Ok(binding) => binding,
+        Err(crate::identity::TokenRejection::Unavailable) => {
+            return Err(
+                (StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable").into_response(),
+            )
+        }
+        Err(rejection) => {
+            warn!(code = rejection.code(), "git: token auth failed");
+            return Err(git_token_challenge(method, "token auth failed"));
+        }
+    };
+    let raw_host = parts
+        .headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let tenant = crate::tenant::bind_community(&state.db, raw_host)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, "repository not found").into_response())?;
+    let pubkey = binding.principal.as_public_key();
+    match crate::api::relay_members::check_relay_membership(
+        state,
+        tenant.community(),
+        pubkey.as_bytes(),
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(crate::api::relay_members::MembershipDecision::Denied) => {
+            warn!(pubkey = %pubkey.to_hex(), "git: relay membership denied");
+            return Err((StatusCode::FORBIDDEN, "restricted: not a relay member").into_response());
+        }
+        Ok(_) => {}
+        Err(e) => {
+            warn!(pubkey = %pubkey.to_hex(), error = %e, "git: relay membership lookup failed");
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "error: internal error checking relay membership",
+            )
+                .into_response());
+        }
+    }
+    let community = tenant.community();
+    let agent = git_restriction_state(&state.db, community, &pubkey).await?;
+    let owner = binding.bot_owner.map(|owner| owner.as_public_key());
+    let owner_state = match (&owner, agent.banned) {
+        (Some(owner), false) => Some(git_restriction_state(&state.db, community, owner).await?),
+        _ => None,
+    };
+    enforce_git_ban_cascade(&agent, owner_state.as_ref()).map_err(|status| {
+        warn!(pubkey = %pubkey.to_hex(), "git: community ban denied token request");
+        (status, "blocked: banned from this community").into_response()
+    })?;
+    Ok(GitAuth { pubkey, tenant })
 }
 
 /// Deny banned principals on every Git HTTP request.
@@ -5467,5 +5618,74 @@ mod off_mode_precedence_tests {
                 }
             } // closes same-key outer block (test_keys_outer / same_key_assertion)
         }
+    }
+}
+
+#[cfg(test)]
+mod token_credential_tests {
+    use super::*;
+    use axum::http::HeaderMap;
+
+    fn with_auth(value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, value.parse().unwrap());
+        headers
+    }
+
+    fn basic(pair: &str) -> HeaderMap {
+        with_auth(&format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD.encode(pair)
+        ))
+    }
+
+    #[test]
+    fn classifies_token_credentials() {
+        let token = |h: &HeaderMap| match git_token_credential(h) {
+            GitTokenCredential::Token(t) => Some(t.expose().to_owned()),
+            _ => None,
+        };
+        assert_eq!(token(&basic("token:bzb_x")).as_deref(), Some("bzb_x"));
+        assert_eq!(token(&with_auth("Bearer bzk_y")).as_deref(), Some("bzk_y"));
+        assert_eq!(token(&with_auth("bearer bzk_y")).as_deref(), Some("bzk_y"));
+        assert!(matches!(
+            git_token_credential(&basic("git:bzb_x")),
+            GitTokenCredential::Malformed
+        ));
+        assert!(matches!(
+            git_token_credential(&basic("token:")),
+            GitTokenCredential::Malformed
+        ));
+        assert!(matches!(
+            git_token_credential(&with_auth("Basic !!!")),
+            GitTokenCredential::Malformed
+        ));
+        assert!(matches!(
+            git_token_credential(&with_auth("Nostr abc")),
+            GitTokenCredential::OtherScheme
+        ));
+        assert!(matches!(
+            git_token_credential(&HeaderMap::new()),
+            GitTokenCredential::Missing
+        ));
+    }
+
+    #[test]
+    fn challenge_offers_both_schemes() {
+        let response = git_token_challenge("GET", "missing");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let values: Vec<_> = response
+            .headers()
+            .get_all(header::WWW_AUTHENTICATE)
+            .iter()
+            .map(|v| v.to_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            values,
+            vec![
+                "Nostr realm=\"buzz\", method=\"GET\"".to_owned(),
+                "Basic realm=\"buzz\"".to_owned()
+            ]
+        );
     }
 }

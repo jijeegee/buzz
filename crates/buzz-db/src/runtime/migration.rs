@@ -492,6 +492,13 @@ mod postgres_tests {
             "storage_accounting_snapshots",
             "operator_listener_pubkeys",
             "operator_listener_outbox",
+            "principals",
+            "identities",
+            "devices",
+            "sessions",
+            "refresh_tokens",
+            "bots",
+            "access_tokens",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -705,7 +712,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 55);
+        assert_eq!(migrations.len(), 58);
         assert_eq!(migrations[48].version, 49);
         assert_eq!(migrations[49].version, 50);
         assert_eq!(migrations[50].version, 51);
@@ -713,6 +720,21 @@ mod postgres_tests {
         assert_eq!(migrations[52].version, 53);
         assert_eq!(migrations[53].version, 54);
         assert_eq!(migrations[54].version, 55);
+        assert_eq!(migrations[55].version, 56);
+        assert_eq!(migrations[56].version, 57);
+        assert_eq!(migrations[57].version, 58);
+        assert!(migrations[55]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE access_tokens"));
+        assert!(migrations[56]
+            .sql
+            .as_str()
+            .contains("ALTER COLUMN sig DROP NOT NULL"));
+        assert!(migrations[57]
+            .sql
+            .as_str()
+            .contains("_operator_global_tables"));
         assert!(migrations[48]
             .sql
             .as_str()
@@ -2409,6 +2431,18 @@ mod postgres_tests {
             .expect("read index shapes")
         }
 
+        // CHECK/FK/PK definitions, keyed by rendered definition (constraint
+        // names legitimately differ between inline and ALTER-added forms).
+        async fn constraint_defs(pool: &PgPool, table: &str) -> Vec<(String, String)> {
+            sqlx::query_as(
+                "SELECT con.contype::text, pg_get_constraintdef(con.oid)                  FROM pg_constraint con                  JOIN pg_class t ON t.oid = con.conrelid                  JOIN pg_namespace n ON n.oid = t.relnamespace                  WHERE n.nspname = 'public' AND t.relname = $1                  ORDER BY 1, 2",
+            )
+            .bind(table)
+            .fetch_all(pool)
+            .await
+            .expect("read constraint definitions")
+        }
+
         let base_url = std::env::var("BUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
             .unwrap_or_else(|_| TEST_DB_URL.to_owned());
@@ -2476,18 +2510,34 @@ mod postgres_tests {
         let desired = PgPool::connect(&format!("{base_prefix}/{desired_db}"))
             .await
             .expect("connect desired-state probe database");
+        // Every pgschema apply caller runs the post-apply reconciliation
+        // (AGENTS.md Gotcha 7); the desired-state probe must too, or the
+        // constraints pgschema drops would be compared without their repair.
+        sqlx::raw_sql(include_str!(
+            "../../../../scripts/reconcile-schema-after-pgschema.sql"
+        ))
+        .execute(&desired)
+        .await
+        .expect("run post-pgschema reconciliation");
         let migrated = PgPool::connect(&format!("{base_prefix}/{migrated_db}"))
             .await
             .expect("connect migrated probe database");
         MIGRATOR
-            .run_to(55, &migrated)
+            .run_to(58, &migrated)
             .await
-            .expect("apply migrations 1-55");
+            .expect("apply migrations 1-58");
 
         for table in [
             "relay_admin_actions",
             "relay_admin_outbox",
             "relay_operator_audit",
+            "principals",
+            "identities",
+            "devices",
+            "sessions",
+            "refresh_tokens",
+            "bots",
+            "access_tokens",
         ] {
             assert_eq!(
                 columns(&desired, table).await,
@@ -2504,6 +2554,38 @@ mod postgres_tests {
                  migration and schema.sql must both use a representable shape."
             );
         }
+
+        // Centralized-identity tables (0056): CHECK constraints (including the
+        // access_tokens kind/session/bot shape) and FKs must survive the
+        // pgschema bootstrap exactly as the migrations create them.
+        for table in [
+            "principals",
+            "identities",
+            "devices",
+            "sessions",
+            "refresh_tokens",
+            "bots",
+            "access_tokens",
+        ] {
+            assert_eq!(
+                constraint_defs(&desired, table).await,
+                constraint_defs(&migrated, table).await,
+                "constraint parity mismatch for {table}: schema.sql desired state has drifted                  from migration 0056"
+            );
+        }
+
+        // 0057: events.sig is nullable on both paths.
+        let sig_nullable = |pool: PgPool| async move {
+            let nullable: String = sqlx::query_scalar(
+                "SELECT is_nullable FROM information_schema.columns                  WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'sig'",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("read events.sig nullability");
+            nullable
+        };
+        assert_eq!(sig_nullable(desired.clone()).await, "YES");
+        assert_eq!(sig_nullable(migrated.clone()).await, "YES");
 
         desired.close().await;
         migrated.close().await;

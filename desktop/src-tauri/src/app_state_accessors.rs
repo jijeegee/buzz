@@ -48,7 +48,9 @@ impl AppState {
     /// is locked (`keyring_locked` — key is held in a keyring that is
     /// unavailable this boot). All signing and publish commands must call
     /// this instead of locking `state.keys` directly, so that recovery mode
-    /// blocks publishing under an invalid or inaccessible identity.
+    /// blocks publishing under an invalid or inaccessible identity. Also
+    /// refused while the current community is signed in with Google (token
+    /// mode); token-aware callers use [`AppState::user_credential`].
     pub fn signing_keys(&self) -> Result<Keys, String> {
         if self
             .identity_lost
@@ -60,6 +62,11 @@ impl AppState {
             return Err("identity is in recovery mode; event signing is disabled \
                  until the identity is restored and Buzz is relaunched"
                 .to_string());
+        }
+        // A community in token mode never signs with the local key: that
+        // would publish under a second identity on the same relay.
+        if let Some(reason) = self.key_signing_blocked() {
+            return Err(reason);
         }
         self.keys
             .lock()

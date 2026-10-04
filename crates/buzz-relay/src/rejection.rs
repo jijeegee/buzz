@@ -19,6 +19,8 @@ pub(crate) enum RejectionTarget<'a> {
     Subscription(&'a str),
     /// An EVENT names the event it submitted.
     Event(nostr::EventId),
+    /// A token AUTH frame; acknowledged as `["OK", "auth", false, reason]`.
+    TokenAuth,
     /// No per-request correlation exists — connection-scoped notice.
     Connection,
 }
@@ -30,6 +32,7 @@ pub(crate) fn rejection_target_for(msg: &ClientMessage) -> RejectionTarget<'_> {
             RejectionTarget::Subscription(sub_id.as_str())
         }
         ClientMessage::Event(event) => RejectionTarget::Event(event.id),
+        ClientMessage::AuthToken(_) => RejectionTarget::TokenAuth,
         _ => RejectionTarget::Connection,
     }
 }
@@ -40,6 +43,9 @@ pub(crate) fn request_rejection_message(target: RejectionTarget<'_>, reason: &st
     match target {
         RejectionTarget::Subscription(sub_id) => RelayMessage::closed(sub_id, reason),
         RejectionTarget::Event(event_id) => RelayMessage::ok(&event_id.to_hex(), false, reason),
+        RejectionTarget::TokenAuth => {
+            RelayMessage::ok(crate::identity::ws::AUTH_OK_ID, false, reason)
+        }
         RejectionTarget::Connection => RelayMessage::notice(reason),
     }
 }
@@ -52,7 +58,14 @@ pub(crate) async fn enforce_ws_admission(
     state: &AppState,
 ) -> bool {
     let is_event = matches!(msg, ClientMessage::Event(_));
-    if !is_event && !matches!(msg, ClientMessage::Req { .. } | ClientMessage::Count { .. }) {
+    // A token AUTH on an authenticated connection is a re-AUTH: each one costs
+    // a token lookup, so it shares the per-principal WS operations budget.
+    if !is_event
+        && !matches!(
+            msg,
+            ClientMessage::Req { .. } | ClientMessage::Count { .. } | ClientMessage::AuthToken(_)
+        )
+    {
         return true;
     }
 
@@ -320,6 +333,37 @@ mod tests {
              pending publish is keyed by, or the send can only time out"
         );
         assert_eq!(frame[1], event_id);
+        assert_eq!(frame[2], false);
+    }
+
+    /// A token re-AUTH on an authenticated connection costs a token lookup,
+    /// so it is admitted through the WS operations budget and rejected on the
+    /// `OK auth` channel the client awaits. Falsifying mutation: drop
+    /// `AuthToken` from the gated frames → admitted → assertion fires.
+    #[tokio::test]
+    async fn enforce_ws_admission_gates_a_token_reauth_on_the_auth_channel() {
+        let state = crate::state::tests::test_state().await;
+        let (conn, mut rx) = test_conn_with_auth(authenticated_state());
+        let (token, _) = buzz_auth::generate_token(buzz_auth::TokenKind::UserAccess);
+        let raw = serde_json::json!(["AUTH", {"token": token.expose()}]).to_string();
+        let msg = ClientMessage::parse_with(
+            &raw,
+            crate::protocol::ParseMode {
+                token_auth: true,
+                drafts: false,
+            },
+        )
+        .expect("parse token AUTH");
+        assert!(matches!(msg, ClientMessage::AuthToken(_)));
+
+        let admitted = enforce_ws_admission(&msg, &conn, &state).await;
+        assert!(
+            !admitted,
+            "an unadmitted re-AUTH must not reach the token store"
+        );
+        let frame = sent_frame(&mut rx);
+        assert_eq!(frame[0], "OK");
+        assert_eq!(frame[1], "auth");
         assert_eq!(frame[2], false);
     }
 

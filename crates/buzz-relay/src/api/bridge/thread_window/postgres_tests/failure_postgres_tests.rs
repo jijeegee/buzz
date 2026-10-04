@@ -142,6 +142,7 @@ async fn thread_window_bounds_rejected_by_ws_event_handler() {
         channel_ids: None,
         auth_method: buzz_auth::AuthMethod::Nip42,
         agent_owner_pubkey: None,
+        token: None,
     });
     let (mut conn, mut send_rx) = crate::connection::tests::test_conn_with_auth(auth);
     Arc::get_mut(&mut conn).unwrap().tenant =

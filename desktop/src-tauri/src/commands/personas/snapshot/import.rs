@@ -672,6 +672,7 @@ pub async fn confirm_agent_snapshot_import(
             effort_level: None,
             runtime: snapshot.definition.runtime.clone(),
             name_pool: snapshot.definition.name_pool.clone(),
+            bot_origin: None,
         };
 
         records.push(record.clone());

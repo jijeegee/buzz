@@ -94,6 +94,25 @@ impl RedisRateLimiter {
     pub fn new(pool: deadpool_redis::Pool) -> Self {
         Self { pool }
     }
+
+    /// Fixed-window limit on an arbitrary deployment-global key, namespaced as
+    /// `buzz:ratelimit:{key}` (e.g. `auth:login:{ip}`, `auth:exchange:{bot}`).
+    /// Used by the centralized-identity `/auth/*` surface, whose subjects are
+    /// IPs, sessions and bots rather than community-scoped pubkeys.
+    pub async fn check_key(
+        &self,
+        key: &str,
+        window_secs: u64,
+        limit: u64,
+    ) -> Result<RateLimitResult, AuthError> {
+        run_rate_limit(
+            &self.pool,
+            &format!("buzz:ratelimit:{key}"),
+            window_secs,
+            limit,
+        )
+        .await
+    }
 }
 
 impl RateLimiter for RedisRateLimiter {

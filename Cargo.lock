@@ -954,10 +954,12 @@ dependencies = [
  "buzz-core",
  "buzz-persona",
  "buzz-sdk",
+ "buzz-token-broker",
  "chrono",
  "clap",
  "evalexpr",
  "futures-util",
+ "git-credential-buzz",
  "git-credential-nostr",
  "git-sign-nostr",
  "hex",
@@ -1077,11 +1079,13 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "subtle",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -1113,6 +1117,7 @@ dependencies = [
  "buzz-core",
  "buzz-persona",
  "buzz-sdk",
+ "buzz-token-broker",
  "buzz-ws-client",
  "bytes",
  "chrono",
@@ -1371,6 +1376,7 @@ dependencies = [
  "chrono",
  "deadpool-redis",
  "futures-util",
+ "hex",
  "nostr 0.44.7",
  "redis",
  "serde",
@@ -1565,6 +1571,16 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "buzz-token-broker"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "zeroize",
 ]
 
 [[package]]
@@ -3552,6 +3568,13 @@ checksum = "ee8cfcc411d9adbbaba82fb72661cc1bcca13e8bba98b364e62b2dba8f960159"
 dependencies = [
  "color_quant",
  "weezl",
+]
+
+[[package]]
+name = "git-credential-buzz"
+version = "0.1.0"
+dependencies = [
+ "buzz-token-broker",
 ]
 
 [[package]]

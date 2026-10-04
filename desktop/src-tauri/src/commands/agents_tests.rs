@@ -68,6 +68,7 @@ fn bare_agent_record(
         definition_respond_to: None,
         definition_respond_to_allowlist: vec![],
         definition_parallelism: None,
+        bot_origin: None,
     }
 }
 fn persona_record(id: &str, model: Option<&str>, provider: Option<&str>) -> AgentDefinition {
@@ -866,4 +867,45 @@ fn normalize_create_effort_level_rejects_unsafe_values_for_a_local_backend() {
         normalize_create_effort_level(Some("xhigh"), &BackendKind::Local).unwrap(),
         Some("xhigh".to_string())
     );
+}
+
+// ── delete order (Rule 1, Rule 3) ──────────────────────────────────────────
+
+#[tokio::test]
+async fn delete_stops_then_deletes_on_the_server_then_locally() {
+    use std::sync::Mutex;
+    let agent = nostr::Keys::generate().public_key().to_hex();
+    let order = Mutex::new(Vec::new());
+    let step = |name: &'static str, result: Result<(), String>| {
+        let order = &order;
+        let agent = agent.clone();
+        move || async move {
+            // The fence holds for every step: no restart can slip in.
+            assert!(crate::auth::bots::DeleteFence::is_active(&agent));
+            order.lock().unwrap().push(name);
+            result
+        }
+    };
+    delete_managed_agent_in_order(
+        &agent,
+        step("stop", Ok(())),
+        step("server", Ok(())),
+        step("local", Ok(())),
+    )
+    .await
+    .unwrap();
+    assert_eq!(*order.lock().unwrap(), vec!["stop", "server", "local"]);
+    assert!(!crate::auth::bots::DeleteFence::is_active(&agent));
+
+    // A server failure keeps the agent: the local delete never runs.
+    order.lock().unwrap().clear();
+    let failed = delete_managed_agent_in_order(
+        &agent,
+        step("stop", Ok(())),
+        step("server", Err("relay down".into())),
+        step("local", Ok(())),
+    )
+    .await;
+    assert!(failed.is_err());
+    assert_eq!(*order.lock().unwrap(), vec!["stop", "server"]);
 }

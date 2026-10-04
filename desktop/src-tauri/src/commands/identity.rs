@@ -53,8 +53,8 @@ mod truncated_display_name_tests {
 
 #[tauri::command]
 pub fn get_identity(state: State<'_, AppState>) -> Result<IdentityInfo, String> {
-    let keys = state.keys.lock().map_err(|error| error.to_string())?;
-    let pubkey = keys.public_key();
+    // In a community signed in with Google, "me" is the account principal.
+    let pubkey = state.current_identity_pubkey()?;
     let pubkey_hex = pubkey.to_hex();
     let display_name = truncated_display_name(&pubkey)?;
     let lost = state
@@ -140,7 +140,15 @@ pub async fn sign_event(
     allow_self_tagging: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let keys = state.signing_keys()?;
+    // Key auth signs; a Google-session community gets a principal draft the
+    // relay stamps (same JSON shape, sentinel signature).
+    let keys = state.user_credential()?;
+    // Token mode: a local agent named in a `p` tag moves onto its server bot.
+    let tags = if keys.is_token() {
+        crate::auth::bots::adopt_named_agents_in_p_tags(&state, tags).await?
+    } else {
+        tags
+    };
 
     tauri::async_runtime::spawn_blocking(move || {
         sign_event_json(
@@ -160,7 +168,7 @@ pub async fn sign_event(
 /// names the author unless `allow_self_tagging` is set, so only callers that
 /// need a self-tag (self-reports) opt in.
 fn sign_event_json(
-    keys: &Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
     kind: u16,
     content: String,
     created_at: Option<u64>,
@@ -180,10 +188,7 @@ fn sign_event_json(
         builder = builder.allow_self_tagging();
     }
 
-    builder
-        .sign_with_keys(keys)
-        .map(|event| event.as_json())
-        .map_err(|error| format!("sign failed: {error}"))
+    keys.sign_builder(builder).map(|event| event.as_json())
 }
 
 #[tauri::command]
@@ -592,6 +597,9 @@ pub async fn sign_out(app: tauri::AppHandle) -> Result<(), String> {
                 .to_string(),
         );
     }
+
+    // Revoke Google-session communities server-side before the local wipe.
+    crate::auth::commands::logout_all_best_effort(&app.state::<AppState>()).await;
 
     // Stop all managed agents before restart so they don't race the wipe.
     if let Err(e) = crate::shutdown::shutdown_managed_agents(&app) {

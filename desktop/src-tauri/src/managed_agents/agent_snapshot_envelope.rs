@@ -427,6 +427,7 @@ mod tests {
             persona_source_version: None,
             provider: None,
             team_catalog_source: None,
+            bot_origin: None,
         }
     }
 

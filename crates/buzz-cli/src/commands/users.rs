@@ -39,7 +39,7 @@ pub async fn cmd_get_users(
         return Err(CliError::Usage("--pubkey: maximum 200 pubkeys".into()));
     }
 
-    let my_pk = client.keys().public_key().to_hex();
+    let my_pk = client.pubkey().to_hex();
     let authors: Vec<&str> = if pubkeys.is_empty() {
         vec![my_pk.as_str()]
     } else {
@@ -87,7 +87,7 @@ pub async fn cmd_get_users(
 fn effective_owner(client: &BuzzClient) -> String {
     client
         .auth_tag_owner_hex()
-        .unwrap_or_else(|| client.keys().public_key().to_hex())
+        .unwrap_or_else(|| client.pubkey().to_hex())
 }
 
 fn resolve_owner(client: &BuzzClient, owner: Option<&str>) -> Result<Option<String>, CliError> {
@@ -427,7 +427,7 @@ pub async fn cmd_set_profile(
 async fn fetch_current_profile(
     client: &BuzzClient,
 ) -> Result<serde_json::Map<String, serde_json::Value>, CliError> {
-    let my_pk = client.keys().public_key().to_hex();
+    let my_pk = client.pubkey().to_hex();
     let filter = serde_json::json!({
         "kinds": [0],
         "authors": [my_pk],

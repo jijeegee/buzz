@@ -8,6 +8,8 @@ use sha2::{Digest, Sha256};
 // nostr 0.36 alias — required for cross-version bridging with buzz-sdk.
 
 use crate::app_state::AppState;
+#[allow(unused_imports)] // trait methods used by relay helpers and `relay::submit`
+use crate::auth::credential::RelaySigner;
 
 const DEFAULT_RELAY_WS_URL: &str = "ws://localhost:3000";
 
@@ -123,8 +125,18 @@ pub fn build_nip98_auth_header(
     body: &[u8],
     state: &AppState,
 ) -> Result<String, String> {
-    let keys = state.keys.lock().map_err(|error| error.to_string())?;
-    build_nip98_auth_header_for_keys(&keys, method, url, body)
+    // Key auth signs NIP-98 with the identity key; a community signed in with
+    // Google sends its bearer access token instead.
+    match state.current_credential_mode() {
+        crate::auth::CredentialMode::Keys => {
+            let keys = state.keys.lock().map_err(|error| error.to_string())?;
+            build_nip98_auth_header_for_keys(&keys, method, url, body)
+        }
+        crate::auth::CredentialMode::Token(session) => {
+            Ok(format!("Bearer {}", session.access.as_str()))
+        }
+        crate::auth::CredentialMode::Blocked(reason) => Err(reason),
+    }
 }
 
 pub fn build_nip98_auth_header_for_keys(
@@ -390,14 +402,14 @@ pub async fn query_relay_at_with_keys(
     state: &AppState,
     api_base_url: &str,
     filters: &[serde_json::Value],
-    keys: &Keys,
+    keys: &(impl crate::auth::credential::RelaySigner + ?Sized),
     auth_tag: Option<&str>,
 ) -> Result<Vec<nostr::Event>, String> {
     crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/query", api_base_url);
     let body_bytes =
         serde_json::to_vec(filters).map_err(|e| format!("filter serialization failed: {e}"))?;
-    let auth = build_nip98_auth_header_for_keys(keys, &Method::POST, &url, &body_bytes)?;
+    let auth = keys.relay_http_auth(&Method::POST, &url, &body_bytes)?;
     send_query_request(
         &state.http_client,
         &url,
@@ -557,6 +569,19 @@ pub async fn sync_managed_agent_profile(
     about: Option<&str>,
     auth_tag: Option<&str>, // NIP-OA auth tag JSON
 ) -> Result<(), String> {
+    // A community signed in with Google manages bot profiles server-side
+    // (`PATCH /auth/bots/{id}/profile`); client kind:0 is refused there.
+    if crate::auth::bots::sync_bot_profile(
+        state,
+        &agent_keys.public_key().to_hex(),
+        relay_url,
+        display_name,
+        avatar_url,
+    )
+    .await?
+    {
+        return Ok(());
+    }
     crate::relay_admission::wait_for_rate_limit().await;
     // Resolve media before replacing the complete profile. A failed transfer
     // leaves the previous kind:0 untouched and the saved source available to retry.
@@ -682,12 +707,10 @@ pub use submit::{
 pub async fn submit_event_with_keys(
     builder: nostr::EventBuilder,
     state: &AppState,
-    keys: &Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
     auth_tag: Option<&str>,
 ) -> Result<SubmitEventResponse, String> {
-    let event = builder
-        .sign_with_keys(keys)
-        .map_err(|e| format!("failed to sign event: {e}"))?;
+    let event = keys.sign_builder(builder)?;
     submit_signed_event_with_keys(&event, state, keys, auth_tag).await
 }
 
@@ -695,17 +718,17 @@ pub async fn submit_event_with_keys(
 pub async fn submit_signed_event_with_keys(
     event: &nostr::Event,
     state: &AppState,
-    keys: &Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
     auth_tag: Option<&str>,
 ) -> Result<SubmitEventResponse, String> {
-    if event.pubkey != keys.public_key() {
+    if event.pubkey != keys.signer_pubkey() {
         return Err("signed event does not match the publishing identity".to_string());
     }
     crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/events", relay_api_base_url_with_override(state));
     let body_bytes = event.as_json().into_bytes();
     crate::egress_guard::assert_no_key_backup_bytes(&body_bytes, "signed event submit (keys)")?;
-    let auth_header = build_nip98_auth_header_for_keys(keys, &Method::POST, &url, &body_bytes)?;
+    let auth_header = keys.relay_http_auth(&Method::POST, &url, &body_bytes)?;
 
     let mut request = state
         .http_client

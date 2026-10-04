@@ -387,7 +387,9 @@ pub(crate) fn redact_secrets_with(s: &str, extras: &[&str]) -> String {
             result.replace_range(pos..end, "[REDACTED]");
         }
     }
-    result
+    // Buzz bearer tokens (centralized identity): bot tokens reach the acp
+    // child env and could be echoed into logs.
+    crate::auth::redact::redact_buzz_tokens(&result).into_owned()
 }
 
 /// Collect string values from every environment map a deploy request can

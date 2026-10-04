@@ -34,6 +34,8 @@ pub mod connection;
 pub mod error;
 /// WebSocket message handlers for NIP-01 client commands.
 pub mod handlers;
+/// Centralized identity: token auth beside key auth (`AUTH_TOKEN_ENABLED`).
+pub mod identity;
 /// Stateless HMAC-signed relay invite tokens (mint/verify).
 pub mod invite_token;
 /// Fixed-schema evidence for the relay's earliest startup steps.

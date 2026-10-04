@@ -23,6 +23,8 @@ buzz-persona = { path = "../buzz-persona" }
 
 # Git multicall helpers and ephemeral key ownership
 git-credential-nostr = { path = "../git-credential-nostr" }
+git-credential-buzz = { path = "../git-credential-buzz" }
+buzz-token-broker = { workspace = true }
 git-sign-nostr = { path = "../git-sign-nostr" }
 tempfile = "3"
 zeroize = { workspace = true }

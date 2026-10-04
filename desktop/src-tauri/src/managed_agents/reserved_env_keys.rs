@@ -33,6 +33,14 @@ pub(crate) const RESERVED_ENV_KEYS: &[&str] = &[
     "BUZZ_API_TOKEN",
     "BUZZ_ACP_PRIVATE_KEY",
     "BUZZ_ACP_API_TOKEN",
+    // Centralized-identity bearer credentials (token mode): Desktop injects
+    // the bot token itself and buzz-acp hands children only its loopback
+    // broker. A saved value would swap the agent's identity or leak a token.
+    "BUZZ_BOT_TOKEN",
+    "BUZZ_BOT_TOKEN_EXPIRES_AT",
+    "BUZZ_ACCESS_TOKEN",
+    "BUZZ_TOKEN_BROKER_URL",
+    "BUZZ_TOKEN_BROKER_SECRET",
     // Relay URL: overriding would let a malicious config redirect the
     // agent to an attacker-controlled relay.
     "BUZZ_RELAY_URL",

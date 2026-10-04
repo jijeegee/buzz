@@ -120,7 +120,7 @@ async fn cmd_list(client: &BuzzClient) -> Result<(), CliError> {
 /// Fetch the caller's own current custom emoji set (latest kind:30030 under
 /// the d-tag, authored by the caller). Empty when none published yet.
 async fn fetch_own_emoji(client: &BuzzClient) -> Result<Vec<CustomEmoji>, CliError> {
-    let me = client.keys().public_key().to_hex();
+    let me = client.pubkey().to_hex();
     let filter = serde_json::json!({
         "kinds": [buzz_sdk::kind::KIND_EMOJI_SET],
         "#d": [CUSTOM_EMOJI_SET_D_TAG],

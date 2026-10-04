@@ -230,6 +230,11 @@ fn migrate_inline_key(store: &impl KeyStore, record: &ManagedAgentRecord) -> Key
 /// `BUZZ_PRIVATE_KEY`/`NOSTR_PRIVATE_KEY`, launching with no identity. Callers
 /// (the spawn path) must fail closed (Wes storage.rs:158).
 pub(crate) fn spawn_key_refusal(record: &ManagedAgentRecord) -> Option<String> {
+    // A server-bot record has no key by design; it spawns with a bot token
+    // (`auth::bots::spawn_auth` refuses it on any other credential).
+    if record.bot_origin.is_some() {
+        return None;
+    }
     record.private_key_nsec.is_empty().then(|| {
         format!(
             "agent {} has no private key available — the OS keyring may be unreachable. \
@@ -332,7 +337,8 @@ fn hydrate_keys_with(store: &impl KeyStore, records: &mut [ManagedAgentRecord]) 
     for record in records.iter_mut() {
         // A key-less definition (no pubkey yet — unified agent model) has no
         // keyring entry by construction; keys are minted on first start.
-        if record.pubkey.is_empty() {
+        // A server-bot record has no key anywhere by design.
+        if record.pubkey.is_empty() || record.bot_origin.is_some() {
             continue;
         }
         if record.private_key_nsec.is_empty() {
@@ -955,7 +961,7 @@ pub struct AgentLogError {
 
 pub fn meaningful_agent_error_from_log(path: &Path) -> Option<AgentLogError> {
     let tail = read_log_tail(path, 200).ok()?;
-    tail.lines().rev().map(str::trim).find_map(|line| {
+    let found = tail.lines().rev().map(str::trim).find_map(|line| {
         // New format: "Agent reported error (code -32002): ..."
         if let Some(rest) = line.strip_prefix("Agent reported error (code ") {
             if let Some(paren_end) = rest.find("): ") {
@@ -989,6 +995,11 @@ pub fn meaningful_agent_error_from_log(path: &Path) -> Option<AgentLogError> {
             });
         }
         None
+    });
+    // `last_error` is shown in the UI: never surface a bearer token from the log.
+    found.map(|mut error| {
+        error.message = crate::auth::redact::redact_buzz_tokens(&error.message).into_owned();
+        error
     })
 }
 

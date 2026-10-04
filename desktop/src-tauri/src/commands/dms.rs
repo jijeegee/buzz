@@ -40,6 +40,9 @@ pub(crate) async fn open_dm_with_scope(
     expected_signer_pubkey: Option<&str>,
     state: &AppState,
 ) -> Result<ChannelInfo, String> {
+    // Google-session community: a local agent enters the DM as its server bot
+    // (its record moves onto the bot first; key mode passes through).
+    let pubkeys = crate::auth::bots::adopt_named_agents(state, pubkeys).await?;
     // Resolve the relay AND the signing identity once for the open + metadata
     // read pair. Callers with a captured tenant scope (Projects agent sends)
     // pass `expected_relay_url` and `expected_signer_pubkey`; a mismatch on
@@ -52,7 +55,7 @@ pub(crate) async fn open_dm_with_scope(
     // NIP-98 auth of every request in this command.
     let api_base_url = crate::relay::relay_api_base_url_with_override(state);
     assert_expected_relay_scope(expected_relay_url, &api_base_url)?;
-    let keys = state.signing_keys()?;
+    let keys = state.user_credential()?;
     assert_expected_signer(expected_signer_pubkey, &keys.public_key().to_hex())?;
 
     // Submit a kind:41010 dm-open event; the relay replies with the channel id

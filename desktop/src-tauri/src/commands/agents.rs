@@ -22,8 +22,8 @@ use crate::{
 /// Read the workspace owner pubkey without holding the lock. Used to populate `BUZZ_ACP_AGENT_OWNER`
 /// as a fallback for legacy agent records that have no NIP-OA `auth_tag`.
 pub(super) fn workspace_owner_hex(state: &AppState) -> Result<String, String> {
-    let keys = state.keys.lock().map_err(|e| e.to_string())?;
-    Ok(keys.public_key().to_hex())
+    // The Google-session principal in a token-mode community, else the key.
+    Ok(state.current_identity_pubkey()?.to_hex())
 }
 
 #[path = "agents_pending.rs"]
@@ -231,14 +231,31 @@ where
     }
     // The Hermes CLI can take seconds: create the profile now, with no lock
     // held and off the async workers. The spawn below only checks it.
-    {
-        let (app, record) = (app.clone(), record_snapshot.clone());
+    let bot_pubkey = {
+        let (app, mut record) = (app.clone(), record_snapshot.clone());
+        // A user-initiated start is the manual "Restart" for an agent parked
+        // after repeated auth failures (Rule 6): reset its counter.
+        state.token_auth.bots.reset(&record.pubkey);
+        let relay_url = crate::relay::relay_ws_url_with_override(state);
         tauri::async_runtime::spawn_blocking(move || {
-            crate::managed_agents::hermes_profile::prepare_for_start(&app, &record)
+            // Token-mode communities: move the agent onto its server bot and
+            // issue its token now, before any runtime lock (network I/O). The
+            // record may have been rewritten to the bot id: continue as that.
+            let pubkey = crate::auth::bots::prepare_for_start(&app, &record, &relay_url)?;
+            if pubkey != record.pubkey {
+                crate::auth::bots::adopt_record_identity(
+                    &mut record,
+                    &pubkey,
+                    &crate::auth::origin_for(&relay_url),
+                );
+            }
+            crate::managed_agents::hermes_profile::prepare_for_start(&app, &record)?;
+            Ok::<_, String>(pubkey)
         })
         .await
-        .map_err(|e| format!("spawn_blocking failed: {e}"))??;
-    }
+        .map_err(|e| format!("spawn_blocking failed: {e}"))??
+    };
+    let pubkey = bot_pubkey.as_str();
 
     // Preflight against the same resolution spawn uses — `resolve_effective_config`
     // (definition → global fallback). A linked instance's own `provider`/`model`/
@@ -500,7 +517,11 @@ pub async fn create_managed_agent(
     // ── Phase 2: compute NIP-OA auth tag (sync) ──────────────────────────────
     // Agents authenticate via the auth tag in their kind:0 profile event.
     // No tokens are minted. Fail closed: bad auth tag → don't create agent.
-    let auth_tag = {
+    // A community signed in with Google records ownership server-side
+    // (`bots.owner_principal_id`); there is no NIP-OA tag to mint.
+    let auth_tag = if state.user_credential()?.is_token() {
+        None
+    } else {
         let owner_keys = state.signing_keys()?;
         // Bridge nostr 0.37 → 0.36 (buzz-sdk) via hex round-trip.
         let compat_owner = nostr::Keys::parse(&owner_keys.secret_key().to_secret_hex())
@@ -512,8 +533,25 @@ pub async fn create_managed_agent(
         Some(tag)
     };
 
+    // ── Phase 2b: a Google-session community registers the agent as a server
+    // bot up front: the record's pubkey IS the bot id and it holds no key
+    // (plan §4.14). Key auth keeps the generated key exactly as before.
+    let registered = if input.backend == BackendKind::Local {
+        let effective_relay = crate::relay::effective_agent_relay_url(
+            &resolved_relay_url,
+            &crate::relay::relay_ws_url_with_override(&state),
+        );
+        crate::auth::bots::register_new_agent(&state, &effective_relay, &name).await?
+    } else {
+        None
+    };
+    let (pubkey, private_key_nsec, bot_origin) = match &registered {
+        Some((bot_id, origin)) => (bot_id.clone(), String::new(), Some(origin.clone())),
+        None => (pubkey, private_key_nsec, None),
+    };
+
     // ── Phase 3: save record (sync lock) ───────────────────────────────────────
-    let (agent, resolved_avatar_url, profile_about) = {
+    let saved = (|| -> Result<_, String> {
         let _store_guard = state
             .managed_agents_store_lock
             .lock()
@@ -759,6 +797,7 @@ pub async fn create_managed_agent(
                 relay_mesh.clone()
             },
             effort_level,
+            bot_origin: bot_origin.clone(),
         };
 
         records.push(record);
@@ -775,11 +814,21 @@ pub async fn create_managed_agent(
         retain_managed_agent_pending(&app, &state, record);
         // Effective owner-authored description for the kind:0 `about`.
         let profile_about = crate::managed_agents::record_effective_description(record, &personas);
-        (
+        Ok((
             summarize_from_disk(&app, record, &runtimes)?,
             resolved_avatar_url,
             profile_about,
-        )
+        ))
+    })();
+    let (agent, resolved_avatar_url, profile_about) = match saved {
+        Ok(saved) => saved,
+        Err(error) => {
+            // Never leave a registered bot without its local record (Rule 1).
+            if let Some((bot_id, origin)) = &registered {
+                crate::auth::bots::discard_new_agent(&state, origin, bot_id).await;
+            }
+            return Err(error);
+        }
     };
 
     // ── Phase 3b: local spawn (async preflight outside store lock) ───────────
@@ -819,16 +868,34 @@ pub async fn create_managed_agent(
     // ── Phase 4: sync agent profile on relay (async, outside lock) ───────────
     // Use the avatar persisted on the record so the published profile and any
     // later reconciliation agree on the same value.
-    let mut profile_sync_error = profile::publish_agent_profile_with_about(
-        &state,
-        &resolved_relay_url,
-        &agent_keys,
-        &name,
-        resolved_avatar_url.as_deref(),
-        profile_about.as_deref(),
-        auth_tag.as_deref(),
-    )
-    .await;
+    let mut profile_sync_error = match &registered {
+        // A server bot's profile lives on the relay (`PATCH /auth/bots/{id}/profile`);
+        // it was registered with this name, so only the avatar is new.
+        Some(_) => crate::auth::bots::sync_bot_profile(
+            &state,
+            &pubkey,
+            &crate::relay::effective_agent_relay_url(
+                &resolved_relay_url,
+                &crate::relay::relay_ws_url_with_override(&state),
+            ),
+            &name,
+            resolved_avatar_url.as_deref(),
+        )
+        .await
+        .err(),
+        None => {
+            profile::publish_agent_profile_with_about(
+                &state,
+                &resolved_relay_url,
+                &agent_keys,
+                &name,
+                resolved_avatar_url.as_deref(),
+                profile_about.as_deref(),
+                auth_tag.as_deref(),
+            )
+            .await
+        }
+    };
     profile_sync_error =
         super::agent_models::flush_managed_agent_policy(&app, &state, profile_sync_error).await;
 
@@ -899,6 +966,9 @@ pub async fn start_managed_agent(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ManagedAgentSummary, String> {
+    // The UI may still hold the pubkey of an agent that just moved onto its
+    // server bot.
+    let pubkey = crate::auth::bots::current_agent_pubkey(&pubkey);
     // Snapshot the workspace owner pubkey for the legacy auth_tag fallback.
     // Read outside the records lock to keep lock ordering simple.
     let owner_hex = workspace_owner_hex(&state)?;
@@ -1081,6 +1151,7 @@ pub async fn stop_managed_agent(
     app: AppHandle,
 ) -> Result<ManagedAgentSummary, String> {
     use tauri::Manager;
+    let pubkey = crate::auth::bots::current_agent_pubkey(&pubkey);
     tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let _store_guard = state
@@ -1120,7 +1191,13 @@ pub async fn stop_managed_agent(
             .iter()
             .find(|record| record.pubkey == pubkey)
             .ok_or_else(|| format!("agent {pubkey} not found"))?;
-        summarize_from_disk(&app, record, &runtimes)
+        let summary = summarize_from_disk(&app, record, &runtimes);
+        drop(runtimes);
+        drop(_store_guard);
+        // Token-mode community: revoke the bot's tokens (Stop in the plan's
+        // revocation matrix). Best-effort, outside every lock.
+        crate::auth::bots::revoke_on_stop(&app, &pubkey);
+        summary
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {e}"))?
@@ -1144,6 +1221,85 @@ fn run_managed_agent_deletion<T>(
 
 #[tauri::command]
 pub async fn delete_managed_agent(
+    pubkey: String,
+    force_remote_delete: Option<bool>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let pubkey = crate::auth::bots::current_agent_pubkey(&pubkey);
+    let (stop_app, server_app) = (app.clone(), app.clone());
+    delete_managed_agent_in_order(
+        &pubkey,
+        || stop_managed_agent_for_delete(stop_app, pubkey.clone()),
+        || crate::auth::bots::delete_server_bots_for(&server_app, &pubkey),
+        || delete_managed_agent_locally(pubkey.clone(), force_remote_delete, app),
+    )
+    .await
+}
+
+/// The order of [`delete_managed_agent`], with each step injected:
+/// 1. fence the agent (no start or watchdog restart while deleting — a late
+///    exit-78 restart would register a new server bot) and stop its process;
+/// 2. delete its server bot (Rule 1: a failure keeps the agent to retry);
+/// 3. only then delete it locally.
+pub(crate) async fn delete_managed_agent_in_order<
+    Stop,
+    StopFut,
+    Server,
+    ServerFut,
+    Local,
+    LocalFut,
+>(
+    pubkey: &str,
+    stop: Stop,
+    server: Server,
+    local: Local,
+) -> Result<(), String>
+where
+    Stop: FnOnce() -> StopFut,
+    StopFut: std::future::Future<Output = Result<(), String>>,
+    Server: FnOnce() -> ServerFut,
+    ServerFut: std::future::Future<Output = Result<(), String>>,
+    Local: FnOnce() -> LocalFut,
+    LocalFut: std::future::Future<Output = Result<(), String>>,
+{
+    let _fence = crate::auth::bots::DeleteFence::begin(pubkey);
+    stop().await?;
+    crate::auth::bots::server_then_local(server(), local).await
+}
+
+/// Step 1 of [`delete_managed_agent`]: stop every pair of the agent.
+async fn stop_managed_agent_for_delete(app: AppHandle, pubkey: String) -> Result<(), String> {
+    use tauri::Manager;
+    tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _store_guard = state
+            .managed_agents_store_lock
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let mut records = load_managed_agents(&app)?;
+        let mut runtimes = state
+            .managed_agent_processes
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let Some(record) = records
+            .iter_mut()
+            .find(|record| record.pubkey.eq_ignore_ascii_case(&pubkey))
+        else {
+            return Ok(());
+        };
+        if record.backend != BackendKind::Local {
+            return Ok(());
+        }
+        stop_managed_agent_process(&app, record, &mut runtimes)?;
+        save_managed_agents(&app, &records)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {e}"))?
+}
+
+/// Local half of [`delete_managed_agent`], run only after the server bot (if
+/// any) is gone.
+async fn delete_managed_agent_locally(
     pubkey: String,
     force_remote_delete: Option<bool>,
     app: AppHandle,
@@ -1249,6 +1405,9 @@ use profile::{profile_needs_sync, resolve_legacy_avatar};
 #[cfg(all(test, not(target_os = "windows")))]
 #[path = "agents_admission_tests.rs"]
 mod admission_tests;
+#[cfg(all(test, not(target_os = "windows")))]
+#[path = "agents_auth_reset_tests.rs"]
+mod auth_reset_tests;
 #[cfg(test)]
 #[path = "agents_tests.rs"]
 mod tests;

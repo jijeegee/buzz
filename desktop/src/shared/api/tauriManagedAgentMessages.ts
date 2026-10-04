@@ -18,6 +18,12 @@ export async function sendManagedAgentChannelMessage(input: {
   mentionPubkeys?: string[];
   parentEventId?: string;
   additionalMarkers?: string[];
+  /**
+   * User-voiced version of the message. In a community signed in with
+   * Google, Desktop may not post as the agent; the backend then posts this
+   * as the user, mentioning the agent, instead of refusing.
+   */
+  userFallback?: { content: string; additionalMarkers?: string[] };
 }): Promise<SendChannelMessageResult> {
   const response = await invokeTauri<RawSendChannelMessageResult>(
     "send_managed_agent_channel_message",
@@ -30,6 +36,12 @@ export async function sendManagedAgentChannelMessage(input: {
       mentionPubkeys: input.mentionPubkeys ?? null,
       parentEventId: input.parentEventId ?? null,
       additionalMarkers: input.additionalMarkers ?? null,
+      userFallback: input.userFallback
+        ? {
+            content: input.userFallback.content,
+            additionalMarkers: input.userFallback.additionalMarkers ?? [],
+          }
+        : null,
     },
   );
 

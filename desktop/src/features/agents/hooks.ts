@@ -625,13 +625,19 @@ export function useStartManagedAgentMutation() {
             expectedSignerPubkey: input.expectedSignerPubkey,
             replayFloorUnix: input.replayFloorUnix,
           }),
-    onSuccess: (updated) => {
+    onSuccess: (updated, input) => {
+      // In a Google-session community a first start can move the agent onto
+      // its server bot, so the returned pubkey may differ from the requested
+      // one: replace the started row either way.
+      const requested = typeof input === "string" ? input : input.pubkey;
       queryClient.setQueryData<ManagedAgent[]>(
         managedAgentsQueryKey,
         (current) => {
           if (!current) return current;
           return current.map((agent) =>
-            agent.pubkey === updated.pubkey ? updated : agent,
+            agent.pubkey === updated.pubkey || agent.pubkey === requested
+              ? updated
+              : agent,
           );
         },
       );

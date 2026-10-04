@@ -1520,6 +1520,7 @@ mod tests {
             definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
+            bot_origin: None,
         };
 
         let runtime = known_acp_runtime_exact("buzz-agent");

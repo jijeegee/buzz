@@ -23,8 +23,14 @@ impl GitEnvironment {
         Ok(environment)
     }
 
+    /// Install the harness Git environment for `identity`.
+    ///
+    /// Key mode: `git-credential-nostr` (NIP-98) plus `git-sign-nostr` commit
+    /// signing from an ephemeral keyfile. Token mode: `git-credential-buzz`
+    /// (`username=token`, password from the loopback token broker) and no
+    /// commit signing — there is no key to sign with.
     pub(crate) fn install(
-        keys: &nostr::Keys,
+        identity: &crate::identity::AgentIdentity,
         relay_url: &str,
         executable: &Path,
     ) -> anyhow::Result<Self> {
@@ -32,20 +38,37 @@ impl GitEnvironment {
             == GitIdentityMode::Agent;
         let dir = tempfile::Builder::new().prefix("buzz-acp-git-").tempdir()?;
         set_owner_only(dir.path())?;
-        symlink(executable, &dir.path().join("git-credential-nostr"))?;
-        if agent {
-            symlink(executable, &dir.path().join("git-sign-nostr"))?;
-        }
-        let keyfile = dir.path().join(".nostr-key");
-        let secret = Zeroizing::new(keys.secret_key().to_secret_hex());
-        write_keyfile_atomic(&keyfile, secret.as_bytes())?;
+        let public_key = identity.public_key();
+        let keyfile_path = match identity.secret_keys("git signing") {
+            Ok(keys) => {
+                symlink(executable, &dir.path().join("git-credential-nostr"))?;
+                if agent {
+                    symlink(executable, &dir.path().join("git-sign-nostr"))?;
+                }
+                let keyfile = dir.path().join(".nostr-key");
+                let secret = Zeroizing::new(keys.secret_key().to_secret_hex());
+                write_keyfile_atomic(&keyfile, secret.as_bytes())?;
+                Some(
+                    keyfile
+                        .to_str()
+                        .ok_or_else(|| anyhow::anyhow!("Git keyfile path is not UTF-8"))?
+                        .to_owned(),
+                )
+            }
+            Err(_) => {
+                symlink(executable, &dir.path().join("git-credential-buzz"))?;
+                None
+            }
+        };
+        let helper = if keyfile_path.is_some() {
+            "nostr"
+        } else {
+            "buzz"
+        };
         let info = KeyInfo {
-            keyfile_path: keyfile
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("Git keyfile path is not UTF-8"))?
-                .to_owned(),
-            pubkey_hex: keys.public_key().to_hex(),
-            npub: keys.public_key().to_bech32()?,
+            keyfile_path,
+            pubkey_hex: public_key.to_hex(),
+            npub: public_key.to_bech32()?,
         };
         let mut relay = url::Url::parse(relay_url)?;
         let scheme = match relay.scheme() {
@@ -65,7 +88,10 @@ impl GitEnvironment {
             let display_name = std::env::var("BUZZ_ACP_DISPLAY_NAME").ok();
             identity_entries(&info, relay, display_name.as_deref())
         } else {
-            vec![("nostr.keyfile".into(), info.keyfile_path.clone())]
+            info.keyfile_path
+                .iter()
+                .map(|path| ("nostr.keyfile".to_owned(), path.clone()))
+                .collect()
         };
         // In `user` mode nothing later overrides inherited identity or signing,
         // so drop agent mode's own managed keys, the author/committer
@@ -83,7 +109,7 @@ impl GitEnvironment {
                         .any(|(managed, _)| same_config_key(managed, key))
             });
         }
-        let mut env = build_git_env(relay, &managed, inherited);
+        let mut env = build_git_env(relay, helper, &managed, inherited);
         let mut paths = vec![dir.path().to_path_buf()];
         paths.extend(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
@@ -96,7 +122,11 @@ impl GitEnvironment {
         ));
         env.push(("GIT_TERMINAL_PROMPT".into(), "0".into()));
         // CLI flags must work even when the caller did not export these variables.
-        env.push(("BUZZ_PRIVATE_KEY".into(), secret.to_string()));
+        // Token mode carries no secret here: each spawned child gets its own
+        // token-broker credentials (`crate::token_broker::apply_child_credentials`).
+        if let Ok(keys) = identity.secret_keys("git credentials") {
+            env.push(("BUZZ_PRIVATE_KEY".into(), keys.secret_key().to_secret_hex()));
+        }
         env.push(("BUZZ_RELAY_URL".into(), relay_url.to_owned()));
         // MCP children start from a cleared env; forward the resolved mode so a
         // nested harness keeps it instead of defaulting to `agent`.
@@ -109,7 +139,8 @@ impl GitEnvironment {
 }
 
 struct KeyInfo {
-    keyfile_path: String,
+    /// Ephemeral signing keyfile; `None` in token mode (no key, no signing).
+    keyfile_path: Option<String>,
     pubkey_hex: String,
     npub: String,
 }
@@ -345,13 +376,16 @@ fn identity_entries(
         ),
         ("user.email".into(), format!("{}@{host}", info.pubkey_hex)),
     ];
+    let Some(keyfile_path) = &info.keyfile_path else {
+        return entries;
+    };
     entries.extend([
         ("gpg.format".into(), "x509".into()),
         ("gpg.x509.program".into(), "git-sign-nostr".into()),
         ("commit.gpgSign".into(), "true".into()),
         ("tag.gpgSign".into(), "true".into()),
         ("user.signingkey".into(), info.pubkey_hex.clone()),
-        ("nostr.keyfile".into(), info.keyfile_path.clone()),
+        ("nostr.keyfile".into(), keyfile_path.clone()),
     ]);
     entries
 }
@@ -359,6 +393,7 @@ fn identity_entries(
 /// Compose a complete config block, including the caller's entries, for env-cleared MCP children.
 fn build_git_env(
     relay: &str,
+    helper: &str,
     managed: &[(String, String)],
     mut entries: Vec<(String, String)>,
 ) -> Vec<(String, String)> {
@@ -367,7 +402,7 @@ fn build_git_env(
         // Reset helpers only inside this relay's Git URL namespace. Unrelated
         // remotes retain their own helper chain and never receive this key.
         (format!("{scope}.helper"), String::new()),
-        (format!("{scope}.helper"), "nostr".into()),
+        (format!("{scope}.helper"), helper.into()),
         (format!("{scope}.useHttpPath"), "true".into()),
     ]);
     entries.extend_from_slice(managed);
@@ -430,7 +465,7 @@ mod git_user_name_tests {
 
     fn key_info() -> KeyInfo {
         KeyInfo {
-            keyfile_path: "/tmp/.nostr-key".into(),
+            keyfile_path: Some("/tmp/.nostr-key".into()),
             pubkey_hex: PUBKEY_HEX.into(),
             npub: NPUB.into(),
         }
@@ -440,9 +475,50 @@ mod git_user_name_tests {
         let relay = "https://localhost:3000";
         build_git_env(
             relay,
+            "nostr",
             &identity_entries(&key_info(), relay, display_name),
             vec![],
         )
+    }
+
+    /// Token mode: no keyfile means no signing config at all, and the relay's
+    /// credential scope uses the `buzz` (bearer token) helper, not `nostr`.
+    #[test]
+    fn token_mode_uses_buzz_helper_and_no_signing() {
+        let relay = "https://relay.example";
+        let info = KeyInfo {
+            keyfile_path: None,
+            ..key_info()
+        };
+        let env = build_git_env(relay, "buzz", &identity_entries(&info, relay, None), vec![]);
+        let scope = format!("credential.{relay}/git.helper");
+        let helpers: Vec<&str> = env
+            .iter()
+            .filter(|(k, v)| k.starts_with("GIT_CONFIG_KEY_") && *v == scope)
+            .filter_map(|(k, _)| {
+                let idx = k.strip_prefix("GIT_CONFIG_KEY_")?;
+                env.iter()
+                    .find(|(name, _)| *name == format!("GIT_CONFIG_VALUE_{idx}"))
+                    .map(|(_, value)| value.as_str())
+            })
+            .collect();
+        assert_eq!(helpers, ["", "buzz"]);
+        for key in [
+            "commit.gpgSign",
+            "gpg.x509.program",
+            "nostr.keyfile",
+            "user.signingkey",
+        ] {
+            assert_eq!(
+                git_config(&env, key),
+                None,
+                "{key} must be absent in token mode"
+            );
+        }
+        assert_eq!(
+            git_config(&env, "user.email").as_deref(),
+            Some(format!("{PUBKEY_HEX}@relay.example").as_str())
+        );
     }
 
     /// Read a git config value back out of the flat GIT_CONFIG_KEY_n/VALUE_n pairs.
@@ -779,5 +855,97 @@ mod git_identity_mode_tests {
                 "{err}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod install_mode_tests {
+    use super::GitEnvironment;
+    use crate::identity::{AgentIdentity, BotToken};
+
+    fn helper_names(environment: &GitEnvironment) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(environment._dir.path())
+            .expect("git env dir")
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn env_value<'a>(environment: &'a GitEnvironment, name: &str) -> Option<&'a str> {
+        environment
+            .env
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    }
+
+    fn helper_config(environment: &GitEnvironment) -> Vec<String> {
+        let env = &environment.env;
+        env.iter()
+            .filter(|(k, v)| k.starts_with("GIT_CONFIG_KEY_") && v.ends_with("/git.helper"))
+            .filter_map(|(k, _)| {
+                let idx = k.strip_prefix("GIT_CONFIG_KEY_")?;
+                env.iter()
+                    .find(|(name, _)| *name == format!("GIT_CONFIG_VALUE_{idx}"))
+                    .map(|(_, value)| value.clone())
+            })
+            .collect()
+    }
+
+    /// Production `install` seam: token mode installs only
+    /// `git-credential-buzz`, writes no keyfile and exports no private key;
+    /// key mode keeps the NIP-98 helper, keyfile and key.
+    #[test]
+    fn install_picks_credential_helper_by_identity_mode() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let exe = dir.path().join("buzz-acp-test-exe");
+        std::fs::write(&exe, b"stub").expect("stub exe");
+        let relay = "wss://relay.example";
+
+        let token = AgentIdentity::token(
+            nostr::Keys::generate().public_key(),
+            BotToken::new("bzb_git".into(), i64::MAX),
+        );
+        let token_env = GitEnvironment::install(&token, relay, &exe).expect("token install");
+        let names = helper_names(&token_env);
+        assert!(
+            names.iter().any(|n| n.starts_with("git-credential-buzz")),
+            "{names:?}"
+        );
+        assert!(
+            !names
+                .iter()
+                .any(|n| n.starts_with("git-credential-nostr") || n.starts_with("git-sign-nostr")),
+            "{names:?}"
+        );
+        assert!(!names.iter().any(|n| n == ".nostr-key"), "{names:?}");
+        assert_eq!(env_value(&token_env, "BUZZ_PRIVATE_KEY"), None);
+        assert!(
+            !token_env.env.iter().any(|(_, v)| v.contains("bzb_git")),
+            "the bot token never enters the Git env"
+        );
+        assert_eq!(
+            helper_config(&token_env).last().map(String::as_str),
+            Some("buzz")
+        );
+
+        let keys = nostr::Keys::generate();
+        let key_env = GitEnvironment::install(&AgentIdentity::keys(keys.clone()), relay, &exe)
+            .expect("key install");
+        let names = helper_names(&key_env);
+        assert!(
+            names.iter().any(|n| n.starts_with("git-credential-nostr")),
+            "{names:?}"
+        );
+        assert!(names.iter().any(|n| n == ".nostr-key"), "{names:?}");
+        assert_eq!(
+            env_value(&key_env, "BUZZ_PRIVATE_KEY"),
+            Some(keys.secret_key().to_secret_hex().as_str())
+        );
+        assert_eq!(
+            helper_config(&key_env).last().map(String::as_str),
+            Some("nostr")
+        );
     }
 }

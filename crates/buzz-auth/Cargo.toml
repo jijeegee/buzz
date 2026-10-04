@@ -35,3 +35,5 @@ hex          = { workspace = true }
 rand         = { workspace = true }
 uuid         = { workspace = true }
 url          = { workspace = true }
+subtle       = { workspace = true }
+zeroize      = { workspace = true }

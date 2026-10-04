@@ -44,6 +44,21 @@ pub async fn update_profile(
     nip05_handle: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<ProfileInfo, String> {
+    // Token mode: the profile is the account's global profile, edited through
+    // `PATCH /auth/profile`; a client kind:0 is refused by the relay there.
+    if let crate::auth::CredentialMode::Token(_) = state.current_credential_mode() {
+        crate::auth::commands::patch_global_profile(
+            &state,
+            display_name.clone(),
+            avatar_url.clone(),
+        )
+        .await?;
+        let mut info = empty_profile_info(&current_pubkey_hex(&state)?);
+        info.display_name = display_name;
+        info.avatar_url = avatar_url;
+        info.has_profile_event = true;
+        return Ok(info);
+    }
     // Read-merge-write: kind 0 is a full profile snapshot.
     let my_pubkey = current_pubkey_hex(&state)?;
     let prior_events = query_relay(
@@ -393,8 +408,7 @@ pub async fn get_presence(
 }
 
 fn current_pubkey_hex(state: &AppState) -> Result<String, String> {
-    let keys = state.keys.lock().map_err(|e| e.to_string())?;
-    Ok(keys.public_key().to_hex())
+    Ok(state.current_identity_pubkey()?.to_hex())
 }
 
 fn current_pubkey_hex_unwrap(state: &AppState) -> String {

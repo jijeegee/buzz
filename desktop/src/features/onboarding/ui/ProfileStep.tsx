@@ -9,6 +9,7 @@ import { cn } from "@/shared/lib/cn";
 import { isRelayUnreachableError } from "@/shared/lib/relayError";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 import { ONBOARDING_PRIMARY_CTA_CLASS } from "./OnboardingChrome";
 import { useOnboardingCardLayout } from "./OnboardingCard";
 import { OnboardingFooter } from "./OnboardingFooter";
@@ -334,6 +335,10 @@ export function ProfileStep({
             "Create an identity key"
           )}
         </Button>
+
+        {usesExistingIdentity ? null : (
+          <GoogleSignInButton disabled={isSaving} />
+        )}
 
         {back ? (
           <Button

@@ -133,14 +133,17 @@ pub async fn admin_probe(
     origin: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<AdminProbeResult, String> {
-    use crate::relay::build_nip98_auth_header_for_keys;
-
     // Resolve signing keys before entering the inner probe. Recovery mode
     // (locked/lost keyring) is surfaced here rather than inside the loop.
-    let sign: Option<SignFn> = match state.signing_keys() {
+    let sign: Option<SignFn> = match state.user_credential() {
         Ok(keys) => Some(Box::new(move |url: &str| {
-            build_nip98_auth_header_for_keys(&keys, &reqwest::Method::GET, url, &[])
-                .map_err(|e| format!("nip98 build failed: {e}"))
+            crate::auth::credential::RelaySigner::relay_http_auth(
+                &keys,
+                &reqwest::Method::GET,
+                url,
+                &[],
+            )
+            .map_err(|e| format!("nip98 build failed: {e}"))
         })),
         Err(_) => None,
     };
@@ -702,7 +705,7 @@ pub async fn admin_fetch_feedback_attachment(
     expected_size: u64,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<tauri::ipc::Response, String> {
-    let keys = state.signing_keys()?;
+    let keys = state.user_credential()?;
     attachment::fetch_feedback_attachment(
         &origin,
         &feedback_id,
@@ -732,7 +735,7 @@ pub async fn admin_save_attachment(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<bool, String> {
-    let keys = state.signing_keys()?;
+    let keys = state.user_credential()?;
     attachment::save_feedback_attachment(
         &origin,
         &feedback_id,
@@ -955,7 +958,9 @@ pub async fn admin_direct_action(
     intent: AdminDirectIntent,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, AdminMutationError> {
-    let keys = state.signing_keys().map_err(AdminMutationError::not_sent)?;
+    let keys = state
+        .user_credential()
+        .map_err(AdminMutationError::not_sent)?;
     send_direct_action(&intent, keys, &state).await
 }
 
@@ -964,11 +969,11 @@ pub async fn admin_direct_action(
 /// sign an action confirmed under the previous one.
 async fn send_direct_action(
     intent: &AdminDirectIntent,
-    keys: nostr::Keys,
+    keys: impl crate::auth::credential::RelaySigner,
     state: &crate::app_state::AppState,
 ) -> Result<serde_json::Value, AdminMutationError> {
     let relay_base = crate::relay::relay_api_base_url_with_override(state);
-    let (url, body) = direct_action_request(intent, &relay_base, &keys.public_key().to_hex())
+    let (url, body) = direct_action_request(intent, &relay_base, &keys.signer_pubkey().to_hex())
         .map_err(AdminMutationError::not_sent)?;
     let bytes = helpers::send_admin_mutation(
         &keys,
@@ -1078,7 +1083,7 @@ pub fn get_admin_origin(
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<Option<String>, String> {
     // Fail closed: never derive the pubkey from an error fallback.
-    let pubkey = validate_pubkey_hex(state.signing_keys()?.public_key().to_hex())?;
+    let pubkey = validate_pubkey_hex(state.user_credential()?.public_key().to_hex())?;
     // If the caller supplied an expected pubkey, reject when it no longer
     // matches the active key — a delayed IPC from a prior session.
     if let Some(ref expected) = expected_pubkey {
@@ -1116,7 +1121,7 @@ pub fn set_admin_origin(
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<Option<String>, String> {
     // Fail closed: never derive the pubkey from an error fallback.
-    let pubkey = validate_pubkey_hex(state.signing_keys()?.public_key().to_hex())?;
+    let pubkey = validate_pubkey_hex(state.user_credential()?.public_key().to_hex())?;
     if let Some(ref expected) = expected_pubkey {
         if *expected != pubkey {
             return Err(

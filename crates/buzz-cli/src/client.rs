@@ -6,6 +6,9 @@ use base64::Engine;
 use nostr::{EventBuilder, JsonUtil, Keys, Kind, Tag};
 use sha2::{Digest, Sha256};
 
+use buzz_sdk::signer::EventSigner;
+use buzz_token_broker::{Secret, TokenSource};
+
 use crate::error::CliError;
 
 /// Descriptor returned by the relay after a successful upload.
@@ -380,6 +383,10 @@ fn sign_blossom_upload(
 }
 
 #[cfg(test)]
+#[path = "client_token_tests.rs"]
+mod token_mode_tests;
+
+#[cfg(test)]
 mod media_download_tests {
     use super::*;
 
@@ -516,15 +523,96 @@ fn advance_query_cursor(
 pub struct BuzzClient {
     http: reqwest::Client,
     relay_url: String, // base URL, no trailing slash, e.g. "https://relay.buzz.place"
-    keys: Keys,
-    /// Optional NIP-OA auth tag injected into every signed event.
+    /// Who this client is: a key (Schnorr-signed events, NIP-98) or a token
+    /// principal (sentinel-signed drafts, `Authorization: Bearer`).
+    signer: EventSigner,
+    /// Bearer token — present exactly when `signer` is a principal.
+    bearer: Option<Secret>,
+    /// Owner pubkey (hex) of a token-mode bot, from `GET /auth/me`.
+    token_owner_hex: Option<String>,
+    /// Optional NIP-OA auth tag injected into every signed event (key mode only).
     auth_tag: Option<Tag>,
-    /// Raw JSON of the auth tag for the `x-auth-tag` HTTP header.
+    /// Raw JSON of the auth tag for the `x-auth-tag` HTTP header (key mode only).
     auth_tag_json: Option<String>,
 }
 
+/// Client-visible 401 codes that mean the token can never work again
+/// (relay `/auth/*` and bridge contract). They map to exit code 3.
+pub const TERMINAL_TOKEN_CODES: [&str; 4] = [
+    "invalid_token",
+    "token_expired",
+    "token_revoked",
+    "principal_disabled",
+];
+
+/// Error text for Blossom media in token mode (bearer media lands in Phase 2).
+pub const MEDIA_REQUIRES_KEY: &str =
+    "media requires key auth until the relay supports bearer media (Phase 2)";
+
+fn build_http() -> Result<reqwest::Client, CliError> {
+    reqwest::Client::builder()
+        .timeout(env_duration_secs("BUZZ_TIMEOUT_SECS", 30))
+        .connect_timeout(env_duration_secs("BUZZ_CONNECT_TIMEOUT_SECS", 15))
+        .build()
+        .map_err(|e| CliError::Other(e.to_string()))
+}
+
+/// Map a non-2xx relay response to a [`CliError`]. A 401 carrying a terminal
+/// token code becomes [`CliError::Auth`] with that code in the message; every
+/// other status keeps the `Relay` shape (401/403 still exit 3).
+fn relay_error(status: u16, body: String) -> CliError {
+    let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+    let message = parsed
+        .as_ref()
+        .and_then(|v| {
+            v.get("error")
+                .or_else(|| v.get("message"))
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| body.clone());
+    if status == 401 {
+        if let Some(code) = parsed
+            .as_ref()
+            .and_then(|v| v.get("code"))
+            .and_then(|c| c.as_str())
+            .filter(|code| TERMINAL_TOKEN_CODES.contains(code))
+        {
+            return CliError::Auth(format!("{code}: {message}"));
+        }
+    }
+    if status == 403 && std::env::var("BUZZ_AUTH_TAG").is_ok() {
+        return CliError::Relay {
+            status,
+            body: format!(
+                "{message} (BUZZ_AUTH_TAG is set — it may be stale or revoked; try unsetting it)"
+            ),
+        };
+    }
+    CliError::Relay {
+        status,
+        body: message,
+    }
+}
+
+/// Map a token-source failure to the CLI error contract. A broker that is
+/// rate limited or failing (429 / 5xx) is a retryable relay error (exit 2); a
+/// rejected secret, an unreachable broker (the hosting `buzz-acp` is gone) or
+/// a malformed answer is an auth error (exit 3).
+pub(crate) fn broker_error(error: buzz_token_broker::BrokerError) -> CliError {
+    match error {
+        buzz_token_broker::BrokerError::Status(status) if status == 429 || status >= 500 => {
+            CliError::Relay {
+                status,
+                body: format!("token broker unavailable: {error}"),
+            }
+        }
+        _ => CliError::Auth(format!("cannot obtain access token: {error}")),
+    }
+}
+
 impl BuzzClient {
-    /// Create a new client pointing at `relay_url`.
+    /// Create a key-mode client pointing at `relay_url`.
     ///
     /// Timeout defaults are tuned for degraded WAN links and can be overridden
     /// via environment variables:
@@ -539,23 +627,94 @@ impl BuzzClient {
         auth_tag: Option<Tag>,
         auth_tag_json: Option<String>,
     ) -> Result<Self, CliError> {
-        let http = reqwest::Client::builder()
-            .timeout(env_duration_secs("BUZZ_TIMEOUT_SECS", 30))
-            .connect_timeout(env_duration_secs("BUZZ_CONNECT_TIMEOUT_SECS", 15))
-            .build()
-            .map_err(|e| CliError::Other(e.to_string()))?;
         Ok(Self {
-            http,
+            http: build_http()?,
             relay_url,
-            keys,
+            signer: EventSigner::Keys(keys),
+            bearer: None,
+            token_owner_hex: None,
             auth_tag,
             auth_tag_json,
         })
     }
 
-    /// Get the keypair.
-    pub fn keys(&self) -> &Keys {
-        &self.keys
+    /// Create a token-mode client: obtain the token from `source` (the broker
+    /// fetch runs on a blocking thread, one retry) and resolve the principal
+    /// with `GET /auth/me`. Any failure to obtain or validate the token is an
+    /// auth error (exit 3).
+    pub async fn from_token_source(
+        relay_url: String,
+        source: TokenSource,
+    ) -> Result<Self, CliError> {
+        let token = tokio::task::spawn_blocking(move || source.token())
+            .await
+            .map_err(|e| CliError::Other(format!("token fetch task failed: {e}")))?
+            .map_err(broker_error)?;
+        Self::with_token(relay_url, token).await
+    }
+
+    /// Create a token-mode client for `token`, resolving its principal with
+    /// `GET /auth/me`.
+    pub async fn with_token(relay_url: String, token: Secret) -> Result<Self, CliError> {
+        let http = build_http()?;
+        let url = format!("{relay_url}/auth/me");
+        let resp = http
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token.expose()))
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        if !(200..300).contains(&status) {
+            return Err(match relay_error(status, body) {
+                CliError::Relay { status, body } if status == 401 || status == 403 => {
+                    CliError::Auth(format!("access token rejected: {body}"))
+                }
+                CliError::Relay { status: 404, .. } => CliError::Auth(
+                    "relay does not support token auth (GET /auth/me returned 404)".into(),
+                ),
+                other => other,
+            });
+        }
+        let me: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| CliError::Auth(format!("invalid /auth/me response: {e}")))?;
+        let principal = me
+            .get("principal_id")
+            .and_then(|v| v.as_str())
+            .and_then(|hex| nostr::PublicKey::from_hex(hex).ok())
+            .ok_or_else(|| CliError::Auth("/auth/me returned no valid principal_id".into()))?;
+        let token_owner_hex = me
+            .get("bot")
+            .and_then(|bot| bot.get("owner"))
+            .and_then(|owner| owner.as_str())
+            .map(str::to_owned);
+        Ok(Self {
+            http,
+            relay_url,
+            signer: EventSigner::Principal(principal),
+            bearer: Some(token),
+            token_owner_hex,
+            auth_tag: None,
+            auth_tag_json: None,
+        })
+    }
+
+    /// The identity this client acts as (key pubkey or token principal).
+    pub fn pubkey(&self) -> nostr::PublicKey {
+        self.signer.public_key()
+    }
+
+    /// Whether this client authenticates with a bearer token.
+    pub fn is_token_mode(&self) -> bool {
+        self.bearer.is_some()
+    }
+
+    /// The secret keys, for operations that need them (NIP-44 and similar).
+    /// In token mode this is a usage error naming `what`.
+    pub fn keys(&self, what: &'static str) -> Result<&Keys, CliError> {
+        self.signer
+            .keys(what)
+            .map_err(|e| CliError::Usage(e.to_string()))
     }
 
     /// Get the relay base URL.
@@ -564,11 +723,13 @@ impl BuzzClient {
         &self.relay_url
     }
 
-    /// Return the owner pubkey carried by the NIP-OA auth tag, if any.
-    ///
-    /// The auth tag is `["auth", owner_pubkey, conditions, sig]`; the
-    /// owner pubkey lives at index 1.
+    /// The owner pubkey of this agent: the NIP-OA auth tag's owner in key
+    /// mode (`["auth", owner_pubkey, conditions, sig]`, index 1), or the bot
+    /// owner reported by `GET /auth/me` in token mode.
     pub fn auth_tag_owner_hex(&self) -> Option<String> {
+        if self.is_token_mode() {
+            return self.token_owner_hex.clone();
+        }
         self.auth_tag
             .as_ref()
             .map(|t| t.as_slice())
@@ -579,16 +740,18 @@ impl BuzzClient {
     ///
     /// All event creation should go through this method to ensure consistent
     /// auth tag injection. Callers MUST NOT add `auth` tags to the builder
-    /// before calling this method.
+    /// before calling this method. In token mode the result is a draft the
+    /// relay stamps for the principal (no auth tag).
     pub fn sign_event(&self, builder: EventBuilder) -> Result<nostr::Event, CliError> {
         let builder = if let Some(ref tag) = self.auth_tag {
             builder.tags([tag.clone()])
         } else {
             builder
         };
-        let event = builder
-            .sign_with_keys(&self.keys)
-            .map_err(|e| CliError::Other(format!("signing failed: {e}")))?;
+        let event = self
+            .signer
+            .sign(builder)
+            .map_err(|e| CliError::Other(e.to_string()))?;
 
         // Enforce: auth tags may only come from self.auth_tag injection.
         let auth_count = event
@@ -605,6 +768,31 @@ impl BuzzClient {
         }
 
         Ok(event)
+    }
+
+    /// `Authorization` header value for a bridge/API request: `Bearer` in
+    /// token mode, a fresh NIP-98 event in key mode.
+    fn auth_header(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&[u8]>,
+    ) -> Result<String, CliError> {
+        match (&self.bearer, &self.signer) {
+            (Some(token), _) => Ok(format!("Bearer {}", token.expose())),
+            (None, EventSigner::Keys(keys)) => sign_nip98(keys, method, url, body),
+            (None, EventSigner::Principal(_)) => {
+                Err(CliError::Auth("token-mode client has no token".into()))
+            }
+        }
+    }
+
+    /// Keys for Blossom media auth; token mode has none until Phase 2.
+    fn media_keys(&self) -> Result<&Keys, CliError> {
+        match (&self.bearer, &self.signer) {
+            (None, EventSigner::Keys(keys)) => Ok(keys),
+            _ => Err(CliError::Usage(MEDIA_REQUIRES_KEY.into())),
+        }
     }
 
     /// Attach the `x-auth-tag` header if configured (NIP-OA relay membership delegation).
@@ -757,9 +945,9 @@ impl BuzzClient {
     /// silently drop the caller's owner attestation or double up an
     /// unrelated tag.
     pub fn sign_event_unchecked(&self, builder: EventBuilder) -> Result<nostr::Event, CliError> {
-        builder
-            .sign_with_keys(&self.keys)
-            .map_err(|e| CliError::Other(format!("signing failed: {e}")))
+        self.signer
+            .sign(builder)
+            .map_err(|e| CliError::Other(e.to_string()))
     }
 
     /// GET a public, unauthenticated relay endpoint (e.g. the NIP-11 `/info`
@@ -796,7 +984,7 @@ impl BuzzClient {
             let body = body.clone();
             let url = url.clone();
             async move {
-                let auth = sign_nip98(&self.keys, "POST", &url, Some(&body))?;
+                let auth = self.auth_header("POST", &url, Some(&body))?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -826,7 +1014,7 @@ impl BuzzClient {
             let body = body.clone();
             let url = url.clone();
             async move {
-                let auth = sign_nip98(&self.keys, "POST", &url, Some(&body))?;
+                let auth = self.auth_header("POST", &url, Some(&body))?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -854,7 +1042,7 @@ impl BuzzClient {
         self.with_retry_body(|| {
             let url = url.clone();
             async move {
-                let auth = sign_nip98(&self.keys, "GET", &url, None)?;
+                let auth = self.auth_header("GET", &url, None)?;
                 let resp = self
                     .with_auth_tag(self.http.get(&url).header("Authorization", auth))
                     .send()
@@ -884,7 +1072,7 @@ impl BuzzClient {
             let body_bytes = body_bytes.clone();
             let url = url.clone();
             async move {
-                let auth = sign_nip98(&self.keys, "POST", &url, Some(&body_bytes))?;
+                let auth = self.auth_header("POST", &url, Some(&body_bytes))?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -915,7 +1103,7 @@ impl BuzzClient {
     ) -> Result<String, CliError> {
         let url = format!("{}{path}", self.relay_url);
         let body = serde_json::to_vec(body).map_err(|e| CliError::Other(e.to_string()))?;
-        let auth = sign_nip98(&self.keys, "POST", &url, Some(&body))?;
+        let auth = self.auth_header("POST", &url, Some(&body))?;
         let unknown = |detail: String| CliError::DeliveryUnknown(detail);
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -989,7 +1177,7 @@ impl BuzzClient {
 
             // Re-sign NIP-98 each attempt: the nonce tag generates a fresh
             // event ID, keeping retries safe against the relay's replay guard.
-            let auth = sign_nip98(&self.keys, "POST", &url, Some(&body))?;
+            let auth = self.auth_header("POST", &url, Some(&body))?;
             let send_result: Result<reqwest::Response, CliError> = self
                 .with_auth_tag(
                     self.http
@@ -1141,7 +1329,7 @@ impl BuzzClient {
                 async move {
                     // Re-sign NIP-98 each attempt: the nonce tag generates a fresh
                     // event ID, keeping retries safe against the relay's replay guard.
-                    let auth = sign_nip98(&self.keys, "POST", &url, Some(&body))?;
+                    let auth = self.auth_header("POST", &url, Some(&body))?;
                     let resp = self
                         .with_auth_tag(
                             self.http
@@ -1183,10 +1371,24 @@ impl BuzzClient {
         // additional overhead absorbed by this budget.
         // See buzz_ws_client::{AUTH_CHALLENGE_TIMEOUT_SECS, AUTH_OK_TIMEOUT_SECS,
         // PUBLISH_OK_TIMEOUT_SECS} for the inner ceilings.
-        let ok =
-            buzz_ws_client::publish_event(&ws_url, event, &self.keys, self.auth_tag.as_ref(), 75)
-                .await
-                .map_err(|e| CliError::Other(e.to_string()))?;
+        let published = match (&self.bearer, &self.signer) {
+            (Some(token), _) => {
+                buzz_ws_client::publish_event_with_token(&ws_url, event, token.expose(), 75).await
+            }
+            (None, EventSigner::Keys(keys)) => {
+                buzz_ws_client::publish_event(&ws_url, event, keys, self.auth_tag.as_ref(), 75)
+                    .await
+            }
+            (None, EventSigner::Principal(_)) => {
+                return Err(CliError::Auth("token-mode client has no token".into()))
+            }
+        };
+        let ok = published.map_err(|e| match e {
+            buzz_ws_client::WsClientError::AuthFailed(message) => {
+                CliError::Auth(format!("relay rejected WebSocket auth: {message}"))
+            }
+            other => CliError::Other(other.to_string()),
+        })?;
 
         if !ok.accepted {
             return Err(CliError::Relay {
@@ -1262,7 +1464,7 @@ impl BuzzClient {
                 let sha256 = sha256.clone();
                 async move {
                     let auth_header =
-                        sign_blossom_upload(&self.keys, &sha256, &mime, &self.relay_url)?;
+                        sign_blossom_upload(self.media_keys()?, &sha256, &mime, &self.relay_url)?;
                     let resp = self
                         .with_auth_tag(
                             self.http
@@ -1308,7 +1510,8 @@ impl BuzzClient {
             let mime = mime.clone();
             let sha256 = sha256.clone();
             async move {
-                let auth_header = sign_blossom_upload(&self.keys, &sha256, &mime, &self.relay_url)?;
+                let auth_header =
+                    sign_blossom_upload(self.media_keys()?, &sha256, &mime, &self.relay_url)?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -1346,7 +1549,7 @@ impl BuzzClient {
             let url = url.clone();
             let client = client.clone();
             async move {
-                let auth_header = sign_blossom_get(&self.keys, &url)?;
+                let auth_header = sign_blossom_get(self.media_keys()?, &url)?;
                 let resp = self
                     .with_auth_tag(client.get(&url).header("Authorization", auth_header))
                     .send()
@@ -1366,28 +1569,7 @@ impl BuzzClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            let message = serde_json::from_str::<serde_json::Value>(&body)
-                .ok()
-                .and_then(|v| {
-                    v.get("error")
-                        .or_else(|| v.get("message"))
-                        .and_then(|m| m.as_str())
-                        .map(|s| s.to_string())
-                })
-                .unwrap_or(body);
-            if status == 403 && std::env::var("BUZZ_AUTH_TAG").is_ok() {
-                let message = format!(
-                    "{message} (BUZZ_AUTH_TAG is set — it may be stale or revoked; try unsetting it)"
-                );
-                return Err(CliError::Relay {
-                    status,
-                    body: message,
-                });
-            }
-            return Err(CliError::Relay {
-                status,
-                body: message,
-            });
+            return Err(relay_error(status, body));
         }
         Ok(resp.text().await?)
     }
@@ -1782,7 +1964,7 @@ mod retry_policy_tests {
         })
         .await;
         let client = test_client(&url);
-        let event = make_moderation_event(client.keys(), 9040);
+        let event = make_moderation_event(client.keys("test").unwrap(), 9040);
         let err = client.submit_event(event).await.unwrap_err();
         assert!(
             matches!(err, CliError::DeliveryUnknown(_)),
@@ -1822,7 +2004,7 @@ mod retry_policy_tests {
         })
         .await;
         let client = test_client(&url);
-        let event = make_moderation_event(client.keys(), 9041);
+        let event = make_moderation_event(client.keys("test").unwrap(), 9041);
         let t0 = std::time::Instant::now();
         let result = client.submit_event(event).await;
         let elapsed = t0.elapsed();
@@ -1855,7 +2037,7 @@ mod retry_policy_tests {
         })
         .await;
         let client = test_client(&url);
-        let event = make_moderation_event(client.keys(), 9040);
+        let event = make_moderation_event(client.keys("test").unwrap(), 9040);
         let err = client.submit_event(event).await.unwrap_err();
 
         // Must be Relay(429), not DeliveryUnknown.
@@ -1883,7 +2065,7 @@ mod retry_policy_tests {
         let (url, attempts) =
             test_server(|_n| (StatusCode::BAD_GATEWAY, "bad gateway".to_string())).await;
         let client = test_client(&url);
-        let event = make_moderation_event(client.keys(), 9042);
+        let event = make_moderation_event(client.keys("test").unwrap(), 9042);
         let err = client.submit_event(event).await.unwrap_err();
         assert!(
             matches!(err, CliError::DeliveryUnknown(_)),
@@ -1911,7 +2093,7 @@ mod retry_policy_tests {
 
         let base = format!("http://{addr}");
         let client = test_client(&base);
-        let event = make_moderation_event(client.keys(), 9040);
+        let event = make_moderation_event(client.keys("test").unwrap(), 9040);
         let err = client.submit_event(event).await.unwrap_err();
         // Must be Network (retryable), not DeliveryUnknown (retryable:false).
         assert!(
@@ -1942,7 +2124,7 @@ mod retry_policy_tests {
         })
         .await;
         let client = test_client(&url);
-        let event = make_stored_event(client.keys());
+        let event = make_stored_event(client.keys("test").unwrap());
         let result = client.submit_event(event).await;
         assert!(
             result.is_ok(),
@@ -2202,7 +2384,7 @@ mod retry_policy_tests {
 
         let base = format!("http://{addr}");
         let client = test_client(&base);
-        let event = make_stored_event(client.keys());
+        let event = make_stored_event(client.keys("test").unwrap());
         let result = client.submit_event(event).await;
         assert!(
             result.is_ok(),
@@ -2364,7 +2546,7 @@ mod retry_policy_tests {
 
         let base = format!("http://{addr}");
         let client = test_client(&base);
-        let event = make_stored_event(client.keys());
+        let event = make_stored_event(client.keys("test").unwrap());
         let err = client.submit_event(event).await.unwrap_err();
 
         // Final error must be DeliveryUnknown — relay may have accepted any attempt.
@@ -2396,7 +2578,7 @@ mod retry_policy_tests {
         let (url, attempts) =
             test_server(|_n| (StatusCode::BAD_GATEWAY, "bad gateway".to_string())).await;
         let client = test_client(&url);
-        let event = make_stored_event(client.keys());
+        let event = make_stored_event(client.keys("test").unwrap());
         let err = client.submit_event(event).await.unwrap_err();
 
         assert!(

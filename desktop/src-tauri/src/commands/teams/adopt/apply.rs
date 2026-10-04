@@ -120,7 +120,7 @@ pub(super) fn add_verified_team(
     assert_adoption_scope_unchanged(
         &scope,
         &crate::relay::relay_api_base_url_with_override(&state),
-        &state.signing_keys()?.public_key().to_hex(),
+        &state.user_credential()?.public_key().to_hex(),
     )?;
 
     let personas_path = managed_agents_store_path(app)?;

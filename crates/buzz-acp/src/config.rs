@@ -13,6 +13,8 @@ use buzz_core::kind::{
 use clap::Parser;
 use clap::ValueEnum;
 use nostr::Keys;
+
+use crate::identity::{AgentIdentity, BotToken, TokenPrincipal};
 use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
@@ -43,6 +45,12 @@ pub(crate) const MAX_TURN_DURATION_CEILING_SECS: u64 = 604_800;
 pub enum ConfigError {
     #[error("failed to parse nostr keys: {0}")]
     KeyParse(#[from] nostr::key::Error),
+
+    #[error("missing credentials: set BUZZ_BOT_TOKEN (token mode) or BUZZ_PRIVATE_KEY (key mode)")]
+    MissingCredentials,
+
+    #[error("token mode requires the principal resolved from GET /auth/me")]
+    UnresolvedPrincipal,
 
     #[error("failed to read file: {0}")]
     Io(#[from] std::io::Error),
@@ -251,8 +259,21 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_RELAY_URL", default_value = "ws://localhost:3000")]
     pub relay_url: String,
 
+    /// Key-mode identity (nsec or hex). Optional when `--bot-token` is set.
     #[arg(long, env = "BUZZ_PRIVATE_KEY", hide_env_values = true)]
-    pub private_key: String,
+    pub private_key: Option<String>,
+
+    /// Centralized-identity bot access token (`bzb_…`), injected by Buzz
+    /// Desktop. When set the harness runs in token mode: drafts instead of
+    /// signatures, `Authorization: Bearer`, token WS AUTH, self-refresh via
+    /// `/auth/token/exchange`. Takes precedence over `--private-key`.
+    #[arg(long, env = "BUZZ_BOT_TOKEN", hide_env_values = true)]
+    pub bot_token: Option<String>,
+
+    /// Expiry (unix seconds) of the initial `--bot-token`. Defaults to one hour
+    /// from startup when unset.
+    #[arg(long, env = "BUZZ_BOT_TOKEN_EXPIRES_AT", hide_env_values = true)]
+    pub bot_token_expires_at: Option<i64>,
 
     /// Agent owner pubkey (64-char hex). Used for --respond-to=owner-only gate.
     #[arg(long, env = "BUZZ_ACP_AGENT_OWNER")]
@@ -652,7 +673,10 @@ pub struct ChannelFilter {
 
 #[derive(Debug)]
 pub struct Config {
-    pub keys: Keys,
+    /// The harness identity: key-signed (`BUZZ_PRIVATE_KEY`) or token
+    /// (`BUZZ_BOT_TOKEN`, see [`crate::identity`]). The field keeps its
+    /// historical name; it is no longer necessarily a keypair.
+    pub keys: AgentIdentity,
     pub relay_url: String,
     pub agent_command: String,
     pub agent_args: Vec<String>,
@@ -1037,25 +1061,67 @@ pub fn propagate_legacy_env_vars() {
 }
 
 impl Config {
-    pub fn from_cli() -> Result<Self, ConfigError> {
-        // Legacy env-var propagation is intentionally NOT done here.
-        // Call `propagate_legacy_env_vars()` before the tokio runtime starts
-        // (in the sync `fn main()` wrapper) — see Rust 2024 edition safety.
-        let args = CliArgs::parse();
-        Self::from_args(args)
-    }
-
-    /// Build a `Config` from already-parsed `CliArgs`. Separated from `from_cli()` so
+    /// Build a `Config` from already-parsed `CliArgs`. Separated from argument parsing so
     /// tests can construct `CliArgs` via `CliArgs::try_parse_from` and exercise the full
     /// validation path without going through process args.
-    pub fn from_args(mut args: CliArgs) -> Result<Self, ConfigError> {
-        let keys = Keys::parse(&args.private_key)?;
-        // Best-effort zeroize: overwrite the raw private key string to reduce
-        // exposure via core dumps or heap inspection (#41). Without the `zeroize`
-        // crate we can only clear the String — the allocator may retain copies.
-        args.private_key
-            .replace_range(.., &"0".repeat(args.private_key.len()));
-        args.private_key.clear();
+    #[cfg(test)]
+    pub fn from_args(args: CliArgs) -> Result<Self, ConfigError> {
+        Self::from_args_resolved(args, None)
+    }
+
+    /// Build a `Config`; in token mode `principal` is the identity
+    /// `GET /auth/me` returned for the bot token (see
+    /// [`crate::token_refresh::resolve_principal`]). The server's bot owner
+    /// replaces `--agent-owner` (it is authoritative in token mode).
+    pub fn from_args_resolved(
+        mut args: CliArgs,
+        principal: Option<TokenPrincipal>,
+    ) -> Result<Self, ConfigError> {
+        let bot_token = args
+            .bot_token
+            .take()
+            .map(zeroize::Zeroizing::new)
+            .filter(|token| !token.trim().is_empty());
+        let keys = match bot_token {
+            Some(token) => {
+                if args.private_key.is_some() {
+                    tracing::warn!(
+                        "both BUZZ_BOT_TOKEN and BUZZ_PRIVATE_KEY are set; using the bot token"
+                    );
+                }
+                let principal = principal.ok_or(ConfigError::UnresolvedPrincipal)?;
+                if let Some(owner) = principal.owner.clone() {
+                    if args
+                        .agent_owner
+                        .as_deref()
+                        .is_some_and(|o| !o.eq_ignore_ascii_case(&owner))
+                    {
+                        tracing::warn!("--agent-owner differs from the bot's server owner; using the server owner");
+                    }
+                    args.agent_owner = Some(owner);
+                }
+                let expires_at = args.bot_token_expires_at.unwrap_or_else(|| {
+                    crate::token_refresh::unix_now() + crate::token_refresh::DEFAULT_TOKEN_TTL_SECS
+                });
+                AgentIdentity::token(
+                    principal.principal,
+                    BotToken::new(token.trim().to_owned(), expires_at),
+                )
+            }
+            None => {
+                let mut raw = zeroize::Zeroizing::new(
+                    args.private_key
+                        .take()
+                        .ok_or(ConfigError::MissingCredentials)?,
+                );
+                if raw.trim().is_empty() {
+                    return Err(ConfigError::MissingCredentials);
+                }
+                let keys = Keys::parse(raw.as_str())?;
+                raw.clear();
+                AgentIdentity::keys(keys)
+            }
+        };
 
         let system_prompt = if let Some(text) = args.system_prompt {
             Some(text)
@@ -1742,7 +1808,7 @@ mod tests {
     /// Build a minimal Config for testing without CLI parsing.
     fn test_config(mode: SubscribeMode) -> Config {
         Config {
-            keys: nostr::Keys::generate(),
+            keys: nostr::Keys::generate().into(),
             relay_url: "ws://localhost:3000".into(),
             agent_command: "goose".into(),
             agent_args: vec!["acp".into()],
@@ -3651,5 +3717,60 @@ channels = "ALL"
             resolve_dynamic_channel_filter_for_type(&all, ch, Some("stream"), &[]).unwrap();
         assert!(!filter.require_mention);
         assert!(filter.kinds.is_none());
+    }
+}
+
+#[cfg(test)]
+mod token_owner_tests {
+    use super::*;
+
+    const OWNER_FLAG: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+    const SERVER_OWNER: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+
+    fn token_args() -> CliArgs {
+        CliArgs::try_parse_from([
+            "buzz-acp",
+            "--bot-token",
+            "bzb_owner",
+            "--agent-owner",
+            OWNER_FLAG,
+        ])
+        .expect("args")
+    }
+
+    /// Token mode: the bot owner from `GET /auth/me` is authoritative and
+    /// replaces `--agent-owner`; with no server owner the flag stays.
+    #[test]
+    fn server_owner_from_auth_me_overrides_agent_owner_flag() {
+        let principal = nostr::Keys::generate().public_key();
+        let config = Config::from_args_resolved(
+            token_args(),
+            Some(TokenPrincipal {
+                principal,
+                owner: Some(SERVER_OWNER.into()),
+            }),
+        )
+        .expect("token config");
+        assert_eq!(config.agent_owner.as_deref(), Some(SERVER_OWNER));
+        assert_eq!(config.keys.public_key(), principal);
+
+        let config = Config::from_args_resolved(
+            token_args(),
+            Some(TokenPrincipal {
+                principal,
+                owner: None,
+            }),
+        )
+        .expect("token config without owner");
+        assert_eq!(config.agent_owner.as_deref(), Some(OWNER_FLAG));
+    }
+
+    /// Token mode without a resolved principal is a configuration error.
+    #[test]
+    fn token_mode_requires_a_resolved_principal() {
+        assert!(matches!(
+            Config::from_args_resolved(token_args(), None),
+            Err(ConfigError::UnresolvedPrincipal)
+        ));
     }
 }

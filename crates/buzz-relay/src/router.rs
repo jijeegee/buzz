@@ -291,6 +291,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let admin_router = admin_enabled
         .then(|| Router::new().nest("/api/admin/v1", api::admin::router(state.clone())));
 
+    // Centralized-identity `/auth/*` surface: mounted only with
+    // AUTH_TOKEN_ENABLED=true, so with the flag off `/auth/*` is unrouted and
+    // answers exactly like any unknown path (the existing 403 fallback).
+    let auth_router = state
+        .identity
+        .enabled()
+        .then(|| api::auth::router(state.clone()));
+
     let api_router = Router::new()
         // WebSocket + NIP-11
         .route("/", get(nip11_or_ws_handler))
@@ -394,6 +402,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(git_policy_router);
     if let Some(admin_router) = admin_router {
         merged = merged.merge(admin_router);
+    }
+    if let Some(auth_router) = auth_router {
+        merged = merged.merge(auth_router);
     }
 
     // Serve both bundles from one fallback. The admin host is checked first so

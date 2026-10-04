@@ -21,6 +21,8 @@
 //! Pool connections handle all other commands.
 //! Lagged receivers get `RecvError::Lagged`.
 
+/// Cross-instance access-token revocation fan-out (centralized identity).
+pub mod auth_revocation;
 /// Cross-pod cache-key invalidation over Redis pub/sub.
 pub mod cache_invalidation;
 /// Cross-pod connection-control commands over Redis pub/sub.
@@ -53,6 +55,7 @@ use buzz_core::TenantContext;
 use nostr::PublicKey;
 use tokio::sync::{broadcast, mpsc, Mutex};
 
+pub use crate::auth_revocation::AuthRevocation;
 use crate::cache_invalidation::{
     cache_invalidation_channel, CacheInvalidation, ScopedCacheInvalidation,
 };
@@ -115,6 +118,7 @@ pub struct PubSubManager {
     cache_invalidation_tx: broadcast::Sender<ScopedCacheInvalidation>,
     conn_control_tx: broadcast::Sender<ScopedConnControl>,
     nip_fi_disconnect_tx: broadcast::Sender<NipFiDisconnect>,
+    auth_revocation_tx: broadcast::Sender<AuthRevocation>,
 }
 
 impl PubSubManager {
@@ -132,6 +136,7 @@ impl PubSubManager {
         let (cache_invalidation_tx, _) = broadcast::channel(4096);
         let (conn_control_tx, _) = broadcast::channel(4096);
         let (nip_fi_disconnect_tx, _) = broadcast::channel(4096);
+        let (auth_revocation_tx, _) = broadcast::channel(4096);
         let (subscription_tx, subscription_rx) = mpsc::channel(4096);
 
         Ok(Self {
@@ -145,6 +150,7 @@ impl PubSubManager {
             cache_invalidation_tx,
             conn_control_tx,
             nip_fi_disconnect_tx,
+            auth_revocation_tx,
         })
     }
 
@@ -198,6 +204,37 @@ impl PubSubManager {
             self.nip_fi_disconnect_tx.clone(),
         )
         .await;
+    }
+
+    /// Starts the access-token revocation subscriber loop with automatic
+    /// reconnection. Runs forever — spawn this in a background task.
+    pub async fn run_auth_revocation_subscriber(self: Arc<Self>) {
+        auth_revocation::run_auth_revocation_subscriber(
+            self.redis_url.clone(),
+            self.auth_revocation_tx.clone(),
+        )
+        .await;
+    }
+
+    /// Returns a new broadcast receiver for cross-instance token revocations.
+    pub fn subscribe_auth_revocations(&self) -> broadcast::Receiver<AuthRevocation> {
+        self.auth_revocation_tx.subscribe()
+    }
+
+    /// Publish a token revocation to every instance (including this one).
+    /// Callers publish only after the revoking transaction committed.
+    pub async fn publish_auth_revocation(
+        &self,
+        message: &AuthRevocation,
+    ) -> Result<i64, PubSubError> {
+        let mut conn = self.pool.get().await?;
+        let payload = serde_json::to_string(message)?;
+        let subscriber_count: i64 = redis::cmd("PUBLISH")
+            .arg(auth_revocation::AUTH_REVOKED_CHANNEL)
+            .arg(&payload)
+            .query_async(&mut conn)
+            .await?;
+        Ok(subscriber_count)
     }
 
     /// Returns a new broadcast receiver for locally-published channel events.

@@ -80,6 +80,9 @@ pub fn sync_managed_agent_processes(
         let Some(status) = status else {
             continue;
         };
+        // buzz-acp exit 78 = its bot token is unusable (token mode): queue it
+        // for the auth watchdog to reissue and restart, within its cap.
+        crate::auth::bots::note_exit(&key.pubkey, &key.relay_url, status.code());
 
         if let Some(record) = records
             .iter_mut()

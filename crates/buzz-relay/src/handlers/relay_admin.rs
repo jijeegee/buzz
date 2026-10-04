@@ -1131,6 +1131,7 @@ mod postgres_tests {
             channel_ids: None,
             auth_method: buzz_auth::AuthMethod::Nip42,
             agent_owner_pubkey: None,
+            token: None,
         });
         let (mut conn, mut sent) = crate::connection::tests::test_conn_with_auth(auth);
         std::sync::Arc::get_mut(&mut conn).unwrap().tenant = f.tenant.clone();

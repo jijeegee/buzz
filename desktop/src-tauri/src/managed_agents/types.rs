@@ -195,6 +195,7 @@ impl AgentDefinition {
             // Definition records keep their default effort on the shared
             // column; `to_definition_view` projects it back.
             effort_level: self.effort_level,
+            bot_origin: None,
         }
     }
 }
@@ -555,6 +556,12 @@ pub struct ManagedAgentRecord {
     /// switches (invalid values skip-as-absent at projection time).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort_level: Option<String>,
+    /// Relay origin (`http(s)://host[:port]`) on which `pubkey` is a
+    /// server-registered bot id (token auth, plan §4.14). Such a record has no
+    /// local key: `private_key_nsec` and `auth_tag` stay empty, and it runs
+    /// only on that community with a bot token. `None` for key-auth agents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_origin: Option<String>,
 }
 
 #[derive(Debug)]

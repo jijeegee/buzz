@@ -119,7 +119,7 @@ pub(super) fn plan_archive(
             continue;
         }
 
-        if !event.verify_id() || !event.verify_signature() {
+        if !buzz_core_pkg::draft::verify_served_event(&event) {
             pre_dropped += 1;
             continue;
         }

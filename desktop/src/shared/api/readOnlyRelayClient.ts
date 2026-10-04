@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
-import { createAuthEvent } from "@/shared/api/tauri";
+import { buildRelayAuthFrame } from "@/shared/api/relayAuthFrame";
 import type { RelayEvent } from "@/shared/api/types";
 import {
   getTextPayload,
@@ -270,14 +270,14 @@ export class ReadOnlyRelayClient {
     challenge: string,
     generation: number,
   ): Promise<void> {
-    const event = await createAuthEvent({
+    const frame = await buildRelayAuthFrame({
       challenge,
       relayUrl: this.relayUrl,
     });
 
     if (generation !== this.generation || !this.authRequest) return;
-    this.authRequest.pendingEventId = event.id;
-    await this.sendRaw(["AUTH", event]);
+    this.authRequest.pendingEventId = frame.pendingId;
+    await this.sendRaw(["AUTH", frame.payload]);
   }
 
   private handleOk(eventId: string, success: boolean, message: string): void {

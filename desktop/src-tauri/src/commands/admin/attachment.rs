@@ -18,11 +18,9 @@ pub(super) async fn fetch_feedback_attachment(
     sha256: &str,
     expected_mime: &str,
     expected_size: u64,
-    keys: &nostr::Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
     purpose: AttachmentUse,
 ) -> Result<Vec<u8>, String> {
-    use crate::relay::build_nip98_auth_header_for_keys;
-
     let feedback_id = uuid::Uuid::parse_str(feedback_id)
         .map_err(|_| "admin_attachment_invalid_feedback_id".to_string())?;
     let sha256 = routes::AttachmentHash::parse(sha256)
@@ -52,8 +50,13 @@ pub(super) async fn fetch_feedback_attachment(
     // One retry on 401 with a fresh NIP-98 event.
     let mut resp = None;
     for _ in 0..2 {
-        let auth = build_nip98_auth_header_for_keys(keys, &reqwest::Method::GET, &url, &[])
-            .map_err(|e| format!("nip98 build failed: {e}"))?;
+        let auth = crate::auth::credential::RelaySigner::relay_http_auth(
+            keys,
+            &reqwest::Method::GET,
+            &url,
+            &[],
+        )
+        .map_err(|e| format!("nip98 build failed: {e}"))?;
         let r = http_client
             .get(&url)
             .header(reqwest::header::AUTHORIZATION, auth)
@@ -116,7 +119,7 @@ pub(super) async fn save_feedback_attachment<Pick, PickFut>(
     sha256: &str,
     expected_mime: &str,
     expected_size: u64,
-    keys: &nostr::Keys,
+    keys: &impl crate::auth::credential::RelaySigner,
     pick: Pick,
 ) -> Result<bool, String>
 where

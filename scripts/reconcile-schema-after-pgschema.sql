@@ -220,6 +220,32 @@ BEGIN
     END IF;
 END $$;
 
+-- pgschema drops multi-column CHECK constraints. Restore the access-token
+-- kind/session/bot shape CHECK from schema/schema.sql (and migration 0056)
+-- verbatim, then fail the bootstrap if it is still absent.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'access_tokens'::regclass
+          AND conname = 'access_tokens_kind_shape'
+    ) THEN
+        ALTER TABLE access_tokens
+            ADD CONSTRAINT access_tokens_kind_shape CHECK (
+                (kind = 'user' AND session_id IS NOT NULL AND bot_id IS NULL)
+                OR (kind <> 'user' AND bot_id IS NOT NULL AND session_id IS NULL)
+            );
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'access_tokens'::regclass
+          AND conname = 'access_tokens_kind_shape'
+          AND contype = 'c'
+    ) THEN
+        RAISE EXCEPTION 'access_tokens must carry access_tokens_kind_shape after pgschema apply';
+    END IF;
+END $$;
+
 -- pgschema reconciles DDL but does not apply seed DML or table storage
 -- parameters from schema/schema.sql. Restore those parts of the desired-state
 -- contract explicitly and fail the bootstrap if the live catalog disagrees.

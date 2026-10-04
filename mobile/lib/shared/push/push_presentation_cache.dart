@@ -38,7 +38,8 @@ bool isVerifiedPushPresentationEvent(NostrEvent event) {
       event.kind,
       event.tags,
       event.content,
-      event.sig,
+      // No signature (server-stamped event) cannot be re-verified natively.
+      event.sig ?? '',
     );
     return true;
   } catch (_) {

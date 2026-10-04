@@ -1337,6 +1337,9 @@ pub struct AppState {
     /// lets tests wait for every publish to finish; nothing waits on it in
     /// production.
     pub nip_fi_publish_tasks: tokio_util::task::TaskTracker,
+    /// Centralized-identity runtime: token auth config, relay principal, OIDC
+    /// providers and token-bound connections. Inert unless enabled.
+    pub identity: Arc<crate::identity::IdentityRuntime>,
 }
 
 impl AppState {
@@ -1360,6 +1363,9 @@ impl AppState {
     ) -> (Self, AuditShutdownHandle) {
         let max_connections = config.max_connections;
         let max_concurrent_handlers = config.max_concurrent_handlers;
+        let identity = Arc::new(crate::identity::IdentityRuntime::new(
+            config.auth_token.clone(),
+        ));
         let search_arc = Arc::new(search);
 
         let audit_arc = audit.into().map(Arc::new);
@@ -1531,6 +1537,7 @@ impl AppState {
             nip_fi_command_verifier: None,
             nip_fi_command_replay,
             nip_fi_publish_tasks: tokio_util::task::TaskTracker::new(),
+            identity,
         };
         (
             state,

@@ -8,12 +8,14 @@
 //! |------|-----------|-------------|
 //! | NIP-42 | WebSocket | Challenge/response; client signs kind:22242 event |
 //! | NIP-98 | HTTP | Signed kind:27235 event in `Authorization: Nostr` header |
+//! | Token | WebSocket + HTTP | Opaque server-issued token (`["AUTH", {"token"}]`, `Authorization: Bearer`) |
 //!
 //! ## Security invariants
 //!
 //! - **AUTH events (kind:22242) are NEVER stored or logged.**
 //! - All paths produce an [`AuthContext`] bound to the connection.
-//! - No JWT validation, no token management, no IdP runtime dependency.
+//! - Opaque tokens are stored only as SHA-256 hashes ([`token`]); the OIDC
+//!   IdP is contacted only during login ([`oidc`]).
 
 /// Channel access checking trait and helpers.
 pub mod access;
@@ -27,10 +29,14 @@ pub mod nip98;
 pub mod nip98_replay;
 /// NIP-FI federated-identity assertion verifier and contracts.
 pub mod nip_fi;
+/// OpenID Connect relying-party support (centralized identity login).
+pub mod oidc;
 /// Per-connection rate limiting.
 pub mod rate_limit;
 /// OAuth scope parsing and enforcement.
 pub mod scope;
+/// Opaque bearer tokens (generation, hashing, PKCE).
+pub mod token;
 
 pub use access::{check_read_access, check_write_access, require_scope, ChannelAccessChecker};
 pub use error::AuthError;
@@ -44,6 +50,7 @@ pub use rate_limit::{
     ip_rate_limit_key, rate_limit_key, LimitType, RateLimitConfig, RateLimitResult, RateLimiter,
 };
 pub use scope::{parse_scopes, Scope};
+pub use token::{generate_token, hash_token, TokenKind, TokenSecret};
 
 pub use nip_fi::{
     command_replay_key, validate_nip_fi_config, AssertionKeySet, AssertionPolicyId,
@@ -81,6 +88,37 @@ pub enum AuthMethod {
     Nip42,
     /// NIP-98 HTTP Auth — Schnorr signature over kind:27235.
     Nip98,
+    /// Opaque server-issued access token (centralized identity). Events from
+    /// such a connection are server-stamped drafts, never client-signed.
+    Token,
+}
+
+/// The access token a token-authenticated connection is bound to.
+///
+/// A connection is bound to exactly one token hash at a time; a same-principal
+/// re-AUTH swaps the binding (see the relay's WS token handler). Revocation
+/// fan-out matches on [`TokenBinding::token_hash`] only, so closing one token
+/// never closes another connection of the same principal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenBinding {
+    /// The authenticated principal (equals [`AuthContext::pubkey`]).
+    pub principal: buzz_core::principal::PrincipalId,
+    /// Kind of the bound token.
+    pub kind: buzz_core::principal::AccessTokenKind,
+    /// SHA-256 of the bound token.
+    pub token_hash: [u8; 32],
+    /// Token expiry; `None` for headless bot tokens.
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Device of a user session token.
+    pub device_id: Option<uuid::Uuid>,
+    /// Session of a user token.
+    pub session_id: Option<uuid::Uuid>,
+    /// Bot id of a bot token (equals the principal).
+    pub bot_id: Option<buzz_core::principal::PrincipalId>,
+    /// Owner of a bot token's bot.
+    pub bot_owner: Option<buzz_core::principal::PrincipalId>,
+    /// Whether the principal holds the `operator` role in the DB roster.
+    pub is_operator: bool,
 }
 
 /// The result of a successful authentication, bound to a connection.
@@ -101,6 +139,9 @@ pub struct AuthContext {
     /// `None` for direct relay members or non-NIP-OA auth paths.
     /// Set by the relay membership gate when NIP-OA fallback succeeds.
     pub agent_owner_pubkey: Option<nostr::PublicKey>,
+    /// Token binding when `auth_method` is [`AuthMethod::Token`] (boxed to
+    /// keep key-auth contexts small).
+    pub token: Option<Box<TokenBinding>>,
 }
 
 impl AuthContext {
@@ -163,6 +204,7 @@ impl AuthService {
             channel_ids: None,
             auth_method: AuthMethod::Nip42,
             agent_owner_pubkey: None, // Set later by relay membership gate if NIP-OA
+            token: None,
         })
     }
 }
@@ -215,6 +257,7 @@ mod tests {
             channel_ids: None,
             auth_method: AuthMethod::Nip42,
             agent_owner_pubkey: None,
+            token: None,
         };
         assert!(ctx.has_scope(&Scope::MessagesRead));
         assert!(!ctx.has_scope(&Scope::MessagesWrite));

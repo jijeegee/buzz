@@ -143,6 +143,10 @@ pub struct AppState {
     /// outage or a document without `self` must stay retryable).
     pub relay_self_cache: Mutex<HashMap<String, (std::time::Instant, String)>>,
     pub archive_db: crate::archive::ArchiveDb,
+    /// Centralized-identity token sessions, keyed by relay origin. Inert
+    /// (every community on key auth) until the user signs in with Google on
+    /// a relay that advertises token auth.
+    pub token_auth: Arc<crate::auth::TokenAuthState>,
 }
 
 /// Parse the `BUZZ_PRIVATE_KEY` env var into identity keys. `Some` means the
@@ -247,6 +251,7 @@ pub fn build_app_state() -> AppState {
         pending_owned_channels: Mutex::new(std::collections::HashSet::new()),
         relay_self_cache: Mutex::new(HashMap::new()),
         archive_db: crate::archive::ArchiveDb::default(),
+        token_auth: Arc::default(),
     }
 }
 

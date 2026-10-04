@@ -270,14 +270,12 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
     // Read outside the per-agent spawn loop so all parallel spawns see the same
     // value and we don't lock `state.keys` repeatedly.
     let owner_hex: Option<String> = state
-        .keys
-        .lock()
-        .map_err(|e| e.to_string())
+        .current_identity_pubkey()
         .ok()
-        .map(|k| k.public_key().to_hex());
+        .map(|pubkey| pubkey.to_hex());
 
     #[cfg(feature = "mesh-llm")]
-    let agents_to_start = {
+    let mut agents_to_start = {
         // Preflight against the same resolution spawn uses — `resolve_effective_config`
         // (definition → global fallback). A linked instance's own `provider`/`model`/
         // `relay_mesh` bytes never contribute. See `start_local_agent_with_preflight`
@@ -312,8 +310,22 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
     // lock: the Hermes CLI can take seconds. A failure is persisted like the
     // mesh preflight's and that agent is skipped; the spawn only checks.
     let mut hermes_profile_failures = std::collections::HashSet::new();
-    for record in &agents_to_start {
-        if let Err(error) = super::hermes_profile::prepare_for_start(app, record) {
+    for record in &mut agents_to_start {
+        // Token-mode community: move the agent onto its server bot and issue
+        // its token before the transition lock (network I/O). The record may
+        // now carry the bot id; the profile and the spawn follow it.
+        let prepared =
+            crate::auth::bots::prepare_for_start(app, record, restore_relay).and_then(|pubkey| {
+                if pubkey != record.pubkey {
+                    crate::auth::bots::adopt_record_identity(
+                        record,
+                        &pubkey,
+                        &crate::auth::origin_for(restore_relay),
+                    );
+                }
+                super::hermes_profile::prepare_for_start(app, record)
+            });
+        if let Err(error) = prepared {
             persist_restore_error(app, &state, &record.pubkey, error)?;
             hermes_profile_failures.insert(record.pubkey.clone());
         }

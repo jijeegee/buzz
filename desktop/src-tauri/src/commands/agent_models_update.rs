@@ -141,10 +141,13 @@ pub(crate) async fn flush_managed_agent_policy(
 /// pairs after the relay policy is flushed.
 #[tauri::command]
 pub async fn update_managed_agent(
-    input: UpdateManagedAgentRequest,
+    mut input: UpdateManagedAgentRequest,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<UpdateManagedAgentResponse, String> {
+    // The UI may still hold the pubkey of an agent that just moved onto its
+    // server bot.
+    input.pubkey = crate::auth::bots::current_agent_pubkey(&input.pubkey);
     // Captured before Phase 1 stops the runtime for an access-policy change: a
     // community removed while this update runs refuses the restart.
     let admission = crate::managed_agents::AdmissionSnapshot::capture(&state);
@@ -336,8 +339,16 @@ pub async fn update_managed_agent(
         super::super::agents::retain_managed_agent_pending(&app, &state, record);
 
         let sync_params = if name_changed {
-            let agent_keys = Keys::parse(&record.private_key_nsec)
-                .map_err(|e| format!("failed to parse agent keys: {e}"))?;
+            // A server bot has no key: its profile is renamed on the relay
+            // (`PATCH /auth/bots/{id}/profile`) instead of a signed kind:0.
+            let agent_keys = if record.bot_origin.is_some() {
+                None
+            } else {
+                Some(
+                    Keys::parse(&record.private_key_nsec)
+                        .map_err(|e| format!("failed to parse agent keys: {e}"))?,
+                )
+            };
             // Re-publish the renamed profile to the agent's effective relay:
             // an explicit per-agent relay wins; empty falls back to workspace.
             let relay_url = crate::relay::effective_agent_relay_url(
@@ -410,17 +421,30 @@ pub async fn update_managed_agent(
     // the complete pre-edit record so Desktop and the relay keep one
     // authoritative name.
     if let Some((agent_keys, relay_url, display_name, avatar_url, about, auth_tag)) = sync_params {
-        if let Err(sync_error) = sync_managed_agent_profile(
-            &state,
-            &relay_url,
-            &agent_keys,
-            &display_name,
-            avatar_url.as_deref(),
-            about.as_deref(),
-            auth_tag.as_deref(),
-        )
-        .await
-        {
+        let synced = match &agent_keys {
+            Some(agent_keys) => {
+                sync_managed_agent_profile(
+                    &state,
+                    &relay_url,
+                    agent_keys,
+                    &display_name,
+                    avatar_url.as_deref(),
+                    about.as_deref(),
+                    auth_tag.as_deref(),
+                )
+                .await
+            }
+            None => crate::auth::bots::sync_bot_profile(
+                &state,
+                &summary.pubkey,
+                &relay_url,
+                &display_name,
+                avatar_url.as_deref(),
+            )
+            .await
+            .map(|_| ()),
+        };
+        if let Err(sync_error) = synced {
             let rollback = rollback.ok_or_else(|| {
                 "missing local rollback state after relay profile sync failure".to_string()
             })?;

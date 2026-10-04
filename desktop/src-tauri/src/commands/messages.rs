@@ -66,10 +66,7 @@ pub async fn get_feed(
         .map(|t| t.split(',').any(|s| s.trim() == "needs_action"))
         .unwrap_or(true);
 
-    let my_pubkey = {
-        let keys = state.keys.lock().map_err(|e| e.to_string())?;
-        keys.public_key().to_hex()
-    };
+    let my_pubkey = { state.current_identity_pubkey()?.to_hex() };
 
     // Mentions: messages that reference me via #p.
     let mut mention_filter = serde_json::json!({
@@ -424,11 +421,16 @@ pub async fn send_channel_message(
 ) -> Result<SendChannelMessageResponse, String> {
     let channel_uuid = uuid::Uuid::parse_str(&channel_id)
         .map_err(|_| format!("invalid channel UUID: {channel_id}"))?;
-    let mentions = mention_pubkeys.unwrap_or_default();
+    // Google-session community: a mentioned local agent moves onto its server
+    // bot first, so the mention reaches the identity it runs as.
+    let mentions =
+        crate::auth::bots::adopt_named_agents(&state, mention_pubkeys.unwrap_or_default()).await?;
     let mention_refs: Vec<&str> = mentions.iter().map(|s| s.as_str()).collect();
     let media = media_tags.unwrap_or_default();
     let emoji = emoji_tags.unwrap_or_default();
-    let mention_refs_only = mention_tags.unwrap_or_default();
+    let mention_refs_only =
+        crate::auth::bots::adopt_named_agents_in_p_tags(&state, mention_tags.unwrap_or_default())
+            .await?;
     let link_previews = link_preview_tags.unwrap_or_default();
     // Resolve the relay AND the signing identity once and use them for every
     // read and the submission. Callers that captured a tenant scope before an
@@ -442,7 +444,7 @@ pub async fn send_channel_message(
     // exact snapshot signs the event and its NIP-98 auth below.
     let relay_base = crate::relay::relay_api_base_url_with_override(&state);
     assert_expected_relay_scope(expected_relay_url.as_deref(), &relay_base)?;
-    let signing_keys = state.signing_keys()?;
+    let signing_keys = state.user_credential()?;
     assert_expected_signer(
         expected_signer_pubkey.as_deref(),
         &signing_keys.public_key().to_hex(),
@@ -693,6 +695,103 @@ fn build_managed_agent_channel_message(
     )
 }
 
+/// What the user posts instead when Desktop may not post as the agent.
+///
+/// In a community signed in with Google, an agent's identity is
+/// server-stamped and only the running agent can author as it. Callers that
+/// still need the message to appear (the Welcome opener, the provider notice)
+/// pass a user-voiced version; Desktop posts it as the signed-in user and
+/// mentions the agent, which then replies for itself.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserFallbackMessage {
+    /// Message text in the user's voice.
+    pub content: String,
+    /// Extra `client` markers carried only by the user-voiced post.
+    #[serde(default)]
+    pub additional_markers: Vec<String>,
+}
+
+/// Who authors a managed-agent channel message.
+#[derive(Debug)]
+enum ManagedAgentPoster {
+    /// Key auth: the agent's own key signs.
+    Agent(Keys),
+    /// Token auth: the user posts the fallback text and mentions the agent.
+    User(UserFallbackMessage),
+}
+
+/// Decide who authors a managed-agent message. Token mode (or a bot record)
+/// refuses local agent signing; with a user fallback the message goes out as
+/// the user instead of being dropped. Key mode ignores the fallback.
+fn managed_agent_poster(
+    record: &ManagedAgentRecord,
+    token_mode: bool,
+    user_fallback: Option<UserFallbackMessage>,
+) -> Result<ManagedAgentPoster, String> {
+    match crate::auth::bots::managed_agent_message_keys(record, token_mode) {
+        Ok(keys) => Ok(ManagedAgentPoster::Agent(keys)),
+        Err(refusal) if token_mode || record.bot_origin.is_some() => match user_fallback {
+            Some(fallback) if !fallback.content.trim().is_empty() => {
+                Ok(ManagedAgentPoster::User(fallback))
+            }
+            _ => Err(refusal),
+        },
+        Err(error) => Err(error),
+    }
+}
+
+/// A Google-session community, signed in or not (`Blocked` is a token
+/// community whose session is not usable yet), never signs as an agent.
+fn credential_mode_is_token(mode: &crate::auth::CredentialMode) -> bool {
+    !matches!(mode, crate::auth::CredentialMode::Keys)
+}
+
+/// Choose the poster, resolving the user's credential only when the user
+/// posts. Returns that credential alongside a user poster.
+fn resolve_managed_agent_poster(
+    record: &ManagedAgentRecord,
+    mode: &crate::auth::CredentialMode,
+    user_fallback: Option<UserFallbackMessage>,
+    user_credential: impl FnOnce() -> Result<crate::auth::credential::UserCredential, String>,
+) -> Result<
+    (
+        ManagedAgentPoster,
+        Option<crate::auth::credential::UserCredential>,
+    ),
+    String,
+> {
+    let poster = managed_agent_poster(record, credential_mode_is_token(mode), user_fallback)?;
+    let credential = match &poster {
+        ManagedAgentPoster::Agent(_) => None,
+        ManagedAgentPoster::User(_) => Some(user_credential()?),
+    };
+    Ok((poster, credential))
+}
+
+/// Mentions for a user-voiced fallback: the agent first, then the caller's,
+/// without duplicates (case-insensitive).
+fn user_fallback_mentions(agent_pubkey: &str, mentions: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    std::iter::once(agent_pubkey.to_string())
+        .chain(mentions)
+        .filter(|pubkey| seen.insert(pubkey.trim().to_ascii_lowercase()))
+        .collect()
+}
+
+fn client_marker_tags(marker: Option<&str>, additional: Vec<String>) -> Vec<Vec<String>> {
+    let mut tags = marker
+        .map(|marker| vec![vec!["client".to_string(), marker.to_string()]])
+        .unwrap_or_default();
+    for marker in additional {
+        let marker = marker.trim();
+        if !marker.is_empty() {
+            tags.push(vec!["client".to_string(), marker.to_string()]);
+        }
+    }
+    tags
+}
+
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn send_managed_agent_channel_message(
@@ -704,6 +803,7 @@ pub async fn send_managed_agent_channel_message(
     mention_pubkeys: Option<Vec<String>>,
     parent_event_id: Option<String>,
     additional_markers: Option<Vec<String>>,
+    user_fallback: Option<UserFallbackMessage>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SendChannelMessageResponse, String> {
@@ -729,17 +829,29 @@ pub async fn send_managed_agent_channel_message(
         find_managed_agent_mut(&mut records, &requested_pubkey)?.clone()
     };
 
-    let keys = Keys::parse(record.private_key_nsec.trim())
-        .map_err(|error| format!("failed to parse managed agent key: {error}"))?;
-    let key_pubkey = keys.public_key().to_hex();
-    if key_pubkey != record.pubkey.to_ascii_lowercase() {
-        return Err(format!(
-            "managed agent key does not match stored pubkey {}",
-            record.pubkey
-        ));
-    }
-    let submission_auth_tag =
-        managed_agent_submission_auth_tag(&record, &state, &keys.public_key())?;
+    // Key auth signs as the agent. Desktop never signs as an agent in a
+    // Google-session community (its identity is server-stamped there): the
+    // caller's user-voiced fallback is posted as the user instead.
+    // The user's own credential is resolved only when the user posts: a
+    // key-mode agent signs with its own key and must keep working while the
+    // user's key is unavailable (recovery mode).
+    let (poster, user_credential) = resolve_managed_agent_poster(
+        &record,
+        &state.current_credential_mode(),
+        user_fallback,
+        || state.user_credential(),
+    )?;
+    let submission_auth_tag = match &poster {
+        ManagedAgentPoster::Agent(keys) => {
+            managed_agent_submission_auth_tag(&record, &state, &keys.public_key())?
+        }
+        ManagedAgentPoster::User(_) => None,
+    };
+    let marker_author = match &user_credential {
+        Some(credential) => credential.public_key().to_hex(),
+        None => record.pubkey.clone(),
+    };
+    let marker_author_pubkey = marker_author.as_str();
     let thread_ref = match parent_event_id.as_deref() {
         Some(parent_id) => Some(
             // Same active-relay resolution as before — this path has no
@@ -759,7 +871,7 @@ pub async fn send_managed_agent_channel_message(
     if let Some(marker) = marker.as_deref() {
         if let Some(existing) = find_managed_agent_channel_message_by_marker(
             &state,
-            marker_author_for_scope(marker_scope.as_deref(), Some(&record.pubkey))?,
+            marker_author_for_scope(marker_scope.as_deref(), Some(marker_author_pubkey))?,
             &channel_id,
             marker,
         )
@@ -779,29 +891,52 @@ pub async fn send_managed_agent_channel_message(
         }
     }
 
-    let mut client_tags = marker
-        .as_deref()
-        .map(|marker| vec![vec!["client".to_string(), marker.to_string()]])
-        .unwrap_or_default();
-    for marker in additional_markers.unwrap_or_default() {
-        let marker = marker.trim();
-        if !marker.is_empty() {
-            client_tags.push(vec!["client".to_string(), marker.to_string()]);
-        }
-    }
     let mentions = mention_pubkeys.unwrap_or_default();
-    let builder = build_managed_agent_channel_message(
-        channel_uuid,
-        trimmed,
-        thread_ref.as_ref(),
-        &mentions,
-        &client_tags,
-    )?;
+    let additional = additional_markers.unwrap_or_default();
     // Same contract as `send_channel_message`: `created_at` is the signed
     // event's, not a post-publication clock read.
-    let (result, created_at) =
-        submit_event_with_keys_created_at(builder, &state, &keys, submission_auth_tag.as_deref())
+    let (result, created_at) = match poster {
+        ManagedAgentPoster::Agent(keys) => {
+            let client_tags = client_marker_tags(marker.as_deref(), additional);
+            let builder = build_managed_agent_channel_message(
+                channel_uuid,
+                trimmed,
+                thread_ref.as_ref(),
+                &mentions,
+                &client_tags,
+            )?;
+            submit_event_with_keys_created_at(
+                builder,
+                &state,
+                &keys,
+                submission_auth_tag.as_deref(),
+            )
+            .await?
+        }
+        ManagedAgentPoster::User(fallback) => {
+            // Mention the agent first so it is notified and answers for
+            // itself; adoption maps a local record onto its server bot id.
+            let mentions = crate::auth::bots::adopt_named_agents(
+                &state,
+                user_fallback_mentions(&record.pubkey, mentions),
+            )
             .await?;
+            let mut additional = additional;
+            additional.extend(fallback.additional_markers);
+            let client_tags = client_marker_tags(marker.as_deref(), additional);
+            let builder = build_managed_agent_channel_message(
+                channel_uuid,
+                fallback.content.trim(),
+                thread_ref.as_ref(),
+                &mentions,
+                &client_tags,
+            )?;
+            let relay_base = crate::relay::relay_api_base_url_with_override(&state);
+            let credential =
+                user_credential.ok_or_else(|| "user credential was not resolved".to_string())?;
+            submit_event_at_created_at(builder, &state, &relay_base, &credential).await?
+        }
+    };
 
     Ok(SendChannelMessageResponse {
         event_id: result.event_id,
@@ -839,10 +974,7 @@ pub async fn remove_reaction(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // Find our own kind:7 reaction event referencing the target.
-    let my_pubkey = {
-        let keys = state.keys.lock().map_err(|e| e.to_string())?;
-        keys.public_key().to_hex()
-    };
+    let my_pubkey = { state.current_identity_pubkey()?.to_hex() };
     let target = event_id.trim();
     let trimmed_emoji = emoji.trim();
 

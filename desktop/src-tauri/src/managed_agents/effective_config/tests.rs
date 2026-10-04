@@ -103,6 +103,7 @@ fn record(
         definition_respond_to: None,
         definition_respond_to_allowlist: vec![],
         definition_parallelism: None,
+        bot_origin: None,
     }
 }
 

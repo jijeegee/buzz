@@ -162,6 +162,59 @@ pub(crate) fn verify_bridge_auth_with_options(
     Err(api_error(StatusCode::UNAUTHORIZED, "missing Nostr auth"))
 }
 
+/// Centralized-identity `Authorization: Bearer` branch for the bridge
+/// (`POST /events`, `/query`, `/count`).
+///
+/// Returns `Ok(None)` — leaving the NIP-98 / X-Pubkey path exactly as it
+/// was — unless token auth is enabled, NIP-FI is `Off`, and the request
+/// carries a Bearer token. A Bearer token that fails verification is a 401
+/// with the token error code; a bot whose owner is banned in this community
+/// is refused like the owner (NIP-OA cascade parity).
+pub(crate) async fn verify_bridge_bearer(
+    state: &AppState,
+    headers: &HeaderMap,
+    tenant: &TenantContext,
+) -> Result<Option<nostr::PublicKey>, axum::response::Response> {
+    use axum::response::IntoResponse as _;
+    if !state.identity.enabled() || !matches!(state.config.nip_fi.mode, NipFiMode::Off) {
+        return Ok(None);
+    }
+    let Some(token) = crate::api::auth::bearer_token(headers) else {
+        return Ok(None);
+    };
+    let binding = crate::identity::verify_access_token(state, &token)
+        .await
+        .map_err(crate::api::auth::rejection_response)?;
+    if let Some(owner) = binding.bot_owner {
+        match crate::handlers::auth::community_ban_outcome(
+            state,
+            tenant.community(),
+            owner.as_public_key(),
+            None,
+            None,
+        )
+        .await
+        {
+            crate::handlers::auth::BanOutcome::Clear => {}
+            crate::handlers::auth::BanOutcome::Banned => {
+                return Err(api_error(
+                    StatusCode::FORBIDDEN,
+                    "blocked: you are banned from this community",
+                )
+                .into_response())
+            }
+            crate::handlers::auth::BanOutcome::DbError => {
+                return Err(api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "error: internal error checking restriction state",
+                )
+                .into_response())
+            }
+        }
+    }
+    Ok(Some(binding.principal.as_public_key()))
+}
+
 // ── NIP-FI Authority boundary ─────────────────────────────────────────────────
 //
 // The two functions below are the ONLY `pub(crate)` entry points to the raw
@@ -918,23 +971,34 @@ pub async fn submit_event(
     // NIP-FI enforce mode. [NIP-FI.md:619-637]
     let nip_fi_enforce = matches!(state.config.nip_fi.mode, NipFiMode::Enforce);
 
-    // NIP-FI admission: NIP-98 extraction runs inside the closure, followed by
-    // assertion verify → pair → deny-map in fixed order. The proven pubkey is
-    // only available through the returned NipFiAdmission. [FI-TRACE-AUTHORITY-UNIFORM]
-    let admission = admit_nip_fi_http_on_state(&state, &headers, || {
-        verify_bridge_auth_with_options(
-            &headers,
-            "POST",
-            &url,
-            Some(&body),
-            state.config.require_auth_token || nip_fi_active,
-            nip_fi_enforce,
-        )
-        .map(|auth| Nip98Proof::new(auth.pubkey, (auth.event_id_bytes, auth.signed_created_at)))
-        .map_err(|e| e.into_response())
-    })?;
-    let pubkey = *admission.proven_pubkey();
-    let (event_id_bytes, signed_created_at) = admission.into_extra();
+    // Centralized-identity Bearer (token auth on, NIP-FI off): the body is a
+    // draft the server stamps. Otherwise the NIP-98 path below, unchanged.
+    let bearer = verify_bridge_bearer(&state, &headers, &tenant).await?;
+    let (pubkey, event_id_bytes, signed_created_at, server_stamped) = match bearer {
+        Some(pubkey) => (pubkey, [0u8; 32], None, true),
+        None => {
+            // NIP-FI admission: NIP-98 extraction runs inside the closure, followed by
+            // assertion verify → pair → deny-map in fixed order. The proven pubkey is
+            // only available through the returned NipFiAdmission. [FI-TRACE-AUTHORITY-UNIFORM]
+            let admission = admit_nip_fi_http_on_state(&state, &headers, || {
+                verify_bridge_auth_with_options(
+                    &headers,
+                    "POST",
+                    &url,
+                    Some(&body),
+                    state.config.require_auth_token || nip_fi_active,
+                    nip_fi_enforce,
+                )
+                .map(|auth| {
+                    Nip98Proof::new(auth.pubkey, (auth.event_id_bytes, auth.signed_created_at))
+                })
+                .map_err(|e| e.into_response())
+            })?;
+            let pubkey = *admission.proven_pubkey();
+            let (event_id_bytes, signed_created_at) = admission.into_extra();
+            (pubkey, event_id_bytes, signed_created_at, false)
+        }
+    };
     let pubkey_hex = pubkey.to_hex();
 
     // Everything after auth — admission, replay, membership, parse, ingest —
@@ -949,6 +1013,7 @@ pub async fn submit_event(
         pubkey,
         event_id_bytes,
         signed_created_at,
+        server_stamped,
     )
     .await;
 
@@ -1059,6 +1124,7 @@ impl SubmitOutcome {
 /// parse, and ingest.  Returns a [`SubmitOutcome`] that carries both the log
 /// fields and the HTTP response so the thin wrapper can emit exactly one
 /// terminal attribution line covering every outcome.
+#[allow(clippy::too_many_arguments)]
 async fn submit_event_authed(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -1067,6 +1133,7 @@ async fn submit_event_authed(
     pubkey: nostr::PublicKey,
     event_id_bytes: [u8; 32],
     signed_auth_created_at: Option<u64>,
+    server_stamped: bool,
 ) -> SubmitOutcome {
     // Admission and replay checks fire before body parse — a 429 or replay
     // reject on a malformed body must still be attributed.
@@ -1084,7 +1151,34 @@ async fn submit_event_authed(
     }
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
-    let event: nostr::Event = match serde_json::from_slice(body) {
+    let parsed: Result<nostr::Event, serde_json::Error> = if server_stamped {
+        // Token auth: the body is a draft; the server stamps the sender.
+        match serde_json::from_slice::<Value>(body) {
+            Ok(draft) => {
+                let principal = buzz_core::principal::PrincipalId::from(pubkey);
+                match crate::identity::ws::stamp_for_principal(&draft, &principal) {
+                    Ok(event) => Ok(event),
+                    Err((_, message)) => {
+                        crate::handlers::ingest::reject_with_transport("http", "invalid");
+                        let kind = draft
+                            .get("kind")
+                            .and_then(Value::as_u64)
+                            .and_then(|k| u32::try_from(k).ok())
+                            .unwrap_or_default();
+                        return SubmitOutcome::Rejected {
+                            kind,
+                            reason: truncate_reason(&message, REJECT_REASON_MAX_BYTES).to_owned(),
+                            response: api_error(StatusCode::BAD_REQUEST, &message),
+                        };
+                    }
+                }
+            }
+            Err(e) => Err(e),
+        }
+    } else {
+        serde_json::from_slice(body)
+    };
+    let event: nostr::Event = match parsed {
         Ok(ev) => ev,
         Err(e) => {
             // Never log `e`'s Display string: serde_json embeds the offending
@@ -1142,10 +1236,18 @@ async fn submit_event_authed(
     }
 
     let kind_u32 = buzz_core::kind::event_kind_u32(&event);
-    let auth = IngestAuth::Http {
-        pubkey,
-        scopes: buzz_auth::Scope::all_known(), // Pure Nostr: full scopes, channel access via membership
-        auth_method: crate::handlers::ingest::HttpAuthMethod::Nip98,
+    let auth = if server_stamped {
+        IngestAuth::Token {
+            pubkey,
+            scopes: buzz_auth::Scope::all_known(),
+            conn_id: None,
+        }
+    } else {
+        IngestAuth::Http {
+            pubkey,
+            scopes: buzz_auth::Scope::all_known(), // Pure Nostr: full scopes, channel access via membership
+            auth_method: crate::handlers::ingest::HttpAuthMethod::Nip98,
+        }
     };
 
     match crate::handlers::ingest::ingest_event(state, tenant, event, auth).await {
@@ -1244,21 +1346,32 @@ pub async fn query_events(
     // [NIP-FI.md:619-637]
     let nip_fi_enforce = matches!(state.config.nip_fi.mode, NipFiMode::Enforce);
 
-    // NIP-FI admission. [FI-TRACE-AUTHORITY-UNIFORM]
-    let admission = admit_nip_fi_http_on_state(&state, &headers, || {
-        verify_bridge_auth_with_options(
-            &headers,
-            "POST",
-            &url,
-            Some(&body),
-            state.config.require_auth_token || nip_fi_active,
-            nip_fi_enforce,
-        )
-        .map(|auth| Nip98Proof::new(auth.pubkey, (auth.event_id_bytes, auth.signed_created_at)))
-        .map_err(|e| e.into_response())
-    })?;
-    let pubkey = *admission.proven_pubkey();
-    let (event_id_bytes, signed_created_at) = admission.into_extra();
+    // Centralized-identity Bearer branch (token auth on, NIP-FI off); the
+    // NIP-98 admission below is unchanged otherwise.
+    let (pubkey, event_id_bytes, signed_created_at) =
+        match verify_bridge_bearer(&state, &headers, &tenant).await? {
+            Some(pubkey) => (pubkey, [0u8; 32], None),
+            None => {
+                // NIP-FI admission. [FI-TRACE-AUTHORITY-UNIFORM]
+                let admission = admit_nip_fi_http_on_state(&state, &headers, || {
+                    verify_bridge_auth_with_options(
+                        &headers,
+                        "POST",
+                        &url,
+                        Some(&body),
+                        state.config.require_auth_token || nip_fi_active,
+                        nip_fi_enforce,
+                    )
+                    .map(|auth| {
+                        Nip98Proof::new(auth.pubkey, (auth.event_id_bytes, auth.signed_created_at))
+                    })
+                    .map_err(|e| e.into_response())
+                })?;
+                let pubkey = *admission.proven_pubkey();
+                let (event_id_bytes, signed_created_at) = admission.into_extra();
+                (pubkey, event_id_bytes, signed_created_at)
+            }
+        };
     let pubkey_hex = pubkey.to_hex();
 
     // Admission, replay, membership, and filter execution all run inside the
@@ -1875,21 +1988,32 @@ pub async fn count_events(
     // [NIP-FI.md:619-637]
     let nip_fi_enforce = matches!(state.config.nip_fi.mode, NipFiMode::Enforce);
 
-    // NIP-FI admission. [FI-TRACE-AUTHORITY-UNIFORM]
-    let admission = admit_nip_fi_http_on_state(&state, &headers, || {
-        verify_bridge_auth_with_options(
-            &headers,
-            "POST",
-            &url,
-            Some(&body),
-            state.config.require_auth_token || nip_fi_active,
-            nip_fi_enforce,
-        )
-        .map(|auth| Nip98Proof::new(auth.pubkey, (auth.event_id_bytes, auth.signed_created_at)))
-        .map_err(|e| e.into_response())
-    })?;
-    let pubkey = *admission.proven_pubkey();
-    let (event_id_bytes, signed_created_at) = admission.into_extra();
+    // Centralized-identity Bearer branch (token auth on, NIP-FI off); the
+    // NIP-98 admission below is unchanged otherwise.
+    let (pubkey, event_id_bytes, signed_created_at) =
+        match verify_bridge_bearer(&state, &headers, &tenant).await? {
+            Some(pubkey) => (pubkey, [0u8; 32], None),
+            None => {
+                // NIP-FI admission. [FI-TRACE-AUTHORITY-UNIFORM]
+                let admission = admit_nip_fi_http_on_state(&state, &headers, || {
+                    verify_bridge_auth_with_options(
+                        &headers,
+                        "POST",
+                        &url,
+                        Some(&body),
+                        state.config.require_auth_token || nip_fi_active,
+                        nip_fi_enforce,
+                    )
+                    .map(|auth| {
+                        Nip98Proof::new(auth.pubkey, (auth.event_id_bytes, auth.signed_created_at))
+                    })
+                    .map_err(|e| e.into_response())
+                })?;
+                let pubkey = *admission.proven_pubkey();
+                let (event_id_bytes, signed_created_at) = admission.into_extra();
+                (pubkey, event_id_bytes, signed_created_at)
+            }
+        };
     let pubkey_hex = pubkey.to_hex();
 
     // Admission, replay, membership, and count execution all run inside the
@@ -7870,6 +7994,7 @@ mod postgres_tests {
                         channel_ids: None,
                         auth_method: buzz_auth::AuthMethod::Nip42,
                         agent_owner_pubkey: None,
+                        token: None,
                     },
                 )),
                 subscriptions: Arc::new(tokio::sync::Mutex::new(Default::default())),
@@ -8205,6 +8330,7 @@ mod postgres_tests {
                 agent.public_key(),
                 fresh_nip98_event_id_bytes(),
                 Some(nostr::Timestamp::now().as_secs()),
+                false,
             )
             .await;
             assert!(

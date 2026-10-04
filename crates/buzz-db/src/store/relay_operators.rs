@@ -103,7 +103,22 @@ pub async fn upsert(
     )
     .await?;
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
+    upsert_in_tx(&mut tx, pubkey, role, added_by, config_operator_exists).await?;
+    tx.commit().await?;
+    Ok(())
+}
 
+/// The body of [`upsert`] on a caller-owned transaction (no commit).
+///
+/// Callers that already hold the roster lock (see [`bootstrap_operator`])
+/// keep the same roster → per-target lock order.
+async fn upsert_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    pubkey: &[u8],
+    role: &str,
+    added_by: &[u8],
+    config_operator_exists: bool,
+) -> Result<()> {
     // A demotion to moderator can drop the effective-operator count; serialize
     // it against every other operator-removing mutation via the roster-wide
     // lock BEFORE the per-target lock so the post-mutation count is race-free (a
@@ -113,7 +128,7 @@ pub async fn upsert(
     // the pre-image confirms this actually demoted an operator.
     let demotion_candidate = role == "moderator";
     if demotion_candidate {
-        acquire_roster_lock(&mut tx).await?;
+        acquire_roster_lock(tx).await?;
     }
 
     // Serialize concurrent mutations of the SAME target before the pre-image
@@ -126,14 +141,14 @@ pub async fn upsert(
     // concurrent mutation of the same target. `remove` needs no such lock: its
     // `DELETE ... RETURNING` takes the row lock and reads the pre-image in one
     // statement, so there is no absent-row read gap to widen.
-    acquire_operator_lock(&mut tx, pubkey).await?;
+    acquire_operator_lock(tx, pubkey).await?;
 
     // Pre-image read inside the transaction: the role the upsert overwrites,
     // or NULL when the target has no prior row.
     let prev_role: Option<String> =
         sqlx::query_scalar("SELECT role FROM relay_operators WHERE pubkey = $1 FOR UPDATE")
             .bind(pubkey)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await?;
 
     sqlx::query(
@@ -148,7 +163,7 @@ pub async fn upsert(
     .bind(pubkey)
     .bind(role)
     .bind(added_by)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     sqlx::query(
@@ -162,7 +177,7 @@ pub async fn upsert(
     .bind(pubkey)
     .bind(prev_role.as_deref())
     .bind(role)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // Enforce the last-operator invariant only when this mutation actually
@@ -172,12 +187,38 @@ pub async fn upsert(
     // roster is empty. Dropping the tx without committing rolls the demotion and
     // its audit row back.
     let demotion = demotion_candidate && prev_role.as_deref() == Some("operator");
-    if demotion && !config_operator_exists && db_operator_count(&mut tx).await? == 0 {
+    if demotion && !config_operator_exists && db_operator_count(tx).await? == 0 {
         return Err(DbError::LastOperator);
     }
-
-    tx.commit().await?;
     Ok(())
+}
+
+/// Grant `principal` the `operator` role iff the DB roster has **no**
+/// `operator` row, in one transaction under the roster-wide lock.
+///
+/// Centralized-identity bootstrap (plan §3.3 B8): evaluated on every OIDC
+/// login whose verified email matches `RELAY_OPERATOR_BOOTSTRAP_EMAIL`. Only
+/// DB rows count — config-backed operators cannot log in with a token. The
+/// grant goes through the same audited upsert path with `added_by` = the relay
+/// principal. Returns whether a grant happened.
+pub async fn bootstrap_operator(
+    pool: &PgPool,
+    principal: &[u8],
+    relay_principal: &[u8],
+) -> Result<bool> {
+    let connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let mut tx = sqlx::Transaction::begin(connection, None).await?;
+    acquire_roster_lock(&mut tx).await?;
+    if db_operator_count(&mut tx).await? != 0 {
+        return Ok(false);
+    }
+    upsert_in_tx(&mut tx, principal, "operator", relay_principal, false).await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 /// Remove a relay operator/moderator DB row, recording the revocation in the
@@ -326,6 +367,17 @@ impl crate::Db {
         config_operator_exists: bool,
     ) -> Result<()> {
         upsert(&self.pool, pubkey, role, added_by, config_operator_exists).await
+    }
+
+    /// Grant `principal` the operator role iff the DB roster has no operator
+    /// (centralized-identity bootstrap). Returns whether a grant happened.
+    #[datastore_span(name = "bootstrap_relay_operator", system = "postgresql")]
+    pub async fn bootstrap_relay_operator(
+        &self,
+        principal: &[u8],
+        relay_principal: &[u8],
+    ) -> Result<bool> {
+        bootstrap_operator(&self.pool, principal, relay_principal).await
     }
 
     /// Remove a relay operator/moderator row. Returns `true` if deleted.

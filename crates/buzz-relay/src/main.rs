@@ -1322,6 +1322,22 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         });
     }
 
+    // Centralized identity (Phase 0, AUTH_TOKEN_ENABLED): resolve the relay
+    // principal (created once per deployment; concurrent boots converge on
+    // the partial unique index) and consume cross-instance token revocations.
+    // Nothing here runs with the flag off.
+    if state.identity.enabled() {
+        let relay_principal = state
+            .db
+            .ensure_relay_principal()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to ensure relay principal: {e}"))?;
+        state.identity.set_relay_principal(relay_principal);
+        info!(relay_principal = %relay_principal, "Token auth enabled");
+
+        buzz_relay::identity::spawn_revocation_consumer(Arc::clone(&state));
+    }
+
     let router = build_router(Arc::clone(&state));
     let health_router = build_health_router(Arc::clone(&state));
 

@@ -32,6 +32,7 @@ import { getProfile } from "@/shared/api/tauriProfiles";
 import type { Channel, ManagedAgent, RelayEvent } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export const WELCOME_KICKOFF_OPENER_MARKER = "buzz-welcome-kickoff.opener.v1";
 export const WELCOME_KICKOFF_CLOSER_MARKER = "buzz-welcome-kickoff.closer.v1";
@@ -416,6 +417,95 @@ export function mergeKickoffEvents(
   ];
 }
 
+/**
+ * The opener in the user's own voice, for communities signed in with Google:
+ * Desktop cannot post as the lead there, so the user asks the lead (and the
+ * online teammates) to say hello and the running bots answer for themselves.
+ */
+export function buildWelcomeKickoffUserOpener(
+  lead: ManagedAgent,
+  introTeammates: readonly ManagedAgent[],
+) {
+  const ask = `@${lead.name} Hi! I just joined Buzz. Could you help me get oriented?`;
+  if (introTeammates.length === 0) return ask;
+  return `${ask}\n\n${formatMentionNames(introTeammates)}, please introduce ${introTeammates.length === 1 ? "yourself" : "yourselves"} in a sentence or two — share what you're good at and when to bring you in. Don't start any work yet.`;
+}
+
+/**
+ * The closer, as the user's own reply to the lead. Used when the community is
+ * Google-signed-in by the time the closer fires (for example the user signed
+ * in after a key-mode opener), where the lead-authored closer is refused.
+ */
+export function buildWelcomeKickoffUserCloser(
+  lead: ManagedAgent,
+  failedNames: readonly string[],
+  delayedNames: readonly string[] = [],
+) {
+  const names = [...failedNames, ...delayedNames];
+  if (names.length === 0) {
+    return `@${lead.name} Thanks, everyone! I'll bring something for us to work on.`;
+  }
+  return `@${lead.name} Thanks! ${names.join(" and ")} ${names.length === 1 ? "seems" : "seem"} to be having trouble — I'll check on them in Agents.`;
+}
+
+export function buildWelcomeKickoffCloserSendInput(
+  lead: ManagedAgent,
+  channelId: string,
+  opener: Pick<RelayEvent, "id">,
+  failedNames: readonly string[],
+  delayedNames: readonly string[] = [],
+) {
+  return {
+    agentPubkey: lead.pubkey,
+    channelId,
+    content: buildWelcomeKickoffCloser(failedNames, delayedNames),
+    marker: closerMarker,
+    markerScope: "channel" as const,
+    parentEventId: opener.id,
+    // Same contract as the opener: in a Google-signed-in community the user
+    // posts the closer so it is never refused (and never re-toasted).
+    userFallback: {
+      content: buildWelcomeKickoffUserCloser(lead, failedNames, delayedNames),
+    },
+  };
+}
+
+/** The provider-required notice, as the user's own note to the lead. */
+export function buildWelcomeKickoffUserProviderNotice(lead: ManagedAgent) {
+  return `@${lead.name} I still need to connect an AI provider in Settings before the team can start. Once I'm connected, I'll come back here to meet everyone.`;
+}
+
+export function buildWelcomeKickoffProviderSendInput(
+  lead: ManagedAgent,
+  channelId: string,
+) {
+  return {
+    agentPubkey: lead.pubkey,
+    channelId,
+    content: WELCOME_KICKOFF_PROVIDER_MESSAGE,
+    marker: providerMarker,
+    markerScope: "channel" as const,
+    userFallback: { content: buildWelcomeKickoffUserProviderNotice(lead) },
+  };
+}
+
+/** Surface a kickoff failure in the UI, not only the console. */
+export function reportWelcomeKickoffFailure(
+  message: string,
+  error: unknown,
+  notify: (message: string, options: { description: string }) => void = (
+    text,
+    options,
+  ) => {
+    toast.error(text, options);
+  },
+) {
+  console.warn(message, error);
+  notify(message, {
+    description: error instanceof Error ? error.message : String(error),
+  });
+}
+
 export function buildWelcomeKickoffOpenerSendInput(
   agentSet: WelcomeAgentSet,
   introTeammates: readonly ManagedAgent[],
@@ -447,6 +537,13 @@ export function buildWelcomeKickoffOpenerSendInput(
     markerScope: "channel" as const,
     mentionPubkeys,
     additionalMarkers: introTeammates.length === 0 ? [closerMarker] : [],
+    // Google-signed-in community: the user posts the opener. It also carries
+    // the closer marker, because the lead-authored closer cannot be posted
+    // there; the running bots reply on their own.
+    userFallback: {
+      content: buildWelcomeKickoffUserOpener(agentSet.lead, introTeammates),
+      additionalMarkers: introTeammates.length === 0 ? [] : [closerMarker],
+    },
   };
 }
 
@@ -467,27 +564,40 @@ export async function restartWelcomeTeammate(
   return startAgent(agent.pubkey);
 }
 
-async function sendWelcomeKickoffCloser({
-  agentSet,
-  channelId,
-  content,
-  opener,
-}: {
-  agentSet: WelcomeAgentSet;
-  channelId: string;
-  content: string;
-  opener: RelayEvent;
-}) {
-  if (await markerExists(channelId, closerMarker)) return;
-
-  await sendManagedAgentChannelMessage({
-    agentPubkey: agentSet.lead.pubkey,
+/** Posts the closer once; `deps` exists only so tests can bind this path. */
+export async function sendWelcomeKickoffCloser(
+  {
+    agentSet,
     channelId,
-    content,
-    marker: closerMarker,
-    markerScope: "channel",
-    parentEventId: opener.id,
-  });
+    failedNames,
+    delayedNames = [],
+    opener,
+  }: {
+    agentSet: WelcomeAgentSet;
+    channelId: string;
+    failedNames: readonly string[];
+    delayedNames?: readonly string[];
+    opener: Pick<RelayEvent, "id">;
+  },
+  deps: {
+    closerExists?: (channelId: string) => Promise<boolean>;
+    send?: typeof sendManagedAgentChannelMessage;
+  } = {},
+) {
+  const closerExists =
+    deps.closerExists ?? ((id: string) => markerExists(id, closerMarker));
+  const send = deps.send ?? sendManagedAgentChannelMessage;
+  if (await closerExists(channelId)) return;
+
+  await send(
+    buildWelcomeKickoffCloserSendInput(
+      agentSet.lead,
+      channelId,
+      opener,
+      failedNames,
+      delayedNames,
+    ),
+  );
 }
 
 /** Runs the Welcome choreography only while the Welcome channel is focused. */
@@ -591,13 +701,12 @@ export function useWelcomeKickoff(
           return;
         }
         if (!readiness.ready) {
-          await sendManagedAgentChannelMessage({
-            agentPubkey: resolvedAgentSet.lead.pubkey,
-            channelId,
-            content: WELCOME_KICKOFF_PROVIDER_MESSAGE,
-            marker: providerMarker,
-            markerScope: "channel",
-          });
+          await sendManagedAgentChannelMessage(
+            buildWelcomeKickoffProviderSendInput(
+              resolvedAgentSet.lead,
+              channelId,
+            ),
+          );
           return;
         }
         const openerAlreadySent = await markerExists(channelId, openerMarker);
@@ -648,7 +757,14 @@ export function useWelcomeKickoff(
         const leadStartIndex = agentsToStart.findIndex(
           (agent) => agent.pubkey === resolvedAgentSet.lead.pubkey,
         );
-        if (startResults[leadStartIndex]?.status === "rejected") return;
+        const leadStart = startResults[leadStartIndex];
+        if (leadStart?.status === "rejected") {
+          reportWelcomeKickoffFailure(
+            `Couldn't start ${resolvedAgentSet.lead.name} for the Welcome kickoff.`,
+            leadStart.reason,
+          );
+          return;
+        }
         const teammatesToAwait = resolvedAgentSet.teammates.filter(
           (teammate) =>
             startResults[
@@ -691,7 +807,10 @@ export function useWelcomeKickoff(
         );
         if (!isCancelled()) onKickoffOpenerPosted?.(openerResult.eventId);
       } catch (error) {
-        console.warn("Failed to start the Welcome team kickoff.", error);
+        reportWelcomeKickoffFailure(
+          "Couldn't start the Welcome team kickoff.",
+          error,
+        );
       } finally {
         kickoffCoordinator.finish(channelId, kickoffController);
       }
@@ -785,15 +904,18 @@ export function useWelcomeKickoff(
             await sendWelcomeKickoffCloser({
               agentSet: latestAgentSet,
               channelId,
-              content: buildWelcomeKickoffCloser(
-                latestResolution.failed.map((agent) => agent.name),
-                latestResolution.unresolved.map((agent) => agent.name),
+              failedNames: latestResolution.failed.map((agent) => agent.name),
+              delayedNames: latestResolution.unresolved.map(
+                (agent) => agent.name,
               ),
               opener: latestOpener,
             });
           })()
             .catch((error) => {
-              console.warn("Failed to finish the Welcome team kickoff.", error);
+              reportWelcomeKickoffFailure(
+                "Couldn't finish the Welcome team kickoff.",
+                error,
+              );
             })
             .finally(() => {
               if (closerAbortControllers.get(channelId) === controller) {
@@ -840,14 +962,15 @@ export function useWelcomeKickoff(
       await sendWelcomeKickoffCloser({
         agentSet: latestAgentSet,
         channelId,
-        content: buildWelcomeKickoffCloser(
-          latestResolution.failed.map((agent) => agent.name),
-        ),
+        failedNames: latestResolution.failed.map((agent) => agent.name),
         opener: latestOpener,
       });
     })()
       .catch((error) => {
-        console.warn("Failed to finish the Welcome team kickoff.", error);
+        reportWelcomeKickoffFailure(
+          "Couldn't finish the Welcome team kickoff.",
+          error,
+        );
       })
       .finally(() => {
         if (closerAbortControllers.get(channelId) === controller) {

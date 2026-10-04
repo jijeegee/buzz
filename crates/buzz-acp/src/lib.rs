@@ -3,6 +3,9 @@
 mod git;
 #[cfg(all(test, unix))]
 mod git_runtime_tests;
+pub mod identity;
+pub mod token_broker;
+pub mod token_refresh;
 
 mod acp;
 mod config;
@@ -105,15 +108,14 @@ fn current_working_directory() -> Result<String> {
 /// it back on presence queries.
 async fn publish_presence(
     publisher: &relay::RelayEventPublisher,
-    keys: &nostr::Keys,
+    keys: &identity::AgentIdentity,
     status: &str,
 ) -> Result<(), relay::RelayError> {
     use buzz_core::kind::KIND_PRESENCE_UPDATE;
     use nostr::{EventBuilder, Kind};
 
-    let event = EventBuilder::new(Kind::Custom(KIND_PRESENCE_UPDATE as u16), status)
-        .tags([])
-        .sign_with_keys(keys)
+    let event = keys
+        .sign(EventBuilder::new(Kind::Custom(KIND_PRESENCE_UPDATE as u16), status).tags([]))
         .map_err(|e| relay::RelayError::Http(format!("presence sign error: {e}")))?;
     publisher.publish_event(event).await?;
     Ok(())
@@ -263,7 +265,7 @@ fn verified_workflow_owner(
     }
 
     let relay_self = nostr::PublicKey::from_hex(relay_self?).ok()?;
-    if event.pubkey != relay_self || event.verify().is_err() {
+    if event.pubkey != relay_self || !buzz_core::draft::verify_served_event(event) {
         return None;
     }
 
@@ -2617,6 +2619,7 @@ pub fn run() -> Result<()> {
         .and_then(|name| name.to_str())
     {
         Some("git-credential-nostr") => std::process::exit(git_credential_nostr::run()),
+        Some("git-credential-buzz") => std::process::exit(git_credential_buzz::run()),
         Some("git-sign-nostr") => std::process::exit(git_sign_nostr::run()),
         _ => {}
     }
@@ -2629,7 +2632,11 @@ pub fn run() -> Result<()> {
         runtime.shutdown_timeout(Duration::from_millis(100));
         std::process::exit(code);
     }
-    tokio_main()
+    let result = tokio_main();
+    if token_refresh::auth_terminal_requested() {
+        std::process::exit(identity::EXIT_AUTH_TERMINAL);
+    }
+    result
 }
 
 #[tokio::main]
@@ -2680,7 +2687,7 @@ async fn tokio_main() -> Result<()> {
         .compact()
         .init();
 
-    let config = Config::from_cli().map_err(|e| anyhow::anyhow!("configuration error: {e}"))?;
+    let config = load_config(config::CliArgs::parse()).await?;
 
     // ── Setup-mode early branch ───────────────────────────────────────────────
     //
@@ -2698,6 +2705,7 @@ async fn tokio_main() -> Result<()> {
     // adapters. During startup cancellation drops the pool and key guard; once
     // ready, the existing main-loop shutdown drains active work first.
     let (shutdown_tx, mut shutdown_rx) = watch::channel(());
+    token_refresh::register_shutdown(shutdown_tx.clone());
     #[cfg(unix)]
     let signals = {
         use tokio::signal::unix::{signal, SignalKind};
@@ -2730,12 +2738,58 @@ async fn tokio_main() -> Result<()> {
     result
 }
 
+/// Build the harness `Config`. In token mode (`BUZZ_BOT_TOKEN`) the bot's
+/// principal is resolved first with `GET /auth/me`; a terminal rejection of
+/// the token exits with [`identity::EXIT_AUTH_TERMINAL`] so Desktop reissues it.
+pub(crate) async fn load_config(args: config::CliArgs) -> Result<Config> {
+    let token = args
+        .bot_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(|token| zeroize::Zeroizing::new(token.to_owned()));
+    let principal = match token {
+        Some(token) => match token_refresh::resolve_principal(
+            &args.relay_url,
+            &token,
+            &relay::STARTUP_CONNECT_BACKOFFS,
+        )
+        .await
+        {
+            Ok(principal) => Some(principal),
+            Err(token_refresh::Failure::Terminal(reason)) => {
+                token_refresh::auth_terminal(&format!(
+                    "GET /auth/me rejected the bot token: {reason}"
+                ));
+                anyhow::bail!("bot token rejected: {reason}");
+            }
+            Err(token_refresh::Failure::Transient(reason)) => {
+                anyhow::bail!("could not resolve the bot principal: {reason}");
+            }
+        },
+        None => None,
+    };
+    // Config owns synchronous prompt-file reads; keep them off the async worker.
+    tokio::task::spawn_blocking(move || Config::from_args_resolved(args, principal))
+        .await
+        .map_err(|e| anyhow::anyhow!("configuration task failed: {e}"))?
+        .map_err(|e| anyhow::anyhow!("configuration error: {e}"))
+}
+
 async fn run_harness(
     config: Config,
     shutdown_tx: watch::Sender<()>,
     mut shutdown_rx: watch::Receiver<()>,
     startup_ready: tokio::sync::oneshot::Sender<()>,
 ) -> Result<()> {
+    // Token mode: agent children reach the bot token only through the
+    // loopback broker, which must be up before the first spawn.
+    if let Some(token) = config.keys.bot_token() {
+        let broker = token_broker::start_global(token.clone())
+            .await
+            .context("token broker failed to start")?;
+        tracing::info!(url = %broker.url(), "token broker listening");
+    }
     let runtime = AgentRuntime::prepare(config)?;
     let config = runtime.config();
 
@@ -2804,6 +2858,10 @@ async fn run_harness(
             .await
             .map_err(|e| anyhow::anyhow!("relay connect error: {e}"))?;
 
+    let _token_refresh_task = config.keys.bot_token().map(|token| {
+        token_refresh::spawn_refresh_task(token.clone(), &config.relay_url, relay.reauth_handle())
+    });
+
     // Tell the relay background task the watermark so it can use
     // `since = watermark - 5s` on the first REQ instead of `since=now`.
     // Best-effort: a failure here is non-fatal (we just lose the startup window
@@ -2870,7 +2928,15 @@ async fn run_harness(
     let mut relay_observer_control_rx = None;
     let mut relay_observer_publisher_task = None;
     let mut relay_observer_publisher = None;
-    if config.relay_observer {
+    // The relay observer encrypts frames to the owner with NIP-44, which needs
+    // the agent's secret key; token mode has none, so it stays off there.
+    let observer_keys = config.keys.secret_keys("relay observer").ok().cloned();
+    if config.relay_observer && observer_keys.is_none() {
+        tracing::warn!(
+            "relay observer requested but unavailable with a bot token (needs NIP-44 keys)"
+        );
+    }
+    if let (true, Some(observer_keys)) = (config.relay_observer, observer_keys.clone()) {
         if let (Some(observer), Some(owner_pubkey_hex)) =
             (observer.clone(), owner_cache.pubkey.clone())
         {
@@ -2879,7 +2945,7 @@ async fn run_harness(
                     relay_observer_publisher = Some((
                         observer,
                         relay.event_publisher(),
-                        config.keys.clone(),
+                        observer_keys,
                         pubkey_hex.clone(),
                         owner_pubkey_hex,
                         owner_pubkey,
@@ -3322,9 +3388,11 @@ async fn run_harness(
                     let _ = result_rx;
                     match control_event {
                         Some(event) => {
-                            if let Some(ref owner_hex) = owner_cache.pubkey {
+                            if let (Some(owner_hex), Some(keys)) =
+                                (owner_cache.pubkey.as_ref(), observer_keys.as_ref())
+                            {
                                 handle_relay_observer_control_event(
-                                    &config.keys,
+                                    keys,
                                     event,
                                     &mut pool,
                                     observer.as_ref(),
@@ -6339,23 +6407,25 @@ fn build_mcp_servers(config: &Config) -> Vec<McpServer> {
         command: config.mcp_command.clone(),
         args: vec![],
         env: {
-            let mut env = vec![
-                EnvVar {
-                    name: "BUZZ_RELAY_URL".into(),
-                    value: config.relay_url.clone(),
-                },
-                EnvVar {
+            let mut env = vec![EnvVar {
+                name: "BUZZ_RELAY_URL".into(),
+                value: config.relay_url.clone(),
+            }];
+            // Token mode adds no credential here: `AcpClient::session_new_full`
+            // gives each MCP server the broker secret of the agent process
+            // that spawns it, so the secret dies with that process.
+            if let Ok(keys) = config.keys.secret_keys("MCP server credentials") {
+                env.push(EnvVar {
                     name: "BUZZ_PRIVATE_KEY".into(),
                     // bech32 encoding of a valid secret key is infallible.
                     // Panic here is correct: injecting a bogus secret would cause
                     // delayed, hard-to-diagnose agent failures downstream.
-                    value: config
-                        .keys
+                    value: keys
                         .secret_key()
                         .to_bech32()
                         .expect("secret key bech32 encoding should never fail"),
-                },
-            ];
+                });
+            }
             // Forward BUZZ_AUTH_TAG (NIP-OA owner attestation credential)
             // so the MCP server can attach it to every signed event.
             if let Ok(auth_tag) = std::env::var("BUZZ_AUTH_TAG") {
@@ -6946,7 +7016,7 @@ mod workflow_owner_tests {
         let client = relay::RestClient {
             http: reqwest::Client::new(),
             base_url: "http://127.0.0.1:0".into(),
-            keys: Keys::generate(),
+            keys: Keys::generate().into(),
             auth_tag_json: None,
         };
 
@@ -7219,7 +7289,7 @@ mod author_gate_tests {
         relay::RestClient {
             http: reqwest::Client::new(),
             base_url: "http://localhost:0".into(),
-            keys: nostr::Keys::generate(),
+            keys: nostr::Keys::generate().into(),
             auth_tag_json: None,
         }
     }
@@ -7300,7 +7370,7 @@ mod author_gate_tests {
         let rest = relay::RestClient {
             http: reqwest::Client::new(),
             base_url,
-            keys: nostr::Keys::generate(),
+            keys: nostr::Keys::generate().into(),
             auth_tag_json: None,
         };
         (rest, server)
@@ -7796,7 +7866,7 @@ mod author_gate_tests {
         let unreachable = relay::RestClient {
             http: reqwest::Client::new(),
             base_url: "http://127.0.0.1:1".into(),
-            keys: nostr::Keys::generate(),
+            keys: nostr::Keys::generate().into(),
             auth_tag_json: None,
         };
         let mut gate = InboundAuthorGate::connect(&unreachable, &agent, "test").await;
@@ -8486,7 +8556,7 @@ mod author_gate_tests {
         let rest = relay::RestClient {
             http: reqwest::Client::new(),
             base_url,
-            keys: nostr::Keys::generate(),
+            keys: nostr::Keys::generate().into(),
             auth_tag_json: None,
         };
         (
@@ -9599,7 +9669,7 @@ mod build_mcp_servers_tests {
 
     pub(super) fn test_config() -> Config {
         Config {
-            keys: nostr::Keys::generate(),
+            keys: nostr::Keys::generate().into(),
             relay_url: "ws://localhost:3000".into(),
             agent_command: "goose".into(),
             agent_args: vec!["acp".into()],
@@ -10459,7 +10529,7 @@ mod error_outcome_emission_tests {
 
     fn test_config() -> Config {
         Config {
-            keys: nostr::Keys::generate(),
+            keys: nostr::Keys::generate().into(),
             relay_url: "ws://localhost:3000".into(),
             // `true` exits cleanly, so the async respawn fails fast and
             // harmlessly off the JoinSet — irrelevant to the synchronous
@@ -12144,7 +12214,7 @@ mod error_outcome_emission_tests {
         let rest = relay::RestClient {
             http: reqwest::Client::new(),
             base_url: format!("http://{}", listener.local_addr().unwrap()),
-            keys: Keys::generate(),
+            keys: Keys::generate().into(),
             auth_tag_json: None,
         };
         let channel_id = uuid::Uuid::new_v4();
@@ -12748,5 +12818,46 @@ mod observer_payload_trim_tests {
         assert!(leaf.starts_with('…'));
         assert!(leaf.ends_with('…'));
         assert!(leaf.contains("[elided"));
+    }
+}
+
+#[cfg(test)]
+mod build_mcp_servers_token_tests {
+    use super::*;
+
+    /// Token mode: the MCP definition carries no private key and no token or
+    /// broker credential of its own; `AcpClient::session_new_full` adds the
+    /// spawning agent's lease (see
+    /// `acp::tests::token_mode_spawn_leases_a_broker_secret_for_the_child_and_its_mcp`).
+    #[test]
+    fn token_mode_mcp_servers_carry_no_credentials() {
+        let mut config = build_mcp_servers_tests::test_config();
+        config.keys = identity::AgentIdentity::token(
+            nostr::Keys::generate().public_key(),
+            identity::BotToken::new("bzb_mcp".into(), i64::MAX),
+        );
+        let servers = build_mcp_servers(&config);
+        assert_eq!(servers.len(), 1);
+        for var in &servers[0].env {
+            assert!(
+                !matches!(
+                    var.name.as_str(),
+                    "BUZZ_PRIVATE_KEY"
+                        | "BUZZ_BOT_TOKEN"
+                        | "BUZZ_ACCESS_TOKEN"
+                        | "BUZZ_TOKEN_BROKER_URL"
+                        | "BUZZ_TOKEN_BROKER_SECRET"
+                ),
+                "{} must not be baked into the shared MCP definition",
+                var.name
+            );
+            assert!(!var.value.contains("bzb_mcp"));
+        }
+
+        let key_mode = build_mcp_servers(&build_mcp_servers_tests::test_config());
+        assert!(key_mode[0]
+            .env
+            .iter()
+            .any(|var| var.name == "BUZZ_PRIVATE_KEY"));
     }
 }

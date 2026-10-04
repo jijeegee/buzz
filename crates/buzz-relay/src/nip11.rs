@@ -76,6 +76,12 @@ pub struct RelayInfo {
     /// Absent when the relay is in `Off` mode. [FI-TRACE-DISCOVERY-PRIVATE]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub federated_identity: Option<serde_json::Value>,
+    /// Centralized-identity token auth descriptor
+    /// (`{"version": 1, "bearer": true, "oidc_providers": [...]}`).
+    /// Present only when `AUTH_TOKEN_ENABLED`; clients use it to offer
+    /// "Sign in with Google" and switch to bearer/token AUTH.
+    #[serde(rename = "buzz_token_auth", skip_serializing_if = "Option::is_none")]
+    pub token_auth: Option<serde_json::Value>,
 }
 
 /// Public capability descriptor for relay-proxied GIF search.
@@ -276,6 +282,7 @@ impl RelayInfo {
             gif,
             relay_self: relay_self.map(|s| s.to_string()),
             federated_identity,
+            token_auth: None,
         }
     }
 }
@@ -358,6 +365,7 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         admin_api.as_deref(),
         state.config.klipy.as_ref().map(|_| "klipy"),
     );
+    info.token_auth = token_auth_descriptor(&state.identity);
     if let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await {
         info.read_state_snapshot = Some(serde_json::json!({
             "version": 1,
@@ -387,6 +395,19 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         info.push = Some(push);
     }
     info
+}
+
+/// The `buzz_token_auth` NIP-11 descriptor, present only when token auth is on.
+pub(crate) fn token_auth_descriptor(
+    identity: &crate::identity::IdentityRuntime,
+) -> Option<serde_json::Value> {
+    identity.enabled().then(|| {
+        serde_json::json!({
+            "version": 1,
+            "bearer": true,
+            "oidc_providers": identity.provider_names(),
+        })
+    })
 }
 
 /// Fetches the workspace icon for the community bound to `raw_host`, as the
@@ -646,6 +667,32 @@ mod tests {
                 "unset/cleared icon must omit the `icon` field, not serialize null/empty"
             );
         }
+    }
+
+    #[test]
+    fn token_auth_descriptor_follows_the_flag() {
+        let mut config = crate::identity::AuthTokenConfig::disabled("ws://h");
+        let off = crate::identity::IdentityRuntime::new(config.clone());
+        assert!(token_auth_descriptor(&off).is_none());
+        let info = RelayInfo::build(
+            None,
+            None,
+            RelayCapabilityFlags::default(),
+            DEFAULT_MAX_FRAME_BYTES,
+            None,
+            None,
+            None,
+        );
+        let json = serde_json::to_value(&info).expect("serialize");
+        assert!(json.get("buzz_token_auth").is_none(), "absent when off");
+
+        config.enabled = true;
+        config.fake_oidc = true;
+        let on = crate::identity::IdentityRuntime::new(config);
+        assert_eq!(
+            token_auth_descriptor(&on),
+            Some(serde_json::json!({"version": 1, "bearer": true, "oidc_providers": ["google"]}))
+        );
     }
 
     #[test]

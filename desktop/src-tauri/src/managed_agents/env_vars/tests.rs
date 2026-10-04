@@ -125,6 +125,25 @@ fn merged_env_strips_reserved_case_insensitive() {
     assert!(merged.is_empty());
 }
 
+/// Token-mode credentials are Desktop-owned: saved persona/agent env can
+/// neither inject a bot token (identity swap) nor redirect the broker.
+#[test]
+fn merged_env_strips_bearer_token_keys() {
+    let agent = map(&[
+        ("BUZZ_BOT_TOKEN", "bzb_evil"),
+        ("BUZZ_BOT_TOKEN_EXPIRES_AT", "1"),
+        ("BUZZ_ACCESS_TOKEN", "bzs_evil"),
+        ("BUZZ_TOKEN_BROKER_URL", "http://127.0.0.1:1"),
+        ("buzz_token_broker_secret", "s"),
+        ("FOO", "1"),
+    ]);
+    let merged = merged_user_env(&BTreeMap::new(), &agent);
+    assert_eq!(merged.keys().collect::<Vec<_>>(), vec!["FOO"]);
+    for key in crate::auth::bots::TOKEN_ENV_KEYS {
+        assert!(is_reserved_env_key(key), "{key} must be reserved");
+    }
+}
+
 #[test]
 fn is_reserved_recognises_full_list() {
     for key in RESERVED_ENV_KEYS {

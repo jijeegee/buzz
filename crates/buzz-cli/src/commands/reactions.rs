@@ -37,10 +37,8 @@ pub async fn cmd_remove_reaction(
     emoji: &str,
 ) -> Result<(), CliError> {
     validate_hex64(event_id)?;
-    let keys = client.keys();
-
     // Find our reaction event by querying kind:7 reactions on this event from us
-    let my_pk = keys.public_key().to_hex();
+    let my_pk = client.pubkey().to_hex();
     let filter = serde_json::json!({
         "kinds": [7],
         "#e": [event_id],

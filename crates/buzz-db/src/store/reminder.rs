@@ -79,7 +79,10 @@ pub async fn query_due_reminders(
             kind: row.get("kind"),
             tags: row.get("tags"),
             content: row.get("content"),
-            sig: row.get("sig"),
+            // Nullable since migration 0057; stamped events use the sentinel.
+            sig: row
+                .get::<Option<Vec<u8>>, _>("sig")
+                .unwrap_or_else(|| buzz_core::draft::SENTINEL_SIG.to_vec()),
             channel_id: row.get("channel_id"),
         })
         .collect();

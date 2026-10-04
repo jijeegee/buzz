@@ -123,6 +123,7 @@ mod tests {
             definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
+            bot_origin: None,
         }
     }
 

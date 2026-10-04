@@ -107,11 +107,11 @@ pub struct ActiveWorkspaceInfo {
 /// Returns the current active workspace info (relay URL + pubkey).
 #[tauri::command]
 pub fn get_active_workspace(state: State<'_, AppState>) -> Result<ActiveWorkspaceInfo, String> {
-    let keys = state.keys.lock().map_err(|e| e.to_string())?;
+    let pubkey = state.current_identity_pubkey()?;
     let relay_url = relay::relay_ws_url_with_override(&state);
     Ok(ActiveWorkspaceInfo {
         relay_url,
-        pubkey: keys.public_key().to_hex(),
+        pubkey: pubkey.to_hex(),
     })
 }
 

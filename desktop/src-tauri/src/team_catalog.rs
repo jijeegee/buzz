@@ -64,7 +64,7 @@ pub(crate) async fn fetch_team_catalog(
     state: State<'_, AppState>,
     relay_client: State<'_, NativeRelayClient>,
 ) -> Result<Vec<TeamCatalogPublication>, String> {
-    let keys = state.signing_keys()?;
+    let keys = state.native_auth()?;
     let owner = keys.public_key().to_hex();
     let relay_url = crate::relay::relay_ws_url_with_override(&state);
     let session = relay_client.session(relay_url.clone(), keys).await;
@@ -90,7 +90,7 @@ pub(crate) async fn fetch_team_catalog(
     })
     .await?;
 
-    let current_keys = state.signing_keys()?;
+    let current_keys = state.native_auth()?;
     if current_keys.public_key().to_hex() != owner
         || crate::relay::relay_ws_url_with_override(&state) != relay_url
     {
@@ -188,7 +188,7 @@ enum PageProgress {
 /// test drives the exact seam production does, not a stubbed result.
 fn verify_page(page: Vec<Event>) -> Vec<Event> {
     page.into_iter()
-        .filter(|event| event.verify().is_ok())
+        .filter(buzz_core_pkg::draft::verify_served_event)
         .collect()
 }
 

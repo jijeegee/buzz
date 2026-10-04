@@ -9,6 +9,10 @@ let renderHook, waitFor, cleanup, act, useCommunityInit, relayClient;
 const calls = [];
 const pendingTrust = [];
 let holdTrust = false;
+let tokenStatus;
+const listeners = [];
+const callbacks = [];
+let tokenAuthApi;
 const a = { id: "a", relayUrl: "wss://a.example", name: "A" };
 const b = { id: "b", relayUrl: "wss://b.example", name: "B" };
 
@@ -28,17 +32,30 @@ before(async () => {
         });
       }
       if (command === "get_identity") return { pubkey: "a".repeat(64) };
+      if (command === "get_token_auth_status") return tokenStatus;
+      if (command === "plugin:event|listen") {
+        listeners.push({ event: args.event, handler: args.handler });
+        return listeners.length;
+      }
       if (command === "get_relay_url") return b.relayUrl;
       return undefined;
     },
-    transformCallback: () => 1,
+    transformCallback: (callback) => {
+      callbacks.push(callback);
+      return callbacks.length - 1;
+    },
+    unregisterCallback: () => {},
   };
+  dom.window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+  globalThis.__TAURI_EVENT_PLUGIN_INTERNALS__ =
+    dom.window.__TAURI_EVENT_PLUGIN_INTERNALS__;
   globalThis.__TAURI_INTERNALS__ = dom.window.__TAURI_INTERNALS__;
   ({ renderHook, waitFor, cleanup, act } = await import(
     "@testing-library/react"
   ));
   ({ useCommunityInit } = await import("./useCommunityInit.ts"));
   ({ relayClient } = await import("@/shared/api/relayClient"));
+  tokenAuthApi = await import("@/shared/api/tokenAuth");
 });
 afterEach(async () => {
   cleanup();
@@ -48,6 +65,8 @@ afterEach(async () => {
   });
   pendingTrust.length = 0;
   calls.length = 0;
+  listeners.length = 0;
+  tokenStatus = undefined;
   localStorage.clear();
 });
 after(() => dom.window.close());
@@ -176,3 +195,55 @@ for (const failingUpdate of [0, 1]) {
     assert.equal(pendingTrust.length, failingUpdate + 1);
   });
 }
+
+function tokenStatusOf(state, principal = null) {
+  return {
+    origin: "https://b.example",
+    supported: true,
+    providers: ["google"],
+    state,
+    principal,
+    deviceId: null,
+    reason: null,
+  };
+}
+
+function emitTokenAuthChanged() {
+  for (const { event, handler } of listeners) {
+    if (event === "token-auth-changed") {
+      callbacks[handler]({ event, id: handler, payload: "https://b.example" });
+    }
+  }
+}
+
+// B3: a restore still retrying at init (state "restoring") leaves the app on
+// the local identity; when it completes, the app reloads into the account
+// identity, as sign-in does. An unchanged identity never reloads.
+test("token identity appearing after init reloads into it", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  tokenStatus = tokenStatusOf("restoring");
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+  await act(async () => emitTokenAuthChanged());
+  await act(async () => {});
+  assert.equal(reload.mock.callCount(), 0, "still restoring: no reload");
+  tokenStatus = tokenStatusOf("active", "c".repeat(64));
+  await act(async () => emitTokenAuthChanged());
+  await waitFor(() => assert.equal(reload.mock.callCount(), 1));
+});
+
+test("an unchanged signed-in identity does not reload", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  tokenStatus = tokenStatusOf("active", "c".repeat(64));
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+  await act(async () => emitTokenAuthChanged());
+  await act(async () => {});
+  assert.equal(reload.mock.callCount(), 0);
+});

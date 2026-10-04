@@ -107,7 +107,11 @@ class NostrEvent {
   final int kind;
   final List<List<String>> tags;
   final String content;
-  final String sig;
+
+  /// Schnorr signature. Absent (or the all-zero sentinel) on events the relay
+  /// stamped for a token-authenticated sender (centralized identity): the
+  /// relay, not a signature, vouches for `pubkey` there.
+  final String? sig;
 
   const NostrEvent({
     required this.id,
@@ -116,7 +120,7 @@ class NostrEvent {
     required this.kind,
     required this.tags,
     required this.content,
-    required this.sig,
+    this.sig,
   });
 
   factory NostrEvent.fromJson(Map<String, dynamic> json) {
@@ -129,7 +133,7 @@ class NostrEvent {
           .map((t) => (t as List<dynamic>).map((e) => e as String).toList())
           .toList(),
       content: json['content'] as String,
-      sig: json['sig'] as String,
+      sig: json['sig'] as String?,
     );
   }
 
@@ -140,7 +144,7 @@ class NostrEvent {
     'kind': kind,
     'tags': tags,
     'content': content,
-    'sig': sig,
+    if (sig != null) 'sig': sig,
   };
 
   /// Get the first value for a given tag key.

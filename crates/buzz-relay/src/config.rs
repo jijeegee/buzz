@@ -384,6 +384,8 @@ pub struct Config {
     /// at WebSocket upgrade. `Off` mode (the default) leaves all identity
     /// enforcement to NIP-42 alone.
     pub nip_fi: crate::nip_fi_config::NipFiRelayConfig,
+    /// Centralized-identity token auth (`AUTH_TOKEN_ENABLED`, default off).
+    pub auth_token: crate::identity::AuthTokenConfig,
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -1331,6 +1333,9 @@ impl Config {
             ));
         }
 
+        // Centralized-identity token auth (Phase 0, default off).
+        let auth_token = crate::identity::AuthTokenConfig::from_env(&relay_url)?;
+
         Ok(Self {
             bind_addr,
             database_url,
@@ -1393,6 +1398,7 @@ impl Config {
             web_dir,
             serve_git_web_gui,
             nip_fi: crate::nip_fi_config::NipFiRelayConfig::from_env()?,
+            auth_token,
         })
     }
 

@@ -337,7 +337,10 @@ pub(crate) async fn search_entries(
 ) -> Result<Vec<GifEntry>, CliError> {
     let (search_path, _) = resolve_gif_descriptor(client).await?;
     let cid = customer_id(
-        client.keys().secret_key().as_secret_bytes(),
+        client
+            .keys("GIF customer ids (derived from the secret key)")?
+            .secret_key()
+            .as_secret_bytes(),
         client.relay_url(),
     );
     let locale = locale.map(|l| l.to_string()).unwrap_or_else(default_locale);
@@ -359,7 +362,10 @@ pub(crate) async fn search_entries(
 pub async fn cmd_share(client: &BuzzClient, slug: &str) -> Result<(), CliError> {
     let (_, share_path) = resolve_gif_descriptor(client).await?;
     let cid = customer_id(
-        client.keys().secret_key().as_secret_bytes(),
+        client
+            .keys("GIF customer ids (derived from the secret key)")?
+            .secret_key()
+            .as_secret_bytes(),
         client.relay_url(),
     );
 

@@ -20,7 +20,7 @@ pub(crate) async fn fetch_own_repo_announcement(
 ) -> Result<Option<Event>, CliError> {
     let filter = serde_json::json!({
         "kinds": [KIND_GIT_REPO_ANNOUNCEMENT],
-        "authors": [client.keys().public_key().to_hex()],
+        "authors": [client.pubkey().to_hex()],
         "#d": [repo_id],
         "limit": 1,
     });
@@ -313,7 +313,7 @@ pub async fn cmd_list_repos(
             crate::validate::validate_hex64(pk)?;
             pk.to_string()
         }
-        None => client.keys().public_key().to_hex(),
+        None => client.pubkey().to_hex(),
     };
 
     let mut filter = serde_json::json!({

@@ -93,7 +93,26 @@ where
     S: Into<std::ffi::OsString> + Clone,
 {
     let matches = build_command().try_get_matches_from(args)?;
-    Cli::from_arg_matches(&matches)
+    let mut cli = Cli::from_arg_matches(&matches)?;
+    cli.private_key_from_argv =
+        matches.value_source("private_key") == Some(clap::parser::ValueSource::CommandLine);
+    Ok(cli)
+}
+
+/// The token source `run` uses: an explicit `--private-key` on the command
+/// line selects key mode and wins over any token env var (a stray
+/// `BUZZ_ACCESS_TOKEN` must not silently change the identity). Otherwise the
+/// env token source (`BUZZ_BOT_TOKEN` > `BUZZ_ACCESS_TOKEN` > broker) wins
+/// over an env `BUZZ_PRIVATE_KEY`.
+fn token_source_for(
+    cli: &Cli,
+    env_source: Option<buzz_token_broker::TokenSource>,
+) -> Option<buzz_token_broker::TokenSource> {
+    if cli.private_key_from_argv {
+        None
+    } else {
+        env_source
+    }
 }
 
 #[derive(Parser)]
@@ -105,8 +124,13 @@ Buzz CLI — interact with a Buzz relay
 
 Configuration (flags override env vars):
   BUZZ_RELAY_URL     Relay base URL        [default: http://localhost:3000]
-  BUZZ_PRIVATE_KEY   Nostr private key (hex or nsec)  [required]
-  BUZZ_AUTH_TAG      NIP-OA auth tag JSON  [optional]
+  BUZZ_BOT_TOKEN     Bot access token (token mode; wins over everything below)
+  BUZZ_ACCESS_TOKEN  Access token (token mode)
+  BUZZ_TOKEN_BROKER_URL + BUZZ_TOKEN_BROKER_SECRET
+                     buzz-acp token broker (token mode, inside hosted agents)
+  BUZZ_PRIVATE_KEY   Nostr private key (hex or nsec)  [key mode, if no token]
+                     (--private-key on the command line always selects key mode)
+  BUZZ_AUTH_TAG      NIP-OA auth tag JSON  [key mode, optional]
 
 The 'pack' subcommand runs locally and does not require a relay connection.
 
@@ -121,6 +145,10 @@ struct Cli {
     /// Nostr private key (hex or nsec). This is the CLI's identity.
     #[arg(long, env = "BUZZ_PRIVATE_KEY", hide_env_values = true)]
     private_key: Option<String>,
+
+    /// `--private-key` came from argv rather than `BUZZ_PRIVATE_KEY`.
+    #[arg(skip)]
+    private_key_from_argv: bool,
 
     /// NIP-OA auth tag JSON (owner attestation). Injected into every signed event.
     #[arg(long, env = "BUZZ_AUTH_TAG", hide_env_values = true)]
@@ -2143,21 +2171,28 @@ fn normalize_auth_tag_input(input: &str) -> String {
     trimmed.to_owned()
 }
 
-async fn run(cli: Cli) -> Result<(), CliError> {
-    let relay_url = client::normalize_relay_url(&cli.relay);
-
-    // Pack commands are local-only — no relay connection needed.
-    if let Cmd::Pack(ref sub) = cli.command {
-        return match sub {
-            PackCmd::Validate { path } => commands::pack::cmd_validate(path),
-            PackCmd::Inspect { path } => commands::pack::cmd_inspect(path),
-        };
+/// Build the relay client from the configured credential.
+///
+/// A token source (`BUZZ_BOT_TOKEN` > `BUZZ_ACCESS_TOKEN` > the acp token
+/// broker) wins; the principal is resolved with `GET /auth/me`. Without one the
+/// CLI falls back to key mode (`BUZZ_PRIVATE_KEY`, optional `BUZZ_AUTH_TAG`),
+/// which Phase 3 removes. Neither configured is an auth error (exit 3).
+pub(crate) async fn build_client(
+    relay_url: String,
+    token_source: Option<buzz_token_broker::TokenSource>,
+    private_key: Option<String>,
+    auth_tag: Option<String>,
+) -> Result<BuzzClient, CliError> {
+    if let Some(source) = token_source {
+        return BuzzClient::from_token_source(relay_url, source).await;
     }
 
-    // Auth: private key is required for all relay operations.
-    // The keypair IS the identity — no tokens, no other auth.
-    let private_key_str = cli.private_key.ok_or_else(|| {
-        CliError::Auth("BUZZ_PRIVATE_KEY is required (use --private-key or set env var)".into())
+    // Key mode: the keypair IS the identity.
+    let private_key_str = private_key.ok_or_else(|| {
+        CliError::Auth(
+            "BUZZ_PRIVATE_KEY is required (use --private-key or set env var),              or provide BUZZ_BOT_TOKEN / BUZZ_ACCESS_TOKEN / BUZZ_TOKEN_BROKER_URL"
+                .into(),
+        )
     })?;
     let keys = Keys::parse(&private_key_str)
         .map_err(|e| CliError::Key(format!("invalid BUZZ_PRIVATE_KEY: {e}")))?;
@@ -2169,7 +2204,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
     // edge only. The SDK grammar and the `x-auth-tag` wire format stay strict
     // JSON; all validation and signature verification happen on the strict
     // path below, unchanged.
-    let (auth_tag, auth_tag_json) = match cli.auth_tag {
+    let (auth_tag, auth_tag_json) = match auth_tag {
         Some(ref input) if !input.is_empty() => {
             let json = normalize_auth_tag_input(input);
             let tag = buzz_sdk::nip_oa::parse_auth_tag(&json)
@@ -2189,7 +2224,22 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         _ => (None, None),
     };
 
-    let client = BuzzClient::new(relay_url, keys, auth_tag, auth_tag_json)?;
+    BuzzClient::new(relay_url, keys, auth_tag, auth_tag_json)
+}
+
+async fn run(cli: Cli) -> Result<(), CliError> {
+    let relay_url = client::normalize_relay_url(&cli.relay);
+
+    // Pack commands are local-only — no relay connection needed.
+    if let Cmd::Pack(ref sub) = cli.command {
+        return match sub {
+            PackCmd::Validate { path } => commands::pack::cmd_validate(path),
+            PackCmd::Inspect { path } => commands::pack::cmd_inspect(path),
+        };
+    }
+
+    let token_source = token_source_for(&cli, buzz_token_broker::TokenSource::from_env());
+    let client = build_client(relay_url, token_source, cli.private_key, cli.auth_tag).await?;
 
     match cli.command {
         Cmd::Agents(sub) => commands::agents::dispatch(sub, &client).await,
@@ -2222,6 +2272,38 @@ async fn run(cli: Cli) -> Result<(), CliError> {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+
+    /// An explicit `--private-key` on argv selects key mode even when a token
+    /// env var is set; without it the env token source passes through.
+    #[test]
+    fn argv_private_key_wins_over_token_env() {
+        let token = || {
+            Some(buzz_token_broker::TokenSource::AccessToken(
+                buzz_token_broker::Secret::new("bzs_stray".into()),
+            ))
+        };
+        let key = "1".repeat(64);
+        let with_key =
+            parse_args(["buzz", "--private-key", key.as_str(), "channels", "list"]).unwrap();
+        assert!(with_key.private_key_from_argv);
+        assert!(token_source_for(&with_key, token()).is_none());
+
+        let without = parse_args(["buzz", "channels", "list"]).unwrap();
+        assert!(!without.private_key_from_argv);
+        assert!(token_source_for(&without, token()).is_some());
+    }
+
+    /// The bot token is env-only: there is no argv flag that would put it in
+    /// the process list.
+    #[test]
+    fn bot_token_has_no_argv_flag() {
+        for flag in ["--bot-token", "--access-token", "--token"] {
+            assert!(
+                parse_args(["buzz", flag, "bzb_x", "channels", "list"]).is_err(),
+                "{flag} must not exist"
+            );
+        }
+    }
 
     /// Raw shorthand `[auth,hex,,hex]` normalizes to strict JSON; the empty
     /// conditions field becomes `""`.

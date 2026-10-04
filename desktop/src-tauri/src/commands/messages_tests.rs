@@ -276,3 +276,143 @@ fn feed_item_from_event_carries_singular_mention_category() {
     assert_eq!(json["category"], "mention");
     assert_eq!(json["id"], event.id.to_hex());
 }
+
+fn poster_test_record(keys: &Keys) -> ManagedAgentRecord {
+    let mut record: ManagedAgentRecord = serde_json::from_value(serde_json::json!({
+        "pubkey": keys.public_key().to_hex(),
+        "name": "Fizz",
+        "private_key_nsec": nostr::ToBech32::to_bech32(keys.secret_key()).expect("nsec"),
+        "relay_url": "",
+        "acp_command": "buzz-acp",
+        "agent_command": "goose",
+        "agent_args": [],
+        "mcp_command": "",
+        "turn_timeout_seconds": 320,
+        "system_prompt": null,
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "last_started_at": null,
+        "last_stopped_at": null,
+        "last_exit_code": null,
+        "last_error": null
+    }))
+    .expect("record");
+    record.bot_origin = None;
+    record
+}
+
+fn fallback(content: &str) -> UserFallbackMessage {
+    UserFallbackMessage {
+        content: content.into(),
+        additional_markers: vec!["closer".into()],
+    }
+}
+
+#[test]
+fn token_mode_posts_the_user_fallback_instead_of_dropping_the_message() {
+    let keys = Keys::generate();
+    let record = poster_test_record(&keys);
+    match managed_agent_poster(&record, true, Some(fallback("@Fizz hi"))) {
+        Ok(ManagedAgentPoster::User(message)) => {
+            assert_eq!(message.content, "@Fizz hi");
+            assert_eq!(message.additional_markers, vec!["closer".to_string()]);
+        }
+        other => panic!("token mode must post as the user, got {other:?}"),
+    }
+    // Without a fallback the refusal still surfaces as an error.
+    let error = managed_agent_poster(&record, true, None).expect_err("refused");
+    assert!(error.contains("Google"), "{error}");
+    // A blank fallback is no fallback.
+    assert!(managed_agent_poster(&record, true, Some(fallback("  "))).is_err());
+}
+
+#[test]
+fn bot_record_posts_the_user_fallback_even_when_signed_out() {
+    let keys = Keys::generate();
+    let mut record = poster_test_record(&keys);
+    crate::auth::bots::adopt_record_identity(
+        &mut record,
+        &Keys::generate().public_key().to_hex(),
+        "http://o.test",
+    );
+    assert!(matches!(
+        managed_agent_poster(&record, false, Some(fallback("@Fizz hi"))),
+        Ok(ManagedAgentPoster::User(_))
+    ));
+}
+
+#[test]
+fn key_mode_signs_as_the_agent_and_ignores_the_fallback() {
+    let keys = Keys::generate();
+    let record = poster_test_record(&keys);
+    match managed_agent_poster(&record, false, Some(fallback("@Fizz hi"))) {
+        Ok(ManagedAgentPoster::Agent(agent_keys)) => {
+            assert_eq!(agent_keys.public_key(), keys.public_key());
+        }
+        other => panic!("key mode must sign as the agent, got {other:?}"),
+    }
+    // A broken key in key mode is an error, never a silent user post.
+    let mut broken = poster_test_record(&keys);
+    broken.private_key_nsec = "not-a-key".into();
+    assert!(managed_agent_poster(&broken, false, Some(fallback("@Fizz hi"))).is_err());
+}
+
+#[test]
+fn user_fallback_mentions_put_the_agent_first_without_duplicates() {
+    let agent = "a".repeat(64);
+    let teammate = "b".repeat(64);
+    assert_eq!(
+        user_fallback_mentions(
+            &agent,
+            vec![agent.to_uppercase(), teammate.clone(), teammate.clone()]
+        ),
+        vec![agent.clone(), teammate]
+    );
+    assert_eq!(user_fallback_mentions(&agent, vec![]), vec![agent]);
+}
+
+#[test]
+fn client_marker_tags_skip_blank_markers() {
+    assert_eq!(
+        client_marker_tags(Some("opener"), vec![" ".into(), "closer".into()]),
+        vec![
+            vec!["client".to_string(), "opener".to_string()],
+            vec!["client".to_string(), "closer".to_string()],
+        ]
+    );
+}
+
+#[test]
+fn key_mode_agent_post_does_not_need_the_user_credential() {
+    // Recovery mode: the user's key is unavailable, the agent's is not.
+    let keys = Keys::generate();
+    let record = poster_test_record(&keys);
+    let result = resolve_managed_agent_poster(
+        &record,
+        &crate::auth::CredentialMode::Keys,
+        Some(fallback("@Fizz hi")),
+        || Err("user key unavailable (recovery mode)".to_string()),
+    );
+    match result {
+        Ok((ManagedAgentPoster::Agent(signer), None)) => {
+            assert_eq!(signer.public_key(), keys.public_key());
+        }
+        Ok(_) => panic!("expected the agent to post without a user credential"),
+        Err(error) => panic!("agent post failed: {error}"),
+    }
+}
+
+#[test]
+fn a_blocked_token_community_never_signs_as_the_agent() {
+    let keys = Keys::generate();
+    let record = poster_test_record(&keys);
+    let error = resolve_managed_agent_poster(
+        &record,
+        &crate::auth::CredentialMode::Blocked("restoring".into()),
+        Some(fallback("@Fizz hi")),
+        || Err("restoring".to_string()),
+    )
+    .map(|_| ())
+    .expect_err("blocked token community must not post");
+    assert_eq!(error, "restoring");
+}

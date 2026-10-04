@@ -19,6 +19,9 @@ pub const AUTH_CHALLENGE_TIMEOUT_SECS: u64 = 20;
 /// Seconds to wait for the relay's OK response to the AUTH event.
 pub const AUTH_OK_TIMEOUT_SECS: u64 = 20;
 
+/// The `OK` label the relay uses for token AUTH replies.
+pub const TOKEN_AUTH_OK_ID: &str = "auth";
+
 /// Seconds to wait for the relay's OK response to a published event.
 pub const PUBLISH_OK_TIMEOUT_SECS: u64 = 30;
 
@@ -89,6 +92,32 @@ impl NostrWsConnection {
         }
 
         debug!("NIP-42 authentication successful");
+        Ok(())
+    }
+
+    /// Connects to the relay at `url` and authenticates with a centralized-identity
+    /// access token (`["AUTH", {"token": …}]`).
+    pub async fn connect_with_token(url: &str, token: &str) -> Result<Self, WsClientError> {
+        let mut conn = Self::connect(url).await?;
+        conn.authenticate_token(token).await?;
+        Ok(conn)
+    }
+
+    /// Authenticates (or, on an already-authenticated connection, re-AUTHs) with
+    /// an access token and waits for `["OK", "auth", …]`.
+    ///
+    /// A re-AUTH with a token for the same principal swaps the connection's
+    /// binding without touching subscriptions. The relay's NIP-42 challenge,
+    /// if any, is not needed and stays buffered.
+    pub async fn authenticate_token(&mut self, token: &str) -> Result<(), WsClientError> {
+        self.send_raw(&json!(["AUTH", { "token": token }])).await?;
+        let ok = self
+            .wait_for_ok(TOKEN_AUTH_OK_ID, Duration::from_secs(AUTH_OK_TIMEOUT_SECS))
+            .await?;
+        if !ok.accepted {
+            return Err(WsClientError::AuthFailed(ok.message));
+        }
+        debug!("token authentication successful");
         Ok(())
     }
 
@@ -291,6 +320,25 @@ pub async fn publish_event(
     .await
     .map_err(|_| WsClientError::Timeout)?;
     result
+}
+
+/// One-shot helper for token auth: connect, AUTH with `token`, send one event
+/// (a draft built by `buzz_sdk::signer::EventSigner::Principal` or any event
+/// whose `pubkey` is the token's principal), disconnect.
+pub async fn publish_event_with_token(
+    relay_url: &str,
+    event: Event,
+    token: &str,
+    timeout_secs: u64,
+) -> Result<OkResponse, WsClientError> {
+    tokio::time::timeout(Duration::from_secs(timeout_secs), async {
+        let mut conn = NostrWsConnection::connect_with_token(relay_url, token).await?;
+        let ok = conn.send_event(event).await?;
+        let _ = conn.disconnect().await;
+        Ok::<_, WsClientError>(ok)
+    })
+    .await
+    .map_err(|_| WsClientError::Timeout)?
 }
 
 #[cfg(test)]

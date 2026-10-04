@@ -225,7 +225,9 @@ CREATE TABLE events (
              ELSE to_tsvector('simple', content)
         END
     ) STORED,
-    sig         BYTEA NOT NULL,
+    -- Nullable since migration 0057: token-authenticated events are server
+    -- stamped (Phase 0 still writes a 64-byte zero sentinel).
+    sig         BYTEA,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     channel_id  UUID,
     deleted_at  TIMESTAMPTZ,
@@ -1818,6 +1820,119 @@ CREATE TABLE relay_operators (
 
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('relay_operators', 'deployment-global operator/moderator roster; no community_id intentionally');
+
+-- ── Centralized identity (migrations 0056/0058) ──────────────────────────────
+-- Server accounts, devices, sessions, bots and opaque access-token hashes.
+-- Deployment-global (no community_id). Principal ids are valid x-only
+-- secp256k1 public keys; the store layer is the only writer. The relay
+-- principal row is created by relay startup code, not seeded here.
+
+CREATE TABLE principals (
+    id            BYTEA PRIMARY KEY CHECK (length(id) = 32),
+    kind          TEXT NOT NULL CHECK (kind IN ('user', 'bot', 'relay')),
+    display_name  TEXT NOT NULL DEFAULT '',
+    avatar_url    TEXT,
+    username      TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    disabled_at   TIMESTAMPTZ,
+    purge_after   TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX principals_username_lower
+    ON principals (lower(username)) WHERE username IS NOT NULL;
+-- Exactly one relay principal per deployment; concurrent first boots converge.
+CREATE UNIQUE INDEX principals_single_relay
+    ON principals (kind) WHERE kind = 'relay';
+
+-- External identities. Adding a provider (Apple, ...) is a CHECK extension.
+CREATE TABLE identities (
+    provider      TEXT NOT NULL CHECK (provider IN ('google')),
+    subject       TEXT NOT NULL,
+    principal_id  BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    email         TEXT,
+    linked_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_login_at TIMESTAMPTZ,
+    PRIMARY KEY (provider, subject)
+);
+CREATE INDEX identities_principal ON identities (principal_id);
+
+CREATE TABLE devices (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    principal_id  BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    platform      TEXT NOT NULL CHECK (platform IN ('desktop', 'mobile', 'web', 'cli')),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at    TIMESTAMPTZ
+);
+CREATE INDEX devices_principal ON devices (principal_id);
+
+CREATE TABLE sessions (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    device_id         UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at        TIMESTAMPTZ,
+    revoked_reason    TEXT
+);
+CREATE INDEX sessions_device ON sessions (device_id);
+
+-- Refresh-token rotation history: one row per issued refresh token. A consumed
+-- row keeps used_at so a replay is detectable (refresh reuse => session revoke).
+CREATE TABLE refresh_tokens (
+    token_hash    BYTEA PRIMARY KEY CHECK (length(token_hash) = 32),
+    session_id    UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    generation    INT  NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at    TIMESTAMPTZ NOT NULL,
+    used_at       TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX refresh_tokens_live
+    ON refresh_tokens (session_id) WHERE used_at IS NULL;
+CREATE INDEX refresh_tokens_session ON refresh_tokens (session_id);
+
+-- owner_principal_id intentionally has no ON DELETE action: purging an owner
+-- without first deleting its bots fails instead of orphaning them.
+CREATE TABLE bots (
+    id                 BYTEA PRIMARY KEY REFERENCES principals(id) ON DELETE CASCADE,
+    owner_principal_id BYTEA NOT NULL REFERENCES principals(id),
+    host_device_id     UUID REFERENCES devices(id) ON DELETE SET NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at         TIMESTAMPTZ
+);
+CREATE INDEX bots_owner ON bots (owner_principal_id) WHERE deleted_at IS NULL;
+CREATE INDEX bots_host_device ON bots (host_device_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE access_tokens (
+    token_hash       BYTEA PRIMARY KEY CHECK (length(token_hash) = 32),
+    principal_id     BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    kind             TEXT NOT NULL CHECK (kind IN ('user', 'bot', 'bot_headless')),
+    session_id       UUID REFERENCES sessions(id) ON DELETE CASCADE,
+    bot_id           BYTEA REFERENCES bots(id) ON DELETE CASCADE,
+    issued_by_device UUID REFERENCES devices(id) ON DELETE CASCADE,
+    expires_at       TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at     TIMESTAMPTZ,
+    superseded_at    TIMESTAMPTZ,
+    revoked_at       TIMESTAMPTZ,
+    revoked_reason   TEXT,
+    -- Named so scripts/reconcile-schema-after-pgschema.sql can restore it:
+    -- pgschema drops multi-column CHECK constraints.
+    CONSTRAINT access_tokens_kind_shape CHECK (
+        (kind = 'user' AND session_id IS NOT NULL AND bot_id IS NULL)
+        OR (kind <> 'user' AND bot_id IS NOT NULL AND session_id IS NULL))
+);
+CREATE INDEX access_tokens_principal ON access_tokens (principal_id) WHERE revoked_at IS NULL;
+CREATE INDEX access_tokens_session ON access_tokens (session_id) WHERE revoked_at IS NULL;
+CREATE INDEX access_tokens_bot ON access_tokens (bot_id) WHERE revoked_at IS NULL;
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('principals', 'deployment-global server accounts (users, bots, relay); no community_id intentionally'),
+    ('identities', 'deployment-global external OIDC identities linked to principals'),
+    ('devices', 'deployment-global login devices of a principal'),
+    ('sessions', 'deployment-global login sessions per device'),
+    ('refresh_tokens', 'deployment-global refresh-token rotation history'),
+    ('bots', 'deployment-global bot registrations owned by a user principal'),
+    ('access_tokens', 'deployment-global opaque access-token hashes');
 
 -- ── Relay admin actions (HTTP enforcement state machine) ──────────────────────
 -- One row per HTTP report-resolution enforcement action. Tracks the durable

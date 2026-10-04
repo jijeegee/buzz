@@ -500,6 +500,38 @@ fn strip_removes_every_buzz_owned_key() {
     }
 }
 
+/// A headless bot token in the user's root Hermes `.env` (the 헤르홈 case,
+/// plan §6.2) must never be seeded into a Buzz-managed agent's profile: the
+/// agent would connect as a different bot.
+#[test]
+fn strip_removes_bearer_token_keys() {
+    let source = "BUZZ_BOT_TOKEN=bzk_rootheadlesstokenvalue
+export BUZZ_ACCESS_TOKEN=bzs_x
+BUZZ_TOKEN_BROKER_URL=http://127.0.0.1:1
+BUZZ_TOKEN_BROKER_SECRET=s
+OPENROUTER_API_KEY=sk-or-123
+";
+    let kept = strip_buzz_owned_env(source);
+    for removed in [
+        "BUZZ_BOT_TOKEN",
+        "bzk_rootheadlesstokenvalue",
+        "BUZZ_ACCESS_TOKEN",
+        "BUZZ_TOKEN_BROKER_URL",
+        "BUZZ_TOKEN_BROKER_SECRET",
+    ] {
+        assert!(
+            !kept.contains(removed),
+            "{removed} must be stripped:
+{kept}"
+        );
+    }
+    assert_eq!(
+        kept,
+        "OPENROUTER_API_KEY=sk-or-123
+"
+    );
+}
+
 #[test]
 fn strip_keeps_other_assignments_verbatim() {
     assert_eq!(
@@ -759,4 +791,24 @@ fn description_is_flattened_to_one_line() {
         sanitize_description("Buzz agent: a\nb\u{0}c "),
         "Buzz agent: a b c"
     );
+}
+
+#[test]
+fn moving_to_a_bot_pubkey_keeps_the_profile() {
+    let root = tempfile::tempdir().expect("root");
+    let old = HermesProfile::under_root(PUBKEY, root.path().to_path_buf()).expect("old");
+    let bot = "fedcba9876543210".repeat(4);
+    let new = HermesProfile::under_root(&bot, root.path().to_path_buf()).expect("new");
+    std::fs::create_dir_all(&old.dir).expect("mkdir");
+    std::fs::write(old.dir.join("memory.md"), "kept").expect("write");
+    assert_eq!(move_profile_dir(&old, &new), Ok(true));
+    assert!(!old.dir.exists());
+    assert_eq!(
+        std::fs::read_to_string(new.dir.join("memory.md")).expect("read"),
+        "kept"
+    );
+    // Never overwrites an existing profile.
+    std::fs::create_dir_all(&old.dir).expect("mkdir again");
+    assert_eq!(move_profile_dir(&old, &new), Ok(false));
+    assert!(old.dir.exists());
 }
