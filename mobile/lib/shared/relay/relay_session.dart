@@ -12,7 +12,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../features/age_gate/age_signal_provider.dart';
 import '../auth/auth.dart';
+import '../auth/token/token_session.dart';
 import 'nostr_models.dart';
+import 'relay_access_tokens.dart';
 import 'relay_client.dart';
 import 'relay_closed_policy.dart';
 import 'relay_http_query_client.dart';
@@ -131,6 +133,18 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   bool _socketConnected = false;
   bool _closedRetryReplayScheduled = false;
 
+  /// Token community transport auth (plan §3.4); `null` in legacy mode.
+  RelayAccessTokens? _accessTokens;
+  final List<void Function()> _tokenListenerRemovers = [];
+
+  /// Parked without a reconnect timer until the token session issues a
+  /// token (signed out, stalled, or the relay refused the last one).
+  bool _awaitingToken = false;
+
+  /// The next socket retries a first AUTH the relay rejected and the token
+  /// session already refreshed; it must not refresh again (one per cycle).
+  bool _retryingRefreshedToken = false;
+
   @override
   SessionState build() {
     final config = ref.watch(relayConfigProvider);
@@ -143,14 +157,57 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
     ref.onDispose(_dispose);
 
-    // Auto-connect when authenticated and we have a signing key (NIP-42 AUTH).
+    final tokens = config.tokenAuth
+        ? ref.watch(relayAccessTokensProvider)
+        : null;
+    _accessTokens = tokens;
+    if (tokens != null) {
+      _tokenListenerRemovers
+        ..add(tokens.addTokenListener(_handleTokenIssued))
+        ..add(tokens.addStateListener(_handleTokenSessionState));
+    }
+
+    // Auto-connect when authenticated and able to AUTH: a token community
+    // through its token session, a legacy one with its signing key (NIP-42).
     final isAuthenticated = authState.value?.status == AuthStatus.authenticated;
-    if (!_ageRestricted && isAuthenticated && config.nsec != null) {
+    final canAuthenticate = config.tokenAuth
+        ? tokens != null
+        : config.nsec != null;
+    if (!_ageRestricted && isAuthenticated && canAuthenticate) {
       // Schedule connection after build completes.
       Future.microtask(() => _connect(config));
     }
 
     return const SessionState(status: SessionStatus.disconnected);
+  }
+
+  /// A token was issued (sign-in or rotation): re-AUTH the live socket so
+  /// it outlives the old token's deadline (a socket still in its first AUTH
+  /// queues it until AUTH OK), or reconnect a parked session.
+  void _handleTokenIssued(String token) {
+    if (_disposed || _ageRestricted) return;
+    final socket = _socket;
+    if (socket != null && !_awaitingToken) {
+      socket.reauthenticate(token);
+      return;
+    }
+    if (!_awaitingToken || _paused) return;
+    _awaitingToken = false;
+    _reconnectTimer?.cancel();
+    _reconnectDelayMs = _baseReconnectDelayMs;
+    unawaited(_connect(ref.read(relayConfigProvider)));
+  }
+
+  /// Sign-out ends the transport: no stale token may be presented again.
+  void _handleTokenSessionState(TokenSessionState tokenState) {
+    if (_disposed || tokenState.status != TokenSessionStatus.signedOut) return;
+    _handleDisconnected(
+      _connectionGeneration,
+      const RelayTokenUnavailableException(),
+    );
+    _connectionGeneration++;
+    _socket?.dispose();
+    _socket = null;
   }
 
   /// Execute a one-shot query via the relay's HTTP bridge (`POST /query`).
@@ -169,19 +226,25 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     );
     // Reuse the session transport on success. A timeout rotates immediately
     // for new queries, then closes the retired client after its peers finish.
-    final response = await _httpQueryClient.post(
+    Future<http.Response> post(String authorization) => _httpQueryClient.post(
       Uri.parse(url),
       headers: {
-        'Authorization': buildNip98AuthHeader(
-          method: 'POST',
-          url: url,
-          bodyBytes: bodyBytes,
-          nsec: config.nsec,
-        ),
+        'Authorization': authorization,
         'Content-Type': 'application/json',
       },
       body: bodyBytes,
       timeout: timeout,
+    );
+    final response = await sendRelayAuthorized(
+      config,
+      config.tokenAuth ? ref.read(relayAccessTokensProvider) : null,
+      post,
+      nip98: () => buildNip98AuthHeader(
+        method: 'POST',
+        url: url,
+        bodyBytes: bodyBytes,
+        nsec: config.nsec,
+      ),
     );
     if (_disposed || _ageRestricted || generation != _contextGeneration) {
       throw StateError('Relay query belongs to a retired session');
@@ -487,6 +550,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     if (_disposed || _ageRestricted) return;
 
     final generation = ++_connectionGeneration;
+    _awaitingToken = false;
     state = SessionState(
       status: _hasConnectedOnce
           ? SessionStatus.reconnecting
@@ -504,6 +568,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       onConnected: () => _handleConnected(generation),
       onDisconnected: (error) => _handleDisconnected(generation, error),
     );
+    socket.accessTokens = config.tokenAuth ? _accessTokens : null;
+    socket.refreshRejectedToken = !_retryingRefreshedToken;
+    _retryingRefreshedToken = false;
     _socket = socket;
 
     await socket.connect();
@@ -527,6 +594,25 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _eventBuffer.clear();
     _flushTimer?.cancel();
     _flushTimer = null;
+    if (error is RelayTokenRefreshedException && _accessTokens != null) {
+      // The relay failed this socket's first AUTH; the refreshed token can
+      // only go on a new one. Reconnect at once, without another refresh.
+      _reconnectTimer?.cancel();
+      state = const SessionState(status: SessionStatus.disconnected);
+      if (_paused) return;
+      _retryingRefreshedToken = true;
+      unawaited(_connect(ref.read(relayConfigProvider)));
+      return;
+    }
+    if (error is RelayTokenUnavailableException ||
+        (error is RelayAuthRejectedException && _accessTokens != null)) {
+      // The token session owns recovery (refresh backoff, stalled/signed-out
+      // gate); the next issued token reconnects via [_handleTokenIssued].
+      _reconnectTimer?.cancel();
+      _awaitingToken = true;
+      state = const SessionState(status: SessionStatus.disconnected);
+      return;
+    }
     if (error is RelayAuthRejectedException) {
       _reconnectTimer?.cancel();
       state = const SessionState(status: SessionStatus.disconnected);
@@ -974,6 +1060,12 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
   void _dispose() {
     _disposed = true;
+    for (final remove in _tokenListenerRemovers) {
+      remove();
+    }
+    _tokenListenerRemovers.clear();
+    _accessTokens = null;
+    _awaitingToken = false;
     _contextGeneration++;
     _beforePauseCallbacks.clear();
     _connectionGeneration++;

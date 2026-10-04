@@ -78,25 +78,42 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     ref.watch(relaySessionProvider);
     final activeCommunity = ref.watch(activeCommunityProvider).value;
 
-    final nsec = relayConfig.nsec?.trim();
-    if (nsec == null || nsec.isEmpty) {
-      return const ReadStateState.inert();
-    }
-
-    final signedRelay = SignedEventRelay(
-      session: ref.read(relaySessionProvider.notifier),
-      nsec: nsec,
-    );
-    final pubkey =
-        _normalizePubkey(activeCommunity?.pubkey) ??
-        _safeDerivedPubkey(signedRelay);
-    if (pubkey == null) {
-      return const ReadStateState.inert();
-    }
-
-    final crypto = ReadStateCrypto.tryCreate(nsec: nsec, pubkey: pubkey);
-    if (crypto == null) {
-      return const ReadStateState.inert();
+    final String pubkey;
+    final ReadStateCrypto? crypto;
+    final SignedEventRelay? signedRelay;
+    if (relayConfig.tokenAuth) {
+      // No signing key: the read state is local-only on this device, keyed
+      // by the token principal (like channel mutes/stars).
+      final principal = _normalizePubkey(relayConfig.principalId);
+      if (principal == null) return const ReadStateState.inert();
+      pubkey = principal;
+      crypto = null;
+      signedRelay = null;
+    } else {
+      final nsec = relayConfig.nsec?.trim();
+      if (nsec == null || nsec.isEmpty) {
+        return const ReadStateState.inert();
+      }
+      final legacyRelay = SignedEventRelay(
+        session: ref.read(relaySessionProvider.notifier),
+        nsec: nsec,
+      );
+      final legacyPubkey =
+          _normalizePubkey(activeCommunity?.pubkey) ??
+          _safeDerivedPubkey(legacyRelay);
+      if (legacyPubkey == null) {
+        return const ReadStateState.inert();
+      }
+      final legacyCrypto = ReadStateCrypto.tryCreate(
+        nsec: nsec,
+        pubkey: legacyPubkey,
+      );
+      if (legacyCrypto == null) {
+        return const ReadStateState.inert();
+      }
+      pubkey = legacyPubkey;
+      crypto = legacyCrypto;
+      signedRelay = legacyRelay;
     }
 
     final prefs = ref.read(savedPrefsProvider);
@@ -105,9 +122,11 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
       pubkey: pubkey,
       prefs: prefs,
       crypto: crypto,
-      relaySession: ref.read(relaySessionProvider.notifier),
+      relaySession: crypto == null
+          ? null
+          : ref.read(relaySessionProvider.notifier),
       signedEventRelay: signedRelay,
-      remoteEnabled: true,
+      remoteEnabled: crypto != null,
       onChanged: () => _emitManagerState(manager),
     );
     _manager = manager;

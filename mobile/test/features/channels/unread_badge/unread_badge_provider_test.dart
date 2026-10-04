@@ -234,11 +234,11 @@ void main() {
   });
 
   test(
-    'read state not ready (isReady: false) does not suppress unread counts',
+    'read state not ready (isReady: false) counts nothing until it is',
     () async {
-      // The provider does not gate on isReady — it computes from whatever
-      // timestamps are in contexts. With an empty context map and readStateReady=false,
-      // readAt is null → channel is unread → (0, 1).
+      // Before the read markers load every observed event has readAt null,
+      // so counting then would flash (and push to the app icon) a badge for
+      // already-read history.
       final container = buildContainer(
         channels: [makeChannel(id: 'ch-a', lastMessageAtSeconds: t20)],
         readContexts: {},
@@ -249,7 +249,7 @@ void main() {
       await container.read(channelsProvider.future);
       final badge = container.read(unreadBadgeProvider);
       expect(badge.highPriorityCount, 0);
-      expect(badge.generalUnreadCount, 1);
+      expect(badge.generalUnreadCount, 0);
     },
   );
 

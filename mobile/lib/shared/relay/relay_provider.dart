@@ -9,14 +9,30 @@ import 'relay_client.dart';
 /// In the pure-nostr world the only secrets the app cares about are:
 ///   - `baseUrl` — where the relay lives (used for WS + media upload)
 ///   - `nsec`    — the user's signing key (drives NIP-42 AUTH and event sigs)
+///
+/// A token-auth community ([tokenAuth]) has no signing key: the relay
+/// authenticates a bearer access token and stamps unsigned drafts as
+/// [principalId]. [nsec] is always `null` then, even if an old key is still
+/// stored, so no transport can fall back to a stale key's identity.
 class RelayConfig {
-  const RelayConfig({required String baseUrl, this.nsec}) : _baseUrl = baseUrl;
+  const RelayConfig({
+    required String baseUrl,
+    this.nsec,
+    this.tokenAuth = false,
+    this.principalId,
+  }) : _baseUrl = baseUrl;
 
   /// Relay origin exactly as the active community stored it.
   final String _baseUrl;
 
   /// Nostr secret key (bech32 nsec) for signing events and NIP-42 AUTH.
   final String? nsec;
+
+  /// Whether the relay authenticates this community by access token.
+  final bool tokenAuth;
+
+  /// The token session's principal (hex pubkey) when [tokenAuth].
+  final String? principalId;
 
   /// The origin as persisted, before scheme canonicalization.
   ///
@@ -87,10 +103,23 @@ class RelayConfigNotifier extends Notifier<RelayConfig> {
     final context = ref.watch(
       activeCommunityProvider.select((value) {
         final active = value.value;
-        return (id: active?.id, relayUrl: active?.relayUrl, nsec: active?.nsec);
+        return (
+          id: active?.id,
+          relayUrl: active?.relayUrl,
+          nsec: active?.nsec,
+          tokenAuth: active?.tokenAuth ?? false,
+          principalId: active?.pubkey,
+        );
       }),
     );
     if (context.relayUrl != null) {
+      if (context.tokenAuth) {
+        return RelayConfig(
+          baseUrl: context.relayUrl!,
+          tokenAuth: true,
+          principalId: context.principalId,
+        );
+      }
       return RelayConfig(baseUrl: context.relayUrl!, nsec: context.nsec);
     }
 
@@ -119,9 +148,11 @@ String? pubkeyFromNsec(String? nsec) {
   }
 }
 
-/// The current user's hex pubkey, derived from the active community nsec.
+/// The current user's hex pubkey: the token principal for a token-auth
+/// community, otherwise derived from the active community nsec.
 final myPubkeyProvider = Provider<String?>((ref) {
   final config = ref.watch(relayConfigProvider);
+  if (config.tokenAuth) return config.principalId;
   return pubkeyFromNsec(config.nsec);
 });
 

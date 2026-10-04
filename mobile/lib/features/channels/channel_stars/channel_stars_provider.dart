@@ -35,28 +35,33 @@ class ChannelStarsNotifier extends Notifier<ChannelStarsState> {
     // Rebuild when the active community changes (pubkey may differ).
     ref.watch(activeCommunityProvider);
 
-    final nsec = relayConfig.nsec?.trim();
-    if (nsec == null || nsec.isEmpty) {
-      return const ChannelStarsState();
-    }
-
-    final pubkey = _safePubkeyFromNsec(nsec);
+    // A token community has no nsec, so no NIP-44 key: the setting is kept
+    // local-only on this device under the principal pubkey.
+    final trimmed = relayConfig.tokenAuth ? null : relayConfig.nsec?.trim();
+    final nsec = trimmed == null || trimmed.isEmpty ? null : trimmed;
+    final pubkey = nsec == null
+        ? (relayConfig.tokenAuth ? relayConfig.principalId : null)
+        : _safePubkeyFromNsec(nsec);
     if (pubkey == null || pubkey.isEmpty) {
       return const ChannelStarsState();
     }
 
-    final ChannelStarsCrypto crypto;
-    try {
-      crypto = ChannelStarsCrypto(nsec, pubkey);
-    } catch (_) {
-      return const ChannelStarsState();
+    ChannelStarsCrypto? crypto;
+    if (nsec != null) {
+      try {
+        crypto = ChannelStarsCrypto(nsec, pubkey);
+      } catch (_) {
+        return const ChannelStarsState();
+      }
     }
 
     final prefs = ref.read(savedPrefsProvider);
-    final signedRelay = SignedEventRelay(
-      session: ref.read(relaySessionProvider.notifier),
-      nsec: nsec,
-    );
+    final signedRelay = nsec == null
+        ? null
+        : SignedEventRelay(
+            session: ref.read(relaySessionProvider.notifier),
+            nsec: nsec,
+          );
 
     late final ChannelStarsManager manager;
     manager = ChannelStarsManager(

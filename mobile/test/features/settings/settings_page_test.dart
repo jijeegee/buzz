@@ -65,7 +65,6 @@ void main() {
             home: SettingsPage(
               profileHeader: const SizedBox.shrink(),
               invitePageBuilder: (_) => const SizedBox.shrink(),
-              identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
             ),
           ),
         ),
@@ -115,7 +114,6 @@ void main() {
             home: SettingsPage(
               profileHeader: const SizedBox.shrink(),
               invitePageBuilder: (_) => const SizedBox.shrink(),
-              identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
             ),
           ),
         ),
@@ -168,7 +166,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const SizedBox.shrink(),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -220,7 +217,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const SizedBox.shrink(),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -270,7 +266,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const SizedBox.shrink(),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -304,7 +299,6 @@ void main() {
             profileEditPageBuilder: (_) =>
                 const Scaffold(body: Text('Profile editor destination')),
             invitePageBuilder: (_) => const SizedBox.shrink(),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -373,7 +367,6 @@ void main() {
             onEditDisplayName: (_) async => opened.add('name'),
             onEditProfileDescription: (_) async => opened.add('description'),
             invitePageBuilder: (_) => const SizedBox.shrink(),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -411,7 +404,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const SizedBox.shrink(),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -446,7 +438,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const SizedBox.shrink(),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -489,7 +480,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const Text('Invite destination'),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -528,7 +518,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const Text('Invite destination'),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -560,7 +549,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const Text('Invite destination'),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),
@@ -592,7 +580,6 @@ void main() {
           home: SettingsPage(
             profileHeader: const SizedBox(height: 100),
             invitePageBuilder: (_) => const SizedBox.shrink(),
-            identityRecoveryPageBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       ),

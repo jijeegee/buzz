@@ -121,6 +121,61 @@ void main() {
     expect(state().isForcedUnread(msgKey), isTrue);
     expect(state().locallyForcedChannelIds, {channelId});
   });
+
+  test('a token community gets a ready, local-only read state keyed by the '
+      'principal (no nsec, never publishes)', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    const principal =
+        'bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22';
+    late _FakeRelaySession session;
+    ProviderContainer build() => ProviderContainer(
+      overrides: [
+        savedPrefsProvider.overrideWithValue(prefs),
+        relayConfigProvider.overrideWith(() => _TokenRelayConfig(principal)),
+        relaySessionProvider.overrideWith(() => session = _FakeRelaySession()),
+        activeCommunityProvider.overrideWith((ref) async => null),
+        appLifecycleProvider.overrideWith(_FakeAppLifecycle.new),
+      ],
+    );
+    container = build();
+    addTearDown(container.dispose);
+    container.read(readStateProvider);
+    await container.read(activeCommunityProvider.future);
+    for (var i = 0; i < 10 && !state().isReady; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(state().isReady, isTrue);
+    expect(state().pubkey, principal);
+    container.read(readStateProvider.notifier).markContextRead(channelId, 900);
+    expect(state().effectiveTimestamp(channelId), 900);
+    expect(session.fetches, 0, reason: 'local-only: no remote read state');
+
+    // Persisted on this device under the principal: a fresh notifier
+    // restores the marker.
+    container.dispose();
+    container = build();
+    container.read(readStateProvider);
+    await container.read(activeCommunityProvider.future);
+    for (var i = 0; i < 10 && !state().isReady; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(state().effectiveTimestamp(channelId), 900);
+  });
+}
+
+class _TokenRelayConfig extends RelayConfigNotifier {
+  _TokenRelayConfig(this.principal);
+
+  final String principal;
+
+  @override
+  RelayConfig build() => RelayConfig(
+    baseUrl: 'http://localhost:1',
+    tokenAuth: true,
+    principalId: principal,
+  );
 }
 
 class _FakeRelayConfig extends RelayConfigNotifier {
@@ -135,6 +190,8 @@ class _FakeRelayConfig extends RelayConfigNotifier {
 /// Relay session that never connects and returns no history, keeping the
 /// manager fully local while exercising its real code paths.
 class _FakeRelaySession extends RelaySessionNotifier {
+  int fetches = 0;
+
   @override
   SessionState build() =>
       const SessionState(status: SessionStatus.disconnected);
@@ -143,7 +200,10 @@ class _FakeRelaySession extends RelaySessionNotifier {
   Future<List<NostrEvent>> fetchHistory(
     NostrFilter filter, {
     Duration timeout = const Duration(seconds: 8),
-  }) async => [];
+  }) async {
+    fetches++;
+    return [];
+  }
 
   @override
   Future<void Function()> subscribe(

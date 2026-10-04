@@ -287,7 +287,9 @@ class BuzzPushLeaseRevocationOutbox {
       );
     }
     final decoded = nostr.Nip19.decode(payload: nsec);
-    final memberPubkey = community.pubkey ?? nostr.Keys(decoded.data).public;
+    // The lease was published by the signing key; a token community's
+    // recorded pubkey is its principal, not that key.
+    final memberPubkey = nostr.Keys(decoded.data).public;
     final relayUrl = canonicalBuzzPushRelayHttpUrl(community.relayUrl);
     final relayOrigin = canonicalBuzzPushRelayOrigin(relayUrl);
     final grants = await (readGrants ?? readBuzzPushEndpointGrants)();

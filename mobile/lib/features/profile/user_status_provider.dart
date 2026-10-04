@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:nostr/nostr.dart' as nostr;
 
 import '../../shared/relay/relay.dart';
 import 'user_status.dart';
@@ -30,18 +29,8 @@ class UserStatusNotifier extends AsyncNotifier<UserStatus?> {
   }
 
   Future<UserStatus?> _fetch() async {
-    final config = ref.read(relayConfigProvider);
-    final nsec = config.nsec;
-    if (nsec == null || nsec.isEmpty) return null;
-
-    String pubkey;
-    try {
-      final privkeyHex = nostr.Nip19.decode(payload: nsec).data;
-      final keyPair = nostr.Keys(privkeyHex);
-      pubkey = keyPair.public.toLowerCase();
-    } catch (_) {
-      return null;
-    }
+    final pubkey = _currentPubkey();
+    if (pubkey == null) return null;
 
     final sessionState = ref.read(relaySessionProvider);
     if (sessionState.status != SessionStatus.connected) return null;
@@ -80,8 +69,8 @@ class UserStatusNotifier extends AsyncNotifier<UserStatus?> {
   }) async {
     final trimmed = text.trim();
     final config = ref.read(relayConfigProvider);
-    final nsec = config.nsec;
-    if (nsec == null || nsec.isEmpty) return;
+    final pubkey = outgoingAuthorPubkey(config)?.toLowerCase();
+    if (pubkey == null) return;
 
     final tags = <List<String>>[
       ['d', 'general'],
@@ -93,17 +82,16 @@ class UserStatusNotifier extends AsyncNotifier<UserStatus?> {
       tags.add(['expiration', '${expiresAt.millisecondsSinceEpoch ~/ 1000}']);
     }
 
-    final privkeyHex = nostr.Nip19.decode(payload: nsec).data;
-    final event = nostr.Event.from(
+    // Signed on a legacy community, an unsigned draft on a token one.
+    final event = buildOutgoingEvent(
+      config,
       kind: EventKind.userStatus,
       content: trimmed,
       tags: tags,
-      secretKey: privkeyHex,
-      verify: false,
     );
 
     final session = ref.read(relaySessionProvider.notifier);
-    await session.publish(NostrEvent.fromJson(event.toMap()));
+    await session.publish(event);
 
     // Optimistic update: update own state immediately.
     final newStatus = (trimmed.isNotEmpty || emoji.isNotEmpty)
@@ -120,8 +108,6 @@ class UserStatusNotifier extends AsyncNotifier<UserStatus?> {
     _scheduleExpiration(newStatus);
 
     // Also update the shared cache so other UI reads stay consistent.
-    final keyPair = nostr.Keys(privkeyHex);
-    final pubkey = keyPair.public.toLowerCase();
     ref.read(userStatusCacheProvider.notifier).updateStatus(pubkey, newStatus);
   }
 
@@ -160,16 +146,8 @@ class UserStatusNotifier extends AsyncNotifier<UserStatus?> {
     }
   }
 
-  String? _currentPubkey() {
-    final nsec = ref.read(relayConfigProvider).nsec;
-    if (nsec == null || nsec.isEmpty) return null;
-    try {
-      final privkeyHex = nostr.Nip19.decode(payload: nsec).data;
-      return nostr.Keys(privkeyHex).public.toLowerCase();
-    } catch (_) {
-      return null;
-    }
-  }
+  String? _currentPubkey() =>
+      outgoingAuthorPubkey(ref.read(relayConfigProvider))?.toLowerCase();
 }
 
 final userStatusProvider =

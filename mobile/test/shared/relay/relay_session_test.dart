@@ -1780,7 +1780,7 @@ class _FakeAuthNotifier extends AuthNotifier {
       const AuthState(status: AuthStatus.unauthenticated);
 
   @override
-  Future<void> signOut() async {
+  Future<void> signOut({bool deviceOnly = false}) async {
     signOutCount++;
   }
 }

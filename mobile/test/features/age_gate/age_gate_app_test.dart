@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:buzz/app.dart';
 import 'package:buzz/features/age_gate/age_restriction_page.dart';
@@ -7,10 +6,9 @@ import 'package:buzz/features/age_gate/age_signal_push_bootstrap.dart';
 import 'package:buzz/features/age_gate/age_signal_provider.dart';
 import 'package:buzz/features/channels/unread_badge/unread_badge_provider.dart';
 import 'package:buzz/features/home/home_page.dart';
-import 'package:buzz/features/pairing/pairing_provider.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/auth/token/token.dart';
 import 'package:buzz/shared/huddle/huddle.dart';
-import 'package:nostr/nostr.dart' as nostr;
 import '../../shared/community/community_storage_test.dart'
     show FakeSecureStorage;
 import 'package:buzz/shared/push/push_bootstrap.dart';
@@ -21,6 +19,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../shared/auth/token/token_auth_test_fakes.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -63,12 +63,6 @@ void main() {
           communitySnapshotWriterProvider.overrideWithValue((_) async {}),
           ageSignalProvider.overrideWith(() => age),
           relaySessionProvider.overrideWith(() => relay),
-          pairingProvider.overrideWith(
-            () => PairingNotifier(
-              credentialValidator:
-                  ({required relayUrl, required nsec}) async {},
-            ),
-          ),
         ],
       );
       addTearDown(container.dispose);
@@ -79,29 +73,25 @@ void main() {
         UncontrolledProviderScope(container: container, child: const App()),
       );
       await tester.pump();
-      final code = base64Url.encode(
-        utf8.encode(
-          jsonEncode({
-            'relayUrl': 'https://relay.example',
-            'nsec': nostr.Keys.generate().nsec,
-          }),
-        ),
-      );
-      final pairing = container.read(pairingProvider.notifier).pair(code);
+      final commit = container
+          .read(authProvider.notifier)
+          .authenticateWithTokenSession(
+            relayUrl: 'https://relay.example',
+            principalId: 'p' * 64,
+          );
       await tester.pump();
       expect(storage.started.isCompleted, isTrue);
       age.setState(AgeSignalState.restricted);
       await tester.pump();
       expect(find.byType(AgeRestrictionPage), findsOneWidget);
       storage.release.complete();
-      await pairing;
+      await commit;
       await tester.pump();
       expect((await storage.loadAll()), hasLength(1));
       expect(
         (await container.read(authProvider.future)).status,
         AuthStatus.authenticated,
       );
-      expect(container.read(pairingProvider).status, PairingStatus.idle);
       expect(find.byType(AgeRestrictionPage), findsOneWidget);
       expect(
         container.read(relaySessionProvider).status,
@@ -128,24 +118,24 @@ void main() {
   });
 
   for (final restrict in [false, true]) {
-    testWidgets('pending legacy pairing follows restriction=$restrict', (
+    testWidgets('pending token sign-in follows restriction=$restrict', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final age = _MutableAgeSignalNotifier();
-      final auth = _RecordingPairAuthNotifier();
-      final validation = Completer<void>();
-      final pairing = PairingNotifier(
-        credentialValidator: ({required relayUrl, required nsec}) =>
-            validation.future,
-      );
+      final auth = _RecordingTokenAuthNotifier();
+      final server = FakeAuthServer();
+      final launcher = _HeldWebAuthLauncher();
       final container = ProviderContainer(
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
           authProvider.overrideWith(() => auth),
           ageSignalProvider.overrideWith(() => age),
-          pairingProvider.overrideWith(() => pairing),
+          authHttpClientProvider.overrideWithValue(server.client),
+          refreshTokenStoreProvider.overrideWithValue(FakeRefreshTokenStore()),
+          webAuthLauncherProvider.overrideWithValue(launcher),
+          authDeviceNameProvider.overrideWithValue('Test phone'),
         ],
       );
       addTearDown(container.dispose);
@@ -153,26 +143,29 @@ void main() {
         UncontrolledProviderScope(container: container, child: const App()),
       );
       await tester.pump();
-      final code = base64Url.encode(
-        utf8.encode(
-          jsonEncode({
-            'relayUrl': 'https://relay.example',
-            'nsec': 'pending-key',
-          }),
-        ),
+      await tester.enterText(
+        find.byKey(const Key('token-sign-in-relay-url')),
+        'relay.example',
       );
-      final pending = container.read(pairingProvider.notifier).pair(code);
-      expect(container.read(pairingProvider).status, PairingStatus.connecting);
+      await tester.tap(find.byKey(const Key('token-sign-in-check')));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.tap(find.byKey(const Key('token-sign-in-google')));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(launcher.pending, isNotNull);
+
       if (restrict) age.setState(AgeSignalState.restricted);
       await tester.pump();
-      validation.complete();
-      await pending;
-      expect(auth.imports, restrict ? 0 : 1);
-      expect(
-        container.read(pairingProvider).status,
-        restrict ? PairingStatus.idle : PairingStatus.success,
-      );
+      launcher.pending!.complete(FakeWebAuthLauncher.success(launcher.opened!));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(auth.tokenSignIns, restrict ? 0 : 1);
       await tester.pumpWidget(const SizedBox.shrink());
+      // The signed-in session arms its refresh timer; dispose it before the
+      // test's pending-timer check.
+      container.dispose();
     });
   }
 
@@ -509,12 +502,30 @@ class _UnavailableCommunityListNotifier extends CommunityListNotifier {
   }
 }
 
-class _RecordingPairAuthNotifier extends _UnauthenticatedAuthNotifier {
-  int imports = 0;
+class _RecordingTokenAuthNotifier extends _UnauthenticatedAuthNotifier {
+  int tokenSignIns = 0;
 
   @override
-  Future<void> authenticateWithCommunity(Community community) async {
-    imports += 1;
+  Future<void> authenticateWithTokenSession({
+    required String relayUrl,
+    required String principalId,
+  }) async {
+    tokenSignIns += 1;
+  }
+}
+
+/// Holds the browser round-trip open so the test can interleave events.
+class _HeldWebAuthLauncher implements WebAuthLauncher {
+  Uri? opened;
+  Completer<Uri>? pending;
+
+  @override
+  Future<Uri> authenticate({
+    required Uri url,
+    required String callbackUrlScheme,
+  }) {
+    opened = url;
+    return (pending = Completer<Uri>()).future;
   }
 }
 

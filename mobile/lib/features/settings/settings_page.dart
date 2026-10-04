@@ -9,14 +9,16 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
+import '../../shared/auth/token/token.dart';
 import '../../shared/clipboard_utils.dart';
 import '../../shared/community/community_membership_provider.dart';
+import '../../shared/community/community_removal.dart';
 import '../../shared/push/push_bridge.dart';
 import '../../shared/push/push_relay_capability_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/utils/string_utils.dart';
-import '../pairing/pairing_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -26,8 +28,11 @@ import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/ios_glass_navigation_action.dart';
 import '../../shared/widgets/immediate_page_route.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import 'account_page.dart';
+import 'devices_page.dart';
 import 'theme_picker_page.dart';
 
+part 'settings_page/account_section.dart';
 part 'settings_page/community_section.dart';
 part 'settings_page/connection_section.dart';
 part 'settings_page/notifications_section.dart';
@@ -42,7 +47,6 @@ class SettingsPage extends HookConsumerWidget {
     super.key,
     required this.profileHeader,
     required this.invitePageBuilder,
-    required this.identityRecoveryPageBuilder,
     this.profileEditPageBuilder = _emptyProfileEditPage,
     this.onEditDisplayName,
     this.onEditProfileDescription,
@@ -53,9 +57,6 @@ class SettingsPage extends HookConsumerWidget {
 
   /// Builds the community-invite page pushed from the invite settings row.
   final WidgetBuilder invitePageBuilder;
-
-  /// Builds the identity-recovery page pushed from the recovery settings row.
-  final WidgetBuilder identityRecoveryPageBuilder;
 
   /// Builds the current-user profile editor opened from the top action.
   final WidgetBuilder profileEditPageBuilder;
@@ -75,7 +76,15 @@ class SettingsPage extends HookConsumerWidget {
       bottomHeight: Grid.xxs,
     );
 
+    final tokenOrigin = ref.watch(activeTokenOriginProvider);
+
     Future<void> showEditProfileSheet() async {
+      // A token account has one global profile; the relay rejects client
+      // kind-0 edits, so Edit opens the account editor directly.
+      if (tokenOrigin != null) {
+        unawaited(HapticFeedback.selectionClick());
+        return _openAccountPage(context, tokenOrigin);
+      }
       final action = await showBuzzModalBottomSheet<_ProfileEditAction>(
         context: context,
         title: 'Edit profile',
@@ -218,9 +227,10 @@ class SettingsPage extends HookConsumerWidget {
                 profileHeader,
                 _CommunitySection(invitePageBuilder: invitePageBuilder),
                 const _NotificationsSection(),
-                _ConnectionSection(
-                  identityRecoveryPageBuilder: identityRecoveryPageBuilder,
-                ),
+                if (tokenOrigin != null)
+                  _AccountSection(origin: tokenOrigin)
+                else
+                  const _ConnectionSection(),
                 const _RemoveCommunitySection(),
               ],
             ),

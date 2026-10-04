@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../community/community.dart';
 import '../community/community_provider.dart';
+import '../push/push_bridge.dart';
+import '../push/push_subscription.dart';
+import 'token/relay_origin.dart';
 
 enum AuthStatus { unknown, unauthenticated, authenticated }
 
@@ -36,7 +41,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           : communities.first;
       await storage.saveActiveId(active.id);
 
-      if (_hasValidNsec(active.nsec)) {
+      // Token communities authenticate through their relay token session
+      // (see `TokenSessionGate`); legacy ones need a usable local key.
+      if (active.tokenAuth || _hasValidNsec(active.nsec)) {
         await syncCommunitySnapshot(ref, communities);
         return AuthState(status: AuthStatus.authenticated, community: active);
       }
@@ -74,12 +81,70 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     });
   }
 
-  Future<void> signOut() {
+  /// Record a completed token sign-in for [relayUrl] and switch to it.
+  ///
+  /// Reuses the stored community for the same relay origin (marking it as
+  /// token-authenticated and setting [principalId] as its identity),
+  /// otherwise creates one.
+  ///
+  /// A reused legacy community's push lease was published by its `nsec`, so
+  /// its revocation is durably journaled with that key first (AGENTS.md
+  /// rule 1; a journal failure propagates and changes nothing). Only then is
+  /// the community rewritten once, without the key and with push off
+  /// (rule 5), so no state pairs the principal with a key it does not own.
+  Future<void> authenticateWithTokenSession({
+    required String relayUrl,
+    required String principalId,
+  }) async {
+    final origin = normalizeRelayOrigin(relayUrl);
+    final existing = (await ref.read(communityStorageProvider).loadAll())
+        .where((community) => _sameOrigin(community.relayUrl, origin))
+        .firstOrNull;
+    final legacyKey = existing?.nsec;
+    var revocationJournaled = false;
+    if (existing != null && legacyKey != null && legacyKey.isNotEmpty) {
+      revocationJournaled = await ref.read(
+        communityPushLeaseRevocationEnqueuerProvider,
+      )(existing);
+    }
+    final community = existing != null
+        ? existing.copyWith(
+            tokenAuth: true,
+            pubkey: principalId,
+            nsec: legacyKey == null ? existing.nsec : null,
+            pushNotificationsEnabled: legacyKey == null
+                ? existing.pushNotificationsEnabled
+                : false,
+            pushSubscriptionState: legacyKey == null
+                ? existing.pushSubscriptionState
+                : const BuzzPushLeaseSubscriptionState.desired(),
+          )
+        : Community.create(
+            name: Community.nameFromUrl(origin),
+            relayUrl: origin,
+            pubkey: principalId,
+            tokenAuth: true,
+          );
+    await authenticateWithCommunity(community);
+    if (revocationJournaled) {
+      unawaited(
+        ref
+            .read(communityPushLeaseRevocationTriggerProvider)()
+            .catchError(reportPushLeaseCleanupError),
+      );
+    }
+  }
+
+  /// Remove the active community. A token community's device session is
+  /// revoked on the relay first; when the relay cannot be reached this throws
+  /// `TokenSessionException` and removes nothing. [deviceOnly] skips the
+  /// relay (see `CommunityListNotifier.removeCommunity`).
+  Future<void> signOut({bool deviceOnly = false}) {
     return () async {
       final storage = ref.read(communityStorageProvider);
       await ref
           .read(communityListProvider.notifier)
-          .removeActiveCommunityForSignOut();
+          .removeActiveCommunityForSignOut(deviceOnly: deviceOnly);
 
       // Community removal already persisted the outbox, deleted credentials,
       // selected the next active community, and removed NSE state. Authentication
@@ -93,6 +158,14 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       ref.invalidateSelf();
       await future;
     }();
+  }
+}
+
+bool _sameOrigin(String relayUrl, String origin) {
+  try {
+    return normalizeRelayOrigin(relayUrl) == origin;
+  } on FormatException {
+    return false;
   }
 }
 

@@ -580,7 +580,7 @@ void main() {
           child: const MaterialApp(
             home: DeepLinkDispatcher(
               dispatchMessageLinks: false,
-              child: Scaffold(body: Text('Pairing')),
+              child: Scaffold(body: Text('Onboarding')),
             ),
           ),
         ),
@@ -609,7 +609,7 @@ void main() {
           child: const MaterialApp(
             home: DeepLinkDispatcher(
               dispatchMessageLinks: false,
-              child: Scaffold(body: Text('Pairing')),
+              child: Scaffold(body: Text('Onboarding')),
             ),
           ),
         ),
@@ -620,7 +620,7 @@ void main() {
         messageContainer.read(pendingDeepLinkProvider),
         isA<MessageDeepLink>(),
       );
-      expect(find.text('Pairing'), findsOneWidget);
+      expect(find.text('Onboarding'), findsOneWidget);
     },
   );
 

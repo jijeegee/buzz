@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../shared/relay/fake_relay_access_tokens.dart';
 import '../profile/presence_snapshot_test.dart'
     show PresenceTestRelay, presenceEvent;
 import 'dart:collection';
@@ -255,6 +256,7 @@ Widget _buildTestable({
   RelayConfigNotifier? relayConfigNotifier,
   HuddleMediaFactory? huddleMediaFactory,
   HuddleTransportFactory? huddleTransportFactory,
+  RelayAccessTokens? relayAccessTokens,
   HuddleHumanCountLoader? huddleHumanCountLoader,
   List<NostrEvent> huddleLifecycle = const [],
   String? huddleCurrentPubkey,
@@ -379,6 +381,8 @@ Widget _buildTestable({
         huddleTransportFactoryProvider.overrideWithValue(
           huddleTransportFactory,
         ),
+      if (relayAccessTokens != null)
+        relayAccessTokensProvider.overrideWithValue(relayAccessTokens),
       if (huddleHumanCountLoader != null)
         huddleHumanCountProvider.overrideWithValue(huddleHumanCountLoader),
       huddleLifecycleProvider(
@@ -5786,6 +5790,48 @@ void main() {
         find.widgetWithText(FilledButton, 'Join'),
       );
       expect(join.onPressed, isNotNull);
+    });
+
+    testWidgets('a token community joins a Huddle with its bearer tokens', (
+      tester,
+    ) async {
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final tokens = FakeRelayAccessTokens();
+      final parameters = <HuddleConnectionParameters>[];
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [
+            _huddleMsg(
+              id: 'token-huddle',
+              kind: EventKind.huddleStarted,
+              pubkey: 'alice',
+              createdAt: now,
+            ),
+          ],
+          users: const {
+            'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
+          },
+          relayConfigNotifier: _TokenHuddleRelayConfigNotifier(),
+          relayAccessTokens: tokens,
+          huddleCurrentPubkey: 'self',
+          huddleMediaFactory: _HuddleTestMedia.new,
+          huddleTransportFactory: (value) {
+            parameters.add(value);
+            return _HuddleTestTransport();
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('huddle-Join-$_huddleChannelId')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('A paired identity is required.'), findsNothing);
+      expect(parameters, hasLength(1));
+      expect(parameters.single.nsec, isNull);
+      expect(parameters.single.accessTokens, same(tokens));
     });
 
     testWidgets('disables a different Huddle card during an active call', (
@@ -15669,6 +15715,15 @@ class _HuddleRelayConfigNotifier extends RelayConfigNotifier {
   @override
   RelayConfig build() =>
       RelayConfig(baseUrl: 'https://relay.example', nsec: _nsec);
+}
+
+class _TokenHuddleRelayConfigNotifier extends RelayConfigNotifier {
+  @override
+  RelayConfig build() => const RelayConfig(
+    baseUrl: 'https://relay.example',
+    tokenAuth: true,
+    principalId: 'self',
+  );
 }
 
 final class _HuddleTestMedia implements HuddleMedia {

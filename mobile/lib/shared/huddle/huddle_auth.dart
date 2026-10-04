@@ -2,19 +2,28 @@ import 'package:flutter/foundation.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../relay/nostr_models.dart';
+import '../relay/relay_access_tokens.dart';
 import 'huddle_wire.dart';
 
 /// Immutable connection inputs for one Huddle audio WebSocket.
 @immutable
 final class HuddleConnectionParameters {
   final String relayWebSocketUrl;
-  final String nsec;
+
+  /// Signing key for the legacy NIP-42 envelope; `null` on a token community.
+  final String? nsec;
+
+  /// Bearer source on a token community (plan §3.6): the challenge is
+  /// answered with `{"type":"auth","token":…}` and every later rotation is
+  /// re-sent over the same socket. Takes precedence over [nsec].
+  final RelayAccessTokens? accessTokens;
   final String parentChannelId;
   final String ephemeralChannelId;
 
   HuddleConnectionParameters({
     required this.relayWebSocketUrl,
-    required this.nsec,
+    this.nsec,
+    this.accessTokens,
     required this.parentChannelId,
     required this.ephemeralChannelId,
   }) {
@@ -37,8 +46,12 @@ final class HuddleConnectionParameters {
     }
     _validateUuid(parentChannelId, 'parentChannelId');
     _validateUuid(ephemeralChannelId, 'ephemeralChannelId');
-    if (nsec.trim().isEmpty) {
-      throw ArgumentError.value(nsec, 'nsec', 'must not be empty');
+    if (accessTokens == null && (nsec?.trim() ?? '').isEmpty) {
+      throw ArgumentError.value(
+        nsec,
+        'nsec',
+        'must not be empty without access tokens',
+      );
     }
   }
 
@@ -65,7 +78,7 @@ abstract final class HuddleAuthV2 {
       throw const HuddleAuthException('Relay challenge must not be empty.');
     }
 
-    final secretKey = _decodeSecretKey(parameters.nsec);
+    final secretKey = _decodeSecretKey(parameters.nsec ?? '');
     final event = nostr.Event.from(
       kind: EventKind.auth,
       content: '',
@@ -85,6 +98,24 @@ abstract final class HuddleAuthV2 {
       'protocol_version': HuddleWireV2.protocolVersion,
     };
   }
+
+  /// Initial token-auth frame for a token community: no signed event.
+  static Map<String, dynamic> buildTokenMessage({
+    required HuddleConnectionParameters parameters,
+    required String token,
+  }) => {
+    'type': 'auth',
+    'token': token,
+    'parent_channel_id': parameters.parentChannelId,
+    'protocol_version': HuddleWireV2.protocolVersion,
+  };
+
+  /// Post-admission re-auth frame carrying a rotated token; the relay answers
+  /// `auth_ok` or `auth_error` and keeps one swap in flight at a time.
+  static Map<String, dynamic> buildReauthMessage(String token) => {
+    'type': 'auth',
+    'token': token,
+  };
 
   static String _decodeSecretKey(String value) {
     final trimmed = value.trim();

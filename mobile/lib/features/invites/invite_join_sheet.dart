@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/auth/token/token.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
-import '../pairing/pairing_page.dart';
 import 'invite_join_provider.dart';
 
 Future<bool?> showInviteJoinSheet(BuildContext context) {
@@ -43,6 +43,12 @@ class InviteJoinSheet extends ConsumerWidget {
     final isStarterSetupRecovery = state.isStarterSetupRecovery;
     final host = state.host ?? 'unknown host';
     final derivedName = state.communityName;
+    final tokenOrigin = state.tokenRelayOrigin;
+    final tokenStatus = tokenOrigin == null
+        ? null
+        : ref.watch(tokenSessionProvider(tokenOrigin)).status;
+    final needsSignIn =
+        tokenStatus != null && tokenStatus != TokenSessionStatus.signedIn;
     final primaryLabel = switch ((
       isClaiming,
       isStarterSetupRecovery,
@@ -52,6 +58,7 @@ class InviteJoinSheet extends ConsumerWidget {
       (true, false, _) => 'Joining…',
       (false, true, InviteJoinStatus.error) => 'Retry setup',
       (false, true, _) => 'Finish setting up',
+      _ when needsSignIn => 'Sign in with Google to join',
       _ => 'Join',
     };
 
@@ -60,6 +67,7 @@ class InviteJoinSheet extends ConsumerWidget {
         host: host,
         communityName: derivedName,
         hasFocusChannel: state.focusChannelId != null,
+        isTokenAuth: tokenOrigin != null,
       );
     }
 
@@ -122,12 +130,35 @@ class InviteJoinSheet extends ConsumerWidget {
               ),
               const SizedBox(height: Grid.sm),
             ],
-            Text(
-              'This phone is the only copy of this identity. If you lose it before pairing or backing up, you’ll lose access as this member.',
-              style: context.textTheme.bodyMedium?.copyWith(
-                color: context.colors.onSurfaceVariant,
+            if (tokenStatus != null) ...[
+              Text(
+                'This community uses your Google sign-in. Your membership '
+                'belongs to your account, not this phone.',
+                style: context.textTheme.bodyMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
-            ),
+              const SizedBox(height: Grid.xxs),
+              Text(
+                switch (tokenStatus) {
+                  TokenSessionStatus.signedIn => 'Signed in',
+                  TokenSessionStatus.signingIn => 'Signing in…',
+                  TokenSessionStatus.restoring => 'Checking sign-in…',
+                  TokenSessionStatus.retrying ||
+                  TokenSessionStatus.stalled => 'Sign-in needs a connection',
+                  TokenSessionStatus.signedOut => 'Not signed in',
+                },
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ] else
+              Text(
+                'This phone is the only copy of this identity. If you lose it, you’ll lose access as this member.',
+                style: context.textTheme.bodyMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
             if (state.status == InviteJoinStatus.error &&
                 state.errorMessage != null) ...[
               const SizedBox(height: Grid.sm),
@@ -168,7 +199,9 @@ class InviteJoinSheet extends ConsumerWidget {
                                   : 'Joining community',
                             ),
                           )
-                        : const Icon(LucideIcons.check),
+                        : Icon(
+                            needsSignIn ? LucideIcons.logIn : LucideIcons.check,
+                          ),
                     label: Text(primaryLabel),
                   ),
                 ),
@@ -185,10 +218,12 @@ class _InviteJoinSuccess extends StatelessWidget {
   final String host;
   final String? communityName;
   final bool hasFocusChannel;
+  final bool isTokenAuth;
 
   const _InviteJoinSuccess({
     required this.host,
     required this.hasFocusChannel,
+    required this.isTokenAuth,
     this.communityName,
   });
 
@@ -211,31 +246,20 @@ class _InviteJoinSuccess extends StatelessWidget {
               'You joined ${communityName ?? host}',
               style: context.textTheme.titleLarge,
             ),
-            const SizedBox(height: Grid.xs),
-            Text(
-              'This phone is the only copy of this identity. If you lose it before pairing or backing up, you’ll lose access as this member.',
-              style: context.textTheme.bodyMedium?.copyWith(
-                color: context.colors.onSurfaceVariant,
+            if (!isTokenAuth) ...[
+              const SizedBox(height: Grid.xs),
+              Text(
+                'This phone is the only copy of this identity. If you lose it, you’ll lose access as this member.',
+                style: context.textTheme.bodyMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
-            ),
+            ],
             const SizedBox(height: Grid.lg),
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const PairingPage(addingCommunity: true),
-                  ),
-                );
-              },
-              icon: const Icon(LucideIcons.scanLine),
-              label: const Text('Back it up now'),
-            ),
-            const SizedBox(height: Grid.xs),
-            TextButton(
+            FilledButton(
               onPressed: () => Navigator.of(context).pop(hasFocusChannel),
               child: Text(
-                hasFocusChannel ? 'Continue to #welcome-everyone' : 'Not now',
+                hasFocusChannel ? 'Continue to #welcome-everyone' : 'Done',
               ),
             ),
           ],

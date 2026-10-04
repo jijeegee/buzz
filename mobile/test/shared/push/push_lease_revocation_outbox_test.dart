@@ -86,6 +86,40 @@ void main() {
     );
   });
 
+  test('a token-converted community signs as its legacy key', () async {
+    final outbox = _outbox(
+      storage: storage,
+      clock: clock,
+      scheduler: scheduler,
+      publisher: (_) async {},
+    );
+    // The community already records the token principal, but the lease it
+    // must revoke was published by the legacy key.
+    final community = Community(
+      id: 'converted',
+      name: 'Converted',
+      relayUrl: 'wss://relay.example',
+      pubkey: nostr.Keys.generate().public,
+      nsec: keys.nsec,
+      tokenAuth: true,
+      pushNotificationsEnabled: true,
+      pushSubscriptionState: const BuzzPushLeaseSubscriptionState.desired()
+          .withReservedGeneration(4),
+      addedAt: DateTime.fromMillisecondsSinceEpoch(0),
+    );
+    final grant = _grant(expiresAt: clock.seconds + 3600);
+
+    expect(
+      await outbox.enqueueCommunity(community, readGrants: () async => [grant]),
+      isTrue,
+    );
+
+    expect(
+      (await storage.loadAll()).single.leaseAddress,
+      '${keys.public}|wss://relay.example|${grant.installationId}',
+    );
+  });
+
   test('concurrent reconnect and resume triggers share one attempt', () async {
     final started = Completer<void>();
     final release = Completer<void>();

@@ -1,11 +1,19 @@
+import 'dart:async';
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 
 import 'package:http/http.dart' as http;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../../shared/auth/auth.dart';
+import '../../shared/auth/token/relay_origin.dart';
+import '../../shared/auth/token/token_auth_descriptor.dart';
+import '../../shared/auth/token/token_session.dart';
+import '../../shared/auth/token/token_session_provider.dart';
 import '../../shared/deeplink/deep_link.dart';
+import '../../shared/relay/relay_access_tokens.dart';
 import '../../shared/relay/relay_provider.dart';
 import '../../shared/relay/relay_session.dart';
 import '../../shared/relay/relay_validation.dart';
@@ -21,6 +29,27 @@ final inviteKeyGeneratorProvider = Provider<InviteKeyGenerator>((ref) {
 });
 
 typedef InviteKeyGenerator = nostr.Keys Function();
+
+/// Bearer source for claiming an invite on a token-auth community, keyed by
+/// its canonical relay origin (the community need not be active yet).
+final inviteClaimAccessTokensProvider =
+    Provider.family<RelayAccessTokens, String>(
+      (ref, origin) => ControllerRelayAccessTokens(
+        ref.watch(tokenSessionControllerProvider(origin)),
+      ),
+    );
+
+/// Detects whether an invite's relay uses token auth (NIP-11
+/// `buzz_token_auth`): a descriptor, `null` for a legacy relay, or a throw
+/// ([TokenAuthDetectionException]) when the relay cannot be asked.
+final inviteTokenAuthDetectorProvider =
+    Provider<Future<TokenAuthDescriptor?> Function(String origin)>(
+      (ref) =>
+          (origin) => fetchTokenAuthDescriptor(
+            origin,
+            ref.read(authHttpClientProvider),
+          ),
+    );
 
 const _unset = Object();
 
@@ -74,6 +103,15 @@ class InviteJoinState {
   final bool isStarterSetupRecovery;
   final String? focusChannelId;
 
+  /// Canonical origin when the invite's relay uses token auth (NIP-11
+  /// `buzz_token_auth`): joining requires signing in, never a new key.
+  final String? tokenRelayOrigin;
+
+  /// Whether [tokenRelayOrigin] reflects a completed detection. A detection
+  /// outage leaves it unchecked so confirmation retries it rather than
+  /// falling back to a legacy keypair.
+  final bool tokenAuthChecked;
+
   const InviteJoinState({
     this.status = InviteJoinStatus.idle,
     this.invite,
@@ -83,6 +121,8 @@ class InviteJoinState {
     this.requiresFreshInvite = false,
     this.isStarterSetupRecovery = false,
     this.focusChannelId,
+    this.tokenRelayOrigin,
+    this.tokenAuthChecked = false,
   });
 
   InviteJoinState copyWith({
@@ -94,6 +134,8 @@ class InviteJoinState {
     bool? requiresFreshInvite,
     bool? isStarterSetupRecovery,
     Object? focusChannelId = _unset,
+    Object? tokenRelayOrigin = _unset,
+    bool? tokenAuthChecked,
   }) => InviteJoinState(
     status: status ?? this.status,
     invite: invite ?? this.invite,
@@ -108,6 +150,10 @@ class InviteJoinState {
     focusChannelId: identical(focusChannelId, _unset)
         ? this.focusChannelId
         : focusChannelId as String?,
+    tokenRelayOrigin: identical(tokenRelayOrigin, _unset)
+        ? this.tokenRelayOrigin
+        : tokenRelayOrigin as String?,
+    tokenAuthChecked: tokenAuthChecked ?? this.tokenAuthChecked,
   );
 }
 
@@ -122,6 +168,18 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     validateInviteRelayUri(Uri.parse(invite.relayUrl));
     final communities = await ref.read(communityListProvider.future);
     final existing = _existingCommunity(communities, invite.relayUrl);
+    if (existing != null && existing.tokenAuth) {
+      // A signed-in token principal is not necessarily a relay member yet:
+      // the invite still has to be claimed with its bearer (confirmJoin).
+      _pendingStarterSetupCommunity = null;
+      state = InviteJoinState(
+        status: InviteJoinStatus.confirming,
+        invite: invite,
+        host: _hostFromRelay(invite.relayUrl),
+        communityName: existing.name,
+      );
+      return;
+    }
     if (existing != null) {
       await ref
           .read(communityListProvider.notifier)
@@ -148,12 +206,30 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     }
 
     _pendingStarterSetupCommunity = null;
+    String? tokenRelayOrigin;
+    var tokenAuthChecked = false;
+    try {
+      tokenRelayOrigin = await _detectTokenRelay(invite.relayUrl);
+      tokenAuthChecked = true;
+    } on TokenAuthDetectionException catch (error) {
+      // Re-checked on confirmation; never assumed legacy.
+      debugPrint('[InviteJoin] token auth detection deferred: $error');
+    }
     state = InviteJoinState(
       status: InviteJoinStatus.confirming,
       invite: invite,
       host: _hostFromRelay(invite.relayUrl),
       communityName: Community.nameFromUrl(invite.relayUrl),
+      tokenRelayOrigin: tokenRelayOrigin,
+      tokenAuthChecked: tokenAuthChecked,
     );
+  }
+
+  /// The canonical origin when [relayUrl] is a token relay, else `null`.
+  Future<String?> _detectTokenRelay(String relayUrl) async {
+    final origin = normalizeRelayOrigin(relayUrl);
+    final descriptor = await ref.read(inviteTokenAuthDetectorProvider)(origin);
+    return descriptor == null ? null : origin;
   }
 
   Future<void> confirmJoin() async {
@@ -173,6 +249,28 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     try {
       final communities = await ref.read(communityListProvider.future);
       final existing = _existingCommunity(communities, invite.relayUrl);
+      if (existing != null && existing.tokenAuth) {
+        final wasActive =
+            (await ref.read(activeCommunityProvider.future))?.id == existing.id;
+        await _claimWithBearer(
+          invite,
+          origin: normalizeRelayOrigin(existing.relayUrl),
+          communityName: existing.name,
+        );
+        await ref
+            .read(communityListProvider.notifier)
+            .switchCommunity(existing.id);
+        // Switching to the already-active community is a no-op, so its
+        // session would stay parked on the pre-claim "not a relay member"
+        // AUTH deny.
+        if (wasActive) _reconnectParkedSession();
+        state = state.copyWith(
+          status: InviteJoinStatus.switchedExisting,
+          communityName: existing.name,
+          isStarterSetupRecovery: false,
+        );
+        return;
+      }
       if (existing != null) {
         await ref
             .read(communityListProvider.notifier)
@@ -196,6 +294,19 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
           errorMessage:
               'This community is no longer available. Re-open the invite link to try again.',
         );
+        return;
+      }
+
+      var tokenRelayOrigin = state.tokenRelayOrigin;
+      if (!state.tokenAuthChecked) {
+        tokenRelayOrigin = await _detectTokenRelay(invite.relayUrl);
+        state = state.copyWith(
+          tokenRelayOrigin: tokenRelayOrigin,
+          tokenAuthChecked: true,
+        );
+      }
+      if (tokenRelayOrigin != null) {
+        await _joinTokenRelay(invite, tokenRelayOrigin);
         return;
       }
 
@@ -258,6 +369,103 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
         requiresFreshInvite: requiresFreshInvite,
       );
     }
+  }
+
+  /// Joins a token relay this device has no community for: signs the
+  /// principal in (system browser) BEFORE claiming, claims with its bearer,
+  /// then saves a token community for that principal. Never creates a key.
+  Future<void> _joinTokenRelay(InviteDeepLink invite, String origin) async {
+    final displayName = Community.nameFromUrl(invite.relayUrl);
+    final controller = ref.read(tokenSessionControllerProvider(origin));
+    if (controller.state.status == TokenSessionStatus.restoring) {
+      await controller.restore();
+    }
+    var token = await controller.ensureFreshAccessToken();
+    if (token == null) {
+      if (controller.state.status != TokenSessionStatus.signedOut) {
+        // Stalled/retrying: a stored session exists but cannot rotate now.
+        throw const InviteClaimException(_relayUnreachable);
+      }
+      if (await controller.signIn()) {
+        token = await controller.ensureFreshAccessToken();
+      }
+    }
+    final principalId = controller.state.principalId;
+    if (token == null || principalId == null) {
+      throw InviteClaimException('Sign in to $displayName to use this invite.');
+    }
+    final claim = await _claimWithBearer(
+      invite,
+      origin: origin,
+      communityName: displayName,
+    );
+    final community = Community.create(
+      name: _communityNameFromClaim(claim, invite.relayUrl),
+      relayUrl: invite.relayUrl,
+      pubkey: principalId,
+      starterSetupIncomplete: true,
+      tokenAuth: true,
+    );
+    await ref.read(authProvider.notifier).authenticateWithCommunity(community);
+    _pendingStarterSetupCommunity = community;
+    state = state.copyWith(isStarterSetupRecovery: true);
+    await startStarterSetupRecovery();
+  }
+
+  /// Reconnects the live relay session unless it is connected (e.g. parked
+  /// on a member-restricted AUTH deny that the claim just lifted).
+  void _reconnectParkedSession() {
+    if (!ref.exists(relaySessionProvider)) return;
+    if (ref.read(relaySessionProvider).status == SessionStatus.connected) {
+      return;
+    }
+    unawaited(ref.read(relaySessionProvider.notifier).reconnect());
+  }
+
+  /// Claims [invite] for the token principal signed in at [origin]
+  /// (`already_member` is a success) and returns the claim body. Throws when
+  /// the relay rejects it.
+  Future<Map<String, dynamic>> _claimWithBearer(
+    InviteDeepLink invite, {
+    required String origin,
+    required String communityName,
+  }) async {
+    final relayUri = Uri.parse(invite.relayUrl);
+    validateInviteRelayUri(relayUri);
+    final url = Uri.parse(_claimUrlFromRelay(invite.relayUrl));
+    final body = jsonEncode({
+      'code': invite.code,
+      if (invite.policyReceipt != null) 'policy_receipt': invite.policyReceipt,
+    });
+    final tokens = ref.read(inviteClaimAccessTokensProvider(origin));
+    final client = ref.read(inviteJoinHttpClientProvider);
+    final http.Response response;
+    try {
+      response = await sendWithBearer(tokens, (authorization) async {
+        final request = http.Request('POST', url)
+          ..followRedirects = false
+          ..headers.addAll({
+            'Authorization': authorization,
+            'Content-Type': 'application/json',
+          })
+          ..body = body;
+        return http.Response.fromStream(await client.send(request));
+      });
+    } on RelayTokenUnavailableException {
+      throw InviteClaimException(
+        'Sign in to $communityName to use this invite.',
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final decoded = _tryDecode(response.body);
+      throw InviteClaimException(
+        decoded is Map && decoded['error'] is String
+            ? decoded['error'] as String
+            : 'HTTP ${response.statusCode}',
+      );
+    }
+    final decoded = _tryDecode(response.body);
+    return decoded is Map ? Map<String, dynamic>.from(decoded) : const {};
   }
 
   /// Runs the pending recovery after its progress UI has been presented.
@@ -420,6 +628,14 @@ String _claimUrlFromRelay(String relayUrl) {
   ).toString();
 }
 
+Object? _tryDecode(String body) {
+  try {
+    return jsonDecode(body.isEmpty ? '{}' : body);
+  } on FormatException {
+    return null;
+  }
+}
+
 String _communityNameFromClaim(Map<String, dynamic> claim, String relayUrl) {
   final host = claim['host'];
   if (host is String && host.trim().isNotEmpty) return host.trim();
@@ -432,8 +648,15 @@ bool _requiresFreshInvite(Object error) {
       message.contains('invite_exhausted');
 }
 
+const _relayUnreachable =
+    'Could not reach the relay. Check your connection and try again.';
+
 String _friendlyInviteError(Object error) {
   final message = error.toString();
+  if (message.startsWith('Sign in to ') || message == _relayUnreachable) {
+    return message;
+  }
+  if (error is TokenAuthDetectionException) return _relayUnreachable;
   if (message.contains('invite_expired')) return 'This invite has expired.';
   if (message.contains('invite_exhausted')) {
     return 'This invite has reached its use limit. Ask for a new invite.';
@@ -446,7 +669,7 @@ String _friendlyInviteError(Object error) {
       message.contains('Connection refused') ||
       message.contains('Network is unreachable') ||
       message.contains('No route to host')) {
-    return 'Could not reach the relay. Check your connection and try again.';
+    return _relayUnreachable;
   }
   return 'Could not join this community: $message';
 }

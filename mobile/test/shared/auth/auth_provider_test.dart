@@ -9,6 +9,7 @@ import 'package:buzz/shared/community/community.dart';
 import 'package:buzz/shared/community/community_provider.dart';
 import 'package:buzz/shared/community/community_storage.dart';
 import 'package:buzz/shared/push/push_bridge.dart';
+import 'package:buzz/shared/push/push_subscription.dart';
 
 import '../community/community_storage_test.dart';
 
@@ -338,5 +339,160 @@ void main() {
     expect(auth.status, AuthStatus.authenticated);
     expect(auth.community?.id, valid.id);
     expect(await storage.loadActiveId(), valid.id);
+  });
+
+  test('a stored token community without a key stays authenticated', () async {
+    final storage = CommunityStorage(secure: FakeSecureStorage());
+    final community = Community.create(
+      name: 'Token',
+      relayUrl: 'https://token.example',
+      pubkey: 'a' * 64,
+      tokenAuth: true,
+    );
+    await storage.save(community);
+    await storage.saveActiveId(community.id);
+    final container = ProviderContainer(
+      overrides: [communityStorageProvider.overrideWithValue(storage)],
+    );
+    addTearDown(container.dispose);
+
+    final auth = await container.read(authProvider.future);
+
+    expect(auth.status, AuthStatus.authenticated);
+    expect(auth.community?.tokenAuth, isTrue);
+    expect((await storage.loadAll()).single.tokenAuth, isTrue);
+  });
+
+  test(
+    'token sign-in converts the same-origin community: tombstone first, then '
+    'one write drops the legacy key and push lease',
+    () async {
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final keys = nostr.Keys.generate();
+      final legacy =
+          Community.create(
+            name: 'Relay',
+            relayUrl: 'wss://Relay.Example:443/',
+            nsec: keys.nsec,
+          ).copyWith(
+            pubkey: keys.public,
+            pushNotificationsEnabled: true,
+            pushSubscriptionState:
+                const BuzzPushLeaseSubscriptionState.desired()
+                    .withReservedGeneration(4),
+          );
+      await storage.save(legacy);
+      await storage.saveActiveId(legacy.id);
+      final journaled = <Community>[];
+      final storedWhenJournaled = <Community>[];
+      var triggers = 0;
+      final container = ProviderContainer(
+        overrides: [
+          communityStorageProvider.overrideWithValue(storage),
+          communityPushLeaseRevocationEnqueuerProvider.overrideWithValue((
+            community,
+          ) async {
+            journaled.add(community);
+            storedWhenJournaled.addAll(await storage.loadAll());
+            return true;
+          }),
+          communityPushLeaseRevocationTriggerProvider.overrideWithValue(
+            () async => triggers++,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(authProvider.future);
+
+      await container
+          .read(authProvider.notifier)
+          .authenticateWithTokenSession(
+            relayUrl: 'https://relay.example',
+            principalId: 'b' * 64,
+          );
+
+      // The tombstone is journaled with the legacy key before anything
+      // forgets it.
+      expect(journaled.single.nsec, keys.nsec);
+      expect(journaled.single.pubkey, keys.public);
+      expect(storedWhenJournaled.single.nsec, keys.nsec);
+      expect(triggers, 1);
+
+      final stored = (await storage.loadAll()).single;
+      expect(stored.id, legacy.id);
+      expect(stored.tokenAuth, isTrue);
+      expect(stored.pubkey, 'b' * 64);
+      expect(stored.nsec, isNull);
+      expect(stored.pushNotificationsEnabled, isFalse);
+      expect(stored.pushSubscriptionState.acceptedGeneration, isNull);
+      expect(stored.pushSubscriptionState.generationCursor, isNull);
+      expect(container.read(authProvider).value?.community?.id, legacy.id);
+    },
+  );
+
+  test(
+    'a failed tombstone journal keeps the legacy community untouched',
+    () async {
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final keys = nostr.Keys.generate();
+      final legacy = Community.create(
+        name: 'Relay',
+        relayUrl: 'https://relay.example',
+        nsec: keys.nsec,
+      ).copyWith(pubkey: keys.public, pushNotificationsEnabled: true);
+      await storage.save(legacy);
+      await storage.saveActiveId(legacy.id);
+      final container = ProviderContainer(
+        overrides: [
+          communityStorageProvider.overrideWithValue(storage),
+          communityPushLeaseRevocationEnqueuerProvider.overrideWithValue(
+            (_) async => throw StateError('keychain locked'),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(authProvider.future);
+
+      await expectLater(
+        container
+            .read(authProvider.notifier)
+            .authenticateWithTokenSession(
+              relayUrl: 'https://relay.example',
+              principalId: 'b' * 64,
+            ),
+        throwsStateError,
+      );
+
+      final stored = (await storage.loadAll()).single;
+      expect(stored.tokenAuth, isFalse);
+      expect(stored.nsec, keys.nsec);
+      expect(stored.pushNotificationsEnabled, isTrue);
+    },
+  );
+
+  test('token sign-in to a new relay creates a token community', () async {
+    final storage = CommunityStorage(secure: FakeSecureStorage());
+    final container = ProviderContainer(
+      overrides: [communityStorageProvider.overrideWithValue(storage)],
+    );
+    addTearDown(container.dispose);
+    await container.read(authProvider.future);
+
+    await container
+        .read(authProvider.notifier)
+        .authenticateWithTokenSession(
+          relayUrl: 'https://new.example',
+          principalId: 'c' * 64,
+        );
+
+    final stored = (await storage.loadAll()).single;
+    expect(stored.relayUrl, 'https://new.example');
+    expect(stored.tokenAuth, isTrue);
+    expect(stored.nsec, isNull);
+    expect(await storage.loadActiveId(), stored.id);
+    expect(
+      container.read(authProvider).value?.status,
+      AuthStatus.authenticated,
+    );
   });
 }

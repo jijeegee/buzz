@@ -8,6 +8,37 @@ import 'package:nostr/nostr.dart' as nostr;
 
 void main() {
   test(
+    'a token community publishes an unsigned draft as the principal',
+    () async {
+      const principal =
+          'cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33';
+      final relaySession = _RecordingRelaySession();
+      final statusCache = _RecordingUserStatusCache();
+      final container = ProviderContainer(
+        overrides: [
+          relayConfigProvider.overrideWith(
+            () => _TokenRelayConfigNotifier(principal),
+          ),
+          relaySessionProvider.overrideWith(() => relaySession),
+          userStatusCacheProvider.overrideWith(() => statusCache),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(userStatusProvider.future);
+      await container
+          .read(userStatusProvider.notifier)
+          .setStatus('Focusing', '');
+
+      final event = relaySession.published.single;
+      expect(event.pubkey, principal);
+      expect(event.sig, isNull);
+      expect(event.toJson().containsKey('sig'), isFalse);
+      expect(statusCache.updates.last.$1, principal);
+    },
+  );
+
+  test(
     'publishes the selected status expiration on the final signed event',
     () async {
       final keys = nostr.Keys.generate();
@@ -175,6 +206,19 @@ class _FixedRelayConfigNotifier extends RelayConfigNotifier {
   @override
   RelayConfig build() =>
       RelayConfig(baseUrl: 'https://relay.example', nsec: nsec);
+}
+
+class _TokenRelayConfigNotifier extends RelayConfigNotifier {
+  _TokenRelayConfigNotifier(this.principal);
+
+  final String principal;
+
+  @override
+  RelayConfig build() => RelayConfig(
+    baseUrl: 'https://relay.example',
+    tokenAuth: true,
+    principalId: principal,
+  );
 }
 
 class _RecordingRelaySession extends RelaySessionNotifier {

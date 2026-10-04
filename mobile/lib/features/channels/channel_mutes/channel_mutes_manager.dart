@@ -31,7 +31,15 @@ class ChannelMutesCrypto {
 class ChannelMutesManager {
   final String pubkey;
   final ChannelMutesStorage _storage;
-  final ChannelMutesCrypto _crypto;
+
+  /// NIP-44 key; `null` on a token community (no nsec), which keeps this
+  /// setting local-only on this device.
+  final ChannelMutesCrypto? _crypto;
+
+  // Remote sync only runs with a key: [_remoteEnabled] requires one.
+  ChannelMutesCrypto get _remoteCrypto =>
+      _crypto ?? (throw StateError('Remote sync needs a signing key'));
+
   final RelaySessionNotifier? _relaySession;
   final SignedEventRelay? _signedEventRelay;
   final bool _remoteEnabled;
@@ -59,7 +67,7 @@ class ChannelMutesManager {
   ChannelMutesManager({
     required this.pubkey,
     required SharedPreferences prefs,
-    required ChannelMutesCrypto crypto,
+    required ChannelMutesCrypto? crypto,
     required RelaySessionNotifier? relaySession,
     required SignedEventRelay? signedEventRelay,
     required bool remoteEnabled,
@@ -70,7 +78,7 @@ class ChannelMutesManager {
        _crypto = crypto,
        _relaySession = relaySession,
        _signedEventRelay = signedEventRelay,
-       _remoteEnabled = remoteEnabled,
+       _remoteEnabled = remoteEnabled && crypto != null,
        _onChanged = onChanged,
        _startupRetryBaseDelay = startupRetryBaseDelay,
        _store = ChannelMutesStorage(prefs).read(pubkey);
@@ -290,7 +298,7 @@ class ChannelMutesManager {
       }
       if (!_isAfterCursor(event.createdAt, event.id)) continue;
       try {
-        final parsed = jsonDecode(_crypto.decrypt(event.content));
+        final parsed = jsonDecode(_remoteCrypto.decrypt(event.content));
         if (parsed is! Map<String, dynamic>) throw const FormatException();
         // Per-channel merge: keep the entry with the highest updatedAt.
         _store = mergeStores(_store, ChannelMuteStore.fromJson(parsed));
@@ -350,7 +358,7 @@ class ChannelMutesManager {
 
     try {
       final payload = jsonEncode(_store.toJson());
-      final ciphertext = _crypto.encrypt(payload);
+      final ciphertext = _remoteCrypto.encrypt(payload);
       final createdAt = max(currentUnixSeconds(), _lastRemoteCreatedAt + 1);
 
       String? signedId;

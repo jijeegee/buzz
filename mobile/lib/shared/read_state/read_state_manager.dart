@@ -43,7 +43,7 @@ enum _ApplyRemoteContextResult { unchanged, advanced }
 
 class ReadStateManager {
   final String pubkey;
-  final ReadStateCrypto _crypto;
+  final ReadStateCrypto? _crypto;
   final ReadStateStorage _storage;
   final RelaySessionNotifier? _relaySession;
   final SignedEventRelay? _signedEventRelay;
@@ -71,7 +71,7 @@ class ReadStateManager {
   ReadStateManager({
     required this.pubkey,
     required SharedPreferences prefs,
-    required ReadStateCrypto crypto,
+    required ReadStateCrypto? crypto,
     required RelaySessionNotifier? relaySession,
     required SignedEventRelay? signedEventRelay,
     required bool remoteEnabled,
@@ -80,7 +80,9 @@ class ReadStateManager {
        _storage = ReadStateStorage(prefs),
        _relaySession = relaySession,
        _signedEventRelay = signedEventRelay,
-       _remoteEnabled = remoteEnabled,
+       // Without a key there is nothing to encrypt the remote blob with:
+       // the read state stays local to this device (token communities).
+       _remoteEnabled = remoteEnabled && crypto != null,
        _onChanged = onChanged {
     _clientId = _storage.getOrCreateClientId(pubkey);
     _slotId = _storage.getOrCreateSlotId(pubkey);
@@ -95,7 +97,7 @@ class ReadStateManager {
     if (_initialized || _disposed) return;
     _initialized = true;
     debugPrint(
-      '[ReadStateManager] initialize pubkey=${pubkey.substring(0, 8)}… clientId=${_clientId.substring(0, 8)}… slotId=$_slotId',
+      '[ReadStateManager] initialize pubkey=${pubkey.substring(0, min(8, pubkey.length))}… clientId=${_clientId.substring(0, 8)}… slotId=$_slotId',
     );
 
     if (!_remoteEnabled || _relaySession == null) {
@@ -222,6 +224,8 @@ class ReadStateManager {
   }
 
   void _mergeEvents(List<NostrEvent> events) {
+    final crypto = _crypto;
+    if (crypto == null) return;
     ReadStateBlob? ownBlob;
     var ownBlobCreatedAt = 0;
 
@@ -229,7 +233,7 @@ class ReadStateManager {
       final decoded = decodeReadStateEvent(
         event,
         pubkey: pubkey,
-        decrypt: _crypto.decrypt,
+        decrypt: crypto.decrypt,
       );
       if (decoded == null) continue;
 
@@ -292,7 +296,8 @@ class ReadStateManager {
   }
 
   void _handleIncomingEvent(NostrEvent event) {
-    if (_disposed) return;
+    final crypto = _crypto;
+    if (_disposed || crypto == null) return;
     debugPrint(
       '[ReadStateManager] incoming event=${event.id.substring(0, 8)}… created_at=${event.createdAt}',
     );
@@ -300,7 +305,7 @@ class ReadStateManager {
     final decoded = decodeReadStateEvent(
       event,
       pubkey: pubkey,
-      decrypt: _crypto.decrypt,
+      decrypt: crypto.decrypt,
     );
     if (decoded == null) return;
 
@@ -379,10 +384,13 @@ class ReadStateManager {
   }
 
   Future<void> _publish({bool allowDisposed = false}) async {
+    final crypto = _crypto;
+    final signedEventRelay = _signedEventRelay;
     if ((!allowDisposed && _disposed) ||
         !_remoteEnabled ||
         _remoteUnsupported ||
-        _signedEventRelay == null) {
+        crypto == null ||
+        signedEventRelay == null) {
       return;
     }
     if (_isPublishing) return;
@@ -400,10 +408,10 @@ class ReadStateManager {
       }
 
       final blob = ReadStateBlob(clientId: _clientId, contexts: contexts);
-      final ciphertext = _crypto.encrypt(jsonEncode(blob.toJson()));
+      final ciphertext = crypto.encrypt(jsonEncode(blob.toJson()));
       final createdAt = max(currentUnixSeconds(), _maxFetchedCreatedAt + 1);
 
-      await _signedEventRelay.submit(
+      await signedEventRelay.submit(
         kind: EventKind.readState,
         content: ciphertext,
         tags: [

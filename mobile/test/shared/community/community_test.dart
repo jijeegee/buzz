@@ -16,6 +16,24 @@ void main() {
     );
     expect(community.starterSetupIncomplete, isFalse);
     expect(community.pushLeaseInstallationId, isNull);
+    expect(community.tokenAuth, isFalse);
+  });
+
+  test('token auth mode round-trips and is omitted for legacy records', () {
+    final token = Community.create(
+      name: 'Buzz',
+      relayUrl: 'https://relay.test',
+      tokenAuth: true,
+    );
+    final legacy = Community.create(
+      name: 'Buzz',
+      relayUrl: 'https://relay.test',
+    );
+
+    expect(token.toJson()['authMode'], 'token');
+    expect(Community.fromJson(token.toJson()).tokenAuth, isTrue);
+    expect(legacy.toJson().containsKey('authMode'), isFalse);
+    expect(token.copyWith(name: 'Renamed').tokenAuth, isTrue);
   });
 
   test('new community gets a unique canonical push lease address id', () {

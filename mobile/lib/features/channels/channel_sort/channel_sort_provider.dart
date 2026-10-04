@@ -37,21 +37,24 @@ class ChannelSortNotifier extends Notifier<ChannelSortState> {
     final sessionState = ref.watch(relaySessionProvider);
     final activeCommunity = ref.watch(activeCommunityProvider).value;
 
-    final nsec = relayConfig.nsec?.trim();
-    if (nsec == null || nsec.isEmpty) {
-      return const ChannelSortState();
-    }
-
-    final pubkey = _safePubkeyFromNsec(nsec);
+    // A token community has no nsec, so no NIP-44 key: the setting is kept
+    // local-only on this device under the principal pubkey.
+    final trimmed = relayConfig.tokenAuth ? null : relayConfig.nsec?.trim();
+    final nsec = trimmed == null || trimmed.isEmpty ? null : trimmed;
+    final pubkey = nsec == null
+        ? (relayConfig.tokenAuth ? relayConfig.principalId : null)
+        : _safePubkeyFromNsec(nsec);
     if (pubkey == null || pubkey.isEmpty) {
       return const ChannelSortState();
     }
 
-    final ChannelSortCrypto crypto;
-    try {
-      crypto = ChannelSortCrypto(nsec, pubkey);
-    } catch (_) {
-      return const ChannelSortState();
+    ChannelSortCrypto? crypto;
+    if (nsec != null) {
+      try {
+        crypto = ChannelSortCrypto(nsec, pubkey);
+      } catch (_) {
+        return const ChannelSortState();
+      }
     }
 
     final relayUrl = activeCommunity?.relayUrl.trim();
@@ -60,10 +63,12 @@ class ChannelSortNotifier extends Notifier<ChannelSortState> {
     }
 
     final prefs = ref.read(savedPrefsProvider);
-    final signedRelay = SignedEventRelay(
-      session: ref.read(relaySessionProvider.notifier),
-      nsec: nsec,
-    );
+    final signedRelay = nsec == null
+        ? null
+        : SignedEventRelay(
+            session: ref.read(relaySessionProvider.notifier),
+            nsec: nsec,
+          );
 
     late final ChannelSortManager manager;
     manager = ChannelSortManager(

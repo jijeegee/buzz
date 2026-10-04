@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 const _channel = MethodChannel('buzz/push');
 
@@ -290,6 +291,46 @@ void main() {
         },
       ]);
       expect(pushEndpointGrants.value.single.endpointGrant, 'new-grant');
+    },
+  );
+
+  test(
+    'snapshot never exports a signing key that does not match its pubkey',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final legacy = nostr.Keys.generate();
+      final stale = nostr.Keys.generate();
+      final snapshots = <Object?>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_channel, (call) async {
+            if (call.method == 'syncPushSnapshot') {
+              snapshots.add(call.arguments);
+            }
+            return null;
+          });
+      Community community(String id, {required String pubkey, bool? token}) =>
+          Community(
+            id: id,
+            name: id,
+            relayUrl: 'wss://$id.example/',
+            pubkey: pubkey,
+            nsec: (id == 'matching' ? legacy : stale).nsec,
+            tokenAuth: token ?? false,
+            pushNotificationsEnabled: true,
+            addedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          );
+
+      await registerBuzzPushCommunitySnapshot([
+        community('matching', pubkey: legacy.public),
+        // Token community still holding a leftover legacy key.
+        community('token', pubkey: 'p' * 64, token: true),
+        // Legacy community whose recorded identity is not its key.
+        community('mismatched', pubkey: 'q' * 64),
+      ]);
+
+      final signingKeys =
+          (snapshots.single! as Map)['signingKeys'] as Map<Object?, Object?>;
+      expect(signingKeys.keys, ['matching']);
     },
   );
 

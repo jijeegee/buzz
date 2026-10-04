@@ -96,14 +96,8 @@ class _CommunitySwitcherSheet extends HookConsumerWidget {
                             context,
                             rootNavigator: true,
                           );
-                          ref.read(pairingProvider.notifier).reset();
                           Navigator.of(context).pop();
-                          nav.push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  const PairingPage(addingCommunity: true),
-                            ),
-                          );
+                          nav.pushNamed<void>(addCommunityRouteName);
                         },
                       ),
                     ],
@@ -388,7 +382,7 @@ Future<void> _confirmRemoveCommunity(
       title: const Text('Remove community?'),
       content: Text(
         'Are you sure you want to remove “${community.name}”? '
-        'You can pair with it again later.',
+        'You can sign in to it again later.',
       ),
       actions: [
         TextButton(
@@ -408,9 +402,13 @@ Future<void> _confirmRemoveCommunity(
 
   final messenger = ScaffoldMessenger.of(context);
   try {
-    await ref
-        .read(communityListProvider.notifier)
-        .removeCommunity(community.id);
+    final removed = await removeCommunityWithRelaySignOut(
+      context,
+      ({required deviceOnly}) => ref
+          .read(communityListProvider.notifier)
+          .removeCommunity(community.id, deviceOnly: deviceOnly),
+    );
+    if (!removed) return;
     if (closeSheetAfterRemoval && context.mounted) {
       Navigator.of(context).pop();
     }

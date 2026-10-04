@@ -36,6 +36,14 @@ class Community {
 
   /// Whether invite-created starter channels still need to be recovered.
   final bool starterSetupIncomplete;
+
+  /// Whether this community signs in with a relay token session
+  /// (centralized identity, plan §3.2) instead of a local `nsec`.
+  ///
+  /// Token communities authenticate with the origin-scoped refresh token in
+  /// `RefreshTokenStore`; [pubkey] holds the principal id and [nsec] is
+  /// normally absent (a legacy key, if any, is kept untouched).
+  final bool tokenAuth;
   final DateTime addedAt;
 
   const Community({
@@ -49,6 +57,7 @@ class Community {
     this.pushSubscriptionState = const BuzzPushLeaseSubscriptionState.desired(),
     this.pushLeaseInstallationId,
     this.starterSetupIncomplete = false,
+    this.tokenAuth = false,
     required this.addedAt,
   });
 
@@ -60,6 +69,7 @@ class Community {
     SensitiveActionPolicy sensitiveActionPolicy =
         SensitiveActionPolicy.disabledByUser,
     bool starterSetupIncomplete = false,
+    bool tokenAuth = false,
   }) {
     return Community(
       id: _uuid.v4(),
@@ -70,6 +80,7 @@ class Community {
       sensitiveActionPolicy: sensitiveActionPolicy,
       pushLeaseInstallationId: _newPushLeaseInstallationId(),
       starterSetupIncomplete: starterSetupIncomplete,
+      tokenAuth: tokenAuth,
       addedAt: DateTime.now(),
     );
   }
@@ -84,6 +95,7 @@ class Community {
     BuzzPushLeaseSubscriptionState? pushSubscriptionState,
     Object? pushLeaseInstallationId = _sentinel,
     bool? starterSetupIncomplete,
+    bool? tokenAuth,
   }) {
     return Community(
       id: id,
@@ -102,6 +114,7 @@ class Community {
           : pushLeaseInstallationId as String?,
       starterSetupIncomplete:
           starterSetupIncomplete ?? this.starterSetupIncomplete,
+      tokenAuth: tokenAuth ?? this.tokenAuth,
       addedAt: addedAt,
     );
   }
@@ -118,6 +131,7 @@ class Community {
     if (pushLeaseInstallationId != null)
       'pushLeaseInstallationId': pushLeaseInstallationId,
     'starterSetupIncomplete': starterSetupIncomplete,
+    if (tokenAuth) 'authMode': 'token',
     'addedAt': addedAt.toIso8601String(),
   };
 
@@ -155,6 +169,7 @@ class Community {
       pushSubscriptionState: pushSubscriptionState,
       pushLeaseInstallationId: pushLeaseInstallationId,
       starterSetupIncomplete: json['starterSetupIncomplete'] as bool? ?? false,
+      tokenAuth: json['authMode'] == 'token',
       addedAt: DateTime.parse(json['addedAt'] as String),
     );
   }

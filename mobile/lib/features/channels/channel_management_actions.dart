@@ -387,15 +387,17 @@ final channelActionsProvider = Provider<ChannelActions>((ref) {
   return ChannelActions(
     ref: ref,
     session: session,
-    signedEventRelay: SignedEventRelay(
+    signedEventRelay: SignedEventRelay.forConfig(
       session: session,
-      nsec: relayConfig.nsec,
+      config: relayConfig,
     ),
     currentPubkey: currentPubkey,
     isCommunityValid: () {
       final currentConfig = ref.read(relayConfigProvider);
       return currentConfig.baseUrl == relayConfig.baseUrl &&
-          currentConfig.nsec == relayConfig.nsec;
+          currentConfig.nsec == relayConfig.nsec &&
+          outgoingAuthorPubkey(currentConfig) ==
+              outgoingAuthorPubkey(relayConfig);
     },
   );
 });

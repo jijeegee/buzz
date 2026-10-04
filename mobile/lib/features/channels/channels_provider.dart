@@ -30,6 +30,10 @@ part 'channels_provider_lifecycle.dart';
 
 const _channelTypeOrder = {'stream': 0, 'forum': 1, 'dm': 2};
 const _unreadCatchUpLimit = 1000;
+
+/// How long an unread catch-up waits for the read markers to load before
+/// giving up; the next refresh (reconnect backstop) starts a new one.
+const _readStateReadyTimeout = Duration(seconds: 30);
 const _participatedRootIdsPrefix = 'buzz-thread-participation.v1';
 const _authoredRootIdsPrefix = 'buzz-thread-authored.v1';
 
@@ -579,11 +583,17 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
 
     final session = ref.read(relaySessionProvider.notifier);
     final mutedChannelIds = _mutedChannelIds();
-    final ReadStateState readState;
+    final ReadStateState? readState;
     try {
-      readState = ref.read(readStateProvider);
+      readState = await _loadedReadState();
     } catch (error) {
       debugPrint('[ChannelsNotifier] unread catch-up skipped: $error');
+      return;
+    }
+    // Without loaded markers every message would be caught up as unread.
+    if (readState == null ||
+        !ref.mounted ||
+        _isCatchUpRetired(fence, subscriptionGeneration)) {
       return;
     }
     final activeChannels = [
@@ -674,6 +684,25 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     } catch (error) {
       if (!ref.mounted) return;
       debugPrint('[ChannelsNotifier] unread catch-up failed: $error');
+    }
+  }
+
+  /// The read state once its markers have loaded, or `null` when they do
+  /// not load within [_readStateReadyTimeout].
+  Future<ReadStateState?> _loadedReadState() async {
+    final current = ref.read(readStateProvider);
+    if (current.isReady) return current;
+    final loaded = Completer<ReadStateState>();
+    final subscription = ref.listen(readStateProvider, (_, next) {
+      if (next.isReady && !loaded.isCompleted) loaded.complete(next);
+    });
+    try {
+      return await loaded.future.timeout(_readStateReadyTimeout);
+    } on TimeoutException {
+      debugPrint('[ChannelsNotifier] read state not loaded; catch-up skipped');
+      return null;
+    } finally {
+      subscription.close();
     }
   }
 

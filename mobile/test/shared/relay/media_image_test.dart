@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:nostr/nostr.dart' as nostr;
 
+import 'fake_relay_access_tokens.dart';
+
 // Minimal valid 1x1 transparent PNG.
 final _pngBytes = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAA'
@@ -212,6 +214,85 @@ void main() {
       current = current.add(const Duration(seconds: 61));
       await attempt();
       expect(fetches, 2);
+    });
+  });
+
+  group('MediaImageProvider on a token community', () {
+    MediaGetAuthService tokenAuth(FakeRelayAccessTokens tokens) =>
+        MediaGetAuthService(
+          baseUrl: _relayBase,
+          nsec: null,
+          accessTokens: tokens,
+        );
+
+    test('awaits a fresh bearer when the cached one is near expiry', () async {
+      final seen = <String?>[];
+      final client = http_testing.MockClient((request) async {
+        seen.add(request.headers['Authorization']);
+        return http.Response.bytes(_pngBytes, 200);
+      });
+      final tokens = FakeRelayAccessTokens(token: 'bzs_fresh')
+        ..currentStale = true;
+      final provider = MediaImageProvider(
+        url: _mediaUrl,
+        auth: tokenAuth(tokens),
+        client: client,
+      );
+
+      await _wait(provider.resolve(ImageConfiguration.empty));
+
+      expect(seen, ['Bearer bzs_fresh']);
+      expect(tokens.freshCalls, 1);
+    });
+
+    test('a 401 token_expired rotates once and retries', () async {
+      final seen = <String?>[];
+      final client = http_testing.MockClient((request) async {
+        seen.add(request.headers['Authorization']);
+        if (seen.length == 1) {
+          return http.Response(
+            jsonEncode({
+              'error': 'authentication failed',
+              'code': 'token_expired',
+            }),
+            401,
+          );
+        }
+        return http.Response.bytes(_pngBytes, 200);
+      });
+      final tokens = FakeRelayAccessTokens(
+        token: 'bzs_1',
+        rotations: ['bzs_2'],
+      );
+      final provider = MediaImageProvider(
+        url: _mediaUrl,
+        auth: tokenAuth(tokens),
+        client: client,
+      );
+
+      await _wait(provider.resolve(ImageConfiguration.empty));
+
+      expect(seen, ['Bearer bzs_1', 'Bearer bzs_2']);
+      expect(tokens.expiredCalls, ['bzs_1']);
+    });
+
+    test('third-party URLs never see the bearer or wait on it', () async {
+      final seen = <String?>[];
+      final client = http_testing.MockClient((request) async {
+        seen.add(request.headers['Authorization']);
+        return http.Response.bytes(_pngBytes, 200);
+      });
+      final tokens = FakeRelayAccessTokens(token: 'bzs_1');
+      final provider = MediaImageProvider(
+        url: 'https://cdn.example/media/a.png',
+        auth: tokenAuth(tokens),
+        client: client,
+      );
+
+      await _wait(provider.resolve(ImageConfiguration.empty));
+
+      expect(seen, [null]);
+      expect(tokens.freshCalls, 0);
     });
   });
 }

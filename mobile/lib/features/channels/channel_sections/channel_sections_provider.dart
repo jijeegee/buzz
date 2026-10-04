@@ -35,28 +35,33 @@ class ChannelSectionsNotifier extends Notifier<ChannelSectionsState> {
     // Rebuild when the active community changes (pubkey may differ).
     ref.watch(activeCommunityProvider);
 
-    final nsec = relayConfig.nsec?.trim();
-    if (nsec == null || nsec.isEmpty) {
-      return const ChannelSectionsState();
-    }
-
-    final pubkey = _safePubkeyFromNsec(nsec);
+    // A token community has no nsec, so no NIP-44 key: the setting is kept
+    // local-only on this device under the principal pubkey.
+    final trimmed = relayConfig.tokenAuth ? null : relayConfig.nsec?.trim();
+    final nsec = trimmed == null || trimmed.isEmpty ? null : trimmed;
+    final pubkey = nsec == null
+        ? (relayConfig.tokenAuth ? relayConfig.principalId : null)
+        : _safePubkeyFromNsec(nsec);
     if (pubkey == null || pubkey.isEmpty) {
       return const ChannelSectionsState();
     }
 
-    final ChannelSectionsCrypto crypto;
-    try {
-      crypto = ChannelSectionsCrypto(nsec, pubkey);
-    } catch (_) {
-      return const ChannelSectionsState();
+    ChannelSectionsCrypto? crypto;
+    if (nsec != null) {
+      try {
+        crypto = ChannelSectionsCrypto(nsec, pubkey);
+      } catch (_) {
+        return const ChannelSectionsState();
+      }
     }
 
     final prefs = ref.read(savedPrefsProvider);
-    final signedRelay = SignedEventRelay(
-      session: ref.read(relaySessionProvider.notifier),
-      nsec: nsec,
-    );
+    final signedRelay = nsec == null
+        ? null
+        : SignedEventRelay(
+            session: ref.read(relaySessionProvider.notifier),
+            nsec: nsec,
+          );
 
     late final ChannelSectionsManager manager;
     manager = ChannelSectionsManager(
@@ -95,23 +100,40 @@ class ChannelSectionsNotifier extends Notifier<ChannelSectionsState> {
     );
   }
 
-  void createSection(String name) => _manager?.createSection(name);
+  void createSection(String name) => _mutate((m) => m.createSection(name));
 
   void renameSection(String sectionId, String newName) =>
-      _manager?.renameSection(sectionId, newName);
+      _mutate((m) => m.renameSection(sectionId, newName));
 
-  void deleteSection(String sectionId) => _manager?.deleteSection(sectionId);
+  void deleteSection(String sectionId) =>
+      _mutate((m) => m.deleteSection(sectionId));
 
-  void moveSectionUp(String sectionId) => _manager?.moveSectionUp(sectionId);
+  void moveSectionUp(String sectionId) =>
+      _mutate((m) => m.moveSectionUp(sectionId));
 
   void moveSectionDown(String sectionId) =>
-      _manager?.moveSectionDown(sectionId);
+      _mutate((m) => m.moveSectionDown(sectionId));
 
   void assignChannel(String channelId, String sectionId) =>
-      _manager?.assignChannel(channelId, sectionId);
+      _mutate((m) => m.assignChannel(channelId, sectionId));
 
   void unassignChannel(String channelId) =>
-      _manager?.unassignChannel(channelId);
+      _mutate((m) => m.unassignChannel(channelId));
+
+  /// Apply a local edit and expose it at once: the manager only reports
+  /// changes from relay sync, which never runs while offline or on a
+  /// local-only (token) community.
+  void _mutate(void Function(ChannelSectionsManager manager) edit) {
+    final manager = _manager;
+    if (manager == null) return;
+    edit(manager);
+    if (_manager != manager) return;
+    state = ChannelSectionsState(
+      isReady: state.isReady,
+      store: manager.store,
+      version: state.version + 1,
+    );
+  }
 
   void _emitManagerState(ChannelSectionsManager manager) {
     if (_manager != manager) return;

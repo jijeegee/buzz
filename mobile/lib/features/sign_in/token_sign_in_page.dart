@@ -1,0 +1,226 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+import '../../shared/auth/auth.dart';
+import '../../shared/auth/token/token.dart';
+import '../../shared/theme/theme.dart';
+import '../../shared/widgets/buzz_loading_indicator.dart';
+import 'community_recovery_actions.dart';
+
+/// "Sign in with Google" for relays with centralized token auth.
+///
+/// Without [lockedOrigin] the user first enters a relay URL; the relay's
+/// NIP-11 document decides whether token sign-in is offered. With
+/// [lockedOrigin] (an existing token community whose session ended) the page
+/// goes straight to the sign-in button.
+class TokenSignInPage extends HookConsumerWidget {
+  const TokenSignInPage({super.key, this.lockedOrigin});
+
+  /// Canonical origin of an existing token community to sign back in to.
+  final String? lockedOrigin;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final urlController = useTextEditingController();
+    final origin = useState<String?>(lockedOrigin);
+    final checking = useState(false);
+    final completing = useState(false);
+    final message = useState<String?>(null);
+    // Fences relay checks: only the newest one may write its result.
+    final checkGeneration = useRef(0);
+
+    final session = origin.value == null
+        ? null
+        : ref.watch(tokenSessionProvider(origin.value!));
+
+    Future<void> checkRelay() async {
+      final generation = ++checkGeneration.value;
+      final String candidate;
+      try {
+        candidate = normalizeRelayOrigin(urlController.text);
+      } on FormatException {
+        message.value = 'Enter a relay address, like relay.example.com.';
+        return;
+      }
+      origin.value = null;
+      message.value = null;
+      checking.value = true;
+      String? failure;
+      TokenAuthDescriptor? descriptor;
+      try {
+        descriptor = await fetchTokenAuthDescriptor(
+          candidate,
+          ref.read(authHttpClientProvider),
+        );
+      } on TokenAuthDetectionException catch (error) {
+        failure = error.message;
+      }
+      if (!context.mounted || generation != checkGeneration.value) return;
+      checking.value = false;
+      if (failure != null) {
+        message.value = failure;
+      } else if (descriptor == null) {
+        message.value =
+            'This relay does not support Google sign-in. Join it with an '
+            'invite link from a member instead.';
+      } else if (!descriptor.supportsGoogle) {
+        message.value = 'This relay has no Google sign-in configured.';
+      } else {
+        origin.value = candidate;
+      }
+    }
+
+    /// Records the signed-in session as the active community. In locked
+    /// mode the community already exists and `TokenSessionGate` owns
+    /// identity changes.
+    Future<void> enterCommunity(String sessionOrigin, String principal) async {
+      if (lockedOrigin != null) return;
+      completing.value = true;
+      try {
+        await ref
+            .read(authProvider.notifier)
+            .authenticateWithTokenSession(
+              relayUrl: sessionOrigin,
+              principalId: principal,
+            );
+      } catch (error) {
+        if (context.mounted) {
+          completing.value = false;
+          message.value = 'Could not save this community: $error';
+        }
+        return;
+      }
+      if (!context.mounted) return;
+      completing.value = false;
+      // Opened on top of onboarding: the authenticated home is underneath.
+      unawaited(Navigator.of(context).maybePop());
+    }
+
+    Future<void> signIn() async {
+      final sessionOrigin = origin.value;
+      if (sessionOrigin == null) return;
+      message.value = null;
+      final controller = ref
+          .read(tokenSessionProvider(sessionOrigin).notifier)
+          .controller;
+      final signedIn = await controller.signIn();
+      final principal = controller.state.principalId;
+      if (!signedIn || principal == null || !context.mounted) return;
+      await enterCommunity(sessionOrigin, principal);
+    }
+
+    final status = session?.status;
+    final busy =
+        checking.value ||
+        completing.value ||
+        status == TokenSessionStatus.restoring ||
+        status == TokenSessionStatus.signingIn;
+    final errorText = message.value ?? session?.errorMessage;
+    final restoredPrincipal =
+        lockedOrigin == null && status == TokenSessionStatus.signedIn
+        ? session?.principalId
+        : null;
+
+    return Scaffold(
+      appBar: lockedOrigin == null && Navigator.of(context).canPop()
+          ? AppBar(title: const Text('Sign in'))
+          : null,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(Grid.sm),
+          children: [
+            const SizedBox(height: Grid.lg),
+            Text(
+              lockedOrigin == null ? 'Sign in to a relay' : 'Signed out',
+              style: context.textTheme.headlineSmall,
+            ),
+            const SizedBox(height: Grid.xxs),
+            Text(
+              lockedOrigin == null
+                  ? 'Relays with Buzz accounts let you sign in with Google.'
+                  : 'Your session on $lockedOrigin ended. Sign in again '
+                        'to continue.',
+              style: context.textTheme.bodyMedium?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: Grid.sm),
+            if (lockedOrigin == null) ...[
+              TextField(
+                key: const Key('token-sign-in-relay-url'),
+                controller: urlController,
+                enabled: !busy,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                textInputAction: TextInputAction.go,
+                onChanged: (_) {
+                  // An edited address invalidates the previous check.
+                  checkGeneration.value += 1;
+                  checking.value = false;
+                  origin.value = null;
+                },
+                onSubmitted: (_) => unawaited(checkRelay()),
+                decoration: const InputDecoration(
+                  labelText: 'Relay address',
+                  hintText: 'relay.example.com',
+                ),
+              ),
+              const SizedBox(height: Grid.xs),
+              if (origin.value == null)
+                OutlinedButton(
+                  key: const Key('token-sign-in-check'),
+                  onPressed: busy ? null : () => unawaited(checkRelay()),
+                  child: const Text('Continue'),
+                ),
+            ],
+            if (restoredPrincipal != null)
+              FilledButton(
+                key: const Key('token-sign-in-continue'),
+                onPressed: busy
+                    ? null
+                    : () => unawaited(
+                        enterCommunity(origin.value!, restoredPrincipal),
+                      ),
+                child: const Text('Continue with saved sign-in'),
+              )
+            else if (origin.value != null)
+              FilledButton(
+                key: const Key('token-sign-in-google'),
+                onPressed: busy ? null : () => unawaited(signIn()),
+                child: const Text('Sign in with Google'),
+              ),
+            if (busy) ...[
+              const SizedBox(height: Grid.sm),
+              const Center(
+                child: BuzzLoadingIndicator(
+                  size: 32,
+                  semanticLabel: 'Signing in',
+                ),
+              ),
+            ],
+            if (errorText != null) ...[
+              const SizedBox(height: Grid.xs),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  errorText,
+                  key: const Key('token-sign-in-error'),
+                  style: context.textTheme.bodySmall?.copyWith(
+                    color: context.colors.error,
+                  ),
+                ),
+              ),
+            ],
+            if (lockedOrigin != null) ...[
+              const SizedBox(height: Grid.md),
+              const CommunityRecoveryActions(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

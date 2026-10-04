@@ -34,7 +34,15 @@ class ChannelSectionsCrypto {
 class ChannelSectionsManager {
   final String pubkey;
   final ChannelSectionsStorage _storage;
-  final ChannelSectionsCrypto _crypto;
+
+  /// NIP-44 key; `null` on a token community (no nsec), which keeps this
+  /// setting local-only on this device.
+  final ChannelSectionsCrypto? _crypto;
+
+  // Remote sync only runs with a key: [_remoteEnabled] requires one.
+  ChannelSectionsCrypto get _remoteCrypto =>
+      _crypto ?? (throw StateError('Remote sync needs a signing key'));
+
   final RelaySessionNotifier? _relaySession;
   final SignedEventRelay? _signedEventRelay;
   final bool _remoteEnabled;
@@ -62,7 +70,7 @@ class ChannelSectionsManager {
   ChannelSectionsManager({
     required this.pubkey,
     required SharedPreferences prefs,
-    required ChannelSectionsCrypto crypto,
+    required ChannelSectionsCrypto? crypto,
     required RelaySessionNotifier? relaySession,
     required SignedEventRelay? signedEventRelay,
     required bool remoteEnabled,
@@ -73,7 +81,7 @@ class ChannelSectionsManager {
        _crypto = crypto,
        _relaySession = relaySession,
        _signedEventRelay = signedEventRelay,
-       _remoteEnabled = remoteEnabled,
+       _remoteEnabled = remoteEnabled && crypto != null,
        _onChanged = onChanged,
        _startupRetryBaseDelay = startupRetryBaseDelay,
        _store = ChannelSectionsStorage(prefs).read(pubkey);
@@ -405,7 +413,7 @@ class ChannelSectionsManager {
     if (dTag != 'channel-sections') return;
 
     try {
-      final plaintext = _crypto.decrypt(event.content);
+      final plaintext = _remoteCrypto.decrypt(event.content);
       final parsed = jsonDecode(plaintext);
       if (parsed is! Map<String, dynamic>) return;
 
@@ -475,7 +483,7 @@ class ChannelSectionsManager {
     final revision = _localRevision;
     try {
       final payload = jsonEncode(submitted.toJson());
-      final ciphertext = _crypto.encrypt(payload);
+      final ciphertext = _remoteCrypto.encrypt(payload);
       final createdAt = max(currentUnixSeconds(), _lastRemoteCreatedAt + 1);
 
       String? signedId;

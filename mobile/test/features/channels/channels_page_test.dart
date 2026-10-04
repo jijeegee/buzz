@@ -1283,7 +1283,7 @@ void main() {
     expect(
       find.text(
         'Are you sure you want to remove “Bravo”? '
-        'You can pair with it again later.',
+        'You can sign in to it again later.',
       ),
       findsOneWidget,
     );
@@ -2684,7 +2684,7 @@ class _FakeCommunityListNotifier extends CommunityListNotifier {
   Future<List<Community>> build() async => _communities;
 
   @override
-  Future<void> removeCommunity(String id) async {
+  Future<void> removeCommunity(String id, {bool deviceOnly = false}) async {
     removedIds.add(id);
     _communities = _communities
         .where((community) => community.id != id)

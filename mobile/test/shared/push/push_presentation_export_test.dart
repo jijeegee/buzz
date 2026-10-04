@@ -586,7 +586,7 @@ class _ObservedVerificationEvent extends NostrEvent {
       );
 
   @override
-  String get sig {
+  String? get sig {
     observations.send(Isolate.current.debugName);
     return super.sig;
   }

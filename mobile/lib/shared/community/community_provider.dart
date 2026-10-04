@@ -13,6 +13,7 @@ import '../push/push_subscription.dart';
 import '../relay/signed_event_relay.dart';
 import 'community.dart';
 import 'community_storage.dart';
+import 'community_token_session.dart';
 
 final class CommunityTransitionCoordinator {
   final Map<Object, Future<void> Function()> _callbacks = {};
@@ -129,7 +130,8 @@ Future<void> _deactivateCommunityPushLease(
     throw StateError('Push lease tombstone requires community signing key.');
   }
   final decoded = nostr.Nip19.decode(payload: nsec);
-  final memberPubkey = community.pubkey ?? nostr.Keys(decoded.data).public;
+  // Derived from the signing key, never from the recorded identity.
+  final memberPubkey = nostr.Keys(decoded.data).public;
   final descriptor = await fetchBuzzPushLeaseDescriptor(community.relayUrl);
   final matchingGrant = (await readBuzzPushEndpointGrants())
       .where(
@@ -284,17 +286,30 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     return community.id;
   }
 
-  Future<void> removeCommunity(String id) =>
-      _removeCommunity(id, invalidateAuthentication: true);
+  /// Removes community [id]. A token community's device session is revoked
+  /// on the relay first; when that fails (`TokenSessionException`) nothing
+  /// is removed. [deviceOnly] skips the relay and only forgets the session
+  /// on this device (see [communityTokenSessionEnderProvider]).
+  Future<void> removeCommunity(String id, {bool deviceOnly = false}) =>
+      _removeCommunity(
+        id,
+        invalidateAuthentication: true,
+        deviceOnly: deviceOnly,
+      );
 
   /// Removes the active community through the same local-first path as the
   /// community list while allowing [AuthNotifier] to publish its final state.
-  Future<void> removeActiveCommunityForSignOut() =>
-      _removeCommunity(null, invalidateAuthentication: false);
+  Future<void> removeActiveCommunityForSignOut({bool deviceOnly = false}) =>
+      _removeCommunity(
+        null,
+        invalidateAuthentication: false,
+        deviceOnly: deviceOnly,
+      );
 
   Future<void> _removeCommunity(
     String? requestedId, {
     required bool invalidateAuthentication,
+    required bool deviceOnly,
   }) {
     return ref.read(communityTransitionProvider).runExclusive(() async {
       var revocationJournaled = false;
@@ -302,13 +317,21 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       final activeId = await storage.loadActiveId();
       final id = requestedId ?? activeId;
       if (id == null) return;
-      if (activeId == id) {
-        await ref.read(communityTransitionProvider).run();
-      }
       final current = state.value ?? await storage.loadAll();
       final removedIndex = current.indexWhere(
         (community) => community.id == id,
       );
+      if (removedIndex >= 0) {
+        // Revoke the relay session before any local teardown: a failure
+        // throws and leaves the community fully usable for a retry.
+        await ref.read(communityTokenSessionEnderProvider)(
+          current[removedIndex],
+          deviceOnly: deviceOnly,
+        );
+      }
+      if (activeId == id) {
+        await ref.read(communityTransitionProvider).run();
+      }
       if (removedIndex >= 0) {
         // Persist every remote-cleanup dependency before erasing credentials.
         // This local transaction is the only removal prerequisite. Relay I/O

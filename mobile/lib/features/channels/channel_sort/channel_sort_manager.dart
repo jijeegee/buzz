@@ -37,7 +37,15 @@ class ChannelSortManager {
   final String pubkey;
   final String relayUrl;
   final ChannelSortStorage _storage;
-  final ChannelSortCrypto _crypto;
+
+  /// NIP-44 key; `null` on a token community (no nsec), which keeps this
+  /// setting local-only on this device.
+  final ChannelSortCrypto? _crypto;
+
+  // Remote sync only runs with a key: [_remoteEnabled] requires one.
+  ChannelSortCrypto get _remoteCrypto =>
+      _crypto ?? (throw StateError('Remote sync needs a signing key'));
+
   final RelaySessionNotifier? _relaySession;
   final SignedEventRelay? _signedEventRelay;
   final bool _remoteEnabled;
@@ -60,7 +68,7 @@ class ChannelSortManager {
     required this.pubkey,
     required this.relayUrl,
     required SharedPreferences prefs,
-    required ChannelSortCrypto crypto,
+    required ChannelSortCrypto? crypto,
     required RelaySessionNotifier? relaySession,
     required SignedEventRelay? signedEventRelay,
     required bool remoteEnabled,
@@ -72,7 +80,7 @@ class ChannelSortManager {
        _crypto = crypto,
        _relaySession = relaySession,
        _signedEventRelay = signedEventRelay,
-       _remoteEnabled = remoteEnabled,
+       _remoteEnabled = remoteEnabled && crypto != null,
        _onChanged = onChanged,
        _startupRetryBaseDelay = startupRetryBaseDelay,
        _publishDelay = publishDelay,
@@ -245,7 +253,7 @@ class ChannelSortManager {
             event.id.compareTo(_lastRemoteEventId) < 0);
     if (!isNewer) return;
     try {
-      final parsed = jsonDecode(_crypto.decrypt(event.content));
+      final parsed = jsonDecode(_remoteCrypto.decrypt(event.content));
       if (parsed is! Map<String, dynamic> || parsed['version'] != 1) return;
       final incoming = ChannelSortStore.fromJson(parsed);
       _lastRemoteCreatedAt = event.createdAt;
@@ -297,7 +305,7 @@ class ChannelSortManager {
         _schedulePublish();
         return;
       }
-      final ciphertext = _crypto.encrypt(jsonEncode(_store.toJson()));
+      final ciphertext = _remoteCrypto.encrypt(jsonEncode(_store.toJson()));
       String? submittedEventId;
       await _signedEventRelay.submit(
         kind: EventKind.readState,

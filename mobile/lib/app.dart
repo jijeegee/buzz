@@ -19,8 +19,6 @@ import 'features/channels/unread_badge/unread_badge_provider.dart';
 import 'features/home/home_page.dart';
 import 'features/invites/invite_create_page.dart';
 import 'features/invites/invite_join_provider.dart';
-import 'features/pairing/pairing_page.dart';
-import 'features/pairing/pairing_provider.dart';
 import 'features/channels/agent_activity/observer_subscription.dart';
 import 'features/channels/channel_detail_page.dart';
 import 'features/channels/deep_link_dispatcher.dart';
@@ -30,7 +28,11 @@ import 'features/profile/settings_profile_header.dart';
 import 'features/profile/profile_edit_page.dart';
 import 'features/profile/profile_text_editor.dart';
 import 'features/settings/settings_page.dart';
+import 'features/sign_in/token_session_gate.dart';
+import 'features/sign_in/token_sign_in_page.dart';
 import 'shared/auth/auth.dart';
+import 'shared/auth/token/token.dart';
+import 'shared/community/add_community_route.dart';
 import 'shared/deeplink/pending_deep_link_provider.dart';
 import 'shared/emoji/emoji_burst.dart';
 import 'shared/push/push_subscription_provider.dart';
@@ -296,11 +298,6 @@ class App extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ageSignalState = ref.watch(ageSignalProvider);
-    ref.listen(ageSignalProvider, (_, next) {
-      if (next == AgeSignalState.restricted) {
-        ref.read(pairingProvider.notifier).reset();
-      }
-    });
     final communityTheme = ageSignalState != AgeSignalState.restricted
         ? ref.watch(communityThemeProvider)
         : defaultCommunityTheme;
@@ -396,6 +393,7 @@ class App extends HookConsumerWidget {
         topSectionGradient: buzzDarkGradient,
       ),
       themeMode: effectiveMode,
+      routes: {addCommunityRouteName: (_) => const TokenSignInPage()},
       // Above the navigator, so an age restriction cannot be bypassed by a
       // route that was pushed while the store signal request was in flight.
       builder: (context, child) => switch (ageSignalState) {
@@ -409,17 +407,19 @@ class App extends HookConsumerWidget {
       },
       home: authState.when(
         loading: () => const _SplashScreen(),
-        error: (_, _) => const PairingPage(),
+        error: (_, _) => const TokenSignInPage(),
         data: (state) => switch (state.status) {
           AuthStatus.authenticated => DeepLinkDispatcher(
-            child: HomePage(
-              settingsPageBuilder: _buildSettingsPage,
-              hasUnreadInbox: hasUnreadInbox,
+            child: _TokenGateIfNeeded(
+              child: HomePage(
+                settingsPageBuilder: _buildSettingsPage,
+                hasUnreadInbox: hasUnreadInbox,
+              ),
             ),
           ),
           _ => const DeepLinkDispatcher(
             dispatchMessageLinks: false,
-            child: PairingPage(),
+            child: _OnboardingHome(),
           ),
         },
       ),
@@ -441,10 +441,36 @@ class _SettingsPageContent extends ConsumerWidget {
       onEditDisplayName: showProfileDisplayNameEditor,
       onEditProfileDescription: showProfileDescriptionEditor,
       invitePageBuilder: (_) => const CommunityInvitePage(),
-      identityRecoveryPageBuilder: (_) =>
-          const PairingPage(addingCommunity: true, identityRecoveryOnly: true),
     );
   }
+}
+
+/// Token communities only reach Home with a live token session; legacy
+/// (nsec) communities pass straight through.
+class _TokenGateIfNeeded extends ConsumerWidget {
+  const _TokenGateIfNeeded({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final origin = ref.watch(activeTokenOriginProvider);
+    if (origin == null) return child;
+    return TokenSessionGate(
+      key: ValueKey(origin),
+      origin: origin,
+      child: child,
+    );
+  }
+}
+
+/// New communities join through relay token sign-in. NIP-AB device pairing
+/// was removed; communities stored with a legacy key keep working.
+class _OnboardingHome extends StatelessWidget {
+  const _OnboardingHome();
+
+  @override
+  Widget build(BuildContext context) => const TokenSignInPage();
 }
 
 class _SplashScreen extends StatelessWidget {

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:hooks_riverpod/misc.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:image_picker/image_picker.dart';
@@ -201,9 +202,11 @@ Widget _buildComposeBar({
   String? threadHeadId,
   VoiceNoteRecorder Function()? voiceNoteRecorderFactory,
   VoiceNotePlayerController Function()? voiceNotePlayerFactory,
+  List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
     overrides: [
+      ...extraOverrides,
       customEmojiListProvider.overrideWithValue(customEmoji),
       mediaUploadServiceProvider.overrideWithValue(uploadService),
       if (voiceNoteRecorderFactory != null)
@@ -681,6 +684,51 @@ void main() {
   });
 
   group('ComposeBar', () {
+    testWidgets('token community sends typing as an unsigned principal draft', (
+      tester,
+    ) async {
+      const principal =
+          'dd44dd44dd44dd44dd44dd44dd44dd44dd44dd44dd44dd44dd44dd44dd44dd44';
+      final publishedEvents = <Map<String, dynamic>>[];
+      await tester.pumpWidget(
+        _buildComposeBar(
+          uploadService: _testUploadService(nostr.Keys.generate().nsec),
+          relayConfig: () => _SwitchableRelayConfigNotifier(
+            const RelayConfig(
+              baseUrl: 'https://relay.example',
+              tokenAuth: true,
+              principalId: principal,
+            ),
+          ),
+          extraOverrides: [relayAccessTokensProvider.overrideWithValue(null)],
+          onSend: (_, _, {mediaTags = const <List<String>>[]}) async {},
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ComposeBar)),
+      );
+      final session = container.read(relaySessionProvider.notifier);
+      session.debugAttachSocketForTest(
+        _RecordingRelaySocket(
+          publishedEvents,
+          session.debugHandleSocketMessageForTest,
+        ),
+      );
+
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), 'h');
+      await tester.pump();
+
+      final typing = publishedEvents.singleWhere(
+        (event) => event['kind'] == EventKind.typingIndicator,
+      );
+      expect(typing['pubkey'], principal);
+      expect(typing.containsKey('sig'), isFalse);
+      expect(typing['tags'], [
+        ['h', 'channel-1'],
+      ]);
+    });
+
     testWidgets('starts compact and grows to the full-width composer', (
       tester,
     ) async {

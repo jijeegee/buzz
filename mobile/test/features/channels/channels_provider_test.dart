@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
+import 'package:buzz/shared/read_state/read_state_provider.dart';
 import 'package:buzz/shared/relay/relay.dart';
 
 part 'channels_provider_live_cases.dart';
@@ -1705,6 +1706,30 @@ void main() {
           sig: 'sig',
         );
 
+    test('unread catch-up waits for loaded read markers, then queries '
+        'since them', () async {
+      final readState = _GatedReadState();
+      final session = _FakeRelaySession(
+        memberships: [_membership(_channelA, myPk)],
+        metadata: [_meta(id: _channelA, name: 'general')],
+        recentMessages: [message('m1', 30, mention: true)],
+      );
+      final container = _buildContainer(
+        session: session,
+        readState: () => readState,
+      );
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      await _settle();
+      // Not loaded: querying now would treat all history as unread.
+      expect(session.queryBatches.where(isUnread), isEmpty);
+
+      readState.load({_channelA: 40});
+      await _waitUntil(() => session.queryBatches.any(isUnread));
+
+      expect(session.queryBatches.firstWhere(isUnread).single.since, 41);
+    });
+
     test('a latest-message deadline keeps known timestamps', () async {
       final session = _FakeRelaySession(
         memberships: [_membership(_channelA, myPk)],
@@ -2364,16 +2389,44 @@ NostrEvent _meta({
   sig: 'sig',
 );
 
-ProviderContainer _buildContainer({required _FakeRelaySession session}) {
+ProviderContainer _buildContainer({
+  required _FakeRelaySession session,
+  ReadStateNotifier Function() readState = _ReadyReadState.new,
+}) {
   return ProviderContainer(
     retry: (_, _) => null,
     overrides: [
+      readStateProvider.overrideWith(readState),
       appLifecycleProvider.overrideWith(() => _FakeAppLifecycleNotifier()),
       relaySessionProvider.overrideWith(() => session),
       // Route the pubkey through a mutable notifier so tests can switch the
       // signing identity mid-flight the way an account change does at runtime.
       myPubkeyProvider.overrideWith((ref) => ref.watch(_testPubkeyProvider)),
     ],
+  );
+}
+
+/// Loaded read state with no markers (the unread catch-up gates on it).
+class _ReadyReadState extends ReadStateNotifier {
+  @override
+  ReadStateState build() => const ReadStateState(
+    isReady: true,
+    pubkey: 'me',
+    contexts: {},
+    version: 1,
+  );
+}
+
+/// Read state whose markers load when the test says so.
+class _GatedReadState extends ReadStateNotifier {
+  @override
+  ReadStateState build() => const ReadStateState.inert();
+
+  void load(Map<String, int> contexts) => state = ReadStateState(
+    isReady: true,
+    pubkey: 'me',
+    contexts: contexts,
+    version: 1,
   );
 }
 

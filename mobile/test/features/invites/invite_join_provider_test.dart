@@ -39,6 +39,9 @@ void main() {
         final auth = _RecordingAuthNotifier();
         final container = ProviderContainer(
           overrides: [
+            inviteTokenAuthDetectorProvider.overrideWithValue(
+              (_) async => null,
+            ),
             communityStorageProvider.overrideWithValue(storage),
             authProvider.overrideWith(() => auth),
             inviteKeyGeneratorProvider.overrideWithValue(() {
@@ -88,6 +91,7 @@ void main() {
       final auth = _RecordingAuthNotifier();
       final container = ProviderContainer(
         overrides: [
+          inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
           communityStorageProvider.overrideWithValue(storage),
           authProvider.overrideWith(() => auth),
           inviteKeyGeneratorProvider.overrideWithValue(() => keys),
@@ -359,6 +363,7 @@ void main() {
       final storage = CommunityStorage(secure: FakeSecureStorage());
       final firstContainer = ProviderContainer(
         overrides: [
+          inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
           communityStorageProvider.overrideWithValue(storage),
           inviteKeyGeneratorProvider.overrideWithValue(() {
             generatedKeys++;
@@ -404,6 +409,7 @@ void main() {
 
       final secondContainer = ProviderContainer(
         overrides: [
+          inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
           communityStorageProvider.overrideWithValue(storage),
           inviteKeyGeneratorProvider.overrideWithValue(() {
             generatedKeys++;
@@ -491,6 +497,7 @@ void main() {
     final storage = CommunityStorage(secure: FakeSecureStorage());
     final container = ProviderContainer(
       overrides: [
+        inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
         communityStorageProvider.overrideWithValue(storage),
         inviteKeyGeneratorProvider.overrideWithValue(() => keys),
         inviteJoinHttpClientProvider.overrideWithValue(
@@ -535,6 +542,7 @@ void main() {
     final storage = CommunityStorage(secure: FakeSecureStorage());
     final container = ProviderContainer(
       overrides: [
+        inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
         communityStorageProvider.overrideWithValue(storage),
         inviteKeyGeneratorProvider.overrideWithValue(() => keys),
         inviteJoinHttpClientProvider.overrideWithValue(
@@ -580,6 +588,7 @@ void main() {
     final auth = _RecordingAuthNotifier();
     final container = ProviderContainer(
       overrides: [
+        inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
         communityStorageProvider.overrideWithValue(storage),
         authProvider.overrideWith(() => auth),
         inviteKeyGeneratorProvider.overrideWithValue(() => keys),
@@ -640,6 +649,7 @@ void main() {
     var nextKeys = 0;
     final container = ProviderContainer(
       overrides: [
+        inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
         communityStorageProvider.overrideWithValue(
           CommunityStorage(secure: FakeSecureStorage()),
         ),

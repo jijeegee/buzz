@@ -15,6 +15,7 @@ import 'package:pointycastle/digests/sha256.dart';
 import 'animated_image_sanitizer.dart';
 import 'media_auth.dart';
 import 'mp4_fast_start.dart';
+import 'relay_access_tokens.dart';
 import 'relay_provider.dart';
 
 part 'media_upload/platform_bindings.dart';
@@ -252,6 +253,9 @@ class MediaUploadService {
   final http.Client _http;
   final bool _ownsHttpClient;
 
+  /// Bearer source on a token-auth community; `null` keeps kind 24242.
+  final RelayAccessTokens? _accessTokens;
+
   MediaUploadService({
     required String baseUrl,
     required String? nsec,
@@ -268,7 +272,9 @@ class MediaUploadService {
     ReadClipboardImage? readClipboardImage,
     DateTime Function()? now,
     http.Client? httpClient,
+    RelayAccessTokens? accessTokens,
   }) : _baseUrl = baseUrl,
+       _accessTokens = accessTokens,
        _nsec = nsec,
        _pickGalleryImage = pickGalleryImage,
        _pickCameraImage = pickCameraImage,
@@ -623,11 +629,37 @@ class MediaUploadService {
     );
   }
 
+  /// One upload PUT with the community's auth: a bearer token (one
+  /// `token_expired` rotation + retry) on a token community, otherwise a
+  /// signed kind 24242 proof.
   Future<http.Response> _sendUploadRequest({
     required Uint8List bytes,
     required String mimeType,
     required String sha256,
     required String path,
+    ValueChanged<double>? onProgress,
+    UploadCancellationToken? cancellationToken,
+  }) {
+    Future<http.Response> send(String authorization) => _sendUploadAttempt(
+      bytes: bytes,
+      mimeType: mimeType,
+      sha256: sha256,
+      path: path,
+      authorization: authorization,
+      onProgress: onProgress,
+      cancellationToken: cancellationToken,
+    );
+    final tokens = _accessTokens;
+    if (tokens != null) return sendWithBearer(tokens, send);
+    return Future.sync(() => send(_buildUploadAuthHeader(sha256)));
+  }
+
+  Future<http.Response> _sendUploadAttempt({
+    required Uint8List bytes,
+    required String mimeType,
+    required String sha256,
+    required String path,
+    required String authorization,
     ValueChanged<double>? onProgress,
     UploadCancellationToken? cancellationToken,
   }) async {
@@ -638,9 +670,11 @@ class MediaUploadService {
       abortTrigger: cancellationToken?.whenCancelled,
     );
     request.contentLength = bytes.length;
-    request.headers.addAll(
-      _buildUploadHeaders(mimeType: mimeType, sha256: sha256),
-    );
+    request.headers.addAll({
+      'Authorization': authorization,
+      'Content-Type': mimeType,
+      'X-SHA-256': sha256,
+    });
     final writeRequest = request.sink
         .addStream(_uploadByteStream(bytes, onProgress))
         .whenComplete(request.sink.close);
@@ -654,18 +688,6 @@ class MediaUploadService {
     if (cancellationToken?.isCancelled ?? false) {
       throw const UploadCancelledException();
     }
-  }
-
-  Map<String, String> _buildUploadHeaders({
-    required String mimeType,
-    required String sha256,
-  }) {
-    final headers = <String, String>{
-      'Authorization': _buildUploadAuthHeader(sha256),
-      'Content-Type': mimeType,
-      'X-SHA-256': sha256,
-    };
-    return headers;
   }
 
   String _buildUploadAuthHeader(String sha256) {

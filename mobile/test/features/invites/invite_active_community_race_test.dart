@@ -26,6 +26,7 @@ void main() {
       var recoveryCalls = 0;
       final container = ProviderContainer(
         overrides: [
+          inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
           communityStorageProvider.overrideWithValue(storage),
           communitySnapshotWriterProvider.overrideWithValue((_) async {}),
           inviteJoinHttpClientProvider.overrideWithValue(

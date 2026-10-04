@@ -189,15 +189,20 @@ class RelayCommunityInviteActions implements CommunityInviteActions {
     required String? nsec,
     required SignedEventRelay signedEventRelay,
     required bool Function() isCommunityActive,
+    RelayAccessTokens? accessTokens,
   }) : _httpClient = httpClient,
        _baseUrl = baseUrl,
        _nsec = nsec,
+       _accessTokens = accessTokens,
        _signedEventRelay = signedEventRelay,
        _isCommunityActive = isCommunityActive;
 
   final http.Client _httpClient;
   final String _baseUrl;
   final String? _nsec;
+
+  /// Bearer source on a token-auth community; `null` keeps NIP-98.
+  final RelayAccessTokens? _accessTokens;
   final SignedEventRelay _signedEventRelay;
   final bool Function() _isCommunityActive;
 
@@ -217,21 +222,27 @@ class RelayCommunityInviteActions implements CommunityInviteActions {
     final body = <String, Object>{'ttl_secs': ttlSeconds};
     if (maxUses != null) body['max_uses'] = maxUses;
     final bodyBytes = utf8.encode(jsonEncode(body));
-    final response = await _httpClient
+    Future<http.Response> post(String authorization) => _httpClient
         .post(
           Uri.parse(url),
           headers: {
-            'Authorization': buildNip98AuthHeader(
-              method: 'POST',
-              url: url,
-              bodyBytes: bodyBytes,
-              nsec: _nsec,
-            ),
+            'Authorization': authorization,
             'Content-Type': 'application/json',
           },
           body: bodyBytes,
         )
         .timeout(const Duration(seconds: 15));
+    final tokens = _accessTokens;
+    final response = tokens != null
+        ? await sendWithBearer(tokens, post)
+        : await post(
+            buildNip98AuthHeader(
+              method: 'POST',
+              url: url,
+              bodyBytes: bodyBytes,
+              nsec: _nsec,
+            ),
+          );
     _ensureCommunityActive();
 
     final dynamic decoded;
@@ -290,10 +301,19 @@ final communityInviteActionsProvider = Provider<CommunityInviteActions>((ref) {
     httpClient: ref.watch(communityInviteHttpClientProvider),
     baseUrl: config.baseUrl,
     nsec: config.nsec,
-    signedEventRelay: SignedEventRelay(session: session, nsec: config.nsec),
+    signedEventRelay: SignedEventRelay.forConfig(
+      session: session,
+      config: config,
+    ),
+    accessTokens: config.tokenAuth
+        ? ref.watch(relayAccessTokensProvider)
+        : null,
     isCommunityActive: () {
       final current = ref.read(relayConfigProvider);
-      return current.baseUrl == config.baseUrl && current.nsec == config.nsec;
+      return current.baseUrl == config.baseUrl &&
+          current.nsec == config.nsec &&
+          current.tokenAuth == config.tokenAuth &&
+          current.principalId == config.principalId;
     },
   );
 });

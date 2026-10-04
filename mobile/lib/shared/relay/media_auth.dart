@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:nostr/nostr.dart' as nostr;
 
+import 'relay_access_tokens.dart';
 import 'relay_provider.dart';
 
 const _mediaGetAuthKind = 24242;
@@ -33,6 +35,10 @@ class MediaGetAuthService {
   final String? _nsec;
   final DateTime Function() _now;
 
+  /// Token-auth communities: the session's access tokens, read on every
+  /// call (never cached here, so a rotation applies to the next request).
+  final RelayAccessTokens? _accessTokens;
+
   Map<String, String>? _cachedHeaders;
   DateTime? _refreshAt;
 
@@ -40,8 +46,10 @@ class MediaGetAuthService {
     required String baseUrl,
     required String? nsec,
     DateTime Function()? now,
+    RelayAccessTokens? accessTokens,
   }) : _baseUrl = baseUrl,
        _nsec = nsec,
+       _accessTokens = accessTokens,
        _now = now ?? DateTime.now;
 
   bool isRelayMediaUrl(String url) {
@@ -52,6 +60,12 @@ class MediaGetAuthService {
   }
 
   Map<String, String> headersFor(String url) {
+    final tokens = _accessTokens;
+    if (tokens != null) {
+      if (!isRelayMediaUrl(url)) return const {};
+      final token = tokens.current;
+      return token == null ? const {} : {'Authorization': 'Bearer $token'};
+    }
     final nsec = _nsec;
     if (nsec == null || nsec.isEmpty) return const {};
     if (!isRelayMediaUrl(url)) return const {};
@@ -85,6 +99,23 @@ class MediaGetAuthService {
       // instead of crashing the widget tree because local key material is bad.
       return const {};
     }
+  }
+
+  /// GET [url] with this community's media auth. On a token community a
+  /// relay media URL awaits a fresh bearer (the synchronous [headersFor]
+  /// sends none inside the expiry margin) and a 401 `token_expired` rotates
+  /// once and retries once; every other URL is fetched exactly as before.
+  Future<http.Response> get(http.Client client, String url) {
+    final uri = Uri.parse(url);
+    final tokens = _accessTokens;
+    if (tokens == null || !isRelayMediaUrl(url)) {
+      return client.get(uri, headers: headersFor(url));
+    }
+    return sendWithBearer(
+      tokens,
+      (authorization) =>
+          client.get(uri, headers: {'Authorization': authorization}),
+    );
   }
 
   bool _isRelayMediaUrl(Uri uri, Uri relayUri) {
@@ -129,6 +160,13 @@ class MediaGetAuthService {
 
 final mediaGetAuthServiceProvider = Provider<MediaGetAuthService>((ref) {
   final config = ref.watch(relayConfigProvider);
+  if (config.tokenAuth) {
+    return MediaGetAuthService(
+      baseUrl: config.baseUrl,
+      nsec: null,
+      accessTokens: ref.watch(relayAccessTokensProvider),
+    );
+  }
   return MediaGetAuthService(baseUrl: config.baseUrl, nsec: config.nsec);
 });
 

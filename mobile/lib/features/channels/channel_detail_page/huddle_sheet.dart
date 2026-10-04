@@ -447,7 +447,8 @@ void _openMobileHuddle({
 }) {
   final config = ref.read(relayConfigProvider);
   final nsec = config.nsec;
-  if (nsec == null || nsec.isEmpty) {
+  // A token community authenticates the audio socket with its bearer.
+  if (!config.tokenAuth && (nsec == null || nsec.isEmpty)) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('A paired identity is required.')),
     );

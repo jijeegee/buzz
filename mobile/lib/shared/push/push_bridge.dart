@@ -305,13 +305,20 @@ Future<void> _registerBuzzPushCommunitySnapshot(
     ];
     final signingKeys = <String, String>{};
     for (final community in communities) {
-      if (!community.pushNotificationsEnabled) continue;
+      // Token communities sign with no local key; a leftover legacy key
+      // would pair the principal with a key it does not own.
+      if (!community.pushNotificationsEnabled || community.tokenAuth) continue;
       final nsec = community.nsec;
       if (nsec == null || nsec.isEmpty) continue;
       try {
         final decoded = nostr.Nip19.decode(payload: nsec);
         if (decoded.prefix != nostr.Nip19Prefix.nsec ||
             decoded.data.length != 64) {
+          continue;
+        }
+        final recorded = community.pubkey;
+        if (recorded != null &&
+            nostr.Keys(decoded.data).public != recorded.toLowerCase()) {
           continue;
         }
         signingKeys[community.id] = decoded.data;

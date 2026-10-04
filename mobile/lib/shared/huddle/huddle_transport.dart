@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../auth/token/token_session.dart';
+import '../relay/relay_access_tokens.dart';
 import 'huddle_auth.dart';
 import 'huddle_wire.dart';
 
@@ -163,6 +165,26 @@ final class HuddleTransport implements HuddleTransportClient {
   bool _hasAdmitted = false;
   Map<int, HuddlePeer>? _admissionPreviousPeers;
 
+  // Token-community re-auth (plan §3.6). Listeners live for one socket
+  // generation and are dropped on every teardown path.
+  void Function()? _removeTokenListener;
+  void Function()? _removeStateListener;
+  String? _lastSentToken;
+  String? _latestToken;
+  bool _reauthInFlight = false;
+
+  /// The token this attempt's first AUTH presented, kept past teardown so a
+  /// rejected admission can refresh exactly that token.
+  String? _admissionToken;
+
+  /// One refresh per [connect]: armed at its start, spent by the first
+  /// refreshable first-AUTH rejection.
+  bool _admissionRefreshArmed = false;
+
+  /// Set when the last attempt was torn down for an admission refresh (the
+  /// transport stays `connecting`, never `failed`, so consumers wait).
+  bool _admissionRefreshing = false;
+
   HuddleTransport({
     required this.parameters,
     this.connectTimeout = const Duration(seconds: 8),
@@ -201,6 +223,62 @@ final class HuddleTransport implements HuddleTransportClient {
       );
     }
 
+    _admissionRefreshArmed = parameters.accessTokens != null;
+    try {
+      await _connectAttempt();
+    } on HuddleTransportError catch (error) {
+      final next = await _refreshRejectedAdmission(error);
+      if (next == null) rethrow;
+      // The relay closes a socket whose first AUTH it rejected, so the
+      // refreshed token goes on a new one. Once: a second rejection is final.
+      await _connectAttempt();
+    }
+  }
+
+  /// After an attempt torn down for a first-AUTH token rejection
+  /// ([isRefreshableTokenRejection]), rotates the rejected token. Returns the
+  /// new token; `null` when there is nothing to refresh or the attempt was
+  /// superseded; throws (and only then fails) when no token can be issued.
+  Future<String?> _refreshRejectedAdmission(HuddleTransportError error) async {
+    final tokens = parameters.accessTokens;
+    final rejected = _admissionToken;
+    if (!_admissionRefreshing || tokens == null || rejected == null) {
+      return null;
+    }
+    _admissionRefreshing = false;
+    final generation = _generation;
+    String? next;
+    Object? cause = error;
+    try {
+      next = await tokens.afterExpired(rejected);
+    } catch (refreshError) {
+      cause = refreshError;
+    }
+    if (!_isCurrent(generation) ||
+        _state.phase != HuddleTransportPhase.connecting) {
+      return null;
+    }
+    if (next != null) return next;
+    final failure = HuddleTransportError(
+      code: HuddleTransportErrorCode.authenticationFailed,
+      message: 'Sign in to this community to join the Huddle.',
+      cause: cause,
+    );
+    _emitState(
+      HuddleTransportState(
+        phase: HuddleTransportPhase.failed,
+        localPeerIndex: _state.localPeerIndex,
+        rosterRevision: _state.rosterRevision,
+        peers: _state.peers,
+        error: failure,
+      ),
+    );
+    throw failure;
+  }
+
+  Future<void> _connectAttempt() async {
+    _admissionToken = null;
+    _admissionRefreshing = false;
     if (_state.phase == HuddleTransportPhase.failed ||
         _state.phase == HuddleTransportPhase.disconnected) {
       _handshakeTimer?.cancel();
@@ -217,6 +295,7 @@ final class HuddleTransport implements HuddleTransportClient {
     final generation = ++_generation;
     _intentionalClose = false;
     _admissionPreviousPeers = Map<int, HuddlePeer>.from(_state.peers);
+    _watchAccessTokens(generation);
     _emitState(
       HuddleTransportState(
         phase: HuddleTransportPhase.connecting,
@@ -315,6 +394,7 @@ final class HuddleTransport implements HuddleTransportClient {
 
     _generation++;
     _intentionalClose = true;
+    _unwatchAccessTokens();
     _handshakeTimer?.cancel();
     _handshakeTimer = null;
     if (_handshakeCompleter case final completer? when !completer.isCompleted) {
@@ -386,6 +466,14 @@ final class HuddleTransport implements HuddleTransportClient {
         _handleRoster(message, generation);
       case 'error':
         _handleRelayError(message, generation);
+      case 'auth_ok':
+        _handleReauthReply(null, generation);
+      case 'auth_error':
+        final reason = message['message'];
+        _handleReauthReply(
+          reason is String ? reason : 'Huddle re-authentication failed.',
+          generation,
+        );
       default:
         _handleProtocolProblem('Unknown Huddle control message.', generation);
     }
@@ -405,6 +493,11 @@ final class HuddleTransport implements HuddleTransportClient {
         ),
         generation,
       );
+      return;
+    }
+
+    if (parameters.accessTokens case final tokens?) {
+      unawaited(_answerWithToken(tokens, generation));
       return;
     }
 
@@ -432,6 +525,119 @@ final class HuddleTransport implements HuddleTransportClient {
         generation,
       );
     }
+  }
+
+  Future<void> _answerWithToken(
+    RelayAccessTokens tokens,
+    int generation,
+  ) async {
+    _emitState(
+      HuddleTransportState(
+        phase: HuddleTransportPhase.authenticating,
+        localPeerIndex: _state.localPeerIndex,
+        rosterRevision: _state.rosterRevision,
+        peers: _state.peers,
+      ),
+    );
+    String? token;
+    Object? cause;
+    try {
+      token = await tokens.fresh();
+    } catch (error) {
+      cause = error;
+    }
+    if (!_isCurrent(generation)) return;
+    if (token == null) {
+      _fail(
+        HuddleTransportError(
+          code: HuddleTransportErrorCode.authenticationFailed,
+          message: 'Sign in to this community to join the Huddle.',
+          cause: cause,
+        ),
+        generation,
+      );
+      return;
+    }
+    _lastSentToken = token;
+    _latestToken = token;
+    _admissionToken = token;
+    _channel?.sink.add(
+      jsonEncode(
+        HuddleAuthV2.buildTokenMessage(parameters: parameters, token: token),
+      ),
+    );
+  }
+
+  void _watchAccessTokens(int generation) {
+    _unwatchAccessTokens();
+    final tokens = parameters.accessTokens;
+    if (tokens == null) return;
+    _removeTokenListener = tokens.addTokenListener((token) {
+      if (!_isCurrent(generation)) return;
+      _latestToken = token;
+      _sendReauthIfNeeded();
+    });
+    _removeStateListener = tokens.addStateListener((session) {
+      if (!_isCurrent(generation) ||
+          session.status != TokenSessionStatus.signedOut) {
+        return;
+      }
+      // Logout fence: the relay would only close this socket at expiry.
+      _fail(
+        const HuddleTransportError(
+          code: HuddleTransportErrorCode.authenticationFailed,
+          message: 'Signed out of this community.',
+        ),
+        generation,
+      );
+    });
+  }
+
+  void _unwatchAccessTokens() {
+    _removeTokenListener?.call();
+    _removeStateListener?.call();
+    _removeTokenListener = null;
+    _removeStateListener = null;
+    _lastSentToken = null;
+    _latestToken = null;
+    _reauthInFlight = false;
+  }
+
+  /// Send the newest rotated token unless the relay already has it or a swap
+  /// is in flight (the relay answers a concurrent frame with `auth_error`).
+  void _sendReauthIfNeeded() {
+    final token = _latestToken;
+    final channel = _channel;
+    if (token == null ||
+        channel == null ||
+        _reauthInFlight ||
+        token == _lastSentToken ||
+        _state.phase != HuddleTransportPhase.connected) {
+      return;
+    }
+    _reauthInFlight = true;
+    _lastSentToken = token;
+    channel.sink.add(jsonEncode(HuddleAuthV2.buildReauthMessage(token)));
+  }
+
+  void _handleReauthReply(String? error, int generation) {
+    if (!_reauthInFlight) {
+      _handleProtocolProblem('Unexpected Huddle re-auth reply.', generation);
+      return;
+    }
+    _reauthInFlight = false;
+    if (error != null) {
+      // The old binding stays valid until its own expiry; the next rotation
+      // retries. No automatic resend, so a persistent rejection cannot loop.
+      _issueController.add(
+        HuddleTransportError(
+          code: HuddleTransportErrorCode.authenticationFailed,
+          message: error,
+        ),
+      );
+      return;
+    }
+    _sendReauthIfNeeded();
   }
 
   void _handleJoined(Map<String, dynamic> message, int generation) {
@@ -553,6 +759,8 @@ final class HuddleTransport implements HuddleTransportClient {
     if (_handshakeCompleter case final completer? when !completer.isCompleted) {
       completer.complete();
     }
+    // A rotation that landed during the handshake is sent once admitted.
+    if (initialAdmission) _sendReauthIfNeeded();
   }
 
   void _emitAdmissionRosterChanges(
@@ -787,6 +995,14 @@ final class HuddleTransport implements HuddleTransportClient {
     final relayMessage = message['message'] is String
         ? message['message'] as String
         : 'Huddle audio relay rejected the connection.';
+    // A first-AUTH token rejection: the relay closes this socket, so
+    // [connect] refreshes the token and retries once on a new one.
+    final refreshing =
+        _admissionRefreshArmed &&
+        _admissionToken != null &&
+        _state.phase == HuddleTransportPhase.authenticating &&
+        isRefreshableTokenRejection(relayMessage);
+    if (refreshing) _admissionRefreshArmed = false;
     _fail(
       HuddleTransportError(
         code: HuddleTransportErrorCode.relayRejected,
@@ -794,6 +1010,7 @@ final class HuddleTransport implements HuddleTransportClient {
         relayCode: relayCode,
       ),
       generation,
+      refreshing: refreshing,
     );
   }
 
@@ -896,20 +1113,30 @@ final class HuddleTransport implements HuddleTransportClient {
     );
   }
 
-  void _fail(HuddleTransportError error, int generation) {
+  /// Tears the attempt down. With [refreshing] the transport stays
+  /// `connecting` (no `failed` for consumers) while [connect] refreshes.
+  void _fail(
+    HuddleTransportError error,
+    int generation, {
+    bool refreshing = false,
+  }) {
     if (!_isCurrent(generation) ||
         _state.phase == HuddleTransportPhase.failed) {
       return;
     }
+    _unwatchAccessTokens();
     _handshakeTimer?.cancel();
     _handshakeTimer = null;
+    _admissionRefreshing = refreshing;
     _emitState(
       HuddleTransportState(
-        phase: HuddleTransportPhase.failed,
+        phase: refreshing
+            ? HuddleTransportPhase.connecting
+            : HuddleTransportPhase.failed,
         localPeerIndex: _state.localPeerIndex,
         rosterRevision: _state.rosterRevision,
         peers: _state.peers,
-        error: error,
+        error: refreshing ? null : error,
       ),
     );
     if (_handshakeCompleter case final completer? when !completer.isCompleted) {

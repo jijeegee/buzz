@@ -196,7 +196,10 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
         ..remove('display_name')
         ..remove('name');
     }
-    final relay = SignedEventRelay(session: session, nsec: context.config.nsec);
+    final relay = SignedEventRelay.forConfig(
+      session: session,
+      config: context.config,
+    );
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final currentCreatedAt = currentHead?.createdAt ?? 0;
     final previousCreatedAt = currentCreatedAt > _lastCreatedAt
@@ -390,9 +393,9 @@ class PresenceNotifier extends AsyncNotifier<String> {
     final sessionState = ref.read(relaySessionProvider);
     if (sessionState.status != SessionStatus.connected) return status;
     final config = ref.read(relayConfigProvider);
-    final relay = SignedEventRelay(
+    final relay = SignedEventRelay.forConfig(
       session: ref.read(relaySessionProvider.notifier),
-      nsec: config.nsec,
+      config: config,
     );
     try {
       await relay.submit(

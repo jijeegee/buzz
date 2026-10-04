@@ -228,9 +228,9 @@ class SendMessage {
 final sendMessageProvider = Provider<SendMessage>((ref) {
   final config = ref.watch(relayConfigProvider);
   return SendMessage(
-    signedEventRelay: SignedEventRelay(
+    signedEventRelay: SignedEventRelay.forConfig(
       session: ref.read(relaySessionProvider.notifier),
-      nsec: config.nsec,
+      config: config,
     ),
     fetchMembers: (channelId) =>
         ref.read(channelMembersProvider(channelId).future),
@@ -250,7 +250,8 @@ final sendMessageProvider = Provider<SendMessage>((ref) {
     isDeliveryValid: () {
       final currentConfig = ref.read(relayConfigProvider);
       return currentConfig.baseUrl == config.baseUrl &&
-          currentConfig.nsec == config.nsec;
+          currentConfig.nsec == config.nsec &&
+          outgoingAuthorPubkey(currentConfig) == outgoingAuthorPubkey(config);
     },
   );
 });

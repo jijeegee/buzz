@@ -18,6 +18,8 @@ class UnreadBadgeState {
 final unreadBadgeProvider = Provider<UnreadBadgeState>((ref) {
   final channelsAsync = ref.watch(channelsProvider);
   final readState = ref.watch(readStateProvider);
+  // Without loaded read markers every observed event looks unread.
+  if (!readState.isReady) return const UnreadBadgeState();
 
   return channelsAsync.when(
     data: (channels) {

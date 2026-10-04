@@ -490,6 +490,18 @@ final class MobileHuddleController extends Notifier<bool> {
     required String ephemeralChannelId,
   }) {
     final config = ref.read(relayConfigProvider);
+    if (config.tokenAuth) {
+      final tokens = ref.read(relayAccessTokensProvider);
+      if (tokens == null) {
+        throw StateError('Sign in to this community to join the Huddle.');
+      }
+      return HuddleConnectionParameters(
+        relayWebSocketUrl: config.wsUrl,
+        accessTokens: tokens,
+        parentChannelId: parentChannelId,
+        ephemeralChannelId: ephemeralChannelId,
+      );
+    }
     final nsec = config.nsec;
     if (nsec == null || nsec.isEmpty) {
       throw StateError('A paired identity is required.');

@@ -201,6 +201,7 @@ void main() {
       expect(events.map((event) => event.kind), [40002, buzzPushLeaseKind]);
       expect(events.every((event) => event.pubkey == signer.public), isTrue);
       for (final event in events) {
+        expect(event.sig, isNotNull);
         expect(
           () => nostr.Event(
             event.id,
@@ -209,7 +210,7 @@ void main() {
             event.kind,
             event.tags,
             event.content,
-            event.sig,
+            event.sig!,
           ),
           returnsNormally,
         );

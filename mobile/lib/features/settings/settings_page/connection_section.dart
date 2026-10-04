@@ -1,95 +1,23 @@
 part of '../settings_page.dart';
 
 class _ConnectionSection extends ConsumerWidget {
-  const _ConnectionSection({required this.identityRecoveryPageBuilder});
-
-  final WidgetBuilder identityRecoveryPageBuilder;
+  const _ConnectionSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(relayConfigProvider);
-    final authState = ref.watch(authProvider).value;
     final nsec = config.nsec;
-    final community = authState?.community;
-
+    // A token community's account lives on the relay (see _AccountSection);
+    // never expose a leftover local key for it.
+    if (config.tokenAuth || nsec == null || nsec.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return AppListCard(
       label: 'Connection',
       verticalPadding: Grid.twelve,
-      children: [
-        if (nsec != null && nsec.isNotEmpty && community != null) ...[
-          _IdentityRow(nsec: nsec),
-          AppListRow(
-            icon: LucideIcons.scanQrCode,
-            title: 'Send identity to desktop',
-            subtitle: 'Scan a recovery code shown by Buzz Desktop',
-            trailing: const _RowChevron(),
-            onTap: () async {
-              final pairing = ref.read(pairingProvider.notifier);
-              final authorized = await pairing.authorizeIdentityExport(
-                community: community,
-              );
-              if (!authorized) {
-                if (!context.mounted) return;
-                final message = ref.read(pairingProvider).errorMessage;
-                if (message != null) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(message)));
-                }
-                return;
-              }
-
-              try {
-                if (!context.mounted) return;
-                final resumed = await _waitForResumedFrame();
-                if (!resumed) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Buzz did not return to the foreground. Try again.',
-                        ),
-                      ),
-                    );
-                  }
-                  return;
-                }
-                if (!context.mounted) return;
-                await Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: identityRecoveryPageBuilder),
-                );
-              } finally {
-                pairing.reset();
-              }
-            },
-          ),
-        ],
-      ],
+      children: [_IdentityRow(nsec: nsec)],
     );
   }
-}
-
-const _resumeWaitTimeout = Duration(seconds: 5);
-
-Future<bool> _waitForResumedFrame() async {
-  final binding = WidgetsBinding.instance;
-  if (binding.lifecycleState != AppLifecycleState.resumed) {
-    final resumed = Completer<void>();
-    final listener = AppLifecycleListener(
-      onResume: () {
-        if (!resumed.isCompleted) resumed.complete();
-      },
-    );
-    try {
-      await resumed.future.timeout(_resumeWaitTimeout);
-    } on TimeoutException {
-      return false;
-    } finally {
-      listener.dispose();
-    }
-  }
-  await binding.endOfFrame;
-  return true;
 }
 
 /// Destructive, so it gets a container of its own rather than sitting at the
@@ -155,8 +83,8 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
     builder: (ctx) => AlertDialog(
       title: const Text('Remove Community'),
       content: const Text(
-        'This will disconnect this community. You will need '
-        'to scan a new pairing code to reconnect.',
+        'This will disconnect this community and sign this device out. '
+        'You can sign in to it again later.',
       ),
       actions: [
         TextButton(
@@ -167,7 +95,13 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
           onPressed: () async {
             Navigator.of(ctx).pop(); // close dialog
             try {
-              await ref.read(authProvider.notifier).signOut();
+              final removed = await removeCommunityWithRelaySignOut(
+                context,
+                ({required deviceOnly}) => ref
+                    .read(authProvider.notifier)
+                    .signOut(deviceOnly: deviceOnly),
+              );
+              if (!removed) return;
             } catch (error) {
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
@@ -177,7 +111,7 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
             }
             if (!context.mounted) return;
             // Pop all pushed routes back to root so MaterialApp.home rebuilds
-            // to PairingPage when auth state changes.
+            // to onboarding when auth state changes.
             Navigator.of(context).popUntil((route) => route.isFirst);
           },
           style: FilledButton.styleFrom(backgroundColor: ctx.colors.error),
