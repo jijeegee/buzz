@@ -458,6 +458,8 @@ pub fn run() {
                     .managed_agent_restore_pending
                     .store(true, Ordering::Release);
             }
+            // Channel routing: drop Lead rules files left by a previous run.
+            managed_agents::channel_routing::lead_rules::sweep_lead_rules_at_launch(&app_handle);
 
             // Periodic sweep: reap orphaned agents from dead instances every 60s.
             // Catches agents that escaped both the Justfile trap and boot-time

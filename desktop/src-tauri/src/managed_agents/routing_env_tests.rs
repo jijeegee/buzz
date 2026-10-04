@@ -182,3 +182,62 @@ fn the_deployed_role_is_read_back_from_the_payload_policy_env() {
         RoutingRole::None
     );
 }
+
+#[test]
+fn lead_env_overrides_user_rules_and_appends_the_addendum() {
+    let rules = generated_dir().join("lead-abcdef012345.toml");
+    let mut command = command_with(PriorEnv::UserRules);
+    command.env(SYSTEM_PROMPT_ENV_VAR, "You are Coder.\n");
+    apply_lead_env(&mut command, &rules, "ADDENDUM").expect("lead env");
+    assert_eq!(
+        env_state(&command, SUBSCRIBE_ENV_VAR),
+        Some(Some("config".to_string()))
+    );
+    assert_eq!(
+        env_state(&command, CONFIG_ENV_VAR),
+        Some(Some(rules.to_string_lossy().into_owned()))
+    );
+    assert_eq!(
+        env_state(&command, SYSTEM_PROMPT_ENV_VAR),
+        Some(Some("You are Coder.\n\nADDENDUM".to_string()))
+    );
+    assert_eq!(env_state(&command, SYSTEM_PROMPT_FILE_ENV_VAR), Some(None));
+}
+
+#[test]
+fn lead_env_without_a_prompt_is_the_addendum_alone() {
+    let mut command = Command::new("true");
+    // The spawn path removes the key when no prompt resolves.
+    command.env_remove(SYSTEM_PROMPT_ENV_VAR);
+    apply_lead_env(&mut command, &generated_dir().join("lead.toml"), "ADDENDUM").expect("lead env");
+    assert_eq!(
+        env_state(&command, SYSTEM_PROMPT_ENV_VAR),
+        Some(Some("ADDENDUM".to_string()))
+    );
+}
+
+/// The harness rejects both prompt keys together, so a prompt file is inlined
+/// ahead of the addendum and its key dropped; an unreadable one fails.
+#[test]
+fn lead_env_inlines_a_prompt_file() {
+    let path = std::env::temp_dir().join(format!(
+        "buzz-lead-prompt-{}.md",
+        uuid::Uuid::new_v4().simple()
+    ));
+    std::fs::write(&path, "From a file.").expect("write prompt");
+    let mut command = Command::new("true");
+    command.env_remove(SYSTEM_PROMPT_ENV_VAR);
+    command.env(SYSTEM_PROMPT_FILE_ENV_VAR, &path);
+    apply_lead_env(&mut command, &generated_dir().join("lead.toml"), "ADDENDUM").expect("lead env");
+    assert_eq!(
+        env_state(&command, SYSTEM_PROMPT_ENV_VAR),
+        Some(Some("From a file.\n\nADDENDUM".to_string()))
+    );
+    assert_eq!(env_state(&command, SYSTEM_PROMPT_FILE_ENV_VAR), Some(None));
+    let _ = std::fs::remove_file(&path);
+
+    let mut command = Command::new("true");
+    command.env_remove(SYSTEM_PROMPT_ENV_VAR);
+    command.env(SYSTEM_PROMPT_FILE_ENV_VAR, &path);
+    assert!(apply_lead_env(&mut command, &generated_dir().join("lead.toml"), "ADDENDUM").is_err());
+}

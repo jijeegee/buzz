@@ -8,7 +8,7 @@ import {
 import { Checkbox } from "@/shared/ui/checkbox";
 
 /**
- * The routing-agent picker that unfolds under the selected Host (later Lead)
+ * The routing-agent picker that unfolds under the selected Host or Lead
  * radio, plus the "Join new channels I create" preference that only means
  * something while a routing agent exists. Picking an agent is the save: the
  * card turns it into one `set_channel_routing(mode, agent)`.
@@ -41,7 +41,11 @@ export function ChannelRoutingAgentPicker({
   const autoJoinId = React.useId();
   const autoJoin = useDefaultAiAutoJoin();
   const value =
-    selectedPubkey && options.some((option) => option.pubkey === selectedPubkey)
+    selectedPubkey &&
+    options.some(
+      (option) =>
+        option.pubkey === selectedPubkey && option.disabledReason === null,
+    )
       ? selectedPubkey
       : "";
 
@@ -86,8 +90,14 @@ export function ChannelRoutingAgentPicker({
               </option>
             ) : null}
             {options.map((option) => (
-              <option key={option.pubkey} value={option.pubkey}>
-                {option.name}
+              <option
+                disabled={option.disabledReason !== null}
+                key={option.pubkey}
+                value={option.pubkey}
+              >
+                {option.disabledReason === null
+                  ? option.name
+                  : `${option.name} (${option.disabledReason})`}
               </option>
             ))}
           </select>

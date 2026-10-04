@@ -23,6 +23,7 @@ use tauri::AppHandle;
 use super::{managed_agents_base_dir, storage::atomic_write_json, BackendKind, ManagedAgentRecord};
 
 mod launch;
+pub(crate) mod lead_rules;
 mod transition;
 pub(crate) use launch::{
     launch_role, live_local_roles, load_deployed_roles, observe_remote, record_deployed_role,
@@ -47,18 +48,18 @@ pub enum ChannelRoutingMode {
     #[default]
     Host,
     /// The routing agent listens to its owner's unmentioned messages through
-    /// generated Config-mode rules. Not selectable yet.
+    /// generated Config-mode rules (`lead_rules`).
     Lead,
     /// The desktop assigns each unmentioned send itself. Not selectable yet.
     DesktopRouter,
 }
 
 impl ChannelRoutingMode {
-    /// Whether this build lets the user select the mode. Lead and Smart
-    /// routing ship in later changes; their variants exist now so the stored
-    /// value and the transition plan already cover them.
+    /// Whether this build lets the user select the mode. Smart routing ships
+    /// in a later change; its variant exists now so the stored value and the
+    /// transition plan already cover it.
     pub(crate) fn is_selectable(self) -> bool {
-        matches!(self, Self::Off | Self::Host)
+        matches!(self, Self::Off | Self::Host | Self::Lead)
     }
 }
 

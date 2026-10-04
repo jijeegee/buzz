@@ -10009,9 +10009,13 @@ function mockChannelRoutingStatus() {
       (agent) => agent.is_default_ai && agent.pubkey.trim().length > 0,
     ) ?? null;
   const roleFor = (agent: RawManagedAgent) =>
-    agent === starred && mockChannelRoutingMode === "host"
-      ? ("dispatcher" as const)
-      : ("none" as const);
+    agent !== starred
+      ? ("none" as const)
+      : mockChannelRoutingMode === "host"
+        ? ("dispatcher" as const)
+        : mockChannelRoutingMode === "lead" && agent.backend.type === "local"
+          ? ("lead" as const)
+          : ("none" as const);
   const agents = mockManagedAgents
     .filter((agent) => agent.pubkey.trim().length > 0)
     .map((agent) => {
@@ -10029,34 +10033,42 @@ function mockChannelRoutingStatus() {
   const host = agents.find(
     (agent) => agent.running && agent.runningRole === "dispatcher",
   );
+  const lead = agents.find(
+    (agent) => agent.running && agent.runningRole === "lead",
+  );
   return {
     mode: mockChannelRoutingMode,
     routingAgent: starred?.pubkey ?? null,
     applied: host
       ? { state: "hosting" as const, pubkey: host.pubkey }
-      : mockChannelRoutingMode === "desktop-router"
-        ? { state: "smart-routing" as const }
-        : { state: "off" as const },
+      : lead
+        ? { state: "leading" as const, pubkey: lead.pubkey }
+        : mockChannelRoutingMode === "desktop-router"
+          ? { state: "smart-routing" as const }
+          : { state: "off" as const },
     routerActive: mockChannelRoutingMode === "desktop-router",
     agents,
   };
 }
 
 /**
- * Mirrors the native `set_channel_routing`: Off and Host only, Host needs a
- * routing agent, and the star moves (unstarring the previous one) before the
+ * Mirrors the native `set_channel_routing`: Off, Host, and Lead; Host and
+ * Lead need a routing agent (a local one for Lead), and the star moves (unstarring the previous one) before the
  * mode is saved.
  */
 async function handleSetChannelRouting(args: {
   mode: typeof mockChannelRoutingMode;
   agentPubkey: string | null;
 }) {
-  if (args.mode !== "off" && args.mode !== "host") {
+  if (args.mode === "desktop-router") {
     throw new Error("That channel routing mode is not available yet.");
   }
-  if (args.mode === "host") {
-    if (!args.agentPubkey) throw new Error("Choose a host agent.");
-    getMockManagedAgent(args.agentPubkey);
+  if (args.mode === "host" || args.mode === "lead") {
+    if (!args.agentPubkey) throw new Error(`Choose a ${args.mode} agent.`);
+    const chosen = getMockManagedAgent(args.agentPubkey);
+    if (args.mode === "lead" && chosen.backend.type !== "local") {
+      throw new Error("Lead needs an agent on this computer.");
+    }
     const now = new Date().toISOString();
     for (const agent of mockManagedAgents) {
       const next = agent.pubkey === args.agentPubkey;

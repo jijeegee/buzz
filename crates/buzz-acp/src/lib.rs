@@ -11,6 +11,8 @@ mod edit_routing;
 mod engram_fetch;
 mod filter;
 mod isolated_execution;
+#[cfg(test)]
+mod lead_rules_fixture_tests;
 mod observer;
 mod pool;
 mod pool_lifecycle;

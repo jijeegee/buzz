@@ -564,10 +564,10 @@ with a TypeScript lookup table or an id comparison in a component.
     (`off | host | lead | desktop-router`, kebab-case) stored alone in
     `<app-data>/agents/channel-routing.json` (`{ "mode": "host" }`; missing or
     unreadable reads as `host`, today's behavior). It is **not** a
-    `GlobalAgentConfig` field (saving that restarts every agent). Only Off and
-    Host are selectable in this build (`ChannelRoutingMode::is_selectable`;
-    `set_channel_routing` rejects the others, and the card renders Lead and
-    Smart routing disabled with "Coming soon"). `routing_role_for` is the whole
+    `GlobalAgentConfig` field (saving that restarts every agent). Off, Host,
+    and Lead are selectable in this build (`ChannelRoutingMode::is_selectable`;
+    `set_channel_routing` rejects Smart routing, and the card renders it
+    disabled with "Coming soon"). `routing_role_for` is the whole
     role table: Host + star -> Dispatcher (any backend); Lead + star + local +
     owner known -> Lead; everything else, including the star under Off or
     Smart routing, -> None. `routing_env::apply_routing_env` also scrubs
@@ -612,6 +612,27 @@ with a TypeScript lookup table or an id comparison in a component.
     harness's dispatcher base prompt carries the routing rules; definition
     `effort_level` seeded from `ACP_THOUGHT_LEVEL_FALLBACK_VALUES[0]`, never a
     literal), then `set_channel_routing(host, pk)` as a second write.
+    **Lead needs no harness code.** Every lead spawn rewrites
+    `<app-data>/agents/routing/lead-<pubkey[..12]>.toml`
+    (`channel_routing/lead_rules.rs` `render_lead_rules`): the mention rule
+    first with the harness default kinds `[9, 40003, 46010, 40007]` (first
+    match wins, so a direct @mention is exactly today's turn), then
+    `lead-listen` (kind 9, no mention, `author == "<owner hex>" &&
+    !str_contains(content, "@")`), both `channels = "all"`.
+    `lead_rules::apply_lead_spawn` runs right after `apply_routing_env` and
+    sets `BUZZ_ACP_SUBSCRIBE=config`, `BUZZ_ACP_CONFIG=<that file>`, and
+    appends `LEAD_LISTEN_ADDENDUM` to the system prompt the child would
+    otherwise get (a prompt file is inlined); a write failure fails the spawn
+    rather than silently running Mentions mode. Any other role's spawn deletes
+    its own leftover file, and `set_channel_routing` plus app start sweep every
+    `lead-*.toml` not used by a tracked Lead process. The rendering is pinned
+    byte-for-byte to `crates/buzz-acp/tests/fixtures/lead_rules.toml`, which
+    the harness's `lead_rules_fixture_tests` load and match events against —
+    change both together. Lead is local-only: `set_channel_routing` refuses a
+    remote agent (`lead_unavailable_reason`, mirroring the role table) and the
+    Lead picker lists remote agents disabled with "runs remotely — Lead needs
+    an agent on this computer"; the remembered star carries over to Lead only
+    when it can lead.
 
 ## Channel-only runtime controls
 

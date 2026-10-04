@@ -11,11 +11,11 @@ import {
 } from "@/features/agents/channelRoutingHooks";
 import { HOST_PERSONA_ID } from "@/features/agents/lib/hostAgent";
 import {
-  hostPickerOptions,
   modeNeedsAgent,
   ROUTING_MODE_OPTIONS,
   routingAgentLabel,
   routingNameOf,
+  routingPickerOptions,
   routingRestartAffordances,
   routingStatusLine,
 } from "@/features/agents/lib/channelRouting";
@@ -32,7 +32,8 @@ import { ChannelRoutingStatusLine } from "./ChannelRoutingStatusLine";
  * transition plan; this card reads `get_channel_routing` and writes through
  * one `set_channel_routing(mode, agent)` per user action.
  *
- * Choosing Host with no routing agent yet only opens the picker (a draft) —
+ * Choosing Host or Lead with no eligible routing agent yet only opens the
+ * picker (a draft) —
  * nothing is saved until an agent is picked, so the radio alone never leaves
  * a half-configured mode on disk. Until some agent is an instance of the
  * built-in Host persona, Host offers "Create a Host agent": create one,
@@ -82,16 +83,16 @@ export function ChannelRoutingCard({
     if (getAgentWorkingState(pubkey).source !== "none") return;
     onRestartAgent(pubkey);
   };
-  const pickerOptions = React.useMemo(
-    () => hostPickerOptions(agents),
-    [agents],
-  );
   const nameOf = React.useMemo(() => routingNameOf(agents), [agents]);
   // An existing Host instance is already in the picker; offer no second one.
   const canCreateHost = !agents.some(
     (agent) => agent.personaId === HOST_PERSONA_ID,
   );
   const selectedMode = draftMode ?? status?.mode ?? null;
+  const pickerOptions = React.useMemo(
+    () => (selectedMode ? routingPickerOptions(selectedMode, agents) : []),
+    [selectedMode, agents],
+  );
   const isSaving = saveMutation.isPending || createHostMutation.isPending;
   const actionError = saveMutation.error ?? createHostMutation.error;
 
@@ -106,9 +107,15 @@ export function ChannelRoutingCard({
       if (mode !== status.mode) save(mode, null);
       return;
     }
+    // The remembered agent carries over only if it can take this mode's role
+    // (a remote host can't lead).
     const remembered =
       status.routingAgent !== null &&
-      pickerOptions.some((option) => option.pubkey === status.routingAgent)
+      routingPickerOptions(mode, agents).some(
+        (option) =>
+          option.pubkey === status.routingAgent &&
+          option.disabledReason === null,
+      )
         ? status.routingAgent
         : null;
     if (remembered === null) {

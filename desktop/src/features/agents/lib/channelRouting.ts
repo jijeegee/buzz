@@ -41,7 +41,7 @@ export const ROUTING_MODE_OPTIONS: readonly RoutingModeOption[] = [
     label: "Lead",
     description:
       "One of your agents listens, takes its own work, and hands off the rest.",
-    available: false,
+    available: true,
   },
   {
     mode: "desktop-router",
@@ -68,18 +68,37 @@ export function routingAgentLabel(mode: ChannelRoutingMode): string {
   return `${routingModeLabel(mode)} agent`;
 }
 
-export type RoutingAgentOption = { pubkey: string; name: string };
+export type RoutingAgentOption = {
+  pubkey: string;
+  name: string;
+  /** Why this agent can't take the mode's role; rendered disabled. */
+  disabledReason: string | null;
+};
+
+/** Mirrors Rust's refusal (`lead_unavailable_reason`); Rust still enforces. */
+export const LEAD_NEEDS_LOCAL_REASON =
+  "runs remotely — Lead needs an agent on this computer";
 
 /**
- * Agents the Host picker offers: every keyed managed agent, local or remote
- * (a host only needs the dispatcher flag, which provider deploys carry too).
+ * Agents the picker offers for `mode`: every keyed managed agent, sorted by
+ * name. A host only needs the dispatcher flag, which provider deploys carry
+ * too, so any backend can host. A lead reads a rules file written on this
+ * computer, so remote agents are listed but disabled with the reason.
  */
-export function hostPickerOptions(
-  agents: readonly Pick<ManagedAgent, "pubkey" | "name">[],
+export function routingPickerOptions(
+  mode: ChannelRoutingMode,
+  agents: readonly Pick<ManagedAgent, "pubkey" | "name" | "backend">[],
 ): RoutingAgentOption[] {
   return agents
     .filter(isDefaultAiEligible)
-    .map(({ pubkey, name }) => ({ pubkey, name }))
+    .map(({ pubkey, name, backend }) => ({
+      pubkey,
+      name,
+      disabledReason:
+        mode === "lead" && backend.type !== "local"
+          ? LEAD_NEEDS_LOCAL_REASON
+          : null,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

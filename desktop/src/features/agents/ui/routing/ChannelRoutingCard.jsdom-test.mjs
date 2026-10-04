@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 // Agents page › Channel routing against the Tauri IPC: the picker renders
-// only under a selected Host, a radio alone never saves a half-configured
+// only under a selected Host or Lead, a radio alone never saves a half-configured
 // mode, picking an agent is exactly one set_channel_routing carrying mode and
 // agent, and the status line + Restart now follow the Rust transition plan.
 
@@ -85,9 +85,10 @@ const { reportChannelBotTyping, resetAgentWorkingSignal } = await import(
   "../../agentWorkingSignal.ts"
 );
 
+const LOCAL = { type: "local" };
 const AGENTS = [
-  { pubkey: HONEY, name: "Honey" },
-  { pubkey: FIZZ, name: "Fizz" },
+  { pubkey: HONEY, name: "Honey", backend: LOCAL },
+  { pubkey: FIZZ, name: "Fizz", backend: LOCAL },
 ];
 
 function baseRouting(overrides = {}) {
@@ -224,10 +225,17 @@ test("one label owner each: the group is named once by the title, every control 
   }
   assert.deepEqual(
     radios.map((input) => input.disabled),
-    [false, false, true, true],
-    "Lead and Smart routing are not selectable yet",
+    [false, false, false, true],
+    "Smart routing is not selectable yet",
   );
-  assert.match(radio(container, "lead").labels[0].textContent, /Coming soon/);
+  assert.match(
+    radio(container, "desktop-router").labels[0].textContent,
+    /Coming soon/,
+  );
+  assert.doesNotMatch(
+    radio(container, "lead").labels[0].textContent,
+    /Coming soon/,
+  );
 
   const select = container.querySelector(
     '[data-testid="agents-channel-routing-agent-select"]',
@@ -482,4 +490,67 @@ test("a mid-turn agent's Restart now disables live and a stale click does nothin
   await click(button());
   assert.deepEqual(restarts, [HONEY]);
   resetAgentWorkingSignal();
+});
+
+test("Lead with a remembered local agent saves once and reports the lead", async () => {
+  routing = baseRouting({ mode: "off", applied: { state: "off" } });
+  const container = await mount();
+
+  await click(radio(container, "lead"));
+  assert.deepEqual(
+    setCalls().map((call) => call.args),
+    [{ mode: "lead", agentPubkey: HONEY }],
+  );
+  const select = container.querySelector(
+    '[data-testid="agents-channel-routing-agent-select"]',
+  );
+  assert.equal(select.labels[0].textContent, "Lead agent");
+  assert.equal(select.value, HONEY);
+});
+
+test("the lead picker disables a remote agent with its reason; a remote routing agent is not carried over", async () => {
+  const REMOTE = { type: "provider", id: "cloud", config: {} };
+  routing = baseRouting();
+  const container = await mount([
+    { pubkey: HONEY, name: "Honey", backend: REMOTE },
+    { pubkey: FIZZ, name: "Fizz", backend: LOCAL },
+  ]);
+
+  await click(radio(container, "lead"));
+  assert.equal(
+    setCalls().length,
+    0,
+    "a remote host can't lead, so the radio only opens the picker",
+  );
+  assert.ok(
+    container.querySelector(
+      '[data-testid="agents-channel-routing-draft-hint"]',
+    ),
+  );
+  const select = container.querySelector(
+    '[data-testid="agents-channel-routing-agent-select"]',
+  );
+  assert.equal(select.value, "");
+  const honey = select.querySelector(`option[value="${HONEY}"]`);
+  assert.equal(honey.disabled, true);
+  assert.equal(
+    honey.textContent,
+    "Honey (runs remotely — Lead needs an agent on this computer)",
+  );
+  assert.equal(select.querySelector(`option[value="${FIZZ}"]`).disabled, false);
+
+  await choose(select, FIZZ);
+  assert.deepEqual(
+    setCalls().map((call) => call.args),
+    [{ mode: "lead", agentPubkey: FIZZ }],
+  );
+});
+
+test("a running lead reads as leading", async () => {
+  routing = baseRouting({
+    mode: "lead",
+    applied: { state: "leading", pubkey: HONEY },
+  });
+  const container = await mount();
+  assert.equal(statusText(container), "On — Honey is leading.");
 });

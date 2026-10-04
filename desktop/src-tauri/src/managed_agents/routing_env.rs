@@ -8,8 +8,11 @@
 //!   reads it as a clap `bool` and, when set, subscribes to every non-DM
 //!   channel without a mention filter and swaps in its compiled-in dispatcher
 //!   base prompt.
-//! - Any other role: the dispatcher flag is removed, so a value inherited
-//!   from the desktop's own environment can never promote an agent.
+//! - [`RoutingRole::Lead`]: `BUZZ_ACP_SUBSCRIBE=config` with `BUZZ_ACP_CONFIG`
+//!   at the generated rules (`channel_routing::lead_rules`) and the listening
+//!   addendum appended to the system prompt ([`apply_lead_env`]).
+//! - Any role but Dispatcher: the dispatcher flag is removed, so a value
+//!   inherited from the desktop's own environment can never promote an agent.
 //!
 //! `BUZZ_ACP_DISPATCHER_CONFIG` (the per-channel human/AI allowlist JSON) is
 //! **never** set: an absent config means the harness applies its default gate
@@ -44,6 +47,12 @@ pub(crate) const DISPATCHER_CONFIG_ENV_VAR: &str = "BUZZ_ACP_DISPATCHER_CONFIG";
 pub(crate) const SUBSCRIBE_ENV_VAR: &str = "BUZZ_ACP_SUBSCRIBE";
 /// Harness Config-mode rules file (`buzz-acp --config`).
 pub(crate) const CONFIG_ENV_VAR: &str = "BUZZ_ACP_CONFIG";
+/// `buzz-acp --subscribe` value that reads rules from `BUZZ_ACP_CONFIG`.
+const LEAD_SUBSCRIBE_MODE: &str = "config";
+/// Harness system prompt, inline (`buzz-acp --system-prompt`).
+const SYSTEM_PROMPT_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT";
+/// Harness system prompt from a file; conflicts with the inline key.
+const SYSTEM_PROMPT_FILE_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT_FILE";
 /// The spelling clap's `bool` env parser accepts, matching the
 /// `BUZZ_ACP_LAZY_POOL=true` convention the spawn path already uses.
 const DISPATCHER_ENABLED: &str = "true";
@@ -53,15 +62,15 @@ fn is_generated_rules_path(value: &OsStr, generated_dir: &Path) -> bool {
     Path::new(value).starts_with(generated_dir)
 }
 
-/// The `BUZZ_ACP_CONFIG` the child will see: the value set on `command`
-/// (user env layer) or, when the command leaves it alone, the inherited one.
-fn effective_config_value(command: &Command) -> Option<std::ffi::OsString> {
+/// The value of `key` the child will see: the value set on `command` (user
+/// env layer) or, when the command leaves it alone, the inherited one.
+fn effective_env_value(command: &Command, key: &str) -> Option<std::ffi::OsString> {
     match command
         .get_envs()
-        .find(|(key, _)| *key == OsStr::new(CONFIG_ENV_VAR))
+        .find(|(name, _)| *name == OsStr::new(key))
     {
         Some((_, value)) => value.map(OsStr::to_os_string),
-        None => std::env::var_os(CONFIG_ENV_VAR),
+        None => std::env::var_os(key),
     }
 }
 
@@ -83,7 +92,7 @@ pub(crate) fn apply_routing_env(
 
     if role != RoutingRole::Lead {
         let generated = generated_dir.is_some_and(|dir| {
-            effective_config_value(command)
+            effective_env_value(command, CONFIG_ENV_VAR)
                 .is_some_and(|value| is_generated_rules_path(&value, dir))
         });
         if generated {
@@ -91,6 +100,42 @@ pub(crate) fn apply_routing_env(
             command.env_remove(CONFIG_ENV_VAR);
         }
     }
+}
+
+/// Stamp the Lead role's subscription and listening instructions. Call after
+/// [`apply_routing_env`], and only for [`RoutingRole::Lead`], so these values
+/// win over user env: `BUZZ_ACP_SUBSCRIBE=config` with `BUZZ_ACP_CONFIG` at
+/// the generated `rules_path`, and `addendum` appended to the system prompt
+/// the child would otherwise get. A prompt given as a file is inlined (the
+/// harness rejects both prompt keys together) and the file key removed.
+pub(crate) fn apply_lead_env(
+    command: &mut Command,
+    rules_path: &Path,
+    addendum: &str,
+) -> Result<(), String> {
+    command.env(SUBSCRIBE_ENV_VAR, LEAD_SUBSCRIBE_MODE);
+    command.env(CONFIG_ENV_VAR, rules_path);
+
+    let base = match effective_env_value(command, SYSTEM_PROMPT_ENV_VAR) {
+        Some(prompt) => prompt.to_string_lossy().into_owned(),
+        None => match effective_env_value(command, SYSTEM_PROMPT_FILE_ENV_VAR) {
+            Some(path) => std::fs::read_to_string(&path).map_err(|error| {
+                format!(
+                    "failed to read the system prompt file {}: {error}",
+                    Path::new(&path).display()
+                )
+            })?,
+            None => String::new(),
+        },
+    };
+    let prompt = if base.trim().is_empty() {
+        addendum.to_string()
+    } else {
+        format!("{}\n\n{addendum}", base.trim_end())
+    };
+    command.env_remove(SYSTEM_PROMPT_FILE_ENV_VAR);
+    command.env(SYSTEM_PROMPT_ENV_VAR, prompt);
+    Ok(())
 }
 
 /// The `launch.policy_env` twin of [`apply_routing_env`] for provider

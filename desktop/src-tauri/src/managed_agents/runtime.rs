@@ -847,6 +847,13 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             .ok()
             .as_deref(),
     );
+    super::channel_routing::lead_rules::apply_lead_spawn(
+        &mut command,
+        routing_role,
+        &record.pubkey,
+        owner_hex,
+        super::channel_routing::generated_routing_dir(app),
+    )?;
 
     crate::build_identity::apply_demo_config_home(&mut command)?;
     // Publish-first replay floor: written AFTER the `descriptor.env` loop, the

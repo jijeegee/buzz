@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  hostPickerOptions,
+  LEAD_NEEDS_LOCAL_REASON,
   modeNeedsAgent,
   ROUTING_MODE_OPTIONS,
   routingHoldFor,
   routingNameOf,
+  routingPickerOptions,
   routingRestartAffordances,
   routingStatusLine,
   routingSummaryText,
@@ -43,13 +44,13 @@ function status(overrides) {
   };
 }
 
-test("only Off and Host are selectable; Lead and Smart routing render as coming soon", () => {
+test("Off, Host, and Lead are selectable; Smart routing renders as coming soon", () => {
   assert.deepEqual(
     ROUTING_MODE_OPTIONS.map((option) => [option.mode, option.available]),
     [
       ["off", true],
       ["host", true],
-      ["lead", false],
+      ["lead", true],
       ["desktop-router", false],
     ],
   );
@@ -59,18 +60,27 @@ test("only Off and Host are selectable; Lead and Smart routing render as coming 
   );
 });
 
+const LOCAL = { type: "local" };
+const REMOTE = { type: "provider", id: "cloud", config: {} };
+const PICKER_AGENTS = [
+  { pubkey: HONEY, name: "Honey", backend: LOCAL },
+  { pubkey: "", name: "Definition", backend: LOCAL },
+  { pubkey: FIZZ, name: "Fizz", backend: REMOTE },
+];
+
 test("the host picker offers keyed agents of any backend, sorted by name", () => {
-  assert.deepEqual(
-    hostPickerOptions([
-      { pubkey: HONEY, name: "Honey" },
-      { pubkey: "", name: "Definition" },
-      { pubkey: FIZZ, name: "Fizz" },
-    ]),
-    [
-      { pubkey: FIZZ, name: "Fizz" },
-      { pubkey: HONEY, name: "Honey" },
-    ],
-  );
+  assert.deepEqual(routingPickerOptions("host", PICKER_AGENTS), [
+    { pubkey: FIZZ, name: "Fizz", disabledReason: null },
+    { pubkey: HONEY, name: "Honey", disabledReason: null },
+  ]);
+});
+
+test("the lead picker lists remote agents disabled with the reason", () => {
+  assert.deepEqual(routingPickerOptions("lead", PICKER_AGENTS), [
+    { pubkey: FIZZ, name: "Fizz", disabledReason: LEAD_NEEDS_LOCAL_REASON },
+    { pubkey: HONEY, name: "Honey", disabledReason: null },
+  ]);
+  assert.match(LEAD_NEEDS_LOCAL_REASON, /needs an agent on this computer/);
 });
 
 test("the status line reports what is applied, not what is saved", () => {

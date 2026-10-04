@@ -14,9 +14,10 @@ use crate::{
     app_state::AppState,
     managed_agents::{
         channel_routing::{
-            load_channel_routing, load_deployed_roles, observe_remote, observed_routing_state,
-            plan_routing_transition, routing_owner_hex, routing_role_for, save_channel_routing,
-            AgentTransition, AppliedRouting, ChannelRoutingMode, ObservedProcess, RoutingRole,
+            lead_rules, load_channel_routing, load_deployed_roles, observe_remote,
+            observed_routing_state, plan_routing_transition, routing_owner_hex, routing_role_for,
+            save_channel_routing, AgentTransition, AppliedRouting, ChannelRoutingMode,
+            ObservedProcess, RoutingRole,
         },
         current_instance_id, find_managed_agent_mut, load_managed_agents, process_is_running,
         save_managed_agents, set_default_ai, sync_managed_agent_processes, workspace_pair_key,
@@ -94,7 +95,10 @@ fn routing_status<R: tauri::Runtime>(
 /// the same boundary the other managed-agent record commands use.
 fn with_routing_store(
     app: &AppHandle,
-    body: impl FnOnce(&mut Vec<ManagedAgentRecord>) -> Result<ChannelRoutingMode, String>,
+    body: impl FnOnce(
+        &mut Vec<ManagedAgentRecord>,
+        &HashMap<ManagedAgentRuntimeKey, ManagedAgentPairRuntime>,
+    ) -> Result<ChannelRoutingMode, String>,
 ) -> Result<ChannelRoutingStatus, String> {
     let state = app.state::<AppState>();
     let _store_guard = state
@@ -116,14 +120,14 @@ fn with_routing_store(
         state.clear_agent_session_caches(pubkey);
     }
 
-    let mode = body(&mut records)?;
+    let mode = body(&mut records, &runtimes)?;
     Ok(routing_status(app, &records, &runtimes, mode))
 }
 
 /// The saved channel routing mode, routing agent, and transition plan.
 #[tauri::command]
 pub async fn get_channel_routing(app: AppHandle) -> Result<ChannelRoutingStatus, String> {
-    tokio::task::spawn_blocking(move || with_routing_store(&app, |_| load_channel_routing(&app)))
+    tokio::task::spawn_blocking(move || with_routing_store(&app, |_, _| load_channel_routing(&app)))
         .await
         .map_err(|e| format!("spawn_blocking failed: {e}"))?
 }
@@ -143,13 +147,28 @@ pub async fn set_channel_routing(
         return Err("That channel routing mode isn't available yet.".to_string());
     }
     tokio::task::spawn_blocking(move || {
-        with_routing_store(&app, |records| {
-            if mode == ChannelRoutingMode::Host {
+        with_routing_store(&app, |records, runtimes| {
+            if matches!(mode, ChannelRoutingMode::Host | ChannelRoutingMode::Lead) {
                 let pubkey = agent_pubkey
                     .as_deref()
                     .map(str::trim)
                     .filter(|pubkey| !pubkey.is_empty())
-                    .ok_or_else(|| "Choose a host agent to turn Host on.".to_string())?;
+                    .ok_or(match mode {
+                        ChannelRoutingMode::Lead => "Choose a lead agent to turn Lead on.",
+                        _ => "Choose a host agent to turn Host on.",
+                    })?;
+                if mode == ChannelRoutingMode::Lead {
+                    let record = records
+                        .iter()
+                        .find(|record| record.pubkey == pubkey)
+                        .ok_or("That agent no longer exists.")?;
+                    let owner = routing_owner_hex(&app);
+                    if let Some(reason) =
+                        lead_rules::lead_unavailable_reason(record, owner.as_deref())
+                    {
+                        return Err(reason.to_string());
+                    }
+                }
                 let changed = set_default_ai(records, Some(pubkey))?;
                 if !changed.is_empty() {
                     let now = now_iso();
@@ -160,6 +179,11 @@ pub async fn set_channel_routing(
                 }
             }
             save_channel_routing(&app, mode)?;
+            // Residue only: a leftover file is inert and the launch sweep
+            // retries, so a failed sweep must not fail the saved switch.
+            if let Err(error) = lead_rules::sweep_stale_lead_rules(&app, runtimes) {
+                eprintln!("buzz-desktop: lead rules sweep: {error}");
+            }
             Ok(mode)
         })
     })
