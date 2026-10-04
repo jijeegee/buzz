@@ -199,10 +199,31 @@ pub(super) fn ensure_remote_provider_supported(provider: Option<&str>) -> Result
 }
 
 /// Build the standard agent JSON payload for provider deploy calls.
+///
+/// Callers may already hold the runtimes lock, so the routing hold reads the
+/// live local roles only when that lock is free. This is a pre-build:
+/// `deploy_to_provider` always rebuilds the payload it invokes with
+/// [`build_deploy_payload_with_live_roles`] and a real snapshot.
 pub(crate) fn build_deploy_payload<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
     record: &ManagedAgentRecord,
+) -> Result<serde_json::Value, String> {
+    let live_roles = state
+        .managed_agent_processes
+        .try_lock()
+        .map(|runtimes| crate::managed_agents::channel_routing::live_local_roles(&runtimes))
+        .unwrap_or_default();
+    build_deploy_payload_with_live_roles(app, state, record, &live_roles)
+}
+
+/// [`build_deploy_payload`] with the other local processes' running routing
+/// roles (`channel_routing::live_local_roles`) supplied for the hold rule.
+pub(super) fn build_deploy_payload_with_live_roles<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    record: &ManagedAgentRecord,
+    live_roles: &[(String, crate::managed_agents::channel_routing::RoutingRole)],
 ) -> Result<serde_json::Value, String> {
     if let Some(err) = crate::managed_agents::spawn_key_refusal(record) {
         return Err(err);
@@ -235,10 +256,17 @@ pub(crate) fn build_deploy_payload<R: tauri::Runtime>(
         effective.model.value.as_deref(),
         &owner_pubkey,
         crate::managed_agents::effective_acp_session_policy(record, &personas),
-        crate::managed_agents::channel_routing::routing_role_for(
+        // Held back like a local spawn while another agent still runs a
+        // role it is losing.
+        crate::managed_agents::channel_routing::launch_role(
+            app,
             record,
-            crate::managed_agents::channel_routing::load_channel_routing(app)?,
-            Some(&owner_pubkey),
+            crate::managed_agents::channel_routing::routing_role_for(
+                record,
+                crate::managed_agents::channel_routing::load_channel_routing(app)?,
+                Some(&owner_pubkey),
+            ),
+            live_roles,
         ),
     );
 

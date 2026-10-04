@@ -315,6 +315,7 @@ fn start_pair<R: tauri::Runtime>(
         lazy,
         owner.as_deref(),
         None,
+        &super::channel_routing::live_local_roles(&runtimes),
     )?;
     let now = crate::util::now_iso();
     let receipt = ManagedAgentRuntimeReceipt {

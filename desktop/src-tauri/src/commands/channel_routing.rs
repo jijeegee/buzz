@@ -14,9 +14,9 @@ use crate::{
     app_state::AppState,
     managed_agents::{
         channel_routing::{
-            load_channel_routing, observed_routing_state, plan_routing_transition,
-            routing_owner_hex, routing_role_for, save_channel_routing, AgentTransition,
-            AppliedRouting, ChannelRoutingMode, ObservedProcess,
+            load_channel_routing, load_deployed_roles, observe_remote, observed_routing_state,
+            plan_routing_transition, routing_owner_hex, routing_role_for, save_channel_routing,
+            AgentTransition, AppliedRouting, ChannelRoutingMode, ObservedProcess, RoutingRole,
         },
         current_instance_id, find_managed_agent_mut, load_managed_agents, process_is_running,
         save_managed_agents, set_default_ai, sync_managed_agent_processes, workspace_pair_key,
@@ -38,19 +38,16 @@ pub struct ChannelRoutingStatus {
 }
 
 /// What this desktop can observe of `record`'s process in the active
-/// workspace: the tracked pair's spawn stamp, an untracked live pid, or a
-/// provider deployment.
+/// workspace: the tracked pair's spawn stamp, a provider deployment's
+/// deployed-role stamp, or an untracked live pid.
 fn observe_process<R: tauri::Runtime>(
     app: &AppHandle<R>,
     record: &ManagedAgentRecord,
     runtimes: &HashMap<ManagedAgentRuntimeKey, ManagedAgentPairRuntime>,
+    deployed_roles: &HashMap<String, RoutingRole>,
 ) -> ObservedProcess {
     if record.backend != BackendKind::Local {
-        return if record.backend_agent_id.is_some() {
-            ObservedProcess::Unstamped
-        } else {
-            ObservedProcess::Stopped
-        };
+        return observe_remote(record, deployed_roles.get(&record.pubkey).copied());
     }
     if let Some(runtime) = workspace_pair_key(app, record).and_then(|key| runtimes.get(&key)) {
         return ObservedProcess::Tracked(runtime.spawn_config.routing_role);
@@ -68,6 +65,7 @@ fn routing_status<R: tauri::Runtime>(
     mode: ChannelRoutingMode,
 ) -> ChannelRoutingStatus {
     let owner = routing_owner_hex(app);
+    let deployed_roles = load_deployed_roles(app);
     let keyed = records.iter().filter(|record| !record.pubkey.is_empty());
     let states: Vec<_> = keyed
         .clone()
@@ -75,7 +73,7 @@ fn routing_status<R: tauri::Runtime>(
             observed_routing_state(
                 record,
                 routing_role_for(record, mode, owner.as_deref()),
-                observe_process(app, record, runtimes),
+                observe_process(app, record, runtimes, &deployed_roles),
             )
         })
         .collect();

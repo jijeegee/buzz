@@ -582,9 +582,12 @@ with a TypeScript lookup table or an id comparison in a component.
     choosing Host opens the picker as a draft and the pick is the save.
     `get_channel_routing` returns the saved mode, the star, and the pure
     `plan_routing_transition` over every keyed record (running role = the
-    tracked pair's `SpawnConfigSnapshot.routing_role`; an unstamped live
-    process or provider deployment is assumed to run its desired role, as the
-    restart badge assumes): `stale` = running with a role other than the
+    tracked pair's `SpawnConfigSnapshot.routing_role`; a provider deployment's
+    is the role its last successful deploy shipped, stamped in
+    `<app-data>/agents/routing/deployed-roles.json` by `deploy_to_provider`
+    (a deployment from before stamps reads as Dispatcher iff starred); only a
+    process adopted from an earlier desktop run is assumed to run its desired
+    role, as the restart badge assumes): `stale` = running with a role other than the
     desired one, `hold` = wants a role while another running agent still
     holds one it is losing, `routerActive` = Smart routing saved and every
     running agent plain, `applied` = what actually runs (`switching` while
@@ -595,7 +598,14 @@ with a TypeScript lookup table or an id comparison in a component.
     `handleRestart`) is disabled with its reason while held or mid-turn, and
     replaced by a redeploy hint for a provider agent. The frontend query key
     nests under `managed-agents` so every agent-list invalidation refreshes
-    it. A manual Start of a held, stopped agent is not gated in this build.
+    it. Every launch is gated by the same hold rule
+    (`channel_routing::launch_role`, from `spawn_agent_child` with the other
+    tracked processes' roles and from the payload `deploy_to_provider`
+    invokes): a held agent launches **plain** (no error), is stamped `None`,
+    shows stale, and is promoted by the restart after the hold releases, so a
+    manual Start, Restart, or redeploy cannot overlap two routing roles. The
+    status line also names a held gainer that is not running yet ("Fizz
+    becomes the host after Honey restarts.").
 
 ## Channel-only runtime controls
 

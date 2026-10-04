@@ -82,6 +82,31 @@ pub struct TransitionPlan {
     pub router_active: bool,
 }
 
+fn is_stale(agent: &AgentRoutingState) -> bool {
+    agent.running && agent.running_role != agent.desired_role
+}
+
+/// Running with a role the saved mode takes away (or changes): this process
+/// must restart before anyone else may take a role.
+fn holds_role_it_is_losing(agent: &AgentRoutingState) -> bool {
+    is_stale(agent) && agent.running_role != RoutingRole::None
+}
+
+/// The hold rule, shared by the plan and by every launch path: an agent that
+/// wants a role waits while any **other** agent still runs a role it is
+/// losing. Spawn and deploy call this through `launch_role` so a manual
+/// Start/Restart/redeploy cannot bypass what auto-restart already respects.
+pub(crate) fn is_held(
+    pubkey: &str,
+    desired_role: RoutingRole,
+    agents: &[AgentRoutingState],
+) -> bool {
+    desired_role != RoutingRole::None
+        && agents
+            .iter()
+            .any(|other| other.pubkey != pubkey && holds_role_it_is_losing(other))
+}
+
 /// Plan the transition from what runs to what `mode` wants.
 ///
 /// - `stale`: running and `running_role != desired_role`.
@@ -94,29 +119,20 @@ pub fn plan_routing_transition(
     mode: ChannelRoutingMode,
     agents: &[AgentRoutingState],
 ) -> TransitionPlan {
-    let is_stale =
-        |agent: &AgentRoutingState| agent.running && agent.running_role != agent.desired_role;
     let transitions: Vec<AgentTransition> = agents
         .iter()
-        .map(|agent| {
-            let losing_elsewhere = agents.iter().any(|other| {
-                other.pubkey != agent.pubkey
-                    && is_stale(other)
-                    && other.running_role != RoutingRole::None
-            });
-            AgentTransition {
-                pubkey: agent.pubkey.clone(),
-                running: agent.running,
-                local: agent.local,
-                running_role: if agent.running {
-                    agent.running_role
-                } else {
-                    RoutingRole::None
-                },
-                desired_role: agent.desired_role,
-                stale: is_stale(agent),
-                hold: agent.desired_role != RoutingRole::None && losing_elsewhere,
-            }
+        .map(|agent| AgentTransition {
+            pubkey: agent.pubkey.clone(),
+            running: agent.running,
+            local: agent.local,
+            running_role: if agent.running {
+                agent.running_role
+            } else {
+                RoutingRole::None
+            },
+            desired_role: agent.desired_role,
+            stale: is_stale(agent),
+            hold: is_held(&agent.pubkey, agent.desired_role, agents),
         })
         .collect();
 

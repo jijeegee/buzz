@@ -720,7 +720,7 @@ pub async fn create_managed_agent(
             } else {
                 input.start_on_app_launch
             },
-            // The star is a separate, post-create action (`set_default_managed_agent`).
+            // The star is a separate, post-create action (`set_channel_routing`).
             is_default_ai: false,
             auto_restart_on_config_change: true,
             runtime_pid: None,

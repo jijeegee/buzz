@@ -498,6 +498,10 @@ pub(crate) fn spawn_with_effort_proof(
 /// publishes the triggering message before this spawn and passes its send
 /// timestamp here so the harness's first REQ replays past that message no
 /// matter how long the spawn takes. buzz-acp clamps stale floors to ~15 min.
+///
+/// `live_routing_roles`: running channel-routing roles of the other tracked
+/// local processes (`channel_routing::live_local_roles`), for the hold rule.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_agent_child<R: tauri::Runtime>(
     app: &AppHandle<R>,
     record: &ManagedAgentRecord,
@@ -506,6 +510,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     lazy: bool,
     owner_hex: Option<&str>,
     replay_floor_unix: Option<u64>,
+    live_routing_roles: &[(String, super::channel_routing::RoutingRole)],
 ) -> Result<crate::managed_agents::ManagedAgentProcess, String> {
     admitted.covers(relay_url)?;
     if let Some(error) = spawn_key_refusal(record) {
@@ -820,14 +825,20 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Resolve once and stamp the same value onto the environment and snapshot.
     let acp_session_policy = super::effective_acp_session_policy(record, &personas);
     super::apply_acp_session_policy_env(&mut command, acp_session_policy);
-    // The channel routing role (saved mode × the record's star) decides the
+    // The channel routing role (saved mode × the record's star, held back
+    // while another agent still runs a role it is losing) decides the
     // routing env. Written after the `descriptor.env` loop like the session
     // policy, so user env can neither enable nor keep a role, and stamped into
     // the snapshot below from the same value.
-    let routing_role = super::channel_routing::routing_role_for(
+    let routing_role = super::channel_routing::launch_role(
+        app,
         record,
-        super::channel_routing::load_channel_routing(app)?,
-        owner_hex,
+        super::channel_routing::routing_role_for(
+            record,
+            super::channel_routing::load_channel_routing(app)?,
+            owner_hex,
+        ),
+        live_routing_roles,
     );
     super::apply_routing_env(
         &mut command,
@@ -989,6 +1000,7 @@ pub fn start_managed_agent_process<R: tauri::Runtime>(
         false,
         owner_hex,
         replay_floor_unix,
+        &super::channel_routing::live_local_roles(runtimes),
     )?;
     let now = now_iso();
     let receipt = super::ManagedAgentRuntimeReceipt {

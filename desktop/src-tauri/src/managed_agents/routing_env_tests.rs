@@ -163,3 +163,22 @@ fn policy_env_carries_the_flag_only_for_a_dispatcher() {
         assert_eq!(policy_env, expected, "{role:?}");
     }
 }
+
+#[test]
+fn the_deployed_role_is_read_back_from_the_payload_policy_env() {
+    for role in ROLES {
+        let mut policy_env = BTreeMap::new();
+        insert_routing_env(&mut policy_env, role);
+        let agent_json = serde_json::json!({ "launch": { "policy_env": policy_env } });
+        let expected = if role == RoutingRole::Dispatcher {
+            RoutingRole::Dispatcher
+        } else {
+            RoutingRole::None
+        };
+        assert_eq!(deployed_routing_role(&agent_json), expected, "{role:?}");
+    }
+    assert_eq!(
+        deployed_routing_role(&serde_json::json!({})),
+        RoutingRole::None
+    );
+}

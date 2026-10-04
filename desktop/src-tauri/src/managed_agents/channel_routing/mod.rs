@@ -22,7 +22,11 @@ use tauri::AppHandle;
 
 use super::{managed_agents_base_dir, storage::atomic_write_json, BackendKind, ManagedAgentRecord};
 
+mod launch;
 mod transition;
+pub(crate) use launch::{
+    launch_role, live_local_roles, load_deployed_roles, observe_remote, record_deployed_role,
+};
 pub(crate) use transition::{
     plan_routing_transition, AgentRoutingState, AgentTransition, AppliedRouting,
 };
@@ -109,8 +113,8 @@ pub(crate) enum ObservedProcess {
     Stopped,
     /// A process this desktop spawned, with the role stamped at spawn.
     Tracked(RoutingRole),
-    /// Live, but with no spawn stamp to read (an adopted process or a
-    /// provider deployment). Its role is assumed to be the desired one, the
+    /// Live, but with no spawn stamp to read (a process adopted from an
+    /// earlier desktop run). Its role is assumed to be the desired one, the
     /// same assumption the restart badge makes for unstamped processes.
     Unstamped,
 }

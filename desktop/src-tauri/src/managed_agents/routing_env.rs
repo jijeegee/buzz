@@ -109,6 +109,17 @@ pub(crate) fn insert_routing_env(policy_env: &mut BTreeMap<String, String>, role
     policy_env.remove(DISPATCHER_CONFIG_ENV_VAR);
 }
 
+/// The role a built provider payload actually carries, read back from its
+/// `launch.policy_env` — what the deployed-role stamp records after the
+/// provider accepts it.
+pub(crate) fn deployed_routing_role(agent_json: &serde_json::Value) -> RoutingRole {
+    if agent_json["launch"]["policy_env"][DISPATCHER_ENV_VAR] == DISPATCHER_ENABLED {
+        RoutingRole::Dispatcher
+    } else {
+        RoutingRole::None
+    }
+}
+
 #[cfg(test)]
 #[path = "routing_env_tests.rs"]
 mod tests;

@@ -109,7 +109,7 @@ pub use repos::{
     write_persisted_repos_dir,
 };
 pub use restore::*;
-pub(crate) use routing_env::{apply_routing_env, insert_routing_env};
+pub(crate) use routing_env::{apply_routing_env, deployed_routing_role, insert_routing_env};
 pub use runtime::*;
 pub use runtime_commands::*;
 pub use runtime_types::*;
