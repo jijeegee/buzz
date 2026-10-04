@@ -650,6 +650,15 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   unbroken Unicode text without horizontal overflow.
 - `lib/agentDescription.test.mjs` — authored-description resolution: trim,
   blank/missing → null.
+- Rust: `catalog_exposes_subscription_provider_only_for_login_runtimes`
+  (presets tests) pins `login_hint ⇔ subscription_provider` on every builtin
+  and its projection through all four catalog constructors.
+  `../settings/ui/models/providersSettingsModel.test.mjs` and
+  `ProvidersSettingsTab.jsdom-test.mjs` pin Settings › Models as a
+  provider-centric view over the same `GlobalAgentConfig` record: one
+  `set_global_agent_config` per action, a harness switch routed through
+  `resetConfigForHarnessChange`, one radio group for the single
+  `preferred_runtime`/`provider` default, and `model` never written there.
 - Rust: `runtime_metadata_env_vars` tests pin spawn-time key application.
 - Rust: persona sharing/retention tests pin relay+owner scoping, durable
   enqueue errors, relay rejection/unavailability, and accepted publication.

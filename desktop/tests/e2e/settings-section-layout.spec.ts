@@ -28,6 +28,7 @@ test("settings sections share the Appearance rhythm", async ({ page }) => {
   for (const section of [
     "notifications",
     "voice",
+    "models",
     "agents",
     "shortcuts",
     "profile",

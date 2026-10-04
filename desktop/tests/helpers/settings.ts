@@ -4,6 +4,7 @@ type SettingsSection =
   | "profile"
   | "notifications"
   | "voice"
+  | "models"
   | "agents"
   | "channel-templates"
   | "compute"

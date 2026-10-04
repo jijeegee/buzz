@@ -4,6 +4,7 @@ import {
   Archive,
   BellRing,
   Bot,
+  BrainCircuit,
   ChevronDown,
   Cpu,
   Download,
@@ -68,6 +69,7 @@ import { MeshComputeSettingsCard } from "@/features/mesh-compute/ui/MeshComputeS
 import { MobilePairingCard } from "./MobilePairingCard";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
 import { AgentsSettingsPanel } from "./AgentsSettingsPanel";
+import { ModelsSettingsPanel } from "./models/ModelsSettingsPanel";
 import { HostedCommunitiesSettingsCard } from "./HostedCommunitiesSettingsCard";
 import { AdminConsoleSettingsCard } from "@/features/admin-console/AdminConsoleSettingsCard";
 import {
@@ -86,6 +88,7 @@ export type SettingsSection =
   | "notifications"
   | "voice"
   | "experimental"
+  | "models"
   | "agents"
   | "channel-templates"
   | "compute"
@@ -106,6 +109,7 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "notifications",
   "voice",
   "experimental",
+  "models",
   "agents",
   "channel-templates",
   "compute",
@@ -175,6 +179,12 @@ export const settingsSections: SettingsSectionDescriptor[] = [
     value: "experimental",
     label: "Experiments",
     icon: FlaskConical,
+  },
+  {
+    value: "models",
+    label: "Models",
+    icon: BrainCircuit,
+    featureGate: "managed-agents",
   },
   {
     value: "agents",
@@ -832,6 +842,8 @@ export function renderSettingsSection(
       return <VoiceSettingsCard />;
     case "experimental":
       return <ExperimentalFeaturesCard />;
+    case "models":
+      return <ModelsSettingsPanel />;
     case "agents":
       return <AgentsSettingsPanel />;
     case "channel-templates":

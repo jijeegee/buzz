@@ -34,6 +34,27 @@ test("relay-admin follows community-members in the Communities nav group", () =>
   );
 });
 
+test("models sits in the App nav group directly before agents", () => {
+  const appGroup = settingsNavGroups.find((g) => g.label === "App");
+  assert.ok(appGroup, "App group must exist in settingsNavGroups");
+  const modelsIndex = appGroup.sections.indexOf("models");
+  const agentsIndex = appGroup.sections.indexOf("agents");
+  assert.ok(modelsIndex !== -1, "models must be present in the App group");
+  assert.equal(
+    agentsIndex,
+    modelsIndex + 1,
+    `expected "agents" immediately after "models", got: ${JSON.stringify(appGroup.sections)}`,
+  );
+  for (const group of settingsNavGroups) {
+    if (group.label !== "App") {
+      assert.ok(
+        !group.sections.includes("models"),
+        `"models" must not also appear in the "${group.label}" group`,
+      );
+    }
+  }
+});
+
 test("the removed admin-console id is not wired into any nav group", () => {
   for (const group of settingsNavGroups) {
     assert.ok(

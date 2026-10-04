@@ -42,6 +42,8 @@ import {
 } from "@/shared/api/tauri";
 import { syncAgentsToActiveHuddle } from "@/shared/api/tauriChannels";
 import { discoverAcpCommands } from "@/shared/api/acpCommands";
+import { setGlobalAgentConfig } from "@/shared/api/tauriGlobalAgentConfig";
+import { globalAgentConfigQueryKey } from "@/features/agents/useGlobalAgentConfig";
 import type { HarnessDefinitionInput } from "@/shared/api/tauri";
 import { discoverAcpRuntimes } from "@/shared/api/tauriAcpDiscovery";
 import {
@@ -77,6 +79,7 @@ import type {
   Channel,
   CreateManagedAgentInput,
   CreatePersonaInput,
+  GlobalAgentConfig,
   ManagedAgent,
   UpdateManagedAgentInput,
   UpdatePersonaInput,
@@ -1007,5 +1010,31 @@ export function useBakedBuildEnvKeysQuery(options?: { enabled?: boolean }) {
     staleTime: Infinity,
     refetchInterval: false,
     retry: false,
+  });
+}
+
+/**
+ * Persist the whole `GlobalAgentConfig` record in one write — the
+ * `set_global_agent_config` command restarts running local agents whose
+ * effective env changed and reports `restarted_count`. On success the shared
+ * config cache is seeded with the backend's canonical value, then both the
+ * config and the managed-agents list are invalidated so restart badges and
+ * statuses catch up. (`AgentDefaultsEditor` still calls the API directly and
+ * seeds the cache itself.)
+ */
+export function useSetGlobalAgentConfigMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (config: GlobalAgentConfig) => setGlobalAgentConfig(config),
+    onSuccess: (result) => {
+      queryClient.setQueryData(globalAgentConfigQueryKey, result.config);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: globalAgentConfigQueryKey,
+      });
+      await queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey });
+    },
   });
 }
