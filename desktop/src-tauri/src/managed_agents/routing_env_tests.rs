@@ -241,3 +241,36 @@ fn lead_env_inlines_a_prompt_file() {
     command.env(SYSTEM_PROMPT_FILE_ENV_VAR, &path);
     assert!(apply_lead_env(&mut command, &generated_dir().join("lead.toml"), "ADDENDUM").is_err());
 }
+
+#[test]
+fn generated_path_match_resolves_dot_segments_and_windows_case() {
+    let dir = generated_dir();
+    let dotted = dir
+        .join("..")
+        .join("routing")
+        .join("lead-abcdef012345.toml");
+    assert!(is_generated_rules_path(dotted.as_os_str(), &dir));
+    let escaped = dir.join("..").join("elsewhere.toml");
+    assert!(!is_generated_rules_path(escaped.as_os_str(), &dir));
+    if cfg!(windows) {
+        let upper = dir.join("lead-x.toml").to_string_lossy().to_uppercase();
+        assert!(is_generated_rules_path(OsStr::new(&upper), &dir));
+    }
+}
+
+/// The inherited branch: a key the command leaves alone reads from the
+/// desktop's own environment; a command-level removal wins over it. (A unique
+/// key, so parallel tests reading the real routing keys are unaffected.)
+#[test]
+fn effective_value_falls_back_to_the_inherited_environment() {
+    let key = format!("BUZZ_TEST_INHERITED_{}", uuid::Uuid::new_v4().simple());
+    std::env::set_var(&key, "from-parent");
+    let mut command = Command::new("true");
+    assert_eq!(
+        effective_env_value(&command, &key),
+        Some("from-parent".into())
+    );
+    command.env_remove(&key);
+    assert_eq!(effective_env_value(&command, &key), None);
+    std::env::remove_var(&key);
+}

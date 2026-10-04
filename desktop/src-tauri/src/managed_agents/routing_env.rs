@@ -58,8 +58,29 @@ const SYSTEM_PROMPT_FILE_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT_FILE";
 const DISPATCHER_ENABLED: &str = "true";
 
 /// Whether a `BUZZ_ACP_CONFIG` value names a file the desktop generated.
+/// Compared lexically after resolving `.`/`..` (the file may not exist, so
+/// no canonicalize), and case-insensitively on Windows, whose paths are.
 fn is_generated_rules_path(value: &OsStr, generated_dir: &Path) -> bool {
-    Path::new(value).starts_with(generated_dir)
+    normalized(Path::new(value)).starts_with(normalized(generated_dir))
+}
+
+fn normalized(path: &Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut out = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    if cfg!(windows) {
+        std::path::PathBuf::from(out.to_string_lossy().to_lowercase())
+    } else {
+        out
+    }
 }
 
 /// The value of `key` the child will see: the value set on `command` (user
