@@ -609,6 +609,10 @@ pub(crate) fn stamp_for_principal(
             claimed_id.unwrap_or_else(fallback_id),
             PUBKEY_MISMATCH_MESSAGE.to_owned(),
         )),
+        Err(StampError::ClockSkew { claimed_id }) => Err((
+            claimed_id.unwrap_or_else(fallback_id),
+            buzz_core::draft::CLOCK_SKEW_MESSAGE.to_owned(),
+        )),
         Err(StampError::Invalid(message)) => Err((fallback_id(), format!("invalid: {message}"))),
     }
 }
@@ -629,6 +633,35 @@ pub(crate) fn stamp_ws_draft(
 #[cfg(test)]
 mod binding_tests {
     use super::*;
+
+    /// A token client with a wrong clock gets a rejection for the id it is
+    /// waiting on (WS `OK` and HTTP share this seam), never a restamped
+    /// event under a different id that it would time out on and resend.
+    #[test]
+    fn skewed_client_draft_is_rejected_under_client_id() {
+        let principal = PrincipalId::generate();
+        let draft_at = |created_at: u64| {
+            let builder = nostr::EventBuilder::new(nostr::Kind::Custom(40002), "hi")
+                .custom_created_at(nostr::Timestamp::from(created_at));
+            buzz_sdk::signer::draft_event(builder, principal.as_public_key()).expect("draft")
+        };
+        let now = Utc::now().timestamp() as u64;
+
+        let skewed = draft_at(now - 3600);
+        let value = serde_json::to_value(&skewed).expect("json");
+        assert_eq!(
+            stamp_for_principal(&value, &principal),
+            Err((
+                skewed.id.to_hex(),
+                buzz_core::draft::CLOCK_SKEW_MESSAGE.to_owned()
+            ))
+        );
+
+        let fresh = draft_at(now);
+        let value = serde_json::to_value(&fresh).expect("json");
+        let stamped = stamp_for_principal(&value, &principal).expect("in window");
+        assert_eq!(stamped.id, fresh.id, "accepted OK carries the client id");
+    }
 
     #[test]
     fn stale_deadline_and_revocation_cannot_close_new_binding() {

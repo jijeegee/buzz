@@ -29,13 +29,15 @@ final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
       } on FormatException {
         return;
       }
+      final controller = ref.read(tokenSessionControllerProvider(origin));
       if (deviceOnly) {
-        await ref.read(refreshTokenStoreProvider).delete(origin);
+        // Through the controller's store queue: a rotation write in flight
+        // must not land after the delete and resurrect the record.
+        await controller.forgetOnDevice();
         // A fresh controller restores from the now-empty store.
         ref.invalidate(tokenSessionControllerProvider(origin));
         return;
       }
-      final controller = ref.read(tokenSessionControllerProvider(origin));
       // A controller that never restored holds no tokens yet and would only
       // forget locally, stranding the live device session on the relay.
       if (controller.state.status == TokenSessionStatus.restoring) {

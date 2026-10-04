@@ -313,6 +313,15 @@ class TokenSessionController {
     await _forget();
   }
 
+  /// Forget the session on this device only, without contacting the relay
+  /// (the "remove from this device" recovery path).
+  ///
+  /// The delete runs through the same serialized store queue as rotation
+  /// writes, after a generation bump, so a rotation write already in flight
+  /// cannot land after it and resurrect the record. A failed delete
+  /// propagates.
+  Future<void> forgetOnDevice() => _forget(propagateDeleteFailure: true);
+
   /// Stop timers and notifications and fence in-flight rotations (see the
   /// class doc).
   void dispose() {
@@ -557,7 +566,10 @@ class TokenSessionController {
     );
   }
 
-  Future<void> _forget({String? errorMessage}) async {
+  Future<void> _forget({
+    String? errorMessage,
+    bool propagateDeleteFailure = false,
+  }) async {
     _generation += 1;
     final generation = _generation;
     _cancelTimer();
@@ -589,6 +601,7 @@ class TokenSessionController {
           ),
         );
       }
+      if (propagateDeleteFailure) rethrow;
     }
   }
 

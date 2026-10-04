@@ -45,3 +45,37 @@ test("account switch cancels private queries, clears mutations and fences late r
   assert.equal(client.getQueryData(["late"]), "bob data");
   scope.dispose();
 });
+
+test("status blips and learning the principal after restore keep the cache", async () => {
+  let now = 0;
+  let offline = false;
+  const session = new WebSession({
+    baseUrl: "https://relay.test",
+    now: () => now,
+    fetch: async (url) => {
+      if (url.endsWith("/auth/me")) return json({ principal_id: "alice" });
+      if (offline) throw new Error("offline");
+      return json({ access: "access", expires_in: 3600 });
+    },
+    setTimer: () => 0,
+    clearTimer: () => {},
+  });
+  const client = new QueryClient();
+  const scope = cache.bindAccountCache(session, client);
+  await session.restore();
+  client.setQueryData(["private"], "alice data");
+  await session.loadProfile();
+  assert.equal(session.getSnapshot().principalId, "alice");
+
+  now += 2 * 3600 * 1000;
+  offline = true;
+  await session.refresh();
+  assert.equal(session.getSnapshot().status, "unavailable");
+  offline = false;
+  await session.refresh();
+  assert.equal(session.getSnapshot().status, "signed_in");
+
+  assert.equal(client.getQueryData(["private"]), "alice data");
+  assert.equal(scope.getSnapshot(), 0);
+  scope.dispose();
+});

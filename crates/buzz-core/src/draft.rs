@@ -3,8 +3,8 @@
 //! A token-authenticated client submits an event *draft*: `kind`, `tags`,
 //! `content` and optionally `created_at`, `pubkey` and `id`. The relay — not
 //! the client — decides who sent it: [`stamp_draft`] sets `pubkey` to the
-//! authenticated principal, corrects a missing or skewed `created_at`,
-//! recomputes the NIP-01 `id`, and fills `sig` with [`SENTINEL_SIG`]. A client
+//! authenticated principal, fills a missing `created_at` with server time
+//! (a skewed one is rejected, not rewritten), recomputes the NIP-01 `id`, and fills `sig` with [`SENTINEL_SIG`]. A client
 //! `sig` is ignored.
 //!
 //! The sentinel exists only because `nostr::Event` always carries a signature
@@ -19,8 +19,12 @@ use crate::principal::PrincipalId;
 /// The 64-byte all-zero signature carried by server-stamped events.
 pub const SENTINEL_SIG: [u8; 64] = [0u8; 64];
 
-/// Maximum distance (seconds) between a draft's `created_at` and server time
-/// before the server replaces it with its own clock.
+/// Maximum distance (seconds) between a draft's `created_at` and server time.
+///
+/// A draft outside this window is rejected ([`StampError::ClockSkew`]) rather
+/// than restamped: rewriting `created_at` changes the event id, so the client
+/// would never see an `OK` for the id it computed, time out, and resend a
+/// message that was in fact stored.
 pub const DRAFT_MAX_SKEW_SECS: i64 = 300;
 
 /// Why a draft could not be stamped.
@@ -34,9 +38,21 @@ pub enum StampError {
         /// Event id the client would have computed for its claimed pubkey.
         claimed_id: Option<String>,
     },
+    /// The draft's `created_at` is more than [`DRAFT_MAX_SKEW_SECS`] from
+    /// server time: the device clock is wrong.
+    ///
+    /// `claimed_id` is the NIP-01 id of the draft as submitted (its own
+    /// `created_at`), i.e. the id the client is waiting on.
+    ClockSkew {
+        /// Event id the client computed for its draft.
+        claimed_id: Option<String>,
+    },
     /// The draft is not a well-formed event body.
     Invalid(String),
 }
+
+/// `OK` message for a [`StampError::ClockSkew`] rejection.
+pub const CLOCK_SKEW_MESSAGE: &str = "invalid: created_at skew, check device clock";
 
 /// Whether `sig` is the server-stamp sentinel.
 pub fn is_sentinel_sig(sig: &[u8]) -> bool {
@@ -63,10 +79,10 @@ pub fn stamp_draft(draft: &Value, principal: &PrincipalId, now: i64) -> Result<E
         Some(Value::String(content)) => content.clone(),
         Some(_) => return Err(StampError::Invalid("content must be a string".into())),
     };
-    let created_at = match object.get("created_at").and_then(Value::as_i64) {
-        Some(ts) if (ts - now).abs() <= DRAFT_MAX_SKEW_SECS => ts,
-        _ => now,
-    };
+    let created_at = object
+        .get("created_at")
+        .and_then(Value::as_i64)
+        .unwrap_or(now);
 
     let build = |pubkey_hex: &str| -> Result<Event, StampError> {
         let event_json = serde_json::json!({
@@ -102,6 +118,11 @@ pub fn stamp_draft(draft: &Value, principal: &PrincipalId, now: i64) -> Result<E
                 .map(|event| event.id.to_hex());
             return Err(StampError::PubkeyMismatch { claimed_id });
         }
+    }
+
+    if created_at.abs_diff(now) > DRAFT_MAX_SKEW_SECS.unsigned_abs() {
+        let claimed_id = build(&principal_hex).ok().map(|event| event.id.to_hex());
+        return Err(StampError::ClockSkew { claimed_id });
     }
 
     build(&principal_hex)
@@ -152,14 +173,37 @@ mod tests {
     }
 
     #[test]
-    fn skewed_or_missing_created_at_uses_server_time() {
+    fn skewed_created_at_is_rejected_with_client_id() {
         let p = principal();
         let now = 1_760_000_000;
-        let skewed = serde_json::json!({"kind": 1, "created_at": now - 3600, "content": ""});
-        assert_eq!(
-            stamp_draft(&skewed, &p, now).unwrap().created_at.as_secs() as i64,
-            now
-        );
+        for skew in [-3600, DRAFT_MAX_SKEW_SECS + 1, -(DRAFT_MAX_SKEW_SECS + 1)] {
+            let draft = serde_json::json!({
+                "kind": 1,
+                "pubkey": p.to_hex(),
+                "created_at": now + skew,
+                "content": "x",
+            });
+            // The id the client computed: the draft stamped on its own clock.
+            let client_id = stamp_draft(&draft, &p, now + skew).unwrap().id.to_hex();
+            assert_eq!(
+                stamp_draft(&draft, &p, now),
+                Err(StampError::ClockSkew {
+                    claimed_id: Some(client_id)
+                }),
+                "skew {skew}"
+            );
+        }
+        for edge in [DRAFT_MAX_SKEW_SECS, -DRAFT_MAX_SKEW_SECS] {
+            let draft = serde_json::json!({"kind": 1, "created_at": now + edge});
+            let event = stamp_draft(&draft, &p, now).expect("within window");
+            assert_eq!(event.created_at.as_secs() as i64, now + edge);
+        }
+    }
+
+    #[test]
+    fn missing_created_at_uses_server_time() {
+        let p = principal();
+        let now = 1_760_000_000;
         let missing = serde_json::json!({"kind": 1});
         assert_eq!(
             stamp_draft(&missing, &p, now).unwrap().created_at.as_secs() as i64,

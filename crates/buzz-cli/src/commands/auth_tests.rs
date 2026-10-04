@@ -622,6 +622,94 @@ async fn existing_keyring_pointer_recovers_when_file_is_unwritable() {
     );
 }
 
+/// Records whether the session file held a refresh token in plaintext at the
+/// moment the keyring was written.
+struct PlaintextSpyStore {
+    inner: MemoryStore,
+    path: std::path::PathBuf,
+    plaintext_at_save: Mutex<Vec<bool>>,
+}
+impl RefreshStore for PlaintextSpyStore {
+    fn load(&self, origin: &str) -> Result<Option<Secret>, String> {
+        self.inner.load(origin)
+    }
+    fn save(&self, origin: &str, token: &Secret) -> Result<(), String> {
+        let on_disk = std::fs::read_to_string(&self.path).unwrap_or_default();
+        self.plaintext_at_save
+            .lock()
+            .unwrap()
+            .push(on_disk.contains(token.expose()));
+        self.inner.save(origin, token)
+    }
+    fn delete(&self, origin: &str) -> Result<(), String> {
+        self.inner.delete(origin)
+    }
+}
+
+#[tokio::test]
+async fn working_keyring_leaves_no_plaintext_refresh_on_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("buzz").join("session.json");
+    let spy = Arc::new(PlaintextSpyStore {
+        inner: MemoryStore::default(),
+        path: path.clone(),
+        plaintext_at_save: Mutex::new(Vec::new()),
+    });
+    let store = SessionStore::new(path.clone(), spy.clone());
+    let origin = "https://relay.test";
+    let device = Some("00000000-0000-0000-0000-000000000001".to_owned());
+    let issue = |access: &str, refresh: &str| IssuedTokens {
+        access: Secret::new(access.into()),
+        refresh: Secret::new(refresh.into()),
+        expires_in: 3600,
+    };
+
+    // First login: the crash-safe snapshot holds the refresh only until the
+    // keyring has it.
+    let first = store
+        .save_tokens(origin, "alice", device.clone(), &issue("a1", "bzr_first"))
+        .await
+        .unwrap();
+    assert_eq!(first, RefreshStorage::Keyring);
+    let on_disk = std::fs::read_to_string(&path).unwrap();
+    assert!(!on_disk.contains("bzr_first"), "plaintext copy removed");
+    assert!(file_json(&store)["sessions"][origin]
+        .get("refresh")
+        .is_none());
+
+    // Rotation over the keyring pointer never writes the refresh to the file.
+    let rotated = store
+        .save_tokens(origin, "alice", device, &issue("a2", "bzr_second"))
+        .await
+        .unwrap();
+    assert_eq!(rotated, RefreshStorage::Keyring);
+    assert_eq!(*spy.plaintext_at_save.lock().unwrap(), [true, false]);
+    let on_disk = std::fs::read_to_string(&path).unwrap();
+    assert!(!on_disk.contains("bzr_second") && on_disk.contains("\"a2\""));
+    let current = store.get(origin).unwrap().unwrap();
+    assert_eq!(
+        store
+            .load_refresh(origin, &current)
+            .await
+            .unwrap()
+            .unwrap()
+            .expose(),
+        "bzr_second"
+    );
+    let leftovers: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(leftovers, [std::ffi::OsString::from("session.json")]);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+}
+
 /// Fail the session-file commit after the keyring accepts a rotated token.
 struct FailCommitStore {
     inner: MemoryStore,

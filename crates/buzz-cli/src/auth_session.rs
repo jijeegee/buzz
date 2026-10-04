@@ -5,7 +5,9 @@
 //! `BUZZ_SESSION_FILE`); the 90-day rotating refresh token (`bzr_…`) lives in
 //! the OS credential store. When no credential store is available (a headless
 //! Linux box without Secret Service), the refresh token falls back to the same
-//! `0600` file, as `gh` does, and the login result says so.
+//! `0600` file, as `gh` does, and the login result says so. On Windows the file
+//! has no explicit ACL: it inherits the per-user profile directory's
+//! (`%APPDATA%`), which only the user and administrators can read.
 //!
 //! The stored session is the **last** credential source: `BUZZ_BOT_TOKEN`,
 //! `BUZZ_ACCESS_TOKEN`, the acp token broker and a configured private key all
@@ -256,7 +258,9 @@ impl SessionStore {
         }
     }
 
-    /// Replace the file atomically (temp file + rename), owner-only on unix.
+    /// Replace the file atomically (temp file + rename), owner-only on unix
+    /// (file `0600`, a newly created directory `0700`). On Windows it relies on
+    /// the user profile directory's inherited ACL (see the module doc).
     fn write_file(&self, file: &SessionFile) -> Result<(), CliError> {
         let fail = |error: std::io::Error| {
             CliError::Other(format!(
@@ -265,7 +269,14 @@ impl SessionStore {
             ))
         };
         if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent).map_err(fail)?;
+            let mut dirs = std::fs::DirBuilder::new();
+            dirs.recursive(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt as _;
+                dirs.mode(0o700);
+            }
+            dirs.create(parent).map_err(fail)?;
         }
         let bytes = serde_json::to_vec_pretty(file)
             .map_err(|e| CliError::Other(format!("cannot encode session file: {e}")))?;
@@ -282,6 +293,13 @@ impl SessionStore {
                 options.mode(0o600);
             }
             let mut out = options.open(&tmp).map_err(fail)?;
+            // `mode` applies only on create; a stale temp file keeps its own.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                out.set_permissions(std::fs::Permissions::from_mode(0o600))
+                    .map_err(fail)?;
+            }
             out.write_all(&bytes).map_err(fail)?;
             out.sync_all().map_err(fail)?;
         }
@@ -323,9 +341,18 @@ impl SessionStore {
             .map_err(|e| CliError::Auth(format!("cannot read the stored login: {e}")))
     }
 
-    /// Persist a complete token snapshot atomically, then move its refresh
-    /// token to the credential store. If that final commit fails, the complete
-    /// file snapshot remains recoverable. Returns the authoritative storage.
+    /// Persist a token snapshot so every prefix of the writes is recoverable
+    /// (Rule 5), keeping the refresh token out of the file whenever the
+    /// credential store works. Returns the authoritative storage.
+    ///
+    /// - Rotation over a verified keyring pointer (same principal and device,
+    ///   refresh not in the file): keyring first, then the file with the new
+    ///   access and no refresh. The refresh never touches the file.
+    /// - First login, migration from the file, or a keyring that fails: a
+    ///   complete snapshot (with refresh) is committed to the file first, then
+    ///   the refresh moves to the keyring and the plaintext copy is removed
+    ///   from the file. It stays only if the keyring is unavailable, or if that
+    ///   final rewrite fails (reported as [`RefreshStorage::File`]).
     pub async fn save_tokens(
         &self,
         origin: &str,
@@ -333,9 +360,6 @@ impl SessionStore {
         device_id: Option<String>,
         tokens: &IssuedTokens,
     ) -> Result<RefreshStorage, CliError> {
-        // Commit one recoverable snapshot before changing the keyring. This
-        // covers first login and file -> keyring migration, not just an
-        // existing keyring pointer. A crash at any later prefix is recoverable.
         let session = StoredSession {
             principal_id: principal_id.to_owned(),
             device_id,
@@ -350,25 +374,36 @@ impl SessionStore {
                 && old.principal_id == session.principal_id
                 && old.device_id == session.device_id
         });
-        file.sessions.insert(origin.to_owned(), session);
-        if let Err(error) = self.write_file(&file) {
-            // A verified existing keyring pointer can recover a rotation even
-            // with a stale access cache. Never use this for first login,
-            // another account/device, or a file-backed refresh token.
-            if has_pointer {
-                let key = origin.to_owned();
-                let refresh = tokens.refresh.clone();
-                if self
-                    .refresh_op(move |store| store.save(&key, &refresh))
-                    .await
-                    .is_ok()
-                {
+        // A verified existing keyring pointer can take the new refresh first:
+        // a crash before the file rewrite leaves pointer -> new refresh. Never
+        // for first login, another account/device, or a file-backed refresh.
+        if has_pointer {
+            let key = origin.to_owned();
+            let refresh = tokens.refresh.clone();
+            if self
+                .refresh_op(move |store| store.save(&key, &refresh))
+                .await
+                .is_ok()
+            {
+                file.sessions.insert(
+                    origin.to_owned(),
+                    StoredSession {
+                        refresh: None,
+                        ..session
+                    },
+                );
+                if let Err(error) = self.write_file(&file) {
+                    // The pointer still resolves to the new refresh; only the
+                    // access cache is stale.
                     eprintln!("warning: {error}; rotated refresh retained in credential store");
-                    return Ok(RefreshStorage::Keyring);
                 }
+                return Ok(RefreshStorage::Keyring);
             }
-            return Err(error);
         }
+        // Otherwise commit one complete recoverable snapshot before touching
+        // the keyring (first login, file -> keyring migration, failed keyring).
+        file.sessions.insert(origin.to_owned(), session);
+        self.write_file(&file)?;
         let refresh = tokens.refresh.clone();
         let key = origin.to_owned();
         let in_keyring = self

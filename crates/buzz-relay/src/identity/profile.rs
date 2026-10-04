@@ -175,14 +175,16 @@ pub(crate) async fn publish_profile_in_community(
         lock.release().await?;
         return Ok(false);
     }
-    let now = chrono::Utc::now().timestamp();
+    let created_at = next_created_at(snapshot.latest.as_ref(), chrono::Utc::now().timestamp());
     let draft = json!({
         "kind": 0,
-        "created_at": next_created_at(snapshot.latest.as_ref(), now),
+        "created_at": created_at,
         "tags": [],
         "content": desired.to_string(),
     });
-    let event = buzz_core::draft::stamp_draft(&draft, principal, now)
+    // The server chose `created_at` (possibly bumped past a future-dated
+    // predecessor so LWW holds); it is authoritative, not a client clock.
+    let event = buzz_core::draft::stamp_draft(&draft, principal, created_at)
         .map_err(|error| anyhow::anyhow!("kind:0 stamp failed: {error:?}"))?;
     let (stored, inserted) = state
         .db

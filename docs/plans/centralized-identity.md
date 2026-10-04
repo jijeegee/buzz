@@ -344,7 +344,7 @@ S→C: ["OK", "auth", true, ""]         # 또는 ["OK","auth",false,"auth-requir
 
 서버 처리(`handle_event`, `ingest_event` 진입 전):
 1. `pubkey`가 있으면 `AuthContext.principal`과 비교, 불일치 → 기존 메시지 `"invalid: event pubkey does not match authenticated identity"` 유지. 없으면 스탬프. 예외 없음(봇 프로필은 `PATCH /auth/bots/{id}/profile`로만 변경되고 kind 0은 서버 발행 전용이므로 owner→bot 예외가 필요 없다, §3.7).
-2. `created_at` 없음 또는 서버 시각과 ±5분 초과 → 서버 시각으로 교정.
+2. `created_at` 없음 → 서버 시각. 서버 시각과 ±5분 초과 → 거절 `["OK", <클라이언트가 계산한 id>, false, "invalid: created_at skew, check device clock"]`(HTTP는 400). 교정하면 id가 바뀌어 클라이언트가 OK를 못 받고 타임아웃 후 재전송 → 중복 (v12).
 3. `id` = NIP-01 직렬화 SHA-256을 서버가 항상 재계산. `verify_id()`와 `events.id` 유니크 제약 그대로.
 4. `sig`: 와이어에서 무시. 내부 `nostr::Event`는 Phase 0–3 동안 64바이트 0 sentinel로 구성. 직렬화 경계(`protocol.rs`, `api/events.rs`)에서 `sig` 제외. Phase 4에서 `buzz_core::event::BuzzEvent`(sig 없음)로 타입 교체. 교체 전까지 §2.1 불변식(유효 x-only 공개키)이 `nostr::Event` 구성의 전제조건이다.
 5. 릴레이 발행 이벤트(워크플로우 sink, 40099 시스템 메시지, side-effect, `bridge.rs:799,2628` synthesize_presence, `audio/handler.rs:2984,3429`)는 `relay` principal로 스탬프. `state.relay_keypair` → `state.relay_principal`.
@@ -808,6 +808,8 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 - `features/settings`: Account(전역 프로필 PATCH, 아바타 업로드 → `avatar_url`), Devices(목록·원격 로그아웃·"모든 다른 기기 로그아웃"), "모든 봇 토큰 회수", 계정 삭제. `features/pairing`(NIP-AB) 삭제, `shared/crypto/{nip44,ecdh,nip_oa}.dart`는 Phase 3.
 - 테스트(위젯, `ProviderScope` 오버라이드): 로그인 버튼 → 가짜 auth 결과 → 상태 전이; 자동 로그인 성공/실패; refresh 401 → 로그인 화면; Devices 원격 로그아웃 후 목록 갱신. 게이트 `just mobile-install mobile-check mobile-test`, iOS 시뮬레이터에서 Google 로그인 → 메시지 → 재시작 후 유지 수동 검증.
 
+- **Phase 2b 후속 수정 (v12)**: (1) 시계 skew: 서버가 5분 초과 `created_at`을 재스탬프하던 것을 거절로 변경(`StampError::ClockSkew`, OK id = 클라이언트가 보낸 pubkey·`created_at`으로 계산한 id, WS·`POST /events` 공통 `stamp_for_principal`). 클라이언트는 이미 OK 메시지를 그대로 표시(mobile 스낵바, desktop `relayClientSession` reject, CLI `Relay{400}`)하므로 타임아웃·중복 재전송 대신 "check device clock"이 보인다. 서버 내부 kind 0 발행은 자신이 고른 `created_at`(미래 선행 이벤트 +1)을 기준 시각으로 스탬프. 테스트: `draft::tests::skewed_created_at_is_rejected_with_client_id`, relay `skewed_client_draft_is_rejected_under_client_id`. (2) mobile O2: 기기 전용 커뮤니티 제거는 `TokenSessionController.forgetOnDevice()`(세대 증가 + 직렬화된 store 큐에서 delete, 실패 전파) 경유 — 진행 중 회전 쓰기가 delete 뒤에 착지해 키체인 레코드를 되살리지 못함. 테스트: `community_token_removal_test` "in-flight rotation"(이전 코드에서 실패 확인). (3) web O1: `bindAccountCache` 키 = signed-out 여부 + principalId; 같은 세대 안에서 unidentified → principal은 계정 변경 아님. status 깜빡임·복원 후 principal 학습이 캐시를 지우지 않음(이전 코드에서 실패 확인). (4) CLI `save_tokens`: 검증된 keyring 포인터(같은 principal·device) 위의 회전은 keyring 먼저 → 파일(refresh 없음) 순서라 refresh가 파일에 평문으로 쓰이지 않음. 첫 로그인·파일→keyring 이전·keyring 실패만 Rule 5 스냅샷(refresh 포함)을 먼저 커밋하고 keyring 성공 후 평문 제거. 파일 0600·새 디렉터리 0700(unix, 기존 temp 파일도 권한 재설정), Windows는 `%APPDATA%` 프로필 ACL 상속에 의존(모듈 문서에 명시). 테스트 `working_keyring_leaves_no_plaintext_refresh_on_disk`(이전 코드에서 실패 확인).
+
 ### 5.4 Phase 3 — 키 인증·서명 제거
 
 범위
@@ -1006,3 +1008,9 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 |------|------|
 | 상태 | Phase 2 리뷰 블로커 B1–B3 및 선택 항목 반영(미커밋). §5.3.1 "리뷰 반영 (v11)". |
 | 결정 변경 | 운영자 config는 필드를 지우지 않고 admin 해석 지점만 플래그로 게이트(`RELAY_OWNER_PUBKEY`의 NIP-43·멤버십 필수 용도, `/operator/*` 프로비저닝은 유지); kind 0 발행은 (커뮤니티, principal) advisory lock 아래에서 principal 재조회, AUTH/re-AUTH reconcile은 `users` row가 있는 곳만, 첫 쓰기에서 발행; PATCH fan-out은 스폰(동시 4); 에이전트 프로세스는 `BUZZ_DISABLE_STORED_SESSION=1`. |
+
+### v11 → v12
+
+| 항목 | 변경 |
+|------|------|
+| 결정 변경 | 토큰 draft의 `created_at` skew(±5분 초과)는 서버 교정 대신 클라이언트 id로 거절(§3 draft 규칙 2). 기기 전용 제거는 컨트롤러 store 큐 경유, web 계정 캐시 키는 principal + signed-out만. §5.3.1 "Phase 2b 후속 수정 (v12)". |

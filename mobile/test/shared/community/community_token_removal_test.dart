@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:buzz/shared/auth/token/token.dart';
 import 'package:buzz/shared/community/community.dart';
 import 'package:buzz/shared/community/community_provider.dart';
@@ -147,6 +149,33 @@ void main() {
       reason: 'a fresh controller replaces the forgotten one',
     );
   });
+
+  test(
+    'device-only removal cannot be undone by an in-flight rotation',
+    () async {
+      final community = await addTokenCommunity();
+      server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'),
+      );
+      final gate = tokens.writeGate = Completer<void>();
+      final restoring = container
+          .read(tokenSessionControllerProvider(_origin))
+          .restore();
+      await settle();
+      expect(server.refreshCalls, 1, reason: 'rotation write is in flight');
+
+      final removing = container
+          .read(communityListProvider.notifier)
+          .removeCommunity(community.id, deviceOnly: true);
+      await settle();
+      gate.complete();
+      await removing;
+      await restoring;
+
+      expect(tokens.data, isEmpty);
+      expect(await storage.loadAll(), isEmpty);
+    },
+  );
 
   test('legacy communities are removed without auth requests', () async {
     await container.read(communityListProvider.future);

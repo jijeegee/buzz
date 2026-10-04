@@ -7,8 +7,8 @@
 //! token and knows its server-issued principal id. It builds the event with
 //! `pubkey = principal`, computes the NIP-01 id, and carries the all-zero
 //! [`buzz_core::draft::SENTINEL_SIG`]. A token-authenticated relay treats the
-//! body as a draft: it re-checks `pubkey`, recomputes the id (identical unless
-//! `created_at` was skewed by more than five minutes) and ignores `sig`. The
+//! body as a draft: it re-checks `pubkey`, recomputes the id (identical; a
+//! `created_at` skewed by more than five minutes is rejected) and ignores `sig`. The
 //! sentinel is never a valid signature, so such an event can never be passed
 //! off as a key-signed one.
 
