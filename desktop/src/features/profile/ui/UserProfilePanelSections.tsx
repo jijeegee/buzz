@@ -79,7 +79,6 @@ export type ProfileSummaryViewProps = {
   handleAgentPrimaryAction: () => void;
   handleAgentRestart: () => void;
   handleEditAgent: () => void;
-  handleToggleAgentAutoStart: () => void;
   handleToggleAgentDefaultAi: () => void;
   handleEditPersona?: () => void;
   handleHuddle?: () => void;
@@ -156,7 +155,6 @@ export function ProfileSummaryView({
   handleAgentPrimaryAction,
   handleAgentRestart,
   handleEditAgent,
-  handleToggleAgentAutoStart,
   handleToggleAgentDefaultAi,
   handleEditPersona,
   handleHuddle,
@@ -568,14 +566,7 @@ export function ProfileSummaryView({
                     isOwner,
                     managedAgent,
                   })}
-                  onToggleStartOnLaunch={
-                    managedAgent?.backend.type === "local"
-                      ? handleToggleAgentAutoStart
-                      : undefined
-                  }
                   restartDiff={managedAgent?.restartDiff ?? []}
-                  startOnLaunchEnabled={managedAgent?.startOnAppLaunch}
-                  startOnLaunchPending={isAgentActionPending}
                   onOpenDiagnostics={onOpenDiagnostics}
                   onOpenInstance={onOpenInstance}
                   showDiagnosticsIngress={showDiagnosticsIngress}

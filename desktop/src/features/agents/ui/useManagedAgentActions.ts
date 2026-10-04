@@ -456,6 +456,8 @@ export function useManagedAgentActions() {
     channelIdToName,
     channelsByPubkey,
     isPending,
+    /** The start-on-launch mutation alone; the card menu item locks on this, not `isPending`. */
+    isStartOnLaunchPending: startOnLaunchMutation.isPending,
     isCreateOpen,
     setIsCreateOpen,
     agentToAddToChannel,

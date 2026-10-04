@@ -11,8 +11,8 @@ import test from "node:test";
 // session-panel import chain reads `import.meta.env` at module load), so what
 // remains here are token-level pins, the same way
 // UserProfileRuntimeContent.test does: no toggle on the dead slot, Sections
-// routes through the shared gates, and the row is mounted under Start on
-// launch.
+// routes through the shared gates, and the row is mounted under the Status
+// row.
 
 const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
 const [panelSource, sectionsSource, tabsSource, actionsSource] =
@@ -56,15 +56,15 @@ test("the summary view decides the tab and the toggle through the shared gates",
   assert.equal(sectionsSource.includes("isDefaultAiEligible("), false);
 });
 
-test("the Runtime tab mounts the row in the Activity group directly under Start on launch", () => {
+test("the Runtime tab mounts the row in the Activity group directly under the Status row", () => {
   const activity = indexOfOrFail(
     tabsSource,
     'testId="user-profile-runtime-activity-section"',
     "UserProfilePanelTabs",
   );
-  const startOnLaunchRow = indexOfOrFail(
+  const statusRow = indexOfOrFail(
     tabsSource,
-    "data-testid={startOnLaunchField.testId}",
+    "fields={statusDiagnosticsFields}",
     "UserProfilePanelTabs",
   );
   const defaultAiRow = indexOfOrFail(
@@ -82,10 +82,10 @@ test("the Runtime tab mounts the row in the Activity group directly under Start 
     'testId="user-profile-agent-configuration-section"',
     "UserProfilePanelTabs",
   );
-  assert.ok(activity < startOnLaunchRow, "Start on launch is an Activity row");
+  assert.ok(activity < statusRow, "Status is an Activity row");
   assert.ok(
-    startOnLaunchRow < defaultAiRow && defaultAiRow < harnessLog,
-    "Default AI sits right after Start on launch, before the harness log row",
+    statusRow < defaultAiRow && defaultAiRow < harnessLog,
+    "Default AI sits right after the Status row, before the harness log row",
   );
   assert.ok(defaultAiRow < configuration, "and inside the Activity group");
 });

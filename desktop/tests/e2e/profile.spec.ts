@@ -1697,13 +1697,12 @@ test("renders agent profile ingress subviews from the Playwright mock bridge", a
   await expect(acpCopy).toHaveCSS("opacity", "0");
   await acpRow.hover();
   await expect(acpCopy).toHaveCSS("opacity", "1");
+  // Start on launch is reported here read-only; the toggle lives in the
+  // Agents page card menu (AgentStartOnLaunchMenuItem).
   const startOnLaunchRow = page.getByTestId("user-profile-start-on-launch");
   await expect(
     startOnLaunchRow.locator('[data-slot="profile-field-icon"]'),
   ).toHaveCount(1);
-  const startOnLaunchToggle = page.getByTestId(
-    "user-profile-start-on-launch-toggle",
-  );
   const activitySection = page.getByTestId(
     "user-profile-runtime-activity-section",
   );
@@ -1712,28 +1711,17 @@ test("renders agent profile ingress subviews from the Playwright mock bridge", a
   ).toBeVisible();
   await expect(
     activitySection.getByTestId("user-profile-start-on-launch"),
-  ).toBeVisible();
-  const activityRowOrder = await activitySection
-    .locator("[data-testid^='user-profile-']")
-    .evaluateAll((rows) =>
-      rows
-        .map((row) => row.getAttribute("data-testid"))
-        .filter((testId): testId is string => testId !== null),
-    );
-  expect(activityRowOrder.indexOf("user-profile-start-on-launch")).toBe(
-    activityRowOrder.indexOf("user-profile-agent-status") + 1,
-  );
+  ).toHaveCount(0);
   await expect(
     page
       .getByTestId("user-profile-agent-configuration-section")
       .getByTestId("user-profile-start-on-launch"),
+  ).toBeVisible();
+  await expect(startOnLaunchRow).toContainText("Yes");
+  await expect(startOnLaunchRow.getByRole("switch")).toHaveCount(0);
+  await expect(
+    page.getByTestId("user-profile-start-on-launch-toggle"),
   ).toHaveCount(0);
-  await expect(startOnLaunchRow).not.toContainText("Yes");
-  await expect(startOnLaunchRow).toBeChecked();
-  await expect(startOnLaunchToggle).toHaveAttribute("data-state", "checked");
-  await startOnLaunchRow.click();
-  await expect(startOnLaunchRow).not.toBeChecked();
-  await expect(startOnLaunchToggle).toHaveAttribute("data-state", "unchecked");
   await expectHashSearchParam(page, "profileTab", "runtime");
   const instancesSection = page.getByTestId("user-profile-instances-section");
   await expect(

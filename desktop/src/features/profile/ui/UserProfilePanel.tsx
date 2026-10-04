@@ -17,7 +17,6 @@ import {
   useManagedAgentsQuery,
   usePersonasQuery,
   useSetDefaultManagedAgentMutation,
-  useSetManagedAgentStartOnAppLaunchMutation,
   useSetPersonaActiveMutation,
   useStartManagedAgentMutation,
   useStopManagedAgentMutation,
@@ -248,7 +247,6 @@ export function UserProfilePanel({
   const startAgentMutation = useStartManagedAgentMutation();
   const stopAgentMutation = useStopManagedAgentMutation();
   const deleteAgentMutation = useDeleteManagedAgentMutation();
-  const startOnLaunchMutation = useSetManagedAgentStartOnAppLaunchMutation();
   const defaultAiMutation = useSetDefaultManagedAgentMutation();
   const createPersonaMutation = useCreatePersonaMutation();
   const updatePersonaMutation = useUpdatePersonaMutation();
@@ -345,7 +343,6 @@ export function UserProfilePanel({
     startAgentMutation.isPending ||
     stopAgentMutation.isPending ||
     deleteAgentMutation.isPending ||
-    startOnLaunchMutation.isPending ||
     defaultAiMutation.isPending ||
     createPersonaMutation.isPending ||
     updatePersonaMutation.isPending ||
@@ -489,28 +486,6 @@ export function UserProfilePanel({
     }
   }, [createManagedAgentForPersona, resolvedPersona]);
 
-  const handleToggleAgentAutoStart = React.useCallback(async () => {
-    if (managedAgent?.backend.type !== "local") return;
-
-    try {
-      const updated = await startOnLaunchMutation.mutateAsync({
-        pubkey: managedAgent.pubkey,
-        startOnAppLaunch: !managedAgent.startOnAppLaunch,
-      });
-      toast.success(
-        updated.startOnAppLaunch
-          ? `Will start ${updated.name} automatically.`
-          : `${updated.name} will stay manual-start only.`,
-      );
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to update startup preference.",
-      );
-    }
-  }, [managedAgent, startOnLaunchMutation.mutateAsync]);
-
   const handleToggleAgentDefaultAi = React.useCallback(async () => {
     if (!managedAgent) return;
 
@@ -520,7 +495,7 @@ export function UserProfilePanel({
         defaultAiSelectionFor(managedAgent.pubkey, nextIsDefaultAi),
       );
       // The command returns the whole list; report this agent's stored
-      // state like the auto-start handler does rather than the requested one.
+      // state rather than the requested one.
       const updatedAgent = updated.find(
         (agent) => agent.pubkey === managedAgent.pubkey,
       );
@@ -765,7 +740,6 @@ export function UserProfilePanel({
       managedAgent={managedAgent}
       onDuplicatePersona={handleDuplicatePersona}
       onExportPersona={handleExportPersona}
-      onToggleAutoStart={handleToggleAgentAutoStart}
       personaActionKey={resolvedPersona?.id}
       viewerIsOwner={viewerIsOwner}
     />
@@ -835,7 +809,6 @@ export function UserProfilePanel({
           handleAgentPrimaryAction={handleAgentPrimaryAction}
           handleAgentRestart={handleAgentRestart}
           handleEditAgent={handleEditAgent}
-          handleToggleAgentAutoStart={handleToggleAgentAutoStart}
           handleToggleAgentDefaultAi={handleToggleAgentDefaultAi}
           handleEditPersona={canManagePersona ? handleEditPersona : undefined}
           handleHuddle={canHuddle ? handleHuddle : undefined}

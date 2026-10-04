@@ -46,7 +46,6 @@ import {
 } from "@/shared/ui/carousel";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 import { PanelSectionGroup } from "@/shared/ui/PanelSectionGroup";
-import { Switch } from "@/shared/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 export function ProfileIngressRow({
@@ -724,12 +723,9 @@ export function ProfileRuntimeTabContent({
   modelSettings,
   needsRestart = false,
   restartDiff = [],
-  startOnLaunchEnabled,
-  startOnLaunchPending = false,
   onOpenDiagnostics,
   onOpenInstance,
   onToggleDefaultAi,
-  onToggleStartOnLaunch,
   showDiagnosticsIngress,
 }: {
   /** Whether the per-agent auto-restart toggle is ON. */
@@ -748,8 +744,6 @@ export function ProfileRuntimeTabContent({
   needsRestart?: boolean;
   /** The full itemised diff — shown uncapped in the Runtime banner. */
   restartDiff?: RestartDiffEntry[];
-  startOnLaunchEnabled?: boolean;
-  startOnLaunchPending?: boolean;
   onOpenDiagnostics: () => void;
   onOpenInstance: (pubkey: string) => void;
   /**
@@ -758,34 +752,17 @@ export function ProfileRuntimeTabContent({
    * never rendered for agents, so nothing there can carry it.
    */
   onToggleDefaultAi?: () => void;
-  onToggleStartOnLaunch?: () => void;
   showDiagnosticsIngress: boolean;
 }) {
-  const startOnLaunchFieldIndex = configurationFields.findIndex(
-    (field) => field.label === "Start on launch",
-  );
-  const startOnLaunchField = configurationFields[startOnLaunchFieldIndex];
-  const StartOnLaunchIcon = startOnLaunchField?.icon;
-  const remainingConfigurationFields = configurationFields.filter(
-    (_, index) => index !== startOnLaunchFieldIndex,
-  );
-  const resolvedStartOnLaunchEnabled =
-    startOnLaunchEnabled ?? startOnLaunchField?.displayValue === "Yes";
-  const canToggleStartOnLaunch = onToggleStartOnLaunch !== undefined;
-  const handleStartOnLaunchToggle = React.useCallback(() => {
-    if (startOnLaunchPending) return;
-    onToggleStartOnLaunch?.();
-  }, [onToggleStartOnLaunch, startOnLaunchPending]);
   const canToggleDefaultAi = onToggleDefaultAi !== undefined;
   const statusDiagnosticsFields = diagnosticsFields.filter(
     (field) => field.label === "Status",
   );
   const hasActivityRows =
     statusDiagnosticsFields.length > 0 ||
-    startOnLaunchField !== undefined ||
     canToggleDefaultAi ||
     showDiagnosticsIngress;
-  const hasConfigurationRows = remainingConfigurationFields.length > 0;
+  const hasConfigurationRows = configurationFields.length > 0;
   const hasInstances = instances.length > 0 || archivedInstances.length > 0;
 
   if (
@@ -833,46 +810,6 @@ export function ProfileRuntimeTabContent({
               variant="runtime"
             />
           ) : null}
-          {startOnLaunchField ? (
-            <div
-              aria-checked={resolvedStartOnLaunchEnabled}
-              aria-disabled={!canToggleStartOnLaunch || startOnLaunchPending}
-              aria-label={startOnLaunchField.label}
-              className={cn(
-                "flex min-h-16 items-center gap-3 px-4 py-3",
-                canToggleStartOnLaunch &&
-                  "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              )}
-              data-testid={startOnLaunchField.testId}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                handleStartOnLaunchToggle();
-              }}
-              onClick={
-                canToggleStartOnLaunch ? handleStartOnLaunchToggle : undefined
-              }
-              role="switch"
-              tabIndex={canToggleStartOnLaunch ? 0 : -1}
-            >
-              {StartOnLaunchIcon ? (
-                <StartOnLaunchIcon
-                  className="h-4 w-4 shrink-0 text-muted-foreground"
-                  data-slot="profile-field-icon"
-                />
-              ) : null}
-              <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
-                {startOnLaunchField.label}
-              </span>
-              <Switch
-                aria-hidden="true"
-                checked={resolvedStartOnLaunchEnabled}
-                data-testid={`${startOnLaunchField.testId}-toggle`}
-                disabled={!canToggleStartOnLaunch || startOnLaunchPending}
-                tabIndex={-1}
-              />
-            </div>
-          ) : null}
           {onToggleDefaultAi ? (
             <ProfileDefaultAiRow
               checked={defaultAiEnabled}
@@ -897,10 +834,7 @@ export function ProfileRuntimeTabContent({
           testId="user-profile-agent-configuration-section"
           title="Agent configuration"
         >
-          <ProfileFieldRows
-            fields={remainingConfigurationFields}
-            variant="runtime"
-          />
+          <ProfileFieldRows fields={configurationFields} variant="runtime" />
         </ProfileSectionGroup>
       ) : null}
       {modelSettings}

@@ -443,7 +443,7 @@ with a TypeScript lookup table or an id comparison in a component.
     `isDefaultAiEligible`, `defaultAiSelectionFor`) and never keeps a rival
     "current default" copy or picks a default on its own. There is exactly
     one toggle path: the "Default AI" switch row in the agent profile's
-    **Runtime tab, Activity group, directly under "Start on launch"**
+    **Runtime tab, Activity group, directly under the Status row**
     (`profile/ui/UserProfilePanelTabs.tsx` `ProfileRuntimeTabContent`,
     `data-testid="user-profile-default-ai"`, one accessible name
     `aria-label="Default AI"`). `UserProfilePanelSections` offers the tab and
@@ -522,6 +522,31 @@ with a TypeScript lookup table or an id comparison in a component.
     (`projects/useProjectChannelRequests.ts`) intentionally never pass
     `addDefaultAi`.
 
+22. **Start on launch is toggled from the Agents page card menu, nowhere
+    else.** `ManagedAgent.startOnAppLaunch` flips only through
+    `ui/AgentStartOnLaunchMenuItem.tsx`: a `DropdownMenuCheckboxItem` ("Start
+    on launch", `role="menuitemcheckbox"` + `aria-checked`, no second label)
+    mounted at the top of `PersonaActionsMenu` when the card's persona has a
+    linked instance, and as the only entry of `StandaloneAgentActionsMenu` on
+    definition-less instance cards (`UnifiedAgentsSection.tsx`). Visibility is
+    the pure `lib/startOnLaunchMenu.ts` `startOnLaunchMenuState(agent)`: no
+    instance → hidden (there is no record to persist on; the card's Start
+    creates one with `startOnAppLaunch: true`), provider backend → visible but
+    disabled with "Managed by provider" (Rust forces the flag off at create),
+    local → live. The handler is
+    `useManagedAgentActions.handleToggleStartOnAppLaunch` (`AgentsView` adapts
+    `(agent, next)` to `(pubkey, next)`), one
+    `set_managed_agent_start_on_app_launch` per click, reported through the
+    section's feedback toast. The item locks only on `isStartOnLaunchPending`
+    — that mutation's own `isPending` — never on the page-wide
+    `isActionPending`, so an unrelated start/stop does not grey it out. The
+    profile Runtime tab reports the flag as a plain read-only "Start on
+    launch: Yes/No" row (`UserProfilePanelFields.tsx`, Agent configuration
+    group) and carries no switch; `UserProfilePanel` owns no auto-start
+    handler, and the header settings menu (`UserProfileAgentActions.tsx`)
+    carries no Auto-start item (that slot is `!isBot`-only, unreachable for
+    agents — rule 20). The card face shows no start-on-launch indicator.
+
 ## Channel-only runtime controls
 
 Desktop observer controls identify a channel, not a thread session. The harness
@@ -570,7 +595,16 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   `ui/personaCatalogOwnerLabel.test.mjs` — reject invisible definition text
   and keep Markdown concealment syntax literal in the review surface.
 - `../profile/ui/UserProfileRuntimeContent.test.mjs` — profile runtime panels
-  cannot reintroduce build-mode previews or synthetic fallback controls.
+  cannot reintroduce build-mode previews or synthetic fallback controls, and
+  Start on launch stays a read-only row (no switch, handler, or header-menu
+  Auto-start item in any profile source).
+- `lib/startOnLaunchMenu.test.mjs` — `startOnLaunchMenuState` table over
+  instance presence × backend × stored flag.
+- `ui/AgentStartOnLaunchMenuItem.jsdom-test.mjs` — the card menu item through
+  the real `useManagedAgentActions` handler: `role="menuitemcheckbox"` +
+  `aria-checked` with no extra label, one
+  `set_managed_agent_start_on_app_launch` call carrying the inverted flag,
+  provider backend disabled and never writing, no item without an instance.
 - `desktop/tests/e2e/profile.spec.ts` — the owned-agent parity flow compares
   every profile tab when opened from Agents and from the agent's DM.
 - `ui/AgentConfigPanelPresentation.test.mjs` — shared profile/agent config rows

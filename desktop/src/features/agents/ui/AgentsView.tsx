@@ -231,6 +231,7 @@ export function AgentsView() {
               }
               isActionPending={isActionPending}
               isAgentsLoading={agents.managedAgentsQuery.isLoading}
+              isStartOnLaunchPending={agents.isStartOnLaunchPending}
               startingAgentPubkey={agents.startingAgentPubkey}
               restartingAgentPubkey={agents.restartingAgentPubkey}
               startingPersonaIds={agents.startingPersonaIds}
@@ -248,6 +249,9 @@ export function AgentsView() {
               }}
               onStartPersona={(persona) => {
                 void agents.handleStartPersona(persona);
+              }}
+              onToggleStartOnLaunch={(agent, next) => {
+                void agents.handleToggleStartOnAppLaunch(agent.pubkey, next);
               }}
               // Persona props
               personas={personas.libraryPersonas}

@@ -4,7 +4,6 @@ import {
   ArchiveRestore,
   CopyPlus,
   Download,
-  Power,
   Settings,
 } from "lucide-react";
 
@@ -19,7 +18,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import { Switch } from "@/shared/ui/switch";
 
 export function UserProfileAgentSettingsMenu({
   archiveActions,
@@ -28,7 +26,6 @@ export function UserProfileAgentSettingsMenu({
   managedAgent,
   onDuplicatePersona,
   onExportPersona,
-  onToggleAutoStart,
   personaActionKey,
 }: {
   archiveActions?: IdentityArchiveActions;
@@ -37,23 +34,16 @@ export function UserProfileAgentSettingsMenu({
   managedAgent?: ManagedAgent;
   onDuplicatePersona?: () => void;
   onExportPersona?: () => void;
-  onToggleAutoStart?: () => void;
   personaActionKey?: string;
 }) {
   const [archiveConfirmOpen, setArchiveConfirmOpen] = React.useState(false);
   const actionKey = managedAgent?.pubkey ?? "persona-draft";
   const personaKey = personaActionKey ?? actionKey;
-  const canToggleAutoStart =
-    managedAgent !== undefined &&
-    managedAgent.backend.type === "local" &&
-    onToggleAutoStart !== undefined;
-  const autoStartSwitchId = `user-profile-agent-auto-start-${actionKey}`;
   const hasPrimaryActions = Boolean(onDuplicatePersona || onExportPersona);
   const hasArchiveAction =
     archiveActions?.canArchive === true &&
     archiveActions.isArchived !== undefined;
-  const hasActions =
-    canToggleAutoStart || hasPrimaryActions || hasArchiveAction;
+  const hasActions = hasPrimaryActions || hasArchiveAction;
 
   if (!hasActions) {
     return null;
@@ -81,30 +71,6 @@ export function UserProfileAgentSettingsMenu({
           className="min-w-56"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          {canToggleAutoStart ? (
-            <DropdownMenuItem
-              className="gap-3 pr-2"
-              disabled={isPending}
-              onSelect={(event) => {
-                event.preventDefault();
-                onToggleAutoStart();
-              }}
-            >
-              <Power className="h-4 w-4 text-muted-foreground" />
-              <span className="min-w-0 flex-1 text-sm font-medium">
-                Auto-start
-              </span>
-              <Switch
-                aria-label="Auto-start"
-                checked={managedAgent.startOnAppLaunch}
-                data-testid={autoStartSwitchId}
-                disabled={isPending}
-                id={autoStartSwitchId}
-                onCheckedChange={onToggleAutoStart}
-                onClick={(event) => event.stopPropagation()}
-              />
-            </DropdownMenuItem>
-          ) : null}
           {onDuplicatePersona ? (
             <DropdownMenuItem
               data-testid={`user-profile-persona-duplicate-${personaKey}`}
@@ -125,7 +91,7 @@ export function UserProfileAgentSettingsMenu({
               Export
             </DropdownMenuItem>
           ) : null}
-          {hasArchiveAction && (canToggleAutoStart || hasPrimaryActions) ? (
+          {hasArchiveAction && hasPrimaryActions ? (
             <DropdownMenuSeparator />
           ) : null}
           {hasArchiveAction && archiveActions ? (
@@ -176,7 +142,6 @@ export function UserProfileAgentSettingsMenuSlot({
   managedAgent,
   onDuplicatePersona,
   onExportPersona,
-  onToggleAutoStart,
   personaActionKey,
   viewerIsOwner,
 }: {
@@ -188,7 +153,6 @@ export function UserProfileAgentSettingsMenuSlot({
   managedAgent?: ManagedAgent;
   onDuplicatePersona: () => void;
   onExportPersona: () => void;
-  onToggleAutoStart: () => void;
   personaActionKey?: string;
   viewerIsOwner: boolean;
 }) {
@@ -211,7 +175,6 @@ export function UserProfileAgentSettingsMenuSlot({
       <UserProfileAgentSettingsMenu
         {...sharedProps}
         managedAgent={managedAgent}
-        onToggleAutoStart={onToggleAutoStart}
       />
     );
   }

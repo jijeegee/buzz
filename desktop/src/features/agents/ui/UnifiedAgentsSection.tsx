@@ -24,6 +24,7 @@ import {
 import { IdentityCardSkeleton } from "@/shared/ui/identity-card-skeleton";
 import { AgentIdentityCard } from "./AgentIdentityCard";
 import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
+import { StandaloneAgentActionsMenu } from "./AgentStartOnLaunchMenuItem";
 import { CreateIdentityCard } from "./CreateIdentityCard";
 import { PersonaActionsMenu } from "./PersonaActionsMenu";
 import { buildUnifiedGroups } from "./unifiedAgentGroups";
@@ -37,6 +38,8 @@ type UnifiedAgentsSectionProps = {
   agentsError: Error | null;
   isActionPending: boolean;
   isAgentsLoading: boolean;
+  /** Pending state of the start-on-launch mutation alone, for the card menu item. */
+  isStartOnLaunchPending: boolean;
   restartingAgentPubkey: string | null;
   startingAgentPubkey: string | null;
   startingPersonaIds: ReadonlySet<string>;
@@ -48,6 +51,7 @@ type UnifiedAgentsSectionProps = {
   onRestartAgent: (pubkey: string) => void;
   onStartAgent: (pubkey: string) => void;
   onStartPersona: (persona: AgentPersona) => void;
+  onToggleStartOnLaunch: (agent: ManagedAgent, next: boolean) => void;
   personas: AgentPersona[];
   personasError: Error | null;
   personaFeedbackErrorMessage: string | null;
@@ -81,6 +85,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
     agentsError,
     isActionPending,
     isAgentsLoading,
+    isStartOnLaunchPending,
     restartingAgentPubkey,
     startingAgentPubkey,
     startingPersonaIds,
@@ -89,6 +94,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
     onRestartAgent,
     onStartAgent,
     onStartPersona,
+    onToggleStartOnLaunch,
     personas,
     personasError,
     personaFeedbackErrorMessage,
@@ -149,8 +155,10 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
                         isActionPending || isEffectiveAvatarLoading
                       }
                       isPending={isPersonasPending}
+                      isStartOnLaunchPending={isStartOnLaunchPending}
                       persona={group.persona}
                       linkedAgent={profileAgent}
+                      onToggleStartOnLaunch={onToggleStartOnLaunch}
                       onDeactivate={onDeactivatePersona}
                       onDelete={onDeletePersona}
                       onDuplicate={onDuplicatePersona}
@@ -187,6 +195,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
               defaultModel={defaultModel}
               groupKey="__unknown__"
               bestiePubkey={bestiePubkey}
+              isStartOnLaunchPending={isStartOnLaunchPending}
               label="Unknown agents"
               restartingAgentPubkey={restartingAgentPubkey}
               startingAgentPubkey={startingAgentPubkey}
@@ -194,6 +203,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
               onOpenAgentProfile={onOpenAgentProfile}
               onRestartAgent={onRestartAgent}
               onStartAgent={onStartAgent}
+              onToggleStartOnLaunch={onToggleStartOnLaunch}
             />
           ) : null}
           {ungrouped.length > 0 ? (
@@ -204,6 +214,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
               defaultModel={defaultModel}
               groupKey="__ungrouped__"
               bestiePubkey={bestiePubkey}
+              isStartOnLaunchPending={isStartOnLaunchPending}
               label="Custom agents"
               restartingAgentPubkey={restartingAgentPubkey}
               startingAgentPubkey={startingAgentPubkey}
@@ -211,6 +222,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
               onOpenAgentProfile={onOpenAgentProfile}
               onRestartAgent={onRestartAgent}
               onStartAgent={onStartAgent}
+              onToggleStartOnLaunch={onToggleStartOnLaunch}
             />
           ) : null}
         </div>
@@ -370,6 +382,7 @@ function AgentPersonaCard({
 function StandaloneAgentCard({
   agent,
   isBestie,
+  isStartOnLaunchPending,
   defaultModel,
   getAvailability,
   restartingAgentPubkey,
@@ -377,9 +390,11 @@ function StandaloneAgentCard({
   onOpenAgentProfile,
   onRestartAgent,
   onStartAgent,
+  onToggleStartOnLaunch,
 }: {
   agent: ManagedAgent;
   isBestie: boolean;
+  isStartOnLaunchPending: boolean;
   defaultModel: string;
   getAvailability: AgentAvailabilityReader;
   restartingAgentPubkey: string | null;
@@ -390,6 +405,7 @@ function StandaloneAgentCard({
   ) => void;
   onRestartAgent: (pubkey: string) => void;
   onStartAgent: (pubkey: string) => void;
+  onToggleStartOnLaunch: (agent: ManagedAgent, next: boolean) => void;
 }) {
   const availability = getAvailability(agent.pubkey);
   const title = agent.name;
@@ -403,6 +419,13 @@ function StandaloneAgentCard({
 
   return (
     <AgentIdentityCard
+      actions={
+        <StandaloneAgentActionsMenu
+          agent={agent}
+          isPending={isStartOnLaunchPending}
+          onToggleStartOnLaunch={onToggleStartOnLaunch}
+        />
+      }
       ariaLabel={`${title} agent profile`}
       avatar={
         <AgentRuntimeAvatarControl
@@ -488,12 +511,14 @@ function CollapsibleAgentGroup({
   collapsed,
   defaultModel,
   getAvailability,
+  isStartOnLaunchPending,
   restartingAgentPubkey,
   startingAgentPubkey,
   onToggle,
   onOpenAgentProfile,
   onRestartAgent,
   onStartAgent,
+  onToggleStartOnLaunch,
 }: {
   groupKey: string;
   label: string;
@@ -502,6 +527,7 @@ function CollapsibleAgentGroup({
   collapsed: ReadonlySet<string>;
   defaultModel: string;
   getAvailability: AgentAvailabilityReader;
+  isStartOnLaunchPending: boolean;
   restartingAgentPubkey: string | null;
   startingAgentPubkey: string | null;
   onToggle: (key: string) => void;
@@ -511,6 +537,7 @@ function CollapsibleAgentGroup({
   ) => void;
   onRestartAgent: (pubkey: string) => void;
   onStartAgent: (pubkey: string) => void;
+  onToggleStartOnLaunch: (agent: ManagedAgent, next: boolean) => void;
 }) {
   const isCollapsed = collapsed.has(groupKey);
   return (
@@ -536,12 +563,14 @@ function CollapsibleAgentGroup({
               getAvailability={getAvailability}
               defaultModel={defaultModel}
               isBestie={agent.pubkey.toLowerCase() === bestiePubkey}
+              isStartOnLaunchPending={isStartOnLaunchPending}
               key={agent.pubkey}
               restartingAgentPubkey={restartingAgentPubkey}
               startingAgentPubkey={startingAgentPubkey}
               onOpenAgentProfile={onOpenAgentProfile}
               onRestartAgent={onRestartAgent}
               onStartAgent={onStartAgent}
+              onToggleStartOnLaunch={onToggleStartOnLaunch}
             />
           ))}
         </div>

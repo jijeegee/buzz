@@ -14,10 +14,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { AgentStartOnLaunchMenuItem } from "./AgentStartOnLaunchMenuItem";
 
 export function PersonaActionsMenu({
   isActionPending,
   isPending,
+  isStartOnLaunchPending,
   persona,
   linkedAgent,
   onDuplicate,
@@ -25,12 +27,16 @@ export function PersonaActionsMenu({
   onShare,
   onDeactivate,
   onDelete,
+  onToggleStartOnLaunch,
 }: {
   isActionPending: boolean;
   isPending: boolean;
+  /** Pending state of the start-on-launch mutation alone (not `isActionPending`). */
+  isStartOnLaunchPending: boolean;
   persona: AgentPersona;
   /** Profile agent instance linked to this definition, if one exists. */
   linkedAgent: ManagedAgent | undefined;
+  onToggleStartOnLaunch: (agent: ManagedAgent, next: boolean) => void;
   onDuplicate: (persona: AgentPersona) => void;
   onEdit: (persona: AgentPersona) => void;
   onShare: (
@@ -58,6 +64,16 @@ export function PersonaActionsMenu({
         align="end"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
+        {linkedAgent ? (
+          <>
+            <AgentStartOnLaunchMenuItem
+              agent={linkedAgent}
+              isPending={isStartOnLaunchPending}
+              onToggleStartOnLaunch={onToggleStartOnLaunch}
+            />
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {canEdit ? (
           <DropdownMenuItem disabled={disabled} onClick={() => onEdit(persona)}>
             <Pencil className="h-4 w-4" />

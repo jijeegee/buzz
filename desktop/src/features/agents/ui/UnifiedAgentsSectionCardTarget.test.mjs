@@ -61,6 +61,8 @@ function agent(overrides = {}) {
     lastErrorCode: null,
     needsRestart: false,
     personaOrphaned: false,
+    startOnAppLaunch: true,
+    backend: { type: "local" },
     ...overrides,
   };
 }
@@ -86,6 +88,7 @@ function baseProps(overrides = {}) {
     agentsError: null,
     isActionPending: false,
     isAgentsLoading: false,
+    isStartOnLaunchPending: false,
     restartingAgentPubkey: null,
     startingAgentPubkey: null,
     startingPersonaIds: new Set(),
@@ -94,6 +97,7 @@ function baseProps(overrides = {}) {
     onRestartAgent: () => {},
     onStartAgent: () => {},
     onStartPersona: () => {},
+    onToggleStartOnLaunch: () => {},
     personas: [],
     personasError: null,
     personaFeedbackErrorMessage: null,
