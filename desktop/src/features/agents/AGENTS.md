@@ -17,7 +17,12 @@ applies them; `AcpRuntimeCatalogEntry` exposes them over IPC; and
 `lib/agentConfigCore.ts` projects them into field descriptors. The frontend
 never maintains a rival copy of this table. Setup guidance follows the same
 rule: `requires_external_cli` is derived from `KnownAcpRuntime` and projected
-to the UI rather than inferred from a runtime ID in a component.
+to the UI rather than inferred from a runtime ID in a component. So is
+billing: `subscription_provider` (`anthropic` for Claude Code, `openai` for
+Codex; `Some` iff `login_hint` is) names the provider a harness's CLI login
+pays for, and Settings › Models files that harness's sign-in row under the
+provider by reading `AcpRuntimeCatalogEntry.subscriptionProvider` — never by
+comparing runtime ids.
 
 **Second metadata source: command-keyed execution policy.**
 `harness_max_parallelism` (`managed_agents/parallelism.rs`) maps the harness's

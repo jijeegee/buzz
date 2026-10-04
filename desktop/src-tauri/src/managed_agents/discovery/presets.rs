@@ -104,6 +104,7 @@ pub(super) fn preset_catalog_entry(
         node_required: false,
         auth_status: AuthStatus::NotApplicable,
         login_hint: None,
+        subscription_provider: None,
         source: HarnessSource::Preset,
         definition_env: Default::default(),
         // Derived from the static preset command (`def.command`). This ensures
@@ -686,6 +687,69 @@ mod tests {
             .find(|entry| entry.id == "effort-fallback-custom")
             .expect("custom harness should appear in the runtime catalog");
         assert_eq!(custom.effort_thought_level, None);
+    }
+
+    // ── Catalog subscription_provider: the one fact behind "Subscription" ───
+
+    /// `subscription_provider` names the provider a harness's CLI login bills,
+    /// so Settings › Models can place the sign-in row under the right provider
+    /// without comparing runtime ids. It exists exactly for the harnesses that
+    /// have a login step: `login_hint.is_some() ⇔ subscription_provider.is_some()`
+    /// on every builtin, and the projection survives all four catalog
+    /// constructors (builtin discovery, preset, custom discovery, custom save).
+    #[test]
+    fn catalog_exposes_subscription_provider_only_for_login_runtimes() {
+        use crate::managed_agents::custom_harnesses::{registry_test_lock, save_and_warm};
+
+        let _path_guard = crate::managed_agents::lock_path_mutex();
+        let _registry_guard = registry_test_lock();
+
+        for runtime in super::super::KNOWN_ACP_RUNTIMES {
+            assert_eq!(
+                runtime.login_hint.is_some(),
+                runtime.subscription_provider.is_some(),
+                "{}: a login step and a billed provider must come together",
+                runtime.id
+            );
+        }
+
+        let builtin = |id: &str| {
+            let runtime = super::super::known_acp_runtime_exact(id)
+                .unwrap_or_else(|| panic!("{id} must be a builtin runtime"));
+            super::super::discover_acp_runtime_phase1(runtime, true)
+                .entry
+                .subscription_provider
+        };
+        assert_eq!(builtin("claude"), Some("anthropic".to_string()));
+        assert_eq!(builtin("codex"), Some("openai".to_string()));
+        assert_eq!(builtin("goose"), None, "goose has no login step");
+        assert_eq!(builtin("buzz-agent"), None, "buzz-agent has no login step");
+
+        for def in PRESET_HARNESSES {
+            assert_eq!(
+                preset_catalog_entry(def, |_| None).subscription_provider,
+                None,
+                "{}: presets advertise no billed provider",
+                def.id
+            );
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let def = crate::managed_agents::custom_harnesses::HarnessDefinition {
+            id: "subscription-custom".to_string(),
+            label: "Subscription Custom".to_string(),
+            command: "subscription-custom-acp".to_string(),
+            args: vec![],
+            env: Default::default(),
+            install_instructions_url: String::new(),
+            install_hint: String::new(),
+        };
+        save_and_warm(dir.path(), &def, None).unwrap();
+        let custom = super::super::discover_acp_runtimes_from(Some(dir.path()), true)
+            .into_iter()
+            .find(|entry| entry.id == "subscription-custom")
+            .expect("custom harness should appear in the runtime catalog");
+        assert_eq!(custom.subscription_provider, None);
     }
 
     /// Uncapped preset (devin): max_parallelism must be None.

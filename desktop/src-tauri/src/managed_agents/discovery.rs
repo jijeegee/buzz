@@ -1061,6 +1061,7 @@ fn discover_acp_runtime_phase1(runtime: &'static KnownAcpRuntime, force: bool) -
             // Filled in by the auth-probe phase in full catalog discovery.
             auth_status: AuthStatus::Unknown,
             login_hint: None,
+            subscription_provider: runtime.subscription_provider.map(str::to_string),
             source: HarnessSource::Builtin,
             definition_env: Default::default(),
             max_parallelism: super::parallelism::harness_max_parallelism(runtime.id),
@@ -1203,6 +1204,7 @@ pub fn discover_acp_runtimes_from(
                 // No auth probe for custom harnesses.
                 auth_status: AuthStatus::NotApplicable,
                 login_hint: None,
+                subscription_provider: None,
                 source: HarnessSource::Custom,
                 definition_env: def.env.clone(), // preserve for edit round-trip
                 max_parallelism: super::parallelism::harness_max_parallelism(&def.command),

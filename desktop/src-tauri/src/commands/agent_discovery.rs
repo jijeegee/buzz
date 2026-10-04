@@ -8,10 +8,9 @@ mod forced_single_flight;
 mod post_install_verification;
 
 fn active_installs() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
-    use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
-    static ACTIVE: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    ACTIVE.get_or_init(|| Mutex::new(HashSet::new()))
+    static ACTIVE: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
 }
 
 /// Returns the adapter install commands that `install_acp_runtime_blocking` would
@@ -161,6 +160,7 @@ pub async fn save_custom_harness(
         node_required: false,
         auth_status: AuthStatus::NotApplicable,
         login_hint: None,
+        subscription_provider: None,
         source: HarnessSource::Custom,
         definition_env: definition.env,
         max_parallelism: crate::managed_agents::harness_max_parallelism(&definition.command),

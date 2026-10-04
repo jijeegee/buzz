@@ -567,6 +567,14 @@ export type AcpRuntimeCatalogEntry = {
   authStatus: AuthStatus;
   /** Hint for completing authentication; null when not applicable or already logged in. */
   loginHint: string | null;
+  /**
+   * The LLM provider id this harness's CLI login bills (`anthropic` for Claude
+   * Code, `openai` for Codex), straight from the Rust catalog
+   * (`KnownAcpRuntime::subscription_provider`). Settings › Models uses it to
+   * file the harness's sign-in row under that provider; never infer it from
+   * the runtime id. Null for harnesses without a login step.
+   */
+  subscriptionProvider: string | null;
   /** "builtin" (compiled in), "preset" (PATH-probed, not editable), or "custom" (user JSON). Controls UI editability. */
   source: "builtin" | "preset" | "custom";
   /**

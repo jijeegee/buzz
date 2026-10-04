@@ -63,6 +63,7 @@ fn goose_runtime() -> &'static KnownAcpRuntime {
         max_rounds_env_var: None,
         required_normalized_fields: &["model", "provider"],
         login_hint: None,
+        subscription_provider: None,
         auth_probe_args: None,
     };
     &RUNTIME

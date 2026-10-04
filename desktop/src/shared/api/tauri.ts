@@ -196,6 +196,7 @@ export type RawAcpRuntimeCatalogEntry = {
   node_required: boolean;
   auth_status: AuthStatus;
   login_hint?: string;
+  subscription_provider?: string | null;
   source: "builtin" | "preset" | "custom";
   /** Definition-level env vars for `source: custom` entries; absent for builtin/preset. */
   definition_env?: Record<string, string>;
@@ -683,6 +684,7 @@ export function fromRawAcpRuntimeCatalogEntry(
     nodeRequired: entry.node_required,
     authStatus: entry.auth_status,
     loginHint: entry.login_hint ?? null,
+    subscriptionProvider: entry.subscription_provider ?? null,
     source: entry.source,
     definitionEnv: entry.definition_env ?? {},
     effortCanonicalValues: entry.effort_canonical_values ?? null,

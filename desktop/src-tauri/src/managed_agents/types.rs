@@ -804,6 +804,12 @@ pub struct AcpRuntimeCatalogEntry {
     /// Hint for completing authentication, shown when `auth_status` is not `logged_in`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub login_hint: Option<String>,
+    /// The LLM provider id this harness's CLI login bills (`anthropic` for
+    /// Claude Code, `openai` for Codex), projected from
+    /// `KnownAcpRuntime::subscription_provider` by every catalog constructor.
+    /// `None` for harnesses with no login step and for presets/customs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscription_provider: Option<String>,
     /// Whether this entry came from the compiled-in catalog or a user-supplied
     /// JSON file in `custom_harnesses/`. The UI uses this to decide editability.
     pub source: HarnessSource,

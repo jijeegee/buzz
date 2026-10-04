@@ -8604,6 +8604,7 @@ async function handleDiscoverAcpRuntimes(
       auth_status: { status: "not_applicable" },
       source: "builtin",
       login_hint: undefined,
+      subscription_provider: null,
     },
     {
       id: "claude",
@@ -8624,6 +8625,7 @@ async function handleDiscoverAcpRuntimes(
       auth_status: { status: "unknown" },
       source: "builtin",
       login_hint: undefined,
+      subscription_provider: "anthropic",
     },
     {
       id: "codex",
@@ -8644,6 +8646,7 @@ async function handleDiscoverAcpRuntimes(
       auth_status: { status: "unknown" },
       source: "builtin",
       login_hint: undefined,
+      subscription_provider: "openai",
     },
     {
       id: "buzz-agent",
@@ -8663,6 +8666,7 @@ async function handleDiscoverAcpRuntimes(
       auth_status: { status: "not_applicable" },
       source: "builtin",
       login_hint: undefined,
+      subscription_provider: null,
     },
   ];
   return mergeMockCustomHarnesses(

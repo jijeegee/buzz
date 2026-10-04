@@ -47,6 +47,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         max_rounds_env_var: None,
         required_normalized_fields: &["model", "provider"],
         login_hint: None,
+        subscription_provider: None,
         auth_probe_args: None,
     },
     KnownAcpRuntime {
@@ -83,6 +84,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         max_rounds_env_var: None,
         required_normalized_fields: &[],
         login_hint: Some("Run the Claude CLI to complete authentication."),
+        subscription_provider: Some("anthropic"),
         auth_probe_args: Some(&["claude", "auth", "status"]),
     },
     KnownAcpRuntime {
@@ -119,6 +121,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         max_rounds_env_var: None,
         required_normalized_fields: &[],
         login_hint: Some("Run `codex login` to authenticate."),
+        subscription_provider: Some("openai"),
         // Verified: `codex login status` exits 0 when logged in, non-zero otherwise.
         auth_probe_args: Some(&["codex", "login", "status"]),
     },
@@ -156,6 +159,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         max_rounds_env_var: Some("BUZZ_AGENT_MAX_ROUNDS"),
         required_normalized_fields: &["model", "provider"],
         login_hint: None,
+        subscription_provider: None,
         auth_probe_args: None,
     },
 ];

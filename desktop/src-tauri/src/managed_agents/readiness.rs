@@ -1069,6 +1069,7 @@ mod tests {
             max_rounds_env_var: None,
             required_normalized_fields: &[],
             login_hint: None,
+            subscription_provider: None,
             auth_probe_args: None,
         }
     }
@@ -1232,38 +1233,7 @@ mod tests {
         KnownAcpRuntime {
             id: "codex",
             label: "Codex",
-            commands: adapter_commands,
-            aliases: &[],
-            avatar_url: "",
-            mcp_command: None,
-            mcp_hooks: false,
-            underlying_cli,
-            cli_install_commands: &[],
-            cli_install_commands_windows: &[],
-            adapter_install_commands: &[],
-            cli_install_instructions_url: "",
-            adapter_install_instructions_url: "",
-            cli_install_hint: "",
-            adapter_install_hint: "",
-            skill_dir: None,
-            supports_acp_model_switching: false,
-            config_file_path: None,
-            config_file_format: None,
-            model_env_var: None,
-            provider_env_var: None,
-            provider_locked: false,
-            default_env: &[],
-            supports_acp_native_config: false,
-            thinking_env_var: None,
-            effort_normalization: None,
-            effort_accepted_values: None,
-            effort_thought_level: None,
-            max_tokens_env_var: None,
-            context_limit_env_var: None,
-            max_rounds_env_var: None,
-            required_normalized_fields: &[],
-            login_hint: None,
-            auth_probe_args: None,
+            ..make_cli_runtime(adapter_commands, underlying_cli)
         }
     }
 

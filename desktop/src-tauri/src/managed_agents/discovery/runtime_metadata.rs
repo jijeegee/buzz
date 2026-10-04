@@ -221,6 +221,12 @@ pub(crate) struct KnownAcpRuntime {
     /// Human-readable hint shown in Doctor when the runtime is available but not
     /// authenticated. `None` for runtimes that have no login step (goose, buzz-agent).
     pub login_hint: Option<&'static str>,
+    /// The LLM provider id (`anthropic`, `openai`) whose bill this harness's
+    /// CLI login pays. This is the only fact tying a "Subscription" sign-in
+    /// path to a provider row in Settings › Models; the UI never infers it from
+    /// the runtime id. `Some` iff `login_hint` is `Some` (pinned by
+    /// `catalog_exposes_subscription_provider_only_for_login_runtimes`).
+    pub subscription_provider: Option<&'static str>,
     /// CLI args for probing authentication status. `args[0]` is the binary name;
     /// the remainder are the subcommand. `None` for runtimes with no login step.
     pub auth_probe_args: Option<&'static [&'static str]>,
