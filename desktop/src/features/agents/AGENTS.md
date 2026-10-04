@@ -483,9 +483,13 @@ with a TypeScript lookup table or an id comparison in a component.
     `sidebar/lib/useCreateChannelForm`, project home via
     `projects/ui/useCreateProjectFormSettings`, project channels via the same
     channel dialog) renders the shared `ui/AddDefaultAiRow` ("Add your
-    default AI"): a live switch while `useDefaultAi()` returns a starred
-    agent, otherwise the same row disabled and off with `NO_DEFAULT_AI_HINT`
-    (never hidden — a hidden row made the Agents setting look like a no-op).
+    default AI") **only while the saved channel routing mode joins new
+    channels** — `lib/defaultAi.ts` `routingJoinsNewChannels(mode)`: Host or
+    Lead; Off, Smart routing, and an unknown (loading/failed) mode hide the
+    row, because there the star is only remembered (rule 23). While shown it
+    is a live switch when `useDefaultAi()` returns a starred agent, otherwise
+    the same row disabled and off with `NO_DEFAULT_AI_HINT` (never hidden for
+    a missing star — that made the setting look like a no-op).
     The switch is seeded from the desktop-local
     preference `lib/defaultAiPreferences.ts` (localStorage
     `buzz-default-ai-auto-join`, default on, broken JSON reads as the default;
@@ -493,7 +497,8 @@ with a TypeScript lookup table or an id comparison in a component.
     agent picker in the Agents page Channel routing card; Settings › Agents
     no longer carries it). It is **not** a
     `GlobalAgentConfig` field — saving that config restarts every local agent.
-    The submitted `addDefaultAi` is `false` whenever no default AI exists.
+    The submitted `addDefaultAi` is `resolveAddDefaultAi(star, switch,
+    mode)`: `false` whenever no default AI exists or the mode does not join.
     The four creation points (`app/AppShell.tsx` channel + forum handlers,
     `projects/useCreateProject.ts`, `projects/useAddProjectChannel.ts`) all
     run the one post-create sequence `lib/joinAgentsAfterCreate.ts` after the
@@ -508,7 +513,10 @@ with a TypeScript lookup table or an id comparison in a component.
     channelId, { agent, role: "bot", ensureRunning: true })` (membership
     write, then start only when the agent is not running/deployed),
     invalidates the same query keys as `applyAgents`, is a no-op without a
-    starred agent, and never rejects — a failure surfaces as `toast.warning`,
+    starred agent or when the channel routing mode — fetched at call time,
+    since the user may have switched routing Off after opening the form —
+    does not join (a failed fetch skips the join with a warning toast), and
+    never rejects — a failure surfaces as `toast.warning`,
     never silently. The two steps must never run concurrently (both rewrite
     the replaceable membership event), and because the default AI is already
     a member when the template applies, `applyAgents` passes

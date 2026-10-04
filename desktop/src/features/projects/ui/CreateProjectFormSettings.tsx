@@ -28,6 +28,7 @@ export function CreateProjectFormSettings({
   addDefaultAi,
   agentPersonaId,
   defaultAi,
+  defaultAiJoinsNewChannels,
   disabled,
   handleTemplateChange,
   handleTemplateCreated,
@@ -265,14 +266,16 @@ export function CreateProjectFormSettings({
         </DropdownMenu>
       </div>
 
-      <AddDefaultAiRow
-        checked={addDefaultAi}
-        defaultAi={defaultAi}
-        disabled={disabled}
-        idPrefix="create-project"
-        joinTarget="the project home"
-        onCheckedChange={setAddDefaultAi}
-      />
+      {defaultAiJoinsNewChannels ? (
+        <AddDefaultAiRow
+          checked={addDefaultAi}
+          defaultAi={defaultAi}
+          disabled={disabled}
+          idPrefix="create-project"
+          joinTarget="the project home"
+          onCheckedChange={setAddDefaultAi}
+        />
+      ) : null}
     </>
   );
 }

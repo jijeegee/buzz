@@ -223,14 +223,16 @@ export function CreateChannelFormFields({
         </p>
       ) : null}
 
-      <AddDefaultAiRow
-        checked={form.addDefaultAi}
-        defaultAi={form.defaultAi}
-        disabled={isCreating}
-        idPrefix="create-channel"
-        joinTarget={`this ${kindLabel}`}
-        onCheckedChange={form.setAddDefaultAi}
-      />
+      {form.defaultAiJoinsNewChannels ? (
+        <AddDefaultAiRow
+          checked={form.addDefaultAi}
+          defaultAi={form.defaultAi}
+          disabled={isCreating}
+          idPrefix="create-channel"
+          joinTarget={`this ${kindLabel}`}
+          onCheckedChange={form.setAddDefaultAi}
+        />
+      ) : null}
 
       {form.errorMessage ? (
         <p className="text-sm text-destructive">{form.errorMessage}</p>

@@ -6,18 +6,38 @@ import {
   findDefaultAi,
   isDefaultAiEligible,
   resolveAddDefaultAi,
+  routingJoinsNewChannels,
 } from "./defaultAi.ts";
 
 const KEYED = "ab".repeat(32);
 const OTHER = "cd".repeat(32);
 
-test("a create form submits addDefaultAi only when an agent is starred and the switch is on", () => {
+test("only Host and Lead join new channels; Off, Smart routing, and unknown do not", () => {
+  assert.equal(routingJoinsNewChannels("host"), true);
+  assert.equal(routingJoinsNewChannels("lead"), true);
+  assert.equal(routingJoinsNewChannels("off"), false);
+  assert.equal(routingJoinsNewChannels("desktop-router"), false);
+  assert.equal(routingJoinsNewChannels(undefined), false);
+  assert.equal(routingJoinsNewChannels(null), false);
+});
+
+test("addDefaultAi is true only for a star × a joining mode × the switch on", () => {
   const starred = { pubkey: KEYED, isDefaultAi: true };
-  assert.equal(resolveAddDefaultAi(starred, true), true);
-  assert.equal(resolveAddDefaultAi(starred, false), false);
-  // Preference on, but nothing to add: forced false.
-  assert.equal(resolveAddDefaultAi(null, true), false);
-  assert.equal(resolveAddDefaultAi(undefined, true), false);
+  for (const mode of ["off", "host", "lead", "desktop-router", undefined]) {
+    for (const defaultAi of [starred, null, undefined]) {
+      for (const requested of [true, false]) {
+        const expected =
+          Boolean(defaultAi) &&
+          requested &&
+          (mode === "host" || mode === "lead");
+        assert.equal(
+          resolveAddDefaultAi(defaultAi, requested, mode),
+          expected,
+          `mode=${mode} star=${Boolean(defaultAi)} requested=${requested}`,
+        );
+      }
+    }
+  }
 });
 
 test("no starred agent yields null", () => {

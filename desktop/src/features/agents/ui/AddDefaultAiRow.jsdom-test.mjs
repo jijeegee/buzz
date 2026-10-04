@@ -5,7 +5,7 @@ import test from "node:test";
 // nothing was starred, so turning on the Agents setting looked like a no-op.
 // These tests pin the shared row: with a starred agent it is a live switch
 // naming the agent; without one it stays visible, disabled, off, and points
-// at the Runtime tab where the star lives.
+// at Agents › Channel routing where the star is chosen.
 
 const { fireEvent } = await import("@testing-library/react");
 const React = (await import("react")).default;

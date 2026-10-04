@@ -1,3 +1,4 @@
+import type { ChannelRoutingMode } from "@/shared/api/tauriChannelRouting";
 import type { ManagedAgent } from "@/shared/api/types";
 
 type DefaultAiCandidate = Pick<ManagedAgent, "pubkey" | "isDefaultAi">;
@@ -36,13 +37,28 @@ export function findDefaultAi<T extends DefaultAiCandidate>(
 }
 
 /**
+ * Whether the routing agent joins channels you create under this saved
+ * channel routing mode: only while it routes (Host or Lead). Under Off and
+ * Smart routing the star is only remembered, so nothing joins and the create
+ * forms hide the row. An unknown mode (status still loading or failed) joins
+ * nothing rather than guess.
+ */
+export function routingJoinsNewChannels(
+  mode: ChannelRoutingMode | null | undefined,
+): boolean {
+  return mode === "host" || mode === "lead";
+}
+
+/**
  * What a create form submits as `addDefaultAi`: the switch value, forced to
  * `false` whenever no agent is starred (the row is shown disabled and off
- * then, but the stored preference may still be on).
+ * then, but the stored preference may still be on) or the routing mode does
+ * not join new channels (the row is hidden then).
  */
 export function resolveAddDefaultAi(
   defaultAi: DefaultAiCandidate | null | undefined,
   requested: boolean,
+  mode: ChannelRoutingMode | null | undefined,
 ): boolean {
-  return Boolean(defaultAi) && requested;
+  return Boolean(defaultAi) && requested && routingJoinsNewChannels(mode);
 }

@@ -50,12 +50,21 @@ function rawAgent(overrides = {}) {
   };
 }
 
+let routingMode = "host";
 const tauriMock = {
   invoke(command, args) {
     calls.push({ command, args });
     switch (command) {
       case "list_managed_agents":
         return Promise.resolve(agents);
+      case "get_channel_routing":
+        return Promise.resolve({
+          mode: routingMode,
+          routingAgent: null,
+          applied: { state: "off" },
+          routerActive: false,
+          agents: [],
+        });
       case "add_channel_members":
         return Promise.resolve(
           membershipError
@@ -152,6 +161,7 @@ function commandNames() {
 }
 
 test.beforeEach(() => {
+  routingMode = "host";
   calls = [];
   warnings.length = 0;
   membershipError = null;
@@ -242,4 +252,22 @@ test("a failed membership write warns instead of rejecting and skips the start",
     /relay rejected the membership update/,
   );
   await harness.unmount();
+});
+
+test("under Off or Smart routing the attach is a no-op, read fresh at call time", async () => {
+  for (const mode of ["off", "desktop-router"]) {
+    agents = [rawAgent({ status: "stopped" })];
+    const harness = await mount();
+    assert.equal(harness.hasDefaultAi(), true);
+    calls = [];
+    // Switched after the form rendered: the call-time read must win.
+    routingMode = mode;
+
+    await harness.attach(CHANNEL);
+
+    assert.deepEqual(commandNames(), [], mode);
+    assert.equal(warnings.length, 0);
+    await harness.unmount();
+    routingMode = "host";
+  }
 });

@@ -7,9 +7,19 @@ import test from "node:test";
 const PUBKEY = "ab".repeat(32);
 
 let agents = [];
+let routingMode = "host";
 const tauriMock = {
   invoke(command) {
     if (command === "list_managed_agents") return Promise.resolve(agents);
+    if (command === "get_channel_routing") {
+      return Promise.resolve({
+        mode: routingMode,
+        routingAgent: null,
+        applied: { state: "off" },
+        routerActive: false,
+        agents: [],
+      });
+    }
     // Personas, teams, runtimes, templates: empty lists are enough here.
     return Promise.resolve([]);
   },
@@ -76,6 +86,17 @@ async function mount({ expectDefaultAi }) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     });
   }
+  for (
+    let i = 0;
+    i < 20 &&
+    handle.current.defaultAiJoinsNewChannels !==
+      (routingMode === "host" || routingMode === "lead");
+    i++
+  ) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+  }
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
@@ -108,4 +129,18 @@ test("without a starred agent addDefaultAi is forced false even with the prefere
   await act(async () => harness.settings().setAddDefaultAi(true));
   assert.equal(harness.settings().addDefaultAi, false);
   await harness.unmount();
+});
+
+test("under Off or Smart routing the row is hidden and addDefaultAi stays false", async () => {
+  for (const mode of ["off", "desktop-router"]) {
+    routingMode = mode;
+    agents = [rawAgent()];
+    setDefaultAiAutoJoin(true);
+    const harness = await mount({ expectDefaultAi: true });
+
+    assert.equal(harness.settings().defaultAiJoinsNewChannels, false, mode);
+    assert.equal(harness.settings().addDefaultAi, false, mode);
+    await harness.unmount();
+  }
+  routingMode = "host";
 });
