@@ -54,20 +54,53 @@ struct Bound {
     deadline: Option<DateTime<Utc>>,
 }
 
+/// Builds the frame a [`TokenSession`] queues before closing its socket.
+pub(crate) type CloseFrame = fn(&str) -> WsMessage;
+
+/// The root relay route's close frame: `["NOTICE", …]`.
+fn notice_frame(notice: &str) -> WsMessage {
+    WsMessage::Text(RelayMessage::notice(notice).into())
+}
+
 /// The token binding of one live connection.
 pub(crate) struct TokenSession {
     bound: StdMutex<Bound>,
     wake: Notify,
     cancel: CancellationToken,
     ctrl_tx: mpsc::Sender<WsMessage>,
+    close_frame: CloseFrame,
 }
 
 impl TokenSession {
+    /// A binding to `hash` (expiring at `deadline`) for a socket that is
+    /// closed by queueing `close_frame` on `ctrl_tx` and cancelling `cancel`.
+    pub(crate) fn new(
+        hash: [u8; 32],
+        deadline: Option<DateTime<Utc>>,
+        cancel: CancellationToken,
+        ctrl_tx: mpsc::Sender<WsMessage>,
+        close_frame: CloseFrame,
+    ) -> Self {
+        Self {
+            bound: StdMutex::new(Bound { hash, deadline }),
+            wake: Notify::new(),
+            cancel,
+            ctrl_tx,
+            close_frame,
+        }
+    }
+
     fn current(&self) -> Bound {
         *self.bound.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn rebind(&self, hash: [u8; 32], deadline: Option<DateTime<Utc>>) {
+    /// The currently bound token hash.
+    pub(crate) fn bound_hash(&self) -> [u8; 32] {
+        self.current().hash
+    }
+
+    /// Swap the binding to a new token (same-principal re-AUTH).
+    pub(crate) fn rebind(&self, hash: [u8; 32], deadline: Option<DateTime<Utc>>) {
         *self.bound.lock().unwrap_or_else(PoisonError::into_inner) = Bound { hash, deadline };
         self.wake.notify_one();
     }
@@ -84,12 +117,10 @@ impl TokenSession {
         true
     }
 
-    /// Queue a NOTICE on the control channel (drained before the close), then
-    /// cancel the connection.
-    fn close(&self, notice: &str) {
-        let _ = self
-            .ctrl_tx
-            .try_send(WsMessage::Text(RelayMessage::notice(notice).into()));
+    /// Queue the route's close frame for `notice` on the control channel
+    /// (drained before the close), then cancel the connection.
+    pub(crate) fn close(&self, notice: &str) {
+        let _ = self.ctrl_tx.try_send((self.close_frame)(notice));
         self.cancel.cancel();
     }
 }
@@ -101,6 +132,11 @@ pub(crate) struct TokenSessionRegistry {
 }
 
 impl TokenSessionRegistry {
+    /// Track `session` under `conn_id` so revocations reach it.
+    pub(crate) fn insert(&self, conn_id: Uuid, session: Arc<TokenSession>) {
+        self.sessions.insert(conn_id, session);
+    }
+
     /// Forget a connection (called from connection teardown).
     pub(crate) fn remove(&self, conn_id: Uuid) {
         self.sessions.remove(&conn_id);
@@ -136,7 +172,7 @@ impl TokenSessionRegistry {
 }
 
 /// Deadline + periodic-recheck loop for one connection. Exits on cancel.
-async fn run_binding_watch(session: Arc<TokenSession>, db: buzz_db::Db) {
+pub(crate) async fn run_binding_watch(session: Arc<TokenSession>, db: buzz_db::Db) {
     loop {
         let bound = session.current();
         let now = Utc::now();
@@ -276,6 +312,7 @@ async fn initial_auth(token: TokenSecret, conn: Arc<ConnectionState>, state: Arc
     };
     let community = conn.tenant.community();
     let pubkey = binding.principal.as_public_key();
+    let binding_principal = binding.principal;
     let owner = binding.bot_owner.map(|owner| owner.as_public_key());
 
     // Ban gate: the principal, then (bots) its owner — owner ban cascades.
@@ -384,15 +421,13 @@ async fn initial_auth(token: TokenSecret, conn: Arc<ConnectionState>, state: Arc
         return;
     }
 
-    let session = Arc::new(TokenSession {
-        bound: StdMutex::new(Bound {
-            hash: binding.token_hash,
-            deadline: binding.expires_at,
-        }),
-        wake: Notify::new(),
-        cancel: conn.cancel.clone(),
-        ctrl_tx: conn.ctrl_tx.clone(),
-    });
+    let session = Arc::new(TokenSession::new(
+        binding.token_hash,
+        binding.expires_at,
+        conn.cancel.clone(),
+        conn.ctrl_tx.clone(),
+        notice_frame,
+    ));
     let ctx = AuthContext {
         pubkey,
         scopes: buzz_auth::Scope::all_known(),
@@ -407,7 +442,6 @@ async fn initial_auth(token: TokenSecret, conn: Arc<ConnectionState>, state: Arc
     let bound_hash = session.current().hash;
     state
         .identity
-        .sessions
         .sessions
         .insert(conn.conn_id, Arc::clone(&session));
     tokio::spawn(run_binding_watch(Arc::clone(&session), state.db.clone()));
@@ -426,6 +460,12 @@ async fn initial_auth(token: TokenSecret, conn: Arc<ConnectionState>, state: Arc
     }
     state.conn_manager.mark_admitted(conn.conn_id);
     info!(conn_id = %conn.conn_id, principal = %pubkey.to_hex(), "token auth successful");
+    super::profile::spawn_reconcile(
+        &state,
+        &conn.tenant,
+        binding_principal,
+        super::profile::Scope::Member,
+    );
     conn.send(RelayMessage::ok(AUTH_OK_ID, true, ""));
 }
 
@@ -461,7 +501,7 @@ async fn reauth(
         conn.cancel.cancel();
         return;
     }
-    let (hash, deadline) = (binding.token_hash, binding.expires_at);
+    let (hash, deadline, principal) = (binding.token_hash, binding.expires_at, binding.principal);
     if !conn.rebind_token(binding) {
         conn.send(RelayMessage::ok(
             AUTH_OK_ID,
@@ -493,6 +533,14 @@ async fn reauth(
         }
     }
     conn.send(RelayMessage::ok(AUTH_OK_ID, true, ""));
+    // A re-AUTH (≤ 1 h apart) also repairs a kind:0 publish that failed, so a
+    // long-lived connection converges without reconnecting (Rule 1).
+    super::profile::spawn_reconcile(
+        &state,
+        &conn.tenant,
+        principal,
+        super::profile::Scope::Member,
+    );
 }
 
 /// Stamp a draft for `principal`, applying the token-connection rules: a

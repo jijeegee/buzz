@@ -31,17 +31,64 @@ async fn new_user(db: &Db) -> PrincipalId {
         .principal
 }
 
-/// B1: concurrent first boots converge on one relay principal.
+/// B1: concurrent first boots converge on one relay principal — the relay
+/// key — and a changed key re-keys the single row.
 #[tokio::test]
-#[ignore = "requires Postgres"]
+#[ignore = "requires Postgres — mutates the global relay principal"]
 async fn concurrent_relay_principal_bootstrap_converges() {
     let pool = pool().await;
+    let key = PrincipalId::generate();
     let (a, b) = tokio::join!(
-        principal::ensure_relay_principal(&pool),
-        principal::ensure_relay_principal(&pool)
+        principal::ensure_relay_principal(&pool, &key),
+        principal::ensure_relay_principal(&pool, &key)
     );
     let (a, b) = (a.expect("first"), b.expect("second"));
     assert_eq!(a, b, "both boots must observe the same relay principal");
+    assert_eq!(a, key, "the relay principal is the relay key");
+    // An operator the relay added under the old key follows the re-key.
+    let operator = PrincipalId::generate();
+    sqlx::query("INSERT INTO relay_operators (pubkey, role, added_by) VALUES ($1, 'operator', $2)")
+        .bind(operator.as_bytes().as_slice())
+        .bind(key.as_bytes().as_slice())
+        .execute(&pool)
+        .await
+        .expect("seed operator");
+    let rotated = PrincipalId::generate();
+    let c = principal::ensure_relay_principal(&pool, &rotated)
+        .await
+        .expect("rotated");
+    assert_eq!(c, rotated, "a new relay key re-keys the relay principal");
+    let added_by: Vec<u8> =
+        sqlx::query_scalar("SELECT added_by FROM relay_operators WHERE pubkey = $1")
+            .bind(operator.as_bytes().as_slice())
+            .fetch_one(&pool)
+            .await
+            .expect("added_by");
+    sqlx::query("DELETE FROM relay_operators WHERE pubkey = $1")
+        .bind(operator.as_bytes().as_slice())
+        .execute(&pool)
+        .await
+        .expect("cleanup operator");
+    assert_eq!(added_by, rotated.as_bytes().to_vec(), "added_by follows");
+
+    // A relay key that already names a user is refused, and both rows stay.
+    let db = Db::from_pool(pool.clone());
+    let user = new_user(&db).await;
+    let refused = principal::ensure_relay_principal(&pool, &user).await;
+    assert!(
+        matches!(&refused, Err(crate::DbError::InvalidData(m)) if m.contains("non-relay")),
+        "relay key colliding with a user is refused up front: {refused:?}"
+    );
+    let relay_now: Vec<u8> = sqlx::query_scalar("SELECT id FROM principals WHERE kind = 'relay'")
+        .fetch_one(&pool)
+        .await
+        .expect("relay row");
+    assert_eq!(
+        relay_now,
+        rotated.as_bytes().to_vec(),
+        "relay row unchanged"
+    );
+    assert!(db.get_principal(&user).await.expect("user").is_some());
     let relay_rows: i64 =
         sqlx::query_scalar("SELECT count(*) FROM principals WHERE kind = 'relay'")
             .fetch_one(&pool)
@@ -252,7 +299,10 @@ async fn bootstrap_grants_only_into_an_empty_roster() {
         .execute(db.pool())
         .await
         .expect("clear roster");
-    let relay = db.ensure_relay_principal().await.expect("relay");
+    let relay = db
+        .ensure_relay_principal(&PrincipalId::generate())
+        .await
+        .expect("relay");
     let first = new_user(&db).await;
     let second = new_user(&db).await;
     assert!(db

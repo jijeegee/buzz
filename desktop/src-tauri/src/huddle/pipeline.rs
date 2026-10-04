@@ -609,14 +609,70 @@ fn should_reselect_constructed_voice(constructed_voice: &str, latest_voice: &str
 /// any bytes can reach the network.
 pub(crate) fn sign_and_guard_stt_body(
     builder: nostr::EventBuilder,
-    keys: &nostr::Keys,
+    signer: &impl crate::auth::credential::RelaySigner,
 ) -> Result<Vec<u8>, String> {
-    let event = builder
-        .sign_with_keys(keys)
+    let event = signer
+        .sign_builder(builder)
         .map_err(|e| format!("sign event: {e}"))?;
     let body_bytes = event.as_json().into_bytes();
     crate::egress_guard::assert_no_key_backup_bytes(&body_bytes, "huddle STT publish")?;
     Ok(body_bytes)
+}
+
+#[cfg(test)]
+#[path = "pipeline_stt_poster_tests.rs"]
+mod stt_poster_tests;
+
+/// Who STT transcripts are posted as, captured when the transcription task
+/// starts: the local key (key mode, as before), or the current community's
+/// Google session, whose access token is re-read at every post.
+pub(crate) enum SttPoster {
+    Keys(nostr::Keys),
+    Token {
+        auth: Arc<crate::auth::TokenAuthState>,
+        origin: String,
+    },
+}
+
+impl SttPoster {
+    /// The poster for the current community; `None` when the key mutex is
+    /// poisoned (as before) or the token session is unusable right now.
+    pub(crate) fn for_state(state: &AppState) -> Option<Self> {
+        match state.current_credential_mode() {
+            crate::auth::CredentialMode::Token(_) => Some(Self::Token {
+                auth: Arc::clone(&state.token_auth),
+                origin: state.current_auth_origin(),
+            }),
+            crate::auth::CredentialMode::Blocked(reason) => {
+                eprintln!("buzz-desktop: STT transcripts disabled: {reason}");
+                None
+            }
+            crate::auth::CredentialMode::Keys => {
+                state.keys.lock().ok().map(|k| Self::Keys(k.clone()))
+            }
+        }
+    }
+
+    /// The credential to sign and authenticate one post with.
+    pub(crate) fn credential(&self) -> Result<crate::auth::credential::UserCredential, String> {
+        match self {
+            Self::Keys(keys) => Ok(crate::auth::credential::UserCredential::Keys(keys.clone())),
+            Self::Token { auth, origin } => match auth.mode(origin) {
+                crate::auth::CredentialMode::Token(session) => {
+                    Ok(crate::auth::credential::UserCredential::Token {
+                        principal: session.principal,
+                        access: session.access,
+                    })
+                }
+                crate::auth::CredentialMode::Blocked(reason) => Err(reason),
+                // Signed out mid-huddle: never fall back to the local key,
+                // which would post under a second identity.
+                crate::auth::CredentialMode::Keys => {
+                    Err("signed out of this community; transcript not posted".into())
+                }
+            },
+        }
+    }
 }
 
 /// Spawn a tokio task that reads text_rx and posts kind:9 events.
@@ -638,9 +694,8 @@ pub(crate) fn spawn_transcription_task(
     let spawned_gen = session_generation.load(Ordering::Acquire);
 
     let http_client = state.http_client.clone();
-    let keys = match state.keys.lock() {
-        Ok(k) => k.clone(),
-        Err(_) => return,
+    let Some(poster) = SttPoster::for_state(state) else {
+        return;
     };
     let relay_base_url = crate::relay::relay_api_base_url_with_override(state);
 
@@ -688,7 +743,16 @@ pub(crate) fn spawn_transcription_task(
             // the kind event and build NIP-98 auth after the wait so both
             // timestamps are fresh — single clean order: wait → sign → auth → send.
             crate::relay_admission::wait_for_rate_limit().await;
-            let body_bytes = match sign_and_guard_stt_body(builder, &keys) {
+            // Resolved per post: in token mode the session's access token
+            // rotates under a long huddle.
+            let signer = match poster.credential() {
+                Ok(signer) => signer,
+                Err(e) => {
+                    eprintln!("buzz-desktop: STT publish: {e}");
+                    continue;
+                }
+            };
+            let body_bytes = match sign_and_guard_stt_body(builder, &signer) {
                 Ok(b) => b,
                 Err(e) => {
                     eprintln!("buzz-desktop: STT publish: {e}");
@@ -696,12 +760,7 @@ pub(crate) fn spawn_transcription_task(
                 }
             };
             let url = format!("{relay_base_url}/events");
-            let auth_header = match crate::relay::build_nip98_auth_header_for_keys(
-                &keys,
-                &reqwest::Method::POST,
-                &url,
-                &body_bytes,
-            ) {
+            let auth_header = match signer.http_auth(&reqwest::Method::POST, &url, &body_bytes) {
                 Ok(h) => h,
                 Err(e) => {
                     eprintln!("buzz-desktop: STT NIP-98 auth: {e}");

@@ -378,14 +378,12 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     // config.rs already strips invalid values with a warning; catch the resulting
     // None here so we fail fast with a clear message rather than starting a relay
     // that no one can administer.
-    if config.require_relay_membership && config.relay_owner_pubkey.is_none() {
+    if let Err(e) = config.check_relay_membership_owner() {
         error!(
             "BUZZ_REQUIRE_RELAY_MEMBERSHIP=true but RELAY_OWNER_PUBKEY is not set or invalid. \
              Set RELAY_OWNER_PUBKEY to a valid 64-char hex pubkey."
         );
-        return Err(anyhow::anyhow!(
-            "RELAY_OWNER_PUBKEY required when BUZZ_REQUIRE_RELAY_MEMBERSHIP=true"
-        ));
+        return Err(anyhow::anyhow!("{e}"));
     }
 
     // NIP-43: relay membership requires a stable signing key.
@@ -1327,12 +1325,7 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     // the partial unique index) and consume cross-instance token revocations.
     // Nothing here runs with the flag off.
     if state.identity.enabled() {
-        let relay_principal = state
-            .db
-            .ensure_relay_principal()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to ensure relay principal: {e}"))?;
-        state.identity.set_relay_principal(relay_principal);
+        let relay_principal = buzz_relay::identity::init_relay_principal(&state).await?;
         info!(relay_principal = %relay_principal, "Token auth enabled");
 
         buzz_relay::identity::spawn_revocation_consumer(Arc::clone(&state));

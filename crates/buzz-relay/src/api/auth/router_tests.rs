@@ -134,3 +134,33 @@ fn bearer_scheme_is_case_insensitive() {
     assert_eq!(token_of("Bearer   "), None);
     assert_eq!(token_of("Bearerbzs_x"), None);
 }
+
+/// The web client's `/auth/cb` return page is the web bundle's `index.html`
+/// when token auth is on, and an unknown path (404) when it is off.
+#[tokio::test]
+async fn web_auth_callback_serves_the_spa_only_with_token_auth() {
+    let dir = std::env::temp_dir().join(format!("buzz-web-{}", uuid::Uuid::new_v4().simple()));
+    std::fs::create_dir_all(&dir).expect("web dir");
+    std::fs::write(dir.join("index.html"), "<!doctype html><title>web</title>").expect("index");
+    for enabled in [true, false] {
+        let mut state = state_with_token_auth(enabled).await;
+        let inner = Arc::get_mut(&mut state).expect("sole reference");
+        Arc::make_mut(&mut inner.config).web_dir = Some(dir.clone());
+        let response = crate::router::build_router(state)
+            .oneshot(request("GET", "/auth/cb?code=bzl_x&state=s"))
+            .await
+            .expect("router response");
+        let status = response.status();
+        let bytes = http_body_util::BodyExt::collect(response.into_body())
+            .await
+            .expect("body")
+            .to_bytes();
+        if enabled {
+            assert_eq!(status, StatusCode::OK);
+            assert!(String::from_utf8_lossy(&bytes).contains("<title>web</title>"));
+        } else {
+            assert_eq!(status, StatusCode::NOT_FOUND);
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

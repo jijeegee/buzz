@@ -416,6 +416,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         let web_index = web_dir.as_ref().map(|dir| dir.join("index.html"));
         let web_files = web_dir.map(ServeDir::new);
         let serve_git_web_gui = state.config.serve_git_web_gui;
+        let token_auth = state.identity.enabled();
         let fallback_state = state.clone();
         let spa_fallback = tower::service_fn(move |req: axum::extract::Request| {
             let admin_index = admin_index.clone();
@@ -445,7 +446,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                     if path.starts_with("/assets/") {
                         return files.oneshot(req).await.map(IntoResponse::into_response);
                     }
-                    if should_serve_spa(path, serve_git_web_gui) {
+                    if should_serve_spa(path, serve_git_web_gui)
+                        || (token_auth && path == WEB_AUTH_CALLBACK_PATH)
+                    {
                         return Ok(read_spa_index(&index).await);
                     }
                 }
@@ -498,6 +501,10 @@ fn is_invite_landing_path(path: &str) -> bool {
     path.strip_prefix("/invite/")
         .is_some_and(|code| !code.is_empty() && !code.contains('/'))
 }
+
+/// The web client's OIDC return page (plan §3.2 web row): served from the web
+/// bundle only when token auth is on.
+const WEB_AUTH_CALLBACK_PATH: &str = "/auth/cb";
 
 fn should_serve_spa(path: &str, serve_git_web_gui: bool) -> bool {
     is_invite_landing_path(path) || (serve_git_web_gui && is_git_web_gui_path(path))

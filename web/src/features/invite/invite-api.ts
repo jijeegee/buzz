@@ -1,4 +1,4 @@
-import { makeNip98AuthHeader } from "@/shared/lib/nip98";
+import { relayAuthorization } from "@/shared/auth/session";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
 const INVITE_REQUEST_TIMEOUT_MS = 15_000;
@@ -19,9 +19,13 @@ export async function claimInviteInBrowser(
     code,
     policy_receipt: policyReceipt,
   });
-  const authorization = await makeNip98AuthHeader(url, "POST", {
+  // Token-auth relays: the signed-in account claims the invite (Bearer).
+  // Key relays: a NIP-07 key must sign, so a reload cannot orphan the
+  // membership row created for a throwaway page key.
+  const authorization = await relayAuthorization(url, "POST", {
     body,
     requireNip07: true,
+    requireSession: true,
   });
   const response = await fetch(url, {
     method: "POST",

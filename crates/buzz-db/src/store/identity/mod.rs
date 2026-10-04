@@ -27,7 +27,10 @@ use crate::error::{DbError, Result};
 
 pub use access_token::{AccessTokenRecord, AccessTokenRejection};
 pub use bot::{BotRecord, ExchangeOutcome};
-pub use principal::{LoginPrincipal, PrincipalRecord, ProfileUpdate};
+pub use principal::{
+    LoginPrincipal, PrincipalRecord, ProfileCommunity, ProfileEventState, ProfilePublishLock,
+    ProfilePublishSnapshot, ProfileUpdate, MAX_PROFILE_COMMUNITIES,
+};
 pub use session::{DeviceRecord, LoginSession, RefreshOutcome};
 
 /// Maximum live (non-revoked) devices per principal.

@@ -545,11 +545,7 @@ pub const TERMINAL_TOKEN_CODES: [&str; 4] = [
     "principal_disabled",
 ];
 
-/// Error text for Blossom media in token mode (bearer media lands in Phase 2).
-pub const MEDIA_REQUIRES_KEY: &str =
-    "media requires key auth until the relay supports bearer media (Phase 2)";
-
-fn build_http() -> Result<reqwest::Client, CliError> {
+pub(crate) fn build_http() -> Result<reqwest::Client, CliError> {
     reqwest::Client::builder()
         .timeout(env_duration_secs("BUZZ_TIMEOUT_SECS", 30))
         .connect_timeout(env_duration_secs("BUZZ_CONNECT_TIMEOUT_SECS", 15))
@@ -560,7 +556,7 @@ fn build_http() -> Result<reqwest::Client, CliError> {
 /// Map a non-2xx relay response to a [`CliError`]. A 401 carrying a terminal
 /// token code becomes [`CliError::Auth`] with that code in the message; every
 /// other status keeps the `Relay` shape (401/403 still exit 3).
-fn relay_error(status: u16, body: String) -> CliError {
+pub(crate) fn relay_error(status: u16, body: String) -> CliError {
     let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
     let message = parsed
         .as_ref()
@@ -787,11 +783,30 @@ impl BuzzClient {
         }
     }
 
-    /// Keys for Blossom media auth; token mode has none until Phase 2.
-    fn media_keys(&self) -> Result<&Keys, CliError> {
+    /// `Authorization` for a Blossom upload of `sha256`: `Bearer` in token
+    /// mode (the relay binds the body to `X-SHA-256`), a fresh kind-24242
+    /// event in key mode.
+    fn media_upload_auth(&self, sha256: &str, mime: &str) -> Result<String, CliError> {
         match (&self.bearer, &self.signer) {
-            (None, EventSigner::Keys(keys)) => Ok(keys),
-            _ => Err(CliError::Usage(MEDIA_REQUIRES_KEY.into())),
+            (Some(token), _) => Ok(format!("Bearer {}", token.expose())),
+            (None, EventSigner::Keys(keys)) => {
+                sign_blossom_upload(keys, sha256, mime, &self.relay_url)
+            }
+            (None, EventSigner::Principal(_)) => {
+                Err(CliError::Auth("token-mode client has no token".into()))
+            }
+        }
+    }
+
+    /// `Authorization` for a Blossom read of `media_url`, which callers have
+    /// already pinned to the relay origin (`media_url_from_input`).
+    fn media_get_auth(&self, media_url: &str) -> Result<String, CliError> {
+        match (&self.bearer, &self.signer) {
+            (Some(token), _) => Ok(format!("Bearer {}", token.expose())),
+            (None, EventSigner::Keys(keys)) => sign_blossom_get(keys, media_url),
+            (None, EventSigner::Principal(_)) => {
+                Err(CliError::Auth("token-mode client has no token".into()))
+            }
         }
     }
 
@@ -1463,8 +1478,7 @@ impl BuzzClient {
                 let mime = mime.clone();
                 let sha256 = sha256.clone();
                 async move {
-                    let auth_header =
-                        sign_blossom_upload(self.media_keys()?, &sha256, &mime, &self.relay_url)?;
+                    let auth_header = self.media_upload_auth(&sha256, &mime)?;
                     let resp = self
                         .with_auth_tag(
                             self.http
@@ -1510,8 +1524,7 @@ impl BuzzClient {
             let mime = mime.clone();
             let sha256 = sha256.clone();
             async move {
-                let auth_header =
-                    sign_blossom_upload(self.media_keys()?, &sha256, &mime, &self.relay_url)?;
+                let auth_header = self.media_upload_auth(&sha256, &mime)?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -1549,7 +1562,7 @@ impl BuzzClient {
             let url = url.clone();
             let client = client.clone();
             async move {
-                let auth_header = sign_blossom_get(self.media_keys()?, &url)?;
+                let auth_header = self.media_get_auth(&url)?;
                 let resp = self
                     .with_auth_tag(client.get(&url).header("Authorization", auth_header))
                     .send()

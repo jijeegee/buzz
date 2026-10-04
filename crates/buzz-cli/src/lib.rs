@@ -1,4 +1,6 @@
 pub mod agent_management;
+mod auth_loopback;
+pub mod auth_session;
 mod client;
 mod commands;
 mod error;
@@ -131,6 +133,8 @@ Configuration (flags override env vars):
   BUZZ_PRIVATE_KEY   Nostr private key (hex or nsec)  [key mode, if no token]
                      (--private-key on the command line always selects key mode)
   BUZZ_AUTH_TAG      NIP-OA auth tag JSON  [key mode, optional]
+  BUZZ_SESSION_FILE  Login stored by `buzz auth login` [default: <config dir>/buzz/session.json]
+                     (used last: only when no token or private key is configured)
 
 The 'pack' subcommand runs locally and does not require a relay connection.
 
@@ -238,6 +242,9 @@ pub enum OutputFormat {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Sign in with Google, manage devices, sessions and bots
+    #[command(subcommand)]
+    Auth(commands::auth::AuthCmd),
     /// Draft owner-reviewed agent creation and updates
     #[command(subcommand)]
     Agents(AgentsCmd),
@@ -2177,23 +2184,39 @@ fn normalize_auth_tag_input(input: &str) -> String {
 /// broker) wins; the principal is resolved with `GET /auth/me`. Without one the
 /// CLI falls back to key mode (`BUZZ_PRIVATE_KEY`, optional `BUZZ_AUTH_TAG`),
 /// which Phase 3 removes. Neither configured is an auth error (exit 3).
+#[allow(dead_code)] // the session-less entry point, kept for tests and callers without a store
 pub(crate) async fn build_client(
     relay_url: String,
     token_source: Option<buzz_token_broker::TokenSource>,
     private_key: Option<String>,
     auth_tag: Option<String>,
 ) -> Result<BuzzClient, CliError> {
+    build_client_with_session(relay_url, token_source, private_key, auth_tag, None).await
+}
+
+/// [`build_client`] with the login stored by `buzz auth login` as the last
+/// credential source: explicit token > private key > stored session. The
+/// stored session never overrides a credential the process was given, so an
+/// ambient human login cannot replace a configured agent identity.
+pub(crate) async fn build_client_with_session(
+    relay_url: String,
+    token_source: Option<buzz_token_broker::TokenSource>,
+    private_key: Option<String>,
+    auth_tag: Option<String>,
+    session: Option<&auth_session::SessionStore>,
+) -> Result<BuzzClient, CliError> {
     if let Some(source) = token_source {
         return BuzzClient::from_token_source(relay_url, source).await;
     }
 
+    if private_key.is_none() {
+        if let Some(store) = session {
+            return client_from_session(relay_url, store).await;
+        }
+    }
+
     // Key mode: the keypair IS the identity.
-    let private_key_str = private_key.ok_or_else(|| {
-        CliError::Auth(
-            "BUZZ_PRIVATE_KEY is required (use --private-key or set env var),              or provide BUZZ_BOT_TOKEN / BUZZ_ACCESS_TOKEN / BUZZ_TOKEN_BROKER_URL"
-                .into(),
-        )
-    })?;
+    let private_key_str = private_key.ok_or_else(missing_credential)?;
     let keys = Keys::parse(&private_key_str)
         .map_err(|e| CliError::Key(format!("invalid BUZZ_PRIVATE_KEY: {e}")))?;
 
@@ -2227,6 +2250,50 @@ pub(crate) async fn build_client(
     BuzzClient::new(relay_url, keys, auth_tag, auth_tag_json)
 }
 
+fn missing_credential() -> CliError {
+    CliError::Auth(
+        "no credential: run `buzz auth login`, or set BUZZ_PRIVATE_KEY (--private-key) or BUZZ_BOT_TOKEN / BUZZ_ACCESS_TOKEN / BUZZ_TOKEN_BROKER_URL"
+            .into(),
+    )
+}
+
+/// The stored `buzz auth login` session, unless the process is a managed
+/// agent ([`buzz_token_broker::DISABLE_STORED_SESSION_ENV`]): an agent whose
+/// own credential is missing must fail (exit 3), not act as the human.
+pub(crate) fn stored_session_for(
+    lookup: impl Fn(&str) -> Option<String>,
+) -> Option<auth_session::SessionStore> {
+    if buzz_token_broker::stored_session_disabled(lookup) {
+        return None;
+    }
+    auth_session::SessionStore::open_default()
+}
+
+/// A token-mode client from the stored login. A relay that calls the cached
+/// access token expired (clock skew) gets one forced refresh.
+async fn client_from_session(
+    relay_url: String,
+    store: &auth_session::SessionStore,
+) -> Result<BuzzClient, CliError> {
+    let http = client::build_http()?;
+    let Some((token, _)) =
+        auth_session::session_access_token(&http, &relay_url, store, false).await?
+    else {
+        return Err(missing_credential());
+    };
+    match BuzzClient::with_token(relay_url.clone(), token).await {
+        Err(CliError::Auth(message)) if message.contains("token_expired") => {
+            let Some((token, _)) =
+                auth_session::session_access_token(&http, &relay_url, store, true).await?
+            else {
+                return Err(missing_credential());
+            };
+            BuzzClient::with_token(relay_url, token).await
+        }
+        other => other,
+    }
+}
+
 async fn run(cli: Cli) -> Result<(), CliError> {
     let relay_url = client::normalize_relay_url(&cli.relay);
 
@@ -2239,7 +2306,28 @@ async fn run(cli: Cli) -> Result<(), CliError> {
     }
 
     let token_source = token_source_for(&cli, buzz_token_broker::TokenSource::from_env());
-    let client = build_client(relay_url, token_source, cli.private_key, cli.auth_tag).await?;
+
+    // `buzz auth` manages the stored login itself (login needs no credential).
+    if let Cmd::Auth(sub) = cli.command {
+        return commands::auth::dispatch(
+            sub,
+            relay_url,
+            token_source,
+            cli.private_key,
+            &cli.format,
+        )
+        .await;
+    }
+
+    let session = stored_session_for(|name| std::env::var(name).ok());
+    let client = build_client_with_session(
+        relay_url,
+        token_source,
+        cli.private_key,
+        cli.auth_tag,
+        session.as_ref(),
+    )
+    .await?;
 
     match cli.command {
         Cmd::Agents(sub) => commands::agents::dispatch(sub, &client).await,
@@ -2264,7 +2352,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Upload(sub) => commands::upload::dispatch(sub, &client).await,
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
-        Cmd::Pack(_) => unreachable!("handled above"),
+        Cmd::Pack(_) | Cmd::Auth(_) => unreachable!("handled above"),
     }
 }
 
@@ -2448,6 +2536,7 @@ mod tests {
     fn command_inventory_is_stable() {
         let expected_groups: Vec<&str> = vec![
             "agents",
+            "auth",
             "canvas",
             "channels",
             "dms",
@@ -2640,6 +2729,10 @@ mod tests {
             names(&cmd, "issues"),
             vec!["assign", "create", "get", "list", "status", "unassign"]
         );
+        assert_eq!(
+            names(&cmd, "auth"),
+            vec!["bots", "devices", "login", "logout", "profile", "sessions", "whoami"]
+        );
         assert_eq!(names(&cmd, "media"), vec!["get"]);
         assert_eq!(names(&cmd, "upload"), vec!["file"]);
         assert_eq!(names(&cmd, "pack"), vec!["inspect", "validate"]);
@@ -2662,6 +2755,7 @@ mod tests {
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
             ("agents", 5),
+            ("auth", 7),
             ("canvas", 4),
             ("channels", 16),
             ("dms", 4),

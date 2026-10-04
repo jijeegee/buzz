@@ -1252,6 +1252,9 @@ async fn submit_event_authed(
 
     match crate::handlers::ingest::ingest_event(state, tenant, event, auth).await {
         Ok(result) => {
+            if result.accepted && server_stamped {
+                crate::handlers::event::note_token_write(state, tenant, pubkey);
+            }
             let response = Json(serde_json::json!({
                 "event_id": result.event_id,
                 "accepted": result.accepted,

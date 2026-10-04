@@ -64,20 +64,69 @@ fn record_from_row(row: &sqlx::postgres::PgRow) -> Result<PrincipalRecord> {
     })
 }
 
-/// Create the deployment's relay principal if absent and return it.
+/// Make `key` the deployment's relay principal and return it.
 ///
-/// Concurrent first boots converge: the partial unique index
-/// `principals_single_relay` admits one row, every caller reads it back.
-pub(super) async fn ensure_relay_principal(pool: &PgPool) -> Result<PrincipalId> {
-    let candidate = PrincipalId::generate();
+/// The relay principal is the relay's own signing key (`RELAY_PRIVATE_KEY`),
+/// so relay-authored events keep one author whether they are signed or
+/// server-stamped, and every existing relay-signed event stays attributable.
+/// A relay row with another id (an earlier key, or a Phase 0/1 random id) is
+/// re-keyed; `relay_operators.added_by` follows it. Concurrent boots serialize
+/// on an advisory lock; the partial unique index `principals_single_relay`
+/// still admits only one row.
+pub(super) async fn ensure_relay_principal(
+    pool: &PgPool,
+    key: &PrincipalId,
+) -> Result<PrincipalId> {
     let mut tx = begin(pool).await?;
-    sqlx::query(
-        "INSERT INTO principals (id, kind, display_name) VALUES ($1, 'relay', 'relay') \
-         ON CONFLICT DO NOTHING",
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('buzz:relay_principal'))")
+        .execute(&mut *tx)
+        .await?;
+    let current: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT id FROM principals WHERE kind = 'relay'")
+            .fetch_optional(&mut *tx)
+            .await?;
+    let key_bytes = key.as_bytes().as_slice();
+    // The relay key must not already name a user or bot: re-keying onto it
+    // would collide, and inserting would silently leave no relay row.
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM principals WHERE id = $1 AND kind <> 'relay')",
     )
-    .bind(candidate.as_bytes().as_slice())
-    .execute(&mut *tx)
+    .bind(key_bytes)
+    .fetch_one(&mut *tx)
     .await?;
+    if taken {
+        return Err(DbError::InvalidData(
+            "relay key is already registered as a non-relay principal".into(),
+        ));
+    }
+    match current {
+        None => {
+            sqlx::query(
+                "INSERT INTO principals (id, kind, display_name) VALUES ($1, 'relay', 'relay')                  ON CONFLICT DO NOTHING",
+            )
+            .bind(key_bytes)
+            .execute(&mut *tx)
+            .await?;
+        }
+        Some(old) if old.as_slice() != key_bytes => {
+            tracing::warn!(
+                old = %hex::encode(&old),
+                new = %key.to_hex(),
+                "relay key changed; re-keying the relay principal"
+            );
+            sqlx::query("UPDATE principals SET id = $2 WHERE id = $1 AND kind = 'relay'")
+                .bind(&old)
+                .bind(key_bytes)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("UPDATE relay_operators SET added_by = $2 WHERE added_by = $1")
+                .bind(&old)
+                .bind(key_bytes)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Some(_) => {}
+    }
     let id: Vec<u8> = sqlx::query_scalar("SELECT id FROM principals WHERE kind = 'relay'")
         .fetch_one(&mut *tx)
         .await?;
@@ -241,11 +290,162 @@ pub(super) async fn update_profile(
     Ok(Some(record))
 }
 
+/// An active community whose `users` projection holds a principal.
+#[derive(Debug, Clone)]
+pub struct ProfileCommunity {
+    /// The community.
+    pub community: buzz_core::CommunityId,
+    /// Its host (for tenant labelling only).
+    pub host: String,
+}
+
+/// The newest live kind:0 a principal has in one community.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileEventState {
+    /// `created_at` (unix seconds).
+    pub created_at: i64,
+    /// Event content (profile JSON).
+    pub content: String,
+}
+
+/// Upper bound on communities one profile change fans out to.
+pub const MAX_PROFILE_COMMUNITIES: i64 = 1000;
+
+/// An attributed connection for the profile-publish reads.
+async fn profile_reader(pool: &PgPool) -> Result<sqlx::pool::PoolConnection<sqlx::Postgres>> {
+    crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authentication,
+    )
+    .await
+    .map_err(Into::into)
+}
+
+async fn profile_communities(pool: &PgPool, id: &PrincipalId) -> Result<Vec<ProfileCommunity>> {
+    let rows = sqlx::query(
+        "SELECT u.community_id, c.host FROM users u          JOIN communities c ON c.id = u.community_id          WHERE u.pubkey = $1 AND c.archived_at IS NULL AND c.deleted_at IS NULL            AND c.deletion_state = 'active'          ORDER BY u.community_id LIMIT $2",
+    )
+    .bind(id.as_bytes().as_slice())
+    .bind(MAX_PROFILE_COMMUNITIES)
+    .fetch_all(&mut *profile_reader(pool).await?)
+    .await?;
+    rows.iter()
+        .map(|row| {
+            let community: uuid::Uuid = row.try_get("community_id")?;
+            Ok(ProfileCommunity {
+                community: buzz_core::CommunityId::from_uuid(community),
+                host: row.try_get("host")?,
+            })
+        })
+        .collect()
+}
+
+/// Everything a kind:0 publish decides on, read under its lock.
+#[derive(Debug, Clone)]
+pub struct ProfilePublishSnapshot {
+    /// The principal row (fresh: read after the lock was granted).
+    pub record: Option<PrincipalRecord>,
+    /// The community's newest live kind:0 of the principal.
+    pub latest: Option<ProfileEventState>,
+    /// Whether the community's `users` projection holds the principal.
+    pub has_user_row: bool,
+}
+
+/// A held per-(community, principal) kind:0 publish lock: a transaction
+/// holding `pg_advisory_xact_lock`. [`Self::release`] commits; dropping it
+/// rolls back, which releases the lock as well.
+pub struct ProfilePublishLock {
+    tx: sqlx::Transaction<'static, sqlx::Postgres>,
+}
+
+impl std::fmt::Debug for ProfilePublishLock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ProfilePublishLock")
+    }
+}
+
+impl ProfilePublishLock {
+    /// Release the lock.
+    pub async fn release(self) -> Result<()> {
+        self.tx.commit().await?;
+        Ok(())
+    }
+}
+
+/// Advisory-lock key for one (community, principal) kind:0 stream.
+fn profile_lock_key(community: buzz_core::CommunityId, id: &PrincipalId) -> i64 {
+    use sha2::{Digest as _, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"buzz:profile-publish:");
+    hasher.update(community.as_uuid().as_bytes());
+    hasher.update(id.as_bytes());
+    let digest = hasher.finalize();
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&digest[..8]);
+    i64::from_be_bytes(bytes)
+}
+
+async fn lock_profile_publish(
+    pool: &PgPool,
+    community: buzz_core::CommunityId,
+    id: &PrincipalId,
+) -> Result<(ProfilePublishLock, ProfilePublishSnapshot)> {
+    let mut tx = begin(pool).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(profile_lock_key(community, id))
+        .execute(&mut *tx)
+        .await?;
+    let record = sqlx::query(
+        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after \
+         FROM principals WHERE id = $1",
+    )
+    .bind(id.as_bytes().as_slice())
+    .fetch_optional(&mut *tx)
+    .await?
+    .as_ref()
+    .map(record_from_row)
+    .transpose()?;
+    let latest = sqlx::query(
+        "SELECT created_at, content FROM events \
+         WHERE community_id = $1 AND kind = 0 AND pubkey = $2 \
+           AND channel_id IS NULL AND deleted_at IS NULL \
+         ORDER BY created_at DESC, id ASC LIMIT 1",
+    )
+    .bind(community.as_uuid())
+    .bind(id.as_bytes().as_slice())
+    .fetch_optional(&mut *tx)
+    .await?
+    .map(|row| -> Result<ProfileEventState> {
+        let created_at: DateTime<Utc> = row.try_get("created_at")?;
+        Ok(ProfileEventState {
+            created_at: created_at.timestamp(),
+            content: row.try_get("content")?,
+        })
+    })
+    .transpose()?;
+    let has_user_row: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM users WHERE community_id = $1 AND pubkey = $2)",
+    )
+    .bind(community.as_uuid())
+    .bind(id.as_bytes().as_slice())
+    .fetch_one(&mut *tx)
+    .await?;
+    Ok((
+        ProfilePublishLock { tx },
+        ProfilePublishSnapshot {
+            record,
+            latest,
+            has_user_row,
+        },
+    ))
+}
+
 impl crate::Db {
-    /// Create the relay principal if absent and return its id.
+    /// Make `key` (the relay signing key) the relay principal; see
+    /// [`ensure_relay_principal`].
     #[datastore_span(name = "ensure_relay_principal", system = "postgresql")]
-    pub async fn ensure_relay_principal(&self) -> Result<PrincipalId> {
-        ensure_relay_principal(&self.pool).await
+    pub async fn ensure_relay_principal(&self, key: &PrincipalId) -> Result<PrincipalId> {
+        ensure_relay_principal(&self.pool, key).await
     }
 
     /// Resolve an OIDC identity to a principal, creating it on first login.
@@ -284,5 +484,28 @@ impl crate::Db {
         update: &ProfileUpdate,
     ) -> Result<Option<PrincipalRecord>> {
         update_profile(&self.pool, id, update).await
+    }
+
+    /// Active communities whose `users` projection holds `id` (at most
+    /// [`MAX_PROFILE_COMMUNITIES`]): where its kind:0 must be published.
+    #[datastore_span(name = "principal_profile_communities", system = "postgresql")]
+    pub async fn principal_profile_communities(
+        &self,
+        id: &PrincipalId,
+    ) -> Result<Vec<ProfileCommunity>> {
+        profile_communities(&self.pool, id).await
+    }
+
+    /// Take the per-(community, principal) kind:0 publish lock and read,
+    /// under it, the principal row, the newest kind:0 and whether a `users`
+    /// row exists. Concurrent publishers for the same pair serialize here, so
+    /// the one that runs last always reads the newest profile.
+    #[datastore_span(name = "lock_principal_profile_publish", system = "postgresql")]
+    pub async fn lock_principal_profile_publish(
+        &self,
+        community: buzz_core::CommunityId,
+        id: &PrincipalId,
+    ) -> Result<(ProfilePublishLock, ProfilePublishSnapshot)> {
+        lock_profile_publish(&self.pool, community, id).await
     }
 }

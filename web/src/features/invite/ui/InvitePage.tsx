@@ -6,6 +6,7 @@ import {
   detectBuzzDownloadPlatform,
   resolveBuzzDownloadUrlForPlatform,
 } from "@/shared/lib/buzz-download";
+import { startGoogleSignIn, useWebSession } from "@/shared/auth/session";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
@@ -132,7 +133,18 @@ export function InvitePage({ code }: { code: string }) {
     }
   };
 
-  const browserSigningAvailable = hasNip07Provider();
+  const session = useWebSession();
+  // Token-auth relays join with the Google-account session; key relays need
+  // a NIP-07 signer (a page key would orphan the membership on reload).
+  const tokenAuth = Boolean(session.tokenAuth);
+  const browserSigningAvailable = tokenAuth
+    ? session.status === "signed_in"
+    : hasNip07Provider();
+  const offerBrowserSignIn =
+    tokenAuth &&
+    session.status !== "signed_in" &&
+    session.status !== "unknown" &&
+    Boolean(session.tokenAuth?.oidcProviders.includes("google"));
   const disabled =
     policy === undefined ||
     opening ||
@@ -233,6 +245,15 @@ export function InvitePage({ code }: { code: string }) {
                 onClick={joinInBrowser}
               >
                 {joiningBrowser ? "Joining…" : "Join in browser"}
+              </Button>
+            ) : null}
+            {offerBrowserSignIn ? (
+              <Button
+                className="h-10 w-full border border-black bg-white text-black hover:bg-black/5"
+                onClick={() => void startGoogleSignIn()}
+                type="button"
+              >
+                Sign in with Google to join in browser
               </Button>
             ) : null}
             {policy === null ? (

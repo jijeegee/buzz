@@ -1,8 +1,9 @@
 /**
  * isomorphic-git wrapper for in-browser repo browsing.
  *
- * Uses LightningFS (IndexedDB-backed) for persistence and NIP-98 auth
- * for the relay's smart HTTP git transport.
+ * Uses LightningFS (IndexedDB-backed) for persistence and relay auth
+ * (Bearer on token-auth relays, NIP-98 otherwise) for the smart HTTP
+ * git transport.
  */
 
 // isomorphic-git expects a global Buffer (Node API) for pack-file parsing,
@@ -23,7 +24,7 @@ import {
   resolveRef,
 } from "isomorphic-git";
 import http from "isomorphic-git/http/web";
-import { makeNip98AuthHeader } from "@/shared/lib/nip98";
+import { relayAuthorization } from "@/shared/auth/session";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
 /** Get a repo-specific LightningFS instance backed by IndexedDB. */
@@ -54,7 +55,9 @@ async function authHeaders(
   repoName: string,
 ): Promise<Record<string, string>> {
   return {
-    Authorization: await makeNip98AuthHeader(
+    // Bearer when signed in on a token-auth relay; otherwise NIP-98 (public
+    // reads keep working signed out, as before).
+    Authorization: await relayAuthorization(
       repoAuthUrl(owner, repoName),
       "GET",
     ),

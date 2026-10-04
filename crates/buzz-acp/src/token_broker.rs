@@ -335,6 +335,8 @@ pub fn apply_child_credentials(
     for name in TOKEN_ENV_VARS {
         cmd.env_remove(name);
     }
+    // Agents never borrow the machine owner's `buzz auth login` session.
+    cmd.env(buzz_token_broker::DISABLE_STORED_SESSION_ENV, "1");
     let Some(broker) = broker else {
         return Ok(None);
     };
@@ -551,6 +553,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(got.token.expose(), "bzb_harness");
+        assert!(
+            env.contains("BUZZ_DISABLE_STORED_SESSION=1"),
+            "agents must not fall back to the human's stored login"
+        );
         drop(lease);
         let err = fetch(url, Secret::new(secret)).await.unwrap_err();
         assert!(matches!(err, BrokerError::Status(401)), "{err:?}");
@@ -568,6 +574,7 @@ mod tests {
         assert!(!env.contains("bzb_stray"));
         assert!(!env.contains("BUZZ_TOKEN_BROKER_URL="));
         assert!(env.contains("BUZZ_PRIVATE_KEY=nsec_keymode"));
+        assert!(env.contains("BUZZ_DISABLE_STORED_SESSION=1"));
     }
 
     #[test]

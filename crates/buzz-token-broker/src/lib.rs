@@ -43,8 +43,22 @@ pub const TOKEN_ENV_VARS: [&str; 4] = [
     BROKER_SECRET_ENV,
 ];
 
+/// Set (to any non-empty value but `0`) on managed-agent processes: `buzz`
+/// must never fall back to the human login stored by `buzz auth login`, so a
+/// misconfigured agent fails with an auth error instead of acting as the
+/// person who owns the machine.
+pub const DISABLE_STORED_SESSION_ENV: &str = "BUZZ_DISABLE_STORED_SESSION";
+
+/// Whether [`DISABLE_STORED_SESSION_ENV`] is set in `lookup`.
+pub fn stored_session_disabled(lookup: impl Fn(&str) -> Option<String>) -> bool {
+    lookup(DISABLE_STORED_SESSION_ENV)
+        .map(|value| value.trim().to_owned())
+        .is_some_and(|value| !value.is_empty() && value != "0")
+}
+
 /// Broker request path.
 pub const BROKER_PATH: &str = "/token";
+
 /// Upper bound on a broker response (headers + body).
 pub const MAX_RESPONSE_BYTES: usize = 4096;
 /// Requests per minute a broker serves per spawn before answering 429.

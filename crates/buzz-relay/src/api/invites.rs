@@ -221,13 +221,58 @@ pub async fn accept_policy(
             "join_policy_not_accepted",
         ));
     }
-    let key = invite_token::derive_invite_key(&state.relay_keypair);
+    let key = invite_key(&state);
     let receipt = invite_token::mint_policy_acceptance(&key, &request.code, &policy.version);
     Ok(Json(serde_json::json!({ "receipt": receipt })))
 }
 
+/// The HMAC key for v1 codes and join-policy receipts: derived from
+/// `INVITE_SIGNING_SECRET` in token mode (required there at startup), from the
+/// relay signing key otherwise (flag off: unchanged).
+fn invite_key(state: &AppState) -> [u8; 32] {
+    match (
+        state.identity.enabled(),
+        state.config.auth_token.invite_signing_secret.as_ref(),
+    ) {
+        (true, Some(secret)) => invite_token::derive_invite_key_from_secret(secret.as_bytes()),
+        _ => invite_token::derive_invite_key(&state.relay_keypair),
+    }
+}
+
+/// Token-mode identity for an invite request: `Ok(None)` unless token auth is
+/// on, NIP-FI is off and the request carries `Authorization: Bearer`. Only a
+/// human session may claim or mint (Telegram: bots do not follow invite
+/// links; their owner adds them).
+async fn invite_bearer(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<nostr::PublicKey>, (StatusCode, Json<Value>)> {
+    if !state.identity.enabled() || !matches!(state.config.nip_fi.mode, buzz_auth::NipFiMode::Off) {
+        return Ok(None);
+    }
+    let Some(token) = crate::api::auth::bearer_token(headers) else {
+        return Ok(None);
+    };
+    let binding = crate::identity::verify_access_token(state, &token)
+        .await
+        .map_err(|rejection| match rejection {
+            crate::identity::TokenRejection::Unavailable => api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "authentication backend unavailable",
+            ),
+            other => api_error(StatusCode::UNAUTHORIZED, other.code()),
+        })?;
+    if binding.kind != buzz_core::principal::AccessTokenKind::User {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "invites require a user session token",
+        ));
+    }
+    Ok(Some(binding.principal.as_public_key()))
+}
+
 /// Shared prelude: bind the tenant from the Host header and verify the NIP-98
-/// signature + replay for `path`.
+/// signature + replay for `path` (or, in token mode, the Bearer token).
 async fn authenticate(
     state: &Arc<AppState>,
     headers: &HeaderMap,
@@ -246,6 +291,10 @@ async fn authenticate(
                 "relay: no community is configured for this host",
             )
         })?;
+
+    if let Some(pubkey) = invite_bearer(state, headers).await? {
+        return Ok((tenant, pubkey));
+    }
 
     let url = bridge::nip98_expected_url(&state.config.relay_url, &tenant, path);
     let bridge::VerifiedBridgeAuth {
@@ -307,6 +356,30 @@ async fn mint_invite_checked(
             .into_response()
         }
     };
+
+    // Token mode: a user Bearer token replaces the NIP-98 proof; the same
+    // membership gate and owner/admin role check follow.
+    match invite_bearer(&state, &headers).await {
+        Ok(Some(pubkey)) => {
+            if let Err(e) = super::relay_members::enforce_relay_membership(
+                &state,
+                tenant.community(),
+                pubkey.as_bytes(),
+                None,
+                None,
+            )
+            .await
+            {
+                return e.into_response();
+            }
+            return match mint_invite_inner(&state, body, tenant, pubkey).await {
+                Ok(json) => json.into_response(),
+                Err(e) => e.into_response(),
+            };
+        }
+        Ok(None) => {}
+        Err(e) => return e.into_response(),
+    }
 
     let url = bridge::nip98_expected_url(&state.config.relay_url, &tenant, "/api/invites");
 
@@ -449,7 +522,7 @@ pub async fn claim_invite(
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid claim JSON: {e}")))?;
 
     let claimer_hex = pubkey.to_hex();
-    let key = invite_token::derive_invite_key(&state.relay_keypair);
+    let key = invite_key(&state);
 
     // --- v2 database-backed path ---
     //
@@ -2122,5 +2195,74 @@ mod postgres_tests {
             .add_relay_member(community.id, &owner.public_key().to_hex(), "owner", None)
             .await
             .expect("seed owner");
+    }
+}
+
+#[cfg(test)]
+mod invite_key_tests {
+    use std::sync::Arc;
+
+    use super::invite_key;
+    use crate::identity::config::InviteSigningSecret;
+    use crate::identity::{AuthTokenConfig, IdentityRuntime};
+    use crate::invite_token::{derive_invite_key, derive_invite_key_from_secret};
+
+    async fn state(enabled: bool) -> Arc<crate::state::AppState> {
+        let mut state = crate::state::tests::test_state_with_database_url(
+            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz",
+        ) // sadscan:disable np.postgres.1 -- closed port, never connects
+        .await;
+        let mut config = AuthTokenConfig::disabled("ws://localhost:3000");
+        config.enabled = enabled;
+        config.invite_signing_secret = InviteSigningSecret::from_hex(&"42".repeat(32));
+        let inner = Arc::get_mut(&mut state).expect("sole reference");
+        Arc::make_mut(&mut inner.config).auth_token = config.clone();
+        inner.identity = Arc::new(IdentityRuntime::new(config));
+        state
+    }
+
+    /// The Bearer door is shut under NIP-FI (as on the bridge): a request
+    /// with a Bearer header takes the NIP-98 path (`Ok(None)`) instead of
+    /// reaching the token verifier. With NIP-FI off the token is verified —
+    /// here a malformed token answers 401, proving the verifier ran.
+    #[tokio::test]
+    async fn invite_bearer_is_inert_unless_nip_fi_is_off() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer bzs_unknown".parse().expect("header"),
+        );
+        let mut nip_fi = state(true).await;
+        Arc::make_mut(&mut Arc::get_mut(&mut nip_fi).expect("sole").config)
+            .nip_fi
+            .mode = buzz_auth::NipFiMode::Enforce;
+        assert!(matches!(
+            super::invite_bearer(&nip_fi, &headers).await,
+            Ok(None)
+        ));
+        let off = state(true).await;
+        let verified = super::invite_bearer(&off, &headers).await;
+        assert!(
+            matches!(&verified, Err((status, _)) if *status == axum::http::StatusCode::UNAUTHORIZED),
+            "{verified:?}"
+        );
+        let flag_off = state(false).await;
+        assert!(matches!(
+            super::invite_bearer(&flag_off, &headers).await,
+            Ok(None)
+        ));
+    }
+
+    /// Token mode keys v1 codes and policy receipts from
+    /// `INVITE_SIGNING_SECRET`, so removing the relay key (Phase 3) does not
+    /// change them; flag off keeps the relay-key derivation.
+    #[tokio::test]
+    async fn token_mode_uses_the_signing_secret_and_flag_off_the_relay_key() {
+        let on = state(true).await;
+        let secret = [0x42u8; 32];
+        assert_eq!(invite_key(&on), derive_invite_key_from_secret(&secret));
+        assert_ne!(invite_key(&on), derive_invite_key(&on.relay_keypair));
+        let off = state(false).await;
+        assert_eq!(invite_key(&off), derive_invite_key(&off.relay_keypair));
     }
 }

@@ -6,6 +6,7 @@ use tauri::State;
 use tokio_util::sync::CancellationToken;
 
 use crate::app_state::AppState;
+use crate::auth::credential::UserCredential;
 use crate::relay::{parse_json_response, relay_api_base_url_with_override, relay_error_message};
 
 use super::media_filename::sanitize_filename;
@@ -344,19 +345,55 @@ pub(crate) fn sign_blossom_get_auth_header(
 /// constructed from (or validated against) the app's own relay base URL —
 /// never to third-party origins, where the bearer token would leak.
 pub(crate) fn mint_media_get_auth(state: &AppState, base_url: &str) -> Option<String> {
-    let keys = match state.signing_keys() {
-        Ok(k) => k,
+    let credential = match state.user_credential() {
+        Ok(credential) => credential,
         Err(e) => {
             eprintln!("buzz-desktop: media get auth unavailable (unsigned request): {e}");
             return None;
         }
     };
-    match sign_blossom_get_auth_header(&keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS) {
+    match media_get_auth_header(&credential, base_url) {
         Ok(header) => Some(header),
         Err(e) => {
             eprintln!("buzz-desktop: media get auth signing failed (unsigned request): {e}");
             None
         }
+    }
+}
+
+/// `Authorization` for a relay media read: the session `Bearer` token in
+/// token mode, a server-scoped Blossom `t=get` event in key mode. Same
+/// relay-origin-only contract as [`mint_media_get_auth`].
+pub(crate) fn media_get_auth_header(
+    credential: &UserCredential,
+    base_url: &str,
+) -> Result<String, String> {
+    match credential {
+        UserCredential::Keys(keys) => {
+            sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS)
+        }
+        UserCredential::Token { access, .. } => Ok(format!("Bearer {}", access.as_str())),
+    }
+}
+
+/// `Authorization` for a relay media upload of `sha256`: the session
+/// `Bearer` token in token mode (the relay binds the body to `X-SHA-256`), a
+/// Blossom `t=upload` event in key mode.
+pub(crate) fn media_upload_auth_header(
+    credential: &UserCredential,
+    sha256: &str,
+    expiry_secs: u64,
+    base_url: &str,
+) -> Result<String, String> {
+    match credential {
+        UserCredential::Keys(keys) => {
+            let event = sign_blossom_upload_auth(keys, sha256, expiry_secs, base_url)?;
+            Ok(format!(
+                "Nostr {}",
+                URL_SAFE_NO_PAD.encode(event.as_json().as_bytes())
+            ))
+        }
+        UserCredential::Token { access, .. } => Ok(format!("Bearer {}", access.as_str())),
     }
 }
 
@@ -422,15 +459,8 @@ async fn do_upload(
     // The server-side window is also 60s in Strict mode, matching this value.
     let expiry_secs = 60u64;
     let base_url = relay_api_base_url_with_override(state);
-    let auth_event = {
-        let keys = state.signing_keys()?;
-        sign_blossom_upload_auth(&keys, &sha256, expiry_secs, &base_url)?
-    };
-
-    let auth_header = format!(
-        "Nostr {}",
-        URL_SAFE_NO_PAD.encode(auth_event.as_json().as_bytes())
-    );
+    let auth_header =
+        media_upload_auth_header(&state.user_credential()?, &sha256, expiry_secs, &base_url)?;
     let body = bytes::Bytes::from(body);
     if let Some((app, progress_id)) = progress.as_ref() {
         emit_media_upload_phase(app, Some(progress_id.as_str()), "uploading");
@@ -796,6 +826,64 @@ pub(super) async fn upload_media_bytes_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// App state whose current community is signed in with Google.
+    fn token_mode_state() -> AppState {
+        let state = crate::app_state::build_app_state();
+        let origin = state.current_auth_origin();
+        state.token_auth.set(
+            &origin,
+            crate::auth::OriginAuth::Active(crate::auth::UserSession {
+                principal: Keys::generate().public_key(),
+                device_id: None,
+                access: zeroize::Zeroizing::new("bzs_media".into()),
+                refresh: zeroize::Zeroizing::new("bzr_media".into()),
+                access_issued_at: 0,
+                access_expires_at: i64::MAX,
+            }),
+        );
+        state
+    }
+
+    #[test]
+    fn media_reads_use_the_session_bearer_in_token_mode() {
+        let state = token_mode_state();
+        let base = relay_api_base_url_with_override(&state);
+        assert_eq!(
+            mint_media_get_auth(&state, &base).as_deref(),
+            Some("Bearer bzs_media")
+        );
+    }
+
+    #[test]
+    fn media_reads_sign_blossom_get_in_key_mode() {
+        let state = crate::app_state::build_app_state();
+        let base = relay_api_base_url_with_override(&state);
+        let header = mint_media_get_auth(&state, &base).expect("key-mode header");
+        assert!(header.starts_with("Nostr "), "{header}");
+    }
+
+    #[test]
+    fn media_uploads_select_bearer_or_blossom_by_credential() {
+        let token = token_mode_state()
+            .user_credential()
+            .expect("token credential");
+        assert_eq!(
+            media_upload_auth_header(&token, &"ab".repeat(32), 60, "https://relay.example.com")
+                .unwrap(),
+            "Bearer bzs_media"
+        );
+        let keys = UserCredential::Keys(Keys::generate());
+        let header =
+            media_upload_auth_header(&keys, &"ab".repeat(32), 60, "https://relay.example.com")
+                .unwrap();
+        let json = URL_SAFE_NO_PAD
+            .decode(header.strip_prefix("Nostr ").expect("Nostr scheme"))
+            .unwrap();
+        let event = nostr::Event::from_json(json).unwrap();
+        assert_eq!(event.kind, Kind::from(24242));
+        assert!(event.verify().is_ok());
+    }
 
     #[test]
     fn test_extract_server_authority_default_ports() {

@@ -333,9 +333,9 @@ pub async fn lookup_admin_principal(
     let pubkey_hex = hex::encode(pubkey);
     let cfg = &state.config;
 
-    // 1. Config Operator check.
+    // 1. Config Operator check (none in token mode: roster only).
     if cfg
-        .relay_operator_pubkeys
+        .admin_config_operator_pubkeys()
         .iter()
         .any(|pk| pk == &pubkey_hex)
     {
@@ -348,16 +348,12 @@ pub async fn lookup_admin_principal(
 
     // 2. Owner fallback B: only when configured RELAY_OPERATOR_PUBKEYS is empty.
     //    Evaluated from config only, never runtime DB rows.
-    if cfg.relay_operator_pubkeys.is_empty() {
-        if let Some(ref owner_hex) = cfg.relay_owner_pubkey {
-            if owner_hex == &pubkey_hex {
-                return Ok(Some(AdminPrincipal {
-                    pubkey,
-                    role: AdminRole::Operator,
-                    source: AdminSource::OwnerFallback,
-                }));
-            }
-        }
+    if cfg.admin_owner_fallback_pubkey() == Some(pubkey_hex.as_str()) {
+        return Ok(Some(AdminPrincipal {
+            pubkey,
+            role: AdminRole::Operator,
+            source: AdminSource::OwnerFallback,
+        }));
     }
 
     // 3. DB lookup — config-backed Operators are already returned above, so

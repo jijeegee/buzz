@@ -433,7 +433,10 @@ pub(super) async fn update_profile(
         .update_principal_profile(&binding.principal, &update)
         .await
     {
-        Ok(Some(record)) => profile_json(&record),
+        Ok(Some(record)) => {
+            crate::identity::profile::spawn_publish_everywhere(&state, record.id);
+            profile_json(&record)
+        }
         Ok(None) => not_found("principal not found"),
         Err(buzz_db::DbError::AccessDenied(message)) => {
             auth_error(StatusCode::CONFLICT, "username_taken", &message)

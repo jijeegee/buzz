@@ -104,6 +104,21 @@ impl std::fmt::Display for InviteError {
     }
 }
 
+/// Domain-separation label for keys derived from `INVITE_SIGNING_SECRET`.
+const SECRET_KEY_DERIVATION_LABEL: &[u8] = b"buzz-invite-secret-v1";
+
+/// Derive the invite HMAC key from `INVITE_SIGNING_SECRET` (token mode).
+///
+/// Distinct label from [`derive_invite_key`], so a code minted under one key
+/// never verifies under the other: switching a deployment to token auth (or
+/// rotating the secret) invalidates outstanding v1 codes and policy receipts.
+pub fn derive_invite_key_from_secret(secret: &[u8; 32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(secret);
+    hasher.update(SECRET_KEY_DERIVATION_LABEL);
+    hasher.finalize().into()
+}
+
 /// Derive the invite HMAC key from the relay's signing secret.
 ///
 /// `sha256(secret_key_bytes || label)` — the label domain-separates this use

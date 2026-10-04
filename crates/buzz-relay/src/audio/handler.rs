@@ -184,7 +184,14 @@ const CURRENT_PROTOCOL_VERSION: u8 = 3;
 struct AuthMsg {
     #[serde(rename = "type")]
     msg_type: String,
-    event: nostr::Event,
+    /// NIP-42 AUTH event (key auth). Absent on a token AUTH.
+    #[serde(default)]
+    event: Option<nostr::Event>,
+    /// Access token (`bzs_`/`bzb_`/`bzk_`). Honoured only when token auth is
+    /// enabled and no `event` is present; otherwise the frame is ignored
+    /// exactly as a frame without a parseable `event` always was.
+    #[serde(default)]
+    token: Option<String>,
     parent_channel_id: Option<Uuid>,
     /// Huddle audio protocol version requested by the client. Defaults to 1
     /// when missing so existing clients keep working without recompile. A
@@ -196,6 +203,14 @@ struct AuthMsg {
 
 fn default_protocol_version() -> u8 {
     1
+}
+
+/// Whether a parsed `type: "auth"` frame starts admission: a NIP-42 `event`
+/// always does; a bare `token` only when token auth is enabled. Anything else
+/// is skipped while the auth window runs, as an unparseable frame always was.
+fn auth_msg_is_admissible(auth: &AuthMsg, token_auth_enabled: bool) -> bool {
+    auth.msg_type == "auth"
+        && (auth.event.is_some() || (token_auth_enabled && auth.token.is_some()))
 }
 
 #[cfg_attr(test, allow(dead_code))]
@@ -474,7 +489,8 @@ pub(crate) async fn handle_active_audio_connection(
     // Register the terminal sender before the proven identity becomes
     // scan-visible, so a concurrent `disconnect_nip_fi` that finds this socket
     // can always enqueue its denial.  [FI-TRACE-DENY-SET]
-    control.set_terminal_frame_sender(terminal_ctrl_tx);
+    // (A token-bound socket's revocation close shares this channel.)
+    control.set_terminal_frame_sender(terminal_ctrl_tx.clone());
 
     // Already-expired fast path: catch a deadline already past at upgrade time
     // before spending the AUTH_TIMEOUT window. Deny through the shared
@@ -507,6 +523,7 @@ pub(crate) async fn handle_active_audio_connection(
         return;
     }
 
+    let token_auth_enabled = state.identity.enabled();
     let auth_result = tokio::select! {
         biased;
         _ = cancel.cancelled() => {
@@ -526,7 +543,7 @@ pub(crate) async fn handle_active_audio_connection(
                         continue;
                     }
                     if let Ok(auth) = serde_json::from_str::<AuthMsg>(&text) {
-                        if auth.msg_type == "auth" {
+                        if auth_msg_is_admissible(&auth, token_auth_enabled) {
                             return Some(auth);
                         }
                     }
@@ -536,7 +553,7 @@ pub(crate) async fn handle_active_audio_connection(
         }) => result,
     };
 
-    let auth_msg = match auth_result {
+    let mut auth_msg = match auth_result {
         Ok(Some(a)) => a,
         _ => {
             debug!(channel_id = %channel_id, "audio auth timeout or disconnect");
@@ -544,66 +561,115 @@ pub(crate) async fn handle_active_audio_connection(
         }
     };
 
-    // Extract NIP-OA auth tag before verify_auth_event consumes the event.
-    let auth_tag_json = crate::handlers::auth::extract_auth_tag_json(&auth_msg.event);
-    let signed_auth_created_at = auth_msg.event.created_at.as_secs();
+    // Two AUTH forms converge on one admission path: NIP-42 (key) proves a
+    // pubkey and may carry a NIP-OA tag; token AUTH (centralized identity,
+    // only reachable when enabled — see `auth_msg_is_admissible`) resolves a
+    // principal and, for a bot, its server-recorded owner.
+    let (pubkey, auth_tag_json, signed_auth_created_at, token_binding) = match auth_msg.event.take()
+    {
+        Some(auth_event) => {
+            // Extract NIP-OA auth tag before verify_auth_event consumes the event.
+            let auth_tag_json = crate::handlers::auth::extract_auth_tag_json(&auth_event);
+            let signed_auth_created_at = auth_event.created_at.as_secs();
 
-    let relay_url = crate::api::bridge::nip42_expected_relay_url(&state.config.relay_url, &tenant);
+            let relay_url =
+                crate::api::bridge::nip42_expected_relay_url(&state.config.relay_url, &tenant);
 
-    // P2: Fence verify_auth_event against cancellation — the verifier awaits
-    // spawn_blocking (up to ~5s), during which the expiry task can fire.
-    // Without this select, verify would complete and pairing bookkeeping would
-    // run after the session deadline. [FI-TRACE-LEASE-BOUND]
-    //
-    // Test hook: fires immediately before the select so a test can arm expiry
-    // while verification is in flight, then confirm pairing is never reached.
-    // [nip_fi_test_hooks::audio_auth_verify_hook]
-    #[cfg(test)]
-    crate::nip_fi_test_hooks::before_auth_verify(tenant.community()).await;
+            // P2: Fence verify_auth_event against cancellation — the verifier awaits
+            // spawn_blocking (up to ~5s), during which the expiry task can fire.
+            // Without this select, verify would complete and pairing bookkeeping would
+            // run after the session deadline. [FI-TRACE-LEASE-BOUND]
+            //
+            // Test hook: fires immediately before the select so a test can arm expiry
+            // while verification is in flight, then confirm pairing is never reached.
+            // [nip_fi_test_hooks::audio_auth_verify_hook]
+            #[cfg(test)]
+            crate::nip_fi_test_hooks::before_auth_verify(tenant.community()).await;
 
-    let auth_ctx = tokio::select! {
-        biased;
-        _ = cancel.cancelled() => {
-            // Expiry fired while waiting for verify_auth_event. Drain the
-            // terminal channel so the denial frame reaches the client.
-            crate::connection::send_exit_frames_bounded(
-                &mut ws_send,
-                terminal_exit_frames(&mut terminal_ctrl_rx, &disconnect_reason),
-            )
-            .await;
-            return;
-        },
-        result = state.auth.verify_auth_event(auth_msg.event, &challenge, &relay_url) => {
-            match result {
-                Ok(ctx) => ctx,
-                Err(e) => {
-                    warn!(channel_id = %channel_id, "audio auth failed: {e}");
-                    // Under NIP-FI the failure is classified exactly as on the
-                    // root route; Off-mode keeps the legacy bespoke frame.
-                    let fi = nip_fi_assertion.is_some();
-                    let frame = if fi {
-                        crate::nip_fi_session::denial_frame(
-                            crate::nip_fi_session::NipFiWsRoute::Audio,
-                            crate::handlers::auth::nip42_denial_class(&e),
-                        )
-                    } else {
-                        WsMessage::Text(
-                            serde_json::json!({"type":"error","message":"auth failed"})
-                                .to_string()
-                                .into(),
-                        )
-                    };
-                    crate::connection::send_exit_frames_bounded(&mut ws_send, [frame]).await;
-                    if fi {
-                        cancel.cancel();
+            let auth_ctx = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    // Expiry fired while waiting for verify_auth_event. Drain the
+                    // terminal channel so the denial frame reaches the client.
+                    crate::connection::send_exit_frames_bounded(
+                        &mut ws_send,
+                        terminal_exit_frames(&mut terminal_ctrl_rx, &disconnect_reason),
+                    )
+                    .await;
+                    return;
+                },
+                result = state.auth.verify_auth_event(auth_event, &challenge, &relay_url) => {
+                    match result {
+                        Ok(ctx) => ctx,
+                        Err(e) => {
+                            warn!(channel_id = %channel_id, "audio auth failed: {e}");
+                            // Under NIP-FI the failure is classified exactly as on the
+                            // root route; Off-mode keeps the legacy bespoke frame.
+                            let fi = nip_fi_assertion.is_some();
+                            let frame = if fi {
+                                crate::nip_fi_session::denial_frame(
+                                    crate::nip_fi_session::NipFiWsRoute::Audio,
+                                    crate::handlers::auth::nip42_denial_class(&e),
+                                )
+                            } else {
+                                WsMessage::Text(
+                                    serde_json::json!({"type":"error","message":"auth failed"})
+                                        .to_string()
+                                        .into(),
+                                )
+                            };
+                            crate::connection::send_exit_frames_bounded(&mut ws_send, [frame]).await;
+                            if fi {
+                                cancel.cancel();
+                            }
+                            return;
+                        }
                     }
+                },
+            };
+
+            (
+                auth_ctx.pubkey,
+                auth_tag_json,
+                Some(signed_auth_created_at),
+                None,
+            )
+        }
+        None => {
+            let token = auth_msg.token.take().unwrap_or_default();
+            // Token AUTH is never combined with a NIP-FI assertion (the root
+            // route refuses it too).
+            let verified = if nip_fi_assertion.is_some() {
+                Err("auth-required: unsupported auth".to_owned())
+            } else {
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => {
+                        crate::connection::send_exit_frames_bounded(
+                            &mut ws_send,
+                            terminal_exit_frames(&mut terminal_ctrl_rx, &disconnect_reason),
+                        )
+                        .await;
+                        return;
+                    },
+                    verified = crate::audio::token_auth::verify(&state, &token) => verified,
+                }
+            };
+            match verified {
+                Ok(binding) => (binding.principal.as_public_key(), None, None, Some(binding)),
+                Err(message) => {
+                    warn!(channel_id = %channel_id, "audio token auth failed: {message}");
+                    crate::connection::send_exit_frames_bounded(
+                        &mut ws_send,
+                        [crate::audio::token_auth::error_frame(&message)],
+                    )
+                    .await;
                     return;
                 }
             }
-        },
+        }
     };
 
-    let pubkey = auth_ctx.pubkey;
     let pubkey_hex = pubkey.to_hex();
     let pubkey_bytes = pubkey.to_bytes().to_vec();
     let parent_channel_id = auth_msg.parent_channel_id;
@@ -689,15 +755,36 @@ pub(crate) async fn handle_active_audio_connection(
     #[cfg(test)]
     crate::nip_fi_test_hooks::after_deny_set_check_passed(tenant.community()).await;
 
+    // Token AUTH: the root route's ban gate — the principal, then (bots) its
+    // owner, whose ban cascades to the bot.
+    if let Some(binding) = &token_binding {
+        if let Some((class, message)) =
+            crate::audio::token_auth::ban_refusal(&state, tenant.community(), binding).await
+        {
+            warn!(channel_id = %channel_id, pubkey = %pubkey_hex, reason = message, "audio: token principal refused by ban gate");
+            exit_authorization_refusal(
+                &mut ws_send,
+                &control,
+                &mut terminal_ctrl_rx,
+                false,
+                class,
+                serde_json::json!({"type": "error", "message": message}),
+            )
+            .await;
+            return;
+        }
+    }
+
     // NIP-OA owner of a delegated agent: from relay membership on a closed
-    // relay, or straight from the self-proving auth tag on an open one.
+    // relay, or straight from the self-proving auth tag on an open one. A
+    // token bot's owner is the server-recorded `bots.owner_principal_id`.
     let mut nip_oa_owner = None;
     let relay_refusal = match crate::api::relay_members::check_relay_membership(
         &state,
         tenant.community(),
         pubkey.as_bytes(),
         auth_tag_json.as_deref(),
-        Some(signed_auth_created_at),
+        signed_auth_created_at,
     )
     .await
     {
@@ -706,12 +793,15 @@ pub(crate) async fn handle_active_audio_connection(
             Some(buzz_auth::DenialClass::AuthorizationDenied)
         }
         Ok(decision) => {
-            nip_oa_owner = match decision {
-                crate::api::relay_members::MembershipDecision::ViaOwner(owner) => Some(owner),
-                _ => crate::api::relay_members::extract_nip_oa_owner(
+            nip_oa_owner = match (&token_binding, decision) {
+                (Some(binding), _) => binding.bot_owner.map(|owner| owner.as_public_key()),
+                (None, crate::api::relay_members::MembershipDecision::ViaOwner(owner)) => {
+                    Some(owner)
+                }
+                (None, _) => crate::api::relay_members::extract_nip_oa_owner(
                     pubkey.as_bytes(),
                     auth_tag_json.as_deref(),
-                    Some(signed_auth_created_at),
+                    signed_auth_created_at,
                 ),
             };
             None
@@ -836,7 +926,7 @@ pub(crate) async fn handle_active_audio_connection(
                 tenant.community(),
                 pubkey,
                 auth_tag_json.as_deref(),
-                Some(signed_auth_created_at),
+                signed_auth_created_at,
             )
             .await
         }
@@ -855,6 +945,21 @@ pub(crate) async fn handle_active_audio_connection(
         .await;
         return;
     }
+    // Token AUTH: bind the socket to its token before any huddle lease, so a
+    // revocation or the token's deadline closes it from here on. Dropped with
+    // the handler, which unregisters it.
+    let audio_token_binding = match &token_binding {
+        Some(binding) => Some(
+            crate::audio::token_auth::AudioTokenBinding::bind(
+                &state,
+                binding,
+                cancel.clone(),
+                terminal_ctrl_tx.clone(),
+            )
+            .await,
+        ),
+        None => None,
+    };
     check_cancel!(cancel, terminal_ctrl_rx, disconnect_reason, ws_send);
 
     // Huddle cross-pod routing (mesh) OR single-pod guardrail.
@@ -1966,6 +2071,7 @@ pub(crate) async fn handle_active_audio_connection(
         Arc::clone(&missed_pongs),
         cancel.clone(),
         remote_session.as_mut(),
+        audio_token_binding.as_ref(),
     )
     .await;
 
@@ -2170,6 +2276,7 @@ async fn recv_loop(
     missed_pongs: Arc<AtomicU8>,
     cancel: CancellationToken,
     mut remote_session: Option<&mut crate::audio::join::RemoteHuddleSession>,
+    token_binding: Option<&crate::audio::token_auth::AudioTokenBinding>,
 ) {
     use crate::audio::wire::{FrameHeader, V2_HEADER_LEN};
 
@@ -2246,8 +2353,19 @@ async fn recv_loop(
                             continue;
                         }
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if v.get("type").and_then(|t| t.as_str()) == Some("leave") {
-                                break;
+                            match v.get("type").and_then(|t| t.as_str()) {
+                                Some("leave") => break,
+                                // Same-principal token swap on a token-bound
+                                // socket (key sockets ignore it, as before).
+                                Some("auth") => {
+                                    if let (Some(binding), Some(token)) = (
+                                        token_binding,
+                                        v.get("token").and_then(|t| t.as_str()),
+                                    ) {
+                                        binding.reauth(token.to_owned(), ctrl_tx.clone());
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -4378,6 +4496,100 @@ mod tests {
         .to_string();
         assert_eq!(frames, vec![expected]);
         assert!(cancelled, "FI NIP-42 denial must cancel the connection");
+    }
+
+    /// A token AUTH frame is never combined with a NIP-FI assertion (the root
+    /// route refuses it too): with an assertion present the audio socket gets
+    /// `auth-required: unsupported auth` before any token lookup.
+    ///
+    /// Mutation: drop the `nip_fi_assertion.is_some()` guard → the token is
+    /// verified against the (unreachable) store and the reply differs.
+    #[tokio::test]
+    async fn audio_token_auth_is_refused_under_a_nip_fi_assertion() {
+        use std::sync::Arc;
+        let mut state = audio_test_state().await;
+        let mut auth = crate::identity::AuthTokenConfig::disabled("ws://localhost:3000");
+        auth.enabled = true;
+        Arc::get_mut(&mut state).expect("sole reference").identity =
+            Arc::new(crate::identity::IdentityRuntime::new(auth));
+        let assertion = buzz_auth::VerifiedAssertion::for_test(
+            Some(nostr::Keys::generate().public_key()),
+            vec![chrono::Utc::now() + chrono::Duration::hours(1)],
+        );
+        let tenant = buzz_core::tenant::TenantContext::resolved(
+            buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::nil()),
+            "test.local".to_string(),
+        );
+        let channel_id = uuid::Uuid::new_v4();
+        let control = crate::state::CommunityConnectionControl::new(CancellationToken::new());
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let app = Router::new().route(
+            "/",
+            get(move |ws: WebSocketUpgrade| {
+                let (state, tenant, assertion, control) = (
+                    Arc::clone(&state),
+                    tenant.clone(),
+                    assertion.clone(),
+                    control.clone(),
+                );
+                async move {
+                    ws.on_upgrade(move |socket| async move {
+                        handle_active_audio_connection(
+                            socket,
+                            state,
+                            tenant,
+                            channel_id,
+                            control,
+                            Some(assertion),
+                            chrono::Utc::now(),
+                            None,
+                        )
+                        .await
+                    })
+                }
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let (mut client, _) = connect_async(format!("ws://{addr}/"))
+            .await
+            .expect("connect");
+        let _challenge = tokio::time::timeout(std::time::Duration::from_secs(2), client.next())
+            .await
+            .expect("challenge");
+        let (token, _) = buzz_auth::generate_token(buzz_auth::TokenKind::UserAccess);
+        client
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                serde_json::json!({"type": "auth", "token": token.expose()})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("send token auth");
+        let mut texts = Vec::new();
+        loop {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), client.next())
+                .await
+                .expect("handler must answer within the read budget")
+            {
+                Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t))) => {
+                    texts.push(t.to_string())
+                }
+                Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_)))
+                | Some(Err(_))
+                | None => break,
+                Some(Ok(_)) => {}
+            }
+        }
+        server.abort();
+        assert_eq!(
+            texts,
+            vec![serde_json::json!({
+                "type": "error",
+                "message": "auth-required: unsupported auth"
+            })
+            .to_string()]
+        );
     }
 
     /// Off-mode control: a failed NIP-42 proof keeps the legacy frame bytes.

@@ -89,6 +89,9 @@ pub(super) async fn create(
     {
         Ok(bot) => {
             tracing::info!(owner = %binding.principal, bot = %bot, "auth.bot_created");
+            // A new bot is in no community yet; this reaches any the owner
+            // pre-provisioned, and first AUTH reconciles the rest.
+            crate::identity::profile::spawn_publish_everywhere(&state, bot);
             (
                 StatusCode::CREATED,
                 axum::Json(json!({ "bot_id": bot.to_hex() })),
@@ -146,7 +149,10 @@ pub(super) async fn update_profile(
         Err(response) => return response,
     };
     match state.db.update_principal_profile(&bot.id, &update).await {
-        Ok(Some(record)) => profile_response(&record),
+        Ok(Some(record)) => {
+            crate::identity::profile::spawn_publish_everywhere(&state, record.id);
+            profile_response(&record)
+        }
         Ok(None) => not_found("bot not found"),
         Err(error) => internal("update_bot_profile", &error),
     }

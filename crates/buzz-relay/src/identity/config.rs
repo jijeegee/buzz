@@ -33,6 +33,30 @@ impl std::fmt::Debug for GoogleOidcConfig {
     }
 }
 
+/// `INVITE_SIGNING_SECRET`: 32 random bytes keying invite codes and
+/// join-policy receipts once relay keys go away (plan §4.4). Never logged.
+#[derive(Clone)]
+pub struct InviteSigningSecret([u8; 32]);
+
+impl InviteSigningSecret {
+    /// Parse 64 hex characters.
+    pub fn from_hex(raw: &str) -> Option<Self> {
+        let bytes = hex::decode(raw.trim()).ok()?;
+        <[u8; 32]>::try_from(bytes.as_slice()).ok().map(Self)
+    }
+
+    /// The raw secret bytes.
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for InviteSigningSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("InviteSigningSecret([REDACTED])")
+    }
+}
+
 /// Token-auth configuration. Everything is inert while `enabled` is false.
 #[derive(Debug, Clone)]
 pub struct AuthTokenConfig {
@@ -65,6 +89,9 @@ pub struct AuthTokenConfig {
     /// `AUTH_TRUSTED_PROXY_CIDRS` — reverse proxies whose `X-Forwarded-For` /
     /// `Forwarded` headers name the client for `/auth/*` per-IP limits.
     pub trusted_proxies: super::client_ip::TrustedProxies,
+    /// `INVITE_SIGNING_SECRET` — required when `enabled` (startup fails
+    /// without it); keys invite codes instead of the relay signing key.
+    pub invite_signing_secret: Option<InviteSigningSecret>,
 }
 
 impl AuthTokenConfig {
@@ -82,6 +109,7 @@ impl AuthTokenConfig {
             mobile_redirect_schemes: vec![DEFAULT_MOBILE_REDIRECT_SCHEME.to_owned()],
             operator_bootstrap_email: None,
             trusted_proxies: super::client_ip::TrustedProxies::default(),
+            invite_signing_secret: None,
         }
     }
 
@@ -142,6 +170,20 @@ impl AuthTokenConfig {
         if let Some(raw) = non_empty(&lookup, "AUTH_TRUSTED_PROXY_CIDRS") {
             config.trusted_proxies = super::client_ip::TrustedProxies::parse(&raw)
                 .map_err(|e| ConfigError::InvalidValue(format!("AUTH_TRUSTED_PROXY_CIDRS: {e}")))?;
+        }
+        if let Some(raw) = non_empty(&lookup, "INVITE_SIGNING_SECRET") {
+            config.invite_signing_secret =
+                Some(InviteSigningSecret::from_hex(&raw).ok_or_else(|| {
+                    ConfigError::InvalidValue(
+                        "INVITE_SIGNING_SECRET must be 64 hex characters (32 bytes)".into(),
+                    )
+                })?);
+        }
+        if config.enabled && config.invite_signing_secret.is_none() {
+            return Err(ConfigError::InvalidValue(
+                "AUTH_TOKEN_ENABLED requires INVITE_SIGNING_SECRET (32 bytes hex, e.g. `openssl rand -hex 32`)"
+                    .into(),
+            ));
         }
         if config.enabled && config.google.is_none() && !config.fake_oidc {
             tracing::warn!(
@@ -231,6 +273,7 @@ mod tests {
             "ws://localhost:3000/",
             lookup(&[
                 ("AUTH_TOKEN_ENABLED", "true"),
+                ("INVITE_SIGNING_SECRET", SECRET_HEX),
                 ("AUTH_ACCESS_TTL_SECS", "180"),
                 ("AUTH_OIDC_GOOGLE_CLIENT_ID", "id"),
                 ("AUTH_OIDC_GOOGLE_CLIENT_SECRET", "shh"),
@@ -242,6 +285,10 @@ mod tests {
         assert_eq!(config.access_ttl, Duration::from_secs(180));
         assert_eq!(config.public_url, "http://localhost:3000");
         assert!(!format!("{config:?}").contains("shh"), "secret is redacted");
+        assert!(
+            !format!("{config:?}").contains(SECRET_HEX),
+            "invite secret is redacted"
+        );
         assert_eq!(
             config.operator_bootstrap_email.as_deref(),
             Some("Owner@Example.com")
@@ -268,6 +315,36 @@ mod tests {
             lookup(&[("AUTH_TRUSTED_PROXY_CIDRS", "10.0.0.0/99")])
         )
         .is_err());
+    }
+
+    const SECRET_HEX: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn enabled_requires_a_valid_invite_signing_secret() {
+        assert!(
+            AuthTokenConfig::from_lookup("ws://h", lookup(&[("AUTH_TOKEN_ENABLED", "true")]))
+                .is_err(),
+            "token mode without INVITE_SIGNING_SECRET must not start"
+        );
+        assert!(AuthTokenConfig::from_lookup(
+            "ws://h",
+            lookup(&[
+                ("AUTH_TOKEN_ENABLED", "true"),
+                ("INVITE_SIGNING_SECRET", "abcd")
+            ])
+        )
+        .is_err());
+        let config = AuthTokenConfig::from_lookup(
+            "ws://h",
+            lookup(&[
+                ("AUTH_TOKEN_ENABLED", "true"),
+                ("INVITE_SIGNING_SECRET", SECRET_HEX),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(config.invite_signing_secret.unwrap().as_bytes()[0], 0x01);
+        // Flag off: optional.
+        assert!(AuthTokenConfig::from_lookup("ws://h", lookup(&[])).is_ok());
     }
 
     #[test]

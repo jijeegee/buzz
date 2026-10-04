@@ -977,7 +977,7 @@ async fn list_operators(
     let mut entries: Vec<OperatorEntry> = vec![];
 
     // 1. Config-backed operators (RELAY_OPERATOR_PUBKEYS).
-    for hex_key in &state.config.relay_operator_pubkeys {
+    for hex_key in state.config.admin_config_operator_pubkeys() {
         entries.push(OperatorEntry {
             pubkey: hex_key.clone(),
             effective_role: "operator".to_string(),
@@ -986,14 +986,12 @@ async fn list_operators(
     }
 
     // 2. Owner fallback B: implicit operator when RELAY_OPERATOR_PUBKEYS is empty.
-    if state.config.relay_operator_pubkeys.is_empty() {
-        if let Some(owner_hex) = &state.config.relay_owner_pubkey {
-            entries.push(OperatorEntry {
-                pubkey: owner_hex.clone(),
-                effective_role: "operator".to_string(),
-                sources: vec!["owner_fallback".to_string()],
-            });
-        }
+    if let Some(owner_hex) = state.config.admin_owner_fallback_pubkey() {
+        entries.push(OperatorEntry {
+            pubkey: owner_hex.to_owned(),
+            effective_role: "operator".to_string(),
+            sources: vec!["owner_fallback".to_string()],
+        });
     }
 
     // 3. DB rows. Config and owner fallback both outrank DB: if a DB row's
@@ -1446,28 +1444,19 @@ async fn untimeout_member(
 /// last-operator invariant is computed against: while it holds, the DB roster
 /// can be emptied freely because config still guarantees an operator.
 pub(crate) fn config_operator_exists(config: &crate::config::Config) -> bool {
-    !config.relay_operator_pubkeys.is_empty() || config.relay_owner_pubkey.is_some()
+    !config.admin_config_operator_pubkeys().is_empty()
+        || config.admin_owner_fallback_pubkey().is_some()
 }
 
 /// Returns true if the hex pubkey is covered by a config-backed grant
 /// (RELAY_OPERATOR_PUBKEYS or owner-fallback B).
 fn is_config_backed_pubkey(config: &crate::config::Config, pubkey_hex: &str) -> bool {
-    if config
-        .relay_operator_pubkeys
+    config
+        .admin_config_operator_pubkeys()
         .iter()
         .any(|k| k == pubkey_hex)
-    {
-        return true;
-    }
-    // Owner fallback B: only when RELAY_OPERATOR_PUBKEYS is empty.
-    if config.relay_operator_pubkeys.is_empty() {
-        if let Some(owner) = &config.relay_owner_pubkey {
-            if owner == pubkey_hex {
-                return true;
-            }
-        }
-    }
-    false
+        // Owner fallback B: only when RELAY_OPERATOR_PUBKEYS is empty.
+        || config.admin_owner_fallback_pubkey() == Some(pubkey_hex)
 }
 
 /// Decode a 64-character hex string into 32 bytes, returning 404 on failure.

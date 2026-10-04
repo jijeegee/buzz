@@ -28,6 +28,8 @@ use buzz_media::{
 
 use crate::state::AppState;
 
+mod token_auth;
+
 /// Lightweight pre-auth upload context: tenant + route mode only.
 ///
 /// Used as the first-phase extractor for `upload_blob`. Blossom auth
@@ -329,72 +331,33 @@ pub(crate) async fn upload_blob(
     headers: HeaderMap,
     body: axum::body::Body,
 ) -> axum::response::Response {
-    use crate::nip_fi_http::{admit_nip_fi_http_on_state, Nip98Proof};
     use axum::response::IntoResponse as _;
 
-    // NIP-FI admission with Blossom extraction as the NIP-98 closure.
-    // In Enforce mode: extraction failure → NIP-FI denial bytes (MissingEvidence/
-    // EvidenceRejected).  In Off mode: MediaError propagates unchanged [FI-INV-15].
-    //
-    // The closure must verify the auth event against the tenant host BEFORE
-    // returning the proven pubkey to the admission gate — same ordering invariant
-    // as the read path. [FI-TRACE-AUTHORITY-UNIFORM]
     let strictness = blossom_strictness_from_state(&state);
-    let tenant_host = ctx.tenant.host().to_owned();
-    let headers_clone = headers.clone();
-    let admission = match admit_nip_fi_http_on_state(&state, &headers, move || {
-        let auth_event = extract_blossom_auth(&headers_clone).map_err(|e| e.into_response())?;
-        // Pre-body check: freshness, cardinality, and server tag. The x-tag
-        // hash binding is checked after body completion.
-        buzz_media::auth::verify_blossom_auth_event(&auth_event, Some(&tenant_host), strictness)
-            .map_err(|e| e.into_response())?;
-        let pubkey = auth_event.pubkey;
-        Ok(Nip98Proof::new(pubkey, auth_event))
-    }) {
-        Ok(a) => a,
-        Err(resp) => return resp,
-    };
-    let auth_event = admission.into_extra();
 
-    // Post-admission: validate X-SHA-256 header and hash binding.
-    // These are Blossom-protocol checks, not NIP-FI — Off mode still enforces
-    // them because they protect body integrity, not the assertion boundary.
-    let claimed_hash = match headers.get("x-sha-256").and_then(|v| v.to_str().ok()) {
-        Some(h) => h.to_owned(),
-        None => {
-            return media_denial(MediaError::MissingTag("x-sha-256"), strictness).into_response()
+    // Centralized-identity Bearer door (token auth on, NIP-FI off). The body
+    // hash binding still comes from `X-SHA-256`, re-checked after the body.
+    let token_principal =
+        match token_auth::media_token_principal(&state, &ctx.tenant, &headers, strictness).await {
+            Ok(principal) => principal,
+            Err(resp) => return resp,
+        };
+    let auth_event = match token_principal {
+        Some(principal) => {
+            let claimed_hash = match claimed_upload_hash(&headers) {
+                Ok(hash) => hash,
+                Err(e) => return media_denial(e, strictness).into_response(),
+            };
+            match token_auth::token_upload_proof(&principal, &claimed_hash) {
+                Ok(proof) => proof,
+                Err(e) => return e.into_response(),
+            }
         }
+        None => match admit_blossom_upload(&state, &ctx, &headers, strictness).await {
+            Ok(auth_event) => auth_event,
+            Err(resp) => return resp,
+        },
     };
-    if claimed_hash.len() != 64
-        || !claimed_hash
-            .chars()
-            .all(|c| matches!(c, '0'..='9' | 'a'..='f'))
-    {
-        return media_denial(MediaError::HashMismatch, strictness).into_response();
-    }
-    let has_matching_x = auth_event
-        .tags
-        .iter()
-        .any(|tag| tag.kind().to_string() == "x" && (tag.content() == Some(&claimed_hash)));
-    if !has_matching_x {
-        return media_denial(MediaError::HashMismatch, strictness).into_response();
-    }
-
-    // Post-admission: relay membership gate (NIP-43).
-    let auth_tag = crate::api::relay_members::extract_auth_tag_header(&headers);
-    if let Err(e) = crate::api::relay_members::enforce_relay_membership(
-        &state,
-        ctx.tenant.community(),
-        auth_event.pubkey.as_bytes(),
-        auth_tag,
-        Some(auth_event.created_at.as_secs()),
-    )
-    .await
-    .map(|_| ())
-    .map_err(|e| membership_denial(e, strictness))
-    {
-        return e.into_response();
-    }
 
     // Post-admission: rate limit and concurrency permit.
     if upload_rate_limited(&state, ctx.tenant.community(), &auth_event.pubkey) {
@@ -423,6 +386,80 @@ pub(crate) async fn upload_blob(
         _upload_permit: upload_permit,
     };
     upload_blob_inner(state, auth, headers, body).await
+}
+
+/// The client's `X-SHA-256` upload hash: required, 64 lowercase hex chars.
+fn claimed_upload_hash(headers: &HeaderMap) -> Result<String, MediaError> {
+    let claimed_hash = headers
+        .get("x-sha-256")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(MediaError::MissingTag("x-sha-256"))?;
+    if claimed_hash.len() != 64
+        || !claimed_hash
+            .chars()
+            .all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+    {
+        return Err(MediaError::HashMismatch);
+    }
+    Ok(claimed_hash.to_owned())
+}
+
+/// Kind-24242 Blossom upload admission: NIP-FI admission with Blossom
+/// extraction as the NIP-98 closure, the `X-SHA-256` / `x` tag binding, and
+/// the relay membership gate. Returns the verified auth event.
+#[allow(clippy::result_large_err)] // Response is the natural error type for axum closures
+async fn admit_blossom_upload(
+    state: &Arc<AppState>,
+    ctx: &UploadContext,
+    headers: &HeaderMap,
+    strictness: BlossomStrictness,
+) -> Result<nostr::Event, Response> {
+    use crate::nip_fi_http::{admit_nip_fi_http_on_state, Nip98Proof};
+
+    // In Enforce mode: extraction failure → NIP-FI denial bytes (MissingEvidence/
+    // EvidenceRejected).  In Off mode: MediaError propagates unchanged [FI-INV-15].
+    //
+    // The closure must verify the auth event against the tenant host BEFORE
+    // returning the proven pubkey to the admission gate — same ordering invariant
+    // as the read path. [FI-TRACE-AUTHORITY-UNIFORM]
+    let tenant_host = ctx.tenant.host().to_owned();
+    let headers_clone = headers.clone();
+    let admission = admit_nip_fi_http_on_state(state, headers, move || {
+        let auth_event = extract_blossom_auth(&headers_clone).map_err(|e| e.into_response())?;
+        // Pre-body check: freshness, cardinality, and server tag. The x-tag
+        // hash binding is checked after body completion.
+        buzz_media::auth::verify_blossom_auth_event(&auth_event, Some(&tenant_host), strictness)
+            .map_err(|e| e.into_response())?;
+        let pubkey = auth_event.pubkey;
+        Ok(Nip98Proof::new(pubkey, auth_event))
+    })?;
+    let auth_event = admission.into_extra();
+
+    // Post-admission: validate X-SHA-256 header and hash binding.
+    // These are Blossom-protocol checks, not NIP-FI — Off mode still enforces
+    // them because they protect body integrity, not the assertion boundary.
+    let claimed_hash =
+        claimed_upload_hash(headers).map_err(|e| media_denial(e, strictness).into_response())?;
+    let has_matching_x = auth_event
+        .tags
+        .iter()
+        .any(|tag| tag.kind().to_string() == "x" && (tag.content() == Some(&claimed_hash)));
+    if !has_matching_x {
+        return Err(media_denial(MediaError::HashMismatch, strictness).into_response());
+    }
+
+    // Post-admission: relay membership gate (NIP-43).
+    let auth_tag = crate::api::relay_members::extract_auth_tag_header(headers);
+    crate::api::relay_members::enforce_relay_membership(
+        state,
+        ctx.tenant.community(),
+        auth_event.pubkey.as_bytes(),
+        auth_tag,
+        Some(auth_event.created_at.as_secs()),
+    )
+    .await
+    .map_err(|e| membership_denial(e, strictness).into_response())?;
+    Ok(auth_event)
 }
 
 async fn upload_blob_inner(
@@ -684,6 +721,35 @@ fn extract_blossom_read_proof(
     Ok(crate::nip_fi_http::Nip98Proof::new(pubkey, auth_event))
 }
 
+/// Kind-24242 Blossom read authorization: NIP-FI admission with Blossom
+/// extraction as the NIP-98 closure, then the membership gate. `Ok(Some)` is
+/// the admission's own denial response, to be returned as-is.
+#[allow(clippy::result_large_err)] // Response is the natural error type for axum closures
+async fn authorize_blossom_read(
+    state: &AppState,
+    tenant: &TenantContext,
+    headers: &HeaderMap,
+    sha256: &str,
+    strictness: BlossomStrictness,
+) -> Result<Option<Response>, MediaDenial> {
+    // In Enforce mode: extraction failure → NIP-FI denial bytes (MissingEvidence/
+    // EvidenceRejected).  In Off mode: MediaError propagates unchanged [FI-INV-15].
+    use crate::nip_fi_http::admit_nip_fi_http_on_state;
+    let tenant_host = tenant.host().to_owned();
+    let headers_clone = headers.clone();
+    let sha256 = sha256.to_owned();
+    let admission = match admit_nip_fi_http_on_state(state, headers, move || {
+        extract_blossom_read_proof(&headers_clone, &sha256, &tenant_host, strictness)
+            .map_err(|e| e.into_response())
+    }) {
+        Ok(a) => a,
+        Err(resp) => return Ok(Some(resp)),
+    };
+    let auth_event = admission.into_extra();
+    enforce_blossom_read_membership(state, tenant, &auth_event, headers, strictness).await?;
+    Ok(None)
+}
+
 /// Post-admission membership gate for media reads.
 ///
 /// Called after `admit_nip_fi_http_on_state` succeeds so that membership
@@ -810,22 +876,18 @@ pub(crate) async fn get_blob(
         .unwrap_or(&sha256_ext)
         .to_owned();
     let strictness = blossom_strictness_from_state(&state);
-    let tenant_host = tenant.host().to_owned();
-    let headers_clone = req_headers.clone();
-    // NIP-FI admission with Blossom extraction as the NIP-98 closure.
-    // In Enforce mode: extraction failure → NIP-FI denial bytes (MissingEvidence/
-    // EvidenceRejected).  In Off mode: MediaError propagates unchanged [FI-INV-15].
-    use crate::nip_fi_http::admit_nip_fi_http_on_state;
-    let admission = match admit_nip_fi_http_on_state(&state, &req_headers, move || {
-        extract_blossom_read_proof(&headers_clone, &sha256, &tenant_host, strictness)
-            .map_err(|e| e.into_response())
-    }) {
-        Ok(a) => a,
-        Err(resp) => return Ok(resp),
-    };
-    let auth_event = admission.into_extra();
-    // Post-admission: membership gate.
-    enforce_blossom_read_membership(&state, &tenant, &auth_event, &req_headers, strictness).await?;
+    let token_principal =
+        match token_auth::media_token_principal(&state, &tenant, &req_headers, strictness).await {
+            Ok(principal) => principal,
+            Err(resp) => return Ok(resp),
+        };
+    if token_principal.is_none() {
+        if let Some(resp) =
+            authorize_blossom_read(&state, &tenant, &req_headers, &sha256, strictness).await?
+        {
+            return Ok(resp);
+        }
+    }
     serve_blob_for_tenant(&state, &tenant, &sha256_ext, &req_headers)
         .await
         .map_err(MediaDenial::from)
@@ -1103,18 +1165,18 @@ pub(crate) async fn head_blob(
         .unwrap_or(&sha256_ext)
         .to_owned();
     let strictness = blossom_strictness_from_state(&state);
-    let tenant_host = tenant.host().to_owned();
-    let headers_clone = headers.clone();
-    use crate::nip_fi_http::admit_nip_fi_http_on_state;
-    let admission = match admit_nip_fi_http_on_state(&state, &headers, move || {
-        extract_blossom_read_proof(&headers_clone, &sha256, &tenant_host, strictness)
-            .map_err(|e| e.into_response())
-    }) {
-        Ok(a) => a,
-        Err(resp) => return Ok(resp),
-    };
-    let auth_event = admission.into_extra();
-    enforce_blossom_read_membership(&state, &tenant, &auth_event, &headers, strictness).await?;
+    let token_principal =
+        match token_auth::media_token_principal(&state, &tenant, &headers, strictness).await {
+            Ok(principal) => principal,
+            Err(resp) => return Ok(resp),
+        };
+    if token_principal.is_none() {
+        if let Some(resp) =
+            authorize_blossom_read(&state, &tenant, &headers, &sha256, strictness).await?
+        {
+            return Ok(resp);
+        }
+    }
     let cache_control = blob_cache_control();
 
     // Sidecar gate FIRST — reject before any blob I/O.

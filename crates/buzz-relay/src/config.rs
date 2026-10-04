@@ -1402,6 +1402,42 @@ impl Config {
         })
     }
 
+    /// Config-backed **admin operator** keys in effect (`RELAY_OPERATOR_PUBKEYS`).
+    ///
+    /// Centralized identity (plan §3.3, Phase 2): with token auth on, admin
+    /// operators come from the `relay_operators` roster alone, so this is
+    /// empty. The config fields themselves are untouched: `RELAY_OWNER_PUBKEY`
+    /// still bootstraps the NIP-43 community owner and satisfies
+    /// `BUZZ_REQUIRE_RELAY_MEMBERSHIP`, and `RELAY_OPERATOR_PUBKEYS` still
+    /// authorizes the key-signed `/operator/*` provisioning API until Phase 3.
+    pub fn admin_config_operator_pubkeys(&self) -> &[String] {
+        if self.auth_token.enabled {
+            &[]
+        } else {
+            &self.relay_operator_pubkeys
+        }
+    }
+
+    /// The owner-fallback admin operator (`RELAY_OWNER_PUBKEY` while
+    /// `RELAY_OPERATOR_PUBKEYS` is empty); `None` with token auth on.
+    pub fn admin_owner_fallback_pubkey(&self) -> Option<&str> {
+        if self.auth_token.enabled || !self.relay_operator_pubkeys.is_empty() {
+            return None;
+        }
+        self.relay_owner_pubkey.as_deref()
+    }
+
+    /// `BUZZ_REQUIRE_RELAY_MEMBERSHIP` needs a relay owner to administer the
+    /// relay; startup refuses to run without one.
+    pub fn check_relay_membership_owner(&self) -> Result<(), ConfigError> {
+        if self.require_relay_membership && self.relay_owner_pubkey.is_none() {
+            return Err(ConfigError::InvalidValue(
+                "RELAY_OWNER_PUBKEY required when BUZZ_REQUIRE_RELAY_MEMBERSHIP=true".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Build a baseline `Config` suitable for test fixtures that need a
     /// structurally valid config without caring about specific field values.
     ///
@@ -1431,6 +1467,56 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B1 regression: token mode drops only the *admin* precedence of the
+    /// config operator keys. Loaded through the production `from_env` with
+    /// the flag on, membership required and an owner set, the owner survives
+    /// (startup's membership check passes, NIP-43 owner bootstrap still has
+    /// it, `/operator/*` still sees the operator keys) while admin resolution
+    /// sees no config operators.
+    #[test]
+    fn token_mode_keeps_owner_and_operator_config_but_not_admin_precedence() {
+        let owner = "bb".repeat(32);
+        let operator = "aa".repeat(32);
+        let secret = "42".repeat(32);
+        let load = |enabled: bool| {
+            crate::nip_fi_config::FOR_TEST_LOCK_WAITERS
+                .lock()
+                .unwrap()
+                .push(std::thread::current().id());
+            let _guard = crate::nip_fi_config::NIP_FI_ENV_LOCK.lock().unwrap();
+            let vars: [(&str, &str); 6] = [
+                ("AUTH_TOKEN_ENABLED", if enabled { "true" } else { "false" }),
+                ("INVITE_SIGNING_SECRET", secret.as_str()),
+                ("BUZZ_REQUIRE_RELAY_MEMBERSHIP", "true"),
+                ("RELAY_OWNER_PUBKEY", owner.as_str()),
+                ("RELAY_OPERATOR_PUBKEYS", operator.as_str()),
+                ("RELAY_OPERATOR_API_ORIGIN", "http://127.0.0.1:3000"),
+            ];
+            for (key, value) in vars {
+                std::env::set_var(key, value);
+            }
+            let config = Config::from_env();
+            for (key, _) in vars {
+                std::env::remove_var(key);
+            }
+            config.expect("config loads")
+        };
+        let on = load(true);
+        assert!(
+            on.check_relay_membership_owner().is_ok(),
+            "owner survives token mode"
+        );
+        assert_eq!(on.relay_owner_pubkey.as_deref(), Some(owner.as_str()));
+        assert_eq!(on.relay_operator_pubkeys, vec![operator.clone()]);
+        assert!(on.admin_config_operator_pubkeys().is_empty());
+        assert_eq!(on.admin_owner_fallback_pubkey(), None);
+        assert!(!crate::api::admin::config_operator_exists(&on));
+
+        let off = load(false);
+        assert_eq!(off.admin_config_operator_pubkeys(), [operator]);
+        assert!(crate::api::admin::config_operator_exists(&off));
+    }
 
     #[test]
     fn klipy_config_debug_redacts_the_api_key() {

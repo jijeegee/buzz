@@ -717,8 +717,8 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
   - `buzz-media/auth.rs` Blossom → Bearer.
   - `buzz-workflow/executor.rs:994-998` → 토큰/내부 경로.
   - `web/` `nostr-signer.ts`, `nip98.ts`, `git-client.ts:57`, `invite-api.ts`.
-  - 나머지 `relay_keypair` 서명 사용처 전부(§5.4 체크리스트의 24개 파일) → `relay_principal` 스탬프.
-- 이 시점에 `relay_keypair`의 남은 용도는 NIP-42 챌린지 응답 검증(Phase 3 삭제 대상)만이다.
+  - ~~나머지 `relay_keypair` 서명 사용처 전부 → `relay_principal` 스탬프~~ **(v10에서 취소, §5.3.1)**: relay principal = relay 서명 키이므로 relay 저작 이벤트는 계속 서명된다.
+- Phase 2 이후 `relay_keypair`는 relay 자신의 서버 신원으로 남는다: relay 저작 이벤트 서명(principal과 같은 저자), 외부 S2S 인증(push 게이트웨이 NIP-98, operator listener, push lease, artifact), 그리고 NIP-42 챌린지 검증(이것만 Phase 3 삭제).
 
 테스트
 - CLI `auth login` loopback 왕복(가짜 provider), `session.json` 소스 순위, 401 terminal → exit 3.
@@ -730,10 +730,88 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 
 수동 검증: `buzz auth login`(브라우저 열림) → `buzz --format compact channels list` → 에이전트 내부 `buzz` 호출(브로커). iOS 시뮬레이터 Google 로그인 → 메시지 → 재시작 후 유지. 운영자 콘솔 Bearer 접근. git push 토큰.
 
+### 5.3.1 Phase 2 상태 / handoff (2026-10-04)
+
+Phase 2(모바일 제외) 구현 완료, **미커밋**(909bfce84 위 작업 트리). 리뷰 전. 모든 서버 변경은 `AUTH_TOKEN_ENABLED`에 묶여 있고 플래그 off 동작은 그대로다. 클라이언트(Desktop/CLI/web)는 Phase 1처럼 relay NIP-11 `buzz_token_auth`가 있고 세션/토큰이 있을 때만 토큰 경로를 탄다.
+
+**파일 (표면별, N = 신규, M = 수정)**
+- 서버 프로필(kind 0): N `crates/buzz-relay/src/identity/profile.rs`(principal/봇 kind 0 서버 스탬프 발행, 내용 비교로 멱등, 같은 초 tie-break 회피); M `identity/ws.rs`(토큰 AUTH 성공 후 그 커뮤니티 reconcile 스폰), `api/auth/session.rs`(`PATCH /auth/profile` 후 발행), `api/auth/bots.rs`(봇 생성·`PATCH /auth/bots/{id}/profile` 후 발행); M `buzz-db/src/store/identity/{principal,mod}.rs`(`principal_profile_communities`, `latest_principal_profile_event`, 상한 `MAX_PROFILE_COMMUNITIES=1000`).
+- 서버 relay 아이덴티티: M `buzz-db` `ensure_relay_principal(key)`(relay 서명 키를 relay principal로, 다른 id면 재키잉 + `relay_operators.added_by` 추종, advisory lock); M `identity/mod.rs` `init_relay_principal`(main.rs·live 테스트 공용 기동 경로), `main.rs`.
+- 운영자: M `buzz-relay/src/config.rs` `with_token_mode_operator_policy`(플래그 on이면 `RELAY_OPERATOR_PUBKEYS`/`RELAY_OWNER_PUBKEY` 무시 + 경고, 로스터만).
+- 초대: M `identity/config.rs`(`INVITE_SIGNING_SECRET`, 플래그 on에서 필수, Debug 마스킹), `invite_token.rs`(`derive_invite_key_from_secret`, 별도 라벨), `api/invites.rs`(`invite_key` 선택, mint·claim·accept-policy Bearer 분기 — user 세션만, 봇 403).
+- web 지원: M `router.rs`(플래그 on에서 `/auth/cb`를 web SPA로 서빙).
+- huddle 오디오: N `audio/token_auth.rs`(admit된 소켓의 같은 principal 토큰 교체 `auth_ok`/`auth_error`); M `audio/handler.rs`(`{"type":"auth","token"}` 형식, 공용 admission, 토큰 바인딩·deadline·revoke 레지스트리), `audio/mod.rs`, `identity/ws.rs`(`TokenSession` close 프레임 경로별); Desktop M `huddle/relay_api.rs`(토큰 모드면 세션 access로 AUTH, 30초마다 회전 감지 후 재전송), `huddle/pipeline.rs` + N `pipeline_stt_poster_tests.rs`(STT 전사 게시를 principal+Bearer로).
+- media: N `api/media/token_auth.rs`(Bearer 게이트 = bridge와 동일 조건, 내부 업로드 증명 kind 24242 sentinel), M `api/media.rs`(업로드·GET·HEAD Bearer 우선, 기존 Blossom 경로 그대로); M `buzz-cli/src/client.rs`(+tests, `upload`/`media` Bearer; `MEDIA_REQUIRES_KEY` 삭제); Desktop M `commands/media.rs`(업로드·미디어 프록시·다운로드·persona 카드가 커뮤니티 자격증명으로 Bearer/Blossom 선택). `buzz-media` 크레이트는 무변경.
+- workflow: M `buzz-workflow/src/executor.rs` `relay_auth_header`(`BUZZ_BOT_TOKEN` > `BUZZ_API_TOKEN` Bearer > dev `X-Pubkey`).
+- buzz-cli `auth`: N `src/auth_session.rs`(origin별 `session.json`, OS keyring refresh, 회전), N `src/auth_loopback.rs`(PKCE, state, loopback `/cb`), N `commands/auth.rs` + `auth_tests.rs`; M `lib.rs`(auth 그룹, `build_client_with_session`), `commands/mod.rs`, `Cargo.toml`(`keyring` 4, `webbrowser` 1, `zeroize` — 모두 lock에 이미 존재), `TESTING.md` §5b.
+- web: N `web/src/shared/auth/{pkce,web-session,token-mode,auth-mode,session}.ts` + 테스트 3, N `shared/auth/ui/{AccountControl,AuthCallbackPage}.tsx`, N `app/routes/auth.cb.tsx`; M `routes.ts`, `routeTree.gen.ts`, `routes/root.tsx`, `features/invite/{invite-api.ts,ui/InvitePage.tsx}`, `features/repos/git-client.ts`, `shared/lib/nostr-client.ts`, `package.json`(`test` 스크립트).
+- 테스트 신규: `api/auth/live_tests/{profile,invites,audio}.rs`, `router_tests.rs`(`/auth/cb`), `invites.rs` `invite_key_tests`, `config.rs` 운영자 정책, `identity/config.rs` 시크릿 필수.
+- `.env.example`: `INVITE_SIGNING_SECRET`(플래그 on 필수), 토큰 모드 운영자 정책 설명.
+
+**테스트 실행과 결과** (§5.1.1 환경 그대로)
+```
+cargo fmt --all -- --check                                   # ok
+cargo clippy --workspace --all-targets -- -D warnings        # ok
+cargo test -p buzz-relay --lib api::auth::live_tests -- --ignored --test-threads=1   # 20/20 (신규 profile, invites, audio 5, media 포함)
+cargo test -p buzz-db identity -- --include-ignored --test-threads=1                # 10/10 (relay principal 재키잉 포함)
+cargo test --no-fail-fast -p buzz-core -p buzz-auth -p buzz-pubsub -p buzz-db -p buzz-relay \
+  -p buzz-sdk -p buzz-token-broker -p git-credential-buzz -p buzz-ws-client -p buzz-cli -p sprig -p buzz-workflow -p buzz-media
+                                                             # 3350 통과 / 6 실패 = §5.1.1 기존 6건과 동일
+cargo test --manifest-path desktop/src-tauri/Cargo.toml      # 3429 통과 / 0 실패
+web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vite build ok, node --test 18/18, file-size·pubkey-truncation ok
+```
+- 뮤테이션 확인(가드 제거 → 테스트 실패): PATCH 후 발행, AUTH 후 reconcile, 초대 user-only 가드, 오디오(레지스트리 insert, 플래그, rebind, deadline watch, desktop 키 폴백), media(Bearer 게이트, 멤버십), CLI(세션 우선순위, 회전 저장, 로그아웃 실패 시 유지), web(single-flight, 세대 펜스, 재시도 상한, state 검사, 세션 요구, 로그아웃 유지).
+- 기존 실패 추가 관찰: `audio::...cw10_full_handler_committed_join_produces_exactly_one_leave_event`(DB 필요 테스트)는 HEAD `handler.rs`에서도 같은 방식으로 실패.
+- Playwright(web)는 pnpm 부재로 미실행. S3/MinIO가 없어 media 실제 업로드 왕복은 미실행(인증 통과 후 저장 실패까지 확인).
+
+**결정 (계획이 열어둔 부분)**
+- **relay principal = relay 서명 키의 공개키.** relay pubkey는 DB 쿼리(39000 등 relay 저작 이벤트), NIP-11 `self`, push lease, identity archive에 쓰인다. 랜덤 id로 바꾸면 기존 relay 이벤트가 전부 다른 저자가 된다. 같은 id면 서명과 스탬프가 같은 저자를 만든다. Phase 0/1의 랜덤 relay row는 기동 시 재키잉된다.
+- **계획 편차 — `relay_keypair` 일괄 전환(B4 마지막 항목)을 하지 않음.** relay 키는 클라이언트 신원이 아니라 서버 자신의 신원이며 외부 S2S 인증(push 게이트웨이 NIP-98, operator listener, push lease, artifact)에 계속 필요하다. relay principal이 그 키와 같으므로 relay 저작 이벤트는 계속 서명된다(키 모드 클라이언트도 검증 통과). 따라서 **Phase 3은 `RELAY_PRIVATE_KEY`/`relay_keypair`를 삭제하지 않는다**(§5.4 체크리스트의 해당 행은 무효). Phase 3이 지우는 것은 클라이언트 키 경로(NIP-42/98/OA/FI)다.
+- **kind 0**: 서버 스탬프(pubkey = principal, sentinel sig), principal의 `users` row가 있는 활성 커뮤니티마다 `replace_addressable_event` → 기존 kind 0 side effect(users projection) → `dispatch_persistent_event`. 내용이 같으면 발행하지 않음. 트리거는 프로필 쓰기(인라인)와 토큰 WS AUTH 성공(스폰, AUTH 지연 없음). 실패는 다음 AUTH의 reconcile이 수렴시킨다(principals row가 원본). 봇은 `"bot": true`. 계정 생성 시점에는 users row가 없으므로 첫 AUTH에서 발행된다.
+- 운영자 config 우선순위 제거는 플래그 on에서만(config 로드 단일 지점). 플래그 off는 그대로.
+- `INVITE_SIGNING_SECRET`은 플래그 on에서만 필수(없으면 기동 실패). 키는 `sha256(secret || "buzz-invite-secret-v1")` — 시크릿 키와 relay 키 파생이 서로의 코드를 검증하지 않는다. v2(DB) 초대 코드는 키와 무관해서 계속 유효; v1 코드와 정책 receipt만 무효.
+- 초대 mint/claim/accept-policy의 Bearer는 **user 세션만**(Telegram: 봇은 초대 링크로 들어가지 않고 owner가 추가). mint는 기존 owner/admin 역할 검사 그대로.
+- 오디오: 토큰 소켓은 루트 WS와 같은 바인딩 레지스트리·deadline 감시·revoke를 공유, 같은 principal 토큰 교체 지원(1h 만료로 허들이 끊기지 않게). 토큰 모드 에이전트의 TTS 음성은 미지원(Desktop이 봇 토큰을 새로 발급하면 실행 중 토큰이 revoke됨).
+- media: Bearer 게이트는 bridge와 같은 조건(플래그 on + NIP-FI off), 읽기(GET/HEAD)도 Bearer 허용(토큰 모드 Desktop 미디어 프록시가 서명 불가하므로).
+- CLI 자격증명 순서: 명시 토큰 env(`BUZZ_BOT_TOKEN` > `BUZZ_ACCESS_TOKEN` > 브로커) > 개인키(argv/env) > 저장된 세션. 세션을 키보다 아래에 둔 이유는 에이전트에 주어진 신원을 사람 로그인이 덮지 않게(Hermes `.env` 버그 클래스). refresh는 OS keyring(service `buzz-cli`, account `refresh:<origin>`), 없으면 `session.json`(0600) 폴백 + 경고(`gh`와 같음). 회전된 refresh를 저장 못 하면 소비된 사본을 지우고 exit 3. 로그아웃 네트워크 실패는 세션 유지 + exit 2.
+- web: access는 JS 메모리, 부팅·만료 5분 전 쿠키 refresh(single-flight, 세대 펜스, 400/401 → 로그아웃, 그 외 5s~300s 백오프 후 중단). 로그아웃 서버 호출 실패 시 세션 유지 + 오류 표시. 초대 claim은 토큰 모드에서 세션 필수(임시 키 폴백 없음).
+- workflow `AddReaction`: 헤더만 토큰화. 대상 `/api/messages/{id}/reactions`는 relay에 라우트가 없다(기존 결함) — 후속.
+
+**후속 (Phase 2에서 하지 않음)**
+- `with_token_mode_operator_policy`의 테스트는 메서드 직접 호출 — `from_env`에서의 호출 자체는 env 변경 없이 고정하기 어려워 미바인딩.
+- HTTP 전용 토큰 클라이언트(CLI만 쓰는 사용자)는 WS AUTH가 없어 kind 0 reconcile이 일어나지 않는다(프로필 PATCH 시에는 발행됨). bridge Bearer에 (커뮤니티, principal) 프로세스 캐시와 함께 reconcile을 붙일지 검토.
+- 봇 아바타 현지화(`desktop/src-tauri/src/relay/profile_avatar.rs`)는 에이전트 키로 서명 — 토큰 모드 봇은 아바타 업로드 불가. 서버 kind 0은 이름만 보장.
+- 오디오: 토큰 교체가 연결당 operations 버킷에 포함되지 않음(동시 1회로만 제한); 에이전트 TTS 음성 경로.
+- media 실제 업로드 왕복(`e2e_media.rs` 토큰판) — MinIO 환경 필요.
+- web: 다중 호스트 배포에서 다른 커뮤니티 호스트의 web 로그인은 단일 `AUTH_PUBLIC_URL` 때문에 redirect 거절; 오프라인 로그아웃 durable 재시도 없음; 10초 넘게 벌어진 두 탭의 같은 쿠키 refresh는 재사용 탐지 위험.
+- CLI: 동시 refresh 잠금 없음(10초 replay 캐시만), `delete-account` 미노출, 실제 relay+가짜 provider live 테스트 없음.
+- workflow `AddReaction`을 `ActionSink` 내부 경로로(지금은 존재하지 않는 HTTP 라우트 호출).
+- Phase 1 후속 중 persona/team 스냅샷 가져오기의 키 에이전트 생성은 Windows에서 앱 없이 검증이 어려워 미착수.
+
+**리뷰 반영 (v11, 2026-10-05)** — Phase 2 리뷰 블로커 B1–B3 + 선택 항목. 이 절이 위 "결정"·"후속"의 해당 항목보다 우선한다.
+- **B1 운영자 config**: `Config`를 변경하지 않는다(`with_token_mode_operator_policy` 삭제). 대신 `Config::admin_config_operator_pubkeys()`/`admin_owner_fallback_pubkey()`가 플래그 on에서 비어 있고, admin 해석 지점(`admin/auth.rs` `lookup_admin_principal`, `admin/mod.rs` 운영자 목록·`config_operator_exists`·`is_config_backed_pubkey`)만 이를 쓴다. `RELAY_OWNER_PUBKEY`는 그대로 NIP-43 owner 부트스트랩과 `BUZZ_REQUIRE_RELAY_MEMBERSHIP` 기동 검사(`Config::check_relay_membership_owner`, main.rs가 호출)에 쓰인다. `/operator/*` 커뮤니티 프로비저닝(`api/operator.rs`, `handlers/community_provisioning.rs`)은 키 서명 API로 **Phase 3까지 `RELAY_OPERATOR_PUBKEYS` 유지**(토큰 경로 없음 — 후속). 테스트: 실제 `from_env`를 env(플래그 on + 멤버십 필수 + owner + operator)로 로드해 owner/operator 필드 보존, admin 해석은 비어 있음, 플래그 off는 기존대로(가드 제거 시 실패 확인).
+- **B2 kind 0 경합**: 발행은 `Db::lock_principal_profile_publish(community, principal)` — `pg_advisory_xact_lock(sha256(community‖principal) 앞 8바이트)`를 잡은 트랜잭션 안에서 principal row·최신 kind 0·`users` row 유무를 읽고, insert·side effect·dispatch를 마친 뒤 commit(드롭 시 rollback으로 해제). 늦게 도착한 발행자는 항상 최신 프로필을 읽으므로 `max(now, prev+1)`이 낡은 이름을 올리지 않는다. 같은 연결의 토큰 재-AUTH 성공 후에도 reconcile → 실패한 발행이 1시간 안에 수렴(Rule 1). 테스트: 잠금을 쥔 채 발행을 스폰 → 400ms 대기 확인 → principal 이름 변경 → 해제 → **그 발행자가 쓴 이벤트**가 새 이름(잠금 제거 시 실패 확인); 발행 없이 바뀐 이름이 재-AUTH로 수렴(재-AUTH reconcile 제거 시 실패).
+- **B3 flaky**: `profiles()`가 id로 중복 제거(백필/라이브 겹침), `users.display_name`은 기한 내 폴링. 전체 live 스위트 5회 연속 결과는 아래.
+- 선택 반영: PATCH·봇 생성/프로필의 fan-out은 스폰(동시 4, `for_each_concurrent`); **AUTH/재-AUTH reconcile은 `users` row가 있는 커뮤니티만**(읽기만 하는 커뮤니티에 Google 이름 공개 안 함), 대신 **토큰 principal의 첫 accepted 쓰기**(WS EVENT, `POST /events`)에서 그 커뮤니티에 발행(프로세스별 10분/10만 캐시로 중복 억제, 실패 시 캐시 무효화) — 첫 메시지 경로와 CLI 전용 사용자 후속도 이것으로 해결; 봇은 AUTH의 owner 링크가 `users` row를 만들므로 AUTH reconcile로 발행. web `safeReturnTo`: 백슬래시·제어문자 거부, `URL`로 정규화 후 같은 origin·`/auth` 경로 아님만 허용. CLI: acp가 모든 에이전트 자식에 `BUZZ_DISABLE_STORED_SESSION=1`(토큰·키 모드 모두, 다른 env 적용 후) → `buzz`는 저장된 로그인을 쓰지 않고 exit 3, `buzz auth login/logout`은 거부. 계획 문서 §5.3·§5.4 정정.
+- Rule 3 테스트 추가: `relay_operators.added_by` 재키잉 추종; relay 키가 이미 user/bot이면 사전 거부(`InvalidData`, 기존 사후 비교는 도달 불가라 사전 검사로 교체); 오디오 토큰 ban 게이트 — banned principal 거부, banned owner의 봇 거부 **그리고 owner 링크(`users` row) 미기록**(결과만으로는 뒤의 final admission이 같은 거부를 내므로, 게이트의 고유 효과인 "부수효과 전 거부"로 반증); NIP-FI assertion이 있는 오디오 토큰 프레임 → `auth-required: unsupported auth`; 오디오 재-AUTH single-flight; 발행 결정의 disabled/relay-kind/`users` row 범위(`desired_profile`); `invite_bearer`의 NIP-FI≠Off 게이트. 각 가드 제거 시 실패 확인.
+- 거절한 선택 항목: `profile_reader`의 reader pool 사용. 이 코드베이스의 replica 읽기는 `route_read` 펜스를 거쳐야 하고(원시 replica pool은 테스트 전용), 지연된 replica는 방금 만든 `users` row를 놓쳐 발행 대상에서 빠뜨린다. writer의 `Authentication` 연산으로 유지.
+- 후속 추가: `INVITE_SIGNING_SECRET`은 이전 시크릿 검증 창이 없다 — 회전 즉시 미사용 v1 코드와 정책 receipt가 무효(v2 DB 초대는 무관). 필요 시 `INVITE_SIGNING_SECRET_PREVIOUS`로 검증만 허용하는 창을 추가. `/operator/*` 프로비저닝 토큰 경로(Phase 3 전). 오디오 ban 게이트의 principal 단독 경로는 결과·부수효과 모두 final admission과 같아 개별 반증 불가(owner 연쇄는 반증됨).
+- 테스트 결과(v11): fmt·workspace clippy -D warnings 통과; live auth 스위트 **5회 연속 22/22**; buzz-db identity 10/10; 워크스페이스 13크레이트 3354 통과 / 6 기존 실패 + 간헐 `telemetry::tests::trace_context_lookup_does_not_enable_callsites`(전역 callsite interest 경합 — 909bfce84 워크트리에서도 5회 중 3회 실패, 단독 실행은 통과); buzz-acp lib 1054/32(기존과 동일); Tauri 3429/0; web tsc·biome·vite build·node 18/18·file-size·pubkey 통과.
+
+
+- **재리뷰 반영 (v11.1)**: kind 0 발행 앞에 프로세스 전역 `tokio::sync::Semaphore`(`PublishSlots`, `max(1, 풀 최대/4)`) — 커넥션보다 먼저 permit을 잡고 잠금 해제까지 보유해, 재접속 폭주 시 발행자들이 잠금 커넥션을 쥔 채 두 번째 커넥션을 기다리며 풀을 고갈시키는 hold-and-wait를 막는다. live 테스트: permit 전부 + advisory lock 보유 상태에서 발행 3개가 커넥션을 잡지 않고 대기(세마포어 제거 시 사용 중 커넥션 1→4로 실패). B1 config 테스트의 env 변경은 기존 `NIP_FI_ENV_LOCK` 아래에서 실행.
+
+**Phase 2b (mobile), deferred** — 이 Windows 머신에 Flutter가 없어 빌드·테스트 불가. macOS에서 별도 구현. 서버는 이미 준비됨(`client=mobile`, `AUTH_MOBILE_REDIRECT_SCHEMES` 기본 `xyz.block.buzz`, refresh 본문 반환, WS 토큰 AUTH, Bearer bridge/media/invite, kind 0 서버 발행).
+- `shared/auth/auth_provider.dart`: nsec 상태 → `{principalId, accessToken, accessExpiresAt}`(Riverpod 메모리), refresh는 `flutter_secure_storage`(origin별 키), 앱 시작 시 refresh 자동 로그인, 만료 5분 전 refresh(single-flight, 세대 펜스, 401 → 로그인 화면; Rule 6 "다시 로그인" 경로 보장). 감지는 NIP-11 `buzz_token_auth.bearer`.
+- 로그인: `flutter_web_auth_2`(iOS `ASWebAuthenticationSession`, Android Custom Tabs) + PKCE S256, `redirect_uri=xyz.block.buzz://auth/cb`, state 검사, `POST /auth/oidc/complete`. iOS `Info.plist`/Android manifest에 scheme 등록. 워크트리별 debug identity(`scripts/mobile-worktree-overrides.sh`)와 scheme 충돌 여부 확인.
+- `relay_session_auth.dart` → `Authorization: Bearer`; `relay_session.dart:146-179,500` → `["AUTH",{"token"}]`, 재연결 시 현재 토큰, `OK auth false token_expired` → refresh 후 재연결; `signed_event_relay.dart` → draft(서명 없음, 서버 스탬프). 미디어 업로드는 Bearer(서버 Phase 2 완료). 허들 오디오는 `{"type":"auth","token"}` + 회전 시 같은 소켓에 재전송(`auth_ok`).
+- `features/settings`: Account(전역 프로필 PATCH, 아바타 업로드 → `avatar_url`), Devices(목록·원격 로그아웃·"모든 다른 기기 로그아웃"), "모든 봇 토큰 회수", 계정 삭제. `features/pairing`(NIP-AB) 삭제, `shared/crypto/{nip44,ecdh,nip_oa}.dart`는 Phase 3.
+- 테스트(위젯, `ProviderScope` 오버라이드): 로그인 버튼 → 가짜 auth 결과 → 상태 전이; 자동 로그인 성공/실패; refresh 401 → 로그인 화면; Devices 원격 로그아웃 후 목록 갱신. 게이트 `just mobile-install mobile-check mobile-test`, iOS 시뮬레이터에서 Google 로그인 → 메시지 → 재시작 후 유지 수동 검증.
+
 ### 5.4 Phase 3 — 키 인증·서명 제거
 
 범위
-- relay: NIP-42/98/OA/FI 분기 삭제, 서명 검증 삭제, AUTH 챌린지 송신 중단, `sig` 와이어 출력·DB 쓰기 중단, `relay_keypair` 필드 삭제, config 키 제거, gift wrap 예외 삭제·기존 1059 `deleted_at`.
+- relay: NIP-42/98/OA/FI 분기 삭제, 서명 검증 삭제, AUTH 챌린지 송신 중단, 클라이언트(토큰) 이벤트의 sentinel `sig` 와이어 출력·DB 쓰기 중단(relay 서명 이벤트는 실제 서명이므로 `sig` 유지 — v10), ~~`relay_keypair` 필드 삭제~~(v10: 유지, §5.3.1), 클라이언트 키 관련 config 제거, gift wrap 예외 삭제·기존 1059 `deleted_at`.
 - buzz-auth nip42/nip98/nip_fi 삭제, `AuthContext.pubkey` 삭제. buzz-pubsub replay 모듈 삭제.
 - ws-client/sdk/acp/cli/desktop/mobile 키 API 삭제, `Keys` 의존 제거.
 - `docs/nips/NIP-OA.md`, `NIP-FI.md` 삭제.
@@ -747,6 +825,7 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 | `audio/handler.rs:33,370-400,495-576,2984,3429` | 토큰 AUTH, `relay_principal` |
 | `api/bridge.rs:98-176,799,1426,2565-2628` | Bearer, `relay_principal` |
 | 나머지 `relay_keypair` 사용처(총 24파일 97지점): `side_effects.rs`, `operator_listener.rs`, `workflow_sink.rs`, `push_runtime.rs`, `push_lease.rs`, `identity_archive.rs`, `moderation_notices.rs`, `artifact.rs`, `thread_roots.rs`, `thread_window.rs`, `api/git/settings.rs`, `nip11.rs`, `handlers/req.rs`, `mesh_boot.rs`(Phase 4 삭제) | `relay_principal` 스탬프 (컴파일러가 누락을 잡지만 체크리스트에 명시) |
+| ~~위 행~~ **무효(v10)**: relay principal = relay 키(§5.3.1). relay 키는 서버 신원·S2S 인증으로 유지하며 Phase 3에서 삭제하지 않는다 | - |
 | `invite_token.rs:111` | `INVITE_SIGNING_SECRET` |
 | `handlers/auth.rs` NIP-42 분기, `connection.rs:526 generate_challenge` 송신 | 토큰 AUTH |
 | `handlers/ingest.rs:2402-2420` | id 재계산 |
@@ -913,3 +992,17 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 | 항목 | 변경 |
 |------|------|
 | 상태 | Phase 1 **READY**(3차 리뷰). closer 사용자 명의 fallback, 지연 자격증명 조회, 삭제 시 대소문자 무시 비교 반영. 미커밋. §5.2.1 "최종 (v9)". |
+
+### v9 → v10
+
+| 항목 | 변경 |
+|------|------|
+| 상태 | Phase 2(모바일 제외) 구현 완료, 미커밋, 리뷰 전. §5.3.1. 모바일은 Phase 2b로 연기(Flutter 부재). |
+| 결정 | relay principal = relay 서명 키(재키잉); relay 키는 Phase 3에서도 유지(S2S 인증), §5.4의 `relay_keypair` 행 무효; kind 0 서버 발행(프로필 쓰기 + 토큰 AUTH reconcile); 운영자 config 우선순위는 플래그 on에서 무시; `INVITE_SIGNING_SECRET` 플래그 on 필수; 초대·오디오·media·web·CLI 토큰화. |
+
+### v10 → v11
+
+| 항목 | 변경 |
+|------|------|
+| 상태 | Phase 2 리뷰 블로커 B1–B3 및 선택 항목 반영(미커밋). §5.3.1 "리뷰 반영 (v11)". |
+| 결정 변경 | 운영자 config는 필드를 지우지 않고 admin 해석 지점만 플래그로 게이트(`RELAY_OWNER_PUBKEY`의 NIP-43·멤버십 필수 용도, `/operator/*` 프로비저닝은 유지); kind 0 발행은 (커뮤니티, principal) advisory lock 아래에서 principal 재조회, AUTH/re-AUTH reconcile은 `users` row가 있는 곳만, 첫 쓰기에서 발행; PATCH fan-out은 스폰(동시 4); 에이전트 프로세스는 `BUZZ_DISABLE_STORED_SESSION=1`. |

@@ -976,6 +976,19 @@ fn shared_http_client() -> &'static reqwest::Client {
     &CLIENT
 }
 
+/// Credential for the workflow's relay HTTP calls, in precedence order:
+/// `BUZZ_BOT_TOKEN` (a workflow-dedicated headless bot, centralized identity),
+/// then the legacy `BUZZ_API_TOKEN`, both as `Bearer`; finally the dev-only
+/// `X-Pubkey` from `BUZZ_RELAY_PUBKEY` (removed with key auth in Phase 3).
+#[cfg_attr(not(feature = "reqwest"), allow(dead_code))]
+fn relay_auth_header(lookup: impl Fn(&str) -> Option<String>) -> Option<(&'static str, String)> {
+    let non_empty = |name: &str| lookup(name).filter(|value| !value.trim().is_empty());
+    if let Some(token) = non_empty("BUZZ_BOT_TOKEN").or_else(|| non_empty("BUZZ_API_TOKEN")) {
+        return Some(("Authorization", format!("Bearer {}", token.trim())));
+    }
+    non_empty("BUZZ_RELAY_PUBKEY").map(|pubkey| ("X-Pubkey", pubkey))
+}
+
 /// POST `{"emoji": emoji}` to `POST /api/messages/{message_id}/reactions`.
 #[cfg(feature = "reqwest")]
 async fn add_reaction_impl(message_id: &str, emoji: &str) -> Result<JsonValue, WorkflowError> {
@@ -991,10 +1004,8 @@ async fn add_reaction_impl(message_id: &str, emoji: &str) -> Result<JsonValue, W
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({ "emoji": emoji }));
 
-    if let Ok(token) = std::env::var("BUZZ_API_TOKEN") {
-        req = req.header("Authorization", format!("Bearer {token}"));
-    } else if let Ok(pubkey) = std::env::var("BUZZ_RELAY_PUBKEY") {
-        req = req.header("X-Pubkey", pubkey);
+    if let Some((name, value)) = relay_auth_header(|name| std::env::var(name).ok()) {
+        req = req.header(name, value);
     }
 
     let resp = req
@@ -1311,6 +1322,37 @@ async fn execute_steps(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn relay_auth_prefers_bot_token_then_api_token_then_dev_pubkey() {
+        let env = |vars: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                vars.iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_owned())
+            }
+        };
+        assert_eq!(
+            super::relay_auth_header(env(&[
+                ("BUZZ_BOT_TOKEN", "bzk_bot"),
+                ("BUZZ_API_TOKEN", "legacy"),
+                ("BUZZ_RELAY_PUBKEY", "ab"),
+            ])),
+            Some(("Authorization", "Bearer bzk_bot".to_owned()))
+        );
+        assert_eq!(
+            super::relay_auth_header(env(&[
+                ("BUZZ_API_TOKEN", "legacy"),
+                ("BUZZ_RELAY_PUBKEY", "ab")
+            ])),
+            Some(("Authorization", "Bearer legacy".to_owned()))
+        );
+        assert_eq!(
+            super::relay_auth_header(env(&[("BUZZ_BOT_TOKEN", " "), ("BUZZ_RELAY_PUBKEY", "ab")])),
+            Some(("X-Pubkey", "ab".to_owned()))
+        );
+        assert_eq!(super::relay_auth_header(env(&[])), None);
+    }
+
     use super::*;
     use serde_json::json;
 

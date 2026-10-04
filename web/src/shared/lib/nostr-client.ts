@@ -1,11 +1,15 @@
 /**
  * Minimal Nostr client with NIP-01 queries and NIP-42 AUTH.
  *
- * Uses NIP-07 when a browser extension is available, with an ephemeral
- * page-lifetime identity as the fallback for read-only queries on open relays.
+ * On a token-auth relay with a signed-in session the challenge is answered
+ * with `["AUTH", {"token"}]`. Otherwise NIP-07 signs when a browser extension
+ * is available, with an ephemeral page-lifetime identity as the fallback for
+ * read-only queries on open relays.
  */
 
 import { makeAuthEvent } from "nostr-tools/nip42";
+import { buildWsAuthFrame } from "@/shared/auth/auth-mode";
+import { browserAuthSources } from "@/shared/auth/session";
 import {
   type SignedNostrEvent,
   signNostrEvent,
@@ -95,12 +99,15 @@ export function queryEvents(
           unauthenticatedReqTimer = null;
         }
         const challenge = data[1];
-        const template = makeAuthEvent(wsUrl, challenge);
         try {
-          const signed = await signNostrEvent(template);
+          const frame = await buildWsAuthFrame({
+            ...browserAuthSources,
+            signChallenge: () =>
+              signNostrEvent(makeAuthEvent(wsUrl, challenge)),
+          });
           if (settled) return;
-          authEventId = signed.id;
-          ws.send(JSON.stringify(["AUTH", signed]));
+          authEventId = frame.okId;
+          ws.send(JSON.stringify(frame.message));
         } catch (error) {
           if (!settled) {
             settled = true;

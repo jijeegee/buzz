@@ -16,6 +16,7 @@
 pub mod client_ip;
 pub mod config;
 pub(crate) mod kv;
+pub(crate) mod profile;
 pub(crate) mod ws;
 
 use std::collections::HashMap;
@@ -67,6 +68,10 @@ pub struct IdentityRuntime {
     providers: RwLock<HashMap<String, Arc<dyn OidcProvider>>>,
     /// Token-authenticated connections on this instance.
     pub(crate) sessions: ws::TokenSessionRegistry,
+    /// Per-process memory of write-triggered kind:0 reconciles.
+    pub(crate) write_triggers: profile::WriteTriggers,
+    /// Bound on concurrent kind:0 publishes (see [`profile::PublishSlots`]).
+    pub(crate) publish_slots: profile::PublishSlots,
 }
 
 impl std::fmt::Debug for IdentityRuntime {
@@ -104,6 +109,8 @@ impl IdentityRuntime {
             relay_principal: OnceLock::new(),
             providers: RwLock::new(providers),
             sessions: ws::TokenSessionRegistry::default(),
+            write_triggers: profile::WriteTriggers::default(),
+            publish_slots: profile::PublishSlots::default(),
         }
     }
 
@@ -152,6 +159,21 @@ impl IdentityRuntime {
             providers.insert(name.to_owned(), provider);
         }
     }
+}
+
+/// Startup: make the relay signing key the relay principal (re-keying an
+/// older relay row) and record it on the runtime. One identity for every
+/// relay-authored event — signed today, server-stamped after Phase 3.
+pub async fn init_relay_principal(state: &AppState) -> anyhow::Result<PrincipalId> {
+    let key = PrincipalId::from_slice(&state.relay_keypair.public_key().to_bytes())
+        .map_err(|error| anyhow::anyhow!("relay key is not a valid principal id: {error}"))?;
+    let relay = state
+        .db
+        .ensure_relay_principal(&key)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to ensure relay principal: {error}"))?;
+    state.identity.set_relay_principal(relay);
+    Ok(relay)
 }
 
 /// Resolve a presented access token to its binding. The only token →

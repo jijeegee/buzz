@@ -360,6 +360,18 @@ pub async fn fan_out_pubsub_event(state: &Arc<AppState>, channel_event: buzz_pub
     }
 }
 
+/// A server-stamped (token) write was accepted in `tenant`: let the kind:0
+/// reconciler publish the principal's profile there (once per process window).
+pub(crate) fn note_token_write(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    pubkey: nostr::PublicKey,
+) {
+    if let Ok(principal) = buzz_core::principal::PrincipalId::from_slice(&pubkey.to_bytes()) {
+        crate::identity::profile::note_token_write(state, tenant, principal);
+    }
+}
+
 /// Schedule post-commit delivery/side effects for a stored event.
 ///
 /// This intentionally returns after only the bounded audit enqueue has completed:
@@ -869,6 +881,9 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
 
     match super::ingest::ingest_event(&state, &conn.tenant, event, ingest_auth).await {
         Ok(result) => {
+            if result.accepted && server_stamped {
+                note_token_write(&state, &conn.tenant, auth_pubkey);
+            }
             if result.accepted {
                 // buzz_events_stored_total is emitted inside ingest_event()
                 // (shared WS/HTTP seam), not here.

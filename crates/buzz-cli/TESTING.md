@@ -116,6 +116,7 @@ bearer token instead of `BUZZ_PRIVATE_KEY`. Sources, highest first:
 3. `BUZZ_TOKEN_BROKER_URL` + `BUZZ_TOKEN_BROKER_SECRET` (the `buzz-acp`
    loopback broker; this is what `buzz` sees inside a hosted agent)
 4. otherwise key mode: `BUZZ_PRIVATE_KEY` (+ optional `BUZZ_AUTH_TAG`)
+5. otherwise the login stored by `buzz auth login` for this relay (§5b)
 
 Tokens are env-only; there is no argv flag that would expose one in the
 process list. An explicit `--private-key` on the command line always selects
@@ -137,11 +138,67 @@ BUZZ_ACCESS_TOKEN=bzs_revoked ./target/release/buzz channels list; echo "exit=$?
 # Expected: {"error":"auth_error","message":"auth error: access token rejected: ..."} exit=3
 ```
 
-Token-mode limits until Phase 2: `buzz upload` / `buzz media` (Blossom is
-still NIP-98) and commands that need a secret key (`buzz mem`, `buzz gifs`,
-owner-reviewed `agents draft-*` and project channel drafts, which NIP-44
-encrypt to the owner) fail with exit 1 and a message naming the reason.
+`buzz upload` / `buzz media` send `Authorization: Bearer` in token mode (the
+relay binds the body to `X-SHA-256`); expect the same descriptor as key mode.
+Commands that need a secret key (`buzz mem`, `buzz gifs`, owner-reviewed
+`agents draft-*` and project channel drafts, which NIP-44 encrypt to the
+owner) fail with exit 1 and a message naming the reason.
 Unit coverage lives in `src/client_token_tests.rs`.
+
+---
+
+## 5b. `buzz auth` — human login and bot management (Phase 2)
+
+`buzz auth login` signs a human in with Google through the relay (OIDC +
+PKCE, plan §3.2 CLI row): the CLI listens on `http://127.0.0.1:<random>/cb`,
+opens the browser at `/auth/oidc/google/start?client=cli&…`, checks the
+returned `state`, and posts the code with its PKCE verifier to
+`/auth/oidc/complete`. It waits 5 minutes at most.
+
+Storage, per relay origin (`scheme://host:port`):
+
+- access token (`bzs_…`, 1 h) in `session.json` under the user config dir
+  (`~/.config/buzz/`, `%APPDATA%\buzz\`, `~/Library/Application Support/buzz/`)
+  or `BUZZ_SESSION_FILE`; written atomically, `0600` on unix;
+- refresh token (`bzr_…`, 90 days, rotating) in the OS credential store
+  (service `buzz-cli`, account `refresh:<origin>`). Without one (headless
+  Linux) it falls back to `session.json` with a warning and
+  `"refresh_storage": "file"` in the login result.
+
+The stored login is the **last** credential source (§5a): any token env var
+or a private key wins, so a human login never replaces an identity an agent
+was given. Other commands use it automatically and refresh it 2 minutes
+before expiry, persisting the rotated refresh token before anything else. A
+refresh the relay rejects (`invalid_token`, `token_expired`,
+`token_revoked`, `refresh_reused`, `principal_disabled`) forgets the login and
+exits 3 with "run `buzz auth login`"; a network/5xx failure keeps it (exit 2).
+
+```bash
+export BUZZ_RELAY_URL=http://127.0.0.1:3000      # relay with AUTH_TOKEN_ENABLED=true
+unset BUZZ_PRIVATE_KEY BUZZ_ACCESS_TOKEN BUZZ_BOT_TOKEN
+buzz auth login                 # browser opens; dev relay: AUTH_OIDC_FAKE=1 signs in at once
+# stdout: {"accepted":true,"message":"signed in","relay":"http://127.0.0.1:3000",
+#          "principal_id":"<hex>","device_id":"<uuid>","refresh_storage":"keyring"}
+buzz auth whoami                # {"mode":"token","source":"session","principal_id":...}
+buzz --format compact channels list            # acts as the signed-in user
+buzz auth profile --display-name "Ada"
+buzz --format compact auth devices list        # [{"id","name","platform":"cli","current":true}]
+buzz auth sessions revoke-others               # other human devices only; bots untouched
+buzz auth bots create --name "home bot"        # {"bot_id":"<hex>"} (headless by default)
+buzz auth bots headless-token <bot_id>         # {"token":"bzk_…","hash_prefix":"…"} shown once
+buzz auth bots revoke-headless <bot_id> <hash_prefix>   # second step of a rotation
+buzz auth bots profile <bot_id> --display-name "Home"
+buzz auth bots revoke-all                      # every bot token you own
+buzz auth logout                # revokes this device + bots it hosts, then forgets it
+buzz channels list; echo "exit=$?"             # exit=3, "run `buzz auth login`"
+```
+
+`buzz auth logout` keeps the stored login when the relay cannot be reached
+(exit 2) so the revoke can be retried; `--local-only` forgets it anyway. Bot
+commands with `--host this-device` create a bot whose short-lived token
+(`buzz auth bots token <id>`) can only be issued from this CLI device.
+Unit coverage: `src/commands/auth_tests.rs` (fake relay; in-memory credential
+store — tests never touch the OS keyring) and `src/auth_loopback.rs`.
 
 ---
 
@@ -557,9 +614,9 @@ buzz users set-profile 2>&1; echo "exit: $?"
 # exit: 1 (at least one field required)
 
 # Exit 3: No auth configured
-env -u BUZZ_PRIVATE_KEY \
+env -u BUZZ_PRIVATE_KEY BUZZ_SESSION_FILE=/nonexistent/session.json \
   cargo run -p buzz-cli -- channels list 2>&1; echo "exit: $?"
-# stderr: {"error":"auth_error","message":"auth error: BUZZ_PRIVATE_KEY is required (use --private-key or set env var)"}
+# stderr: {"error":"auth_error","message":"auth error: no credential: run `buzz auth login`, or set BUZZ_PRIVATE_KEY (--private-key) or BUZZ_BOT_TOKEN / BUZZ_ACCESS_TOKEN / BUZZ_TOKEN_BROKER_URL"}
 # exit: 3
 
 # Not-found returns null, not an error (exit 0)
@@ -580,9 +637,9 @@ BUZZ_PRIVATE_KEY="nsec1..." buzz channels list | jq .
 # Should succeed
 
 # No auth → exit 3
-env -u BUZZ_PRIVATE_KEY \
+env -u BUZZ_PRIVATE_KEY BUZZ_SESSION_FILE=/nonexistent/session.json \
   cargo run -p buzz-cli -- channels list 2>&1; echo "exit: $?"
-# stderr: {"error":"auth_error","message":"auth error: BUZZ_PRIVATE_KEY is required (use --private-key or set env var)"}
+# stderr: {"error":"auth_error","message":"auth error: no credential: run `buzz auth login`, or set BUZZ_PRIVATE_KEY (--private-key) or BUZZ_BOT_TOKEN / BUZZ_ACCESS_TOKEN / BUZZ_TOKEN_BROKER_URL"}
 # exit: 3
 ```
 

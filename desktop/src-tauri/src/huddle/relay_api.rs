@@ -69,15 +69,87 @@ fn build_audio_auth_event(
         .map_err(|e| format!("sign: {e}"))
 }
 
+/// How an audio socket authenticates after the relay's challenge.
+pub(crate) enum AudioAuth<'a> {
+    /// NIP-42: sign the challenge (agents may add a NIP-OA tag).
+    Keys {
+        keys: &'a nostr::Keys,
+        auth_tag_json: Option<&'a str>,
+    },
+    /// Token mode: present the community session's access token; the relay
+    /// resolves the principal (plan §3.4). The challenge is ignored.
+    Token(&'a str),
+}
+
+/// The `{"type":"auth"}` frame answering `challenge`.
+fn build_audio_auth_message(
+    auth: &AudioAuth<'_>,
+    relay_url: &str,
+    challenge: &str,
+    parent_channel_id: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    use nostr::JsonUtil;
+
+    let mut message = serde_json::json!({
+        "type": "auth",
+        "parent_channel_id": parent_channel_id,
+        // Use the released v2 contract while deployed relays remain capped at
+        // v2. Relay-to-client media therefore has a one-byte peer-index prefix;
+        // see huddle::wire for the compatibility tradeoff.
+        "protocol_version": super::wire::PROTOCOL_VERSION,
+    });
+    match auth {
+        AudioAuth::Keys {
+            keys,
+            auth_tag_json,
+        } => {
+            let event = build_audio_auth_event(keys, relay_url, challenge, *auth_tag_json)?;
+            message["event"] = serde_json::from_str(&event.as_json())
+                .map_err(|e| format!("failed to serialize auth event: {e}"))?;
+        }
+        AudioAuth::Token(token) => {
+            message["token"] = serde_json::Value::String((*token).to_owned());
+        }
+    }
+    Ok(message)
+}
+
+/// The audio auth for the user's own socket in the current community: the
+/// Google session's access token in token mode, the local key otherwise.
+fn user_audio_auth(state: &AppState) -> Result<UserAudioAuth, String> {
+    match state.current_credential_mode() {
+        crate::auth::CredentialMode::Token(session) => Ok(UserAudioAuth::Token(session.access)),
+        crate::auth::CredentialMode::Blocked(reason) => Err(reason),
+        crate::auth::CredentialMode::Keys => Ok(UserAudioAuth::Keys(
+            state.keys.lock().map_err(|e| e.to_string())?.clone(),
+        )),
+    }
+}
+
+/// Owned form of the user's [`AudioAuth`].
+enum UserAudioAuth {
+    Keys(nostr::Keys),
+    Token(zeroize::Zeroizing<String>),
+}
+
+impl UserAudioAuth {
+    fn as_audio_auth(&self) -> AudioAuth<'_> {
+        match self {
+            Self::Keys(keys) => AudioAuth::Keys {
+                keys,
+                auth_tag_json: None,
+            },
+            Self::Token(token) => AudioAuth::Token(token.as_str()),
+        }
+    }
+}
+
 async fn connect_authenticated_audio_socket(
     channel_id: &str,
     parent_channel_id: Option<&str>,
     relay_url: &str,
-    keys: &nostr::Keys,
-    auth_tag_json: Option<&str>,
+    auth: AudioAuth<'_>,
 ) -> Result<(WsSink, WsReceiver, u8, Vec<(u8, String, u8)>), String> {
-    use nostr::JsonUtil;
-
     let ws_url = format!("{relay_url}/huddle/{channel_id}/audio");
     let (ws_stream, _) = connect_async(&ws_url)
         .await
@@ -107,18 +179,7 @@ async fn connect_authenticated_audio_socket(
     .await
     .map_err(|_| "timeout waiting for challenge from relay".to_string())??;
 
-    let event = build_audio_auth_event(keys, relay_url, &challenge, auth_tag_json)?;
-    let event_json: serde_json::Value = serde_json::from_str(&event.as_json())
-        .map_err(|e| format!("failed to serialize auth event: {e}"))?;
-    let auth_msg = serde_json::json!({
-        "type": "auth",
-        "event": event_json,
-        "parent_channel_id": parent_channel_id,
-        // Use the released v2 contract while deployed relays remain capped at
-        // v2. Relay-to-client media therefore has a one-byte peer-index prefix;
-        // see huddle::wire for the compatibility tradeoff.
-        "protocol_version": super::wire::PROTOCOL_VERSION,
-    });
+    let auth_msg = build_audio_auth_message(&auth, relay_url, &challenge, parent_channel_id)?;
     ws_tx
         .send(WsMsg::Text(auth_msg.to_string().into()))
         .await
@@ -184,7 +245,17 @@ pub(crate) async fn connect_audio_relay(
     state: &AppState,
 ) -> Result<(CancellationToken, tokio::sync::mpsc::Sender<Vec<u8>>), String> {
     let relay_url = crate::relay::relay_ws_url_with_override(state);
-    let keys = state.keys.lock().map_err(|e| e.to_string())?.clone();
+    let user_auth = user_audio_auth(state)?;
+    // Token mode: hand the socket each refreshed access token so the relay
+    // keeps the huddle bound past the token's 1 h lifetime.
+    let token_refresh = match &user_auth {
+        UserAudioAuth::Token(access) => Some(AudioTokenRefresh {
+            auth: Arc::clone(&state.token_auth),
+            origin: state.current_auth_origin(),
+            sent: access.clone(),
+        }),
+        UserAudioAuth::Keys(_) => None,
+    };
 
     // TTS interrupt flags — recv task cancels TTS when remote humans speak.
     let (
@@ -208,9 +279,13 @@ pub(crate) async fn connect_audio_relay(
 
     let app_handle = state.app_handle.lock().ok().and_then(|g| g.clone());
 
-    let (ws_tx, ws_rx, _peer_index, initial_peers) =
-        connect_authenticated_audio_socket(channel_id, parent_channel_id, &relay_url, &keys, None)
-            .await?;
+    let (ws_tx, ws_rx, _peer_index, initial_peers) = connect_authenticated_audio_socket(
+        channel_id,
+        parent_channel_id,
+        &relay_url,
+        user_auth.as_audio_auth(),
+    )
+    .await?;
 
     let cancel = CancellationToken::new();
     let cancel_clone = cancel.clone();
@@ -237,6 +312,7 @@ pub(crate) async fn connect_audio_relay(
             agent_pubkeys,
             human_floor,
             output_device_name,
+            token_refresh,
         })
         .await
         {
@@ -326,8 +402,10 @@ pub(crate) async fn connect_tts_audio_publisher(
         channel_id,
         parent_channel_id,
         &relay_url,
-        keys,
-        auth_tag_json,
+        AudioAuth::Keys {
+            keys,
+            auth_tag_json,
+        },
     )
     .await?;
 
@@ -462,6 +540,55 @@ struct AudioRelayPipelineArgs {
     agent_pubkeys: Arc<std::sync::Mutex<Vec<String>>>,
     human_floor: super::human_floor::HumanFloor,
     output_device_name: Option<String>,
+    token_refresh: Option<AudioTokenRefresh>,
+}
+
+/// How often a token-mode audio socket checks for a refreshed access token.
+const AUDIO_TOKEN_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Token-mode state for re-authenticating a live audio socket.
+struct AudioTokenRefresh {
+    auth: Arc<crate::auth::TokenAuthState>,
+    origin: String,
+    /// The access token the socket is currently bound to.
+    sent: zeroize::Zeroizing<String>,
+}
+
+impl AudioTokenRefresh {
+    /// The `{"type":"auth","token"}` re-AUTH frame when the community session
+    /// holds an access token newer than the one last sent, recording it as
+    /// sent. `None` while unchanged or not signed in (the relay then closes
+    /// the socket at the old token's expiry and the huddle reconnects).
+    fn next_reauth_frame(&mut self) -> Option<WsMsg> {
+        let crate::auth::CredentialMode::Token(session) = self.auth.mode(&self.origin) else {
+            return None;
+        };
+        if session.access.as_str() == self.sent.as_str() {
+            return None;
+        }
+        let frame = serde_json::json!({ "type": "auth", "token": session.access.as_str() });
+        self.sent = session.access;
+        Some(WsMsg::Text(frame.to_string().into()))
+    }
+}
+
+/// Send each refreshed access token on the socket until cancelled or closed.
+async fn keep_audio_token_fresh(
+    mut refresh: AudioTokenRefresh,
+    ws_tx: Arc<tokio::sync::Mutex<WsSink>>,
+    cancel: CancellationToken,
+) {
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => return,
+            _ = tokio::time::sleep(AUDIO_TOKEN_CHECK_INTERVAL) => {}
+        }
+        if let Some(frame) = refresh.next_reauth_frame() {
+            if ws_tx.lock().await.send(frame).await.is_err() {
+                return;
+            }
+        }
+    }
 }
 
 async fn audio_relay_pipeline(args: AudioRelayPipelineArgs) -> Result<(), String> {
@@ -479,6 +606,7 @@ async fn audio_relay_pipeline(args: AudioRelayPipelineArgs) -> Result<(), String
         agent_pubkeys,
         human_floor,
         output_device_name,
+        token_refresh,
     } = args;
 
     let mut encoder = opus::Encoder::new(48000, opus::Channels::Mono, opus::Application::Voip)
@@ -496,6 +624,13 @@ async fn audio_relay_pipeline(args: AudioRelayPipelineArgs) -> Result<(), String
     let ws_tx = StdArc::new(tokio::sync::Mutex::new(ws_tx));
     let ws_tx_send = StdArc::clone(&ws_tx);
     let cancel_send = cancel.clone();
+    let token_task = token_refresh.map(|refresh| {
+        tokio::spawn(keep_audio_token_fresh(
+            refresh,
+            StdArc::clone(&ws_tx),
+            cancel.clone(),
+        ))
+    });
 
     let send_task = tokio::spawn(async move {
         use super::wire::{audio_level_dbov, FrameHeader, V2_HEADER_LEN};
@@ -598,6 +733,9 @@ async fn audio_relay_pipeline(args: AudioRelayPipelineArgs) -> Result<(), String
     match futures_util::future::select(std::pin::pin!(send_task), std::pin::pin!(recv_task)).await {
         Either::Left((_, recv_handle)) => recv_handle.abort(),
         Either::Right((_, send_handle)) => send_handle.abort(),
+    }
+    if let Some(token_task) = token_task {
+        token_task.abort();
     }
 
     Ok(())
@@ -709,5 +847,106 @@ mod tests {
             7,
         );
         assert_eq!(queue.len(), 1, "cancelled epoch must not enqueue");
+    }
+
+    fn session_with_access(principal: nostr::PublicKey, access: &str) -> crate::auth::OriginAuth {
+        crate::auth::OriginAuth::Active(crate::auth::UserSession {
+            principal,
+            device_id: None,
+            access: zeroize::Zeroizing::new(access.into()),
+            refresh: zeroize::Zeroizing::new("bzr_test".into()),
+            access_issued_at: 0,
+            access_expires_at: i64::MAX,
+        })
+    }
+
+    #[test]
+    fn token_mode_audio_auth_presents_the_session_token_without_signing() {
+        let state = crate::app_state::build_app_state();
+        let origin = state.current_auth_origin();
+        let principal = nostr::Keys::generate().public_key();
+        state
+            .token_auth
+            .set(&origin, session_with_access(principal, "bzs_session"));
+
+        let auth = user_audio_auth(&state).expect("token auth");
+        let message = build_audio_auth_message(
+            &auth.as_audio_auth(),
+            "ws://relay.test",
+            "challenge-1",
+            Some("parent"),
+        )
+        .expect("auth message");
+        assert_eq!(message["type"], "auth");
+        assert_eq!(message["token"], "bzs_session");
+        assert!(
+            message.get("event").is_none(),
+            "token mode must not sign a NIP-42 event with the local key"
+        );
+        assert_eq!(message["parent_channel_id"], "parent");
+        assert_eq!(
+            message["protocol_version"],
+            super::super::wire::PROTOCOL_VERSION
+        );
+    }
+
+    #[test]
+    fn key_mode_audio_auth_signs_the_challenge() {
+        let state = crate::app_state::build_app_state();
+        let auth = user_audio_auth(&state).expect("key auth");
+        let message = build_audio_auth_message(
+            &auth.as_audio_auth(),
+            "ws://relay.test",
+            "challenge-1",
+            None,
+        )
+        .expect("auth message");
+        assert!(message.get("token").is_none());
+        let event: nostr::Event =
+            serde_json::from_value(message["event"].clone()).expect("auth event");
+        assert_eq!(event.kind, nostr::Kind::Custom(22242));
+        assert!(event
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice() == ["challenge", "challenge-1"]));
+    }
+
+    #[test]
+    fn blocked_token_session_refuses_audio_instead_of_using_the_local_key() {
+        let state = crate::app_state::build_app_state();
+        let origin = state.current_auth_origin();
+        state.token_auth.set(
+            &origin,
+            crate::auth::OriginAuth::NeedsLogin("refresh_reused".into()),
+        );
+        assert!(user_audio_auth(&state).is_err());
+    }
+
+    #[test]
+    fn audio_token_refresh_sends_each_new_access_token_once() {
+        let auth = Arc::new(crate::auth::TokenAuthState::default());
+        let principal = nostr::Keys::generate().public_key();
+        auth.set("o", session_with_access(principal, "bzs_one"));
+        let mut refresh = AudioTokenRefresh {
+            auth: Arc::clone(&auth),
+            origin: "o".into(),
+            sent: zeroize::Zeroizing::new("bzs_one".into()),
+        };
+        assert!(refresh.next_reauth_frame().is_none(), "unchanged token");
+
+        auth.set("o", session_with_access(principal, "bzs_two"));
+        let Some(WsMsg::Text(frame)) = refresh.next_reauth_frame() else {
+            panic!("refreshed token must produce a re-AUTH frame");
+        };
+        let frame: serde_json::Value = serde_json::from_str(&frame).expect("json");
+        assert_eq!(frame["type"], "auth");
+        assert_eq!(frame["token"], "bzs_two");
+        assert!(refresh.next_reauth_frame().is_none(), "sent only once");
+
+        auth.set("o", crate::auth::OriginAuth::Restoring);
+        assert!(
+            refresh.next_reauth_frame().is_none(),
+            "no session, no frame"
+        );
     }
 }

@@ -17,7 +17,7 @@ use buzz_token_broker::{Secret, TokenSource};
 use nostr::{EventBuilder, Keys, Kind};
 use tokio::net::TcpListener;
 
-use super::{BuzzClient, MEDIA_REQUIRES_KEY};
+use super::BuzzClient;
 use crate::error::{exit_code, CliError};
 
 #[derive(Debug, Clone)]
@@ -25,6 +25,7 @@ struct Seen {
     method: String,
     path: String,
     authorization: Option<String>,
+    x_sha256: Option<String>,
     body: Vec<u8>,
 }
 
@@ -61,6 +62,10 @@ async fn fake_relay(
                         path: uri.path().to_owned(),
                         authorization: headers
                             .get("authorization")
+                            .and_then(|v| v.to_str().ok())
+                            .map(str::to_owned),
+                        x_sha256: headers
+                            .get("x-sha-256")
                             .and_then(|v| v.to_str().ok())
                             .map(str::to_owned),
                         body,
@@ -306,21 +311,72 @@ async fn token_mode_submits_a_principal_draft_with_sentinel_sig() {
 }
 
 #[tokio::test]
-async fn token_mode_refuses_media_without_sending_a_bogus_header() {
+async fn token_mode_media_get_sends_bearer_to_the_relay_origin() {
     let principal = PrincipalId::generate();
-    let (url, seen) = fake_relay(me_ok(&principal), accepted()).await;
+    let (url, seen) = fake_relay(me_ok(&principal), (StatusCode::OK, "blob".into())).await;
     let client = BuzzClient::with_token(url, Secret::new("bzb_x".into()))
         .await
         .unwrap();
-    let err = client.download_media(&"ab".repeat(32)).await.unwrap_err();
-    assert!(
-        matches!(err, CliError::Usage(ref m) if m == MEDIA_REQUIRES_KEY),
-        "{err}"
-    );
-    assert!(
-        bridge_requests(&seen).is_empty(),
-        "no media request was sent"
-    );
+    let hash = "ab".repeat(32);
+    let bytes = client.download_media(&hash).await.unwrap();
+    assert_eq!(&bytes[..], b"blob");
+    let requests = bridge_requests(&seen);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[0].path, format!("/media/{hash}"));
+    assert_eq!(requests[0].authorization.as_deref(), Some("Bearer bzb_x"));
+}
+
+#[tokio::test]
+async fn token_mode_upload_sends_bearer_and_declared_hash() {
+    use sha2::Digest as _;
+    let principal = PrincipalId::generate();
+    // A minimal PNG signature is enough for the CLI's magic-byte MIME check.
+    let png: Vec<u8> = [
+        &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A][..],
+        &[0u8; 32][..],
+    ]
+    .concat();
+    let sha256 = hex::encode(sha2::Sha256::digest(&png));
+    let descriptor = serde_json::json!({
+        "url": "http://relay/media/x.png",
+        "sha256": sha256,
+        "size": png.len(),
+        "type": "image/png",
+        "uploaded": 0,
+    })
+    .to_string();
+    let (url, seen) = fake_relay(me_ok(&principal), (StatusCode::OK, descriptor)).await;
+    let client = BuzzClient::with_token(url, Secret::new("bzs_x".into()))
+        .await
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pic.png");
+    std::fs::write(&path, &png).unwrap();
+
+    let desc = client.upload_file(path.to_str().unwrap()).await.unwrap();
+    assert_eq!(desc.sha256, sha256);
+    let requests = bridge_requests(&seen);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, "PUT");
+    assert_eq!(requests[0].path, "/upload");
+    assert_eq!(requests[0].authorization.as_deref(), Some("Bearer bzs_x"));
+    assert_eq!(requests[0].x_sha256.as_deref(), Some(sha256.as_str()));
+    assert_eq!(requests[0].body, png);
+}
+
+#[tokio::test]
+async fn key_mode_media_keeps_blossom_auth() {
+    let keys = Keys::generate();
+    let (url, seen) = fake_relay(
+        me_ok(&PrincipalId::generate()),
+        (StatusCode::OK, "b".into()),
+    )
+    .await;
+    let client = BuzzClient::new(url, keys, None, None).unwrap();
+    client.download_media(&"ab".repeat(32)).await.unwrap();
+    let auth = bridge_requests(&seen)[0].authorization.clone().unwrap();
+    assert!(auth.starts_with("Nostr "), "{auth}");
 }
 
 /// A loopback broker stand-in that answers every request with `status_line`.

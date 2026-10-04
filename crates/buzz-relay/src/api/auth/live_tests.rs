@@ -20,6 +20,10 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::identity::AuthTokenConfig;
 use crate::state::AppState;
 
+mod audio;
+mod invites;
+mod profile;
+
 type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -142,12 +146,9 @@ async fn instance_configured(
     assert!(state.identity.enabled() == enabled);
     if enabled {
         // Same startup sequence as main.rs.
-        let relay = state
-            .db
-            .ensure_relay_principal()
+        crate::identity::init_relay_principal(&state)
             .await
             .expect("relay principal");
-        state.identity.set_relay_principal(relay);
         state
             .identity
             .register_provider("google", Arc::new(TestProvider));
@@ -1551,4 +1552,129 @@ async fn git_transport_accepts_basic_and_bearer_tokens() {
         .expect("stop");
     assert_eq!(stop.status(), 204);
     assert_eq!(get(Some(basic(&token))).await.status(), 401);
+}
+
+/// Blossom media through the Bearer door (Phase 2): with the flag on a user
+/// token authorizes reads (the request reaches the blob lookup: 404 for an
+/// unknown blob) and uploads (past auth into storage); a revoked token is a
+/// 401 with its code; with the flag off the Bearer header is ignored and the
+/// kind-24242 path answers exactly as before. On a closed relay a non-member
+/// token is refused and the same principal is admitted once it is a member.
+/// Falsifying mutations: skip `media_token_principal` → token reads/uploads
+/// get the Blossom 401; drop its membership call → the non-member read
+/// reaches the 404.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn media_accepts_bearer_tokens_behind_the_flag() {
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .expect("pg");
+    let host = community(&pool).await;
+    let on = instance(&host).await;
+    let off = instance_with(&host, false, None).await;
+    let user = new_user(&on).await;
+    let blob = format!("/media/{}", "ab".repeat(32));
+    async fn head(inst: &Instance, path: &str, token: &str) -> u16 {
+        inst.http
+            .head(inst.url(path))
+            .header("host", &inst.host)
+            .bearer_auth(token)
+            .send()
+            .await
+            .expect("head")
+            .status()
+            .as_u16()
+    }
+
+    assert_eq!(head(&on, &blob, &user.access).await, 404);
+    let get = on
+        .get(&blob)
+        .bearer_auth(&user.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(get.status(), 404, "token GET reaches the blob lookup");
+
+    let body = b"not stored: storage is unreachable in this test".to_vec();
+    let sha256 = hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&body));
+    let upload = on
+        .http
+        .put(on.url("/upload"))
+        .header("host", &on.host)
+        .bearer_auth(&user.access)
+        .header("x-sha-256", &sha256)
+        .body(body.clone())
+        .send()
+        .await
+        .unwrap();
+    let status = upload.status().as_u16();
+    assert!(
+        status != 401 && status != 403,
+        "token upload passes auth (storage then fails), got {status}"
+    );
+    let missing_hash = on
+        .http
+        .put(on.url("/upload"))
+        .header("host", &on.host)
+        .bearer_auth(&user.access)
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        missing_hash.status(),
+        401,
+        "token upload still requires X-SHA-256"
+    );
+
+    assert_eq!(
+        head(&off, &blob, &user.access).await,
+        401,
+        "flag off: Bearer is not media auth"
+    );
+
+    let logout = on
+        .post("/auth/logout")
+        .bearer_auth(&user.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(logout.status(), 204);
+    let revoked = on
+        .get(&blob)
+        .bearer_auth(&user.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked.status(), 401);
+    assert_eq!(
+        revoked.json::<Value>().await.unwrap()["code"],
+        "token_revoked"
+    );
+
+    let closed = instance_configured(&host, true, None, |config| {
+        config.require_relay_membership = true;
+    })
+    .await;
+    let outsider = new_user(&closed).await;
+    assert_eq!(
+        head(&closed, &blob, &outsider.access).await,
+        403,
+        "non-member token is refused on a closed relay"
+    );
+    let community = crate::tenant::bind_community(&closed.state.db, &host)
+        .await
+        .expect("community")
+        .community();
+    closed
+        .state
+        .db
+        .add_relay_member(community, &outsider.principal, "member", None)
+        .await
+        .expect("add member");
+    assert_eq!(
+        head(&closed, &blob, &outsider.access).await,
+        404,
+        "the same token is admitted once the principal is a member"
+    );
 }
