@@ -606,6 +606,11 @@ with a TypeScript lookup table or an id comparison in a component.
     manual Start, Restart, or redeploy cannot overlap two routing roles. The
     status line also names a held gainer that is not running yet ("Fizz
     becomes the host after Honey restarts.").
+    With no agents at all, the Host picker offers "Create a Host agent": an
+    instance of the built-in `builtin:host` persona (minimal prompt — the
+    harness's dispatcher base prompt carries the routing rules; definition
+    `effort_level` seeded from `ACP_THOUGHT_LEVEL_FALLBACK_VALUES[0]`, never a
+    literal), then `set_channel_routing(host, pk)` as a second write.
 
 ## Channel-only runtime controls
 

@@ -770,6 +770,29 @@ fn record_column_outranks_persona_column() {
 }
 
 #[test]
+fn builtin_host_persona_low_effort_outranks_global_high() {
+    // The built-in Host persona seeds the catalog's lowest level; a Global AI
+    // Defaults pick of "high" must not raise a Host instance's routing turns.
+    let host =
+        crate::managed_agents::built_in_persona_definition("builtin:host", "2026-03-19T00:00:00Z")
+            .expect("builtin:host must exist");
+    let mut r = record();
+    r.persona_id = Some(host.id.clone());
+    let launch = effort_launch_projection(
+        &r,
+        Some(claude()),
+        std::slice::from_ref(&host),
+        Some("builtin:host"),
+        &BTreeMap::new(),
+        Some("high"),
+        None,
+        &BTreeMap::new(),
+    );
+    assert_eq!(launch.value.as_deref(), Some("low"));
+    assert_eq!(launch.key, ACP_KEY);
+}
+
+#[test]
 fn persona_column_sits_between_persona_native_and_legacy_env_for_goose() {
     // Same shape as the record tier: native env > column > legacy alias.
     let mut r = record();

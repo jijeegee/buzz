@@ -8,6 +8,7 @@ import { afterEach, test } from "node:test";
 
 const HONEY = "aa".repeat(32);
 const FIZZ = "bb".repeat(32);
+const HOST = "cc".repeat(32);
 
 let calls = [];
 let routing;
@@ -25,6 +26,43 @@ const tauriMock = {
           routingAgent: args.agentPubkey ?? routing.routingAgent,
         };
         return Promise.resolve(routing);
+      case "list_personas":
+        return Promise.resolve([
+          {
+            id: "builtin:host",
+            display_name: "Host",
+            avatar_url: null,
+            system_prompt: "You are Host.",
+            effort_level: "low",
+            is_builtin: true,
+            is_active: true,
+            created_at: "",
+            updated_at: "",
+          },
+        ]);
+      case "discover_acp_providers":
+        return Promise.resolve([
+          {
+            id: "buzz-agent",
+            label: "Buzz Agent",
+            availability: "available",
+            command: "buzz-agent",
+            default_args: [],
+            mcp_command: null,
+            source: "builtin",
+          },
+        ]);
+      case "get_global_agent_config":
+        return Promise.resolve({ preferred_runtime: null });
+      case "create_managed_agent":
+        return Promise.resolve({
+          agent: {
+            pubkey: HOST,
+            name: args.input.name,
+            persona_id: args.input.personaId,
+            backend: { type: "local" },
+          },
+        });
       default:
         return new Promise(() => {}); // pending — never an unmocked error
     }
@@ -282,6 +320,37 @@ test("with no agents the picker says so instead of rendering an empty select", a
       '[data-testid="agents-channel-routing-agent-select"]',
     ),
     null,
+  );
+});
+
+test("with no agents, Host offers to create one and saves it as the host", async () => {
+  routing = baseRouting({
+    mode: "off",
+    routingAgent: null,
+    applied: { state: "off" },
+    agents: [],
+  });
+  const container = await mount([]);
+
+  await click(radio(container, "host"));
+  const create = await waitFor(
+    container,
+    '[data-testid="agents-channel-routing-create-host"]',
+  );
+  assert.equal(create.textContent, "Create a Host agent");
+
+  await click(create);
+  for (let i = 0; i < 40 && setCalls().length === 0; i++) await settle(10);
+
+  const created = calls.filter(
+    (call) => call.command === "create_managed_agent",
+  );
+  assert.equal(created.length, 1);
+  assert.equal(created[0].args.input.personaId, "builtin:host");
+  assert.equal(created[0].args.input.name, "Host");
+  assert.deepEqual(
+    setCalls().map((call) => call.args),
+    [{ mode: "host", agentPubkey: HOST }],
   );
 });
 

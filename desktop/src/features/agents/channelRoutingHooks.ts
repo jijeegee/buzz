@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { managedAgentsQueryKey } from "@/features/agents/hooks";
+import {
+  managedAgentsQueryKey,
+  personasQueryKey,
+  useCreateManagedAgentMutation,
+} from "@/features/agents/hooks";
+import { buildHostAgentCreateInput } from "@/features/agents/lib/hostAgent";
 import {
   type ChannelRoutingMode,
   type ChannelRoutingStatus,
@@ -58,6 +63,24 @@ export function useSetChannelRoutingMutation() {
     onSettled: async () => {
       // The star moves with the mode, so the agent list changes too.
       await queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey });
+    },
+  });
+}
+
+/**
+ * "Create a Host agent": a new instance of the built-in Host persona,
+ * resolving to its pubkey. Making it the routing agent is the caller's
+ * separate `set_channel_routing`, so a failed save leaves a plain agent.
+ */
+export function useCreateHostAgentMutation() {
+  const queryClient = useQueryClient();
+  const { mutateAsync: createAgent } = useCreateManagedAgentMutation();
+  return useMutation({
+    mutationFn: async () =>
+      (await createAgent(await buildHostAgentCreateInput())).agent.pubkey,
+    onSettled: async () => {
+      // Creating may have re-added the Host persona to My Agents.
+      await queryClient.invalidateQueries({ queryKey: personasQueryKey });
     },
   });
 }

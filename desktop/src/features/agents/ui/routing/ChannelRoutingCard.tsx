@@ -6,6 +6,7 @@ import {
 } from "@/features/agents/agentWorkingSignal";
 import {
   useChannelRoutingQuery,
+  useCreateHostAgentMutation,
   useSetChannelRoutingMutation,
 } from "@/features/agents/channelRoutingHooks";
 import {
@@ -20,6 +21,7 @@ import {
 import type { ChannelRoutingMode } from "@/shared/api/tauriChannelRouting";
 import type { ManagedAgent } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { Button } from "@/shared/ui/button";
 import { ChannelRoutingAgentPicker } from "./ChannelRoutingAgentPicker";
 import { ChannelRoutingStatusLine } from "./ChannelRoutingStatusLine";
 
@@ -31,7 +33,10 @@ import { ChannelRoutingStatusLine } from "./ChannelRoutingStatusLine";
  *
  * Choosing Host with no routing agent yet only opens the picker (a draft) —
  * nothing is saved until an agent is picked, so the radio alone never leaves
- * a half-configured mode on disk.
+ * a half-configured mode on disk. With no agents at all, Host offers
+ * "Create a Host agent": create an instance of the built-in Host persona,
+ * then save it as the routing agent (two writes; the first alone leaves an
+ * ordinary agent, which is a valid state).
  */
 export function ChannelRoutingCard({
   agents,
@@ -48,6 +53,8 @@ export function ChannelRoutingCard({
   const statusQuery = useChannelRoutingQuery();
   const { mutate: saveRouting, ...saveMutation } =
     useSetChannelRoutingMutation();
+  const { mutate: createHostAgent, ...createHostMutation } =
+    useCreateHostAgentMutation();
   const [draftMode, setDraftMode] = React.useState<ChannelRoutingMode | null>(
     null,
   );
@@ -80,7 +87,8 @@ export function ChannelRoutingCard({
   );
   const nameOf = React.useMemo(() => routingNameOf(agents), [agents]);
   const selectedMode = draftMode ?? status?.mode ?? null;
-  const isSaving = saveMutation.isPending;
+  const isSaving = saveMutation.isPending || createHostMutation.isPending;
+  const actionError = saveMutation.error ?? createHostMutation.error;
 
   const save = (mode: ChannelRoutingMode, agentPubkey: string | null) => {
     saveRouting({ mode, agentPubkey }, { onSuccess: () => setDraftMode(null) });
@@ -179,6 +187,26 @@ export function ChannelRoutingCard({
                     <>
                       <ChannelRoutingAgentPicker
                         disabled={isSaving}
+                        emptyAction={
+                          option.mode === "host" ? (
+                            <Button
+                              data-testid="agents-channel-routing-create-host"
+                              disabled={isSaving}
+                              onClick={() =>
+                                createHostAgent(undefined, {
+                                  onSuccess: (pubkey) => save("host", pubkey),
+                                })
+                              }
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              {createHostMutation.isPending
+                                ? "Creating…"
+                                : "Create a Host agent"}
+                            </Button>
+                          ) : undefined
+                        }
                         label={routingAgentLabel(option.mode)}
                         onChoose={(pubkey) => save(option.mode, pubkey)}
                         options={pickerOptions}
@@ -202,11 +230,11 @@ export function ChannelRoutingCard({
             })}
           </fieldset>
 
-          {saveMutation.error ? (
+          {actionError ? (
             <p className="mt-2 text-sm text-destructive" role="alert">
-              {saveMutation.error instanceof Error
-                ? saveMutation.error.message
-                : String(saveMutation.error)}
+              {actionError instanceof Error
+                ? actionError.message
+                : String(actionError)}
             </p>
           ) : null}
 

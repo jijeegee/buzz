@@ -18,12 +18,15 @@ import { Checkbox } from "@/shared/ui/checkbox";
  */
 export function ChannelRoutingAgentPicker({
   disabled,
+  emptyAction,
   label,
   onChoose,
   options,
   selectedPubkey,
 }: {
   disabled: boolean;
+  /** Offered beside "No agents yet." when there is nothing to pick. */
+  emptyAction?: React.ReactNode;
   /** "Host agent" / "Lead agent". */
   label: string;
   onChoose: (pubkey: string) => void;
@@ -52,12 +55,17 @@ export function ChannelRoutingAgentPicker({
           {label}
         </label>
         {options.length === 0 ? (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="agents-channel-routing-no-agents"
-          >
-            No agents yet — create one below.
-          </p>
+          <>
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="agents-channel-routing-no-agents"
+            >
+              {emptyAction
+                ? "No agents yet."
+                : "No agents yet — create one below."}
+            </p>
+            {emptyAction}
+          </>
         ) : (
           <select
             className="flex h-9 min-w-0 max-w-xs flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs disabled:cursor-not-allowed disabled:opacity-60"

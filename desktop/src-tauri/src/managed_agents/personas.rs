@@ -2,7 +2,10 @@ use std::fs;
 
 use tauri::AppHandle;
 
-use crate::{managed_agents::AgentDefinition, util::now_iso};
+use crate::{
+    managed_agents::{AgentDefinition, ACP_THOUGHT_LEVEL_FALLBACK_VALUES},
+    util::now_iso,
+};
 
 struct BuiltInPersona {
     id: &'static str,
@@ -12,6 +15,9 @@ struct BuiltInPersona {
     name_pool: &'static [&'static str],
     model: Option<&'static str>,
     runtime: Option<&'static str>,
+    /// Seeded into the definition's `effort_level` column; `None` leaves the
+    /// harness default (or the global default) in charge.
+    effort_level: Option<&'static str>,
     default_active: bool,
 }
 
@@ -35,6 +41,16 @@ pub(crate) const POLLEN_LEGACY_SYSTEM_PROMPT: &str = "You are Bumble, a curious 
 // product name everywhere it is consumed.
 const POLLEN_AVATAR: &str = BUMBLE_AVATAR;
 
+/// Stable id of the built-in Host persona the Channel routing card offers
+/// when Host mode has no agent to route with.
+const HOST_PERSONA_ID: &str = "builtin:host";
+
+/// Kept minimal on purpose: the dispatcher base prompt the harness prepends
+/// in Host mode already carries every routing rule.
+const HOST_SYSTEM_PROMPT: &str =
+    "You are Host. Routing is your whole job; follow the dispatcher rules above exactly.\n\
+Keep each routing message to one or two lines.";
+
 const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[
     BuiltInPersona {
         id: "builtin:fizz",
@@ -47,6 +63,7 @@ const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[
         ],
         model: None,
         runtime: None,
+        effort_level: None,
         default_active: true,
     },
     BuiltInPersona {
@@ -57,6 +74,7 @@ const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[
         name_pool: &["Honey"],
         model: None,
         runtime: None,
+        effort_level: None,
         default_active: true,
     },
     BuiltInPersona {
@@ -67,6 +85,19 @@ const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[
         name_pool: &[POLLEN_DISPLAY_NAME],
         model: None,
         runtime: None,
+        effort_level: None,
+        default_active: true,
+    },
+    BuiltInPersona {
+        id: HOST_PERSONA_ID,
+        display_name: "Host",
+        avatar_url: None,
+        system_prompt: HOST_SYSTEM_PROMPT,
+        name_pool: &["Host"],
+        model: None,
+        runtime: None,
+        // Routing is a short classification turn: the catalog's lowest level.
+        effort_level: Some(ACP_THOUGHT_LEVEL_FALLBACK_VALUES[0]),
         default_active: true,
     },
 ];
@@ -121,7 +152,7 @@ fn built_in_persona_records(now: &str) -> Vec<AgentDefinition> {
     BUILT_IN_PERSONAS
         .iter()
         .map(|persona| AgentDefinition {
-            effort_level: None,
+            effort_level: persona.effort_level.map(|s| s.to_string()),
             id: persona.id.to_string(),
             display_name: persona.display_name.to_string(),
             avatar_url: persona.avatar_url.map(|s| s.to_string()),

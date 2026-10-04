@@ -33,6 +33,7 @@ use presets::{preset_catalog_entry, PRESET_HARNESSES};
 use runtime_metadata::AcpThoughtLevelOption;
 pub(crate) use runtime_metadata::EffortNormalization;
 pub(crate) use runtime_metadata::KnownAcpRuntime;
+pub(crate) use runtime_metadata::ACP_THOUGHT_LEVEL_FALLBACK_VALUES;
 #[cfg(test)]
 pub(crate) use runtime_metadata::GOOSE_EFFORT_NORMALIZATION;
 
