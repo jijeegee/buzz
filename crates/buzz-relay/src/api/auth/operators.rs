@@ -18,7 +18,7 @@ use serde_json::json;
 use super::{
     auth_error, authenticate, bad_request, forbidden, internal, json_object, not_found, unavailable,
 };
-use crate::api::admin::{config_operator_exists, is_effective_operator};
+use crate::api::admin::is_effective_operator;
 use crate::state::AppState;
 
 async fn require_operator(state: &AppState, headers: &HeaderMap) -> Result<TokenBinding, Response> {
@@ -93,12 +93,7 @@ pub(super) async fn grant(
     }
     match state
         .db
-        .upsert_relay_operator(
-            target.as_bytes(),
-            role,
-            caller.principal.as_bytes(),
-            config_operator_exists(&state.config),
-        )
+        .upsert_identity_operator(target.as_bytes(), role, caller.principal.as_bytes())
         .await
     {
         Ok(()) => {
@@ -110,7 +105,8 @@ pub(super) async fn grant(
             "last_operator",
             "operation would remove the last relay operator",
         ),
-        Err(error) => internal("upsert_relay_operator", &error),
+        Err(buzz_db::DbError::AccessDenied(message)) => bad_request(&message),
+        Err(error) => internal("upsert_identity_operator", &error),
     }
 }
 
@@ -130,11 +126,7 @@ pub(super) async fn revoke(
     };
     match state
         .db
-        .remove_relay_operator(
-            target.as_bytes(),
-            caller.principal.as_bytes(),
-            config_operator_exists(&state.config),
-        )
+        .remove_identity_operator(target.as_bytes(), caller.principal.as_bytes())
         .await
     {
         Ok(true) => {

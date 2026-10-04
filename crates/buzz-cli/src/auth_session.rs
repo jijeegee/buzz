@@ -323,9 +323,9 @@ impl SessionStore {
             .map_err(|e| CliError::Auth(format!("cannot read the stored login: {e}")))
     }
 
-    /// Persist `tokens` for `origin`: refresh token first (credential store,
-    /// else the file), then the session file. Returns where the refresh
-    /// token went.
+    /// Persist a complete token snapshot atomically, then move its refresh
+    /// token to the credential store. If that final commit fails, the complete
+    /// file snapshot remains recoverable. Returns the authoritative storage.
     pub async fn save_tokens(
         &self,
         origin: &str,
@@ -333,32 +333,59 @@ impl SessionStore {
         device_id: Option<String>,
         tokens: &IssuedTokens,
     ) -> Result<RefreshStorage, CliError> {
+        // Commit one recoverable snapshot before changing the keyring. This
+        // covers first login and file -> keyring migration, not just an
+        // existing keyring pointer. A crash at any later prefix is recoverable.
+        let session = StoredSession {
+            principal_id: principal_id.to_owned(),
+            device_id,
+            access: tokens.access.expose().to_owned(),
+            access_expires_at: now_secs() + tokens.expires_in.max(0),
+            refresh: Some(tokens.refresh.expose().to_owned()),
+        };
+        let mut file = self.read_file()?;
+        file.version = FILE_VERSION;
+        let has_pointer = file.sessions.get(origin).is_some_and(|old| {
+            old.refresh.is_none()
+                && old.principal_id == session.principal_id
+                && old.device_id == session.device_id
+        });
+        file.sessions.insert(origin.to_owned(), session);
+        if let Err(error) = self.write_file(&file) {
+            // A verified existing keyring pointer can recover a rotation even
+            // with a stale access cache. Never use this for first login,
+            // another account/device, or a file-backed refresh token.
+            if has_pointer {
+                let key = origin.to_owned();
+                let refresh = tokens.refresh.clone();
+                if self
+                    .refresh_op(move |store| store.save(&key, &refresh))
+                    .await
+                    .is_ok()
+                {
+                    eprintln!("warning: {error}; rotated refresh retained in credential store");
+                    return Ok(RefreshStorage::Keyring);
+                }
+            }
+            return Err(error);
+        }
         let refresh = tokens.refresh.clone();
         let key = origin.to_owned();
         let in_keyring = self
             .refresh_op(move |store| store.save(&key, &refresh))
             .await
             .is_ok();
-        let session = StoredSession {
-            principal_id: principal_id.to_owned(),
-            device_id,
-            access: tokens.access.expose().to_owned(),
-            access_expires_at: now_secs() + tokens.expires_in.max(0),
-            refresh: (!in_keyring).then(|| tokens.refresh.expose().to_owned()),
-        };
-        let mut file = self.read_file()?;
-        file.version = FILE_VERSION;
-        file.sessions.insert(origin.to_owned(), session);
-        if let Err(error) = self.write_file(&file) {
-            if in_keyring {
-                // The access cache is stale, but the new refresh token is
-                // durable: the next command refreshes again.
-                eprintln!("warning: {error}");
-                return Ok(RefreshStorage::Keyring);
+        if in_keyring {
+            if let Some(session) = file.sessions.get_mut(origin) {
+                session.refresh = None;
             }
-            return Err(error);
-        }
-        if !in_keyring {
+            if let Err(error) = self.write_file(&file) {
+                // The committed file snapshot still contains the NEW refresh
+                // token, so report its actual storage location, not Keyring.
+                eprintln!("warning: {error}; keeping refresh token in session file");
+                return Ok(RefreshStorage::File);
+            }
+        } else {
             // A stale keyring entry must not shadow the file copy later.
             let key = origin.to_owned();
             let _ = self.refresh_op(move |store| store.delete(&key)).await;
@@ -406,7 +433,7 @@ pub async fn post_refresh(
             .as_ref()
             .and_then(|v| v.get("code"))
             .and_then(|c| c.as_str())
-            .unwrap_or("invalid_token");
+            .unwrap_or("");
         if TERMINAL_REFRESH_CODES.contains(&code) {
             return Err(RefreshError::Terminal(code.to_owned()));
         }

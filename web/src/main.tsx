@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useSyncExternalStore } from "react";
+import { bindAccountCache } from "@/shared/auth/account-cache";
+import { webSession } from "@/shared/auth/session";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "@/app/App";
@@ -22,12 +24,22 @@ const queryClient = new QueryClient({
   },
 });
 
+const accountCache = bindAccountCache(webSession, queryClient);
+
+function AccountApp() {
+  const epoch = useSyncExternalStore(
+    accountCache.subscribe,
+    accountCache.getSnapshot,
+  );
+  return <App key={epoch} />;
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider delayDuration={300}>
-          <App />
+          <AccountApp />
           <Toaster />
         </TooltipProvider>
       </ThemeProvider>

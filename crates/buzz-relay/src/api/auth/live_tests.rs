@@ -22,6 +22,7 @@ use crate::state::AppState;
 
 mod audio;
 mod invites;
+mod operators;
 mod profile;
 
 type Ws =
@@ -699,11 +700,17 @@ async fn refresh_rotation_replay_and_reuse_detection() {
 #[tokio::test]
 #[ignore = "requires Postgres + Redis"]
 async fn exchange_reauth_binding_swap_and_grace_expiry() {
+    // Several real DB/HTTP round trips precede the cache-miss retry. Keep
+    // them inside grace on slower hosts; expiry is still explicitly tested.
+    const GRACE_SECS: u64 = 10;
     let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
         .await
         .expect("pg");
     let host = community(&pool).await;
-    let inst = instance(&host).await;
+    let inst = instance_configured(&host, true, None, |config| {
+        config.auth_token.exchange_grace = Duration::from_secs(GRACE_SECS);
+    })
+    .await;
     let owner = new_user(&inst).await;
 
     let exchange = |token: String| {

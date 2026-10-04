@@ -24,12 +24,20 @@ import {
   resolveRef,
 } from "isomorphic-git";
 import http from "isomorphic-git/http/web";
-import { relayAuthorization } from "@/shared/auth/session";
+import { relayAuthorization, webSession } from "@/shared/auth/session";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
 /** Get a repo-specific LightningFS instance backed by IndexedDB. */
 export function getFs(owner: string, repoName: string): LightningFS {
-  return new LightningFS(`buzz-git-${owner}-${repoName}`);
+  // v2 deliberately never opens the legacy account-agnostic databases.
+  return new LightningFS(
+    `buzz-git-v2-${JSON.stringify([
+      relayHttpBaseUrl(),
+      webSession.getPrincipalCacheKey(),
+      owner,
+      repoName,
+    ])}`,
+  );
 }
 
 /** Working directory inside the virtual FS. */
@@ -73,10 +81,16 @@ export async function ensureClone(
   repoName: string,
   ref: string,
 ): Promise<{ fs: LightningFS; dir: string }> {
+  const epoch = webSession.getAccountEpoch();
+  const assertCurrent = () => {
+    if (epoch !== webSession.getAccountEpoch())
+      throw new Error("Account changed during repository request");
+  };
+  const headers = await authHeaders(owner, repoName);
+  assertCurrent();
   const fs = getFs(owner, repoName);
   const dir = getDir(owner, repoName);
   const url = repoGitUrl(owner, repoName);
-  const headers = await authHeaders(owner, repoName);
 
   let exists = false;
   try {
@@ -86,21 +100,18 @@ export async function ensureClone(
     // repo not cloned yet
   }
 
+  assertCurrent();
   if (exists) {
-    try {
-      await fetch({
-        fs,
-        http,
-        dir,
-        url,
-        ref,
-        depth: 1,
-        singleBranch: true,
-        headers,
-      });
-    } catch {
-      // fetch may fail if ref hasn't changed — that's fine
-    }
+    await fetch({
+      fs,
+      http,
+      dir,
+      url,
+      ref,
+      depth: 1,
+      singleBranch: true,
+      headers,
+    });
   } else {
     await clone({
       fs,
@@ -115,6 +126,7 @@ export async function ensureClone(
     });
   }
 
+  assertCurrent();
   return { fs, dir };
 }
 

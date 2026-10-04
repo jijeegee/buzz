@@ -83,6 +83,7 @@ pub(super) async fn complete_login(
         .expires_at
         .ok_or_else(|| DbError::InvalidData("refresh token requires an expiry".into()))?;
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, principal).await?;
     let live_devices: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM devices WHERE principal_id = $1 AND revoked_at IS NULL",
     )
@@ -147,6 +148,13 @@ pub(super) async fn rotate_refresh(
         .expires_at
         .ok_or_else(|| DbError::InvalidData("refresh token requires an expiry".into()))?;
     let mut tx = begin(pool).await?;
+    let subject: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT d.principal_id FROM refresh_tokens rt JOIN sessions s ON s.id = rt.session_id JOIN devices d ON d.id = s.device_id WHERE rt.token_hash = $1")
+        .bind(old_hash.as_slice()).fetch_optional(&mut *tx).await?;
+    let Some(subject) = subject else {
+        return Ok(RefreshOutcome::NotFound);
+    };
+    super::lock_subject(&mut tx, &principal_from_bytes(&subject)?).await?;
     let row = sqlx::query(
         "SELECT rt.session_id, rt.generation, rt.expires_at, rt.used_at, \
                 s.revoked_at AS session_revoked_at, d.id AS device_id, d.principal_id, \
@@ -268,6 +276,7 @@ pub(super) async fn revoke_device(
     reason: RevokeReason,
 ) -> Result<Option<Vec<[u8; 32]>>> {
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, principal).await?;
     let owned: Option<Uuid> =
         sqlx::query_scalar("SELECT id FROM devices WHERE id = $1 AND principal_id = $2 FOR UPDATE")
             .bind(device_id)
@@ -312,6 +321,7 @@ pub(super) async fn revoke_other_sessions(
     keep_session: Uuid,
 ) -> Result<Vec<[u8; 32]>> {
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, principal).await?;
     let sessions: Vec<Uuid> = sqlx::query_scalar(
         "UPDATE sessions SET revoked_at = now(), revoked_reason = 'revoke_all' \
          WHERE revoked_at IS NULL AND id <> $2 AND device_id IN \

@@ -608,9 +608,9 @@ pub async fn login(
 }
 
 /// Sign out the stored session: `POST /auth/logout`, then forget it locally.
-/// A relay that already rejects the token (401) still forgets locally; a
-/// network/relay failure keeps the session (the relay still trusts it) unless
-/// `local_only`.
+/// Expired access is refreshed and retried once; only successful revocation
+/// or a terminal refresh rejection forgets locally. Other failures preserve
+/// the session for retry unless `local_only`.
 pub async fn logout(
     relay_url: &str,
     store: &SessionStore,
@@ -631,25 +631,37 @@ pub async fn logout(
         }));
     }
     let http = build_http()?;
-    let remote = match session_access_token_detailed(&http, relay_url, store, false).await {
-        Ok(Some((token, _))) => {
-            let resp = http
-                .post(format!("{relay_url}/auth/logout"))
-                .bearer_auth(token.expose())
-                .json(&json!({}))
-                .send()
-                .await?;
-            let status = resp.status().as_u16();
-            let body = resp.text().await?;
-            if (200..300).contains(&status) || status == 401 {
-                "revoked"
-            } else {
+    let mut force_refresh = false;
+    let remote = loop {
+        match session_access_token_detailed(&http, relay_url, store, force_refresh).await {
+            Ok(Some((token, _))) => {
+                let resp = http
+                    .post(format!("{relay_url}/auth/logout"))
+                    .bearer_auth(token.expose())
+                    .json(&json!({}))
+                    .send()
+                    .await?;
+                let status = resp.status().as_u16();
+                let body = resp.text().await?;
+                if (200..300).contains(&status) {
+                    break "revoked";
+                }
+                let expired = status == 401
+                    && serde_json::from_str::<Value>(&body)
+                        .ok()
+                        .and_then(|v| v.get("code").and_then(Value::as_str).map(str::to_owned))
+                        .as_deref()
+                        == Some("token_expired");
+                if expired && !force_refresh {
+                    force_refresh = true;
+                    continue;
+                }
                 return Err(relay_error(status, body));
             }
+            // Only a terminal refresh rejection proves the session is ended.
+            Ok(None) | Err(SessionError::Ended(_)) => break "already_ended",
+            Err(SessionError::Failed(error)) => return Err(error),
         }
-        // The relay already ended this session (and it was forgotten).
-        Ok(None) | Err(SessionError::Ended(_)) => "already_ended",
-        Err(SessionError::Failed(error)) => return Err(error),
     };
     store.forget(&origin).await?;
     Ok(json!({

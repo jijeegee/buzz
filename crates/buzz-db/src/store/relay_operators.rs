@@ -43,7 +43,7 @@ async fn acquire_operator_lock(tx: &mut Transaction<'_, Postgres>, pubkey: &[u8]
 /// Take the transaction-scoped roster-wide advisory lock. Serializes all
 /// operator-removing mutations against each other so the last-operator check
 /// sees a stable count.
-async fn acquire_roster_lock(tx: &mut Transaction<'_, Postgres>) -> Result<()> {
+pub(crate) async fn acquire_roster_lock(tx: &mut Transaction<'_, Postgres>) -> Result<()> {
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
         .bind(OPERATOR_ROSTER_LOCK)
         .execute(&mut **tx)
@@ -53,12 +53,31 @@ async fn acquire_roster_lock(tx: &mut Transaction<'_, Postgres>) -> Result<()> {
 
 /// Number of DB rows currently carrying the `operator` role, read inside the
 /// mutation transaction after the change is applied.
-async fn db_operator_count(tx: &mut Transaction<'_, Postgres>) -> Result<i64> {
+async fn db_operator_count(tx: &mut Transaction<'_, Postgres>, token_only: bool) -> Result<i64> {
+    if token_only {
+        return Ok(sqlx::query_scalar("SELECT count(*) FROM relay_operators o JOIN principals p ON p.id = o.pubkey WHERE o.role = 'operator' AND p.kind = 'user' AND p.disabled_at IS NULL")
+            .fetch_one(&mut **tx).await?);
+    }
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM relay_operators WHERE role = 'operator'")
             .fetch_one(&mut **tx)
             .await?;
     Ok(count)
+}
+
+async fn require_active_user(tx: &mut Transaction<'_, Postgres>, principal: &[u8]) -> Result<()> {
+    let usable: Option<bool> = sqlx::query_scalar(
+        "SELECT kind = 'user' AND disabled_at IS NULL FROM principals WHERE id = $1 FOR UPDATE",
+    )
+    .bind(principal)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if usable != Some(true) {
+        return Err(DbError::AccessDenied(
+            "operator target must be an active user".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// A row in `relay_operators`.
@@ -97,13 +116,32 @@ pub async fn upsert(
     added_by: &[u8],
     config_operator_exists: bool,
 ) -> Result<()> {
+    upsert_with_policy(pool, pubkey, role, added_by, config_operator_exists, false).await
+}
+
+async fn upsert_with_policy(
+    pool: &PgPool,
+    pubkey: &[u8],
+    role: &str,
+    added_by: &[u8],
+    config_operator_exists: bool,
+    token_only: bool,
+) -> Result<()> {
     let connection = crate::observability::acquire_writer(
         pool,
         crate::observability::WriterOperation::Authorization,
     )
     .await?;
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
-    upsert_in_tx(&mut tx, pubkey, role, added_by, config_operator_exists).await?;
+    upsert_in_tx(
+        &mut tx,
+        pubkey,
+        role,
+        added_by,
+        config_operator_exists,
+        token_only,
+    )
+    .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -118,6 +156,7 @@ async fn upsert_in_tx(
     role: &str,
     added_by: &[u8],
     config_operator_exists: bool,
+    token_only: bool,
 ) -> Result<()> {
     // A demotion to moderator can drop the effective-operator count; serialize
     // it against every other operator-removing mutation via the roster-wide
@@ -127,8 +166,11 @@ async fn upsert_in_tx(
     // before the pre-image is known — and only enforce the invariant below once
     // the pre-image confirms this actually demoted an operator.
     let demotion_candidate = role == "moderator";
-    if demotion_candidate {
+    if demotion_candidate || token_only {
         acquire_roster_lock(tx).await?;
+    }
+    if token_only {
+        require_active_user(tx, pubkey).await?;
     }
 
     // Serialize concurrent mutations of the SAME target before the pre-image
@@ -187,7 +229,7 @@ async fn upsert_in_tx(
     // roster is empty. Dropping the tx without committing rolls the demotion and
     // its audit row back.
     let demotion = demotion_candidate && prev_role.as_deref() == Some("operator");
-    if demotion && !config_operator_exists && db_operator_count(tx).await? == 0 {
+    if demotion && !config_operator_exists && db_operator_count(tx, token_only).await? == 0 {
         return Err(DbError::LastOperator);
     }
     Ok(())
@@ -213,10 +255,10 @@ pub async fn bootstrap_operator(
     .await?;
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
     acquire_roster_lock(&mut tx).await?;
-    if db_operator_count(&mut tx).await? != 0 {
+    if db_operator_count(&mut tx, true).await? != 0 {
         return Ok(false);
     }
-    upsert_in_tx(&mut tx, principal, "operator", relay_principal, false).await?;
+    upsert_in_tx(&mut tx, principal, "operator", relay_principal, false, true).await?;
     tx.commit().await?;
     Ok(true)
 }
@@ -238,6 +280,16 @@ pub async fn remove(
     pubkey: &[u8],
     actor: &[u8],
     config_operator_exists: bool,
+) -> Result<bool> {
+    remove_with_policy(pool, pubkey, actor, config_operator_exists, false).await
+}
+
+async fn remove_with_policy(
+    pool: &PgPool,
+    pubkey: &[u8],
+    actor: &[u8],
+    config_operator_exists: bool,
+    token_only: bool,
 ) -> Result<bool> {
     let connection = crate::observability::acquire_writer(
         pool,
@@ -275,7 +327,10 @@ pub async fn remove(
 
         // Deleting an operator can empty the roster. Dropping the tx here rolls
         // the delete and its audit row back.
-        if !config_operator_exists && db_operator_count(&mut tx).await? == 0 {
+        if prev_role.as_deref() == Some("operator")
+            && !config_operator_exists
+            && db_operator_count(&mut tx, token_only).await? == 0
+        {
             return Err(DbError::LastOperator);
         }
     }
@@ -341,6 +396,24 @@ pub async fn list(pool: &PgPool) -> Result<Vec<RelayOperatorRecord>> {
 }
 
 impl crate::Db {
+    /// Audited token-mode grant: only active humans qualify; legacy/config
+    /// keys cannot satisfy the last usable human operator invariant.
+    #[datastore_span(name = "upsert_identity_operator", system = "postgresql")]
+    pub async fn upsert_identity_operator(
+        &self,
+        principal: &[u8],
+        role: &str,
+        actor: &[u8],
+    ) -> Result<()> {
+        upsert_with_policy(&self.pool, principal, role, actor, false, true).await
+    }
+
+    /// Audited token-mode removal preserving the last active human operator.
+    #[datastore_span(name = "remove_identity_operator", system = "postgresql")]
+    pub async fn remove_identity_operator(&self, principal: &[u8], actor: &[u8]) -> Result<bool> {
+        remove_with_policy(&self.pool, principal, actor, false, true).await
+    }
+
     /// Fetch one relay operator/moderator row by pubkey (32-byte binary).
     #[datastore_span(name = "get_relay_operator", system = "postgresql")]
     pub async fn get_relay_operator(&self, pubkey: &[u8]) -> Result<Option<RelayOperatorRecord>> {
@@ -854,7 +927,7 @@ mod postgres_tests {
             "deleting the last remaining operator must be rejected, got {result_b:?}"
         );
 
-        let remaining = db_operator_count(&mut pool.begin().await.expect("begin"))
+        let remaining = db_operator_count(&mut pool.begin().await.expect("begin"), false)
             .await
             .expect("count operators");
         assert_eq!(remaining, 1, "operator b must remain standing");

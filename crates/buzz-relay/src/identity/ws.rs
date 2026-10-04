@@ -51,6 +51,7 @@ pub(crate) const PUBKEY_MISMATCH_MESSAGE: &str =
 #[derive(Debug, Clone, Copy)]
 struct Bound {
     hash: [u8; 32],
+    generation: u64,
     deadline: Option<DateTime<Utc>>,
 }
 
@@ -82,7 +83,11 @@ impl TokenSession {
         close_frame: CloseFrame,
     ) -> Self {
         Self {
-            bound: StdMutex::new(Bound { hash, deadline }),
+            bound: StdMutex::new(Bound {
+                hash,
+                deadline,
+                generation: 0,
+            }),
             wake: Notify::new(),
             cancel,
             ctrl_tx,
@@ -101,7 +106,13 @@ impl TokenSession {
 
     /// Swap the binding to a new token (same-principal re-AUTH).
     pub(crate) fn rebind(&self, hash: [u8; 32], deadline: Option<DateTime<Utc>>) {
-        *self.bound.lock().unwrap_or_else(PoisonError::into_inner) = Bound { hash, deadline };
+        let mut bound = self.bound.lock().unwrap_or_else(PoisonError::into_inner);
+        *bound = Bound {
+            hash,
+            deadline,
+            generation: bound.generation.wrapping_add(1),
+        };
+        drop(bound);
         self.wake.notify_one();
     }
 
@@ -114,6 +125,25 @@ impl TokenSession {
         bound.deadline = Some(bound.deadline.map_or(not_after, |d| d.min(not_after)));
         drop(bound);
         self.wake.notify_one();
+        true
+    }
+
+    // The match and cancellation are one critical section with rebind.
+    fn close_if_current(&self, observed: Bound, notice: &str) -> bool {
+        let bound = self.bound.lock().unwrap_or_else(PoisonError::into_inner);
+        if bound.hash != observed.hash || bound.generation != observed.generation {
+            return false;
+        }
+        self.close(notice);
+        true
+    }
+
+    fn close_if_hash(&self, hash: &[u8; 32], notice: &str) -> bool {
+        let bound = self.bound.lock().unwrap_or_else(PoisonError::into_inner);
+        if &bound.hash != hash {
+            return false;
+        }
+        self.close(notice);
         true
     }
 
@@ -162,8 +192,9 @@ impl TokenSessionRegistry {
                     }
                 }
                 None => {
-                    entry.close(&format!("auth-revoked: {reason}"));
-                    affected += 1;
+                    if entry.close_if_hash(&bound.hash, &format!("auth-revoked: {reason}")) {
+                        affected += 1;
+                    }
                 }
             }
         }
@@ -188,41 +219,50 @@ pub(crate) async fn run_binding_watch(session: Arc<TokenSession>, db: buzz_db::D
         }
         // Re-read: a rebind may have landed while sleeping.
         let current = session.current();
-        if current.hash != bound.hash {
+        if current.generation != bound.generation {
             continue;
         }
         if current
             .deadline
             .is_some_and(|deadline| deadline <= Utc::now())
         {
-            session.close("auth-expired: token_expired");
+            if session.close_if_current(current, "auth-expired: token_expired") {
+                return;
+            }
+            continue;
+        }
+        if until_deadline.is_none_or(|d| d >= RECHECK_INTERVAL)
+            && recheck_binding(&session, current, db.lookup_access_token(&current.hash)).await
+        {
             return;
         }
-        if until_deadline.is_none_or(|d| d >= RECHECK_INTERVAL) {
-            match db.lookup_access_token(&current.hash).await {
-                Ok(Some(record)) => {
-                    if let Err(rejection) = record.check(Utc::now()) {
-                        let code = match rejection {
-                            buzz_db::identity::AccessTokenRejection::Expired => "token_expired",
-                            buzz_db::identity::AccessTokenRejection::PrincipalDisabled => {
-                                "principal_disabled"
-                            }
-                            _ => "token_revoked",
-                        };
-                        session.close(&format!("auth-revoked: {code}"));
-                        return;
-                    }
-                }
-                Ok(None) => {
-                    session.close("auth-revoked: token_revoked");
-                    return;
-                }
-                // A failed recheck keeps the binding; the token's own deadline
-                // still bounds the session.
-                Err(error) => warn!(%error, "token binding recheck failed"),
-            }
-        }
     }
+}
+
+// Keep the asynchronous lookup separate from the synchronous binding decision.
+async fn recheck_binding(
+    session: &TokenSession,
+    bound: Bound,
+    lookup: impl std::future::Future<
+        Output = Result<Option<buzz_db::identity::AccessTokenRecord>, buzz_db::DbError>,
+    >,
+) -> bool {
+    let notice = match lookup.await {
+        Ok(Some(record)) => match record.check(Utc::now()) {
+            Ok(()) => return false,
+            Err(buzz_db::identity::AccessTokenRejection::Expired) => "auth-revoked: token_expired",
+            Err(buzz_db::identity::AccessTokenRejection::PrincipalDisabled) => {
+                "auth-revoked: principal_disabled"
+            }
+            Err(_) => "auth-revoked: token_revoked",
+        },
+        Ok(None) => "auth-revoked: token_revoked",
+        Err(error) => {
+            warn!(%error, "token binding recheck failed");
+            return false;
+        }
+    };
+    session.close_if_current(bound, notice)
 }
 
 fn deny(
@@ -451,7 +491,7 @@ async fn initial_auth(token: TokenSecret, conn: Arc<ConnectionState>, state: Arc
     match state.db.lookup_access_token(&bound_hash).await {
         Ok(Some(record)) if record.check(Utc::now()).is_ok() => {}
         _ => {
-            session.close("auth-revoked: token_revoked");
+            session.close_if_hash(&bound_hash, "auth-revoked: token_revoked");
             return;
         }
     }
@@ -526,7 +566,9 @@ async fn reauth(
         Ok(Some(record)) if record.check(Utc::now()).is_ok() => {}
         _ => {
             match &session {
-                Some(session) => session.close("auth-revoked: token_revoked"),
+                Some(session) => {
+                    session.close_if_hash(&hash, "auth-revoked: token_revoked");
+                }
                 None => conn.cancel.cancel(),
             }
             return;
@@ -581,5 +623,73 @@ pub(crate) fn stamp_ws_draft(
             stamp_for_principal(draft, &PrincipalId::from(ctx.pubkey))
         }
         _ => Err((String::new(), "auth-required: not authenticated".to_owned())),
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+
+    #[test]
+    fn stale_deadline_and_revocation_cannot_close_new_binding() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let cancel = CancellationToken::new();
+        let session = Arc::new(TokenSession::new(
+            [1; 32],
+            Some(Utc::now()),
+            cancel.clone(),
+            tx,
+            notice_frame,
+        ));
+        let old = session.current();
+        session.rebind([2; 32], None);
+        assert!(!session.close_if_current(old, "auth-expired: token_expired"));
+        assert!(!session.close_if_hash(&old.hash, "auth-revoked: stopped"));
+        let registry = TokenSessionRegistry::default();
+        registry.insert(Uuid::new_v4(), session);
+        assert_eq!(registry.apply(&[[1; 32]], "stopped", None), 0);
+        assert!(!cancel.is_cancelled());
+        assert!(rx.try_recv().is_err());
+        assert_eq!(registry.apply(&[[2; 32]], "stopped", None), 1);
+        assert!(cancel.is_cancelled());
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn stale_lookup_cannot_close_rebound_session() {
+        for new_hash in [[2; 32], [1; 32]] {
+            let (tx, mut rx) = mpsc::channel(4);
+            let cancel = CancellationToken::new();
+            let session = Arc::new(TokenSession::new(
+                [1; 32],
+                None,
+                cancel.clone(),
+                tx,
+                notice_frame,
+            ));
+            let observed = session.current();
+            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+            let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+            let task = tokio::spawn({
+                let session = session.clone();
+                async move {
+                    recheck_binding(&session, observed, async {
+                        started_tx.send(()).unwrap();
+                        finish_rx.await.unwrap();
+                        Ok(None)
+                    })
+                    .await
+                }
+            });
+            started_rx.await.unwrap();
+            session.rebind(new_hash, Some(Utc::now() + chrono::Duration::hours(1)));
+            finish_tx.send(()).unwrap();
+            assert!(
+                !task.await.unwrap(),
+                "old lookup must not terminate the new generation"
+            );
+            assert!(!cancel.is_cancelled());
+            assert!(rx.try_recv().is_err());
+        }
     }
 }

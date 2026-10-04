@@ -8,6 +8,63 @@ use super::*;
 
 const DEADLINE: Duration = Duration::from_secs(5);
 
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn profile_retry_repairs_projection_after_event_commit() {
+    use crate::identity::profile::{publish_profile_in_community, Scope};
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let inst = instance(&community(&pool).await).await;
+    let user = new_user(&inst).await;
+    let principal = buzz_core::principal::PrincipalId::from_hex(&user.principal).unwrap();
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM communities WHERE host = $1")
+        .bind(&inst.host)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let tenant = buzz_core::tenant::TenantContext::resolved(
+        buzz_core::CommunityId::from_uuid(id),
+        inst.host.clone(),
+    );
+    let trigger = format!("profile_fault_{}", uuid::Uuid::new_v4().simple());
+    // Only generated UUID identifiers and a parsed principal's hex enter this DDL.
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "CREATE FUNCTION {trigger}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.pubkey = decode('{}','hex') THEN RAISE EXCEPTION 'projection fault'; END IF; RETURN NEW; END $$; CREATE TRIGGER {trigger} BEFORE INSERT OR UPDATE ON users FOR EACH ROW EXECUTE FUNCTION {trigger}();", user.principal
+    ))).execute(&pool).await.unwrap();
+    let failed =
+        publish_profile_in_community(&inst.state, &tenant, &principal, Scope::Participant).await;
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "DROP TRIGGER {trigger} ON users; DROP FUNCTION {trigger}();"
+    )))
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(failed.is_err(), "projection fault must propagate");
+    let (lock, snapshot) = inst
+        .state
+        .db
+        .lock_principal_profile_publish(tenant.community(), &principal)
+        .await
+        .unwrap();
+    assert!(
+        snapshot.latest.is_some(),
+        "event was durably committed before projection failed"
+    );
+    assert!(!snapshot.has_user_row);
+    lock.release().await.unwrap();
+    assert!(
+        !publish_profile_in_community(&inst.state, &tenant, &principal, Scope::Member)
+            .await
+            .unwrap(),
+        "retry repairs without a new event"
+    );
+    assert_eq!(
+        users_display_name(&inst, &user.principal).await.as_deref(),
+        Some("Test User")
+    );
+}
+
 /// Distinct (by id) kind:0 events of `author` visible over `ws`. A REQ can
 /// deliver the same event twice (backfill and live overlap); that is correct
 /// relay behavior, so de-duplicate.

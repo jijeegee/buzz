@@ -557,6 +557,194 @@ async fn relay_reported_expiry_forces_one_refresh() {
     assert_eq!(me[1].authorization.as_deref(), Some("Bearer bzs_new"));
 }
 
+#[tokio::test]
+async fn first_login_cannot_succeed_without_a_session_pointer() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = test_store(&dir);
+    std::fs::create_dir_all(store.path().parent().unwrap()).unwrap();
+    std::fs::create_dir(
+        store
+            .path()
+            .with_extension(format!("json.tmp{}", std::process::id())),
+    )
+    .unwrap();
+    let result = store
+        .save_tokens(
+            "https://relay.test",
+            "alice",
+            None,
+            &IssuedTokens {
+                access: Secret::new("access".into()),
+                refresh: Secret::new("refresh".into()),
+                expires_in: 3600,
+            },
+        )
+        .await;
+    assert!(result.is_err(), "no discoverable session was persisted");
+}
+
+#[tokio::test]
+async fn existing_keyring_pointer_recovers_when_file_is_unwritable() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = test_store(&dir);
+    let origin = "https://relay.test";
+    seed(&store, origin, "alice", "old_access", "old_refresh", 3600).await;
+    let old = store.get(origin).unwrap().unwrap();
+    std::fs::create_dir(
+        store
+            .path()
+            .with_extension(format!("json.tmp{}", std::process::id())),
+    )
+    .unwrap();
+    let storage = store
+        .save_tokens(
+            origin,
+            "alice",
+            old.device_id,
+            &IssuedTokens {
+                access: Secret::new("new_access".into()),
+                refresh: Secret::new("new_refresh".into()),
+                expires_in: 3600,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(storage, RefreshStorage::Keyring);
+    let current = store.get(origin).unwrap().unwrap();
+    assert_eq!(
+        store
+            .load_refresh(origin, &current)
+            .await
+            .unwrap()
+            .unwrap()
+            .expose(),
+        "new_refresh"
+    );
+}
+
+/// Fail the session-file commit after the keyring accepts a rotated token.
+struct FailCommitStore {
+    inner: MemoryStore,
+    block_path: std::path::PathBuf,
+}
+impl RefreshStore for FailCommitStore {
+    fn load(&self, origin: &str) -> Result<Option<Secret>, String> {
+        self.inner.load(origin)
+    }
+    fn save(&self, origin: &str, token: &Secret) -> Result<(), String> {
+        self.inner.save(origin, token)?;
+        std::fs::create_dir_all(&self.block_path).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    fn delete(&self, origin: &str) -> Result<(), String> {
+        self.inner.delete(origin)
+    }
+}
+
+#[tokio::test]
+async fn migration_commit_failure_keeps_rotated_refresh_discoverable() {
+    let dir = tempfile::tempdir().unwrap();
+    let (initial, keyring) = test_store(&dir);
+    keyring.fail_saves.store(true, Ordering::SeqCst);
+    let origin = "https://relay.test";
+    seed(
+        &initial,
+        origin,
+        "alice",
+        "old_access",
+        "consumed_refresh",
+        3600,
+    )
+    .await;
+    let failing = Arc::new(FailCommitStore {
+        inner: MemoryStore::default(),
+        block_path: initial
+            .path()
+            .with_extension(format!("json.tmp{}", std::process::id())),
+    });
+    let store = SessionStore::new(initial.path().to_owned(), failing);
+    let result = store
+        .save_tokens(
+            origin,
+            "alice",
+            None,
+            &IssuedTokens {
+                access: Secret::new("new_access".into()),
+                refresh: Secret::new("new_refresh".into()),
+                expires_in: 3600,
+            },
+        )
+        .await
+        .unwrap();
+    let reloaded = store.get(origin).unwrap().unwrap();
+    assert_eq!(
+        store
+            .load_refresh(origin, &reloaded)
+            .await
+            .unwrap()
+            .unwrap()
+            .expose(),
+        "new_refresh"
+    );
+    assert_eq!(reloaded.access, "new_access");
+    assert_eq!(result, RefreshStorage::File);
+}
+
+#[tokio::test]
+async fn logout_refreshes_expired_access_and_retries_once() {
+    let relay = FakeRelay::default();
+    relay.route("POST /auth/logout", 401, r#"{"code":"token_expired"}"#);
+    relay.route("POST /auth/logout", 204, "");
+    relay.route(
+        "POST /auth/refresh",
+        200,
+        r#"{"access":"bzs_new","refresh":"bzr_new","expires_in":3600}"#,
+    );
+    let url = serve(relay.clone()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = test_store(&dir);
+    seed(&store, &url, &principal_hex(), "bzs_old", "bzr_old", 3600).await;
+    logout(&url, &store, false).await.unwrap();
+    let calls = relay.seen_path("/auth/logout");
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[1].authorization.as_deref(), Some("Bearer bzs_new"));
+    assert!(store.get(&url).unwrap().is_none());
+}
+
+#[tokio::test]
+async fn logout_keeps_session_when_refresh_401_has_no_terminal_code() {
+    let relay = FakeRelay::default();
+    relay.route("POST /auth/logout", 401, r#"{"code":"token_expired"}"#);
+    relay.route("POST /auth/refresh", 401, "{}");
+    let url = serve(relay.clone()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = test_store(&dir);
+    seed(&store, &url, &principal_hex(), "bzs_old", "bzr_old", 3600).await;
+    assert!(logout(&url, &store, false).await.is_err());
+    assert!(store.get(&url).unwrap().is_some());
+    assert_eq!(relay.seen_path("/auth/refresh").len(), 1);
+}
+
+#[tokio::test]
+async fn logout_does_not_forget_on_unknown_or_repeated_expired_401() {
+    for code in ["unknown", "token_expired"] {
+        let relay = FakeRelay::default();
+        relay.route("POST /auth/logout", 401, &format!(r#"{{"code":"{code}"}}"#));
+        relay.route(
+            "POST /auth/refresh",
+            200,
+            r#"{"access":"bzs_new","refresh":"bzr_new","expires_in":3600}"#,
+        );
+        let url = serve(relay.clone()).await;
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = test_store(&dir);
+        seed(&store, &url, &principal_hex(), "bzs_old", "bzr_old", 3600).await;
+        assert!(logout(&url, &store, false).await.is_err());
+        assert!(store.get(&url).unwrap().is_some());
+        assert!(relay.seen_path("/auth/logout").len() <= 2);
+    }
+}
+
 // ── Management commands and logout ──────────────────────────────────────
 
 #[tokio::test]

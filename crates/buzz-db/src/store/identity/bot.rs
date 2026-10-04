@@ -73,6 +73,7 @@ pub(super) async fn create_bot(
     host_device_id: Option<Uuid>,
 ) -> Result<PrincipalId> {
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, owner).await?;
     let live: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM bots WHERE owner_principal_id = $1 AND deleted_at IS NULL",
     )
@@ -118,6 +119,7 @@ pub(super) async fn delete_bot(
     bot: &PrincipalId,
 ) -> Result<Option<Vec<[u8; 32]>>> {
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, bot).await?;
     let deleted = sqlx::query(
         "UPDATE bots SET deleted_at = now() \
          WHERE id = $1 AND owner_principal_id = $2 AND deleted_at IS NULL",
@@ -144,6 +146,32 @@ pub(super) async fn delete_bot(
     Ok(Some(hashes_from_rows(rows)?))
 }
 
+async fn validate_issuance(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    bot: &PrincipalId,
+    device: Option<Uuid>,
+) -> Result<()> {
+    let valid: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM bots b JOIN principals p ON p.id = b.id \
+         JOIN principals owner ON owner.id = b.owner_principal_id \
+         WHERE b.id = $1 AND b.deleted_at IS NULL AND p.disabled_at IS NULL \
+         AND owner.kind = 'user' AND owner.disabled_at IS NULL \
+         AND b.host_device_id IS NOT DISTINCT FROM $2::uuid \
+         AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM devices d \
+           WHERE d.id = $2 AND d.principal_id = owner.id AND d.revoked_at IS NULL)))",
+    )
+    .bind(bot.as_bytes().as_slice())
+    .bind(device)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !valid {
+        return Err(DbError::AccessDenied(
+            "bot or hosting device is unavailable".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Issue a desktop-hosted bot token, revoking every earlier `bzb_` of the bot
 /// (`reissued`) in the same transaction.
 pub(super) async fn issue_bot_token(
@@ -153,6 +181,8 @@ pub(super) async fn issue_bot_token(
     token: IssuedToken,
 ) -> Result<Vec<[u8; 32]>> {
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, bot).await?;
+    validate_issuance(&mut tx, bot, Some(device_id)).await?;
     let rows: Vec<Vec<u8>> = sqlx::query_scalar(
         "UPDATE access_tokens SET revoked_at = now(), revoked_reason = 'reissued' \
          WHERE bot_id = $1 AND kind = 'bot' AND revoked_at IS NULL RETURNING token_hash",
@@ -181,6 +211,8 @@ pub(super) async fn issue_headless_token(
     token: IssuedToken,
 ) -> Result<()> {
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, bot).await?;
+    validate_issuance(&mut tx, bot, None).await?;
     sqlx::query(
         "INSERT INTO access_tokens (token_hash, principal_id, kind, bot_id, expires_at) \
          VALUES ($1, $2, 'bot_headless', $2, $3)",
@@ -203,6 +235,7 @@ pub(super) async fn revoke_bot_tokens(
 ) -> Result<Vec<[u8; 32]>> {
     let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_owned()).collect();
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, bot).await?;
     let rows: Vec<Vec<u8>> = sqlx::query_scalar(
         "UPDATE access_tokens SET revoked_at = now(), revoked_reason = $3 \
          WHERE bot_id = $1 AND kind = ANY($2) AND revoked_at IS NULL RETURNING token_hash",
@@ -224,6 +257,7 @@ pub(super) async fn revoke_headless_token(
     hash_prefix: &str,
 ) -> Result<Option<[u8; 32]>> {
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, bot).await?;
     let rows: Vec<Vec<u8>> = sqlx::query_scalar(
         "SELECT token_hash FROM access_tokens \
          WHERE bot_id = $1 AND kind = 'bot_headless' AND revoked_at IS NULL \
@@ -253,6 +287,7 @@ pub(super) async fn revoke_all_owned_bot_tokens(
     owner: &PrincipalId,
 ) -> Result<Vec<[u8; 32]>> {
     let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, owner).await?;
     let rows: Vec<Vec<u8>> = sqlx::query_scalar(
         "UPDATE access_tokens SET revoked_at = now(), revoked_reason = 'revoke_all' \
          WHERE revoked_at IS NULL AND bot_id IN \
@@ -281,13 +316,23 @@ pub(super) async fn exchange_bot_token(
     replay_window: chrono::Duration,
 ) -> Result<ExchangeOutcome> {
     let mut tx = begin(pool).await?;
+    let subject: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT principal_id FROM access_tokens WHERE token_hash = $1")
+            .bind(old_hash.as_slice())
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some(subject) = subject else {
+        return Ok(ExchangeOutcome::NotFound);
+    };
+    super::lock_subject(&mut tx, &principal_from_bytes(&subject)?).await?;
     let row = sqlx::query(
         "SELECT t.kind, t.bot_id, t.issued_by_device, t.expires_at, t.superseded_at, \
                 t.superseded_at > now() - make_interval(secs => $2) AS recently_superseded, \
-                t.revoked_at, b.deleted_at, p.disabled_at \
+                t.revoked_at, b.deleted_at, p.disabled_at, owner.disabled_at AS owner_disabled_at \
          FROM access_tokens t \
          JOIN bots b ON b.id = t.bot_id \
          JOIN principals p ON p.id = t.principal_id \
+         JOIN principals owner ON owner.id = b.owner_principal_id \
          WHERE t.token_hash = $1 FOR UPDATE OF t",
     )
     .bind(old_hash.as_slice())
@@ -301,6 +346,20 @@ pub(super) async fn exchange_bot_token(
     if kind != "bot" {
         return Ok(ExchangeOutcome::NotExchangeable);
     }
+    let expires_at: Option<DateTime<Utc>> = row.try_get("expires_at")?;
+    let revoked_at: Option<DateTime<Utc>> = row.try_get("revoked_at")?;
+    let deleted_at: Option<DateTime<Utc>> = row.try_get("deleted_at")?;
+    let disabled_at: Option<DateTime<Utc>> = row.try_get("disabled_at")?;
+    let now = Utc::now();
+    let owner_disabled_at: Option<DateTime<Utc>> = row.try_get("owner_disabled_at")?;
+    if owner_disabled_at.is_some()
+        || revoked_at.is_some()
+        || deleted_at.is_some()
+        || disabled_at.is_some()
+        || expires_at.is_none_or(|exp| exp <= now)
+    {
+        return Ok(ExchangeOutcome::Invalid);
+    }
     // `superseded_at` is stamped with the DB clock, so the replay window is
     // measured on the DB clock too (NULL when the token was never superseded).
     let superseded_at: Option<DateTime<Utc>> = row.try_get("superseded_at")?;
@@ -310,18 +369,6 @@ pub(super) async fn exchange_bot_token(
             return Ok(ExchangeOutcome::RecentlyExchanged);
         }
         return Ok(ExchangeOutcome::Superseded);
-    }
-    let expires_at: Option<DateTime<Utc>> = row.try_get("expires_at")?;
-    let revoked_at: Option<DateTime<Utc>> = row.try_get("revoked_at")?;
-    let deleted_at: Option<DateTime<Utc>> = row.try_get("deleted_at")?;
-    let disabled_at: Option<DateTime<Utc>> = row.try_get("disabled_at")?;
-    let now = Utc::now();
-    if revoked_at.is_some()
-        || deleted_at.is_some()
-        || disabled_at.is_some()
-        || expires_at.is_none_or(|exp| exp <= now)
-    {
-        return Ok(ExchangeOutcome::Invalid);
     }
     let bot_bytes: Vec<u8> = row.try_get("bot_id")?;
     let bot = principal_from_bytes(&bot_bytes)?;

@@ -140,6 +140,9 @@ pub(super) async fn disable_principal(
     purge_after: Option<Duration>,
 ) -> Result<Vec<[u8; 32]>> {
     let mut tx = begin(pool).await?;
+    // Roster checks and disabling agree on which human accounts are usable.
+    crate::relay_operators::acquire_roster_lock(&mut tx).await?;
+    super::lock_subject(&mut tx, principal).await?;
     sqlx::query(
         "UPDATE principals SET disabled_at = now(), \
                 purge_after = CASE WHEN $2::double precision IS NULL THEN NULL \

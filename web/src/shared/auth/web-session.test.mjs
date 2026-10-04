@@ -155,6 +155,103 @@ test("login completion posts the PKCE verifier with cookies enabled", async () =
   assert.equal(h.timers.at(-1).ms, 30_000);
 });
 
+test("logout refreshes an expired access token before revoking the cookie", async () => {
+  let cookie = true;
+  const h = harness((url, init) => {
+    if (url.endsWith("/complete")) return loginResponse();
+    if (url.endsWith("/refresh"))
+      return cookie
+        ? json(200, { access: "bzs_fresh", expires_in: 3600 })
+        : json(400, {});
+    if (init.headers.Authorization === "Bearer bzs_1")
+      return json(401, { code: "token_expired" });
+    cookie = false;
+    return new Response(null, { status: 204 });
+  });
+  await h.session.completeLogin("code", "verifier");
+  await h.session.signOut();
+  assert.equal(cookie, false, "logout must actually revoke the cookie");
+  await h.session.restore();
+  assert.equal(h.session.getSnapshot().status, "signed_out");
+});
+
+test("logout rejects unknown or repeated expired 401 and retains retry state", async () => {
+  for (const code of ["token_expired", "unknown"]) {
+    const h = harness((url) =>
+      url.endsWith("/complete")
+        ? loginResponse()
+        : url.endsWith("/refresh")
+          ? json(200, { access: "bzs_new", expires_in: 3600 })
+          : json(401, { code }),
+    );
+    await h.session.completeLogin("code", "verifier");
+    await assert.rejects(h.session.signOut(), /Sign-out failed/);
+    assert.equal(h.session.getSnapshot().status, "signed_in");
+    assert.ok(h.calls.length <= 4);
+  }
+});
+
+test("a delayed profile body cannot restore account metadata after logout", async () => {
+  let release;
+  let reading;
+  const started = new Promise((r) => {
+    reading = r;
+  });
+  const h = harness((url) => {
+    if (url.endsWith("/complete")) return loginResponse();
+    if (url.endsWith("/logout")) return new Response(null, { status: 204 });
+    return {
+      ok: true,
+      json: () => {
+        reading();
+        return new Promise((r) => {
+          release = r;
+        });
+      },
+    };
+  });
+  await h.session.completeLogin("code", "v");
+  const pending = h.session.loadProfile();
+  await started;
+  await h.session.signOut();
+  release({ principal_id: "alice", display_name: "Alice" });
+  await pending;
+  assert.equal(h.session.getSnapshot().principalId, null);
+});
+
+test("logout preserves recovery when refresh returns an unknown 401", async () => {
+  const h = harness((url) =>
+    url.endsWith("/complete")
+      ? loginResponse()
+      : json(401, {
+          code: url.endsWith("/logout")
+            ? "token_expired"
+            : "upstream_auth_failed",
+        }),
+  );
+  await h.session.completeLogin("code", "v");
+  await assert.rejects(h.session.signOut());
+  assert.equal(h.session.getSnapshot().status, "signed_in");
+});
+
+test("a logout response for a retired account cannot report the new account signed out", async () => {
+  let release;
+  const h = harness((url) =>
+    url.endsWith("/logout")
+      ? new Promise((r) => {
+          release = r;
+        })
+      : loginResponse(),
+  );
+  await h.session.completeLogin("alice", "v");
+  const pending = h.session.signOut();
+  while (!release) await new Promise((r) => setImmediate(r));
+  await h.session.completeLogin("bob", "v");
+  release(new Response(null, { status: 204 }));
+  await assert.rejects(pending, /account changed/i);
+  assert.equal(h.session.getSnapshot().status, "signed_in");
+});
+
 test("SignInRequiredError is an Error", () => {
   assert.ok(new SignInRequiredError() instanceof Error);
 });

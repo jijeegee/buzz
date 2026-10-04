@@ -126,11 +126,10 @@ fn desired_profile(snapshot: &ProfilePublishSnapshot, scope: Scope) -> Option<Va
     if record.disabled_at.is_some() || record.kind == PrincipalKind::Relay {
         return None;
     }
-    if scope == Scope::Member && !snapshot.has_user_row {
+    if scope == Scope::Member && !snapshot.has_user_row && snapshot.latest.is_none() {
         return None;
     }
-    let desired = profile_metadata(record);
-    (!is_current(snapshot.latest.as_ref(), &desired)).then_some(desired)
+    Some(profile_metadata(record))
 }
 
 /// Publish `principal`'s current kind:0 into one community when it is not
@@ -157,6 +156,25 @@ pub(crate) async fn publish_profile_in_community(
         lock.release().await?;
         return Ok(false);
     };
+    // Content equality proves storage, not completion of the projection. A
+    // committed kind:0 is also the durable retry record for its side effects.
+    if let Some(latest) = snapshot
+        .latest
+        .as_ref()
+        .filter(|_| is_current(snapshot.latest.as_ref(), &desired))
+    {
+        let stored = state
+            .db
+            .get_event_by_id_for_event_write(tenant.community(), &latest.id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("profile event disappeared under publish lock"))?;
+        // Replay only the idempotent projection. Re-dispatching an already
+        // stored event would duplicate event-created audits and workflow runs
+        // on every AUTH; the canonical event remains available to REQ.
+        crate::handlers::side_effects::handle_side_effects(tenant, 0, &stored.event, state).await?;
+        lock.release().await?;
+        return Ok(false);
+    }
     let now = chrono::Utc::now().timestamp();
     let draft = json!({
         "kind": 0,
@@ -311,10 +329,12 @@ mod tests {
     fn current_only_when_content_matches() {
         let desired = json!({"name": "Ada", "display_name": "Ada"});
         let same = ProfileEventState {
+            id: vec![],
             created_at: 10,
             content: r#"{"display_name":"Ada","name":"Ada"}"#.into(),
         };
         let stale = ProfileEventState {
+            id: vec![],
             created_at: 10,
             content: r#"{"name":"Old"}"#.into(),
         };
@@ -326,6 +346,7 @@ mod tests {
     #[test]
     fn created_at_moves_past_a_same_second_predecessor() {
         let existing = ProfileEventState {
+            id: vec![],
             created_at: 100,
             content: String::new(),
         };

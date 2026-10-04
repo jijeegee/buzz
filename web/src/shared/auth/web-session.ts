@@ -71,6 +71,7 @@ export class WebSession {
 
   private access: AccessToken | null = null;
   private generation = 0;
+  private readonly cacheNamespace = crypto.randomUUID();
   private inflight: Promise<string | null> | null = null;
   private timer: unknown = null;
   private failures = 0;
@@ -99,6 +100,21 @@ export class WebSession {
 
   /** Current snapshot (stable identity until the next change). */
   getSnapshot = (): SessionSnapshot => this.snapshot;
+
+  /** Generation fence for account-scoped asynchronous work. */
+  getAccountEpoch = (): number => this.generation;
+
+  /** Persistent clones are never shared with an unidentified login. */
+  getPrincipalCacheKey(): string {
+    if (this.snapshot.principalId)
+      return JSON.stringify(["principal", this.snapshot.principalId]);
+    if (this.snapshot.status === "signed_out") return JSON.stringify(["guest"]);
+    return JSON.stringify([
+      "unidentified",
+      this.cacheNamespace,
+      this.generation,
+    ]);
+  }
 
   /**
    * A usable access token, refreshing via the cookie when the cached one is
@@ -169,8 +185,14 @@ export class WebSession {
    * the user back in on the next page load.
    */
   async signOut(): Promise<void> {
-    const token = await this.getAccessToken();
-    if (token) {
+    const generation = this.generation;
+    let token = await this.getAccessToken();
+    const assertCurrent = () => {
+      if (generation !== this.generation)
+        throw new Error("Account changed during sign-out. Try again.");
+    };
+    for (let attempt = 0; token && attempt < 2; attempt += 1) {
+      assertCurrent();
       let response: Response;
       try {
         response = await this.fetchImpl(`${this.baseUrl}/auth/logout`, {
@@ -181,14 +203,27 @@ export class WebSession {
       } catch {
         throw new Error("Could not reach the relay to sign out. Try again.");
       }
-      // 401: the session is already dead on the relay.
-      if (!response.ok && response.status !== 401) {
-        throw new Error(`Sign-out failed (HTTP ${response.status}).`);
+      assertCurrent();
+      if (response.ok) {
+        this.forget();
+        return;
       }
-    } else if (this.snapshot.status !== "signed_out") {
+      const body = await response.json().catch(() => ({}));
+      assertCurrent();
+      if (
+        response.status === 401 &&
+        body.code === "token_expired" &&
+        attempt === 0
+      ) {
+        token = await this.refresh();
+        continue;
+      }
+      // An access-token rejection does not prove the refresh cookie is dead.
+      throw new Error(`Sign-out failed (HTTP ${response.status}).`);
+    }
+    if (this.snapshot.status !== "signed_out") {
       throw new Error("Could not reach the relay to sign out. Try again.");
     }
-    this.forget();
   }
 
   private profileInflight: Promise<void> | null = null;
@@ -213,6 +248,7 @@ export class WebSession {
       });
       if (!response.ok || generation !== this.generation) return;
       const me = (await response.json()) as Record<string, unknown>;
+      if (generation !== this.generation) return;
       this.update({
         ...this.snapshot,
         principalId:
@@ -276,15 +312,26 @@ export class WebSession {
     } catch {
       return { kind: "transient" };
     }
-    // 400: no refresh cookie. 401: invalid, expired, revoked, reused, disabled.
-    if (response.status === 400 || response.status === 401) {
-      return { kind: "terminal" };
-    }
-    if (!response.ok) return { kind: "transient" };
     const json = (await response.json().catch(() => ({}))) as Record<
       string,
       unknown
     >;
+    // 400: no refresh cookie. A generic/unknown 401 (e.g. a proxy) is
+    // not evidence that the relay revoked the recoverable session.
+    if (
+      response.status === 400 ||
+      (response.status === 401 &&
+        [
+          "invalid_token",
+          "token_expired",
+          "token_revoked",
+          "refresh_reused",
+          "principal_disabled",
+        ].includes(String(json.code)))
+    ) {
+      return { kind: "terminal" };
+    }
+    if (!response.ok) return { kind: "transient" };
     if (typeof json.access !== "string") return { kind: "transient" };
     return {
       kind: "ok",

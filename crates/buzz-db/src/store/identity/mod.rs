@@ -98,6 +98,28 @@ async fn begin(pool: &PgPool) -> Result<Transaction<'static, Postgres>> {
     Ok(sqlx::Transaction::begin(connection, None).await?)
 }
 
+/// Serialize credentials and revocations on the owner, then the subject.
+/// Always take these locks before device/session/token rows. Reading token
+/// state in a later statement sees a revocation that committed while waiting.
+async fn lock_subject(tx: &mut Transaction<'_, Postgres>, subject: &PrincipalId) -> Result<()> {
+    let owner: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT owner_principal_id FROM bots WHERE id = $1")
+            .bind(subject.as_bytes().as_slice())
+            .fetch_optional(&mut **tx)
+            .await?;
+    if let Some(owner) = owner {
+        sqlx::query("SELECT id FROM principals WHERE id = $1 FOR UPDATE")
+            .bind(owner)
+            .execute(&mut **tx)
+            .await?;
+    }
+    sqlx::query("SELECT id FROM principals WHERE id = $1 FOR UPDATE")
+        .bind(subject.as_bytes().as_slice())
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 fn principal_from_bytes(bytes: &[u8]) -> Result<PrincipalId> {
     PrincipalId::from_slice(bytes)
         .map_err(|e| DbError::InvalidData(format!("stored principal id: {e}")))

@@ -31,6 +31,223 @@ async fn new_user(db: &Db) -> PrincipalId {
         .principal
 }
 
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn bot_issuance_revalidates_device_and_owner() {
+    let db = Db::from_pool(pool().await);
+    let owner = new_user(&db).await;
+    let session = db
+        .complete_login(&owner, "host", "desktop", token(24), token(1))
+        .await
+        .unwrap();
+    let bot = db
+        .create_bot(&owner, "bot", Some(session.device_id))
+        .await
+        .unwrap();
+    db.revoke_device(&owner, session.device_id, RevokeReason::Logout)
+        .await
+        .unwrap();
+    assert!(
+        db.issue_bot_token(&bot, session.device_id, token(1))
+            .await
+            .is_err(),
+        "a logged-out host cannot issue a token"
+    );
+    let headless = db.create_bot(&owner, "headless", None).await.unwrap();
+    db.disable_principal(&owner, None).await.unwrap();
+    assert!(
+        db.issue_headless_bot_token(&headless, token(1))
+            .await
+            .is_err(),
+        "disabled owners cannot issue headless tokens"
+    );
+}
+
+/// Force exchange to reach its token read before revocation starts. A token
+/// UPDATE alone sees the pre-exchange snapshot and misses the new token.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn bot_token_creation_cannot_escape_concurrent_revocation() {
+    let pool = pool().await;
+    let db = Db::from_pool(pool.clone());
+    for reissue in [false, true] {
+        for reason in [
+            RevokeReason::Stopped,
+            RevokeReason::Logout,
+            RevokeReason::RevokeAll,
+            RevokeReason::AccountDisabled,
+        ] {
+            let owner = new_user(&db).await;
+            let login = db
+                .complete_login(&owner, "host", "desktop", token(24), token(1))
+                .await
+                .unwrap();
+            let bot = db
+                .create_bot(&owner, "bot", Some(login.device_id))
+                .await
+                .unwrap();
+            let old = token(1);
+            let new = token(1);
+            db.issue_bot_token(&bot, login.device_id, old)
+                .await
+                .unwrap();
+            let mut held = pool.begin().await.unwrap();
+            sqlx::query("SELECT token_hash FROM access_tokens WHERE token_hash = $1 FOR UPDATE")
+                .bind(old.hash.as_slice())
+                .execute(&mut *held)
+                .await
+                .unwrap();
+            let exchange = tokio::spawn({
+                let db = db.clone();
+                async move {
+                    if reissue {
+                        db.issue_bot_token(&bot, login.device_id, new)
+                            .await
+                            .unwrap();
+                    } else {
+                        assert!(matches!(
+                            db.exchange_bot_token(
+                                &old.hash,
+                                new,
+                                Duration::seconds(60),
+                                Duration::seconds(10)
+                            )
+                            .await
+                            .unwrap(),
+                            ExchangeOutcome::Exchanged { .. }
+                        ));
+                    }
+                }
+            });
+            wait_for_lock_waiters(&pool, 1).await;
+            let revocation = tokio::spawn({
+                let db = db.clone();
+                async move {
+                    match reason {
+                        RevokeReason::Stopped => db.revoke_bot_tokens(&bot, &["bot"], reason).await,
+                        RevokeReason::Logout => db
+                            .revoke_device(&owner, login.device_id, reason)
+                            .await
+                            .map(|v| v.unwrap()),
+                        RevokeReason::RevokeAll => db.revoke_all_owned_bot_tokens(&owner).await,
+                        RevokeReason::AccountDisabled => db.disable_principal(&owner, None).await,
+                        _ => unreachable!(),
+                    }
+                }
+            });
+            wait_for_lock_waiters(&pool, 2).await;
+            held.commit().await.unwrap();
+            exchange.await.unwrap();
+            let hashes = revocation.await.unwrap().unwrap();
+            assert!(
+                hashes.contains(&new.hash),
+                "{reason:?} (reissue={reissue}) must publish revocation of the new token"
+            );
+            assert!(db
+                .lookup_access_token(&new.hash)
+                .await
+                .unwrap()
+                .unwrap()
+                .check(Utc::now())
+                .is_err());
+        }
+    }
+}
+
+async fn wait_for_lock_waiters(pool: &PgPool, count: i64) {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let waiting: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'")
+                .fetch_one(pool).await.unwrap();
+            if waiting >= count { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.expect("operations reached their database lock barriers");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn revoke_others_preserves_hosted_bot_exchange() {
+    let db = Db::from_pool(pool().await);
+    let owner = new_user(&db).await;
+    let host = db
+        .complete_login(&owner, "host", "desktop", token(24), token(1))
+        .await
+        .unwrap();
+    let keep = db
+        .complete_login(&owner, "keep", "mobile", token(24), token(1))
+        .await
+        .unwrap();
+    let bot = db
+        .create_bot(&owner, "bot", Some(host.device_id))
+        .await
+        .unwrap();
+    let old = token(1);
+    db.issue_bot_token(&bot, host.device_id, old).await.unwrap();
+    db.revoke_other_sessions(&owner, keep.session_id)
+        .await
+        .unwrap();
+    assert!(db
+        .lookup_access_token(&old.hash)
+        .await
+        .unwrap()
+        .unwrap()
+        .check(Utc::now())
+        .is_ok());
+    assert!(matches!(
+        db.exchange_bot_token(
+            &old.hash,
+            token(1),
+            Duration::seconds(60),
+            Duration::seconds(10)
+        )
+        .await
+        .unwrap(),
+        ExchangeOutcome::Exchanged { .. }
+    ));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn revoked_exchange_replay_is_invalid() {
+    let db = Db::from_pool(pool().await);
+    let owner = new_user(&db).await;
+    let login = db
+        .complete_login(&owner, "host", "desktop", token(24), token(1))
+        .await
+        .unwrap();
+    let bot = db
+        .create_bot(&owner, "bot", Some(login.device_id))
+        .await
+        .unwrap();
+    let old = token(1);
+    db.issue_bot_token(&bot, login.device_id, old)
+        .await
+        .unwrap();
+    db.exchange_bot_token(
+        &old.hash,
+        token(1),
+        Duration::seconds(60),
+        Duration::seconds(10),
+    )
+    .await
+    .unwrap();
+    db.revoke_bot_tokens(&bot, &["bot"], RevokeReason::Stopped)
+        .await
+        .unwrap();
+    assert_eq!(
+        db.exchange_bot_token(
+            &old.hash,
+            token(1),
+            Duration::seconds(60),
+            Duration::seconds(10)
+        )
+        .await
+        .unwrap(),
+        ExchangeOutcome::Invalid
+    );
+}
+
 /// B1: concurrent first boots converge on one relay principal — the relay
 /// key — and a changed key re-keys the single row.
 #[tokio::test]

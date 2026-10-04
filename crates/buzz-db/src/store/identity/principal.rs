@@ -302,6 +302,8 @@ pub struct ProfileCommunity {
 /// The newest live kind:0 a principal has in one community.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileEventState {
+    /// Stored event id, used to replay an incomplete projection.
+    pub id: Vec<u8>,
     /// `created_at` (unix seconds).
     pub created_at: i64,
     /// Event content (profile JSON).
@@ -406,7 +408,7 @@ async fn lock_profile_publish(
     .map(record_from_row)
     .transpose()?;
     let latest = sqlx::query(
-        "SELECT created_at, content FROM events \
+        "SELECT id, created_at, content FROM events \
          WHERE community_id = $1 AND kind = 0 AND pubkey = $2 \
            AND channel_id IS NULL AND deleted_at IS NULL \
          ORDER BY created_at DESC, id ASC LIMIT 1",
@@ -418,6 +420,7 @@ async fn lock_profile_publish(
     .map(|row| -> Result<ProfileEventState> {
         let created_at: DateTime<Utc> = row.try_get("created_at")?;
         Ok(ProfileEventState {
+            id: row.try_get("id")?,
             created_at: created_at.timestamp(),
             content: row.try_get("content")?,
         })
