@@ -717,7 +717,6 @@ pub fn run() {
             set_agent_managed_profiles,
             set_managed_agent_start_on_app_launch,
             set_managed_agent_auto_restart,
-            set_default_managed_agent,
             get_channel_routing,
             set_channel_routing,
             delete_managed_agent,

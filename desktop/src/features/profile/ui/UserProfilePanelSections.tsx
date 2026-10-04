@@ -15,10 +15,7 @@ import type { IdentityArchiveActions } from "@/features/identity-archive/hooks";
 import { getPresenceLabel } from "@/features/presence/lib/presence";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import type { ProfileActivityAgent } from "@/features/profile/lib/profileActivityAgent";
-import {
-  defaultAiToggleFor,
-  shouldShowRuntimeTab,
-} from "@/features/profile/lib/profileRuntimeGates";
+import { shouldShowRuntimeTab } from "@/features/profile/lib/profileRuntimeGates";
 import type {
   useFollowMutation,
   useUnfollowMutation,
@@ -79,7 +76,6 @@ export type ProfileSummaryViewProps = {
   handleAgentPrimaryAction: () => void;
   handleAgentRestart: () => void;
   handleEditAgent: () => void;
-  handleToggleAgentDefaultAi: () => void;
   handleEditPersona?: () => void;
   handleHuddle?: () => void;
   handleInstantiateAgent: () => void;
@@ -155,7 +151,6 @@ export function ProfileSummaryView({
   handleAgentPrimaryAction,
   handleAgentRestart,
   handleEditAgent,
-  handleToggleAgentDefaultAi,
   handleEditPersona,
   handleHuddle,
   handleInstantiateAgent,
@@ -543,8 +538,6 @@ export function ProfileSummaryView({
                     managedAgent?.autoRestartOnConfigChange ?? false
                   }
                   currentPubkey={pubkey}
-                  defaultAiEnabled={managedAgent?.isDefaultAi ?? false}
-                  defaultAiPending={isAgentActionPending}
                   diagnosticsFields={diagnosticsFields}
                   diagnosticsSummary={diagnosticsTrailing}
                   configurationFields={runtimeFields}
@@ -561,11 +554,6 @@ export function ProfileSummaryView({
                     ) : undefined
                   }
                   needsRestart={managedAgent?.needsRestart ?? false}
-                  onToggleDefaultAi={defaultAiToggleFor({
-                    handler: handleToggleAgentDefaultAi,
-                    isOwner,
-                    managedAgent,
-                  })}
                   restartDiff={managedAgent?.restartDiff ?? []}
                   onOpenDiagnostics={onOpenDiagnostics}
                   onOpenInstance={onOpenInstance}

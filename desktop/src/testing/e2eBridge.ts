@@ -9987,27 +9987,79 @@ async function handleSetManagedAgentStartOnAppLaunch(args: {
   return cloneManagedAgent(agent);
 }
 
+/** Mock `channel-routing.json`; a missing file reads as `host` natively. */
+let mockChannelRoutingMode: "off" | "host" | "lead" | "desktop-router" = "host";
+
 /**
- * Mirrors the native `set_default_managed_agent`: at most one agent carries
- * the star, `null` clears it, and the whole list comes back because starring
- * one agent unstars the previous default.
+ * Mirrors the native `get_channel_routing`. Mock processes have no stamped
+ * spawn config, so every running agent already runs its desired role (no
+ * transition in flight): the routing agent hosts while Host is saved.
  */
-async function handleSetDefaultManagedAgent(args: {
-  pubkey: string | null;
-}): Promise<RawManagedAgent[]> {
-  if (args.pubkey !== null) {
-    // Throws for an unknown pubkey before anything is mutated.
-    getMockManagedAgent(args.pubkey);
+function mockChannelRoutingStatus() {
+  const starred =
+    mockManagedAgents.find(
+      (agent) => agent.is_default_ai && agent.pubkey.trim().length > 0,
+    ) ?? null;
+  const roleFor = (agent: RawManagedAgent) =>
+    agent === starred && mockChannelRoutingMode === "host"
+      ? ("dispatcher" as const)
+      : ("none" as const);
+  const agents = mockManagedAgents
+    .filter((agent) => agent.pubkey.trim().length > 0)
+    .map((agent) => {
+      const running = agent.status === "running";
+      return {
+        pubkey: agent.pubkey,
+        running,
+        local: agent.backend.type === "local",
+        runningRole: running ? roleFor(agent) : ("none" as const),
+        desiredRole: roleFor(agent),
+        stale: false,
+        hold: false,
+      };
+    });
+  const host = agents.find(
+    (agent) => agent.running && agent.runningRole === "dispatcher",
+  );
+  return {
+    mode: mockChannelRoutingMode,
+    routingAgent: starred?.pubkey ?? null,
+    applied: host
+      ? { state: "hosting" as const, pubkey: host.pubkey }
+      : mockChannelRoutingMode === "desktop-router"
+        ? { state: "smart-routing" as const }
+        : { state: "off" as const },
+    routerActive: mockChannelRoutingMode === "desktop-router",
+    agents,
+  };
+}
+
+/**
+ * Mirrors the native `set_channel_routing`: Off and Host only, Host needs a
+ * routing agent, and the star moves (unstarring the previous one) before the
+ * mode is saved.
+ */
+async function handleSetChannelRouting(args: {
+  mode: typeof mockChannelRoutingMode;
+  agentPubkey: string | null;
+}) {
+  if (args.mode !== "off" && args.mode !== "host") {
+    throw new Error("That channel routing mode is not available yet.");
   }
-  const now = new Date().toISOString();
-  for (const agent of mockManagedAgents) {
-    const next = args.pubkey !== null && agent.pubkey === args.pubkey;
-    if ((agent.is_default_ai ?? false) !== next) {
-      agent.is_default_ai = next;
-      agent.updated_at = now;
+  if (args.mode === "host") {
+    if (!args.agentPubkey) throw new Error("Choose a host agent.");
+    getMockManagedAgent(args.agentPubkey);
+    const now = new Date().toISOString();
+    for (const agent of mockManagedAgents) {
+      const next = agent.pubkey === args.agentPubkey;
+      if ((agent.is_default_ai ?? false) !== next) {
+        agent.is_default_ai = next;
+        agent.updated_at = now;
+      }
     }
   }
-  return mockManagedAgents.map(cloneManagedAgent);
+  mockChannelRoutingMode = args.mode;
+  return mockChannelRoutingStatus();
 }
 
 async function handleSetManagedAgentAutoRestart(args: {
@@ -14217,9 +14269,11 @@ export function maybeInstallE2eTauriMocks() {
         return handleSetManagedAgentAutoRestart(
           payload as Parameters<typeof handleSetManagedAgentAutoRestart>[0],
         );
-      case "set_default_managed_agent":
-        return handleSetDefaultManagedAgent(
-          payload as Parameters<typeof handleSetDefaultManagedAgent>[0],
+      case "get_channel_routing":
+        return mockChannelRoutingStatus();
+      case "set_channel_routing":
+        return handleSetChannelRouting(
+          payload as Parameters<typeof handleSetChannelRouting>[0],
         );
       case "set_managed_agent_start_on_app_launch":
         return handleSetManagedAgentStartOnAppLaunch(

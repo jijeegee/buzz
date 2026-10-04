@@ -44,6 +44,10 @@ export type AutoRestartInputs = {
   edgeConsumed: boolean;
   /** Milliseconds the fire-conditions have held continuously. */
   quiescentForMs: number;
+  /** Channel-routing transition hold (`plan_routing_transition`): another
+   * agent still runs a routing role this one is about to take, so restarting
+   * now would run both roles at once. Releases once that agent restarts. */
+  routingHold: boolean;
 };
 
 /** Continuity window: fire-conditions must hold this long uninterrupted.
@@ -65,6 +69,7 @@ export function decideAutoRestart(
     isRunning,
     edgeConsumed,
     quiescentForMs,
+    routingHold,
   } = inputs;
 
   // Never-fire gates. Each resets the continuity window ("hold").
@@ -73,6 +78,8 @@ export function decideAutoRestart(
   if (!isLocalBackend) return "hold";
   if (!isRunning) return "hold";
   if (!connected) return "hold";
+  // Losing roles restart first; a gaining agent waits for them.
+  if (routingHold) return "hold";
   // Any working signal — observer OR typing — defers. `working` and
   // `workingSource` travel together, but check both so a partial reader
   // can never slip through.

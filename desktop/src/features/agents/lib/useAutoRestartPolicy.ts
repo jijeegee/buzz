@@ -5,6 +5,8 @@ import {
   managedAgentsQueryKey,
   useManagedAgentsQuery,
 } from "@/features/agents/hooks";
+import { useChannelRoutingQuery } from "@/features/agents/channelRoutingHooks";
+import { routingHoldFor } from "@/features/agents/lib/channelRouting";
 import { captureRelayRemovals } from "@/features/agents/managedAgentRelayCleanup";
 import { clearActiveTurnsForAgentOnStop } from "@/features/agents/managedAgentRuntimeHooks";
 import {
@@ -12,6 +14,7 @@ import {
   stopManagedAgent,
 } from "@/shared/api/tauriManagedAgents";
 import { listManagedAgents } from "@/shared/api/tauri";
+import { getChannelRouting } from "@/shared/api/tauriChannelRouting";
 import type { ManagedAgent } from "@/shared/api/types";
 import { useDocumentVisible } from "@/shared/lib/useDocumentVisible";
 import { getAgentObserverSnapshot } from "../observerRelayStore";
@@ -24,6 +27,7 @@ import {
 
 const defaultRestartOps = {
   listManagedAgents,
+  getChannelRouting,
   stopManagedAgent,
   startManagedAgent,
 };
@@ -42,12 +46,16 @@ export async function restartDriftedAgent(
     ? captureRelayRemovals(relayUrl)
     : () => {};
   // Pre-fire re-fetch: shrink the stale-decision window to ~0.
-  const fresh = await ops.listManagedAgents();
+  const [fresh, routing] = await Promise.all([
+    ops.listManagedAgents(),
+    ops.getChannelRouting(),
+  ]);
   const current = fresh.find((a) => a.pubkey === pubkey);
   if (
     !current?.needsRestart ||
     !current.autoRestartOnConfigChange ||
     current.status !== "running" ||
+    routingHoldFor(routing, pubkey) ||
     getAgentWorkingState(pubkey).source !== "none"
   ) {
     return;
@@ -76,6 +84,7 @@ const POLICY_TICK_MS = 15_000;
 export function useAutoRestartPolicy(relayUrl: string | undefined) {
   const queryClient = useQueryClient();
   const agents: ManagedAgent[] | undefined = useManagedAgentsQuery().data;
+  const routing = useChannelRoutingQuery().data;
   const edgesRef = React.useRef(new Map<string, AutoRestartEdgeState>());
   const inFlightRef = React.useRef(new Set<string>());
   const [, setTick] = React.useState(0);
@@ -118,6 +127,7 @@ export function useAutoRestartPolicy(relayUrl: string | undefined) {
         isRunning,
         edgeConsumed: edge.consumed,
         quiescentForMs: edge.armedAt === null ? 0 : now - edge.armedAt,
+        routingHold: routingHoldFor(routing, agent.pubkey),
       });
 
       if (decision === "hold") {

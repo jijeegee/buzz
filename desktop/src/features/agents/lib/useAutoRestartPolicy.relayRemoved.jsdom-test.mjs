@@ -7,7 +7,11 @@ import { markRelayRemoved } from "../managedAgentRelayCleanup.ts";
 const PUBKEY = "cd".repeat(32);
 
 // Auto-restart fires only for a running, drifted, opted-in agent.
-async function autoRestartAcrossFetch(relayUrl, duringFetch) {
+async function autoRestartAcrossFetch(
+  relayUrl,
+  duringFetch,
+  routing = { agents: [] },
+) {
   const calls = [];
   const ops = {
     listManagedAgents: async () => {
@@ -21,6 +25,7 @@ async function autoRestartAcrossFetch(relayUrl, duringFetch) {
         },
       ];
     },
+    getChannelRouting: async () => routing,
     stopManagedAgent: async () => calls.push("stop"),
     startManagedAgent: async () => calls.push("start"),
   };
@@ -44,4 +49,26 @@ test("removing an unrelated relay during the pre-fire fetch still restarts the a
   );
   await result;
   assert.deepEqual(calls, ["stop", "start"]);
+});
+
+test("a channel-routing hold read in the pre-fire fetch restarts nothing", async () => {
+  const { result, calls } = await autoRestartAcrossFetch(
+    "wss://auto-held.example",
+    () => {},
+    {
+      agents: [
+        {
+          pubkey: PUBKEY,
+          running: true,
+          local: true,
+          runningRole: "none",
+          desiredRole: "dispatcher",
+          stale: true,
+          hold: true,
+        },
+      ],
+    },
+  );
+  await result;
+  assert.deepEqual(calls, []);
 });

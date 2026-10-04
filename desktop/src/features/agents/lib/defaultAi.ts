@@ -4,23 +4,11 @@ type DefaultAiCandidate = Pick<ManagedAgent, "pubkey" | "isDefaultAi">;
 
 /**
  * Shown wherever a default-AI affordance has nothing to act on. Names the one
- * place the star lives (the agent profile's Runtime tab) so the empty state
- * is a pointer, not a dead end.
+ * place the star is chosen (the routing agent picker in the Agents page
+ * "Channel routing" card) so the empty state is a pointer, not a dead end.
  */
 export const NO_DEFAULT_AI_HINT =
-  "No default AI yet — open an agent's profile and turn on Default AI under Runtime";
-
-/**
- * One-line status for the Agents settings panel: which agent is starred, or
- * the hint above when none is.
- */
-export function defaultAiStatusCopy(
-  defaultAi: Pick<ManagedAgent, "name"> | null,
-): string {
-  return defaultAi
-    ? `Current default AI: ${defaultAi.name}.`
-    : `${NO_DEFAULT_AI_HINT}.`;
-}
+  "No routing agent yet — choose one in Agents › Channel routing";
 
 /**
  * A key-less definition record has no identity to star. This mirrors the
@@ -57,28 +45,4 @@ export function resolveAddDefaultAi(
   requested: boolean,
 ): boolean {
   return Boolean(defaultAi) && requested;
-}
-
-/**
- * The `set_default_managed_agent` argument for a star toggle: starring sends
- * the agent's pubkey, un-starring the current default clears the selection.
- */
-export function defaultAiSelectionFor(
-  pubkey: string,
-  isDefaultAi: boolean,
-): string | null {
-  return isDefaultAi ? pubkey : null;
-}
-
-/**
- * The one-line toast the Runtime tab's "Default AI" row shows after a
- * successful toggle.
- */
-export function defaultAiToggleNotice(
-  name: string,
-  isDefaultAi: boolean,
-): string {
-  return isDefaultAi
-    ? `${name} is now your default AI.`
-    : `${name} is no longer your default AI.`;
 }

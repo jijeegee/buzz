@@ -13,6 +13,7 @@ import { PersonaDeleteDialog } from "./PersonaDeleteDialog";
 import { PersonaShareDialog } from "./PersonaShareDialog";
 import { AgentSnapshotExportDialog } from "./AgentSnapshotExportDialog";
 import { AgentSnapshotImportDialog } from "./AgentSnapshotImportDialog";
+import { ChannelRoutingCard } from "./routing/ChannelRoutingCard";
 import { TeamSnapshotExportDialog } from "./TeamSnapshotExportDialog";
 import { TeamSnapshotImportDialog } from "./TeamSnapshotImportDialog";
 import { TeamShareDialog } from "./TeamShareDialog";
@@ -218,6 +219,13 @@ export function AgentsView() {
             title="Agents"
           />
           <div className="flex flex-col gap-8">
+            <ChannelRoutingCard
+              agents={agents.managedAgents}
+              onRestartAgent={(pubkey) => {
+                void agents.handleRestart(pubkey);
+              }}
+              restartingAgentPubkey={agents.restartingAgentPubkey}
+            />
             <UnifiedAgentsSection
               getAvailability={agents.getAvailability}
               defaultModel={inheritedDefaults.model.value}

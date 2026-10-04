@@ -47,7 +47,6 @@ import { globalAgentConfigQueryKey } from "@/features/agents/useGlobalAgentConfi
 import type { HarnessDefinitionInput } from "@/shared/api/tauri";
 import { discoverAcpRuntimes } from "@/shared/api/tauriAcpDiscovery";
 import {
-  setDefaultManagedAgent,
   setManagedAgentAutoRestart,
   setManagedAgentStartOnAppLaunch,
   startManagedAgent,
@@ -664,22 +663,6 @@ export function useSetManagedAgentAutoRestartMutation() {
       pubkey: string;
       autoRestartOnConfigChange: boolean;
     }) => setManagedAgentAutoRestart(pubkey, autoRestartOnConfigChange),
-    onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey });
-    },
-  });
-}
-
-/**
- * Star one managed agent as the default AI (`pubkey`) or clear the star
- * (`null`). Resolves with the full list because the backend unstars the
- * previous default in the same write.
- */
-export function useSetDefaultManagedAgentMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (pubkey: string | null) => setDefaultManagedAgent(pubkey),
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey });
     },

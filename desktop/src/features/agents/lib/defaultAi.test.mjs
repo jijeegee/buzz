@@ -3,9 +3,6 @@ import test from "node:test";
 
 import {
   NO_DEFAULT_AI_HINT,
-  defaultAiSelectionFor,
-  defaultAiStatusCopy,
-  defaultAiToggleNotice,
   findDefaultAi,
   isDefaultAiEligible,
   resolveAddDefaultAi,
@@ -53,29 +50,7 @@ test("a key-less record is never eligible and is ignored even if flagged", () =>
   assert.equal(findDefaultAi([{ pubkey: "", isDefaultAi: true }]), null);
 });
 
-test("starring sends the pubkey and un-starring the current default clears it", () => {
-  assert.equal(defaultAiSelectionFor(KEYED, true), KEYED);
-  assert.equal(defaultAiSelectionFor(KEYED, false), null);
-});
-
-test("the settings status names the starred agent or points at the Runtime tab", () => {
-  assert.equal(
-    defaultAiStatusCopy({ name: "Scout" }),
-    "Current default AI: Scout.",
-  );
-  assert.equal(defaultAiStatusCopy(null), `${NO_DEFAULT_AI_HINT}.`);
+test("the empty-state hint points at the Channel routing card", () => {
   // The hint must say where the star lives; a bare "none" is a dead end.
-  assert.match(NO_DEFAULT_AI_HINT, /profile/);
-  assert.match(NO_DEFAULT_AI_HINT, /Runtime/);
-});
-
-test("the toggle notice names the agent and the new state", () => {
-  assert.equal(
-    defaultAiToggleNotice("Scout", true),
-    "Scout is now your default AI.",
-  );
-  assert.equal(
-    defaultAiToggleNotice("Scout", false),
-    "Scout is no longer your default AI.",
-  );
+  assert.match(NO_DEFAULT_AI_HINT, /Agents › Channel routing/);
 });

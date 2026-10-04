@@ -26,6 +26,7 @@ function greenInputs(overrides = {}) {
     isRunning: true,
     edgeConsumed: false,
     quiescentForMs: AUTO_RESTART_QUIESCENCE_MS,
+    routingHold: false,
     ...overrides,
   };
 }
@@ -56,6 +57,10 @@ const NEVER_FIRE_ROWS = [
   ["observer relay not connected", { connected: false }],
   ["remote backend", { isLocalBackend: false }],
   ["agent not running", { isRunning: false }],
+  [
+    "channel routing holds it until the losing agent restarts",
+    { routingHold: true },
+  ],
   [
     "edge already consumed (one attempt per rising edge)",
     { edgeConsumed: true },
