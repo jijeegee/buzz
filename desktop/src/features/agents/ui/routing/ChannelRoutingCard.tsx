@@ -9,6 +9,7 @@ import {
   useCreateHostAgentMutation,
   useSetChannelRoutingMutation,
 } from "@/features/agents/channelRoutingHooks";
+import { HOST_PERSONA_ID } from "@/features/agents/lib/hostAgent";
 import {
   hostPickerOptions,
   modeNeedsAgent,
@@ -33,8 +34,8 @@ import { ChannelRoutingStatusLine } from "./ChannelRoutingStatusLine";
  *
  * Choosing Host with no routing agent yet only opens the picker (a draft) —
  * nothing is saved until an agent is picked, so the radio alone never leaves
- * a half-configured mode on disk. With no agents at all, Host offers
- * "Create a Host agent": create an instance of the built-in Host persona,
+ * a half-configured mode on disk. Until some agent is an instance of the
+ * built-in Host persona, Host offers "Create a Host agent": create one,
  * then save it as the routing agent (two writes; the first alone leaves an
  * ordinary agent, which is a valid state).
  */
@@ -86,6 +87,10 @@ export function ChannelRoutingCard({
     [agents],
   );
   const nameOf = React.useMemo(() => routingNameOf(agents), [agents]);
+  // An existing Host instance is already in the picker; offer no second one.
+  const canCreateHost = !agents.some(
+    (agent) => agent.personaId === HOST_PERSONA_ID,
+  );
   const selectedMode = draftMode ?? status?.mode ?? null;
   const isSaving = saveMutation.isPending || createHostMutation.isPending;
   const actionError = saveMutation.error ?? createHostMutation.error;
@@ -187,8 +192,8 @@ export function ChannelRoutingCard({
                     <>
                       <ChannelRoutingAgentPicker
                         disabled={isSaving}
-                        emptyAction={
-                          option.mode === "host" ? (
+                        createAction={
+                          option.mode === "host" && canCreateHost ? (
                             <Button
                               data-testid="agents-channel-routing-create-host"
                               disabled={isSaving}

@@ -2686,6 +2686,13 @@ function resetMockPersonas(config?: E2eConfig) {
       avatar_url: null,
       system_prompt: "You are Pollen.",
     },
+    {
+      id: "builtin:host",
+      display_name: "Host",
+      avatar_url: null,
+      system_prompt: "You are Host.",
+      effort_level: "low",
+    },
   ];
   mockPersonas = builtInPersonas.map((persona) => ({
     id: persona.id,
@@ -2695,6 +2702,7 @@ function resetMockPersonas(config?: E2eConfig) {
     runtime: null,
     model: null,
     provider: null,
+    effort_level: persona.effort_level ?? null,
     name_pool: [],
     session_policy: "channel",
     is_builtin: true,

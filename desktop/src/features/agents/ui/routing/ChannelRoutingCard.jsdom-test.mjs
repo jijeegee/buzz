@@ -354,6 +354,49 @@ test("with no agents, Host offers to create one and saves it as the host", async
   );
 });
 
+test("with other agents but no Host instance, the create action sits under the picker", async () => {
+  routing = baseRouting();
+  const container = await mount();
+
+  assert.ok(
+    container.querySelector(
+      '[data-testid="agents-channel-routing-agent-select"]',
+    ),
+  );
+  const create = container.querySelector(
+    '[data-testid="agents-channel-routing-create-host"]',
+  );
+  assert.equal(create.textContent, "Create a Host agent");
+
+  await click(create);
+  for (let i = 0; i < 40 && setCalls().length === 0; i++) await settle(10);
+
+  assert.equal(
+    calls.filter((call) => call.command === "create_managed_agent").length,
+    1,
+  );
+  assert.deepEqual(
+    setCalls().map((call) => call.args),
+    [{ mode: "host", agentPubkey: HOST }],
+  );
+});
+
+test("an existing Host instance is picked, not created again", async () => {
+  routing = baseRouting();
+  const container = await mount([
+    ...AGENTS,
+    { pubkey: HOST, name: "Host", personaId: "builtin:host" },
+  ]);
+
+  assert.ok(picker(container));
+  assert.equal(
+    container.querySelector(
+      '[data-testid="agents-channel-routing-create-host"]',
+    ),
+    null,
+  );
+});
+
 test("while switching hosts, only the losing agent can restart now", async () => {
   routing = baseRouting({
     routingAgent: FIZZ,

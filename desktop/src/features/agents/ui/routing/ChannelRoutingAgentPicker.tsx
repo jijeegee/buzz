@@ -17,16 +17,19 @@ import { Checkbox } from "@/shared/ui/checkbox";
  * checkbox by its own.
  */
 export function ChannelRoutingAgentPicker({
+  createAction,
   disabled,
-  emptyAction,
   label,
   onChoose,
   options,
   selectedPubkey,
 }: {
+  /**
+   * Offered under the select (or beside "No agents yet.") when the mode has a
+   * one-click way to create its agent, e.g. "Create a Host agent".
+   */
+  createAction?: React.ReactNode;
   disabled: boolean;
-  /** Offered beside "No agents yet." when there is nothing to pick. */
-  emptyAction?: React.ReactNode;
   /** "Host agent" / "Lead agent". */
   label: string;
   onChoose: (pubkey: string) => void;
@@ -60,11 +63,11 @@ export function ChannelRoutingAgentPicker({
               className="text-sm text-muted-foreground"
               data-testid="agents-channel-routing-no-agents"
             >
-              {emptyAction
+              {createAction
                 ? "No agents yet."
                 : "No agents yet — create one below."}
             </p>
-            {emptyAction}
+            {createAction}
           </>
         ) : (
           <select
@@ -90,6 +93,9 @@ export function ChannelRoutingAgentPicker({
           </select>
         )}
       </div>
+      {createAction && options.length > 0 ? (
+        <div className="sm:pl-[7.75rem]">{createAction}</div>
+      ) : null}
       <div className="flex items-center gap-2 sm:pl-[7.75rem]">
         <Checkbox
           checked={autoJoin}
