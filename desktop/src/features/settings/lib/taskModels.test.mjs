@@ -16,6 +16,13 @@ test("task model ids are unique (they key task-models.json)", () => {
   }
 });
 
+test("message routing is a registered task (Smart routing's model row)", () => {
+  const task = TASK_MODEL_TASKS.find((entry) => entry.id === "message-routing");
+  assert.ok(task, "message-routing must be registered");
+  assert.equal(task.label, "Message routing");
+  assert.match(task.description, /without an @mention/);
+});
+
 test("duplicateTaskModelIds reports each repeated id once", () => {
   const task = (id) => ({
     id,

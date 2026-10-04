@@ -1,59 +1,49 @@
 import { TASK_MODEL_TASKS } from "../../lib/taskModels";
+import { useTaskModelsQuery } from "../../taskModelsHooks";
 import {
   SettingsOptionGroup,
   SettingsOptionGroupList,
-  SettingsOptionRow,
 } from "../SettingsOptionGroup";
+import { TaskModelRow } from "./TaskModelRow";
 
 /**
  * Settings › Models › Task models.
  *
- * Renders one row per entry in `TASK_MODEL_TASKS`. The registry is empty
- * today, so the tab shows a deliberate empty state rather than inventing
- * tasks; the first task that lands brings its own `ModelEffortFields` row
- * and `task-models.json` persistence (see `lib/taskModels.ts`).
+ * One row per entry in `TASK_MODEL_TASKS`, each showing the Rust-reported
+ * state from `get_task_models` (saved choice, effective model, readiness).
+ * A task Rust does not report renders nothing rather than an invented row.
  */
-export function TaskModelsSettingsTab() {
+export function TaskModelsSettingsTab({
+  onOpenProviders,
+}: {
+  onOpenProviders: () => void;
+}) {
+  const query = useTaskModelsQuery();
+  const statuses = query.data ?? [];
+
   return (
     <div data-testid="settings-models-tasks">
       <SettingsOptionGroupList>
         <SettingsOptionGroup
-          description="Each task Buzz runs on its own behalf picks its provider, model, and effort here, independently of your agents."
+          description="Each task Buzz runs on its own behalf picks its provider and model here, independently of your agents. Changing one never restarts an agent."
           title="App tasks"
         >
-          {TASK_MODEL_TASKS.length === 0 ? (
-            <div
-              className="px-4 py-6 text-sm"
-              data-testid="settings-models-tasks-empty"
-            >
-              <p className="font-medium text-foreground">No app tasks yet</p>
-              <p
-                className="mt-1 text-sm text-muted-foreground/70"
-                data-settings-subcopy
-              >
-                When Buzz starts using AI for its own work — summaries, titles,
-                search — each task's provider, model, and effort will be set
-                here.
-              </p>
-            </div>
-          ) : (
-            TASK_MODEL_TASKS.map((task) => (
-              <SettingsOptionRow
-                data-testid={`settings-models-task-${task.id}`}
+          {query.isError ? (
+            <p className="px-4 py-3 text-sm text-destructive" role="alert">
+              Couldn't load task models.
+            </p>
+          ) : null}
+          {TASK_MODEL_TASKS.map((task) => {
+            const status = statuses.find((entry) => entry.taskId === task.id);
+            return status ? (
+              <TaskModelRow
                 key={task.id}
-              >
-                <div className="min-w-0">
-                  <p className="font-medium text-foreground">{task.label}</p>
-                  <p
-                    className="mt-0.5 text-sm text-muted-foreground/70"
-                    data-settings-subcopy
-                  >
-                    {task.description}
-                  </p>
-                </div>
-              </SettingsOptionRow>
-            ))
-          )}
+                onOpenProviders={onOpenProviders}
+                status={status}
+                task={task}
+              />
+            ) : null;
+          })}
         </SettingsOptionGroup>
       </SettingsOptionGroupList>
     </div>

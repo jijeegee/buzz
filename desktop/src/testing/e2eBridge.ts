@@ -10052,14 +10052,17 @@ function mockChannelRoutingStatus() {
 }
 
 /**
- * Mirrors the native `set_channel_routing`: Off, Host, and Lead; Host and
- * Lead need a routing agent (a local one for Lead), and the star moves (unstarring the previous one) before the
- * mode is saved.
+ * Mirrors the native `set_channel_routing`: Host and Lead need a routing
+ * agent (a local one for Lead), and the star moves (unstarring the previous
+ * one) before the mode is saved; Smart routing needs a ready router model.
  */
 async function handleSetChannelRouting(args: {
   mode: typeof mockChannelRoutingMode;
   agentPubkey: string | null;
 }) {
+  if (args.mode === "desktop-router" && !mockTaskModelStatus().ready) {
+    throw new Error("Smart routing needs an API key.");
+  }
   if (args.mode === "desktop-router") {
     throw new Error("That channel routing mode is not available yet.");
   }
@@ -10080,6 +10083,70 @@ async function handleSetChannelRouting(args: {
   }
   mockChannelRoutingMode = args.mode;
   return mockChannelRoutingStatus();
+}
+
+/** Mock `task-models.json` entry for `message-routing`. */
+let mockMessageRoutingModel: { provider: string | null; model: string | null } =
+  { provider: null, model: null };
+
+/** Mirrors the native `get_task_models`; the mock desktop has an Anthropic key. */
+function mockTaskModelStatus() {
+  const provider = mockMessageRoutingModel.provider ?? "anthropic";
+  const providers = [
+    {
+      id: "anthropic",
+      label: "Anthropic",
+      hasKey: true,
+      defaultModel: "claude-haiku-4-5",
+    },
+    {
+      id: "openai",
+      label: "OpenAI",
+      hasKey: false,
+      defaultModel: "gpt-4.1-nano",
+    },
+    {
+      id: "openrouter",
+      label: "OpenRouter",
+      hasKey: false,
+      defaultModel: "anthropic/claude-haiku-4.5",
+    },
+  ];
+  const entry = providers.find((option) => option.id === provider);
+  const ready = entry?.hasKey ?? false;
+  const model = mockMessageRoutingModel.model ?? entry?.defaultModel ?? null;
+  return {
+    taskId: "message-routing",
+    provider: mockMessageRoutingModel.provider,
+    model: mockMessageRoutingModel.model,
+    effectiveProvider: ready ? provider : null,
+    effectiveModel: ready ? model : null,
+    modelLabel: ready
+      ? model === "claude-haiku-4-5"
+        ? "Claude Haiku 4.5"
+        : model
+      : null,
+    ready,
+    notReadyReason: ready ? null : "Needs an API key",
+    providers,
+  };
+}
+
+/**
+ * Mirrors the native `route_message`: not configured unless Smart routing is
+ * saved; otherwise a spec may install `window.__BUZZ_E2E_ROUTE_MESSAGE__`
+ * to answer, and the default picks nobody.
+ */
+async function handleRouteMessage(args: { input: unknown }) {
+  if (mockChannelRoutingMode !== "desktop-router") {
+    return { decision: "skipped", reason: "not-configured" };
+  }
+  const override = (
+    window as unknown as {
+      __BUZZ_E2E_ROUTE_MESSAGE__?: (input: unknown) => unknown;
+    }
+  ).__BUZZ_E2E_ROUTE_MESSAGE__;
+  return override ? override(args.input) : { decision: "none" };
 }
 
 async function handleSetManagedAgentAutoRestart(args: {
@@ -14295,6 +14362,23 @@ export function maybeInstallE2eTauriMocks() {
         return handleSetChannelRouting(
           payload as Parameters<typeof handleSetChannelRouting>[0],
         );
+      case "route_message":
+        return handleRouteMessage(
+          payload as Parameters<typeof handleRouteMessage>[0],
+        );
+      case "get_task_models":
+        return [mockTaskModelStatus()];
+      case "set_task_model": {
+        const args = payload as {
+          provider: string | null;
+          model: string | null;
+        };
+        mockMessageRoutingModel = {
+          provider: args.provider ?? null,
+          model: args.model ?? null,
+        };
+        return [mockTaskModelStatus()];
+      }
       case "set_managed_agent_start_on_app_launch":
         return handleSetManagedAgentStartOnAppLaunch(
           payload as Parameters<

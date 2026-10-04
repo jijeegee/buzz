@@ -50,16 +50,20 @@ pub enum ChannelRoutingMode {
     /// The routing agent listens to its owner's unmentioned messages through
     /// generated Config-mode rules (`lead_rules`).
     Lead,
-    /// The desktop assigns each unmentioned send itself. Not selectable yet.
+    /// Smart routing: the desktop assigns each of the user's unmentioned
+    /// sends itself (`message_routing`); no agent gets a routing role.
     DesktopRouter,
 }
 
 impl ChannelRoutingMode {
-    /// Whether this build lets the user select the mode. Smart routing ships
-    /// in a later change; its variant exists now so the stored value and the
-    /// transition plan already cover it.
+    /// Whether this build lets the user select the mode. Every mode is
+    /// selectable; `set_channel_routing` still refuses one that is not ready
+    /// (no routing agent, a Lead it cannot run, or no Smart routing key).
     pub(crate) fn is_selectable(self) -> bool {
-        matches!(self, Self::Off | Self::Host | Self::Lead)
+        matches!(
+            self,
+            Self::Off | Self::Host | Self::Lead | Self::DesktopRouter
+        )
     }
 }
 

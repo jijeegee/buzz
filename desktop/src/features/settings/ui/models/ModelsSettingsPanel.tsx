@@ -2,11 +2,14 @@ import * as React from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 
+import {
+  clearRequestedModelsSettingsTab,
+  type ModelsSettingsTab,
+  readRequestedModelsSettingsTab,
+} from "../../lib/modelsSettingsTabRequest";
 import { SettingsSectionHeader } from "../SettingsSectionHeader";
 import { ProvidersSettingsTab } from "./ProvidersSettingsTab";
 import { TaskModelsSettingsTab } from "./TaskModelsSettingsTab";
-
-type ModelsTab = "providers" | "tasks";
 
 /**
  * Settings › Models: the AI Buzz itself relies on.
@@ -14,11 +17,14 @@ type ModelsTab = "providers" | "tasks";
  * - **Providers** — per provider, the subscription sign-in (the harness whose
  *   CLI login bills it) and the API key, plus the single "Default for new
  *   agents" choice. A provider-centric view over `GlobalAgentConfig`.
- * - **Task models** — which provider/model/effort each app task uses; empty
- *   until Buzz runs AI for its own work.
+ * - **Task models** — which provider/model each app task uses (today:
+ *   Smart routing's message router).
  */
 export function ModelsSettingsPanel() {
-  const [tab, setTab] = React.useState<ModelsTab>("providers");
+  const [tab, setTab] = React.useState<ModelsSettingsTab>(
+    () => readRequestedModelsSettingsTab() ?? "providers",
+  );
+  React.useEffect(() => clearRequestedModelsSettingsTab(), []);
 
   return (
     <section className="min-w-0" data-testid="settings-models">
@@ -26,7 +32,10 @@ export function ModelsSettingsPanel() {
         title="Models"
         description="AI that Buzz itself uses — which provider you pay for, and which model handles each app task."
       />
-      <Tabs onValueChange={(value) => setTab(value as ModelsTab)} value={tab}>
+      <Tabs
+        onValueChange={(value) => setTab(value as ModelsSettingsTab)}
+        value={tab}
+      >
         <TabsList aria-label="Models settings" className="mb-6">
           <TabsTrigger
             data-testid="settings-models-tab-providers"
@@ -42,7 +51,7 @@ export function ModelsSettingsPanel() {
           <ProvidersSettingsTab />
         </TabsContent>
         <TabsContent className="mt-0" value="tasks">
-          <TaskModelsSettingsTab />
+          <TaskModelsSettingsTab onOpenProviders={() => setTab("providers")} />
         </TabsContent>
       </Tabs>
     </section>

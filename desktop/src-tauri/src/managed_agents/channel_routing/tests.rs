@@ -121,9 +121,9 @@ fn save_then_load_round_trips_every_mode() {
 }
 
 #[test]
-fn smart_routing_is_the_only_unselectable_mode_in_this_build() {
+fn every_mode_is_selectable_in_this_build() {
     assert!(ChannelRoutingMode::Off.is_selectable());
     assert!(ChannelRoutingMode::Host.is_selectable());
     assert!(ChannelRoutingMode::Lead.is_selectable());
-    assert!(!ChannelRoutingMode::DesktopRouter.is_selectable());
+    assert!(ChannelRoutingMode::DesktopRouter.is_selectable());
 }
