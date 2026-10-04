@@ -2745,6 +2745,7 @@ test("settings subtitles share the Appearance secondary color", async ({
     "local-archive",
     "channel-templates",
     "hosted-communities",
+    "models",
     "agents",
     "compute",
     "experimental",

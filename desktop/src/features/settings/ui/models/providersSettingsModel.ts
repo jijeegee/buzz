@@ -210,7 +210,7 @@ export function defaultOptions(rows: readonly ProviderRow[]): DefaultOption[] {
       label: `${row.label} · ${row.apiKeyEnvVar ? "API key" : "Workspace"}`,
       detail: row.apiKeyRuntime
         ? `${row.apiKeyRuntime.label} with ${credential}`
-        : "Needs Buzz Agent or Goose installed",
+        : "Needs an installed runtime that takes a provider",
       runtime: row.apiKeyRuntime,
       available: row.apiKeyRuntime !== null,
       selected: row.defaultPath === "api-key",

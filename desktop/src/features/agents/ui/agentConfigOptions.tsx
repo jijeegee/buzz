@@ -14,10 +14,11 @@ export { getDefaultPersonaRuntime } from "../lib/resolvePersonaRuntime";
  * offering it for new selections would create a regression path.
  * OSS builds pass an empty `Set` so v1 remains visible.
  *
- * All three dialog sites that show a provider picker import this constant —
- * `AgentDefinitionDialog`, `AgentInstanceEditDialog`, and
- * `AgentDefaultsSettingsCard` — making it the single source of truth for
- * which provider ids to suppress on Block builds.
+ * Every surface that lists providers imports this constant —
+ * `AgentDefinitionDialog`, `AgentInstanceEditDialog`,
+ * `AgentDefaultsSettingsCard`, and the Settings › Models Providers tab —
+ * making it the single source of truth for which provider ids to suppress
+ * on Block builds.
  */
 export const BLOCK_BUILD_HIDDEN_PROVIDER_IDS: ReadonlySet<string> = new Set([
   "databricks",

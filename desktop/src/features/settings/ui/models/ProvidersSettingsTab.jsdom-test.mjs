@@ -42,6 +42,9 @@ if (!globalThis.ResizeObserver) {
 
 let calls = [];
 let globalConfig;
+/** How `get_global_agent_config` answers: resolve now, reject, or wait for `releaseConfigFetch`. */
+let configFetch = "resolve";
+let releaseConfigFetch = null;
 
 function rawRuntime(overrides) {
   return {
@@ -107,6 +110,14 @@ const tauriMock = {
       case "discover_acp_providers":
         return Promise.resolve(rawCatalog);
       case "get_global_agent_config":
+        if (configFetch === "reject") {
+          return Promise.reject(new Error("config store unreadable"));
+        }
+        if (configFetch === "deferred") {
+          return new Promise((resolve) => {
+            releaseConfigFetch = () => resolve(globalConfig);
+          });
+        }
         return Promise.resolve(globalConfig);
       case "set_global_agent_config":
         globalConfig = args.config;
@@ -201,7 +212,21 @@ afterEach(async () => {
     mounted = null;
   }
   calls = [];
+  configFetch = "resolve";
+  releaseConfigFetch = null;
 });
+
+/** Every write affordance in the tab: key inputs, Save/Remove, radios. */
+function writeControls(container) {
+  return [
+    ...container.querySelectorAll(
+      'input[data-testid="persona-provider-api-key"]',
+    ),
+    ...container.querySelectorAll('[data-testid$="-save-key"]'),
+    ...container.querySelectorAll('[data-testid$="-remove-key"]'),
+    ...container.querySelectorAll('input[type="radio"]'),
+  ];
+}
 
 function resetConfig() {
   globalConfig = {
@@ -405,6 +430,117 @@ test("choosing a subscription default persists the harness switch once, clearing
   await act(async () => radio.click());
   await settle(20);
   assert.equal(setCalls().length, 1);
+});
+
+test("a failed global-config read disables every write and never persists the empty placeholder", async () => {
+  resetConfig();
+  configFetch = "reject";
+  mounted = await mount(ProvidersSettingsTab);
+  const { container } = mounted;
+  const error = await waitFor(
+    container,
+    '[data-testid="settings-models-config-error"]',
+  );
+  assert.equal(error.getAttribute("role"), "alert");
+  await waitFor(
+    container,
+    'input[type="radio"][value="anthropic:subscription"]',
+  );
+  const controls = writeControls(container);
+  assert.ok(controls.length >= 8, "inputs, buttons and radios all rendered");
+  for (const control of controls) {
+    assert.equal(
+      control.disabled,
+      true,
+      `${control.outerHTML.slice(0, 60)} is disabled`,
+    );
+  }
+  // Even a forced click on a locked radio must not reach the backend.
+  const radio = container.querySelector(
+    'input[type="radio"][value="anthropic:subscription"]',
+  );
+  await act(async () => radio.click());
+  await settle(30);
+  assert.equal(setCalls().length, 0);
+});
+
+test("writes stay locked while the global config is still loading, then open once it lands", async () => {
+  resetConfig();
+  configFetch = "deferred";
+  mounted = await mount(ProvidersSettingsTab);
+  const { container } = mounted;
+  const input = (
+    await waitFor(
+      container,
+      '[data-testid="settings-models-anthropic-api-key"]',
+    )
+  ).querySelector('input[data-testid="persona-provider-api-key"]');
+  const save = container.querySelector(
+    '[data-testid="settings-models-anthropic-save-key"]',
+  );
+  assert.ok(releaseConfigFetch, "the config read is being held open");
+  assert.equal(input.disabled, true, "key field waits for the record");
+  assert.equal(save.disabled, true);
+  // Force the draft and the click anyway: the placeholder window must not write.
+  await act(async () => typeInto(input, "sk-ant-early"));
+  await act(async () => save.click());
+  await settle(20);
+  assert.equal(
+    setCalls().length,
+    0,
+    "nothing persisted during the placeholder window",
+  );
+  assert.equal(
+    container.querySelector('[data-testid="settings-models-config-error"]'),
+    null,
+    "loading is not an error",
+  );
+
+  await act(async () => releaseConfigFetch());
+  await settle(30);
+  assert.equal(
+    input.disabled,
+    false,
+    "controls open once the real record is in",
+  );
+  await act(async () => typeInto(input, "sk-ant-late"));
+  await act(async () => save.click());
+  await settle(30);
+  const saves = setCalls();
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].args.config.env_vars.ANTHROPIC_API_KEY, "sk-ant-late");
+  assert.equal(
+    saves[0].args.config.env_vars.OPENAI_COMPAT_API_KEY,
+    "sk-openai",
+    "the loaded record, not the placeholder, was spread",
+  );
+  assert.equal(saves[0].args.config.model, "claude-sonnet");
+});
+
+test("status lines sit outside the radio group", async () => {
+  resetConfig();
+  mounted = await mount(ProvidersSettingsTab);
+  const { container } = mounted;
+  await waitFor(
+    container,
+    'input[type="radio"][value="anthropic:subscription"]',
+  );
+  const radio = container.querySelector(
+    'input[type="radio"][value="anthropic:subscription"]',
+  );
+  await act(async () => radio.click());
+  const notice = await waitFor(
+    container,
+    '[data-testid="settings-models-default"] [data-testid="settings-models-save-notice"]',
+  );
+  assert.equal(notice.closest('[role="radiogroup"]'), null);
+  const group = container.querySelector('[role="radiogroup"]');
+  for (const child of group.children) {
+    assert.ok(
+      child.querySelector('input[type="radio"]'),
+      "each group row is an option",
+    );
+  }
 });
 
 test("Models renders an accessible tablist and switches to the Task models empty state", async () => {

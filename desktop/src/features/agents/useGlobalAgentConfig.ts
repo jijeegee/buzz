@@ -27,8 +27,17 @@ export const globalAgentConfigQueryKey = ["globalAgentConfig"] as const;
 export function useGlobalAgentConfig(): {
   globalConfig: GlobalAgentConfig;
   isLoading: boolean;
+  /**
+   * True only once the backend's real record is in hand (fetched, not the
+   * `EMPTY_CONFIG` placeholder and not the post-error fallback). Surfaces
+   * that spread `globalConfig` back into `set_global_agent_config` must
+   * refuse to write until this is true, or they wipe every key and default
+   * that was not loaded yet.
+   */
+  isReady: boolean;
+  isError: boolean;
 } {
-  const { data, isPending } = useQuery({
+  const { data, isError, isPending, isPlaceholderData, status } = useQuery({
     queryKey: globalAgentConfigQueryKey,
     queryFn: getGlobalAgentConfig,
     // Config is only mutated via setGlobalAgentConfig — treat as stable until
@@ -41,5 +50,7 @@ export function useGlobalAgentConfig(): {
   return {
     globalConfig: data ?? EMPTY_CONFIG,
     isLoading: isPending,
+    isReady: status === "success" && !isPlaceholderData,
+    isError,
   };
 }

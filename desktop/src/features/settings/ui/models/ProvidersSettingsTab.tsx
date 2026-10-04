@@ -1,5 +1,5 @@
 import * as React from "react";
-import { RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 
 import {
   useAcpRuntimesQueryForced,
@@ -50,7 +50,11 @@ const NO_HIDDEN_PROVIDERS: ReadonlySet<string> = new Set();
 export function ProvidersSettingsTab() {
   const runtimesQuery = useAcpRuntimesQueryForced();
   const bakedEnvKeysQuery = useBakedBuildEnvKeysQuery();
-  const { globalConfig, isLoading: isConfigLoading } = useGlobalAgentConfig();
+  const {
+    globalConfig,
+    isError: isConfigError,
+    isReady: isConfigReady,
+  } = useGlobalAgentConfig();
   const saveMutation = useSetGlobalAgentConfigMutation();
   // Bumped by "Check again" so HarnessRow drops stale install results, the
   // same way the Agent runtimes panel does.
@@ -73,10 +77,15 @@ export function ProvidersSettingsTab() {
   const options = React.useMemo(() => defaultOptions(rows), [rows]);
 
   const isRefreshing = runtimesQuery.isFetching;
-  const busy = saveMutation.isPending || isConfigLoading;
+  // Every write spreads `globalConfig` back into `set_global_agent_config`,
+  // so nothing may write until the real record is loaded: the hook's
+  // placeholder (and its post-error fallback) is an empty config that would
+  // wipe every other key and default.
+  const busy = saveMutation.isPending || !isConfigReady;
 
   const persist = React.useCallback(
     async (scope: string, next: GlobalAgentConfig): Promise<boolean> => {
+      if (!isConfigReady) return false;
       setNotice(null);
       try {
         const result = await saveMutation.mutateAsync(next);
@@ -91,7 +100,7 @@ export function ProvidersSettingsTab() {
         return false;
       }
     },
-    [saveMutation.mutateAsync],
+    [isConfigReady, saveMutation.mutateAsync],
   );
 
   const noticeFor = (scope: string) =>
@@ -200,6 +209,17 @@ export function ProvidersSettingsTab() {
 
   return (
     <div data-testid="settings-models-providers">
+      {isConfigError ? (
+        <p
+          className="mb-6 flex items-center gap-1 text-sm text-destructive"
+          data-testid="settings-models-config-error"
+          role="alert"
+        >
+          <AlertCircle aria-hidden="true" className="size-3.5 shrink-0" />
+          Couldn't load Agent defaults, so keys and the default can't be changed
+          here right now. Reopen Settings to try again.
+        </p>
+      ) : null}
       <SettingsOptionGroupList>
         {groups.map(renderGroup)}
         <DefaultForNewAgentsGroup

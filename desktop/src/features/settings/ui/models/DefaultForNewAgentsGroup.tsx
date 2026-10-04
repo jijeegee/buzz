@@ -30,23 +30,22 @@ export function DefaultForNewAgentsGroup({
       description="New agents start on this provider and sign-in path unless their own settings say otherwise. The default model and effort stay in Agent defaults."
       title={<span id={titleId}>Default for new agents</span>}
     >
-      <div
-        aria-labelledby={titleId}
-        className="divide-y divide-border/55"
-        role="radiogroup"
-      >
-        {options.length === 0 ? (
-          <SettingsOptionRow data-testid="settings-models-default-empty">
-            <p
-              className="text-sm text-muted-foreground/70"
-              data-settings-subcopy
-            >
-              Install an agent runtime under Settings › Agents to choose a
-              default.
-            </p>
-          </SettingsOptionRow>
-        ) : (
-          options.map((option) => {
+      {options.length === 0 ? (
+        <SettingsOptionRow data-testid="settings-models-default-empty">
+          <p className="text-sm text-muted-foreground/70" data-settings-subcopy>
+            Install an agent runtime under Settings › Agents to choose a
+            default.
+          </p>
+        </SettingsOptionRow>
+      ) : (
+        // The group holds radios and their labels only; status lines live
+        // outside it so screen readers count the options, not the notices.
+        <div
+          aria-labelledby={titleId}
+          className="divide-y divide-border/55"
+          role="radiogroup"
+        >
+          {options.map((option) => {
             const inputId = `${groupName}-${option.id}`;
             const locked = disabled || (!option.available && !option.selected);
             return (
@@ -84,14 +83,14 @@ export function DefaultForNewAgentsGroup({
                 />
               </SettingsOptionRow>
             );
-          })
-        )}
-        {notice ? (
-          <div className="px-4 py-3">
-            <SaveNoticeLine notice={notice} />
-          </div>
-        ) : null}
-      </div>
+          })}
+        </div>
+      )}
+      {notice ? (
+        <div className="px-4 py-3">
+          <SaveNoticeLine notice={notice} />
+        </div>
+      ) : null}
     </SettingsOptionGroup>
   );
 }

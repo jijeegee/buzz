@@ -273,7 +273,7 @@ test("defaultOptions lists every provider × path with a harness, one selected",
   assert.equal(noProviderHarness[1].available, false);
   assert.equal(
     noProviderHarness[1].detail,
-    "Needs Buzz Agent or Goose installed",
+    "Needs an installed runtime that takes a provider",
   );
 });
 
