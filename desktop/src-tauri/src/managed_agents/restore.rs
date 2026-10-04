@@ -308,6 +308,20 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
             .filter(|record| !mesh_preflight_failures.contains(&record.pubkey))
             .collect::<Vec<_>>()
     };
+    // Hermes profiles are created here, before Phase B takes the transition
+    // lock: the Hermes CLI can take seconds. A failure is persisted like the
+    // mesh preflight's and that agent is skipped; the spawn only checks.
+    let mut hermes_profile_failures = std::collections::HashSet::new();
+    for record in &agents_to_start {
+        if let Err(error) = super::hermes_profile::prepare_for_start(app, record) {
+            persist_restore_error(app, &state, &record.pubkey, error)?;
+            hermes_profile_failures.insert(record.pubkey.clone());
+        }
+    }
+    let agents_to_start: Vec<_> = agents_to_start
+        .into_iter()
+        .filter(|record| !hermes_profile_failures.contains(&record.pubkey))
+        .collect();
     if agents_to_start.is_empty() {
         return Ok(());
     }
@@ -607,7 +621,6 @@ pub(crate) fn spawn_pending_profile_reconciliations(app: &tauri::AppHandle, work
     }
 }
 
-#[cfg(feature = "mesh-llm")]
 fn persist_restore_error<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     state: &AppState,

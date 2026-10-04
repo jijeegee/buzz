@@ -80,6 +80,11 @@ pub(crate) const RESERVED_ENV_KEYS: &[&str] = &[
     // Demo-build identity owns the child agent config root. A user override
     // could silently reconnect a demo harness to production OAuth state.
     "BUZZ_AGENT_CONFIG_DIR",
+    // Per-agent Hermes profile: every Hermes agent's config root (SOUL.md,
+    // memories, `.env`) is chosen by the desktop. An override could point the
+    // agent back at the shared root, whose `.env` overrides the agent's
+    // signing key.
+    "HERMES_HOME",
     // Desktop ownership markers: these brand every spawned harness with the
     // launching Desktop instance. A user-supplied override would let a
     // definition masquerade as a different instance or fake the nonce used

@@ -201,6 +201,19 @@ fn reserved_keys_include_dispatcher_mode_and_its_gate_config() {
 }
 
 #[test]
+fn reserved_keys_include_hermes_home() {
+    // The desktop points each Hermes agent at its own profile; a saved
+    // HERMES_HOME must not send it back to the shared root, whose `.env`
+    // overrides the agent's signing key.
+    assert!(is_reserved_env_key("HERMES_HOME"));
+    let persona = map(&[("hermes_home", "/shared")]);
+    let agent = map(&[("HERMES_HOME", "/shared")]);
+    assert!(merged_user_env(&persona, &agent).is_empty());
+    let error = validate_user_env_keys(&agent).expect_err("saving HERMES_HOME must be rejected");
+    assert!(error.contains("HERMES_HOME"), "got: {error}");
+}
+
+#[test]
 fn reserved_keys_include_code_execution_surface() {
     // The agent/MCP command + args are what Buzz actually exec's.
     // Overriding lets the user run arbitrary code as the agent.

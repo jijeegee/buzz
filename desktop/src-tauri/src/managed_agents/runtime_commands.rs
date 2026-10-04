@@ -252,6 +252,21 @@ fn start_pair<R: tauri::Runtime>(
     app: AppHandle<R>,
 ) -> Result<ManagedAgentRuntimeStatus, String> {
     let state = app.state::<AppState>();
+    // The Hermes CLI can take seconds: create the profile before taking any
+    // lock (the store lock is held only for this snapshot read). The spawn
+    // below only checks it.
+    let snapshot = {
+        let _store = state
+            .managed_agents_store_lock
+            .lock()
+            .map_err(|e| e.to_string())?;
+        load_managed_agents(&app)?
+            .into_iter()
+            .find(|record| record.pubkey == pubkey)
+    };
+    if let Some(record) = snapshot {
+        super::hermes_profile::prepare_for_start(&app, &record)?;
+    }
     let transition = state
         .managed_agent_runtime_transition
         .lock()

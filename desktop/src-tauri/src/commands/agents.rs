@@ -229,6 +229,16 @@ where
     if record_snapshot.backend != BackendKind::Local {
         return Err(format!("agent {pubkey} is not a local agent"));
     }
+    // The Hermes CLI can take seconds: create the profile now, with no lock
+    // held and off the async workers. The spawn below only checks it.
+    {
+        let (app, record) = (app.clone(), record_snapshot.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::managed_agents::hermes_profile::prepare_for_start(&app, &record)
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking failed: {e}"))??;
+    }
 
     // Preflight against the same resolution spawn uses — `resolve_effective_config`
     // (definition → global fallback). A linked instance's own `provider`/`model`/
@@ -1205,6 +1215,9 @@ pub async fn delete_managed_agent(
             // the retained 30177 head.
             tombstone_managed_agent_pending(&app, &state, &pubkey);
         }
+        // Best-effort and outside the store lock: the Hermes CLI can take
+        // seconds, and the agent record is already gone either way.
+        crate::managed_agents::hermes_profile::delete_profile_for_deleted_agent(&pubkey);
         try_regenerate_nest(&app);
         Ok(())
     })

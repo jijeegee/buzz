@@ -551,6 +551,15 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             })?;
     let effective_command = &descriptor.command;
     let agent_args = &descriptor.args;
+    // Hermes agents each run on their own Hermes profile instead of the
+    // user's shared root. The start entry points create it before taking any
+    // lock (`hermes_profile::prepare_for_start`); this only checks it is
+    // ready and refuses the spawn otherwise, never falling back to the root.
+    let hermes_profile = super::hermes_profile::require_for_spawn(
+        effective_command,
+        &record.pubkey,
+        super::hermes_profile::agent_label(record),
+    )?;
 
     let log_path = super::managed_agent_runtime_log_path(app, &runtime_key)?;
     append_log_marker(
@@ -562,6 +571,12 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             now_iso()
         ),
     )?;
+    if let Some(profile) = &hermes_profile {
+        append_log_marker(
+            &log_path,
+            &format!("Hermes profile: {}", profile.dir.display()),
+        )?;
+    }
 
     let stdout = open_log_file(&log_path)?;
     let stderr = stdout
@@ -790,9 +805,12 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
 
     // User env (descriptor.env): fully-layered floor→runtime→definition→global→persona→agent,
     // reserved-key filtered. Written last so user-explicit values win over Buzz-set env.
-    for (key, value) in &descriptor.env {
-        command.env(key, value);
-    }
+    // `HERMES_HOME` is written by the same call, after the user env.
+    super::hermes_profile::apply_user_env_then_hermes_home(
+        &mut command,
+        &descriptor.env,
+        hermes_profile.as_ref(),
+    );
     // Resolve once and stamp the same value onto the environment and snapshot.
     let acp_session_policy = super::effective_acp_session_policy(record, &personas);
     super::apply_acp_session_policy_env(&mut command, acp_session_policy);

@@ -151,7 +151,7 @@ pub async fn delete_persona(id: String, app: AppHandle) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
 
-        {
+        let deleted_agents = {
             // Store lock held across all three phases.
             // Lock ordering: store lock (acquired here) → process lock (per-agent in Phase 2).
             let _store_guard = state
@@ -279,8 +279,13 @@ pub async fn delete_persona(id: String, app: AppHandle) -> Result<(), String> {
             tombstone_persona_pending(&app, &state, &d_tag);
 
             // _store_guard drops here, before try_regenerate_nest.
-        }
+            cascade
+        };
 
+        // Best-effort and outside the store lock, like `delete_managed_agent`.
+        for pk in &deleted_agents {
+            crate::managed_agents::hermes_profile::delete_profile_for_deleted_agent(pk);
+        }
         try_regenerate_nest(&app);
 
         Ok(())
