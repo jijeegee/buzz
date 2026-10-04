@@ -130,7 +130,25 @@ test("the status line reports what is applied, not what is saved", () => {
         ],
       }),
       "switching",
-      "Switching — Honey stops hosting after it restarts. Fizz becomes the host after it restarts.",
+      "Switching — Honey stops hosting after it restarts. Fizz becomes the host after Honey restarts.",
+    ],
+    [
+      // A held gainer that is not running yet is part of the switch.
+      status({
+        routingAgent: FIZZ,
+        applied: { state: "switching" },
+        agents: [
+          agent({ runningRole: "dispatcher", stale: true }),
+          agent({
+            pubkey: FIZZ,
+            running: false,
+            desiredRole: "dispatcher",
+            hold: true,
+          }),
+        ],
+      }),
+      "switching",
+      "Switching — Honey stops hosting after it restarts. Fizz becomes the host after Honey restarts.",
     ],
   ];
   for (const [input, tone, text] of rows) {

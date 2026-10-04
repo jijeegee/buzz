@@ -43,6 +43,9 @@ const { QueryClient, QueryClientProvider } = await import(
   "@tanstack/react-query"
 );
 const { ChannelRoutingCard } = await import("./ChannelRoutingCard.tsx");
+const { reportChannelBotTyping, resetAgentWorkingSignal } = await import(
+  "../../agentWorkingSignal.ts"
+);
 
 const AGENTS = [
   { pubkey: HONEY, name: "Honey" },
@@ -327,4 +330,44 @@ test("while switching hosts, only the losing agent can restart now", async () =>
   await click(honeyButton);
   assert.deepEqual(restarts, [HONEY]);
   assert.equal(setCalls().length, 0, "restarting never rewrites the mode");
+});
+
+test("a mid-turn agent's Restart now disables live and a stale click does nothing", async () => {
+  routing = baseRouting({
+    mode: "off",
+    applied: { state: "switching" },
+    agents: [
+      {
+        pubkey: HONEY,
+        running: true,
+        local: true,
+        runningRole: "dispatcher",
+        desiredRole: "none",
+        stale: true,
+        hold: false,
+      },
+    ],
+  });
+  const container = await mount();
+  const button = () =>
+    container.querySelector(
+      '[data-testid="agents-channel-routing-restart"] button',
+    );
+  assert.equal(button().disabled, false);
+
+  // Honey starts a turn after render: the card re-renders from the signal.
+  await act(async () => reportChannelBotTyping("chan-1", [HONEY]));
+  assert.equal(button().disabled, true);
+  assert.match(
+    container.querySelector('[data-testid="agents-channel-routing-restart"]')
+      .textContent,
+    /middle of a turn/,
+  );
+
+  // Turn ends: the button comes back and a click restarts once.
+  await act(async () => reportChannelBotTyping("chan-1", []));
+  assert.equal(button().disabled, false);
+  await click(button());
+  assert.deepEqual(restarts, [HONEY]);
+  resetAgentWorkingSignal();
 });

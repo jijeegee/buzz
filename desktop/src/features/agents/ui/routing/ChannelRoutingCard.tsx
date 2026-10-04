@@ -1,6 +1,9 @@
 import * as React from "react";
 
-import { getAgentWorkingState } from "@/features/agents/agentWorkingSignal";
+import {
+  getAgentWorkingState,
+  subscribeAgentWorkingSignal,
+} from "@/features/agents/agentWorkingSignal";
 import {
   useChannelRoutingQuery,
   useSetChannelRoutingMutation,
@@ -50,6 +53,27 @@ export function ChannelRoutingCard({
   );
 
   const status = statusQuery.data;
+  // Subscribe to the working signal for the agents a restart could touch, so
+  // "Restart now" disables the moment one starts a turn. The snapshot is a
+  // string so it is stable between unrelated signal changes.
+  const workingStale = React.useSyncExternalStore(
+    subscribeAgentWorkingSignal,
+    () =>
+      (status?.agents ?? [])
+        .filter(
+          (agent) =>
+            agent.stale && getAgentWorkingState(agent.pubkey).source !== "none",
+        )
+        .map((agent) => agent.pubkey)
+        .join(","),
+  );
+  const isWorking = (pubkey: string) =>
+    workingStale.split(",").includes(pubkey);
+  // Re-check at click time too: the signal can move between render and click.
+  const restartIfIdle = (pubkey: string) => {
+    if (getAgentWorkingState(pubkey).source !== "none") return;
+    onRestartAgent(pubkey);
+  };
   const pickerOptions = React.useMemo(
     () => hostPickerOptions(agents),
     [agents],
@@ -189,13 +213,12 @@ export function ChannelRoutingCard({
           <div className="mt-3">
             <ChannelRoutingStatusLine
               affordances={routingRestartAffordances(status, {
-                isWorking: (pubkey) =>
-                  getAgentWorkingState(pubkey).source !== "none",
+                isWorking,
                 nameOf,
               })}
               isRestarting={(pubkey) => restartingAgentPubkey === pubkey}
               line={routingStatusLine(status, nameOf)}
-              onRestart={onRestartAgent}
+              onRestart={restartIfIdle}
             />
           </div>
         </>

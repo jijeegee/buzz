@@ -95,8 +95,20 @@ const ROLE_VERB: Record<Exclude<RoutingRole, "none">, string> = {
 };
 
 /** What one stale agent's restart will do, in plain words. */
+/** The other agent still running a role it is losing, if any. */
+function holdingAgent(
+  agents: readonly AgentRoutingTransition[],
+  pubkey: string,
+): AgentRoutingTransition | undefined {
+  return agents.find(
+    (other) =>
+      other.pubkey !== pubkey && other.stale && other.runningRole !== "none",
+  );
+}
+
 function transitionSentence(
   agent: AgentRoutingTransition,
+  agents: readonly AgentRoutingTransition[],
   nameOf: NameOf,
 ): string {
   const name = nameOf(agent.pubkey);
@@ -105,7 +117,11 @@ function transitionSentence(
     return `${name} stops ${ROLE_VERB[from]} after it restarts.`;
   }
   if (from === "none" && to !== "none") {
-    return `${name} becomes the ${ROLE_NOUN[to]} after it restarts.`;
+    // A held gainer (running plain or stopped) waits for the losing agent.
+    const blocker = agent.hold ? holdingAgent(agents, agent.pubkey) : undefined;
+    return blocker
+      ? `${name} becomes the ${ROLE_NOUN[to]} after ${nameOf(blocker.pubkey)} restarts.`
+      : `${name} becomes the ${ROLE_NOUN[to]} after it restarts.`;
   }
   if (from !== "none" && to !== "none") {
     return `${name} switches from ${ROLE_NOUN[from]} to ${ROLE_NOUN[to]} after it restarts.`;
@@ -135,9 +151,15 @@ export function routingStatusLine(
     case "smart-routing":
       return { tone: "on", text: "On — Buzz picks the agent as you send." };
     case "switching": {
+      // Stale agents, plus a held gainer that is not running yet (a launch
+      // during the hold would come up plain, so it is part of the switch).
       const sentences = status.agents
-        .filter((agent) => agent.stale)
-        .map((agent) => transitionSentence(agent, nameOf));
+        .filter(
+          (agent) =>
+            agent.stale ||
+            (agent.hold && !agent.running && agent.desiredRole !== "none"),
+        )
+        .map((agent) => transitionSentence(agent, status.agents, nameOf));
       if (mode === "desktop-router") {
         sentences.push("Smart routing turns on right after.");
       }
@@ -199,10 +221,7 @@ export function routingRestartAffordances(
     }
     const label = `Restart ${name} now`;
     if (agent.hold) {
-      const blocker = stale.find(
-        (other) =>
-          other.pubkey !== agent.pubkey && other.runningRole !== "none",
-      );
+      const blocker = holdingAgent(status.agents, agent.pubkey);
       const reason =
         blocker && blocker.runningRole !== "none"
           ? `Waiting for ${nameOf(blocker.pubkey)} to stop ${ROLE_VERB[blocker.runningRole]}.`
