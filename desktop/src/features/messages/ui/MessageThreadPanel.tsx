@@ -834,6 +834,7 @@ export function MessageThreadPanel({
             <MessageComposer
               audienceContext={{
                 type: "thread",
+                rootContent: threadHead.body,
                 rootTags: threadHead.tags,
               }}
               channelId={channelId}

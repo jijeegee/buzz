@@ -48,7 +48,7 @@ export const ROUTING_MODE_OPTIONS: readonly RoutingModeOption[] = [
     label: "Smart routing",
     description:
       "Buzz picks the agent as you send. No extra messages in the channel.",
-    available: false,
+    available: true,
   },
 ];
 

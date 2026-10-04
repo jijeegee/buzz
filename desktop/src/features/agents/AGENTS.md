@@ -565,9 +565,11 @@ with a TypeScript lookup table or an id comparison in a component.
     `<app-data>/agents/channel-routing.json` (`{ "mode": "host" }`; missing or
     unreadable reads as `host`, today's behavior). It is **not** a
     `GlobalAgentConfig` field (saving that restarts every agent). Off, Host,
-    and Lead are selectable in this build (`ChannelRoutingMode::is_selectable`;
-    `set_channel_routing` rejects Smart routing, and the card renders it
-    disabled with "Coming soon"). `routing_role_for` is the whole
+    Lead, and Smart routing are selectable in this build
+    (`ChannelRoutingMode::is_selectable`); `set_channel_routing` still refuses
+    a mode that is not ready — Host/Lead without a routing agent, Lead on an
+    agent it cannot run, Smart routing without a router model key (rule 24).
+    `routing_role_for` is the whole
     role table: Host + star -> Dispatcher (any backend); Lead + star + local +
     owner known -> Lead; everything else, including the star under Off or
     Smart routing, -> None. `routing_env::apply_routing_env` also scrubs
@@ -634,6 +636,37 @@ with a TypeScript lookup table or an id comparison in a component.
     an agent on this computer"; the remembered star carries over to Lead only
     when it can lead.
 
+24. **Smart routing (`desktop-router`) is a desktop-side, send-time pick
+    carried by the existing agent-address path; its model is an app task.**
+    Only this user's own composer sends in stream/forum channels route; DMs,
+    edits, drafts with an explicit `@mention` or tray-addressed agents, and
+    any applied state other than Smart routing (Off, Host, Lead, or a switch
+    in flight — the composer reads the plan's `routerActive`, never the saved
+    mode) never call the model (`messages/lib/autoAssignGate.ts`). While
+    typing, `messages/ui/useAutoAssign.ts` runs a 900 ms-debounced preview
+    (≤ 6 per draft, results fenced by draft text) and shows the pick as a
+    removable "→ Name" chip; Enter waits at most 1.2 s for the pick, else
+    sends unassigned with a quiet notice — sending is never blocked. The pick
+    is appended to `addressedAgentPubkeys`, so delivery is the ordinary `p`
+    tag + `["mention", pk, "agent-address"]`; nothing extra is posted and no
+    harness changes. Rust owns the rest (`src-tauri/src/message_routing/`):
+    the aliased roster prompt (`a1…aN`, pubkeys never sent), caps, the strict
+    `{"to":[≤2 aliases]}` parser, the 2 s deadline, `buzz-agent::complete_once`
+    for the call, and the JSONL comparison log
+    (`<app-data>/agents/routing-log/desktop.jsonl`, rotated at 5 MB). The
+    roster's capability text comes from `messages/lib/routerRoster.ts`:
+    persona description → kind:0 `about` → my own agent's system-prompt
+    prefix → name only. The router model is the `message-routing` entry in
+    Settings › Models › Task models, stored in
+    `<app-data>/agents/task-models.json` (never `GlobalAgentConfig`, so a
+    change restarts nothing); its row renders provider + model through
+    `ModelEffortFields` with `effort: null` (the router never thinks). Only
+    API-key providers route (Anthropic, OpenAI, OpenRouter, keys from the
+    Providers tab's `GlobalAgentConfig.env_vars`, then the process env); a
+    subscription sign-in is never reused over HTTP, so a subscription-only
+    desktop shows Smart routing disabled with "Needs an API key · Add one in
+    Models".
+
 ## Channel-only runtime controls
 
 Desktop observer controls identify a channel, not a thread session. The harness
@@ -696,6 +729,17 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   label owner per control, picker-only-under-Host, draft-until-pick, one
   `set_channel_routing` per action, and the restart buttons;
   `lib/autoRestartPolicy.test.mjs` has the `routingHold` row.
+- Smart routing (rule 24): Rust `message_routing::tests` (prompt text,
+  aliasing, caps, strict parser table, provider/model resolution incl.
+  subscription-only, deadline timeout, log lines) and
+  `managed_agents::task_models` tests; `buzz-agent` `complete_once_tests`;
+  `messages/lib/autoAssignGate.test.mjs` (every skip reason),
+  `messages/lib/routerRoster.test.mjs` (description priority, caps),
+  `messages/ui/useAutoAssign.jsdom-test.mjs` (debounce, text fence,
+  dismissal, bounded Enter wait, call budget, closed gate),
+  `messages/ui/smartRoutingComposerWiring.test.mjs` (send seam),
+  `../settings/ui/models/TaskModelRow.jsdom-test.mjs`, and the Smart routing
+  cases in `ui/routing/ChannelRoutingCard.jsdom-test.mjs`.
 - `lib/startOnLaunchMenu.test.mjs` — `startOnLaunchMenuState` table over
   instance presence × backend × stored flag.
 - `ui/AgentStartOnLaunchMenuItem.jsdom-test.mjs` — the card menu item through

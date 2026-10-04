@@ -46,6 +46,22 @@ export function useChannelRoutingQuery() {
   });
 }
 
+/**
+ * Whether Smart routing is applied right now (not merely saved), for the
+ * composer. Shares the card's cache but never polls on its own: the
+ * managed-agents invalidations that move the applied state refresh it.
+ */
+export function useSmartRoutingActive(): boolean {
+  return (
+    useQuery({
+      queryKey: channelRoutingQueryKey,
+      queryFn: getChannelRouting,
+      select: (status: ChannelRoutingStatus) => status.routerActive,
+      staleTime: 30_000,
+    }).data ?? false
+  );
+}
+
 /** One user action = one `set_channel_routing` carrying mode and agent. */
 export function useSetChannelRoutingMutation() {
   const queryClient = useQueryClient();

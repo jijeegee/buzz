@@ -12,6 +12,8 @@ const HOST = "cc".repeat(32);
 
 let calls = [];
 let routing;
+/** `get_task_models` answer; null leaves the query pending. */
+let taskModels = null;
 
 const tauriMock = {
   invoke(command, args) {
@@ -19,6 +21,8 @@ const tauriMock = {
     switch (command) {
       case "get_channel_routing":
         return Promise.resolve(routing);
+      case "get_task_models":
+        return taskModels ? Promise.resolve(taskModels) : new Promise(() => {});
       case "set_channel_routing":
         routing = {
           ...routing,
@@ -84,6 +88,24 @@ const { ChannelRoutingCard } = await import("./ChannelRoutingCard.tsx");
 const { reportChannelBotTyping, resetAgentWorkingSignal } = await import(
   "../../agentWorkingSignal.ts"
 );
+const { readRequestedModelsSettingsTab, clearRequestedModelsSettingsTab } =
+  await import("../../../settings/lib/modelsSettingsTabRequest.ts");
+
+function routerModel(ready) {
+  return [
+    {
+      taskId: "message-routing",
+      provider: null,
+      model: null,
+      effectiveProvider: ready ? "anthropic" : null,
+      effectiveModel: ready ? "claude-haiku-4-5" : null,
+      modelLabel: ready ? "Claude Haiku 4.5" : null,
+      ready,
+      notReadyReason: ready ? null : "Needs an API key",
+      providers: [],
+    },
+  ];
+}
 
 const LOCAL = { type: "local" };
 const AGENTS = [
@@ -129,6 +151,7 @@ async function waitFor(container, selector, attempts = 40) {
 
 let mounted = null;
 let restarts = [];
+let modelsOpened = 0;
 
 async function mount(agents = AGENTS) {
   const queryClient = new QueryClient({
@@ -144,6 +167,9 @@ async function mount(agents = AGENTS) {
         { client: queryClient },
         React.createElement(ChannelRoutingCard, {
           agents,
+          onOpenModelsSettings: () => {
+            modelsOpened += 1;
+          },
           onRestartAgent: (pubkey) => restarts.push(pubkey),
           restartingAgentPubkey: null,
         }),
@@ -168,6 +194,9 @@ afterEach(async () => {
   }
   calls = [];
   restarts = [];
+  taskModels = null;
+  modelsOpened = 0;
+  clearRequestedModelsSettingsTab();
 });
 
 const setCalls = () =>
@@ -226,16 +255,14 @@ test("one label owner each: the group is named once by the title, every control 
   assert.deepEqual(
     radios.map((input) => input.disabled),
     [false, false, false, true],
-    "Smart routing is not selectable yet",
+    "Smart routing waits for its router model",
   );
-  assert.match(
-    radio(container, "desktop-router").labels[0].textContent,
-    /Coming soon/,
-  );
-  assert.doesNotMatch(
-    radio(container, "lead").labels[0].textContent,
-    /Coming soon/,
-  );
+  for (const mode of ["lead", "desktop-router"]) {
+    assert.doesNotMatch(
+      radio(container, mode).labels[0].textContent,
+      /Coming soon/,
+    );
+  }
 
   const select = container.querySelector(
     '[data-testid="agents-channel-routing-agent-select"]',
@@ -553,4 +580,75 @@ test("a running lead reads as leading", async () => {
   });
   const container = await mount();
   assert.equal(statusText(container), "On — Honey is leading.");
+});
+
+test("Smart routing with a ready router model: named model line, one save with no agent", async () => {
+  taskModels = routerModel(true);
+  routing = baseRouting({ mode: "off", applied: { state: "off" } });
+  const container = await mount();
+  await waitFor(
+    container,
+    'input[type="radio"][value="desktop-router"]:not([disabled])',
+  );
+  const line = container.querySelector(
+    '[data-testid="agents-channel-routing-smart-model"]',
+  );
+  assert.match(line.textContent, /Uses Claude Haiku 4\.5/);
+  assert.match(line.textContent, /Change in Models/);
+  assert.equal(
+    radio(container, "desktop-router").labels.length,
+    1,
+    "the model link is not part of the radio's label",
+  );
+
+  await click(radio(container, "desktop-router"));
+  assert.deepEqual(
+    setCalls().map((call) => call.args),
+    [{ mode: "desktop-router", agentPubkey: null }],
+  );
+  assert.equal(picker(container), null, "Smart routing needs no agent picker");
+
+  await click(
+    container.querySelector(
+      '[data-testid="agents-channel-routing-smart-model-link"]',
+    ),
+  );
+  assert.equal(modelsOpened, 1);
+  assert.equal(readRequestedModelsSettingsTab(), "tasks");
+});
+
+test("Smart routing without an API key is disabled and links to Providers", async () => {
+  taskModels = routerModel(false);
+  routing = baseRouting({ mode: "off", applied: { state: "off" } });
+  const container = await mount();
+  const line = await waitFor(
+    container,
+    '[data-testid="agents-channel-routing-smart-model"]',
+  );
+  assert.match(line.textContent, /Needs an API key/);
+  assert.match(line.textContent, /Add one in Models/);
+  assert.equal(radio(container, "desktop-router").disabled, true);
+
+  await click(radio(container, "desktop-router"));
+  assert.equal(setCalls().length, 0, "a disabled radio never saves");
+
+  await click(
+    container.querySelector(
+      '[data-testid="agents-channel-routing-smart-model-link"]',
+    ),
+  );
+  assert.equal(modelsOpened, 1);
+  assert.equal(readRequestedModelsSettingsTab(), "providers");
+});
+
+test("the applied Smart routing state reads as on", async () => {
+  taskModels = routerModel(true);
+  routing = baseRouting({
+    mode: "desktop-router",
+    applied: { state: "smart-routing" },
+    routerActive: true,
+  });
+  const container = await mount();
+  assert.equal(statusText(container), "On — Buzz picks the agent as you send.");
+  assert.equal(picker(container), null);
 });

@@ -25,6 +25,7 @@ import { useManagedAgentActions } from "./useManagedAgentActions";
 import { usePersonaActions } from "./usePersonaActions";
 import { useTeamActions } from "./useTeamActions";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
+import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useBakedBuildEnvQuery } from "@/features/agents/hooks";
 import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
@@ -40,6 +41,7 @@ import { getInheritedAgentDefaults } from "./bakedEnvHelpers";
 
 export function AgentsView() {
   const { openPersonaProfilePanel, openProfilePanel } = useProfilePanel();
+  const { goSettings } = useAppNavigation();
   const { globalConfig } = useGlobalAgentConfig();
   const { data: bakedEnv } = useBakedBuildEnvQuery({ enabled: true });
   const inheritedDefaults = getInheritedAgentDefaults(globalConfig, bakedEnv);
@@ -221,6 +223,7 @@ export function AgentsView() {
           <div className="flex flex-col gap-8">
             <ChannelRoutingCard
               agents={agents.managedAgents}
+              onOpenModelsSettings={() => void goSettings("models")}
               onRestartAgent={(pubkey) => {
                 void agents.handleRestart(pubkey);
               }}

@@ -19,11 +19,14 @@ import {
   routingRestartAffordances,
   routingStatusLine,
 } from "@/features/agents/lib/channelRouting";
+import { requestModelsSettingsTab } from "@/features/settings/lib/modelsSettingsTabRequest";
+import { useMessageRoutingModelQuery } from "@/features/settings/taskModelsHooks";
 import type { ChannelRoutingMode } from "@/shared/api/tauriChannelRouting";
 import type { ManagedAgent } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { ChannelRoutingAgentPicker } from "./ChannelRoutingAgentPicker";
+import { ChannelRoutingSmartModelLine } from "./ChannelRoutingSmartModelLine";
 import { ChannelRoutingStatusLine } from "./ChannelRoutingStatusLine";
 
 /**
@@ -39,13 +42,20 @@ import { ChannelRoutingStatusLine } from "./ChannelRoutingStatusLine";
  * built-in Host persona, Host offers "Create a Host agent": create one,
  * then save it as the routing agent (two writes; the first alone leaves an
  * ordinary agent, which is a valid state).
+ *
+ * Smart routing is selectable only while its router model is ready (an API
+ * key in Settings › Models); the line under it names the model or links to
+ * where the key goes.
  */
 export function ChannelRoutingCard({
   agents,
+  onOpenModelsSettings,
   onRestartAgent,
   restartingAgentPubkey,
 }: {
   agents: readonly ManagedAgent[];
+  /** Navigate to Settings › Models (the tab is requested before calling). */
+  onOpenModelsSettings: () => void;
   onRestartAgent: (pubkey: string) => void;
   restartingAgentPubkey: string | null;
 }) {
@@ -53,6 +63,7 @@ export function ChannelRoutingCard({
   const descriptionId = React.useId();
   const groupName = React.useId();
   const statusQuery = useChannelRoutingQuery();
+  const routerModel = useMessageRoutingModelQuery();
   const { mutate: saveRouting, ...saveMutation } =
     useSetChannelRoutingMutation();
   const { mutate: createHostAgent, ...createHostMutation } =
@@ -158,7 +169,11 @@ export function ChannelRoutingCard({
             {ROUTING_MODE_OPTIONS.map((option) => {
               const inputId = `${groupName}-${option.mode}`;
               const checked = selectedMode === option.mode;
-              const locked = isSaving || !option.available;
+              const isSmartRouting = option.mode === "desktop-router";
+              const selectable =
+                option.available &&
+                (!isSmartRouting || routerModel.status?.ready === true);
+              const locked = isSaving || !selectable;
               return (
                 <div
                   data-testid={`agents-channel-routing-mode-${option.mode}`}
@@ -178,7 +193,7 @@ export function ChannelRoutingCard({
                     <label
                       className={cn(
                         "min-w-0 flex-1 sm:flex sm:gap-3",
-                        option.available
+                        selectable
                           ? "cursor-pointer"
                           : "cursor-not-allowed opacity-60",
                       )}
@@ -193,6 +208,16 @@ export function ChannelRoutingCard({
                       </span>
                     </label>
                   </div>
+                  {isSmartRouting && option.available ? (
+                    <ChannelRoutingSmartModelLine
+                      onOpenModels={(tab) => {
+                        requestModelsSettingsTab(tab);
+                        onOpenModelsSettings();
+                      }}
+                      status={routerModel.status}
+                      statusError={routerModel.isError}
+                    />
+                  ) : null}
                   {checked &&
                   modeNeedsAgent(option.mode) &&
                   option.available ? (

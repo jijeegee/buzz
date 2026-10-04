@@ -66,6 +66,8 @@ import { prepareBackgroundLinkPreviews } from "@/features/messages/lib/linkPrevi
 import { useComposerLinkPreviews } from "./useComposerLinkPreviews";
 import { useAddressedAgentMentionRestore } from "./useAddressedAgentMentionRestore";
 import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
+import { ComposerAutoAssignRow } from "./ComposerAutoAssignRow";
+import { useComposerAutoAssign } from "./useComposerAutoAssign";
 import type { MessageComposerProps } from "./MessageComposer.types";
 function MessageComposerImpl({
   audienceContext = null,
@@ -240,6 +242,7 @@ function MessageComposerImpl({
   const syncAddressedAgentsFromTextRef = React.useRef<(text: string) => void>(
     () => {},
   );
+  const autoAssignTextRef = React.useRef<(text: string) => void>(() => {});
   disabledRef.current = disabled;
   isSendingRef.current = isSending;
   isUploadingRef.current = media.isUploading;
@@ -305,6 +308,7 @@ function MessageComposerImpl({
       if (!isSubmitLockedRef.current && !editTargetRef.current) {
         syncAddressedAgentsFromTextRef.current(text);
       }
+      autoAssignTextRef.current(text);
       mentions.updateMentionQuery(text, cursor);
       channelLinks.updateChannelQuery(text, cursor);
       emojiAutocomplete.updateEmojiQuery(text, cursor);
@@ -329,6 +333,17 @@ function MessageComposerImpl({
       rootTags: audienceContext?.rootTags ?? [],
       scope: audienceScope,
     });
+  const autoAssign = useComposerAutoAssign({
+    addressedAgentCount: persistentAudience.pubkeys.length,
+    channelId,
+    channelType,
+    draftKey: effectiveDraftKey,
+    isEditing: editTarget != null,
+    mentions,
+    selfPubkey: ownerPubkey,
+    threadRoot: audienceContext?.rootContent ?? replyTarget?.body ?? null,
+  });
+  autoAssignTextRef.current = autoAssign.onText;
   const addressPulse = useAddressMentionPulse();
   const {
     completeOptionsReveal: completeMentionOptionsReveal,
@@ -637,8 +652,16 @@ function MessageComposerImpl({
       )
         ? null
         : prepareBackgroundLinkPreviews(getLiveLinkPreviewCandidates());
+      // Smart routing: waits at most ~1.2 s, never throws. An edit made
+      // during that wait abandons this send, like a mention settling below.
+      const revisionBeforeRouting = getComposerRevision();
+      const autoAssignedPubkeys = await autoAssign.resolveForSend(trimmed);
+      if (getComposerRevision() !== revisionBeforeRouting) return;
       await mentionSendFlow.sendMessageWithMentionFlow({
-        addressedAgentPubkeys: persistentAudience.pubkeys,
+        addressedAgentPubkeys: [
+          ...persistentAudience.pubkeys,
+          ...autoAssignedPubkeys,
+        ],
         capturedChannelId: channelId,
         capturedThreadContext,
         pendingImeta: currentPendingImeta,
@@ -659,6 +682,7 @@ function MessageComposerImpl({
       onPreparingMentionSendChange?.(false);
     }
   }, [
+    autoAssign.resolveForSend,
     channelId,
     channelLinks.clearChannels,
     customEmoji,
@@ -686,6 +710,7 @@ function MessageComposerImpl({
     persistentAudience.pubkeys,
     isEditSubmissionLocked,
     effectiveDraftKey,
+    getComposerRevision,
     mentions.getDraftMentionRefs,
     mentions.restoreDraftMentionRefs,
     mentions.revalidateMentionPubkeys,
@@ -943,6 +968,15 @@ function MessageComposerImpl({
                 ) : null}
               </div>
             )}
+            {editTarget == null ? (
+              <ComposerAutoAssignRow
+                announcement={autoAssign.announcement}
+                notice={autoAssign.notice}
+                onRemove={autoAssign.dismiss}
+                pending={autoAssign.pending}
+                suggestions={autoAssign.suggestions}
+              />
+            ) : null}
             {/* biome-ignore lint/a11y/noStaticElementInteractions: keydown handler bridges Tiptap editor to autocomplete and submit */}
             <div
               className="rich-text-composer relative max-h-32 overflow-y-auto"

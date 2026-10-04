@@ -27,6 +27,8 @@ export type MessageComposerEditTarget = {
 
 export type MessageComposerProps = {
   audienceContext?: {
+    /** The thread root's text, given to Smart routing as context. */
+    rootContent?: string | null;
     rootTags?: readonly string[][];
     type: "thread";
   } | null;

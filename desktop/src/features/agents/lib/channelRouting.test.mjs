@@ -44,14 +44,14 @@ function status(overrides) {
   };
 }
 
-test("Off, Host, and Lead are selectable; Smart routing renders as coming soon", () => {
+test("every mode ships: Off, Host, Lead, and Smart routing are selectable", () => {
   assert.deepEqual(
     ROUTING_MODE_OPTIONS.map((option) => [option.mode, option.available]),
     [
       ["off", true],
       ["host", true],
       ["lead", true],
-      ["desktop-router", false],
+      ["desktop-router", true],
     ],
   );
   assert.deepEqual(
