@@ -537,9 +537,12 @@ with a TypeScript lookup table or an id comparison in a component.
     `useManagedAgentActions.handleToggleStartOnAppLaunch` (`AgentsView` adapts
     `(agent, next)` to `(pubkey, next)`), one
     `set_managed_agent_start_on_app_launch` per click, reported through the
-    section's feedback toast. The item locks only on `isStartOnLaunchPending`
-    — that mutation's own `isPending` — never on the page-wide
-    `isActionPending`, so an unrelated start/stop does not grey it out. The
+    section's feedback toast. The lock is one-directional in both senses: the
+    item locks only on `isStartOnLaunchPending` — that mutation's own
+    `isPending` — never on the page-wide `isActionPending`, so an unrelated
+    start/stop does not grey it out; and that mutation is deliberately left
+    **out** of `useManagedAgentActions.isPending`, so flipping the flag never
+    greys out the other card actions or sibling menu items. The
     profile Runtime tab reports the flag as a plain read-only "Start on
     launch: Yes/No" row (`UserProfilePanelFields.tsx`, Agent configuration
     group) and carries no switch; `UserProfilePanel` owns no auto-start

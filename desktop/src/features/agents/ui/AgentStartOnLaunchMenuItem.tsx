@@ -53,15 +53,13 @@ export function AgentStartOnLaunchMenuItem({
 
 /**
  * Actions menu for a definition-less instance card, which has no persona menu
- * to host the entry. Renders nothing when the entry would be hidden.
+ * to host the entry.
  */
 export function StandaloneAgentActionsMenu({
   agent,
   isPending,
   onToggleStartOnLaunch,
 }: AgentStartOnLaunchMenuItemProps & { agent: ManagedAgent }) {
-  if (startOnLaunchMenuState(agent) === "hidden") return null;
-
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>

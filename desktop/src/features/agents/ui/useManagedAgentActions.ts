@@ -438,7 +438,6 @@ export function useManagedAgentActions() {
     createAgentMutation.isPending ||
     startMutation.isPending ||
     stopMutation.isPending ||
-    startOnLaunchMutation.isPending ||
     deleteMutation.isPending;
   const startingAgentPubkey =
     startMutation.isPending && typeof startMutation.variables === "string"
