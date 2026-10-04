@@ -31,6 +31,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use super::{
+    channel_routing::RoutingRole,
     effective_config::{resolve_effective_config, EffectiveConfigResult},
     known_acp_runtime, normalize_agent_args,
     persona_events::preview_prospective_persona_snapshot,
@@ -80,9 +81,9 @@ pub(crate) struct SpawnConfigInputs<'a> {
     /// boundary; captured here so editing the definition while an agent runs
     /// drives the existing restart-required path.
     pub session_policy: AcpSessionPolicy,
-    /// Whether the launch runs in dispatcher mode (`BUZZ_ACP_DISPATCHER`),
-    /// i.e. whether the record carried the default-AI star at spawn time.
-    pub dispatcher: bool,
+    /// The channel routing role the launch applies (`routing_role_for`:
+    /// saved mode × the record's star), which decides the routing env.
+    pub routing_role: RoutingRole,
 }
 
 /// The effective spawn configuration of one managed-agent process.
@@ -154,13 +155,14 @@ pub(crate) struct SpawnConfigSnapshot {
     /// via layered env), so it must be captured explicitly rather than read back
     /// out of `env`.
     pub session_policy: String,
-    /// Whether this launch ran as a channel dispatcher (`BUZZ_ACP_DISPATCHER`).
-    /// Driven by the record's default-AI star, which the harness reads only at
-    /// launch, so moving or clearing the star while an agent runs raises the
-    /// restart-required badge. Written directly on the spawn `Command` and
-    /// reserved from user env, so it is captured explicitly like
-    /// `session_policy` rather than read back out of `env`.
-    pub dispatcher: bool,
+    /// The channel routing role this launch ran with (`routing_role_for`).
+    /// The harness reads the routing env only at launch, so moving the star
+    /// or switching the routing mode while an agent runs raises the
+    /// restart-required badge, and the transition plan reads this stamp as
+    /// the agent's *running* role. Written directly on the spawn `Command`
+    /// after user env, so it is captured explicitly like `session_policy`
+    /// rather than read back out of `env`.
+    pub routing_role: RoutingRole,
 }
 
 /// The startup effort a spawn actually applied, read from the single effort key
@@ -200,7 +202,7 @@ impl SpawnConfigSnapshot {
             provider,
             enforced_owner_only,
             session_policy,
-            dispatcher,
+            routing_role,
         } = inputs;
         let (respond_to, respond_to_allowlist) =
             super::projected_access_with_policy(record, enforced_owner_only);
@@ -268,7 +270,7 @@ impl SpawnConfigSnapshot {
             // what launched regardless of which tier supplied the value.
             effort_level: effective_effort(descriptor),
             session_policy: session_policy.as_str().to_string(),
-            dispatcher,
+            routing_role,
         }
     }
 
@@ -297,7 +299,8 @@ impl std::fmt::Debug for SpawnConfigSnapshot {
 
 /// Snapshot the effective spawn configuration `record` would get if it were
 /// started right now under the current `personas`/`teams`/`global`, resolving
-/// a blank record relay against `workspace_relay`.
+/// a blank record relay against `workspace_relay`. `routing_role` is the
+/// caller's `routing_role_for` under the saved channel routing mode.
 ///
 /// Pure — no `AppHandle`, no disk, no keyring. This is the *prospective* side
 /// of the comparison; the stamped side is built at spawn from the values that
@@ -309,6 +312,7 @@ pub(crate) fn prospective_spawn_config_snapshot(
     workspace_relay: &str,
     global: &GlobalAgentConfig,
     enforced_owner_only: bool,
+    routing_role: RoutingRole,
 ) -> SpawnConfigSnapshot {
     // Prospective re-snapshot: apply the same `apply_persona_snapshot` the
     // start/restore paths run right before spawning, so this describes what a
@@ -360,7 +364,7 @@ pub(crate) fn prospective_spawn_config_snapshot(
         provider: provider.as_deref(),
         enforced_owner_only,
         session_policy: record.session_policy,
-        dispatcher: record.is_default_ai,
+        routing_role,
     })
 }
 

@@ -1,0 +1,165 @@
+use super::*;
+use std::path::PathBuf;
+
+/// `Some(Some(value))` set, `Some(None)` explicitly removed, `None` untouched.
+fn env_state(command: &Command, key: &str) -> Option<Option<String>> {
+    command
+        .get_envs()
+        .find(|(k, _)| *k == key)
+        .map(|(_, value)| value.and_then(|v| v.to_str()).map(str::to_owned))
+}
+
+fn generated_dir() -> PathBuf {
+    std::env::temp_dir()
+        .join("buzz-test-app-data")
+        .join("agents")
+        .join("routing")
+}
+
+/// The env a spawn might arrive with before the routing stamp.
+#[derive(Clone, Copy, Debug)]
+enum PriorEnv {
+    Clean,
+    /// Desktop process env (or a saved value) carrying both dispatcher keys.
+    Dispatcher,
+    /// A Lead-era subscription pointing at our generated rules file.
+    GeneratedRules,
+    /// The user's own Config-mode rules elsewhere.
+    UserRules,
+}
+
+const PRIORS: [PriorEnv; 4] = [
+    PriorEnv::Clean,
+    PriorEnv::Dispatcher,
+    PriorEnv::GeneratedRules,
+    PriorEnv::UserRules,
+];
+const ROLES: [RoutingRole; 3] = [
+    RoutingRole::None,
+    RoutingRole::Dispatcher,
+    RoutingRole::Lead,
+];
+
+fn user_rules_path() -> String {
+    std::env::temp_dir()
+        .join("my-rules.toml")
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn command_with(prior: PriorEnv) -> Command {
+    let mut command = Command::new("true");
+    match prior {
+        PriorEnv::Clean => {}
+        PriorEnv::Dispatcher => {
+            command.env(DISPATCHER_ENV_VAR, "true");
+            command.env(DISPATCHER_CONFIG_ENV_VAR, "{\"deadbeef\":{}}");
+        }
+        PriorEnv::GeneratedRules => {
+            command.env(SUBSCRIBE_ENV_VAR, "config");
+            command.env(
+                CONFIG_ENV_VAR,
+                generated_dir().join("lead-abcdef012345.toml"),
+            );
+        }
+        PriorEnv::UserRules => {
+            command.env(SUBSCRIBE_ENV_VAR, "config");
+            command.env(CONFIG_ENV_VAR, user_rules_path());
+        }
+    }
+    command
+}
+
+#[test]
+fn every_role_over_every_prior_env_leaves_only_its_own_keys() {
+    let dir = generated_dir();
+    for role in ROLES {
+        for prior in PRIORS {
+            let mut command = command_with(prior);
+            apply_routing_env(&mut command, role, Some(&dir));
+            let label = format!("{role:?} over {prior:?}");
+
+            // The dispatcher flag is set exactly for a dispatcher.
+            let expected_flag = if role == RoutingRole::Dispatcher {
+                Some(Some("true".to_string()))
+            } else {
+                Some(None)
+            };
+            assert_eq!(
+                env_state(&command, DISPATCHER_ENV_VAR),
+                expected_flag,
+                "{label}"
+            );
+            // The custom gate never survives.
+            assert_eq!(
+                env_state(&command, DISPATCHER_CONFIG_ENV_VAR),
+                Some(None),
+                "{label}"
+            );
+
+            match (role, prior) {
+                // Our generated rules never outlive the Lead role.
+                (RoutingRole::None | RoutingRole::Dispatcher, PriorEnv::GeneratedRules) => {
+                    assert_eq!(
+                        env_state(&command, SUBSCRIBE_ENV_VAR),
+                        Some(None),
+                        "{label}"
+                    );
+                    assert_eq!(env_state(&command, CONFIG_ENV_VAR), Some(None), "{label}");
+                }
+                // The user's own rules file is theirs.
+                (_, PriorEnv::UserRules) => {
+                    assert_eq!(
+                        env_state(&command, SUBSCRIBE_ENV_VAR),
+                        Some(Some("config".to_string())),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        env_state(&command, CONFIG_ENV_VAR),
+                        Some(Some(user_rules_path())),
+                        "{label}"
+                    );
+                }
+                // Nothing else touches the subscription keys.
+                (RoutingRole::Lead, PriorEnv::GeneratedRules) => {
+                    assert_eq!(
+                        env_state(&command, SUBSCRIBE_ENV_VAR),
+                        Some(Some("config".to_string())),
+                        "{label}"
+                    );
+                }
+                (_, PriorEnv::Clean | PriorEnv::Dispatcher) => {
+                    assert_eq!(env_state(&command, SUBSCRIBE_ENV_VAR), None, "{label}");
+                    assert_eq!(env_state(&command, CONFIG_ENV_VAR), None, "{label}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn without_a_generated_dir_the_subscription_keys_are_left_alone() {
+    let mut command = command_with(PriorEnv::GeneratedRules);
+    apply_routing_env(&mut command, RoutingRole::None, None);
+    assert_eq!(
+        env_state(&command, SUBSCRIBE_ENV_VAR),
+        Some(Some("config".to_string()))
+    );
+}
+
+#[test]
+fn policy_env_carries_the_flag_only_for_a_dispatcher() {
+    for role in ROLES {
+        let mut policy_env = BTreeMap::from([
+            (DISPATCHER_ENV_VAR.to_string(), "true".to_string()),
+            (DISPATCHER_CONFIG_ENV_VAR.to_string(), "{}".to_string()),
+            ("KEEP_ME".to_string(), "yes".to_string()),
+        ]);
+        insert_routing_env(&mut policy_env, role);
+        let mut expected = BTreeMap::from([("KEEP_ME".to_string(), "yes".to_string())]);
+        if role == RoutingRole::Dispatcher {
+            expected.insert(DISPATCHER_ENV_VAR.to_string(), "true".to_string());
+        }
+        assert_eq!(policy_env, expected, "{role:?}");
+    }
+}

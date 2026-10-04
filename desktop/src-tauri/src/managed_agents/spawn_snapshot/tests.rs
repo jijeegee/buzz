@@ -20,6 +20,7 @@ fn snapshot_with_policy(
         workspace_relay,
         global,
         enforced_owner_only,
+        crate::managed_agents::channel_routing::RoutingRole::None,
     )
     .canonical()
 }

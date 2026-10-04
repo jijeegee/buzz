@@ -55,6 +55,8 @@ pub async fn set_default_managed_agent(
         let teams = load_teams(&app).unwrap_or_default();
         let global_config =
             crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
+        let routing_mode =
+            crate::managed_agents::channel_routing::load_channel_routing(&app).unwrap_or_default();
         records
             .iter()
             .map(|record| {
@@ -65,6 +67,7 @@ pub async fn set_default_managed_agent(
                     &personas,
                     &teams,
                     &global_config,
+                    routing_mode,
                 )
             })
             .collect()

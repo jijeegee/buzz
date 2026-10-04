@@ -177,6 +177,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     personas: &[crate::managed_agents::types::AgentDefinition],
     teams: &[crate::managed_agents::TeamRecord],
     global_config: &crate::managed_agents::GlobalAgentConfig,
+    routing_mode: super::channel_routing::ChannelRoutingMode,
 ) -> Result<ManagedAgentSummary, String> {
     use crate::managed_agents::BackendKind;
 
@@ -284,6 +285,11 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
             &key.relay_url,
             global_config,
             super::owner_only_access_build(),
+            super::channel_routing::routing_role_for(
+                record,
+                routing_mode,
+                super::channel_routing::routing_owner_hex(app).as_deref(),
+            ),
         );
         (runtime, current)
     });
@@ -814,11 +820,22 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Resolve once and stamp the same value onto the environment and snapshot.
     let acp_session_policy = super::effective_acp_session_policy(record, &personas);
     super::apply_acp_session_policy_env(&mut command, acp_session_policy);
-    // Dispatcher mode follows the default-AI star. Written after the
-    // `descriptor.env` loop like the session policy (both keys are reserved,
-    // so user env can neither enable nor configure it) and stamped into the
-    // snapshot below from the same record field.
-    super::apply_dispatcher_env(&mut command, record.is_default_ai);
+    // The channel routing role (saved mode × the record's star) decides the
+    // routing env. Written after the `descriptor.env` loop like the session
+    // policy, so user env can neither enable nor keep a role, and stamped into
+    // the snapshot below from the same value.
+    let routing_role = super::channel_routing::routing_role_for(
+        record,
+        super::channel_routing::load_channel_routing(app)?,
+        owner_hex,
+    );
+    super::apply_routing_env(
+        &mut command,
+        routing_role,
+        super::channel_routing::generated_routing_dir(app)
+            .ok()
+            .as_deref(),
+    );
 
     crate::build_identity::apply_demo_config_home(&mut command)?;
     // Publish-first replay floor: written AFTER the `descriptor.env` loop, the
@@ -870,7 +887,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             provider: effective_provider.as_deref(),
             enforced_owner_only: super::owner_only_access_build(),
             session_policy: acp_session_policy,
-            dispatcher: record.is_default_ai,
+            routing_role,
         },
     );
 
