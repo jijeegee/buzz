@@ -493,14 +493,14 @@ pub(crate) fn spawn_with_effort_proof(
 /// `owner_hex`: the workspace owner's pubkey, used as a fallback for legacy
 /// records that have no NIP-OA `auth_tag`. See `build_respond_to_env`.
 ///
+/// `live_routing_roles`: running channel-routing roles of the other tracked
+/// local processes (`channel_routing::live_local_roles`), for the hold rule.
+///
 /// `replay_floor_unix`: optional unix-seconds replay floor for the harness's
 /// startup watermark (`BUZZ_ACP_REPLAY_FLOOR`). A publish-first mention send
 /// publishes the triggering message before this spawn and passes its send
 /// timestamp here so the harness's first REQ replays past that message no
 /// matter how long the spawn takes. buzz-acp clamps stale floors to ~15 min.
-///
-/// `live_routing_roles`: running channel-routing roles of the other tracked
-/// local processes (`channel_routing::live_local_roles`), for the hold rule.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_agent_child<R: tauri::Runtime>(
     app: &AppHandle<R>,
