@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 // Smart routing reaches agents only through the composer's existing
-// agent-address path: the pick is appended to `addressedAgentPubkeys`, which
-// `useMentionSendFlow` turns into `p` tags plus `["mention", pk,
-// "agent-address"]`. These pins keep the send seam from silently dropping
+// agent-address path: the pick is appended to `addressedAgentPubkeys` and
+// named in `autoRoutedAgentPubkeys`, which `useMentionSendFlow` turns into
+// `p` tags plus `["mention", pk, "auto-route"]`. These pins keep the send seam from silently dropping
 // the pick or moving it out of the bounded wait. (`useAutoAssign` itself is
 // exercised through the real hook in `useAutoAssign.jsdom-test.mjs`.)
 
@@ -24,7 +24,7 @@ test("the send awaits the Smart routing pick and addresses it like the tray", as
   assert.ok(flowAt > resolveAt, "before handing off to the mention flow");
   assert.match(
     send,
-    /addressedAgentPubkeys: \[\s*\.\.\.persistentAudience\.pubkeys,\s*\.\.\.autoAssignedPubkeys,\s*\]/,
+    /addressedAgentPubkeys: \[\s*\.\.\.persistentAudience\.pubkeys,\s*\.\.\.autoAssignedPubkeys,\s*\],\s*autoRoutedAgentPubkeys: autoAssignedPubkeys,/,
   );
   // An edit during the bounded wait abandons the send instead of clearing
   // keystrokes the user typed after pressing Enter.
@@ -34,23 +34,26 @@ test("the send awaits the Smart routing pick and addresses it like the tray", as
   );
 });
 
-test("every text change feeds the router and the chips render outside edit mode", async () => {
+test("every text change feeds the router; only the notice renders outside edit mode", async () => {
   const composer = await source("./MessageComposer.tsx");
   const onUpdate = composer.slice(
     composer.indexOf("onUpdate: ({"),
     composer.indexOf("const linkEditor"),
   );
   assert.match(onUpdate, /autoAssignTextRef\.current\(text\);/);
-  assert.match(composer, /editTarget == null \? \(\s*<ComposerAutoAssignRow/);
+  assert.match(
+    composer,
+    /editTarget == null \? \(\s*<ComposerAutoAssignRow notice=\{autoAssign\.notice\} \/>/,
+  );
 });
 
-test("the agent-address mention tag is what the pick becomes", async () => {
+test("the auto-route mention tag is what the pick becomes", async () => {
   const { buildAgentAddressMentionTags } = await import(
     "../lib/agentAddressMention.mjs"
   );
   const pubkey = "aa".repeat(32);
-  assert.deepEqual(buildAgentAddressMentionTags([pubkey], [pubkey]), [
-    ["mention", pubkey, "agent-address"],
+  assert.deepEqual(buildAgentAddressMentionTags([pubkey], [pubkey], [pubkey]), [
+    ["mention", pubkey, "auto-route"],
   ]);
 });
 

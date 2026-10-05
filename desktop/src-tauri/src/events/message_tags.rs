@@ -5,6 +5,7 @@ use super::check_pubkey;
 const MAX_THREAD_ROOT_EXCERPT_CHARS: usize = 64;
 const SENT_FROM_THREAD_TAG: &str = "buzz:sent-from-thread";
 const AGENT_ADDRESS_MENTION_MARKER: &str = "agent-address";
+const AUTO_ROUTE_MENTION_MARKER: &str = "auto-route";
 
 pub(super) fn mention_reference_tags(
     mentions: &[Vec<String>],
@@ -20,17 +21,19 @@ pub(super) fn mention_reference_tags(
         let Some(pubkey) = mention.get(1) else {
             return Err("mention reference tag missing pubkey".into());
         };
+        let marker = mention.get(2).map(String::as_str);
         if mention.len() > 3
-            || (mention.len() == 3
-                && mention.get(2).map(String::as_str) != Some(AGENT_ADDRESS_MENTION_MARKER))
+            || marker.is_some_and(|marker| {
+                marker != AGENT_ADDRESS_MENTION_MARKER && marker != AUTO_ROUTE_MENTION_MARKER
+            })
         {
             return Err("mention reference tag has invalid display metadata".into());
         }
         check_pubkey(pubkey)?;
         let normalized_pubkey = pubkey.to_ascii_lowercase();
         let mut parts = vec!["mention", normalized_pubkey.as_str()];
-        if mention.len() == 3 {
-            parts.push(AGENT_ADDRESS_MENTION_MARKER);
+        if let Some(marker) = marker {
+            parts.push(marker);
         }
         tags.push(
             Tag::parse(parts).map_err(|error| format!("invalid mention reference tag: {error}"))?,

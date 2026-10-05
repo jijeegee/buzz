@@ -25,8 +25,6 @@ export const AUTO_ASSIGN_SEND_WAIT_MS = 1_200;
 export const AUTO_ASSIGN_MAX_PREVIEW_CALLS = 6;
 /** Distinct draft texts whose results are remembered per draft. */
 const RESULT_CACHE_LIMIT = 8;
-/** Pending dots appear only for calls slower than this (no flicker). */
-const PENDING_INDICATOR_DELAY_MS = 300;
 const NOTICE_MS = 3_000;
 
 const SKIP_NOTICE: Record<
@@ -46,7 +44,7 @@ type CacheEntry = {
 export type AutoAssignOptions = {
   channelId: string | null;
   channelType: string | null | undefined;
-  /** Changing it starts a fresh draft (cache, dismissals, call budget). */
+  /** Changing it starts a fresh draft (cache and call budget). */
   draftKey: string | null | undefined;
   isEditing: boolean;
   addressedAgentCount: number;
@@ -57,24 +55,21 @@ export type AutoAssignOptions = {
   threadRoot: string | null;
   getExplicitMentionCount: (text: string) => number;
   getRoster: () => RouterRosterSnapshot;
-  nameOf: (pubkey: string) => string;
   /** Injected in tests; defaults to the `route_message` IPC. */
   route?: (input: RouteMessageInput) => Promise<RouteMessageResult>;
 };
 
-export type AutoAssignSuggestion = { pubkey: string; name: string };
-
 /**
  * Smart routing in the composer. While the user types, a debounced preview
- * call picks the agent and the composer shows it as a removable "→ Name"
- * chip before Enter. On Enter, `resolveForSend` returns the pick for the
+ * call routes the draft in the background and caches the pick; nothing is
+ * shown before Enter. On Enter, `resolveForSend` returns the pick for the
  * final text — from the cache, the in-flight call, or a fresh one — waiting
  * at most the route's `sendWaitMs`; a slow or failed call sends
  * unassigned with a quiet notice. Sending is never blocked.
  *
- * Results are fenced by text: a late answer for an older draft text is
- * cached but never shown for the current one. State is React-only (no
- * module singletons), reset when the draft key changes or the draft empties.
+ * Results are keyed by text, so a late answer for an older draft text is
+ * never used for the current one. State is React-only (no module
+ * singletons), reset when the draft key changes or the draft empties.
  */
 export function useAutoAssign(options: AutoAssignOptions) {
   const optionsRef = React.useRef(options);
@@ -82,64 +77,30 @@ export function useAutoAssign(options: AutoAssignOptions) {
   const draftRef = React.useRef({
     cache: new Map<string, CacheEntry>(),
     calls: 0,
-    dismissed: new Set<string>(),
     latestKey: "",
   });
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [suggested, setSuggested] = React.useState<readonly string[]>([]);
-  const suggestedRef = React.useRef<readonly string[]>([]);
-  const [pending, setPending] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
-  const [announcement, setAnnouncement] = React.useState("");
 
-  /** Replace the chips; announces newly added agents once. */
-  const commitSuggested = React.useCallback((next: readonly string[]) => {
-    const previous = suggestedRef.current;
-    if (
-      previous.length === next.length &&
-      previous.every((pubkey, index) => pubkey === next[index])
-    ) {
-      return;
-    }
-    const added = next.filter((pubkey) => !previous.includes(pubkey));
-    suggestedRef.current = next;
-    setSuggested(next);
-    if (added.length > 0) {
-      setAnnouncement(
-        `${added.map(optionsRef.current.nameOf).join(" and ")} will handle this`,
-      );
-    }
-  }, []);
-
-  const clearTimers = React.useCallback(() => {
+  const clearDebounce = React.useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (pendingRef.current) clearTimeout(pendingRef.current);
     debounceRef.current = null;
-    pendingRef.current = null;
   }, []);
 
   const resetDraft = React.useCallback(() => {
-    clearTimers();
-    draftRef.current = {
-      cache: new Map(),
-      calls: 0,
-      dismissed: new Set(),
-      latestKey: "",
-    };
-    commitSuggested([]);
-    setPending(false);
-  }, [clearTimers, commitSuggested]);
+    clearDebounce();
+    draftRef.current = { cache: new Map(), calls: 0, latestKey: "" };
+  }, [clearDebounce]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: draftKey is the sole trigger
   React.useEffect(() => resetDraft(), [options.draftKey]);
   React.useEffect(
     () => () => {
-      clearTimers();
+      clearDebounce();
       if (noticeRef.current) clearTimeout(noticeRef.current);
     },
-    [clearTimers],
+    [clearDebounce],
   );
 
   const showNotice = React.useCallback((text: string) => {
@@ -208,60 +169,20 @@ export function useAutoAssign(options: AutoAssignOptions) {
     [],
   );
 
-  const apply = React.useCallback(
-    (result: RouteMessageResult) => {
-      const draft = draftRef.current;
-      commitSuggested(
-        result.decision === "assigned"
-          ? result.pubkeys
-              .map(normalizePubkey)
-              .filter((pubkey) => !draft.dismissed.has(pubkey))
-          : [],
-      );
-    },
-    [commitSuggested],
-  );
-
   const runPreview = React.useCallback(
     (key: string, text: string) => {
       const draft = draftRef.current;
-      if (draft.latestKey !== key) return;
-      let entry = draft.cache.get(key) ?? null;
-      if (!entry) {
-        if (draft.calls >= AUTO_ASSIGN_MAX_PREVIEW_CALLS) return;
-        entry = start(key, text, "preview");
-        if (entry) draft.calls += 1;
-      }
-      if (!entry) {
-        apply({ decision: "none" });
-        return;
-      }
-      if (entry.result) {
-        apply(entry.result);
-        return;
-      }
-      pendingRef.current = setTimeout(() => {
-        if (draftRef.current.latestKey === key) setPending(true);
-      }, PENDING_INDICATOR_DELAY_MS);
-      void entry.promise.then((result) => {
-        // Fence: an answer for an older draft text stays cached but is never
-        // shown for the current one.
-        if (draftRef.current.latestKey !== key) return;
-        if (pendingRef.current) clearTimeout(pendingRef.current);
-        setPending(false);
-        apply(result);
-      });
+      if (draft.latestKey !== key || draft.cache.has(key)) return;
+      if (draft.calls >= AUTO_ASSIGN_MAX_PREVIEW_CALLS) return;
+      if (start(key, text, "preview")) draft.calls += 1;
     },
-    [apply, start],
+    [start],
   );
 
   /** Feed every composer text change; cheap when Smart routing is off. */
   const onText = React.useCallback(
     (text: string) => {
-      if (!optionsRef.current.routerActive) {
-        commitSuggested([]);
-        return;
-      }
+      if (!optionsRef.current.routerActive) return;
       const key = routableTextKey(text);
       if (key === "") {
         if (draftRef.current.latestKey !== "" || draftRef.current.calls > 0) {
@@ -272,23 +193,14 @@ export function useAutoAssign(options: AutoAssignOptions) {
       const draft = draftRef.current;
       if (key === draft.latestKey) return;
       draft.latestKey = key;
-      clearTimers();
-      setPending(false);
-      if (!decide(text, null).run) {
-        commitSuggested([]);
-        return;
-      }
-      const cached = draft.cache.get(key);
-      if (cached?.result) {
-        apply(cached.result);
-        return;
-      }
+      clearDebounce();
+      if (!decide(text, null).run || draft.cache.has(key)) return;
       debounceRef.current = setTimeout(
         () => runPreview(key, text),
         AUTO_ASSIGN_DEBOUNCE_MS,
       );
     },
-    [apply, clearTimers, commitSuggested, decide, resetDraft, runPreview],
+    [clearDebounce, decide, resetDraft, runPreview],
   );
 
   /**
@@ -297,8 +209,7 @@ export function useAutoAssign(options: AutoAssignOptions) {
    */
   const resolveForSend = React.useCallback(
     async (text: string): Promise<string[]> => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = null;
+      clearDebounce();
       const key = routableTextKey(text);
       const draft = draftRef.current;
       draft.latestKey = key;
@@ -333,43 +244,10 @@ export function useAutoAssign(options: AutoAssignOptions) {
         return [];
       }
       if (result.decision === "none") return [];
-      return result.pubkeys
-        .map(normalizePubkey)
-        .filter((pubkey) => !draft.dismissed.has(pubkey));
+      return result.pubkeys.map(normalizePubkey);
     },
-    [decide, showNotice, start],
+    [clearDebounce, decide, showNotice, start],
   );
 
-  const dismiss = React.useCallback(
-    (pubkey: string) => {
-      const normalized = normalizePubkey(pubkey);
-      draftRef.current.dismissed.add(normalized);
-      commitSuggested(
-        suggestedRef.current.filter((entry) => entry !== normalized),
-      );
-    },
-    [commitSuggested],
-  );
-
-  const visible =
-    options.routerActive &&
-    !options.isEditing &&
-    options.addressedAgentCount === 0;
-  const suggestions = React.useMemo<AutoAssignSuggestion[]>(
-    () =>
-      visible
-        ? suggested.map((pubkey) => ({ pubkey, name: options.nameOf(pubkey) }))
-        : [],
-    [options.nameOf, suggested, visible],
-  );
-
-  return {
-    announcement,
-    dismiss,
-    notice,
-    onText,
-    pending: visible && pending,
-    resolveForSend,
-    suggestions,
-  };
+  return { notice, onText, resolveForSend };
 }

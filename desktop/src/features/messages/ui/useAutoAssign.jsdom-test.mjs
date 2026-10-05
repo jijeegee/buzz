@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 // Smart routing's composer state through the real hook with an injected
-// router (no IPC, no model): debounced preview, the text fence, one-click
-// dismissal, the bounded Enter wait, the per-draft call budget, and the
+// router (no IPC, no model): debounced background preview, the text fence,
+// the bounded Enter wait, the per-draft call budget, and the
 // closed gate. Real timers: the debounce and the Enter wait are the
 // behavior under test.
 
@@ -26,7 +26,6 @@ const ROSTER = {
   ],
   humans: ["Jiho"],
 };
-const NAMES = { [CODER]: "Coder", [TRANSLATOR]: "Translator" };
 
 let calls = [];
 /** Each call gets a deferred the test settles. */
@@ -58,7 +57,6 @@ async function mount(overrides = {}) {
     getExplicitMentionCount: () => 0,
     getRoster: () => ROSTER,
     isEditing: false,
-    nameOf: (pubkey) => NAMES[pubkey] ?? "?",
     route: deferredRoute(),
     routerActive: true,
     routerReady: true,
@@ -90,9 +88,15 @@ const settleCall = (index, result) =>
     calls[index].resolve(result);
     await Promise.resolve();
   });
-const chipNames = (hook) => hook.current.suggestions.map((s) => s.name);
+const sendNow = async (hook, text) => {
+  let sent;
+  await act(async () => {
+    sent = await hook.current.resolveForSend(text);
+  });
+  return sent;
+};
 
-test("typing debounces into one preview call for the latest text, shown as a chip", async () => {
+test("typing debounces into one background preview call; Enter reuses its pick", async () => {
   const hook = await mount();
   await type(hook, "fix");
   await type(hook, "fix the");
@@ -107,11 +111,16 @@ test("typing debounces into one preview call for the latest text, shown as a chi
   assert.deepEqual(calls[0].input.humans, ["Jiho"]);
 
   await settleCall(0, { decision: "assigned", pubkeys: [CODER] });
-  assert.deepEqual(chipNames(hook), ["Coder"]);
-  assert.equal(hook.current.announcement, "Coder will handle this");
+  assert.deepEqual(Object.keys(hook.current).sort(), [
+    "notice",
+    "onText",
+    "resolveForSend",
+  ]);
+  assert.deepEqual(await sendNow(hook, "fix the windows build"), [CODER]);
+  assert.equal(calls.length, 1, "the cached answer is reused, no new call");
 });
 
-test("a late answer for an older text never shows for the current one", async () => {
+test("a late answer for an older text is never used for the current one", async () => {
   const hook = await mount();
   await type(hook, "fix the windows build");
   await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 50);
@@ -120,33 +129,15 @@ test("a late answer for an older text never shows for the current one", async ()
   assert.equal(calls.length, 2);
 
   await settleCall(0, { decision: "assigned", pubkeys: [CODER] });
-  assert.deepEqual(chipNames(hook), [], "the stale pick must be fenced");
   await settleCall(1, { decision: "none" });
-  assert.deepEqual(chipNames(hook), []);
+  assert.deepEqual(await sendNow(hook, "thanks all"), []);
 });
 
-test("a removed chip stays removed for that draft, including at send", async () => {
+test("an emptied draft forgets its cached picks", async () => {
   const hook = await mount();
   await type(hook, "translate this please");
   await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 50);
   await settleCall(0, { decision: "assigned", pubkeys: [TRANSLATOR] });
-  assert.deepEqual(chipNames(hook), ["Translator"]);
-
-  await act(async () => hook.current.dismiss(TRANSLATOR));
-  assert.deepEqual(chipNames(hook), []);
-
-  // Retyping back to the same text reuses the cached answer, still dismissed.
-  await type(hook, "translate this please!");
-  await type(hook, "translate this please");
-  assert.deepEqual(chipNames(hook), []);
-  let sent;
-  await act(async () => {
-    sent = await hook.current.resolveForSend("translate this please");
-  });
-  assert.deepEqual(sent, []);
-  assert.equal(calls.length, 1, "the cached answer is reused, no new call");
-
-  // An emptied draft (sent or cleared) forgets the dismissal.
   await type(hook, "");
   await type(hook, "translate this please");
   await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 50);

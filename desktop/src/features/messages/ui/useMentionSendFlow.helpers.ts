@@ -70,6 +70,8 @@ export type PendingNonMemberMentionSend = {
   composerRevision: number;
   invitationSignal?: AbortSignal;
   addressedAgentPubkeys: string[];
+  /** The subset of `addressedAgentPubkeys` Smart routing picked. */
+  autoRoutedAgentPubkeys?: string[];
   inlineAgentMentionPubkeys: string[];
   capturedChannelId: string | null;
   capturedThreadContext: {
@@ -100,6 +102,7 @@ export type PendingNonMemberMentionSend = {
 
 export type SendMessageWithMentionFlowInput = {
   addressedAgentPubkeys?: readonly string[];
+  autoRoutedAgentPubkeys?: readonly string[];
   capturedChannelId: string | null;
   capturedThreadContext?: PendingNonMemberMentionSend["capturedThreadContext"];
   pendingImeta: ImetaMedia[];

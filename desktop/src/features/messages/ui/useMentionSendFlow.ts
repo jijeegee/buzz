@@ -568,6 +568,7 @@ export function useMentionSendFlow({
             ...buildAgentAddressMentionTags(
               draft.addressedAgentPubkeys,
               revalidatedMentionPubkeys,
+              draft.autoRoutedAgentPubkeys,
             ),
           ];
           await send(
@@ -722,6 +723,7 @@ export function useMentionSendFlow({
   const sendMessageWithMentionFlow = React.useCallback(
     async ({
       addressedAgentPubkeys = [],
+      autoRoutedAgentPubkeys = [],
       capturedChannelId,
       capturedThreadContext = null,
       pendingImeta,
@@ -863,6 +865,9 @@ export function useMentionSendFlow({
           sourceOwner,
           composerRevision,
           addressedAgentPubkeys: uniqueNormalizedPubkeys(addressedAgentPubkeys),
+          autoRoutedAgentPubkeys: uniqueNormalizedPubkeys(
+            autoRoutedAgentPubkeys,
+          ),
           inlineAgentMentionPubkeys: uniqueNormalizedPubkeys(
             savedMentionRefs
               .filter((ref) => ref.isAgent)

@@ -8,7 +8,6 @@ import {
   getTaskModels,
   MESSAGE_ROUTING_TASK_ID,
 } from "@/shared/api/tauriMessageRouting";
-import { truncateNpub } from "@/shared/lib/pubkey";
 import { useAutoAssign } from "./useAutoAssign";
 import { useRouterRosterSource } from "./useRouterRosterSource";
 
@@ -58,14 +57,10 @@ export function useComposerAutoAssign({
     memberPubkeys: mentions.memberPubkeys,
     selfPubkey,
   });
-  const { getDraftMentionRefs, getMentionDisplayName } = mentions;
+  const { getDraftMentionRefs } = mentions;
   const getExplicitMentionCount = React.useCallback(
     (text: string) => getDraftMentionRefs(text).length,
     [getDraftMentionRefs],
-  );
-  const nameOf = React.useCallback(
-    (pubkey: string) => getMentionDisplayName(pubkey) ?? truncateNpub(pubkey),
-    [getMentionDisplayName],
   );
   return useAutoAssign({
     addressedAgentCount,
@@ -75,7 +70,6 @@ export function useComposerAutoAssign({
     getExplicitMentionCount,
     getRoster,
     isEditing,
-    nameOf,
     routerActive,
     routerReady,
     sendWaitMs,

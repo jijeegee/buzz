@@ -662,6 +662,7 @@ function MessageComposerImpl({
           ...persistentAudience.pubkeys,
           ...autoAssignedPubkeys,
         ],
+        autoRoutedAgentPubkeys: autoAssignedPubkeys,
         capturedChannelId: channelId,
         capturedThreadContext,
         pendingImeta: currentPendingImeta,
@@ -969,13 +970,7 @@ function MessageComposerImpl({
               </div>
             )}
             {editTarget == null ? (
-              <ComposerAutoAssignRow
-                announcement={autoAssign.announcement}
-                notice={autoAssign.notice}
-                onRemove={autoAssign.dismiss}
-                pending={autoAssign.pending}
-                suggestions={autoAssign.suggestions}
-              />
+              <ComposerAutoAssignRow notice={autoAssign.notice} />
             ) : null}
             {/* biome-ignore lint/a11y/noStaticElementInteractions: keydown handler bridges Tiptap editor to autocomplete and submit */}
             <div
