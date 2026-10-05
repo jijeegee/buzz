@@ -596,7 +596,13 @@ with a TypeScript lookup table or an id comparison in a component.
     anything is stale). The card's status line shows `applied`, never just
     the saved mode. Losing agents restart first: `decideAutoRestart` holds on
     `routingHold` (from the same plan, re-checked in `restartDriftedAgent`'s
-    pre-fire fetch), and the card's "Restart <name> now" (the page's ordinary
+    pre-fire fetch). A routing switch does not wait out the config-drift
+    quiescence window: `routingTransition` (`routingTransitionFor` — local,
+    stale, not held) makes `decideAutoRestart` fire as soon as every other
+    gate is green (idle, connected, unconsumed edge), so after a save each
+    idle loser restarts at once and the gainer is promoted the moment its
+    hold releases; a mid-turn agent still waits. Ordinary drift keeps the
+    window. The card's "Restart <name> now" (the page's ordinary
     `handleRestart`) is disabled with its reason while held or mid-turn, and
     replaced by a redeploy hint for a provider agent. The frontend query key
     nests under `managed-agents` so every agent-list invalidation refreshes

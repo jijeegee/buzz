@@ -27,6 +27,7 @@ function greenInputs(overrides = {}) {
     edgeConsumed: false,
     quiescentForMs: AUTO_RESTART_QUIESCENCE_MS,
     routingHold: false,
+    routingTransition: false,
     ...overrides,
   };
 }
@@ -73,6 +74,22 @@ for (const [label, overrides] of NEVER_FIRE_ROWS) {
       decideAutoRestart(greenInputs(overrides)),
       "hold",
       `${label} must hold — a fire here is a kill`,
+    );
+  });
+}
+
+for (const [label, overrides] of NEVER_FIRE_ROWS) {
+  test(`never fires during a routing switch either: ${label}`, () => {
+    assert.equal(
+      decideAutoRestart(
+        greenInputs({
+          ...overrides,
+          routingTransition: true,
+          quiescentForMs: 0,
+        }),
+      ),
+      "hold",
+      `${label} must hold even when a routing switch waives the window`,
     );
   });
 }
@@ -126,4 +143,18 @@ test("undefined prior state initializes un-consumed and un-armed", () => {
     nextEdgeState(undefined, { needsRestart: true, isRunning: true }),
     { consumed: false, armedAt: null },
   );
+});
+
+// ── channel-routing transitions ─────────────────────────────────────────────
+
+test("save → an idle agent losing (or, once released, gaining) a role restarts now", () => {
+  // The user switched routing: no quiescence window, just the safety gates.
+  assert.equal(
+    decideAutoRestart(
+      greenInputs({ routingTransition: true, quiescentForMs: 0 }),
+    ),
+    "fire",
+  );
+  // Ordinary config drift still waits out the window.
+  assert.equal(decideAutoRestart(greenInputs({ quiescentForMs: 0 })), "arm");
 });

@@ -274,6 +274,24 @@ export function routingHoldFor(
   );
 }
 
+/**
+ * Whether this agent's restart applies a routing switch right now: a local
+ * agent the plan marks stale (running role ≠ saved role) and not held.
+ * Auto-restart fires these as soon as the agent is idle instead of waiting
+ * out the config-drift quiescence window.
+ */
+export function routingTransitionFor(
+  status: ChannelRoutingStatus | undefined,
+  pubkey: string,
+): boolean {
+  return (
+    status?.agents.some(
+      (agent) =>
+        agent.pubkey === pubkey && agent.local && agent.stale && !agent.hold,
+    ) ?? false
+  );
+}
+
 /** Settings › Agents one-liner: the saved mode and its agent. */
 export function routingSummaryText(
   status: ChannelRoutingStatus,

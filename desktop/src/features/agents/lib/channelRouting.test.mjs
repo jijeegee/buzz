@@ -11,6 +11,7 @@ import {
   routingRestartAffordances,
   routingStatusLine,
   routingSummaryText,
+  routingTransitionFor,
 } from "./channelRouting.ts";
 
 const HONEY = "aa".repeat(32);
@@ -241,6 +242,39 @@ test("routingHoldFor reads the plan's hold and treats unknown status as not held
   assert.equal(routingHoldFor(held, FIZZ), true);
   assert.equal(routingHoldFor(held, HONEY), false);
   assert.equal(routingHoldFor(undefined, FIZZ), false);
+});
+
+test("routingTransitionFor: after a save, the losing host restarts now and the held gainer waits", () => {
+  // Star moved Honey → Fizz under Host: Honey still dispatches (stale, loser),
+  // Fizz runs plain and is held behind it.
+  const switching = status({
+    agents: [
+      agent({ runningRole: "dispatcher", desiredRole: "none", stale: true }),
+      agent({
+        pubkey: FIZZ,
+        desiredRole: "dispatcher",
+        stale: true,
+        hold: true,
+      }),
+    ],
+  });
+  assert.equal(routingTransitionFor(switching, HONEY), true);
+  assert.equal(routingTransitionFor(switching, FIZZ), false);
+  // Honey restarted plain: the hold releases and Fizz is promoted now.
+  const released = status({
+    agents: [
+      agent(),
+      agent({ pubkey: FIZZ, desiredRole: "dispatcher", stale: true }),
+    ],
+  });
+  assert.equal(routingTransitionFor(released, HONEY), false);
+  assert.equal(routingTransitionFor(released, FIZZ), true);
+  // A remote agent needs a redeploy; unknown status is no transition.
+  const remote = status({
+    agents: [agent({ local: false, runningRole: "dispatcher", stale: true })],
+  });
+  assert.equal(routingTransitionFor(remote, HONEY), false);
+  assert.equal(routingTransitionFor(undefined, HONEY), false);
 });
 
 test("the Settings summary names the saved mode and its agent", () => {

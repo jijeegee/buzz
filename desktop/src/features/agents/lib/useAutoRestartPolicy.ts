@@ -6,7 +6,10 @@ import {
   useManagedAgentsQuery,
 } from "@/features/agents/hooks";
 import { useChannelRoutingQuery } from "@/features/agents/channelRoutingHooks";
-import { routingHoldFor } from "@/features/agents/lib/channelRouting";
+import {
+  routingHoldFor,
+  routingTransitionFor,
+} from "@/features/agents/lib/channelRouting";
 import { captureRelayRemovals } from "@/features/agents/managedAgentRelayCleanup";
 import { clearActiveTurnsForAgentOnStop } from "@/features/agents/managedAgentRuntimeHooks";
 import {
@@ -128,6 +131,7 @@ export function useAutoRestartPolicy(relayUrl: string | undefined) {
         edgeConsumed: edge.consumed,
         quiescentForMs: edge.armedAt === null ? 0 : now - edge.armedAt,
         routingHold: routingHoldFor(routing, agent.pubkey),
+        routingTransition: routingTransitionFor(routing, agent.pubkey),
       });
 
       if (decision === "hold") {
