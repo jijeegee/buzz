@@ -1914,10 +1914,10 @@ async fn create_session_and_apply_model(
     // advertises the requested mode in session/new. Agents that don't support
     // the mode (e.g., goose crashes on unrecognized set_config_option values)
     // are safely skipped — the harness auto-approves via handle_permission_request.
-    if !ctx.permission_mode.is_default()
-        && agent_supports_mode(&resp.raw, ctx.permission_mode.as_wire_str())
-    {
-        apply_permission_mode(&mut agent.acp, &resp.session_id, &ctx.permission_mode).await?;
+    if !ctx.permission_mode.is_default() {
+        if let Some(wire) = advertised_mode_wire(&resp.raw, &ctx.permission_mode) {
+            apply_permission_mode(&mut agent.acp, &resp.session_id, wire).await?;
+        }
     }
 
     Ok(resp.session_id)
@@ -2226,6 +2226,24 @@ fn patch_config_option_current_value(
     }
 }
 
+/// Resolve the mode id to send for `mode`, or `None` when the agent does not
+/// advertise it. codex-acp names its bypass equivalent `agent-full-access`;
+/// its other modes force `networkAccess: false` on every turn (overriding
+/// `CODEX_CONFIG`), which blocks `buzz` CLI calls to the relay.
+fn advertised_mode_wire(
+    session_new_result: &serde_json::Value,
+    mode: &PermissionMode,
+) -> Option<&'static str> {
+    let candidates: &[&'static str] = match mode {
+        PermissionMode::BypassPermissions => &["bypassPermissions", "agent-full-access"],
+        other => &[other.as_wire_str()],
+    };
+    candidates
+        .iter()
+        .copied()
+        .find(|wire| agent_supports_mode(session_new_result, wire))
+}
+
 /// Set the session permission mode via `session/set_config_option`.
 ///
 /// Non-fatal for most errors: logs and proceeds. The agent falls back
@@ -2253,9 +2271,8 @@ fn agent_supports_mode(session_new_result: &serde_json::Value, mode_wire: &str) 
 async fn apply_permission_mode(
     acp: &mut AcpClient,
     session_id: &str,
-    mode: &PermissionMode,
+    wire: &str,
 ) -> Result<(), AcpError> {
-    let wire = mode.as_wire_str();
     let result = tokio::time::timeout(PERMISSION_MODE_TIMEOUT, async {
         acp.session_set_config_option(session_id, "mode", wire)
             .await
@@ -5893,6 +5910,17 @@ mod tests {
             &session_new,
             PermissionMode::Auto.as_wire_str()
         ));
+    }
+
+    #[test]
+    fn advertised_mode_wire_maps_bypass_to_codex_full_access() {
+        let codex = json!({
+            "modes": { "availableModes": [{ "id": "agent" }, { "id": "agent-full-access" }] }
+        });
+        assert_eq!(
+            advertised_mode_wire(&codex, &PermissionMode::BypassPermissions),
+            Some("agent-full-access")
+        );
     }
 
     #[test]
