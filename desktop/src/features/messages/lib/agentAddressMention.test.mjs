@@ -31,11 +31,13 @@ test("reads ordered address metadata without treating ordinary mentions as tray 
   );
 });
 
-test("marks Smart routing picks apart from manually addressed agents", () => {
-  const tags = buildAgentAddressMentionTags([ALICE, BOB], [ALICE, BOB], [BOB]);
-  assert.deepEqual(tags, [
+test("reads Smart routing picks apart from manually addressed agents", () => {
+  const tags = [
     ["mention", ALICE, AGENT_ADDRESS_MENTION_MARKER],
     ["mention", BOB, AUTO_ROUTE_MENTION_MARKER],
+  ];
+  assert.deepEqual(buildAgentAddressMentionTags([ALICE], [ALICE, BOB]), [
+    tags[0],
   ]);
   assert.deepEqual(getAgentAddressMentionPubkeys(tags), [ALICE]);
   assert.deepEqual(getAutoRouteMentionPubkeys(tags), [BOB]);

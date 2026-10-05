@@ -1,5 +1,5 @@
 import type { MentionRevalidationOptions } from "@/features/messages/lib/agentMentionRevalidation";
-import type { ManagedAgent } from "@/shared/api/types";
+import type { ManagedAgent, RelayEvent } from "@/shared/api/types";
 import {
   type ImetaMedia,
   mergeOutgoingTags,
@@ -70,8 +70,8 @@ export type PendingNonMemberMentionSend = {
   composerRevision: number;
   invitationSignal?: AbortSignal;
   addressedAgentPubkeys: string[];
-  /** The subset of `addressedAgentPubkeys` Smart routing picked. */
-  autoRoutedAgentPubkeys?: string[];
+  /** Called with the published event once the relay accepts it (Smart routing). */
+  onPublished?: (message: RelayEvent) => void;
   inlineAgentMentionPubkeys: string[];
   capturedChannelId: string | null;
   capturedThreadContext: {
@@ -102,7 +102,7 @@ export type PendingNonMemberMentionSend = {
 
 export type SendMessageWithMentionFlowInput = {
   addressedAgentPubkeys?: readonly string[];
-  autoRoutedAgentPubkeys?: readonly string[];
+  onPublished?: (message: RelayEvent) => void;
   capturedChannelId: string | null;
   capturedThreadContext?: PendingNonMemberMentionSend["capturedThreadContext"];
   pendingImeta: ImetaMedia[];

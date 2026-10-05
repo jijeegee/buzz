@@ -12,7 +12,7 @@ import type {
   ProfilePanelView,
 } from "@/features/profile/ui/UserProfilePanel";
 import type { ProfilePanelOpenOptions } from "@/shared/context/ProfilePanelContext";
-import type { Channel } from "@/shared/api/types";
+import type { Channel, RelayEvent } from "@/shared/api/types";
 import type { IdleAuxiliaryHeaderControls } from "./IdleAuxiliaryPanel";
 export type ChannelPaneProps = {
   activeChannel: Channel | null;
@@ -132,7 +132,7 @@ export type ChannelPaneProps = {
       threadHeadId: string | null;
     } | null,
     forceRest?: boolean,
-  ) => Promise<void>;
+  ) => Promise<RelayEvent | undefined>;
   onSendToChannel: (
     message: TimelineMessage,
     threadRoot: TimelineMessage,
@@ -154,7 +154,7 @@ export type ChannelPaneProps = {
       parentEventId: string | null;
       threadHeadId: string | null;
     } | null,
-  ) => Promise<void>;
+  ) => Promise<RelayEvent | undefined>;
   onTargetReached?: (messageId: string) => void;
   onToggleReaction?: (
     message: TimelineMessage,

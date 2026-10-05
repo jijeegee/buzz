@@ -688,7 +688,11 @@ export const MessageRow = React.memo(
       <>
         <SentFromThreadLine channelId={channelId} tags={message.tags} />
         {renderBody()}
-        <MessageAutoRouteLine profiles={profiles} tags={message.tags} />
+        <MessageAutoRouteLine
+          messageId={message.id}
+          profiles={profiles}
+          tags={message.tags}
+        />
         {continuationMetadataNode}
         <MessageReactions
           messageId={message.id}

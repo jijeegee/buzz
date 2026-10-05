@@ -4,7 +4,14 @@ import type { DraftMentionRef } from "@/features/messages/lib/useDrafts";
 import type { ImetaMedia } from "@/features/messages/lib/imetaMediaMarkdown";
 import type { MediaUploadController } from "@/features/messages/lib/useMediaUpload";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
-import type { ChannelType } from "@/shared/api/types";
+import type { ChannelType, RelayEvent } from "@/shared/api/types";
+
+/**
+ * What a composer's `onSend` resolves to: the published event when the
+ * surface knows it (Smart routing then routes it), otherwise nothing.
+ */
+// biome-ignore lint/suspicious/noConfusingVoidType: senders that resolve to nothing stay assignable.
+export type SentMessage = RelayEvent | void;
 
 export type MessageComposerEditTarget = {
   author: string;
@@ -99,7 +106,7 @@ export type MessageComposerProps = {
     } | null,
     /** Route through the REST publisher even when best-effort enrichment settled empty. */
     forceRest?: boolean,
-  ) => Promise<void>;
+  ) => Promise<SentMessage>;
   placeholder?: string;
   profiles?: UserProfileLookup;
   /** Explicit mention pubkeys from the loaded channel window, newest first. */

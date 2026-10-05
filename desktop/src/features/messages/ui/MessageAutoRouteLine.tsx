@@ -4,22 +4,50 @@ import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import { truncateNpub } from "@/shared/lib/pubkey";
 import { getAutoRouteMentionPubkeys } from "../lib/agentAddressMention.mjs";
+import { useAutoRouteStatus } from "../lib/autoRouteStatus";
+
+const STATUS_CLASS = "mt-0.5 text-xs text-muted-foreground/80";
 
 /**
  * Trailing "→ Delivered to Name" line for the agents Smart routing picked
- * (`auto-route` mention tags). Manually addressed agents render as the
- * leading address chip instead. Each name is the only label of its profile
- * trigger; the arrow is decorative.
+ * (`auto-route` mention tags, or the local delivery before its edit echoes
+ * back). Before that, a just-sent message shows "Routing…" or "Not
+ * delivered" here. Manually addressed agents render as the leading address
+ * chip instead. Each name is the only label of its profile trigger; the
+ * arrow is decorative.
  */
 export function MessageAutoRouteLine({
+  messageId,
   profiles,
   tags,
 }: {
+  messageId?: string;
   profiles?: UserProfileLookup;
   tags?: string[][];
 }) {
-  const pubkeys = React.useMemo(() => getAutoRouteMentionPubkeys(tags), [tags]);
-  if (pubkeys.length === 0) return null;
+  const routing = useAutoRouteStatus(messageId);
+  const taggedPubkeys = React.useMemo(
+    () => getAutoRouteMentionPubkeys(tags),
+    [tags],
+  );
+  const pubkeys =
+    taggedPubkeys.length > 0 || routing?.status !== "delivered"
+      ? taggedPubkeys
+      : routing.pubkeys;
+  if (pubkeys.length === 0) {
+    if (routing?.status === "routing" || routing?.status === "failed") {
+      return (
+        <div
+          className={STATUS_CLASS}
+          data-testid="message-auto-route-status"
+          role="status"
+        >
+          {routing.status === "routing" ? "Routing…" : "Not delivered"}
+        </div>
+      );
+    }
+    return null;
+  }
   return (
     <div
       className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground/80"

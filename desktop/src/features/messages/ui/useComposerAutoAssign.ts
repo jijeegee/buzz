@@ -13,7 +13,7 @@ import { useRouterRosterSource } from "./useRouterRosterSource";
 
 /**
  * Wires Smart routing into one `MessageComposer`: the applied mode and model
- * readiness, the channel roster, and the Enter-time `useAutoAssign` call.
+ * readiness, the channel roster, and the after-send `useAutoAssign` routing.
  * Everything stays idle (no queries, no timers) unless Smart routing is the
  * applied channel routing.
  */
@@ -46,9 +46,6 @@ export function useComposerAutoAssign({
     staleTime: 30_000,
   }).data;
   const routerReady = routerModel !== undefined;
-  // Subscription routes (Codex / Claude Code CLI) take ~5 s, so Enter waits
-  // longer for them than for an API key.
-  const sendWaitMs = routerModel?.sendWaitMs;
   const getRoster = useRouterRosterSource({
     enabled: routerActive,
     getIdentities: mentions.getMentionIdentities,
@@ -69,7 +66,6 @@ export function useComposerAutoAssign({
     isEditing,
     routerActive,
     routerReady,
-    sendWaitMs,
     threadRoot,
   });
 }

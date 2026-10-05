@@ -2,17 +2,16 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 // Smart routing's composer state through the real hook with an injected
-// router (no IPC, no model): one call per send at Enter, the bounded Enter
-// wait, and the closed gate. Real timers: the Enter wait is the behavior
-// under test. Typing never reaches the hook (the composer's onUpdate does not
+// router (no IPC, no model): Enter never waits, the publish routes the sent
+// text exactly once, the pick is delivered, and an edit in between fences
+// it out. Typing never reaches the hook (the composer's onUpdate does not
 // call it; see smartRoutingComposerWiring.test.mjs).
 
 const React = (await import("react")).default;
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { AUTO_ASSIGN_SEND_WAIT_MS, useAutoAssign } = await import(
-  "./useAutoAssign.ts"
-);
+const { useAutoAssign } = await import("./useAutoAssign.ts");
+const status = await import("../lib/autoRouteStatus.ts");
 
 const CODER = "aa".repeat(32);
 const TRANSLATOR = "bb".repeat(32);
@@ -23,8 +22,10 @@ const ROSTER = {
   ],
   humans: ["Jiho"],
 };
+const MESSAGE = { id: "m1", content: "fix the windows build", tags: [] };
 
 let calls = [];
+let deliveries = [];
 /** Each call gets a deferred the test settles. */
 function deferredRoute() {
   return (input) => {
@@ -36,11 +37,11 @@ function deferredRoute() {
     return promise;
   };
 }
-
-const sleep = (ms) =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-  });
+async function deliver(message, pubkeys, isCurrent) {
+  if (!isCurrent()) return false;
+  deliveries.push({ id: message.id, pubkeys });
+  return true;
+}
 
 let mounted = null;
 
@@ -76,101 +77,74 @@ afterEach(async () => {
     mounted = null;
   }
   calls = [];
+  deliveries = [];
+  status.resetAutoRouteStatus();
 });
 
 const settleCall = (index, result) =>
   act(async () => {
     calls[index].resolve(result);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-test("the hook has no typing input; each Enter routes exactly once", async () => {
-  const hook = await mount();
-  assert.deepEqual(Object.keys(hook.current).sort(), [
-    "notice",
-    "resolveForSend",
-  ]);
-  assert.equal(calls.length, 0, "mounting never calls the router");
+const statusOf = (id) => status.getAutoRouteStatus(id);
 
-  const sending = hook.current.resolveForSend("fix the windows build");
-  await sleep(20);
+test("Enter never routes; the publish routes once and delivers the pick", async () => {
+  const hook = await mount();
+  assert.deepEqual(Object.keys(hook.current), ["routeAfterSend"]);
+  const onPublished = hook.current.routeAfterSend(
+    "fix the windows build",
+    deliver,
+  );
+  assert.equal(typeof onPublished, "function");
+  assert.equal(calls.length, 0, "the send itself never calls the router");
+
+  onPublished(MESSAGE);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].input.message, "fix the windows build");
   assert.equal(calls[0].input.phase, "send");
   assert.equal(calls[0].input.channelId, "chan");
   assert.deepEqual(calls[0].input.humans, ["Jiho"]);
+  assert.equal(statusOf("m1")?.status, "routing");
+
   await settleCall(0, { decision: "assigned", pubkeys: [CODER] });
-  assert.deepEqual(await sending, [CODER]);
-
-  const again = hook.current.resolveForSend("fix the windows build");
-  await sleep(20);
-  assert.equal(calls.length, 2, "a second send routes again, no cache");
-  await settleCall(1, { decision: "none" });
-  assert.deepEqual(await again, []);
+  assert.deepEqual(deliveries, [{ id: "m1", pubkeys: [CODER] }]);
+  assert.equal(statusOf("m1")?.status, "delivered");
+  assert.deepEqual(statusOf("m1")?.pubkeys, [CODER]);
 });
 
-test("Enter with no answer in time sends unassigned with a quiet notice", async () => {
+test("an edit before the pick returns is never delivered to", async () => {
   const hook = await mount();
-  const started = Date.now();
-  let sent;
-  await act(async () => {
-    sent = await hook.current.resolveForSend("fix the windows build");
-  });
-  const waited = Date.now() - started;
-  assert.deepEqual(sent, []);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].input.phase, "send");
-  assert.ok(
-    waited >= AUTO_ASSIGN_SEND_WAIT_MS - 50 &&
-      waited < AUTO_ASSIGN_SEND_WAIT_MS + 800,
-    `waited ${waited} ms`,
-  );
-  assert.equal(
-    hook.current.notice,
-    "Sent without auto-assign (routing timed out)",
-  );
+  hook.current.routeAfterSend("fix the windows build", deliver)(MESSAGE);
+  status.cancelAutoRoute("m1");
+  await settleCall(0, { decision: "assigned", pubkeys: [CODER] });
+  assert.deepEqual(deliveries, []);
+  assert.equal(statusOf("m1"), null);
 });
 
-test("a slow (subscription) route waits its own longer budget on Enter", async () => {
-  const hook = await mount({ sendWaitMs: AUTO_ASSIGN_SEND_WAIT_MS + 1_500 });
-  const sending = hook.current.resolveForSend("fix the windows build");
-  // Past the default API-key budget, still inside the route's own.
-  await sleep(AUTO_ASSIGN_SEND_WAIT_MS + 400);
-  calls[0].resolve({ decision: "assigned", pubkeys: [CODER] });
-  assert.deepEqual(await sending, [CODER]);
-  assert.equal(hook.current.notice, null);
-});
-
-test("a failed route sends unassigned; 'not configured' stays silent", async () => {
-  const hook = await mount({
-    route: () => Promise.reject(new Error("ipc down")),
-  });
-  let sent;
-  await act(async () => {
-    sent = await hook.current.resolveForSend("fix the windows build");
-  });
-  assert.deepEqual(sent, []);
-  assert.equal(
-    hook.current.notice,
-    "Sent without auto-assign (routing failed)",
-  );
-
-  const quiet = await (async () => {
-    await act(async () => mounted.root.unmount());
-    mounted = null;
-    return mount({
-      route: () =>
-        Promise.resolve({ decision: "skipped", reason: "not-configured" }),
+test("a failed route shows Not delivered; none and not-configured stay silent", async () => {
+  const hook = await mount();
+  const results = [
+    ["m1", { decision: "skipped", reason: "provider-error" }, "failed"],
+    ["m2", { decision: "none" }, null],
+    ["m3", { decision: "skipped", reason: "not-configured" }, null],
+  ];
+  for (const [index, [id, result, expected]] of results.entries()) {
+    hook.current.routeAfterSend(
+      "fix the windows build",
+      deliver,
+    )({
+      ...MESSAGE,
+      id,
     });
-  })();
-  await act(async () => {
-    sent = await quiet.current.resolveForSend("fix the windows build");
-  });
-  assert.deepEqual(sent, []);
-  assert.equal(quiet.current.notice, null);
+    await settleCall(index, result);
+    assert.equal(statusOf(id)?.status ?? null, expected, id);
+  }
+  assert.equal(calls.length, 3, "one call per message, no retry");
+  assert.deepEqual(deliveries, []);
 });
 
-test("a closed gate never calls the router on Enter", async () => {
+test("a closed gate never calls the router", async () => {
   for (const override of [
     { routerActive: false },
     { routerReady: false },
@@ -181,13 +155,13 @@ test("a closed gate never calls the router on Enter", async () => {
     { getRoster: () => ({ roster: [], humans: [] }) },
   ]) {
     const hook = await mount(override);
-    let sent;
-    await act(async () => {
-      sent = await hook.current.resolveForSend("fix the windows build");
-    });
-    assert.deepEqual(sent, [], JSON.stringify(Object.keys(override)));
-    assert.equal(calls.length, 0, JSON.stringify(Object.keys(override)));
+    assert.equal(
+      hook.current.routeAfterSend("fix the windows build", deliver),
+      null,
+      JSON.stringify(Object.keys(override)),
+    );
     await act(async () => mounted.root.unmount());
     mounted = null;
   }
+  assert.equal(calls.length, 0);
 });

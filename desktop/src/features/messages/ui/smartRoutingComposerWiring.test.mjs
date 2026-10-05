@@ -2,59 +2,40 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-// Smart routing reaches agents only through the composer's existing
-// agent-address path: the pick is appended to `addressedAgentPubkeys` and
-// named in `autoRoutedAgentPubkeys`, which `useMentionSendFlow` turns into
-// `p` tags plus `["mention", pk, "auto-route"]`. These pins keep the send seam from silently dropping
-// the pick or moving it out of the bounded wait. (`useAutoAssign` itself is
-// exercised through the real hook in `useAutoAssign.jsdom-test.mjs`.)
+// Smart routing never delays the send: the composer hands the mention flow
+// an `onPublished` callback, and the pick reaches the agent afterwards via
+// `deliverAutoRoute` (an edit that newly `p`-tags it plus the `auto-route`
+// display tag). These pins keep the send seam from awaiting the router again.
+// (`useAutoAssign` itself is exercised through the real hook in
+// `useAutoAssign.jsdom-test.mjs`.)
 
 async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
 }
 
-test("the send awaits the Smart routing pick and addresses it like the tray", async () => {
+test("the send never awaits the router; routing starts on publish", async () => {
   const composer = await source("./MessageComposer.tsx");
   const send = composer.slice(composer.indexOf("// Normal send"));
-  const resolveAt = send.indexOf("await autoAssign.resolveForSend(trimmed)");
-  const flowAt = send.indexOf(
-    "await mentionSendFlow.sendMessageWithMentionFlow(",
-  );
-  assert.ok(resolveAt > 0, "the send resolves the pick");
-  assert.ok(flowAt > resolveAt, "before handing off to the mention flow");
+  assert.doesNotMatch(send, /await autoAssign\./);
   assert.match(
     send,
-    /addressedAgentPubkeys: \[\s*\.\.\.persistentAudience\.pubkeys,\s*\.\.\.autoAssignedPubkeys,\s*\],\s*autoRoutedAgentPubkeys: autoAssignedPubkeys,/,
+    /onPublished:\s*autoAssign\.routeAfterSend\(\s*trimmed,\s*mentionSendFlow\.deliverAutoRoute,\s*\)/,
   );
-  // An edit during the bounded wait abandons the send instead of clearing
-  // keystrokes the user typed after pressing Enter.
+  const flow = await source("./useMentionSendFlow.ts");
+  assert.match(flow, /if \(published\) draft\.onPublished\?\.\(published\);/);
   assert.match(
-    send,
-    /if \(getComposerRevision\(\) !== revisionBeforeRouting\) return;/,
+    flow,
+    /pubkeys\.map\(\(pubkey\) => \["mention", pubkey, AUTO_ROUTE_MENTION_MARKER\]\)/,
   );
 });
 
-test("typing never reaches the router; only the notice renders outside edit mode", async () => {
+test("typing never reaches the router", async () => {
   const composer = await source("./MessageComposer.tsx");
   const onUpdate = composer.slice(
     composer.indexOf("onUpdate: ({"),
     composer.indexOf("const linkEditor"),
   );
   assert.doesNotMatch(onUpdate, /autoAssign/);
-  assert.match(
-    composer,
-    /editTarget == null \? \(\s*<ComposerAutoAssignRow notice=\{autoAssign\.notice\} \/>/,
-  );
-});
-
-test("the auto-route mention tag is what the pick becomes", async () => {
-  const { buildAgentAddressMentionTags } = await import(
-    "../lib/agentAddressMention.mjs"
-  );
-  const pubkey = "aa".repeat(32);
-  assert.deepEqual(buildAgentAddressMentionTags([pubkey], [pubkey], [pubkey]), [
-    ["mention", pubkey, "auto-route"],
-  ]);
 });
 
 test("thread replies give the router their root text", async () => {

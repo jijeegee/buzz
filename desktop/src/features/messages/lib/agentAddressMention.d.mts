@@ -4,7 +4,6 @@ export const AUTO_ROUTE_MENTION_MARKER: "auto-route";
 export function buildAgentAddressMentionTags(
   addressedPubkeys: Iterable<string>,
   deliveredPubkeys: Iterable<string>,
-  autoRoutedPubkeys?: Iterable<string>,
 ): string[][];
 
 export function getAgentAddressMentionPubkeys(

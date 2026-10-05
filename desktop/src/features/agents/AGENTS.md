@@ -647,21 +647,23 @@ with a TypeScript lookup table or an id comparison in a component.
     an agent on this computer"; the remembered star carries over to Lead only
     when it can lead.
 
-24. **Smart routing (`desktop-router`) is a desktop-side, send-time pick
-    carried by the existing agent-address path; its model is an app task.**
+24. **Smart routing (`desktop-router`) is a desktop-side, after-send pick
+    delivered by editing the sent message; its model is an app task.**
     Only this user's own composer sends in stream/forum channels route; DMs,
     edits, drafts with an explicit `@mention` or tray-addressed agents, and
     any applied state other than Smart routing (Off, Host, Lead, or a switch
     in flight — the composer reads the plan's `routerActive`, never the saved
-    mode) never call the model (`messages/lib/autoAssignGate.ts`). While
-    typing, `messages/ui/useAutoAssign.ts` runs a 900 ms-debounced preview
-    (≤ 6 per draft, results fenced by draft text) and shows the pick as a
-    removable "→ Name" chip; Enter waits at most the route's `sendWaitMs`
-    (1.2 s on an API key, 8 s on a subscription CLI route) for the pick, else
-    sends unassigned with a quiet notice — sending is never blocked. The pick
-    is appended to `addressedAgentPubkeys`, so delivery is the ordinary `p`
-    tag + `["mention", pk, "agent-address"]`; nothing extra is posted and no
-    harness changes. Rust owns the rest (`src-tauri/src/message_routing/`):
+    mode) never call the model (`messages/lib/autoAssignGate.ts`). Typing
+    never calls it and Enter never waits for it: the message posts unchanged,
+    then `messages/ui/useAutoAssign.ts` routes the sent text once and
+    `useMentionSendFlow`'s `deliverAutoRoute` publishes a same-body kind:40003
+    edit that newly `p`-tags the pick plus `["mention", pk, "auto-route"]`
+    (buzz-acp wakes an agent on an edit that newly mentions it, so no
+    harness change). The sent row shows "Routing…", then "→ Delivered to
+    Name", or "Not delivered" (`messages/lib/autoRouteStatus.ts`); an edit
+    or delete first fences the pick out. The timeline never marks that
+    delivery edit as an edit and keeps its `auto-route` tags across later
+    edits (`formatTimelineMessages.ts`). Rust owns the rest (`src-tauri/src/message_routing/`):
     the aliased roster prompt (`a1…aN`, pubkeys never sent), caps, the strict
     `{"to":[≤2 aliases]}` parser, the per-route deadline (2 s API key, 12 s
     CLI), the call itself, and the JSONL comparison log
@@ -755,8 +757,8 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   `managed_agents::task_models` tests; `buzz-agent` `complete_once_tests`;
   `messages/lib/autoAssignGate.test.mjs` (every skip reason),
   `messages/lib/routerRoster.test.mjs` (description priority, caps),
-  `messages/ui/useAutoAssign.jsdom-test.mjs` (debounce, text fence,
-  dismissal, bounded Enter wait, call budget, closed gate),
+  `messages/ui/useAutoAssign.jsdom-test.mjs` (route on publish, delivery,
+  edit fence, one call per message, closed gate),
   `messages/ui/smartRoutingComposerWiring.test.mjs` (send seam),
   `../settings/ui/models/TaskModelRow.jsdom-test.mjs`, and the Smart routing
   cases in `ui/routing/ChannelRoutingCard.jsdom-test.mjs`.

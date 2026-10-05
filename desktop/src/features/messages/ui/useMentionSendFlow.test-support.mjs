@@ -167,8 +167,10 @@ export async function setup({ lifecycle = false } = {}) {
     "@/shared/lib/customEmojiTags": { buildCustomEmojiTags: () => [] },
     "./useMentionSendFlow.helpers": helpers,
     "@/features/messages/lib/agentAddressMention.mjs": {
+      AUTO_ROUTE_MENTION_MARKER: "auto-route",
       buildAgentAddressMentionTags: () => [],
     },
+    "@/shared/api/editMessage": { editMessage: async () => {} },
     "@/features/messages/lib/agentMentionRevalidation": {
       AgentMentionAuthorizationError: class extends Error {},
     },

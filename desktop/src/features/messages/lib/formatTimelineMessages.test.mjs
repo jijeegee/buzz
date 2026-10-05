@@ -112,6 +112,34 @@ test("a far-future edit still rewrites the body of an old message", () => {
   assert.equal(out[0].edited, true, "the message must be marked edited");
 });
 
+test("Smart routing's delivery edit is not an edit and survives a later one", () => {
+  const delivery = streamEdit(HEX64_A, "hello world", {
+    tags: [
+      ["h", CHANNEL_ID],
+      ["e", HEX64_A],
+      ["p", PUBKEY_B],
+      ["mention", PUBKEY_B, "auto-route"],
+    ],
+  });
+  const routed = (events) =>
+    formatTimelineMessages(events, null, undefined, null)[0];
+  const delivered = routed([streamMessage(), delivery]);
+  assert.equal(delivered.edited, false);
+  assert.ok(
+    delivered.tags.some(
+      (tag) => tag[0] === "mention" && tag[2] === "auto-route",
+    ),
+  );
+  const later = streamEdit(HEX64_A, "hello again", {
+    id: "c".repeat(64),
+    created_at: 1_700_000_002,
+  });
+  const edited = routed([streamMessage(), delivery, later]);
+  assert.equal(edited.edited, true);
+  assert.equal(edited.body, "hello again");
+  assert.ok(edited.tags.some((tag) => tag[2] === "auto-route"));
+});
+
 test("a far-future deletion still hides an old message", () => {
   const old = streamMessage({ created_at: 1_700_000_000 });
   const lateDeletion = deletionEvent(9005, HEX64_A, {

@@ -18,7 +18,7 @@ import { handleTimelineMentionCopy } from "@/features/messages/lib/timelineMenti
 import type { TimelineMessage } from "@/features/messages/types";
 import type { VideoReviewPresentation } from "@/features/messages/lib/videoReviewContext";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
-import type { Channel } from "@/shared/api/types";
+import type { Channel, RelayEvent } from "@/shared/api/types";
 import type { ThreadPanelLayoutProps } from "@/features/channels/lib/threadPanelLayout";
 import { useEscapeKey } from "@/shared/hooks/useEscapeKey";
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
@@ -95,7 +95,7 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
       threadHeadId: string | null;
     } | null,
     forceRest?: boolean,
-  ) => Promise<void>;
+  ) => Promise<RelayEvent | undefined>;
   onSendToChannel?: (
     message: TimelineMessage,
     threadRoot: TimelineMessage,

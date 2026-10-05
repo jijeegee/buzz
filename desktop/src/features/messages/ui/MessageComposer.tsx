@@ -66,7 +66,6 @@ import { prepareBackgroundLinkPreviews } from "@/features/messages/lib/linkPrevi
 import { useComposerLinkPreviews } from "./useComposerLinkPreviews";
 import { useAddressedAgentMentionRestore } from "./useAddressedAgentMentionRestore";
 import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
-import { ComposerAutoAssignRow } from "./ComposerAutoAssignRow";
 import { useComposerAutoAssign } from "./useComposerAutoAssign";
 import type { MessageComposerProps } from "./MessageComposer.types";
 function MessageComposerImpl({
@@ -648,17 +647,15 @@ function MessageComposerImpl({
       )
         ? null
         : prepareBackgroundLinkPreviews(getLiveLinkPreviewCandidates());
-      // Smart routing: waits at most ~1.2 s, never throws. An edit made
-      // during that wait abandons this send, like a mention settling below.
-      const revisionBeforeRouting = getComposerRevision();
-      const autoAssignedPubkeys = await autoAssign.resolveForSend(trimmed);
-      if (getComposerRevision() !== revisionBeforeRouting) return;
       await mentionSendFlow.sendMessageWithMentionFlow({
-        addressedAgentPubkeys: [
-          ...persistentAudience.pubkeys,
-          ...autoAssignedPubkeys,
-        ],
-        autoRoutedAgentPubkeys: autoAssignedPubkeys,
+        addressedAgentPubkeys: persistentAudience.pubkeys,
+        // Smart routing never delays the send: the gate is checked now, the
+        // routing call runs once the relay accepts the publish.
+        onPublished:
+          autoAssign.routeAfterSend(
+            trimmed,
+            mentionSendFlow.deliverAutoRoute,
+          ) ?? undefined,
         capturedChannelId: channelId,
         capturedThreadContext,
         pendingImeta: currentPendingImeta,
@@ -679,7 +676,7 @@ function MessageComposerImpl({
       onPreparingMentionSendChange?.(false);
     }
   }, [
-    autoAssign.resolveForSend,
+    autoAssign.routeAfterSend,
     channelId,
     channelLinks.clearChannels,
     customEmoji,
@@ -693,6 +690,7 @@ function MessageComposerImpl({
     media.restoreQueuedAttachments,
     media.setPendingImeta,
     media.setUploadState,
+    mentionSendFlow.deliverAutoRoute,
     mentionSendFlow.isPreparingMentionSend,
     mentionSendFlow.sendMessageWithMentionFlow,
     mentions.clearMentions,
@@ -707,7 +705,6 @@ function MessageComposerImpl({
     persistentAudience.pubkeys,
     isEditSubmissionLocked,
     effectiveDraftKey,
-    getComposerRevision,
     mentions.getDraftMentionRefs,
     mentions.restoreDraftMentionRefs,
     mentions.revalidateMentionPubkeys,
@@ -965,9 +962,6 @@ function MessageComposerImpl({
                 ) : null}
               </div>
             )}
-            {editTarget == null ? (
-              <ComposerAutoAssignRow notice={autoAssign.notice} />
-            ) : null}
             {/* biome-ignore lint/a11y/noStaticElementInteractions: keydown handler bridges Tiptap editor to autocomplete and submit */}
             <div
               className="rich-text-composer relative max-h-32 overflow-y-auto"

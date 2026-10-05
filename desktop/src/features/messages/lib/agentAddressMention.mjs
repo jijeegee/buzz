@@ -8,26 +8,17 @@ export const AUTO_ROUTE_MENTION_MARKER = "auto-route";
  * Persist the subset of delivered mentions that came from the composer's
  * address tray. The ordinary `p` tag remains the notification mechanism;
  * this annotated reference is display metadata for reconstructing the tray
- * state when the message is rendered later. Recipients in `autoRoutedPubkeys`
- * are marked `auto-route` instead, so they render as a trailing delivery
- * line rather than an address chip.
+ * state when the message is rendered later. (Smart routing's picks are added
+ * after the send, as `auto-route` tags on a delivery edit.)
  */
 export function buildAgentAddressMentionTags(
   addressedPubkeys,
   deliveredPubkeys,
-  autoRoutedPubkeys = [],
 ) {
   const delivered = new Set([...deliveredPubkeys].map(normalizePubkey));
-  const autoRouted = new Set([...autoRoutedPubkeys].map(normalizePubkey));
   return [...new Set([...addressedPubkeys].map(normalizePubkey))]
     .filter((pubkey) => pubkey && delivered.has(pubkey))
-    .map((pubkey) => [
-      "mention",
-      pubkey,
-      autoRouted.has(pubkey)
-        ? AUTO_ROUTE_MENTION_MARKER
-        : AGENT_ADDRESS_MENTION_MARKER,
-    ]);
+    .map((pubkey) => ["mention", pubkey, AGENT_ADDRESS_MENTION_MARKER]);
 }
 
 function markedMentionPubkeys(tags, marker) {

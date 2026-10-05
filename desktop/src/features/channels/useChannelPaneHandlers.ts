@@ -308,15 +308,14 @@ export function useChannelPaneHandlers({
         threadHeadId: string | null;
       } | null,
       forceRest?: boolean,
-    ) => {
-      await sendMutateRef.current({
+    ) =>
+      sendMutateRef.current({
         content,
         mentionPubkeys,
         mediaTags,
         channelId: channelId ?? undefined,
         forceRest,
-      });
-    },
+      }),
     [],
   );
 
@@ -397,6 +396,7 @@ export function useChannelPaneHandlers({
           setThreadScrollTargetId(sentMessage.id);
         }
       }
+      return sentMessage;
     },
     [
       setExpandedThreadReplyIds,
