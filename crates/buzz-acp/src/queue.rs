@@ -1175,6 +1175,63 @@ pub(crate) fn reaction_target_id(event: &Event) -> String {
     edit_target_id(event).unwrap_or_else(|| event.id.to_hex())
 }
 
+/// Desktop Smart routing's follow-up delivery: a resolved kind:40003 edit
+/// tagged `["buzz:route", relation, of, thread_root, …]` hands the agent a
+/// message that continues, amends, or cancels earlier message `of`, whose
+/// work lives in `thread_root`. Only resolved edits count: the relay accepts
+/// an edit only from the original's author, so the note is the owner's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RouteFollowUp {
+    pub relation: &'static str,
+    pub of: String,
+    pub thread_root: String,
+}
+
+pub(crate) fn route_follow_up(event: &Event, edit: Option<&ResolvedEdit>) -> Option<RouteFollowUp> {
+    edit?;
+    event.tags.iter().find_map(|tag| {
+        let parts = tag.as_slice();
+        if parts.first().map(String::as_str) != Some("buzz:route") {
+            return None;
+        }
+        let relation = match parts.get(1)?.as_str() {
+            "continue" => "continue",
+            "amend" => "amend",
+            "cancel" => "cancel",
+            _ => return None,
+        };
+        let id = |index: usize| {
+            parts
+                .get(index)
+                .and_then(|value| nostr::EventId::from_hex(value).ok())
+                .map(|id| id.to_hex())
+        };
+        Some(RouteFollowUp {
+            relation,
+            of: id(2)?,
+            thread_root: id(3)?,
+        })
+    })
+}
+
+/// The one-line `<follow-up>` note for a [`RouteFollowUp`] turn.
+fn follow_up_note(follow_up: &RouteFollowUp) -> String {
+    let RouteFollowUp {
+        relation,
+        of,
+        thread_root,
+    } = follow_up;
+    let action = if *relation == "cancel" {
+        "The owner retracts or replaces it: stop that work and don't redo it."
+    } else {
+        "Supplement or fix that work; don't redo it."
+    };
+    format!(
+        "This message is a {relation} of message {of}, which you were given earlier. {action} \
+         Its thread is {thread_root}."
+    )
+}
+
 /// Thread tags that route replies for `event`. See
 /// [`BatchEvent::routing_thread_tags`].
 pub(crate) fn routing_thread_tags(event: &Event, edit: Option<&ResolvedEdit>) -> ThreadTags {
@@ -2147,12 +2204,21 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
     };
     // An edit routes through its original message: the edit's own bare `e`
     // tag is not a thread link, and the edit event is not a visible row.
-    let thread_tags = last_event.routing_thread_tags();
+    let mut thread_tags = last_event.routing_thread_tags();
     let routing_event_id = last_event.routing_event_id();
     let is_dm = args
         .channel_info
         .map(|ci| ci.channel_type == "dm")
         .unwrap_or(false);
+    // A Smart routing follow-up answers in the earlier work's thread, not
+    // under the edited message. Session scope is unchanged.
+    let follow_up = (!is_dm)
+        .then(|| route_follow_up(&last_event.event, last_event.edit.as_ref()))
+        .flatten();
+    if let Some(follow_up) = &follow_up {
+        thread_tags.root_event_id = Some(follow_up.thread_root.clone());
+        thread_tags.parent_event_id = Some(follow_up.thread_root.clone());
+    }
 
     let mut sections: Vec<String> = Vec::with_capacity(7);
 
@@ -2209,6 +2275,12 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
         ),
         reply_anchor.as_deref(),
     ));
+    if let Some(follow_up) = &follow_up {
+        sections.push(crate::prompt_framing::semantic_section(
+            "follow-up",
+            &follow_up_note(follow_up),
+        ));
+    }
 
     // 3. Conversation context (thread or DM).
     if let Some(ctx) = args.conversation_context {
@@ -6553,6 +6625,81 @@ mod tests {
             prompt.contains(&format!("--reply-to {root_id}")),
             "{prompt}"
         );
+    }
+
+    fn route_edit(target: &str, route: &[&str]) -> Event {
+        EventBuilder::new(Kind::Custom(40003), "and add a test")
+            .tags([
+                nostr::Tag::parse(["e", target]).unwrap(),
+                nostr::Tag::parse(route.iter().copied()).unwrap(),
+            ])
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    fn top_level_edit(target: &str) -> Option<ResolvedEdit> {
+        Some(ResolvedEdit {
+            target_event_id: target.to_string(),
+            target_thread_tags: ThreadTags::default(),
+        })
+    }
+
+    #[test]
+    fn route_follow_up_edit_answers_in_the_earlier_thread_with_a_note() {
+        let original = "12".repeat(32);
+        let of = "34".repeat(32);
+        let root = "56".repeat(32);
+        for (relation, action) in [("amend", "don't redo it"), ("cancel", "stop that work")] {
+            let edit = route_edit(&original, &["buzz:route", relation, &of, &root, "note"]);
+            let batch = one_event_batch(edit, top_level_edit(&original));
+            let prompt = format_prompt(&batch, &FormatPromptArgs::default()).join("\n");
+            assert!(prompt.contains(&format!("--reply-to {root}")), "{prompt}");
+            assert!(!prompt.contains(&format!("--reply-to {original}")));
+            assert!(prompt.contains(&format!(
+                "<follow-up>\nThis message is a {relation} of message {of}"
+            )));
+            assert!(prompt.contains(action), "{prompt}");
+        }
+    }
+
+    #[test]
+    fn route_tag_is_ignored_unless_valid_on_a_resolved_edit() {
+        let original = "12".repeat(32);
+        let of = "34".repeat(32);
+        let root = "56".repeat(32);
+        let cases = [
+            // Unresolved edit: the original (and its author) is unverified.
+            (
+                route_edit(&original, &["buzz:route", "amend", &of, &root]),
+                None,
+            ),
+            // `new`, an unknown relation, or a malformed id.
+            (
+                route_edit(&original, &["buzz:route", "new", &of, &root]),
+                top_level_edit(&original),
+            ),
+            (
+                route_edit(&original, &["buzz:route", "redo", &of, &root]),
+                top_level_edit(&original),
+            ),
+            (
+                route_edit(&original, &["buzz:route", "amend", &of, "not-hex"]),
+                top_level_edit(&original),
+            ),
+        ];
+        for (edit, resolved) in cases {
+            assert_eq!(route_follow_up(&edit, resolved.as_ref()), None);
+            let prompt = format_prompt(
+                &one_event_batch(edit, resolved),
+                &FormatPromptArgs::default(),
+            )
+            .join("\n");
+            assert!(
+                prompt.contains(&format!("--reply-to {original}")),
+                "{prompt}"
+            );
+            assert!(!prompt.contains("<follow-up>"));
+        }
     }
 
     #[test]

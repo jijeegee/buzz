@@ -964,9 +964,12 @@ mod tests {
             .iter()
             .find(|tag| tag.first().map(String::as_str) == Some("buzz:route"))
             .expect("route note tag");
-        assert_eq!(route[1..3], ["amend".to_string(), id.to_string()]);
-        assert!(route[3].contains("don't redo it"), "{route:?}");
-        assert!(route[3].contains(&format!("--reply-to {id}")), "{route:?}");
+        assert_eq!(
+            route[1..4],
+            ["amend".to_string(), id.to_string(), id.to_string()]
+        );
+        assert!(route[4].contains("don't redo it"), "{route:?}");
+        assert!(route[4].contains(&format!("--reply-to {id}")), "{route:?}");
         for bad in ["new", "nonsense"] {
             let channel = Uuid::parse_str(CH_ID).unwrap();
             let target = EventId::from_hex(id).unwrap();

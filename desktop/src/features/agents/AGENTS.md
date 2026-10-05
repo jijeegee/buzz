@@ -664,15 +664,15 @@ with a TypeScript lookup table or an id comparison in a component.
     same-body kind:40003 edit that newly `p`-tags its group's agents plus
     `["mention", pk, "auto-route"]` (buzz-acp wakes an agent on an edit that
     newly mentions it, so no harness change). A follow-up's edit also
-    carries `["buzz:route", relation, of, note]`: a plain-language "supplement
-    or fix, don't redo" (or "stop") note with the thread to reply in, which
-    the agent sees in its prompt's Tags. `messages/lib/autoRouteLedger.ts`
+    carries `["buzz:route", relation, of, thread_root, note]`: buzz-acp
+    (`queue::route_follow_up`, resolved edits only, so the owner's) anchors
+    the reply in `thread_root` and adds a `<follow-up>` line ("supplement or
+    fix, don't redo", or "stop"); `note` says the same in the prompt's Tags. `messages/lib/autoRouteLedger.ts`
     keeps this desktop's deliveries for 30 minutes: a message there is never
     routed again, and the channel's entries are the router's PRIOR (with the
     agents mid-turn as WORKING). A follow-up the model gave no agent goes to
-    the earlier delivery's agents. Thread placement still follows the edited
-    message (the harness anchors edits to the original), so the note only
-    asks for the thread. The sent row shows "Routing…", then "→ Delivered to
+    the earlier delivery's agents. Session scope still follows the edited
+    message; only the reply anchor moves. The sent row shows "Routing…", then "→ Delivered to
     Name", or "Not delivered" (`messages/lib/autoRouteStatus.ts`); an edit
     or delete first fences the pick out. In a routed channel (Smart
     routing about to route this send, or an applied Host/Lead agent that is
