@@ -12,6 +12,7 @@ import {
   type RouterRecentMessage,
   routeMessage,
 } from "@/shared/api/tauriMessageRouting";
+import { getSoftMentionPubkeys } from "@/features/messages/lib/agentAddressMention.mjs";
 import type { RelayEvent } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import type { RouterRosterSnapshot } from "./useRouterRosterSource";
@@ -31,7 +32,6 @@ export type AutoAssignOptions = {
   routerActive: boolean;
   routerReady: boolean;
   threadRoot: string | null;
-  getExplicitMentionCount: (text: string) => number;
   getRoster: () => RouterRosterSnapshot;
   /** Cached conversation before the sent message (read at publish time). */
   getRecent?: (message: RelayEvent) => RouterRecentMessage[];
@@ -75,7 +75,6 @@ export function useAutoAssign(options: AutoAssignOptions) {
         channelType: current.channelType,
         isEditing: current.isEditing,
         addressedAgentCount: current.addressedAgentCount,
-        explicitMentionCount: current.getExplicitMentionCount(text),
         text,
         rosterSize: roster.length,
       });
@@ -92,13 +91,38 @@ export function useAutoAssign(options: AutoAssignOptions) {
       const getRecent = current.getRecent;
       return (message) => {
         const recent = getRecent?.(message) ?? [];
-        void routeAndDeliver(message, { ...input, recent }, route, deliver);
+        // Soft mentions: the owner's agent @mentions, posted without `p`
+        // tags because this call decides who acts on them.
+        const mentioned = getSoftMentionPubkeys(message.tags);
+        void routeAndDeliver(
+          message,
+          { ...input, recent, mentioned },
+          route,
+          deliver,
+        );
       };
     },
     [],
   );
 
   return { routeAfterSend };
+}
+
+/**
+ * Who gets the message: the router's pick plus any soft-mentioned agent it
+ * could not judge (not in its roster). When routing failed, the
+ * soft-mentioned agents: the owner named them, so they are the safe
+ * fallback. Empty means nobody.
+ */
+export function autoRouteTargets(
+  outcome: { pubkeys: string[] } | "none" | "failed",
+  mentioned: readonly string[],
+  rosterPubkeys: ReadonlySet<string>,
+): string[] {
+  if (outcome === "failed") return [...mentioned];
+  const unjudged = mentioned.filter((pubkey) => !rosterPubkeys.has(pubkey));
+  const picks = outcome === "none" ? [] : outcome.pubkeys;
+  return [...new Set([...picks, ...unjudged])];
 }
 
 async function routeAndDeliver(
@@ -109,6 +133,10 @@ async function routeAndDeliver(
 ) {
   const generation = beginAutoRoute(message.id);
   const isCurrent = () => isAutoRouteCurrent(message.id, generation);
+  const mentioned = input.mentioned ?? [];
+  const rosterPubkeys = new Set(
+    input.roster.map((entry) => normalizePubkey(entry.pubkey)),
+  );
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     const result = await Promise.race([
@@ -117,23 +145,28 @@ async function routeAndDeliver(
         timer = setTimeout(() => resolve(null), AUTO_ROUTE_RESULT_TIMEOUT_MS);
       }),
     ]);
-    if (result === null) {
-      settleAutoRoute(message.id, generation, { status: "failed" });
-      return;
-    }
-    if (result.decision === "skipped") {
-      settleAutoRoute(
-        message.id,
-        generation,
-        result.reason === "not-configured" ? null : { status: "failed" },
-      );
-      return;
-    }
-    if (result.decision === "none" || !isCurrent()) {
+    const outcome =
+      result === null || result.decision === "skipped"
+        ? ("failed" as const)
+        : result.decision === "none"
+          ? ("none" as const)
+          : { pubkeys: result.pubkeys.map(normalizePubkey) };
+    const pubkeys = autoRouteTargets(outcome, mentioned, rosterPubkeys);
+    if (!isCurrent()) {
       settleAutoRoute(message.id, generation, null);
       return;
     }
-    const pubkeys = result.pubkeys.map(normalizePubkey);
+    if (pubkeys.length === 0) {
+      // Nobody to deliver to: "Not delivered" only for a real failure.
+      const notConfigured =
+        result?.decision === "skipped" && result.reason === "not-configured";
+      settleAutoRoute(
+        message.id,
+        generation,
+        outcome === "failed" && !notConfigured ? { status: "failed" } : null,
+      );
+      return;
+    }
     const delivered = await deliver(message, pubkeys, isCurrent);
     settleAutoRoute(
       message.id,

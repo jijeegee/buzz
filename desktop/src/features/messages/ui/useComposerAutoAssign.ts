@@ -1,7 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
-import { useSmartRoutingActive } from "@/features/agents/channelRoutingHooks";
+import {
+  useRoutingAgentApplied,
+  useSmartRoutingActive,
+} from "@/features/agents/channelRoutingHooks";
+import { isAgentMentionChannelType } from "@/features/agents/lib/agentAutocompleteEligibility";
 import type { UseMentionsResult } from "@/features/messages/lib/useMentions";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
 import { selectRouterRecent } from "@/features/messages/lib/routerRecent";
@@ -11,6 +15,7 @@ import {
   MESSAGE_ROUTING_TASK_ID,
 } from "@/shared/api/tauriMessageRouting";
 import type { RelayEvent } from "@/shared/api/types";
+import { normalizePubkey } from "@/shared/lib/pubkey";
 import { useAutoAssign } from "./useAutoAssign";
 import { useRouterRosterSource } from "./useRouterRosterSource";
 
@@ -55,11 +60,6 @@ export function useComposerAutoAssign({
     memberPubkeys: mentions.memberPubkeys,
     selfPubkey,
   });
-  const { getDraftMentionRefs } = mentions;
-  const getExplicitMentionCount = React.useCallback(
-    (text: string) => getDraftMentionRefs(text).length,
-    [getDraftMentionRefs],
-  );
   const queryClient = useQueryClient();
   const getRecent = React.useCallback(
     (message: RelayEvent) => {
@@ -74,16 +74,24 @@ export function useComposerAutoAssign({
     },
     [channelId, queryClient, selfPubkey],
   );
-  return useAutoAssign({
+  // Host/Lead: the routing agent reads every message in channels it belongs
+  // to, so there an agent mention needs no `p` tag to be seen.
+  const routingAgent = useRoutingAgentApplied();
+  const routedByAgent =
+    routingAgent !== null &&
+    !isEditing &&
+    isAgentMentionChannelType(channelType) &&
+    mentions.memberPubkeys.has(normalizePubkey(routingAgent));
+  const { routeAfterSend } = useAutoAssign({
     addressedAgentCount,
     channelId,
     getRecent,
     channelType,
-    getExplicitMentionCount,
     getRoster,
     isEditing,
     routerActive,
     routerReady,
     threadRoot,
   });
+  return { routeAfterSend, routedByAgent };
 }

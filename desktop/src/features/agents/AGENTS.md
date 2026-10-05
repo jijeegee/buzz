@@ -650,7 +650,7 @@ with a TypeScript lookup table or an id comparison in a component.
 24. **Smart routing (`desktop-router`) is a desktop-side, after-send pick
     delivered by editing the sent message; its model is an app task.**
     Only this user's own composer sends in stream/forum channels route; DMs,
-    edits, drafts with an explicit `@mention` or tray-addressed agents, and
+    edits, drafts with tray-addressed agents, and
     any applied state other than Smart routing (Off, Host, Lead, or a switch
     in flight — the composer reads the plan's `routerActive`, never the saved
     mode) never call the model (`messages/lib/autoAssignGate.ts`). Typing
@@ -661,7 +661,15 @@ with a TypeScript lookup table or an id comparison in a component.
     (buzz-acp wakes an agent on an edit that newly mentions it, so no
     harness change). The sent row shows "Routing…", then "→ Delivered to
     Name", or "Not delivered" (`messages/lib/autoRouteStatus.ts`); an edit
-    or delete first fences the pick out. The timeline never marks that
+    or delete first fences the pick out. In a routed channel (Smart
+    routing about to route this send, or an applied Host/Lead agent that is
+    a member of the channel) the owner's agent `@mentions` are soft: posted
+    as `["mention", pk, "soft"]` with no `p` tag (`splitSoftAgentMentions`),
+    so the routing decides who acts. Tray chips and agents the send created
+    stay hard `p` recipients. Smart routing passes the soft mentions as
+    MENTIONED (a mention may be the object, not the assignee); a failed
+    call delivers to them instead, and a mentioned agent outside the roster
+    is always delivered. The timeline never marks that
     delivery edit as an edit and keeps its `auto-route` tags across later
     edits (`formatTimelineMessages.ts`). Rust owns the rest (`src-tauri/src/message_routing/`):
     the aliased roster prompt (`a1…aN`, pubkeys never sent), caps, the strict
@@ -758,7 +766,8 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   `messages/lib/autoAssignGate.test.mjs` (every skip reason),
   `messages/lib/routerRoster.test.mjs` (description priority, caps),
   `messages/ui/useAutoAssign.jsdom-test.mjs` (route on publish, delivery,
-  edit fence, one call per message, closed gate),
+  edit fence, one call per message, closed gate, soft-mention judging and
+  fallback), `messages/ui/useMentionSendFlow.helpers.test.mjs` (soft split),
   `messages/ui/smartRoutingComposerWiring.test.mjs` (send seam),
   `../settings/ui/models/TaskModelRow.jsdom-test.mjs`, and the Smart routing
   cases in `ui/routing/ChannelRoutingCard.jsdom-test.mjs`.

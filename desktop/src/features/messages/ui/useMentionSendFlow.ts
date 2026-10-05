@@ -38,6 +38,7 @@ import {
   mentionRevalidationOptions,
   withoutInvitingRecipients,
   mergeMentionRecipients,
+  splitSoftAgentMentions,
   type PendingNonMemberMentionSend,
   type QueuedAgentWake,
   type SendMessageWithMentionFlowInput,
@@ -47,6 +48,8 @@ import {
 import {
   AUTO_ROUTE_MENTION_MARKER,
   buildAgentAddressMentionTags,
+  buildSoftMentionTags,
+  SOFT_MENTION_MARKER,
 } from "@/features/messages/lib/agentAddressMention.mjs";
 import { editMessage } from "@/shared/api/editMessage";
 import type { AutoRouteDeliver } from "./useAutoAssign";
@@ -461,6 +464,7 @@ export function useMentionSendFlow({
           ...managedMentionPubkeys,
           ...normalizedMentionPubkeys.filter(mentions.isAgentPubkey),
         ]);
+        const agentMentionPubkeySet = new Set(agentMentionPubkeys);
         const preparedAgentPubkeys = uniqueNormalizedPubkeys([
           ...readyAgentPubkeys,
           ...agentMentionPubkeys,
@@ -568,16 +572,27 @@ export function useMentionSendFlow({
             );
           if (signal?.aborted || isSendCancelled())
             return restoreComposerAfterFailure();
+          const { delivered: deliveredMentionPubkeys, soft: softPubkeys } =
+            draft.softAgentMentions
+              ? splitSoftAgentMentions(
+                  revalidatedMentionPubkeys,
+                  (pubkey) =>
+                    agentMentionPubkeySet.has(pubkey) ||
+                    mentions.isAgentPubkey(pubkey),
+                  [...draft.addressedAgentPubkeys, ...readyAgentPubkeys],
+                )
+              : { delivered: revalidatedMentionPubkeys, soft: [] };
           const finalTagsWithAgentAddress = [
             ...finalOutgoingTags,
             ...buildAgentAddressMentionTags(
               draft.addressedAgentPubkeys,
-              revalidatedMentionPubkeys,
+              deliveredMentionPubkeys,
             ),
+            ...buildSoftMentionTags(softPubkeys),
           ];
           const published = await send(
             finalContent,
-            revalidatedMentionPubkeys,
+            deliveredMentionPubkeys,
             finalTagsWithAgentAddress,
             sendChannelId,
             draft.capturedThreadContext,
@@ -595,7 +610,7 @@ export function useMentionSendFlow({
           if (published) draft.onPublished?.(published);
           if (signal?.aborted || isSendCancelled()) return;
           const sentMentionPubkeys = new Set(
-            revalidatedMentionPubkeys.map(normalizePubkey),
+            deliveredMentionPubkeys.map(normalizePubkey),
           );
           const newlyPinnedPubkeys = draft.inlineAgentMentionPubkeys.filter(
             (pubkey) => sentMentionPubkeys.has(normalizePubkey(pubkey)),
@@ -729,6 +744,7 @@ export function useMentionSendFlow({
     async ({
       addressedAgentPubkeys = [],
       onPublished,
+      softAgentMentions = false,
       capturedChannelId,
       capturedThreadContext = null,
       pendingImeta,
@@ -871,6 +887,7 @@ export function useMentionSendFlow({
           composerRevision,
           addressedAgentPubkeys: uniqueNormalizedPubkeys(addressedAgentPubkeys),
           onPublished,
+          softAgentMentions,
           inlineAgentMentionPubkeys: uniqueNormalizedPubkeys(
             savedMentionRefs
               .filter((ref) => ref.isAgent)
@@ -997,7 +1014,25 @@ export function useMentionSendFlow({
         message.tags.filter((tag) => tag[0] === "emoji"),
         pubkeys,
         false,
-        pubkeys.map((pubkey) => ["mention", pubkey, AUTO_ROUTE_MENTION_MARKER]),
+        [
+          // The edit's mention snapshot replaces the original's body
+          // identities, so it repeats them (soft ones included).
+          ...uniqueNormalizedPubkeys(
+            message.tags.flatMap((tag) =>
+              tag[1] &&
+              (tag[0] === "p" ||
+                (tag[0] === "mention" &&
+                  (tag.length === 2 || tag[2] === SOFT_MENTION_MARKER)))
+                ? [tag[1]]
+                : [],
+            ),
+          ).map((pubkey) => ["mention", pubkey]),
+          ...pubkeys.map((pubkey) => [
+            "mention",
+            pubkey,
+            AUTO_ROUTE_MENTION_MARKER,
+          ]),
+        ],
       );
       for (const wake of dedupeQueuedAgentWakes(readiness.agentsToWake)) {
         startAgentDetached(wake.agent, wake.replayFloorUnix);

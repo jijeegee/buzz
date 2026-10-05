@@ -647,15 +647,18 @@ function MessageComposerImpl({
       )
         ? null
         : prepareBackgroundLinkPreviews(getLiveLinkPreviewCandidates());
+      // Smart routing never delays the send: the gate is checked now, the
+      // routing call runs once the relay accepts the publish.
+      const onPublished =
+        autoAssign.routeAfterSend(trimmed, mentionSendFlow.deliverAutoRoute) ??
+        undefined;
       await mentionSendFlow.sendMessageWithMentionFlow({
         addressedAgentPubkeys: persistentAudience.pubkeys,
-        // Smart routing never delays the send: the gate is checked now, the
-        // routing call runs once the relay accepts the publish.
-        onPublished:
-          autoAssign.routeAfterSend(
-            trimmed,
-            mentionSendFlow.deliverAutoRoute,
-          ) ?? undefined,
+        onPublished,
+        // Routed channel: agent @mentions are display-only and the routing
+        // (host, lead, or the Smart routing call above) decides who acts.
+        softAgentMentions:
+          autoAssign.routedByAgent || onPublished !== undefined,
         capturedChannelId: channelId,
         capturedThreadContext,
         pendingImeta: currentPendingImeta,
@@ -677,6 +680,7 @@ function MessageComposerImpl({
     }
   }, [
     autoAssign.routeAfterSend,
+    autoAssign.routedByAgent,
     channelId,
     channelLinks.clearChannels,
     customEmoji,

@@ -9,12 +9,11 @@ const OPEN = {
   channelType: "stream",
   isEditing: false,
   addressedAgentCount: 0,
-  explicitMentionCount: 0,
   text: "fix the windows build",
   rosterSize: 3,
 };
 
-test("an unmentioned stream or forum draft with a roster routes", () => {
+test("a stream or forum draft with a roster routes, @mentions included", () => {
   assert.deepEqual(autoAssignDecision(OPEN), { run: true });
   assert.deepEqual(autoAssignDecision({ ...OPEN, channelType: "forum" }), {
     run: true,
@@ -30,7 +29,6 @@ test("every skip reason, each alone on an otherwise routable draft", () => {
     [{ channelType: undefined }, "channel-type"],
     [{ isEditing: true }, "editing"],
     [{ addressedAgentCount: 1 }, "addressed"],
-    [{ explicitMentionCount: 1 }, "explicit-mention"],
     [{ text: "" }, "too-short"],
     [{ text: " k \n" }, "too-short"],
     [{ rosterSize: 0 }, "no-roster"],

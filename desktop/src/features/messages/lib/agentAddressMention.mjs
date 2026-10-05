@@ -3,6 +3,12 @@ import { normalizePubkey } from "../../../shared/lib/pubkey.ts";
 export const AGENT_ADDRESS_MENTION_MARKER = "agent-address";
 /** Marks a recipient Smart routing picked, not one the owner addressed. */
 export const AUTO_ROUTE_MENTION_MARKER = "auto-route";
+/**
+ * An owner `@mention` of an agent in a routed channel: rendered like any
+ * mention but sent without a `p` tag, so the channel's routing decides who
+ * acts on it (a mention may be the subject, not the assignee).
+ */
+export const SOFT_MENTION_MARKER = "soft";
 
 /**
  * Persist the subset of delivered mentions that came from the composer's
@@ -31,6 +37,18 @@ function markedMentionPubkeys(tags, marker) {
         .map((tag) => normalizePubkey(tag[1])),
     ),
   ];
+}
+
+/** Display-only `soft` mention tags for `pubkeys`, deduplicated. */
+export function buildSoftMentionTags(pubkeys) {
+  return [...new Set([...pubkeys].map(normalizePubkey))]
+    .filter(Boolean)
+    .map((pubkey) => ["mention", pubkey, SOFT_MENTION_MARKER]);
+}
+
+/** Return the ordered, deduplicated soft-mentioned agents on an event. */
+export function getSoftMentionPubkeys(tags) {
+  return markedMentionPubkeys(tags, SOFT_MENTION_MARKER);
 }
 
 /** Return the ordered, deduplicated agent-address recipients on an event. */

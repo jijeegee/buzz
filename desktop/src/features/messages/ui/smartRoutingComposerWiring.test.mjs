@@ -19,14 +19,17 @@ test("the send never awaits the router; routing starts on publish", async () => 
   assert.doesNotMatch(send, /await autoAssign\./);
   assert.match(
     send,
-    /onPublished:\s*autoAssign\.routeAfterSend\(\s*trimmed,\s*mentionSendFlow\.deliverAutoRoute,\s*\)/,
+    /const onPublished =\s*autoAssign\.routeAfterSend\(trimmed, mentionSendFlow\.deliverAutoRoute\)/,
+  );
+  // A routed send posts agent mentions soft; the router judges them.
+  assert.match(
+    send,
+    /softAgentMentions:\s*autoAssign\.routedByAgent \|\| onPublished !== undefined,/,
   );
   const flow = await source("./useMentionSendFlow.ts");
   assert.match(flow, /if \(published\) draft\.onPublished\?\.\(published\);/);
-  assert.match(
-    flow,
-    /pubkeys\.map\(\(pubkey\) => \["mention", pubkey, AUTO_ROUTE_MENTION_MARKER\]\)/,
-  );
+  assert.match(flow, /AUTO_ROUTE_MENTION_MARKER,\s*\]\),/);
+  assert.match(flow, /\.\.\.buildSoftMentionTags\(softPubkeys\),/);
 });
 
 test("typing never reaches the router", async () => {

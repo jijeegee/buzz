@@ -25,6 +25,8 @@ export type RouteMessageInput = {
   channelId: string | null;
   /** Earlier messages in the same conversation, oldest first. */
   recent?: RouterRecentMessage[];
+  /** Agents `@mentioned` in the message (soft: the router judges them). */
+  mentioned?: string[];
 };
 
 /** One cached earlier message given to the router as context. */

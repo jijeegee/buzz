@@ -11,12 +11,12 @@
 
 use super::{RouteMessageInput, RouterRecentMessage, RouterRosterEntry};
 
-/// Fixed system prompt (~190 tokens).
+/// Fixed system prompt (~230 tokens), shared by every route.
 pub const ROUTER_SYSTEM_PROMPT: &str = "\
 You assign a team-chat message to the agent who should handle it.
 Choose only from ROSTER ids. Output JSON only: {\"to\":[\"a1\"]} or {\"to\":[]}.
 - Pick the one best owner by name and description.
-- If the message names or addresses an agent, pick that agent.
+- If the message asks a named agent to act, pick that agent. MENTIONED lists the agents @mentioned in MESSAGE: a mention may be the object, not the assignee (\"ask a1 to review a2's change\" goes to a1).
 - Pick two only if the message clearly asks for two separate jobs for different agents.
 - Use RECENT (oldest first; authors are ROSTER ids, owner, or human) for follow-ups: a message continuing work an agent was handling goes to that agent.
 - Return [] for greetings, thanks, reactions, small talk, status remarks, messages for HUMANS, or when no agent fits.
@@ -106,8 +106,23 @@ fn recent_lines(recent: &[RouterRecentMessage], roster: &[RouterRosterEntry]) ->
         .collect()
 }
 
+/// Roster aliases of the `@mentioned` agents, in roster order. Agents
+/// outside the roster are left out: the composer delivers those itself.
+fn mentioned_aliases(mentioned: &[String], roster: &[RouterRosterEntry]) -> Vec<String> {
+    let mentioned: Vec<String> = mentioned
+        .iter()
+        .map(|pubkey| pubkey.trim().to_ascii_lowercase())
+        .collect();
+    roster
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| mentioned.contains(&entry.pubkey))
+        .map(|(index, _)| format!("a{}", index + 1))
+        .collect()
+}
+
 /// The user turn: ROSTER, HUMANS, THREAD ROOT (replies only), RECENT,
-/// MESSAGE.
+/// MENTIONED, MESSAGE.
 /// `roster` must already be capped; alias `aN` is `roster[N-1]`.
 pub fn build_user_prompt(input: &RouteMessageInput, roster: &[RouterRosterEntry]) -> String {
     let mut prompt = String::from("ROSTER\n");
@@ -145,6 +160,10 @@ pub fn build_user_prompt(input: &RouteMessageInput, roster: &[RouterRosterEntry]
             prompt.push_str(&line);
             prompt.push('\n');
         }
+    }
+    let mentioned = mentioned_aliases(&input.mentioned, roster);
+    if !mentioned.is_empty() {
+        prompt.push_str(&format!("MENTIONED: {}\n", mentioned.join(", ")));
     }
     prompt.push_str("MESSAGE\n");
     prompt.push_str(&truncate_chars(input.message.trim(), MAX_MESSAGE_CHARS));

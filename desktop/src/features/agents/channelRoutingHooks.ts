@@ -62,6 +62,24 @@ export function useSmartRoutingActive(): boolean {
   );
 }
 
+/**
+ * The host or lead agent running right now, if one is: in its channels the
+ * owner's agent mentions go soft. Same cache and refresh as above.
+ */
+export function useRoutingAgentApplied(): string | null {
+  return (
+    useQuery({
+      queryKey: channelRoutingQueryKey,
+      queryFn: getChannelRouting,
+      select: ({ applied }: ChannelRoutingStatus) =>
+        applied.state === "hosting" || applied.state === "leading"
+          ? applied.pubkey
+          : null,
+      staleTime: 30_000,
+    }).data ?? null
+  );
+}
+
 /** One user action = one `set_channel_routing` carrying mode and agent. */
 export function useSetChannelRoutingMutation() {
   const queryClient = useQueryClient();

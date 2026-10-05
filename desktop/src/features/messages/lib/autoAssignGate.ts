@@ -18,8 +18,6 @@ export type AutoAssignGateInput = {
   isEditing: boolean;
   /** Agents already addressed through the composer tray. */
   addressedAgentCount: number;
-  /** Explicit `@mentions` (people or agents) in the draft. */
-  explicitMentionCount: number;
   text: string;
   /** Agent members the router could pick from. */
   rosterSize: number;
@@ -31,7 +29,6 @@ export type AutoAssignSkipReason =
   | "channel-type"
   | "editing"
   | "addressed"
-  | "explicit-mention"
   | "too-short"
   | "no-roster";
 
@@ -53,11 +50,9 @@ export function autoAssignDecision(
   }
   if (input.isEditing) return { run: false, reason: "editing" };
   if (input.addressedAgentCount > 0) return { run: false, reason: "addressed" };
-  // An explicit @mention — of a person or an agent — is the user choosing;
-  // the router never second-guesses it or intercepts a message for a human.
-  if (input.explicitMentionCount > 0) {
-    return { run: false, reason: "explicit-mention" };
-  }
+  // @mentions still route: an agent mention goes out soft (no `p` tag) and
+  // the router judges whether it is the assignee or only the subject. Only
+  // the tray (above) is a hard assignment.
   if (input.text.replace(/\s/g, "").length < MIN_ROUTABLE_CHARS) {
     return { run: false, reason: "too-short" };
   }

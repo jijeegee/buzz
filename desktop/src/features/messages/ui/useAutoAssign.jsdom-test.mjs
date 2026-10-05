@@ -51,7 +51,6 @@ async function mount(overrides = {}) {
     addressedAgentCount: 0,
     channelId: "chan",
     channelType: "stream",
-    getExplicitMentionCount: () => 0,
     getRoster: () => ROSTER,
     isEditing: false,
     route: deferredRoute(),
@@ -150,6 +149,50 @@ test("a failed route shows Not delivered; none and not-configured stay silent", 
   assert.deepEqual(deliveries, []);
 });
 
+const SOFT = (pubkey) => ["mention", pubkey, "soft"];
+const OUTSIDER = "cc".repeat(32);
+
+test("soft-mentioned agents are judged by the router, not delivered blindly", async () => {
+  const hook = await mount();
+  hook.current.routeAfterSend(
+    "ask Coder to review Translator's PR",
+    deliver,
+  )({
+    ...MESSAGE,
+    tags: [SOFT(TRANSLATOR), SOFT(CODER)],
+  });
+  assert.deepEqual(calls[0].input.mentioned, [TRANSLATOR, CODER]);
+  await settleCall(0, { decision: "assigned", pubkeys: [CODER] });
+  assert.deepEqual(deliveries, [{ id: "m1", pubkeys: [CODER] }]);
+});
+
+test("routing failure falls back to the soft-mentioned agents", async () => {
+  const hook = await mount();
+  hook.current.routeAfterSend(
+    "Translator, please translate",
+    deliver,
+  )({
+    ...MESSAGE,
+    tags: [SOFT(TRANSLATOR)],
+  });
+  await settleCall(0, { decision: "skipped", reason: "timeout" });
+  assert.deepEqual(deliveries, [{ id: "m1", pubkeys: [TRANSLATOR] }]);
+  assert.equal(statusOf("m1")?.status, "delivered");
+});
+
+test("a mentioned agent outside the roster is always delivered", async () => {
+  const hook = await mount();
+  hook.current.routeAfterSend(
+    "thanks",
+    deliver,
+  )({
+    ...MESSAGE,
+    tags: [SOFT(OUTSIDER)],
+  });
+  await settleCall(0, { decision: "none" });
+  assert.deepEqual(deliveries, [{ id: "m1", pubkeys: [OUTSIDER] }]);
+});
+
 test("a closed gate never calls the router", async () => {
   for (const override of [
     { routerActive: false },
@@ -157,7 +200,6 @@ test("a closed gate never calls the router", async () => {
     { channelType: "dm" },
     { addressedAgentCount: 1 },
     { isEditing: true },
-    { getExplicitMentionCount: () => 1 },
     { getRoster: () => ({ roster: [], humans: [] }) },
   ]) {
     const hook = await mount(override);

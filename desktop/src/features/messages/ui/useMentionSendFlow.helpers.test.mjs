@@ -6,6 +6,7 @@ import {
   getErrorMessage,
   mergeMentionRecipients,
   mentionRevalidationOptions,
+  splitSoftAgentMentions,
 } from "./useMentionSendFlow.helpers.ts";
 
 test("formatMessageSendError preserves the publication failure", () => {
@@ -59,5 +60,20 @@ test("revalidation carries captured and prepared agent keys independently of the
       phase: "publish",
       intendedAgentPubkeys: ["a".repeat(64), "b".repeat(64), "c".repeat(64)],
     },
+  );
+});
+
+test("routed channel: agent mentions go soft, tray and people stay delivered", () => {
+  const AGENT = "a".repeat(64);
+  const TRAY_AGENT = "b".repeat(64);
+  const PERSON = "c".repeat(64);
+  const agents = new Set([AGENT, TRAY_AGENT]);
+  assert.deepEqual(
+    splitSoftAgentMentions(
+      [AGENT.toUpperCase(), TRAY_AGENT, PERSON],
+      (pubkey) => agents.has(pubkey),
+      [TRAY_AGENT],
+    ),
+    { delivered: [TRAY_AGENT, PERSON], soft: [AGENT] },
   );
 });

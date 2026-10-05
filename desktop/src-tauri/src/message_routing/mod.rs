@@ -70,6 +70,10 @@ pub struct RouteMessageInput {
     /// re-caps count and length.
     #[serde(default)]
     pub recent: Vec<RouterRecentMessage>,
+    /// Agents `@mentioned` in the message. Their mention went out without a
+    /// `p` tag, so the router judges whether each is the assignee.
+    #[serde(default)]
+    pub mentioned: Vec<String>,
 }
 
 /// One earlier message shown to the router as conversation context.

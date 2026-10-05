@@ -52,6 +52,7 @@ fn input(message: &str, roster: Vec<RouterRosterEntry>) -> RouteMessageInput {
         phase: RoutePhase::Preview,
         channel_id: Some("chan".to_string()),
         recent: Vec::new(),
+        mentioned: Vec::new(),
     }
 }
 
@@ -74,8 +75,7 @@ fn system_prompt_is_the_documented_router_prompt() {
     assert!(ROUTER_SYSTEM_PROMPT
         .starts_with("You assign a team-chat message to the agent who should handle it."));
     assert!(ROUTER_SYSTEM_PROMPT.contains(r#"Output JSON only: {"to":["a1"]} or {"to":[]}."#));
-    assert!(ROUTER_SYSTEM_PROMPT
-        .contains("If the message names or addresses an agent, pick that agent."));
+    assert!(ROUTER_SYSTEM_PROMPT.contains("a mention may be the object, not the assignee"));
     assert!(ROUTER_SYSTEM_PROMPT
         .contains("a message continuing work an agent was handling goes to that agent"));
     assert!(ROUTER_SYSTEM_PROMPT
@@ -143,6 +143,15 @@ fn recent_chat_sits_between_roster_and_message_oldest_first_and_capped() {
     assert!(lines[0].starts_with("human: old 7"));
     assert!(prompt.starts_with("ROSTER\n"));
     assert!(prompt.ends_with("MESSAGE\nand add a test for it"));
+    assert!(!prompt.contains(&pk(9)));
+}
+
+#[test]
+fn mentioned_agents_appear_as_aliases_right_before_the_message() {
+    let mut mentioned = input("ask Coder to review the Translator's PR", team());
+    mentioned.mentioned = vec![pk(2).to_ascii_uppercase(), pk(1), pk(9)];
+    let prompt = build_user_prompt(&mentioned, &capped_roster(&mentioned.roster));
+    assert!(prompt.ends_with("MENTIONED: a1, a2\nMESSAGE\nask Coder to review the Translator's PR"));
     assert!(!prompt.contains(&pk(9)));
 }
 
