@@ -5,8 +5,9 @@
 //! `<app-data>/agents/routing/lead-<pubkey prefix>.toml` on every lead spawn.
 //! The harness matches rules first-match-wins, so the mention rule comes first
 //! and a direct @mention is handled exactly as in Mentions mode; the second
-//! rule (`lead-listen`) hears only the owner's kind-9 messages that contain no
-//! `@`. The harness reads the file once at startup, so deleting a stale one
+//! rule (`lead-listen`) hears every other kind-9 message from the owner. That
+//! includes a body `@Name`: in a routed channel the owner's agent mentions are
+//! soft (no `p` tag), so the lead decides who acts on them. The harness reads the file once at startup, so deleting a stale one
 //! never disturbs a running process — the sweep below runs on every routing
 //! save and at app start, and each non-lead spawn drops its own file.
 //!
@@ -37,10 +38,11 @@ pub(crate) const LEAD_LISTEN_TAG: &str = "lead-listen";
 /// Appended to the lead's system prompt so a `lead-listen` turn knows it may
 /// end silently; the base prompt otherwise asks every turn to post a result.
 pub(crate) const LEAD_LISTEN_ADDENDUM: &str = "## Listening as channel lead
-Turns of type `lead-listen` carry a message your owner posted without mentioning anyone. You hear every such message, so many are not for you.
+Turns of type `lead-listen` carry a message your owner posted without addressing you directly. You hear every such message, so many are not for you.
+An `@Name` in your owner's text is not an assignment: the name may be the object, not the assignee ('ask @A to review @B's change' is for A). Decide who should do it.
 Your final reply text is discarded: nobody ever sees it. Anything meant for the channel, including a clarifying question to your owner, must be posted with `buzz messages send`.
 Pick exactly one:
-1. Stay silent: post nothing when `Parsed:` lists mentions of someone else, the message continues a thread another agent is handling, or it is small talk or meant for a person. Silence is the correct result here, not a failure.
+1. Stay silent: post nothing when `Parsed:` lists mentions of someone else (they were addressed directly and already have it), the message continues a thread another agent is handling, or it is small talk or meant for a person. Silence is the correct result here, not a failure.
 2. Delegate: when another channel member is the better owner, post one short message: `@<Exact Name>` plus a self-contained restatement, sent with `--mention <pubkey>`. Do not do their work.
 3. Do it yourself: otherwise do the work and post the result (or post your clarifying question).
 Delegate only to channel members. First run `buzz channels members --channel <uuid>` (it prints the member pubkeys) and look up names and descriptions with `buzz users get --pubkey <hex> ...`. Every `@` name and `--mention` pubkey you post must come from that list. Your own subagents, tools, skills, and agents you know from anywhere else are not channel members: never @mention them. If no member fits, do it yourself.";
@@ -96,7 +98,7 @@ name = "{LEAD_LISTEN_TAG}"
 channels = "all"
 kinds = [9]
 require_mention = false
-filter = 'author == "{owner}" && !str_contains(content, "@")'
+filter = 'author == "{owner}"'
 prompt_tag = "{LEAD_LISTEN_TAG}"
 "#
     ))

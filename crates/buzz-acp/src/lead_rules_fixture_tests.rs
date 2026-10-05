@@ -96,31 +96,28 @@ async fn lead_fixture_mentioned_messages_match_the_mention_rule() {
 }
 
 #[tokio::test]
-async fn lead_fixture_unmentioned_owner_messages_without_at_match_lead_listen() {
+async fn lead_fixture_owner_messages_not_addressing_the_lead_match_lead_listen() {
     let cast = Cast::new();
     let plain = event(&cast.owner, 9, "can someone translate this doc", &[]);
     assert_eq!(cast.tag_for(&plain).await.as_deref(), Some("lead-listen"));
+    // A soft mention: body `@` with no `p` tag. The lead decides who acts.
+    let soft = event(&cast.owner, 9, "ask @Translator to check this", &[]);
+    assert_eq!(cast.tag_for(&soft).await.as_deref(), Some("lead-listen"));
+    // Addressed to another agent directly: heard too (filters cannot read
+    // tags); the lead's addendum keeps it silent when `Parsed:` lists them.
+    let other = event(
+        &cast.owner,
+        9,
+        "@Translator translate this",
+        &[&cast.translator],
+    );
+    assert_eq!(cast.tag_for(&other).await.as_deref(), Some("lead-listen"));
 }
 
 #[tokio::test]
 async fn lead_fixture_everything_else_matches_nothing() {
     let cast = Cast::new();
     let cases = [
-        // The owner addresses another agent: body `@` and its `p` tag.
-        (
-            "owner mentions translator",
-            event(
-                &cast.owner,
-                9,
-                "@Translator translate this",
-                &[&cast.translator],
-            ),
-        ),
-        // Body `@` without any `p` tag still keeps the lead out.
-        (
-            "owner body @ only",
-            event(&cast.owner, 9, "mail me at a@b.c", &[]),
-        ),
         // A sibling agent's unmentioned message.
         (
             "sibling unmentioned",

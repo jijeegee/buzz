@@ -12,5 +12,5 @@ name = "lead-listen"
 channels = "all"
 kinds = [9]
 require_mention = false
-filter = 'author == "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798" && !str_contains(content, "@")'
+filter = 'author == "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"'
 prompt_tag = "lead-listen"
