@@ -1010,6 +1010,9 @@ pub struct PromptContext {
     /// Dispatcher mode: fetch and inject the `<channel-roster>` standing
     /// section for every new non-DM channel session.
     pub dispatcher: bool,
+    /// Lead mode: inject the `<channel-roster>` section like a dispatcher, but
+    /// proceed without it when the fetch fails.
+    pub channel_roster: bool,
 }
 
 impl AgentPool {
@@ -2740,7 +2743,7 @@ pub async fn run_prompt_task(
     if let PromptSource::Channel(scope) = &source {
         let cid = scope.channel_id();
         // Only non-DM scopes ever hold a roster, so no DM check is needed here.
-        if ctx.dispatcher && agent.state.roster_refresh_due(scope) {
+        if (ctx.dispatcher || ctx.channel_roster) && agent.state.roster_refresh_due(scope) {
             let fetched = crate::dispatcher::fetch_channel_roster_section(
                 cid,
                 &ctx.agent_keys.public_key().to_hex(),
@@ -2758,7 +2761,7 @@ pub async fn run_prompt_task(
                     target: "pool::session",
                     channel = %cid,
                     scope = %scope.telemetry_label(),
-                    "channel roster changed — rotating dispatcher session"
+                    "channel roster changed — rotating channel session"
                 );
                 pending_roster = Some((scope.clone(), fetch));
             }
@@ -2784,7 +2787,7 @@ pub async fn run_prompt_task(
             // A dispatcher routes by roster; DMs have no roster to route over.
             // Without a roster there is nothing to route over, so the session
             // is not created: fail closed and let the requeued batch retry.
-            if ctx.dispatcher && !is_dm && pending_roster.is_none() {
+            if (ctx.dispatcher || ctx.channel_roster) && !is_dm && pending_roster.is_none() {
                 match crate::dispatcher::fetch_channel_roster_section(
                     cid,
                     &ctx.agent_keys.public_key().to_hex(),
@@ -2793,6 +2796,13 @@ pub async fn run_prompt_task(
                 .await
                 {
                     Some(section) => pending_roster = Some((scope.clone(), section)),
+                    // A lead works without a roster; only a dispatcher needs one.
+                    None if !ctx.dispatcher => {
+                        tracing::debug!(
+                            channel_id = %cid,
+                            "channel roster unavailable — starting the session without it"
+                        );
+                    }
                     None => {
                         let reason = format!("channel roster for {cid} is unavailable");
                         tracing::warn!(
@@ -2833,7 +2843,7 @@ pub async fn run_prompt_task(
         PromptSource::Heartbeat => None,
     };
 
-    // The channel roster — dispatcher mode only, absent for heartbeats/DMs.
+    // The channel roster — dispatcher or lead mode, absent for heartbeats/DMs.
     let channel_roster: Option<String> = match &source {
         PromptSource::Channel(scope) => agent
             .state
@@ -10923,6 +10933,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             harness_name: "goose".to_string(),
             relay_url: "ws://127.0.0.1:3000".to_string(),
             dispatcher: false,
+            channel_roster: false,
         }
     }
 
