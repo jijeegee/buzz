@@ -50,6 +50,36 @@ pub(super) fn mention_reference_tags(
     Ok(())
 }
 
+/// Smart routing's follow-up note on a delivery edit: `["buzz:route",
+/// relation, of, note]`. buzz-acp renders every tag of the event that wakes
+/// an agent into its prompt, so the plain-language note reaches the agent
+/// with no harness change. `of` is the earlier delivered message and
+/// `thread_root` the thread that agent answered in.
+pub(super) fn route_note_tag(relation: &str, of: &str, thread_root: &str) -> Result<Tag, String> {
+    let of = EventId::from_hex(of.trim()).map_err(|_| "route note has invalid event ID")?;
+    let root =
+        EventId::from_hex(thread_root.trim()).map_err(|_| "route note has invalid thread root")?;
+    let (of, root) = (of.to_hex(), root.to_hex());
+    let reply = format!("Reply in thread {root} (`--reply-to {root}`).");
+    let note = match relation {
+        "continue" => format!(
+            "Owner follow-up to message {of}, which you were given earlier. Continue that \
+             work: supplement or fix your earlier answer, don't redo it. {reply}"
+        ),
+        "amend" => format!(
+            "Owner change to message {of}, which you were given earlier. Apply the change to \
+             that work: supplement or fix your earlier answer, don't redo it. {reply}"
+        ),
+        "cancel" => format!(
+            "The owner retracts or replaces the instruction in message {of}. Stop that work \
+             and don't redo it. {reply}"
+        ),
+        _ => return Err(format!("unknown route relation {relation:?}")),
+    };
+    Tag::parse(["buzz:route", relation, of.as_str(), note.as_str()])
+        .map_err(|e| format!("invalid route note tag: {e}"))
+}
+
 pub(super) fn append_sent_from_thread_tag(
     source_tag: Option<&[String]>,
     tags: &mut Vec<Tag>,

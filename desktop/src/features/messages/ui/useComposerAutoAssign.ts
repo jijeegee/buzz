@@ -6,6 +6,7 @@ import {
   useSmartRoutingActive,
 } from "@/features/agents/channelRoutingHooks";
 import { isAgentMentionChannelType } from "@/features/agents/lib/agentAutocompleteEligibility";
+import { holdAutoRouteBatch } from "@/features/messages/lib/autoRouteBatcher";
 import type { UseMentionsResult } from "@/features/messages/lib/useMentions";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
 import { selectRouterRecent } from "@/features/messages/lib/routerRecent";
@@ -23,12 +24,14 @@ import { useRouterRosterSource } from "./useRouterRosterSource";
  * Wires Smart routing into one `MessageComposer`: the applied mode and model
  * readiness, the channel roster, and the after-send `useAutoAssign` routing.
  * Everything stays idle (no queries, no timers) unless Smart routing is the
- * applied channel routing.
+ * applied channel routing. While this composer holds a draft, its
+ * channel's routing batch waits (`autoRouteBatcher`).
  */
 export function useComposerAutoAssign({
   addressedAgentCount,
   channelId,
   channelType,
+  hasDraft,
   isEditing,
   mentions,
   selfPubkey,
@@ -37,6 +40,8 @@ export function useComposerAutoAssign({
   addressedAgentCount: number;
   channelId: string | null;
   channelType: string | null | undefined;
+  /** The composer holds unsent text. */
+  hasDraft: boolean;
   isEditing: boolean;
   mentions: UseMentionsResult;
   selfPubkey: string | null;
@@ -62,7 +67,7 @@ export function useComposerAutoAssign({
   });
   const queryClient = useQueryClient();
   const getRecent = React.useCallback(
-    (message: RelayEvent) => {
+    (message: RelayEvent, exclude: ReadonlySet<string>) => {
       const sentChannelId =
         message.tags.find((tag) => tag[0] === "h")?.[1] ?? channelId;
       if (!sentChannelId) return [];
@@ -70,10 +75,17 @@ export function useComposerAutoAssign({
         queryClient.getQueryData<RelayEvent[]>(
           channelMessagesKey(sentChannelId),
         ) ?? [];
-      return selectRouterRecent(cached, message, selfPubkey);
+      return selectRouterRecent(cached, message, selfPubkey, exclude);
     },
     [channelId, queryClient, selfPubkey],
   );
+  const composerId = React.useId();
+  const holding = routerActive && hasDraft && !isEditing;
+  React.useEffect(() => {
+    if (!holding || !channelId) return;
+    holdAutoRouteBatch(channelId, composerId, true);
+    return () => holdAutoRouteBatch(channelId, composerId, false);
+  }, [channelId, composerId, holding]);
   // Host/Lead: the routing agent reads every message in channels it belongs
   // to, so there an agent mention needs no `p` tag to be seen.
   const routingAgent = useRoutingAgentApplied();

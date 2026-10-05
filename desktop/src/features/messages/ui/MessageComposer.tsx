@@ -334,6 +334,7 @@ function MessageComposerImpl({
     addressedAgentCount: persistentAudience.pubkeys.length,
     channelId,
     channelType,
+    hasDraft: !isContentEmpty,
     isEditing: editTarget != null,
     mentions,
     selfPubkey: ownerPubkey,

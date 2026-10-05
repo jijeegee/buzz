@@ -995,7 +995,7 @@ export function useMentionSendFlow({
   // body, attachments, and emoji, so the edit changes nothing visible. Wakes
   // flush only after the edit is accepted, like a send's.
   const deliverAutoRoute = React.useCallback<AutoRouteDeliver>(
-    async (message, pubkeys, isCurrent) => {
+    async (message, pubkeys, isCurrent, route) => {
       const messageChannelId = message.tags.find((tag) => tag[0] === "h")?.[1];
       if (!messageChannelId) throw new Error("Message has no channel.");
       const readiness = await ensureManagedAgentMentionsReady(
@@ -1033,6 +1033,7 @@ export function useMentionSendFlow({
             AUTO_ROUTE_MENTION_MARKER,
           ]),
         ],
+        route,
       );
       for (const wake of dedupeQueuedAgentWakes(readiness.agentsToWake)) {
         startAgentDetached(wake.agent, wake.replayFloorUnix);

@@ -1,4 +1,5 @@
 import { invokeTauri } from "@/shared/api/tauri";
+import type { RouteNote } from "@/shared/api/tauriMessageRouting";
 
 export async function editMessage(
   channelId: string,
@@ -9,6 +10,7 @@ export async function editMessage(
   mentionPubkeys?: string[],
   suppressLinkPreviews?: boolean,
   mentionTags?: string[][],
+  route?: RouteNote | null,
 ): Promise<void> {
   await invokeTauri("edit_message", {
     input: {
@@ -20,6 +22,7 @@ export async function editMessage(
       mentionPubkeys: mentionPubkeys ?? [],
       suppressLinkPreviews: suppressLinkPreviews ?? false,
       mentionTags: mentionTags ?? null,
+      route: route ?? null,
     },
   });
 }

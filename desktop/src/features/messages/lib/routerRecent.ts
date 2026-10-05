@@ -18,11 +18,13 @@ export const ROUTER_RECENT_MAX_CHARS = 300;
  * The messages before `message` in its own conversation — the same thread
  * for a reply, the top level otherwise — from already-cached channel
  * events, oldest first. No relay fetch: whatever is cached is the context.
+ * `exclude` drops the batch's own messages, which the router sees as NEW.
  */
 export function selectRouterRecent(
   events: readonly RelayEvent[],
   message: RelayEvent,
   ownerPubkey: string | null,
+  exclude: ReadonlySet<string> = new Set(),
 ): RouterRecentMessage[] {
   const threadRoot = getThreadReference(message.tags).rootId;
   const owner = ownerPubkey ? normalizePubkey(ownerPubkey) : null;
@@ -31,6 +33,7 @@ export function selectRouterRecent(
     .filter((event) => {
       if (
         event.id === message.id ||
+        exclude.has(event.id) ||
         (event.kind !== KIND_STREAM_MESSAGE &&
           event.kind !== KIND_STREAM_MESSAGE_V2) ||
         event.created_at < since ||
@@ -39,7 +42,7 @@ export function selectRouterRecent(
         return false;
       }
       const root = getThreadReference(event.tags).rootId;
-      // A reply's thread root already rides as THREAD ROOT.
+      // A reply's thread root already rides on its NEW line.
       return root === threadRoot;
     })
     .sort((a, b) => a.created_at - b.created_at)

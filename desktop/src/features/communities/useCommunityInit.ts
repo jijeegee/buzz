@@ -30,6 +30,8 @@ import { resetAudioMediaLoadScheduler } from "@/features/messages/lib/audioMedia
 import { resetBackgroundMediaUploads } from "@/features/messages/lib/backgroundMediaUploadStore";
 import { resetLinkPreviewPreparations } from "@/features/messages/lib/linkPreviewPreparationStore";
 import { resetPersistentAgentAudienceStore } from "@/features/messages/lib/persistentAgentAudience";
+import { resetAutoRouteBatches } from "@/features/messages/lib/autoRouteBatcher";
+import { resetAutoRouteLedger } from "@/features/messages/lib/autoRouteLedger";
 import { resetAutoRouteStatus } from "@/features/messages/lib/autoRouteStatus";
 import {
   resetDetachedToastScope,
@@ -91,6 +93,8 @@ async function resetCommunityState({
   resetBackgroundMediaUploads();
   resetLinkPreviewPreparations();
   resetPersistentAgentAudienceStore();
+  resetAutoRouteBatches();
+  resetAutoRouteLedger();
   resetAutoRouteStatus();
   resetChannelMembershipWrites();
   // Intentionally NOT reset: the in-flight detached agent-start map

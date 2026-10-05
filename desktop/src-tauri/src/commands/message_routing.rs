@@ -63,7 +63,7 @@ pub(crate) fn router_not_ready<R: tauri::Runtime>(
     Ok(resolve_router_model_for_app(app, &load_task_models(app)?)?.err())
 }
 
-/// Route one composer send. Returns `Skipped { NotConfigured }` without a
+/// Route one batch of composer sends. Returns `Skipped { NotConfigured }` without a
 /// model call unless Smart routing is the saved mode and a key is present.
 /// Each real call appends one line to the comparison log.
 #[tauri::command]
@@ -123,7 +123,7 @@ pub async fn route_message(
             input.phase,
             input.channel_id.clone(),
             &log_model(&resolved),
-            &input.message,
+            &input.messages,
             &outcome,
         );
         let written = tokio::task::spawn_blocking(move || {

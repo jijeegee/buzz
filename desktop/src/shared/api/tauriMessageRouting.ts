@@ -15,18 +15,37 @@ export type RouterRosterEntry = {
 /** `preview` = debounced while typing; `send` = resolved on Enter. */
 export type RoutePhase = "preview" | "send";
 
+/** One routing call: a batch of the owner's sends in one channel. */
 export type RouteMessageInput = {
-  message: string;
-  /** The thread root's text when the send is a reply. */
-  threadRoot: string | null;
+  /** Oldest first; Rust routes at most 12. */
+  messages: RouterNewMessage[];
   roster: RouterRosterEntry[];
   humans: string[];
   phase: RoutePhase;
   channelId: string | null;
   /** Earlier messages in the same conversation, oldest first. */
   recent?: RouterRecentMessage[];
+  /** This desktop's deliveries in the channel, last 30 minutes. */
+  prior?: RouterPriorDelivery[];
+  /** Agents mid-turn right now. */
+  working?: string[];
+};
+
+export type RouterNewMessage = {
+  /** Event id; comes back in `RouteGroup.messageIds`, never prompted. */
+  id: string;
+  text: string;
+  /** The thread root's text when the send is a reply. */
+  threadRoot: string | null;
   /** Agents `@mentioned` in the message (soft: the router judges them). */
-  mentioned?: string[];
+  mentioned: string[];
+};
+
+/** An earlier delivery a new message may continue, amend, or cancel. */
+export type RouterPriorDelivery = {
+  id: string;
+  agents: string[];
+  text: string;
 };
 
 /** One cached earlier message given to the router as context. */
@@ -44,11 +63,31 @@ export type RouterSkipReason =
   | "provider-error"
   | "bad-output";
 
+export type RouteRelation = "new" | "continue" | "amend" | "cancel";
+
+/** Messages of the batch that go to the same agents together. */
+export type RouteGroup = {
+  messageIds: string[];
+  /** Empty: nobody acts (small talk, a human, no fitting agent). */
+  pubkeys: string[];
+  relation: RouteRelation;
+  /** The earlier delivery's event id for any relation but `new`. */
+  of: string | null;
+};
+
 export type RouteMessageResult =
-  | { decision: "assigned"; pubkeys: string[] }
-  /** The model chose nobody (small talk, a human, no fitting agent). */
-  | { decision: "none" }
+  | { decision: "routed"; groups: RouteGroup[] }
   | { decision: "skipped"; reason: RouterSkipReason };
+
+/**
+ * A follow-up delivery's `buzz:route` note: the agent sees which earlier
+ * message it relates to and the thread to answer in.
+ */
+export type RouteNote = {
+  relation: Exclude<RouteRelation, "new">;
+  of: string;
+  threadRoot: string;
+};
 
 export async function routeMessage(
   input: RouteMessageInput,

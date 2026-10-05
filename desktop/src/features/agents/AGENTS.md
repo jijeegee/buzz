@@ -655,11 +655,24 @@ with a TypeScript lookup table or an id comparison in a component.
     in flight — the composer reads the plan's `routerActive`, never the saved
     mode) never call the model (`messages/lib/autoAssignGate.ts`). Typing
     never calls it and Enter never waits for it: the message posts unchanged,
-    then `messages/ui/useAutoAssign.ts` routes the sent text once and
-    `useMentionSendFlow`'s `deliverAutoRoute` publishes a same-body kind:40003
-    edit that newly `p`-tags the pick plus `["mention", pk, "auto-route"]`
-    (buzz-acp wakes an agent on an edit that newly mentions it, so no
-    harness change). The sent row shows "Routing…", then "→ Delivered to
+    then `messages/ui/useAutoAssign.ts` queues it in its channel's batch
+    (`messages/lib/autoRouteBatcher.ts`: fires 3 s after the last send,
+    waits while a composer in that channel holds a draft, at most 20 s, at
+    once at 12 messages). One call routes the batch into groups
+    `{messageIds, pubkeys, relation: new|continue|amend|cancel, of}`, and
+    `useMentionSendFlow`'s `deliverAutoRoute` publishes, per message, one
+    same-body kind:40003 edit that newly `p`-tags its group's agents plus
+    `["mention", pk, "auto-route"]` (buzz-acp wakes an agent on an edit that
+    newly mentions it, so no harness change). A follow-up's edit also
+    carries `["buzz:route", relation, of, note]`: a plain-language "supplement
+    or fix, don't redo" (or "stop") note with the thread to reply in, which
+    the agent sees in its prompt's Tags. `messages/lib/autoRouteLedger.ts`
+    keeps this desktop's deliveries for 30 minutes: a message there is never
+    routed again, and the channel's entries are the router's PRIOR (with the
+    agents mid-turn as WORKING). A follow-up the model gave no agent goes to
+    the earlier delivery's agents. Thread placement still follows the edited
+    message (the harness anchors edits to the original), so the note only
+    asks for the thread. The sent row shows "Routing…", then "→ Delivered to
     Name", or "Not delivered" (`messages/lib/autoRouteStatus.ts`); an edit
     or delete first fences the pick out. In a routed channel (Smart
     routing about to route this send, or an applied Host/Lead agent that is
@@ -672,8 +685,10 @@ with a TypeScript lookup table or an id comparison in a component.
     is always delivered. The timeline never marks that
     delivery edit as an edit and keeps its `auto-route` tags across later
     edits (`formatTimelineMessages.ts`). Rust owns the rest (`src-tauri/src/message_routing/`):
-    the aliased roster prompt (`a1…aN`, pubkeys never sent), caps, the strict
-    `{"to":[≤2 aliases]}` parser, the per-route deadline (2 s API key, 12 s
+    the aliased prompt (`a1…aN` agents, `m1…mN` new messages, `p1…pN` prior
+    deliveries; pubkeys and event ids never sent; one shared
+    `ROUTER_SYSTEM_PROMPT` for every route), caps, the strict
+    `{"groups":[…]}` parser (every message in exactly one group, ≤2 agents), the per-route deadline (2 s API key, 12 s
     CLI), the call itself, and the JSONL comparison log
     (`<app-data>/agents/routing-log/desktop.jsonl`, rotated at 5 MB). The
     roster's capability text comes from `messages/lib/routerRoster.ts`:
@@ -765,9 +780,10 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   `managed_agents::task_models` tests; `buzz-agent` `complete_once_tests`;
   `messages/lib/autoAssignGate.test.mjs` (every skip reason),
   `messages/lib/routerRoster.test.mjs` (description priority, caps),
-  `messages/ui/useAutoAssign.jsdom-test.mjs` (route on publish, delivery,
-  edit fence, one call per message, closed gate, soft-mention judging and
-  fallback), `messages/ui/useMentionSendFlow.helpers.test.mjs` (soft split),
+  `messages/ui/useAutoAssign.jsdom-test.mjs` (batch timing and draft hold,
+  one call per batch, per-group delivery, exactly once, follow-up route note
+  and PRIOR, edit fence, closed gate, soft-mention judging and fallback),
+  Rust `events` `edit_carries_a_route_note_for_follow_ups_only`, `messages/ui/useMentionSendFlow.helpers.test.mjs` (soft split),
   `messages/ui/smartRoutingComposerWiring.test.mjs` (send seam),
   `../settings/ui/models/TaskModelRow.jsdom-test.mjs`, and the Smart routing
   cases in `ui/routing/ChannelRoutingCard.jsdom-test.mjs`.

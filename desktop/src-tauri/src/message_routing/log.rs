@@ -1,5 +1,6 @@
 //! Smart routing comparison log: `<app-data>/agents/routing-log/desktop.jsonl`,
-//! one line per routing call while Smart routing is the saved mode.
+//! one line per routing call (one batch) while Smart routing is the saved
+//! mode.
 //!
 //! The log is diagnostic: a failed append is reported on stderr and never
 //! fails or delays the routing result. It stays local to this machine and is
@@ -12,7 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use super::model::model_price_per_mtok;
-use super::{RouteMessageResult, RouteOutcome, RoutePhase};
+use super::{RouteMessageResult, RouteOutcome, RoutePhase, RouterNewMessage};
 
 const LOG_DIR: &str = "routing-log";
 const LOG_FILE: &str = "desktop.jsonl";
@@ -26,6 +27,9 @@ pub struct RoutingLogLine {
     pub phase: RoutePhase,
     pub channel: Option<String>,
     pub decision: &'static str,
+    /// Messages in the batch and the groups the model made of them.
+    pub messages: usize,
+    pub groups: usize,
     pub targets: Vec<String>,
     pub reason: Option<super::RouterSkip>,
     pub latency_ms: u64,
@@ -42,13 +46,23 @@ impl RoutingLogLine {
         phase: RoutePhase,
         channel: Option<String>,
         model: &str,
-        message: &str,
+        messages: &[RouterNewMessage],
         outcome: &RouteOutcome,
     ) -> Self {
-        let (decision, targets, reason) = match &outcome.result {
-            RouteMessageResult::Assigned { pubkeys } => ("assigned", pubkeys.clone(), None),
-            RouteMessageResult::NoFit => ("none", Vec::new(), None),
-            RouteMessageResult::Skipped { reason } => ("skipped", Vec::new(), Some(*reason)),
+        let (groups, reason) = match &outcome.result {
+            RouteMessageResult::Routed { groups } => (groups.as_slice(), None),
+            RouteMessageResult::Skipped { reason } => (&[][..], Some(*reason)),
+        };
+        let mut targets: Vec<String> = Vec::new();
+        for pubkey in groups.iter().flat_map(|group| &group.pubkeys) {
+            if !targets.contains(pubkey) {
+                targets.push(pubkey.clone());
+            }
+        }
+        let decision = match (reason, targets.is_empty()) {
+            (Some(_), _) => "skipped",
+            (None, true) => "none",
+            (None, false) => "assigned",
         };
         let est_cost_usd = model_price_per_mtok(model).map(|(input, output)| {
             (outcome.est_input_tokens as f64 * input + outcome.est_output_tokens as f64 * output)
@@ -60,6 +74,8 @@ impl RoutingLogLine {
             phase,
             channel,
             decision,
+            messages: messages.len(),
+            groups: groups.len(),
             targets,
             reason,
             latency_ms: outcome.latency_ms,
@@ -67,7 +83,10 @@ impl RoutingLogLine {
             est_input_tokens: outcome.est_input_tokens,
             est_output_tokens: outcome.est_output_tokens,
             est_cost_usd,
-            excerpt: message.trim().chars().take(EXCERPT_CHARS).collect(),
+            excerpt: messages
+                .first()
+                .map(|message| message.text.trim().chars().take(EXCERPT_CHARS).collect())
+                .unwrap_or_default(),
         }
     }
 }

@@ -15,7 +15,8 @@ use uuid::Uuid;
 mod message_tags;
 
 use message_tags::{
-    append_client_tags, append_sent_from_thread_tag, emoji_tags, imeta_tags, mention_reference_tags,
+    append_client_tags, append_sent_from_thread_tag, emoji_tags, imeta_tags,
+    mention_reference_tags, route_note_tag,
 };
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -352,6 +353,18 @@ pub struct MessageEditTags<'a> {
     pub custom_emoji: &'a [Vec<String>],
     pub mentions: &'a [&'a str],
     pub mention_refs: Option<&'a [Vec<String>]>,
+    /// Smart routing's follow-up note, see [`RouteNote`].
+    pub route: Option<&'a RouteNote>,
+}
+
+/// How a Smart routing delivery relates to an earlier one (`continue`,
+/// `amend`, or `cancel`), rendered as a `buzz:route` note for the agent.
+#[derive(serde::Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteNote {
+    pub relation: String,
+    pub of: String,
+    pub thread_root: String,
 }
 
 /// Kind 40003 — edit a message with full content, media, emoji, mentions,
@@ -374,6 +387,13 @@ pub fn build_message_edit(
     if let Some(mention_refs) = edit_tags.mention_refs {
         mention_reference_tags(mention_refs, &mut tags)?;
         tags.push(tag(vec!["buzz:mention-snapshot"])?);
+    }
+    if let Some(route) = edit_tags.route {
+        tags.push(route_note_tag(
+            &route.relation,
+            &route.of,
+            &route.thread_root,
+        )?);
     }
     if suppress_link_previews {
         tags.push(tag(vec!["link-preview", "none"])?);
@@ -876,6 +896,14 @@ mod tests {
         mentions: &[&str],
         mention_refs: Option<&[Vec<String>]>,
     ) -> Vec<Vec<String>> {
+        edit_tags_with_route(mentions, mention_refs, None)
+    }
+
+    fn edit_tags_with_route(
+        mentions: &[&str],
+        mention_refs: Option<&[Vec<String>]>,
+        route: Option<&RouteNote>,
+    ) -> Vec<Vec<String>> {
         let channel = Uuid::parse_str(CH_ID).unwrap();
         let target =
             EventId::from_hex("d24da132115ca0a46233cf4c2ad8338fbf914250cbcaa9181a6dd59533cb5ac1")
@@ -889,6 +917,7 @@ mod tests {
                 custom_emoji: &[],
                 mentions,
                 mention_refs,
+                route,
             },
             false,
         )
@@ -920,6 +949,39 @@ mod tests {
                 .any(|t| t.first().map(String::as_str) == Some("p")),
             "unchanged-mention edit must not emit any `p` tag, got {tags:?}"
         );
+    }
+
+    #[test]
+    fn edit_carries_a_route_note_for_follow_ups_only() {
+        let id = "d24da132115ca0a46233cf4c2ad8338fbf914250cbcaa9181a6dd59533cb5ac1";
+        let note = |relation: &str| RouteNote {
+            relation: relation.into(),
+            of: id.to_ascii_uppercase(),
+            thread_root: id.into(),
+        };
+        let tags = edit_tags_with_route(&[], None, Some(&note("amend")));
+        let route = tags
+            .iter()
+            .find(|tag| tag.first().map(String::as_str) == Some("buzz:route"))
+            .expect("route note tag");
+        assert_eq!(route[1..3], ["amend".to_string(), id.to_string()]);
+        assert!(route[3].contains("don't redo it"), "{route:?}");
+        assert!(route[3].contains(&format!("--reply-to {id}")), "{route:?}");
+        for bad in ["new", "nonsense"] {
+            let channel = Uuid::parse_str(CH_ID).unwrap();
+            let target = EventId::from_hex(id).unwrap();
+            let edit = MessageEditTags {
+                media: &[],
+                custom_emoji: &[],
+                mentions: &[],
+                mention_refs: None,
+                route: Some(&note(bad)),
+            };
+            assert!(build_message_edit(channel, target, "x", edit, false).is_err());
+        }
+        assert!(!edit_tags(&[])
+            .iter()
+            .any(|tag| tag.first().map(String::as_str) == Some("buzz:route")));
     }
 
     #[test]
