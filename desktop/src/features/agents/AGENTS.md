@@ -606,6 +606,11 @@ with a TypeScript lookup table or an id comparison in a component.
     invokes): a held agent launches **plain** (no error), is stamped `None`,
     shows stale, and is promoted by the restart after the hold releases, so a
     manual Start, Restart, or redeploy cannot overlap two routing roles. The
+    restart badge's prospective snapshot goes through the same `launch_role`
+    (`build_managed_agent_summary`), so a held gainer shows **no** badge — a
+    restart would only launch it plain again — and the badge lights once the
+    hold releases; comparing against the unheld desired role instead badged
+    a restart that could never clear it. The
     status line also names a held gainer that is not running yet ("Fizz
     becomes the host after Honey restarts.").
     Until some agent is an instance of `builtin:host`, the Host picker offers

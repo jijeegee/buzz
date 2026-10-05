@@ -22,11 +22,11 @@ use tauri::AppHandle;
 
 use super::{
     generated_routing_dir, load_channel_routing, routing_owner_hex, routing_role_for,
-    transition::is_held, AgentRoutingState, ObservedProcess, RoutingRole,
+    transition::is_held, AgentRoutingState, ChannelRoutingMode, ObservedProcess, RoutingRole,
 };
 use crate::managed_agents::{
-    load_managed_agents, storage::atomic_write_json, BackendKind, ManagedAgentPairRuntime,
-    ManagedAgentRecord, ManagedAgentRuntimeKey,
+    storage::{atomic_write_json, load_managed_agents_without_keys},
+    BackendKind, ManagedAgentPairRuntime, ManagedAgentRecord, ManagedAgentRuntimeKey,
 };
 
 const DEPLOYED_ROLES_FILE: &str = "deployed-roles.json";
@@ -126,6 +126,11 @@ pub(crate) fn launch_role_among(
 /// local process (`live_local`, from [`live_local_roles`]) and provider
 /// deployment. A store that cannot be read skips
 /// the gate (the launch then fails or succeeds on its own terms).
+///
+/// The restart badge's prospective snapshot calls this too, so it compares
+/// the stamp against what a restart would *actually* launch: a held gainer
+/// would come back plain, so it shows no restart (the routing card says
+/// what it waits for) instead of a badge no restart can clear.
 pub(crate) fn launch_role<R: tauri::Runtime>(
     app: &AppHandle<R>,
     record: &ManagedAgentRecord,
@@ -135,20 +140,44 @@ pub(crate) fn launch_role<R: tauri::Runtime>(
     if desired_role == RoutingRole::None {
         return RoutingRole::None;
     }
-    let records = match load_managed_agents(app) {
+    let records = match load_managed_agents_without_keys(app) {
         Ok(records) => records,
         Err(error) => {
             eprintln!("buzz-desktop: routing hold check skipped: {error}");
             return desired_role;
         }
     };
-    let mode = load_channel_routing(app).unwrap_or_default();
-    let owner = routing_owner_hex(app);
+    launch_role_with(
+        record,
+        desired_role,
+        live_local,
+        &records,
+        load_channel_routing(app).unwrap_or_default(),
+        routing_owner_hex(app).as_deref(),
+        &load_deployed_roles(app),
+    )
+}
+
+/// Pure core of [`launch_role`] over already-loaded state: `records` (the
+/// store), the saved `mode` and `owner` (for each other agent's desired
+/// role), and the provider deployments' `deployed_roles` stamps.
+pub(crate) fn launch_role_with(
+    record: &ManagedAgentRecord,
+    desired_role: RoutingRole,
+    live_local: &[(String, RoutingRole)],
+    records: &[ManagedAgentRecord],
+    mode: ChannelRoutingMode,
+    owner: Option<&str>,
+    deployed_roles: &HashMap<String, RoutingRole>,
+) -> RoutingRole {
+    if desired_role == RoutingRole::None {
+        return RoutingRole::None;
+    }
     let desired_of = |pubkey: &str| {
         records
             .iter()
             .find(|candidate| candidate.pubkey == pubkey)
-            .map(|candidate| routing_role_for(candidate, mode, owner.as_deref()))
+            .map(|candidate| routing_role_for(candidate, mode, owner))
             .unwrap_or_default()
     };
 
@@ -163,12 +192,11 @@ pub(crate) fn launch_role<R: tauri::Runtime>(
             running_role: *running_role,
         })
         .collect();
-    let stamps = load_deployed_roles(app);
     for other in records.iter().filter(|other| {
         other.pubkey != record.pubkey && matches!(other.backend, BackendKind::Provider { .. })
     }) {
         if let ObservedProcess::Tracked(running_role) =
-            observe_remote(other, stamps.get(&other.pubkey).copied())
+            observe_remote(other, deployed_roles.get(&other.pubkey).copied())
         {
             others.push(AgentRoutingState {
                 pubkey: other.pubkey.clone(),

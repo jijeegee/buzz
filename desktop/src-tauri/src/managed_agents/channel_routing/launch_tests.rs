@@ -129,3 +129,81 @@ fn the_deployed_roles_sidecar_parses_and_ignores_damage() {
     assert_eq!(roles.get("honey"), Some(&RoutingRole::Dispatcher));
     assert_eq!(roles.get("fizz"), Some(&RoutingRole::None));
 }
+
+#[test]
+fn a_held_gainer_has_no_restart_badge_until_the_old_host_restarts() {
+    // The owner's report: Host mode, star moved from Haiku (running as host)
+    // to Host. Every Host spawn was held — stamped plain — while the badge
+    // compared against the unheld desired role (dispatcher), so "Restart
+    // required" came back after every restart. The badge must compare against
+    // what a restart would launch: plain while held, dispatcher once released.
+    use crate::managed_agents::spawn_snapshot::{
+        eligible_restart_diff, prospective_spawn_config_snapshot, TrackedSpawnState,
+    };
+    let local = |pubkey: &str, starred: bool| {
+        let mut record = record(pubkey, starred, false);
+        record.backend = BackendKind::Local;
+        record
+    };
+    let haiku = local("haiku", false);
+    let host = local("host", true);
+    let records = [haiku, host.clone()];
+    let mode = ChannelRoutingMode::Host;
+    let desired = routing_role_for(&host, mode, None);
+    let role_with = |live: &[(String, RoutingRole)]| {
+        launch_role_with(&host, desired, live, &records, mode, None, &HashMap::new())
+    };
+    let snapshot = |role| {
+        prospective_spawn_config_snapshot(
+            &host,
+            &[],
+            &[],
+            "wss://ws.example",
+            &Default::default(),
+            false,
+            role,
+        )
+    };
+    let badge = |stamped: RoutingRole, current: RoutingRole| {
+        eligible_restart_diff(
+            false,
+            Some(TrackedSpawnState {
+                stamped: &snapshot(stamped),
+                current: &snapshot(current),
+                stamped_availability: None,
+                current_availability: None,
+            }),
+        )
+        .into_iter()
+        .map(|entry| entry.field)
+        .collect::<Vec<_>>()
+    };
+
+    // Haiku still dispatches: Host's spawn is stamped plain, and a restart
+    // would launch plain again — so no badge (the old desired-role badge lit
+    // here and no restart could ever clear it).
+    let held = [
+        ("haiku".to_string(), RoutingRole::Dispatcher),
+        ("host".to_string(), RoutingRole::None),
+    ];
+    let stamped = role_with(&held);
+    assert_eq!(stamped, RoutingRole::None);
+    assert_eq!(badge(stamped, desired), vec!["routing_role"], "the bug");
+    assert!(badge(stamped, role_with(&held)).is_empty());
+
+    // Haiku restarted plain: the hold releases and the badge lights, so
+    // auto-restart (or the user) promotes Host with one restart.
+    let released = [
+        ("haiku".to_string(), RoutingRole::None),
+        ("host".to_string(), RoutingRole::None),
+    ];
+    assert_eq!(badge(stamped, role_with(&released)), vec!["routing_role"]);
+    // ...after which it is stamped dispatcher and settles.
+    let promoted = role_with(&released);
+    assert_eq!(promoted, RoutingRole::Dispatcher);
+    let settled = [
+        ("haiku".to_string(), RoutingRole::None),
+        ("host".to_string(), RoutingRole::Dispatcher),
+    ];
+    assert!(badge(promoted, role_with(&settled)).is_empty());
+}

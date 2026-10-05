@@ -285,10 +285,18 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
             &key.relay_url,
             global_config,
             super::owner_only_access_build(),
-            super::channel_routing::routing_role_for(
+            // What a restart would launch, hold included (the same gate the
+            // spawn stamp went through): a gainer held behind another agent's
+            // old role would restart plain, so it must not badge.
+            super::channel_routing::launch_role(
+                app,
                 record,
-                routing_mode,
-                super::channel_routing::routing_owner_hex(app).as_deref(),
+                super::channel_routing::routing_role_for(
+                    record,
+                    routing_mode,
+                    super::channel_routing::routing_owner_hex(app).as_deref(),
+                ),
+                &super::channel_routing::live_local_roles(runtimes),
             ),
         );
         (runtime, current)
