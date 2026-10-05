@@ -138,6 +138,14 @@ pub fn build_user_prompt(input: &RouteMessageInput, roster: &[RouterRosterEntry]
         prompt.push_str(&truncate_chars(root, MAX_THREAD_ROOT_CHARS));
         prompt.push('\n');
     }
+    let recent = recent_lines(&input.recent, roster);
+    if !recent.is_empty() {
+        prompt.push_str("RECENT\n");
+        for line in recent {
+            prompt.push_str(&line);
+            prompt.push('\n');
+        }
+    }
     prompt.push_str("MESSAGE\n");
     prompt.push_str(&truncate_chars(input.message.trim(), MAX_MESSAGE_CHARS));
     prompt

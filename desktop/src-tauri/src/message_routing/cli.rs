@@ -2,10 +2,12 @@
 //! CLI (`codex exec` / `claude -p`) on that CLI's own sign-in.
 //!
 //! Buzz never reads, copies, or logs subscription tokens here — the CLI owns
-//! them. The prompt goes in on stdin (never the command line), every tool is
-//! off, nothing is persisted as a session, and the run happens in an empty
-//! scratch directory under a hard deadline that kills the whole process tree
-//! (`output_with_timeout_and_input`).
+//! them. The router instructions replace each CLI's own agent prompt (read
+//! from [`INSTRUCTIONS_FILE`] in the scratch directory), the user turn goes
+//! in on stdin (never the command line), every tool we can switch off is
+//! off, no project docs or settings load, nothing is persisted as a session,
+//! and the run happens in that empty scratch directory under a hard deadline
+//! that kills the whole process tree (`output_with_timeout_and_input`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -43,12 +45,16 @@ const CODEX_DISABLED_FEATURES: &[&str] = &[
     "tool_suggest",
     "goals",
     "view_image",
+    "sleep_tool",
+    "personality",
 ];
 
-/// Short, quote-free system prompt for `claude -p`: it replaces Claude
-/// Code's long agent prompt, and the real router prompt rides on stdin.
-const CLAUDE_SYSTEM_PROMPT: &str =
-    "Follow the routing instructions in the user message exactly. Reply with the JSON object only.";
+/// The router instructions as a file in the scratch directory, named
+/// relative to it: Codex reads it as `model_instructions_file` (replacing
+/// its base instructions) and Claude Code as `--system-prompt-file`
+/// (replacing its agent prompt). A relative name keeps every argument free
+/// of quotes and spaces, safe through a Windows `.cmd` shim.
+pub const INSTRUCTIONS_FILE: &str = "router-instructions.md";
 
 /// The CLI binary and its sign-in probe for a subscription route.
 fn cli_command(provider: RouterProvider) -> Option<(&'static str, &'static [&'static str])> {
@@ -133,6 +139,16 @@ pub fn cli_args(provider: RouterProvider, model: &str) -> Vec<String> {
                 "model_reasoning_effort=low",
                 "-c",
                 "web_search=disabled",
+                // Router instructions instead of Codex's ~3.5k-token base
+                // prompt; no AGENTS.md, sandbox, or environment preamble.
+                "-c",
+                "model_instructions_file=router-instructions.md",
+                "-c",
+                "project_doc_max_bytes=0",
+                "-c",
+                "include_permissions_instructions=false",
+                "-c",
+                "include_environment_context=false",
             ] {
                 args.push(arg.to_string());
             }
@@ -150,8 +166,8 @@ pub fn cli_args(provider: RouterProvider, model: &str) -> Vec<String> {
                 model,
                 "--tools",
                 "",
-                "--system-prompt",
-                CLAUDE_SYSTEM_PROMPT,
+                "--system-prompt-file",
+                INSTRUCTIONS_FILE,
                 "--no-session-persistence",
                 "--strict-mcp-config",
                 "--setting-sources",
@@ -167,11 +183,18 @@ pub fn cli_args(provider: RouterProvider, model: &str) -> Vec<String> {
     args
 }
 
-/// The stdin prompt: the router's system prompt, then the user turn. Codex
-/// has no system-prompt flag, and Claude Code gets only a short one (see
-/// [`CLAUDE_SYSTEM_PROMPT`]), so the full router instructions travel here.
-pub fn cli_prompt(system: &str, user: &str) -> String {
-    format!("{system}\n\n{user}\n")
+/// Write the router instructions to [`INSTRUCTIONS_FILE`] in `dir`, which
+/// both CLIs load in place of their own system prompt. Staged and renamed so
+/// a concurrent run never reads a half-written file; skipped when unchanged.
+fn write_instructions(dir: &Path, system: &str) -> Result<(), String> {
+    let path = dir.join(INSTRUCTIONS_FILE);
+    if std::fs::read_to_string(&path).is_ok_and(|current| current == system) {
+        return Ok(());
+    }
+    let staged = dir.join(format!("{INSTRUCTIONS_FILE}.{}", std::process::id()));
+    std::fs::write(&staged, system)
+        .and_then(|()| std::fs::rename(&staged, &path))
+        .map_err(|e| format!("router instructions: {e}"))
 }
 
 /// The reply text from a finished run. Both CLIs print only the final
@@ -228,6 +251,7 @@ pub fn complete_via_cli(
     }
     let dir = scratch_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("router scratch dir: {e}"))?;
+    write_instructions(&dir, system)?;
     let mut command = std::process::Command::new(program);
     command.args(cli_args(provider, model)).current_dir(&dir);
     if let Some(path) = cli_probe::augmented_path() {
@@ -239,10 +263,11 @@ pub fn complete_via_cli(
         command
             .env_remove("ANTHROPIC_API_KEY")
             .env_remove("ANTHROPIC_AUTH_TOKEN")
-            .env_remove("CLAUDECODE");
+            .env_remove("CLAUDECODE")
+            // A routing pick needs no extended thinking: it only costs tokens.
+            .env("MAX_THINKING_TOKENS", "0");
     }
-    let output =
-        output_with_timeout_and_input(command, cli_prompt(system, user).into_bytes(), timeout);
+    let output = output_with_timeout_and_input(command, format!("{user}\n").into_bytes(), timeout);
     let reply = cli_reply(provider, output);
     if reply.is_err() {
         forget_cli_state(provider);
