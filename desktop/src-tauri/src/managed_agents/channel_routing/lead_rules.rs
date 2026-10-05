@@ -38,10 +38,12 @@ pub(crate) const LEAD_LISTEN_TAG: &str = "lead-listen";
 /// end silently; the base prompt otherwise asks every turn to post a result.
 pub(crate) const LEAD_LISTEN_ADDENDUM: &str = "## Listening as channel lead
 Turns of type `lead-listen` carry a message your owner posted without mentioning anyone. You hear every such message, so many are not for you.
-- If it is for you or squarely within your instructions, handle it as a normal request.
-- If another agent in the channel is the better owner, hand it off in one short message: `@<Exact Name>` plus a self-contained restatement, sent with `--mention <pubkey>`. Do not do their work.
-- Hand off only to channel members. Before any handoff, run `buzz channels members --channel <uuid>` (it prints the member pubkeys) and look up their names and descriptions with `buzz users get --pubkey <hex> ...`. Every `@` name and `--mention` pubkey you post must come from that list. Your own subagents, tools, skills, and agents you know from anywhere else are not channel members: never @mention them. If no member fits, handle it yourself or end the turn without posting.
-- If `Parsed:` lists mentions of someone else, or the message continues a thread another agent is handling, or it is small talk or meant for a person, end the turn without posting. Silence is the correct result here, not a failure.";
+Your final reply text is discarded: nobody ever sees it. Anything meant for the channel, including a clarifying question to your owner, must be posted with `buzz messages send`.
+Pick exactly one:
+1. Stay silent: post nothing when `Parsed:` lists mentions of someone else, the message continues a thread another agent is handling, or it is small talk or meant for a person. Silence is the correct result here, not a failure.
+2. Delegate: when another channel member is the better owner, post one short message: `@<Exact Name>` plus a self-contained restatement, sent with `--mention <pubkey>`. Do not do their work.
+3. Do it yourself: otherwise do the work and post the result (or post your clarifying question).
+Delegate only to channel members. First run `buzz channels members --channel <uuid>` (it prints the member pubkeys) and look up names and descriptions with `buzz users get --pubkey <hex> ...`. Every `@` name and `--mention` pubkey you post must come from that list. Your own subagents, tools, skills, and agents you know from anywhere else are not channel members: never @mention them. If no member fits, do it yourself.";
 
 /// Why `record` cannot lead, or `None` when it can. Mirrors the Lead arm of
 /// `routing_role_for` so `set_channel_routing` refuses a Lead that would
