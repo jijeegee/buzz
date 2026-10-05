@@ -360,13 +360,44 @@ fn spawn_drain<R: Read + Send + 'static>(
 ///   process group on Unix (the group-escapee case bounded by the drain rule
 ///   above) — the adjudicated asymmetry. The timeout path additionally sends a
 ///   graceful `SIGTERM` and a grace period before the kill.
-pub(crate) fn output_with_timeout(mut command: Command, timeout: Duration) -> Option<Output> {
+pub(crate) fn output_with_timeout(command: Command, timeout: Duration) -> Option<Output> {
+    run_bounded(command, None, timeout)
+}
+
+/// [`output_with_timeout`] with `input` written to the child's stdin (then
+/// closed) — for one-shot CLIs that read their prompt from stdin, so prompt
+/// text never travels through a command line (or a `.cmd` shim's argument
+/// re-parsing on Windows). The same ownership, deadline, and capture
+/// guarantees apply.
+pub(crate) fn output_with_timeout_and_input(
+    command: Command,
+    input: Vec<u8>,
+    timeout: Duration,
+) -> Option<Output> {
+    run_bounded(command, Some(input), timeout)
+}
+
+fn run_bounded(mut command: Command, input: Option<Vec<u8>>, timeout: Duration) -> Option<Output> {
     command
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = BoundedChild::spawn(command)?;
+
+    // Feed stdin on its own thread so a child that never reads cannot stall
+    // the poll loop; teardown closes the pipe, which ends a blocked write.
+    let stdin_feed = match (input, child.child.stdin.take()) {
+        (Some(bytes), Some(mut stdin)) => Some(std::thread::spawn(move || {
+            use std::io::Write as _;
+            let _ = stdin.write_all(&bytes);
+        })),
+        _ => None,
+    };
 
     let stdout_pipe = child.take_stdout();
     let stderr_pipe = child.take_stderr();
@@ -438,6 +469,9 @@ pub(crate) fn output_with_timeout(mut command: Command, timeout: Duration) -> Op
     child.kill_tree();
     child.reap();
     stop.store(true, Ordering::Relaxed);
+    if let Some(feed) = stdin_feed {
+        let _ = feed.join();
+    }
 
     let stdout = join_drain(stdout_drain);
     let stderr = join_drain(stderr_drain);

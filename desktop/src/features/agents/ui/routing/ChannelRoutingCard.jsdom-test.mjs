@@ -101,7 +101,10 @@ function routerModel(ready) {
       effectiveModel: ready ? "claude-haiku-4-5" : null,
       modelLabel: ready ? "Claude Haiku 4.5" : null,
       ready,
-      notReadyReason: ready ? null : "Needs an API key",
+      notReadyReason: ready
+        ? null
+        : "Sign in to Codex or Claude Code, or add an API key",
+      sendWaitMs: 1_200,
       providers: [],
     },
   ];
@@ -617,7 +620,7 @@ test("Smart routing with a ready router model: named model line, one save with n
   assert.equal(readRequestedModelsSettingsTab(), "tasks");
 });
 
-test("Smart routing without an API key is disabled and links to Providers", async () => {
+test("Smart routing with no route set up is disabled, names what's missing, and links to Providers", async () => {
   taskModels = routerModel(false);
   routing = baseRouting({ mode: "off", applied: { state: "off" } });
   const container = await mount();
@@ -625,8 +628,10 @@ test("Smart routing without an API key is disabled and links to Providers", asyn
     container,
     '[data-testid="agents-channel-routing-smart-model"]',
   );
-  assert.match(line.textContent, /Needs an API key/);
-  assert.match(line.textContent, /Add one in Models/);
+  assert.match(
+    line.textContent,
+    /Sign in to Codex or Claude Code, or add an API key·Models/,
+  );
   assert.equal(radio(container, "desktop-router").disabled, true);
 
   await click(radio(container, "desktop-router"));

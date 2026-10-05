@@ -43,11 +43,27 @@ export async function routeMessage(
   return invokeTauri<RouteMessageResult>("route_message", { input });
 }
 
+/**
+ * `api-key` routes call the provider over HTTP with a Providers-tab key;
+ * `subscription` routes run the official CLI (`codex exec`, `claude -p`) on
+ * its own sign-in, which is slower (~5 s a call).
+ */
+export type TaskModelRouteKind = "api-key" | "subscription";
+
+/** One route a task can use, e.g. "Codex (ChatGPT subscription)". */
 export type TaskModelProviderOption = {
   id: string;
   label: string;
-  hasKey: boolean;
+  kind: TaskModelRouteKind;
+  /** Callable now: key saved, or CLI installed and signed in. */
+  ready: boolean;
+  /** Why not, e.g. "Sign in to Codex"; null when ready. */
+  unavailableReason: string | null;
   defaultModel: string;
+  /** Suggested models for a subscription route; empty for API keys. */
+  models: string[];
+  /** How long Enter waits for a routing answer on this route. */
+  sendWaitMs: number;
 };
 
 /** One app task's model state for Settings › Models › Task models. */
@@ -63,6 +79,8 @@ export type TaskModelStatus = {
   modelLabel: string | null;
   ready: boolean;
   notReadyReason: string | null;
+  /** Enter's wait budget on the effective route. */
+  sendWaitMs: number;
   providers: TaskModelProviderOption[];
 };
 

@@ -12,21 +12,37 @@ use crate::{
             load_task_models, normalize_choice, save_task_model, TaskModelSetting, TaskModels,
             KNOWN_TASK_IDS, MESSAGE_ROUTING_TASK,
         },
+        GlobalAgentConfig,
     },
     message_routing::{
+        cli::{cli_models, cli_state, complete_via_cli, is_safe_cli_model},
         log::{append_routing_log, routing_log_path, RoutingLogLine},
         model::{
-            model_label, resolve_router_model, ResolvedRouterModel, RouterNotReady, RouterProvider,
-            ROUTER_PROVIDERS,
+            model_label, resolve_router_model, route_backend, ResolvedRouterModel, RouterAuthKind,
+            RouterBackend, RouterNotReady, RouterProvider, ROUTER_PROVIDERS, SEND_WAIT_API_MS,
         },
-        route_with, router_agent_config, RouteMessageInput, RouteMessageResult, RouterSkip,
-        ROUTER_MAX_OUTPUT_TOKENS,
+        route_with_deadline, router_agent_config, RouteMessageInput, RouteMessageResult,
+        RouterSkip, ROUTER_MAX_OUTPUT_TOKENS,
     },
     util::now_iso,
 };
 
-/// Resolve the routing model from saved task models, the global config, and
-/// the process environment (global `env_vars` win; blank = absent).
+/// `GlobalAgentConfig.env_vars` first, then the process environment;
+/// blank = absent.
+fn env_lookup(global: &GlobalAgentConfig) -> impl Fn(&str) -> Option<String> + '_ {
+    |key| {
+        global
+            .env_vars
+            .get(key)
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+            .or_else(|| std::env::var(key).ok())
+    }
+}
+
+/// Resolve the routing model from saved task models, the global config, the
+/// process environment, and the CLI routes' sign-in state. Blocking: a CLI
+/// sign-in probe may spawn.
 pub(crate) fn resolve_router_model_for_app<R: tauri::Runtime>(
     app: &AppHandle<R>,
     task_models: &TaskModels,
@@ -35,20 +51,16 @@ pub(crate) fn resolve_router_model_for_app<R: tauri::Runtime>(
     Ok(resolve_router_model(
         task_models.get(MESSAGE_ROUTING_TASK),
         global.provider.as_deref(),
-        |key| {
-            global
-                .env_vars
-                .get(key)
-                .filter(|value| !value.trim().is_empty())
-                .cloned()
-                .or_else(|| std::env::var(key).ok())
-        },
+        env_lookup(&global),
+        cli_state,
     ))
 }
 
-/// Whether Smart routing can call a model right now.
-pub(crate) fn router_model_ready<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
-    Ok(resolve_router_model_for_app(app, &load_task_models(app)?)?.is_ok())
+/// Why Smart routing can't call a model right now, or `None` when it can.
+pub(crate) fn router_not_ready<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Option<RouterNotReady>, String> {
+    Ok(resolve_router_model_for_app(app, &load_task_models(app)?)?.err())
 }
 
 /// Route one composer send. Returns `Skipped { NotConfigured }` without a
@@ -73,20 +85,44 @@ pub async fn route_message(
             reason: RouterSkip::NotConfigured,
         });
     };
-    let cfg = router_agent_config(&resolved);
-    let model = resolved.model.clone();
-    let outcome = route_with(&input, |system, user| async move {
-        buzz_agent_pkg::complete_once(&cfg, &system, &user, ROUTER_MAX_OUTPUT_TOKENS, &model)
+    let deadline = resolved.provider.deadline();
+    let outcome = match &resolved.backend {
+        RouterBackend::Api { .. } => {
+            let cfg = router_agent_config(&resolved)
+                .ok_or_else(|| "routing provider has no HTTP client".to_string())?;
+            let model = resolved.model.clone();
+            route_with_deadline(&input, deadline, |system, user| async move {
+                buzz_agent_pkg::complete_once(
+                    &cfg,
+                    &system,
+                    &user,
+                    ROUTER_MAX_OUTPUT_TOKENS,
+                    &model,
+                )
+                .await
+                .map_err(|error| error.to_string())
+            })
             .await
-            .map_err(|error| error.to_string())
-    })
-    .await;
+        }
+        RouterBackend::Cli { program } => {
+            let (provider, program, model) =
+                (resolved.provider, program.clone(), resolved.model.clone());
+            route_with_deadline(&input, deadline, |system, user| async move {
+                tokio::task::spawn_blocking(move || {
+                    complete_via_cli(provider, &program, &model, &system, &user, deadline)
+                })
+                .await
+                .map_err(|e| format!("spawn_blocking failed: {e}"))?
+            })
+            .await
+        }
+    };
     if outcome.called {
         let line = RoutingLogLine::new(
             now_iso(),
             input.phase,
             input.channel_id.clone(),
-            &resolved.model,
+            &log_model(&resolved),
             &input.message,
             &outcome,
         );
@@ -104,14 +140,32 @@ pub async fn route_message(
     Ok(outcome.result)
 }
 
-/// One provider choice in a Task models row.
+/// The comparison log's model: bare for API keys (so the cost estimate
+/// applies), `codex:<model>` / `claude-code:<model>` for subscription calls.
+fn log_model(resolved: &ResolvedRouterModel) -> String {
+    match resolved.backend {
+        RouterBackend::Api { .. } => resolved.model.clone(),
+        RouterBackend::Cli { .. } => format!("{}:{}", resolved.provider.id(), resolved.model),
+    }
+}
+
+/// One route choice in a Task models row.
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskModelProviderOption {
     id: &'static str,
     label: &'static str,
-    has_key: bool,
+    kind: RouterAuthKind,
+    /// Callable right now (key saved, or CLI installed and signed in).
+    ready: bool,
+    /// Why not, e.g. "Sign in to Codex" (absent when ready).
+    unavailable_reason: Option<String>,
     default_model: &'static str,
+    /// Suggested model ids for a subscription route; empty for API keys (the
+    /// row discovers those from the provider).
+    models: Vec<String>,
+    /// How long Enter waits for a routing answer on this route.
+    send_wait_ms: u64,
 }
 
 /// What Settings › Models › Task models renders for one task.
@@ -129,6 +183,8 @@ pub struct TaskModelStatus {
     model_label: Option<String>,
     ready: bool,
     not_ready_reason: Option<String>,
+    /// Enter's wait budget on the effective route.
+    send_wait_ms: u64,
     providers: Vec<TaskModelProviderOption>,
 }
 
@@ -137,15 +193,25 @@ fn task_model_statuses<R: tauri::Runtime>(
     task_models: &TaskModels,
 ) -> Result<Vec<TaskModelStatus>, String> {
     let global = load_global_agent_config(app)?;
-    let has_key = |key: &str| {
-        global
-            .env_vars
-            .get(key)
-            .is_some_and(|value| !value.trim().is_empty())
-            || std::env::var(key).is_ok_and(|value| !value.trim().is_empty())
-    };
-    let resolved = resolve_router_model_for_app(app, task_models)?;
+    let lookup = env_lookup(&global);
     let saved = task_models.get(MESSAGE_ROUTING_TASK);
+    let resolved = resolve_router_model(saved, global.provider.as_deref(), &lookup, cli_state);
+    let providers = ROUTER_PROVIDERS
+        .into_iter()
+        .map(|provider| {
+            let backend = route_backend(provider, &lookup, &cli_state);
+            TaskModelProviderOption {
+                id: provider.id(),
+                label: provider.label(),
+                kind: provider.auth_kind(),
+                ready: backend.is_ok(),
+                unavailable_reason: backend.err().map(|reason| reason.message()),
+                default_model: provider.default_model(),
+                models: cli_models(provider),
+                send_wait_ms: provider.send_wait_ms(),
+            }
+        })
+        .collect();
     Ok(vec![TaskModelStatus {
         task_id: MESSAGE_ROUTING_TASK,
         provider: saved.and_then(|setting| setting.provider.clone()),
@@ -161,15 +227,10 @@ fn task_model_statuses<R: tauri::Runtime>(
             .map(|resolved| model_label(&resolved.model)),
         ready: resolved.is_ok(),
         not_ready_reason: resolved.as_ref().err().map(RouterNotReady::message),
-        providers: ROUTER_PROVIDERS
-            .into_iter()
-            .map(|provider| TaskModelProviderOption {
-                id: provider.id(),
-                label: provider.label(),
-                has_key: has_key(provider.key_env()),
-                default_model: provider.default_model(),
-            })
-            .collect(),
+        send_wait_ms: resolved.as_ref().map_or(SEND_WAIT_API_MS, |resolved| {
+            resolved.provider.send_wait_ms()
+        }),
+        providers,
     }])
 }
 
@@ -195,15 +256,24 @@ pub async fn set_task_model(
         .find(|known| *known == task_id)
         .ok_or_else(|| format!("Unknown app task: {task_id}"))?;
     let provider = normalize_choice(provider, "Provider")?;
-    if let Some(id) = provider.as_deref() {
-        if RouterProvider::from_id(id).is_none() {
-            return Err(format!("{id} can't be used for this task."));
+    let route = match provider.as_deref() {
+        Some(id) => Some(
+            RouterProvider::from_id(id)
+                .ok_or_else(|| format!("{id} can't be used for this task."))?,
+        ),
+        None => None,
+    };
+    let model = normalize_choice(model, "Model")?;
+    // A subscription route passes the model id on the CLI's command line.
+    if let (Some(route), Some(model)) = (route, model.as_deref()) {
+        if route.auth_kind() == RouterAuthKind::Subscription && !is_safe_cli_model(model) {
+            return Err(format!(
+                "{model} can't be used with {}: model ids are letters, digits, and . - _ : /",
+                route.short_name()
+            ));
         }
     }
-    let setting = TaskModelSetting {
-        provider,
-        model: normalize_choice(model, "Model")?,
-    };
+    let setting = TaskModelSetting { provider, model };
     tokio::task::spawn_blocking(move || {
         let saved = save_task_model(&app, task_id, setting)?;
         task_model_statuses(&app, &saved)

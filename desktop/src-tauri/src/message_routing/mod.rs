@@ -4,13 +4,15 @@
 //! agent address (`p` tag + `agent-address` mention). Nothing is posted to
 //! the channel and no harness changes are involved.
 //!
-//! - [`model`] resolves the provider/model/key (Settings › Models › Task
-//!   models + Providers keys).
+//! - [`model`] resolves the route: an API key (Providers tab) or a
+//!   signed-in Codex / Claude Code CLI (Settings › Models › Task models).
+//! - [`cli`] runs one call on a subscription route through the official CLI.
 //! - [`prompt`] builds the aliased prompt and strictly parses the reply.
 //! - [`log`] appends one JSONL line per call for the routing comparison.
-//! - [`route_with`] runs one call under a hard deadline; the completion is
+//! - [`route_with_deadline`] runs one call under a hard deadline; the completion is
 //!   injected so tests never reach a real provider.
 
+pub mod cli;
 pub mod log;
 pub mod model;
 pub mod prompt;
@@ -22,12 +24,9 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use model::ResolvedRouterModel;
+use model::{ResolvedRouterModel, RouterBackend};
 use prompt::{build_user_prompt, capped_roster, parse_router_reply, ROUTER_SYSTEM_PROMPT};
 
-/// Hard wall-clock limit for one routing call, retries included. The
-/// composer separately waits at most ~1.2 s on Enter.
-pub const ROUTER_DEADLINE: Duration = Duration::from_millis(2_000);
 /// A reply is `{"to":["a1","a2"]}` — 40 tokens is ample and bounds cost.
 pub const ROUTER_MAX_OUTPUT_TOKENS: u32 = 40;
 
@@ -110,30 +109,29 @@ fn estimate_tokens(text: &str) -> u64 {
     (text.chars().count() as u64).div_ceil(4)
 }
 
-/// Build the `buzz-agent` config for one routing call.
-pub fn router_agent_config(resolved: &ResolvedRouterModel) -> buzz_agent_pkg::config::Config {
+/// Build the `buzz-agent` config for one API-key routing call; `None` for a
+/// CLI route.
+pub fn router_agent_config(
+    resolved: &ResolvedRouterModel,
+) -> Option<buzz_agent_pkg::config::Config> {
+    let RouterBackend::Api { api_key, base_url } = &resolved.backend else {
+        return None;
+    };
     let mut cfg = buzz_agent_pkg::config::Config::for_discovery(
-        resolved.provider.agent_provider(),
-        resolved.api_key.clone(),
-        resolved.base_url.clone(),
+        resolved.provider.agent_provider()?,
+        api_key.clone(),
+        base_url.clone(),
         None,
     );
-    cfg.llm_timeout = ROUTER_DEADLINE;
-    cfg
+    cfg.llm_timeout = resolved.provider.deadline();
+    Some(cfg)
 }
 
 /// Route one message: cap and alias the roster, call `complete(system,
-/// user)` under [`ROUTER_DEADLINE`], and map the strict reply back to
+/// user)` under `deadline` (the route's own, see
+/// [`model::RouterProvider::deadline`]), and map the strict reply back to
 /// pubkeys. An empty roster short-circuits to `NoFit` with no call.
-pub async fn route_with<F, Fut>(input: &RouteMessageInput, complete: F) -> RouteOutcome
-where
-    F: FnOnce(String, String) -> Fut,
-    Fut: Future<Output = Result<String, String>>,
-{
-    route_with_deadline(input, ROUTER_DEADLINE, complete).await
-}
-
-pub(crate) async fn route_with_deadline<F, Fut>(
+pub async fn route_with_deadline<F, Fut>(
     input: &RouteMessageInput,
     deadline: Duration,
     complete: F,

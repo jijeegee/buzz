@@ -15,7 +15,11 @@ import type { RouterRosterSnapshot } from "./useRouterRosterSource";
 
 /** Typing pause before a preview call. */
 export const AUTO_ASSIGN_DEBOUNCE_MS = 900;
-/** The longest Enter waits for a routing result before sending unassigned. */
+/**
+ * The longest Enter waits for a routing result before sending unassigned,
+ * unless the route says otherwise (`sendWaitMs`: subscription CLI routes
+ * wait longer).
+ */
 export const AUTO_ASSIGN_SEND_WAIT_MS = 1_200;
 /** Preview calls per draft; past it only the Enter-time call runs. */
 export const AUTO_ASSIGN_MAX_PREVIEW_CALLS = 6;
@@ -48,6 +52,8 @@ export type AutoAssignOptions = {
   addressedAgentCount: number;
   routerActive: boolean;
   routerReady: boolean;
+  /** Enter's wait budget for the current route; default {@link AUTO_ASSIGN_SEND_WAIT_MS}. */
+  sendWaitMs?: number;
   threadRoot: string | null;
   getExplicitMentionCount: (text: string) => number;
   getRoster: () => RouterRosterSnapshot;
@@ -63,7 +69,7 @@ export type AutoAssignSuggestion = { pubkey: string; name: string };
  * call picks the agent and the composer shows it as a removable "→ Name"
  * chip before Enter. On Enter, `resolveForSend` returns the pick for the
  * final text — from the cache, the in-flight call, or a fresh one — waiting
- * at most {@link AUTO_ASSIGN_SEND_WAIT_MS}; a slow or failed call sends
+ * at most the route's `sendWaitMs`; a slow or failed call sends
  * unassigned with a quiet notice. Sending is never blocked.
  *
  * Results are fenced by text: a late answer for an older draft text is
@@ -287,7 +293,7 @@ export function useAutoAssign(options: AutoAssignOptions) {
 
   /**
    * The agents to address for this send. Never throws and never waits more
-   * than {@link AUTO_ASSIGN_SEND_WAIT_MS}.
+   * than the route's `sendWaitMs`.
    */
   const resolveForSend = React.useCallback(
     async (text: string): Promise<string[]> => {
@@ -307,7 +313,10 @@ export function useAutoAssign(options: AutoAssignOptions) {
         (await Promise.race([
           entry.promise,
           new Promise<null>((resolve) => {
-            timer = setTimeout(() => resolve(null), AUTO_ASSIGN_SEND_WAIT_MS);
+            timer = setTimeout(
+              () => resolve(null),
+              optionsRef.current.sendWaitMs ?? AUTO_ASSIGN_SEND_WAIT_MS,
+            );
           }),
         ]));
       if (timer) clearTimeout(timer);

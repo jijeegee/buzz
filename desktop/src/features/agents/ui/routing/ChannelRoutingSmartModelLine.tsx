@@ -35,7 +35,8 @@ export function ChannelRoutingSmartModelLine({
       <span>
         {ready
           ? `Uses ${status.modelLabel ?? status.effectiveModel}`
-          : "Needs an API key"}
+          : (status.notReadyReason ??
+            "Sign in to Codex or Claude Code, or add an API key")}
       </span>
       <span aria-hidden="true">·</span>
       <button
@@ -44,7 +45,7 @@ export function ChannelRoutingSmartModelLine({
         onClick={() => onOpenModels(ready ? "tasks" : "providers")}
         type="button"
       >
-        {ready ? "Change in Models" : "Add one in Models"}
+        {ready ? "Change in Models" : "Models"}
         <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
       </button>
     </p>

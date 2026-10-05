@@ -2,42 +2,72 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 // Settings › Models › Task models › Message routing against the Tauri IPC:
-// provider and model only (no effort control), each change is exactly one
-// `set_task_model`, providers without a key cannot be picked, and the row
+// route and model only (no effort control), each change is exactly one
+// `set_task_model`, routes that aren't set up (no key, CLI signed out)
+// cannot be picked, subscription routes list their own models, and the row
 // reports readiness from Rust.
 
 let calls = [];
 let status;
 
+const PROVIDERS = [
+  {
+    id: "anthropic",
+    label: "Anthropic API key",
+    kind: "api-key",
+    ready: true,
+    unavailableReason: null,
+    defaultModel: "claude-haiku-4-5",
+    models: [],
+    sendWaitMs: 1_200,
+  },
+  {
+    id: "openai",
+    label: "OpenAI API key",
+    kind: "api-key",
+    ready: false,
+    unavailableReason: "Needs an OpenAI API key",
+    defaultModel: "gpt-4.1-nano",
+    models: [],
+    sendWaitMs: 1_200,
+  },
+  {
+    id: "codex",
+    label: "Codex (ChatGPT subscription)",
+    kind: "subscription",
+    ready: true,
+    unavailableReason: null,
+    defaultModel: "gpt-6-luna",
+    models: ["gpt-6-luna", "gpt-6-sol"],
+    sendWaitMs: 8_000,
+  },
+  {
+    id: "claude-code",
+    label: "Claude Code (Claude subscription, slower)",
+    kind: "subscription",
+    ready: false,
+    unavailableReason: "Sign in to Claude Code",
+    defaultModel: "haiku",
+    models: ["haiku", "sonnet"],
+    sendWaitMs: 8_000,
+  },
+];
+
 function statusFor({ provider = null, model = null } = {}) {
   const effective = provider ?? "anthropic";
-  const defaults = {
-    anthropic: "claude-haiku-4-5",
-    openai: "gpt-4.1-nano",
-  };
+  const route = PROVIDERS.find((entry) => entry.id === effective);
   return {
     taskId: "message-routing",
     provider,
     model,
     effectiveProvider: effective,
-    effectiveModel: model ?? defaults[effective],
-    modelLabel: model ?? "Claude Haiku 4.5",
+    effectiveModel: model ?? route.defaultModel,
+    modelLabel:
+      model ?? (effective === "anthropic" ? "Claude Haiku 4.5" : "GPT-6-Luna"),
     ready: true,
     notReadyReason: null,
-    providers: [
-      {
-        id: "anthropic",
-        label: "Anthropic",
-        hasKey: true,
-        defaultModel: "claude-haiku-4-5",
-      },
-      {
-        id: "openai",
-        label: "OpenAI",
-        hasKey: false,
-        defaultModel: "gpt-4.1-nano",
-      },
-    ],
+    sendWaitMs: route.sendWaitMs,
+    providers: PROVIDERS,
   };
 }
 
@@ -171,23 +201,55 @@ test("provider and model only: two labelled selects and no effort control", asyn
   assert.equal(container.querySelectorAll("select").length, 2);
   assert.match(
     select(container, "status").textContent,
-    /Ready — Claude Haiku 4\.5 \(Anthropic\)/,
+    /Ready — Claude Haiku 4\.5 via Anthropic API key/,
   );
   assert.match(container.textContent, /including drafts while you type/);
 });
 
-test("a provider without a key cannot be picked", async () => {
+test("every route is listed; ones that aren't set up say why and cannot be picked", async () => {
   status = statusFor();
   const container = await mount();
   const options = [...select(container, "provider").options].map((option) => [
     option.value,
     option.disabled,
+    option.textContent,
   ]);
   assert.deepEqual(options, [
-    ["", false],
-    ["anthropic", false],
-    ["openai", true],
+    ["", false, "Automatic"],
+    ["anthropic", false, "Anthropic API key"],
+    ["openai", true, "OpenAI API key — Needs an OpenAI API key"],
+    ["codex", false, "Codex (ChatGPT subscription)"],
+    [
+      "claude-code",
+      true,
+      "Claude Code (Claude subscription, slower) — Sign in to Claude Code",
+    ],
   ]);
+});
+
+test("a subscription route offers its own models without key discovery", async () => {
+  status = statusFor({ provider: "codex" });
+  const container = await mount();
+  const model = select(container, "model");
+  assert.deepEqual(
+    [...model.options].map((option) => option.value),
+    ["", "gpt-6-sol"],
+  );
+  assert.match(model.options[0].textContent, /gpt-6-luna \(fastest\)/);
+  assert.match(
+    select(container, "status").textContent,
+    /Codex \(ChatGPT subscription\)\. About 5 s per pick/,
+  );
+  assert.equal(
+    calls.filter((call) => call.command === "discover_agent_models").length,
+    0,
+  );
+  await choose(model, "gpt-6-sol");
+  assert.deepEqual(setCalls().at(-1).args, {
+    taskId: "message-routing",
+    provider: "codex",
+    model: "gpt-6-sol",
+  });
 });
 
 test("each change is exactly one set_task_model; a provider change resets the model", async () => {

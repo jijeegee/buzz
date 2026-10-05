@@ -140,13 +140,19 @@ const tauriMock = {
             effectiveModel: null,
             modelLabel: null,
             ready: false,
-            notReadyReason: "Needs an API key",
+            notReadyReason:
+              "Sign in to Codex or Claude Code, or add an API key",
+            sendWaitMs: 1_200,
             providers: [
               {
                 id: "anthropic",
-                label: "Anthropic",
-                hasKey: false,
+                label: "Anthropic API key",
+                kind: "api-key",
+                ready: false,
+                unavailableReason: "Needs an Anthropic API key",
                 defaultModel: "claude-haiku-4-5",
+                models: [],
+                sendWaitMs: 1_200,
               },
             ],
           },
@@ -594,7 +600,10 @@ test("Models renders an accessible tablist; Task models lists Message routing an
     '[data-testid="settings-models-task-message-routing"]',
   );
   assert.match(row.textContent, /Message routing/);
-  assert.match(row.textContent, /Needs an API key/);
+  assert.match(
+    row.textContent,
+    /Sign in to Codex or Claude Code, or add an API key/,
+  );
   assert.equal(
     container.querySelector('[data-testid="settings-models-providers"]'),
     null,

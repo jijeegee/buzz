@@ -187,6 +187,16 @@ test("Enter with no answer in time sends unassigned with a quiet notice", async 
   );
 });
 
+test("a slow (subscription) route waits its own longer budget on Enter", async () => {
+  const hook = await mount({ sendWaitMs: AUTO_ASSIGN_SEND_WAIT_MS + 1_500 });
+  const sending = hook.current.resolveForSend("fix the windows build");
+  // Past the default API-key budget, still inside the route's own.
+  await sleep(AUTO_ASSIGN_SEND_WAIT_MS + 400);
+  calls[0].resolve({ decision: "assigned", pubkeys: [CODER] });
+  assert.deepEqual(await sending, [CODER]);
+  assert.equal(hook.current.notice, null);
+});
+
 test("a failed route sends unassigned; 'not configured' stays silent", async () => {
   const hook = await mount({
     route: () => Promise.reject(new Error("ipc down")),

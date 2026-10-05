@@ -5,13 +5,31 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::log::{append_routing_log, routing_log_path, RoutingLogLine};
-use super::model::{resolve_router_model, RouterNotReady, RouterProvider};
+use std::path::PathBuf;
+
+use super::cli::{
+    cli_args, cli_models, cli_prompt, cli_reply, codex_listed_models, complete_via_cli,
+    is_safe_cli_model,
+};
+use super::model::{
+    resolve_router_model, CliState, ResolvedRouterModel, RouterBackend, RouterNotReady,
+    RouterProvider, ROUTER_API_DEADLINE,
+};
 use super::prompt::{
     build_user_prompt, capped_roster, parse_router_reply, MAX_DESCRIPTION_CHARS, MAX_MESSAGE_CHARS,
     MAX_NAME_CHARS, MAX_ROSTER, ROUTER_SYSTEM_PROMPT,
 };
 use super::*;
 use crate::managed_agents::task_models::TaskModelSetting;
+
+/// One call on an API-key route's deadline.
+async fn route_with<F, Fut>(input: &RouteMessageInput, complete: F) -> RouteOutcome
+where
+    F: FnOnce(String, String) -> Fut,
+    Fut: std::future::Future<Output = Result<String, String>>,
+{
+    route_with_deadline(input, ROUTER_API_DEADLINE, complete).await
+}
 
 fn pk(n: u8) -> String {
     format!("{n:02x}").repeat(32)
@@ -182,6 +200,27 @@ fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
     move |key| map.get(key).cloned()
 }
 
+fn no_cli(_: RouterProvider) -> CliState {
+    CliState::NotInstalled
+}
+
+fn cli_ready(ready: &'static [RouterProvider]) -> impl Fn(RouterProvider) -> CliState {
+    move |provider| {
+        if ready.contains(&provider) {
+            CliState::Ready(PathBuf::from(format!("/bin/{}", provider.id())))
+        } else {
+            CliState::SignedOut
+        }
+    }
+}
+
+fn api_key(resolved: &ResolvedRouterModel) -> (&str, &str) {
+    match &resolved.backend {
+        RouterBackend::Api { api_key, base_url } => (api_key, base_url),
+        RouterBackend::Cli { .. } => panic!("expected an API route, got {resolved:?}"),
+    }
+}
+
 #[test]
 fn provider_resolution_order() {
     let all = env(&[
@@ -190,22 +229,21 @@ fn provider_resolution_order() {
         ("OPENROUTER_API_KEY", "r"),
     ]);
     // Automatic: Anthropic first.
-    let resolved = resolve_router_model(None, None, &all).unwrap();
+    let resolved = resolve_router_model(None, None, &all, no_cli).unwrap();
     assert_eq!(resolved.provider, RouterProvider::Anthropic);
     assert_eq!(resolved.model, "claude-haiku-4-5");
     assert!(resolved.model_is_default);
-    assert_eq!(resolved.api_key, "a");
-    assert_eq!(resolved.base_url, "https://api.anthropic.com");
+    assert_eq!(api_key(&resolved), ("a", "https://api.anthropic.com"));
 
     // The global default provider wins when it has a key.
-    let resolved = resolve_router_model(None, Some("openrouter"), &all).unwrap();
+    let resolved = resolve_router_model(None, Some("openrouter"), &all, no_cli).unwrap();
     assert_eq!(resolved.provider, RouterProvider::Openrouter);
     assert_eq!(resolved.model, "anthropic/claude-haiku-4.5");
 
     // A global default without a key (or not a router provider) falls through.
     let only_openai = env(&[("OPENAI_COMPAT_API_KEY", "o")]);
     for global in [Some("anthropic"), Some("databricks"), None] {
-        let resolved = resolve_router_model(None, global, &only_openai).unwrap();
+        let resolved = resolve_router_model(None, global, &only_openai, no_cli).unwrap();
         assert_eq!(resolved.provider, RouterProvider::Openai, "{global:?}");
         assert_eq!(resolved.model, "gpt-4.1-nano");
     }
@@ -219,55 +257,343 @@ fn provider_resolution_order() {
         ("OPENROUTER_API_KEY", "r"),
         ("OPENROUTER_BASE_URL", " http://proxy/v1 "),
     ]);
-    let resolved = resolve_router_model(Some(&setting), Some("anthropic"), &with_proxy).unwrap();
+    let resolved =
+        resolve_router_model(Some(&setting), Some("anthropic"), &with_proxy, no_cli).unwrap();
     assert_eq!(resolved.provider, RouterProvider::Openrouter);
     assert_eq!(resolved.model, "openai/gpt-4.1-nano");
     assert!(!resolved.model_is_default);
-    assert_eq!(resolved.base_url, "http://proxy/v1");
+    assert_eq!(api_key(&resolved), ("r", "http://proxy/v1"));
 }
 
 #[test]
-fn subscription_only_and_missing_keys_are_not_ready() {
-    // Subscription sign-in leaves no API key anywhere: honestly not ready.
+fn automatic_prefers_api_keys_then_codex_then_claude_code() {
+    let both = cli_ready(&[RouterProvider::Codex, RouterProvider::ClaudeCode]);
+    // Any API key beats a (slower) subscription route.
+    let resolved =
+        resolve_router_model(None, None, env(&[("OPENROUTER_API_KEY", "r")]), &both).unwrap();
+    assert_eq!(resolved.provider, RouterProvider::Openrouter);
+
+    // Subscription only: Codex first (faster), on its own default model.
+    let resolved = resolve_router_model(None, Some("anthropic"), env(&[]), &both).unwrap();
+    assert_eq!(resolved.provider, RouterProvider::Codex);
+    assert_eq!(resolved.model, "gpt-6-luna");
+    assert!(matches!(
+        &resolved.backend,
+        RouterBackend::Cli { program } if program == &PathBuf::from("/bin/codex")
+    ));
+
+    // Only Claude Code signed in.
+    let claude = cli_ready(&[RouterProvider::ClaudeCode]);
+    let resolved = resolve_router_model(None, None, env(&[]), &claude).unwrap();
+    assert_eq!(resolved.provider, RouterProvider::ClaudeCode);
+    assert_eq!(resolved.model, "haiku");
+
+    // A global default naming a CLI route id is not an API-key preference.
+    let resolved = resolve_router_model(
+        None,
+        Some("claude-code"),
+        env(&[]),
+        cli_ready(&[RouterProvider::Codex, RouterProvider::ClaudeCode]),
+    )
+    .unwrap();
+    assert_eq!(resolved.provider, RouterProvider::Codex);
+}
+
+#[test]
+fn cli_routes_are_not_probed_when_an_api_key_resolves() {
+    let probed = std::cell::Cell::new(0);
+    let counting = |_: RouterProvider| {
+        probed.set(probed.get() + 1);
+        CliState::SignedOut
+    };
+    resolve_router_model(None, None, env(&[("ANTHROPIC_API_KEY", "a")]), counting).unwrap();
+    assert_eq!(probed.get(), 0);
+}
+
+#[test]
+fn nothing_ready_and_missing_routes_name_what_is_missing() {
+    // No key and no signed-in CLI: the message names every way in.
+    let err = resolve_router_model(None, Some("anthropic"), env(&[]), cli_ready(&[])).unwrap_err();
+    assert_eq!(err, RouterNotReady::NoRoute);
     assert_eq!(
-        resolve_router_model(None, Some("anthropic"), env(&[])).unwrap_err(),
-        RouterNotReady::NoApiKey
+        err.message(),
+        "Sign in to Codex or Claude Code, or add an API key"
     );
     // Blank keys count as absent.
     assert_eq!(
-        resolve_router_model(None, None, env(&[("ANTHROPIC_API_KEY", "  ")])).unwrap_err(),
-        RouterNotReady::NoApiKey
+        resolve_router_model(None, None, env(&[("ANTHROPIC_API_KEY", "  ")]), no_cli).unwrap_err(),
+        RouterNotReady::NoRoute
     );
-    // A chosen provider never silently falls back to another one's key.
-    let setting = TaskModelSetting {
+    // A chosen route never silently falls back to another one.
+    let openai = TaskModelSetting {
         provider: Some("openai".into()),
         model: None,
     };
+    let err = resolve_router_model(
+        Some(&openai),
+        None,
+        env(&[("ANTHROPIC_API_KEY", "a")]),
+        cli_ready(&[RouterProvider::Codex]),
+    )
+    .unwrap_err();
     assert_eq!(
-        resolve_router_model(Some(&setting), None, env(&[("ANTHROPIC_API_KEY", "a")])).unwrap_err(),
+        err,
         RouterNotReady::ProviderKeyMissing(RouterProvider::Openai)
     );
+    assert_eq!(err.message(), "Needs an OpenAI API key");
+
+    let codex = TaskModelSetting {
+        provider: Some("codex".into()),
+        model: None,
+    };
+    let err = resolve_router_model(
+        Some(&codex),
+        None,
+        env(&[("ANTHROPIC_API_KEY", "a")]),
+        cli_ready(&[]),
+    )
+    .unwrap_err();
+    assert_eq!(err, RouterNotReady::CliSignedOut(RouterProvider::Codex));
+    assert_eq!(err.message(), "Sign in to Codex");
+
+    let claude = TaskModelSetting {
+        provider: Some("claude-code".into()),
+        model: Some("sonnet".into()),
+    };
+    let err = resolve_router_model(Some(&claude), None, env(&[]), no_cli).unwrap_err();
+    assert_eq!(err.message(), "Claude Code isn't installed");
+    let resolved = resolve_router_model(
+        Some(&claude),
+        None,
+        env(&[]),
+        cli_ready(&[RouterProvider::ClaudeCode]),
+    )
+    .unwrap();
+    assert_eq!(
+        (resolved.provider, resolved.model.as_str()),
+        (RouterProvider::ClaudeCode, "sonnet")
+    );
+
     let unsupported = TaskModelSetting {
         provider: Some("databricks".into()),
         model: None,
     };
     assert!(matches!(
-        resolve_router_model(Some(&unsupported), None, env(&[("ANTHROPIC_API_KEY", "a")])),
+        resolve_router_model(
+            Some(&unsupported),
+            None,
+            env(&[("ANTHROPIC_API_KEY", "a")]),
+            no_cli
+        ),
         Err(RouterNotReady::UnsupportedProvider(_))
     ));
 }
 
 #[test]
+fn routes_carry_their_own_deadline_and_send_wait() {
+    assert_eq!(RouterProvider::Anthropic.deadline(), ROUTER_API_DEADLINE);
+    assert_eq!(RouterProvider::Openrouter.send_wait_ms(), 1_200);
+    for provider in [RouterProvider::Codex, RouterProvider::ClaudeCode] {
+        assert!(provider.deadline() > Duration::from_secs(8), "{provider:?}");
+        assert!(provider.send_wait_ms() >= 6_000, "{provider:?}");
+        assert!(provider.deadline().as_millis() as u64 > provider.send_wait_ms());
+        assert!(provider.key_env().is_none());
+        assert_eq!(RouterProvider::from_id(provider.id()), Some(provider));
+    }
+}
+
+#[test]
 fn router_config_uses_the_deadline_and_resolved_endpoint() {
-    let resolved = resolve_router_model(None, None, env(&[("ANTHROPIC_API_KEY", "a")])).unwrap();
-    let cfg = router_agent_config(&resolved);
-    assert_eq!(cfg.llm_timeout, ROUTER_DEADLINE);
+    let resolved =
+        resolve_router_model(None, None, env(&[("ANTHROPIC_API_KEY", "a")]), no_cli).unwrap();
+    let cfg = router_agent_config(&resolved).unwrap();
+    assert_eq!(cfg.llm_timeout, ROUTER_API_DEADLINE);
     assert_eq!(cfg.base_url, "https://api.anthropic.com");
     assert_eq!(cfg.api_key, "a");
     assert!(
-        !format!("{resolved:?}").contains("api_key: \"a\""),
+        !format!("{resolved:?}").contains("\"a\""),
         "Debug must not leak the key"
     );
+    // A CLI route has no HTTP config at all.
+    let cli =
+        resolve_router_model(None, None, env(&[]), cli_ready(&[RouterProvider::Codex])).unwrap();
+    assert!(router_agent_config(&cli).is_none());
+}
+
+// ── Subscription CLI routes ─────────────────────────────────────────────
+
+#[test]
+fn codex_args_are_one_shot_tool_free_and_read_stdin() {
+    let args = cli_args(RouterProvider::Codex, "gpt-6-luna");
+    assert_eq!(args.first().map(String::as_str), Some("exec"));
+    assert_eq!(
+        args.last().map(String::as_str),
+        Some("-"),
+        "prompt comes from stdin"
+    );
+    for flag in [
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--ignore-user-config",
+        "--ignore-rules",
+    ] {
+        assert!(args.iter().any(|arg| arg == flag), "{flag}");
+    }
+    let joined = args.join(" ");
+    assert!(joined.contains("--sandbox read-only"));
+    assert!(joined.contains("--model gpt-6-luna"));
+    assert!(joined.contains("-c model_reasoning_effort=low"));
+    assert!(joined.contains("-c features.shell_tool=false"));
+    // `--disable` errors on unknown names; config overrides never do.
+    assert!(!args.iter().any(|arg| arg == "--disable"));
+    // No quotes anywhere: safe through a Windows `.cmd` shim.
+    assert!(args.iter().all(|arg| !arg.contains('"')));
+}
+
+#[test]
+fn claude_args_print_with_no_tools_settings_or_session() {
+    let args = cli_args(RouterProvider::ClaudeCode, "haiku");
+    let pair = |flag: &str| {
+        args.iter()
+            .position(|arg| arg == flag)
+            .map(|index| args[index + 1].as_str())
+    };
+    assert!(args.iter().any(|arg| arg == "--print"));
+    assert_eq!(pair("--model"), Some("haiku"));
+    assert_eq!(pair("--tools"), Some(""));
+    assert_eq!(pair("--setting-sources"), Some(""));
+    assert_eq!(pair("--output-format"), Some("text"));
+    assert!(args.iter().any(|arg| arg == "--no-session-persistence"));
+    assert!(args.iter().any(|arg| arg == "--strict-mcp-config"));
+    // `--bare` would refuse the subscription sign-in (API key only).
+    assert!(!args.iter().any(|arg| arg == "--bare"));
+    assert!(args
+        .iter()
+        .all(|arg| !arg.contains('"') && !arg.contains('\n')));
+    // API-key routes never run a CLI.
+    assert!(cli_args(RouterProvider::Anthropic, "x").is_empty());
+}
+
+#[test]
+fn cli_prompt_carries_the_full_router_prompt() {
+    let user = build_user_prompt(&input("fix the build", team()), &capped_roster(&team()));
+    let prompt = cli_prompt(ROUTER_SYSTEM_PROMPT, &user);
+    assert!(prompt.starts_with(ROUTER_SYSTEM_PROMPT));
+    assert!(prompt.contains("ROSTER\na1 | Coder"));
+    assert!(prompt.trim_end().ends_with("fix the build"));
+}
+
+#[test]
+fn cli_model_ids_are_restricted_to_safe_characters() {
+    for ok in [
+        "haiku",
+        "gpt-6-luna",
+        "claude-haiku-4-5",
+        "openai/gpt-5.5",
+        "a:b_c",
+    ] {
+        assert!(is_safe_cli_model(ok), "{ok}");
+    }
+    for bad in [
+        "",
+        "a b",
+        "x\"y",
+        "%PATH%",
+        "a&b",
+        "a|b",
+        "a\nb",
+        &"m".repeat(129),
+    ] {
+        assert!(!is_safe_cli_model(bad), "{bad:?}");
+    }
+}
+
+#[cfg(unix)]
+fn exit_status(code: i32) -> std::process::ExitStatus {
+    use std::os::unix::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(code << 8)
+}
+
+#[cfg(windows)]
+fn exit_status(code: i32) -> std::process::ExitStatus {
+    use std::os::windows::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(code as u32)
+}
+
+#[test]
+fn cli_reply_takes_stdout_on_success_only() {
+    let output = |code: i32, stdout: &str, stderr: &str| std::process::Output {
+        status: exit_status(code),
+        stdout: stdout.as_bytes().to_vec(),
+        stderr: stderr.as_bytes().to_vec(),
+    };
+    assert_eq!(
+        cli_reply(
+            RouterProvider::ClaudeCode,
+            Some(output(0, "```json\n{\"to\":[\"a1\"]}\n```\n", "noise"))
+        )
+        .unwrap(),
+        "```json\n{\"to\":[\"a1\"]}\n```"
+    );
+    let err = cli_reply(
+        RouterProvider::Codex,
+        Some(output(1, "", "\nError: not logged in\nmore detail")),
+    )
+    .unwrap_err();
+    assert!(err.starts_with("Codex exited with"), "{err}");
+    assert!(err.contains("Error: not logged in") && !err.contains("more detail"));
+    assert!(cli_reply(RouterProvider::Codex, Some(output(0, "  \n", ""))).is_err());
+    assert_eq!(
+        cli_reply(RouterProvider::Codex, None).unwrap_err(),
+        "Codex did not finish"
+    );
+}
+
+#[test]
+fn codex_models_come_from_the_listed_cache_entries() {
+    let cache = r#"{"models":[
+        {"slug":"gpt-6-luna","visibility":"list"},
+        {"slug":"gpt-reserve","visibility":"hide"},
+        {"slug":"gpt-5.5","visibility":"list"},
+        {"slug":"bad slug","visibility":"list"}
+    ]}"#;
+    assert_eq!(codex_listed_models(cache), vec!["gpt-6-luna", "gpt-5.5"]);
+    assert!(codex_listed_models("not json").is_empty());
+    assert_eq!(
+        cli_models(RouterProvider::ClaudeCode),
+        vec!["haiku", "sonnet"]
+    );
+    assert!(cli_models(RouterProvider::Openai).is_empty());
+}
+
+/// Real one-shot calls through the installed CLIs (subscription usage, ~5 s
+/// each). Run by hand: `cargo test ... real_cli_routing -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn real_cli_routing_smoke() {
+    for provider in [RouterProvider::Codex, RouterProvider::ClaudeCode] {
+        let CliState::Ready(program) = super::cli::cli_state(provider) else {
+            eprintln!("{provider:?}: not ready, skipped");
+            continue;
+        };
+        let roster = capped_roster(&team());
+        let user = build_user_prompt(
+            &input("the login page crashes, please fix", team()),
+            &roster,
+        );
+        let started = std::time::Instant::now();
+        let reply = complete_via_cli(
+            provider,
+            &program,
+            provider.default_model(),
+            ROUTER_SYSTEM_PROMPT,
+            &user,
+            provider.deadline(),
+        );
+        eprintln!("{provider:?}: {:?} in {:?}", reply, started.elapsed());
+        let reply = reply.unwrap();
+        assert_eq!(parse_router_reply(&reply, roster.len()), Some(vec![0]));
+    }
 }
 
 // ── The call (LLM mocked) ───────────────────────────────────────────────

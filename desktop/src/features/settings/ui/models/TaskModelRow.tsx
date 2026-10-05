@@ -21,13 +21,14 @@ const AUTOMATIC = "";
 /**
  * Models the provider lists for this key, for the Model select. A failed or
  * slow discovery only leaves the Default row and the saved model.
+ * Subscription routes skip discovery: Rust supplies their model list.
  */
 function useProviderModels(
   provider: TaskModelProviderOption | null,
   apiKey: string | null,
 ) {
   return useQuery({
-    enabled: provider?.hasKey === true,
+    enabled: provider?.kind === "api-key" && provider.ready,
     queryKey: ["task-model-discovery", provider?.id ?? "", apiKey ?? ""],
     queryFn: async () => {
       if (!provider) return [];
@@ -51,11 +52,19 @@ const PROVIDER_KEY_ENV: Record<string, string> = {
   openrouter: "OPENROUTER_API_KEY",
 };
 
+/** Option text: the route, plus what is missing when it can't be used. */
+function providerOptionLabel(provider: TaskModelProviderOption): string {
+  if (provider.ready) return provider.label;
+  return `${provider.label} — ${provider.unavailableReason ?? "not available"}`;
+}
+
 /**
- * One Settings › Models › Task models row: provider and model for an app
+ * One Settings › Models › Task models row: the route and model for an app
  * task (no effort — the router never thinks, so `ModelEffortFields` gets
- * `effort: null`). Each change is one `set_task_model`; a failure shows
- * inline and the saved state stays what Rust reports.
+ * `effort: null`). Routes are listed explicitly — API keys and subscription
+ * sign-ins (Codex, Claude Code) — each with its real availability. Each
+ * change is one `set_task_model`; a failure shows inline and the saved
+ * state stays what Rust reports.
  */
 export function TaskModelRow({
   onOpenProviders,
@@ -86,7 +95,10 @@ export function TaskModelRow({
       : null,
   );
   const modelOptions = React.useMemo(() => {
-    const ids = new Set(discovery.data ?? []);
+    const ids = new Set([
+      ...(effectiveProvider?.models ?? []),
+      ...(discovery.data ?? []),
+    ]);
     if (status.model) ids.add(status.model);
     if (effectiveProvider) ids.delete(effectiveProvider.defaultModel);
     return [...ids].sort((a, b) => a.localeCompare(b));
@@ -142,13 +154,11 @@ export function TaskModelRow({
               <option value={AUTOMATIC}>Automatic</option>
               {status.providers.map((provider) => (
                 <option
-                  disabled={!provider.hasKey && provider.id !== savedProvider}
+                  disabled={!provider.ready && provider.id !== savedProvider}
                   key={provider.id}
                   value={provider.id}
                 >
-                  {provider.hasKey
-                    ? provider.label
-                    : `${provider.label} — add an API key in Providers`}
+                  {providerOptionLabel(provider)}
                 </option>
               ))}
             </select>
@@ -170,7 +180,11 @@ export function TaskModelRow({
             >
               <option value={AUTOMATIC}>
                 {effectiveProvider
-                  ? `Default — ${effectiveProvider.defaultModel} (cheapest)`
+                  ? `Default — ${effectiveProvider.defaultModel} (${
+                      effectiveProvider.kind === "subscription"
+                        ? "fastest"
+                        : "cheapest"
+                    })`
                   : "Default"}
               </option>
               {modelOptions.map((model) => (
@@ -190,13 +204,15 @@ export function TaskModelRow({
         {status.ready ? (
           <span className="text-muted-foreground">
             Ready — {status.modelLabel ?? status.effectiveModel}
-            {effectiveProvider ? ` (${effectiveProvider.label})` : null}
+            {effectiveProvider ? ` via ${effectiveProvider.label}` : null}
+            {effectiveProvider?.kind === "subscription"
+              ? ". About 5 s per pick, so it usually lands while you type."
+              : null}
           </span>
         ) : (
           <>
             <span className="text-amber-700 dark:text-amber-400">
-              {status.notReadyReason ?? "Not ready"}. Sign-in subscriptions
-              can't route instantly.
+              {status.notReadyReason ?? "Not ready"}.
             </span>
             <button
               className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
@@ -204,7 +220,7 @@ export function TaskModelRow({
               onClick={onOpenProviders}
               type="button"
             >
-              Add one in Providers
+              Set up in Providers
               <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </>

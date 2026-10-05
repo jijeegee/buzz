@@ -656,14 +656,15 @@ with a TypeScript lookup table or an id comparison in a component.
     mode) never call the model (`messages/lib/autoAssignGate.ts`). While
     typing, `messages/ui/useAutoAssign.ts` runs a 900 ms-debounced preview
     (≤ 6 per draft, results fenced by draft text) and shows the pick as a
-    removable "→ Name" chip; Enter waits at most 1.2 s for the pick, else
+    removable "→ Name" chip; Enter waits at most the route's `sendWaitMs`
+    (1.2 s on an API key, 8 s on a subscription CLI route) for the pick, else
     sends unassigned with a quiet notice — sending is never blocked. The pick
     is appended to `addressedAgentPubkeys`, so delivery is the ordinary `p`
     tag + `["mention", pk, "agent-address"]`; nothing extra is posted and no
     harness changes. Rust owns the rest (`src-tauri/src/message_routing/`):
     the aliased roster prompt (`a1…aN`, pubkeys never sent), caps, the strict
-    `{"to":[≤2 aliases]}` parser, the 2 s deadline, `buzz-agent::complete_once`
-    for the call, and the JSONL comparison log
+    `{"to":[≤2 aliases]}` parser, the per-route deadline (2 s API key, 12 s
+    CLI), the call itself, and the JSONL comparison log
     (`<app-data>/agents/routing-log/desktop.jsonl`, rotated at 5 MB). The
     roster's capability text comes from `messages/lib/routerRoster.ts`:
     persona description → kind:0 `about` → my own agent's system-prompt
@@ -671,11 +672,19 @@ with a TypeScript lookup table or an id comparison in a component.
     Settings › Models › Task models, stored in
     `<app-data>/agents/task-models.json` (never `GlobalAgentConfig`, so a
     change restarts nothing); its row renders provider + model through
-    `ModelEffortFields` with `effort: null` (the router never thinks). Only
-    API-key providers route (Anthropic, OpenAI, OpenRouter, keys from the
-    Providers tab's `GlobalAgentConfig.env_vars`, then the process env); a
-    subscription sign-in is never reused over HTTP, so a subscription-only
-    desktop shows Smart routing disabled with "Needs an API key · Add one in
+    `ModelEffortFields` with `effort: null` (the router never thinks). Its
+    Provider select lists every route explicitly, with real availability:
+    API keys (Anthropic, OpenAI, OpenRouter — `buzz-agent::complete_once`
+    over HTTP, keys from the Providers tab's `GlobalAgentConfig.env_vars`,
+    then the process env), "Codex (ChatGPT subscription)" (`codex exec`
+    one-shot) and "Claude Code (Claude subscription, slower)" (`claude -p`
+    one-shot). Subscription routes go only through the official CLI on its
+    own sign-in (`message_routing/cli.rs`): Buzz never reads, stores, or logs
+    subscription tokens, and Claude subscription OAuth is never reused over
+    HTTP (Anthropic policy). Automatic is fastest first: the global default
+    API-key provider, other API keys, Codex, Claude Code. Smart routing is
+    selectable when any route is ready; otherwise it is disabled with the
+    missing piece, e.g. "Sign in to Codex or Claude Code, or add an API key ·
     Models".
 
 ## Channel-only runtime controls

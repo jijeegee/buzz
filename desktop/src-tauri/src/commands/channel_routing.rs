@@ -147,10 +147,13 @@ pub async fn set_channel_routing(
         return Err("That channel routing mode isn't available yet.".to_string());
     }
     tokio::task::spawn_blocking(move || {
-        if mode == ChannelRoutingMode::DesktopRouter && !super::router_model_ready(&app)? {
-            return Err(
-                "Smart routing needs an API key. Add one in Settings › Models.".to_string(),
-            );
+        if mode == ChannelRoutingMode::DesktopRouter {
+            if let Some(reason) = super::router_not_ready(&app)? {
+                return Err(format!(
+                    "Smart routing can't call a model: {}. Set it up in Settings › Models.",
+                    reason.message()
+                ));
+            }
         }
         with_routing_store(&app, |records, runtimes| {
             if matches!(mode, ChannelRoutingMode::Host | ChannelRoutingMode::Lead) {

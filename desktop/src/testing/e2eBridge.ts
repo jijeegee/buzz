@@ -10089,31 +10089,50 @@ async function handleSetChannelRouting(args: {
 let mockMessageRoutingModel: { provider: string | null; model: string | null } =
   { provider: null, model: null };
 
-/** Mirrors the native `get_task_models`; the mock desktop has an Anthropic key. */
+/**
+ * Mirrors the native `get_task_models`; the mock desktop has an Anthropic
+ * key and no signed-in CLI.
+ */
 function mockTaskModelStatus() {
   const provider = mockMessageRoutingModel.provider ?? "anthropic";
+  const apiKey = (
+    id: string,
+    label: string,
+    ready: boolean,
+    defaultModel: string,
+  ) => ({
+    id,
+    label: `${label} API key`,
+    kind: "api-key" as const,
+    ready,
+    unavailableReason: ready ? null : `Needs an ${label} API key`,
+    defaultModel,
+    models: [] as string[],
+    sendWaitMs: 1_200,
+  });
+  const subscription = (id: string, label: string, name: string) => ({
+    id,
+    label,
+    kind: "subscription" as const,
+    ready: false,
+    unavailableReason: `Sign in to ${name}`,
+    defaultModel: id === "codex" ? "gpt-6-luna" : "haiku",
+    models: id === "codex" ? ["gpt-6-luna"] : ["haiku", "sonnet"],
+    sendWaitMs: 8_000,
+  });
   const providers = [
-    {
-      id: "anthropic",
-      label: "Anthropic",
-      hasKey: true,
-      defaultModel: "claude-haiku-4-5",
-    },
-    {
-      id: "openai",
-      label: "OpenAI",
-      hasKey: false,
-      defaultModel: "gpt-4.1-nano",
-    },
-    {
-      id: "openrouter",
-      label: "OpenRouter",
-      hasKey: false,
-      defaultModel: "anthropic/claude-haiku-4.5",
-    },
+    apiKey("anthropic", "Anthropic", true, "claude-haiku-4-5"),
+    apiKey("openai", "OpenAI", false, "gpt-4.1-nano"),
+    apiKey("openrouter", "OpenRouter", false, "anthropic/claude-haiku-4.5"),
+    subscription("codex", "Codex (ChatGPT subscription)", "Codex"),
+    subscription(
+      "claude-code",
+      "Claude Code (Claude subscription, slower)",
+      "Claude Code",
+    ),
   ];
   const entry = providers.find((option) => option.id === provider);
-  const ready = entry?.hasKey ?? false;
+  const ready = entry?.ready ?? false;
   const model = mockMessageRoutingModel.model ?? entry?.defaultModel ?? null;
   return {
     taskId: "message-routing",
@@ -10127,7 +10146,11 @@ function mockTaskModelStatus() {
         : model
       : null,
     ready,
-    notReadyReason: ready ? null : "Needs an API key",
+    notReadyReason: ready
+      ? null
+      : (entry?.unavailableReason ??
+        "Sign in to Codex or Claude Code, or add an API key"),
+    sendWaitMs: entry?.sendWaitMs ?? 1_200,
     providers,
   };
 }

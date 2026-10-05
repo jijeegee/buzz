@@ -38,17 +38,20 @@ export function useComposerAutoAssign({
   threadRoot: string | null;
 }) {
   const routerActive = useSmartRoutingActive();
-  const routerReady =
-    useQuery({
-      enabled: routerActive,
-      queryKey: taskModelsQueryKey,
-      queryFn: getTaskModels,
-      select: (tasks) =>
-        tasks.some(
-          (task) => task.taskId === MESSAGE_ROUTING_TASK_ID && task.ready,
-        ),
-      staleTime: 30_000,
-    }).data ?? false;
+  const routerModel = useQuery({
+    enabled: routerActive,
+    queryKey: taskModelsQueryKey,
+    queryFn: getTaskModels,
+    select: (tasks) =>
+      tasks.find(
+        (task) => task.taskId === MESSAGE_ROUTING_TASK_ID && task.ready,
+      ),
+    staleTime: 30_000,
+  }).data;
+  const routerReady = routerModel !== undefined;
+  // Subscription routes (Codex / Claude Code CLI) take ~5 s, so Enter waits
+  // longer for them than for an API key.
+  const sendWaitMs = routerModel?.sendWaitMs;
   const getRoster = useRouterRosterSource({
     enabled: routerActive,
     getIdentities: mentions.getMentionIdentities,
@@ -75,6 +78,7 @@ export function useComposerAutoAssign({
     nameOf,
     routerActive,
     routerReady,
+    sendWaitMs,
     threadRoot,
   });
 }
