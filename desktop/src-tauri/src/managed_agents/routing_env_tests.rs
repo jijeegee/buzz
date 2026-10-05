@@ -198,6 +198,10 @@ fn lead_env_overrides_user_rules_and_appends_the_addendum() {
         Some(Some(rules.to_string_lossy().into_owned()))
     );
     assert_eq!(
+        env_state(&command, CHANNEL_ROSTER_ENV_VAR),
+        Some(Some("true".to_string()))
+    );
+    assert_eq!(
         env_state(&command, SYSTEM_PROMPT_ENV_VAR),
         Some(Some("You are Coder.\n\nADDENDUM".to_string()))
     );

@@ -39,13 +39,15 @@ pub(crate) const LEAD_LISTEN_TAG: &str = "lead-listen";
 /// end silently; the base prompt otherwise asks every turn to post a result.
 pub(crate) const LEAD_LISTEN_ADDENDUM: &str = "## Listening as channel lead
 Turns of type `lead-listen` carry a message your owner posted without addressing you directly. You hear every such message, so many are not for you.
-An `@Name` in your owner's text is not an assignment: the name may be the object, not the assignee ('ask @A to review @B's change' is for A). Decide who should do it.
+You are this channel's coordinator first and a worker second: your owner made you lead so each request reaches the member best suited to it, not so you do everything yourself.
 Your final reply text is discarded: nobody ever sees it. Anything meant for the channel, including a clarifying question to your owner, must be posted with `buzz messages send`.
-Pick exactly one:
-1. Stay silent: post nothing when `Parsed:` lists mentions of someone else (they were addressed directly and already have it), the message continues a thread another agent is handling, or it is small talk or meant for a person. Silence is the correct result here, not a failure.
-2. Delegate: when another channel member is the better owner, post one short message: `@<Exact Name>` plus a self-contained restatement, sent with `--mention <pubkey>`. Do not do their work.
-3. Do it yourself: otherwise do the work and post the result (or post your clarifying question).
-Delegate only to channel members. First run `buzz channels members --channel <uuid>` (it prints the member pubkeys) and look up names and descriptions with `buzz users get --pubkey <hex> ...`. Every `@` name and `--mention` pubkey you post must come from that list. Your own subagents, tools, skills, and agents you know from anywhere else are not channel members: never @mention them. If no member fits, do it yourself.";
+Decide in this order and stop at the first match:
+1. Stay silent: small talk, thanks, an FYI or status update, a message addressed to a person by name, a message whose `Parsed:` lists mentions of someone else (they were addressed directly and already have it), or a follow-up in a thread another agent is handling. Post nothing; silence is the correct result here, not a failure.
+2. Delegate: the request's core skill (coding, design, research, ...) matches another agent member's name or description better than your own. Humans are never assignees. Post one short message per assignee: `@<Exact Name>` plus a self-contained restatement, sent with `--mention <pubkey>`. If the request splits into independent parts, give each part to its best member. Do not start their part yourself, and do not @mention members who are not assignees.
+3. Do it yourself: only when the request matches your own description best, or no member fits. Do the work and post the result, or post one clarifying question.
+An `@Name` in your owner's text is not an assignment: the name may be the object, not the assignee ('ask @A to review @B's change' is for A). Decide who should do it.
+When torn between delegating and doing it yourself, delegate.
+Delegate only to channel members. The `<channel-roster>` block in your context lists them with their pubkeys, descriptions, and whether each is a human or an agent. Only if that block is missing, run `buzz channels members --channel <uuid>` and look up names and descriptions with `buzz users get --pubkey <hex> ...`. Every `@` name and `--mention` pubkey you post must come from that list. Your own subagents, tools, skills, and agents you know from anywhere else are not channel members: never @mention them.";
 
 /// Why `record` cannot lead, or `None` when it can. Mirrors the Lead arm of
 /// `routing_role_for` so `set_channel_routing` refuses a Lead that would

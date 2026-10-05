@@ -10,7 +10,8 @@
 //!   base prompt.
 //! - [`RoutingRole::Lead`]: `BUZZ_ACP_SUBSCRIBE=config` with `BUZZ_ACP_CONFIG`
 //!   at the generated rules (`channel_routing::lead_rules`) and the listening
-//!   addendum appended to the system prompt ([`apply_lead_env`]).
+//!   addendum appended to the system prompt, plus `BUZZ_ACP_CHANNEL_ROSTER=true`
+//!   so the harness injects the `<channel-roster>` section ([`apply_lead_env`]).
 //! - Any role but Dispatcher: the dispatcher flag is removed, so a value
 //!   inherited from the desktop's own environment can never promote an agent.
 //!
@@ -47,6 +48,9 @@ pub(crate) const DISPATCHER_CONFIG_ENV_VAR: &str = "BUZZ_ACP_DISPATCHER_CONFIG";
 pub(crate) const SUBSCRIBE_ENV_VAR: &str = "BUZZ_ACP_SUBSCRIBE";
 /// Harness Config-mode rules file (`buzz-acp --config`).
 pub(crate) const CONFIG_ENV_VAR: &str = "BUZZ_ACP_CONFIG";
+/// Harness flag that injects the `<channel-roster>` section (`buzz-acp
+/// --channel-roster`). Set only for leads; reserved and removed otherwise.
+pub(crate) const CHANNEL_ROSTER_ENV_VAR: &str = "BUZZ_ACP_CHANNEL_ROSTER";
 /// `buzz-acp --subscribe` value that reads rules from `BUZZ_ACP_CONFIG`.
 const LEAD_SUBSCRIBE_MODE: &str = "config";
 /// Harness system prompt, inline (`buzz-acp --system-prompt`).
@@ -110,6 +114,7 @@ pub(crate) fn apply_routing_env(
         command.env_remove(DISPATCHER_ENV_VAR);
     }
     command.env_remove(DISPATCHER_CONFIG_ENV_VAR);
+    command.env_remove(CHANNEL_ROSTER_ENV_VAR);
 
     if role != RoutingRole::Lead {
         let generated = generated_dir.is_some_and(|dir| {
@@ -136,6 +141,7 @@ pub(crate) fn apply_lead_env(
 ) -> Result<(), String> {
     command.env(SUBSCRIBE_ENV_VAR, LEAD_SUBSCRIBE_MODE);
     command.env(CONFIG_ENV_VAR, rules_path);
+    command.env(CHANNEL_ROSTER_ENV_VAR, DISPATCHER_ENABLED);
 
     let base = match effective_env_value(command, SYSTEM_PROMPT_ENV_VAR) {
         Some(prompt) => prompt.to_string_lossy().into_owned(),
@@ -173,6 +179,7 @@ pub(crate) fn insert_routing_env(policy_env: &mut BTreeMap<String, String>, role
         policy_env.remove(DISPATCHER_ENV_VAR);
     }
     policy_env.remove(DISPATCHER_CONFIG_ENV_VAR);
+    policy_env.remove(CHANNEL_ROSTER_ENV_VAR);
 }
 
 /// The role a built provider payload actually carries, read back from its
