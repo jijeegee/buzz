@@ -242,7 +242,6 @@ function MessageComposerImpl({
   const syncAddressedAgentsFromTextRef = React.useRef<(text: string) => void>(
     () => {},
   );
-  const autoAssignTextRef = React.useRef<(text: string) => void>(() => {});
   disabledRef.current = disabled;
   isSendingRef.current = isSending;
   isUploadingRef.current = media.isUploading;
@@ -308,7 +307,6 @@ function MessageComposerImpl({
       if (!isSubmitLockedRef.current && !editTargetRef.current) {
         syncAddressedAgentsFromTextRef.current(text);
       }
-      autoAssignTextRef.current(text);
       mentions.updateMentionQuery(text, cursor);
       channelLinks.updateChannelQuery(text, cursor);
       emojiAutocomplete.updateEmojiQuery(text, cursor);
@@ -337,13 +335,11 @@ function MessageComposerImpl({
     addressedAgentCount: persistentAudience.pubkeys.length,
     channelId,
     channelType,
-    draftKey: effectiveDraftKey,
     isEditing: editTarget != null,
     mentions,
     selfPubkey: ownerPubkey,
     threadRoot: audienceContext?.rootContent ?? replyTarget?.body ?? null,
   });
-  autoAssignTextRef.current = autoAssign.onText;
   const addressPulse = useAddressMentionPulse();
   const {
     completeOptionsReveal: completeMentionOptionsReveal,

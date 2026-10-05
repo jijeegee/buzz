@@ -2,20 +2,17 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 // Smart routing's composer state through the real hook with an injected
-// router (no IPC, no model): debounced background preview, the text fence,
-// the bounded Enter wait, the per-draft call budget, and the
-// closed gate. Real timers: the debounce and the Enter wait are the
-// behavior under test.
+// router (no IPC, no model): one call per send at Enter, the bounded Enter
+// wait, and the closed gate. Real timers: the Enter wait is the behavior
+// under test. Typing never reaches the hook (the composer's onUpdate does not
+// call it; see smartRoutingComposerWiring.test.mjs).
 
 const React = (await import("react")).default;
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const {
-  AUTO_ASSIGN_DEBOUNCE_MS,
-  AUTO_ASSIGN_MAX_PREVIEW_CALLS,
-  AUTO_ASSIGN_SEND_WAIT_MS,
-  useAutoAssign,
-} = await import("./useAutoAssign.ts");
+const { AUTO_ASSIGN_SEND_WAIT_MS, useAutoAssign } = await import(
+  "./useAutoAssign.ts"
+);
 
 const CODER = "aa".repeat(32);
 const TRANSLATOR = "bb".repeat(32);
@@ -53,7 +50,6 @@ async function mount(overrides = {}) {
     addressedAgentCount: 0,
     channelId: "chan",
     channelType: "stream",
-    draftKey: "chan",
     getExplicitMentionCount: () => 0,
     getRoster: () => ROSTER,
     isEditing: false,
@@ -82,78 +78,35 @@ afterEach(async () => {
   calls = [];
 });
 
-const type = (hook, text) => act(async () => hook.current.onText(text));
 const settleCall = (index, result) =>
   act(async () => {
     calls[index].resolve(result);
     await Promise.resolve();
   });
-const sendNow = async (hook, text) => {
-  let sent;
-  await act(async () => {
-    sent = await hook.current.resolveForSend(text);
-  });
-  return sent;
-};
 
-test("typing debounces into one background preview call; Enter reuses its pick", async () => {
+test("the hook has no typing input; each Enter routes exactly once", async () => {
   const hook = await mount();
-  await type(hook, "fix");
-  await type(hook, "fix the");
-  await type(hook, "fix the windows build");
-  await sleep(AUTO_ASSIGN_DEBOUNCE_MS - 300);
-  assert.equal(calls.length, 0, "no call before the typing pause");
-  await sleep(400);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].input.message, "fix the windows build");
-  assert.equal(calls[0].input.phase, "preview");
-  assert.equal(calls[0].input.channelId, "chan");
-  assert.deepEqual(calls[0].input.humans, ["Jiho"]);
-
-  await settleCall(0, { decision: "assigned", pubkeys: [CODER] });
   assert.deepEqual(Object.keys(hook.current).sort(), [
     "notice",
-    "onText",
     "resolveForSend",
   ]);
-  assert.deepEqual(await sendNow(hook, "fix the windows build"), [CODER]);
-  assert.equal(calls.length, 1, "the cached answer is reused, no new call");
-});
+  assert.equal(calls.length, 0, "mounting never calls the router");
 
-test("a late answer for an older text is never used for the current one", async () => {
-  const hook = await mount();
-  await type(hook, "fix the windows build");
-  await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 50);
-  await type(hook, "thanks all");
-  await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 50);
-  assert.equal(calls.length, 2);
-
-  await settleCall(0, { decision: "assigned", pubkeys: [CODER] });
-  await settleCall(1, { decision: "none" });
-  assert.deepEqual(await sendNow(hook, "thanks all"), []);
-});
-
-test("an emptied draft forgets its cached picks", async () => {
-  const hook = await mount();
-  await type(hook, "translate this please");
-  await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 50);
-  await settleCall(0, { decision: "assigned", pubkeys: [TRANSLATOR] });
-  await type(hook, "");
-  await type(hook, "translate this please");
-  await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 50);
-  assert.equal(calls.length, 2);
-});
-
-test("Enter waits for the in-flight preview instead of calling again", async () => {
-  const hook = await mount();
-  await type(hook, "fix the windows build");
-  await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 50);
-  assert.equal(calls.length, 1);
   const sending = hook.current.resolveForSend("fix the windows build");
-  await sleep(200);
-  calls[0].resolve({ decision: "assigned", pubkeys: [CODER] });
-  assert.deepEqual(await sending, [CODER]);
+  await sleep(20);
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].input.message, "fix the windows build");
+  assert.equal(calls[0].input.phase, "send");
+  assert.equal(calls[0].input.channelId, "chan");
+  assert.deepEqual(calls[0].input.humans, ["Jiho"]);
+  await settleCall(0, { decision: "assigned", pubkeys: [CODER] });
+  assert.deepEqual(await sending, [CODER]);
+
+  const again = hook.current.resolveForSend("fix the windows build");
+  await sleep(20);
+  assert.equal(calls.length, 2, "a second send routes again, no cache");
+  await settleCall(1, { decision: "none" });
+  assert.deepEqual(await again, []);
 });
 
 test("Enter with no answer in time sends unassigned with a quiet notice", async () => {
@@ -217,24 +170,7 @@ test("a failed route sends unassigned; 'not configured' stays silent", async () 
   assert.equal(quiet.current.notice, null);
 });
 
-test("preview calls are capped per draft; Enter still gets one call", async () => {
-  const hook = await mount();
-  for (let i = 0; i <= AUTO_ASSIGN_MAX_PREVIEW_CALLS; i++) {
-    await type(hook, `message number ${i}`);
-    await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 30);
-  }
-  assert.equal(calls.length, AUTO_ASSIGN_MAX_PREVIEW_CALLS);
-  assert.ok(calls.every((call) => call.input.phase === "preview"));
-
-  const sending = hook.current.resolveForSend("the final text");
-  await sleep(20);
-  assert.equal(calls.length, AUTO_ASSIGN_MAX_PREVIEW_CALLS + 1);
-  assert.equal(calls.at(-1).input.phase, "send");
-  calls.at(-1).resolve({ decision: "none" });
-  await sending;
-});
-
-test("a closed gate never calls the router, while typing or on Enter", async () => {
+test("a closed gate never calls the router on Enter", async () => {
   for (const override of [
     { routerActive: false },
     { routerReady: false },
@@ -245,8 +181,6 @@ test("a closed gate never calls the router, while typing or on Enter", async () 
     { getRoster: () => ({ roster: [], humans: [] }) },
   ]) {
     const hook = await mount(override);
-    await type(hook, "fix the windows build");
-    await sleep(AUTO_ASSIGN_DEBOUNCE_MS + 30);
     let sent;
     await act(async () => {
       sent = await hook.current.resolveForSend("fix the windows build");

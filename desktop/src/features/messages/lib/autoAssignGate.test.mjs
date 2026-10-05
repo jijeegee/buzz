@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { autoAssignDecision, routableTextKey } from "./autoAssignGate.ts";
+import { autoAssignDecision } from "./autoAssignGate.ts";
 
 const OPEN = {
   routerActive: true,
@@ -61,10 +61,4 @@ test("two non-blank characters are enough", () => {
   assert.deepEqual(autoAssignDecision({ ...OPEN, text: " o k " }), {
     run: true,
   });
-});
-
-test("routableTextKey trims and collapses whitespace only", () => {
-  assert.equal(routableTextKey("  fix   the\nbuild  "), "fix the build");
-  assert.equal(routableTextKey("Fix"), "Fix");
-  assert.equal(routableTextKey(" \n "), "");
 });

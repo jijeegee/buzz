@@ -13,7 +13,7 @@ import { useRouterRosterSource } from "./useRouterRosterSource";
 
 /**
  * Wires Smart routing into one `MessageComposer`: the applied mode and model
- * readiness, the channel roster, and the draft-scoped `useAutoAssign` state.
+ * readiness, the channel roster, and the Enter-time `useAutoAssign` call.
  * Everything stays idle (no queries, no timers) unless Smart routing is the
  * applied channel routing.
  */
@@ -21,7 +21,6 @@ export function useComposerAutoAssign({
   addressedAgentCount,
   channelId,
   channelType,
-  draftKey,
   isEditing,
   mentions,
   selfPubkey,
@@ -30,7 +29,6 @@ export function useComposerAutoAssign({
   addressedAgentCount: number;
   channelId: string | null;
   channelType: string | null | undefined;
-  draftKey: string | null | undefined;
   isEditing: boolean;
   mentions: UseMentionsResult;
   selfPubkey: string | null;
@@ -66,7 +64,6 @@ export function useComposerAutoAssign({
     addressedAgentCount,
     channelId,
     channelType,
-    draftKey,
     getExplicitMentionCount,
     getRoster,
     isEditing,

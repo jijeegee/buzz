@@ -3,7 +3,7 @@ import { isAgentMentionChannelType } from "@/features/agents/lib/agentAutocomple
 /**
  * Whether Smart routing (channel routing mode `desktop-router`) may route
  * this composer's draft. Pure, so the full input space is table-tested; the
- * composer hook evaluates it while typing (preview) and again on Enter.
+ * composer hook evaluates it once, on Enter.
  *
  * Only the user's own composer sends reach this path — agents post through
  * `buzz-cli`, never this UI — so AI-authored messages are never routed.
@@ -63,9 +63,4 @@ export function autoAssignDecision(
   }
   if (input.rosterSize === 0) return { run: false, reason: "no-roster" };
   return { run: true };
-}
-
-/** Cache key for one draft text: trimmed, inner whitespace collapsed. */
-export function routableTextKey(text: string): string {
-  return text.trim().replace(/\s+/g, " ");
 }

@@ -34,13 +34,13 @@ test("the send awaits the Smart routing pick and addresses it like the tray", as
   );
 });
 
-test("every text change feeds the router; only the notice renders outside edit mode", async () => {
+test("typing never reaches the router; only the notice renders outside edit mode", async () => {
   const composer = await source("./MessageComposer.tsx");
   const onUpdate = composer.slice(
     composer.indexOf("onUpdate: ({"),
     composer.indexOf("const linkEditor"),
   );
-  assert.match(onUpdate, /autoAssignTextRef\.current\(text\);/);
+  assert.doesNotMatch(onUpdate, /autoAssign/);
   assert.match(
     composer,
     /editTarget == null \? \(\s*<ComposerAutoAssignRow notice=\{autoAssign\.notice\} \/>/,
