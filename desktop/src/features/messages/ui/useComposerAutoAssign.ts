@@ -1,13 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
 import { useSmartRoutingActive } from "@/features/agents/channelRoutingHooks";
 import type { UseMentionsResult } from "@/features/messages/lib/useMentions";
+import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
+import { selectRouterRecent } from "@/features/messages/lib/routerRecent";
 import { taskModelsQueryKey } from "@/features/settings/taskModelsHooks";
 import {
   getTaskModels,
   MESSAGE_ROUTING_TASK_ID,
 } from "@/shared/api/tauriMessageRouting";
+import type { RelayEvent } from "@/shared/api/types";
 import { useAutoAssign } from "./useAutoAssign";
 import { useRouterRosterSource } from "./useRouterRosterSource";
 
@@ -57,9 +60,24 @@ export function useComposerAutoAssign({
     (text: string) => getDraftMentionRefs(text).length,
     [getDraftMentionRefs],
   );
+  const queryClient = useQueryClient();
+  const getRecent = React.useCallback(
+    (message: RelayEvent) => {
+      const sentChannelId =
+        message.tags.find((tag) => tag[0] === "h")?.[1] ?? channelId;
+      if (!sentChannelId) return [];
+      const cached =
+        queryClient.getQueryData<RelayEvent[]>(
+          channelMessagesKey(sentChannelId),
+        ) ?? [];
+      return selectRouterRecent(cached, message, selfPubkey);
+    },
+    [channelId, queryClient, selfPubkey],
+  );
   return useAutoAssign({
     addressedAgentCount,
     channelId,
+    getRecent,
     channelType,
     getExplicitMentionCount,
     getRoster,

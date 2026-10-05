@@ -23,6 +23,17 @@ export type RouteMessageInput = {
   humans: string[];
   phase: RoutePhase;
   channelId: string | null;
+  /** Earlier messages in the same conversation, oldest first. */
+  recent?: RouterRecentMessage[];
+};
+
+/** One cached earlier message given to the router as context. */
+export type RouterRecentMessage = {
+  pubkey: string;
+  /** Written by this desktop's owner. */
+  isOwner: boolean;
+  content: string;
+  createdAt: number;
 };
 
 export type RouterSkipReason =

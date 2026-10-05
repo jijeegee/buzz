@@ -90,7 +90,12 @@ const settleCall = (index, result) =>
 const statusOf = (id) => status.getAutoRouteStatus(id);
 
 test("Enter never routes; the publish routes once and delivers the pick", async () => {
-  const hook = await mount();
+  const recent = [
+    { pubkey: CODER, isOwner: false, content: "done", createdAt: 1 },
+  ];
+  const hook = await mount({
+    getRecent: (message) => (message.id === "m1" ? recent : []),
+  });
   assert.deepEqual(Object.keys(hook.current), ["routeAfterSend"]);
   const onPublished = hook.current.routeAfterSend(
     "fix the windows build",
@@ -105,6 +110,7 @@ test("Enter never routes; the publish routes once and delivers the pick", async 
   assert.equal(calls[0].input.phase, "send");
   assert.equal(calls[0].input.channelId, "chan");
   assert.deepEqual(calls[0].input.humans, ["Jiho"]);
+  assert.deepEqual(calls[0].input.recent, recent, "read at publish time");
   assert.equal(statusOf("m1")?.status, "routing");
 
   await settleCall(0, { decision: "assigned", pubkeys: [CODER] });

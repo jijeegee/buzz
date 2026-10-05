@@ -9,6 +9,7 @@ import {
 import {
   type RouteMessageInput,
   type RouteMessageResult,
+  type RouterRecentMessage,
   routeMessage,
 } from "@/shared/api/tauriMessageRouting";
 import type { RelayEvent } from "@/shared/api/types";
@@ -32,6 +33,8 @@ export type AutoAssignOptions = {
   threadRoot: string | null;
   getExplicitMentionCount: (text: string) => number;
   getRoster: () => RouterRosterSnapshot;
+  /** Cached conversation before the sent message (read at publish time). */
+  getRecent?: (message: RelayEvent) => RouterRecentMessage[];
   /** Injected in tests; defaults to the `route_message` IPC. */
   route?: (input: RouteMessageInput) => Promise<RouteMessageResult>;
 };
@@ -86,8 +89,10 @@ export function useAutoAssign(options: AutoAssignOptions) {
         channelId: current.channelId,
       };
       const route = current.route ?? routeMessage;
+      const getRecent = current.getRecent;
       return (message) => {
-        void routeAndDeliver(message, input, route, deliver);
+        const recent = getRecent?.(message) ?? [];
+        void routeAndDeliver(message, { ...input, recent }, route, deliver);
       };
     },
     [],

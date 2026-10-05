@@ -1,8 +1,8 @@
 //! Smart routing (channel routing mode `desktop-router`): this desktop picks
 //! the agent for each of the user's own unmentioned channel sends with one
-//! cheap model call, and the composer carries the pick as an ordinary
-//! agent address (`p` tag + `agent-address` mention). Nothing is posted to
-//! the channel and no harness changes are involved.
+//! cheap model call after the message posts, and delivers the pick with a
+//! same-body edit that newly `p`-tags it (+ an `auto-route` mention). No
+//! extra message is posted and no harness changes are involved.
 //!
 //! - [`model`] resolves the route: an API key (Providers tab) or a
 //!   signed-in Codex / Claude Code CLI (Settings › Models › Task models).
@@ -65,6 +65,24 @@ pub struct RouteMessageInput {
     pub phase: RoutePhase,
     #[serde(default)]
     pub channel_id: Option<String>,
+    /// Recent channel (or thread) messages before this one, from the
+    /// desktop's cache: the frontend keeps the last 3 hours, and the prompt
+    /// re-caps count and length.
+    #[serde(default)]
+    pub recent: Vec<RouterRecentMessage>,
+}
+
+/// One earlier message shown to the router as conversation context.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RouterRecentMessage {
+    /// Author pubkey; a roster agent is shown by its alias, never this.
+    pub pubkey: String,
+    /// Written by this desktop's owner.
+    #[serde(default)]
+    pub is_owner: bool,
+    pub content: String,
+    pub created_at: u64,
 }
 
 /// Why a call produced no decision. Distinct from [`RouteMessageResult::NoFit`]
