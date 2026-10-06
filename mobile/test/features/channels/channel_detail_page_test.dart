@@ -2485,7 +2485,7 @@ void main() {
       final starSemantics = tester.getSemantics(
         find.byKey(const ValueKey('channel-details-star-action')),
       );
-      expect(starSemantics.label, 'Star');
+      expect(starSemantics.label, 'Pin');
       expect(starSemantics.flagsCollection.isButton, isTrue);
       expect(
         starSemantics.flagsCollection.isEnabled.toString(),
@@ -2528,7 +2528,7 @@ void main() {
         final muteAction = find.byKey(
           const ValueKey('channel-details-mute-action'),
         );
-        expect(find.text('Star'), findsOneWidget);
+        expect(find.text('Pin'), findsOneWidget);
         var star = tester.widget<LucideStarIcon>(find.byType(LucideStarIcon));
         expect(star.filled, isFalse);
         expect(find.text('Mute'), findsOneWidget);
@@ -2537,7 +2537,7 @@ void main() {
         await tester.tap(starAction);
         await tester.pump();
 
-        expect(find.text('Unstar'), findsOneWidget);
+        expect(find.text('Unpin'), findsOneWidget);
         star = tester.widget<LucideStarIcon>(find.byType(LucideStarIcon));
         expect(star.filled, isTrue);
         expect(star.color, AppTheme.light().colorScheme.primary);
@@ -2553,7 +2553,7 @@ void main() {
         await tester.tap(muteAction);
         await tester.pump();
 
-        expect(find.text('Star'), findsOneWidget);
+        expect(find.text('Pin'), findsOneWidget);
         expect(find.text('Mute'), findsOneWidget);
         star = tester.widget<LucideStarIcon>(find.byType(LucideStarIcon));
         expect(star.filled, isFalse);
@@ -2591,7 +2591,7 @@ void main() {
       final editAction = find.byKey(
         const ValueKey('channel-details-edit-action'),
       );
-      expect(find.text('Star'), findsOneWidget);
+      expect(find.text('Pin'), findsOneWidget);
       expect(find.text('Mute'), findsOneWidget);
       expect(find.text('Edit'), findsOneWidget);
       expect(tester.getSize(starAction).height, greaterThan(84));
@@ -10275,7 +10275,7 @@ void main() {
       expect(find.text('General discussion'), findsOneWidget);
       expect(find.text('5 members'), findsOneWidget);
       expect(find.text('Preferences'), findsNothing);
-      expect(find.text('Star'), findsOneWidget);
+      expect(find.text('Pin'), findsOneWidget);
       expect(find.text('Mute'), findsOneWidget);
       expect(find.text('Edit'), findsOneWidget);
       expect(find.text('Actions'), findsNothing);

@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/clipboard_utils.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/relay/relay_provider.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import '../../shared/widgets/avatar_image.dart';
@@ -78,15 +79,20 @@ class ChannelActionsSheet extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pinScope = useMemoized(
+      () => (ref.read(relayConfigProvider).baseUrl, ref.read(myPubkeyProvider)),
+      const [],
+    );
+    bool samePinScope() =>
+        pinScope ==
+        (ref.read(relayConfigProvider).baseUrl, ref.read(myPubkeyProvider));
     final displayedChannel = useState(channel);
     final currentChannel = displayedChannel.value;
     final isMuted =
         ref.watch(channelMutesProvider).store.channels[channel.id]?.muted ==
         true;
-    final isStarred =
-        !channel.isDm &&
-        ref.watch(channelStarsProvider).store.channels[channel.id]?.starred ==
-            true;
+    final stars = ref.watch(channelStarsProvider);
+    final isStarred = stars.store.channels[channel.id]?.starred == true;
     final membersAsync = channel.isDm
         ? const AsyncValue<List<ChannelMember>>.data([])
         : ref.watch(channelMembersProvider(channel.id));
@@ -136,17 +142,22 @@ class ChannelActionsSheet extends HookConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (!channel.isDm) ...[
+              ...[
                 _ChannelQuickActionsRow(
                   isStarred: isStarred,
                   isUnread: isUnread,
-                  onToggleStar: () {
-                    close();
-                    final notifier = ref.read(channelStarsProvider.notifier);
-                    isStarred
-                        ? notifier.unstarChannel(channel.id)
-                        : notifier.starChannel(channel.id);
-                  },
+                  onToggleStar: !stars.isReady
+                      ? null
+                      : () {
+                          if (!samePinScope()) return;
+                          close();
+                          final notifier = ref.read(
+                            channelStarsProvider.notifier,
+                          );
+                          isStarred
+                              ? notifier.unstarChannel(channel.id)
+                              : notifier.starChannel(channel.id);
+                        },
                   onToggleRead: () {
                     close();
                     final timestamp = dateTimeToUnixSeconds(
@@ -178,7 +189,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 ),
                 const SizedBox(height: Grid.xs),
               ],
-              if (!channel.isDm)
+              if (channel.isForum)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.folderInput),
@@ -364,7 +375,7 @@ class _ChannelQuickActionsRow extends StatelessWidget {
 
   final bool isStarred;
   final bool isUnread;
-  final VoidCallback onToggleStar;
+  final VoidCallback? onToggleStar;
   final VoidCallback onToggleRead;
 
   @override
@@ -372,8 +383,8 @@ class _ChannelQuickActionsRow extends StatelessWidget {
     children: [
       Expanded(
         child: _ChannelQuickAction(
-          icon: isStarred ? LucideIcons.starOff : LucideIcons.star,
-          label: isStarred ? 'Unstar' : 'Star',
+          icon: isStarred ? LucideIcons.pinOff : LucideIcons.pin,
+          label: isStarred ? 'Unpin' : 'Pin',
           onTap: onToggleStar,
         ),
       ),
@@ -398,15 +409,16 @@ class _ChannelQuickAction extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: () {
-      unawaited(HapticFeedback.lightImpact());
-      onTap();
-    },
-    behavior: HitTestBehavior.opaque,
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap == null
+        ? null
+        : () {
+            unawaited(HapticFeedback.lightImpact());
+            onTap?.call();
+          },
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,

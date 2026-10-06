@@ -188,6 +188,55 @@ async fn signup_then_new_device_restores_identical_signer_and_existing_link_keep
     let _ = task.await;
 }
 
+// Public secp256k1 test vector, never a real account. Flutter exercises its
+// production upload and restore against this same wire representation.
+#[tokio::test]
+async fn mobile_first_and_desktop_first_share_the_exact_backup_wire_identity() {
+    let fixture: Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../mobile/test/fixtures/google_key_backup_interop.json"
+    )))
+    .unwrap();
+    let expected = Keys::parse(fixture["secret_key"].as_str().unwrap()).unwrap();
+    for mobile_first in [true, false] {
+        let relay = Relay::default();
+        if mobile_first {
+            *relay.key.lock().unwrap() = Some(expected.clone());
+        }
+        let (origin, task) = server(relay.clone()).await;
+        let client = crate::app_state::build_media_fetch_client().unwrap();
+        let local = if mobile_first {
+            Keys::generate()
+        } else {
+            expected.clone()
+        };
+        let restored = resolve_backup(
+            &client,
+            &origin,
+            "test-session",
+            "account-a",
+            &local,
+            true,
+            |_| {
+                assert!(!mobile_first);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(restored.public_key().to_hex(), fixture["pubkey"]);
+        assert_eq!(restored.secret_key().to_secret_hex(), fixture["secret_key"]);
+        let (_, Json(wire)) = mock_restore(State(relay.clone())).await;
+        assert_eq!(wire, fixture);
+        assert_eq!(
+            relay.uploads.load(std::sync::atomic::Ordering::SeqCst),
+            usize::from(!mobile_first)
+        );
+        task.abort();
+        let _ = task.await;
+    }
+}
+
 #[tokio::test]
 async fn restore_or_status_failure_and_established_key_conflict_never_upload() {
     for (fail_restore, fail_status) in [(true, false), (false, true), (false, false)] {

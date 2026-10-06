@@ -464,13 +464,18 @@ class _TokenGateIfNeeded extends ConsumerWidget {
   }
 }
 
-/// New communities join through relay token sign-in. NIP-AB device pairing
-/// was removed; communities stored with a legacy key keep working.
-class _OnboardingHome extends StatelessWidget {
+/// Google creates or restores a signing key on any first device.
+class _OnboardingHome extends ConsumerWidget {
   const _OnboardingHome();
 
   @override
-  Widget build(BuildContext context) => const TokenSignInPage();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final community = ref.watch(authProvider).value?.community;
+    return TokenSignInPage(
+      defaultCommunity: community == null,
+      backupOrigin: community?.relayUrl,
+    );
+  }
 }
 
 class _SplashScreen extends StatelessWidget {

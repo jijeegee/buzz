@@ -218,3 +218,22 @@ lib/
 - **Spacing:** `Grid` tokens for consistent spacing
 - **Linting:** `flutter_lints` + `riverpod_lint` via `custom_lint`
 - **Feature isolation:** No cross-feature imports except `shared/`
+
+## Google first-device development flow
+
+`just mobile-dev` and `just mobile-build-android` pass the explicit recovery
+service origin through `BUZZ_KEY_BACKUP_ORIGIN`, defaulting in those development
+recipes to `https://jihobuzz.duckdns.org:8443`. Override that environment variable
+for another deployment. Direct Flutter/IDE launches use
+`--dart-define-from-file=config/dev.json`, or explicitly pass
+`--dart-define=BUZZ_KEY_BACKUP_ORIGIN=https://your-service.example`.
+Generic auth code has no hardcoded custody host; release builds must supply their
+chosen HTTPS recovery origin. A build without one retains the custom-server flow.
+
+On a first phone, Google authorizes the existing server custody binding for a
+locally generated Nostr key. A returning device restores the same key. The app
+checks signed relay AUTH before saving/entering the default community; Google
+backup alone does not grant membership on a closed relay. No desktop pairing or
+manual key transport is required. Desktop provider/model setup remains desktop
+only. See [the parity plan](../docs/plans/mobile-parity-stage12.md) for verification
+and the separate two-device acceptance steps.

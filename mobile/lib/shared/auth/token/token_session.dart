@@ -178,6 +178,9 @@ class TokenSessionController {
 
   /// Account sessions for custody never select a messaging identity.
   String get identityMode => _identityMode;
+
+  /// Changes on login, logout and disposal; custody results must stay in it.
+  int get generation => _generation;
   _AccessToken? _access;
   int _failures = 0;
   Timer? _timer;

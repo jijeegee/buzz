@@ -12,12 +12,16 @@ class ChannelStarsState {
   final bool isReady;
   final ChannelStarStore store;
 
+  /// A local load failure with the original durable data retained for retry.
+  final String? errorMessage;
+
   /// Bumped on every change to force downstream rebuilds.
   final int version;
 
   const ChannelStarsState({
     this.isReady = false,
     this.store = const ChannelStarStore(),
+    this.errorMessage,
     this.version = 0,
   });
 }
@@ -66,6 +70,7 @@ class ChannelStarsNotifier extends Notifier<ChannelStarsState> {
     late final ChannelStarsManager manager;
     manager = ChannelStarsManager(
       pubkey: pubkey,
+      origin: relayConfig.baseUrl,
       prefs: prefs,
       crypto: crypto,
       relaySession: ref.read(relaySessionProvider.notifier),
@@ -81,14 +86,25 @@ class ChannelStarsNotifier extends Notifier<ChannelStarsState> {
     });
 
     ref.onDispose(() {
-      manager.dispose();
+      manager.dispose(flushPending: false);
       if (_manager == manager) {
         _manager = null;
       }
     });
 
     Future.microtask(() async {
-      await manager.initialize();
+      try {
+        await manager.initialize();
+      } catch (_) {
+        if (_manager != manager) return;
+        state = ChannelStarsState(
+          store: manager.store,
+          errorMessage:
+              'Could not load personal pins. Retry to keep your saved pins.',
+          version: state.version + 1,
+        );
+        return;
+      }
       if (_manager != manager) return;
       _emitManagerState(manager);
     });

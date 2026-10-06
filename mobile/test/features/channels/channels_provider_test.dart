@@ -1,3 +1,5 @@
+import 'package:buzz/features/channels/channel_mutes/channel_mutes_provider.dart';
+import 'package:buzz/features/channels/channel_mutes/channel_mutes_storage.dart';
 import 'dart:async';
 
 import 'package:fake_async/fake_async.dart';
@@ -1625,6 +1627,57 @@ void main() {
     expect(members.every((member) => member.joinedAt == joinedAt), isTrue);
   });
 
+  for (final scenario in ['self', 'muted', 'unfollowed reply']) {
+    test(
+      'Chats recency includes $scenario without changing unread eligibility',
+      () async {
+        NostrEvent message(int at, {int kind = EventKind.streamMessageV2}) =>
+            NostrEvent(
+              id: 'event-$at',
+              pubkey: scenario == 'self' ? myPk : 'alice',
+              createdAt: at,
+              kind: kind,
+              content: 'message',
+              sig: 'sig',
+              tags: [
+                ['h', _channelA],
+                if (scenario == 'unfollowed reply') ...[
+                  ['e', 'other-root', '', 'root'],
+                  ['e', 'other-root', '', 'reply'],
+                ],
+              ],
+            );
+        final session = _FakeRelaySession(
+          memberships: [_membership(_channelA, myPk)],
+          metadata: [_meta(id: _channelA, name: 'general', createdAt: 900)],
+          recentMessages: [message(20)],
+        );
+        final container = _buildContainer(
+          session: session,
+          mutes: scenario == 'muted' ? _MutedChat.new : null,
+        );
+        addTearDown(container.dispose);
+        await container.read(channelsProvider.future);
+        await _settle();
+        int? recent() => container
+            .read(channelsProvider)
+            .requireValue
+            .single
+            .lastMessageAt
+            ?.millisecondsSinceEpoch;
+        expect(recent(), 20000);
+        session.emit(message(30));
+        expect(recent(), 30000);
+        session.emit(message(1000, kind: EventKind.streamMessageEdit));
+        expect(recent(), 30000);
+        expect(
+          container.read(channelsProvider.notifier).latestObservedByChannel,
+          isEmpty,
+        );
+      },
+    );
+  }
+
   test('live channel events update channel lastMessageAt', () async {
     final session = _FakeRelaySession(
       memberships: [_membership(_channelA, myPk)],
@@ -1635,23 +1688,29 @@ void main() {
 
     await container.read(channelsProvider.future);
 
-    // Emit a live message event on channelA.
-    session.emit(
-      NostrEvent(
-        id: 'event-1',
-        pubkey: 'alice',
-        createdAt: 20,
-        kind: EventKind.streamMessageV2,
-        tags: const [
-          ['h', _channelA],
-        ],
-        content: 'new message',
-        sig: 'sig',
-      ),
+    // The mock transport retains the same message returned by later history.
+    final message = NostrEvent(
+      id: 'event-1',
+      pubkey: 'alice',
+      createdAt: 20,
+      kind: EventKind.streamMessageV2,
+      tags: const [
+        ['h', _channelA],
+      ],
+      content: 'new message',
+      sig: 'sig',
     );
+    session.recentMessages = [message];
+    session.emit(message);
 
     final channels = container.read(channelsProvider).value!;
     expect(channels.single.lastMessageAt?.millisecondsSinceEpoch, 20 * 1000);
+    // A later metadata edit must keep the actual last-message timestamp.
+    session.metadata = [_meta(id: _channelA, name: 'renamed', createdAt: 900)];
+    await container.read(channelsProvider.notifier).refresh();
+    final renamed = container.read(channelsProvider).requireValue.single;
+    expect(renamed.name, 'renamed');
+    expect(renamed.lastMessageAt?.millisecondsSinceEpoch, 20 * 1000);
   });
 
   group('latest-message batch failure', () {
@@ -2392,11 +2451,13 @@ NostrEvent _meta({
 ProviderContainer _buildContainer({
   required _FakeRelaySession session,
   ReadStateNotifier Function() readState = _ReadyReadState.new,
+  ChannelMutesNotifier Function()? mutes,
 }) {
   return ProviderContainer(
     retry: (_, _) => null,
     overrides: [
       readStateProvider.overrideWith(readState),
+      if (mutes != null) channelMutesProvider.overrideWith(mutes),
       appLifecycleProvider.overrideWith(() => _FakeAppLifecycleNotifier()),
       relaySessionProvider.overrideWith(() => session),
       // Route the pubkey through a mutable notifier so tests can switch the
@@ -2959,4 +3020,14 @@ class _FakeRelaySession extends RelaySessionNotifier {
 class _FakeAppLifecycleNotifier extends AppLifecycleNotifier {
   @override
   AppLifecycleState build() => AppLifecycleState.resumed;
+}
+
+class _MutedChat extends ChannelMutesNotifier {
+  @override
+  ChannelMutesState build() => const ChannelMutesState(
+    isReady: true,
+    store: ChannelMuteStore(
+      channels: {_channelA: ChannelMuteEntry(muted: true, updatedAt: 1)},
+    ),
+  );
 }

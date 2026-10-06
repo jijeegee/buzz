@@ -30,6 +30,9 @@ class ChannelStarsCrypto {
 
 class ChannelStarsManager {
   final String pubkey;
+
+  /// Community scope; null retains the legacy storage API for old callers.
+  final String? origin;
   final ChannelStarsStorage _storage;
 
   /// NIP-44 key; `null` on a token community (no nsec), which keeps this
@@ -66,6 +69,7 @@ class ChannelStarsManager {
 
   ChannelStarsManager({
     required this.pubkey,
+    this.origin,
     required SharedPreferences prefs,
     required ChannelStarsCrypto? crypto,
     required RelaySessionNotifier? relaySession,
@@ -81,12 +85,16 @@ class ChannelStarsManager {
        _remoteEnabled = remoteEnabled && crypto != null,
        _onChanged = onChanged,
        _startupRetryBaseDelay = startupRetryBaseDelay,
-       _store = ChannelStarsStorage(prefs).read(pubkey);
+       _store = ChannelStarsStorage(prefs).read(pubkey, origin: origin);
 
   ChannelStarStore get store => _store;
 
   Future<void> initialize() async {
     if (_disposed) return;
+
+    final stored = await _storage.load(pubkey, origin: origin);
+    if (_disposed) return;
+    _store = mergeStores(stored, _store);
 
     if (!_remoteEnabled || _relaySession == null) {
       _onChanged();
@@ -94,7 +102,7 @@ class ChannelStarsManager {
     }
 
     await _syncWithRelay();
-    _onChanged();
+    if (!_disposed) _onChanged();
   }
 
   /// Re-reads the retained head once, e.g. on app foreground resume, to catch
@@ -350,7 +358,9 @@ class ChannelStarsManager {
 
     // Read-before-write: merge remote state before publishing
     final events = await _fetchHead();
+    if (_disposed && !allowDisposed) return;
     if (events != null) await _applyEvents(events);
+    if (_disposed && !allowDisposed) return;
     if (!_disposed) _onChanged();
 
     // No-op suppression: skip if nothing changed
@@ -388,7 +398,7 @@ class ChannelStarsManager {
 
   Future<bool> _persist() async {
     try {
-      if (await _storage.write(pubkey, _store)) return true;
+      if (await _storage.write(pubkey, _store, origin: origin)) return true;
       debugPrint('[ChannelStarsManager] persist returned false');
     } catch (error) {
       debugPrint('[ChannelStarsManager] persist failed: $error');

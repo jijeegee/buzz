@@ -931,7 +931,7 @@ mobile-build-android:
     #!/usr/bin/env bash
     set -euo pipefail
     ./scripts/mobile-worktree-overrides.sh
-    set -- build apk --debug --no-pub
+    set -- build apk --debug --no-pub --dart-define="BUZZ_KEY_BACKUP_ORIGIN=${BUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}"
     if [[ -n "${BUZZ_PUSH_GATEWAY_URL:-}" ]]; then
         set -- "$@" --dart-define="BUZZ_PUSH_GATEWAY_URL=${BUZZ_PUSH_GATEWAY_URL}"
     fi
@@ -953,7 +953,7 @@ mobile-dev:
     if [[ -z "$gateway_url" && -f "$overrides_file" ]]; then
         gateway_url="$(sed -nE 's/^[[:space:]]*BUZZ_PUSH_GATEWAY_URL[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$/\1/p' "$overrides_file" | tail -n 1 | sed 's/\$()//g')"
     fi
-    set -- run
+    set -- run --dart-define="BUZZ_KEY_BACKUP_ORIGIN=${BUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}"
     if [[ -n "$gateway_url" ]]; then
         set -- "$@" --dart-define="BUZZ_PUSH_GATEWAY_URL=${gateway_url}"
     fi

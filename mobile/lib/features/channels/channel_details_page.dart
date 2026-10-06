@@ -40,6 +40,10 @@ class ChannelDetailsPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pinScope = useMemoized(
+      () => (ref.read(relayConfigProvider).baseUrl, ref.read(myPubkeyProvider)),
+      const [],
+    );
     final displayedChannel = useState(channel);
     final resolvedChannel = displayedChannel.value;
     final scrollController = useScrollController();
@@ -223,6 +227,10 @@ class ChannelDetailsPage extends HookConsumerWidget {
     }
 
     void toggleStar() {
+      if (pinScope !=
+          (ref.read(relayConfigProvider).baseUrl, ref.read(myPubkeyProvider))) {
+        return;
+      }
       final notifier = ref.read(channelStarsProvider.notifier);
       isStarred
           ? notifier.unstarChannel(resolvedChannel.id)
@@ -335,7 +343,8 @@ class ChannelDetailsPage extends HookConsumerWidget {
                             ? context.colors.primary
                             : context.colors.onSurface,
                       ),
-                      label: isStarred ? 'Unstar' : 'Star',
+                      label: isStarred ? 'Unpin' : 'Pin',
+                      isEnabled: ref.watch(channelStarsProvider).isReady,
                       onTap: toggleStar,
                     ),
                   ),

@@ -84,6 +84,21 @@ class _ChannelTile extends ConsumerWidget {
                 ],
               ),
             ),
+            if (ref
+                    .watch(channelStarsProvider)
+                    .store
+                    .channels[channel.id]
+                    ?.starred ==
+                true) ...[
+              const SizedBox(width: Grid.xxs),
+              Icon(
+                LucideIcons.pin,
+                size: 14,
+                semanticLabel: 'Pinned',
+                key: ValueKey('chat-pinned-${channel.id}'),
+                color: contentColor,
+              ),
+            ],
             if (channel.isEphemeral) ...[
               const SizedBox(width: Grid.xxs),
               _EphemeralBadge(channel: channel),

@@ -1,3 +1,6 @@
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:buzz/features/channels/channel_stars/channel_stars_provider.dart';
+import '../../shared/community/community_storage_test.dart';
 import 'dart:async';
 
 import '../profile/presence_snapshot_test.dart'
@@ -35,6 +38,7 @@ import 'package:buzz/shared/widgets/masked_avatar_badge.dart';
 import 'package:buzz/shared/widgets/skeleton.dart';
 
 part 'channels_page_test/presence_tests.dart';
+part 'channels_page_test/chats_parity_tests.dart';
 
 void main() {
   Widget buildTestable({
@@ -101,6 +105,8 @@ void main() {
       ),
     );
   }
+
+  chatsParityTests((overrides) => buildTestable(overrides: overrides));
 
   final testChannels = [
     Channel(
@@ -196,124 +202,112 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('shows grouped channel list when data loads', (tester) async {
-    // Valid fixture keys whose npub encodings were verified against the
-    // NIP-19 codec independently of the code under test.
-    const a11ce =
-        'a11ce00000000000000000000000000000000000000000000000000000000000';
-    const b0b =
-        'b0b0000000000000000000000000000000000000000000000000000000000000';
-    final unnamedDm = Channel(
-      id: 'dm-unnamed',
-      name: 'DM',
-      channelType: 'dm',
-      visibility: 'open',
-      description: 'Direct message',
-      createdBy: 'aabb',
-      createdAt: DateTime(2025),
-      memberCount: 2,
-      participants: [shortPubkey(a11ce), 'Test'],
-      participantPubkeys: const [a11ce, 'aabb'],
-      isMember: true,
-    );
-    final groupDm = Channel(
-      id: 'dm-group',
-      name: 'Group DM',
-      channelType: 'dm',
-      visibility: 'open',
-      description: 'Direct message',
-      createdBy: 'aabb',
-      createdAt: DateTime(2025),
-      memberCount: 3,
-      participants: [shortPubkey(a11ce), shortPubkey(b0b), 'Test'],
-      participantPubkeys: const [a11ce, b0b, 'aabb'],
-      isMember: true,
-    );
-    await tester.pumpWidget(
-      buildTestable(
-        overrides: [
-          channelsProvider.overrideWith(
-            () => _FakeNotifier([...testChannels, unnamedDm, groupDm]),
-          ),
-        ],
-      ),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'shows one Chats list with preserved channel and DM presentation',
+    (tester) async {
+      // Valid fixture keys whose npub encodings were verified against the
+      // NIP-19 codec independently of the code under test.
+      const a11ce =
+          'a11ce00000000000000000000000000000000000000000000000000000000000';
+      const b0b =
+          'b0b0000000000000000000000000000000000000000000000000000000000000';
+      final unnamedDm = Channel(
+        id: 'dm-unnamed',
+        name: 'DM',
+        channelType: 'dm',
+        visibility: 'open',
+        description: 'Direct message',
+        createdBy: 'aabb',
+        createdAt: DateTime(2025),
+        memberCount: 2,
+        participants: [shortPubkey(a11ce), 'Test'],
+        participantPubkeys: const [a11ce, 'aabb'],
+        isMember: true,
+      );
+      final groupDm = Channel(
+        id: 'dm-group',
+        name: 'Group DM',
+        channelType: 'dm',
+        visibility: 'open',
+        description: 'Direct message',
+        createdBy: 'aabb',
+        createdAt: DateTime(2025),
+        memberCount: 3,
+        participants: [shortPubkey(a11ce), shortPubkey(b0b), 'Test'],
+        participantPubkeys: const [a11ce, b0b, 'aabb'],
+        isMember: true,
+      );
+      await tester.pumpWidget(
+        buildTestable(
+          overrides: [
+            channelsProvider.overrideWith(
+              () => _FakeNotifier([...testChannels, unnamedDm, groupDm]),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('general'), findsOneWidget);
-    expect(find.text('design-forum'), findsNothing);
-    expect(find.text('Alice'), findsOneWidget);
-    expect(find.text('Channels'), findsOneWidget);
-    expect(find.text('FORUMS'), findsNothing);
-    expect(find.text('DMs'), findsOneWidget);
-    expect(find.text('Community'), findsOneWidget);
-    expect(find.byTooltip('Create or start conversation'), findsOneWidget);
-    expect(find.byTooltip('Channels options'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.ellipsisVertical), findsWidgets);
-    expect(find.byIcon(LucideIcons.arrowUpDown), findsNothing);
-    expect(find.byTooltip('DMs options'), findsOneWidget);
+      expect(find.text('general'), findsOneWidget);
+      expect(find.text('design-forum'), findsNothing);
+      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('Chats'), findsOneWidget);
+      expect(find.text('FORUMS'), findsNothing);
+      expect(find.text('DMs'), findsNothing);
+      expect(find.text('Community'), findsOneWidget);
+      expect(find.byTooltip('Create or start conversation'), findsOneWidget);
+      expect(find.byTooltip('Channels options'), findsNothing);
+      expect(find.byIcon(LucideIcons.ellipsisVertical), findsNothing);
+      expect(find.byIcon(LucideIcons.arrowUpDown), findsNothing);
+      expect(find.byTooltip('DMs options'), findsNothing);
 
-    // DM identity display: the unnamed counterpart tile renders its
-    // compact npub label, but its avatar initial stays keyed to the hex
-    // public key — never the `N` the npub label starts with. The named
-    // tile keeps its authored initial from the positional participant
-    // label even without a cached profile.
-    expect(find.text(shortPubkey(a11ce)), findsOneWidget);
-    expect(_dmTileAvatarInitial(tester, shortPubkey(a11ce)), 'A');
-    expect(_dmTileAvatarInitial(tester, 'Alice'), 'A');
-    // A multi-counterpart DM still takes the group count badge — the
-    // single-counterpart avatar above is not shared with it.
-    final groupTile = _dmTileFor('${shortPubkey(a11ce)}, ${shortPubkey(b0b)}');
-    expect(
-      find.descendant(of: groupTile, matching: find.byType(AvatarImage)),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: groupTile, matching: find.text('2')),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.byTooltip('Channels options'));
-    await tester.pumpAndSettle();
-    expect(find.text('Sort: Recent'), findsOneWidget);
-    expect(find.text('Sort: A–Z'), findsOneWidget);
-    final popover = find.byKey(const ValueKey('sort-popover-Channels'));
-    expect(popover, findsOneWidget);
-    expect(
-      find.descendant(of: popover, matching: find.byType(PopupMenuDivider)),
-      findsNothing,
-    );
-    final selectedCheck = find.byKey(const ValueKey('sort-selected-check'));
-    expect(selectedCheck, findsOneWidget);
-    expect(
-      tester.getCenter(selectedCheck).dx,
-      greaterThan(tester.getCenter(find.text('Sort: A–Z')).dx),
-    );
-
-    for (final label in ['general', 'Alice']) {
-      final text = tester.widget<Text>(find.text(label));
-      expect(text.style?.fontSize, contentListTitleTextStyle.fontSize);
-      expect(text.style?.height, contentListTitleTextStyle.height);
+      // DM identity display: the unnamed counterpart tile renders its
+      // compact npub label, but its avatar initial stays keyed to the hex
+      // public key — never the `N` the npub label starts with. The named
+      // tile keeps its authored initial from the positional participant
+      // label even without a cached profile.
+      expect(find.text(shortPubkey(a11ce)), findsOneWidget);
+      expect(_dmTileAvatarInitial(tester, shortPubkey(a11ce)), 'A');
+      expect(_dmTileAvatarInitial(tester, 'Alice'), 'A');
+      // A multi-counterpart DM still takes the group count badge — the
+      // single-counterpart avatar above is not shared with it.
+      final groupTile = _dmTileFor(
+        '${shortPubkey(a11ce)}, ${shortPubkey(b0b)}',
+      );
       expect(
-        text.style?.color,
+        find.descendant(of: groupTile, matching: find.byType(AvatarImage)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: groupTile, matching: find.text('2')),
+        findsOneWidget,
+      );
+
+      for (final label in ['general', 'Alice']) {
+        final text = tester.widget<Text>(find.text(label));
+        expect(text.style?.fontSize, contentListTitleTextStyle.fontSize);
+        expect(text.style?.height, contentListTitleTextStyle.height);
+        expect(
+          text.style?.color,
+          Theme.of(
+            tester.element(find.text(label)),
+          ).colorScheme.onSurface.withValues(alpha: 0.8),
+        );
+      }
+      final channelIcon = tester.widget<Icon>(
+        find.byKey(const ValueKey('channel-icon-1')),
+      );
+      expect(
+        channelIcon.color,
         Theme.of(
-          tester.element(find.text(label)),
+          tester.element(find.byKey(const ValueKey('channel-icon-1'))),
         ).colorScheme.onSurface.withValues(alpha: 0.8),
       );
-    }
-    final channelIcon = tester.widget<Icon>(
-      find.byKey(const ValueKey('channel-icon-1')),
-    );
-    expect(
-      channelIcon.color,
-      Theme.of(
-        tester.element(find.byKey(const ValueKey('channel-icon-1'))),
-      ).colorScheme.onSurface.withValues(alpha: 0.8),
-    );
-    final sectionTitle = tester.widget<Text>(find.text('Channels'));
-    expect(sectionTitle.style?.fontSize, contentListTitleTextStyle.fontSize);
-    expect(sectionTitle.style?.fontWeight, FontWeight.w600);
-  });
+      final sectionTitle = tester.widget<Text>(find.text('Chats'));
+      expect(sectionTitle.style?.fontSize, contentListTitleTextStyle.fontSize);
+      expect(sectionTitle.style?.fontWeight, FontWeight.w600);
+    },
+  );
 
   testWidgets('keys DM tile fallback avatars to the non-self counterpart', (
     tester,
@@ -522,7 +516,7 @@ void main() {
     expect((padding.padding as EdgeInsets).bottom, footerClearance);
   });
 
-  testWidgets('balances an expanded section around its following divider', (
+  testWidgets('renders one Chats section without a separate DM divider', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -533,15 +527,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-
-    final lastChannel = tester.getRect(find.text('general'));
-    final divider = tester.getRect(find.byType(Divider).last);
-    final nextSectionHeader = tester.getRect(find.text('DMs'));
-
-    expect(
-      divider.top - lastChannel.bottom,
-      closeTo(nextSectionHeader.top - divider.bottom, 0.01),
-    );
+    expect(find.text('Chats'), findsOneWidget);
+    expect(find.text('DMs'), findsNothing);
+    expect(find.text('general'), findsOneWidget);
+    expect(find.text('Alice'), findsOneWidget);
   });
 
   testWidgets('keeps the Buzz background fixed behind the channels list', (
@@ -596,7 +585,23 @@ void main() {
           colors: [Colors.yellow, Colors.blue],
         ),
         overrides: [
-          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+          channelsProvider.overrideWith(
+            () => _FakeNotifier([
+              ...testChannels,
+              for (var i = 0; i < 5; i++)
+                Channel(
+                  id: 'extra-$i',
+                  name: 'extra-$i',
+                  channelType: 'stream',
+                  visibility: 'open',
+                  description: '',
+                  createdBy: 'aabb',
+                  createdAt: DateTime(2026),
+                  memberCount: 2,
+                  isMember: true,
+                ),
+            ]),
+          ),
         ],
       ),
     );
@@ -665,119 +670,36 @@ void main() {
     expect(scrollable.position.pixels, scrollable.position.minScrollExtent);
   });
 
-  testWidgets('truncates long custom section names beside the menu', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(320, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    const sectionName = 'A deliberately long custom section name for testing';
-    await tester.pumpWidget(
-      buildTestable(
-        overrides: [
-          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
-          channelSectionsProvider.overrideWith(
-            () => _FakeChannelSectionsNotifier(
-              const ChannelSectionStore(
-                sections: [
-                  ChannelSection(id: 'section-1', name: sectionName, order: 0),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final label = tester.widget<Text>(find.text(sectionName));
-    expect(label.maxLines, 1);
-    expect(label.overflow, TextOverflow.ellipsis);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('section menu matches desktop labels, icons, and inset', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      buildTestable(
-        overrides: [
-          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
-          channelSectionsProvider.overrideWith(
-            () => _FakeChannelSectionsNotifier(
-              const ChannelSectionStore(
-                sections: [
-                  ChannelSection(id: 'section-1', name: 'Design', order: 0),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const Key('section-menu-section-1')));
-    await tester.pumpAndSettle();
-
-    final popover = find.byKey(const Key('section-popover-section-1'));
-    expect(popover, findsOneWidget);
-    for (final label in [
-      'Rename section',
-      'Move up',
-      'Move down',
-      'Delete section',
-    ]) {
-      expect(
-        find.descendant(of: popover, matching: find.text(label)),
-        findsOne,
+  testWidgets(
+    'legacy section assignments stay stored while Chats combines their rows',
+    (tester) async {
+      final sections = _FakeChannelSectionsNotifier(
+        const ChannelSectionStore(
+          sections: [ChannelSection(id: 'section-1', name: 'Design', order: 0)],
+          assignments: {'1': 'section-1'},
+        ),
       );
-    }
-    for (final icon in [
-      LucideIcons.pencil,
-      LucideIcons.arrowUp,
-      LucideIcons.arrowDown,
-      LucideIcons.trash2,
-    ]) {
-      expect(
-        find.descendant(of: popover, matching: find.byIcon(icon)),
-        findsOne,
+      await tester.pumpWidget(
+        buildTestable(
+          overrides: [
+            channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+            channelSectionsProvider.overrideWith(() => sections),
+          ],
+        ),
       );
-    }
-
-    final actionMenuItems = tester
-        .widgetList<PopupMenuItem<String>>(
-          find.descendant(
-            of: popover,
-            matching: find.byWidgetPredicate(
-              (widget) => widget is PopupMenuItem<String>,
-            ),
-          ),
-        )
-        .where(
-          (item) => const {
-            'rename',
-            'move_up',
-            'move_down',
-            'delete',
-          }.contains(item.value),
-        );
-    expect(actionMenuItems, hasLength(4));
-    for (final item in actionMenuItems) {
-      expect(
-        item.padding,
-        const EdgeInsets.fromLTRB(Grid.xs, 0, Grid.twelve, 0),
+      await tester.pumpAndSettle();
+      expect(find.text('Design'), findsNothing);
+      expect(find.text('Chats'), findsOneWidget);
+      expect(find.text('general'), findsOneWidget);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ChannelsPage)),
       );
-    }
-
-    final error = Theme.of(tester.element(popover)).colorScheme.error;
-    final deleteText = tester.widget<Text>(find.text('Delete section'));
-    final deleteIcon = tester.widget<Icon>(
-      find.descendant(of: popover, matching: find.byIcon(LucideIcons.trash2)),
-    );
-    expect(deleteText.style?.color, error);
-    expect(deleteIcon.color, error);
-  });
+      expect(
+        container.read(channelSectionsProvider).store.assignments['1'],
+        'section-1',
+      );
+    },
+  );
 
   testWidgets('aligns the top, section, row, and skeleton label columns', (
     tester,
@@ -795,7 +717,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final topLabelX = tester.getTopLeft(find.text('Community')).dx;
-    final sectionLabelX = tester.getTopLeft(find.text('Channels')).dx;
+    final sectionLabelX = tester.getTopLeft(find.text('Chats')).dx;
     final rowLabelX = tester.getTopLeft(find.text('general')).dx;
     // The community title shares the leading row with its avatar. Channel
     // labels stay aligned below it.

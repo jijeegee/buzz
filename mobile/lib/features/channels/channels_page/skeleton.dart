@@ -15,7 +15,11 @@ class _ChannelsSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final visibleChannels =
         channels
-            ?.where((channel) => channel.isMember && !channel.isArchived)
+            ?.where(
+              (channel) =>
+                  !channel.isArchived &&
+                  (channel.isDm || channel.isStream && channel.isMember),
+            )
             .take(8)
             .toList() ??
         const <Channel>[];
@@ -39,10 +43,6 @@ class _ChannelsSkeleton extends StatelessWidget {
     while (widths.length < 6) {
       widths.add(fallbackWidths[widths.length % fallbackWidths.length]);
     }
-    final splitAt = min(4, widths.length);
-    final firstSection = widths.take(splitAt).toList();
-    final secondSection = widths.skip(splitAt).toList();
-
     final semanticsLabel = switch (status) {
       SessionStatus.connecting => 'Connecting',
       SessionStatus.reconnecting => 'Reconnecting',
@@ -61,11 +61,7 @@ class _ChannelsSkeleton extends StatelessWidget {
             Grid.gutter,
             80,
           ),
-          children: [
-            _ChannelSkeletonSection(widths: firstSection),
-            const SizedBox(height: Grid.xs),
-            _ChannelSkeletonSection(widths: secondSection),
-          ],
+          children: [_ChannelSkeletonSection(widths: widths)],
         ),
       ),
     );

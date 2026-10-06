@@ -358,7 +358,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         if (channelId == null) continue;
         final channel = channelById[channelId];
         if (channel == null) continue;
-        if (!channel.isDm &&
+        if (channel.isForum &&
             !shouldNotifyForEvent(
               event,
               myPk,
@@ -737,6 +737,13 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         _recordSelfThreadInterest(event, myPk);
       }
 
+      // Chats recency describes messages independently of notifications:
+      // own sends, muted chats and unfollowed replies count too.
+      if (!channel.isForum &&
+          EventKind.channelMessageEventKinds.contains(event.kind)) {
+        updated[idx] = _advanceLastMessageAt(channel, event.createdAt);
+      }
+
       if (myPk != null &&
           shouldNotifyForEvent(
             event,
@@ -748,13 +755,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
             channelId: channel.id,
           )) {
         _recordUnreadEvent(channel, event, myPk);
-        final eventTime = DateTime.fromMillisecondsSinceEpoch(
-          event.createdAt * 1000,
-          isUtc: true,
-        );
-        if (channel.lastMessageAt == null ||
-            eventTime.isAfter(channel.lastMessageAt!)) {
-          updated[idx] = channel.copyWith(lastMessageAt: eventTime);
+        if (channel.isForum) {
+          updated[idx] = _advanceLastMessageAt(channel, event.createdAt);
         }
       }
 

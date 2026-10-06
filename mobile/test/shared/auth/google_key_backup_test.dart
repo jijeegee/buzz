@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:async';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import 'package:buzz/shared/auth/google_key_backup.dart';
@@ -25,6 +28,7 @@ class BackupServer {
   bool failRestore = false;
   bool failUpload = false;
   String? raceSecret;
+  int raceStatus = 409;
   String? restoreSecretOverride;
   final proofs = <nostr.Event>[];
 
@@ -46,7 +50,7 @@ class BackupServer {
         if (failUpload) return jsonResponse({}, status: 503);
         if (raceSecret != null) {
           secret = raceSecret;
-          return jsonResponse({'code': 'backup_exists'}, status: 409);
+          return jsonResponse({'code': 'backup_exists'}, status: raceStatus);
         }
         secret = body['secret_key'] as String;
         return jsonResponse({
@@ -94,6 +98,91 @@ Future<TokenSessionController> signedInSession({FakeAuthServer? server}) async {
 }
 
 void main() {
+  test(
+    'mobile-first upload and desktop-first restore share the exact wire key',
+    () async {
+      // Public secp256k1 test vector shared with Rust resolve_backup tests.
+      final wire =
+          jsonDecode(
+                await File(
+                  'test/fixtures/google_key_backup_interop.json',
+                ).readAsString(),
+              )
+              as Map<String, dynamic>;
+      final key = nostr.Keys(wire['secret_key'] as String);
+      for (final mobileFirst in [true, false]) {
+        final server = BackupServer();
+        if (!mobileFirst) server.secret = key.secret;
+        final result = await GoogleKeyBackupService(
+          origin: origin,
+          client: server.client,
+          session: await signedInSession(),
+          communities: CommunityStorage(secure: FakeSecureStorage()),
+          pending: PendingBackupKeyStore(storage: FakeSecureStorage()),
+          generateKeys: () {
+            expect(mobileFirst, isTrue);
+            return key;
+          },
+        ).resolve();
+        expect(result.pubkey, wire['pubkey']);
+        expect(result.nsec, key.nsec);
+        expect(server.secret, wire['secret_key']);
+        expect(server.proofs.length, mobileFirst ? 1 : 0);
+      }
+    },
+  );
+
+  for (final cancel in [true, false]) {
+    test(
+      'stale backup absence is fenced: ${cancel ? "page cancellation" : "same-account new login"}',
+      () async {
+        final session = await signedInSession();
+        final status = Completer<http.Response>();
+        final requested = Completer<void>();
+        var current = true;
+        var generated = 0;
+        var requests = 0;
+        final service = GoogleKeyBackupService(
+          origin: origin,
+          client: MockClient((request) {
+            requests++;
+            requested.complete();
+            return status.future;
+          }),
+          session: session,
+          communities: CommunityStorage(secure: FakeSecureStorage()),
+          pending: PendingBackupKeyStore(storage: FakeSecureStorage()),
+          generateKeys: () {
+            generated++;
+            return nostr.Keys.generate();
+          },
+        );
+        final resolving = service.resolve(isCurrent: () => current);
+        final failed = expectLater(
+          resolving,
+          throwsA(isA<KeyBackupException>()),
+        );
+        await requested.future;
+        if (cancel) {
+          current = false;
+        } else {
+          await session.signIn(identityMode: 'key_backup');
+        }
+        status.complete(
+          jsonResponse({
+            'state': 'absent',
+            'account_id': account,
+            'pubkey': null,
+            'version': 1,
+          }),
+        );
+        await failed;
+        expect(generated, 0);
+        expect(requests, 1);
+      },
+    );
+  }
+
   test(
     'missing local key restores only the recorded pubkey from a ready backup',
     () async {
@@ -319,6 +408,25 @@ void main() {
       final result = await service().resolve();
       expect(generated, 1);
       expect(server.proofs.first.pubkey, result.pubkey);
+    },
+  );
+
+  test(
+    'a backup_exists body on HTTP 503 cannot authorize conflict recovery',
+    () async {
+      final server = BackupServer()
+        ..raceSecret = nostr.Keys.generate().secret
+        ..raceStatus = 503;
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final service = GoogleKeyBackupService(
+        origin: origin,
+        client: server.client,
+        session: await signedInSession(),
+        communities: storage,
+        pending: PendingBackupKeyStore(storage: FakeSecureStorage()),
+      );
+      await expectLater(service.resolve(), throwsA(isA<KeyBackupException>()));
+      expect(await storage.loadAll(), isEmpty);
     },
   );
 

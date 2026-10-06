@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/auth.dart';
 import '../../shared/auth/google_key_backup.dart';
+import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
@@ -18,7 +19,15 @@ import 'community_recovery_actions.dart';
 /// [lockedOrigin] (an existing token community whose session ended) the page
 /// goes straight to the sign-in button.
 class TokenSignInPage extends HookConsumerWidget {
-  const TokenSignInPage({super.key, this.lockedOrigin, this.backupOrigin});
+  const TokenSignInPage({
+    super.key,
+    this.lockedOrigin,
+    this.backupOrigin,
+    this.defaultCommunity = false,
+  });
+
+  /// Ordinary first-device entry uses the configured custody service.
+  final bool defaultCommunity;
 
   /// Link/recover a signed identity from Settings, separate from token mode.
   final String? backupOrigin;
@@ -29,15 +38,28 @@ class TokenSignInPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final urlController = useTextEditingController();
-    final origin = useState<String?>(lockedOrigin ?? backupOrigin);
-    final keyBackup = useState(backupOrigin != null);
+    final configuredOrigin = defaultCommunity
+        ? ref.watch(defaultCommunityOriginProvider)
+        : null;
+    final initialOrigin = lockedOrigin ?? backupOrigin ?? configuredOrigin;
+    final origin = useState<String?>(initialOrigin);
+    final keyBackup = useState(
+      backupOrigin != null || configuredOrigin != null,
+    );
     final dualMode = useState(false);
-    final fixedOrigin = lockedOrigin != null || backupOrigin != null;
+    final fixedOrigin = initialOrigin != null;
     final checking = useState(false);
     final completing = useState(false);
     final message = useState<String?>(null);
     // Fences relay checks: only the newest one may write its result.
     final checkGeneration = useRef(0);
+    final attemptGeneration = useRef(0);
+    final attemptBusy = useRef(false);
+    useEffect(() {
+      return () {
+        attemptGeneration.value++;
+      };
+    }, const []);
 
     final session = origin.value == null
         ? null
@@ -118,18 +140,35 @@ class TokenSignInPage extends HookConsumerWidget {
     /// Records the signed-in session as the active community. In locked
     /// mode the community already exists and `TokenSessionGate` owns
     /// identity changes.
-    Future<void> enterCommunity(String sessionOrigin, String principal) async {
+    Future<void> enterCommunity(
+      String sessionOrigin,
+      String principal, {
+      bool Function()? isCurrent,
+    }) async {
       if (lockedOrigin != null) return;
       completing.value = true;
       try {
         if (keyBackup.value) {
+          final controller = ref.read(
+            keyBackupSessionControllerProvider(sessionOrigin),
+          );
+          final sessionGeneration = controller.generation;
+          final authAtStart = ref.read(authProvider).value;
+          bool canCommit() =>
+              context.mounted &&
+              isCurrent?.call() != false &&
+              identical(ref.read(authProvider).value, authAtStart) &&
+              controller.generation == sessionGeneration &&
+              controller.state.status == TokenSessionStatus.signedIn;
           final community = await ref
               .read(googleKeyBackupServiceProvider(sessionOrigin))
-              .resolve();
-          if (!context.mounted) return;
+              .resolve(isCurrent: canCommit);
+          if (!canCommit()) return;
+          await ref.read(signedCommunityAdmissionProvider)(community);
+          if (!canCommit()) return;
           await ref
               .read(authProvider.notifier)
-              .authenticateWithCommunity(community);
+              .authenticateWithCommunity(community, isCurrent: canCommit);
         } else {
           await ref
               .read(authProvider.notifier)
@@ -156,29 +195,40 @@ class TokenSignInPage extends HookConsumerWidget {
     Future<void> signIn() async {
       final sessionOrigin = origin.value;
       if (sessionOrigin == null) return;
-      message.value = null;
-      if (keyBackup.value) {
-        try {
-          await ref
-              .read(googleKeyBackupServiceProvider(sessionOrigin))
-              .checkLocalCompatibility();
-          if (!context.mounted) return;
-        } on KeyBackupException catch (error) {
-          if (context.mounted) message.value = error.message;
-          return;
+      if (attemptBusy.value) return;
+      attemptBusy.value = true;
+      completing.value = true;
+      final generation = ++attemptGeneration.value;
+      bool isCurrent() =>
+          context.mounted && generation == attemptGeneration.value;
+      try {
+        message.value = null;
+        if (keyBackup.value) {
+          try {
+            await ref
+                .read(googleKeyBackupServiceProvider(sessionOrigin))
+                .checkLocalCompatibility();
+            if (!context.mounted) return;
+          } on KeyBackupException catch (error) {
+            if (context.mounted) message.value = error.message;
+            return;
+          }
         }
+        final controller = ref.read(
+          keyBackup.value
+              ? keyBackupSessionControllerProvider(sessionOrigin)
+              : tokenSessionControllerProvider(sessionOrigin),
+        );
+        final signedIn = await controller.signIn(
+          identityMode: keyBackup.value ? 'key_backup' : 'token',
+        );
+        final principal = controller.state.principalId;
+        if (!signedIn || principal == null || !context.mounted) return;
+        await enterCommunity(sessionOrigin, principal, isCurrent: isCurrent);
+      } finally {
+        attemptBusy.value = false;
+        if (context.mounted) completing.value = false;
       }
-      final controller = ref.read(
-        keyBackup.value
-            ? keyBackupSessionControllerProvider(sessionOrigin)
-            : tokenSessionControllerProvider(sessionOrigin),
-      );
-      final signedIn = await controller.signIn(
-        identityMode: keyBackup.value ? 'key_backup' : 'token',
-      );
-      final principal = controller.state.principalId;
-      if (!signedIn || principal == null || !context.mounted) return;
-      await enterCommunity(sessionOrigin, principal);
     }
 
     final status = session?.status;
@@ -206,7 +256,7 @@ class TokenSignInPage extends HookConsumerWidget {
             const SizedBox(height: Grid.lg),
             Text(
               keyBackup.value
-                  ? 'Google key recovery'
+                  ? 'Welcome to Buzz'
                   : dualMode.value
                   ? 'Existing account sign-in'
                   : lockedOrigin == null
@@ -217,7 +267,7 @@ class TokenSignInPage extends HookConsumerWidget {
             const SizedBox(height: Grid.xxs),
             Text(
               keyBackup.value
-                  ? 'Google restores your existing Buzz identity on another device. '
+                  ? 'Sign in on your first device or restore the same Buzz identity here. '
                         'If this account has no backup, your current key is linked, '
                         'or a new key is created on this device. The server encrypts '
                         'the backup, but its operator or anyone controlling your '
@@ -299,6 +349,18 @@ class TokenSignInPage extends HookConsumerWidget {
                       ? 'Use an existing token account'
                       : 'Use Google key recovery',
                 ),
+              ),
+            if (defaultCommunity && configuredOrigin != null)
+              TextButton(
+                key: const Key('sign-in-custom-community'),
+                onPressed: busy
+                    ? null
+                    : () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const TokenSignInPage(),
+                        ),
+                      ),
+                child: const Text('Advanced: use a custom community'),
               ),
             if (busy) ...[
               const SizedBox(height: Grid.sm),

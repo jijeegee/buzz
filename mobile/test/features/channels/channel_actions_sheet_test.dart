@@ -116,9 +116,8 @@ void main() {
     await tester.pumpAndSettle();
 
     for (final label in [
-      'Star',
+      'Pin',
       'Mark Unread',
-      'Move to section…',
       'Mute channel',
       'Manage channel',
       'Copy channel name',
@@ -130,12 +129,10 @@ void main() {
       expect(find.text(label), findsOneWidget, reason: label);
     }
 
-    final moveTop = tester.getTopLeft(find.text('Move to section…')).dy;
     final muteTop = tester.getTopLeft(find.text('Mute channel')).dy;
     final manageTop = tester.getTopLeft(find.text('Manage channel')).dy;
     final copyNameTop = tester.getTopLeft(find.text('Copy channel name')).dy;
     final copyIdTop = tester.getTopLeft(find.text('Copy channel ID')).dy;
-    expect(moveTop, lessThan(muteTop));
     expect(muteTop, lessThan(manageTop));
     expect(manageTop, lessThan(copyNameTop));
     expect(copyNameTop, lessThan(copyIdTop));
@@ -304,7 +301,7 @@ void main() {
 
     expect(find.text('Archive channel'), findsNothing);
     expect(find.text('Delete channel'), findsNothing);
-    expect(find.text('Move to section…'), findsOneWidget);
+    expect(find.text('Move to section…'), findsNothing);
     expect(find.text('Leave channel'), findsOneWidget);
   });
 
@@ -433,7 +430,7 @@ void main() {
     expect(tester.widget<FilledButton>(editCanvas).onPressed, isNull);
   });
 
-  testWidgets('regular members can move channels but cannot edit metadata', (
+  testWidgets('regular members can pin chats but cannot edit metadata', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -453,7 +450,7 @@ void main() {
     await tester.tap(find.text('Open actions'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Move to section…'), findsOneWidget);
+    expect(find.text('Move to section…'), findsNothing);
     await tester.tap(find.text('Manage channel'));
     await tester.pumpAndSettle();
 
@@ -481,7 +478,7 @@ void main() {
     );
   });
 
-  testWidgets('DM omits quick actions, then shows mute and copy rows', (
+  testWidgets('DM offers pin and read actions with mute and copy rows', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -493,6 +490,8 @@ void main() {
     await tester.pumpAndSettle();
 
     for (final label in [
+      'Pin',
+      'Mark Unread',
       'Mute channel',
       'Copy channel name',
       'Copy channel ID',
@@ -500,9 +499,7 @@ void main() {
       expect(find.text(label), findsOneWidget, reason: label);
     }
     for (final label in [
-      'Star',
-      'Unstar',
-      'Mark Unread',
+      'Unpin',
       'Mark Read',
       'Move to section…',
       'Manage channel',

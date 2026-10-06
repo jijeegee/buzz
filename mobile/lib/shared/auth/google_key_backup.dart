@@ -12,9 +12,12 @@ import 'token/token.dart';
 
 /// A safe, body-free explanation of a custody operation failure.
 class KeyBackupException implements Exception {
-  const KeyBackupException(this.message, {this.code});
+  const KeyBackupException(this.message, {this.code, this.statusCode});
   final String message;
   final String? code;
+
+  /// HTTP status, when known; only a confirmed 409 permits winner recovery.
+  final int? statusCode;
   @override
   String toString() => message;
 }
@@ -96,20 +99,34 @@ class GoogleKeyBackupService {
 
   /// Resolve and return a signed-key community. The caller persists it through
   /// AuthNotifier before exposing the authenticated app. Single-flight.
-  Future<Community> resolve() => _inFlight ??= _resolve()
-      .onError((Object error, StackTrace stack) {
-        if (error is KeyBackupException) throw error;
-        throw const KeyBackupException(
-          'Could not read or save the signing key securely. '
-          'Your existing identity is unchanged; try again.',
-        );
-      })
-      .whenComplete(() {
-        _inFlight = null;
-      });
+  Future<Community> resolve({bool Function()? isCurrent}) =>
+      _inFlight ??= _resolve(isCurrent)
+          .onError((Object error, StackTrace stack) {
+            if (error is KeyBackupException) throw error;
+            throw const KeyBackupException(
+              'Could not read or save the signing key securely. '
+              'Your existing identity is unchanged; try again.',
+            );
+          })
+          .whenComplete(() {
+            _inFlight = null;
+          });
 
-  Future<Community> _resolve() async {
+  Future<Community> _resolve(bool Function()? isCurrent) async {
+    final generation = _session.generation;
+    void guard() {
+      if (isCurrent?.call() == false ||
+          generation != _session.generation ||
+          _session.state.status != TokenSessionStatus.signedIn) {
+        throw const KeyBackupException(
+          'Sign-in changed or was cancelled. Try again.',
+        );
+      }
+    }
+
+    guard();
     await checkLocalCompatibility();
+    guard();
     if (_session.identityMode != 'key_backup') {
       throw const KeyBackupException(
         'Sign in with Google for key recovery first.',
@@ -132,7 +149,7 @@ class GoogleKeyBackupService {
         'Recover its original key before linking Google; nothing was replaced.',
       );
     }
-    final status = await _status(account);
+    final status = await _status(account, guard);
     late nostr.Keys keys;
     if (status['state'] == 'ready') {
       if (existing?.pubkey != null && existing!.pubkey != status['pubkey']) {
@@ -141,7 +158,7 @@ class GoogleKeyBackupService {
           'Buzz identity. The saved identity was preserved.',
         );
       }
-      keys = await _restore(status, local);
+      keys = await _restore(status, local, guard);
     } else {
       if (missingLocalKey) {
         throw const KeyBackupException(
@@ -151,6 +168,7 @@ class GoogleKeyBackupService {
       }
       // Only a verified successful absent status authorizes key generation.
       final pending = await _pending.read(origin, account);
+      guard();
       final candidate =
           local ?? (pending == null ? _generateKeys() : _keys(pending));
       if (candidate == null) {
@@ -160,15 +178,20 @@ class GoogleKeyBackupService {
         );
       }
       await _pending.write(origin, account, candidate.nsec);
+      guard();
       try {
-        await _initialize(account, candidate);
+        await _initialize(account, candidate, guard);
         keys = candidate;
       } on KeyBackupException catch (error) {
-        if (error.code != 'backup_exists' || existing != null) rethrow;
+        if (error.statusCode != 409 ||
+            error.code != 'backup_exists' ||
+            existing != null) {
+          rethrow;
+        }
         // Another first device won. Never retry initialization with a new key.
-        final winner = await _status(account);
+        final winner = await _status(account, guard);
         if (winner['state'] != 'ready') rethrow;
-        keys = await _restore(winner, null);
+        keys = await _restore(winner, null, guard);
       }
     }
     if (_session.state.principalId != account ||
@@ -178,6 +201,7 @@ class GoogleKeyBackupService {
       );
     }
     final now = await _existing();
+    guard();
     if (now?.id != existing?.id ||
         now?.nsec != existing?.nsec ||
         now?.pubkey != existing?.pubkey ||
@@ -210,8 +234,11 @@ class GoogleKeyBackupService {
         .firstOrNull;
   }
 
-  Future<Map<String, dynamic>> _status(String account) async {
-    final status = await _request('GET', '/auth/key-backup');
+  Future<Map<String, dynamic>> _status(
+    String account,
+    void Function() guard,
+  ) async {
+    final status = await _request('GET', '/auth/key-backup', guard: guard);
     if (status['account_id'] != account ||
         status['version'] != 1 ||
         !(status['state'] == 'absent' && status['pubkey'] == null ||
@@ -226,6 +253,7 @@ class GoogleKeyBackupService {
   Future<nostr.Keys> _restore(
     Map<String, dynamic> status,
     nostr.Keys? local,
+    void Function() guard,
   ) async {
     if (local != null && local.public != status['pubkey']) {
       throw const KeyBackupException(
@@ -233,7 +261,12 @@ class GoogleKeyBackupService {
         'identity. Your existing identity and conversations were preserved.',
       );
     }
-    final result = await _request('POST', '/auth/key-backup/restore', body: {});
+    final result = await _request(
+      'POST',
+      '/auth/key-backup/restore',
+      guard: guard,
+      body: {},
+    );
     final secret = result['secret_key'];
     if (!_validHex(secret) ||
         result['version'] != 1 ||
@@ -258,10 +291,15 @@ class GoogleKeyBackupService {
     return keys;
   }
 
-  Future<void> _initialize(String account, nostr.Keys keys) async {
+  Future<void> _initialize(
+    String account,
+    nostr.Keys keys,
+    void Function() guard,
+  ) async {
     final challenge = await _request(
       'POST',
       '/auth/key-backup/challenge',
+      guard: guard,
       body: {'pubkey': keys.public},
     );
     if (challenge['account_id'] != account ||
@@ -286,6 +324,7 @@ class GoogleKeyBackupService {
     final result = await _request(
       'POST',
       '/auth/key-backup',
+      guard: guard,
       body: {'secret_key': keys.secret, 'proof': proof.toMap()},
     );
     if (result['pubkey'] != keys.public || result['version'] != 1) {
@@ -299,8 +338,11 @@ class GoogleKeyBackupService {
     String method,
     String path, {
     Map<String, dynamic>? body,
+    required void Function() guard,
   }) async {
+    guard();
     final token = await _session.ensureFreshAccessToken();
+    guard();
     if (token == null) {
       throw const KeyBackupException('Sign in with Google again.');
     }
@@ -319,6 +361,7 @@ class GoogleKeyBackupService {
       final raw = await _readBounded(
         response,
       ).timeout(const Duration(seconds: 20));
+      guard();
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
         throw const KeyBackupException(
@@ -327,18 +370,22 @@ class GoogleKeyBackupService {
       }
       if (response.statusCode != 200) {
         final code = decoded['code'];
-        throw KeyBackupException(switch (code) {
-          'reauth_required' =>
-            'Sign in with Google again to recover or back up your key.',
-          'backup_exists' =>
-            'This account already has an immutable key backup.',
-          'key_already_linked' =>
-            'This key is already linked to another Google account.',
-          'account_mode_conflict' =>
-            'This Google account has separate token-mode data. It cannot be merged.',
-          _ =>
-            'Key backup request failed (HTTP ${response.statusCode}). Try again; your identity is unchanged.',
-        }, code: code is String ? code : null);
+        throw KeyBackupException(
+          switch (code) {
+            'reauth_required' =>
+              'Sign in with Google again to recover or back up your key.',
+            'backup_exists' =>
+              'This account already has an immutable key backup.',
+            'key_already_linked' =>
+              'This key is already linked to another Google account.',
+            'account_mode_conflict' =>
+              'This Google account has separate token-mode data. It cannot be merged.',
+            _ =>
+              'Key backup request failed (HTTP ${response.statusCode}). Try again; your identity is unchanged.',
+          },
+          code: code is String ? code : null,
+          statusCode: response.statusCode,
+        );
       }
       return decoded;
     } on KeyBackupException {

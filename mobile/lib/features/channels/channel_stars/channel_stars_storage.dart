@@ -2,7 +2,12 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-String channelStarsKey(String pubkey) => 'buzz.channel-stars.v1:$pubkey';
+import '../../../shared/auth/token/relay_origin.dart';
+
+/// Durable personal pins are isolated by signer and normalized community.
+String channelStarsKey(String pubkey, {String? origin}) => origin == null
+    ? 'buzz.channel-stars.v1:$pubkey'
+    : 'buzz.channel-stars.v2:${jsonEncode([pubkey, normalizeRelayOrigin(origin)])}';
 
 class ChannelStarEntry {
   final bool starred;
@@ -65,8 +70,8 @@ class ChannelStarsStorage {
 
   ChannelStarsStorage(this._prefs);
 
-  ChannelStarStore read(String pubkey) {
-    final raw = _prefs.getString(channelStarsKey(pubkey));
+  ChannelStarStore read(String pubkey, {String? origin}) {
+    final raw = _prefs.getString(channelStarsKey(pubkey, origin: origin));
     if (raw == null || raw.isEmpty) {
       return const ChannelStarStore();
     }
@@ -85,6 +90,30 @@ class ChannelStarsStorage {
     }
   }
 
-  Future<bool> write(String pubkey, ChannelStarStore store) =>
-      _prefs.setString(channelStarsKey(pubkey), jsonEncode(store.toJson()));
+  /// Claim unscoped legacy data for exactly one community. Keep the source
+  /// intact, including after an interrupted/failed copy, so retry is safe.
+  Future<ChannelStarStore> load(String pubkey, {String? origin}) async {
+    if (origin == null) return read(pubkey);
+    final canonical = normalizeRelayOrigin(origin);
+    final key = channelStarsKey(pubkey, origin: canonical);
+    if (_prefs.containsKey(key)) return read(pubkey, origin: canonical);
+    final legacy = _prefs.getString(channelStarsKey(pubkey));
+    if (legacy == null) return const ChannelStarStore();
+    final claim = 'buzz.channel-stars.migrated-origin:$pubkey';
+    final owner = _prefs.getString(claim);
+    if (owner != null && owner != canonical) return const ChannelStarStore();
+    if (owner == null && !await _prefs.setString(claim, canonical)) {
+      throw StateError('Could not preserve legacy pin scope');
+    }
+    if (!await _prefs.setString(key, legacy)) {
+      throw StateError('Could not persist scoped pins');
+    }
+    return read(pubkey, origin: canonical);
+  }
+
+  Future<bool> write(String pubkey, ChannelStarStore store, {String? origin}) =>
+      _prefs.setString(
+        channelStarsKey(pubkey, origin: origin),
+        jsonEncode(store.toJson()),
+      );
 }

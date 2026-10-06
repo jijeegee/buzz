@@ -1,3 +1,4 @@
+import 'package:buzz/shared/auth/default_community.dart';
 import 'package:buzz/features/sign_in/token_sign_in_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
 import 'package:buzz/shared/auth/google_key_backup.dart';
@@ -19,8 +20,10 @@ class RecordingAuth extends AuthNotifier {
   Future<AuthState> build() async =>
       const AuthState(status: AuthStatus.unauthenticated);
   @override
-  Future<void> authenticateWithCommunity(Community community) async =>
-      saved = community;
+  Future<void> authenticateWithCommunity(
+    Community community, {
+    bool Function()? isCurrent,
+  }) async => saved = community;
   @override
   Future<void> authenticateWithTokenSession({
     required String relayUrl,
@@ -90,6 +93,7 @@ void main() {
             keyBackupRefreshTokenStoreProvider.overrideWithValue(backupStore),
             communityStorageProvider.overrideWithValue(storage),
             authProvider.overrideWith(() => auth),
+            signedCommunityAdmissionProvider.overrideWithValue((_) async {}),
           ],
         );
         addTearDown(container.dispose);
@@ -199,9 +203,11 @@ void main() {
             CommunityStorage(secure: FakeSecureStorage()),
           ),
           authProvider.overrideWith(() => auth),
+          signedCommunityAdmissionProvider.overrideWithValue((_) async {}),
         ],
       );
       addTearDown(container.dispose);
+      await container.read(authProvider.future);
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
