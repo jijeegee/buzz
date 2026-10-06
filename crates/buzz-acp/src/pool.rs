@@ -2552,6 +2552,9 @@ pub async fn run_prompt_task(
         turn_id.clone(),
         turn_started_at.clone(),
     ));
+    agent
+        .acp
+        .set_observer_thread_root(observer_thread_root.map(str::to_owned));
     let triggering_event_ids: Vec<String> = batch
         .as_ref()
         .map(|b| b.events.iter().map(|be| be.event.id.to_hex()).collect())
