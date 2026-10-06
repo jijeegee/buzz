@@ -2948,11 +2948,10 @@ pub async fn run_prompt_task(
                 // After a restart, reattach to the provider session the ledger
                 // recorded for this scope (same adapter, same cwd) instead of
                 // starting over from relay context.
-                let reattach = ctx.session_ledger.as_ref().and_then(|ledger| {
-                    ledger
-                        .lookup(scope, &ctx.harness_name, &ctx.cwd)
-                        .map(|entry| entry.session_id)
-                });
+                let reattach = ctx
+                    .session_ledger
+                    .as_ref()
+                    .and_then(|ledger| ledger.take_resumable(scope, &ctx.harness_name, &ctx.cwd));
                 match open_session_and_apply_model(
                     &mut agent,
                     &ctx,
@@ -3699,6 +3698,10 @@ pub async fn run_prompt_task(
                     &pending_delivered_event_ids,
                     &pending_hydrated_thread_roots,
                 );
+                // Keep a session in steady use from aging out of the ledger.
+                if let Some(ledger) = &ctx.session_ledger {
+                    ledger.touch(scope, &session_id);
+                }
             } else if !agent.has_system_prompt_support() {
                 agent.state.heartbeat_standing_context_sent = true;
             }
@@ -4745,6 +4748,9 @@ enum TimelineTarget<'a> {
 /// Event ids are 64-hex, so this can never collide with a thread root.
 const MAIN_TIMELINE_HYDRATION_KEY: &str = "main";
 
+/// The relay's maximum `top_level` window size (`BRIDGE_WINDOW_MAX_LIMIT`).
+const MAIN_TIMELINE_WINDOW_MAX_LIMIT: u32 = 200;
+
 /// Shared context builder for thread and main-timeline scopes.
 ///
 /// Both targets use the same window `limit`, the same sentinel-based
@@ -4900,7 +4906,10 @@ where
     Query: Fn(Vec<serde_json::Value>) -> QueryFut,
     QueryFut: std::future::Future<Output = Result<serde_json::Value, crate::relay::RelayError>>,
 {
-    let fetch_limit = thread_reply_fetch_limit(limit, session_delta.overfetch);
+    // Keep the sentinel row inside the relay's window cap, or a full window
+    // could never prove truncation.
+    let fetch_limit = thread_reply_fetch_limit(limit, session_delta.overfetch)
+        .min(MAIN_TIMELINE_WINDOW_MAX_LIMIT - 1);
     let message_kinds = [
         buzz_core::kind::KIND_STREAM_MESSAGE,
         buzz_core::kind::KIND_STREAM_MESSAGE_V2,
