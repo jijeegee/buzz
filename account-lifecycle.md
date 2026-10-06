@@ -14,6 +14,8 @@ account-switch implementation seam.
   `apply_workspace` changes the key and relay; `useCommunityInit` disconnects
   the previous frontend relay and resets stores. These paths alone cannot
   implement the required concurrent account switch.
+  `NativeRelayClient` also has a single archive-owned session slot that shuts
+  down its predecessor; preserving frontend sockets alone is insufficient.
 - Independent review additionally found that `apply_workspace` calls
   `agents/provider_access::reconcile_on_workspace_apply`, which can redeploy
   all existing provider agents using the newly active owner/relay/config.
@@ -118,3 +120,44 @@ Account addition/list/switch/logout controls and concurrent account runtimes
 are not implemented by this checkpoint. The reviewed storage/runtime/provider
 dependencies above remain required; no account switching is exposed through
 the unsafe existing workspace-apply path. App-exit behavior is unchanged.
+
+## Desktop HTTP ownership checkpoint
+
+Two existing native HTTP paths re-read mutable view state after waiting for a
+rate limit. `query_relay_at` now captures its user credential before waiting,
+while still generating fresh NIP-98 authorization after admission. An explicit
+agent-signed submission captures its destination before waiting. A delayed A
+request can therefore finish using A's credential and destination while B is
+selected, instead of leaking B's credential to A or A's event to B.
+
+Loopback fixture tests exercise those exact production functions with a held
+admission gate, key/token replacement and relay changes. This is a narrow HTTP
+regression fix, not proof that all agent/controller lifetimes support multiple
+accounts. No native process registry, provider/model flow or shutdown code was
+changed. The installed desktop binary is not replaced by library tests.
+
+## Validation and later manual acceptance
+
+- Mobile: 104 focused tests passed, including browser ownership, callback URI,
+  stale error/cancellation, sign-in widgets, custody interoperability, existing
+  token settings and the age-gate fixture affected by the launcher interface.
+  Changed Dart files passed analysis and formatting.
+- Android: Gradle configuration and actual debug main-manifest merge passed;
+  the merged `parity_dev` callback is `xyz.block.buzz.parity-dev://auth/cb`.
+  Release main-manifest merge could not resolve uncached AndroidX dependencies
+  in offline mode. No APK was built or installed; no dependency upgrade or cache
+  cleaning was performed.
+- Desktop: three loopback HTTP ownership tests and 13 existing admission tests
+  passed. Changed Rust files passed rustfmt; offline library Clippy passed with
+  warnings in unchanged code. Tests did not launch or replace the desktop app.
+- Hermit activation failed on this Windows checkout (`/pkg/hermit@stable/hermit`
+  missing). Checks use the installed Flutter 3.41.7 and Rust toolchains/caches.
+- Later, after parent-coordinated allowlist change and APK build, check a phone
+  with production and dev apps installed: each login returns to the initiating
+  app, one tap sequence opens one auth flow, Back/cancel then retry can finish,
+  and Google MFA is unchanged. No physical-device reproduction or acceptance
+  is claimed here.
+- Native rebuild/relaunch remains a separate coordinated step. Full A -> B -> A,
+  selected logout, account-local draft/PIN/read/mute state, agent/provider
+  ownership and default-community account actions still need implementation and
+  isolated acceptance before a real account switch can be tested.

@@ -382,20 +382,11 @@ pub async fn query_relay_at(
     api_base_url: &str,
     filters: &[serde_json::Value],
 ) -> Result<Vec<nostr::Event>, String> {
-    crate::relay_admission::wait_for_rate_limit().await;
-    let url = format!("{}/query", api_base_url);
-    let body_bytes =
-        serde_json::to_vec(filters).map_err(|e| format!("filter serialization failed: {e}"))?;
-    let auth = build_nip98_auth_header(&Method::POST, &url, &body_bytes, state)?;
-    send_query_request(
-        &state.http_client,
-        &url,
-        &auth,
-        None,
-        body_bytes,
-        QUERY_REQUEST_TIMEOUT,
-    )
-    .await
+    // Pin the identity before the admission wait. A view/identity change while
+    // this request is parked must not authenticate to A's relay as B. The
+    // explicit-signature path still mints fresh NIP-98 auth AFTER the wait.
+    let credential = state.user_credential()?;
+    query_relay_at_with_keys(state, api_base_url, filters, &credential, None).await
 }
 
 pub async fn query_relay_at_with_keys(
@@ -724,8 +715,10 @@ pub async fn submit_signed_event_with_keys(
     if event.pubkey != keys.signer_pubkey() {
         return Err("signed event does not match the publishing identity".to_string());
     }
-    crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/events", relay_api_base_url_with_override(state));
+    // The signer is already pinned by the caller; its destination must be
+    // captured before the same suspension point, not read from the next view.
+    crate::relay_admission::wait_for_rate_limit().await;
     let body_bytes = event.as_json().into_bytes();
     crate::egress_guard::assert_no_key_backup_bytes(&body_bytes, "signed event submit (keys)")?;
     let auth_header = keys.relay_http_auth(&Method::POST, &url, &body_bytes)?;
@@ -762,3 +755,6 @@ pub async fn submit_signed_event_with_keys(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod account_scope_tests;
