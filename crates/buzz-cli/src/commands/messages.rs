@@ -993,6 +993,52 @@ pub async fn dispatch(
             )
             .await
         }
+        MessagesCmd::NameThread {
+            channel,
+            event,
+            name,
+        } => {
+            validate_hex64(&event)?;
+            let event = event.to_lowercase();
+            let channel_id = Uuid::parse_str(&channel)
+                .map_err(|_| CliError::Usage("invalid channel UUID".into()))?;
+            let name = name.trim();
+            buzz_core::thread_name::validate_thread_name(name)
+                .map_err(|e| CliError::Usage(e.into()))?;
+            let raw = client
+                .query(&serde_json::json!({
+                    "kinds": [buzz_core::kind::KIND_THREAD_NAME],
+                    "#h": [channel_id.to_string()], "#e": [&event], "limit": 1,
+                }))
+                .await?;
+            let previous: Vec<serde_json::Value> = serde_json::from_str(&raw)
+                .map_err(|e| CliError::Other(format!("invalid thread name response: {e}")))?;
+            let previous_time = previous
+                .iter()
+                .filter_map(|event| event.get("created_at").and_then(|v| v.as_u64()))
+                .max()
+                .unwrap_or(0);
+            let created_at = nostr::Timestamp::now()
+                .as_secs()
+                .max(previous_time.saturating_add(1));
+            let tags = [
+                nostr::Tag::parse(["h", &channel_id.to_string()]),
+                nostr::Tag::parse(["e", &event]),
+            ]
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| CliError::Usage(e.to_string()))?;
+            let builder = nostr::EventBuilder::new(
+                nostr::Kind::Custom(buzz_core::kind::KIND_THREAD_NAME as u16),
+                name,
+            )
+            .tags(tags)
+            .custom_created_at(nostr::Timestamp::from(created_at));
+            let event = client.sign_event(builder)?;
+            let resp = client.submit_event(event).await?;
+            println!("{}", normalize_write_response(&resp));
+            Ok(())
+        }
         MessagesCmd::Edit { event, content } => cmd_edit_message(client, &event, &content).await,
         MessagesCmd::Delete {
             event,
