@@ -737,7 +737,24 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   --mention <agent-pubkey> --content '!cancel'
 ```
 
+## Session context gauge and compaction
+
+`context_usage` observer events feed `agentContextUsageStore.ts`: one reading
+per (agent, channel, thread root | null), newest by observer ordering, bounded
+and persisted per observing identity. A chat agent avatar resolves its message's
+thread scope (`rootId ?? id`) first, then the channel's whole-conversation
+scope, and renders nothing without a reading. `compact_session` is the one
+thread-scoped observer control: it carries `threadRootEventId`, settles only on
+a result matching type, request ID, and channel, and reports a missing ack or
+terminal result as unconfirmed, never success (`lib/compactSessionOutcome.ts`).
+Cancel and model switch remain channel-only as described above.
+
 ## The tests that enforce this
+
+- `agentContextUsageStore.test.mjs`, `lib/contextGauge.test.mjs`, and
+  `lib/compactSessionOutcome.test.mjs` — gauge store ordering, keying,
+  persistence, and bound; dial geometry and stage thresholds; compaction
+  result correlation and copy.
 
 - `lib/agentConfigCore.test.mjs` — field model per harness × scope, clearing
   policy. Update when the capability model changes.

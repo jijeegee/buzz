@@ -1,6 +1,10 @@
 import { ArrowUpRight, CircleAlert, UserPlus } from "lucide-react";
 
 import { MemorySection } from "@/features/agent-memory/ui/MemorySection";
+import {
+  AgentChannelSessionsRow,
+  useAgentChannelSessionGroups,
+} from "@/features/agents/ui/AgentChannelSessions";
 import { ManagedAgentLogPanel } from "@/features/agents/ui/ManagedAgentLogPanel";
 import {
   type ProfileField,
@@ -46,6 +50,7 @@ export function ChannelsFocusedView({
   isLoading,
   onAddToChannel,
   onOpenChannel,
+  sessionAgent = null,
   variant = "focused",
 }: {
   canAddToChannel: boolean;
@@ -54,8 +59,14 @@ export function ChannelsFocusedView({
   isLoading: boolean;
   onAddToChannel: () => void;
   onOpenChannel: (channelId: string) => void;
+  /**
+   * The owned agent whose per-channel session context readings to show. Null
+   * for viewers who do not own the agent.
+   */
+  sessionAgent?: { pubkey: string; name: string } | null;
   variant?: "embedded" | "focused";
 }) {
+  const sessionGroups = useAgentChannelSessionGroups(sessionAgent?.pubkey);
   return (
     <div className={variant === "focused" ? "pt-4" : undefined}>
       <ProfileSectionGroup testId="user-profile-channels-section">
@@ -101,21 +112,30 @@ export function ChannelsFocusedView({
           >
             {channels.map((channel) => (
               <li key={channel.id}>
-                <button
-                  aria-label={`Open #${channel.name}`}
-                  className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
-                  data-testid={`user-profile-channel-link-${channel.name}`}
-                  onClick={() => onOpenChannel(channel.id)}
-                  type="button"
-                >
-                  <span className="min-w-0 flex-1 truncate">
-                    #{channel.name}
-                  </span>
-                  <ArrowUpRight
-                    aria-hidden="true"
-                    className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+                {sessionAgent ? (
+                  <AgentChannelSessionsRow
+                    agentName={sessionAgent.name}
+                    channel={channel}
+                    group={sessionGroups.get(channel.id)}
+                    onOpenChannel={onOpenChannel}
                   />
-                </button>
+                ) : (
+                  <button
+                    aria-label={`Open #${channel.name}`}
+                    className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
+                    data-testid={`user-profile-channel-link-${channel.name}`}
+                    onClick={() => onOpenChannel(channel.id)}
+                    type="button"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      #{channel.name}
+                    </span>
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+                    />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
