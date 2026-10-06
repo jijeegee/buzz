@@ -87,6 +87,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   onAutoSendComplete = null,
   botTypingEntries,
   channelManagementOpen = false,
+  channelManagementInitialView = null,
   currentPubkey,
   editTarget = null,
   fetchOlder,
@@ -125,6 +126,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   onBackFromAgentSession,
   onCloseAgentSession,
   onCloseChannelManagement,
+  onOpenGoalThread,
   onChannelManagementDeleted,
   onCloseIdleAuxiliaryPanel,
   onCloseProfilePanel,
@@ -845,6 +847,8 @@ export const ChannelPane = React.memo(function ChannelPane({
             key="channel-management-panel"
             onChannelManagementDeleted={onChannelManagementDeleted}
             onCloseChannelManagement={onCloseChannelManagement}
+            initialView={channelManagementInitialView}
+            onOpenGoalThread={onOpenGoalThread}
             onOpenMembers={onOpenMembers}
             onResetThreadPanelWidth={onResetThreadPanelWidth}
             onThreadPanelResizeStart={onThreadPanelResizeStart}

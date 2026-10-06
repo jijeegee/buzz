@@ -123,11 +123,13 @@ export function ChannelScreen({
     readStateVersion,
   } = useAppShell();
   const {
+    channelManagementInitialView,
     channelManagementOpen,
     clearAutoSend,
     clearMessageRouteTarget,
     openAgentSessionChannelId,
     openAgentSessionPubkey,
+    openGoalsPanel,
     openProfilePanel,
     openThreadHeadId,
     profilePanelPubkey,
@@ -733,6 +735,38 @@ export function ChannelScreen({
     handleCloseAgentSession,
     setProfilePanelPubkey,
   ]);
+  // Goals live in the channel side panel; the header chip opens it straight
+  // into the goals view (or closes it when the goals view is showing).
+  const handleOpenGoals = React.useCallback(() => {
+    if (!requireThreadEditResolution()) return;
+    if (channelManagementOpen && channelManagementInitialView === "goals") {
+      setChannelManagementOpen(false);
+      return;
+    }
+    setOpenThreadHeadId(null);
+    setExpandedThreadReplyIds(new Set());
+    setThreadScrollTargetId(null);
+    setThreadReplyTargetId(null);
+    handleCloseAgentSession();
+    setProfilePanelPubkey(null);
+    openGoalsPanel();
+  }, [
+    channelManagementInitialView,
+    channelManagementOpen,
+    handleCloseAgentSession,
+    openGoalsPanel,
+    requireThreadEditResolution,
+    setChannelManagementOpen,
+    setOpenThreadHeadId,
+    setProfilePanelPubkey,
+  ]);
+  const handleOpenGoalThread = React.useCallback(
+    (threadRootId: string) => {
+      setChannelManagementOpen(false, { replace: true });
+      setOpenThreadHeadId(threadRootId);
+    },
+    [setChannelManagementOpen, setOpenThreadHeadId],
+  );
   const handleToggleMembers = React.useCallback(
     () => setIsMembersSidebarOpen((prev) => !prev),
     [],
@@ -754,6 +788,7 @@ export function ChannelScreen({
         onAddBotOpenChange={setIsAddBotOpen}
         onJoinChannel={joinChannelMutation.mutateAsync}
         onManageChannel={handleManageChannel}
+        onOpenGoals={handleOpenGoals}
         onToggleMembers={handleToggleMembers}
         showHeaderContent={!isSinglePanelView && !isHuddleTranscript}
         transparentChrome={activeChannel?.channelType !== "forum"}
@@ -774,6 +809,7 @@ export function ChannelScreen({
       joinChannelMutation.isPending,
       joinChannelMutation.mutateAsync,
       handleManageChannel,
+      handleOpenGoals,
       handleToggleMembers,
       isSinglePanelView,
       isHuddleTranscript,
@@ -846,6 +882,7 @@ export function ChannelScreen({
                   autoSendDraftKey={autoSendDraftKey}
                   onAutoSendComplete={clearAutoSend}
                   botTypingEntries={botTypingEntries}
+                  channelManagementInitialView={channelManagementInitialView}
                   channelManagementOpen={channelManagementOpen}
                   currentPubkey={currentPubkey}
                   canResetThreadPanelWidth={canResetThreadPanelWidth}
@@ -909,6 +946,7 @@ export function ChannelScreen({
                   }
                   {...{ onCloseIdleAuxiliaryPanel }}
                   onCloseChannelManagement={handleCloseChannelManagement}
+                  onOpenGoalThread={handleOpenGoalThread}
                   onCloseThread={handleCloseThread}
                   onDelete={
                     activeChannel?.archivedAt ? undefined : handleDelete

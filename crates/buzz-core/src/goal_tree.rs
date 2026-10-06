@@ -574,7 +574,11 @@ impl GoalTree {
 
 /// One edit to a goal tree. Writers keep the op, not the resulting tree, so
 /// after a revision conflict they re-read the head and re-apply the same op.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Serialized as `{"op": "add", ...}` with snake_case fields, which is the
+/// shape clients send over their own bridges (e.g. the desktop app).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
 pub enum GoalOp {
     /// Create the layer 1 goal (with `id`) or rewrite the existing one.
     SetRoot {
@@ -583,6 +587,7 @@ pub enum GoalOp {
         /// Goal sentence.
         title: String,
         /// Replacement note, if given.
+        #[serde(default)]
         note: Option<String>,
     },
     /// Add a child goal at the end of `parent`'s children.
@@ -594,8 +599,10 @@ pub enum GoalOp {
         /// Goal sentence.
         title: String,
         /// Note, if any.
+        #[serde(default)]
         note: Option<String>,
         /// Initial assignees.
+        #[serde(default)]
         assignees: Vec<String>,
     },
     /// Change fields of one goal.
@@ -603,14 +610,19 @@ pub enum GoalOp {
         /// Node id.
         id: String,
         /// New title.
+        #[serde(default)]
         title: Option<String>,
         /// New note (empty string clears).
+        #[serde(default)]
         note: Option<String>,
         /// New status.
+        #[serde(default)]
         status: Option<GoalStatus>,
         /// Pubkeys to assign.
+        #[serde(default)]
         add_assignees: Vec<String>,
         /// Pubkeys to unassign.
+        #[serde(default)]
         remove_assignees: Vec<String>,
     },
     /// Re-parent a goal (not the root).
@@ -620,6 +632,7 @@ pub enum GoalOp {
         /// New parent id.
         parent: String,
         /// Sort key; appended last when absent.
+        #[serde(default)]
         order: Option<i64>,
     },
     /// Delete a goal. Removing the root empties the tree.
@@ -627,6 +640,7 @@ pub enum GoalOp {
         /// Node id.
         id: String,
         /// Required when the goal has sub-goals.
+        #[serde(default)]
         recursive: bool,
     },
     /// Link a thread to a goal, moving it off any other goal.
@@ -875,6 +889,31 @@ mod tests {
         .unwrap();
         assert_eq!(tree.progress("a"), (1, 3));
         assert_eq!(tree.progress("root"), (1, 6));
+    }
+
+    #[test]
+    fn ops_deserialize_from_client_json() {
+        let op: GoalOp =
+            serde_json::from_str(r#"{"op":"update","id":"a","status":"done"}"#).unwrap();
+        assert_eq!(
+            op,
+            GoalOp::Update {
+                id: "a".into(),
+                title: None,
+                note: None,
+                status: Some(GoalStatus::Done),
+                add_assignees: vec![],
+                remove_assignees: vec![],
+            }
+        );
+        let op: GoalOp = serde_json::from_str(r#"{"op":"remove","id":"a"}"#).unwrap();
+        assert_eq!(
+            op,
+            GoalOp::Remove {
+                id: "a".into(),
+                recursive: false
+            }
+        );
     }
 
     #[test]

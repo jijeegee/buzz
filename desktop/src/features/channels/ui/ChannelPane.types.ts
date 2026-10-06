@@ -36,6 +36,8 @@ export type ChannelPaneProps = {
   onAutoSendComplete?: (() => void) | null;
   botTypingEntries: TypingIndicatorEntry[];
   channelManagementOpen?: boolean;
+  /** Opens the channel side panel straight into this view. */
+  channelManagementInitialView?: "goals" | null;
   currentPubkey?: string;
   editTarget?: MessageComposerEditTarget | null;
   fetchOlder?: () => Promise<void>;
@@ -93,6 +95,8 @@ export type ChannelPaneProps = {
   onBackFromAgentSession?: () => void;
   onCloseAgentSession: () => void;
   onCloseChannelManagement?: () => void;
+  /** Opens a thread linked from the goals view. */
+  onOpenGoalThread?: (threadRootId: string) => void;
   onChannelManagementDeleted?: () => void;
   onCloseIdleAuxiliaryPanel?: () => void;
   onCloseProfilePanel: () => void;

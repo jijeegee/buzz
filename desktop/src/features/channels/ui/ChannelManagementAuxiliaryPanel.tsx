@@ -8,9 +8,11 @@ type ChannelManagementAuxiliaryPanelProps = {
   activeChannel: Channel;
   canResetThreadPanelWidth: boolean;
   currentPubkey?: string;
+  initialView?: "goals" | null;
   isSinglePanelView: boolean;
   onChannelManagementDeleted?: () => void;
   onCloseChannelManagement?: () => void;
+  onOpenGoalThread?: (threadRootId: string) => void;
   onOpenMembers?: () => void;
   onResetThreadPanelWidth: () => void;
   onThreadPanelResizeStart: (
@@ -25,9 +27,11 @@ export function ChannelManagementAuxiliaryPanel({
   activeChannel,
   canResetThreadPanelWidth,
   currentPubkey,
+  initialView = null,
   isSinglePanelView,
   onChannelManagementDeleted,
   onCloseChannelManagement,
+  onOpenGoalThread,
   onOpenMembers,
   onResetThreadPanelWidth,
   onThreadPanelResizeStart,
@@ -40,6 +44,8 @@ export function ChannelManagementAuxiliaryPanel({
       animateSplitEnter={isSinglePanelView && !useSplitAuxiliaryPane}
       channel={activeChannel}
       currentPubkey={currentPubkey}
+      initialView={initialView}
+      onOpenThread={onOpenGoalThread}
       layout={useSplitAuxiliaryPane || isSinglePanelView ? "split" : "overlay"}
       onDeleted={onChannelManagementDeleted}
       onOpenMembers={onOpenMembers}

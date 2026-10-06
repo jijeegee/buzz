@@ -9,6 +9,8 @@ import { getDmParticipantPreview } from "@/features/channels/lib/dmParticipantDi
 import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
 import { ChannelHeaderStatusBadge } from "@/features/channels/ui/ChannelHeaderStatusBadge";
 import { ChannelMembersBar } from "@/features/channels/ui/ChannelMembersBar";
+import { GoalHeaderChip } from "@/features/goals/ui/GoalChips";
+import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import {
   DEFAULT_HOVER_PROFILE_STATUS_GEOMETRY,
   ProfileAvatarWithStatus,
@@ -49,6 +51,7 @@ type ChannelScreenHeaderProps = {
   onAddBotOpenChange?: (open: boolean) => void;
   onJoinChannel?: () => Promise<void>;
   onManageChannel: () => void;
+  onOpenGoals?: () => void;
   onToggleMembers: () => void;
 };
 
@@ -70,8 +73,10 @@ export function ChannelScreenHeader({
   transparentChrome = false,
   onJoinChannel,
   onManageChannel,
+  onOpenGoals,
   onToggleMembers,
 }: ChannelScreenHeaderProps) {
+  const goalsEnabled = useFeatureEnabled("goalTree");
   const isGroupDm =
     activeChannel?.channelType === "dm" &&
     activeDmHeaderParticipants.length > 1;
@@ -127,9 +132,21 @@ export function ChannelScreenHeader({
   ) : (
     headerEndActions
   );
+  const goalChip =
+    goalsEnabled &&
+    activeChannel &&
+    activeChannel.channelType !== "forum" &&
+    onOpenGoals ? (
+      <GoalHeaderChip
+        channelId={activeChannel.id}
+        compact={actionsVariant === "compact"}
+        onOpenGoals={onOpenGoals}
+      />
+    ) : null;
   const actions =
     terminalButton || channelActions ? (
       <div className="flex items-center gap-1">
+        {goalChip}
         {terminalButton}
         {channelActions}
       </div>

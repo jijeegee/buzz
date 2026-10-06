@@ -50,6 +50,8 @@ import { UnreadDivider } from "./UnreadDivider";
 import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
+import { ThreadGoalChip } from "@/features/goals/ui/GoalChips";
+import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
 import { isTaskThreadClosed } from "@/features/messages/lib/taskThread";
@@ -225,6 +227,7 @@ export function MessageThreadPanel({
   >(null);
   const isOverlay = useIsThreadPanelOverlay();
   const threadHeadId = threadHead?.id ?? null;
+  const goalsEnabled = useFeatureEnabled("goalTree");
   useEscapeKey(
     onClose,
     !isHuddleTranscript && (isOverlay || isSinglePanelView || isFocusMode),
@@ -540,6 +543,12 @@ export function MessageThreadPanel({
             className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-1 pt-0")}
             data-testid="message-thread-head"
           >
+            {goalsEnabled && channelId ? (
+              <ThreadGoalChip
+                channelId={channelId}
+                threadRootId={threadHead.id}
+              />
+            ) : null}
             <div className="rounded-2xl">
               <MessageThreadRow
                 actionBarPlacement="inside"
