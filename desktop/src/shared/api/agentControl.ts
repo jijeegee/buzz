@@ -36,3 +36,23 @@ export async function switchManagedAgentModel(
     requestId,
   });
 }
+
+/**
+ * Ask a running agent to compact one session's context. `threadRootEventId`
+ * selects the thread-scoped session; null targets the channel's whole
+ * conversation scope. The harness acknowledges with a `started` control
+ * result and later reports a terminal status for the same `requestId`.
+ */
+export async function compactManagedAgentSession(
+  pubkey: string,
+  channelId: string,
+  threadRootEventId: string | null,
+  requestId: string,
+): Promise<void> {
+  await sendAgentObserverControl(pubkey, {
+    type: "compact_session",
+    channelId,
+    threadRootEventId,
+    requestId,
+  });
+}

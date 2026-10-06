@@ -475,11 +475,13 @@ export type SwitchManagedAgentModelStatus =
   | "failure";
 
 export type ControlResultFrame = {
-  type: "cancel_turn" | "switch_model";
+  type: "cancel_turn" | "switch_model" | "compact_session";
   status: string;
   modelId?: string;
   /** Opaque per-pick id echoed from the request; correlates late frames. */
   requestId?: string;
+  /** Thread root echoed by `compact_session` results; null for a whole conversation. */
+  threadRootEventId?: string | null;
   /** Buzz channel UUID from the observer envelope; disambiguates channels. */
   channelId?: string | null;
 };
