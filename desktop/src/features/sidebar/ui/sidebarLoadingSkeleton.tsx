@@ -274,8 +274,6 @@ export function SidebarLoadingContent({
         {shape.channels.map((row) => (
           <SidebarLoadingRow key={row.key} widthClass={row.widthClass} />
         ))}
-      </SidebarLoadingSection>
-      <SidebarLoadingSection titleWidthClass="w-24">
         {shape.directMessages.map((row) => (
           <SidebarLoadingRow avatar key={row.key} widthClass={row.widthClass} />
         ))}

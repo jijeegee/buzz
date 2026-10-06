@@ -1,254 +1,111 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import { TEST_IDENTITIES } from "../helpers/bridge";
+import { installChatListBridge } from "../helpers/chatListBridge";
 
-import { waitForAnimations } from "../helpers/animations";
-import { TEST_IDENTITIES, installMockBridge } from "../helpers/bridge";
-
-const SHOTS = "test-results/channel-sort";
-
-// Mock-mode current-user pubkey and relay (see e2eBridge DEFAULT_MOCK_PUBKEY /
-// DEFAULT_RELAY_WS_URL). Sort preferences persist under the relay-scoped key
-// buzz-channel-sort.v1:<pubkey>:<encoded-relay>.
 const MOCK_PUBKEY = "deadbeef".repeat(8);
-const MOCK_RELAY_ENCODED = encodeURIComponent("ws://localhost:3000");
-const SORT_STORAGE_KEY = `buzz-channel-sort.v1:${MOCK_PUBKEY}:${MOCK_RELAY_ENCODED}`;
+const SORT_STORAGE_KEY = `buzz-channel-sort.v1:${MOCK_PUBKEY}:${encodeURIComponent("ws://localhost:3000")}`;
 
-function seedSortState(page: Page, groups: Record<string, string>) {
-  return page.addInitScript(
-    ({ key, groups }) => {
-      window.localStorage.setItem(key, JSON.stringify({ version: 1, groups }));
-    },
-    { key: SORT_STORAGE_KEY, groups },
-  );
-}
-
-async function openApp(page: Page) {
+test("mixed chat activity reorders live while personal pins stay first", async ({
+  page,
+}) => {
+  await page.addInitScript((key) => {
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: 1,
+        groups: { channels: "alpha", dms: "alpha" },
+      }),
+    );
+  }, SORT_STORAGE_KEY);
+  await installChatListBridge(page);
   await page.goto("/");
-  await page.getByTestId("channel-general").click();
-  await expect(page.getByTestId("chat-title")).toHaveText("general");
-}
-
-async function waitForMockLiveSubscription(page: Page, channelName: string) {
+  const list = page.getByTestId("chat-list");
+  const names = () =>
+    list
+      .locator("[data-channel-id]")
+      .evaluateAll((rows) =>
+        rows.map((row) => row.getAttribute("data-testid")),
+      );
+  await list.getByTestId("channel-general").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+  for (const [channelName, year] of [
+    ["engineering", 3000],
+    ["alice-tyler", 3001],
+  ] as const) {
+    await list.getByTestId(`channel-${channelName}`).click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (name) =>
+            window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+              channelName: name,
+              kind: 9,
+              exactChannel: true,
+            }) ?? false,
+          channelName,
+        ),
+      )
+      .toBe(true);
+    await list.getByTestId("channel-general").click();
+    await page.evaluate(
+      ({ name, createdAt, pubkey }) => {
+        window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+          channelName: name,
+          createdAt,
+          pubkey,
+          content: "Isolated chat-list test",
+        });
+      },
+      {
+        name: channelName,
+        createdAt: Date.parse(`${year}-01-01T00:00:00Z`) / 1000,
+        pubkey: TEST_IDENTITIES.alice.pubkey,
+      },
+    );
+    await expect
+      .poll(async () => (await names()).slice(0, 2))
+      .toEqual(["channel-general", `channel-${channelName}`]);
+  }
+  await list.getByTestId("channel-general").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Unpin", exact: true }).click();
   await expect
-    .poll(() =>
-      page.evaluate(
-        (name) =>
-          window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
-            channelName: name,
-          }) ?? false,
-        channelName,
+    .poll(async () => (await names()).slice(0, 2))
+    .toEqual(["channel-alice-tyler", "channel-engineering"]);
+  await page.getByTestId("chat-list-section-label").hover();
+  await page.getByTestId("section-actions-chats").click();
+  await expect(
+    page.getByRole("menuitem", { name: "Sort", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("menuitem", { name: /Browse channels/ }),
+  ).toBeVisible();
+});
+
+test("forum sort preference remains independent and survives reload", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    (key) =>
+      localStorage.setItem(
+        key,
+        JSON.stringify({ version: 1, groups: { forums: "recent" } }),
       ),
-    )
-    .toBe(true);
-}
-
-async function emitMockMessage(
-  page: Page,
-  channelName: string,
-  createdAt: number,
-) {
-  await page.evaluate(
-    ({ channelName, createdAt, pubkey }) => {
-      const emit = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-      if (!emit) {
-        throw new Error("Mock message emitter is not installed");
-      }
-      emit({
-        channelName,
-        content: "Fresh activity for Recent ordering",
-        createdAt,
-        pubkey,
-      });
-    },
-    { channelName, createdAt, pubkey: TEST_IDENTITIES.alice.pubkey },
+    SORT_STORAGE_KEY,
   );
-}
-
-function forumNames(page: Page) {
-  return page
-    .getByTestId("forum-list")
-    .locator("[data-testid^='channel-']")
-    .evaluateAll((nodes) =>
-      nodes
-        .map((n) => n.getAttribute("data-testid") ?? "")
-        .filter(
-          (id) =>
-            !id.startsWith("channel-unread") &&
-            !id.startsWith("channel-working"),
-        )
-        .map((id) => id.replace(/^channel-/, "")),
-    );
-}
-
-function streamNames(page: Page) {
-  return page
-    .getByTestId("stream-list")
-    .locator("[data-testid^='channel-']")
-    .evaluateAll((nodes) =>
-      nodes
-        .map((n) => n.getAttribute("data-testid") ?? "")
-        .filter(
-          (id) =>
-            !id.startsWith("channel-unread") &&
-            !id.startsWith("channel-working") &&
-            !id.startsWith("channel-dm-count"),
-        )
-        .map((id) => id.replace(/^channel-/, "")),
-    );
-}
-
-test.describe("per-group channel sort", () => {
-  test("01 — Channels group defaults to A–Z", async ({ page }) => {
-    await installMockBridge(page);
-    await openApp(page);
-
-    const names = await streamNames(page);
-    const sorted = [...names].sort((a, b) => a.localeCompare(b));
-    expect(names).toEqual(sorted);
-  });
-
-  test("02 — sort trigger switches Channels to Recent and persists", async ({
-    page,
-  }) => {
-    await installMockBridge(page);
-    await openApp(page);
-
-    // Prime a live subscription while A–Z keeps engineering rendered, then move
-    // away so the later message exercises sidebar recency rather than routing.
-    await page.getByTestId("channel-engineering").click();
-    await expect(page.getByTestId("chat-title")).toHaveText("engineering");
-    await waitForMockLiveSubscription(page, "engineering");
-    await page.getByTestId("channel-general").click();
-    await expect(page.getByTestId("chat-title")).toHaveText("general");
-
-    // Hover the Channels header to reveal the action cluster, then open the
-    // sort dropdown and choose Recent.
-    const streamList = page.getByTestId("stream-list");
-    await expect(streamList).toBeVisible();
-    await page.getByText("Channels", { exact: true }).hover();
-    const trigger = page.getByTestId("section-actions-channels");
-    await expect(trigger).toBeVisible();
-    await waitForAnimations(page);
-    await page.screenshot({ path: `${SHOTS}/01-channels-sort-ingress.png` });
-    await trigger.click();
-    // Sort is now a submenu flyout — open it before the radio items render.
-    await page.getByRole("menuitem", { name: "Sort" }).click();
-    await expect(
-      page.getByRole("menuitemradio", { name: "Recent" }),
-    ).toBeVisible();
-    await waitForAnimations(page);
-    await page.screenshot({ path: `${SHOTS}/02-channels-sort-open.png` });
-    await page.getByRole("menuitemradio", { name: "Recent" }).click();
-
-    // Mock recency: all-replies (far future) > deep-history (1m) > general
-    // (5m) > agents (15m) > sales (30m) > engineering (42m) > design (120m),
-    // then no-activity channels alphabetically. The list is virtualized, so
-    // only assert on the rendered prefix.
-    await expect
-      .poll(async () => (await streamNames(page)).slice(0, 3))
-      .toEqual(["all-replies", "deep-history", "general"]);
-    const names = await streamNames(page);
-    const recencyOrder = [
-      "all-replies",
-      "deep-history",
-      "general",
-      "agents",
-      "sales",
-      "engineering",
-      "design",
-    ];
-    const rendered = recencyOrder.filter((n) => names.includes(n));
-    expect(names.slice(0, rendered.length)).toEqual(rendered);
-    await waitForAnimations(page);
-    await page.screenshot({ path: `${SHOTS}/03-channels-recent.png` });
-
-    // A fresh message must advance the matching channel immediately. The mock
-    // fixture intentionally pins all-replies in 2999, so use 3000 to prove the
-    // live cache update outranks even that deterministic sentinel.
-    await emitMockMessage(
-      page,
-      "engineering",
-      Math.floor(Date.parse("3000-01-01T00:00:00.000Z") / 1_000),
-    );
-    await expect
-      .poll(async () => (await streamNames(page)).slice(0, 3))
-      .toEqual(["engineering", "all-replies", "deep-history"]);
-
-    // Persisted for this identity.
-    const stored = await page.evaluate((key) => {
-      return JSON.parse(window.localStorage.getItem(key) ?? "null");
-    }, SORT_STORAGE_KEY);
-    expect(stored).toMatchObject({
-      version: 1,
-      groups: { channels: "recent" },
-    });
-
-    // Survives reload.
-    await page.reload();
-    await expect(page.getByTestId("stream-list")).toBeVisible();
-    await expect
-      .poll(async () => (await streamNames(page)).slice(0, 2))
-      .toEqual(["all-replies", "deep-history"]);
-  });
-
-  test("03 — group preferences are independent (seeded Channels=recent leaves Forums A–Z)", async ({
-    page,
-  }) => {
-    await seedSortState(page, { channels: "recent" });
-    await installMockBridge(page);
-    await openApp(page);
-
-    // Channels reflects the seeded Recent order…
-    await expect
-      .poll(async () => (await streamNames(page)).slice(0, 2))
-      .toEqual(["all-replies", "deep-history"]);
-
-    // …while Forums (unset) stays alphabetical.
-    const forumOrder = await forumNames(page);
-    const sortedForums = [...forumOrder].sort((a, b) => a.localeCompare(b));
-    expect(forumOrder).toEqual(sortedForums);
-    await waitForAnimations(page);
-    await page.screenshot({ path: `${SHOTS}/04-independent-groups.png` });
-  });
-
-  test("04 — Forum Recent survives authoritative reload", async ({ page }) => {
-    await seedSortState(page, { forums: "recent" });
-    await installMockBridge(page);
-    await openApp(page);
-
-    await expect
-      .poll(async () => (await forumNames(page)).slice(0, 2))
-      .toEqual(["watercooler", "announcements"]);
-
-    await page.reload();
-    await expect(page.getByTestId("forum-list")).toBeVisible();
-    await expect
-      .poll(async () => (await forumNames(page)).slice(0, 2))
-      .toEqual(["watercooler", "announcements"]);
-  });
-
-  test("05 — DM group has its own sort trigger", async ({ page }) => {
-    await installMockBridge(page);
-    await openApp(page);
-
-    const dmList = page.getByTestId("dm-list");
-    await expect(dmList).toBeVisible();
-    await page.getByText("Direct messages", { exact: true }).hover();
-    const trigger = page.getByTestId("section-actions-dms");
-    await expect(trigger).toBeVisible();
-    await trigger.click();
-    // Sort is now a submenu flyout — open it before the radio items render.
-    await page.getByRole("menuitem", { name: "Sort" }).click();
-    await expect(
-      page.getByRole("menuitemradio", { name: "A–Z" }),
-    ).toBeVisible();
-    await waitForAnimations(page);
-    await page.screenshot({ path: `${SHOTS}/05-dm-sort-open.png` });
-    await page.getByRole("menuitemradio", { name: "Recent" }).click();
-
-    const stored = await page.evaluate((key) => {
-      return JSON.parse(window.localStorage.getItem(key) ?? "null");
-    }, SORT_STORAGE_KEY);
-    expect(stored).toMatchObject({ version: 1, groups: { dms: "recent" } });
-  });
+  await installChatListBridge(page);
+  await page.goto("/");
+  const names = () =>
+    page
+      .getByTestId("forum-list")
+      .locator("[data-channel-id]")
+      .evaluateAll((rows) =>
+        rows.map((row) => row.getAttribute("data-testid")),
+      );
+  await expect
+    .poll(names)
+    .toEqual(["channel-watercooler", "channel-announcements"]);
+  await page.reload();
+  await expect
+    .poll(names)
+    .toEqual(["channel-watercooler", "channel-announcements"]);
 });

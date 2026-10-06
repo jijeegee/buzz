@@ -68,8 +68,10 @@ to manufacture a first-run test.
   that key, WebSocket state was `connected`, and the persisted transaction reached
   `default-community / profile` with no error. The native window showed the
   existing Build your profile screen. No login, profile or app-data reset was
-  performed. Fresh Google login and completion of profile/team setup by the human
-  remain acceptance work; mock success does not attest them.
+  performed. Subsequently, on 2026-10-06, the user personally reported successful
+  login into the app, channel creation and message sending. This is user-reported
+  acceptance of that flow; no additional login/recovery test by the agent is
+  implied.
 - Native sources are unchanged; the dedicated binary matched its recorded
   SHA-256 and was reused. The launcher reported `externalJob: false` and its DEV
   native/Vite children were live after the launching command exited. Production

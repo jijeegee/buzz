@@ -67,7 +67,7 @@ async function createAndJoinSharedStream(
   await openCreateChannelDialog(ownerPage);
   await ownerPage.getByTestId("create-channel-name").fill(channelName);
   await ownerPage.getByTestId("create-channel-submit").click();
-  await expect(ownerPage.getByTestId("stream-list")).toContainText(channelName);
+  await expect(ownerPage.getByTestId("chat-list")).toContainText(channelName);
   await expect(ownerPage.getByTestId("chat-title")).toHaveText(channelName);
   await expect(ownerPage.getByTestId("message-input")).toBeEnabled();
 
@@ -82,9 +82,7 @@ async function createAndJoinSharedStream(
     .getByRole("button", { name: "Join" })
     .click();
   await expect(memberPage.getByTestId("chat-title")).toHaveText(channelName);
-  await expect(memberPage.getByTestId("stream-list")).toContainText(
-    channelName,
-  );
+  await expect(memberPage.getByTestId("chat-list")).toContainText(channelName);
 
   await expect(memberPage.getByTestId("message-input")).toBeEnabled();
 
@@ -193,10 +191,10 @@ test("loads channels from the relay", async ({ page }) => {
   await installRelayBridge(page, "tyler");
   await page.goto("/");
 
-  await expect(page.getByTestId("stream-list")).toContainText("general");
-  await expect(page.getByTestId("stream-list")).toContainText("random");
+  await expect(page.getByTestId("chat-list")).toContainText("general");
+  await expect(page.getByTestId("chat-list")).toContainText("random");
   await expect(page.getByTestId("forum-list")).toContainText("watercooler");
-  await expect(page.getByTestId("dm-list")).toContainText("alice-tyler");
+  await expect(page.getByTestId("chat-list")).toContainText("alice-tyler");
 });
 
 test("loads the home feed from the relay", async ({ browser }) => {
@@ -277,7 +275,7 @@ test("creates a relay-backed stream", async ({ page }) => {
     .fill("Created from Playwright");
   await page.getByTestId("create-channel-submit").click();
 
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
   await expect(page.getByTestId("chat-title")).toHaveText(channelName);
 });
 

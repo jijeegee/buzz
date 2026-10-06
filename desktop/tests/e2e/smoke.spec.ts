@@ -88,9 +88,9 @@ test("loads the app shell with mocked channels", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
-  await expect(page.getByTestId("stream-list")).toContainText("general");
+  await expect(page.getByTestId("chat-list")).toContainText("general");
   await expect(page.getByTestId("forum-list")).toContainText("watercooler");
-  await expect(page.getByTestId("dm-list")).toContainText("alice-tyler");
+  await expect(page.getByTestId("chat-list")).toContainText("alice-tyler");
 });
 
 async function chooseSharedComputeProvider(
@@ -119,7 +119,7 @@ test("creates a new mocked stream", async ({ page }) => {
     .fill("Release coordination");
   await page.getByTestId("create-channel-submit").click();
 
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
   await expect(page.getByTestId("chat-title")).toContainText(channelName);
 });
 

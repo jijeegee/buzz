@@ -101,7 +101,7 @@ test("assigns from an agent profile, reopens, drags, and offers the message acti
   const sidebarBestie = page.getByTestId("bestie-sidebar-entry");
   await expect(sidebarBestie).toContainText("Mochi");
   await expect(
-    page.getByTestId("dm-list").getByTestId("channel-alice-tyler"),
+    page.getByTestId("chat-list").getByTestId("channel-alice-tyler"),
   ).toHaveCount(0);
   expect(
     await sidebarBestie.evaluate(

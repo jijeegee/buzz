@@ -25,33 +25,48 @@ export function useChannelStars(
   unstarChannel: (channelId: string) => void;
 } {
   const [store, setStore] = React.useState<ChannelStarStore>(() => {
-    if (!pubkey) {
+    if (!pubkey || !relayUrl) {
       return DEFAULT_STORE;
     }
-    return readChannelStarsStore(pubkey);
+    return readChannelStarsStore(pubkey, relayUrl);
   });
 
+  const scope = pubkey && relayUrl ? storageKey(pubkey, relayUrl) : null;
+  const [loadedScope, setLoadedScope] = React.useState(scope);
+  if (loadedScope !== scope) {
+    // Reset during render so no child ever commits the previous owner's pins.
+    setLoadedScope(scope);
+    setStore(
+      pubkey && relayUrl
+        ? readChannelStarsStore(pubkey, relayUrl)
+        : DEFAULT_STORE,
+    );
+  }
+
   const managerRef = React.useRef<ChannelStarSyncManager | null>(null);
+  const managerScopeRef = React.useRef<string | null>(null);
   const lastAppliedRemoteTs = React.useRef(0);
   const lastAppliedEventId = React.useRef("");
   // Local-mutation revision: incremented on every user edit so an in-flight
   // retry fetch that started before the edit is discarded at apply time.
   const localRevision = React.useRef(0);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!pubkey || !relayUrl) {
       setStore(DEFAULT_STORE);
       lastAppliedRemoteTs.current = 0;
       lastAppliedEventId.current = "";
       return;
     }
-    setStore(readChannelStarsStore(pubkey));
+    setStore(readChannelStarsStore(pubkey, relayUrl));
     lastAppliedRemoteTs.current = 0;
     lastAppliedEventId.current = "";
     managerRef.current = new ChannelStarSyncManager(pubkey, relayUrl);
+    managerScopeRef.current = storageKey(pubkey, relayUrl);
     return () => {
       managerRef.current?.destroy();
       managerRef.current = null;
+      managerScopeRef.current = null;
     };
   }, [pubkey, relayUrl]);
 
@@ -59,23 +74,28 @@ export function useChannelStars(
     if (!pubkey) {
       return;
     }
-    const key = storageKey(pubkey);
+    const key = storageKey(pubkey, relayUrl);
     const handler = (e: StorageEvent) => {
       if (e.key !== key) {
         return;
       }
-      setStore(readChannelStarsStore(pubkey));
+      setStore(readChannelStarsStore(pubkey, relayUrl));
     };
     window.addEventListener("storage", handler);
     return () => {
       window.removeEventListener("storage", handler);
     };
-  }, [pubkey]);
+  }, [pubkey, relayUrl]);
 
   const applyRemote = React.useCallback(
     (remote: RemoteStars): ((prev: ChannelStarStore) => ChannelStarStore) => {
       return (prev) => {
-        if (!pubkey) return prev;
+        if (
+          !pubkey ||
+          !relayUrl ||
+          managerScopeRef.current !== storageKey(pubkey, relayUrl)
+        )
+          return prev;
         if (remote.createdAt < lastAppliedRemoteTs.current) return prev;
         if (
           remote.createdAt === lastAppliedRemoteTs.current &&
@@ -84,7 +104,7 @@ export function useChannelStars(
           return prev;
         managerRef.current?.cancelPendingStarPublish();
         const merged = mergeStores(prev, remote.store);
-        if (!writeChannelStarsStore(pubkey, merged)) return prev;
+        if (!writeChannelStarsStore(pubkey, merged, relayUrl)) return prev;
         // Advance the applied head only after the cache write succeeds so a
         // failed write leaves the same head retryable on the next tick.
         lastAppliedRemoteTs.current = remote.createdAt;
@@ -92,13 +112,13 @@ export function useChannelStars(
         return merged;
       };
     },
-    [pubkey],
+    [pubkey, relayUrl],
   );
 
   React.useEffect(() => {
     if (!pubkey || !relayUrl) return;
     let cancelled = false;
-    const local = readChannelStarsStore(pubkey);
+    const local = readChannelStarsStore(pubkey, relayUrl);
     void managerRef.current?.bootstrap(local).then((result) => {
       if (cancelled) return;
       if (result.action === "apply-remote") {
@@ -189,12 +209,16 @@ export function useChannelStars(
 
   const setStarState = React.useCallback(
     (channelId: string, starred: boolean) => {
-      if (!pubkey) return;
+      if (!pubkey || !relayUrl) return;
       const entry: ChannelStarEntry = {
         starred,
         updatedAt: Math.floor(Date.now() / 1000),
       };
       setStore((prev) => {
+        // A deferred menu action from the previous community/account must not
+        // merge its IDs into this state or publish through the new manager.
+        if (managerScopeRef.current !== storageKey(pubkey, relayUrl))
+          return prev;
         const next = boundStarStore(
           {
             version: 1,
@@ -202,13 +226,13 @@ export function useChannelStars(
           },
           channelId,
         );
-        if (!writeChannelStarsStore(pubkey, next)) return prev;
+        if (!writeChannelStarsStore(pubkey, next, relayUrl)) return prev;
         localRevision.current += 1;
         managerRef.current?.publishStars(next);
         return next;
       });
     },
-    [pubkey],
+    [pubkey, relayUrl],
   );
 
   const starChannel = React.useCallback(

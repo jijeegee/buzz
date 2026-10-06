@@ -86,7 +86,7 @@ test("an incoming DM produces exactly one desktop notification", async ({
 
   // Wait until the DM channel is loaded — live subscriptions (channel + home
   // feed mention) are established once the channel list resolves.
-  await expect(page.getByTestId("dm-list")).toContainText("alice-tyler");
+  await expect(page.getByTestId("chat-list")).toContainText("alice-tyler");
   await feedInitialized;
   // Small buffer for the feed effect (seen-set initialization) to run.
   await page.waitForTimeout(1_000);

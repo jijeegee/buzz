@@ -74,7 +74,7 @@ async function dragSidebarRail(page: Page, deltaX: number) {
   await page.mouse.up();
 }
 
-test("sidebar rows separate hover, selected, and reorder states", async ({
+test("sidebar rows preserve hover and selected states without manual reordering", async ({
   page,
 }) => {
   await loadTheme(page, "github-light");
@@ -104,9 +104,9 @@ test("sidebar rows separate hover, selected, and reorder states", async ({
     const selected = document.querySelector<HTMLElement>(
       '[data-testid="channel-general"]',
     );
-    const following = document.querySelector<HTMLElement>(
-      '[data-testid="channel-random"]',
-    );
+    const following = selected
+      ?.closest("li")
+      ?.nextElementSibling?.querySelector<HTMLElement>("[data-channel-id]");
     if (!selected || !following) return null;
     const selectedBox = selected.getBoundingClientRect();
     const followingBox = following.getBoundingClientRect();
@@ -158,41 +158,14 @@ test("sidebar rows separate hover, selected, and reorder states", async ({
   await expect(selectedRow).toHaveCSS("transform", "none");
   await expect(draggableRow).not.toHaveAttribute("data-sidebar-drag-state");
 
-  // Small pointer motion still counts as an ordinary click. The row only
-  // scales once dnd-kit's 6px reorder threshold has been crossed.
+  // Message recency owns row order. Dragging must not enter a manual order mode.
   await page.mouse.move(
     selectedBox.x + selectedBox.width / 2,
-    selectedBox.y + selectedBox.height / 2 + 3,
-    { steps: 3 },
+    selectedBox.y + selectedBox.height / 2 + 12,
   );
   await expect(draggableRow).not.toHaveAttribute("data-sidebar-drag-state");
-  await expect(draggableRow).toHaveCSS("transform", "none");
-
-  await page.mouse.move(
-    selectedBox.x + selectedBox.width / 2,
-    selectedBox.y + selectedBox.height / 2 + 8,
-    { steps: 5 },
-  );
-  await expect(draggableRow).toHaveAttribute(
-    "data-sidebar-drag-state",
-    "dragging",
-  );
-  await expect(page.getByTestId("sidebar-channel-drag-overlay")).toBeVisible();
-  await expect
-    .poll(() =>
-      draggableRow.evaluate((element) => getComputedStyle(element).transform),
-    )
-    .toBe("matrix(0.985, 0, 0, 0.985, 0, 0)");
+  await expect(page.getByTestId("sidebar-channel-drag-overlay")).toHaveCount(0);
   await page.mouse.up();
-  await expect(draggableRow).not.toHaveAttribute("data-sidebar-drag-state");
-  await expect(
-    page.getByTestId("sidebar-channel-drag-overlay"),
-  ).not.toBeVisible();
-  await expect
-    .poll(() =>
-      draggableRow.evaluate((element) => getComputedStyle(element).transform),
-    )
-    .toBe("none");
 });
 
 test("add community starts with create and join choices", async ({ page }) => {
@@ -408,7 +381,7 @@ test("channel owner can archive from the context menu", async ({ page }) => {
   await page.getByTestId("channel-general").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Archive channel" }).click();
 
-  await expect(page.getByTestId("stream-list")).not.toContainText("general");
+  await expect(page.getByTestId("chat-list")).not.toContainText("general");
 });
 
 test("channel owner can delete from the context menu", async ({ page }) => {
@@ -423,7 +396,7 @@ test("channel owner can delete from the context menu", async ({ page }) => {
   await page.getByTestId("channel-delete-confirm").click();
 
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
-  await expect(page.getByTestId("stream-list")).not.toContainText("general");
+  await expect(page.getByTestId("chat-list")).not.toContainText("general");
 });
 
 for (const theme of ["buzz", "github-light", "catppuccin-mocha"]) {

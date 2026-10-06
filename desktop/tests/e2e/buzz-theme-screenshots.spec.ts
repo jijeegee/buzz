@@ -176,8 +176,9 @@ async function expectBuzzSidebarPalette(page: Page, mode: "light" | "dark") {
   await expect(hoverChannel).toHaveCSS("background-color", rowHoverSurface);
 
   const firstDmItem = page
-    .getByTestId("dm-list")
+    .getByTestId("chat-list")
     .locator('[data-sidebar="menu-item"]')
+    .filter({ has: page.getByRole("button", { name: "Close direct message" }) })
     .first();
   const firstDmButton = firstDmItem.locator('[data-sidebar="menu-button"]');
   const firstDmLabel = firstDmButton.locator("[data-sidebar-row-label]");
@@ -215,7 +216,7 @@ async function expectBuzzSidebarPalette(page: Page, mode: "light" | "dark") {
 
 async function expectIconlessSectionTitleAligned(
   page: Page,
-  listTestId: "stream-list" | "dm-list",
+  listTestId: "chat-list",
 ) {
   const titleBox = await page
     .getByTestId(`${listTestId}-section-label`)
@@ -392,8 +393,7 @@ test("buzz light sidebar gradient", async ({ page }) => {
   await expectBuzzGradientPaint(page, "light");
   await expectBuzzSidebarPalette(page, "light");
   await expectBuzzContentShadow(page, "light");
-  await expectIconlessSectionTitleAligned(page, "stream-list");
-  await expectIconlessSectionTitleAligned(page, "dm-list");
+  await expectIconlessSectionTitleAligned(page, "chat-list");
   await waitForAnimations(page);
   await page
     .getByTestId("app-sidebar")
@@ -407,8 +407,7 @@ test("buzz dark sidebar gradient", async ({ page }) => {
   await expectBuzzGradientPaint(page, "dark");
   await expectBuzzSidebarPalette(page, "dark");
   await expectBuzzContentShadow(page, "dark");
-  await expectIconlessSectionTitleAligned(page, "stream-list");
-  await expectIconlessSectionTitleAligned(page, "dm-list");
+  await expectIconlessSectionTitleAligned(page, "chat-list");
   await expect(page.locator("[data-buzz-content-surface]")).toHaveCSS(
     "background-color",
     "rgb(26, 26, 26)",

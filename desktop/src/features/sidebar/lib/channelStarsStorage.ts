@@ -1,3 +1,5 @@
+import { normalizeRelayUrl } from "@/shared/lib/normalizeRelayUrl";
+
 const STORAGE_KEY_PREFIX = "buzz-channel-stars.v1";
 export const MAX_CHANNEL_STAR_ENTRIES = 500;
 
@@ -16,8 +18,11 @@ export const DEFAULT_STORE: ChannelStarStore = Object.freeze({
   channels: {},
 });
 
-export function storageKey(pubkey: string): string {
-  return `${STORAGE_KEY_PREFIX}:${pubkey}`;
+export function storageKey(pubkey: string, relayUrl?: string): string {
+  const key = `${STORAGE_KEY_PREFIX}:${pubkey}`;
+  return relayUrl
+    ? `${key}:${encodeURIComponent(normalizeRelayUrl(relayUrl))}`
+    : key;
 }
 
 export function parseStarPayload(json: unknown): ChannelStarStore | null {
@@ -49,9 +54,31 @@ export function parseStarPayload(json: unknown): ChannelStarStore | null {
   return boundStarStore({ version: 1, channels });
 }
 
-export function readChannelStarsStore(pubkey: string): ChannelStarStore {
+export function readChannelStarsStore(
+  pubkey: string,
+  relayUrl?: string,
+): ChannelStarStore {
   try {
-    const raw = window.localStorage.getItem(storageKey(pubkey));
+    let raw = window.localStorage.getItem(storageKey(pubkey, relayUrl));
+    if (!raw && relayUrl) {
+      // Bind the old account-only cache once, retaining its original data.
+      // Claim before copying: a failed scoped write is retryable, and another
+      // community can never import these IDs on a subsequent read.
+      const legacyRaw = window.localStorage.getItem(storageKey(pubkey));
+      if (legacyRaw) {
+        const legacy = JSON.parse(legacyRaw);
+        const store = parseStarPayload(legacy);
+        const scope = normalizeRelayUrl(relayUrl);
+        if (store && (!legacy.migratedTo || legacy.migratedTo === scope)) {
+          window.localStorage.setItem(
+            storageKey(pubkey),
+            JSON.stringify({ ...legacy, migratedTo: scope }),
+          );
+          writeChannelStarsStore(pubkey, store, relayUrl);
+          raw = JSON.stringify(store);
+        }
+      }
+    }
     if (!raw) {
       return DEFAULT_STORE;
     }
@@ -96,10 +123,11 @@ export function boundStarStore(
 export function writeChannelStarsStore(
   pubkey: string,
   store: ChannelStarStore,
+  relayUrl?: string,
 ): boolean {
   try {
     window.localStorage.setItem(
-      storageKey(pubkey),
+      storageKey(pubkey, relayUrl),
       JSON.stringify(boundStarStore(store)),
     );
     return true;

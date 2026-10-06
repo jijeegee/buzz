@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { installMockBridge } from "../helpers/bridge";
 
@@ -24,77 +24,6 @@ async function seedChannelSections(page: Page) {
     },
     { pubkey: MOCK_PUBKEY, sections: [SECTION_TOP, SECTION_BOTTOM] },
   );
-}
-
-// dnd-kit's PointerSensor activates only after the pointer travels past its
-// 6px distance constraint, so a single move never starts a drag. This walks the
-// pointer down, past the activation threshold, onto the target, then releases —
-// the sequence dnd-kit needs to fire onDragEnd and commit the reorder.
-async function dragOver(page: Page, source: Locator, target: Locator) {
-  const from = await source.boundingBox();
-  if (!from) throw new Error("drag source not laid out");
-  const pointer = {
-    x: from.x + from.width / 2,
-    y: from.y + from.height / 2,
-  };
-  await source.dispatchEvent("pointerdown", {
-    button: 0,
-    buttons: 1,
-    clientX: pointer.x,
-    clientY: pointer.y,
-    isPrimary: true,
-    pointerId: 1,
-    pointerType: "mouse",
-  });
-  await page.evaluate(({ x, y }) => {
-    document.dispatchEvent(
-      new PointerEvent("pointermove", {
-        bubbles: true,
-        buttons: 1,
-        clientX: x,
-        clientY: y + 8,
-        isPrimary: true,
-        pointerId: 1,
-        pointerType: "mouse",
-      }),
-    );
-  }, pointer);
-  await expect(page.getByTestId("sidebar-section-drag-overlay")).toBeVisible();
-
-  const to = await target.boundingBox();
-  if (!to) throw new Error("drag target not laid out");
-  const destination = {
-    x: to.x + to.width / 2,
-    y: to.y + to.height - 2,
-  };
-  await page.evaluate(async ({ x, y }) => {
-    document.dispatchEvent(
-      new PointerEvent("pointermove", {
-        bubbles: true,
-        buttons: 1,
-        clientX: x,
-        clientY: y,
-        isPrimary: true,
-        pointerId: 1,
-        pointerType: "mouse",
-      }),
-    );
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
-    document.dispatchEvent(
-      new PointerEvent("pointerup", {
-        bubbles: true,
-        button: 0,
-        buttons: 0,
-        clientX: x,
-        clientY: y,
-        isPrimary: true,
-        pointerId: 1,
-        pointerType: "mouse",
-      }),
-    );
-  }, destination);
 }
 
 test.describe("list virtualization", () => {
@@ -197,50 +126,20 @@ test.describe("list virtualization", () => {
     ).toBeVisible();
   });
 
-  test("06 — custom-section dnd reorder commits under content-visibility", async ({
-    page,
-  }) => {
+  test("06 ? legacy sections share one normal chat list", async ({ page }) => {
     await seedChannelSections(page);
     await installMockBridge(page);
     await page.goto("/");
-    await page.getByTestId("channel-general").click();
-    await expect(page.getByTestId("chat-title")).toHaveText("general");
-
-    // dnd-kit marks each section's wrapping row with role="button" +
-    // aria-roledescription="sortable" and spreads the drag listeners there, so
-    // the row itself is the handle. Scoping to that attribute reads the live
-    // section order and excludes the inner disclosure button and the (hidden)
-    // assign-to-section context-menu items that reuse the same names.
-    const headers = page.locator('[aria-roledescription="sortable"]');
-    const topHeader = headers.filter({ hasText: "Priority" });
-    const bottomHeader = headers.filter({ hasText: "Archive" });
-    const topHeaderButton = topHeader.getByRole("button", {
-      name: "Priority",
-      exact: true,
-    });
-    await expect(topHeader).toBeVisible();
-    await expect(bottomHeader).toBeVisible();
-    await expect(headers).toHaveCount(2);
-
-    const sectionOrder = async () =>
-      headers.evaluateAll((rows) =>
-        rows.map((row) =>
-          row.textContent?.trim().startsWith("Priority")
-            ? "Priority"
-            : "Archive",
-        ),
-      );
-    expect(await sectionOrder()).toEqual(["Priority", "Archive"]);
-
-    // Drag "Priority" past "Archive" — onDragEnd commits arrayMove and persists
-    // the new order. The drop must land for the order to flip.
-    await dragOver(page, topHeaderButton, bottomHeader);
-
-    // The drop landed: order flipped. A no-op drag would leave it unchanged.
-    await expect.poll(sectionOrder).toEqual(["Archive", "Priority"]);
-    // Both section rows stayed committed in the DOM across the reorder — the
-    // content-visibility invariant the divergence rests on (no unmount).
-    await expect(headers).toHaveCount(2);
+    await expect(page.getByTestId("chat-list")).toBeVisible();
+    await expect(page.locator('[aria-roledescription="sortable"]')).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByTestId("chat-list").getByTestId("channel-general"),
+    ).toBeAttached();
+    await expect(
+      page.getByTestId("chat-list").getByTestId("channel-alice-tyler"),
+    ).toBeAttached();
   });
 
   test("08 — cascading older pages never snap the viewport toward newest", async ({

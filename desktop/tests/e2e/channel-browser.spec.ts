@@ -20,7 +20,7 @@ async function seedCustomSection(page: Page) {
 test.beforeEach(async ({ page }, testInfo) => {
   await installMockBridge(
     page,
-    testInfo.title.includes("failed section create")
+    testInfo.title.includes("failed chat create")
       ? { createChannelErrors: ["Create failed"] }
       : undefined,
   );
@@ -222,7 +222,7 @@ test("sidebar add-channel button creates without treating the click as a callbac
   await page.goto("/");
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
 
-  await page.getByTestId("section-actions-channels-quick-create").click();
+  await openChannelBrowser(page);
 
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
   const channelName = `sidebar-created-${Date.now()}`;
@@ -231,44 +231,36 @@ test("sidebar add-channel button creates without treating the click as a callbac
   await page.getByTestId("create-channel-submit").click();
 
   await expect(page.getByTestId("channel-browser-dialog")).not.toBeVisible();
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
 });
 
-test("custom section add button creates directly into that section", async ({
+test("legacy sections do not split Chats or lose their saved preferences", async ({
   page,
 }) => {
   await seedCustomSection(page);
   await page.goto("/");
-
-  const addButton = page.getByTestId(
-    `section-actions-${CUSTOM_SECTION.id}-quick-create`,
-  );
-  await expect(addButton).toHaveAccessibleName("Add channel to Projects");
-  await addButton.click();
-  await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
-
-  const channelName = `section-created-${Date.now()}`;
-  await page.getByTestId("channel-browser-search").fill(channelName);
-  await page.getByTestId("channel-browser-create-row").click();
-  await page.getByTestId("create-channel-submit").click();
-
-  await expect(page.getByTestId("channel-browser-dialog")).not.toBeVisible();
+  await expect(page.getByTestId("chat-list")).toBeVisible();
   await expect(
     page.getByTestId(`section-title-${CUSTOM_SECTION.id}`),
-  ).toBeVisible();
-  await expect(page.getByTestId(`channel-${channelName}`)).toBeVisible();
-  await expect(page.getByTestId("stream-list")).not.toContainText(channelName);
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      (pubkey) =>
+        JSON.parse(
+          localStorage.getItem(`buzz-channel-sections.v1:${pubkey}`) ?? "null",
+        )?.sections,
+      MOCK_PUBKEY,
+    ),
+  ).toEqual([CUSTOM_SECTION]);
 });
 
-test("canceling section create does not affect the next global create", async ({
+test("canceling chat browse does not affect the next create", async ({
   page,
 }) => {
   await seedCustomSection(page);
   await page.goto("/");
 
-  await page
-    .getByTestId(`section-actions-${CUSTOM_SECTION.id}-quick-create`)
-    .click();
+  await openChannelBrowser(page);
   // Gate on the dialog mounting before dismissing it. Escape sent before mount
   // is dropped (no handler yet), and not.toBeVisible() then passes vacuously
   // against a dialog that hasn't rendered — so the dialog opens *after* the
@@ -280,24 +272,20 @@ test("canceling section create does not affect the next global create", async ({
   // detach so it can't intercept the next click.
   await expect(page.getByTestId("dialog-overlay")).toHaveCount(0);
 
-  await page.getByTestId("section-actions-channels-quick-create").click();
+  await openChannelBrowser(page);
   const channelName = `global-after-cancel-${Date.now()}`;
   await page.getByTestId("channel-browser-search").fill(channelName);
   await page.getByTestId("channel-browser-create-row").click();
   await page.getByTestId("create-channel-submit").click();
 
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
 });
 
-test("failed section create retry still assigns to the section", async ({
-  page,
-}) => {
+test("failed chat create retry still appears in Chats", async ({ page }) => {
   await seedCustomSection(page);
   await page.goto("/");
 
-  await page
-    .getByTestId(`section-actions-${CUSTOM_SECTION.id}-quick-create`)
-    .click();
+  await openChannelBrowser(page);
   const channelName = `section-retry-${Date.now()}`;
   await page.getByTestId("channel-browser-search").fill(channelName);
   await page.getByTestId("channel-browser-create-row").click();
@@ -308,7 +296,7 @@ test("failed section create retry still assigns to the section", async ({
 
   await expect(page.getByTestId("channel-browser-dialog")).not.toBeVisible();
   await expect(page.getByTestId(`channel-${channelName}`)).toBeVisible();
-  await expect(page.getByTestId("stream-list")).not.toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
 });
 
 test("create affordance is visible on open before typing", async ({ page }) => {
@@ -395,7 +383,7 @@ test("creating from the browser adds the channel to the sidebar", async ({
   await page.getByTestId("create-channel-submit").click();
 
   await expect(page.getByTestId("channel-browser-dialog")).not.toBeVisible();
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
   await expect(page.getByTestId("chat-title")).toContainText(channelName);
 });
 
@@ -459,7 +447,7 @@ test("joining a channel from browser adds it to the sidebar", async ({
   await page.goto("/");
 
   // Verify "design" is not in the sidebar
-  const streamList = page.getByTestId("stream-list");
+  const streamList = page.getByTestId("chat-list");
   await expect(streamList).not.toContainText("design");
 
   // Open browser and join
@@ -541,7 +529,7 @@ test("keyboard navigation works in channel browser", async ({ page }) => {
 test("sidebar only shows channels the user has joined", async ({ page }) => {
   await page.goto("/");
 
-  const streamList = page.getByTestId("stream-list");
+  const streamList = page.getByTestId("chat-list");
 
   // Channels the mock user IS a member of
   await expect(streamList).toContainText("general");

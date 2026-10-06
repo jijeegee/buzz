@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { BellOff, ChevronDown, CircleDot, X } from "lucide-react";
+import { BellOff, ChevronDown, CircleDot, Pin, X } from "lucide-react";
 
 import {
   ContextMenu,
@@ -250,6 +250,7 @@ export function ChannelMenuButton({
   hasUnread,
   activeWorking,
   isMuted,
+  isPinned,
   dmParticipants,
   presenceStatus,
   onSelectChannel,
@@ -260,6 +261,7 @@ export function ChannelMenuButton({
   hasUnread: boolean;
   activeWorking?: ActiveChannelTurnSummary;
   isMuted?: boolean;
+  isPinned?: boolean;
   dmParticipants?: SidebarDmParticipant[];
   presenceStatus?: PresenceStatus;
   onSelectChannel: (channelId: string) => void;
@@ -308,6 +310,12 @@ export function ChannelMenuButton({
         dmParticipants={dmParticipants}
         presenceStatus={presenceStatus}
       />
+      {isPinned ? (
+        <span className="shrink-0" data-testid={`chat-pinned-${channel.id}`}>
+          <Pin aria-hidden="true" className="h-3 w-3" />
+          <span className="sr-only">Pinned for you</span>
+        </span>
+      ) : null}
       <span
         className={cn(
           "flex min-w-0 flex-1 items-center gap-1",
@@ -397,6 +405,11 @@ export function SidebarSection({
   onMuteChannel,
   onUnmuteChannel,
   sectionActionsOpen,
+  starredChannelIds,
+  onStarChannel,
+  onUnstarChannel,
+  onDeleteChannel,
+  onLeaveChannel,
 }: {
   action?: React.ReactNode;
   activeWorkingByChannelId?: ReadonlyMap<string, ActiveChannelTurnSummary>;
@@ -424,6 +437,11 @@ export function SidebarSection({
   onMuteChannel?: (channelId: string) => void;
   onUnmuteChannel?: (channelId: string) => void;
   sectionActionsOpen?: boolean;
+  starredChannelIds?: ReadonlySet<string>;
+  onStarChannel?: (channelId: string) => void;
+  onUnstarChannel?: (channelId: string) => void;
+  onDeleteChannel?: (channel: Channel) => void;
+  onLeaveChannel?: (channel: Channel) => void;
 }) {
   if (items.length === 0 && !action && !emptyState) {
     return null;
@@ -480,6 +498,7 @@ export function SidebarSection({
                       dmParticipants={dmParticipantsByChannelId?.[channel.id]}
                       hasUnread={unreadChannelIds.has(channel.id)}
                       isMuted={mutedChannelIds?.has(channel.id)}
+                      isPinned={starredChannelIds?.has(channel.id)}
                       isActive={
                         isActiveChannel && selectedChannelId === channel.id
                       }
@@ -538,6 +557,19 @@ export function SidebarSection({
                         onMarkChannelUnread={onMarkChannelUnread}
                         onMuteChannel={onMuteChannel}
                         onUnmuteChannel={onUnmuteChannel}
+                        isStarred={starredChannelIds?.has(channel.id)}
+                        onStarChannel={onStarChannel}
+                        onUnstarChannel={onUnstarChannel}
+                        onDeleteChannel={
+                          channel.channelType === "dm"
+                            ? undefined
+                            : onDeleteChannel
+                        }
+                        onLeaveChannel={
+                          channel.channelType === "dm"
+                            ? undefined
+                            : onLeaveChannel
+                        }
                       />
                     </ContextMenuContent>
                   </ContextMenu>

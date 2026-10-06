@@ -88,10 +88,15 @@ export function compareChannelsByName(left: Channel, right: Channel): number {
  * `alpha` orders by name (id tie-breaker). `recent` orders by last message
  * time, newest first; channels without any message activity sink to the
  * bottom in alphabetical order so quiet channels stay stable and findable.
+ * Callers may supply a stable tie comparator when labels must not move rows.
  */
 export function sortChannelsForSidebar(
   channels: Channel[],
   mode: ChannelSortMode,
+  compareTies: (
+    left: Channel,
+    right: Channel,
+  ) => number = compareChannelsByName,
 ): Channel[] {
   if (mode === "alpha") {
     return [...channels].sort(compareChannelsByName);
@@ -104,6 +109,6 @@ export function sortChannelsForSidebar(
     }
     if (leftMs !== null && rightMs === null) return -1;
     if (leftMs === null && rightMs !== null) return 1;
-    return compareChannelsByName(left, right);
+    return compareTies(left, right);
   });
 }

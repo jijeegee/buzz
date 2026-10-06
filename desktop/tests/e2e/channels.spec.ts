@@ -521,7 +521,7 @@ test("sidebar shows all channel types", async ({ page }) => {
   await expect(page.getByTestId("sidebar-agents-count")).toHaveCount(0);
 
   // Streams
-  const streamList = page.getByTestId("stream-list");
+  const streamList = page.getByTestId("chat-list");
   await expect(streamList).toContainText("general");
   await expect(streamList).toContainText("random");
   await expect(streamList).toContainText("engineering");
@@ -533,7 +533,7 @@ test("sidebar shows all channel types", async ({ page }) => {
   await expect(forumList).toContainText("announcements");
 
   // DMs
-  const dmList = page.getByTestId("dm-list");
+  const dmList = page.getByTestId("chat-list");
   await expect(dmList).toContainText("alice-tyler");
   await expect(dmList).toContainText("bob-tyler");
 });
@@ -688,11 +688,11 @@ test("start a new direct message from the sidebar", async ({ page }) => {
   await page.getByTestId("message-input").fill("Hello charlie");
   await page.getByTestId("send-message").click();
 
-  await expect(page.getByTestId("dm-list")).toContainText("charlie");
+  await expect(page.getByTestId("chat-list")).toContainText("charlie");
   await expect(page.getByTestId("chat-title")).toHaveText(
     "charlie, Squircle Agent",
   );
-  await expect(page.getByTestId("section-actions-dms")).not.toBeFocused();
+  await expect(page.getByTestId("section-actions-chats")).not.toBeFocused();
 });
 
 test("keeps typing focus while arrow keys traverse and select DM recipients", async ({
@@ -1268,7 +1268,7 @@ test("does not reopen a direct message after leaving the composer", async ({
 
   await page.getByTestId("channel-general").click();
   await expect(page.getByTestId("chat-title")).toHaveText("general");
-  await expect(page.getByTestId("dm-list")).toContainText("charlie");
+  await expect(page.getByTestId("chat-list")).toContainText("charlie");
   // The DM appearing proves the delayed open completed. Give the abandoned
   // continuation time to run before asserting that it did not publish.
   await page.waitForTimeout(1_250);
@@ -1419,7 +1419,7 @@ test("create stream with name and description", async ({ page }) => {
     .fill("A stream for testing channel creation");
   await page.getByTestId("create-channel-submit").click();
 
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
   await expect(page.getByTestId("chat-title")).toHaveText(channelName);
 });
 
@@ -1633,7 +1633,7 @@ test("create ephemeral stream shows sidebar and header affordances", async ({
   await expect(page.getByTestId("create-channel-ttl")).toContainText("14 days");
   await page.getByTestId("create-channel-submit").click();
 
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
   await expect(page.getByTestId("chat-title")).toContainText(channelName);
   await expect(
     page.getByTestId(`channel-ephemeral-${channelName}`),
@@ -1827,14 +1827,14 @@ test("archived channels stay out of all sidebar sections", async ({ page }) => {
 
   await page.reload();
 
-  await expect(page.getByTestId("stream-list")).not.toContainText(
+  await expect(page.getByTestId("chat-list")).not.toContainText(
     archivedStreamName,
   );
   await expect(page.getByTestId("forum-list")).not.toContainText(
     archivedForumName,
   );
-  await expect(page.getByTestId("dm-list")).toContainText("alice-tyler");
-  await expect(page.getByTestId("dm-list")).not.toContainText("outsider");
+  await expect(page.getByTestId("chat-list")).toContainText("alice-tyler");
+  await expect(page.getByTestId("chat-list")).not.toContainText("outsider");
 });
 
 test("create stream with special characters", async ({ page }) => {
@@ -1848,7 +1848,7 @@ test("create stream with special characters", async ({ page }) => {
     .fill("Stream with spaces and hyphens");
   await page.getByTestId("create-channel-submit").click();
 
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
   await expect(page.getByTestId("chat-title")).toHaveText(channelName);
 });
 
@@ -2665,7 +2665,7 @@ test("manage channel updates details", async ({ page }) => {
   await expect(editDialog).toHaveCount(0);
 
   await expect(page.getByTestId("chat-title")).toHaveText(newName);
-  await expect(page.getByTestId("stream-list")).toContainText(newName);
+  await expect(page.getByTestId("chat-list")).toContainText(newName);
   await expect(page.getByTestId("channel-management-name-row")).toContainText(
     newName,
   );
@@ -2678,7 +2678,7 @@ test("manage channel updates details", async ({ page }) => {
   await page.getByTestId("channel-random").click();
   await expect(page.getByTestId("chat-title")).toHaveText("random");
 
-  await page.getByTestId("stream-list").getByText(newName).click();
+  await page.getByTestId("chat-list").getByText(newName).click();
   await expect(page.getByTestId("chat-title")).toHaveText(newName);
   await page.getByTestId("channel-management-trigger").click();
   await expect(page.getByTestId("channel-management-sheet")).toBeVisible();
@@ -5321,7 +5321,7 @@ test("manage channel can archive and unarchive a stream", async ({ page }) => {
   await expect(page.getByTestId("channel-management-unarchive")).toBeVisible();
 
   await closeChannelManagement(page);
-  await expect(page.getByTestId("stream-list")).not.toContainText("general");
+  await expect(page.getByTestId("chat-list")).not.toContainText("general");
   await expect(page.getByTestId("message-input")).toHaveAttribute(
     "contenteditable",
     "false",
@@ -5343,7 +5343,7 @@ test("manage channel can archive and unarchive a stream", async ({ page }) => {
   await expect(page.getByTestId("channel-management-archive")).toBeVisible();
 
   await closeChannelManagement(page);
-  await expect(page.getByTestId("stream-list")).toContainText("general");
+  await expect(page.getByTestId("chat-list")).toContainText("general");
   await expect(page.getByTestId("message-input")).toHaveAttribute(
     "contenteditable",
     "true",
@@ -5368,7 +5368,7 @@ test("manage channel can delete an owned stream", async ({ page }) => {
   await page.getByTestId("channel-delete-confirm").click();
 
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
-  await expect(page.getByTestId("stream-list")).not.toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).not.toContainText(channelName);
 });
 
 test("canceling channel deletion keeps the owned stream", async ({ page }) => {
@@ -5392,5 +5392,5 @@ test("canceling channel deletion keeps the owned stream", async ({ page }) => {
     page.getByTestId("channel-delete-confirmation-dialog"),
   ).not.toBeVisible();
   await expect(page.getByTestId("chat-title")).toHaveText(channelName);
-  await expect(page.getByTestId("stream-list")).toContainText(channelName);
+  await expect(page.getByTestId("chat-list")).toContainText(channelName);
 });

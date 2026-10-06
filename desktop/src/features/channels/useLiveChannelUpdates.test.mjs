@@ -180,6 +180,52 @@ test("live channel stream drives mention, unread and DM callbacks once across re
   }
 });
 
+test("chat recency advances for actual self/peer messages, not metadata or auxiliary events", async () => {
+  const { channelsQueryKey } = await import("./hooks.ts");
+  const { sortChatList } = await import("@/features/sidebar/lib/chatList");
+  const initial = channels(2).map((channel, index) => ({
+    ...channel,
+    lastMessageAt: new Date((100 + index) * 1000).toISOString(),
+  }));
+  const h = await mount(initial);
+  try {
+    h.queryClient.setQueryData(channelsQueryKey, initial);
+    const order = () =>
+      sortChatList(h.queryClient.getQueryData(channelsQueryKey)).map(
+        ({ id }) => id,
+      );
+    assert.deepEqual(order(), ["channel-1", "channel-0"]);
+    // Deliver through the production subscription callback even when the kind
+    // would normally arrive on the separate metadata subscription.
+    for (const kind of [39000, 39002, 7, 5, 40001]) {
+      await h.deliver(
+        h.subscriptions[0],
+        message(`metadata-${kind}`, { kind, created_at: 200 }),
+      );
+    }
+    assert.deepEqual(order(), ["channel-1", "channel-0"]);
+    await h.deliver(
+      h.subscriptions[0],
+      message("self-message", { pubkey: VIEWER, created_at: 201 }),
+    );
+    assert.deepEqual(order(), ["channel-0", "channel-1"]);
+    await h.deliver(
+      h.subscriptions[1],
+      message("peer-message", { created_at: 202, tags: [["h", "channel-1"]] }),
+    );
+    assert.deepEqual(order(), ["channel-1", "channel-0"]);
+    assert.deepEqual(
+      sortChatList(
+        h.queryClient.getQueryData(channelsQueryKey),
+        new Set(["channel-0"]),
+      ).map(({ id }) => id),
+      ["channel-0", "channel-1"],
+    );
+  } finally {
+    h.restore();
+  }
+});
+
 test("mention signal retains kind, recipient, self and member-channel boundaries", async () => {
   let mentions = 0;
   const h = await mount(channels(1), { onLiveMention: () => mentions++ });

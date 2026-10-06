@@ -82,6 +82,7 @@ import { requestFocusedThreadClose } from "@/features/channels/focusedThreadClos
 import { CommunityRail } from "@/features/sidebar/ui/CommunityRail";
 import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
+import { isJoinedChat } from "@/features/sidebar/lib/chatList";
 import { useCommunities } from "@/features/communities/useCommunities";
 import {
   consumePendingCommunityRestore,
@@ -272,7 +273,7 @@ export function AppShell() {
     `${communitiesHook.activeCommunity?.id ?? "none"}-${communitiesHook.reinitKey}`,
   );
   const memberChannels = React.useMemo(
-    () => channels.filter((channel) => channel.isMember),
+    () => channels.filter(isJoinedChat),
     [channels],
   );
   const sidebarChannels = React.useMemo(
