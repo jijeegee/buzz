@@ -685,6 +685,11 @@ impl AcpClient {
         self.compact_supported
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_compact_supported_for_test(&mut self, supported: bool) {
+        self.compact_supported = supported;
+    }
+
     /// Return a clone of the observer handle, if attached.
     pub(crate) fn observer_handle(&self) -> Option<ObserverHandle> {
         self.observer.clone()
