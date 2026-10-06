@@ -16,6 +16,10 @@
 //! | Repeated mention in the same thread | reuse that thread scope                 |
 //! | Direct message                      | `Conversation(channel_id)`              |
 //!
+//! Under [`SessionPolicy::MainAndThreads`] the thread rows are unchanged, but a
+//! top-level channel message (one with no NIP-10 thread root) scopes to the
+//! channel's single `Main(channel_id)` session instead of opening a new thread.
+//!
 //! Under [`SessionPolicy::Channel`] (the current default / rollback path) every
 //! surface collapses to `Conversation(channel_id)`, preserving today's
 //! channel-keyed behavior exactly.
@@ -39,6 +43,13 @@ pub enum SessionPolicy {
     /// Thread-scoped: each canonical channel thread gets an isolated provider
     /// session. DMs remain conversation-scoped.
     Thread,
+    /// Main timeline plus threads: every top-level channel message shares one
+    /// `Main(channel_id)` session, and each canonical channel thread gets an
+    /// isolated provider session. DMs remain conversation-scoped.
+    ///
+    /// Accepts the desktop storage spelling `main_and_threads` as an alias.
+    #[value(alias = "main_and_threads")]
+    MainAndThreads,
 }
 
 impl SessionPolicy {
@@ -48,6 +59,7 @@ impl SessionPolicy {
         let session_model = match self {
             Self::Channel => include_str!("session_model_channel.md"),
             Self::Thread => include_str!("session_model_thread.md"),
+            Self::MainAndThreads => include_str!("session_model_main_and_threads.md"),
         };
         format!("{}\n\n{}", base_prompt.trim_end(), session_model.trim_end())
     }
@@ -58,6 +70,7 @@ impl std::fmt::Display for SessionPolicy {
         match self {
             Self::Channel => f.write_str("channel"),
             Self::Thread => f.write_str("thread"),
+            Self::MainAndThreads => f.write_str("main-and-threads"),
         }
     }
 }
@@ -78,6 +91,11 @@ pub enum SessionScope {
         channel_id: Uuid,
         root_event_id: String,
     },
+    /// The channel's main timeline (top-level messages) under
+    /// [`SessionPolicy::MainAndThreads`]. Distinct from
+    /// [`Conversation`](Self::Conversation): threads in the same channel keep
+    /// their own [`Thread`](Self::Thread) scopes.
+    Main { channel_id: Uuid },
 }
 
 impl SessionScope {
@@ -87,14 +105,15 @@ impl SessionScope {
         match self {
             Self::Conversation { channel_id } => *channel_id,
             Self::Thread { channel_id, .. } => *channel_id,
+            Self::Main { channel_id } => *channel_id,
         }
     }
 
     /// The canonical thread-root event id for a [`Thread`](Self::Thread) scope,
-    /// or `None` for a conversation scope.
+    /// or `None` for a conversation or main-timeline scope.
     pub fn root_event_id(&self) -> Option<&str> {
         match self {
-            Self::Conversation { .. } => None,
+            Self::Conversation { .. } | Self::Main { .. } => None,
             Self::Thread { root_event_id, .. } => Some(root_event_id),
         }
     }
@@ -102,6 +121,18 @@ impl SessionScope {
     /// True when this scope is thread-scoped (not conversation-scoped).
     pub fn is_thread(&self) -> bool {
         matches!(self, Self::Thread { .. })
+    }
+
+    /// True when this scope is the channel main timeline.
+    pub fn is_main(&self) -> bool {
+        matches!(self, Self::Main { .. })
+    }
+
+    /// True when a batch for this scope waits for the worker that owns its
+    /// provider session instead of opening a duplicate session on another idle
+    /// worker. `Conversation` scopes keep the legacy fork-onto-idle behavior.
+    pub fn holds_for_busy_owner(&self) -> bool {
+        matches!(self, Self::Thread { .. } | Self::Main { .. })
     }
 
     /// Derive the scope for an admitted event.
@@ -114,6 +145,10 @@ impl SessionScope {
     /// 3. Under [`SessionPolicy::Thread`], a channel event with a NIP-10 root
     ///    tag scopes to that canonical root; a top-level mention (no thread
     ///    tags) opens a new thread rooted at the triggering event id.
+    /// 4. Under [`SessionPolicy::MainAndThreads`], a channel event with a
+    ///    NIP-10 root scopes to that thread, and every other channel event
+    ///    (top-level messages, edits of top-level originals, unresolved edits)
+    ///    scopes to the channel's [`Main`](Self::Main) session.
     ///
     /// Thread roots are resolved with [`crate::queue::parse_thread_tags`], i.e. Buzz's shared
     /// [`buzz_core::nip10`] canonical-root rules — a malformed marker id is
@@ -150,9 +185,18 @@ impl SessionScope {
             return Self::Conversation { channel_id };
         }
 
-        let root_event_id = routing_thread_tags(event, edit)
-            .root_event_id
-            .unwrap_or_else(|| reaction_target_id(event));
+        let routed_root = routing_thread_tags(event, edit).root_event_id;
+        if policy == SessionPolicy::MainAndThreads {
+            return match routed_root {
+                Some(root) => Self::Thread {
+                    channel_id,
+                    root_event_id: root.to_ascii_lowercase(),
+                },
+                None => Self::Main { channel_id },
+            };
+        }
+
+        let root_event_id = routed_root.unwrap_or_else(|| reaction_target_id(event));
         Self::Thread {
             channel_id,
             root_event_id: root_event_id.to_ascii_lowercase(),
@@ -164,6 +208,7 @@ impl SessionScope {
     pub fn telemetry_label(&self) -> String {
         match self {
             Self::Conversation { .. } => "conversation".to_string(),
+            Self::Main { .. } => "main".to_string(),
             Self::Thread { root_event_id, .. } => {
                 let short: String = root_event_id.chars().take(8).collect();
                 format!("thread:{short}")
@@ -198,7 +243,11 @@ mod tests {
     fn session_model_is_appended_once_and_matches_policy() {
         let base = include_str!("base_prompt.md");
         assert!(!base.contains("## Session Model"));
-        for policy in [SessionPolicy::Channel, SessionPolicy::Thread] {
+        for policy in [
+            SessionPolicy::Channel,
+            SessionPolicy::Thread,
+            SessionPolicy::MainAndThreads,
+        ] {
             let prompt = policy.append_session_model(base);
             assert!(prompt.starts_with(base.trim_end()));
             assert_eq!(prompt.matches("## Session Model").count(), 1);
@@ -218,6 +267,12 @@ mod tests {
                     assert!(prompt.contains("each thread gets its own"));
                     assert!(prompt.contains("sibling channel thread"));
                     assert!(!prompt.contains("one per-channel session"));
+                }
+                SessionPolicy::MainAndThreads => {
+                    assert!(prompt.contains("main timeline (top-level messages) is one"));
+                    assert!(prompt.contains("each thread gets its own"));
+                    assert!(!prompt.contains("one per-channel session"));
+                    assert!(!prompt.contains("new thread rooted at a top-level mention"));
                 }
             }
         }
@@ -426,6 +481,95 @@ mod tests {
     }
 
     #[test]
+    fn main_and_threads_routes_top_level_to_main_and_replies_to_thread() {
+        let ch = Uuid::new_v4();
+        let policy = SessionPolicy::MainAndThreads;
+        let main = SessionScope::Main { channel_id: ch };
+
+        // Two independent top-level mentions share the one main session.
+        assert_eq!(
+            SessionScope::derive(policy, ch, false, &plain_event()),
+            main
+        );
+        assert_eq!(
+            SessionScope::derive(policy, ch, false, &plain_event()),
+            main
+        );
+
+        // A threaded reply keeps its own canonical-root thread session,
+        // normalized to lowercase like the Thread policy.
+        let root = "AB".repeat(32);
+        let reply = event_with_tags(vec![
+            vec!["e".into(), root.clone(), String::new(), "root".into()],
+            vec!["e".into(), "f".repeat(64), String::new(), "reply".into()],
+        ]);
+        assert_eq!(
+            SessionScope::derive(policy, ch, false, &reply),
+            SessionScope::Thread {
+                channel_id: ch,
+                root_event_id: root.to_ascii_lowercase(),
+            }
+        );
+
+        // A lone `root` marker is top-level per ingest rules, so it is main.
+        let lone_root = event_with_tags(vec![vec![
+            "e".into(),
+            "c".repeat(64),
+            String::new(),
+            "root".into(),
+        ]]);
+        assert_eq!(SessionScope::derive(policy, ch, false, &lone_root), main);
+
+        // DMs stay conversation-scoped.
+        assert_eq!(
+            SessionScope::derive(policy, ch, true, &reply),
+            SessionScope::Conversation { channel_id: ch }
+        );
+    }
+
+    #[test]
+    fn main_and_threads_edits_follow_their_original() {
+        use crate::edit_routing::test_support::{edit_event, message};
+        let ch = Uuid::new_v4();
+        let policy = SessionPolicy::MainAndThreads;
+        let root = "ab".repeat(32);
+
+        let threaded = message(Some(&root));
+        let edit = edit_event(&threaded.id.to_hex(), &[]);
+        let resolved = ResolvedEdit {
+            target_event_id: threaded.id.to_hex(),
+            target_thread_tags: crate::queue::parse_thread_tags(&threaded),
+        };
+        let scope = SessionScope::derive_routed(policy, ch, false, &edit, Some(&resolved));
+        assert_eq!(thread_root(&scope), root);
+
+        let top = message(None);
+        let edit = edit_event(&top.id.to_hex(), &[]);
+        let resolved = ResolvedEdit {
+            target_event_id: top.id.to_hex(),
+            target_thread_tags: crate::queue::parse_thread_tags(&top),
+        };
+        let scope = SessionScope::derive_routed(policy, ch, false, &edit, Some(&resolved));
+        assert_eq!(scope, SessionScope::Main { channel_id: ch });
+    }
+
+    #[test]
+    fn session_policy_parses_cli_and_storage_spellings() {
+        use clap::ValueEnum;
+        for spelling in ["main-and-threads", "main_and_threads"] {
+            assert_eq!(
+                SessionPolicy::from_str(spelling, false),
+                Ok(SessionPolicy::MainAndThreads),
+                "{spelling}"
+            );
+        }
+        assert_eq!(
+            SessionPolicy::MainAndThreads.to_string(),
+            "main-and-threads"
+        );
+    }
+
+    #[test]
     fn accessors_and_labels() {
         let ch = Uuid::new_v4();
         let conv = SessionScope::Conversation { channel_id: ch };
@@ -443,6 +587,17 @@ mod tests {
         assert_eq!(thread.root_event_id(), Some(root.as_str()));
         assert!(thread.is_thread());
         assert_eq!(thread.telemetry_label(), "thread:abcdef01");
+        assert!(!thread.is_main());
+        assert!(thread.holds_for_busy_owner());
+        assert!(!conv.holds_for_busy_owner());
+
+        let main = SessionScope::Main { channel_id: ch };
+        assert_eq!(main.channel_id(), ch);
+        assert_eq!(main.root_event_id(), None);
+        assert!(!main.is_thread());
+        assert!(main.is_main());
+        assert!(main.holds_for_busy_owner());
+        assert_eq!(main.telemetry_label(), "main");
     }
 
     #[test]

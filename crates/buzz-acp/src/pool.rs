@@ -42,7 +42,7 @@ use crate::queue::{
     PromptProfile, PromptProfileLookup, ThreadTags,
 };
 use crate::relay::{ChannelInfo, RestClient};
-use crate::scope::SessionScope;
+use crate::scope::{SessionPolicy, SessionScope};
 
 /// Window within which agent activity before a hard-cap death qualifies
 /// the turn as "recently active" (eligible for requeue instead of dead-letter).
@@ -447,8 +447,8 @@ pub struct AgentPool {
     /// First time each scope was held for a busy owner, so the bounded hold can
     /// expire and fork rather than starve behind an unbounded turn. Derived
     /// state: cleared on every dispatch/invalidation path, and only ever holds
-    /// `Thread` scopes (the sole variant [`hold_decision`](Self::hold_decision)
-    /// stamps).
+    /// `Thread` and `Main` scopes (the variants
+    /// [`hold_decision`](Self::hold_decision) stamps).
     held_since: HashMap<SessionScope, tokio::time::Instant>,
 }
 
@@ -1013,6 +1013,11 @@ pub struct PromptContext {
     /// Lead mode: inject the `<channel-roster>` section like a dispatcher, but
     /// proceed without it when the fetch fails.
     pub channel_roster: bool,
+    /// Session scoping policy; selects the busy-owner hold behavior.
+    pub session_policy: SessionPolicy,
+    /// Durable scope → provider-session ledger for resume after restart.
+    /// `None` unless the main-and-threads policy has a state directory.
+    pub session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
 }
 
 impl AgentPool {
@@ -1090,18 +1095,19 @@ impl AgentPool {
     /// worker was successfully claimed, so pool exhaustion cannot restart the
     /// bounded window.
     ///
-    /// Gated on the scope variant, not the session policy: `Conversation` scopes
-    /// (channel-policy channels and all DMs) never hold — a busy owner there means
-    /// fork onto another idle worker, the pre-thread-sessions behavior. Only
-    /// `Thread` scopes hold, so a momentarily busy owner does not cause a
-    /// duplicate provider session for the same thread.
+    /// Gated on the scope variant: `Conversation` scopes (channel-policy
+    /// channels and all DMs) never hold — a busy owner there means fork onto
+    /// another idle worker, the pre-thread-sessions behavior. `Thread` and
+    /// `Main` scopes hold, so a momentarily busy owner does not cause a
+    /// duplicate provider session. The session policy picks `timeout` (see
+    /// [`busy_owner_hold_timeout`]); [`HOLD_BUSY_OWNER_UNBOUNDED`] never forks.
     pub fn hold_decision(
         &mut self,
         scope: &SessionScope,
         now: tokio::time::Instant,
         timeout: Duration,
     ) -> HoldDecision {
-        if !scope.is_thread() || !self.should_hold_for_busy_owner(scope) {
+        if !scope.holds_for_busy_owner() || !self.should_hold_for_busy_owner(scope) {
             self.held_since.remove(scope);
             return HoldDecision::Dispatch;
         }
@@ -1235,9 +1241,10 @@ impl AgentPool {
         if !self.any_idle() {
             return None;
         }
+        // An unbounded hold has no deadline: the owner's return wakes the loop.
         self.held_since
             .values()
-            .map(|held_since| *held_since + timeout)
+            .filter_map(|held_since| held_since.checked_add(timeout))
             .min()
     }
 
@@ -1599,6 +1606,22 @@ const PERMISSION_MODE_TIMEOUT: Duration = Duration::from_secs(5);
 /// after expiry, versus the max-turn deadline it could starve behind today.
 pub(crate) const HOLD_BUSY_OWNER_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Hold window that never expires: a held batch waits for its session owner to
+/// return instead of forking a duplicate session. The owner's turn is itself
+/// bounded by the max-turn deadline, so the wait cannot be unbounded in time.
+pub(crate) const HOLD_BUSY_OWNER_UNBOUNDED: Duration = Duration::MAX;
+
+/// Busy-owner hold window for a session policy. `main-and-threads` never forks
+/// a held main or thread session — forking abandons the owner's provider
+/// session and restarts from relay context. Existing policies keep the bounded
+/// [`HOLD_BUSY_OWNER_TIMEOUT`] fork fallback unchanged.
+pub(crate) fn busy_owner_hold_timeout(policy: SessionPolicy) -> Duration {
+    match policy {
+        SessionPolicy::MainAndThreads => HOLD_BUSY_OWNER_UNBOUNDED,
+        SessionPolicy::Channel | SessionPolicy::Thread => HOLD_BUSY_OWNER_TIMEOUT,
+    }
+}
+
 /// Placeholder [`fetch_channel_info`] substitutes when a channel's metadata
 /// event carries no `name` tag. Not a real channel name — consumers that need
 /// an identifying name must treat it as absent.
@@ -1662,6 +1685,35 @@ async fn create_session_and_apply_model(
     agent_core: Option<&str>,
     channel: NewSessionChannelContext<'_>,
 ) -> Result<String, AcpError> {
+    open_session_and_apply_model(agent, ctx, agent_core, channel, None)
+        .await
+        .map(|opened| opened.session_id)
+}
+
+/// A provider session opened for a scope: newly created, or reattached from
+/// the durable ledger.
+struct OpenedSession {
+    session_id: String,
+    /// True when an existing provider session was reattached (resume/load)
+    /// instead of created; its prior usage and history are not zero.
+    reattached: bool,
+}
+
+/// [`create_session_and_apply_model`], first trying to reattach to
+/// `reattach_session_id` when the agent supports it.
+///
+/// A reattached session goes through the same model, effort, config-capture,
+/// and permission-mode application as a new one, because the resume/load
+/// response has the `session/new` shape. Any reattach failure other than the
+/// agent exiting falls back to `session/new`; the caller then rebuilds context
+/// from the relay as for any fresh session.
+async fn open_session_and_apply_model(
+    agent: &mut OwnedAgent,
+    ctx: &PromptContext,
+    agent_core: Option<&str>,
+    channel: NewSessionChannelContext<'_>,
+    reattach_session_id: Option<&str>,
+) -> Result<OpenedSession, AcpError> {
     // Build base_prompt + system_prompt + agent core + canvas metadata into a
     // single prompt. Standard protocol-v2 agents receive it in `session/new`;
     // Goose receives it through the custom request below. Legacy agents receive
@@ -1704,22 +1756,49 @@ async fn create_session_and_apply_model(
         ctx.session_title.as_deref(),
     );
 
-    let resp = agent
-        .acp
-        .session_new_full(
-            &ctx.cwd,
-            mcp_servers,
-            session_new_system_prompt(
-                is_goose,
-                agent.protocol_version,
-                &agent.agent_name,
-                combined_system_prompt.as_deref(),
-            ),
-            session_title.as_deref(),
-        )
-        .await?;
+    let reattached_resp = match reattach_session_id {
+        Some(session_id) if agent.acp.can_reattach_sessions() => {
+            match agent
+                .acp
+                .session_reattach(session_id, &ctx.cwd, mcp_servers.clone())
+                .await
+            {
+                Ok(resp) => Some(resp),
+                Err(AcpError::AgentExited) => return Err(AcpError::AgentExited),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "pool::session",
+                        "could not reattach session {session_id}; starting a new one: {error}"
+                    );
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+    let reattached = reattached_resp.is_some();
+    let resp = match reattached_resp {
+        Some(resp) => resp,
+        None => {
+            agent
+                .acp
+                .session_new_full(
+                    &ctx.cwd,
+                    mcp_servers,
+                    session_new_system_prompt(
+                        is_goose,
+                        agent.protocol_version,
+                        &agent.agent_name,
+                        combined_system_prompt.as_deref(),
+                    ),
+                    session_title.as_deref(),
+                )
+                .await?
+        }
+    };
 
-    if is_goose && agent.goose_system_prompt_supported != Some(false) {
+    // A reattached session already carries its standing system prompt.
+    if !reattached && is_goose && agent.goose_system_prompt_supported != Some(false) {
         if let Some(prompt) = combined_system_prompt.as_deref() {
             match agent
                 .acp
@@ -1923,7 +2002,10 @@ async fn create_session_and_apply_model(
         }
     }
 
-    Ok(resp.session_id)
+    Ok(OpenedSession {
+        session_id: resp.session_id,
+        reattached,
+    })
 }
 
 /// Run a prepared task with the normal session setup and standing instructions.
@@ -2863,7 +2945,15 @@ pub async fn run_prompt_task(
                 // The title includes channel and, for thread sessions, the
                 // canonical root prefix so sibling sessions are distinguishable.
                 // DMs, unresolved, and unnamed channels omit the channel name.
-                match create_session_and_apply_model(
+                // After a restart, reattach to the provider session the ledger
+                // recorded for this scope (same adapter, same cwd) instead of
+                // starting over from relay context.
+                let reattach = ctx.session_ledger.as_ref().and_then(|ledger| {
+                    ledger
+                        .lookup(scope, &ctx.harness_name, &ctx.cwd)
+                        .map(|entry| entry.session_id)
+                });
+                match open_session_and_apply_model(
                     &mut agent,
                     &ctx,
                     agent_core.as_deref(),
@@ -2875,13 +2965,18 @@ pub async fn run_prompt_task(
                         scope: Some(scope),
                         channel_type: origin_channel_type.as_deref(),
                     },
+                    reattach.as_deref(),
                 )
                 .await
                 {
-                    Ok(sid) => {
+                    Ok(OpenedSession {
+                        session_id: sid,
+                        reattached,
+                    }) => {
                         tracing::info!(
                             target: "pool::session",
-                            "created session {sid} for channel {cid} (scope {})",
+                            "{} session {sid} for channel {cid} (scope {})",
+                            if reattached { "reattached" } else { "created" },
                             scope.telemetry_label()
                         );
                         agent.state.sessions.insert(scope.clone(), sid.clone());
@@ -2889,9 +2984,15 @@ pub async fn run_prompt_task(
                             .state
                             .deliveries
                             .insert(scope.clone(), ChannelDeliveryState::default());
-                        // Seed a zero usage baseline: buzz-acp spawned this session
-                        // so prior usage is zero by definition — first turn is reliable.
-                        agent.acp.notify_session_spawned(&sid);
+                        if let Some(ledger) = &ctx.session_ledger {
+                            ledger.record(scope, &sid, &ctx.harness_name, &ctx.cwd);
+                        }
+                        // Seed a zero usage baseline only for a session buzz-acp
+                        // spawned: prior usage is zero by definition, so the first
+                        // turn is reliable. A reattached session has prior usage.
+                        if !reattached {
+                            agent.acp.notify_session_spawned(&sid);
+                        }
                         // Commit canvas only after session creation succeeds (I3).
                         if let Some((pending_scope, section)) = pending_roster.take() {
                             agent.state.roster_sections.insert(
@@ -3238,7 +3339,8 @@ pub async fn run_prompt_task(
             .unwrap_or(false);
         let context_target = resolve_context_target(b, is_dm);
         let hydrated_thread_root = match &context_target {
-            ContextTarget::Thread(root) => Some(root),
+            ContextTarget::Thread(root) => Some(root.as_str()),
+            ContextTarget::Main => Some(MAIN_TIMELINE_HYDRATION_KEY),
             ContextTarget::Dm | ContextTarget::None => None,
         };
         let thread_context_is_hydrated = hydrated_thread_root.is_some_and(|root| {
@@ -3246,7 +3348,7 @@ pub async fn run_prompt_task(
                 .state
                 .deliveries
                 .get(&b.scope)
-                .is_some_and(|delivery| delivery.hydrated_thread_roots.contains(root))
+                .is_some_and(|delivery| delivery.hydrated_thread_roots.iter().any(|r| r == root))
         });
         let rendered_batch_ids: HashSet<String> = b
             .events
@@ -4333,6 +4435,17 @@ async fn fetch_conversation_context_for_target(
             .await
         }
         ContextTarget::Dm => fetch_dm_context(channel_id, limit, &ctx.rest_client).await,
+        ContextTarget::Main => {
+            fetch_main_context(
+                channel_id,
+                limit,
+                ctx.agent_keys.public_key(),
+                &ctx.rest_client,
+                overfetch_session_delta,
+                delivered_ids,
+            )
+            .await
+        }
         ContextTarget::None => None,
     }
 }
@@ -4344,6 +4457,8 @@ enum ContextTarget {
     Thread(String),
     /// Fetch recent DM conversation history.
     Dm,
+    /// Fetch the channel main timeline (main-and-threads policy).
+    Main,
     /// No supplementary context (new thread's first turn, or plain channel).
     None,
 }
@@ -4352,12 +4467,16 @@ enum ContextTarget {
 /// [`SessionScope`] — never by inferring scope from the last event.
 ///
 /// - Thread scope: the canonical root is authoritative.
+/// - Main scope (main-and-threads policy): the channel main timeline.
 /// - Conversation scope (DMs always; channels under `channel` policy): a
 ///   threaded reply fetches its reply chain; a DM non-reply fetches recent
 ///   conversation history; a plain top-level channel message has none.
 fn resolve_context_target(batch: &FlushBatch, is_dm: bool) -> ContextTarget {
     if let Some(root_id) = batch.scope.root_event_id() {
         return ContextTarget::Thread(root_id.to_ascii_lowercase());
+    }
+    if batch.scope.is_main() {
+        return ContextTarget::Main;
     }
     let Some(last_event) = batch.events.last() else {
         return ContextTarget::None;
@@ -4381,12 +4500,14 @@ fn fetched_thread_root_to_hydrate(
     context: Option<&ConversationContext>,
     is_dm: bool,
 ) -> Option<String> {
-    if is_dm || !matches!(context, Some(ConversationContext::Thread { .. })) {
-        return None;
-    }
-    match target {
-        ContextTarget::Thread(root) => Some(root.clone()),
-        ContextTarget::Dm | ContextTarget::None => None,
+    match (target, context) {
+        (ContextTarget::Thread(root), Some(ConversationContext::Thread { .. })) if !is_dm => {
+            Some(root.clone())
+        }
+        (ContextTarget::Main, Some(ConversationContext::Dm { .. })) => {
+            Some(MAIN_TIMELINE_HYDRATION_KEY.to_string())
+        }
+        _ => None,
     }
 }
 
@@ -4562,12 +4683,12 @@ async fn fetch_thread_context(
     overfetch_session_delta: bool,
     delivered_ids: &HashSet<String>,
 ) -> Option<ConversationContext> {
-    fetch_thread_context_with(
+    fetch_timeline_context_with(
         channel_id,
-        root_event_id,
+        TimelineTarget::Thread { root_event_id },
         limit,
         agent_pubkey,
-        |filters| async move { rest.query(&filters).await },
+        |filters| async move { rest.query_raw(&filters).await },
         |filters| async move { rest.count(&filters).await },
         ThreadContextSessionDelta {
             overfetch: overfetch_session_delta,
@@ -4583,9 +4704,58 @@ struct ThreadContextSessionDelta<'a> {
     delivered_ids: &'a HashSet<String>,
 }
 
-async fn fetch_thread_context_with<Query, QueryFut, Count, CountFut>(
+/// Fetch main-timeline context: the channel's recent top-level messages.
+///
+/// Uses the same builder, limit, overfetch, and delivery-delta rules as
+/// [`fetch_thread_context`], so main-timeline and thread context stay one code
+/// path — changing one changes the other.
+async fn fetch_main_context(
     channel_id: Uuid,
-    root_event_id: &str,
+    limit: u32,
+    agent_pubkey: nostr::PublicKey,
+    rest: &RestClient,
+    overfetch_session_delta: bool,
+    delivered_ids: &HashSet<String>,
+) -> Option<ConversationContext> {
+    fetch_timeline_context_with(
+        channel_id,
+        TimelineTarget::Main,
+        limit,
+        agent_pubkey,
+        |filters| async move { rest.query_raw(&filters).await },
+        |filters| async move { rest.count(&filters).await },
+        ThreadContextSessionDelta {
+            overfetch: overfetch_session_delta,
+            delivered_ids,
+        },
+    )
+    .await
+}
+
+/// Which canonical timeline [`fetch_timeline_context_with`] reads.
+#[derive(Debug, Clone, Copy)]
+enum TimelineTarget<'a> {
+    /// A channel thread: its root event plus recent replies.
+    Thread { root_event_id: &'a str },
+    /// The channel main timeline: recent top-level messages.
+    Main,
+}
+
+/// Hydration key recorded for a scope whose main-timeline context was fetched.
+/// Event ids are 64-hex, so this can never collide with a thread root.
+const MAIN_TIMELINE_HYDRATION_KEY: &str = "main";
+
+/// Shared context builder for thread and main-timeline scopes.
+///
+/// Both targets use the same window `limit`, the same sentinel-based
+/// truncation detection, the same bounded 2x overfetch for hydrated sessions,
+/// and the same delivery-delta parser. They differ only in the relay filter:
+/// a thread reads its root plus `#e=root` replies (with the agent's newest
+/// reply pinned and a best-effort exact `/count`); the main timeline reads the
+/// relay's `top_level` channel window, which serves top-level rows only.
+async fn fetch_timeline_context_with<Query, QueryFut, Count, CountFut>(
+    channel_id: Uuid,
+    target: TimelineTarget<'_>,
     limit: u32,
     agent_pubkey: nostr::PublicKey,
     query: Query,
@@ -4593,11 +4763,25 @@ async fn fetch_thread_context_with<Query, QueryFut, Count, CountFut>(
     session_delta: ThreadContextSessionDelta<'_>,
 ) -> Option<ConversationContext>
 where
-    Query: Fn(Vec<nostr::Filter>) -> QueryFut,
+    Query: Fn(Vec<serde_json::Value>) -> QueryFut,
     QueryFut: std::future::Future<Output = Result<serde_json::Value, crate::relay::RelayError>>,
     Count: Fn(Vec<nostr::Filter>) -> CountFut,
     CountFut: std::future::Future<Output = Result<serde_json::Value, crate::relay::RelayError>>,
 {
+    let root_event_id = match target {
+        TimelineTarget::Thread { root_event_id } => root_event_id,
+        TimelineTarget::Main => {
+            return fetch_main_timeline_window(
+                channel_id,
+                limit,
+                agent_pubkey,
+                query,
+                session_delta,
+            )
+            .await;
+        }
+    };
+
     use nostr::{Alphabet, SingleLetterTag};
 
     // Defense-in-depth: validate hex event ID.
@@ -4631,8 +4815,11 @@ where
     let agent_reply_filter = replies_filter.clone().author(agent_pubkey).limit(1);
 
     let context = fetch_with_retry(|| async {
-        let mut filters = vec![root_filter.clone(), replies_filter.clone()];
-        filters.push(agent_reply_filter.clone());
+        let filters = [&root_filter, &replies_filter, &agent_reply_filter]
+            .into_iter()
+            .map(serde_json::to_value)
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
         match timeout(CONTEXT_FETCH_TIMEOUT, query(filters)).await {
             Ok(Ok(json)) => parse_nostr_thread_response_with_meta(
                 json,
@@ -4691,6 +4878,103 @@ where
     }
 
     Some(parsed.context)
+}
+
+/// Main-timeline half of [`fetch_timeline_context_with`].
+///
+/// Reads the relay's `top_level` channel window (top-level rows only, so busy
+/// threads cannot crowd recent main-timeline messages out of the window) and
+/// parses it with the thread parser so limits, overfetch, and delivery deltas
+/// behave identically. The window carries no root event, cannot filter by
+/// author, and has no matching `/count`, so the agent pin comes only from the
+/// fetched rows and a full window reports the sentinel-proven lower bound.
+/// The result is top-level conversation history, rendered like DM history.
+async fn fetch_main_timeline_window<Query, QueryFut>(
+    channel_id: Uuid,
+    limit: u32,
+    agent_pubkey: nostr::PublicKey,
+    query: Query,
+    session_delta: ThreadContextSessionDelta<'_>,
+) -> Option<ConversationContext>
+where
+    Query: Fn(Vec<serde_json::Value>) -> QueryFut,
+    QueryFut: std::future::Future<Output = Result<serde_json::Value, crate::relay::RelayError>>,
+{
+    let fetch_limit = thread_reply_fetch_limit(limit, session_delta.overfetch);
+    let message_kinds = [
+        buzz_core::kind::KIND_STREAM_MESSAGE,
+        buzz_core::kind::KIND_STREAM_MESSAGE_V2,
+    ];
+    let window_filter = serde_json::json!({
+        "kinds": message_kinds,
+        "#h": [channel_id.to_string()],
+        "limit": fetch_limit.saturating_add(1),
+        "top_level": true,
+    });
+
+    let parsed = fetch_with_retry(|| async {
+        match timeout(CONTEXT_FETCH_TIMEOUT, query(vec![window_filter.clone()])).await {
+            Ok(Ok(json)) => {
+                // The window also returns relay-signed overlays (thread
+                // summaries, window bounds); keep only message rows.
+                let rows: Vec<serde_json::Value> = json
+                    .as_array()?
+                    .iter()
+                    .filter(|ev| {
+                        ev.get("kind")
+                            .and_then(|k| k.as_u64())
+                            .is_some_and(|k| message_kinds.iter().any(|m| u64::from(*m) == k))
+                    })
+                    .cloned()
+                    .collect();
+                if rows.is_empty() {
+                    return Some(None);
+                }
+                Some(parse_nostr_thread_response_with_meta(
+                    serde_json::Value::Array(rows),
+                    "",
+                    limit,
+                    &agent_pubkey,
+                    session_delta.overfetch,
+                    fetch_limit,
+                    session_delta.delivered_ids,
+                ))
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    channel_id = %channel_id,
+                    "main timeline context fetch failed: {e} — will retry"
+                );
+                None
+            }
+            Err(_) => {
+                tracing::warn!(
+                    channel_id = %channel_id,
+                    "main timeline context fetch timed out — will retry"
+                );
+                None
+            }
+        }
+    })
+    .await??;
+
+    match parsed.context {
+        ConversationContext::Thread {
+            messages,
+            total,
+            truncated,
+            ..
+        } => Some(ConversationContext::Dm {
+            messages,
+            total: if truncated {
+                total.max(fetch_limit as usize + 1)
+            } else {
+                total
+            },
+            truncated,
+        }),
+        dm @ ConversationContext::Dm { .. } => Some(dm),
+    }
 }
 
 /// Best-effort exact thread size for truncated context labels.
@@ -6606,6 +6890,114 @@ mod tests {
         }
     }
 
+    fn main_row(id: &str, pubkey: &str, content: &str, created_at: u64) -> serde_json::Value {
+        let mut row = thread_event(id, pubkey, content, created_at);
+        row["kind"] = json!(buzz_core::kind::KIND_STREAM_MESSAGE);
+        row
+    }
+
+    async fn fetch_main_for_test(
+        rows: serde_json::Value,
+        limit: u32,
+        overfetch: bool,
+        delivered_ids: &HashSet<String>,
+        expected_window_limit: u32,
+    ) -> Option<ConversationContext> {
+        let channel_id = Uuid::new_v4();
+        fetch_timeline_context_with(
+            channel_id,
+            TimelineTarget::Main,
+            limit,
+            Keys::generate().public_key(),
+            move |filters| {
+                assert_eq!(filters.len(), 1, "main reads one top_level window");
+                let window = &filters[0];
+                assert_eq!(window.get("top_level"), Some(&json!(true)));
+                assert_eq!(window.get("kinds"), Some(&json!([9, 40002])));
+                assert_eq!(window.get("#h"), Some(&json!([channel_id.to_string()])));
+                assert_eq!(window.get("limit"), Some(&json!(expected_window_limit)));
+                assert!(window.get("#e").is_none());
+                std::future::ready(Ok(rows.clone()))
+            },
+            |_filters| -> std::future::Ready<Result<serde_json::Value, crate::relay::RelayError>> {
+                panic!("main timeline context must not issue a /count");
+            },
+            ThreadContextSessionDelta {
+                overfetch,
+                delivered_ids,
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn main_timeline_context_shares_thread_window_limit_and_sentinel() {
+        // Same `limit` and sentinel as thread context: limit + 1 rows requested,
+        // the oldest (sentinel) dropped, and the result marked truncated.
+        let rows = json!([
+            main_row(&"a".repeat(64), "humanpub", "newest", 3000),
+            main_row(&"b".repeat(64), "humanpub", "middle", 2000),
+            main_row(&"c".repeat(64), "humanpub", "sentinel", 1000),
+            // Relay-signed overlays from the window are not messages.
+            {"id": "d".repeat(64), "kind": buzz_core::kind::KIND_THREAD_SUMMARY,
+             "pubkey": "relay", "content": "{}", "created_at": 3001},
+            {"id": "e".repeat(64), "kind": buzz_core::kind::KIND_WINDOW_BOUNDS,
+             "pubkey": "relay", "content": "{}", "created_at": 3002},
+        ]);
+        let ctx = fetch_main_for_test(rows, 2, false, &HashSet::new(), 3)
+            .await
+            .expect("main context");
+        match ctx {
+            ConversationContext::Dm {
+                messages,
+                total,
+                truncated,
+            } => {
+                let contents: Vec<&str> = messages.iter().map(|m| m.content.as_str()).collect();
+                assert_eq!(contents, ["middle", "newest"]);
+                assert!(truncated);
+                assert_eq!(total, 3, "sentinel proves at least limit + 1 rows");
+            }
+            other => panic!("expected top-level conversation context, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn main_timeline_context_overfetches_and_keeps_new_rows_for_hydrated_session() {
+        // A hydrated main session overfetches 2x like a hydrated thread so rows
+        // it already received do not crowd out new ones.
+        let delivered: HashSet<String> = ["a".repeat(64), "b".repeat(64)].into_iter().collect();
+        let rows = json!([
+            main_row(&"c".repeat(64), "humanpub", "new two", 4000),
+            main_row(&"d".repeat(64), "humanpub", "new one", 3000),
+            main_row(&"a".repeat(64), "humanpub", "seen two", 2000),
+            main_row(&"b".repeat(64), "humanpub", "seen one", 1000),
+        ]);
+        let ctx = fetch_main_for_test(rows, 2, true, &delivered, 5)
+            .await
+            .expect("main context");
+        let ctx = conversation_context_delta(Some(ctx), &delivered, &HashSet::new())
+            .expect("new rows survive the delivery delta");
+        match ctx {
+            ConversationContext::Dm { messages, .. } => {
+                let contents: Vec<&str> = messages.iter().map(|m| m.content.as_str()).collect();
+                assert_eq!(contents, ["new one", "new two"]);
+            }
+            other => panic!("expected top-level conversation context, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn main_timeline_context_with_only_overlays_is_absent() {
+        let rows = json!([
+            {"id": "e".repeat(64), "kind": buzz_core::kind::KIND_WINDOW_BOUNDS,
+             "pubkey": "relay", "content": "{}", "created_at": 1},
+        ]);
+        assert!(fetch_main_for_test(rows, 12, false, &HashSet::new(), 13)
+            .await
+            .is_none());
+    }
+
     #[tokio::test]
     async fn test_fetch_thread_context_uses_exact_count_when_above_sentinel_minimum() {
         let agent = Keys::generate();
@@ -6634,9 +7026,11 @@ mod tests {
             )
         ]);
 
-        let ctx = fetch_thread_context_with(
+        let ctx = fetch_timeline_context_with(
             channel_id,
-            root_id,
+            TimelineTarget::Thread {
+                root_event_id: root_id,
+            },
             2,
             agent_pubkey,
             move |filters| {
@@ -6696,9 +7090,11 @@ mod tests {
             )
         ]);
 
-        let ctx = fetch_thread_context_with(
+        let ctx = fetch_timeline_context_with(
             channel_id,
-            root_id,
+            TimelineTarget::Thread {
+                root_event_id: root_id,
+            },
             2,
             agent.public_key(),
             move |_filters| std::future::ready(Ok(json.clone())),
@@ -6754,9 +7150,11 @@ mod tests {
             )
         ]);
 
-        let ctx = fetch_thread_context_with(
+        let ctx = fetch_timeline_context_with(
             channel_id,
-            root_id,
+            TimelineTarget::Thread {
+                root_event_id: root_id,
+            },
             2,
             agent.public_key(),
             move |_filters| std::future::ready(Ok(json.clone())),
@@ -6811,9 +7209,11 @@ mod tests {
             )
         ]);
 
-        let ctx = fetch_thread_context_with(
+        let ctx = fetch_timeline_context_with(
             channel_id,
-            root_id,
+            TimelineTarget::Thread {
+                root_event_id: root_id,
+            },
             2,
             agent.public_key(),
             move |_filters| std::future::ready(Ok(json.clone())),
@@ -6877,9 +7277,11 @@ mod tests {
             )
         ]);
 
-        let ctx = fetch_thread_context_with(
+        let ctx = fetch_timeline_context_with(
             channel_id,
-            root_id,
+            TimelineTarget::Thread {
+                root_event_id: root_id,
+            },
             2,
             agent.public_key(),
             move |_filters| std::future::ready(Ok(json.clone())),
@@ -6958,9 +7360,11 @@ mod tests {
             "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string(),
         ]);
 
-        let ctx = fetch_thread_context_with(
+        let ctx = fetch_timeline_context_with(
             channel_id,
-            root_id,
+            TimelineTarget::Thread {
+                root_event_id: root_id,
+            },
             3,
             agent.public_key(),
             move |filters| {
@@ -7050,9 +7454,11 @@ mod tests {
             )
         ]);
 
-        let ctx = fetch_thread_context_with(
+        let ctx = fetch_timeline_context_with(
             channel_id,
-            root_id,
+            TimelineTarget::Thread {
+                root_event_id: root_id,
+            },
             2,
             agent.public_key(),
             move |_filters| std::future::ready(Ok(json.clone())),
@@ -7096,7 +7502,7 @@ mod tests {
     }
 
     fn assert_thread_query_filters(
-        filters: &[nostr::Filter],
+        filters: &[serde_json::Value],
         channel_id: Uuid,
         root_id: &str,
         agent_pubkey: nostr::PublicKey,
@@ -8556,9 +8962,11 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         let trigger_id = trigger.id.to_hex();
         let response = serde_json::to_value(vec![root, trigger.clone()]).unwrap();
 
-        let context = fetch_thread_context_with(
+        let context = fetch_timeline_context_with(
             channel_id,
-            &root_id,
+            TimelineTarget::Thread {
+                root_event_id: &root_id,
+            },
             10,
             agent.public_key(),
             move |_filters| std::future::ready(Ok(response.clone())),
@@ -8944,6 +9352,28 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
     }
 
     #[test]
+    fn context_target_main_scope_reads_main_timeline_and_hydrates_it() {
+        let ch = Uuid::new_v4();
+        let batch = batch_with_scope(
+            SessionScope::Main { channel_id: ch },
+            signed_event_with_tags(vec![]),
+        );
+        let target = resolve_context_target(&batch, false);
+        assert_eq!(target, ContextTarget::Main);
+
+        let ctx = ConversationContext::Dm {
+            messages: vec![],
+            total: 0,
+            truncated: false,
+        };
+        assert_eq!(
+            fetched_thread_root_to_hydrate(&target, Some(&ctx), false).as_deref(),
+            Some(MAIN_TIMELINE_HYDRATION_KEY)
+        );
+        assert_eq!(fetched_thread_root_to_hydrate(&target, None, false), None);
+    }
+
+    #[test]
     fn merged_batch_hydrates_only_successfully_fetched_non_dm_target() {
         let channel = Uuid::new_v4();
         let cancelled_root = "a".repeat(64);
@@ -9294,6 +9724,80 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 );
             }
         }
+    }
+
+    #[test]
+    fn busy_owner_hold_timeout_is_unbounded_only_for_main_and_threads() {
+        assert_eq!(
+            busy_owner_hold_timeout(SessionPolicy::Channel),
+            HOLD_BUSY_OWNER_TIMEOUT
+        );
+        assert_eq!(
+            busy_owner_hold_timeout(SessionPolicy::Thread),
+            HOLD_BUSY_OWNER_TIMEOUT
+        );
+        assert_eq!(
+            busy_owner_hold_timeout(SessionPolicy::MainAndThreads),
+            HOLD_BUSY_OWNER_UNBOUNDED
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn main_and_threads_hold_never_forks_and_arms_no_deadline() {
+        // Main and thread scopes hold for their busy owner. Under the
+        // main-and-threads timeout the hold never expires into a fork (which
+        // would discard the owner's session), and it arms no timer: the
+        // owner's return is what wakes the dispatch loop.
+        let channel_id = Uuid::new_v4();
+        let idle_scope = thread_scope(channel_id, &"c".repeat(64));
+        let timeout = busy_owner_hold_timeout(SessionPolicy::MainAndThreads);
+        for scope in [
+            SessionScope::Main { channel_id },
+            thread_scope(channel_id, &"a".repeat(64)),
+        ] {
+            let idle_agent = idle_agent_with_session(0, idle_scope.clone()).await;
+            let mut pool = AgentPool::from_slots(vec![Some(idle_agent)]);
+            pool.record_scope_owner(scope.clone(), 1);
+            mark_agent_busy(&mut pool, 1, thread_scope(channel_id, &"b".repeat(64)));
+
+            let started = tokio::time::Instant::now();
+            assert!(matches!(
+                pool.hold_decision(&scope, started, timeout),
+                HoldDecision::Hold { .. }
+            ));
+            assert_eq!(pool.next_hold_deadline(timeout), None);
+            // Far beyond the bounded window (and any max-turn deadline), still held.
+            let much_later = started + Duration::from_secs(24 * 60 * 60);
+            assert!(
+                matches!(
+                    pool.hold_decision(&scope, much_later, timeout),
+                    HoldDecision::Hold { .. }
+                ),
+                "{scope:?} must not fork under main-and-threads"
+            );
+            // The bounded legacy window still forks the same scope.
+            assert!(matches!(
+                pool.hold_decision(&scope, much_later, HOLD_BUSY_OWNER_TIMEOUT),
+                HoldDecision::ForkAfterHold { .. }
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn conversation_scope_never_holds_even_with_unbounded_timeout() {
+        let channel_id = Uuid::new_v4();
+        let scope = conv(channel_id);
+        let mut pool = AgentPool::from_slots(vec![]);
+        pool.record_scope_owner(scope.clone(), 1);
+        mark_agent_busy(&mut pool, 1, thread_scope(channel_id, &"b".repeat(64)));
+        assert!(matches!(
+            pool.hold_decision(
+                &scope,
+                tokio::time::Instant::now(),
+                HOLD_BUSY_OWNER_UNBOUNDED
+            ),
+            HoldDecision::Dispatch
+        ));
     }
 
     #[tokio::test(start_paused = true)]
@@ -10949,6 +11453,8 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             relay_url: "ws://127.0.0.1:3000".to_string(),
             dispatcher: false,
             channel_roster: false,
+            session_policy: SessionPolicy::default(),
+            session_ledger: None,
         }
     }
 

@@ -1594,6 +1594,20 @@ fn append_new_thread_reply_instruction(s: &mut String, event_id: &str) {
     ));
 }
 
+/// Append the main-timeline reply instruction for a human-facing top-level
+/// message under the main-and-threads session policy.
+///
+/// The main timeline is one continuing conversation, so ordinary replies stay
+/// on it instead of opening a thread under the triggering message.
+fn append_main_timeline_reply_instruction(s: &mut String) {
+    s.push_str(
+        "\nIMPORTANT: This message is on the channel main timeline. For ordinary \
+         replies in this turn, post on the main timeline: use `buzz messages send` \
+         WITHOUT `--reply-to`, and @mention the person you are answering. Use \
+         `--reply-to` only when the human explicitly asks for a thread reply.",
+    );
+}
+
 /// Decide whether a turn is human-facing for reply-anchor purposes.
 ///
 /// A turn is human-facing when the triggering sender is a human, OR a human
@@ -1894,6 +1908,28 @@ fn format_context_hints(
             } else {
                 append_new_thread_reply_instruction(&mut s, event_id);
             }
+        }
+        crate::prompt_framing::semantic_section("context", &s)
+    } else if scope.is_main() {
+        let ctx_hint = if complete_conversation_context {
+            "Main timeline context included below."
+        } else if has_conversation_context {
+            "Main timeline context included below. Use `buzz messages get --channel <UUID>` for older messages if truncated."
+        } else if conversation_context_had_session_events {
+            "Earlier main timeline context is already available in this session. Use `buzz messages get --channel <UUID>` to re-read it."
+        } else {
+            "Use `buzz messages get --channel <UUID>` for recent main timeline messages if needed."
+        };
+        let mut s = format!(
+            "Scope: channel\n\
+             Session scope: main\n\
+             Channel: {channel_display}"
+        );
+        append_channel_description(&mut s, channel_info);
+        append_project_home(&mut s, channel_info, channel_id);
+        s.push_str(&format!("\n{ctx_hint}"));
+        if reply_anchor.is_some() {
+            append_main_timeline_reply_instruction(&mut s);
         }
         crate::prompt_framing::semantic_section("context", &s)
     } else {
@@ -4364,7 +4400,11 @@ mod tests {
                 "reply".into(),
             ]],
         );
-        for policy in [SessionPolicy::Channel, SessionPolicy::Thread] {
+        for policy in [
+            SessionPolicy::Channel,
+            SessionPolicy::Thread,
+            SessionPolicy::MainAndThreads,
+        ] {
             for is_dm in [false, true] {
                 for (event, is_reply) in [(&top, false), (&reply, true)] {
                     let batch = FlushBatch {
@@ -4401,7 +4441,15 @@ mod tests {
                         if is_dm {
                             assert!(prompt.contains("Session scope: dm conversation"));
                             assert!(prompt.contains("Scope: dm"));
-                        } else if policy == SessionPolicy::Thread {
+                        } else if policy == SessionPolicy::MainAndThreads && !is_reply {
+                            assert!(prompt.contains("Session scope: main"));
+                            assert!(prompt.contains("Scope: channel"));
+                            assert!(prompt.contains("on the channel main timeline"));
+                            assert!(!prompt.contains("Thread root:"));
+                            assert!(!prompt.contains(&format!("--reply-to {root}")));
+                            assert!(prompt.contains("buzz messages get"));
+                            continue;
+                        } else if policy != SessionPolicy::Channel {
                             assert!(prompt.contains("Session scope: thread"));
                             assert!(prompt.contains("Scope: thread"));
                             assert!(prompt.contains(&format!("Thread root: {root}")));

@@ -378,8 +378,10 @@ pub struct CliArgs {
 
     /// How ACP provider sessions are scoped in channels.
     /// channel (default): one provider session per channel (legacy behavior).
-    /// thread: each canonical channel thread gets an isolated provider session;
-    /// direct messages stay conversation-scoped either way. Ships as `channel`
+    /// thread: each canonical channel thread gets an isolated provider session.
+    /// main-and-threads: the channel main timeline shares one provider session
+    /// and each canonical thread gets its own.
+    /// Direct messages stay conversation-scoped either way. Ships as `channel`
     /// so thread scoping can be canaried and rolled back without code changes.
     #[arg(
         long,
@@ -388,6 +390,14 @@ pub struct CliArgs {
         value_enum
     )]
     pub session_policy: crate::scope::SessionPolicy,
+
+    /// Directory for durable harness state. Under the `main-and-threads`
+    /// session policy the harness keeps a per-agent, per-relay ledger of
+    /// scope → provider-session ids here so it can resume those sessions
+    /// (ACP `session/resume` or `session/load`) after a restart. Unset
+    /// disables resume; sessions then restart from relay context.
+    #[arg(long, env = "BUZZ_ACP_STATE_DIR")]
+    pub state_dir: Option<std::path::PathBuf>,
 
     /// How to handle new @mentions while a turn is already in-flight.
     /// steer (default): cancel+re-prompt, framing the new mention as a message
@@ -704,6 +714,8 @@ pub struct Config {
     pub dedup_mode: DedupMode,
     /// How ACP provider sessions are scoped in channels (channel vs thread).
     pub session_policy: crate::scope::SessionPolicy,
+    /// Durable harness state directory (session resume ledger).
+    pub state_dir: Option<std::path::PathBuf>,
     pub multiple_event_handling: MultipleEventHandling,
     pub ignore_self: bool,
     pub kinds_override: Option<Vec<u32>>,
@@ -1390,6 +1402,7 @@ impl Config {
             subscribe_mode: args.subscribe,
             dedup_mode: args.dedup,
             session_policy: args.session_policy,
+            state_dir: args.state_dir,
             multiple_event_handling: args.multiple_event_handling,
             ignore_self: !args.no_ignore_self,
             kinds_override: args.kinds,
@@ -1834,6 +1847,7 @@ mod tests {
             subscribe_mode: mode,
             dedup_mode: DedupMode::Queue,
             session_policy: crate::scope::SessionPolicy::Channel,
+            state_dir: None,
             multiple_event_handling: MultipleEventHandling::Queue,
             ignore_self: true,
             kinds_override: None,
@@ -3004,6 +3018,34 @@ channels = "ALL"
             "thread",
         ]);
         assert_eq!(args.session_policy, crate::scope::SessionPolicy::Thread);
+    }
+
+    #[test]
+    fn test_state_dir_is_optional_and_parses() {
+        let base = ["buzz-acp", "--private-key", &"0".repeat(64)];
+        assert_eq!(CliArgs::parse_from(base).state_dir, None);
+        let args = CliArgs::parse_from(base.into_iter().chain(["--state-dir", "/tmp/buzz-state"]));
+        assert_eq!(
+            args.state_dir.as_deref(),
+            Some(std::path::Path::new("/tmp/buzz-state"))
+        );
+    }
+
+    #[test]
+    fn test_session_policy_main_and_threads_flag_parses() {
+        for spelling in ["main-and-threads", "main_and_threads"] {
+            let args = CliArgs::parse_from([
+                "buzz-acp",
+                "--private-key",
+                &"0".repeat(64),
+                "--session-policy",
+                spelling,
+            ]);
+            assert_eq!(
+                args.session_policy,
+                crate::scope::SessionPolicy::MainAndThreads
+            );
+        }
     }
 
     #[test]

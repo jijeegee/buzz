@@ -28,6 +28,7 @@ mod run_task;
 mod runtime;
 use runtime::{AgentRuntime, PoolStartup, SessionMode};
 mod scope;
+mod session_ledger;
 mod setup_mode;
 mod usage;
 
@@ -3308,7 +3309,8 @@ async fn run_harness(
 
         // Borrow result_rx and join_set simultaneously via split-borrow helper.
         pool.retain_held_scopes(|scope| queue.has_pending_scope(scope));
-        let hold_deadline = pool.next_hold_deadline(pool::HOLD_BUSY_OWNER_TIMEOUT);
+        let hold_deadline =
+            pool.next_hold_deadline(pool::busy_owner_hold_timeout(config.session_policy));
         let pool_event: Option<PoolEvent> = {
             let (result_rx, join_set) = pool.rx_and_join_set();
             tokio::select! {
@@ -3499,6 +3501,11 @@ async fn run_harness(
                                     // complete normally (the relay may reject actions if
                                     // the agent lost access).
                                     let drained_ids = queue.drain_channel(ch);
+                                    // A removed channel's sessions must not be
+                                    // resumed after a restart either.
+                                    if let Some(ledger) = &ctx.session_ledger {
+                                        ledger.remove_channel(ch);
+                                    }
                                     let invalidated = if pool_ready {
                                         pool.invalidate_channel_sessions(ch)
                                     } else {
@@ -3650,6 +3657,11 @@ async fn run_harness(
                                             .await,
                                         &buzz_event.event,
                                     );
+                                    // An explicit rotate must also stop a restart
+                                    // from resuming the rotated-away session.
+                                    if let Some(ledger) = &ctx.session_ledger {
+                                        ledger.remove(&scope);
+                                    }
                                     let fired = signal_in_flight_task_for_scope(
                                         &mut pool,
                                         &scope,
@@ -4938,15 +4950,16 @@ fn dispatch_pending(
         };
         let channel_id = batch.channel_id;
         let scope = batch.scope.clone();
-        // Authoritative affinity, variant-gated and bounded: only a `Thread`
+        // Authoritative affinity, variant-gated: only a `Thread` or `Main`
         // scope whose session owner is checked out (busy on another turn) is
-        // held, and only until `HOLD_BUSY_OWNER_TIMEOUT` elapses. `Conversation`
-        // scopes never hold — a busy owner there forks onto another idle worker,
-        // so an active channel cannot starve a sibling channel on a shared
-        // worker. A held thread that outwaits the window forks a fresh session
-        // rather than starve behind an unbounded turn.
-        let forked_after_hold = match pool.hold_decision(&scope, now, pool::HOLD_BUSY_OWNER_TIMEOUT)
-        {
+        // held. `Conversation` scopes never hold — a busy owner there forks
+        // onto another idle worker, so an active channel cannot starve a
+        // sibling channel on a shared worker. Under the `thread` policy a held
+        // thread that outwaits `HOLD_BUSY_OWNER_TIMEOUT` forks a fresh session;
+        // under `main-and-threads` it waits for the owner's (deadline-bounded)
+        // turn instead, so the session is never split.
+        let hold_timeout = pool::busy_owner_hold_timeout(ctx.session_policy);
+        let forked_after_hold = match pool.hold_decision(&scope, now, hold_timeout) {
             pool::HoldDecision::Hold {
                 held_for,
                 owner_index,
@@ -4967,7 +4980,8 @@ fn dispatch_pending(
                             "scope": scope.telemetry_label(),
                             "ownerIndex": owner_index,
                             "heldForSecs": held_for.as_secs_f64(),
-                            "timeoutSecs": pool::HOLD_BUSY_OWNER_TIMEOUT.as_secs_f64(),
+                            "timeoutSecs": (hold_timeout != pool::HOLD_BUSY_OWNER_UNBOUNDED)
+                                .then(|| hold_timeout.as_secs_f64()),
                         }),
                     );
                 }
@@ -9688,6 +9702,7 @@ mod build_mcp_servers_tests {
             subscribe_mode: config::SubscribeMode::All,
             dedup_mode: config::DedupMode::Queue,
             session_policy: scope::SessionPolicy::Channel,
+            state_dir: None,
             multiple_event_handling: config::MultipleEventHandling::Queue,
             ignore_self: true,
             kinds_override: None,
@@ -10552,6 +10567,7 @@ mod error_outcome_emission_tests {
             subscribe_mode: config::SubscribeMode::All,
             dedup_mode: config::DedupMode::Queue,
             session_policy: scope::SessionPolicy::Channel,
+            state_dir: None,
             multiple_event_handling: config::MultipleEventHandling::Queue,
             ignore_self: true,
             kinds_override: None,
