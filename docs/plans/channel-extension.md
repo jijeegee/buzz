@@ -1,123 +1,170 @@
-# Extend existing channels: discovery and decision gate
+# Extend the existing channel stack
 
-2026-10-06. Baseline: `1187dd35f` (`feat(auth): add Google custodial same-key recovery`).
-Status: **blocked at the user-requested decision gate, before implementation**.
-This is a bounded source inspection, not an exhaustive security audit.
+2026-10-06. Baseline `1187dd35f`; planning HEAD `67ba765a7`.
+The user approved the necessary storage, connection and authorization changes.
+The former decision gate is superseded. Deployment remains out of scope.
 
-## Contract and preserved scope
+## Contract
 
-Deliver one desktop/mobile chat list containing DMs, real standalone channels,
-and joined community channels. Personal pins precede actual latest-message
-ordering; ties are deterministic. Preserve read/mute state. Standalone groups
-must use existing channel messages, membership, roles, timeline, composer,
-attachments, replies, reactions and supported agents. Google login must reach
-chat home without community enrollment; retain advanced relay configuration.
+Google same-key recovery opens chat home with zero communities. Desktop and
+mobile show one list of DMs, groups and joined community channels. Personal
+stars become pins; each partition sorts by actual last message and stable scoped
+identity. Empty rooms last; metadata edits do not count. Preserve read/mute,
+drafts and pending sends. Default onboarding has no IP/WSS entry; retain custom
+relay entry under advanced settings. A group is an existing channel with absent
+community affiliation, using the existing commands, membership/roles, Nostr
+kinds/WS, timeline/composer, attachments/replies/reactions and supported agents.
+No separate chat stack, synthetic community or implicit community membership.
 
-Both channel affiliations need owner/admin-controlled all-history or
-since-current-join visibility. Existing rooms retain all-history; new rooms
-default to since-join. Rejoin establishes a new authoritative cutoff, duplicate
-join does not. Enforce current membership and history visibility on server
-reads, search, replies, previews, media and agent context. Warn before exposing
-prior history. Already downloaded data cannot be recalled.
+Read: AGENTS, VISION, VISION_MOBILE, VISION_SOVEREIGN, VISION_AGENT,
+VISION_MODERATION, root/buzz-db TESTING and Google recovery plan/validation.
+Intentional extension: optional community affiliation. Existing community
+isolation, signing identities, recovery and local agent execution rules remain.
 
-Read: root AGENTS/TESTING, buzz-db TESTING, VISION, VISION_MOBILE,
-VISION_SOVEREIGN, VISION_AGENT, VISION_MODERATION and the custody plan/validation.
-Intentional tension: VISION makes the community the mandatory isolated world
-for channels and DMs; the approved requirement adds a world outside it. It does
-not authorize weakening isolation between existing communities.
+## Chosen storage and routing
 
-Preserve [Google custody](google-key-recovery.md): Google restores the same
-signing key; account ids never replace messaging identities. Do not touch keys,
-agent execution permissions, live accounts, services, databases or credentials.
-No old prototype imports, separate chat stack, new message kind, SSE, synthetic
-community membership, or migration rewrites. No push or deployment.
+Use additive migrations from 0060 and update desired schema/reconciliation. Add
+`channel_scopes(id UUID PRIMARY KEY, community_id UUID UNIQUE NULL REFERENCES
+communities(id), host TEXT NOT NULL UNIQUE)`. Copy existing community ids/hosts
+unchanged; affiliated rows require id = community_id. Community creation/host
+updates synchronize the registry transactionally. Host uniqueness must cover
+both registries, including future inserts. An explicitly registered standalone
+host has a random scope id and NULL affiliation; no communities or relay_members
+row is created for it or its users.
 
-## Current production paths and actual blockers
+Repoint only shared channel-store FKs to channel_scopes: channels,
+channel_members, events, users, event_mentions, thread_metadata, reactions,
+audit_log, parameterized_event_watermarks and the existing shared feature tables
+needed by enabled operations. Retain composite keys, values, indexes and scoped
+predicates. For compatibility their legacy SQL `community_id` column remains
+the storage partition key; actual affiliation is channel_scopes.community_id.
+API responses must not label a standalone partition as a community. Community
+membership/invites, bans, deletion and operator authority retain real community
+FKs. This avoids a bulk rename of existing channel queries, not an extra product.
 
-Paths below are relative to the repository root.
+Extend the resolved connection context with explicit optional affiliation.
+Shared channel routes resolve a registered host to exactly one partition;
+unknown hosts fail closed. Existing community-only routes still demand a real
+community context. Reuse root WS and /events, /query, /count handlers on the
+standalone host, and shared media/window/profile/agent routes. Deny community-only
+routes and kinds there. Standalone admission proves NIP-42/NIP-98 identity and
+retains configured identity checks/rate limits without requiring relay_members.
+Never disable the existing community gate globally or resolve by bare channel id.
+Keep partition-qualified Redis/caches. Community deletion/write fences remain
+mandatory for affiliated scopes; standalone writes validate their registered
+scope and never manufacture a community deletion lease.
 
-| Concern | Existing implementation and consequence |
-| --- | --- |
-| Schema | `schema/schema.sql:79,145,203`: channels, channel_members and events have mandatory community foreign keys and community-leading primary keys. Channels may share UUIDs across communities. Channel community is immutable. Making only channel affiliation nullable cannot represent a standalone member or event. |
-| Connection and authorization | `crates/buzz-relay/src/tenant.rs::bind_community` binds the host before access; unmapped hosts fail closed. `crates/buzz-auth/src/access.rs::ChannelAccessChecker` requires TenantContext for every membership lookup. Closed-relay admission is an additional community membership gate. There is no outside-community connection scope to select. |
-| Create/member/roles/leave | `crates/buzz-relay/src/handlers/side_effects.rs` dispatches existing 9007/9000/9001/9021/9022 commands; creation and joins call scoped channel DB methods. `channel_authz.rs` and `crates/buzz-db/src/store/channel_members.rs` preserve role and last-owner safety. These are the paths to extend, never duplicate. |
-| Invitations | `crates/buzz-relay/src/api/invites.rs::claim_invite` calls `claim_relay_invite` and publishes community membership. That URL flow cannot be reused unchanged for a group-only invitation. Direct channel member commands are scoped to the connection's community too. |
-| Reads and transport | `handlers/event.rs`, `handlers/req.rs`, `api/bridge.rs`, `crates/buzz-db/src/store/event.rs` and `crates/buzz-search/src/lib.rs` carry the community into writes, reads and search. The thread-window path also has separate relay/DB entry points. Dropping tenant predicates would break the existing isolation contract. |
-| History cutoff | `channel_members.rs::add_member` revives removed rows without updating joined_at; auto-membership also has a reactivation path. Duplicate 9021 joins currently return early. `events` has received_at as well as sender-created created_at; event insertion stamps received_at in application code. A reliable cutoff needs transaction ordering with membership, not a client timestamp filter. |
-| Media | `crates/buzz-relay/src/api/media.rs` binds the host and enforces relay membership on media reads. A channel/history setting alone does not establish attachment eligibility; the download authorization path must be covered before claiming privacy. |
-| Desktop reuse | `desktop/src/features/channels/hooks.ts` overlays actual last-message timestamps; `lib/channelRecency.ts` advances them. Sidebar `AppSidebar.tsx` separates stream/starred/DM sections; `lib/channelSortPreference.ts` already sorts recent messages with stable name/id ties. `lib/channelStarsStorage.ts` and `channelStarsSync.ts` hold personal stars. Existing `ChannelScreen.tsx`/`ChannelPane.tsx` are the conversation renderers. |
-| Mobile reuse | `mobile/lib/features/channels/channels_provider.dart` loads joined ids from 39002 and fetches latest messages. `channels_page/body.dart` filters isMember and separates stream/starred/DM lists. `channel_stars/`, `channel_sort/`, existing read/mute providers, `channel_detail_page.dart` and `compose_bar/` are reusable. |
-| Client scope | Desktop `src/app/App.tsx` applies a selected community before mounting its keyed app/query subtree. Mobile `lib/app.dart`, shared community/relay providers and star provider depend on active community configuration. Aggregating joined communities and hosting no-community chat requires changes beyond flattening the visible lists. |
+Configuration: `BUZZ_STANDALONE_RELAY_URL` explicitly registers the standalone
+host at startup (never on arbitrary inbound hosts). Reject conflicts with an
+affiliated host. If it equals the canonical relay URL, skip community/owner/
+allowlist bootstrap there; otherwise retain canonical community bootstrap and
+register the additional host. Advertise the standalone URL as a NIP-11 capability
+at the configured login service. Clients use it with their recovered key; custody
+sessions remain bound to their original auth origin. No production config changes.
 
-**Gate conclusion:** this baseline cannot provide real outside-community
-channels through a modest nullable-affiliation or creation-policy patch. It
-requires changing the storage/connection authorization boundary across the
-existing channel stack and both clients. No such overhaul is approved by this
-plan. Preserving a mandatory tenant key by secretly enrolling users in another
-community would violate the request, even if its UI were hidden.
+## Membership and invitation
 
-## Small alternatives for the parent/user decision
+Use 9007 creation/creator-owner bootstrap, 9000 add/roles, 9001 remove, 9021 join,
+9022 leave and current last-owner guards. Community channels still require
+community eligibility, including target pubkeys. Groups grant only membership
+of that channel. Implement the currently deferred 9009 invitation in the same
+command dispatcher. `channel_invites` has scope/channel/target-pubkey key,
+inviter, expiry and acceptance state. Targeted invitations need no bearer code.
+Reuse p-gated membership notification conventions for invitation delivery.
+Accept via 9021: check target, expiry, current inviter authority and eligibility,
+then consume invitation and add/reactivate member in ONE transaction under the
+existing membership lock. Duplicate accept is idempotent; consumed invitations
+cannot authorize rejoin. Pending invites permit only minimal invitation metadata.
 
-1. Independently implement one list and personal pin controls **within the
-   selected community**, on both clients, using the providers and renderers
-   above. No backend migration. This is a useful partial milestone already
-   permitted by the request, but does not supply standalone groups,
-   cross-community aggregation, no-community home or history policy. It has
-   not been implemented in this discovery checkpoint.
-2. If product scope is explicitly changed, offer existing private channels
-   inside a visibly selected community using current member/role/leave flows.
-   This is not a standalone-group implementation and must not be presented as
-   one. Do not make this substitution without a user decision.
+Standalone private rooms require invitation; open rooms can be discovered/joined
+by authenticated keys on that host. Open community discovery remains community
+scoped and subject to community admission. Neither exposes message content to
+nonmembers. Home includes joined rooms only. No cross-partition open predicate.
 
-Keeping the complete requirement instead needs an explicit decision to allow
-the broader existing-channel scope change. No replacement architecture or
-parallel service is proposed here.
+## History enforcement, before groups are enabled
 
-## Smallest changes after a scope decision
+Add `channels.history_policy` ('all'/'since_join'): existing rooms backfilled
+'all', new-room default 'since_join'. Owner/admin changes use 9002 and 39000;
+both clients warn before enabling all-history. Add channel-local server ordering:
+`channels.accepted_sequence`, `events.channel_sequence`, and
+`channel_members.join_sequence`, all BIGINT default 0 before legacy backfill.
+Event acceptance and joining
+acquire the SAME existing membership advisory lock, then advance/read the
+channel counter inside their transaction. Never allocate order before the lock.
+Visible content requires active membership and (all-history OR event sequence
+> current join sequence). New membership/reactivation stamp DB joined_at after
+the lock; duplicate joins/role changes preserve cutoff. Cover direct add, invite
+acceptance, creator bootstrap and automatic membership. Rejoin never revives an
+old membership period. Client created_at cannot establish eligibility.
 
-For the independent list milestone, affect the desktop sidebar/list controls,
-mobile channels list/tile and their existing tests. Feed joined rows into one
-list; reuse personal stars as pins, pinned rows first and each partition by
-last-message time with stable identity ties. Empty rooms sort last. Do not use
-metadata updated_at, change read/mute storage or add a second timeline. A
-multi-community list must first address community-qualified row identities;
-current star payloads index channel ids, which are not globally unique.
+Backfill events in deterministic (received_at, id, created_at) order per channel and seed
+the high watermark. Old reactivation discarded removed_at while keeping stale
+joined_at, so legacy rows cannot prove their current membership period. Mark
+their cutoff as migration-established and conservatively use that watermark.
+Existing rooms remain all-history. On switching a legacy room to since-join,
+explicitly warn that those members see only post-migration content because old
+membership periods cannot be reconstructed. This is a compatibility limitation,
+not reconstructed historical truth. Future joins/rejoins have exact cutoffs;
+duplicate joins preserve the legacy marker.
 
-For a subsequently approved full change, reuse the listed channel/event/auth
-paths, then deliver one working create/invite/send/read flow before extending
-all history-sensitive reads. Extend existing channel settings on both clients
-with the same policy, owner/admin checks and prior-history warning. Do not
-commit disconnected policy helpers as a functioning milestone.
+Persist 9009 and invited 9021 through a narrow atomic ingest
+branch, following persist_workflow_deletion. Do not use catch-and-log post-store
+side effects for authoritative mutation. Command, invite consumption and membership
+commit together before ACK. Pending invites remain queryable from durable rows;
+notifications/publication repair are durable, not the sole discovery mechanism.
 
-Migration strategy: none in this checkpoint. Any later implementation adds a
-new migration after 0059 and updates desired schema; existing migration files
-and data remain untouched. Backfill existing rooms to all-history, then set
-the new-room default to since-join. Reset the authoritative cutoff only on
-inactive-to-active membership under the existing membership lock. Resolve
-storage scope and cutoff concurrency before writing a schema migration. Test
-desired-schema and migration paths only in new explicit isolated fixtures;
-deployment/application belongs to the parent, not this task.
+Push membership/history predicates before LIMIT/count/aggregation in REQ,
+HTTP reads, search, windows/threads, inbox previews and unread derivation. Check
+authoritative membership/policy on the writer, including fan-out and stale
+cache/replica paths. Discovery snapshots/minimal pending-invite metadata are
+separate from message-history visibility. Edits/reactions/replies/summaries and
+agent context must also authorize referenced messages/root; reject replies to
+invisible roots. Counts and summaries must not reveal hidden history.
+Media needs an accessible referencing event in the same scope, or the uploader's
+own unattached staging upload, including thumbnail/HEAD/range/download paths.
+A hash is not permission. Legacy unmapped media fails conservatively, never
+public fallback. Agent context uses the same authorized reads; tool execution
+permissions stay unchanged. Previously downloaded bytes cannot be recalled.
 
-## Acceptance and validation
+## Client sessions
 
-- Desktop and mobile: actual new messages reorder mixed chats; metadata edits
-  do not. Pins remain above unpinned chats and affect only their owner. Ties,
-  empty rooms, refresh/reconnect and account/community changes remain stable.
-  Unjoined public rooms are absent; read/mute behavior stays intact.
-- Standalone channel: an invited account without community membership can
-  create/join/use the existing conversation features; invitation grants only
-  that channel. Join/leave/kick, role safety and local agent permissions work.
-- Policy: old rooms preserve history, new rooms default since-join, owner/admin
-  settings and warning work. Leave/kick denies reads; successful rejoin hides
-  the old period; duplicate joins preserve cutoff. Concurrent join/send and
-  malicious sender timestamps cannot bypass it. Exercise raw signed queries,
-  search, thread roots/replies, previews, downloads and agent context.
-- Isolation: same channel UUID in two communities, foreign event/media ids,
-  open-channel discovery and cross-account pins cannot cross boundaries.
-- Google recovery preserves user/agent keys and ownership. Ordinary login
-  needs no IP/WSS entry and reaches chat home with zero communities.
-- Focused production-path tests plus actual changed app/relay flows precede
-  functioning local `git commit -s` milestones. Explicitly stage only changed
-  task files. Human acceptance remains pending until the user tests it.
+Extend existing saved connection config with explicit standalone/community
+kind; do not persist a fake community. Google custody selects a standalone
+connection with the recovered key. Keep per-session transports and existing
+conversation renderers. Row/route identity is (normalized relay URL, scope kind,
+channel id). Aggregate joined summaries from all configured connections with
+bounded independent retries; an offline community cannot block chat home.
+Selecting a row activates its real connection before opening existing desktop
+ChannelScreen/ChannelPane or mobile channel_detail_page. Fence async results;
+retain resetCommunityState on active-session changes. Never send on the previous
+connection. Adapt desktop/native commands and mobile providers for zero-community
+home. Preserve per-connection star/read/mute data; remote stars remain scoped by
+their own transport. Scope profiles and previews too. An active-community-only
+flattened list is not fulfillment of the mixed-home requirement.
 
-Actual work and checks: [validation record](channel-extension-validation.md).
+## Checkpoints and validation
+
+1. One bounded read-only independent plan review; resolve concrete blockers here,
+   then implement immediately without another approval gate.
+2. First functioning checkpoint prioritizes isolated create -> targeted invite ->
+   accept by a zero-community identity -> send/read through existing channel
+   handlers AND conversation UI. Enforce membership/history from the first
+   enabled path. Test wrong host, colliding ids, uninvolved/removed keys, duplicate
+   accept and concurrent join/send. Helpers alone are not this checkpoint.
+3. Complete protected references/media/search/context and both settings UIs;
+   check old/new rooms, leave/kick/rejoin, duplicate join, malicious timestamps
+   and every actual read surface.
+4. Complete Google-to-home, all-connection mixed list/pins and mobile parity;
+   test reconnect/offline connection, colliding ids, account/session switches,
+   unread/mute/drafts and unchanged keys/agent ownership.
+
+Use proportional production-path tests and isolated relay/frontend fixtures.
+Update migration expectations and scoped-table lint inventory. Exercise desired
+schema AND additive migration against new explicit DB/Redis fixtures only.
+Record review resolutions, real checks, commits and outstanding acceptance in
+[channel-extension-validation.md](channel-extension-validation.md). Commit
+functioning increments locally with `git commit -s`, explicit owned file staging
+and staged diff inspection. Preserve CLAUDE.md exact bytes/exclude it. Honor
+hooks; report genuine resource/tool blockers promptly. No push, deployment,
+live migrations/accounts/keys, service/native restart/rebuild, cache deletion or
+unrelated process termination. Human/deployed acceptance remain pending.

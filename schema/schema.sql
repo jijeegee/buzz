@@ -98,6 +98,8 @@ CREATE TABLE channels (
     purpose         TEXT,
     purpose_set_by  BYTEA,
     purpose_set_at  TIMESTAMPTZ,
+    history_policy TEXT NOT NULL DEFAULT 'since_join' CHECK (history_policy IN ('all', 'since_join')),
+    accepted_sequence BIGINT NOT NULL DEFAULT 0 CHECK (accepted_sequence >= 0),
     participant_hash BYTEA,
     ttl_seconds     INT,
     ttl_deadline    TIMESTAMPTZ,
@@ -148,6 +150,8 @@ CREATE TABLE channel_members (
     pubkey      BYTEA NOT NULL,
     role        member_role NOT NULL DEFAULT 'member',
     joined_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    join_sequence BIGINT NOT NULL DEFAULT 0 CHECK (join_sequence >= 0),
+    join_cutoff_is_legacy BOOLEAN NOT NULL DEFAULT false,
     invited_by  BYTEA,
     removed_at  TIMESTAMPTZ,
     removed_by  BYTEA,
@@ -229,6 +233,7 @@ CREATE TABLE events (
     -- stamped (Phase 0 still writes a 64-byte zero sentinel).
     sig         BYTEA,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    channel_sequence BIGINT NOT NULL DEFAULT 0 CHECK (channel_sequence >= 0),
     channel_id  UUID,
     deleted_at  TIMESTAMPTZ,
     d_tag       TEXT,
@@ -2186,3 +2191,59 @@ SELECT attach_community_write_fence('artifact_revisions');
 -- The relay does not expire events. Any future row retention or partition
 -- retirement must skip payloads referenced by `artifact_heads.event_id`
 -- (NIP-AR: expiring earlier revisions MUST NOT remove the current revision).
+
+-- Channel history acceptance ordering (migration 0060).
+CREATE FUNCTION stamp_channel_event_sequence() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.channel_id IS NULL THEN
+        NEW.channel_sequence := 0;
+        RETURN NEW;
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended(
+        'buzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
+    UPDATE channels SET accepted_sequence = accepted_sequence + 1
+    WHERE community_id = NEW.community_id AND id = NEW.channel_id
+    RETURNING accepted_sequence INTO NEW.channel_sequence;
+    -- Existing event storage permits references to absent channels. They have
+    -- no membership and cannot pass a reader's channel authorization.
+    IF NOT FOUND THEN NEW.channel_sequence := 0; END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER stamp_channel_event_sequence
+BEFORE INSERT ON events
+FOR EACH ROW EXECUTE FUNCTION stamp_channel_event_sequence();
+
+CREATE FUNCTION stamp_channel_membership_cutoff() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF OLD.community_id IS DISTINCT FROM NEW.community_id
+           OR OLD.channel_id IS DISTINCT FROM NEW.channel_id
+           OR OLD.pubkey IS DISTINCT FROM NEW.pubkey THEN
+            RAISE EXCEPTION 'channel membership identity is immutable'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        -- Active duplicate joins and role changes never advance the boundary.
+        IF OLD.removed_at IS NULL OR NEW.removed_at IS NOT NULL THEN
+            NEW.join_sequence := OLD.join_sequence;
+            NEW.joined_at := OLD.joined_at;
+            NEW.join_cutoff_is_legacy := OLD.join_cutoff_is_legacy;
+            RETURN NEW;
+        END IF;
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended(
+        'buzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
+    SELECT accepted_sequence INTO STRICT NEW.join_sequence FROM channels
+    WHERE community_id = NEW.community_id AND id = NEW.channel_id;
+    NEW.joined_at := clock_timestamp();
+    NEW.join_cutoff_is_legacy := false;
+    RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER stamp_channel_membership_cutoff
+BEFORE INSERT OR UPDATE ON channel_members
+FOR EACH ROW EXECUTE FUNCTION stamp_channel_membership_cutoff();
