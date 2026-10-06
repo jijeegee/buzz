@@ -516,6 +516,9 @@ class _RecordingTokenAuthNotifier extends _UnauthenticatedAuthNotifier {
 
 /// Holds the browser round-trip open so the test can interleave events.
 class _HeldWebAuthLauncher implements WebAuthLauncher {
+  @override
+  Future<String> callbackScheme() async => buzzMobileCallbackScheme;
+
   Uri? opened;
   Completer<Uri>? pending;
 

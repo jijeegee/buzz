@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 
+import 'mobile_callback.dart';
+
 /// The user closed the sign-in browser without finishing.
 class WebAuthCancelledException implements Exception {
   const WebAuthCancelledException();
@@ -9,10 +11,18 @@ class WebAuthCancelledException implements Exception {
   String toString() => 'WebAuthCancelledException';
 }
 
+/// Another account/controller already owns the system authentication browser.
+class WebAuthBusyException implements Exception {
+  const WebAuthBusyException();
+}
+
 /// Opens the system auth browser and returns the callback URL.
 ///
 /// Injectable so tests and widget tests never touch the platform channel.
 abstract interface class WebAuthLauncher {
+  /// Callback scheme registered by the installed application.
+  Future<String> callbackScheme();
+
   /// Open [url] and resolve with the first navigation to
   /// `callbackUrlScheme://...`. Throws [WebAuthCancelledException] when the
   /// user dismisses the browser.
@@ -28,10 +38,20 @@ class FlutterWebAuth2Launcher implements WebAuthLauncher {
   const FlutterWebAuth2Launcher();
 
   @override
+  Future<String> callbackScheme() => installedMobileCallbackScheme();
+
+  // The platform plugin has one pending callback per scheme. A second call
+  // overwrites it on Android and strands the first Future. Keep the guard
+  // across launcher instances as well as token/key-backup/origin controllers.
+  static bool _authenticating = false;
+
+  @override
   Future<Uri> authenticate({
     required Uri url,
     required String callbackUrlScheme,
   }) async {
+    if (_authenticating) throw const WebAuthBusyException();
+    _authenticating = true;
     try {
       final result = await FlutterWebAuth2.authenticate(
         url: url.toString(),
@@ -44,6 +64,8 @@ class FlutterWebAuth2Launcher implements WebAuthLauncher {
     } on PlatformException catch (error) {
       if (error.code == 'CANCELED') throw const WebAuthCancelledException();
       rethrow;
+    } finally {
+      _authenticating = false;
     }
   }
 }

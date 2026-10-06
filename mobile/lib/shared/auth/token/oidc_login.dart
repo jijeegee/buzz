@@ -1,15 +1,12 @@
 import 'dart:math';
 
 import 'auth_api.dart';
+import 'mobile_callback.dart';
 import 'pkce.dart';
 import 'web_auth_launcher.dart';
 
-/// Custom URL scheme the relay redirects mobile logins to (relay default
-/// `AUTH_MOBILE_REDIRECT_SCHEMES=xyz.block.buzz`).
-const buzzMobileCallbackScheme = 'xyz.block.buzz';
-
-/// The exact `redirect_uri` the relay accepts for `client=mobile`.
-const buzzMobileRedirectUri = '$buzzMobileCallbackScheme://auth/cb';
+export 'mobile_callback.dart'
+    show buzzMobileCallbackScheme, buzzMobileRedirectUri;
 
 /// The OIDC login did not produce tokens.
 class OidcLoginException implements Exception {
@@ -38,20 +35,42 @@ Future<LoginGrant> runOidcLogin({
   String provider = 'google',
   String? deviceName,
   String identityMode = 'token',
+  String callbackScheme = buzzMobileCallbackScheme,
   Random? random,
 }) async {
   final pkce = PkcePair.generate(random);
+  final redirectUri = Uri.parse('$callbackScheme://auth/cb');
   final callback = await launcher.authenticate(
     url: api.startUri(
       provider: provider,
       state: pkce.state,
       codeChallenge: pkce.challenge,
-      redirectUri: buzzMobileRedirectUri,
+      redirectUri: redirectUri.toString(),
       deviceName: deviceName,
       identityMode: identityMode,
     ),
-    callbackUrlScheme: buzzMobileCallbackScheme,
+    callbackUrlScheme: callbackScheme,
   );
+  if (callback.scheme != redirectUri.scheme ||
+      callback.authority != redirectUri.authority ||
+      callback.path != redirectUri.path ||
+      callback.hasFragment) {
+    throw const OidcLoginException(
+      'The sign-in response used an unexpected callback address. Try again.',
+      code: 'invalid_callback',
+    );
+  }
+  // Do not let a repeated query parameter select an arbitrary state/code.
+  if ([
+    'state',
+    'code',
+    'error',
+  ].any((key) => (callback.queryParametersAll[key]?.length ?? 0) > 1)) {
+    throw const OidcLoginException(
+      'The sign-in response contained ambiguous parameters. Try again.',
+      code: 'invalid_callback',
+    );
+  }
   final params = callback.queryParameters;
   // State first: an unsolicited callback (forged code *or* forged error)
   // must not be acted on at all.

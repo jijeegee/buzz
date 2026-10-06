@@ -48,6 +48,11 @@ class FakeRefreshTokenStore implements RefreshTokenStore {
 class FakeWebAuthLauncher implements WebAuthLauncher {
   FakeWebAuthLauncher(this.respond);
 
+  String installedScheme = buzzMobileCallbackScheme;
+
+  @override
+  Future<String> callbackScheme() async => installedScheme;
+
   /// Builds the callback from the start URL the app opened.
   Uri Function(Uri startUrl) respond;
   final List<Uri> opened = [];
@@ -75,7 +80,7 @@ class FakeWebAuthLauncher implements WebAuthLauncher {
 
   /// A successful provider callback echoing the request `state`.
   static Uri success(Uri startUrl, {String code = 'bzl_code'}) =>
-      Uri.parse('xyz.block.buzz://auth/cb').replace(
+      Uri.parse(startUrl.queryParameters['redirect_uri']!).replace(
         queryParameters: {
           'code': code,
           'state': startUrl.queryParameters['state']!,

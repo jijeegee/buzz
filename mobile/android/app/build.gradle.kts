@@ -160,6 +160,7 @@ android {
         versionName = flutter.versionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         resValue("string", "app_name", "Buzz")
+        manifestPlaceholders["buzzAuthCallbackScheme"] = "xyz.block.buzz"
     }
 
     signingConfigs {
@@ -179,6 +180,10 @@ android {
             // keep the production applicationId and label.
             if (debugIdSuffix != null) {
                 applicationIdSuffix = debugIdSuffix
+                // Must match callbackSchemeForAndroidPackage in Dart. This
+                // scheme needs an explicit relay redirect allowlist entry.
+                manifestPlaceholders["buzzAuthCallbackScheme"] =
+                    "xyz.block.buzz" + debugIdSuffix.replace('_', '-')
             }
             val resolvedAppName =
                 debugAppName

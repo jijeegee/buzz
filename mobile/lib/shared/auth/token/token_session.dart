@@ -462,25 +462,38 @@ class TokenSessionController {
     );
     final LoginGrant grant;
     try {
+      final callbackScheme = await _launcher.callbackScheme();
+      if (!_isCurrent(startGeneration)) return false;
       grant = await runOidcLogin(
         api: _api,
         launcher: _launcher,
         provider: provider,
         deviceName: deviceName,
         identityMode: identityMode,
+        callbackScheme: callbackScheme,
       );
     } on WebAuthCancelledException {
-      _emit(_settledState(null));
+      if (_isCurrent(startGeneration)) _emit(_settledState(null));
+      return false;
+    } on WebAuthBusyException {
+      if (_isCurrent(startGeneration)) {
+        _emit(
+          _settledState('Another sign-in is open. Finish or close it first.'),
+        );
+      }
       return false;
     } on OidcLoginException catch (error) {
-      _emit(_settledState(error.message));
+      if (_isCurrent(startGeneration)) _emit(_settledState(error.message));
       return false;
     } on AuthApiException catch (error) {
-      _emit(_settledState(_loginFailureMessage(error)));
+      if (_isCurrent(startGeneration)) {
+        _emit(_settledState(_loginFailureMessage(error)));
+      }
       return false;
-    } catch (error) {
-      debugPrint('Sign-in browser failed for $origin: $error');
-      _emit(_settledState('Could not open the sign-in page. Try again.'));
+    } catch (_) {
+      if (_isCurrent(startGeneration)) {
+        _emit(_settledState('Could not open the sign-in page. Try again.'));
+      }
       return false;
     }
     if (!_isCurrent(startGeneration)) {
