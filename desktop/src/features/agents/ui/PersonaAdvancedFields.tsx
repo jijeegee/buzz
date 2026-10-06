@@ -181,6 +181,10 @@ export function PersonaAdvancedFields({
               })
             }
             options={[
+              {
+                label: "Main timeline and each thread",
+                value: "main_and_threads",
+              },
               { label: "Entire channel", value: "channel" },
               { label: "Each thread", value: "thread" },
             ]}
@@ -191,9 +195,11 @@ export function PersonaAdvancedFields({
             className="text-xs text-muted-foreground"
             id="persona-session-policy-description"
           >
-            {behaviorDraft.sessionPolicy === "thread"
-              ? "Keeps a separate conversation for each channel thread. Direct messages remain shared."
-              : "Shares one conversation across every thread in a channel."}
+            {behaviorDraft.sessionPolicy === "main_and_threads"
+              ? "Keeps one continuing conversation for the channel main timeline and a separate conversation for each thread. Direct messages remain shared."
+              : behaviorDraft.sessionPolicy === "thread"
+                ? "Keeps a separate conversation for each channel thread. Direct messages remain shared."
+                : "Shares one conversation across every thread in a channel."}
           </p>
         </div>
 

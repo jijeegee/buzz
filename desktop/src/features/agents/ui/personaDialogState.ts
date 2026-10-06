@@ -49,7 +49,7 @@ export function createPersonaDialogState(): PersonaDialogState {
       acpCommand: "buzz-acp",
       runtime: undefined,
       model: undefined,
-      behavior: { sessionPolicy: "thread" },
+      behavior: { sessionPolicy: "main_and_threads" },
     },
   };
 }

@@ -785,14 +785,18 @@ fn mint_without_definition_or_input_uses_client_defaults() {
     assert_eq!(minted.respond_to, RespondTo::default());
     assert!(minted.respond_to_allowlist.is_empty());
     assert_eq!(minted.parallelism, None);
-    assert_eq!(minted.session_policy, AcpSessionPolicy::Thread);
+    assert_eq!(minted.session_policy, AcpSessionPolicy::MainAndThreads);
 }
 
 #[test]
 fn mint_preserves_definition_session_policy_including_legacy_channel() {
     let mut definition = sample_persona();
     assert_eq!(definition.session_policy, AcpSessionPolicy::Channel);
-    for policy in [AcpSessionPolicy::Channel, AcpSessionPolicy::Thread] {
+    for policy in [
+        AcpSessionPolicy::Channel,
+        AcpSessionPolicy::Thread,
+        AcpSessionPolicy::MainAndThreads,
+    ] {
         definition.session_policy = policy;
         let minted =
             resolve_mint_behavioral_defaults(None, Vec::new(), None, Some(&definition)).unwrap();

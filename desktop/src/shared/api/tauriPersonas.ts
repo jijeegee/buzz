@@ -34,7 +34,7 @@ export type RawPersona = {
   respond_to?: string | null;
   respond_to_allowlist?: string[];
   parallelism?: number | null;
-  session_policy?: "channel" | "thread";
+  session_policy?: "channel" | "thread" | "main_and_threads";
   created_at: string;
   updated_at: string;
   /** Non-null when the pack `.persona.md` write-back failed (non-fatal). */

@@ -883,6 +883,16 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Resolve once and stamp the same value onto the environment and snapshot.
     let acp_session_policy = super::effective_acp_session_policy(record, &personas);
     super::apply_acp_session_policy_env(&mut command, acp_session_policy);
+    // Main-and-threads agents keep a durable session ledger so a restarted
+    // harness can resume their provider sessions. Other policies are launched
+    // exactly as before.
+    command.env_remove(super::ACP_STATE_DIR_ENV_VAR);
+    if acp_session_policy == super::AcpSessionPolicy::MainAndThreads {
+        command.env(
+            super::ACP_STATE_DIR_ENV_VAR,
+            super::storage::managed_agents_state_dir(app)?,
+        );
+    }
     // The channel routing role (saved mode × the record's star, held back
     // while another agent still runs a role it is losing) decides the
     // routing env. Written after the `descriptor.env` loop like the session

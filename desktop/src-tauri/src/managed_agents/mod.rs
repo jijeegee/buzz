@@ -119,6 +119,7 @@ pub use runtime_types::*;
 pub(crate) use session_policy::{
     apply_acp_session_policy_env, effective_acp_session_policy, insert_acp_session_policy_env,
     AcpSessionPolicy, ManagedAgentExperimentState, ACP_SESSION_POLICY_ENV_VAR,
+    ACP_STATE_DIR_ENV_VAR,
 };
 pub use storage::*;
 pub use teams::*;

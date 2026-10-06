@@ -172,7 +172,7 @@ type MockPersonaSeed = {
   namePool?: string[];
   respondTo?: "owner-only" | "allowlist" | "anyone";
   respondToAllowlist?: string[];
-  sessionPolicy?: "channel" | "thread";
+  sessionPolicy?: "channel" | "thread" | "main_and_threads";
 };
 
 type MockTeamSeed = {
@@ -1060,7 +1060,7 @@ type RawPersona = {
   respond_to?: string | null;
   respond_to_allowlist?: string[];
   parallelism?: number | null;
-  session_policy?: "channel" | "thread";
+  session_policy?: "channel" | "thread" | "main_and_threads";
   created_at: string;
   updated_at: string;
 };
@@ -3638,7 +3638,10 @@ function mockPersonaCatalogPublications() {
     };
     const rawDescription = content.description;
     const sessionPolicy =
-      content.session_policy === "thread" ? "thread" : "channel";
+      content.session_policy === "thread" ||
+      content.session_policy === "main_and_threads"
+        ? content.session_policy
+        : "channel";
     if (
       typeof displayName !== "string" ||
       !displayName.trim() ||
@@ -8975,7 +8978,7 @@ type PersonaBehaviorInput = {
   respondTo?: "owner-only" | "allowlist" | "anyone";
   respondToAllowlist?: string[];
   parallelism?: number;
-  sessionPolicy?: "channel" | "thread";
+  sessionPolicy?: "channel" | "thread" | "main_and_threads";
 };
 
 /** Mirrors `apply_persona_behavior`: replace all four as a unit. */

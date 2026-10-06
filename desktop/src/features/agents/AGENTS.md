@@ -867,10 +867,13 @@ unauthenticated passthrough. No image-reader proxy or tenant isolation exception
 
 ## Conversation context defaults
 
-New blank persona drafts explicitly seed `behavior.sessionPolicy: "thread"`
-(Each thread); create submits that choice and linked instances inherit it.
-New standalone managed agents seed Thread in `resolve_mint_behavioral_defaults`.
-Entire channel remains selectable. Edit, duplicate, catalog/import, and existing
+New blank persona drafts explicitly seed
+`behavior.sessionPolicy: "main_and_threads"` (Main timeline and each thread);
+create submits that choice and linked instances inherit it. New standalone
+managed agents seed MainAndThreads in `resolve_mint_behavioral_defaults`.
+Entire channel and Each thread remain selectable. Only MainAndThreads launches
+get `BUZZ_ACP_STATE_DIR` (`<app data>/agents/state`), which enables the
+harness session-resume ledger; other policies launch exactly as before. Edit, duplicate, catalog/import, and existing
 records preserve their policy: an absent stored field still means Channel.
 Do not change the serde or harness fallback to implement a creation default,
 rewrite existing agents, or reset their conversations. DMs remain shared.

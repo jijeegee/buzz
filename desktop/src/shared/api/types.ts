@@ -295,7 +295,7 @@ export type ManagedAgentBackend =
   | { type: "provider"; id: string; config: Record<string, unknown> };
 
 /** ACP conversation boundary configured on an agent definition. */
-export type AcpSessionPolicy = "channel" | "thread";
+export type AcpSessionPolicy = "channel" | "thread" | "main_and_threads";
 
 import type { RestartDiffEntry } from "./restartDiff";
 export type { JsonValue, RestartChange, RestartDiffEntry } from "./restartDiff";

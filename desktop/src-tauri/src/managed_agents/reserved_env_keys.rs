@@ -74,6 +74,7 @@ pub(crate) const RESERVED_ENV_KEYS: &[&str] = &[
     // Definition-owned policy: user env cannot override whether channel
     // threads receive independent ACP sessions.
     "BUZZ_ACP_SESSION_POLICY",
+    "BUZZ_ACP_STATE_DIR",
     "BUZZ_ACP_NO_PRESENCE",
     // Dispatcher mode follows the default-AI star on the record. User env must
     // not turn an agent the UI shows as ordinary into a channel router, nor

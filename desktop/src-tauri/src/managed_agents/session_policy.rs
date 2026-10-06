@@ -6,6 +6,8 @@ use super::{AgentDefinition, ManagedAgentRecord};
 use crate::app_state::AppState;
 
 pub(crate) const ACP_SESSION_POLICY_ENV_VAR: &str = "BUZZ_ACP_SESSION_POLICY";
+/// Harness state directory (session resume ledger); set for main-and-threads.
+pub(crate) const ACP_STATE_DIR_ENV_VAR: &str = "BUZZ_ACP_STATE_DIR";
 
 /// Desktop experiment state that influences managed-agent lifecycle behavior.
 pub struct ManagedAgentExperimentState {
@@ -26,7 +28,7 @@ impl AppState {
     }
 }
 
-/// Defines whether one ACP conversation is shared by a channel or isolated per thread.
+/// Defines how ACP conversations are scoped within a channel.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AcpSessionPolicy {
@@ -35,6 +37,9 @@ pub enum AcpSessionPolicy {
     Channel,
     /// Keep a separate ACP conversation for each channel thread.
     Thread,
+    /// Keep one ACP conversation for the channel main timeline and a separate
+    /// one for each channel thread.
+    MainAndThreads,
 }
 
 impl<'de> Deserialize<'de> for AcpSessionPolicy {
@@ -45,6 +50,7 @@ impl<'de> Deserialize<'de> for AcpSessionPolicy {
         let value = serde_json::Value::deserialize(deserializer)?;
         Ok(match value.as_str() {
             Some("thread") => Self::Thread,
+            Some("main_and_threads") => Self::MainAndThreads,
             _ => Self::Channel,
         })
     }
@@ -59,6 +65,7 @@ impl AcpSessionPolicy {
         match self {
             Self::Channel => "channel",
             Self::Thread => "thread",
+            Self::MainAndThreads => "main_and_threads",
         }
     }
 }
@@ -121,6 +128,25 @@ mod tests {
             "\"thread\""
         );
         assert_eq!(AcpSessionPolicy::Thread.as_str(), "thread");
+    }
+
+    #[test]
+    fn main_and_threads_round_trips_for_storage_ipc_and_env() {
+        assert_eq!(
+            serde_json::to_string(&AcpSessionPolicy::MainAndThreads).unwrap_or_default(),
+            "\"main_and_threads\""
+        );
+        assert_eq!(
+            serde_json::from_value::<AcpSessionPolicy>(serde_json::json!("main_and_threads"))
+                .unwrap_or_default(),
+            AcpSessionPolicy::MainAndThreads
+        );
+        // The harness accepts this storage spelling as an alias of
+        // `main-and-threads`, so the env value can share it.
+        assert_eq!(
+            AcpSessionPolicy::MainAndThreads.as_str(),
+            "main_and_threads"
+        );
     }
 
     #[test]
