@@ -260,6 +260,9 @@ enum Cmd {
     /// Get and set channel canvas documents
     #[command(subcommand)]
     Canvas(CanvasCmd),
+    /// Read and edit a channel's or DM's layered goal tree (L1 root goal and sub-goals)
+    #[command(subcommand)]
+    Goals(GoalsCmd),
     /// Add, remove, and list emoji reactions
     #[command(subcommand)]
     Reactions(ReactionsCmd),
@@ -845,6 +848,143 @@ pub enum CanvasCmd {
         #[arg(long)]
         channel: String,
         /// Revision event ID to restore (64-char hex)
+        #[arg(long)]
+        revision: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GoalsCmd {
+    /// Show the goal tree as an outline; with --node or --thread also show that
+    /// goal's path, sub-goals, and the other goals on its layer
+    Get {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Focus on this goal id
+        #[arg(long)]
+        node: Option<String>,
+        /// Focus on the goal this thread (root event id) is linked to
+        #[arg(long)]
+        thread: Option<String>,
+    },
+    /// Create the single layer 1 goal, or rewrite it
+    SetRoot {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// One-sentence goal (single line)
+        #[arg(long)]
+        title: String,
+        /// Key information for this conversation; '-' reads stdin
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Add a sub-goal under an existing goal
+    Add {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Parent goal id
+        #[arg(long)]
+        parent: String,
+        /// One-line goal
+        #[arg(long)]
+        title: String,
+        /// Key information; '-' reads stdin
+        #[arg(long)]
+        note: Option<String>,
+        /// Assignee pubkey (hex or npub); repeatable
+        #[arg(long)]
+        assignee: Vec<String>,
+    },
+    /// Change a goal's title, note, status, or assignees
+    Update {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Goal id
+        #[arg(long)]
+        node: String,
+        /// New one-line title
+        #[arg(long)]
+        title: Option<String>,
+        /// New note ('' clears, '-' reads stdin)
+        #[arg(long)]
+        note: Option<String>,
+        /// open | in_progress | done | dropped
+        #[arg(long)]
+        status: Option<String>,
+        /// Pubkey to assign (hex or npub); repeatable
+        #[arg(long)]
+        assign: Vec<String>,
+        /// Pubkey to unassign (hex or npub); repeatable
+        #[arg(long)]
+        unassign: Vec<String>,
+    },
+    /// Move a goal under a different parent
+    Move {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Goal id
+        #[arg(long)]
+        node: String,
+        /// New parent goal id
+        #[arg(long)]
+        parent: String,
+        /// Sort position among siblings (default: last)
+        #[arg(long)]
+        order: Option<i64>,
+    },
+    /// Delete a goal; removing the layer 1 goal clears the tree (history keeps it)
+    Remove {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Goal id
+        #[arg(long)]
+        node: String,
+        /// Also delete its sub-goals (required when it has any)
+        #[arg(long)]
+        recursive: bool,
+    },
+    /// Link a thread to the goal it works on (moves it off any other goal)
+    Link {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Goal id
+        #[arg(long)]
+        node: String,
+        /// Thread root event id (64-char hex)
+        #[arg(long)]
+        thread: String,
+    },
+    /// Detach a thread from its goal
+    Unlink {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Thread root event id (64-char hex)
+        #[arg(long)]
+        thread: String,
+    },
+    /// List previous revisions of the goal tree, newest first
+    History {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Maximum revisions to list
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+    /// Restore the goal tree to a previous revision
+    Restore {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Revision event id (64-char hex)
         #[arg(long)]
         revision: String,
     },
@@ -2356,6 +2496,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Threads(sub) => commands::threads::dispatch(sub, &client).await,
         Cmd::Channels(sub) => commands::channels::dispatch(sub, &client, &cli.format).await,
         Cmd::Canvas(sub) => commands::channels::dispatch_canvas(sub, &client).await,
+        Cmd::Goals(sub) => commands::goals::dispatch(sub, &client).await,
         Cmd::Reactions(sub) => commands::reactions::dispatch(sub, &client).await,
         Cmd::Emoji(sub) => commands::emoji::dispatch(sub, &client).await,
         Cmd::Gifs(sub) => commands::gifs::dispatch(sub, &client).await,
@@ -2565,6 +2706,7 @@ mod tests {
             "emoji",
             "feed",
             "gifs",
+            "goals",
             "issues",
             "media",
             "mem",

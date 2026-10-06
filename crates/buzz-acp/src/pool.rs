@@ -3388,6 +3388,19 @@ pub async fn run_prompt_task(
 
         let profile_lookup =
             fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
+        let goal_context = crate::goal_context::fetch_goal_tree(b.channel_id, &ctx.rest_client)
+            .await
+            .and_then(|tree| {
+                crate::goal_context::render_goal_context(
+                    &tree,
+                    b.channel_id,
+                    // The thread this turn belongs to: the fetched thread,
+                    // or a thread session's own root on its first turn.
+                    hydrated_thread_root
+                        .map(String::as_str)
+                        .or_else(|| b.scope.root_event_id()),
+                )
+            });
 
         let known_names: Vec<&str> = profile_lookup
             .iter()
@@ -3411,6 +3424,7 @@ pub async fn run_prompt_task(
                 agent_core: standing.agent_core,
                 huddle_instructions: standing.huddle_instructions,
                 channel_info: channel_info.as_ref(),
+                goal_context: goal_context.as_deref(),
                 conversation_context: conversation_context.as_ref(),
                 conversation_context_had_session_events,
                 profile_lookup: profile_lookup.as_ref(),

@@ -2068,6 +2068,9 @@ pub struct FormatPromptArgs<'a> {
     /// Owner-signed instructions for an active huddle channel.
     pub huddle_instructions: Option<&'a str>,
     pub channel_info: Option<&'a PromptChannelInfo>,
+    /// Rendered `<goal-context>` body — the conversation's goal tree, fetched
+    /// fresh each turn (see `goal_context`).
+    pub goal_context: Option<&'a str>,
     pub conversation_context: Option<&'a ConversationContext>,
     /// True when delta filtering removed context already available to this
     /// live session, either as prior input or as the agent's own reply.
@@ -2296,6 +2299,12 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
         ),
         reply_anchor.as_deref(),
     ));
+    if let Some(goals) = args.goal_context {
+        sections.push(crate::prompt_framing::semantic_section(
+            "goal-context",
+            goals,
+        ));
+    }
     if let Some(follow_up) = &follow_up {
         sections.push(crate::prompt_framing::semantic_section(
             "follow-up",

@@ -497,6 +497,10 @@ pub const KIND_STREAM_MESSAGE_DIFF: u32 = 40008;
 pub const KIND_THREAD_NAME: u32 = 40009;
 /// Canvas (shared document) for a channel.
 pub const KIND_CANVAS: u32 = 40100;
+/// Goal tree (layered goals) for a channel or DM — see [`crate::goal_tree`].
+/// Same head-per-channel storage as [`KIND_CANVAS`]; every write must carry an
+/// `expected-revision` precondition.
+pub const KIND_GOAL_TREE: u32 = 40110;
 /// System message for channel state changes (join, leave, rename, etc.).
 pub const KIND_SYSTEM_MESSAGE: u32 = 40099;
 
@@ -720,6 +724,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_REMINDER,
     KIND_STREAM_MESSAGE_DIFF,
     KIND_CANVAS,
+    KIND_GOAL_TREE,
     KIND_SYSTEM_MESSAGE,
     KIND_CHANNEL_SUMMARY,
     KIND_PRESENCE_SNAPSHOT,
@@ -779,6 +784,14 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_GIT_STATUS_DRAFT,
     KIND_PROJECT,
 ];
+
+/// Returns `true` for kinds stored as one live head per channel: the newest
+/// non-deleted event of the kind in a channel, across all authors, is current
+/// and older events are history. Writes serialize on a per-channel lock and
+/// may carry an `expected-revision` precondition.
+pub const fn is_channel_head_kind(kind: u32) -> bool {
+    matches!(kind, KIND_CANVAS | KIND_GOAL_TREE)
+}
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
 pub const fn is_ephemeral(kind: u32) -> bool {
@@ -895,6 +908,7 @@ const _: () = assert!(
 // Compile-time: all Buzz kind constants fit in nostr's u16-backed Kind.
 const _: () = assert!(KIND_AUTH <= u16::MAX as u32);
 const _: () = assert!(KIND_CANVAS <= u16::MAX as u32);
+const _: () = assert!(KIND_GOAL_TREE <= u16::MAX as u32);
 const _: () = assert!(KIND_HUDDLE_GUIDELINES <= u16::MAX as u32);
 const _: () = assert!(EPHEMERAL_KIND_MIN < EPHEMERAL_KIND_MAX);
 // Compile-time: KIND_AGENT_TURN_METRIC is a regular stored kind (not ephemeral, not replaceable).

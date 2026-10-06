@@ -13,6 +13,7 @@ mod dispatcher;
 mod edit_routing;
 mod engram_fetch;
 mod filter;
+mod goal_context;
 mod isolated_execution;
 #[cfg(test)]
 mod lead_rules_fixture_tests;

@@ -10,7 +10,7 @@ use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row, Transaction};
 use uuid::Uuid;
 
 use buzz_core::kind::{
-    event_kind_i32, is_ephemeral, is_parameterized_replaceable, KIND_AUTH, KIND_CANVAS,
+    event_kind_i32, is_channel_head_kind, is_ephemeral, is_parameterized_replaceable, KIND_AUTH,
     KIND_EVENT_REMINDER, KIND_HUDDLE_STARTED, SHARED_GATED_KINDS,
 };
 use buzz_core::{CommunityId, StoredEvent};
@@ -1228,7 +1228,7 @@ pub(crate) async fn soft_delete_event_and_update_thread_in_tx(
     }
 
     if let Some((kind, Some(channel_id))) = target {
-        if kind == KIND_CANVAS as i32 {
+        if is_channel_head_kind(kind as u32) {
             let lock_key = event_replacement_lock_key(
                 community_id,
                 kind,
@@ -1758,11 +1758,11 @@ pub async fn insert_event_with_thread_metadata(
     .await?;
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
 
-    if event_kind_i32(event) == KIND_CANVAS as i32 {
+    if is_channel_head_kind(event_kind_i32(event) as u32) {
         if let Some(ch) = channel_id {
             let lock_key = event_replacement_lock_key(
                 community_id,
-                KIND_CANVAS as i32,
+                event_kind_i32(event),
                 &[],
                 Some(ch.as_bytes().as_slice()),
             );
