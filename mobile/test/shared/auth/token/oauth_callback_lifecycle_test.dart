@@ -4,6 +4,7 @@ import 'package:buzz/shared/auth/token/mobile_callback.dart';
 import 'package:buzz/shared/auth/token/token.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'token_auth_test_fakes.dart';
@@ -220,5 +221,26 @@ void main() {
     h.launcher.error = null;
     expect(await h.controller.signIn(), isTrue);
     expect(h.launcher.opened, hasLength(2));
+  });
+
+  test('late rejected-mode cleanup cannot overwrite newer recovery', () async {
+    final h = Harness();
+    addTearDown(h.controller.dispose);
+    await h.controller.restore();
+    final cleanup = h.server.heldLogout = Completer<http.Response>();
+    // The default grant is token mode; key backup must reject it.
+    final pending = h.controller.signIn(identityMode: 'key_backup');
+    await settle();
+    expect(h.logouts, hasLength(1));
+    await h.controller.forgetOnDevice();
+    h.store.readError = StateError('Keychain unavailable');
+    await h.controller.restore();
+    final settled = h.controller.state;
+    final notifications = h.states.length;
+    cleanup.complete(http.Response('', 204));
+    expect(await pending, isFalse);
+    expect(h.controller.state, settled);
+    expect(h.states.length, notifications);
+    expect(h.store.writes, 0);
   });
 }

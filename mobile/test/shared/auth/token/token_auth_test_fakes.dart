@@ -104,6 +104,9 @@ class FakeAuthServer {
   /// When set, `/auth/oidc/complete` answers with this future instead.
   Completer<http.Response>? heldComplete;
 
+  /// Hold cleanup while a newer session transition finishes.
+  Completer<http.Response>? heldLogout;
+
   /// NIP-11 document at `/`; defaults to a token relay offering Google.
   http.Response Function(http.Request) nip11 = (_) => jsonResponse({
     'name': 'Test relay',
@@ -131,6 +134,8 @@ class FakeAuthServer {
         if (held != null) return held.future;
         return complete(request);
       case '/auth/logout':
+        final held = heldLogout;
+        if (held != null) return held.future;
         return logout(request);
       case '/auth/refresh':
         if (holdRefreshes) {

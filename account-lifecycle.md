@@ -34,6 +34,8 @@ account-switch implementation seam.
   must not overwrite A's refresh token or link B to A's key. Riverpod relay
   lifetimes currently follow the active community and require an account-owned
   lifetime before presenting switching as concurrent operation.
+  `CommunityListNotifier.addCommunity` also replaces a saved entry by relay URL,
+  so keyed token storage alone would still overwrite same-origin A with B.
 
 ## Transitions and storage
 
@@ -138,10 +140,12 @@ changed. The installed desktop binary is not replaced by library tests.
 
 ## Validation and later manual acceptance
 
-- Mobile: 104 focused tests passed, including browser ownership, callback URI,
+- Mobile: 105 focused tests passed, including browser ownership, callback URI,
   stale error/cancellation, sign-in widgets, custody interoperability, existing
   token settings and the age-gate fixture affected by the launcher interface.
   Changed Dart files passed analysis and formatting.
+  This includes a rejection whose device-session cleanup completes after a
+  newer recovery state: its completion cannot overwrite that state.
 - Android: Gradle configuration and actual debug main-manifest merge passed;
   the merged `parity_dev` callback is `xyz.block.buzz.parity-dev://auth/cb`.
   Release main-manifest merge could not resolve uncached AndroidX dependencies

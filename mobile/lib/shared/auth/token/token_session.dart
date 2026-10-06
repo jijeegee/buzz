@@ -502,6 +502,7 @@ class TokenSessionController {
     }
     if (grant.identityMode != identityMode) {
       await _revokeUnsaved(grant.accessToken);
+      if (!_isCurrent(startGeneration)) return false;
       _emit(
         _settledState(
           'This Google account uses a different identity mode. '
