@@ -144,3 +144,11 @@ test("uppercases in tag pubkeys are normalized", () => {
     alice: PUBKEY,
   });
 });
+
+test("a soft agent mention (no p tag) still renders as a mention", () => {
+  const profiles = { [PUBKEY]: profile({ displayName: "Coder" }) };
+  assert.deepEqual(
+    resolveMentionProps([["mention", PUBKEY, "soft"]], profiles, "@Coder hi"),
+    { mentionNames: ["Coder"], mentionPubkeysByName: { coder: PUBKEY } },
+  );
+});

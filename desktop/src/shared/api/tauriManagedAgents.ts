@@ -56,21 +56,6 @@ export async function setManagedAgentStartOnAppLaunch(
   return fromRawManagedAgent(response);
 }
 
-/**
- * Star `pubkey` as this desktop's default AI, or clear the star with `null`.
- * Rust enforces single selection, so the whole list comes back: starring one
- * agent unstars whichever agent held it before.
- */
-export async function setDefaultManagedAgent(
-  pubkey: string | null,
-): Promise<ManagedAgent[]> {
-  const response = await invokeTauri<RawManagedAgent[]>(
-    "set_default_managed_agent",
-    { pubkey },
-  );
-  return response.map(fromRawManagedAgent);
-}
-
 export async function setManagedAgentAutoRestart(
   pubkey: string,
   autoRestartOnConfigChange: boolean,

@@ -14,12 +14,12 @@ pub(crate) use agent_description::{effective_agent_description, record_effective
 pub(crate) mod admission_test_support;
 mod backend;
 pub(crate) mod bestie_assignment;
+pub(crate) mod channel_routing;
 pub(crate) mod claude_config;
 pub(crate) mod config_bridge;
 pub(crate) mod custom_harnesses;
 mod definition_validation;
 mod discovery;
-mod dispatcher_env;
 pub(crate) mod effective_config;
 mod env_vars;
 pub(crate) mod git_bash;
@@ -40,6 +40,7 @@ mod relay_mesh;
 mod repos;
 mod restore;
 pub mod retention;
+mod routing_env;
 mod runtime;
 mod runtime_commands;
 mod runtime_types;
@@ -47,6 +48,7 @@ mod session_policy;
 pub(crate) mod snapshot_avatar;
 pub(crate) mod spawn_snapshot;
 pub(crate) mod storage;
+pub(crate) mod task_models;
 pub(crate) mod team_catalog;
 pub(crate) mod team_events;
 mod team_repair;
@@ -83,7 +85,6 @@ pub(crate) use definition_validation::{
     validate_managed_agent_definition_text, validate_visible_text,
 };
 pub use discovery::*;
-pub(crate) use dispatcher_env::{apply_dispatcher_env, insert_dispatcher_env};
 pub use env_vars::*;
 #[cfg(windows)]
 pub(crate) use git_bash::git_bash_available;
@@ -109,6 +110,9 @@ pub use repos::{
     write_persisted_repos_dir,
 };
 pub use restore::*;
+pub(crate) use routing_env::{
+    apply_lead_env, apply_routing_env, deployed_routing_role, insert_routing_env,
+};
 pub use runtime::*;
 pub use runtime_commands::*;
 pub use runtime_types::*;

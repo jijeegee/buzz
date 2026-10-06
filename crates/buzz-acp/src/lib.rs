@@ -14,6 +14,8 @@ mod edit_routing;
 mod engram_fetch;
 mod filter;
 mod isolated_execution;
+#[cfg(test)]
+mod lead_rules_fixture_tests;
 mod observer;
 mod pool;
 mod pool_lifecycle;
@@ -9715,6 +9717,7 @@ mod build_mcp_servers_tests {
             no_base_prompt: false,
             base_prompt_content: None,
             dispatcher: false,
+            channel_roster: false,
             dispatcher_config: config::DispatcherConfig::default(),
         }
     }
@@ -10578,6 +10581,7 @@ mod error_outcome_emission_tests {
             no_base_prompt: false,
             base_prompt_content: None,
             dispatcher: false,
+            channel_roster: false,
             dispatcher_config: config::DispatcherConfig::default(),
         }
     }

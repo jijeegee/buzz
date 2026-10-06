@@ -27,6 +27,7 @@ mod media_proxy;
 mod mesh_llm;
 #[cfg(not(feature = "mesh-llm"))]
 mod mesh_llm_stubs;
+mod message_routing;
 mod migration;
 #[cfg(test)]
 mod model_tests;
@@ -466,6 +467,8 @@ pub fn run() {
                     .managed_agent_restore_pending
                     .store(true, Ordering::Release);
             }
+            // Channel routing: drop Lead rules files left by a previous run.
+            managed_agents::channel_routing::lead_rules::sweep_lead_rules_at_launch(&app_handle);
 
             // Periodic sweep: reap orphaned agents from dead instances every 60s.
             // Catches agents that escaped both the Justfile trap and boot-time
@@ -736,7 +739,11 @@ pub fn run() {
             set_agent_managed_profiles,
             set_managed_agent_start_on_app_launch,
             set_managed_agent_auto_restart,
-            set_default_managed_agent,
+            get_channel_routing,
+            set_channel_routing,
+            route_message,
+            get_task_models,
+            set_task_model,
             delete_managed_agent,
             get_managed_agent_log,
             get_agent_models,

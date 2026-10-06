@@ -11,8 +11,6 @@ use crate::{
     util::now_iso,
 };
 
-use super::build_deploy_payload;
-
 /// Deploy an agent to a provider backend. Resolves the binary, calls deploy via
 /// spawn_blocking, and persists the result (backend_agent_id or last_error).
 ///
@@ -80,11 +78,18 @@ pub(crate) async fn deploy_to_provider(
             BackendKind::Provider { id, config } => (id.clone(), config.clone()),
             BackendKind::Local => return Err(format!("agent {pubkey} is not provider-backed")),
         };
+        // Store lock, then runtimes lock: the order every record command uses.
+        let live_roles = crate::managed_agents::channel_routing::live_local_roles(
+            &*state
+                .managed_agent_processes
+                .lock()
+                .map_err(|error| error.to_string())?,
+        );
         (
             provider_id,
             config,
             record.provider_binary_path.clone(),
-            build_deploy_payload(app, state, record)?,
+            super::deploy::build_deploy_payload_with_live_roles(app, state, record, &live_roles)?,
         )
     };
     // The rebuild above re-read the live workspace relay and owner identity.
@@ -129,6 +134,19 @@ pub(crate) async fn deploy_to_provider(
 
     let result = apply_deploy_result(rec, deploy_result, &deployed_agent_json);
     save_managed_agents(app, &records)?;
+    if result.is_ok() {
+        // The channel routing plan reads this as the deployment's running
+        // role. The deploy itself succeeded, so a failed stamp must not turn
+        // it into an error; without a stamp the plan falls back to the
+        // star-based assumption and the next deploy rewrites it.
+        if let Err(error) = crate::managed_agents::channel_routing::record_deployed_role(
+            app,
+            pubkey,
+            crate::managed_agents::deployed_routing_role(&deployed_agent_json),
+        ) {
+            eprintln!("buzz-desktop: failed to stamp deployed routing role for {pubkey}: {error}");
+        }
+    }
     result
 }
 

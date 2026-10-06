@@ -3,14 +3,20 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { attachManagedAgentToChannel } from "@/features/agents/channelAgents";
+import { channelRoutingQueryKey } from "@/features/agents/channelRoutingHooks";
 import { managedAgentsQueryKey } from "@/features/agents/hooks";
-import { findDefaultAi } from "@/features/agents/lib/defaultAi";
+import {
+  findDefaultAi,
+  routingJoinsNewChannels,
+} from "@/features/agents/lib/defaultAi";
 import { useDefaultAi } from "@/features/agents/useDefaultAi";
+import { getChannelRouting } from "@/shared/api/tauriChannelRouting";
 import type { ManagedAgent } from "@/shared/api/types";
 
 /**
  * Adds the default AI to a channel you just created, as a bot, starting it
- * when it is not already running. A no-op when no agent is starred.
+ * when it is not already running. A no-op when no agent is starred or the
+ * saved channel routing mode is not Host or Lead (read fresh at call time).
  *
  * `attachDefaultAi` never rejects: a failed membership write or start is
  * reported with a warning toast so callers can fire-and-forget it after
@@ -33,6 +39,25 @@ export function useAttachDefaultAi() {
       );
       const agent = cached ? findDefaultAi(cached) : null;
       if (!agent) return;
+      // The mode is read at call time too: a form opened under Host must not
+      // join after the user switched routing Off in the meantime.
+      let joins: boolean;
+      try {
+        const routing = await queryClient.fetchQuery({
+          queryKey: channelRoutingQueryKey,
+          queryFn: getChannelRouting,
+        });
+        joins = routingJoinsNewChannels(routing.mode);
+      } catch (error) {
+        toast.warning(`${agent.name} was not added to this channel`, {
+          description:
+            error instanceof Error
+              ? error.message
+              : "Couldn't read channel routing.",
+        });
+        return;
+      }
+      if (!joins) return;
 
       try {
         await attachManagedAgentToChannel(channelId, {

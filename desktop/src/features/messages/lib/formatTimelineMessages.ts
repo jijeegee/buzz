@@ -45,6 +45,7 @@ import { formatTime } from "@/features/messages/lib/dateFormatters";
 // Pure overlay helper lives in a sibling .mjs so node:test (no TS loader)
 // can exercise the exact same source the renderer uses.
 import { applyEditTagOverlay } from "@/features/messages/lib/applyEditTagOverlay.mjs";
+import { AUTO_ROUTE_MENTION_MARKER } from "@/features/messages/lib/agentAddressMention.mjs";
 import { truncateNpub } from "@/shared/lib/pubkey";
 
 const HEX_RE = /^[0-9a-f]+$/i;
@@ -264,6 +265,9 @@ export function formatTimelineMessages(
     string,
     { content: string; tags: string[][]; createdAt: number }
   >();
+  // Smart routing's `auto-route` recipients, from any authorized edit. Like
+  // preview suppression they are monotonic: a later body edit keeps them.
+  const autoRouteTagsByTargetId = new Map<string, string[][]>();
   for (const event of events) {
     if (
       event.kind !== KIND_STREAM_MESSAGE_EDIT ||
@@ -285,6 +289,18 @@ export function formatTimelineMessages(
     }
     if (hasLinkPreviewSuppression(event.tags)) {
       previewSuppressedTargetIds.add(targetId);
+    }
+    const autoRouteTags = event.tags.filter(
+      (tag) => tag[0] === "mention" && tag[2] === AUTO_ROUTE_MENTION_MARKER,
+    );
+    if (autoRouteTags.length > 0) {
+      autoRouteTagsByTargetId.set(targetId, [
+        ...(autoRouteTagsByTargetId.get(targetId) ?? []),
+        ...autoRouteTags,
+      ]);
+      // The delivery edit repeats the body unchanged: it only addresses the
+      // pick, so it never marks the message edited.
+      if (event.content === target.content) continue;
     }
 
     const existing = editsByTargetId.get(targetId);
@@ -516,7 +532,11 @@ export function formatTimelineMessages(
       // Logic lives in `applyEditTagOverlay.mjs` so prod and tests share
       // a single source.
       tags: (() => {
-        const effectiveTags = applyEditTagOverlay(event.tags, edit?.tags);
+        const overlaidTags = applyEditTagOverlay(event.tags, edit?.tags);
+        const autoRouteTags = autoRouteTagsByTargetId.get(event.id);
+        const effectiveTags = autoRouteTags
+          ? [...overlaidTags, ...autoRouteTags]
+          : overlaidTags;
         if (
           hasLinkPreviewSuppression(event.tags) ||
           previewSuppressedTargetIds.has(event.id)

@@ -1,5 +1,5 @@
 import type { MentionRevalidationOptions } from "@/features/messages/lib/agentMentionRevalidation";
-import type { ManagedAgent } from "@/shared/api/types";
+import type { ManagedAgent, RelayEvent } from "@/shared/api/types";
 import {
   type ImetaMedia,
   mergeOutgoingTags,
@@ -70,6 +70,10 @@ export type PendingNonMemberMentionSend = {
   composerRevision: number;
   invitationSignal?: AbortSignal;
   addressedAgentPubkeys: string[];
+  /** Called with the published event once the relay accepts it (Smart routing). */
+  onPublished?: (message: RelayEvent) => void;
+  /** Routed channel: agent `@mentions` post as display-only `soft` tags. */
+  softAgentMentions?: boolean;
   inlineAgentMentionPubkeys: string[];
   capturedChannelId: string | null;
   capturedThreadContext: {
@@ -100,6 +104,8 @@ export type PendingNonMemberMentionSend = {
 
 export type SendMessageWithMentionFlowInput = {
   addressedAgentPubkeys?: readonly string[];
+  onPublished?: (message: RelayEvent) => void;
+  softAgentMentions?: boolean;
   capturedChannelId: string | null;
   capturedThreadContext?: PendingNonMemberMentionSend["capturedThreadContext"];
   pendingImeta: ImetaMedia[];
@@ -173,6 +179,26 @@ export function mergeMentionRecipients(
     ...explicitMentionPubkeys,
     ...addressedAgentPubkeys,
   ]);
+}
+
+/**
+ * In a routed channel the owner's agent `@mentions` are display-only (`soft`,
+ * no `p` tag) so the channel's routing decides who acts. Agents the tray
+ * addressed or this send created (`hardPubkeys`) and every non-agent mention
+ * stay delivered as usual.
+ */
+export function splitSoftAgentMentions(
+  mentionPubkeys: Iterable<string>,
+  isAgent: (pubkey: string) => boolean,
+  hardPubkeys: Iterable<string>,
+) {
+  const hard = new Set(uniqueNormalizedPubkeys(hardPubkeys));
+  const delivered: string[] = [];
+  const soft: string[] = [];
+  for (const pubkey of uniqueNormalizedPubkeys(mentionPubkeys)) {
+    (isAgent(pubkey) && !hard.has(pubkey) ? soft : delivered).push(pubkey);
+  }
+  return { delivered, soft };
 }
 
 export function isManagedAgentRunning(agent: ManagedAgent) {

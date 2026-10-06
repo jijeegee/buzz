@@ -280,6 +280,17 @@ pub fn load_managed_agents<R: tauri::Runtime>(
     Ok(records)
 }
 
+/// The agent instances without their keys: for readers that need only
+/// record fields (the routing hold check runs on every summary poll) and must
+/// not pay a keyring read per record.
+pub(crate) fn load_managed_agents_without_keys<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Vec<ManagedAgentRecord>, String> {
+    let mut records = load_agent_store(app)?;
+    records.retain(|record| !record.pubkey.is_empty());
+    Ok(records)
+}
+
 /// Load the key-less agent *definitions* (former personas) from the unified
 /// store. The persona compatibility shim (`load_personas`) presents these in
 /// the legacy shape via `to_definition_view`.

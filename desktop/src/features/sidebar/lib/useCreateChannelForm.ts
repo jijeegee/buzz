@@ -55,6 +55,8 @@ export type CreateChannelFormState = {
   setTtlSeconds: (value: number) => void;
   /** The starred default AI; the add-default-AI row renders only when set. */
   defaultAi: ManagedAgent | null;
+  /** The row renders only while channel routing is Host or Lead. */
+  defaultAiJoinsNewChannels: boolean;
   addDefaultAi: boolean;
   setAddDefaultAi: (value: boolean) => void;
   errorMessage: string | null;
@@ -89,7 +91,11 @@ export function useCreateChannelForm({
   const [ttlSeconds, setTtlSeconds] = React.useState(
     DEFAULT_EPHEMERAL_TTL_SECONDS,
   );
-  const { defaultAi } = useDefaultAi();
+  const {
+    defaultAi,
+    routingMode,
+    joinsNewChannels: defaultAiJoinsNewChannels,
+  } = useDefaultAi();
   const [addDefaultAi, setAddDefaultAi] = React.useState(getDefaultAiAutoJoin);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = React.useState<
@@ -180,7 +186,11 @@ export function useCreateChannelForm({
             visibility,
             ttlSeconds: ephemeral ? ttlSeconds : undefined,
             templateId: selectedTemplateId ?? undefined,
-            addDefaultAi: resolveAddDefaultAi(defaultAi, addDefaultAi),
+            addDefaultAi: resolveAddDefaultAi(
+              defaultAi,
+              addDefaultAi,
+              routingMode,
+            ),
           });
           onCreated?.();
         } catch (error) {
@@ -201,6 +211,7 @@ export function useCreateChannelForm({
       name,
       onCreate,
       onCreated,
+      routingMode,
       selectedTemplateId,
       ttlSeconds,
       visibility,
@@ -230,6 +241,7 @@ export function useCreateChannelForm({
     ttlSeconds,
     setTtlSeconds,
     defaultAi,
+    defaultAiJoinsNewChannels,
     addDefaultAi,
     setAddDefaultAi,
     errorMessage,

@@ -94,7 +94,11 @@ export function useCreateProjectFormSettings(
   const runtimesQuery = useAvailableAcpRuntimes({ enabled: active });
   const teamsQuery = useTeamsQuery();
   const templatesQuery = useChannelTemplatesQuery();
-  const { defaultAi } = useDefaultAi();
+  const {
+    defaultAi,
+    routingMode,
+    joinsNewChannels: defaultAiJoinsNewChannels,
+  } = useDefaultAi();
   const [addDefaultAi, setAddDefaultAi] = React.useState(getDefaultAiAutoJoin);
   const [channelVisibility, setChannelVisibility] =
     React.useState<ChannelVisibility>("open");
@@ -191,12 +195,14 @@ export function useCreateProjectFormSettings(
   );
 
   return {
-    /** `false` whenever no default AI exists, whatever the stored preference. */
-    addDefaultAi: resolveAddDefaultAi(defaultAi, addDefaultAi),
+    /** `false` whenever no default AI exists or routing does not join new
+     * channels, whatever the stored preference. */
+    addDefaultAi: resolveAddDefaultAi(defaultAi, addDefaultAi, routingMode),
     agentPersonaId,
     buildAgents,
     channelVisibility,
     defaultAi,
+    defaultAiJoinsNewChannels,
     handleTemplateCreated: applyTemplate,
     handleTemplateChange,
     personas,

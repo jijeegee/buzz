@@ -22,6 +22,25 @@ pub use catalog::{
 pub use config::Provider;
 pub use types::AgentError;
 
+/// One system + user text completion over `cfg`'s provider, returning the
+/// reply text. Each HTTP attempt is bounded by `cfg.llm_timeout`; the usual
+/// retry policy still applies, so callers that need a hard wall-clock limit
+/// wrap the future in their own deadline.
+pub async fn complete_once(
+    cfg: &config::Config,
+    system: &str,
+    user: &str,
+    max_output_tokens: u32,
+    model: &str,
+) -> Result<String, AgentError> {
+    llm::Llm::new(cfg)?
+        .summarize(cfg, system, user, max_output_tokens, model)
+        .await
+}
+
+#[cfg(test)]
+mod complete_once_tests;
+
 /// Environment keys the Windows Git Bash resolver may inspect. `spawn_one()`
 /// forwards every key in this list into its otherwise-cleared MCP child; Doctor
 /// uses the same contract so a ready agent can always start its shell tool.

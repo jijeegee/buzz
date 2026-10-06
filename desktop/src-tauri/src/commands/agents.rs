@@ -51,6 +51,7 @@ pub(super) fn summarize_from_disk(
         &load_personas(app).unwrap_or_default(),
         &load_teams(app).unwrap_or_default(),
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
+        crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
     )
 }
 
@@ -358,6 +359,7 @@ where
         &personas,
         &load_teams(app).unwrap_or_default(),
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
+        crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
     )
 }
 
@@ -400,6 +402,8 @@ pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSumma
         let teams = load_teams(&app).unwrap_or_default();
         let global_config =
             crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
+        let routing_mode =
+            crate::managed_agents::channel_routing::load_channel_routing(&app).unwrap_or_default();
         records
             .iter()
             .map(|record| {
@@ -410,6 +414,7 @@ pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSumma
                     &personas,
                     &teams,
                     &global_config,
+                    routing_mode,
                 )
             })
             .collect()
@@ -750,7 +755,7 @@ pub async fn create_managed_agent(
             } else {
                 input.start_on_app_launch
             },
-            // The star is a separate, post-create action (`set_default_managed_agent`).
+            // The star is a separate, post-create action (`set_channel_routing`).
             is_default_ai: false,
             auto_restart_on_config_change: true,
             runtime_pid: None,

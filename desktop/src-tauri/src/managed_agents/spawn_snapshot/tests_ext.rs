@@ -403,6 +403,7 @@ fn snapshot_under(policy: AcpSessionPolicy) -> SpawnConfigSnapshot {
         "wss://ws.example",
         &Default::default(),
         false,
+        crate::managed_agents::channel_routing::RoutingRole::None,
     )
 }
 
@@ -423,11 +424,16 @@ fn policy_transition_diff(
     )
 }
 
-/// Prospective snapshot for a definition-less record with the default-AI star
-/// set or cleared.
-fn snapshot_with_star(is_default_ai: bool) -> SpawnConfigSnapshot {
+/// Prospective snapshot for a definition-less record with the routing star
+/// set or cleared under `mode`, the role resolved through the production
+/// `routing_role_for` exactly as the summary builder resolves it.
+fn snapshot_with_star(
+    is_default_ai: bool,
+    mode: crate::managed_agents::channel_routing::ChannelRoutingMode,
+) -> SpawnConfigSnapshot {
     let mut record = record();
     record.is_default_ai = is_default_ai;
+    let role = crate::managed_agents::channel_routing::routing_role_for(&record, mode, None);
     prospective_spawn_config_snapshot(
         &record,
         &[],
@@ -435,30 +441,42 @@ fn snapshot_with_star(is_default_ai: bool) -> SpawnConfigSnapshot {
         "wss://ws.example",
         &Default::default(),
         false,
+        role,
     )
 }
 
 #[test]
-fn toggling_the_default_ai_star_while_running_requires_restart() {
-    // The harness reads BUZZ_ACP_DISPATCHER only at launch, so starring or
-    // un-starring a running agent must light exactly the `dispatcher` entry on
-    // the real badge path — and nothing when the star is unchanged.
-    let plain = snapshot_with_star(false);
-    let starred = snapshot_with_star(true);
+fn moving_the_routing_star_or_mode_while_running_requires_restart() {
+    use crate::managed_agents::channel_routing::ChannelRoutingMode::{Host, Off};
+    // The harness reads the routing env only at launch, so starring or
+    // un-starring a running agent under Host — or switching Host ⇄ Off with
+    // the star in place — must light exactly the `routing_role` entry on the
+    // real badge path, and nothing when the role is unchanged.
+    let plain = snapshot_with_star(false, Host);
+    let starred = snapshot_with_star(true, Host);
+    let starred_off = snapshot_with_star(true, Off);
 
-    let forward = policy_transition_diff(&plain, &starred);
-    assert_eq!(
-        forward.iter().map(|e| e.field.as_str()).collect::<Vec<_>>(),
-        vec!["dispatcher"],
-    );
-    let reverse = policy_transition_diff(&starred, &plain);
-    assert_eq!(
-        reverse.iter().map(|e| e.field.as_str()).collect::<Vec<_>>(),
-        vec!["dispatcher"],
+    for (from, to) in [
+        (&plain, &starred),
+        (&starred, &plain),
+        (&starred, &starred_off),
+        (&starred_off, &starred),
+    ] {
+        assert_eq!(
+            policy_transition_diff(from, to)
+                .iter()
+                .map(|e| e.field.as_str())
+                .collect::<Vec<_>>(),
+            vec!["routing_role"],
+        );
+    }
+    assert!(
+        policy_transition_diff(&starred, &snapshot_with_star(true, Host)).is_empty(),
+        "an unchanged role must not badge"
     );
     assert!(
-        policy_transition_diff(&starred, &snapshot_with_star(true)).is_empty(),
-        "an unchanged star must not badge"
+        policy_transition_diff(&plain, &starred_off).is_empty(),
+        "a star under Off is no role at all"
     );
 }
 

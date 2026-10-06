@@ -1,18 +1,16 @@
 /**
- * Registry of the AI tasks Buzz itself performs (summaries, titles, search…),
- * each of which gets its own provider / model / effort under
- * Settings › Models › Task models.
+ * Registry of the AI tasks Buzz itself performs, each of which gets its own
+ * provider / model under Settings › Models › Task models.
  *
- * Today the list is empty: Buzz does not yet run AI for its own work, and the
- * tab renders an explicit empty state instead of inventing rows. The first
- * task to land appends itself here; its persistence
- * (`<app-data>/agents/task-models.json`, one task = one save) and the
- * `ModelEffortFields`-based row ship in that same change. Task models are
+ * Persistence is Rust-owned: `<app-data>/agents/task-models.json`, one task
+ * = one `set_task_model` save, read back through `get_task_models` (which
+ * also reports readiness from the Providers tab's API keys). Task models are
  * deliberately not `GlobalAgentConfig` fields — saving that record restarts
- * running local agents, which an app-task change must never do.
+ * running local agents, which an app-task change must never do. Rust keeps
+ * the matching id list (`task_models::KNOWN_TASK_IDS`) and rejects others.
  */
 export type TaskModelTask = {
-  /** Stable identifier; the future `task-models.json` key. */
+  /** Stable identifier; the `task-models.json` key. */
   id: string;
   /** Row title, e.g. "Channel summaries". */
   label: string;
@@ -25,9 +23,18 @@ export type TaskModelTask = {
   defaultEffortTier: "lowest" | "harness-default";
 };
 
-export const TASK_MODEL_TASKS: readonly TaskModelTask[] = [];
+export const TASK_MODEL_TASKS: readonly TaskModelTask[] = [
+  {
+    id: "message-routing",
+    label: "Message routing",
+    description:
+      "Picks which agent handles a message you send without an @mention (Smart routing).",
+    // The router never thinks: its row offers provider and model only.
+    defaultEffortTier: "lowest",
+  },
+];
 
-/** Ids must be unique: they key the future per-task persistence. */
+/** Ids must be unique: they key the per-task persistence. */
 export function duplicateTaskModelIds(
   tasks: readonly TaskModelTask[],
 ): string[] {

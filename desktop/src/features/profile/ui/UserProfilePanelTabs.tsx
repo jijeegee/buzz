@@ -25,7 +25,6 @@ import {
   type ProfileActivityFeedScope,
   useProfileActivityFeedScope,
 } from "@/features/profile/lib/profileActivityFeedScope";
-import { ProfileDefaultAiRow } from "@/features/profile/ui/ProfileDefaultAiRow";
 import { UserProfileAgentManagementRows } from "@/features/profile/ui/UserProfileAgentManagementRows";
 import { ProtectedAgentBestieAction } from "@protected-feature-components";
 import { ProfileInstancesSection } from "@/features/profile/ui/ProfileInstancesSection";
@@ -714,8 +713,6 @@ export function ProfileRuntimeTabContent({
   autoRestartEnabled = false,
   archivedInstances,
   currentPubkey,
-  defaultAiEnabled = false,
-  defaultAiPending = false,
   diagnosticsFields,
   diagnosticsSummary,
   configurationFields,
@@ -725,16 +722,12 @@ export function ProfileRuntimeTabContent({
   restartDiff = [],
   onOpenDiagnostics,
   onOpenInstance,
-  onToggleDefaultAi,
   showDiagnosticsIngress,
 }: {
   /** Whether the per-agent auto-restart toggle is ON. */
   autoRestartEnabled?: boolean;
   archivedInstances: ManagedAgent[];
   currentPubkey: string | null;
-  /** Whether this agent is starred as the desktop's default AI. */
-  defaultAiEnabled?: boolean;
-  defaultAiPending?: boolean;
   diagnosticsFields: ProfileField[];
   diagnosticsSummary: React.ReactNode;
   configurationFields: ProfileField[];
@@ -746,22 +739,13 @@ export function ProfileRuntimeTabContent({
   restartDiff?: RestartDiffEntry[];
   onOpenDiagnostics: () => void;
   onOpenInstance: (pubkey: string) => void;
-  /**
-   * Present only for the owner of an eligible (keyed) managed agent. This row
-   * is the one user-reachable default-AI toggle; the header settings menu is
-   * never rendered for agents, so nothing there can carry it.
-   */
-  onToggleDefaultAi?: () => void;
   showDiagnosticsIngress: boolean;
 }) {
-  const canToggleDefaultAi = onToggleDefaultAi !== undefined;
   const statusDiagnosticsFields = diagnosticsFields.filter(
     (field) => field.label === "Status",
   );
   const hasActivityRows =
-    statusDiagnosticsFields.length > 0 ||
-    canToggleDefaultAi ||
-    showDiagnosticsIngress;
+    statusDiagnosticsFields.length > 0 || showDiagnosticsIngress;
   const hasConfigurationRows = configurationFields.length > 0;
   const hasInstances = instances.length > 0 || archivedInstances.length > 0;
 
@@ -808,13 +792,6 @@ export function ProfileRuntimeTabContent({
             <ProfileFieldRows
               fields={statusDiagnosticsFields}
               variant="runtime"
-            />
-          ) : null}
-          {onToggleDefaultAi ? (
-            <ProfileDefaultAiRow
-              checked={defaultAiEnabled}
-              onToggle={onToggleDefaultAi}
-              pending={defaultAiPending}
             />
           ) : null}
           {showDiagnosticsIngress ? (

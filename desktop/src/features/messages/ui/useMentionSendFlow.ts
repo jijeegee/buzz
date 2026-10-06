@@ -38,13 +38,21 @@ import {
   mentionRevalidationOptions,
   withoutInvitingRecipients,
   mergeMentionRecipients,
+  splitSoftAgentMentions,
   type PendingNonMemberMentionSend,
   type QueuedAgentWake,
   type SendMessageWithMentionFlowInput,
   resolvePreviewTags,
   uniqueNormalizedPubkeys,
 } from "./useMentionSendFlow.helpers";
-import { buildAgentAddressMentionTags } from "@/features/messages/lib/agentAddressMention.mjs";
+import {
+  AUTO_ROUTE_MENTION_MARKER,
+  buildAgentAddressMentionTags,
+  buildSoftMentionTags,
+  SOFT_MENTION_MARKER,
+} from "@/features/messages/lib/agentAddressMention.mjs";
+import { editMessage } from "@/shared/api/editMessage";
+import type { AutoRouteDeliver } from "./useAutoAssign";
 import { AgentMentionAuthorizationError } from "@/features/messages/lib/agentMentionRevalidation";
 import type { UseMentionSendFlowOptions } from "./useMentionSendFlow.types";
 
@@ -456,6 +464,7 @@ export function useMentionSendFlow({
           ...managedMentionPubkeys,
           ...normalizedMentionPubkeys.filter(mentions.isAgentPubkey),
         ]);
+        const agentMentionPubkeySet = new Set(agentMentionPubkeys);
         const preparedAgentPubkeys = uniqueNormalizedPubkeys([
           ...readyAgentPubkeys,
           ...agentMentionPubkeys,
@@ -563,16 +572,27 @@ export function useMentionSendFlow({
             );
           if (signal?.aborted || isSendCancelled())
             return restoreComposerAfterFailure();
+          const { delivered: deliveredMentionPubkeys, soft: softPubkeys } =
+            draft.softAgentMentions
+              ? splitSoftAgentMentions(
+                  revalidatedMentionPubkeys,
+                  (pubkey) =>
+                    agentMentionPubkeySet.has(pubkey) ||
+                    mentions.isAgentPubkey(pubkey),
+                  [...draft.addressedAgentPubkeys, ...readyAgentPubkeys],
+                )
+              : { delivered: revalidatedMentionPubkeys, soft: [] };
           const finalTagsWithAgentAddress = [
             ...finalOutgoingTags,
             ...buildAgentAddressMentionTags(
               draft.addressedAgentPubkeys,
-              revalidatedMentionPubkeys,
+              deliveredMentionPubkeys,
             ),
+            ...buildSoftMentionTags(softPubkeys),
           ];
-          await send(
+          const published = await send(
             finalContent,
-            revalidatedMentionPubkeys,
+            deliveredMentionPubkeys,
             finalTagsWithAgentAddress,
             sendChannelId,
             draft.capturedThreadContext,
@@ -587,9 +607,10 @@ export function useMentionSendFlow({
           for (const wake of agentsToWake) {
             startAgentDetached(wake.agent, wake.replayFloorUnix);
           }
+          if (published) draft.onPublished?.(published);
           if (signal?.aborted || isSendCancelled()) return;
           const sentMentionPubkeys = new Set(
-            revalidatedMentionPubkeys.map(normalizePubkey),
+            deliveredMentionPubkeys.map(normalizePubkey),
           );
           const newlyPinnedPubkeys = draft.inlineAgentMentionPubkeys.filter(
             (pubkey) => sentMentionPubkeys.has(normalizePubkey(pubkey)),
@@ -722,6 +743,8 @@ export function useMentionSendFlow({
   const sendMessageWithMentionFlow = React.useCallback(
     async ({
       addressedAgentPubkeys = [],
+      onPublished,
+      softAgentMentions = false,
       capturedChannelId,
       capturedThreadContext = null,
       pendingImeta,
@@ -863,6 +886,8 @@ export function useMentionSendFlow({
           sourceOwner,
           composerRevision,
           addressedAgentPubkeys: uniqueNormalizedPubkeys(addressedAgentPubkeys),
+          onPublished,
+          softAgentMentions,
           inlineAgentMentionPubkeys: uniqueNormalizedPubkeys(
             savedMentionRefs
               .filter((ref) => ref.isAgent)
@@ -964,7 +989,61 @@ export function useMentionSendFlow({
     setPendingNonMemberSend(null);
     setNonMemberPromptError(null);
   }, [invitation.cancel]);
+  // Smart routing's delivery: the pick joins the already-published message
+  // through an edit that newly `p`-tags it (the harness wakes an agent on an
+  // edit that newly mentions it) plus the `auto-route` display tag. Same
+  // body, attachments, and emoji, so the edit changes nothing visible. Wakes
+  // flush only after the edit is accepted, like a send's.
+  const deliverAutoRoute = React.useCallback<AutoRouteDeliver>(
+    async (message, pubkeys, isCurrent, route) => {
+      const messageChannelId = message.tags.find((tag) => tag[0] === "h")?.[1];
+      if (!messageChannelId) throw new Error("Message has no channel.");
+      const readiness = await ensureManagedAgentMentionsReady(
+        pubkeys,
+        messageChannelId,
+      );
+      if (readiness.errors.length > 0) {
+        throw new Error(readiness.errors.join("; "));
+      }
+      if (!isCurrent()) return false;
+      await editMessage(
+        messageChannelId,
+        message.id,
+        message.content,
+        message.tags.filter((tag) => tag[0] === "imeta"),
+        message.tags.filter((tag) => tag[0] === "emoji"),
+        pubkeys,
+        false,
+        [
+          // The edit's mention snapshot replaces the original's body
+          // identities, so it repeats them (soft ones included).
+          ...uniqueNormalizedPubkeys(
+            message.tags.flatMap((tag) =>
+              tag[1] &&
+              (tag[0] === "p" ||
+                (tag[0] === "mention" &&
+                  (tag.length === 2 || tag[2] === SOFT_MENTION_MARKER)))
+                ? [tag[1]]
+                : [],
+            ),
+          ).map((pubkey) => ["mention", pubkey]),
+          ...pubkeys.map((pubkey) => [
+            "mention",
+            pubkey,
+            AUTO_ROUTE_MENTION_MARKER,
+          ]),
+        ],
+        route,
+      );
+      for (const wake of dedupeQueuedAgentWakes(readiness.agentsToWake)) {
+        startAgentDetached(wake.agent, wake.replayFloorUnix);
+      }
+      return true;
+    },
+    [ensureManagedAgentMentionsReady, startAgentDetached],
+  );
   return {
+    deliverAutoRoute,
     // Agent starts are detached (publish-first), so useDetachedAgentStart's
     // in-flight state deliberately does not gate the composer — a background
     // start must not block the next send.

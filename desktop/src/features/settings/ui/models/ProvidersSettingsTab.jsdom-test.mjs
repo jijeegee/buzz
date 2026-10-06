@@ -130,6 +130,33 @@ const tauriMock = {
         return Promise.resolve([]);
       case "discover_acp_auth_methods":
         return Promise.resolve({ methods: [] });
+      case "get_task_models":
+        return Promise.resolve([
+          {
+            taskId: "message-routing",
+            provider: null,
+            model: null,
+            effectiveProvider: null,
+            effectiveModel: null,
+            modelLabel: null,
+            ready: false,
+            notReadyReason:
+              "Sign in to Codex or Claude Code, or add an API key",
+            sendWaitMs: 1_200,
+            providers: [
+              {
+                id: "anthropic",
+                label: "Anthropic API key",
+                kind: "api-key",
+                ready: false,
+                unavailableReason: "Needs an Anthropic API key",
+                defaultModel: "claude-haiku-4-5",
+                models: [],
+                sendWaitMs: 1_200,
+              },
+            ],
+          },
+        ]);
       default:
         return new Promise(() => {}); // pending — never an unmocked error
     }
@@ -543,7 +570,7 @@ test("status lines sit outside the radio group", async () => {
   }
 });
 
-test("Models renders an accessible tablist and switches to the Task models empty state", async () => {
+test("Models renders an accessible tablist; Task models lists Message routing and links back to Providers", async () => {
   resetConfig();
   mounted = await mount(ModelsSettingsPanel);
   const { container } = mounted;
@@ -557,10 +584,6 @@ test("Models renders an accessible tablist and switches to the Task models empty
   );
   assert.equal(tabs[0].getAttribute("aria-selected"), "true");
   await waitFor(container, '[data-testid="settings-models-providers"]');
-  assert.equal(
-    container.querySelector('[data-testid="settings-models-tasks-empty"]'),
-    null,
-  );
 
   await act(async () => {
     tabs[1].dispatchEvent(
@@ -572,14 +595,29 @@ test("Models renders an accessible tablist and switches to the Task models empty
   });
   await settle(20);
   assert.equal(tabs[1].getAttribute("aria-selected"), "true");
-  const empty = container.querySelector(
-    '[data-testid="settings-models-tasks-empty"]',
+  const row = await waitFor(
+    container,
+    '[data-testid="settings-models-task-message-routing"]',
   );
-  assert.ok(empty, "Task models shows its empty state");
-  assert.match(empty.textContent, /No app tasks yet/);
+  assert.match(row.textContent, /Message routing/);
+  assert.match(
+    row.textContent,
+    /Sign in to Codex or Claude Code, or add an API key/,
+  );
   assert.equal(
     container.querySelector('[data-testid="settings-models-providers"]'),
     null,
     "only the active tab's panel is mounted",
   );
+
+  await act(async () => {
+    container
+      .querySelector(
+        '[data-testid="settings-models-task-message-routing-open-providers"]',
+      )
+      .click();
+  });
+  await settle(20);
+  assert.equal(tabs[0].getAttribute("aria-selected"), "true");
+  await waitFor(container, '[data-testid="settings-models-providers"]');
 });

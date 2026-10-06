@@ -61,6 +61,7 @@ import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 // from the on-render overlay.
 import { noteChannelMembershipChange } from "@/shared/api/channelMembershipWrites";
 import { applyEditTagOverlay } from "@/features/messages/lib/applyEditTagOverlay.mjs";
+import { cancelAutoRoute } from "@/features/messages/lib/autoRouteStatus";
 import {
   emptyChannelWindowStore,
   mapChannelWindowEvents,
@@ -803,6 +804,7 @@ export function useDeleteMessageMutation(channel: Channel | null) {
       if (!channel) {
         throw new Error("No channel selected.");
       }
+      cancelAutoRoute(eventId);
       await deleteMessage(channel.id, eventId);
     },
     onSuccess: (_data, { eventId }) => {
@@ -837,6 +839,8 @@ export function useEditMessageMutation(channel: Channel | null) {
       if (!channel) {
         throw new Error("No channel selected.");
       }
+      // A Smart routing pick still in flight must not land on the old text.
+      cancelAutoRoute(eventId);
 
       // `mediaTags` arrives as the merged outgoing set (imeta + NIP-30 emoji).
       // Split so each rides its own validated Tauri arg — emoji tags must NOT

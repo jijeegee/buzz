@@ -122,5 +122,6 @@ fn make_prompt_context(
         harness_name: crate::config::normalize_agent_command_identity(&config.agent_command),
         relay_url: config.relay_url.clone(),
         dispatcher: config.dispatcher,
+        channel_roster: config.channel_roster,
     })
 }

@@ -4,74 +4,11 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     app_state::AppState,
     managed_agents::{
-        build_managed_agent_summary, current_instance_id, find_managed_agent_mut,
-        load_managed_agents, load_personas, load_teams, save_managed_agents, set_default_ai,
+        current_instance_id, find_managed_agent_mut, load_managed_agents, save_managed_agents,
         sync_managed_agent_processes, ManagedAgentSummary,
     },
     util::now_iso,
 };
-
-/// Star one managed agent as this desktop's default AI (`Some(pubkey)`) or
-/// clear the star (`None`). The single-selection rule lives in
-/// [`set_default_ai`]; this command only owns the lock → load → sync →
-/// mutate → save boundary shared with the other record toggles. Returns the
-/// whole list because starring one agent unstars another.
-#[tauri::command]
-pub async fn set_default_managed_agent(
-    pubkey: Option<String>,
-    app: AppHandle,
-) -> Result<Vec<ManagedAgentSummary>, String> {
-    tokio::task::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        let _store_guard = state
-            .managed_agents_store_lock
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let mut records = load_managed_agents(&app)?;
-        let mut runtimes = state
-            .managed_agent_processes
-            .lock()
-            .map_err(|error| error.to_string())?;
-
-        let (sync_changed, exited_pubkeys) =
-            sync_managed_agent_processes(&mut records, &mut runtimes, &current_instance_id(&app));
-        if sync_changed {
-            save_managed_agents(&app, &records)?;
-        }
-        for pubkey in &exited_pubkeys {
-            state.clear_agent_session_caches(pubkey);
-        }
-
-        let changed = set_default_ai(&mut records, pubkey.as_deref())?;
-        if !changed.is_empty() {
-            let now = now_iso();
-            for changed_pubkey in &changed {
-                find_managed_agent_mut(&mut records, changed_pubkey)?.updated_at = now.clone();
-            }
-            save_managed_agents(&app, &records)?;
-        }
-
-        let personas = load_personas(&app).unwrap_or_default();
-        let teams = load_teams(&app).unwrap_or_default();
-        let global_config =
-            crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
-        records
-            .iter()
-            .map(|record| {
-                build_managed_agent_summary(
-                    &app,
-                    record,
-                    &runtimes,
-                    &personas,
-                    &teams,
-                    &global_config,
-                )
-            })
-            .collect()
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking failed: {e}"))?
-}
 
 #[tauri::command]
 pub fn set_agent_managed_profiles(enabled: bool, state: State<'_, AppState>) {

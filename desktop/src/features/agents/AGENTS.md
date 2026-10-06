@@ -435,70 +435,70 @@ with a TypeScript lookup table or an id comparison in a component.
     for resets; owner replay of a redacted head preserves only a nonportable
     local override. That local path is not synchronized through catalog heads.
 
-20. **The default AI is one starred record, chosen in Rust.**
+20. **The default AI is one starred record, chosen in Rust; it is the
+    channel routing agent.**
     `ManagedAgentRecord.is_default_ai` (`#[serde(default,
     skip_serializing_if = "std::ops::Not::not")]`) marks at most one managed
-    agent per desktop as the user's default AI. The single-selection rule lives
-    in exactly one place, the pure `set_default_ai` in `managed_agents/types.rs`,
-    which unstars every other record in the same pass, rejects key-less
-    definition records (empty `pubkey`), and is the only mutator the
-    `set_default_managed_agent` command calls. That command returns the whole
-    summary list because starring one agent unstars another. The frontend only
-    reads `ManagedAgent.isDefaultAi` (`lib/defaultAi.ts`: `findDefaultAi`,
-    `isDefaultAiEligible`, `defaultAiSelectionFor`) and never keeps a rival
-    "current default" copy or picks a default on its own. There is exactly
-    one toggle path: the "Default AI" switch row in the agent profile's
-    **Runtime tab, Activity group, directly under the Status row**
-    (`profile/ui/UserProfilePanelTabs.tsx` `ProfileRuntimeTabContent`,
-    `data-testid="user-profile-default-ai"`, one accessible name
-    `aria-label="Default AI"`). `UserProfilePanelSections` offers the tab and
-    the row through the pure gates in `profile/lib/profileRuntimeGates.ts`
-    (`shouldShowRuntimeTab`, `defaultAiToggleFor`: owner + eligible managed
-    agent, any backend); the handler is
-    `UserProfilePanel.handleToggleAgentDefaultAi`, which goes through
-    `useSetDefaultManagedAgentMutation` with `defaultAiSelectionFor` and
-    reports the stored result with `defaultAiToggleNotice`. Do **not** put the
-    switch in the header settings menu (`UserProfileAgentActions.tsx`):
-    `UserProfilePanel` renders that slot only when `!isBot`, so for agents it
-    never mounts and a switch there is unreachable (that is where the first
-    version lived and nobody could find it). Do not add a second toggle
-    elsewhere (`useManagedAgentActions` has none; `ManagedAgentRow`/
-    `AgentGroupRows` are not wired into any route and carry no star).
-    Starring the current default clears the selection (`null`), it does not
-    no-op. The Agents settings panel shows `defaultAiStatusCopy` (which agent
-    is starred, or `NO_DEFAULT_AI_HINT`) under its auto-join switch.
-    **The star's only spawn consequence is dispatcher mode.** Local spawn
-    (`runtime.rs`, after the `descriptor.env` loop beside the session policy)
-    and remote deploy (`agents_deploy.rs` `policy_env`) both call
-    `managed_agents/dispatcher_env.rs` with `record.is_default_ai`: starred →
+    agent per desktop. The single-selection rule lives in exactly one place,
+    the pure `set_default_ai` in `managed_agents/types.rs`, which unstars every
+    other record in the same pass and rejects key-less definition records
+    (empty `pubkey`). Its only caller is the `set_channel_routing` command
+    (`commands/channel_routing.rs`, rule 23), which moves the star and saves
+    the routing mode as one user action; there is no standalone star command.
+    The frontend only reads `ManagedAgent.isDefaultAi` (`lib/defaultAi.ts`:
+    `findDefaultAi`, `isDefaultAiEligible`) and never keeps a rival "current
+    default" copy or picks a default on its own. There is exactly one edit
+    location: the routing agent picker in the Agents page **Channel routing**
+    card (`ui/routing/ChannelRoutingCard.tsx` ->
+    `ChannelRoutingAgentPicker`, `data-testid="agents-channel-routing"`),
+    rendered by `AgentsView` directly under the page header for every viewer
+    of `/agents` (no owner/bot gate). The profile Runtime tab carries **no**
+    Default AI row (it was removed; `profile/ui/UserProfileDefaultAiWiring.test.mjs`
+    pins that no profile source writes the star), and the header settings menu
+    (`UserProfileAgentActions.tsx`) must not get one either: `UserProfilePanel`
+    renders that slot only when `!isBot`, so for agents it never mounts.
+    Settings › Agents › Conversations shows a read-only
+    `ChannelRoutingSummaryRow` ("Channel routing: Host (Honey)") with a
+    "Change on the Agents page" link, never a control.
+    **The star's spawn consequence is its routing role**, and the role comes
+    only from `channel_routing::routing_role_for(record, mode, owner)`: local
+    spawn (`runtime.rs`, after the `descriptor.env` loop beside the session
+    policy), the prospective restart snapshot (summary builder), and remote
+    deploy (`agents_deploy.rs` `policy_env`) all call it, then
+    `managed_agents/routing_env.rs` turns the role into env. Dispatcher ->
     `BUZZ_ACP_DISPATCHER=true` (clap `bool` spelling, same as
-    `BUZZ_ACP_LAZY_POOL`); unstarred → the key is removed. The desktop never
-    sets `BUZZ_ACP_DISPATCHER_CONFIG` — the harness default gate (channel
-    owner/admin + the agent's owner, no AI authors) is what runs — and both
-    keys are reserved env keys so a saved value can neither promote an
-    ordinary agent to a router nor hand it a custom gate. The dispatcher base
-    prompt is compiled into the harness; the desktop injects nothing beyond the
-    flag, and the persona `BUZZ_ACP_SYSTEM_PROMPT` layers on top as usual.
-    `SpawnConfigSnapshot.dispatcher` captures the same field so moving or
-    clearing the star on a running agent raises the restart badge (`dispatcher`
-    entry, rendered plain). Channel auto-join and composer preference are
-    deliberately **not** part of this field; they land as separate changes that
-    read the flag.
+    `BUZZ_ACP_LAZY_POOL`); any other role -> the key is removed. The desktop
+    never sets `BUZZ_ACP_DISPATCHER_CONFIG` (the harness default gate,
+    channel owner/admin + the agent's owner with no AI authors, is what runs),
+    and both keys are reserved env keys so a saved value can neither promote
+    an ordinary agent to a router nor hand it a custom gate. The dispatcher
+    base prompt is compiled into the harness; the desktop injects nothing
+    beyond the flag. `SpawnConfigSnapshot.routing_role` captures the same
+    value, so moving the star or switching the mode on a running agent raises
+    the restart badge (`routing_role` entry, rendered plain) and gives the
+    transition plan the agent's *running* role.
 
 21. **The default AI joins channels you create through one attach path.**
     Every create form (channel/forum dialog and browser via
     `sidebar/lib/useCreateChannelForm`, project home via
     `projects/ui/useCreateProjectFormSettings`, project channels via the same
     channel dialog) renders the shared `ui/AddDefaultAiRow` ("Add your
-    default AI"): a live switch while `useDefaultAi()` returns a starred
-    agent, otherwise the same row disabled and off with `NO_DEFAULT_AI_HINT`
-    (never hidden — a hidden row made the Agents setting look like a no-op).
+    default AI") **only while the saved channel routing mode joins new
+    channels** — `lib/defaultAi.ts` `routingJoinsNewChannels(mode)`: Host or
+    Lead; Off, Smart routing, and an unknown (loading/failed) mode hide the
+    row, because there the star is only remembered (rule 23). While shown it
+    is a live switch when `useDefaultAi()` returns a starred agent, otherwise
+    the same row disabled and off with `NO_DEFAULT_AI_HINT` (never hidden for
+    a missing star — that made the setting look like a no-op).
     The switch is seeded from the desktop-local
     preference `lib/defaultAiPreferences.ts` (localStorage
     `buzz-default-ai-auto-join`, default on, broken JSON reads as the default;
-    the global switch lives in the Agents settings panel). It is **not** a
+    the global "Join new channels I create" checkbox lives under the routing
+    agent picker in the Agents page Channel routing card; Settings › Agents
+    no longer carries it). It is **not** a
     `GlobalAgentConfig` field — saving that config restarts every local agent.
-    The submitted `addDefaultAi` is `false` whenever no default AI exists.
+    The submitted `addDefaultAi` is `resolveAddDefaultAi(star, switch,
+    mode)`: `false` whenever no default AI exists or the mode does not join.
     The four creation points (`app/AppShell.tsx` channel + forum handlers,
     `projects/useCreateProject.ts`, `projects/useAddProjectChannel.ts`) all
     run the one post-create sequence `lib/joinAgentsAfterCreate.ts` after the
@@ -513,7 +513,10 @@ with a TypeScript lookup table or an id comparison in a component.
     channelId, { agent, role: "bot", ensureRunning: true })` (membership
     write, then start only when the agent is not running/deployed),
     invalidates the same query keys as `applyAgents`, is a no-op without a
-    starred agent, and never rejects — a failure surfaces as `toast.warning`,
+    starred agent or when the channel routing mode — fetched at call time,
+    since the user may have switched routing Off after opening the form —
+    does not join (a failed fetch skips the join with a warning toast), and
+    never rejects — a failure surfaces as `toast.warning`,
     never silently. The two steps must never run concurrently (both rewrite
     the replaceable membership event), and because the default AI is already
     a member when the template applies, `applyAgents` passes
@@ -555,15 +558,159 @@ with a TypeScript lookup table or an id comparison in a component.
     carries no Auto-start item (that slot is `!isBot`-only, unreachable for
     agents — rule 20). The card face shows no start-on-launch indicator.
 
-## Conversation context defaults
+23. **Channel routing is one Rust-owned enum; per-agent env comes only from
+    `routing_role_for`; transitions go through `plan_routing_transition`.**
+    `managed_agents/channel_routing/` owns `ChannelRoutingMode`
+    (`off | host | lead | desktop-router`, kebab-case) stored alone in
+    `<app-data>/agents/channel-routing.json` (`{ "mode": "host" }`; missing or
+    unreadable reads as `host`, today's behavior). It is **not** a
+    `GlobalAgentConfig` field (saving that restarts every agent). Off, Host,
+    Lead, and Smart routing are selectable in this build
+    (`ChannelRoutingMode::is_selectable`); `set_channel_routing` still refuses
+    a mode that is not ready — Host/Lead without a routing agent, Lead on an
+    agent it cannot run, Smart routing without a router model key (rule 24).
+    `routing_role_for` is the whole
+    role table: Host + star -> Dispatcher (any backend); Lead + star + local +
+    owner known -> Lead; everything else, including the star under Off or
+    Smart routing, -> None. `routing_env::apply_routing_env` also scrubs
+    `BUZZ_ACP_SUBSCRIBE`/`BUZZ_ACP_CONFIG` when the config points into the
+    desktop-generated `<app-data>/agents/routing/` directory and the role is
+    not Lead, so a Lead-era value cannot outlive the mode; a user's own rules
+    file elsewhere is preserved (those keys are deliberately not reserved).
+    `set_channel_routing(mode, agentPubkey)` is one user action: star first
+    (Host requires an agent), then the mode; each prefix is a valid state
+    (Review-Proven rule 5). Off keeps the star so switching back remembers it.
+    The card never saves on a radio click alone when no routing agent exists:
+    choosing Host opens the picker as a draft and the pick is the save.
+    `get_channel_routing` returns the saved mode, the star, and the pure
+    `plan_routing_transition` over every keyed record (running role = the
+    tracked pair's `SpawnConfigSnapshot.routing_role`; a provider deployment's
+    is the role its last successful deploy shipped, stamped in
+    `<app-data>/agents/routing/deployed-roles.json` by `deploy_to_provider`
+    (a deployment from before stamps reads as Dispatcher iff starred); only a
+    process adopted from an earlier desktop run is assumed to run its desired
+    role, as the restart badge assumes): `stale` = running with a role other than the
+    desired one, `hold` = wants a role while another running agent still
+    holds one it is losing, `routerActive` = Smart routing saved and every
+    running agent plain, `applied` = what actually runs (`switching` while
+    anything is stale). The card's status line shows `applied`, never just
+    the saved mode. Losing agents restart first: `decideAutoRestart` holds on
+    `routingHold` (from the same plan, re-checked in `restartDriftedAgent`'s
+    pre-fire fetch). A routing switch does not wait out the config-drift
+    quiescence window: `routingTransition` (`routingTransitionFor` — local,
+    stale, not held) makes `decideAutoRestart` fire as soon as every other
+    gate is green (idle, connected, unconsumed edge), so after a save each
+    idle loser restarts at once and the gainer is promoted the moment its
+    hold releases; a mid-turn agent still waits. Ordinary drift keeps the
+    window. The card's "Restart <name> now" (the page's ordinary
+    `handleRestart`) is disabled with its reason while held or mid-turn, and
+    replaced by a redeploy hint for a provider agent. The frontend query key
+    nests under `managed-agents` so every agent-list invalidation refreshes
+    it. Every launch is gated by the same hold rule
+    (`channel_routing::launch_role`, from `spawn_agent_child` with the other
+    tracked processes' roles and from the payload `deploy_to_provider`
+    invokes): a held agent launches **plain** (no error), is stamped `None`,
+    shows stale, and is promoted by the restart after the hold releases, so a
+    manual Start, Restart, or redeploy cannot overlap two routing roles. The
+    restart badge's prospective snapshot goes through the same `launch_role`
+    (`build_managed_agent_summary`), so a held gainer shows **no** badge — a
+    restart would only launch it plain again — and the badge lights once the
+    hold releases; comparing against the unheld desired role instead badged
+    a restart that could never clear it. The
+    status line also names a held gainer that is not running yet ("Fizz
+    becomes the host after Honey restarts.").
+    Until some agent is an instance of `builtin:host`, the Host picker offers
+    "Create a Host agent" (under the select, or alone when empty): an
+    instance of the built-in `builtin:host` persona (minimal prompt — the
+    harness's dispatcher base prompt carries the routing rules; definition
+    `effort_level` seeded from `ACP_THOUGHT_LEVEL_FALLBACK_VALUES[0]`, never a
+    literal), then `set_channel_routing(host, pk)` as a second write.
+    **Lead needs no harness code.** Every lead spawn rewrites
+    `<app-data>/agents/routing/lead-<pubkey[..12]>.toml`
+    (`channel_routing/lead_rules.rs` `render_lead_rules`): the mention rule
+    first with the harness default kinds `[9, 40003, 46010, 40007]` (first
+    match wins, so a direct @mention is exactly today's turn), then
+    `lead-listen` (kind 9, no mention, `author == "<owner hex>" &&
+    !str_contains(content, "@")`), both `channels = "all"`.
+    `lead_rules::apply_lead_spawn` runs right after `apply_routing_env` and
+    sets `BUZZ_ACP_SUBSCRIBE=config`, `BUZZ_ACP_CONFIG=<that file>`, and
+    appends `LEAD_LISTEN_ADDENDUM` to the system prompt the child would
+    otherwise get (a prompt file is inlined); a write failure fails the spawn
+    rather than silently running Mentions mode. Any other role's spawn deletes
+    its own leftover file, and `set_channel_routing` plus app start sweep every
+    `lead-*.toml` not used by a tracked Lead process. The rendering is pinned
+    byte-for-byte to `crates/buzz-acp/tests/fixtures/lead_rules.toml`, which
+    the harness's `lead_rules_fixture_tests` load and match events against —
+    change both together. Lead is local-only: `set_channel_routing` refuses a
+    remote agent (`lead_unavailable_reason`, mirroring the role table) and the
+    Lead picker lists remote agents disabled with "runs remotely — Lead needs
+    an agent on this computer"; the remembered star carries over to Lead only
+    when it can lead.
 
-New blank persona drafts explicitly seed `behavior.sessionPolicy: "thread"`
-(Each thread); create submits that choice and linked instances inherit it.
-New standalone managed agents seed Thread in `resolve_mint_behavioral_defaults`.
-Entire channel remains selectable. Edit, duplicate, catalog/import, and existing
-records preserve their policy: an absent stored field still means Channel.
-Do not change the serde or harness fallback to implement a creation default,
-rewrite existing agents, or reset their conversations. DMs remain shared.
+24. **Smart routing (`desktop-router`) is a desktop-side, after-send pick
+    delivered by editing the sent message; its model is an app task.**
+    Only this user's own composer sends in stream/forum channels route; DMs,
+    edits, drafts with tray-addressed agents, and
+    any applied state other than Smart routing (Off, Host, Lead, or a switch
+    in flight — the composer reads the plan's `routerActive`, never the saved
+    mode) never call the model (`messages/lib/autoAssignGate.ts`). Typing
+    never calls it and Enter never waits for it: the message posts unchanged,
+    then `messages/ui/useAutoAssign.ts` queues it in its channel's batch
+    (`messages/lib/autoRouteBatcher.ts`: fires 3 s after the last send,
+    waits while a composer in that channel holds a draft, at most 20 s, at
+    once at 12 messages). One call routes the batch into groups
+    `{messageIds, pubkeys, relation: new|continue|amend|cancel, of}`, and
+    `useMentionSendFlow`'s `deliverAutoRoute` publishes, per message, one
+    same-body kind:40003 edit that newly `p`-tags its group's agents plus
+    `["mention", pk, "auto-route"]` (buzz-acp wakes an agent on an edit that
+    newly mentions it, so no harness change). A follow-up's edit also
+    carries `["buzz:route", relation, of, thread_root, note]`: buzz-acp
+    (`queue::route_follow_up`, resolved edits only, so the owner's) anchors
+    the reply in `thread_root` and adds a `<follow-up>` line ("supplement or
+    fix, don't redo", or "stop"); `note` says the same in the prompt's Tags. `messages/lib/autoRouteLedger.ts`
+    keeps this desktop's deliveries for 30 minutes: a message there is never
+    routed again, and the channel's entries are the router's PRIOR (with the
+    agents mid-turn as WORKING). A follow-up the model gave no agent goes to
+    the earlier delivery's agents. Session scope still follows the edited
+    message; only the reply anchor moves. The sent row shows "Routing…", then "→ Delivered to
+    Name", or "Not delivered" (`messages/lib/autoRouteStatus.ts`); an edit
+    or delete first fences the pick out. In a routed channel (Smart
+    routing about to route this send, or an applied Host/Lead agent that is
+    a member of the channel) the owner's agent `@mentions` are soft: posted
+    as `["mention", pk, "soft"]` with no `p` tag (`splitSoftAgentMentions`),
+    so the routing decides who acts. Tray chips and agents the send created
+    stay hard `p` recipients. Smart routing passes the soft mentions as
+    MENTIONED (a mention may be the object, not the assignee); a failed
+    call delivers to them instead, and a mentioned agent outside the roster
+    is always delivered. The timeline never marks that
+    delivery edit as an edit and keeps its `auto-route` tags across later
+    edits (`formatTimelineMessages.ts`). Rust owns the rest (`src-tauri/src/message_routing/`):
+    the aliased prompt (`a1…aN` agents, `m1…mN` new messages, `p1…pN` prior
+    deliveries; pubkeys and event ids never sent; one shared
+    `ROUTER_SYSTEM_PROMPT` for every route), caps, the strict
+    `{"groups":[…]}` parser (every message in exactly one group, ≤2 agents), the per-route deadline (2 s API key, 12 s
+    CLI), the call itself, and the JSONL comparison log
+    (`<app-data>/agents/routing-log/desktop.jsonl`, rotated at 5 MB). The
+    roster's capability text comes from `messages/lib/routerRoster.ts`:
+    persona description → kind:0 `about` → my own agent's system-prompt
+    prefix → name only. The router model is the `message-routing` entry in
+    Settings › Models › Task models, stored in
+    `<app-data>/agents/task-models.json` (never `GlobalAgentConfig`, so a
+    change restarts nothing); its row renders provider + model through
+    `ModelEffortFields` with `effort: null` (the router never thinks). Its
+    Provider select lists every route explicitly, with real availability:
+    API keys (Anthropic, OpenAI, OpenRouter — `buzz-agent::complete_once`
+    over HTTP, keys from the Providers tab's `GlobalAgentConfig.env_vars`,
+    then the process env), "Codex (ChatGPT subscription)" (`codex exec`
+    one-shot) and "Claude Code (Claude subscription, slower)" (`claude -p`
+    one-shot). Subscription routes go only through the official CLI on its
+    own sign-in (`message_routing/cli.rs`): Buzz never reads, stores, or logs
+    subscription tokens, and Claude subscription OAuth is never reused over
+    HTTP (Anthropic policy). Automatic is fastest first: the global default
+    API-key provider, other API keys, Codex, Claude Code. Smart routing is
+    selectable when any route is ready; otherwise it is disabled with the
+    missing piece, e.g. "Sign in to Codex or Claude Code, or add an API key ·
+    Models".
 
 ## Channel-only runtime controls
 
@@ -616,6 +763,30 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   cannot reintroduce build-mode previews or synthetic fallback controls, and
   Start on launch stays a read-only row (no switch, handler, or header-menu
   Auto-start item in any profile source).
+- Rust `managed_agents::channel_routing` tests: the full `routing_role_for`
+  table (mode × star × backend × owner), file fallbacks and round trip, and
+  `transition_tests.rs`, an exhaustive exploration of every mode switch ×
+  star move × running/remote set proving no reachable state runs two
+  routing paths and every switch finishes, plus a hold-ignoring variant that
+  must fail. `routing_env_tests.rs` pins role × prior env.
+  `lib/channelRouting.test.mjs` pins the card copy, Restart now states, and
+  the hold lookup; `ui/routing/ChannelRoutingCard.jsdom-test.mjs` pins one
+  label owner per control, picker-only-under-Host, draft-until-pick, one
+  `set_channel_routing` per action, and the restart buttons;
+  `lib/autoRestartPolicy.test.mjs` has the `routingHold` row.
+- Smart routing (rule 24): Rust `message_routing::tests` (prompt text,
+  aliasing, caps, strict parser table, provider/model resolution incl.
+  subscription-only, deadline timeout, log lines) and
+  `managed_agents::task_models` tests; `buzz-agent` `complete_once_tests`;
+  `messages/lib/autoAssignGate.test.mjs` (every skip reason),
+  `messages/lib/routerRoster.test.mjs` (description priority, caps),
+  `messages/ui/useAutoAssign.jsdom-test.mjs` (batch timing and draft hold,
+  one call per batch, per-group delivery, exactly once, follow-up route note
+  and PRIOR, edit fence, closed gate, soft-mention judging and fallback),
+  Rust `events` `edit_carries_a_route_note_for_follow_ups_only`, `messages/ui/useMentionSendFlow.helpers.test.mjs` (soft split),
+  `messages/ui/smartRoutingComposerWiring.test.mjs` (send seam),
+  `../settings/ui/models/TaskModelRow.jsdom-test.mjs`, and the Smart routing
+  cases in `ui/routing/ChannelRoutingCard.jsdom-test.mjs`.
 - `lib/startOnLaunchMenu.test.mjs` — `startOnLaunchMenuState` table over
   instance presence × backend × stored flag.
 - `ui/AgentStartOnLaunchMenuItem.jsdom-test.mjs` — the card menu item through
@@ -693,6 +864,16 @@ this is not permission to fetch the removed source. It is not learned from profi
 uses the fixed agent signer, origin-scoped Blossom auth, no redirects, byte caps,
 and hash/descriptor verification; ordinary public external avatars remain
 unauthenticated passthrough. No image-reader proxy or tenant isolation exception.
+
+## Conversation context defaults
+
+New blank persona drafts explicitly seed `behavior.sessionPolicy: "thread"`
+(Each thread); create submits that choice and linked instances inherit it.
+New standalone managed agents seed Thread in `resolve_mint_behavioral_defaults`.
+Entire channel remains selectable. Edit, duplicate, catalog/import, and existing
+records preserve their policy: an absent stored field still means Channel.
+Do not change the serde or harness fallback to implement a creation default,
+rewrite existing agents, or reset their conversations. DMs remain shared.
 
 ## Keep this file true
 

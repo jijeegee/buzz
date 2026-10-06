@@ -81,6 +81,8 @@ pub(crate) const RESERVED_ENV_KEYS: &[&str] = &[
     // default gate (channel owner/admin + the agent's owner, no AI authors).
     "BUZZ_ACP_DISPATCHER",
     "BUZZ_ACP_DISPATCHER_CONFIG",
+    // The roster section follows the Lead role the same way.
+    "BUZZ_ACP_CHANNEL_ROSTER",
     // Readiness handoff: desktop is the ONLY readiness source. A saved or
     // ambient env var must not be able to forge setup mode (NotReady) on a
     // Ready agent or suppress it (empty/stale payload) on a NotReady one.

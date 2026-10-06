@@ -9,6 +9,8 @@ import { Switch } from "@/shared/ui/switch";
  * disabled and explains where to star one, so the Agents setting
  * ("Add default AI to new channels") never looks like it silently did
  * nothing. `resolveAddDefaultAi` still forces the payload to `false` then.
+ * The forms render it only while channel routing is Host or Lead
+ * (`routingJoinsNewChannels`); under Off and Smart routing nothing joins.
  */
 export function AddDefaultAiRow({
   checked,

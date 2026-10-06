@@ -60,6 +60,7 @@ import { SentFromThreadLine } from "./SentFromThreadLine";
 import { WaveMessageAttachment } from "./WaveMessageAttachment";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { useMessageAgentAddressPrefix } from "./MessageAgentAddressPrefix";
+import { MessageAutoRouteLine } from "./MessageAutoRouteLine";
 const DiffMessage = React.lazy(() => import("./DiffMessage"));
 const DiffMessageExpanded = React.lazy(() => import("./DiffMessageExpanded"));
 export type ThreadDepthGuideAction = {
@@ -687,6 +688,11 @@ export const MessageRow = React.memo(
       <>
         <SentFromThreadLine channelId={channelId} tags={message.tags} />
         {renderBody()}
+        <MessageAutoRouteLine
+          messageId={message.id}
+          profiles={profiles}
+          tags={message.tags}
+        />
         {continuationMetadataNode}
         <MessageReactions
           messageId={message.id}

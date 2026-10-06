@@ -441,6 +441,10 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
                                                     true,
                                                     owner_hex_ref,
                                                     None,
+                                                    // Restore spawns every record with
+                                                    // its desired role, so only provider
+                                                    // deployments can hold one.
+                                                    &[],
                                                 )
                                             }) {
                                             Ok(process) => {

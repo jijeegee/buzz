@@ -14,7 +14,8 @@ import type { AgentWorkingSource } from "../agentWorkingSignal";
  * in other communities.
  *
  * Decisions:
- * - "fire": restart now (all gates green, continuity window satisfied).
+ * - "fire": restart now (all gates green, continuity window satisfied — or
+ *   waived for a channel-routing transition the user just saved).
  * - "arm": conditions are green but the quiescence window is still
  *   accumulating — keep the timer running.
  * - "hold": some gate is red — reset any accumulated quiescence and show
@@ -44,6 +45,16 @@ export type AutoRestartInputs = {
   edgeConsumed: boolean;
   /** Milliseconds the fire-conditions have held continuously. */
   quiescentForMs: number;
+  /** Channel-routing transition hold (`plan_routing_transition`): another
+   * agent still runs a routing role this one is about to take, so restarting
+   * now would run both roles at once. Releases once that agent restarts. */
+  routingHold: boolean;
+  /** Channel-routing transition (`plan_routing_transition`): this agent runs
+   * a routing role other than the saved one and is not held — the user just
+   * switched the mode or moved the star (a loser drops its role; a gainer
+   * whose hold released takes it). The restart is expected, so it fires as
+   * soon as every other gate is green, skipping the quiescence window. */
+  routingTransition: boolean;
 };
 
 /** Continuity window: fire-conditions must hold this long uninterrupted.
@@ -65,6 +76,8 @@ export function decideAutoRestart(
     isRunning,
     edgeConsumed,
     quiescentForMs,
+    routingHold,
+    routingTransition,
   } = inputs;
 
   // Never-fire gates. Each resets the continuity window ("hold").
@@ -73,12 +86,17 @@ export function decideAutoRestart(
   if (!isLocalBackend) return "hold";
   if (!isRunning) return "hold";
   if (!connected) return "hold";
+  // Losing roles restart first; a gaining agent waits for them.
+  if (routingHold) return "hold";
   // Any working signal — observer OR typing — defers. `working` and
   // `workingSource` travel together, but check both so a partial reader
   // can never slip through.
   if (working || workingSource !== "none") return "hold";
   // One attempt per rising edge: a consumed edge badges until it cycles.
   if (edgeConsumed) return "hold";
+  // A routing switch the user just saved restarts the moment the agent is
+  // idle; ordinary config drift still waits out the window below.
+  if (routingTransition) return "fire";
 
   return quiescentForMs >= AUTO_RESTART_QUIESCENCE_MS ? "fire" : "arm";
 }

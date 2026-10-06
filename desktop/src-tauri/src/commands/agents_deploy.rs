@@ -46,6 +46,7 @@ pub(crate) fn resolve_deploy_model_provider(
 /// `descriptor.env` is the authoritative six-layer environment for ordinary
 /// values. Desktop-owned settings are reserved, stripped from that layer, and
 /// emitted through `policy_env` so local and provider launches agree.
+#[allow(clippy::too_many_arguments)]
 fn build_launch_block_for_policy(
     record: &ManagedAgentRecord,
     descriptor: &crate::managed_agents::readiness::EffectiveHarnessDescriptor,
@@ -54,6 +55,7 @@ fn build_launch_block_for_policy(
     effective_model: Option<&str>,
     owner_pubkey: &str,
     session_policy: crate::managed_agents::AcpSessionPolicy,
+    routing_role: crate::managed_agents::channel_routing::RoutingRole,
 ) -> serde_json::Value {
     use crate::managed_agents::{
         known_acp_runtime, resolve_session_title, DISPLAY_NAME_ENV_VAR, SESSION_TITLE_ENV_VAR,
@@ -80,9 +82,9 @@ fn build_launch_block_for_policy(
         crate::managed_agents::acp_agents_value(&descriptor.command, record.parallelism),
     );
     crate::managed_agents::insert_acp_session_policy_env(&mut policy_env, session_policy);
-    // Dispatcher mode follows the default-AI star — same record field, same
-    // decision as the local spawn path, so both launch paths agree.
-    crate::managed_agents::insert_dispatcher_env(&mut policy_env, record.is_default_ai);
+    // The channel routing role comes from the same `routing_role_for` as the
+    // local spawn path, so both launch paths agree.
+    crate::managed_agents::insert_routing_env(&mut policy_env, routing_role);
 
     if let Some(value) = effective_prompt {
         policy_env.insert("BUZZ_ACP_SYSTEM_PROMPT".into(), value.to_string());
@@ -177,6 +179,12 @@ pub(super) fn build_launch_block(
         effective_model,
         owner_pubkey,
         crate::managed_agents::AcpSessionPolicy::Channel,
+        // Host is the stored default, so tests keep today's star → dispatcher.
+        crate::managed_agents::channel_routing::routing_role_for(
+            record,
+            crate::managed_agents::channel_routing::ChannelRoutingMode::Host,
+            Some(owner_pubkey),
+        ),
     )
 }
 
@@ -191,10 +199,31 @@ pub(super) fn ensure_remote_provider_supported(provider: Option<&str>) -> Result
 }
 
 /// Build the standard agent JSON payload for provider deploy calls.
+///
+/// Callers may already hold the runtimes lock, so the routing hold reads the
+/// live local roles only when that lock is free. This is a pre-build:
+/// `deploy_to_provider` always rebuilds the payload it invokes with
+/// [`build_deploy_payload_with_live_roles`] and a real snapshot.
 pub(crate) fn build_deploy_payload<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
     record: &ManagedAgentRecord,
+) -> Result<serde_json::Value, String> {
+    let live_roles = state
+        .managed_agent_processes
+        .try_lock()
+        .map(|runtimes| crate::managed_agents::channel_routing::live_local_roles(&runtimes))
+        .unwrap_or_default();
+    build_deploy_payload_with_live_roles(app, state, record, &live_roles)
+}
+
+/// [`build_deploy_payload`] with the other local processes' running routing
+/// roles (`channel_routing::live_local_roles`) supplied for the hold rule.
+pub(super) fn build_deploy_payload_with_live_roles<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    record: &ManagedAgentRecord,
+    live_roles: &[(String, crate::managed_agents::channel_routing::RoutingRole)],
 ) -> Result<serde_json::Value, String> {
     if let Some(err) = crate::managed_agents::spawn_key_refusal(record) {
         return Err(err);
@@ -227,6 +256,18 @@ pub(crate) fn build_deploy_payload<R: tauri::Runtime>(
         effective.model.value.as_deref(),
         &owner_pubkey,
         crate::managed_agents::effective_acp_session_policy(record, &personas),
+        // Held back like a local spawn while another agent still runs a
+        // role it is losing.
+        crate::managed_agents::channel_routing::launch_role(
+            app,
+            record,
+            crate::managed_agents::channel_routing::routing_role_for(
+                record,
+                crate::managed_agents::channel_routing::load_channel_routing(app)?,
+                Some(&owner_pubkey),
+            ),
+            live_roles,
+        ),
     );
 
     let effective_parallelism =
@@ -393,6 +434,35 @@ mod tests {
     }
 
     #[test]
+    fn launch_block_deploys_the_starred_agent_plain_when_routing_is_off() {
+        use crate::managed_agents::channel_routing::{routing_role_for, ChannelRoutingMode};
+        let mut record = record();
+        record.is_default_ai = true;
+        let descriptor = EffectiveHarnessDescriptor {
+            command: "goose".into(),
+            args: vec![],
+            env: BTreeMap::new(),
+        };
+
+        for mode in [ChannelRoutingMode::Off, ChannelRoutingMode::DesktopRouter] {
+            let launch = build_launch_block_for_policy(
+                &record,
+                &descriptor,
+                &[],
+                None,
+                None,
+                "owner-hex",
+                crate::managed_agents::AcpSessionPolicy::Channel,
+                routing_role_for(&record, mode, Some("owner-hex")),
+            );
+            assert!(
+                launch["policy_env"]["BUZZ_ACP_DISPATCHER"].is_null(),
+                "{mode:?}: the star alone must not deploy a dispatcher"
+            );
+        }
+    }
+
+    #[test]
     fn launch_block_thread_policy_is_authoritative_and_preserves_unrelated_env() {
         let record = record();
         let descriptor = EffectiveHarnessDescriptor {
@@ -412,6 +482,7 @@ mod tests {
             None,
             "owner-hex",
             crate::managed_agents::AcpSessionPolicy::Thread,
+            crate::managed_agents::channel_routing::RoutingRole::None,
         );
 
         assert_eq!(launch["policy_env"]["BUZZ_ACP_SESSION_POLICY"], "thread");

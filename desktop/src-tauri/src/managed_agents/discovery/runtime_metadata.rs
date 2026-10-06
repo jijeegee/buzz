@@ -75,8 +75,9 @@ impl AcpThoughtLevelOption {
     }
 }
 
-/// The common pre-discovery subset shared by every ACP thought-level harness.
-pub(crate) static ACP_THOUGHT_LEVEL_FALLBACK_VALUES: &[&str] = &["low", "medium", "high"];
+/// The common pre-discovery subset shared by every ACP thought-level harness,
+/// lowest first. A `const` so built-in persona tables can name a level from it.
+pub(crate) const ACP_THOUGHT_LEVEL_FALLBACK_VALUES: &[&str] = &["low", "medium", "high"];
 
 /// claude-agent-acp advertises effort as the `effort` thought_level option.
 pub(crate) static CLAUDE_THOUGHT_LEVEL_OPTION: AcpThoughtLevelOption = AcpThoughtLevelOption {

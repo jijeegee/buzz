@@ -1,15 +1,10 @@
 import { AgentDefaultsSettingsCard } from "./AgentDefaultsSettingsCard";
-import { defaultAiStatusCopy } from "@/features/agents/lib/defaultAi";
-import {
-  setDefaultAiAutoJoin,
-  useDefaultAiAutoJoin,
-} from "@/features/agents/lib/defaultAiPreferences";
-import { useDefaultAi } from "@/features/agents/useDefaultAi";
 import {
   setKeepMentionedAgentsPinned,
   useKeepMentionedAgentsPinned,
 } from "@/features/messages/lib/autoPinMentionedAgentsPreference";
 import { Switch } from "@/shared/ui/switch";
+import { ChannelRoutingSummaryRow } from "./ChannelRoutingSummaryRow";
 import { HarnessesSettingsPanel } from "./HarnessesSettingsPanel";
 import { PreventSleepSettingsCard } from "./PreventSleepSettingsCard";
 import {
@@ -21,8 +16,6 @@ import { SettingsSectionHeader } from "./SettingsSectionHeader";
 
 export function AgentsSettingsPanel() {
   const automaticallyMentionAgents = useKeepMentionedAgentsPinned();
-  const addDefaultAiToNewChannels = useDefaultAiAutoJoin();
-  const { defaultAi, isLoading: isDefaultAiLoading } = useDefaultAi();
 
   return (
     <section className="min-w-0" data-testid="settings-agents">
@@ -55,38 +48,7 @@ export function AgentsSettingsPanel() {
               onCheckedChange={setKeepMentionedAgentsPinned}
             />
           </SettingsOptionRow>
-          <SettingsOptionRow data-testid="settings-default-ai-auto-join">
-            <div className="min-w-0">
-              <label
-                className="font-medium text-foreground"
-                htmlFor="settings-default-ai-auto-join-switch"
-              >
-                Add default AI to new channels
-              </label>
-              <p
-                className="mt-0.5 text-sm text-muted-foreground/70"
-                data-settings-subcopy
-              >
-                Channels, forums, and project channels you create start with
-                your default AI as a bot. Each create form can still opt out.
-              </p>
-              {isDefaultAiLoading ? null : (
-                <p
-                  className="mt-0.5 text-sm text-muted-foreground/70"
-                  data-settings-subcopy
-                  data-testid="settings-default-ai-current"
-                >
-                  {defaultAiStatusCopy(defaultAi)}
-                </p>
-              )}
-            </div>
-            <Switch
-              checked={addDefaultAiToNewChannels}
-              data-testid="settings-default-ai-auto-join-switch"
-              id="settings-default-ai-auto-join-switch"
-              onCheckedChange={setDefaultAiAutoJoin}
-            />
-          </SettingsOptionRow>
+          <ChannelRoutingSummaryRow />
         </SettingsOptionGroup>
         <PreventSleepSettingsCard />
         <HarnessesSettingsPanel />

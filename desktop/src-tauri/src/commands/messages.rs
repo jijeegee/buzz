@@ -1018,6 +1018,9 @@ pub struct EditMessageInput {
     mention_tags: Option<Vec<Vec<String>>>,
     #[serde(default)]
     suppress_link_previews: bool,
+    /// Smart routing's follow-up note on a delivery edit.
+    #[serde(default)]
+    route: Option<events::RouteNote>,
 }
 
 #[tauri::command]
@@ -1045,6 +1048,7 @@ pub async fn edit_message(
             custom_emoji: &input.emoji_tags,
             mentions: &mention_refs,
             mention_refs: input.mention_tags.as_deref(),
+            route: input.route.as_ref(),
         },
         input.suppress_link_previews,
     )?;

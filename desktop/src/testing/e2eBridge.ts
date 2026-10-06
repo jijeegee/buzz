@@ -2686,6 +2686,13 @@ function resetMockPersonas(config?: E2eConfig) {
       avatar_url: null,
       system_prompt: "You are Pollen.",
     },
+    {
+      id: "builtin:host",
+      display_name: "Host",
+      avatar_url: null,
+      system_prompt: "You are Host.",
+      effort_level: "low",
+    },
   ];
   mockPersonas = builtInPersonas.map((persona) => ({
     id: persona.id,
@@ -2695,6 +2702,7 @@ function resetMockPersonas(config?: E2eConfig) {
     runtime: null,
     model: null,
     provider: null,
+    effort_level: persona.effort_level ?? null,
     name_pool: [],
     session_policy: "channel",
     is_builtin: true,
@@ -9987,27 +9995,181 @@ async function handleSetManagedAgentStartOnAppLaunch(args: {
   return cloneManagedAgent(agent);
 }
 
+/** Mock `channel-routing.json`; a missing file reads as `host` natively. */
+let mockChannelRoutingMode: "off" | "host" | "lead" | "desktop-router" = "host";
+
 /**
- * Mirrors the native `set_default_managed_agent`: at most one agent carries
- * the star, `null` clears it, and the whole list comes back because starring
- * one agent unstars the previous default.
+ * Mirrors the native `get_channel_routing`. Mock processes have no stamped
+ * spawn config, so every running agent already runs its desired role (no
+ * transition in flight): the routing agent hosts while Host is saved.
  */
-async function handleSetDefaultManagedAgent(args: {
-  pubkey: string | null;
-}): Promise<RawManagedAgent[]> {
-  if (args.pubkey !== null) {
-    // Throws for an unknown pubkey before anything is mutated.
-    getMockManagedAgent(args.pubkey);
+function mockChannelRoutingStatus() {
+  const starred =
+    mockManagedAgents.find(
+      (agent) => agent.is_default_ai && agent.pubkey.trim().length > 0,
+    ) ?? null;
+  const roleFor = (agent: RawManagedAgent) =>
+    agent !== starred
+      ? ("none" as const)
+      : mockChannelRoutingMode === "host"
+        ? ("dispatcher" as const)
+        : mockChannelRoutingMode === "lead" && agent.backend.type === "local"
+          ? ("lead" as const)
+          : ("none" as const);
+  const agents = mockManagedAgents
+    .filter((agent) => agent.pubkey.trim().length > 0)
+    .map((agent) => {
+      const running = agent.status === "running";
+      return {
+        pubkey: agent.pubkey,
+        running,
+        local: agent.backend.type === "local",
+        runningRole: running ? roleFor(agent) : ("none" as const),
+        desiredRole: roleFor(agent),
+        stale: false,
+        hold: false,
+      };
+    });
+  const host = agents.find(
+    (agent) => agent.running && agent.runningRole === "dispatcher",
+  );
+  const lead = agents.find(
+    (agent) => agent.running && agent.runningRole === "lead",
+  );
+  return {
+    mode: mockChannelRoutingMode,
+    routingAgent: starred?.pubkey ?? null,
+    applied: host
+      ? { state: "hosting" as const, pubkey: host.pubkey }
+      : lead
+        ? { state: "leading" as const, pubkey: lead.pubkey }
+        : mockChannelRoutingMode === "desktop-router"
+          ? { state: "smart-routing" as const }
+          : { state: "off" as const },
+    routerActive: mockChannelRoutingMode === "desktop-router",
+    agents,
+  };
+}
+
+/**
+ * Mirrors the native `set_channel_routing`: Host and Lead need a routing
+ * agent (a local one for Lead), and the star moves (unstarring the previous
+ * one) before the mode is saved; Smart routing needs a ready router model.
+ */
+async function handleSetChannelRouting(args: {
+  mode: typeof mockChannelRoutingMode;
+  agentPubkey: string | null;
+}) {
+  if (args.mode === "desktop-router" && !mockTaskModelStatus().ready) {
+    throw new Error("Smart routing needs an API key.");
   }
-  const now = new Date().toISOString();
-  for (const agent of mockManagedAgents) {
-    const next = args.pubkey !== null && agent.pubkey === args.pubkey;
-    if ((agent.is_default_ai ?? false) !== next) {
-      agent.is_default_ai = next;
-      agent.updated_at = now;
+  if (args.mode === "desktop-router") {
+    throw new Error("That channel routing mode is not available yet.");
+  }
+  if (args.mode === "host" || args.mode === "lead") {
+    if (!args.agentPubkey) throw new Error(`Choose a ${args.mode} agent.`);
+    const chosen = getMockManagedAgent(args.agentPubkey);
+    if (args.mode === "lead" && chosen.backend.type !== "local") {
+      throw new Error("Lead needs an agent on this computer.");
+    }
+    const now = new Date().toISOString();
+    for (const agent of mockManagedAgents) {
+      const next = agent.pubkey === args.agentPubkey;
+      if ((agent.is_default_ai ?? false) !== next) {
+        agent.is_default_ai = next;
+        agent.updated_at = now;
+      }
     }
   }
-  return mockManagedAgents.map(cloneManagedAgent);
+  mockChannelRoutingMode = args.mode;
+  return mockChannelRoutingStatus();
+}
+
+/** Mock `task-models.json` entry for `message-routing`. */
+let mockMessageRoutingModel: { provider: string | null; model: string | null } =
+  { provider: null, model: null };
+
+/**
+ * Mirrors the native `get_task_models`; the mock desktop has an Anthropic
+ * key and no signed-in CLI.
+ */
+function mockTaskModelStatus() {
+  const provider = mockMessageRoutingModel.provider ?? "anthropic";
+  const apiKey = (
+    id: string,
+    label: string,
+    ready: boolean,
+    defaultModel: string,
+  ) => ({
+    id,
+    label: `${label} API key`,
+    kind: "api-key" as const,
+    ready,
+    unavailableReason: ready ? null : `Needs an ${label} API key`,
+    defaultModel,
+    models: [] as string[],
+    sendWaitMs: 1_200,
+  });
+  const subscription = (id: string, label: string, name: string) => ({
+    id,
+    label,
+    kind: "subscription" as const,
+    ready: false,
+    unavailableReason: `Sign in to ${name}`,
+    defaultModel: id === "codex" ? "gpt-6-luna" : "haiku",
+    models: id === "codex" ? ["gpt-6-luna"] : ["haiku", "sonnet"],
+    sendWaitMs: 8_000,
+  });
+  const providers = [
+    apiKey("anthropic", "Anthropic", true, "claude-haiku-4-5"),
+    apiKey("openai", "OpenAI", false, "gpt-4.1-nano"),
+    apiKey("openrouter", "OpenRouter", false, "anthropic/claude-haiku-4.5"),
+    subscription("codex", "Codex (ChatGPT subscription)", "Codex"),
+    subscription(
+      "claude-code",
+      "Claude Code (Claude subscription, slower)",
+      "Claude Code",
+    ),
+  ];
+  const entry = providers.find((option) => option.id === provider);
+  const ready = entry?.ready ?? false;
+  const model = mockMessageRoutingModel.model ?? entry?.defaultModel ?? null;
+  return {
+    taskId: "message-routing",
+    provider: mockMessageRoutingModel.provider,
+    model: mockMessageRoutingModel.model,
+    effectiveProvider: ready ? provider : null,
+    effectiveModel: ready ? model : null,
+    modelLabel: ready
+      ? model === "claude-haiku-4-5"
+        ? "Claude Haiku 4.5"
+        : model
+      : null,
+    ready,
+    notReadyReason: ready
+      ? null
+      : (entry?.unavailableReason ??
+        "Sign in to Codex or Claude Code, or add an API key"),
+    sendWaitMs: entry?.sendWaitMs ?? 1_200,
+    providers,
+  };
+}
+
+/**
+ * Mirrors the native `route_message`: not configured unless Smart routing is
+ * saved; otherwise a spec may install `window.__BUZZ_E2E_ROUTE_MESSAGE__`
+ * to answer, and the default picks nobody.
+ */
+async function handleRouteMessage(args: { input: unknown }) {
+  if (mockChannelRoutingMode !== "desktop-router") {
+    return { decision: "skipped", reason: "not-configured" };
+  }
+  const override = (
+    window as unknown as {
+      __BUZZ_E2E_ROUTE_MESSAGE__?: (input: unknown) => unknown;
+    }
+  ).__BUZZ_E2E_ROUTE_MESSAGE__;
+  return override ? override(args.input) : { decision: "none" };
 }
 
 async function handleSetManagedAgentAutoRestart(args: {
@@ -14217,10 +14379,29 @@ export function maybeInstallE2eTauriMocks() {
         return handleSetManagedAgentAutoRestart(
           payload as Parameters<typeof handleSetManagedAgentAutoRestart>[0],
         );
-      case "set_default_managed_agent":
-        return handleSetDefaultManagedAgent(
-          payload as Parameters<typeof handleSetDefaultManagedAgent>[0],
+      case "get_channel_routing":
+        return mockChannelRoutingStatus();
+      case "set_channel_routing":
+        return handleSetChannelRouting(
+          payload as Parameters<typeof handleSetChannelRouting>[0],
         );
+      case "route_message":
+        return handleRouteMessage(
+          payload as Parameters<typeof handleRouteMessage>[0],
+        );
+      case "get_task_models":
+        return [mockTaskModelStatus()];
+      case "set_task_model": {
+        const args = payload as {
+          provider: string | null;
+          model: string | null;
+        };
+        mockMessageRoutingModel = {
+          provider: args.provider ?? null,
+          model: args.model ?? null,
+        };
+        return [mockTaskModelStatus()];
+      }
       case "set_managed_agent_start_on_app_launch":
         return handleSetManagedAgentStartOnAppLaunch(
           payload as Parameters<

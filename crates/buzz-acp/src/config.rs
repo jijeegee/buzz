@@ -526,6 +526,12 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_DISPATCHER", default_value_t = false)]
     pub dispatcher: bool,
 
+    /// Inject the `<channel-roster>` standing section into new non-DM channel
+    /// sessions without dispatcher mode (used by channel leads). Unlike a
+    /// dispatcher, the session proceeds without a roster when the fetch fails.
+    #[arg(long, env = "BUZZ_ACP_CHANNEL_ROSTER", default_value_t = false)]
+    pub channel_roster: bool,
+
     /// Per-channel dispatcher policy as JSON:
     /// `{"<channel_uuid>": {"humans": ["<hex>", ...], "ais": ["<hex>", ...]}}`.
     /// Both arrays are optional. An empty or missing `humans` list admits the
@@ -770,6 +776,8 @@ pub struct Config {
     pub base_prompt_content: Option<String>,
     /// Whether this harness runs as a channel dispatcher (`--dispatcher`).
     pub dispatcher: bool,
+    /// Whether to inject the `<channel-roster>` section (`--channel-roster`).
+    pub channel_roster: bool,
     /// Per-channel dispatcher author policy (`--dispatcher-config`).
     pub dispatcher_config: DispatcherConfig,
 }
@@ -1414,6 +1422,7 @@ impl Config {
             no_base_prompt: args.no_base_prompt,
             base_prompt_content,
             dispatcher: args.dispatcher,
+            channel_roster: args.channel_roster,
             dispatcher_config,
         };
 
@@ -1854,6 +1863,7 @@ mod tests {
             no_base_prompt: false,
             base_prompt_content: None,
             dispatcher: false,
+            channel_roster: false,
             dispatcher_config: DispatcherConfig::default(),
         }
     }

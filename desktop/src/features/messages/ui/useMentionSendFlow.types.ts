@@ -1,6 +1,7 @@
 import type * as React from "react";
 import type { CustomEmoji } from "@/shared/lib/remarkCustomEmoji";
 import type { ChannelType } from "@/shared/api/types";
+import type { SentMessage } from "./MessageComposer.types";
 import type { ImetaMedia } from "@/features/messages/lib/imetaMediaMarkdown";
 import type { QueuedMediaAttachment } from "@/features/messages/lib/backgroundMediaUploadStore";
 import type { UseChannelLinksResult } from "@/features/messages/lib/useChannelLinks";
@@ -41,7 +42,7 @@ export type UseMentionSendFlowOptions = {
         threadHeadId: string | null;
       } | null,
       forceRest?: boolean,
-    ) => Promise<void>
+    ) => Promise<SentMessage>
   >;
   richText: Pick<UseRichTextEditorResult, "clearContent" | "setContent">;
   setContent: (content: string) => void;

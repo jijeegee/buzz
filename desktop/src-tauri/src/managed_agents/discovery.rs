@@ -10,7 +10,7 @@ use crate::managed_agents::{
 };
 mod auth_status_cache;
 mod bounded_command;
-pub(crate) use bounded_command::output_with_timeout;
+pub(crate) use bounded_command::{output_with_timeout, output_with_timeout_and_input};
 pub(crate) mod command_search;
 mod login_shell;
 mod presets;
@@ -33,6 +33,7 @@ use presets::{preset_catalog_entry, PRESET_HARNESSES};
 use runtime_metadata::AcpThoughtLevelOption;
 pub(crate) use runtime_metadata::EffortNormalization;
 pub(crate) use runtime_metadata::KnownAcpRuntime;
+pub(crate) use runtime_metadata::ACP_THOUGHT_LEVEL_FALLBACK_VALUES;
 #[cfg(test)]
 pub(crate) use runtime_metadata::GOOSE_EFFORT_NORMALIZATION;
 
@@ -709,7 +710,7 @@ pub(crate) fn is_npm_global_install(cmd: &str) -> bool {
 /// On timeout or spawn failure the child is killed and `Unknown` is returned;
 /// no orphaned threads or processes are left behind (see
 /// [`bounded_command::output_with_timeout`]).
-fn probe_auth_status(binary_path: &Path, probe_args: &[&str]) -> AuthStatus {
+pub(crate) fn probe_auth_status(binary_path: &Path, probe_args: &[&str]) -> AuthStatus {
     use crate::managed_agents::readiness::cli_probe;
 
     let augmented_path = cli_probe::augmented_path();

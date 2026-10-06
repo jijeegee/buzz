@@ -5,6 +5,10 @@ use super::check_pubkey;
 const MAX_THREAD_ROOT_EXCERPT_CHARS: usize = 64;
 const SENT_FROM_THREAD_TAG: &str = "buzz:sent-from-thread";
 const AGENT_ADDRESS_MENTION_MARKER: &str = "agent-address";
+const AUTO_ROUTE_MENTION_MARKER: &str = "auto-route";
+/// An owner `@mention` in a routed channel: rendered, but with no `p` tag, so
+/// the routing (host, lead, or Smart routing) decides who acts on it.
+const SOFT_MENTION_MARKER: &str = "soft";
 
 pub(super) fn mention_reference_tags(
     mentions: &[Vec<String>],
@@ -20,23 +24,67 @@ pub(super) fn mention_reference_tags(
         let Some(pubkey) = mention.get(1) else {
             return Err("mention reference tag missing pubkey".into());
         };
+        let marker = mention.get(2).map(String::as_str);
         if mention.len() > 3
-            || (mention.len() == 3
-                && mention.get(2).map(String::as_str) != Some(AGENT_ADDRESS_MENTION_MARKER))
+            || marker.is_some_and(|marker| {
+                ![
+                    AGENT_ADDRESS_MENTION_MARKER,
+                    AUTO_ROUTE_MENTION_MARKER,
+                    SOFT_MENTION_MARKER,
+                ]
+                .contains(&marker)
+            })
         {
             return Err("mention reference tag has invalid display metadata".into());
         }
         check_pubkey(pubkey)?;
         let normalized_pubkey = pubkey.to_ascii_lowercase();
         let mut parts = vec!["mention", normalized_pubkey.as_str()];
-        if mention.len() == 3 {
-            parts.push(AGENT_ADDRESS_MENTION_MARKER);
+        if let Some(marker) = marker {
+            parts.push(marker);
         }
         tags.push(
             Tag::parse(parts).map_err(|error| format!("invalid mention reference tag: {error}"))?,
         );
     }
     Ok(())
+}
+
+/// Smart routing's follow-up note on a delivery edit: `["buzz:route",
+/// relation, of, thread_root, note]`. `of` is the earlier delivered message
+/// and `thread_root` the thread that agent answered in. buzz-acp anchors the
+/// reply in `thread_root` and adds a follow-up line to the prompt
+/// (`queue::route_follow_up`); `note` says the same in plain language for
+/// any harness that only renders the tags.
+pub(super) fn route_note_tag(relation: &str, of: &str, thread_root: &str) -> Result<Tag, String> {
+    let of = EventId::from_hex(of.trim()).map_err(|_| "route note has invalid event ID")?;
+    let root =
+        EventId::from_hex(thread_root.trim()).map_err(|_| "route note has invalid thread root")?;
+    let (of, root) = (of.to_hex(), root.to_hex());
+    let reply = format!("Reply in thread {root} (`--reply-to {root}`).");
+    let note = match relation {
+        "continue" => format!(
+            "Owner follow-up to message {of}, which you were given earlier. Continue that \
+             work: supplement or fix your earlier answer, don't redo it. {reply}"
+        ),
+        "amend" => format!(
+            "Owner change to message {of}, which you were given earlier. Apply the change to \
+             that work: supplement or fix your earlier answer, don't redo it. {reply}"
+        ),
+        "cancel" => format!(
+            "The owner retracts or replaces the instruction in message {of}. Stop that work \
+             and don't redo it. {reply}"
+        ),
+        _ => return Err(format!("unknown route relation {relation:?}")),
+    };
+    Tag::parse([
+        "buzz:route",
+        relation,
+        of.as_str(),
+        root.as_str(),
+        note.as_str(),
+    ])
+    .map_err(|e| format!("invalid route note tag: {e}"))
 }
 
 pub(super) fn append_sent_from_thread_tag(

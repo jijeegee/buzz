@@ -50,7 +50,7 @@ fn merge_personas_adds_missing_built_ins() {
         .iter()
         .map(|record| record.display_name.as_str())
         .collect();
-    assert_eq!(display_names, vec!["Fizz", "Honey", "Pollen"]);
+    assert_eq!(display_names, vec!["Fizz", "Honey", "Pollen", "Host"]);
     let active_ids: Vec<&str> = records
         .iter()
         .filter(|record| record.is_active)
@@ -58,8 +58,62 @@ fn merge_personas_adds_missing_built_ins() {
         .collect();
     assert_eq!(
         active_ids,
-        vec!["builtin:fizz", "builtin:honey", "builtin:bumble"]
+        vec![
+            "builtin:fizz",
+            "builtin:honey",
+            "builtin:bumble",
+            "builtin:host"
+        ]
     );
+}
+
+#[test]
+fn host_builtin_seeds_the_catalog_lowest_effort() {
+    let host = built_in_persona_records("2026-03-19T00:00:00Z")
+        .into_iter()
+        .find(|record| record.id == "builtin:host")
+        .expect("builtin:host must exist");
+
+    assert_eq!(host.display_name, "Host");
+    assert_eq!(host.effort_level.as_deref(), Some("low"));
+    assert_eq!(host.runtime, None, "Host follows the global harness");
+    assert_eq!(host.model, None);
+    assert!(host.is_active);
+    assert!(host.system_prompt.starts_with("You are Host."));
+}
+
+#[test]
+fn merge_personas_adds_host_to_an_existing_store_without_touching_edits() {
+    let mut edited_fizz = custom_persona("builtin:fizz", "My Fizz");
+    edited_fizz.is_builtin = true;
+    edited_fizz.system_prompt = "User-edited instructions".to_string();
+    let (records, changed) = merge_personas(vec![edited_fizz], "2026-03-19T00:00:00Z");
+
+    assert!(changed);
+    assert!(records.iter().any(|record| record.id == "builtin:host"));
+    let fizz = records
+        .iter()
+        .find(|record| record.id == "builtin:fizz")
+        .expect("fizz built-in should exist");
+    assert_eq!(fizz.system_prompt, "User-edited instructions");
+}
+
+#[test]
+fn merge_personas_preserves_host_edits() {
+    let mut edited_host = custom_persona("builtin:host", "My Host");
+    edited_host.is_builtin = true;
+    edited_host.system_prompt = "Route only Korean messages.".to_string();
+    edited_host.effort_level = Some("high".to_string());
+
+    let (records, _) = merge_personas(vec![edited_host.clone()], "2026-03-19T00:00:00Z");
+
+    let host = records
+        .iter()
+        .find(|record| record.id == "builtin:host")
+        .expect("host built-in should exist");
+    assert_eq!(host.display_name, edited_host.display_name);
+    assert_eq!(host.system_prompt, edited_host.system_prompt);
+    assert_eq!(host.effort_level, edited_host.effort_level);
 }
 
 #[test]

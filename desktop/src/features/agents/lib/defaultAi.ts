@@ -1,26 +1,15 @@
+import type { ChannelRoutingMode } from "@/shared/api/tauriChannelRouting";
 import type { ManagedAgent } from "@/shared/api/types";
 
 type DefaultAiCandidate = Pick<ManagedAgent, "pubkey" | "isDefaultAi">;
 
 /**
  * Shown wherever a default-AI affordance has nothing to act on. Names the one
- * place the star lives (the agent profile's Runtime tab) so the empty state
- * is a pointer, not a dead end.
+ * place the star is chosen (the routing agent picker in the Agents page
+ * "Channel routing" card) so the empty state is a pointer, not a dead end.
  */
 export const NO_DEFAULT_AI_HINT =
-  "No default AI yet — open an agent's profile and turn on Default AI under Runtime";
-
-/**
- * One-line status for the Agents settings panel: which agent is starred, or
- * the hint above when none is.
- */
-export function defaultAiStatusCopy(
-  defaultAi: Pick<ManagedAgent, "name"> | null,
-): string {
-  return defaultAi
-    ? `Current default AI: ${defaultAi.name}.`
-    : `${NO_DEFAULT_AI_HINT}.`;
-}
+  "No routing agent yet — choose one in Agents › Channel routing";
 
 /**
  * A key-less definition record has no identity to star. This mirrors the
@@ -48,37 +37,28 @@ export function findDefaultAi<T extends DefaultAiCandidate>(
 }
 
 /**
+ * Whether the routing agent joins channels you create under this saved
+ * channel routing mode: only while it routes (Host or Lead). Under Off and
+ * Smart routing the star is only remembered, so nothing joins and the create
+ * forms hide the row. An unknown mode (status still loading or failed) joins
+ * nothing rather than guess.
+ */
+export function routingJoinsNewChannels(
+  mode: ChannelRoutingMode | null | undefined,
+): boolean {
+  return mode === "host" || mode === "lead";
+}
+
+/**
  * What a create form submits as `addDefaultAi`: the switch value, forced to
  * `false` whenever no agent is starred (the row is shown disabled and off
- * then, but the stored preference may still be on).
+ * then, but the stored preference may still be on) or the routing mode does
+ * not join new channels (the row is hidden then).
  */
 export function resolveAddDefaultAi(
   defaultAi: DefaultAiCandidate | null | undefined,
   requested: boolean,
+  mode: ChannelRoutingMode | null | undefined,
 ): boolean {
-  return Boolean(defaultAi) && requested;
-}
-
-/**
- * The `set_default_managed_agent` argument for a star toggle: starring sends
- * the agent's pubkey, un-starring the current default clears the selection.
- */
-export function defaultAiSelectionFor(
-  pubkey: string,
-  isDefaultAi: boolean,
-): string | null {
-  return isDefaultAi ? pubkey : null;
-}
-
-/**
- * The one-line toast the Runtime tab's "Default AI" row shows after a
- * successful toggle.
- */
-export function defaultAiToggleNotice(
-  name: string,
-  isDefaultAi: boolean,
-): string {
-  return isDefaultAi
-    ? `${name} is now your default AI.`
-    : `${name} is no longer your default AI.`;
+  return Boolean(defaultAi) && requested && routingJoinsNewChannels(mode);
 }

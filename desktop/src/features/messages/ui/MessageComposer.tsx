@@ -66,6 +66,7 @@ import { prepareBackgroundLinkPreviews } from "@/features/messages/lib/linkPrevi
 import { useComposerLinkPreviews } from "./useComposerLinkPreviews";
 import { useAddressedAgentMentionRestore } from "./useAddressedAgentMentionRestore";
 import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
+import { useComposerAutoAssign } from "./useComposerAutoAssign";
 import type { MessageComposerProps } from "./MessageComposer.types";
 function MessageComposerImpl({
   audienceContext = null,
@@ -329,6 +330,16 @@ function MessageComposerImpl({
       rootTags: audienceContext?.rootTags ?? [],
       scope: audienceScope,
     });
+  const autoAssign = useComposerAutoAssign({
+    addressedAgentCount: persistentAudience.pubkeys.length,
+    channelId,
+    channelType,
+    hasDraft: !isContentEmpty,
+    isEditing: editTarget != null,
+    mentions,
+    selfPubkey: ownerPubkey,
+    threadRoot: audienceContext?.rootContent ?? replyTarget?.body ?? null,
+  });
   const addressPulse = useAddressMentionPulse();
   const {
     completeOptionsReveal: completeMentionOptionsReveal,
@@ -637,8 +648,18 @@ function MessageComposerImpl({
       )
         ? null
         : prepareBackgroundLinkPreviews(getLiveLinkPreviewCandidates());
+      // Smart routing never delays the send: the gate is checked now, the
+      // routing call runs once the relay accepts the publish.
+      const onPublished =
+        autoAssign.routeAfterSend(trimmed, mentionSendFlow.deliverAutoRoute) ??
+        undefined;
       await mentionSendFlow.sendMessageWithMentionFlow({
         addressedAgentPubkeys: persistentAudience.pubkeys,
+        onPublished,
+        // Routed channel: agent @mentions are display-only and the routing
+        // (host, lead, or the Smart routing call above) decides who acts.
+        softAgentMentions:
+          autoAssign.routedByAgent || onPublished !== undefined,
         capturedChannelId: channelId,
         capturedThreadContext,
         pendingImeta: currentPendingImeta,
@@ -659,6 +680,8 @@ function MessageComposerImpl({
       onPreparingMentionSendChange?.(false);
     }
   }, [
+    autoAssign.routeAfterSend,
+    autoAssign.routedByAgent,
     channelId,
     channelLinks.clearChannels,
     customEmoji,
@@ -672,6 +695,7 @@ function MessageComposerImpl({
     media.restoreQueuedAttachments,
     media.setPendingImeta,
     media.setUploadState,
+    mentionSendFlow.deliverAutoRoute,
     mentionSendFlow.isPreparingMentionSend,
     mentionSendFlow.sendMessageWithMentionFlow,
     mentions.clearMentions,
