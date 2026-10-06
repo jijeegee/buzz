@@ -8,6 +8,7 @@ import type { Profile } from "@/shared/api/types";
 const STORAGE_KEY = "buzz-community-onboarding-transaction.v1";
 
 export type CommunityOnboardingSource =
+  | "default-community"
   | "first-community"
   | "add-community"
   | "membership-recovery"

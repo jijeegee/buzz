@@ -28,6 +28,7 @@ export default defineConfig({
         "**/tooltip-semantics.spec.ts",
         "**/search-scope-screenshots.spec.ts",
         "**/onboarding-docked-cta-screenshots.spec.ts",
+        "**/default-community-onboarding.spec.ts",
         "**/identity-key-help.spec.ts",
         "**/exact-key-profile.spec.ts",
         "**/key-import-reveal.spec.ts",

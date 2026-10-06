@@ -157,9 +157,11 @@ function LoadingDots({ label }: { label: string }) {
 export function CommunityOnboardingFlow({
   onCancel,
   onConnect,
+  onRetryConnection,
 }: {
   onCancel: () => void;
   onConnect: () => void;
+  onRetryConnection: () => void;
 }) {
   const { transaction, update, clear } = useCommunityOnboarding();
   const queryClient = useQueryClient();
@@ -259,11 +261,16 @@ export function CommunityOnboardingFlow({
     };
   }, [clear, isEnteringStage]);
 
-  const retry = () =>
+  const retry = () => {
+    if (transaction?.stage === "connecting") {
+      onRetryConnection();
+      return;
+    }
     update({
       stage: transaction?.inviteCode ? "claiming" : "connecting",
       error: undefined,
     });
+  };
   const relayUrl = transaction?.relayUrl;
   const finish = React.useCallback(async () => {
     if (!relayUrl) return;
@@ -528,11 +535,14 @@ export function CommunityOnboardingFlow({
             {transaction.stage === "claiming" ||
             transaction.stage === "connecting" ? (
               <>
-                <Users className="mx-auto h-10 w-10" />
+                <Users aria-hidden="true" className="mx-auto h-10 w-10" />
                 <h1 className="mt-5 text-title font-normal">
                   Joining {transaction.communityName}
                 </h1>
-                <p className="mt-3 text-sm text-foreground/80">
+                <p
+                  className="mt-3 text-sm text-foreground/80"
+                  role={transaction.error ? "alert" : "status"}
+                >
                   {transaction.error ??
                     (transaction.stage === "claiming"
                       ? "Accepting your invite…"
@@ -549,7 +559,9 @@ export function CommunityOnboardingFlow({
                     onClick={onCancel}
                     variant="ghost"
                   >
-                    Cancel
+                    {transaction.source === "default-community"
+                      ? "Advanced setup"
+                      : "Cancel"}
                   </Button>
                 </div>
               </>

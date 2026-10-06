@@ -124,7 +124,13 @@ type CommunityInitResult =
       defaultRelayUrl: string;
     }
   | { isReady: false; needsSetup: false; appliedKey: string | null }
-  | { isReady: false; needsSetup: false; appliedKey: null; error: string };
+  | {
+      isReady: false;
+      needsSetup: false;
+      appliedKey: null;
+      error: string;
+      attemptedKey?: string;
+    };
 
 /**
  * Applies the active community config to the Tauri backend and resets
@@ -206,6 +212,7 @@ export function useCommunityInit(
                 isReady: false,
                 needsSetup: false,
                 appliedKey: null,
+                attemptedKey: communityKey,
                 error:
                   error instanceof Error
                     ? `Could not safely leave community: ${error.message}`
@@ -331,6 +338,7 @@ export function useCommunityInit(
               isReady: false,
               needsSetup: false,
               appliedKey: null,
+              attemptedKey: communityKey,
               error:
                 error instanceof Error
                   ? `Could not safely switch communities: ${error.message}`
@@ -385,6 +393,7 @@ export function useCommunityInit(
             isReady: false,
             needsSetup: false,
             appliedKey: null,
+            attemptedKey: communityKey,
             error:
               error instanceof Error
                 ? error.message

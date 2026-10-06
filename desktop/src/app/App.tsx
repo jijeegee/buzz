@@ -34,6 +34,7 @@ import {
   isTransactionStillConnecting,
 } from "@/features/onboarding/communityOnboarding";
 import { CommunityOnboardingFlow } from "@/features/onboarding/ui/CommunityOnboardingFlow";
+import { DefaultCommunitySetup } from "@/features/onboarding/ui/DefaultCommunitySetup";
 import {
   MachineOnboardingFlow,
   type MachineOnboardingPage,
@@ -68,6 +69,7 @@ import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { isSharedIdentity as isSharedIdentityCmd } from "@/shared/api/tauri";
 import { getProfile } from "@/shared/api/tauriProfiles";
+import { relayClient } from "@/shared/api/relayClient";
 import {
   type AddCommunityDeepLinkPayload,
   listenForDeepLinks,
@@ -393,6 +395,7 @@ function CommunityApp({
   const [isCommunityChangeOpen, setIsCommunityChangeOpen] = useState(false);
   const [resumeFirstCommunityPage, setResumeFirstCommunityPage] =
     useState<FirstCommunityPage | null>(null);
+  const [manualCommunitySetup, setManualCommunitySetup] = useState(false);
   const isFindingCommunityAfterLeave =
     activeCommunity === null && loadCommunityDiscoveryAfterLeave();
 
@@ -465,34 +468,45 @@ function CommunityApp({
 
   const handleCommunityOnboardingConnect = useCallback(async () => {
     const transaction = communityOnboarding.transaction;
-    if (transaction?.stage !== "connecting") return;
+    if (transaction?.stage !== "connecting" || transaction.error) return;
     if (connectingTransactionRef.current === transaction.id) return;
     connectingTransactionRef.current = transaction.id;
-    if (transaction.communityId) {
-      await transitionCommunity(transaction.communityId);
-      return;
+    try {
+      if (transaction.communityId) {
+        await transitionCommunity(transaction.communityId);
+        return;
+      }
+      const previousCommunityId = activeCommunity?.id;
+      const relayAlreadyExists = communities.some(
+        (community) => community.relayUrl === transaction.relayUrl,
+      );
+      const id = addCommunity({
+        id: crypto.randomUUID(),
+        name: transaction.communityName,
+        relayUrl: transaction.relayUrl,
+        token: transaction.token,
+        reposDir: transaction.reposDir,
+        pubkey: currentPubkey ?? undefined,
+        addedAt: new Date().toISOString(),
+      });
+      communityOnboarding.update({
+        communityId: id,
+        previousCommunityId,
+        addedCommunity: !relayAlreadyExists,
+        error: undefined,
+      });
+      await transitionCommunity(id);
+      reconnectCommunity();
+    } catch {
+      if (
+        isTransactionStillConnecting(transactionRef.current, transaction.id)
+      ) {
+        communityOnboarding.update(
+          { error: "Could not save or apply the community. Please retry." },
+          transaction.id,
+        );
+      }
     }
-    const previousCommunityId = activeCommunity?.id;
-    const relayAlreadyExists = communities.some(
-      (community) => community.relayUrl === transaction.relayUrl,
-    );
-    const id = addCommunity({
-      id: crypto.randomUUID(),
-      name: transaction.communityName,
-      relayUrl: transaction.relayUrl,
-      token: transaction.token,
-      reposDir: transaction.reposDir,
-      pubkey: currentPubkey ?? undefined,
-      addedAt: new Date().toISOString(),
-    });
-    communityOnboarding.update({
-      communityId: id,
-      previousCommunityId,
-      addedCommunity: !relayAlreadyExists,
-      error: undefined,
-    });
-    await transitionCommunity(id);
-    reconnectCommunity();
   }, [
     activeCommunity?.id,
     addCommunity,
@@ -505,6 +519,10 @@ function CommunityApp({
 
   const handleCommunityOnboardingCancel = useCallback(async () => {
     const transaction = communityOnboarding.transaction;
+    if (transaction?.source === "default-community") {
+      relayClient.disconnect();
+      setManualCommunitySetup(true);
+    }
     communityOnboarding.clear();
 
     if (!transaction?.communityId) return;
@@ -546,21 +564,75 @@ function CommunityApp({
     transaction?.communityId === activeCommunity?.id &&
     community.isReady &&
     community.appliedKey === communityKey;
+  const communityApplyError =
+    "error" in community && community.attemptedKey === communityKey
+      ? community.error
+      : null;
   useEffect(() => {
-    if (transaction?.stage !== "connecting" || !targetIsReady) return;
+    if (
+      transaction?.stage === "connecting" &&
+      communityApplyError &&
+      !transaction.error
+    ) {
+      communityOnboarding.update(
+        { error: communityApplyError },
+        transaction.id,
+      );
+    }
+  }, [communityApplyError, communityOnboarding.update, transaction]);
+
+  const retryCommunityConnection = useCallback(() => {
+    connectingTransactionRef.current = null;
+    profileCheckTransactionRef.current = null;
+    communityOnboarding.update({ error: undefined });
+    reconnectCommunity();
+  }, [communityOnboarding.update, reconnectCommunity]);
+
+  useEffect(() => {
+    if (
+      transaction?.stage !== "connecting" ||
+      transaction.error ||
+      !targetIsReady
+    )
+      return;
     const transactionId = transaction.id;
     const relayUrl = transaction.relayUrl;
-    if (profileCheckTransactionRef.current === transactionId) return;
-    profileCheckTransactionRef.current = transactionId;
+    const requestKey = `${transactionId}:${communityKey}`;
+    if (profileCheckTransactionRef.current === requestKey) return;
+    profileCheckTransactionRef.current = requestKey;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     // resolveProfileCheckAction resolves exactly once (Promise.race + timer
     // cleared on settle), so no settled flag is needed here.
-    void resolveProfileCheckAction(getProfile, 10_000).then((result) => {
+    const checkProfile = async () => {
+      if (transaction.source === "default-community") {
+        // Applying a URL does not grant membership. Wait for the existing
+        // signed AUTH path; closed relays must admit this same key themselves.
+        await Promise.race([
+          relayClient.preconnect(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error("Community connection timed out. Please retry."),
+                ),
+              20_000,
+            );
+          }),
+        ]);
+        clearTimeout(timer);
+        if (cancelled) return;
+      }
+      const result = await resolveProfileCheckAction(getProfile, 10_000);
       // Atomic staleness guard via isTransactionStillConnecting: the
       // transaction must still be the same one that launched this request
       // AND still be in connecting. Covers cancel+replacement (B's ID !== A's)
       // and cancel-without-replacement (transactionRef.current is null).
-      if (!isTransactionStillConnecting(transactionRef.current, transactionId))
+      if (
+        cancelled ||
+        !isTransactionStillConnecting(transactionRef.current, transactionId)
+      )
         return;
 
       if (result.action === "skip") {
@@ -572,10 +644,39 @@ function CommunityApp({
           transactionId,
         );
       }
-    });
+    };
+    void checkProfile()
+      .catch((error: unknown) => {
+        if (
+          cancelled ||
+          !isTransactionStillConnecting(transactionRef.current, transactionId)
+        )
+          return;
+        relayClient.disconnect();
+        communityOnboarding.update(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not authenticate with the community. Please retry.",
+          },
+          transactionId,
+        );
+      })
+      .finally(() => clearTimeout(timer));
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (profileCheckTransactionRef.current === requestKey)
+        profileCheckTransactionRef.current = null;
+    };
   }, [
-    communityOnboarding,
+    communityOnboarding.clear,
+    communityOnboarding.update,
+    communityKey,
     targetIsReady,
+    transaction?.error,
+    transaction?.source,
     transaction?.stage,
     transaction?.id,
     transaction?.relayUrl,
@@ -599,15 +700,22 @@ function CommunityApp({
   let appContent: ReactNode = null;
   if (!transaction) {
     if (community.needsSetup) {
-      // Show welcome setup for first-run users with no communities
-      appContent = (
-        <WelcomeSetup
-          initialPage={resumeFirstCommunityPage ?? undefined}
-          onBack={
-            isFindingCommunityAfterLeave ? undefined : onBackToMachineConfig
-          }
-        />
-      );
+      appContent =
+        !manualCommunitySetup &&
+        !isFindingCommunityAfterLeave &&
+        communities.length === 0 ? (
+          <DefaultCommunitySetup
+            onBack={onBackToMachineConfig}
+            onManualSetup={() => setManualCommunitySetup(true)}
+          />
+        ) : (
+          <WelcomeSetup
+            initialPage={resumeFirstCommunityPage ?? undefined}
+            onBack={
+              isFindingCommunityAfterLeave ? undefined : onBackToMachineConfig
+            }
+          />
+        );
     } else if ("error" in community && community.error) {
       // Surface apply failures so the user can retry or change community.
       appContent = (
@@ -688,6 +796,7 @@ function CommunityApp({
           <CommunityOnboardingFlow
             onCancel={handleCommunityOnboardingCancel}
             onConnect={handleCommunityOnboardingConnect}
+            onRetryConnection={retryCommunityConnection}
           />
         </div>
       ) : null}
