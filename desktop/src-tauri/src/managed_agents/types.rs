@@ -1021,6 +1021,8 @@ pub struct MintBehavioralDefaults {
     pub respond_to_allowlist: Vec<String>,
     /// Validated (1..=32) when present; caller applies its own default.
     pub parallelism: Option<u32>,
+    /// Inherit the definition, or isolate threads for a new standalone agent.
+    pub session_policy: super::AcpSessionPolicy,
 }
 
 /// Resolve the NIP-AP behavioral quad for a new instance: explicit input
@@ -1094,6 +1096,9 @@ pub fn resolve_mint_behavioral_defaults(
         respond_to,
         respond_to_allowlist,
         parallelism,
+        session_policy: definition
+            .map(|definition| definition.session_policy)
+            .unwrap_or(super::AcpSessionPolicy::Thread),
     })
 }
 

@@ -110,6 +110,7 @@ function rawPersona(input) {
     respond_to: null,
     respond_to_allowlist: [],
     parallelism: null,
+    session_policy: input.behavior?.sessionPolicy ?? "channel",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   };
@@ -419,7 +420,7 @@ test("Create: a picked effort reaches create_persona as the definition default, 
   );
 });
 
-test("Create: an untouched effort picker sends no effortLevel", async () => {
+test("Create: untouched defaults omit effortLevel and persist thread context", async () => {
   installIpc();
   const nameInput = await openCreateDialog();
   await act(async () => {
@@ -440,6 +441,33 @@ test("Create: an untouched effort picker sends no effortLevel", async () => {
     "no pick must mean the key is absent — the definition default stays adapter default",
   );
   assert.equal("effortLevel" in instance, false);
+  assert.equal(persona.behavior.sessionPolicy, "thread");
+});
+
+test("Create: choosing Entire channel persists the explicit policy", async () => {
+  installIpc();
+  const nameInput = await openCreateDialog();
+  await act(async () => {
+    fireEvent.change(nameInput, { target: { value: "Shared context" } });
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+  });
+  const trigger = dom.window.document.getElementById("persona-session-policy");
+  assert.ok(trigger, "Conversation context must be available in Advanced");
+  assert.equal(trigger.textContent.trim(), "Each thread");
+  await act(async () => {
+    fireEvent.pointerDown(
+      trigger,
+      new dom.window.MouseEvent("pointerdown", { bubbles: true, button: 0 }),
+    );
+    fireEvent.click(trigger);
+  });
+  await act(async () => {
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: "Entire channel" }),
+    );
+  });
+  const { persona } = await submitCreate();
+  assert.equal(persona.behavior.sessionPolicy, "channel");
 });
 
 test("Create: a pick made before saved defaults re-seed a no-effort harness is dropped", async () => {

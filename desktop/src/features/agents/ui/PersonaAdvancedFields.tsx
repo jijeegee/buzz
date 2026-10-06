@@ -184,7 +184,7 @@ export function PersonaAdvancedFields({
               { label: "Entire channel", value: "channel" },
               { label: "Each thread", value: "thread" },
             ]}
-            placeholder="Entire channel"
+            placeholder="Select conversation context"
             value={behaviorDraft.sessionPolicy}
           />
           <p

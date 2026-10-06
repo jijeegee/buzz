@@ -555,6 +555,16 @@ with a TypeScript lookup table or an id comparison in a component.
     carries no Auto-start item (that slot is `!isBot`-only, unreachable for
     agents — rule 20). The card face shows no start-on-launch indicator.
 
+## Conversation context defaults
+
+New blank persona drafts explicitly seed `behavior.sessionPolicy: "thread"`
+(Each thread); create submits that choice and linked instances inherit it.
+New standalone managed agents seed Thread in `resolve_mint_behavioral_defaults`.
+Entire channel remains selectable. Edit, duplicate, catalog/import, and existing
+records preserve their policy: an absent stored field still means Channel.
+Do not change the serde or harness fallback to implement a creation default,
+rewrite existing agents, or reset their conversations. DMs remain shared.
+
 ## Channel-only runtime controls
 
 Desktop observer controls identify a channel, not a thread session. The harness

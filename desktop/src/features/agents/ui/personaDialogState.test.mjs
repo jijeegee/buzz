@@ -67,6 +67,7 @@ test("createPersonaDialogState returns a fresh empty draft", () => {
     acpCommand: "buzz-acp",
     runtime: undefined,
     model: undefined,
+    behavior: { sessionPolicy: "thread" },
   });
   assert.notStrictEqual(first.initialValues, second.initialValues);
 });
