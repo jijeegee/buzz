@@ -37,6 +37,7 @@ Future<LoginGrant> runOidcLogin({
   required WebAuthLauncher launcher,
   String provider = 'google',
   String? deviceName,
+  String identityMode = 'token',
   Random? random,
 }) async {
   final pkce = PkcePair.generate(random);
@@ -47,6 +48,7 @@ Future<LoginGrant> runOidcLogin({
       codeChallenge: pkce.challenge,
       redirectUri: buzzMobileRedirectUri,
       deviceName: deviceName,
+      identityMode: identityMode,
     ),
     callbackUrlScheme: buzzMobileCallbackScheme,
   );

@@ -4,6 +4,29 @@ fn assert_key_eq(a: &Keys, b: &Keys) {
     assert_eq!(a.public_key().to_hex(), b.public_key().to_hex());
 }
 
+#[test]
+fn only_fresh_generation_marks_an_identity_as_replaceable_bootstrap() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = FakeIdentityStore::reachable_but_empty();
+    let resolved =
+        resolve_identity_with_store(&store, &dir.path().join("identity.key"), dir.path()).unwrap();
+    assert_eq!(
+        store.load("identity.bootstrap").unwrap().as_deref(),
+        Some(resolved.keys.public_key().to_hex().as_str())
+    );
+    let existing =
+        FakeIdentityStore::present_with(&resolved.keys.secret_key().to_bech32().unwrap());
+    let again =
+        resolve_identity_with_store(&existing, &dir.path().join("identity.key"), dir.path())
+            .unwrap();
+    assert_eq!(again.keys.public_key(), resolved.keys.public_key());
+    assert_eq!(
+        existing.load("identity.bootstrap").unwrap(),
+        None,
+        "unmarked existing keys are established and cannot be replaced by Google login"
+    );
+}
+
 /// `BUZZ_PRIVATE_KEY` is process-global; serialize the env-mutating tests
 /// so they don't race each other under the parallel test runner.
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

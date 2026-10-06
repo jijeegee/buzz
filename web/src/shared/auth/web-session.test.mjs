@@ -40,6 +40,22 @@ function harness(handler) {
 const loginResponse = () =>
   json(200, { principal_id: "ab", access: "bzs_1", expires_in: 3600 });
 
+test("custody sessions cannot become browser messaging identities", async () => {
+  const h = harness(() =>
+    json(200, {
+      identity_mode: "key_backup",
+      principal_id: "ab",
+      access: "bzs_1",
+      expires_in: 3600,
+    }),
+  );
+  await assert.rejects(
+    h.session.completeLogin("code", "verifier"),
+    /desktop or mobile/,
+  );
+  assert.notEqual(h.session.getSnapshot().status, "signed_in");
+});
+
 test("concurrent token requests share one cookie refresh", async () => {
   let release;
   const gate = new Promise((resolve) => {

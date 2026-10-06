@@ -14,6 +14,60 @@ import 'package:buzz/shared/push/push_subscription.dart';
 import '../community/community_storage_test.dart';
 
 void main() {
+  test(
+    'startup preserves Google-backed pubkey metadata when its local key is missing',
+    () async {
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final keys = nostr.Keys.generate();
+      final existing = Community.create(
+        name: 'Recover me',
+        relayUrl: 'https://relay.test',
+        pubkey: keys.public,
+        googleBackupAccountId: 'account',
+      );
+      await storage.save(existing);
+      await storage.saveActiveId(existing.id);
+      final container = ProviderContainer(
+        overrides: [communityStorageProvider.overrideWithValue(storage)],
+      );
+      addTearDown(container.dispose);
+      final auth = await container.read(authProvider.future);
+      expect(auth.status, AuthStatus.unauthenticated);
+      expect((await storage.loadAll()).single.pubkey, keys.public);
+      expect(await storage.loadActiveId(), existing.id);
+    },
+  );
+  test(
+    'token sign-in cannot replace a Google-backed signing identity',
+    () async {
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final keys = nostr.Keys.generate();
+      final existing = Community.create(
+        name: 'Original',
+        relayUrl: 'https://relay.test',
+        pubkey: keys.public,
+        nsec: keys.nsec,
+        googleBackupAccountId: 'account',
+      );
+      await storage.save(existing);
+      final container = ProviderContainer(
+        overrides: [communityStorageProvider.overrideWithValue(storage)],
+      );
+      addTearDown(container.dispose);
+      await container.read(authProvider.future);
+      await expectLater(
+        container
+            .read(authProvider.notifier)
+            .authenticateWithTokenSession(
+              relayUrl: existing.relayUrl,
+              principalId: 'unrelated-principal',
+            ),
+        throwsStateError,
+      );
+      expect((await storage.loadAll()).single.nsec, keys.nsec);
+      expect((await storage.loadAll()).single.tokenAuth, isFalse);
+    },
+  );
   test('waits for transition teardown before replacing credentials', () async {
     final storage = CommunityStorage(secure: FakeSecureStorage());
     final active = Community.create(

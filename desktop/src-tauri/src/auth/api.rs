@@ -63,6 +63,10 @@ impl std::fmt::Display for ApiError {
 pub(crate) struct LoginTokens {
     pub principal_id: String,
     #[serde(default)]
+    pub identity_mode: Option<String>,
+    #[serde(default)]
+    pub signing_pubkey: Option<String>,
+    #[serde(default)]
     pub device_id: Option<String>,
     pub access: SecretField,
     pub refresh: SecretField,
@@ -94,6 +98,10 @@ pub(crate) struct DeviceInfo {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct MeInfo {
     pub principal_id: String,
+    #[serde(default)]
+    pub identity_mode: Option<String>,
+    #[serde(default)]
+    pub signing_pubkey: Option<String>,
     #[serde(default)]
     pub device_id: Option<String>,
 }
@@ -153,7 +161,7 @@ async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, Api
     }
 }
 
-async fn send_json<T: for<'de> Deserialize<'de>>(
+pub(super) async fn send_json<T: for<'de> Deserialize<'de>>(
     request: reqwest::RequestBuilder,
 ) -> Result<T, ApiError> {
     send(request)
@@ -176,18 +184,36 @@ fn bearer(access: &str) -> String {
 pub(crate) async fn fetch_token_auth_support(
     client: &reqwest::Client,
     origin: &str,
-) -> Result<Option<Vec<String>>, ApiError> {
+) -> Result<(Option<Vec<String>>, bool), ApiError> {
     let value: serde_json::Value = send_json(
         client
             .get(format!("{origin}/"))
             .header("Accept", "application/nostr+json"),
     )
     .await?;
-    Ok(parse_token_auth_descriptor(&value))
+    let backup = value
+        .get("buzz_key_backup")
+        .and_then(|v| v.get("version"))
+        .and_then(serde_json::Value::as_u64)
+        == Some(1);
+    Ok((parse_token_auth_descriptor(&value), backup))
 }
 
 /// Parse the NIP-11 descriptor. Pure, for tests.
 pub(crate) fn parse_token_auth_descriptor(nip11: &serde_json::Value) -> Option<Vec<String>> {
+    if let Some(providers) = nip11
+        .get("buzz_key_backup")
+        .filter(|value| value.get("version").and_then(serde_json::Value::as_u64) == Some(1))
+        .and_then(|value| value.get("providers"))
+        .and_then(serde_json::Value::as_array)
+    {
+        return Some(
+            providers
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect(),
+        );
+    }
     let descriptor = nip11.get("buzz_token_auth")?;
     if descriptor
         .get("bearer")

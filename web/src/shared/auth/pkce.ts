@@ -111,6 +111,8 @@ export async function beginLogin(options: {
     state: pending.state,
     code_challenge: await pkceChallenge(pending.verifier),
     client: "web",
+    // This browser supports legacy token login, never custodial key export.
+    identity_mode: "token",
     redirect_uri: `${redirectOrigin}/auth/cb`,
     device_name: options.deviceName ?? "Web browser",
   });

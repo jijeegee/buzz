@@ -22,6 +22,7 @@ pub async fn submit_signed_event_at_with_keys(
     if event.pubkey != keys.signer_pubkey() {
         return Err("signed event does not match the publishing identity".to_string());
     }
+    crate::auth::key_recovery::mark_identity_used(state, event.pubkey, event.kind)?;
     crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/events", api_base_url.trim_end_matches('/'));
     let body_bytes = event.as_json().into_bytes();

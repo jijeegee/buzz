@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/auth.dart';
+import '../../shared/auth/google_key_backup.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
@@ -17,7 +18,10 @@ import 'community_recovery_actions.dart';
 /// [lockedOrigin] (an existing token community whose session ended) the page
 /// goes straight to the sign-in button.
 class TokenSignInPage extends HookConsumerWidget {
-  const TokenSignInPage({super.key, this.lockedOrigin});
+  const TokenSignInPage({super.key, this.lockedOrigin, this.backupOrigin});
+
+  /// Link/recover a signed identity from Settings, separate from token mode.
+  final String? backupOrigin;
 
   /// Canonical origin of an existing token community to sign back in to.
   final String? lockedOrigin;
@@ -25,7 +29,10 @@ class TokenSignInPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final urlController = useTextEditingController();
-    final origin = useState<String?>(lockedOrigin);
+    final origin = useState<String?>(lockedOrigin ?? backupOrigin);
+    final keyBackup = useState(backupOrigin != null);
+    final dualMode = useState(false);
+    final fixedOrigin = lockedOrigin != null || backupOrigin != null;
     final checking = useState(false);
     final completing = useState(false);
     final message = useState<String?>(null);
@@ -34,7 +41,11 @@ class TokenSignInPage extends HookConsumerWidget {
 
     final session = origin.value == null
         ? null
-        : ref.watch(tokenSessionProvider(origin.value!));
+        : ref.watch(
+            keyBackup.value
+                ? keyBackupSessionProvider(origin.value!)
+                : tokenSessionProvider(origin.value!),
+          );
 
     Future<void> checkRelay() async {
       final generation = ++checkGeneration.value;
@@ -69,7 +80,38 @@ class TokenSignInPage extends HookConsumerWidget {
       } else if (!descriptor.supportsGoogle) {
         message.value = 'This relay has no Google sign-in configured.';
       } else {
+        keyBackup.value = descriptor.keyBackup;
+        dualMode.value =
+            descriptor.keyBackup && descriptor.existingTokenAccounts;
         origin.value = candidate;
+      }
+    }
+
+    Future<void> selectExistingTokenAccount() async {
+      final sessionOrigin = origin.value;
+      if (sessionOrigin == null) return;
+      checking.value = true;
+      message.value = null;
+      try {
+        final communities = await ref.read(communityStorageProvider).loadAll();
+        if (!context.mounted) return;
+        if (communities.any(
+          (community) =>
+              !community.tokenAuth &&
+              normalizeRelayOrigin(community.relayUrl) == sessionOrigin,
+        )) {
+          message.value =
+              'This device has a signing identity on this relay. '
+              'An existing token account cannot replace it. Use Google key recovery.';
+          return;
+        }
+        keyBackup.value = false;
+      } catch (_) {
+        if (context.mounted) {
+          message.value = 'Could not check the saved identity. Try again.';
+        }
+      } finally {
+        if (context.mounted) checking.value = false;
       }
     }
 
@@ -80,16 +122,28 @@ class TokenSignInPage extends HookConsumerWidget {
       if (lockedOrigin != null) return;
       completing.value = true;
       try {
-        await ref
-            .read(authProvider.notifier)
-            .authenticateWithTokenSession(
-              relayUrl: sessionOrigin,
-              principalId: principal,
-            );
+        if (keyBackup.value) {
+          final community = await ref
+              .read(googleKeyBackupServiceProvider(sessionOrigin))
+              .resolve();
+          if (!context.mounted) return;
+          await ref
+              .read(authProvider.notifier)
+              .authenticateWithCommunity(community);
+        } else {
+          await ref
+              .read(authProvider.notifier)
+              .authenticateWithTokenSession(
+                relayUrl: sessionOrigin,
+                principalId: principal,
+              );
+        }
       } catch (error) {
         if (context.mounted) {
           completing.value = false;
-          message.value = 'Could not save this community: $error';
+          message.value = error is KeyBackupException
+              ? error.message
+              : 'Could not save this community. Your existing identity is unchanged.';
         }
         return;
       }
@@ -103,10 +157,25 @@ class TokenSignInPage extends HookConsumerWidget {
       final sessionOrigin = origin.value;
       if (sessionOrigin == null) return;
       message.value = null;
-      final controller = ref
-          .read(tokenSessionProvider(sessionOrigin).notifier)
-          .controller;
-      final signedIn = await controller.signIn();
+      if (keyBackup.value) {
+        try {
+          await ref
+              .read(googleKeyBackupServiceProvider(sessionOrigin))
+              .checkLocalCompatibility();
+          if (!context.mounted) return;
+        } on KeyBackupException catch (error) {
+          if (context.mounted) message.value = error.message;
+          return;
+        }
+      }
+      final controller = ref.read(
+        keyBackup.value
+            ? keyBackupSessionControllerProvider(sessionOrigin)
+            : tokenSessionControllerProvider(sessionOrigin),
+      );
+      final signedIn = await controller.signIn(
+        identityMode: keyBackup.value ? 'key_backup' : 'token',
+      );
       final principal = controller.state.principalId;
       if (!signedIn || principal == null || !context.mounted) return;
       await enterCommunity(sessionOrigin, principal);
@@ -120,7 +189,9 @@ class TokenSignInPage extends HookConsumerWidget {
         status == TokenSessionStatus.signingIn;
     final errorText = message.value ?? session?.errorMessage;
     final restoredPrincipal =
-        lockedOrigin == null && status == TokenSessionStatus.signedIn
+        !keyBackup.value &&
+            lockedOrigin == null &&
+            status == TokenSessionStatus.signedIn
         ? session?.principalId
         : null;
 
@@ -134,13 +205,30 @@ class TokenSignInPage extends HookConsumerWidget {
           children: [
             const SizedBox(height: Grid.lg),
             Text(
-              lockedOrigin == null ? 'Sign in to a relay' : 'Signed out',
+              keyBackup.value
+                  ? 'Google key recovery'
+                  : dualMode.value
+                  ? 'Existing account sign-in'
+                  : lockedOrigin == null
+                  ? 'Sign in to a relay'
+                  : 'Signed out',
               style: context.textTheme.headlineSmall,
             ),
             const SizedBox(height: Grid.xxs),
             Text(
-              lockedOrigin == null
-                  ? 'Relays with Buzz accounts let you sign in with Google.'
+              keyBackup.value
+                  ? 'Google restores your existing Buzz identity on another device. '
+                        'If this account has no backup, your current key is linked, '
+                        'or a new key is created on this device. The server encrypts '
+                        'the backup, but its operator or anyone controlling your '
+                        'Google account can recover your key. Signing out cannot '
+                        'revoke a copied key.'
+                  : lockedOrigin == null
+                  ? dualMode.value
+                        ? 'Return to an account created before key recovery was added. '
+                              'Its existing identity and history are kept. '
+                              'New accounts use Google key recovery.'
+                        : 'Relays with Buzz accounts let you sign in with Google.'
                   : 'Your session on $lockedOrigin ended. Sign in again '
                         'to continue.',
               style: context.textTheme.bodyMedium?.copyWith(
@@ -148,7 +236,7 @@ class TokenSignInPage extends HookConsumerWidget {
               ),
             ),
             const SizedBox(height: Grid.sm),
-            if (lockedOrigin == null) ...[
+            if (!fixedOrigin) ...[
               TextField(
                 key: const Key('token-sign-in-relay-url'),
                 controller: urlController,
@@ -161,6 +249,7 @@ class TokenSignInPage extends HookConsumerWidget {
                   checkGeneration.value += 1;
                   checking.value = false;
                   origin.value = null;
+                  dualMode.value = false;
                 },
                 onSubmitted: (_) => unawaited(checkRelay()),
                 decoration: const InputDecoration(
@@ -191,6 +280,25 @@ class TokenSignInPage extends HookConsumerWidget {
                 key: const Key('token-sign-in-google'),
                 onPressed: busy ? null : () => unawaited(signIn()),
                 child: const Text('Sign in with Google'),
+              ),
+            if (dualMode.value && origin.value != null && !fixedOrigin)
+              TextButton(
+                key: const Key('token-sign-in-existing-account'),
+                onPressed: busy
+                    ? null
+                    : () {
+                        if (keyBackup.value) {
+                          unawaited(selectExistingTokenAccount());
+                        } else {
+                          message.value = null;
+                          keyBackup.value = true;
+                        }
+                      },
+                child: Text(
+                  keyBackup.value
+                      ? 'Use an existing token account'
+                      : 'Use Google key recovery',
+                ),
               ),
             if (busy) ...[
               const SizedBox(height: Grid.sm),

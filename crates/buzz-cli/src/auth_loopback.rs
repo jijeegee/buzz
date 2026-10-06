@@ -89,6 +89,9 @@ impl std::fmt::Display for LoopbackError {
         match self {
             Self::Timeout => f.write_str("sign-in timed out"),
             Self::StateMismatch => f.write_str("sign-in response did not match this request"),
+            Self::Denied(reason) if reason == "unsupported_client" || reason == "account_mode_conflict" => {
+                f.write_str("Google key signup/recovery requires Buzz desktop or mobile; existing token accounts and Nostr keys are not merged")
+            }
             Self::Denied(reason) => write!(f, "sign-in was refused ({reason})"),
             Self::Malformed => f.write_str("sign-in response was malformed"),
             Self::Io(error) => write!(f, "sign-in listener failed: {error}"),

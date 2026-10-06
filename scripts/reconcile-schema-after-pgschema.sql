@@ -249,6 +249,19 @@ END $$;
 -- pgschema reconciles DDL but does not apply seed DML or table storage
 -- parameters from schema/schema.sql. Restore those parts of the desired-state
 -- contract explicitly and fail the bootstrap if the live catalog disagrees.
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('account_key_backups', 'deployment-global immutable Google account to Nostr key backup binding')
+ON CONFLICT (table_name) DO NOTHING;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM _operator_global_tables WHERE table_name = 'account_key_backups'
+    ) THEN
+        RAISE EXCEPTION 'account_key_backups must be registered as deployment-global';
+    END IF;
+END $$;
+
 ALTER TABLE replica_heartbeat SET (vacuum_truncate = false);
 
 INSERT INTO replica_heartbeat (id) VALUES (1)

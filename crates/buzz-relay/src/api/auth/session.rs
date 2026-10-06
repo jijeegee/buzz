@@ -16,8 +16,9 @@ use uuid::Uuid;
 
 use super::oidc::{issue_session_tokens, refresh_cookie};
 use super::{
-    auth_error, authenticate, authenticate_user, bad_request, internal, json_object, not_found,
-    optional_string, rate_limit, unavailable, validate_avatar_url, validate_display_name,
+    auth_error, authenticate_session, authenticate_user, authenticate_user_session, bad_request,
+    internal, json_object, not_found, optional_string, rate_limit, unavailable,
+    validate_avatar_url, validate_display_name,
 };
 use crate::identity::{kv, publish_revocations};
 use crate::state::AppState;
@@ -219,7 +220,7 @@ fn clear_cookie() -> [(header::HeaderName, String); 1] {
 
 /// `POST /auth/logout` — revoke this device, its sessions and hosted bots.
 pub(super) async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let binding = match authenticate_user(&state, &headers).await {
+    let binding = match authenticate_user_session(&state, &headers).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -246,7 +247,7 @@ pub(super) async fn list_devices(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    let binding = match authenticate_user(&state, &headers).await {
+    let binding = match authenticate_user_session(&state, &headers).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -276,7 +277,7 @@ pub(super) async fn revoke_device(
     Path(device_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Response {
-    let binding = match authenticate_user(&state, &headers).await {
+    let binding = match authenticate_user_session(&state, &headers).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -300,7 +301,7 @@ pub(super) async fn revoke_others(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    let binding = match authenticate_user(&state, &headers).await {
+    let binding = match authenticate_user_session(&state, &headers).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -323,7 +324,7 @@ pub(super) async fn revoke_others(
 
 /// `GET /auth/me` — any access token.
 pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let binding = match authenticate(&state, &headers).await {
+    let binding = match authenticate_session(&state, &headers).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -331,6 +332,18 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         Ok(Some(principal)) => principal,
         Ok(None) => return not_found("principal not found"),
         Err(error) => return internal("get_principal", &error),
+    };
+    let key_mode = match state.db.account_key_mode(&binding.principal).await {
+        Ok(mode) => mode,
+        Err(_) => return unavailable(),
+    };
+    let signing_pubkey = if key_mode {
+        match state.db.get_key_backup(&binding.principal).await {
+            Ok(backup) => backup.map(|backup| hex::encode(backup.pubkey)),
+            Err(_) => return unavailable(),
+        }
+    } else {
+        None
     };
     let bot = match binding.bot_id {
         Some(bot_id) => match state.db.get_bot(&bot_id).await {
@@ -345,6 +358,8 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
     };
     axum::Json(json!({
         "principal_id": principal.id.to_hex(),
+        "identity_mode": if key_mode { "key_backup" } else { "token" },
+        "signing_pubkey": signing_pubkey,
         "kind": principal.kind.as_str(),
         "display_name": principal.display_name,
         "avatar_url": principal.avatar_url,

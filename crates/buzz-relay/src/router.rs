@@ -130,6 +130,9 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/operator/",
     // Admin SPA backend — operator-credential gated; subtree
     "/api/admin/",
+    // OIDC/account sessions authorize custodial backup before the client has
+    // restored its signing key. Each handler authenticates its own session.
+    "/auth/",
     // NIP-FI admin disconnect — authenticated by its own command JWT
     // (`nip-fi-command+jwt` in the same header), which the assertion verifier
     // would reject.  No trailing slash, so the matcher exempts the exact path
@@ -291,12 +294,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let admin_router = admin_enabled
         .then(|| Router::new().nest("/api/admin/v1", api::admin::router(state.clone())));
 
-    // Centralized-identity `/auth/*` surface: mounted only with
-    // AUTH_TOKEN_ENABLED=true, so with the flag off `/auth/*` is unrouted and
-    // answers exactly like any unknown path (the existing 403 fallback).
+    // Account sessions support token accounts or optional Nostr key custody.
+    // Neither capability changes the existing signed-message routes.
     let auth_router = state
         .identity
-        .enabled()
+        .sessions_enabled()
         .then(|| api::auth::router(state.clone()));
 
     let api_router = Router::new()
@@ -466,6 +468,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .layer(middleware::from_fn(track_metrics))
         .layer(http_trace_layer())
         .layer(build_cors_layer(&state.config.cors_origins))
+        .layer(middleware::from_fn(api::auth::no_store))
 }
 
 fn http_trace_layer() -> TraceLayer<HttpMakeClassifier, fn(&Request<Body>) -> tracing::Span> {

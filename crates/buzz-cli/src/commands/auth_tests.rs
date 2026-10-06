@@ -1007,6 +1007,37 @@ fn start_url_encodes_every_parameter() {
     assert_eq!(q["redirect_uri"], "http://127.0.0.1:5000/cb");
     assert_eq!(q["device_name"], "my host & co");
     assert_eq!(q["client"], "cli");
+    assert_eq!(q.get("identity_mode").map(String::as_str), Some("token"));
+}
+
+#[tokio::test]
+async fn custody_session_is_not_adopted_as_cli_messaging_identity() {
+    let relay = FakeRelay::default();
+    relay.route(
+        "POST /auth/oidc/complete",
+        200,
+        &serde_json::json!({
+            "identity_mode":"key_backup", "principal_id":principal_hex(),
+            "access":"bzs_account", "refresh":"bzr_account", "expires_in":3600,
+        })
+        .to_string(),
+    );
+    let relay_url = serve(relay).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = test_store(&dir);
+    let browser = fake_browser(Arc::new(Mutex::new(None)), None);
+    let error = login(
+        &relay_url,
+        &store,
+        "google",
+        "CLI",
+        &browser,
+        Duration::from_secs(10),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("desktop or mobile"));
+    assert!(!store.path().exists());
 }
 
 #[test]

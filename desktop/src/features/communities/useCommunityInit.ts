@@ -410,7 +410,11 @@ export function useCommunityInit(
           // still retrying completes, or another path signs in), every
           // identity-scoped store must restart under it, as sign-in does.
           const appliedPrincipal =
-            tokenAuth.state === "active" ? tokenAuth.principal : null;
+            tokenAuth.keyBackup || tokenAuth.keyBackupSupported
+              ? identityPubkey
+              : tokenAuth.state === "active"
+                ? tokenAuth.principal
+                : null;
           void onTokenAuthChanged(() => {
             if (cancelled) return;
             void getTokenAuthStatus()

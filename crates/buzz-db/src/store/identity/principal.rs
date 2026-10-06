@@ -144,12 +144,43 @@ pub(super) async fn login_identity(
     display_name: &str,
     avatar_url: Option<&str>,
 ) -> Result<LoginPrincipal> {
+    login_identity_mode(
+        pool,
+        provider,
+        subject,
+        email,
+        display_name,
+        avatar_url,
+        IdentityLoginMode::Token,
+    )
+    .await
+}
+
+pub(super) enum IdentityLoginMode {
+    Token,
+    ExistingToken,
+    KeyBackup,
+}
+
+pub(super) async fn login_identity_mode(
+    pool: &PgPool,
+    provider: &str,
+    subject: &str,
+    email: Option<&str>,
+    display_name: &str,
+    avatar_url: Option<&str>,
+    requested_mode: IdentityLoginMode,
+) -> Result<LoginPrincipal> {
+    let mode = match requested_mode {
+        IdentityLoginMode::Token | IdentityLoginMode::ExistingToken => "token",
+        IdentityLoginMode::KeyBackup => "key_backup",
+    };
     // Two attempts: a concurrent first login for the same subject makes our
     // identity insert a no-op; the retry then finds the winner's principal.
     for _ in 0..2 {
         let mut tx = begin(pool).await?;
         let existing = sqlx::query(
-            "SELECT i.principal_id, p.disabled_at, p.purge_after FROM identities i \
+            "SELECT i.principal_id, p.disabled_at, p.purge_after, p.identity_mode FROM identities i \
              JOIN principals p ON p.id = i.principal_id \
              WHERE i.provider = $1 AND i.subject = $2 FOR UPDATE OF i, p",
         )
@@ -159,6 +190,10 @@ pub(super) async fn login_identity(
         .await?;
 
         if let Some(row) = existing {
+            let existing_mode: String = row.try_get("identity_mode")?;
+            if existing_mode != mode {
+                return Err(DbError::AccessDenied("account_mode_conflict".into()));
+            }
             let id: Vec<u8> = row.try_get("principal_id")?;
             let disabled_at: Option<DateTime<Utc>> = row.try_get("disabled_at")?;
             let purge_after: Option<DateTime<Utc>> = row.try_get("purge_after")?;
@@ -190,13 +225,17 @@ pub(super) async fn login_identity(
             });
         }
 
+        if matches!(requested_mode, IdentityLoginMode::ExistingToken) {
+            return Err(DbError::AccessDenied("unsupported_client".into()));
+        }
         let principal = PrincipalId::generate();
         sqlx::query(
-            "INSERT INTO principals (id, kind, display_name, avatar_url) VALUES ($1, 'user', $2, $3)",
+            "INSERT INTO principals (id, kind, display_name, avatar_url, identity_mode) VALUES ($1, 'user', $2, $3, $4)",
         )
         .bind(principal.as_bytes().as_slice())
         .bind(display_name)
         .bind(avatar_url)
+        .bind(mode)
         .execute(&mut *tx)
         .await?;
         let inserted: Option<Vec<u8>> = sqlx::query_scalar(

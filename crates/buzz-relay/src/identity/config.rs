@@ -1,6 +1,8 @@
-//! Configuration for centralized-identity token auth (`AUTH_TOKEN_ENABLED`).
+//! Configuration for optional token messaging and Google custodial sessions.
 
 use std::time::Duration;
+
+use buzz_auth::key_backup::BackupMasterKey;
 
 use crate::config::ConfigError;
 
@@ -57,14 +59,16 @@ impl std::fmt::Debug for InviteSigningSecret {
     }
 }
 
-/// Token-auth configuration. Everything is inert while `enabled` is false.
+/// Account-session configuration. Token messaging and custodial backup are
+/// independently enabled; both are inert by default.
 #[derive(Debug, Clone)]
 pub struct AuthTokenConfig {
-    /// `AUTH_TOKEN_ENABLED` (default false). Gates `/auth/*` (unrouted when off:
-    /// it answers like any unknown path, a 403),
-    /// WS `["AUTH", {"token"}]`, the bridge `Bearer` branch and the operator
-    /// bootstrap.
+    /// `AUTH_TOKEN_ENABLED` (default false). Gates token messaging, token bots,
+    /// the bridge `Bearer` branch and the token-account operator bootstrap.
     pub enabled: bool,
+    /// Optional custodial encryption key. Enables account sessions/backup
+    /// independently of token messaging; never included in logs.
+    pub key_backup_master: Option<BackupMasterKey>,
     /// `AUTH_ACCESS_TTL_SECS`.
     pub access_ttl: Duration,
     /// `AUTH_REFRESH_TTL_SECS`.
@@ -99,6 +103,7 @@ impl AuthTokenConfig {
     pub fn disabled(relay_url: &str) -> Self {
         Self {
             enabled: false,
+            key_backup_master: None,
             access_ttl: Duration::from_secs(DEFAULT_ACCESS_TTL_SECS),
             refresh_ttl: Duration::from_secs(DEFAULT_REFRESH_TTL_SECS),
             bot_ttl: Duration::from_secs(DEFAULT_BOT_TTL_SECS),
@@ -125,6 +130,7 @@ impl AuthTokenConfig {
     ) -> Result<Self, ConfigError> {
         let mut config = Self::disabled(relay_url);
         config.enabled = parse_flag(&lookup, "AUTH_TOKEN_ENABLED")?;
+        let key_backup_enabled = parse_flag(&lookup, "AUTH_KEY_BACKUP_ENABLED")?;
         config.access_ttl = parse_secs(&lookup, "AUTH_ACCESS_TTL_SECS", config.access_ttl)?;
         config.refresh_ttl = parse_secs(&lookup, "AUTH_REFRESH_TTL_SECS", config.refresh_ttl)?;
         config.bot_ttl = parse_secs(&lookup, "AUTH_BOT_TTL_SECS", config.bot_ttl)?;
@@ -158,6 +164,32 @@ impl AuthTokenConfig {
                 ));
             }
             config.public_url = url.trim_end_matches('/').to_owned();
+        }
+        if key_backup_enabled {
+            if config.fake_oidc && !cfg!(test) {
+                return Err(ConfigError::InvalidValue(
+                    "AUTH_OIDC_FAKE cannot be used with custodial key backup".into(),
+                ));
+            }
+            let raw = lookup("AUTH_KEY_BACKUP_MASTER_KEY").ok_or_else(|| {
+                ConfigError::InvalidValue(
+                    "AUTH_KEY_BACKUP_ENABLED requires AUTH_KEY_BACKUP_MASTER_KEY".into(),
+                )
+            })?;
+            let raw = zeroize::Zeroizing::new(raw);
+            let key_id = non_empty(&lookup, "AUTH_KEY_BACKUP_KEY_ID").ok_or_else(|| {
+                ConfigError::InvalidValue(
+                    "AUTH_KEY_BACKUP_ENABLED requires AUTH_KEY_BACKUP_KEY_ID".into(),
+                )
+            })?;
+            config.key_backup_master =
+                Some(BackupMasterKey::from_hex(&key_id, &raw).map_err(|_| {
+                    ConfigError::InvalidValue("invalid key backup master key or key id".into())
+                })?);
+            let local_http = parse_flag(&lookup, "AUTH_KEY_BACKUP_ALLOW_INSECURE_LOCAL")?;
+            if !backup_origin_allowed(&config.public_url, local_http) {
+                return Err(ConfigError::InvalidValue("key backup requires an HTTPS AUTH_PUBLIC_URL; explicit insecure-local mode is restricted to loopback".into()));
+            }
         }
         if let Some(schemes) = non_empty(&lookup, "AUTH_MOBILE_REDIRECT_SCHEMES") {
             config.mobile_redirect_schemes = schemes
@@ -197,6 +229,30 @@ impl AuthTokenConfig {
     pub fn callback_url(&self, provider: &str) -> String {
         format!("{}/auth/oidc/{provider}/callback", self.public_url)
     }
+
+    /// Account-session routes are also needed by key backup without enabling
+    /// token messaging, token bot adoption or token profiles.
+    pub fn sessions_enabled(&self) -> bool {
+        self.enabled || self.key_backup_master.is_some()
+    }
+}
+
+fn backup_origin_allowed(origin: &str, allow_local_http: bool) -> bool {
+    url::Url::parse(origin).is_ok_and(|url| {
+        let loopback = match url.host() {
+            Some(url::Host::Domain("localhost")) => true,
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            _ => false,
+        };
+        url.host().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.path() == "/"
+            && url.query().is_none()
+            && url.fragment().is_none()
+            && (url.scheme() == "https" || (allow_local_http && loopback && url.scheme() == "http"))
+    })
 }
 
 /// `ws://h` → `http://h`, `wss://h` → `https://h`; trailing slash dropped.
@@ -318,6 +374,88 @@ mod tests {
     }
 
     const SECRET_HEX: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn custody_requires_master_key_and_https() {
+        assert!(
+            AuthTokenConfig::from_lookup(
+                "wss://relay.example",
+                lookup(&[("AUTH_KEY_BACKUP_ENABLED", "true")]),
+            )
+            .is_err(),
+            "custody must never start without its master key"
+        );
+        assert!(
+            AuthTokenConfig::from_lookup(
+                "ws://relay.example",
+                lookup(&[
+                    ("AUTH_KEY_BACKUP_ENABLED", "true"),
+                    ("AUTH_KEY_BACKUP_MASTER_KEY", SECRET_HEX),
+                    ("AUTH_KEY_BACKUP_KEY_ID", "test-v1"),
+                ]),
+            )
+            .is_err(),
+            "custody must reject non-TLS public origins"
+        );
+    }
+
+    #[test]
+    fn custody_is_independent_of_token_messaging_and_secrets_are_redacted() {
+        let config = AuthTokenConfig::from_lookup(
+            "wss://relay.example",
+            lookup(&[
+                ("AUTH_KEY_BACKUP_ENABLED", "true"),
+                ("AUTH_KEY_BACKUP_MASTER_KEY", SECRET_HEX),
+                ("AUTH_KEY_BACKUP_KEY_ID", "v1"),
+            ]),
+        )
+        .unwrap();
+        assert!(config.sessions_enabled());
+        assert!(config.key_backup_master.is_some());
+        assert!(!config.enabled);
+        assert!(config.invite_signing_secret.is_none());
+        assert!(!format!("{config:?}").contains(SECRET_HEX));
+        for bad in [
+            "",
+            "1234",
+            "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        ] {
+            assert!(
+                AuthTokenConfig::from_lookup("wss://relay.example", |name| match name {
+                    "AUTH_KEY_BACKUP_ENABLED" => Some("true".into()),
+                    "AUTH_KEY_BACKUP_MASTER_KEY" => Some(bad.into()),
+                    "AUTH_KEY_BACKUP_KEY_ID" => Some("v1".into()),
+                    _ => None,
+                })
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn custody_origin_is_exact_and_insecure_development_is_explicit() {
+        for (origin, local, accepted) in [
+            ("https://relay.example", false, true),
+            ("http://relay.example", true, false),
+            ("http://localhost:3000", false, false),
+            ("http://localhost:3000", true, true),
+            ("http://127.0.0.1:3000", true, true),
+            ("http://[::1]:3000", true, true),
+            ("https://user@relay.example", false, false),
+            ("https://relay.example/path", false, false),
+            ("https://relay.example?token=value", false, false),
+            ("https://relay.example#fragment", false, false),
+        ] {
+            let result = AuthTokenConfig::from_lookup(origin, |name| match name {
+                "AUTH_KEY_BACKUP_ENABLED" => Some("true".into()),
+                "AUTH_KEY_BACKUP_MASTER_KEY" => Some(SECRET_HEX.into()),
+                "AUTH_KEY_BACKUP_KEY_ID" => Some("v1".into()),
+                "AUTH_KEY_BACKUP_ALLOW_INSECURE_LOCAL" => Some(local.to_string()),
+                _ => None,
+            });
+            assert_eq!(result.is_ok(), accepted, "{origin} with local={local}");
+        }
+    }
 
     #[test]
     fn enabled_requires_a_valid_invite_signing_secret() {

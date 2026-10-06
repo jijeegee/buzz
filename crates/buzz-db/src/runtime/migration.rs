@@ -493,6 +493,7 @@ mod postgres_tests {
             "operator_listener_pubkeys",
             "operator_listener_outbox",
             "principals",
+            "account_key_backups",
             "identities",
             "devices",
             "sessions",
@@ -712,7 +713,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 58);
+        assert_eq!(migrations.len(), 59);
         assert_eq!(migrations[48].version, 49);
         assert_eq!(migrations[49].version, 50);
         assert_eq!(migrations[50].version, 51);
@@ -723,6 +724,11 @@ mod postgres_tests {
         assert_eq!(migrations[55].version, 56);
         assert_eq!(migrations[56].version, 57);
         assert_eq!(migrations[57].version, 58);
+        assert_eq!(migrations[58].version, 59);
+        assert!(migrations[58]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE account_key_backups"));
         assert!(migrations[55]
             .sql
             .as_str()
@@ -2523,15 +2529,16 @@ mod postgres_tests {
             .await
             .expect("connect migrated probe database");
         MIGRATOR
-            .run_to(58, &migrated)
+            .run_to(59, &migrated)
             .await
-            .expect("apply migrations 1-58");
+            .expect("apply migrations 1-59");
 
         for table in [
             "relay_admin_actions",
             "relay_admin_outbox",
             "relay_operator_audit",
             "principals",
+            "account_key_backups",
             "identities",
             "devices",
             "sessions",
@@ -2560,6 +2567,7 @@ mod postgres_tests {
         // pgschema bootstrap exactly as the migrations create them.
         for table in [
             "principals",
+            "account_key_backups",
             "identities",
             "devices",
             "sessions",

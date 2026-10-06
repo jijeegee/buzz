@@ -31,6 +31,7 @@ void main() {
         'state': 's' * 32,
         'code_challenge': 'c' * 43,
         'client': 'mobile',
+        'identity_mode': 'token',
         'redirect_uri': 'xyz.block.buzz://auth/cb',
         'device_name': 'Pixel 9',
       });

@@ -13,6 +13,7 @@ import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 import { BackupStep } from "./BackupStep";
 import { DefaultConfigStep } from "./DefaultConfigStep";
 import { DownloadKeyStep } from "./DownloadKeyStep";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 import {
   backupSessionToPasswordEntry,
   resetEncryptedBackupSession,
@@ -353,6 +354,11 @@ export function MachineOnboardingFlow({
                 <p className="mt-4 text-sm text-destructive">{error}</p>
               ) : null}
               <div className="mt-10 flex flex-col items-center gap-3">
+                <GoogleSignInButton
+                  allowRestore
+                  disabled={isPending}
+                  onComplete={loadRecoveredIdentity}
+                />
                 <Button
                   className={ONBOARDING_LANDING_CTA_CLASS}
                   disabled={isPending}
@@ -545,6 +551,11 @@ export function MachineOnboardingFlow({
                     showBack={false}
                     showPasswordStageBack={false}
                     variant="spotlight"
+                  />
+                  <GoogleSignInButton
+                    allowRestore
+                    disabled={isPending || isKeyImporting}
+                    onComplete={loadRecoveredIdentity}
                   />
                   {identityLost && keyImportStage === "key-entry" ? (
                     <Button

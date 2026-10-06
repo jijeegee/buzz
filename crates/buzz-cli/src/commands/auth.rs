@@ -512,6 +512,7 @@ pub fn start_url(
         .append_pair("state", state)
         .append_pair("code_challenge", challenge)
         .append_pair("client", "cli")
+        .append_pair("identity_mode", "token")
         .append_pair("redirect_uri", redirect_uri)
         .append_pair("device_name", device_name)
         .finish();
@@ -573,6 +574,15 @@ pub async fn login(
     }
     let parsed: Value = serde_json::from_str(&body)
         .map_err(|e| CliError::Other(format!("invalid login response: {e}")))?;
+    if parsed
+        .get("identity_mode")
+        .and_then(Value::as_str)
+        .is_some_and(|mode| mode != "token")
+    {
+        return Err(CliError::Auth(
+            "Google key recovery requires Buzz desktop or mobile; the CLI signing identity was not changed".into(),
+        ));
+    }
     let field = |name: &str| parsed.get(name).and_then(|v| v.as_str()).map(str::to_owned);
     let (Some(principal_id), Some(access), Some(refresh)) =
         (field("principal_id"), field("access"), field("refresh"))

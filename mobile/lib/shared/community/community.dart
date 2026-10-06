@@ -44,6 +44,9 @@ class Community {
   /// `RefreshTokenStore`; [pubkey] holds the principal id and [nsec] is
   /// normally absent (a legacy key, if any, is kept untouched).
   final bool tokenAuth;
+
+  /// Google account authorizing custody only; messaging still uses [nsec].
+  final String? googleBackupAccountId;
   final DateTime addedAt;
 
   const Community({
@@ -58,6 +61,7 @@ class Community {
     this.pushLeaseInstallationId,
     this.starterSetupIncomplete = false,
     this.tokenAuth = false,
+    this.googleBackupAccountId,
     required this.addedAt,
   });
 
@@ -70,6 +74,7 @@ class Community {
         SensitiveActionPolicy.disabledByUser,
     bool starterSetupIncomplete = false,
     bool tokenAuth = false,
+    String? googleBackupAccountId,
   }) {
     return Community(
       id: _uuid.v4(),
@@ -81,6 +86,7 @@ class Community {
       pushLeaseInstallationId: _newPushLeaseInstallationId(),
       starterSetupIncomplete: starterSetupIncomplete,
       tokenAuth: tokenAuth,
+      googleBackupAccountId: googleBackupAccountId,
       addedAt: DateTime.now(),
     );
   }
@@ -96,6 +102,7 @@ class Community {
     Object? pushLeaseInstallationId = _sentinel,
     bool? starterSetupIncomplete,
     bool? tokenAuth,
+    String? googleBackupAccountId,
   }) {
     return Community(
       id: id,
@@ -115,6 +122,8 @@ class Community {
       starterSetupIncomplete:
           starterSetupIncomplete ?? this.starterSetupIncomplete,
       tokenAuth: tokenAuth ?? this.tokenAuth,
+      googleBackupAccountId:
+          googleBackupAccountId ?? this.googleBackupAccountId,
       addedAt: addedAt,
     );
   }
@@ -132,6 +141,8 @@ class Community {
       'pushLeaseInstallationId': pushLeaseInstallationId,
     'starterSetupIncomplete': starterSetupIncomplete,
     if (tokenAuth) 'authMode': 'token',
+    if (googleBackupAccountId != null)
+      'googleBackupAccountId': googleBackupAccountId,
     'addedAt': addedAt.toIso8601String(),
   };
 
@@ -170,6 +181,7 @@ class Community {
       pushLeaseInstallationId: pushLeaseInstallationId,
       starterSetupIncomplete: json['starterSetupIncomplete'] as bool? ?? false,
       tokenAuth: json['authMode'] == 'token',
+      googleBackupAccountId: json['googleBackupAccountId'] as String?,
       addedAt: DateTime.parse(json['addedAt'] as String),
     );
   }

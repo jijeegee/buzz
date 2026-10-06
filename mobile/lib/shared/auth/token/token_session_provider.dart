@@ -23,6 +23,12 @@ final refreshTokenStoreProvider = Provider<RefreshTokenStore>(
   (ref) => SecureRefreshTokenStore(),
 );
 
+/// Custody grants cannot overwrite a pre-existing token messaging session.
+final keyBackupRefreshTokenStoreProvider = Provider<RefreshTokenStore>(
+  (ref) =>
+      SecureRefreshTokenStore(keyPrefix: 'buzz.auth.key-backup.refresh.v1'),
+);
+
 /// System-browser launcher for OIDC. Override in tests.
 final webAuthLauncherProvider = Provider<WebAuthLauncher>(
   (ref) => const FlutterWebAuth2Launcher(),
@@ -64,16 +70,36 @@ final tokenSessionControllerProvider =
       return controller;
     });
 
+final keyBackupSessionControllerProvider =
+    Provider.family<TokenSessionController, String>((ref, origin) {
+      final controller = TokenSessionController(
+        origin: origin,
+        api: AuthApi(origin: origin, client: ref.watch(authHttpClientProvider)),
+        store: ref.watch(keyBackupRefreshTokenStoreProvider),
+        launcher: ref.watch(webAuthLauncherProvider),
+        clock: ref.watch(sessionClockProvider),
+        timerFactory: ref.watch(sessionTimerFactoryProvider),
+        deviceName: ref.watch(authDeviceNameProvider),
+      );
+      ref.onDispose(controller.dispose);
+      return controller;
+    });
+
 /// UI-facing state of one origin's token session. Building it starts the
 /// restore (stored refresh → rotation) automatically.
 class TokenSessionNotifier extends Notifier<TokenSessionState> {
-  TokenSessionNotifier(this.origin);
+  TokenSessionNotifier(this.origin, {this.keyBackup = false});
 
   final String origin;
+  final bool keyBackup;
 
   @override
   TokenSessionState build() {
-    final controller = ref.watch(tokenSessionControllerProvider(origin));
+    final controller = ref.watch(
+      keyBackup
+          ? keyBackupSessionControllerProvider(origin)
+          : tokenSessionControllerProvider(origin),
+    );
     final removeListener = controller.addListener((next) => state = next);
     ref.onDispose(removeListener);
     if (controller.state.status == TokenSessionStatus.restoring) {
@@ -82,13 +108,21 @@ class TokenSessionNotifier extends Notifier<TokenSessionState> {
     return controller.state;
   }
 
-  TokenSessionController get controller =>
-      ref.read(tokenSessionControllerProvider(origin));
+  TokenSessionController get controller => ref.read(
+    keyBackup
+        ? keyBackupSessionControllerProvider(origin)
+        : tokenSessionControllerProvider(origin),
+  );
 }
 
 final tokenSessionProvider =
     NotifierProvider.family<TokenSessionNotifier, TokenSessionState, String>(
       TokenSessionNotifier.new,
+    );
+
+final keyBackupSessionProvider =
+    NotifierProvider.family<TokenSessionNotifier, TokenSessionState, String>(
+      (origin) => TokenSessionNotifier(origin, keyBackup: true),
     );
 
 /// Canonical origin of the active community when it uses token auth,

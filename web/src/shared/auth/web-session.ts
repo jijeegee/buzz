@@ -167,6 +167,11 @@ export class WebSession {
         typeof json.error === "string" ? json.error : `HTTP ${response.status}`,
       );
     }
+    if (json.identity_mode && json.identity_mode !== "token") {
+      throw new Error(
+        "Google key recovery is supported in Buzz desktop or mobile. Your browser identity was not changed.",
+      );
+    }
     this.generation += 1;
     this.failures = 0;
     this.setAccess(json.access, json.expires_in);

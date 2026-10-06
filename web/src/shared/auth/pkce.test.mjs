@@ -38,6 +38,11 @@ test("beginLogin stores the verifier and builds the web start URL", async () => 
   );
   assert.equal(url.searchParams.get("client"), "web");
   assert.equal(
+    url.searchParams.get("identity_mode"),
+    "token",
+    "web explicitly requests its supported legacy mode",
+  );
+  assert.equal(
     url.searchParams.get("redirect_uri"),
     "https://relay.test/auth/cb",
   );

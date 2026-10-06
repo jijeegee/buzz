@@ -36,6 +36,14 @@ pub struct TokenAuthStatus {
     pub device_id: Option<String>,
     /// Why a session ended (`needs_login`).
     pub reason: Option<String>,
+    /// This relay supports custodial backup without token messaging.
+    pub key_backup_supported: bool,
+    /// The current account backs up a Nostr key, independently of sessions.
+    pub key_backup: bool,
+    /// Known pre-existing token account, including after local logout.
+    pub legacy_token_account: bool,
+    /// Messaging identity, never the backup authorization account id.
+    pub signing_pubkey: Option<String>,
 }
 
 fn status_of(
@@ -62,7 +70,37 @@ fn status_of(
         principal,
         device_id,
         reason,
+        key_backup_supported: false,
+        key_backup: false,
+        legacy_token_account: false,
+        signing_pubkey: None,
     }
+}
+
+fn current_status(
+    state: &AppState,
+    origin: &str,
+    providers: Option<Vec<String>>,
+) -> TokenAuthStatus {
+    let mut status = status_of(origin, providers, state.token_auth.get(origin).map(|e| e.1));
+    status.key_backup_supported = state.token_auth.supports_key_backup(origin);
+    status.key_backup = state.token_auth.signing_pubkey(origin).is_some();
+    status.legacy_token_account = !status.key_backup
+        && (!matches!(
+            state.token_auth.get(origin),
+            None | Some((_, OriginAuth::SignedOut))
+        ) || matches!(KeyringRefreshStore.legacy_token_account(origin), Ok(true)));
+    status.signing_pubkey = status
+        .key_backup
+        .then(|| {
+            state
+                .keys
+                .lock()
+                .ok()
+                .map(|keys| keys.public_key().to_hex())
+        })
+        .flatten();
+    status
 }
 
 use super::restore::{emit_changed, spawn_refresh_loop};
@@ -75,7 +113,8 @@ async fn support_for(state: &AppState, origin: &str) -> Option<Vec<String>> {
         return cached;
     }
     match api::fetch_token_auth_support(&state.http_client, origin).await {
-        Ok(support) => {
+        Ok((support, backup)) => {
+            state.token_auth.record_backup_support(origin, backup);
             state.token_auth.record_support(origin, support.clone());
             support
         }
@@ -106,18 +145,10 @@ pub async fn get_token_auth_status(app: AppHandle) -> Result<TokenAuthStatus, St
                 .token_auth
                 .replace_if(&origin, generation, OriginAuth::SignedOut);
         }
-        return Ok(status_of(
-            &origin,
-            None,
-            state.token_auth.get(&origin).map(|e| e.1),
-        ));
+        return Ok(current_status(&state, &origin, None));
     }
     super::restore::restore_if_stored(&app, &origin).await;
-    Ok(status_of(
-        &origin,
-        support,
-        state.token_auth.get(&origin).map(|e| e.1),
-    ))
+    Ok(current_status(&state, &origin, support))
 }
 
 fn device_name() -> String {
@@ -135,17 +166,30 @@ fn device_name() -> String {
 /// Sign in to the current community with Google: system browser + loopback
 /// redirect + PKCE (plan §3.2). Resolves once the session is active.
 #[tauri::command]
-pub async fn login_with_google(app: AppHandle) -> Result<TokenAuthStatus, String> {
+pub async fn login_with_google(
+    app: AppHandle,
+    allow_restore: Option<bool>,
+    existing_token_account: Option<bool>,
+) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
     if !state.token_auth.begin_login() {
         return Err("a Google sign-in is already in progress".into());
     }
-    let result = login_inner(&app).await;
+    let result = login_inner(
+        &app,
+        allow_restore == Some(true),
+        existing_token_account == Some(true),
+    )
+    .await;
     state.token_auth.end_login();
     result
 }
 
-async fn login_inner(app: &AppHandle) -> Result<TokenAuthStatus, String> {
+async fn login_inner(
+    app: &AppHandle,
+    allow_restore: bool,
+    existing_token_account: bool,
+) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let providers = support_for(&state, &origin)
@@ -157,7 +201,7 @@ async fn login_inner(app: &AppHandle) -> Result<TokenAuthStatus, String> {
     let pkce = super::pkce::pkce_pair()?;
     let oauth_state = super::pkce::new_state()?;
     let listener = LoopbackListener::bind().await.map_err(|e| e.to_string())?;
-    let url = api::start_url(
+    let mut url = api::start_url(
         &origin,
         "google",
         &oauth_state,
@@ -165,6 +209,24 @@ async fn login_inner(app: &AppHandle) -> Result<TokenAuthStatus, String> {
         &listener.redirect_uri(),
         &device_name(),
     );
+    let backup = requested_login_mode(
+        &state.token_auth,
+        &origin,
+        &KeyringRefreshStore,
+        existing_token_account,
+    )?;
+    if existing_token_account {
+        let _guard = state
+            .managed_agents_store_lock
+            .lock()
+            .map_err(|_| "agent storage is busy")?;
+        ensure_existing_token_agents(&origin, &crate::managed_agents::load_managed_agents(app)?)?;
+    }
+    if backup {
+        url.push_str("&identity_mode=key_backup");
+    } else {
+        url.push_str("&identity_mode=token");
+    }
     app.opener()
         .open_url(url.as_str(), None::<&str>)
         .map_err(|e| format!("could not open the browser: {e}"))?;
@@ -175,14 +237,43 @@ async fn login_inner(app: &AppHandle) -> Result<TokenAuthStatus, String> {
     let tokens = api::complete_login(&state.http_client, &origin, &code, &pkce.verifier)
         .await
         .map_err(|e| format!("sign-in could not be completed: {e}"))?;
+    verify_login_mode(backup, tokens.identity_mode.as_deref())?;
     let principal = PublicKey::from_hex(&tokens.principal_id)
         .map_err(|_| "the relay returned an invalid account id".to_string())?;
     // Under the refresh lock: an in-flight refresh of an older generation can
     // neither write its token over this one nor revive the old session.
     let _refresh_guard = state.token_auth.refresh_lock(&origin).lock_owned().await;
-    if let Err(error) = KeyringRefreshStore.store(&origin, &tokens.refresh) {
-        // The session still works for this run; the next launch asks again.
-        eprintln!("buzz-desktop: auth: could not store the session in the keyring: {error}");
+    if !backup
+        && requested_login_mode(
+            &state.token_auth,
+            &origin,
+            &KeyringRefreshStore,
+            existing_token_account,
+        )?
+    {
+        return Err("A key-backup binding appeared during sign-in. Your existing session was preserved; sign in again.".into());
+    }
+    if backup {
+        super::key_recovery::complete(app, &origin, &tokens, allow_restore).await?;
+    }
+    let agent_store_guard = if !backup && existing_token_account {
+        let guard = state
+            .managed_agents_store_lock
+            .lock()
+            .map_err(|_| "agent storage is busy")?;
+        ensure_existing_token_agents(&origin, &crate::managed_agents::load_managed_agents(app)?)?;
+        Some(guard)
+    } else {
+        None
+    };
+    if !backup {
+        // This non-secret account mode survives logout, so a later sign-in
+        // cannot silently select custody for a known legacy account.
+        KeyringRefreshStore.remember_legacy_token_account(&origin)?;
+        if let Err(error) = KeyringRefreshStore.store(&origin, &tokens.refresh) {
+            // The session still works for this run; the next launch asks again.
+            eprintln!("buzz-desktop: auth: could not store the session in the keyring: {error}");
+        }
     }
     state.token_auth.clear_pending_refresh(&origin);
     let now = chrono::Utc::now().timestamp();
@@ -195,14 +286,87 @@ async fn login_inner(app: &AppHandle) -> Result<TokenAuthStatus, String> {
         access_expires_at: now + tokens.expires_in.max(0),
     };
     let generation = state.token_auth.set(&origin, OriginAuth::Active(session));
+    drop(agent_store_guard);
     drop(_refresh_guard);
     spawn_refresh_loop(app, &origin, generation);
     emit_changed(app, &origin);
-    Ok(status_of(
-        &origin,
-        Some(providers),
-        state.token_auth.get(&origin).map(|e| e.1),
-    ))
+    Ok(current_status(&state, &origin, Some(providers)))
+}
+
+fn ensure_existing_token_agents(
+    origin: &str,
+    records: &[crate::managed_agents::ManagedAgentRecord],
+) -> Result<(), String> {
+    // Match runtime relay resolution: creation-era relay pins do not isolate
+    // key agents from the active community's token adoption path.
+    if records.iter().any(|record| {
+        !record.pubkey.is_empty()
+            && record.bot_origin.is_none()
+            && super::origin_for(&crate::relay::effective_agent_relay_url(
+                &record.relay_url,
+                origin,
+            )) == origin
+    }) {
+        return Err("This community has existing agents with signing keys. Opening a separate token account here could replace their identities, so sign-in was stopped. Your keys, agents, and account data were preserved. Keep using key authentication or link this identity with Google key backup.".into());
+    }
+    Ok(())
+}
+
+/// Choose the account mode used by the actual OIDC start and completion path.
+fn login_uses_key_backup(
+    auth: &super::TokenAuthState,
+    origin: &str,
+    store: &dyn RefreshStore,
+) -> Result<bool, String> {
+    // Durable/in-memory identity state outranks discovery. An outage or a
+    // changed descriptor must never downgrade a backup account to token mode.
+    if auth.signing_pubkey(origin).is_some() {
+        return Ok(true);
+    }
+    if let Some(pubkey) = store.signing_pubkey(origin)? {
+        auth.set_key_backup(origin, pubkey);
+        return Ok(true);
+    }
+    match auth.get(origin) {
+        Some((_, OriginAuth::NeedsLogin(reason))) if reason.starts_with("backup_") => {
+            Err("The stored key-backup binding is unavailable. Restore access to OS secure storage and retry; token login cannot replace it.".into())
+        }
+        Some((_, OriginAuth::Active(_) | OriginAuth::Restoring | OriginAuth::NeedsLogin(_))) => Ok(false),
+        _ if store.legacy_token_account(origin)? || store.load(origin)?.is_some() => Ok(false),
+        _ => Ok(auth.supports_key_backup(origin)),
+    }
+}
+
+fn requested_login_mode(
+    auth: &super::TokenAuthState,
+    origin: &str,
+    store: &dyn RefreshStore,
+    existing_token_account: bool,
+) -> Result<bool, String> {
+    let backup = login_uses_key_backup(auth, origin, store)?;
+    if existing_token_account {
+        if auth.signing_pubkey(origin).is_some() {
+            return Err("This device has a Google key-backup binding. An existing token account cannot replace it.".into());
+        }
+        // Explicit route for a pre-upgrade user who already signed out. The
+        // custody-enabled relay accepts only an existing token account here.
+        Ok(false)
+    } else {
+        Ok(backup)
+    }
+}
+
+fn verify_login_mode(backup: bool, returned_mode: Option<&str>) -> Result<(), String> {
+    let matches = if backup {
+        returned_mode == Some("key_backup")
+    } else {
+        // Older token-only relays predate the explicit mode field.
+        matches!(returned_mode, None | Some("token"))
+    };
+    if !matches {
+        return Err("The relay returned a different account mode. Your existing identity and session were preserved; accounts cannot be merged automatically.".into());
+    }
+    Ok(())
 }
 
 /// The current community's live session, refreshed first when it is about to
@@ -328,11 +492,7 @@ pub async fn logout(app: AppHandle) -> Result<TokenAuthStatus, String> {
     forget_session(&state.token_auth, &origin, &KeyringRefreshStore).await?;
     emit_changed(&app, &origin);
     let support = state.token_auth.cached_support(&origin).flatten();
-    Ok(status_of(
-        &origin,
-        support,
-        state.token_auth.get(&origin).map(|e| e.1),
-    ))
+    Ok(current_status(&state, &origin, support))
 }
 
 /// Forget `origin`'s session locally: keyring token and in-memory state.
@@ -347,6 +507,13 @@ pub(crate) async fn forget_session(
     store: &dyn RefreshStore,
 ) -> Result<(), String> {
     let _guard = auth.refresh_lock(origin).lock_owned().await;
+    if auth.signing_pubkey(origin).is_none()
+        && store.signing_pubkey(origin)?.is_none()
+        && (!matches!(auth.get(origin), None | Some((_, OriginAuth::SignedOut)))
+            || store.load(origin)?.is_some())
+    {
+        store.remember_legacy_token_account(origin)?;
+    }
     store.delete(origin)?;
     auth.clear_pending_refresh(origin);
     auth.set(origin, OriginAuth::SignedOut);
@@ -420,11 +587,7 @@ pub async fn delete_account(app: AppHandle) -> Result<TokenAuthStatus, String> {
     forget_session(&state.token_auth, &origin, &KeyringRefreshStore).await?;
     emit_changed(&app, &origin);
     let support = state.token_auth.cached_support(&origin).flatten();
-    Ok(status_of(
-        &origin,
-        support,
-        state.token_auth.get(&origin).map(|e| e.1),
-    ))
+    Ok(current_status(&state, &origin, support))
 }
 
 /// Edit the global profile (`PATCH /auth/profile`).
@@ -494,6 +657,193 @@ pub(crate) async fn logout_all_best_effort(state: &AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_token_login_preserves_existing_key_agents_and_allows_token_bots() {
+        let origin = "https://relay.test";
+        let mut record: crate::managed_agents::ManagedAgentRecord =
+            serde_json::from_value(serde_json::json!({
+                "pubkey": nostr::Keys::generate().public_key().to_hex(),
+                "name": "Scout", "relay_url": "wss://relay.test", "acp_command": "buzz-acp",
+                "agent_command": "goose", "agent_args": [], "mcp_command": "",
+                "turn_timeout_seconds": 320, "system_prompt": null,
+                "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+            }))
+            .unwrap();
+        let before = serde_json::to_value(&record).unwrap();
+        assert!(
+            ensure_existing_token_agents(origin, std::slice::from_ref(&record)).is_err(),
+            "the compatibility route must not expose key agents to token adoption"
+        );
+        assert_eq!(serde_json::to_value(&record).unwrap(), before);
+        record.relay_url = "wss://old-community.test".into();
+        assert!(
+            ensure_existing_token_agents(origin, std::slice::from_ref(&record)).is_err(),
+            "legacy relay pins are ignored by production agent fan-out"
+        );
+        record.bot_origin = Some(origin.into());
+        assert!(ensure_existing_token_agents(origin, std::slice::from_ref(&record)).is_ok());
+        assert!(ensure_existing_token_agents(origin, &[]).is_ok());
+        // A key record created while the browser was open must fail the same
+        // guard when the final store-locked login commit rechecks the records.
+        record.bot_origin = None;
+        assert!(ensure_existing_token_agents(origin, &[record]).is_err());
+    }
+
+    struct LoginStore {
+        binding: Option<PublicKey>,
+        refresh: Option<String>,
+    }
+
+    impl RefreshStore for LoginStore {
+        fn load(&self, _: &str) -> Result<Option<String>, String> {
+            Ok(self.refresh.clone())
+        }
+        fn store(&self, _: &str, _: &str) -> Result<(), String> {
+            panic!("selection must not change stored credentials")
+        }
+        fn delete(&self, _: &str) -> Result<(), String> {
+            panic!("selection must preserve stored credentials")
+        }
+        fn signing_pubkey(&self, _: &str) -> Result<Option<PublicKey>, String> {
+            Ok(self.binding)
+        }
+    }
+
+    #[test]
+    fn google_relogin_keeps_known_token_accounts_on_dual_mode_relays() {
+        let store = LoginStore {
+            binding: None,
+            refresh: None,
+        };
+        for state in [
+            OriginAuth::Restoring,
+            OriginAuth::NeedsLogin("token_expired".into()),
+            OriginAuth::Active(UserSession {
+                principal: nostr::Keys::generate().public_key(),
+                device_id: None,
+                access: Zeroizing::new("test-access".into()),
+                refresh: Zeroizing::new("test-refresh".into()),
+                access_issued_at: 0,
+                access_expires_at: i64::MAX,
+            }),
+        ] {
+            let auth = super::super::TokenAuthState::default();
+            auth.record_backup_support("https://relay.test", true);
+            auth.set("https://relay.test", state);
+            assert!(
+                !login_uses_key_backup(&auth, "https://relay.test", &store).unwrap(),
+                "known token re-login must not select a different account mode"
+            );
+        }
+    }
+
+    #[test]
+    fn google_relogin_backup_marker_wins_even_when_discovery_is_unavailable() {
+        let auth = super::super::TokenAuthState::default();
+        let pubkey = nostr::Keys::generate().public_key();
+        let store = LoginStore {
+            binding: Some(pubkey),
+            refresh: Some("test-refresh".into()),
+        };
+        assert!(
+            login_uses_key_backup(&auth, "https://relay.test", &store).unwrap(),
+            "discovery failure must not choose token login for a backed-up key"
+        );
+        assert_eq!(store.binding, Some(pubkey));
+        assert_eq!(store.refresh.as_deref(), Some("test-refresh"));
+    }
+
+    #[test]
+    fn google_relogin_fresh_accounts_prefer_backup_and_stored_token_accounts_keep_their_mode() {
+        let auth = super::super::TokenAuthState::default();
+        auth.record_backup_support("https://relay.test", true);
+        let fresh = LoginStore {
+            binding: None,
+            refresh: None,
+        };
+        assert!(login_uses_key_backup(&auth, "https://relay.test", &fresh).unwrap());
+        let legacy = LoginStore {
+            binding: None,
+            refresh: Some("test-refresh".into()),
+        };
+        assert!(!login_uses_key_backup(&auth, "https://relay.test", &legacy).unwrap());
+    }
+
+    #[test]
+    fn google_relogin_rejects_cross_mode_completion_before_session_storage() {
+        assert!(verify_login_mode(false, Some("key_backup")).is_err());
+        assert!(verify_login_mode(true, Some("token")).is_err());
+        assert!(verify_login_mode(true, None).is_err());
+        assert!(verify_login_mode(false, None).is_ok());
+        assert!(verify_login_mode(false, Some("token")).is_ok());
+        assert!(verify_login_mode(true, Some("key_backup")).is_ok());
+    }
+
+    #[test]
+    fn google_relogin_explicit_legacy_route_cannot_replace_a_backup_binding() {
+        let auth = super::super::TokenAuthState::default();
+        let origin = "https://relay.test";
+        auth.record_backup_support(origin, true);
+        let fresh = LoginStore {
+            binding: None,
+            refresh: None,
+        };
+        assert!(!requested_login_mode(&auth, origin, &fresh, true).unwrap());
+        assert!(requested_login_mode(&auth, origin, &fresh, false).unwrap());
+        let bound = LoginStore {
+            binding: Some(nostr::Keys::generate().public_key()),
+            refresh: None,
+        };
+        assert!(requested_login_mode(&auth, origin, &bound, true).is_err());
+        assert!(requested_login_mode(&auth, origin, &bound, false).unwrap());
+    }
+
+    #[tokio::test]
+    async fn google_relogin_after_logout_and_app_restart_keeps_legacy_mode() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Mutex,
+        };
+        struct LogoutStore {
+            refresh: Mutex<Option<String>>,
+            legacy: AtomicBool,
+        }
+        impl RefreshStore for LogoutStore {
+            fn load(&self, _: &str) -> Result<Option<String>, String> {
+                Ok(self.refresh.lock().unwrap().clone())
+            }
+            fn store(&self, _: &str, _: &str) -> Result<(), String> {
+                panic!("logout cannot create a credential")
+            }
+            fn delete(&self, _: &str) -> Result<(), String> {
+                self.refresh.lock().unwrap().take();
+                Ok(())
+            }
+            fn legacy_token_account(&self, _: &str) -> Result<bool, String> {
+                Ok(self.legacy.load(Ordering::SeqCst))
+            }
+            fn remember_legacy_token_account(&self, _: &str) -> Result<(), String> {
+                self.legacy.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        let origin = "https://relay.test";
+        let store = LogoutStore {
+            refresh: Mutex::new(Some("test-refresh".into())),
+            legacy: AtomicBool::new(false),
+        };
+        let auth = super::super::TokenAuthState::default();
+        auth.set(origin, OriginAuth::NeedsLogin("token_expired".into()));
+        forget_session(&auth, origin, &store).await.unwrap();
+        assert!(store.load(origin).unwrap().is_none());
+        let restarted = super::super::TokenAuthState::default();
+        restarted.record_backup_support(origin, true);
+        assert!(
+            !login_uses_key_backup(&restarted, origin, &store).unwrap(),
+            "logging out deletes credentials, not knowledge of the existing account mode"
+        );
+    }
 
     #[test]
     fn status_shape() {

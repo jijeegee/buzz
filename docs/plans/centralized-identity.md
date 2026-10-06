@@ -1,5 +1,12 @@
 # Centralized Identity — 설계 및 단계별 구현 계획
 
+> **Superseded 2026-10-05:** [Google key recovery](google-key-recovery.md) is the
+> current implementation contract. Google login now protects a custodial backup
+> of the client's original Nostr key. Conflicting principal replacement,
+> token-only messaging, agent recreation/history loss, signature removal and
+> Phase 3/4 deletion sections below are historical, not instructions to execute.
+> Existing token-mode data is preserved without automatic migration or merging.
+
 상태: v4 (2026-10-04, 리뷰어 READY). v1 리뷰(B1–B4) + 사용자 확정 사항 + v2 리뷰(B5–B8) + v3 선택 항목 반영.
 범위: Buzz 포크를 "중앙 서버 계정(Google 로그인) + 토큰 인증" 모델로 전환하는 설계와 구현 계획.
 원칙: 결정되지 않은 부분은 KakaoTalk/Telegram이 하는 방식을 따른다.

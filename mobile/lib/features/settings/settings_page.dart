@@ -31,6 +31,7 @@ import '../../shared/widgets/modal_presentation.dart';
 import 'account_page.dart';
 import 'devices_page.dart';
 import 'theme_picker_page.dart';
+import '../sign_in/token_sign_in_page.dart';
 
 part 'settings_page/account_section.dart';
 part 'settings_page/community_section.dart';

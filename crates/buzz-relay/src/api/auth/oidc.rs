@@ -43,6 +43,8 @@ const LOGIN_COMPLETE_GLOBAL: u64 = 300;
 /// Pending login stored between `start` and `callback`.
 #[derive(Serialize, Deserialize)]
 struct PendingLogin {
+    #[serde(default = "token_identity_mode")]
+    identity_mode: String,
     provider: String,
     code_challenge: String,
     client: String,
@@ -54,6 +56,8 @@ struct PendingLogin {
 /// One-time login code record stored between `callback` and `complete`.
 #[derive(Serialize, Deserialize)]
 struct LoginCodeRecord {
+    #[serde(default = "token_identity_mode")]
+    identity_mode: String,
     principal: String,
     code_challenge: String,
     client: String,
@@ -62,11 +66,16 @@ struct LoginCodeRecord {
 
 #[derive(Deserialize, Default)]
 struct StartQuery {
+    identity_mode: Option<String>,
     state: Option<String>,
     code_challenge: Option<String>,
     client: Option<String>,
     redirect_uri: Option<String>,
     device_name: Option<String>,
+}
+
+fn token_identity_mode() -> String {
+    "token".into()
 }
 
 #[derive(Deserialize, Default)]
@@ -161,6 +170,22 @@ pub(super) async fn start(
     else {
         return bad_request("client must be desktop, mobile, web or cli");
     };
+    let identity_mode = query.identity_mode.unwrap_or_else(|| {
+        if state.identity.enabled() {
+            "token".into()
+        } else {
+            "key_backup".into()
+        }
+    });
+    match identity_mode.as_str() {
+        "key_backup" if state.identity.config().key_backup_master.is_some() => {
+            if !matches!(client.as_str(), "desktop" | "mobile") {
+                return auth_error(StatusCode::BAD_REQUEST, "unsupported_client", "Google key backup signup and recovery require Buzz desktop or mobile; existing CLI key import remains supported");
+            }
+        }
+        "token" if state.identity.enabled() => {}
+        _ => return bad_request("requested identity_mode is not enabled"),
+    }
     let Some(redirect_uri) = query
         .redirect_uri
         .filter(|uri| redirect_allowed(&state, &client, uri))
@@ -183,6 +208,7 @@ pub(super) async fn start(
         hex::encode(bytes)
     };
     let pending = PendingLogin {
+        identity_mode,
         provider: provider_name.clone(),
         code_challenge,
         client,
@@ -273,18 +299,51 @@ pub(super) async fn callback(
         .clone()
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| "user".to_owned());
-    let login = match state
-        .db
-        .login_identity(
-            &provider_name,
-            &identity.subject,
-            identity.email.as_deref(),
-            display_name.chars().take(64).collect::<String>().as_str(),
-            identity.picture.as_deref(),
-        )
-        .await
-    {
+    let name = display_name.chars().take(64).collect::<String>();
+    let result = if pending.identity_mode == "key_backup" {
+        state
+            .db
+            .login_key_identity(
+                &provider_name,
+                &identity.subject,
+                identity.email.as_deref(),
+                &name,
+                identity.picture.as_deref(),
+            )
+            .await
+    } else if state.identity.config().key_backup_master.is_some() {
+        // On deployments offering custody, legacy clients can still sign into
+        // an existing token account, but cannot silently create a new identity.
+        state
+            .db
+            .login_existing_token_identity(
+                &provider_name,
+                &identity.subject,
+                identity.email.as_deref(),
+                &name,
+                identity.picture.as_deref(),
+            )
+            .await
+    } else {
+        state
+            .db
+            .login_identity(
+                &provider_name,
+                &identity.subject,
+                identity.email.as_deref(),
+                &name,
+                identity.picture.as_deref(),
+            )
+            .await
+    };
+    let login = match result {
         Ok(login) => login,
+        Err(buzz_db::DbError::AccessDenied(message)) if message == "account_mode_conflict" => {
+            return fail("account_mode_conflict");
+        }
+        Err(buzz_db::DbError::AccessDenied(message)) if message == "unsupported_client" => {
+            return fail("unsupported_client");
+        }
         Err(error) => {
             tracing::error!(%error, "identity login failed");
             return fail("server_error");
@@ -296,10 +355,13 @@ pub(super) async fn callback(
     if login.created {
         tracing::info!(principal = %login.principal, "auth.account_created");
     }
-    bootstrap_operator(&state, &login.principal, &identity).await;
+    if pending.identity_mode == "token" {
+        bootstrap_operator(&state, &login.principal, &identity).await;
+    }
 
     let (code_token, code_hash) = generate_token(TokenKind::LoginCode);
     let record = LoginCodeRecord {
+        identity_mode: pending.identity_mode,
         principal: login.principal.to_hex(),
         code_challenge: pending.code_challenge.clone(),
         client: pending.client.clone(),
@@ -448,6 +510,25 @@ pub(super) async fn complete(
     let Ok(principal) = PrincipalId::from_hex(&record.principal) else {
         return internal("login code principal", &"invalid principal id");
     };
+    let key_mode = match state.db.account_key_mode(&principal).await {
+        Ok(mode) => mode,
+        Err(_) => return unavailable(),
+    };
+    if key_mode != (record.identity_mode == "key_backup") {
+        return auth_error(
+            StatusCode::CONFLICT,
+            "account_mode_conflict",
+            "account identity mode changed",
+        );
+    }
+    let signing_pubkey = if key_mode {
+        match state.db.get_key_backup(&principal).await {
+            Ok(backup) => backup.map(|backup| hex::encode(backup.pubkey)),
+            Err(_) => return unavailable(),
+        }
+    } else {
+        None
+    };
     let (access, refresh, access_issued, refresh_issued) = issue_session_tokens(&state);
     let session = match state
         .db
@@ -478,6 +559,8 @@ pub(super) async fn complete(
             [(header::SET_COOKIE, cookie)],
             axum::Json(json!({
                 "principal_id": principal.to_hex(),
+                "identity_mode": record.identity_mode,
+                "signing_pubkey": signing_pubkey,
                 "device_id": session.device_id,
                 "access": access.expose(),
                 "expires_in": expires_in,
@@ -487,6 +570,8 @@ pub(super) async fn complete(
     }
     axum::Json(json!({
         "principal_id": principal.to_hex(),
+        "identity_mode": record.identity_mode,
+        "signing_pubkey": signing_pubkey,
         "device_id": session.device_id,
         "access": access.expose(),
         "refresh": refresh.expose(),

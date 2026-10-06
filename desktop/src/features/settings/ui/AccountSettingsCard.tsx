@@ -104,26 +104,38 @@ export function AccountSettingsCard() {
 
   if (!status?.supported) return null;
 
-  const signIn = () =>
+  const signIn = (existingTokenAccount = false) =>
     run("Sign in", async () => {
-      await loginWithGoogle();
-      reloadIntoNewIdentity();
+      const next = await loginWithGoogle(false, existingTokenAccount);
+      setStatus(next);
+      if (!next.keyBackup) reloadIntoNewIdentity();
     });
 
   const signOut = () =>
     run("Sign out", async () => {
-      await logoutTokenSession();
-      reloadIntoNewIdentity();
+      const next = await logoutTokenSession();
+      setStatus(next);
+      if (!next.keyBackup) reloadIntoNewIdentity();
     });
 
   return (
     <div className="mt-12" data-testid="settings-account">
       <SettingsOptionGroup
-        description="This community uses Google sign-in. Your account, devices and agents are managed by the community's server."
+        description={
+          (status.keyBackupSupported && !status.legacyTokenAccount) ||
+          status.keyBackup
+            ? "Google provides recovery for your existing Buzz signing key. The server operator or someone with access to your Google account can recover the key."
+            : "This community uses Google sign-in. Your account, devices and agents are managed by the community's server."
+        }
         title="Account"
       >
         {status.state === "active" ? (
-          <ActiveAccount busy={busy} run={run} status={status} />
+          <ActiveAccount
+            busy={busy}
+            onStatus={setStatus}
+            run={run}
+            status={status}
+          />
         ) : (
           <SettingsOptionRow>
             <div className="min-w-0" aria-live="polite">
@@ -136,8 +148,12 @@ export function AccountSettingsCard() {
               </p>
               <p className="text-sm text-muted-foreground/70">
                 {status.state === "needs_login"
-                  ? "Sign in with Google again to keep using this community and its agents."
-                  : "Sign in with Google to use your account on this community. Your browser opens to finish signing in."}
+                  ? status.keyBackup
+                    ? "Sign in again to manage recovery. Your signing key and agents keep working."
+                    : "Sign in with Google again to keep using this community and its agents."
+                  : status.keyBackupSupported && !status.legacyTokenAccount
+                    ? "Link this existing Buzz identity to Google and back it up. A different backed-up identity cannot overwrite this one."
+                    : "Sign in with Google to use your account on this community. Your browser opens to finish signing in."}
               </p>
             </div>
             <Button
@@ -153,8 +169,25 @@ export function AccountSettingsCard() {
                 ? "Waiting for browser…"
                 : status.state === "needs_login"
                   ? "Sign in again"
-                  : "Sign in with Google"}
+                  : status.keyBackupSupported && !status.legacyTokenAccount
+                    ? "Link key with Google"
+                    : "Sign in with Google"}
             </Button>
+            {status.keyBackupSupported &&
+            !status.keyBackup &&
+            !status.legacyTokenAccount &&
+            status.state === "signed_out" ? (
+              <Button
+                data-testid="existing-token-sign-in"
+                disabled={busy !== null}
+                onClick={() => void signIn(true)}
+                type="button"
+                variant="outline"
+                title="Return to an existing account created before Google key backup. This does not link or replace your Buzz signing key."
+              >
+                Use an existing token account
+              </Button>
+            ) : null}
             {status.state === "restoring" ? (
               // Rule 6: a restore that keeps failing must not strand the user;
               // signing out (forgetting the stored session) stays reachable.
@@ -179,10 +212,12 @@ function ActiveAccount({
   status,
   busy,
   run,
+  onStatus,
 }: {
   status: TokenAuthStatus;
   busy: string | null;
   run: (label: string, action: () => Promise<unknown>) => Promise<void>;
+  onStatus: (status: TokenAuthStatus) => void;
 }) {
   const [devices, setDevices] = React.useState<AuthDevice[] | null>(null);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
@@ -207,7 +242,12 @@ function ActiveAccount({
         <div className="min-w-0">
           <p className="font-medium">Signed in with Google</p>
           <p className="text-sm text-muted-foreground/70">
-            Account {shortId(status.principal)}
+            {status.keyBackup ? "Backed-up signing key" : "Account"}{" "}
+            {shortId(
+              status.keyBackup
+                ? (status.signingPubkey ?? null)
+                : status.principal,
+            )}
           </p>
         </div>
         <Button
@@ -215,8 +255,9 @@ function ActiveAccount({
           disabled={disabled}
           onClick={() =>
             void run("Sign out", async () => {
-              await logoutTokenSession();
-              window.location.reload();
+              const next = await logoutTokenSession();
+              onStatus(next);
+              if (!next.keyBackup) window.location.reload();
             })
           }
           type="button"
@@ -225,6 +266,30 @@ function ActiveAccount({
           Sign out
         </Button>
       </SettingsOptionRow>
+      {status.keyBackup ? (
+        <SettingsOptionRow>
+          <p className="min-w-0 text-sm text-muted-foreground/70">
+            Signing out only blocks future backup access. It cannot revoke a
+            copied signing key. Existing agents keep their keys and continue
+            running.
+          </p>
+          <Button
+            disabled={disabled}
+            onClick={() =>
+              void run("Verify backup", async () => {
+                onStatus(await loginWithGoogle(false));
+                toast.success(
+                  "Google backup verified. Your signing identity is unchanged.",
+                );
+              })
+            }
+            type="button"
+            variant="outline"
+          >
+            Verify Google backup
+          </Button>
+        </SettingsOptionRow>
+      ) : null}
       <SettingsOptionRow className="items-start">
         <div className="min-w-0 flex-1">
           <p className="font-medium" id="account-devices-heading">
@@ -292,66 +357,73 @@ function ActiveAccount({
           Sign out other devices
         </Button>
       </SettingsOptionRow>
-      <SettingsOptionRow>
-        <p className="min-w-0 text-sm text-muted-foreground/70">
-          Disconnect every agent right away. Agents on this computer get a new
-          token the next time they start.
-        </p>
-        <Button
-          disabled={disabled}
-          onClick={() =>
-            void run("Revoke agent tokens", async () => {
-              await revokeAllBotTokens();
-              toast.success("All agent tokens were revoked.");
-            })
-          }
-          type="button"
-          variant="outline"
-        >
-          Revoke agent tokens
-        </Button>
-      </SettingsOptionRow>
-      <SettingsOptionRow>
-        <p className="min-w-0 text-sm text-muted-foreground/70">
-          Delete your account on this community. Signing in again within 30 days
-          restores it.
-        </p>
-        <Button
-          disabled={disabled}
-          onClick={() => setConfirmDelete(true)}
-          type="button"
-          variant="destructive"
-        >
-          Delete account
-        </Button>
-      </SettingsOptionRow>
-      <AlertDialog onOpenChange={setConfirmDelete} open={confirmDelete}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete your account?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Every device and agent is signed out now. The account is removed
-              after 30 days unless you sign in with Google again before then.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disabled}>Cancel</AlertDialogCancel>
+      {!status.keyBackup ? (
+        <>
+          <SettingsOptionRow>
+            <p className="min-w-0 text-sm text-muted-foreground/70">
+              Disconnect every agent right away. Agents on this computer get a
+              new token the next time they start.
+            </p>
             <Button
               disabled={disabled}
               onClick={() =>
-                void run("Delete account", async () => {
-                  await deleteTokenAccount();
-                  window.location.reload();
+                void run("Revoke agent tokens", async () => {
+                  await revokeAllBotTokens();
+                  toast.success("All agent tokens were revoked.");
                 })
               }
+              type="button"
+              variant="outline"
+            >
+              Revoke agent tokens
+            </Button>
+          </SettingsOptionRow>
+          <SettingsOptionRow>
+            <p className="min-w-0 text-sm text-muted-foreground/70">
+              Delete your account on this community. Signing in again within 30
+              days restores it.
+            </p>
+            <Button
+              disabled={disabled}
+              onClick={() => setConfirmDelete(true)}
               type="button"
               variant="destructive"
             >
               Delete account
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          </SettingsOptionRow>
+          <AlertDialog onOpenChange={setConfirmDelete} open={confirmDelete}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Every device and agent is signed out now. The account is
+                  removed after 30 days unless you sign in with Google again
+                  before then.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={disabled}>
+                  Cancel
+                </AlertDialogCancel>
+                <Button
+                  disabled={disabled}
+                  onClick={() =>
+                    void run("Delete account", async () => {
+                      await deleteTokenAccount();
+                      window.location.reload();
+                    })
+                  }
+                  type="button"
+                  variant="destructive"
+                >
+                  Delete account
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      ) : null}
     </>
   );
 }

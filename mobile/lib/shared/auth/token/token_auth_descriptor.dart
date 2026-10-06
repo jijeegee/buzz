@@ -8,7 +8,17 @@ import 'package:http/http.dart' as http;
 /// accept `Authorization: Bearer` and `["AUTH", {"token": ...}]` and offer
 /// OIDC sign-in.
 class TokenAuthDescriptor {
-  const TokenAuthDescriptor({required this.oidcProviders});
+  const TokenAuthDescriptor({
+    required this.oidcProviders,
+    this.keyBackup = false,
+    this.existingTokenAccounts = false,
+  });
+
+  /// Google sessions authorize custody while Nostr keys authorize messaging.
+  final bool keyBackup;
+
+  /// The relay also supports returning to pre-existing token accounts.
+  final bool existingTokenAccounts;
 
   /// Provider names accepted by `/auth/oidc/{provider}/start`.
   final List<String> oidcProviders;
@@ -24,6 +34,21 @@ class TokenAuthDescriptor {
 TokenAuthDescriptor? parseTokenAuthDescriptor(Object? nip11) {
   if (nip11 is! Map) return null;
   final raw = nip11['buzz_token_auth'];
+  final backup = nip11['buzz_key_backup'];
+  if (backup is Map && backup['version'] == 1) {
+    final providers = backup['providers'];
+    return TokenAuthDescriptor(
+      keyBackup: true,
+      existingTokenAccounts:
+          raw is Map &&
+          raw['bearer'] == true &&
+          raw['oidc_providers'] is List &&
+          (raw['oidc_providers'] as List).contains('google'),
+      oidcProviders: providers is List
+          ? List.unmodifiable(providers.whereType<String>())
+          : const [],
+    );
+  }
   if (raw is! Map || raw['bearer'] != true) return null;
   final providers = raw['oidc_providers'];
   return TokenAuthDescriptor(

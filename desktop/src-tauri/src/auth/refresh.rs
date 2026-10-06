@@ -133,6 +133,18 @@ pub(crate) async fn refresh_once(
             let me = api::me(client, origin, &tokens.access)
                 .await
                 .map_err(|e| classify(&e))?;
+            if me.identity_mode.as_deref() == Some("key_backup") {
+                let pubkey = me
+                    .signing_pubkey
+                    .as_deref()
+                    .and_then(|value| PublicKey::from_hex(value).ok())
+                    .ok_or_else(|| RefreshFailure::Terminal("backup_not_initialized".into()))?;
+                if auth.signing_pubkey(origin) != Some(pubkey) {
+                    return Err(RefreshFailure::Terminal("backup_binding_conflict".into()));
+                }
+            } else if auth.signing_pubkey(origin).is_some() {
+                return Err(RefreshFailure::Terminal("account_mode_conflict".into()));
+            }
             let principal = PublicKey::from_hex(&me.principal_id)
                 .map_err(|_| RefreshFailure::Terminal("invalid_principal".into()))?;
             (principal, me.device_id)
@@ -244,6 +256,22 @@ pub(crate) async fn restore_session(
     store: &dyn RefreshStore,
 ) -> Option<(u64, Result<(), RefreshFailure>)> {
     let _guard = auth.refresh_lock(origin).lock_owned().await;
+    match store.signing_pubkey(origin) {
+        Ok(Some(pubkey)) => auth.set_key_backup(origin, pubkey),
+        Ok(None) => {}
+        Err(_) => {
+            let generation = auth.set(
+                origin,
+                OriginAuth::NeedsLogin("backup_binding_unavailable".into()),
+            );
+            return Some((
+                generation,
+                Err(RefreshFailure::Terminal(
+                    "backup_binding_unavailable".into(),
+                )),
+            ));
+        }
+    }
     if !matches!(auth.get(origin), None | Some((_, OriginAuth::SignedOut))) {
         return None;
     }

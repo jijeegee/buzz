@@ -3,9 +3,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invokeTauri } from "@/shared/api/tauri";
 
 /**
- * Centralized-identity (Google sign-in) bridge for the current community.
+ * Google account bridge for the current community.
  *
- * Token mode is per community: a relay that advertises `buzz_token_auth` in
+ * Key-backup accounts keep their local Nostr signer through login and renewal.
+ * Legacy token mode is per community: a relay that advertises `buzz_token_auth` in
  * NIP-11 offers "Sign in with Google"; once signed in, the Rust side signs
  * and authenticates as the account principal (bearer tokens, server-stamped
  * drafts) instead of the local key. Every call acts on the active community.
@@ -25,6 +26,10 @@ export type TokenAuthStatus = {
   principal: string | null;
   deviceId: string | null;
   reason: string | null;
+  keyBackupSupported?: boolean;
+  keyBackup?: boolean;
+  legacyTokenAccount?: boolean;
+  signingPubkey?: string | null;
 };
 
 export type AuthDevice = {
@@ -44,8 +49,14 @@ export function getTokenAuthStatus(): Promise<TokenAuthStatus> {
 }
 
 /** Open the system browser for Google sign-in; resolves once signed in. */
-export function loginWithGoogle(): Promise<TokenAuthStatus> {
-  return invokeTauri<TokenAuthStatus>("login_with_google");
+export function loginWithGoogle(
+  allowRestore = false,
+  existingTokenAccount = false,
+): Promise<TokenAuthStatus> {
+  return invokeTauri<TokenAuthStatus>("login_with_google", {
+    allowRestore,
+    ...(existingTokenAccount ? { existingTokenAccount: true } : {}),
+  });
 }
 
 /** Sign out of the current community (revokes this device's session). */
@@ -102,7 +113,12 @@ export function tokenIdentityChanged(
   appliedPrincipal: string | null,
   status: TokenAuthStatus,
 ): boolean {
-  return status.state === "active" && status.principal !== appliedPrincipal;
+  const identity = status.keyBackup ? status.signingPubkey : status.principal;
+  return (
+    status.state === "active" &&
+    identity != null &&
+    identity !== appliedPrincipal
+  );
 }
 
 /**

@@ -22,6 +22,7 @@ use crate::state::AppState;
 
 mod audio;
 mod invites;
+mod key_backup;
 mod operators;
 mod profile;
 
@@ -150,10 +151,12 @@ async fn instance_configured(
         crate::identity::init_relay_principal(&state)
             .await
             .expect("relay principal");
+        crate::identity::spawn_revocation_consumer(Arc::clone(&state));
+    }
+    if state.identity.sessions_enabled() {
         state
             .identity
             .register_provider("google", Arc::new(TestProvider));
-        crate::identity::spawn_revocation_consumer(Arc::clone(&state));
     }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -325,6 +328,7 @@ async fn login_code(inst: &Instance, code: &str, verifier: &str) -> String {
                 ("state", state.as_str()),
                 ("code_challenge", challenge.as_str()),
                 ("client", "cli"),
+                ("identity_mode", "token"),
                 ("redirect_uri", REDIRECT_URI),
                 ("device_name", "test laptop"),
             ],

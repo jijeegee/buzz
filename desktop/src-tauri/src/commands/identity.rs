@@ -143,6 +143,7 @@ pub async fn sign_event(
     // Key auth signs; a Google-session community gets a principal draft the
     // relay stamps (same JSON shape, sentinel signature).
     let keys = state.user_credential()?;
+    crate::auth::key_recovery::mark_identity_used(&state, keys.public_key(), Kind::Custom(kind))?;
     // Token mode: a local agent named in a `p` tag moves onto its server bot.
     let tags = if keys.is_token() {
         crate::auth::bots::adopt_named_agents_in_p_tags(&state, tags).await?

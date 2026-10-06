@@ -1,7 +1,9 @@
 //! Managed agents as server bots (plan §4.14, token mode only).
 //!
-//! In a community where the user is signed in with Google, each managed agent
-//! runs as a server-registered bot hosted by this device:
+//! Only a legacy token-mode Google account runs each managed agent as a
+//! server-registered bot hosted by this device. Google key-backup accounts
+//! remain [`CredentialMode::Keys`] and preserve agent keys and NIP-OA tags;
+//! none of the adoption or token-renewal paths below apply to them.
 //!
 //! 1. The agent *is* its bot: created in token mode it is registered at once
 //!    ([`register_new_agent`]); an existing key agent is moved onto a new bot
@@ -705,6 +707,17 @@ fn session_for(state: &AppState, origin: &str) -> Result<Option<UserSession>, St
     }
 }
 
+fn key_backup_bot_conflict(
+    state: &AppState,
+    record: &ManagedAgentRecord,
+    origin: &str,
+) -> Result<(), String> {
+    if record.bot_origin.is_some() && state.token_auth.signing_pubkey(origin).is_some() {
+        return Err(format!("{} belongs to an earlier token account. Google key recovery cannot merge or recreate this agent. Its existing record and history were preserved.", record_label(record)));
+    }
+    Ok(())
+}
+
 fn record_label(record: &ManagedAgentRecord) -> &str {
     record.display_name.as_deref().unwrap_or(&record.name)
 }
@@ -840,6 +853,7 @@ pub(crate) fn prepare_for_start<R: tauri::Runtime>(
     // status: restore a stored session first so a signed-in community never
     // spawns its agents on key auth.
     super::restore::restore_if_stored_blocking(app, &origin);
+    key_backup_bot_conflict(&state, record, &origin)?;
     // Refreshed first when about to expire: a reissue after sleep or a long
     // backoff must not go out with an expired access token.
     let Some(session) = super::commands::fresh_session_for_spawn(&state, &origin)? else {
@@ -1039,6 +1053,7 @@ pub(crate) fn spawn_auth(
     relay_url: &str,
 ) -> Result<SpawnAuth, String> {
     let origin = origin_for(relay_url);
+    key_backup_bot_conflict(state, record, &origin)?;
     let signed_in = session_for(state, &origin)?.is_some();
     if let Some(reason) = bot_home_refusal(record, &origin, signed_in) {
         return Err(reason);

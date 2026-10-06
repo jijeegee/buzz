@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:buzz/shared/auth/token/token.dart';
+import 'package:buzz/shared/auth/google_key_backup.dart';
 import 'package:buzz/shared/community/community.dart';
 import 'package:buzz/shared/community/community_provider.dart';
 import 'package:buzz/shared/community/community_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 import '../auth/token/token_auth_test_fakes.dart';
 import 'community_storage_test.dart';
@@ -18,6 +20,8 @@ final _principal = 'p' * 64;
 void main() {
   late FakeAuthServer server;
   late FakeRefreshTokenStore tokens;
+  late FakeRefreshTokenStore backupTokens;
+  late PendingBackupKeyStore pending;
   late CommunityStorage storage;
   late ProviderContainer container;
   late List<String> journaled;
@@ -25,6 +29,8 @@ void main() {
   setUp(() {
     server = FakeAuthServer();
     tokens = FakeRefreshTokenStore();
+    backupTokens = FakeRefreshTokenStore();
+    pending = PendingBackupKeyStore(storage: FakeSecureStorage());
     storage = CommunityStorage(secure: FakeSecureStorage());
     journaled = [];
     final clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
@@ -43,6 +49,8 @@ void main() {
         ),
         authHttpClientProvider.overrideWithValue(server.client),
         refreshTokenStoreProvider.overrideWithValue(tokens),
+        keyBackupRefreshTokenStoreProvider.overrideWithValue(backupTokens),
+        pendingBackupKeyStoreProvider.overrideWithValue(pending),
         webAuthLauncherProvider.overrideWithValue(
           FakeWebAuthLauncher(FakeWebAuthLauncher.success),
         ),
@@ -74,6 +82,44 @@ void main() {
   }
 
   Iterable<String> paths() => server.requests.map((r) => r.url.path);
+
+  test(
+    'custody logout removes pending local key without erasing token-mode session',
+    () async {
+      final keys = nostr.Keys.generate();
+      final community = Community.create(
+        name: 'Signed',
+        relayUrl: _origin,
+        pubkey: keys.public,
+        nsec: keys.nsec,
+        googleBackupAccountId: _principal,
+      );
+      await container.read(communityListProvider.future);
+      await container
+          .read(communityListProvider.notifier)
+          .addCommunity(community);
+      backupTokens.data[_origin] = StoredTokenSession(
+        refreshToken: 'bzr_backup',
+        principalId: _principal,
+        identityMode: 'key_backup',
+      );
+      tokens.data[_origin] = const StoredTokenSession(
+        refreshToken: 'untouched',
+        principalId: 'old-token',
+      );
+      await pending.write(_origin, _principal, keys.nsec);
+      server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_backup', 'bzr_new'),
+      );
+      await container
+          .read(communityListProvider.notifier)
+          .removeCommunity(community.id);
+      expect(await pending.read(_origin, _principal), isNull);
+      expect(backupTokens.data, isEmpty);
+      expect(tokens.data[_origin]!.refreshToken, 'untouched');
+      expect(await storage.loadAll(), isEmpty);
+    },
+  );
 
   test('revokes the device session on the relay, then removes', () async {
     final community = await addTokenCommunity();

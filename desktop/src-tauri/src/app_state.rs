@@ -330,6 +330,10 @@ trait IdentityKeyStore {
     fn probe(&self, name: &str) -> crate::secret_store::KeyringProbe;
     fn load(&self, name: &str) -> Result<Option<String>, String>;
     fn store(&self, name: &str, value: &str) -> Result<(), String>;
+    fn store_bootstrap(&self, value: &str, pubkey: &str) -> Result<(), String> {
+        self.store(IDENTITY_KEY_NAME, value)?;
+        self.store("identity.bootstrap", pubkey)
+    }
     fn delete(&self, name: &str) -> Result<(), String>;
     /// Verify that `key` holds `expected` by reading directly from the OS
     /// backend — bypassing any in-process cache. Returns `Ok(true)` when the
@@ -339,6 +343,17 @@ trait IdentityKeyStore {
 }
 
 impl IdentityKeyStore for crate::secret_store::SecretStore {
+    fn store_bootstrap(&self, value: &str, pubkey: &str) -> Result<(), String> {
+        let mut entries = std::collections::HashMap::from([
+            (IDENTITY_KEY_NAME.to_owned(), value.to_owned()),
+            ("identity.bootstrap".to_owned(), pubkey.to_owned()),
+        ]);
+        let result = self.store_all(&entries);
+        for value in entries.values_mut() {
+            zeroize::Zeroize::zeroize(value);
+        }
+        result
+    }
     fn probe(&self, name: &str) -> crate::secret_store::KeyringProbe {
         crate::secret_store::SecretStore::probe(self, name)
     }
@@ -786,6 +801,22 @@ fn persist_identity_to_keyring(
     Ok(())
 }
 
+/// Prepare strict OS-keyring recovery without plaintext fallback or deletion.
+/// A different legacy file would override the recovered key on next boot, so
+/// preserve it and report the conflict instead of replacing an existing identity.
+pub(crate) fn prepare_recovered_identity(
+    data_dir: &std::path::Path,
+    keys: &Keys,
+) -> Result<(), String> {
+    let legacy = data_dir.join("identity.key");
+    if legacy.exists() && load_key_file(&legacy)?.public_key() != keys.public_key() {
+        return Err("a different local identity file exists; recovery cannot replace it".into());
+    }
+    std::fs::create_dir_all(data_dir)
+        .map_err(|_| "could not prepare identity storage".to_owned())?;
+    write_migration_marker(&migration_marker_path(data_dir))
+}
+
 /// Core implementation of imported-identity persistence. Tries the OS keyring
 /// first via [`persist_identity_to_keyring`]; if the keyring is unavailable,
 /// falls back to the `0o600` identity.key file. Returns `Err` only when both
@@ -889,7 +920,7 @@ fn store_key_preferring_keyring(
         .secret_key()
         .to_bech32()
         .map_err(|e| format!("encode nsec: {e}"))?;
-    match store.store(IDENTITY_KEY_NAME, &nsec) {
+    match store.store_bootstrap(&nsec, &keys.public_key().to_hex()) {
         Ok(()) => Ok(IdentityStorage::SystemKeyring),
         Err(keyring_err) => {
             eprintln!("buzz-desktop: keyring write failed ({keyring_err}), using file fallback");

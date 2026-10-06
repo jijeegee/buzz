@@ -65,6 +65,9 @@ const React = (await import("react")).default;
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { AccountSettingsCard } = await import("./AccountSettingsCard.tsx");
+const { GoogleSignInButton } = await import(
+  "../../onboarding/ui/GoogleSignInButton.tsx"
+);
 
 function baseStatus(overrides) {
   return {
@@ -85,13 +88,13 @@ async function settle(predicate) {
   }
 }
 
-async function mount() {
+async function mount(Component = AccountSettingsCard, props) {
   calls.length = 0;
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(React.createElement(AccountSettingsCard));
+    root.render(React.createElement(Component, props));
   });
   await settle(() => calls.some((c) => c.command === "get_token_auth_status"));
   await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
@@ -172,4 +175,79 @@ test("sign-out stays reachable while a sign-in restore is stuck (Rule 6)", async
   });
   assert.equal(calls.filter((c) => c.command === "logout").length, 1);
   await unmount();
+});
+
+test("Google key backup links the existing identity explicitly and discloses custody", async () => {
+  status = baseStatus({ keyBackupSupported: true });
+  const { container, unmount } = await mount();
+  const button = container.querySelector("[data-testid='account-sign-in']");
+  assert.equal(button.textContent.trim(), "Link key with Google");
+  assert.match(container.textContent, /server operator/);
+  assert.match(container.textContent, /cannot overwrite/);
+  await act(async () => fireEvent.click(button));
+  assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
+    allowRestore: false,
+  });
+  await unmount();
+});
+
+test("Google backup sessions do not offer token-agent revocation or identity deletion", async () => {
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+    signingPubkey: "cd".repeat(32),
+  });
+  const { container, unmount } = await mount();
+  assert.match(container.textContent, /Backed-up signing key/);
+  assert.match(container.textContent, /cannot revoke a copied/);
+  assert.match(container.textContent, /Verify Google backup/);
+  assert.doesNotMatch(
+    container.textContent,
+    /Revoke agent tokens|Delete account/,
+  );
+  await unmount();
+});
+
+test("new-device Google onboarding explicitly requests same-key recovery", async () => {
+  status = baseStatus({ keyBackupSupported: true });
+  const { container, unmount } = await mount(GoogleSignInButton, {
+    allowRestore: true,
+  });
+  const button = container.querySelector(
+    "[data-testid='onboarding-google-sign-in']",
+  );
+  assert.ok(button);
+  assert.match(container.textContent, /server operator/);
+  await act(async () => fireEvent.click(button));
+  assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
+    allowRestore: true,
+  });
+  assert.equal(button.disabled, true);
+  await unmount();
+});
+
+test("previously signed-out token users have an explicit existing-account route", async () => {
+  for (const Component of [AccountSettingsCard, GoogleSignInButton]) {
+    status = baseStatus({ keyBackupSupported: true });
+    const { container, unmount } = await mount(Component);
+    const button = container.querySelector(
+      "[data-testid='existing-token-sign-in']",
+    );
+    assert.ok(
+      button,
+      "existing account recovery remains reachable before mode is known",
+    );
+    assert.match(button.textContent, /existing token account/);
+    await act(async () => fireEvent.click(button));
+    assert.deepEqual(
+      calls.find((c) => c.command === "login_with_google").args,
+      {
+        allowRestore: false,
+        existingTokenAccount: true,
+      },
+    );
+    await unmount();
+  }
 });

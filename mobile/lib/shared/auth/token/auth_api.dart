@@ -45,6 +45,7 @@ class LoginGrant {
     required this.accessToken,
     required this.refreshToken,
     required this.expiresIn,
+    this.identityMode = 'token',
   });
 
   final String principalId;
@@ -52,6 +53,7 @@ class LoginGrant {
   final String accessToken;
   final String refreshToken;
   final Duration expiresIn;
+  final String identityMode;
 }
 
 /// Tokens issued by `POST /auth/refresh` (the old refresh is consumed).
@@ -87,6 +89,7 @@ class AuthApi {
     required String codeChallenge,
     required String redirectUri,
     String? deviceName,
+    String identityMode = 'token',
   }) {
     final name = deviceName?.trim();
     return Uri.parse(
@@ -96,6 +99,7 @@ class AuthApi {
         'state': state,
         'code_challenge': codeChallenge,
         'client': 'mobile',
+        'identity_mode': identityMode,
         'redirect_uri': redirectUri,
         if (name != null && name.isNotEmpty) 'device_name': name,
       },
@@ -120,6 +124,9 @@ class AuthApi {
       accessToken: _string(json, 'access'),
       refreshToken: _string(json, 'refresh'),
       expiresIn: _expiresIn(json),
+      identityMode: json['identity_mode'] is String
+          ? json['identity_mode'] as String
+          : 'token',
     );
   }
 

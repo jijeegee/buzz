@@ -15,7 +15,25 @@ class _ConnectionSection extends ConsumerWidget {
     return AppListCard(
       label: 'Connection',
       verticalPadding: Grid.twelve,
-      children: [_IdentityRow(nsec: nsec)],
+      children: [
+        _IdentityRow(nsec: nsec),
+        AppListRow(
+          key: const Key('settings-google-key-backup'),
+          icon: LucideIcons.shield,
+          title: 'Google key backup',
+          subtitle: 'Link or recover this signing identity',
+          trailing: const _RowChevron(),
+          onTap: () => unawaited(
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => TokenSignInPage(
+                  backupOrigin: normalizeRelayOrigin(config.baseUrl),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

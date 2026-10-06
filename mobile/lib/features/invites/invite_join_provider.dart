@@ -168,9 +168,10 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     validateInviteRelayUri(Uri.parse(invite.relayUrl));
     final communities = await ref.read(communityListProvider.future);
     final existing = _existingCommunity(communities, invite.relayUrl);
-    if (existing != null && existing.tokenAuth) {
-      // A signed-in token principal is not necessarily a relay member yet:
-      // the invite still has to be claimed with its bearer (confirmJoin).
+    if (existing != null &&
+        (existing.tokenAuth || existing.googleBackupAccountId != null)) {
+      // Google sign-in/recovery does not grant community membership. Claim
+      // with the existing signing key (or old token principal) on confirmation.
       _pendingStarterSetupCommunity = null;
       state = InviteJoinState(
         status: InviteJoinStatus.confirming,
@@ -229,7 +230,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
   Future<String?> _detectTokenRelay(String relayUrl) async {
     final origin = normalizeRelayOrigin(relayUrl);
     final descriptor = await ref.read(inviteTokenAuthDetectorProvider)(origin);
-    return descriptor == null ? null : origin;
+    return descriptor == null || descriptor.keyBackup ? null : origin;
   }
 
   Future<void> confirmJoin() async {
@@ -272,9 +273,19 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
         return;
       }
       if (existing != null) {
+        if (existing.googleBackupAccountId != null) {
+          final nsec = existing.nsec;
+          if (nsec == null || pubkeyFromNsec(nsec) != existing.pubkey) {
+            throw const InviteClaimException(
+              'Recover your original signing key before joining.',
+            );
+          }
+          await _claimWithSigningKey(invite, nsec);
+        }
         await ref
             .read(communityListProvider.notifier)
             .switchCommunity(existing.id);
+        if (existing.googleBackupAccountId != null) _reconnectParkedSession();
         if (existing.starterSetupIncomplete || state.isStarterSetupRecovery) {
           _pendingStarterSetupCommunity = existing;
           await startStarterSetupRecovery();
@@ -311,41 +322,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       }
 
       final keys = ref.read(inviteKeyGeneratorProvider)();
-      final body = jsonEncode({
-        'code': invite.code,
-        if (invite.policyReceipt != null)
-          'policy_receipt': invite.policyReceipt,
-      });
-      final relayUri = Uri.parse(invite.relayUrl);
-      validateInviteRelayUri(relayUri);
-      final url = _claimUrlFromRelay(invite.relayUrl);
-      final request = http.Request('POST', Uri.parse(url))
-        ..followRedirects = false
-        ..headers.addAll({
-          'Authorization': buildNip98AuthHeader(
-            method: 'POST',
-            url: url,
-            bodyBytes: utf8.encode(body),
-            nsec: keys.nsec,
-          ),
-          'Content-Type': 'application/json',
-        })
-        ..body = body;
-      final streamedResponse = await ref
-          .read(inviteJoinHttpClientProvider)
-          .send(request);
-      final response = await http.Response.fromStream(streamedResponse);
-      final decoded = jsonDecode(response.body.isEmpty ? '{}' : response.body);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message = decoded is Map && decoded['error'] is String
-            ? decoded['error'] as String
-            : 'HTTP ${response.statusCode}';
-        throw InviteClaimException(message);
-      }
-      if (decoded is! Map) {
-        throw const FormatException('Invite claim returned malformed JSON');
-      }
-      final claim = Map<String, dynamic>.from(decoded);
+      final claim = await _claimWithSigningKey(invite, keys.nsec);
 
       final community = Community.create(
         name: _communityNameFromClaim(claim, invite.relayUrl),
@@ -369,6 +346,45 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
         requiresFreshInvite: requiresFreshInvite,
       );
     }
+  }
+
+  Future<Map<String, dynamic>> _claimWithSigningKey(
+    InviteDeepLink invite,
+    String nsec,
+  ) async {
+    final body = jsonEncode({
+      'code': invite.code,
+      if (invite.policyReceipt != null) 'policy_receipt': invite.policyReceipt,
+    });
+    validateInviteRelayUri(Uri.parse(invite.relayUrl));
+    final url = _claimUrlFromRelay(invite.relayUrl);
+    final request = http.Request('POST', Uri.parse(url))
+      ..followRedirects = false
+      ..headers.addAll({
+        'Authorization': buildNip98AuthHeader(
+          method: 'POST',
+          url: url,
+          bodyBytes: utf8.encode(body),
+          nsec: nsec,
+        ),
+        'Content-Type': 'application/json',
+      })
+      ..body = body;
+    final response = await http.Response.fromStream(
+      await ref.read(inviteJoinHttpClientProvider).send(request),
+    );
+    final decoded = jsonDecode(response.body.isEmpty ? '{}' : response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw InviteClaimException(
+        decoded is Map && decoded['error'] is String
+            ? decoded['error'] as String
+            : 'HTTP ${response.statusCode}',
+      );
+    }
+    if (decoded is! Map) {
+      throw const FormatException('Invite claim returned malformed JSON');
+    }
+    return Map<String, dynamic>.from(decoded);
   }
 
   /// Joins a token relay this device has no community for: signs the

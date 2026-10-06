@@ -1,8 +1,9 @@
-//! Centralized-identity token auth for Desktop (plan §4.14, Phase 1).
+//! Google account sessions for Desktop: Nostr key recovery and legacy tokens.
 //!
 //! Token mode is opt-in **per community**: it is active only when the
 //! community's relay advertises `buzz_token_auth` in NIP-11 *and* the user has
-//! signed in with Google for that relay. Each relay is its own account
+//! signed in with a legacy token account for that relay. Google key-backup
+//! accounts always use the original local signer, including on expiry. Each relay is its own account
 //! database, so sessions are keyed by the relay's HTTP origin. The refresh
 //! token lives in the OS keyring (`auth.refresh.<origin>`); the access token
 //! lives only in memory here.
@@ -20,6 +21,7 @@ pub(crate) mod api;
 pub(crate) mod bots;
 pub(crate) mod commands;
 pub(crate) mod credential;
+pub(crate) mod key_recovery;
 pub(crate) mod loopback;
 pub(crate) mod pkce;
 pub(crate) mod redact;
@@ -102,12 +104,43 @@ pub(crate) trait RefreshStore: Send + Sync {
     fn load(&self, origin: &str) -> Result<Option<String>, String>;
     fn store(&self, origin: &str, token: &str) -> Result<(), String>;
     fn delete(&self, origin: &str) -> Result<(), String>;
+    fn signing_pubkey(&self, _origin: &str) -> Result<Option<PublicKey>, String> {
+        Ok(None)
+    }
+    fn legacy_token_account(&self, _origin: &str) -> Result<bool, String> {
+        Ok(false)
+    }
+    fn remember_legacy_token_account(&self, _origin: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// The OS-keyring refresh store (shared desktop secret blob).
 pub(crate) struct KeyringRefreshStore;
 
 impl RefreshStore for KeyringRefreshStore {
+    fn legacy_token_account(&self, origin: &str) -> Result<bool, String> {
+        match crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
+            .load(&format!("auth.legacy-token.{origin}"))?
+            .as_deref()
+        {
+            None => Ok(false),
+            Some("token") => Ok(true),
+            Some(_) => Err("invalid stored account mode".into()),
+        }
+    }
+    fn remember_legacy_token_account(&self, origin: &str) -> Result<(), String> {
+        crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
+            .store(&format!("auth.legacy-token.{origin}"), "token")
+    }
+    fn signing_pubkey(&self, origin: &str) -> Result<Option<PublicKey>, String> {
+        crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
+            .load(&key_recovery::binding_key(origin))?
+            .map(|value| {
+                PublicKey::from_hex(&value).map_err(|_| "invalid stored backup binding".into())
+            })
+            .transpose()
+    }
     fn load(&self, origin: &str) -> Result<Option<String>, String> {
         crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
             .load(&refresh_key(origin))
@@ -128,9 +161,13 @@ type SupportEntry = (Instant, Option<Vec<String>>);
 /// Per-process token-auth state held on `AppState`.
 #[derive(Default)]
 pub struct TokenAuthState {
+    /// Recovery accounts never change messaging credentials, including while
+    /// their Google session is expired or being refreshed.
+    key_backups: Mutex<HashMap<String, PublicKey>>,
     origins: Mutex<HashMap<String, (u64, OriginAuth)>>,
     next_generation: AtomicU64,
     support: Mutex<HashMap<String, SupportEntry>>,
+    backup_support: Mutex<HashMap<String, bool>>,
     refresh_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     login_in_flight: Mutex<bool>,
     /// A rotated refresh token not yet folded into an `Active` session, keyed
@@ -144,6 +181,35 @@ pub struct TokenAuthState {
 }
 
 impl TokenAuthState {
+    pub(crate) fn record_backup_support(&self, origin: &str, enabled: bool) {
+        self.backup_support
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(origin.to_owned(), enabled);
+    }
+
+    pub(crate) fn supports_key_backup(&self, origin: &str) -> bool {
+        self.backup_support
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(origin)
+            .copied()
+            .unwrap_or(false)
+    }
+    pub(crate) fn set_key_backup(&self, origin: &str, pubkey: PublicKey) {
+        self.key_backups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(origin.to_owned(), pubkey);
+    }
+
+    pub(crate) fn signing_pubkey(&self, origin: &str) -> Option<PublicKey> {
+        self.key_backups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(origin)
+            .copied()
+    }
     /// `(generation, state)` of `origin`.
     pub(crate) fn get(&self, origin: &str) -> Option<(u64, OriginAuth)> {
         self.origins
@@ -274,6 +340,9 @@ impl TokenAuthState {
 
     /// The identity mode for `origin`.
     pub(crate) fn mode(&self, origin: &str) -> CredentialMode {
+        if self.signing_pubkey(origin).is_some() {
+            return CredentialMode::Keys;
+        }
         match self.get(origin) {
             None | Some((_, OriginAuth::SignedOut)) => CredentialMode::Keys,
             Some((_, OriginAuth::Active(session))) => CredentialMode::Token(session),
@@ -301,6 +370,10 @@ impl TokenAuthState {
 
     /// Forget every in-memory session (sign-out of the whole app / reset).
     pub(crate) fn clear_all(&self) {
+        self.key_backups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         self.origins
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

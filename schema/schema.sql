@@ -1828,6 +1828,7 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
 -- principal row is created by relay startup code, not seeded here.
 
 CREATE TABLE principals (
+    identity_mode TEXT NOT NULL DEFAULT 'token' CONSTRAINT principals_identity_mode CHECK (identity_mode IN ('token', 'key_backup')),
     id            BYTEA PRIMARY KEY CHECK (length(id) = 32),
     kind          TEXT NOT NULL CHECK (kind IN ('user', 'bot', 'relay')),
     display_name  TEXT NOT NULL DEFAULT '',
@@ -1925,6 +1926,17 @@ CREATE INDEX access_tokens_principal ON access_tokens (principal_id) WHERE revok
 CREATE INDEX access_tokens_session ON access_tokens (session_id) WHERE revoked_at IS NULL;
 CREATE INDEX access_tokens_bot ON access_tokens (bot_id) WHERE revoked_at IS NULL;
 
+-- Custodial recovery is independent of Nostr messaging identity and transport.
+CREATE TABLE account_key_backups (
+    account_id BYTEA PRIMARY KEY REFERENCES principals(id),
+    pubkey BYTEA NOT NULL UNIQUE CHECK (length(pubkey) = 32),
+    version SMALLINT NOT NULL CHECK (version = 1),
+    key_id TEXT NOT NULL CHECK (key_id ~ '^[A-Za-z0-9_-]{1,64}$'),
+    nonce BYTEA NOT NULL CHECK (length(nonce) = 12),
+    ciphertext BYTEA NOT NULL CHECK (length(ciphertext) = 48),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('principals', 'deployment-global server accounts (users, bots, relay); no community_id intentionally'),
     ('identities', 'deployment-global external OIDC identities linked to principals'),
@@ -1932,7 +1944,8 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('sessions', 'deployment-global login sessions per device'),
     ('refresh_tokens', 'deployment-global refresh-token rotation history'),
     ('bots', 'deployment-global bot registrations owned by a user principal'),
-    ('access_tokens', 'deployment-global opaque access-token hashes');
+    ('access_tokens', 'deployment-global opaque access-token hashes'),
+    ('account_key_backups', 'deployment-global immutable Google account to Nostr key backup binding');
 
 -- ── Relay admin actions (HTTP enforcement state machine) ──────────────────────
 -- One row per HTTP report-resolution enforcement action. Tracks the durable

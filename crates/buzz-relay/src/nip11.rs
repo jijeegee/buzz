@@ -82,6 +82,10 @@ pub struct RelayInfo {
     /// "Sign in with Google" and switch to bearer/token AUTH.
     #[serde(rename = "buzz_token_auth", skip_serializing_if = "Option::is_none")]
     pub token_auth: Option<serde_json::Value>,
+    /// Optional Google account onboarding/backup for client-held Nostr keys.
+    /// This never advertises token messaging or replaces the signing identity.
+    #[serde(rename = "buzz_key_backup", skip_serializing_if = "Option::is_none")]
+    pub key_backup: Option<serde_json::Value>,
 }
 
 /// Public capability descriptor for relay-proxied GIF search.
@@ -283,6 +287,7 @@ impl RelayInfo {
             relay_self: relay_self.map(|s| s.to_string()),
             federated_identity,
             token_auth: None,
+            key_backup: None,
         }
     }
 }
@@ -366,6 +371,7 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         state.config.klipy.as_ref().map(|_| "klipy"),
     );
     info.token_auth = token_auth_descriptor(&state.identity);
+    info.key_backup = key_backup_descriptor(&state.identity);
     if let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await {
         info.read_state_snapshot = Some(serde_json::json!({
             "version": 1,
@@ -406,6 +412,14 @@ pub(crate) fn token_auth_descriptor(
             "version": 1,
             "bearer": true,
             "oidc_providers": identity.provider_names(),
+        })
+    })
+}
+
+fn key_backup_descriptor(identity: &crate::identity::IdentityRuntime) -> Option<serde_json::Value> {
+    identity.config().key_backup_master.as_ref().map(|_| {
+        serde_json::json!({
+            "version": 1, "providers": identity.provider_names(),
         })
     })
 }
@@ -693,6 +707,26 @@ mod tests {
             token_auth_descriptor(&on),
             Some(serde_json::json!({"version": 1, "bearer": true, "oidc_providers": ["google"]}))
         );
+    }
+
+    #[test]
+    fn custody_discovery_never_enables_token_messaging() {
+        use crate::identity::{AuthTokenConfig, IdentityRuntime};
+        let mut config = AuthTokenConfig::disabled("https://relay.example");
+        config.key_backup_master = Some(
+            buzz_auth::key_backup::BackupMasterKey::from_hex("test-v1", &"42".repeat(32)).unwrap(),
+        );
+        config.fake_oidc = true;
+        let runtime = IdentityRuntime::new(config);
+        assert_eq!(
+            key_backup_descriptor(&runtime),
+            Some(serde_json::json!({
+                "version": 1, "providers": ["google"],
+            }))
+        );
+        assert!(token_auth_descriptor(&runtime).is_none());
+        assert!(!runtime.enabled());
+        assert!(runtime.sessions_enabled());
     }
 
     #[test]

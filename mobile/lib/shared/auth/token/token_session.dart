@@ -174,6 +174,10 @@ class TokenSessionController {
   int _generation = 0;
   String? _refreshToken;
   String? _principalId;
+  String _identityMode = 'token';
+
+  /// Account sessions for custody never select a messaging identity.
+  String get identityMode => _identityMode;
   _AccessToken? _access;
   int _failures = 0;
   Timer? _timer;
@@ -219,9 +223,13 @@ class TokenSessionController {
 
   /// Run the Google (or [provider]) login. Returns whether it signed in;
   /// failures are reported in [state]. Single-flight.
-  Future<bool> signIn({String provider = 'google'}) {
+  Future<bool> signIn({
+    String provider = 'google',
+    String identityMode = 'token',
+  }) {
     return _signingIn ??= _runSignIn(
       provider,
+      identityMode,
     ).whenComplete(() => _signingIn = null);
   }
 
@@ -376,6 +384,7 @@ class TokenSessionController {
     }
     _refreshToken = stored.refreshToken;
     _principalId = stored.principalId;
+    _identityMode = stored.identityMode;
     _failures = 0;
     await _refresh();
   }
@@ -417,6 +426,7 @@ class TokenSessionController {
         StoredTokenSession(
           refreshToken: rotated.refreshToken,
           principalId: principal,
+          identityMode: _identityMode,
         ),
       );
     } on _StaleGeneration {
@@ -435,7 +445,7 @@ class TokenSessionController {
     return rotated.accessToken;
   }
 
-  Future<bool> _runSignIn(String provider) async {
+  Future<bool> _runSignIn(String provider, String identityMode) async {
     if (_disposed) return false;
     // Fence the login against a sign-out (or dispose) that happens while
     // the browser or the code exchange is still pending: such a grant must
@@ -454,6 +464,7 @@ class TokenSessionController {
         launcher: _launcher,
         provider: provider,
         deviceName: deviceName,
+        identityMode: identityMode,
       );
     } on WebAuthCancelledException {
       _emit(_settledState(null));
@@ -470,9 +481,17 @@ class TokenSessionController {
       return false;
     }
     if (!_isCurrent(startGeneration)) {
-      // Signed out or disposed mid-login: revoke the orphaned device
-      // session instead of resurrecting it.
       await _revokeUnsaved(grant.accessToken);
+      return false;
+    }
+    if (grant.identityMode != identityMode) {
+      await _revokeUnsaved(grant.accessToken);
+      _emit(
+        _settledState(
+          'This Google account uses a different identity mode. '
+          'Existing account data has been preserved.',
+        ),
+      );
       return false;
     }
     // A new session replaces whatever was here; fence everything older.
@@ -486,6 +505,7 @@ class TokenSessionController {
         StoredTokenSession(
           refreshToken: grant.refreshToken,
           principalId: grant.principalId,
+          identityMode: grant.identityMode,
         ),
       );
     } on _StaleGeneration {
@@ -499,6 +519,7 @@ class TokenSessionController {
     if (!_isCurrent(generation)) return false;
     _refreshToken = grant.refreshToken;
     _principalId = grant.principalId;
+    _identityMode = grant.identityMode;
     _publish(grant.accessToken, grant.expiresIn, grant.principalId);
     return true;
   }

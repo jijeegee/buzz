@@ -1,6 +1,7 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../auth/token/relay_origin.dart';
+import '../auth/google_key_backup.dart';
 import '../auth/token/token_session.dart';
 import '../auth/token/token_session_provider.dart';
 import 'community.dart';
@@ -22,20 +23,28 @@ typedef CommunityTokenSessionEnder =
 final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
   (ref) {
     return (community, {required deviceOnly}) async {
-      if (!community.tokenAuth) return;
+      if (!community.tokenAuth && community.googleBackupAccountId == null) {
+        return;
+      }
       final String origin;
       try {
         origin = normalizeRelayOrigin(community.relayUrl);
       } on FormatException {
         return;
       }
-      final controller = ref.read(tokenSessionControllerProvider(origin));
+      final provider = community.googleBackupAccountId != null
+          ? keyBackupSessionControllerProvider(origin)
+          : tokenSessionControllerProvider(origin);
+      final controller = ref.read(provider);
       if (deviceOnly) {
         // Through the controller's store queue: a rotation write in flight
         // must not land after the delete and resurrect the record.
         await controller.forgetOnDevice();
+        if (community.googleBackupAccountId case final account?) {
+          await ref.read(pendingBackupKeyStoreProvider).delete(origin, account);
+        }
         // A fresh controller restores from the now-empty store.
-        ref.invalidate(tokenSessionControllerProvider(origin));
+        ref.invalidate(provider);
         return;
       }
       // A controller that never restored holds no tokens yet and would only
@@ -44,6 +53,9 @@ final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
         await controller.restore();
       }
       await controller.signOut();
+      if (community.googleBackupAccountId case final account?) {
+        await ref.read(pendingBackupKeyStoreProvider).delete(origin, account);
+      }
     };
   },
 );

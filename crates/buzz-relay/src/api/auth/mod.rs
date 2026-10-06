@@ -2,9 +2,9 @@
 //!
 //! Authentication itself cannot be a Nostr event (an event needs auth
 //! first), and OIDC needs browser redirects, so this is an HTTP-only surface
-//! like health and NIP-11. The router is mounted only when
-//! `AUTH_TOKEN_ENABLED=true`; otherwise `/auth/*` is unrouted and answers
-//! exactly like any unknown path (403 from the fallback).
+//! like health and NIP-11. The router is mounted when token auth or Google
+//! key backup is enabled. Backup sessions have a separate authorization seam
+//! and never grant access to token messaging, bots or token profiles.
 //!
 //! Errors are `{"error": <message>, "code": <code>}`; 401 codes are
 //! `invalid_token | token_expired | token_revoked | refresh_reused |
@@ -15,6 +15,7 @@
 #![allow(clippy::result_large_err)]
 
 mod bots;
+mod key_backup;
 mod oidc;
 mod operators;
 mod session;
@@ -39,15 +40,21 @@ use buzz_core::principal::AccessTokenKind;
 use serde_json::{json, Value};
 use tower_http::limit::RequestBodyLimitLayer;
 
-use crate::identity::{verify_access_token, TokenRejection};
+use crate::identity::{verify_access_token, verify_session_token, TokenRejection};
 use crate::state::AppState;
 
 /// Bound on `/auth/*` request bodies.
 const AUTH_BODY_LIMIT: usize = 16 * 1024;
 
-/// Build the `/auth/*` router. Callers mount it only when token auth is on.
+/// Build the `/auth/*` router when account sessions are enabled.
 pub(crate) fn router(state: Arc<AppState>) -> Router {
     Router::new()
+        .route(
+            "/auth/key-backup",
+            get(key_backup::status).post(key_backup::initialize),
+        )
+        .route("/auth/key-backup/challenge", post(key_backup::challenge))
+        .route("/auth/key-backup/restore", post(key_backup::restore))
         .route("/auth/oidc/{provider}/start", get(oidc::start))
         .route("/auth/oidc/{provider}/callback", get(oidc::callback))
         .route("/auth/oidc/complete", post(oidc::complete))
@@ -78,6 +85,26 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         )
         .layer(RequestBodyLimitLayer::new(AUTH_BODY_LIMIT))
         .with_state(state)
+}
+
+/// Protect every auth response, including SPA callbacks, unknown routes,
+/// middleware/extractor failures and CORS preflight responses.
+pub(crate) async fn no_store(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let auth = request.uri().path().starts_with("/auth/");
+    let mut response = next.run(request).await;
+    if auth {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("no-store"),
+        );
+        response
+            .headers_mut()
+            .insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
+    }
+    response
 }
 
 /// `{"error", "code"}` response.
@@ -165,6 +192,34 @@ async fn authenticate_user(
     headers: &HeaderMap,
 ) -> Result<TokenBinding, Response> {
     let binding = authenticate(state, headers).await?;
+    if binding.kind != AccessTokenKind::User {
+        return Err(forbidden("a user session token is required"));
+    }
+    Ok(binding)
+}
+
+/// Account session authentication is separate from messaging authorization.
+async fn authenticate_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<TokenBinding, Response> {
+    let token = bearer_token(headers).ok_or_else(|| {
+        auth_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "missing bearer token",
+        )
+    })?;
+    verify_session_token(state, &token)
+        .await
+        .map_err(rejection_response)
+}
+
+async fn authenticate_user_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<TokenBinding, Response> {
+    let binding = authenticate_session(state, headers).await?;
     if binding.kind != AccessTokenKind::User {
         return Err(forbidden("a user session token is required"));
     }

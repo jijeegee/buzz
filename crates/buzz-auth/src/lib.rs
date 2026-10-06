@@ -21,6 +21,8 @@
 pub mod access;
 /// Authentication error types.
 pub mod error;
+/// Custodial encryption and account-bound proof verification for key recovery.
+pub mod key_backup;
 /// NIP-42 challenge–response authentication.
 pub mod nip42;
 /// NIP-98 HTTP Auth verification (kind:27235).

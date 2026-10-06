@@ -51,6 +51,69 @@ fn request(method: &str, uri: &str) -> Request<Body> {
         .expect("request")
 }
 
+#[tokio::test]
+async fn custody_only_mounts_account_routes_without_enabling_token_messaging() {
+    let mut state = state_with_token_auth(false).await;
+    let mut config = AuthTokenConfig::disabled("https://relay.example");
+    config.key_backup_master = Some(
+        buzz_auth::key_backup::BackupMasterKey::from_hex("test-v1", &"42".repeat(32)).unwrap(),
+    );
+    Arc::get_mut(&mut state).unwrap().identity = Arc::new(IdentityRuntime::new(config));
+    assert!(!state.identity.enabled());
+    for (method, path) in [
+        ("GET", "/auth/me"),
+        ("GET", "/auth/key-backup"),
+        ("POST", "/auth/key-backup/challenge"),
+        ("POST", "/auth/key-backup"),
+        ("POST", "/auth/key-backup/restore"),
+    ] {
+        let response = crate::router::build_router(Arc::clone(&state))
+            .oneshot(request(method, path))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        assert_eq!(response.headers()["cache-control"], "no-store", "{path}");
+    }
+}
+
+#[tokio::test]
+async fn disabled_custody_cannot_return_any_key() {
+    let state = state_with_token_auth(true).await;
+    let response = crate::router::build_router(state)
+        .oneshot(request("POST", "/auth/key-backup/restore"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+}
+
+#[tokio::test]
+async fn auth_body_limit_errors_are_also_uncacheable() {
+    let state = state_with_token_auth(true).await;
+    let request = Request::builder()
+        .method("POST")
+        .uri("/auth/key-backup")
+        .header("host", "localhost")
+        .body(Body::from(vec![b'x'; super::AUTH_BODY_LIMIT + 1]))
+        .unwrap();
+    let response = crate::router::build_router(state)
+        .oneshot(request)
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+}
+
+#[tokio::test]
+async fn unknown_auth_routes_are_uncacheable_even_with_sessions_disabled() {
+    let state = state_with_token_auth(false).await;
+    let response = crate::router::build_router(state)
+        .oneshot(request("GET", "/auth/unknown-callback"))
+        .await
+        .unwrap();
+    assert_eq!(response.headers()["cache-control"], "no-store");
+}
+
 /// With `AUTH_TOKEN_ENABLED=false` (the default) every `/auth/*` route —
 /// OIDC (and with it the operator bootstrap), refresh, exchange, operators —
 /// is unrouted: it answers exactly like a path that never existed (the

@@ -1,18 +1,28 @@
 import 'package:buzz/features/settings/settings_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/community/community_membership_provider.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/widget_helpers.dart';
 
 void main() {
   testWidgets('shows a compact copyable identity row', (tester) async {
+    PackageInfo.setMockInitialValues(
+      appName: 'Buzz',
+      packageName: 'xyz.block.buzz',
+      version: 'test',
+      buildNumber: '1',
+      buildSignature: '',
+    );
     MethodCall? clipboardCall;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -30,8 +40,12 @@ void main() {
       WidgetHelpers.testable(
         overrides: [
           relayConfigProvider.overrideWith(_RelayConfigNotifier.new),
+          relaySessionProvider.overrideWith(_DisconnectedSession.new),
           authProvider.overrideWith(_AuthNotifier.new),
           savedPrefsProvider.overrideWithValue(prefs),
+          currentCommunityRoleProvider.overrideWithValue(
+            const AsyncData<CommunityMemberRole?>(CommunityMemberRole.member),
+          ),
         ],
         child: SettingsPage(
           profileHeader: const SizedBox.shrink(),
@@ -52,6 +66,7 @@ void main() {
         'npub1fu64hh9hes90w2808n8tjc2ajp5yhddjef0ctx4s7zmsgp6cwx4qgy4eg9';
     expect(find.text('Connected to'), findsNothing);
     expect(find.text('https://relay.test'), findsNothing);
+    expect(find.byKey(const Key('settings-google-key-backup')), findsOneWidget);
     // Neither the raw hex key nor the full npub is rendered visually — the
     // full npub is exposed through a11y and the clipboard only.
     expect(find.text(expectedPubkey), findsNothing);
@@ -91,6 +106,12 @@ class _AuthNotifier extends AuthNotifier {
       addedAt: DateTime.utc(2026),
     ),
   );
+}
+
+class _DisconnectedSession extends RelaySessionNotifier {
+  @override
+  SessionState build() =>
+      const SessionState(status: SessionStatus.disconnected);
 }
 
 class _RelayConfigNotifier extends RelayConfigNotifier {

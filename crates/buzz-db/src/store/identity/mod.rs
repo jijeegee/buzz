@@ -11,8 +11,12 @@
 
 mod access_token;
 mod bot;
+mod key_backup;
 mod principal;
 mod session;
+
+#[cfg(test)]
+mod key_backup_postgres_tests;
 
 #[cfg(test)]
 mod postgres_tests;
@@ -27,6 +31,7 @@ use crate::error::{DbError, Result};
 
 pub use access_token::{AccessTokenRecord, AccessTokenRejection};
 pub use bot::{BotRecord, ExchangeOutcome};
+pub use key_backup::{InitializeKeyBackup, KeyBackupRecord};
 pub use principal::{
     LoginPrincipal, PrincipalRecord, ProfileCommunity, ProfileEventState, ProfilePublishLock,
     ProfilePublishSnapshot, ProfileUpdate, MAX_PROFILE_COMMUNITIES,

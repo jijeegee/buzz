@@ -17,6 +17,62 @@ import 'package:buzz/shared/deeplink/deep_link.dart';
 import '../../shared/community/community_storage_test.dart';
 
 void main() {
+  test(
+    'Google restored identity claims membership invite with the same key',
+    () async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final existing = Community.create(
+        name: 'Recovered',
+        relayUrl: 'https://relay.example.com',
+        pubkey: keys.public,
+        nsec: keys.nsec,
+        googleBackupAccountId: 'google-account',
+      );
+      await storage.save(existing);
+      http.Request? claimed;
+      final container = ProviderContainer(
+        overrides: [
+          communityStorageProvider.overrideWithValue(storage),
+          authProvider.overrideWith(_RecordingAuthNotifier.new),
+          inviteKeyGeneratorProvider.overrideWithValue(
+            () => throw StateError('Do not replace restored key'),
+          ),
+          inviteJoinHttpClientProvider.overrideWithValue(
+            http_testing.MockClient((request) async {
+              claimed = request;
+              return http.Response('{"status":"joined"}', 200);
+            }),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(communityListProvider.future);
+      final notifier = container.read(inviteJoinProvider.notifier);
+      await notifier.prepare(
+        const InviteDeepLink(
+          relayUrl: 'wss://relay.example.com',
+          code: 'invite',
+        ),
+      );
+      expect(
+        container.read(inviteJoinProvider).status,
+        InviteJoinStatus.confirming,
+      );
+      await notifier.confirmJoin();
+      expect(
+        container.read(inviteJoinProvider).status,
+        InviteJoinStatus.switchedExisting,
+      );
+      final header = claimed!.headers['authorization']!;
+      final proof = nostr.Event.fromJson(
+        utf8.decode(base64Decode(header.substring('Nostr '.length))),
+      );
+      expect(proof.pubkey, keys.public);
+      expect((await storage.loadAll()).single.nsec, keys.nsec);
+      expect((await storage.loadAll()).single.tokenAuth, isFalse);
+    },
+  );
   for (final existingRelayUrl in [
     'wss://relay.example.com',
     'https://relay.example.com',

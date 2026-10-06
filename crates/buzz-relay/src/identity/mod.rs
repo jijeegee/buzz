@@ -1,10 +1,9 @@
 //! Centralized identity (Phase 0): token authentication beside key auth.
 //!
-//! Everything here is inert unless `AUTH_TOKEN_ENABLED=true`
-//! ([`config::AuthTokenConfig::enabled`]): `/auth/*` is not mounted, WS
-//! `["AUTH", {"token"}]` frames are not parsed, the bridge ignores `Bearer`,
-//! and the operator bootstrap never runs. Key-based (NIP-42/NIP-98) auth is
-//! untouched either way.
+//! `AUTH_TOKEN_ENABLED` gates token messaging and bots. Independently,
+//! `AUTH_KEY_BACKUP_ENABLED` mounts account sessions and Google backup routes
+//! while preserving signed NIP-42/NIP-98 messaging. Backup sessions cannot
+//! authorize token messaging, token profiles, bots or account deletion.
 //!
 //! - [`verify_access_token`] is the single token → principal seam (WS AUTH and
 //!   HTTP `Bearer`).
@@ -87,7 +86,7 @@ impl IdentityRuntime {
     /// Build the runtime and its OIDC provider registry from `config`.
     pub fn new(config: AuthTokenConfig) -> Self {
         let mut providers: HashMap<String, Arc<dyn OidcProvider>> = HashMap::new();
-        if config.enabled {
+        if config.sessions_enabled() {
             if let Some(google) = &config.google {
                 match buzz_auth::oidc::GoogleProvider::new(
                     google.client_id.clone(),
@@ -117,6 +116,11 @@ impl IdentityRuntime {
     /// Whether token auth is enabled (`AUTH_TOKEN_ENABLED`).
     pub fn enabled(&self) -> bool {
         self.config.enabled
+    }
+
+    /// Whether account sessions are enabled for token accounts or custody.
+    pub fn sessions_enabled(&self) -> bool {
+        self.config.sessions_enabled()
     }
 
     /// The token-auth configuration.
@@ -179,6 +183,25 @@ pub async fn init_relay_principal(state: &AppState) -> anyhow::Result<PrincipalI
 /// Resolve a presented access token to its binding. The only token →
 /// principal seam: WS AUTH and HTTP `Bearer` both go through here.
 pub(crate) async fn verify_access_token(
+    state: &AppState,
+    token: &TokenSecret,
+) -> Result<TokenBinding, TokenRejection> {
+    let binding = verify_session_token(state, token).await?;
+    if !state.identity.enabled()
+        || state
+            .db
+            .account_key_mode(&binding.principal)
+            .await
+            .map_err(|_| TokenRejection::Unavailable)?
+    {
+        return Err(TokenRejection::InvalidToken);
+    }
+    Ok(binding)
+}
+
+/// Verify a server-issued session for account management. Custodial sessions
+/// deliberately cannot authenticate the signed-message or token-bot surfaces.
+pub(crate) async fn verify_session_token(
     state: &AppState,
     token: &TokenSecret,
 ) -> Result<TokenBinding, TokenRejection> {

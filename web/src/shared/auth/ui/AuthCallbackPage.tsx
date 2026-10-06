@@ -7,6 +7,10 @@ import { Button } from "@/shared/ui/button";
 const ERROR_MESSAGES: Record<string, string> = {
   access_denied: "Google sign-in was cancelled.",
   account_disabled: "This account is disabled.",
+  unsupported_client:
+    "Google key signup and recovery are supported in Buzz desktop or mobile. Existing browser token accounts remain separate.",
+  account_mode_conflict:
+    "This Google account uses a Nostr key backup. Use Buzz desktop or mobile to restore it; no browser identity was replaced.",
 };
 
 /**

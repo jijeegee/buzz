@@ -48,6 +48,13 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         return AuthState(status: AuthStatus.authenticated, community: active);
       }
 
+      // Preserve the pubkey boundary for Google recovery when the local
+      // secure key is missing. Onboarding can restore only that same identity.
+      if (active.googleBackupAccountId != null && active.pubkey != null) {
+        await syncCommunitySnapshot(ref, communities);
+        return AuthState(status: AuthStatus.unauthenticated, community: active);
+      }
+
       await storage.remove(active.id);
       communities.removeWhere((community) => community.id == active.id);
       activeId = null;
@@ -100,6 +107,12 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     final existing = (await ref.read(communityStorageProvider).loadAll())
         .where((community) => _sameOrigin(community.relayUrl, origin))
         .firstOrNull;
+    if (existing?.googleBackupAccountId != null) {
+      throw StateError(
+        'This community uses a Google-backed signing key. '
+        'Token sign-in cannot replace its identity. Use Google key recovery.',
+      );
+    }
     final legacyKey = existing?.nsec;
     var revocationJournaled = false;
     if (existing != null && legacyKey != null && legacyKey.isNotEmpty) {

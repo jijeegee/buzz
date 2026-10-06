@@ -9,19 +9,22 @@ class StoredTokenSession {
   const StoredTokenSession({
     required this.refreshToken,
     required this.principalId,
+    this.identityMode = 'token',
   });
 
   final String refreshToken;
   final String principalId;
+  final String identityMode;
 
   @override
   bool operator ==(Object other) =>
       other is StoredTokenSession &&
       other.refreshToken == refreshToken &&
-      other.principalId == principalId;
+      other.principalId == principalId &&
+      other.identityMode == identityMode;
 
   @override
-  int get hashCode => Object.hash(refreshToken, principalId);
+  int get hashCode => Object.hash(refreshToken, principalId, identityMode);
 }
 
 /// Origin-scoped durable storage for refresh tokens. Access tokens are
@@ -37,10 +40,14 @@ abstract interface class RefreshTokenStore {
 
 /// [RefreshTokenStore] in the platform keychain/keystore.
 class SecureRefreshTokenStore implements RefreshTokenStore {
-  SecureRefreshTokenStore({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+  SecureRefreshTokenStore({
+    FlutterSecureStorage? storage,
+    this.keyPrefix = 'buzz.auth.refresh.v1',
+  }) : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
+  final String keyPrefix;
+  String _keyFor(String origin) => '$keyPrefix:$origin';
 
   /// Storage key for [origin]'s record.
   static String keyFor(String origin) => 'buzz.auth.refresh.v1:$origin';
@@ -55,7 +62,7 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
   /// so it is deleted and reported as absent (signed out).
   @override
   Future<StoredTokenSession?> read(String origin) async {
-    final key = keyFor(origin);
+    final key = _keyFor(origin);
     final raw = await _storage.read(key: key, iOptions: _iOptions);
     if (raw == null) return null;
     final session = _decode(raw);
@@ -69,17 +76,19 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
   @override
   Future<void> write(String origin, StoredTokenSession session) =>
       _storage.write(
-        key: keyFor(origin),
+        key: _keyFor(origin),
         value: jsonEncode({
           'refresh': session.refreshToken,
           'principal_id': session.principalId,
+          if (session.identityMode != 'token')
+            'identity_mode': session.identityMode,
         }),
         iOptions: _iOptions,
       );
 
   @override
   Future<void> delete(String origin) =>
-      _storage.delete(key: keyFor(origin), iOptions: _iOptions);
+      _storage.delete(key: _keyFor(origin), iOptions: _iOptions);
 
   static StoredTokenSession? _decode(String raw) {
     try {
@@ -89,7 +98,13 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
       final principal = json['principal_id'];
       if (refresh is! String || refresh.isEmpty) return null;
       if (principal is! String || principal.isEmpty) return null;
-      return StoredTokenSession(refreshToken: refresh, principalId: principal);
+      return StoredTokenSession(
+        refreshToken: refresh,
+        principalId: principal,
+        identityMode: json['identity_mode'] is String
+            ? json['identity_mode'] as String
+            : 'token',
+      );
     } on FormatException {
       return null;
     }
