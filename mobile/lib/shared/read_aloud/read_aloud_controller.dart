@@ -11,7 +11,7 @@ import 'system_speech_engine.dart';
 
 /// Override this provider to replace system TTS without changing message UI.
 final speechEngineProvider = Provider<SpeechEngine>(
-  (_) => SystemSpeechEngine(),
+  (ref) => ref.read(systemSpeechEngineProvider),
 );
 
 /// The single speech session shared by all mobile conversations.
@@ -94,6 +94,7 @@ class ReadAloudController extends Notifier<ReadAloudState> {
     ref.listen(readAloudEnabledProvider, (_, enabled) {
       if (!enabled) unawaited(stop());
     });
+    ref.listen(readAloudEngineProvider, (_, _) => unawaited(stop()));
     final unregister = ref.read(communityTransitionProvider).register(stop);
     final lifecycle = AppLifecycleListener(
       onStateChange: (phase) {
