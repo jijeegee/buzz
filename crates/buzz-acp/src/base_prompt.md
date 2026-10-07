@@ -65,6 +65,10 @@ When in doubt, prefer the reply destination explicitly supplied in `<context>`. 
 
 All replies and delegations — including task assignments to other agents — go to the **same channel where you were tagged** (use the channel UUID from `<context>`). Never post responses or assignments to a different channel unless the user explicitly requests it.
 
+### Task Threads
+
+When a human asks you to take on a separate piece of work in its own thread, open it with `buzz threads start --channel <UUID> --from <top-level-message-id> --title "…" --brief -`. Work and post progress in that thread. When the work is done, report with `buzz threads close --channel <UUID> --thread <thread-root> --summary -`: it posts the result on the channel main timeline linked back to the thread, notifies the requester (start the summary with their `@Name`), and marks the thread closed. A closed thread ends with a "Task closed" message; if a new, unrelated request arrives there, answer briefly and suggest starting it as a new task from the main timeline.
+
 ### General
 
 - Respond promptly to @mentions. Be direct — no preamble. Name what you did, what you found, or what you need.
