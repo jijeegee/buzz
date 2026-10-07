@@ -126,7 +126,9 @@ void main() {
     final teardown = Completer<void>();
     container.read(communityTransitionProvider).register(() => teardown.future);
 
-    final signingOut = container.read(authProvider.notifier).signOut();
+    final signingOut = container
+        .read(authProvider.notifier)
+        .removeActiveCommunity();
     await Future<void>.delayed(Duration.zero);
 
     expect(await storage.loadActiveId(), community.id);
@@ -166,7 +168,9 @@ void main() {
     final switching = container
         .read(communityListProvider.notifier)
         .switchCommunity(replacement.id);
-    final signingOut = container.read(authProvider.notifier).signOut();
+    final signingOut = container
+        .read(authProvider.notifier)
+        .removeActiveCommunity();
     await Future<void>.delayed(Duration.zero);
 
     expect(await storage.loadActiveId(), active.id);
@@ -291,7 +295,7 @@ void main() {
       addTearDown(container.dispose);
       await container.read(authProvider.future);
 
-      await container.read(authProvider.notifier).signOut();
+      await container.read(authProvider.notifier).removeActiveCommunity();
 
       expect(
         snapshots.any((snapshot) {

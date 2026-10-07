@@ -18,15 +18,20 @@ Widget _settings() => SettingsPage(
 );
 
 Future<void> _tapRemoveAndConfirm(WidgetTester tester) async {
-  await tester.scrollUntilVisible(find.text('Sign out'), 200);
-  await tester.tap(find.text('Sign out'));
+  await tester.scrollUntilVisible(find.text('탈퇴·삭제 관리'), 200);
+  await tester.tap(find.text('탈퇴·삭제 관리'));
   await frames(tester);
-  await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
+  await tester.ensureVisible(
+    find.byKey(const Key('settings-remove-community')),
+  );
+  await tester.tap(find.byKey(const Key('settings-remove-community')));
+  await frames(tester);
+  await tester.tap(find.widgetWithText(FilledButton, '제거'));
   await frames(tester);
 }
 
 void main() {
-  group('Sign out (token)', () {
+  group('Remove community (token)', () {
     testWidgets('signs the device out on the relay before removing', (
       tester,
     ) async {
@@ -79,6 +84,41 @@ void main() {
         );
       },
     );
+  });
+
+  testWidgets('logout has no removal confirmation and retains the community', (
+    tester,
+  ) async {
+    final h = TokenSettingsHarness();
+    h.server.refreshResponses.add(
+      (_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'),
+    );
+    await h.pump(tester, _settings());
+    expect(
+      find.byKey(const Key('settings-remove-community')).hitTestable(),
+      findsNothing,
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('settings-sign-out')),
+      200,
+    );
+    await tester.tap(find.byKey(const Key('settings-sign-out')));
+    await frames(tester);
+    expect(find.byType(AlertDialog), findsNothing);
+    final saved = (await h.storage.loadAll()).single;
+    expect(saved.id, h.community.id);
+    expect(saved.pubkey, h.community.pubkey);
+    expect(saved.signedOut, isTrue);
+    expect(h.tokens.data, isEmpty);
+    expect(
+      h.container.read(authProvider).value?.status,
+      AuthStatus.unauthenticated,
+    );
+    expect(
+      h.server.requests.where((r) => r.url.path == '/auth/logout'),
+      hasLength(1),
+    );
+    expect(h.server.requests.where((r) => r.method == 'DELETE'), isEmpty);
   });
 
   group('Account (token)', () {

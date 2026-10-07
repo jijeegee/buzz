@@ -23,11 +23,14 @@ class RecordingAuth extends AuthNotifier {
   Future<void> authenticateWithCommunity(
     Community community, {
     bool Function()? isCurrent,
+    bool resumeSignedOut = false,
   }) async => saved = community;
   @override
   Future<void> authenticateWithTokenSession({
     required String relayUrl,
     required String principalId,
+    bool Function()? isCurrent,
+    bool resumeSignedOut = false,
   }) => throw StateError('Google custody must never select token messaging');
 }
 
@@ -37,6 +40,8 @@ class ReturningTokenAuth extends RecordingAuth {
   Future<void> authenticateWithTokenSession({
     required String relayUrl,
     required String principalId,
+    bool Function()? isCurrent,
+    bool resumeSignedOut = false,
   }) async {
     tokenPrincipal = principalId;
   }
@@ -49,6 +54,97 @@ Future<void> frames(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+    'retained Google account requires fresh authentication before resuming',
+    (tester) async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final retained = Community.create(
+        name: 'Saved account',
+        relayUrl: backup.origin,
+        pubkey: keys.public,
+        nsec: keys.nsec,
+        googleBackupAccountId: backup.account,
+      ).copyWith(signedOut: true);
+      await storage.save(retained);
+      await storage.saveActiveId(retained.id);
+      final authServer = FakeAuthServer();
+      authServer.nip11 = (_) => jsonResponse({
+        'buzz_key_backup': {
+          'version': 1,
+          'providers': ['google'],
+        },
+      });
+      authServer.complete = (_) => jsonResponse({
+        'principal_id': backup.account,
+        'identity_mode': 'key_backup',
+        'device_id': 'device',
+        'access': 'bzs_login',
+        'refresh': 'bzr_login',
+        'expires_in': 3600,
+      });
+      final server = backup.BackupServer()..secret = keys.secret;
+      final client = MockClient((request) async {
+        final forwarded = http.Request(request.method, request.url)
+          ..headers.addAll(request.headers)
+          ..bodyBytes = request.bodyBytes;
+        return http.Response.fromStream(
+          await (request.url.path.startsWith('/auth/key-backup')
+                  ? server.client
+                  : authServer.client)
+              .send(forwarded),
+        );
+      });
+      final launcher = FakeWebAuthLauncher(FakeWebAuthLauncher.success);
+      final clock = FakeClock(DateTime.now());
+      final container = ProviderContainer(
+        overrides: [
+          authHttpClientProvider.overrideWithValue(client),
+          webAuthLauncherProvider.overrideWithValue(launcher),
+          sessionClockProvider.overrideWithValue(clock.call),
+          sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+          keyBackupRefreshTokenStoreProvider.overrideWithValue(
+            FakeRefreshTokenStore(),
+          ),
+          communityStorageProvider.overrideWithValue(storage),
+          communitySnapshotWriterProvider.overrideWithValue((_) async {}),
+          signedCommunityAdmissionProvider.overrideWithValue((_) async {}),
+        ],
+      );
+      addTearDown(container.dispose);
+      expect(
+        (await container.read(authProvider.future)).status,
+        AuthStatus.unauthenticated,
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: TokenSignInPage(
+              backupOrigin: backup.origin,
+              resumeSignedOut: true,
+            ),
+          ),
+        ),
+      );
+      await frames(tester);
+      expect(launcher.opened, isEmpty);
+      expect((await storage.loadAll()).single.signedOut, isTrue);
+      await tester.ensureVisible(find.byKey(const Key('token-sign-in-google')));
+      await tester.tap(find.byKey(const Key('token-sign-in-google')));
+      await frames(tester);
+      expect(launcher.opened, hasLength(1));
+      expect(
+        container.read(authProvider).value?.status,
+        AuthStatus.authenticated,
+      );
+      final saved = (await storage.loadAll()).single;
+      expect(saved.signedOut, isFalse);
+      expect(saved.id, retained.id);
+      expect(saved.nsec, retained.nsec);
+      expect(server.proofs, isEmpty);
+    },
+  );
   for (final existingBackup in [false, true]) {
     testWidgets(
       'dual-mode return to existing token account; local backed key = $existingBackup',

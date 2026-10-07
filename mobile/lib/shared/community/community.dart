@@ -45,6 +45,10 @@ class Community {
   /// normally absent (a legacy key, if any, is kept untouched).
   final bool tokenAuth;
 
+  /// Local session ended. Membership and secure recovery material are retained,
+  /// but only explicit, identity-verified sign-in may resume this community.
+  final bool signedOut;
+
   /// Google account authorizing custody only; messaging still uses [nsec].
   final String? googleBackupAccountId;
   final DateTime addedAt;
@@ -61,6 +65,7 @@ class Community {
     this.pushLeaseInstallationId,
     this.starterSetupIncomplete = false,
     this.tokenAuth = false,
+    this.signedOut = false,
     this.googleBackupAccountId,
     required this.addedAt,
   });
@@ -102,6 +107,7 @@ class Community {
     Object? pushLeaseInstallationId = _sentinel,
     bool? starterSetupIncomplete,
     bool? tokenAuth,
+    bool? signedOut,
     String? googleBackupAccountId,
   }) {
     return Community(
@@ -122,6 +128,7 @@ class Community {
       starterSetupIncomplete:
           starterSetupIncomplete ?? this.starterSetupIncomplete,
       tokenAuth: tokenAuth ?? this.tokenAuth,
+      signedOut: signedOut ?? this.signedOut,
       googleBackupAccountId:
           googleBackupAccountId ?? this.googleBackupAccountId,
       addedAt: addedAt,
@@ -141,6 +148,7 @@ class Community {
       'pushLeaseInstallationId': pushLeaseInstallationId,
     'starterSetupIncomplete': starterSetupIncomplete,
     if (tokenAuth) 'authMode': 'token',
+    if (signedOut) 'signedOut': true,
     if (googleBackupAccountId != null)
       'googleBackupAccountId': googleBackupAccountId,
     'addedAt': addedAt.toIso8601String(),
@@ -181,10 +189,20 @@ class Community {
       pushLeaseInstallationId: pushLeaseInstallationId,
       starterSetupIncomplete: json['starterSetupIncomplete'] as bool? ?? false,
       tokenAuth: json['authMode'] == 'token',
+      signedOut: json['signedOut'] == true,
       googleBackupAccountId: json['googleBackupAccountId'] as String?,
       addedAt: DateTime.parse(json['addedAt'] as String),
     );
   }
+
+  /// Gives the resumed session its own push lease, separate from old cleanup.
+  Community resumeSession() => copyWith(
+    signedOut: false,
+    pushLeaseInstallationId: _newPushLeaseInstallationId(),
+    pushSubscriptionState: BuzzPushLeaseSubscriptionState.desired(
+      desired: pushSubscriptionState.desired,
+    ),
+  );
 
   /// Derive a human-friendly community name from a relay URL.
   static String nameFromUrl(String url) {

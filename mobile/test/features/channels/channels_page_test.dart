@@ -1194,22 +1194,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Done'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.logOut), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.trash2), findsNWidgets(2));
     expect(activeSelection, findsNothing);
     expect(inactiveSelection, findsNothing);
 
-    await tester.tap(find.byTooltip('Sign out of Bravo'));
+    await tester.tap(find.byTooltip('Remove Bravo from this device'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Sign out of this community?'), findsOneWidget);
-    expect(
-      find.textContaining(
-        'Your account and community membership are not deleted.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('커뮤니티를 이 기기에서 제거할까요?'), findsOneWidget);
+    expect(find.textContaining('서버의 계정과 가입 정보는 삭제하지 않습니다.'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
+    await tester.tap(find.widgetWithText(FilledButton, '제거'));
     await tester.pumpAndSettle();
 
     expect(communityNotifier.removedIds, ['bravo']);

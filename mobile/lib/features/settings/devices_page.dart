@@ -105,7 +105,9 @@ class DevicesPage extends HookConsumerWidget {
       cleanupError.value = null;
       busy.value = true;
       try {
-        await ref.read(authProvider.notifier).signOut(deviceOnly: true);
+        await ref
+            .read(authProvider.notifier)
+            .removeActiveCommunity(deviceOnly: true);
       } catch (failure) {
         if (context.mounted) cleanupError.value = '$failure';
         return;

@@ -31,6 +31,7 @@ import 'features/profile/profile_text_editor.dart';
 import 'features/settings/settings_page.dart';
 import 'features/sign_in/token_session_gate.dart';
 import 'features/sign_in/token_sign_in_page.dart';
+import 'features/sign_in/signed_out_page.dart';
 import 'shared/auth/auth.dart';
 import 'shared/auth/token/token.dart';
 import 'shared/community/add_community_route.dart';
@@ -471,7 +472,14 @@ class _OnboardingHome extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final community = ref.watch(authProvider).value?.community;
+    final auth = ref.watch(authProvider).value;
+    final community = auth?.community;
+    if (community?.signedOut == true) {
+      return SignedOutPage(
+        community: community!,
+        cleanupError: auth?.logoutError,
+      );
+    }
     return TokenSignInPage(
       defaultCommunity: community == null,
       backupOrigin: community?.relayUrl,

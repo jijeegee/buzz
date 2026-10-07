@@ -168,6 +168,17 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     validateInviteRelayUri(Uri.parse(invite.relayUrl));
     final communities = await ref.read(communityListProvider.future);
     final existing = _existingCommunity(communities, invite.relayUrl);
+    if (existing?.signedOut == true) {
+      _pendingStarterSetupCommunity = null;
+      state = InviteJoinState(
+        status: InviteJoinStatus.error,
+        invite: invite,
+        host: _hostFromRelay(invite.relayUrl),
+        communityName: existing!.name,
+        errorMessage: '먼저 이 계정으로 다시 로그인해 주세요.',
+      );
+      return;
+    }
     if (existing != null &&
         (existing.tokenAuth || existing.googleBackupAccountId != null)) {
       // Google sign-in/recovery does not grant community membership. Claim
@@ -250,6 +261,9 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     try {
       final communities = await ref.read(communityListProvider.future);
       final existing = _existingCommunity(communities, invite.relayUrl);
+      if (existing?.signedOut == true) {
+        throw const InviteClaimException('먼저 이 계정으로 다시 로그인해 주세요.');
+      }
       if (existing != null && existing.tokenAuth) {
         final wasActive =
             (await ref.read(activeCommunityProvider.future))?.id == existing.id;
@@ -558,8 +572,17 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     required bool incomplete,
   }) {
     return ref.read(communityTransitionProvider).runExclusive(() async {
-      final updated = community.copyWith(starterSetupIncomplete: incomplete);
-      await ref.read(communityStorageProvider).save(updated);
+      final storage = ref.read(communityStorageProvider);
+      final current = (await storage.loadAll())
+          .where((item) => item.id == community.id)
+          .firstOrNull;
+      if (current == null ||
+          current.signedOut ||
+          current.pubkey != community.pubkey) {
+        throw const InviteClaimException('먼저 이 계정으로 다시 로그인해 주세요.');
+      }
+      final updated = current.copyWith(starterSetupIncomplete: incomplete);
+      await storage.save(updated);
       ref.invalidate(communityListProvider);
       ref.invalidate(activeCommunityProvider);
       ref.invalidate(authProvider);

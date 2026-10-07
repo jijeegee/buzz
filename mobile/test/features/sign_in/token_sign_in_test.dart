@@ -23,6 +23,8 @@ class _RecordingAuthNotifier extends AuthNotifier {
   Future<void> authenticateWithTokenSession({
     required String relayUrl,
     required String principalId,
+    bool Function()? isCurrent,
+    bool resumeSignedOut = false,
   }) async {
     tokenSignIns.add((relayUrl: relayUrl, principalId: principalId));
   }

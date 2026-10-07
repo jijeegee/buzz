@@ -270,11 +270,11 @@ class _CommunityActionSwap extends StatelessWidget {
         child: isEditing
             ? IconButton(
                 key: ValueKey('community-switcher-remove-$communityId'),
-                tooltip: 'Sign out of $communityName',
+                tooltip: 'Remove $communityName from this device',
                 visualDensity: VisualDensity.compact,
                 onPressed: onRemove,
                 icon: Icon(
-                  LucideIcons.logOut,
+                  LucideIcons.trash2,
                   size: 18,
                   color: context.colors.error,
                 ),
@@ -379,11 +379,11 @@ Future<void> _confirmRemoveCommunity(
   final confirmed = await showBuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog.adaptive(
-      title: const Text('Sign out of this community?'),
+      title: const Text('커뮤니티를 이 기기에서 제거할까요?'),
       content: Text(
-        'Sign out of “${community.name}” on this device? '
-        'Your account and community membership are not deleted.'
-        '${!community.tokenAuth ? '\n\nThe saved private key for this community is removed from this device. Before continuing, make sure you have a saved key or backup, or have verified Google key recovery.' : ''}',
+        '“${community.name}”의 로그인 정보와 이 기기의 목록을 제거합니다. '
+        '서버의 계정과 가입 정보는 삭제하지 않습니다.'
+        '${!community.tokenAuth ? '\n\n저장된 개인 키도 제거됩니다. 개인 키 백업이나 Google 계정 복구가 준비되어 있는지 확인해 주세요.' : ''}',
       ),
       actions: [
         TextButton(
@@ -393,7 +393,7 @@ Future<void> _confirmRemoveCommunity(
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
           style: FilledButton.styleFrom(backgroundColor: context.colors.error),
-          child: const Text('Sign out'),
+          child: const Text('제거'),
         ),
       ],
     ),
@@ -414,7 +414,7 @@ Future<void> _confirmRemoveCommunity(
       Navigator.of(context).pop();
     }
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('Could not sign out: $e')));
+    messenger.showSnackBar(SnackBar(content: Text('커뮤니티를 제거하지 못했어요: $e')));
   }
 }
 

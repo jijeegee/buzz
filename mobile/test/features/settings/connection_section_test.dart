@@ -91,12 +91,21 @@ void main() {
     expect(clipboardCall?.method, 'Clipboard.setData');
     expect(clipboardCall?.arguments, {'text': expectedNpub});
     expect(find.text('Pubkey copied'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Sign out'), 200);
-    await tester.tap(find.text('Sign out'));
+    expect(
+      find.byKey(const Key('settings-remove-community')).hitTestable(),
+      findsNothing,
+    );
+    await tester.scrollUntilVisible(find.text('탈퇴·삭제 관리'), 200);
+    await tester.tap(find.text('탈퇴·삭제 관리'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('The saved private key'), findsOneWidget);
-    expect(find.textContaining('Before continuing'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
+    await tester.ensureVisible(
+      find.byKey(const Key('settings-remove-community')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settings-remove-community')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('저장된 개인 키도'), findsOneWidget);
+    await tester.tap(find.text('취소'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
   });
