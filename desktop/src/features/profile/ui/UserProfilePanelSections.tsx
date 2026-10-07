@@ -53,6 +53,11 @@ import { cn } from "@/shared/lib/cn";
 import { observeElementBlockSize } from "@/shared/layout/observeElementBlockSize";
 import { useMeasuredCssVariable } from "@/shared/layout/useMeasuredCssVariable";
 import { Badge } from "@/shared/ui/badge";
+import {
+  Layer0GoalCard,
+  PublicGoalLine,
+} from "@/features/goals/ui/Layer0GoalCard";
+import { FeatureGate } from "@/shared/features/FeatureGate";
 
 export { AgentInstructionsFocusedView } from "@/features/profile/ui/UserProfilePanelAgentDetails";
 
@@ -476,6 +481,15 @@ export function ProfileSummaryView({
           className="self-center"
           restartDiff={managedAgent.restartDiff}
         />
+      ) : null}
+
+      {pubkey ? (
+        <FeatureGate feature="goalTree">
+          <PublicGoalLine pubkey={pubkey} />
+          {isOwner === true && managedAgent ? (
+            <Layer0GoalCard agentPubkey={managedAgent.pubkey} />
+          ) : null}
+        </FeatureGate>
       ) : null}
 
       {showTabSection ? (

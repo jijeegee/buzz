@@ -92,6 +92,7 @@ fn make_prompt_context(
         system_prompt: config.system_prompt.clone(),
         session_title: config.session_title.clone(),
         team_instructions: config.team_instructions.clone(),
+        layer0_goals: config.layer0_goals.clone(),
         base_prompt: if config.no_base_prompt {
             None
         } else {

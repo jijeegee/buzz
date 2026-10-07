@@ -28,12 +28,13 @@ use buzz_core::kind::{
     KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
     KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
     KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE,
-    KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION,
-    KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED,
-    KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED,
-    KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
-    KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_THREAD_NAME, KIND_USER_STATUS, KIND_WORKFLOW_DEF,
-    KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
+    KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT,
+    KIND_PUBLIC_GOAL, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
+    KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2,
+    KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_THREAD_NAME,
+    KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
+    RELAY_ADMIN_CHANGE_ROLE,
     RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
@@ -595,6 +596,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // palette is the client-side union of every member's own set.
         | KIND_EMOJI_SET
         | KIND_EMOJI_LIST
+        | KIND_PUBLIC_GOAL
         | KIND_AGENT_PROFILE => Ok(Scope::UsersWrite),
         KIND_DELETION
         | KIND_REACTION
@@ -773,6 +775,8 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // keyed by (pubkey, kind[, d_tag]). A stray `h` tag must not channel-scope them.
             | KIND_EMOJI_SET
             | KIND_EMOJI_LIST
+            // A public layer 0 goal belongs to its author, never to a channel.
+            | KIND_PUBLIC_GOAL
             // NIP-AE agent engrams are addressed by (pubkey_a, kind, d_tag); never channel-scoped.
             | KIND_AGENT_ENGRAM
             // NIP-ER event reminders are addressed by (pubkey, kind, d_tag); never channel-scoped.
@@ -2535,6 +2539,15 @@ async fn ingest_event_inner(
         if let Err(msg) = validate_canvas_future_timestamp(event_ts, now) {
             return Err(IngestError::Rejected(msg.into()));
         }
+    }
+
+    if kind_u32 == KIND_PUBLIC_GOAL
+        && event.content.chars().count() > buzz_core::kind::MAX_PUBLIC_GOAL_CHARS
+    {
+        return Err(IngestError::Rejected(format!(
+            "invalid: public goal exceeds {} characters",
+            buzz_core::kind::MAX_PUBLIC_GOAL_CHARS
+        )));
     }
 
     const MAX_EVENT_CONTENT_BYTES: usize = 256 * 1024; // 256 KB
@@ -6852,6 +6865,16 @@ mod postgres_tests {
             validate_goal_tree_write(&event).unwrap(),
             CanvasRevisionSpec::NoHead
         );
+    }
+
+    #[test]
+    fn public_goal_is_global_user_state() {
+        assert!(is_global_only_kind(KIND_PUBLIC_GOAL));
+        assert!(!requires_h_channel_scope(KIND_PUBLIC_GOAL));
+        assert!(matches!(
+            required_scope_for_kind(KIND_PUBLIC_GOAL, &goal_tree_event("", vec![])),
+            Ok(Scope::UsersWrite)
+        ));
     }
 
     #[test]

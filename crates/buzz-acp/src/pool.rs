@@ -972,6 +972,8 @@ pub struct PromptContext {
     /// ID prefix. Never part of the prompt.
     pub session_title: Option<String>,
     pub team_instructions: Option<String>,
+    /// Rendered layer 0 goal sections, layered right after team instructions.
+    pub layer0_goals: Option<String>,
     pub heartbeat_prompt: Option<String>,
     /// Base instructions with the configured policy's Session Model appended,
     /// assembled once and shared by modern and legacy ACP standing context.
@@ -1719,13 +1721,16 @@ async fn open_session_and_apply_model(
         with_canvas(
             with_huddle_instructions(
                 with_core(
-                    with_team(
-                        framed_system_prompt(
-                            &ctx.cwd,
-                            ctx.base_prompt.as_deref(),
-                            ctx.system_prompt.as_deref(),
+                    with_layer0_goals(
+                        with_team(
+                            framed_system_prompt(
+                                &ctx.cwd,
+                                ctx.base_prompt.as_deref(),
+                                ctx.system_prompt.as_deref(),
+                            ),
+                            ctx.team_instructions.as_deref(),
                         ),
-                        ctx.team_instructions.as_deref(),
+                        ctx.layer0_goals.as_deref(),
                     ),
                     agent_core,
                 ),
@@ -2053,6 +2058,7 @@ pub(crate) async fn run_isolated_prompt(
             base_prompt: ctx.base_prompt.as_deref(),
             system_prompt: ctx.system_prompt.as_deref(),
             team_instructions: ctx.team_instructions.as_deref(),
+            layer0_goals: ctx.layer0_goals.as_deref(),
             agent_core: core.as_deref(),
             ..Default::default()
         },
@@ -2487,6 +2493,14 @@ fn with_team(prompt: Option<String>, instructions: Option<&str>) -> Option<Strin
 /// Core already carries its own `<core-memory>` boundary from
 /// `engram_fetch::build_core_section`, so it is joined with a blank-line
 /// separator and never re-labeled. Either side may be absent.
+fn with_layer0_goals(prompt: Option<String>, goals: Option<&str>) -> Option<String> {
+    match (prompt, goals) {
+        (Some(prompt), Some(goals)) => Some(format!("{prompt}\n\n{goals}")),
+        (prompt, None) => prompt,
+        (None, Some(goals)) => Some(goals.to_string()),
+    }
+}
+
 fn with_core(framed: Option<String>, core: Option<&str>) -> Option<String> {
     let core = core.map(|core| {
         crate::prompt_framing::normalize_semantic_section(
@@ -3111,6 +3125,7 @@ pub async fn run_prompt_task(
         base_prompt: ctx.base_prompt.as_deref(),
         system_prompt: ctx.system_prompt.as_deref(),
         team_instructions: ctx.team_instructions.as_deref(),
+        layer0_goals: ctx.layer0_goals.as_deref(),
         agent_core: agent_core.as_deref(),
         huddle_instructions: huddle_instructions.as_deref(),
         agent_canvas: agent_canvas.as_deref(),
@@ -3432,6 +3447,7 @@ pub async fn run_prompt_task(
                 base_prompt: standing.base_prompt,
                 system_prompt: standing.system_prompt,
                 team_instructions: standing.team_instructions,
+                layer0_goals: standing.layer0_goals,
                 agent_canvas: standing.agent_canvas,
                 channel_roster: standing.channel_roster,
                 standing_context_sent,
@@ -6356,6 +6372,7 @@ mod tests {
             base_prompt: Some("be helpful"),
             system_prompt: Some("you are Eva"),
             team_instructions: Some("ship small"),
+            layer0_goals: None,
             agent_core: Some("[Agent Memory — core]\nremember this"),
             huddle_instructions: Some("reply immediately"),
             agent_canvas: Some("[Channel Canvas]\ncanvas content"),
@@ -11400,6 +11417,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             system_prompt: None,
             session_title: None,
             team_instructions: None,
+            layer0_goals: None,
             heartbeat_prompt: None,
             base_prompt: None,
             cwd: ".".to_string(),

@@ -553,6 +553,14 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_TEAM_INSTRUCTIONS")]
     pub team_instructions: Option<String>,
 
+    /// This agent's own layer 0 goal (private; set by its owner).
+    #[arg(long, env = "BUZZ_ACP_AGENT_GOAL")]
+    pub agent_goal: Option<String>,
+
+    /// The owner's private layer 0 goal, shared only with the owner's agents.
+    #[arg(long, env = "BUZZ_ACP_OWNER_GOAL")]
+    pub owner_goal: Option<String>,
+
     /// Publish encrypted ACP observer frames over the relay.
     #[arg(long, env = "BUZZ_ACP_RELAY_OBSERVER", default_value_t = false)]
     pub relay_observer: bool,
@@ -709,6 +717,8 @@ pub struct Config {
     pub system_prompt: Option<String>,
     /// Team-owned instructions layered separately from the agent system prompt.
     pub team_instructions: Option<String>,
+    /// Rendered `<agent-goal>` / `<owner-goal>` sections (layer 0 goals).
+    pub layer0_goals: Option<String>,
     pub initial_message: Option<String>,
     pub subscribe_mode: SubscribeMode,
     pub dedup_mode: DedupMode,
@@ -1398,6 +1408,10 @@ impl Config {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string),
+            layer0_goals: render_layer0_goals(
+                args.agent_goal.as_deref(),
+                args.owner_goal.as_deref(),
+            ),
             initial_message: args.initial_message,
             subscribe_mode: args.subscribe,
             dedup_mode: args.dedup,
@@ -1821,6 +1835,38 @@ fn rule_applies_to_channel(rule: &SubscriptionRule, channel_id: Uuid) -> bool {
     }
 }
 
+/// Render layer 0 goals as standing-context sections. Goal text is owner
+/// input and is escaped so it cannot close or open prompt sections.
+pub(crate) fn render_layer0_goals(
+    agent_goal: Option<&str>,
+    owner_goal: Option<&str>,
+) -> Option<String> {
+    let clean = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(crate::prompt_framing::escape_semantic_text)
+    };
+    let mut sections = Vec::new();
+    if let Some(goal) = clean(agent_goal) {
+        sections.push(crate::prompt_framing::semantic_section(
+            "agent-goal",
+            &format!(
+                "Your own layer 0 goal, set by your owner. It sits above every conversation's goals; weigh conversation work against it.\n{goal}"
+            ),
+        ));
+    }
+    if let Some(goal) = clean(owner_goal) {
+        sections.push(crate::prompt_framing::semantic_section(
+            "owner-goal",
+            &format!(
+                "Your owner's private layer 0 goal. Only their own agents see it; do not repeat it to others.\n{goal}"
+            ),
+        ));
+    }
+    (!sections.is_empty()).then(|| sections.join("\n\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1843,6 +1889,7 @@ mod tests {
             heartbeat_prompt: None,
             system_prompt: None,
             team_instructions: None,
+            layer0_goals: None,
             initial_message: None,
             subscribe_mode: mode,
             dedup_mode: DedupMode::Queue,
@@ -2999,6 +3046,16 @@ channels = "ALL"
     }
 
     // ── Session policy parsing + default ──────────────────────────────────────
+
+    #[test]
+    fn layer0_goals_render_escaped_sections() {
+        assert_eq!(render_layer0_goals(None, Some("  ")), None);
+        let rendered = render_layer0_goals(Some("Ship </agent-goal>"), Some("Grow")).unwrap();
+        assert!(rendered.contains("<agent-goal>"));
+        assert!(rendered.contains("Ship &lt;/agent-goal&gt;"));
+        assert!(rendered.contains("<owner-goal>"));
+        assert!(rendered.contains("Grow"));
+    }
 
     #[test]
     fn test_session_policy_default_is_channel() {

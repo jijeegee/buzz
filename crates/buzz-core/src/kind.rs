@@ -32,6 +32,12 @@ pub const KIND_NIP65_RELAY_LIST_METADATA: u32 = 10002;
 pub const KIND_BOOKMARK_LIST: u32 = 10003;
 /// NIP-51: Emoji list (replaceable) — user preferred emojis and pointers to emoji sets.
 pub const KIND_EMOJI_LIST: u32 = 10030;
+/// Public layer 0 goal (replaceable, one per pubkey): the part of a person's
+/// or agent's own goal they chose to share. Empty content means none is
+/// shared. The private part never leaves the owner's machine.
+pub const KIND_PUBLIC_GOAL: u32 = 10110;
+/// Maximum characters in a public goal.
+pub const MAX_PUBLIC_GOAL_CHARS: usize = 1_000;
 /// NIP-51: Follow set (parameterized replaceable, 30000–39999 range) — named curated lists of pubkeys.
 ///
 /// User-owned, keyed by `(pubkey, kind, d_tag)`. Allows multiple named follow lists on top of
@@ -725,6 +731,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_MESSAGE_DIFF,
     KIND_CANVAS,
     KIND_GOAL_TREE,
+    KIND_PUBLIC_GOAL,
     KIND_SYSTEM_MESSAGE,
     KIND_CHANNEL_SUMMARY,
     KIND_PRESENCE_SNAPSHOT,

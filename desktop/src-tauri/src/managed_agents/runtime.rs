@@ -761,6 +761,18 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             }
         }
     }
+    // Layer 0 goals stay on this machine; only this agent's own process sees
+    // its goal and its owner's private goal.
+    let (agent_goal, owner_goal) = crate::commands::spawn_goals(app, &record.pubkey);
+    for (key, value) in [
+        ("BUZZ_ACP_AGENT_GOAL", agent_goal),
+        ("BUZZ_ACP_OWNER_GOAL", owner_goal),
+    ] {
+        match value {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        };
+    }
     let team_instructions = super::spawn_snapshot::effective_team_instructions(record, &teams);
     if let Some(instructions) = &team_instructions {
         command.env("BUZZ_ACP_TEAM_INSTRUCTIONS", instructions);
