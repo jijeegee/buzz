@@ -343,7 +343,10 @@ class App extends HookConsumerWidget {
     if (ageSignalState != AgeSignalState.restricted &&
         authState.value?.status == AuthStatus.authenticated) {
       ref.watch(relaySessionProvider);
-      ref.watch(observerRelayProvider);
+      // Keep the observer subscription alive without rebuilding the app root:
+      // every agent telemetry frame emits new state, and watching it here
+      // rebuilt MaterialApp (and every Theme dependent) once per frame.
+      ref.listen(observerRelayProvider, (_, _) {});
       ref.watch(appLifecycleProvider);
       ref.watch(userStatusCacheProvider);
       if (ref.watch(activeCommunityProvider).value?.pushNotificationsEnabled ==
