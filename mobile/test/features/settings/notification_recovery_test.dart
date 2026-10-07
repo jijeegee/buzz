@@ -116,7 +116,17 @@ void main() {
         reason:
             '${container.read(activeCommunityProvider)} / ${container.read(communityListProvider)}',
       );
-      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+      expect(
+        tester
+            .widget<Switch>(
+              find.descendant(
+                of: find.byKey(const ValueKey('push-notifications-enabled')),
+                matching: find.byType(Switch),
+              ),
+            )
+            .value,
+        isTrue,
+      );
       expect(
         find.text(
           'Push support unavailable; you can still turn notifications off',
@@ -128,7 +138,12 @@ void main() {
       );
       await tester.pump();
       expect(settingsOpened, 1);
-      await tester.tap(find.byType(Switch));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('push-notifications-enabled')),
+          matching: find.byType(Switch),
+        ),
+      );
       await tester.pumpAndSettle();
       final stored = (await storage.loadAll()).single;
       expect(stored.pushNotificationsEnabled, isFalse);
@@ -139,7 +154,12 @@ void main() {
         find.text('Waiting for relay confirmation; notifications may continue'),
         findsOneWidget,
       );
-      final offSwitch = tester.widget<Switch>(find.byType(Switch));
+      final offSwitch = tester.widget<Switch>(
+        find.descendant(
+          of: find.byKey(const ValueKey('push-notifications-enabled')),
+          matching: find.byType(Switch),
+        ),
+      );
       expect(offSwitch.value, isFalse);
       expect(offSwitch.onChanged, isNull);
       await tester.tap(

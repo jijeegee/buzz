@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../shared/read_aloud/speech_audio_gate.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -35,6 +36,7 @@ class VoiceNoteComposerRecorder extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recorder = useMemoized(ref.read(voiceNoteRecorderFactoryProvider));
+    final speech = ref.read(speechAudioGateProvider);
     final samples = useState<List<double>>(const []);
     final sampleSequence = useState(0);
     final elapsed = useState(Duration.zero);
@@ -107,6 +109,11 @@ class VoiceNoteComposerRecorder extends HookConsumerWidget {
       });
       unawaited(() async {
         try {
+          await speech.acquire(recorder);
+          if (!active) {
+            speech.release(recorder);
+            return;
+          }
           await recorder.start();
           if (active) {
             startedAt.value = DateTime.now();
@@ -126,8 +133,12 @@ class VoiceNoteComposerRecorder extends HookConsumerWidget {
         timer.cancel();
         unawaited(levelSubscription.cancel());
         unawaited(() async {
-          await recorder.cancel();
-          await recorder.dispose();
+          try {
+            await recorder.cancel();
+            await recorder.dispose();
+          } finally {
+            speech.release(recorder);
+          }
         }());
       };
     }, [recorder]);

@@ -31,6 +31,7 @@ import '../../shared/widgets/modal_presentation.dart';
 import 'account_page.dart';
 import 'devices_page.dart';
 import 'theme_picker_page.dart';
+import 'read_aloud_settings.dart';
 import '../sign_in/token_sign_in_page.dart';
 
 part 'settings_page/account_section.dart';
@@ -227,6 +228,7 @@ class SettingsPage extends HookConsumerWidget {
               children: [
                 profileHeader,
                 _CommunitySection(invitePageBuilder: invitePageBuilder),
+                const ReadAloudSettings(),
                 const _NotificationsSection(),
                 if (tokenOrigin != null)
                   _AccountSection(origin: tokenOrigin)

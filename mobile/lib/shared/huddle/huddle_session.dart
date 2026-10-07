@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../features/age_gate/age_signal_provider.dart';
+import '../read_aloud/speech_audio_gate.dart';
 import 'huddle_auth.dart';
 import 'huddle_media.dart';
 import 'huddle_transport.dart';
@@ -176,6 +177,7 @@ final huddleSessionProvider =
 
 /// Owns one foreground mobile Huddle and wires native Opus media to its socket.
 final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
+  late SpeechAudioGate _speechAudioGate;
   HuddleMedia? _media;
   HuddleTransportClient? _transport;
   StreamSubscription<HuddleMediaState>? _mediaStateSubscription;
@@ -203,6 +205,7 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
 
   @override
   HuddleSessionState build() {
+    _speechAudioGate = ref.read(speechAudioGateProvider);
     _ageRestricted = ref.watch(ageSignalProvider) == AgeSignalState.restricted;
     ref.onDispose(() {
       _generation += 1;
@@ -246,6 +249,8 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
     );
 
     try {
+      await _speechAudioGate.acquire(this);
+      _ensureCurrent(generation);
       final media = ref.read(huddleMediaFactoryProvider)();
       _media = media;
       _mediaStateSubscription = media.states.listen((mediaState) {
@@ -746,6 +751,7 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
     _playbackQueues.clear();
     _playbackDrain = null;
     _lastPlaybackPeerIndex = null;
+    _speechAudioGate.release(this);
     if (failure != null) {
       Error.throwWithStackTrace(failure, failureStackTrace!);
     }
