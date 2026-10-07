@@ -34,8 +34,17 @@ buzz messages name-thread --channel <UUID> --event <HEAD_ID> --name ""
 ```
 
 Deploy the updated relay before clients, because older relays reject the new
-kind. No database migration is required. This change adds desktop UI and CLI;
-mobile clients continue to display their existing headings.
+kind. No database migration is required. Desktop, mobile and the CLI share the
+same name events. On mobile, open a thread and use **Edit thread name** in the
+header. Names also appear in the channel and nested reply summaries. Archived
+channels and non-members have read-only access. Older clients keep their normal
+headings.
+
+Mobile caches up to 500 confirmed names per community/identity. Editor drafts
+survive closing the dialog and restarting the app. Saving requires connectivity;
+a rejected or uncertain save keeps the draft and reports the error. The name
+changes only after relay acceptance. Mobile input uses the same Unicode-scalar
+weight as the relay; the normal Korean keyboard composes Hangul syllables.
 
 ## Validation
 
@@ -45,3 +54,6 @@ mobile clients continue to display their existing headings.
 - Desktop `threadName.test.mjs` covers ordering, clear events and channel isolation.
 - Playwright `thread-name.spec.ts` exercises editing, limits, Korean composition,
   list display, live updates and clearing through the application.
+- Mobile `thread_name_test.dart` exercises editor limits, rejected-save recovery,
+  clearing, relay-stamped events, live/history ordering, cache isolation and
+  subscription disposal.

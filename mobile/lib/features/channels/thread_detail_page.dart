@@ -25,6 +25,8 @@ import 'channel_messages_provider.dart';
 import 'channel_typing_provider.dart';
 import 'channel_typing_indicator.dart';
 import 'thread_replies_provider.dart';
+import 'thread_name_provider.dart';
+import 'thread_name_editor.dart';
 import 'channels_provider.dart';
 import 'compose_bar.dart';
 import 'composer_dock_size_reporter.dart';
@@ -94,6 +96,8 @@ class ThreadDetailPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final nameKey = (channelId: channelId, headId: threadHead.id);
+    final threadName = ref.watch(threadNameProvider(nameKey)).value?.content;
     final appView = View.of(context);
     final composerDockHeight = useState(0.0);
     final composerFocusNode = useFocusNode();
@@ -850,8 +854,21 @@ class ThreadDetailPage extends HookConsumerWidget {
                 ? iosGlassChannelHeaderTitleSpacing
                 : 0,
           ),
-          child: const Text('Thread', key: ValueKey('thread-app-bar-title')),
+          child: Text(
+            threadName == null || threadName.isEmpty ? 'Thread' : threadName,
+            key: const ValueKey('thread-app-bar-title'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
+        actions: [
+          if (isMember && !isArchived && !liveDeletionHidesHead)
+            IconButton(
+              tooltip: 'Edit thread name',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => showThreadNameEditor(context, nameKey),
+            ),
+        ],
         titleStyle: channelTitleTextStyle,
       ),
       body: Stack(
