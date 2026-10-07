@@ -15,11 +15,15 @@ import {
   formatContextUpdatedAgo,
   formatContextUsageLabel,
 } from "@/features/agents/lib/contextGauge";
+import {
+  type ContextReading,
+  compactDialogView,
+  compactUnavailableReason,
+} from "@/features/agents/lib/contextUsageQuery";
 import { cn } from "@/shared/lib/cn";
 import { useNow } from "@/shared/lib/useNow";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -33,6 +37,7 @@ import {
   runCompactSession,
   useCompactSessionPending,
 } from "./runCompactSession";
+import { useContextUsageQuery } from "./useContextUsageQuery";
 
 const STAGE_FILL_CLASS: Record<ContextGaugeStage, string> = {
   normal: "fill-muted-foreground/35",
@@ -93,31 +98,12 @@ function scopeDescription(reading: AgentContextUsage): string {
     : "Whole conversation";
 }
 
-/** Reason the Compact action is unavailable, or null when it can run. */
-export function compactUnavailableReason({
-  compactSupported,
-  hasActiveTurn,
-  pending,
-}: {
-  compactSupported: boolean;
-  hasActiveTurn: boolean;
-  pending: boolean;
-}): string | null {
-  if (!compactSupported) {
-    return "This agent's runtime doesn't support compaction.";
-  }
-  if (pending) {
-    return "A compaction request for this session is already in progress.";
-  }
-  if (hasActiveTurn) {
-    return "The agent is working in this channel. Compact after the turn finishes.";
-  }
-  return null;
-}
-
 /**
- * Confirmation for compacting one session. Shows the current reading and
- * disables Compact (with the reason) while unavailable.
+ * Confirmation for compacting one session. On open it asks the harness for
+ * the session's current reading and shows it (or the cached reading, marked
+ * possibly stale, when the harness doesn't answer). Compact sends the shown
+ * reading as the expectation; a `stale` refusal replaces it with the
+ * harness's newer reading and keeps the dialog open.
  */
 export function CompactSessionDialog({
   agentName,
@@ -135,12 +121,43 @@ export function CompactSessionDialog({
     (turn) => turn.channelId === reading.channelId,
   );
   const pending = useCompactSessionPending(reading);
-  const unavailableReason = compactUnavailableReason({
-    compactSupported: reading.compactSupported,
-    hasActiveTurn,
-    pending,
-  });
+  const query = useContextUsageQuery(reading);
+  const [changed, setChanged] = React.useState<ContextReading | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
   const now = useNow(30_000);
+  const view = compactDialogView({ cached: reading, query, changed, now });
+  const unavailableReason = compactUnavailableReason({
+    compactSupported: view.reading.compactSupported,
+    hasActiveTurn,
+    noSession: view.noSession,
+    pending: pending || submitting,
+  });
+
+  const compact = () => {
+    setSubmitting(true);
+    void runCompactSession(
+      {
+        agentPubkey: reading.agentPubkey,
+        agentName,
+        channelId: reading.channelId,
+        threadRootEventId: reading.threadRootEventId,
+      },
+      {
+        expected: {
+          sessionId: view.reading.sessionId,
+          used: view.reading.used,
+        },
+        onStarted: () => onOpenChange(false),
+        onStale: (current) => {
+          // Without a reading the old one is not trustworthy either: re-check.
+          if (current) setChanged(current);
+        },
+      },
+    ).then((outcome) => {
+      setSubmitting(false);
+      if (outcome !== "stale") onOpenChange(false);
+    });
+  };
 
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
@@ -154,19 +171,29 @@ export function CompactSessionDialog({
         </AlertDialogHeader>
         <div
           className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2 text-sm"
+          data-freshness={view.freshness}
           data-testid="compact-session-usage"
         >
-          <ContextGaugeDial size={28} reading={reading} />
+          <ContextGaugeDial size={28} reading={view.reading} />
           <div className="min-w-0">
             <p className="font-medium">
-              {formatContextUsageLabel(reading.used, reading.size)}
+              {formatContextUsageLabel(view.reading.used, view.reading.size)}
             </p>
             <p className="text-xs text-muted-foreground">
               {scopeDescription(reading)} · Updated{" "}
-              {formatContextUpdatedAgo(reading.updatedAt, now)}
+              {formatContextUpdatedAgo(view.updatedAt, now)}
             </p>
           </div>
         </div>
+        {view.note ? (
+          <p
+            aria-live="polite"
+            className="text-sm text-muted-foreground"
+            data-testid="compact-session-freshness"
+          >
+            {view.note}
+          </p>
+        ) : null}
         {unavailableReason ? (
           <p
             className="text-sm text-muted-foreground"
@@ -181,22 +208,13 @@ export function CompactSessionDialog({
               Cancel
             </Button>
           </AlertDialogCancel>
-          <AlertDialogAction asChild>
-            <Button
-              disabled={unavailableReason !== null}
-              onClick={() => {
-                void runCompactSession({
-                  agentPubkey: reading.agentPubkey,
-                  agentName,
-                  channelId: reading.channelId,
-                  threadRootEventId: reading.threadRootEventId,
-                });
-              }}
-              type="button"
-            >
-              Compact
-            </Button>
-          </AlertDialogAction>
+          <Button
+            disabled={view.checking || unavailableReason !== null}
+            onClick={compact}
+            type="button"
+          >
+            Compact
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

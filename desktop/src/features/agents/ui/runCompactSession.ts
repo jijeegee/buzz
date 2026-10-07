@@ -3,13 +3,18 @@ import { toast } from "sonner";
 
 import {
   awaitCompactSessionOutcome,
+  type CompactSessionOutcome,
   compactSessionOutcomeNotice,
 } from "@/features/agents/lib/compactSessionOutcome";
+import type { ContextReading } from "@/features/agents/lib/contextUsageQuery";
 import {
   ensureRelayObserverSubscription,
   subscribeControlResults,
 } from "@/features/agents/observerRelayStore";
-import { compactManagedAgentSession } from "@/shared/api/agentControl";
+import {
+  type CompactSessionExpectation,
+  compactManagedAgentSession,
+} from "@/shared/api/agentControl";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 /** Wait this long for the harness `started` ack. */
@@ -58,13 +63,27 @@ export function useCompactSessionPending(
   return React.useSyncExternalStore(subscribePending, getSnapshot);
 }
 
+export type RunCompactSessionOptions = {
+  /** The reading the user confirmed; the harness refuses if it moved. */
+  expected?: CompactSessionExpectation;
+  /** The harness accepted the request and started compacting. */
+  onStarted?: () => void;
+  /** The harness refused because the session changed; its current reading. */
+  onStale?: (reading: ContextReading | null) => void;
+};
+
 /**
  * Send a `compact_session` control and narrate it through one toast that
  * moves from "requested" to "compacting" to the harness's terminal outcome.
+ * Resolves with the outcome, or null when not sent (already pending) or the
+ * send failed.
  */
-export async function runCompactSession(target: CompactSessionTarget) {
+export async function runCompactSession(
+  target: CompactSessionTarget,
+  options: RunCompactSessionOptions = {},
+): Promise<CompactSessionOutcome | null> {
   const key = pendingKey(target);
-  if (pendingScopes.has(key)) return;
+  if (pendingScopes.has(key)) return null;
   setPending(key, true);
   const requestId = crypto.randomUUID();
   const toastId = `compact-session-${requestId}`;
@@ -84,6 +103,7 @@ export async function runCompactSession(target: CompactSessionTarget) {
           target.channelId,
           target.threadRootEventId,
           requestId,
+          options.expected,
         );
       },
       scheduleTimeout: (phase, onTimeout) => {
@@ -99,10 +119,13 @@ export async function runCompactSession(target: CompactSessionTarget) {
         toast.loading(`Compacting ${target.agentName}'s session context…`, {
           id: toastId,
         });
+        options.onStarted?.();
       },
+      onStale: options.onStale,
     });
     const notice = compactSessionOutcomeNotice(outcome, target.agentName);
     toast[notice.tone](notice.message, { id: toastId });
+    return outcome;
   } catch (error) {
     toast.error(
       error instanceof Error
@@ -110,6 +133,7 @@ export async function runCompactSession(target: CompactSessionTarget) {
         : `Failed to ask ${target.agentName} to compact this session.`,
       { id: toastId },
     );
+    return null;
   } finally {
     setPending(key, false);
   }

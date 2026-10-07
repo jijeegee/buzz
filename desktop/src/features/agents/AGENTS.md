@@ -743,18 +743,32 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
 per (agent, channel, thread root | null), newest by observer ordering, bounded
 and persisted per observing identity. A chat agent avatar resolves its message's
 thread scope (`rootId ?? id`) first, then the channel's whole-conversation
-scope, and renders nothing without a reading. `compact_session` is the one
-thread-scoped observer control: it carries `threadRootEventId`, settles only on
+scope, and renders nothing without a reading. `compact_session` and
+`query_context_usage` are the thread-scoped observer controls. Compaction
+carries `threadRootEventId`, settles only on
 a result matching type, request ID, and channel, and reports a missing ack or
 terminal result as unconfirmed, never success (`lib/compactSessionOutcome.ts`).
 Cancel and model switch remain channel-only as described above.
 
+Opening the Compact dialog sends `query_context_usage` for the same scope
+(`lib/contextUsageQuery.ts`, `ui/useContextUsageQuery.ts`). The harness answers
+`ok` with its in-memory reading (and republishes it as `context_usage`, so the
+store refreshes through the normal ingestion path), `busy`, `no_reading`, or
+`no_session`; `no_session` disables Compact. No answer within the short query
+timeout shows the cached reading as possibly stale and leaves Compact enabled.
+Compact sends the shown reading as `expectedSessionId`/`expectedUsed`; the
+harness refuses with `stale` plus its current reading when the session id
+differs or `used` drifted by more than `max(10% of size, 20,000)` tokens. The
+dialog stays open on `stale` and shows that reading; it closes on `started` or
+any other result.
+
 ## The tests that enforce this
 
-- `agentContextUsageStore.test.mjs`, `lib/contextGauge.test.mjs`, and
-  `lib/compactSessionOutcome.test.mjs` — gauge store ordering, keying,
-  persistence, and bound; dial geometry and stage thresholds; compaction
-  result correlation and copy.
+- `agentContextUsageStore.test.mjs`, `lib/contextGauge.test.mjs`,
+  `lib/compactSessionOutcome.test.mjs`, and `lib/contextUsageQuery.test.mjs` —
+  gauge store ordering, keying, persistence, and bound; dial geometry and
+  stage thresholds; compaction result correlation and copy; live query
+  correlation, dialog freshness states, and Compact gating.
 
 - `lib/agentConfigCore.test.mjs` — field model per harness × scope, clearing
   policy. Update when the capability model changes.

@@ -1,4 +1,5 @@
 import type { ControlResultFrame } from "@/shared/api/types";
+import { type ContextReading, parseContextReading } from "./contextUsageQuery";
 
 /** Terminal outcome of one `compact_session` request, as seen by Desktop. */
 export type CompactSessionOutcome =
@@ -9,6 +10,11 @@ export type CompactSessionOutcome =
   | "no_session"
   | "unsupported"
   | "ambiguous_target"
+  /**
+   * The session changed since the reading the user confirmed (new session or
+   * usage moved past the harness threshold); nothing was compacted.
+   */
+  | "stale"
   /** No harness acknowledgement arrived within the ack window. */
   | "unconfirmed"
   /** The harness acknowledged, but no terminal result arrived in time. */
@@ -22,6 +28,7 @@ const HARNESS_TERMINAL_STATUSES = new Set<string>([
   "no_session",
   "unsupported",
   "ambiguous_target",
+  "stale",
 ]);
 
 export type CompactTimeoutPhase = "ack" | "completion";
@@ -31,8 +38,9 @@ export type CompactTimeoutPhase = "ack" | "completion";
  *
  * Correlates on control type, request id, and channel. A `started` ack moves
  * the request into its completion phase (reported through `onStarted`); any
- * harness terminal status settles it. Missing results resolve to an explicit
- * unconfirmed outcome rather than success. Transport failures reject.
+ * harness terminal status settles it. A `stale` result hands the harness's
+ * current reading to `onStale` before settling. Missing results resolve to an
+ * explicit unconfirmed outcome rather than success. Transport failures reject.
  */
 export async function awaitCompactSessionOutcome({
   requestId,
@@ -41,6 +49,7 @@ export async function awaitCompactSessionOutcome({
   send,
   scheduleTimeout,
   onStarted,
+  onStale,
 }: {
   requestId: string;
   channelId: string;
@@ -51,6 +60,7 @@ export async function awaitCompactSessionOutcome({
     onTimeout: () => void,
   ) => () => void;
   onStarted?: () => void;
+  onStale?: (reading: ContextReading | null) => void;
 }): Promise<CompactSessionOutcome> {
   let settled = false;
   let started = false;
@@ -99,6 +109,9 @@ export async function awaitCompactSessionOutcome({
       return;
     }
     if (HARNESS_TERMINAL_STATUSES.has(frame.status)) {
+      if (frame.status === "stale") {
+        onStale?.(parseContextReading(frame.reading));
+      }
       settle(frame.status as CompactSessionOutcome);
     }
   });
@@ -158,6 +171,11 @@ export function compactSessionOutcomeNotice(
       return {
         tone: "error",
         message: `${agentName} couldn't tell which session to compact.`,
+      };
+    case "stale":
+      return {
+        tone: "info",
+        message: `${agentName}'s context changed since you looked, so nothing was compacted. Re-check the reading and try again.`,
       };
     case "unconfirmed":
       return {

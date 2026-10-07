@@ -84,6 +84,7 @@ describe("awaitCompactSessionOutcome", () => {
     "ambiguous_target",
     "failed",
     "timeout",
+    "stale",
   ]) {
     it(`settles on terminal ${status}`, async () => {
       const h = harness();
@@ -92,6 +93,48 @@ describe("awaitCompactSessionOutcome", () => {
       assert.equal(await outcome, status);
     });
   }
+
+  it("hands a stale result's reading to onStale before settling", async () => {
+    const h = harness();
+    const readings = [];
+    const outcome = awaitCompactSessionOutcome({
+      requestId: REQUEST,
+      channelId: CHANNEL,
+      send: async () => {},
+      ...h.options,
+      onStale: (reading) => readings.push(reading),
+    });
+    h.emit(
+      frame("stale", {
+        reading: {
+          sessionId: "live",
+          used: 150000,
+          size: 200000,
+          compactSupported: true,
+          updatedAt: "2026-10-07T00:00:00+00:00",
+        },
+      }),
+    );
+    assert.equal(await outcome, "stale");
+    assert.equal(readings.length, 1);
+    assert.equal(readings[0].sessionId, "live");
+    assert.equal(readings[0].used, 150000);
+  });
+
+  it("passes null to onStale when the stale result has no usable reading", async () => {
+    const h = harness();
+    const readings = [];
+    const outcome = awaitCompactSessionOutcome({
+      requestId: REQUEST,
+      channelId: CHANNEL,
+      send: async () => {},
+      ...h.options,
+      onStale: (reading) => readings.push(reading),
+    });
+    h.emit(frame("stale"));
+    assert.equal(await outcome, "stale");
+    assert.deepEqual(readings, [null]);
+  });
 
   it("ignores frames for other controls, requests, or channels", async () => {
     const h = harness();
@@ -149,6 +192,7 @@ describe("compactSessionOutcomeNotice", () => {
       no_session: "info",
       unsupported: "info",
       ambiguous_target: "error",
+      stale: "info",
       unconfirmed: "info",
       unconfirmed_completion: "info",
     };
@@ -157,5 +201,12 @@ describe("compactSessionOutcomeNotice", () => {
       assert.equal(notice.tone, tone, outcome);
       assert.match(notice.message, /Fizz/, outcome);
     }
+  });
+
+  it("tells the user to re-check on stale", () => {
+    assert.match(
+      compactSessionOutcomeNotice("stale", "Fizz").message,
+      /changed since you looked.*Re-check/,
+    );
   });
 });
