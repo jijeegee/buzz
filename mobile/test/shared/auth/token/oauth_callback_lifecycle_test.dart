@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:buzz/shared/auth/token/mobile_callback.dart';
 import 'package:buzz/shared/auth/token/token.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -122,9 +123,87 @@ void main() {
   );
 
   const channel = MethodChannel('flutter_web_auth_2');
+  const returnChannel = MethodChannel('buzz/auth_browser');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-  tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+  tearDown(() {
+    messenger.setMockMethodCallHandler(channel, null);
+    messenger.setMockMethodCallHandler(returnChannel, null);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  test('Android returns to the app only after a browser callback', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final callback = Completer<String>();
+    var returns = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'authenticate') return callback.future;
+      return null;
+    });
+    messenger.setMockMethodCallHandler(returnChannel, (call) async {
+      expect(call.method, 'returnToApp');
+      returns++;
+      return null;
+    });
+    final pending = const FlutterWebAuth2Launcher().authenticate(
+      url: Uri.parse('https://relay.example/auth/start'),
+      callbackUrlScheme: buzzMobileCallbackScheme,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(returns, 0);
+    callback.complete(buzzMobileRedirectUri);
+    expect(await pending, Uri.parse(buzzMobileRedirectUri));
+    expect(returns, 1);
+  });
+
+  test(
+    'window return failure preserves the callback and allows retry',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        return call.method == 'authenticate' ? buzzMobileRedirectUri : null;
+      });
+      messenger.setMockMethodCallHandler(returnChannel, (call) async {
+        throw PlatformException(code: 'return_failed');
+      });
+      for (var attempt = 0; attempt < 2; attempt++) {
+        expect(
+          await const FlutterWebAuth2Launcher().authenticate(
+            url: Uri.parse('https://relay.example/auth/start'),
+            callbackUrlScheme: buzzMobileCallbackScheme,
+          ),
+          Uri.parse(buzzMobileRedirectUri),
+        );
+      }
+    },
+  );
+
+  test(
+    'cancelled browsers and iOS do not request Android window return',
+    () async {
+      var returns = 0;
+      var cancelled = true;
+      messenger.setMockMethodCallHandler(returnChannel, (call) async {
+        returns++;
+        return null;
+      });
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method != 'authenticate') return null;
+        if (cancelled) throw PlatformException(code: 'CANCELED');
+        return buzzMobileRedirectUri;
+      });
+      Future<Uri> launch() => const FlutterWebAuth2Launcher().authenticate(
+        url: Uri.parse('https://relay.example/auth/start'),
+        callbackUrlScheme: buzzMobileCallbackScheme,
+      );
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      await expectLater(launch(), throwsA(isA<WebAuthCancelledException>()));
+      cancelled = false;
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(await launch(), Uri.parse(buzzMobileRedirectUri));
+      expect(returns, 0);
+    },
+  );
 
   test('two launchers cannot overwrite the pending platform callback', () async {
     final firstCallback = Completer<String>();
