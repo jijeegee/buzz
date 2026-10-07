@@ -493,6 +493,8 @@ pub const KIND_STREAM_MESSAGE_SCHEDULED: u32 = 40006;
 pub const KIND_STREAM_REMINDER: u32 = 40007;
 /// A diff/patch message showing file changes (unified diff format).
 pub const KIND_STREAM_MESSAGE_DIFF: u32 = 40008;
+/// Shared thread name: h=channel, e=thread head, content=name (empty clears).
+pub const KIND_THREAD_NAME: u32 = 40009;
 /// Canvas (shared document) for a channel.
 pub const KIND_CANVAS: u32 = 40100;
 /// System message for channel state changes (join, leave, rename, etc.).
@@ -711,6 +713,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_MESSAGE,
     KIND_STREAM_MESSAGE_V2,
     KIND_STREAM_MESSAGE_EDIT,
+    KIND_THREAD_NAME,
     KIND_STREAM_MESSAGE_PINNED,
     KIND_STREAM_MESSAGE_BOOKMARKED,
     KIND_STREAM_MESSAGE_SCHEDULED,

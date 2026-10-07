@@ -524,6 +524,18 @@ pub enum MessagesCmd {
         #[arg(long)]
         content: String,
     },
+    /// Set a shared thread name (40 English / 20 Korean characters); empty clears it
+    NameThread {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Thread head event ID (64-char hex)
+        #[arg(long)]
+        event: String,
+        /// Name; ASCII costs one unit, other characters two, maximum 40
+        #[arg(long)]
+        name: String,
+    },
     /// Delete a message by event ID
     Delete {
         /// Event ID to delete (64-char hex)
@@ -2622,6 +2634,7 @@ mod tests {
                 "delete",
                 "edit",
                 "get",
+                "name-thread",
                 "search",
                 "send",
                 "send-diff",
@@ -2769,7 +2782,7 @@ mod tests {
             ("feed", 1),
             ("issues", 6),
             ("media", 1),
-            ("messages", 8),
+            ("messages", 9),
             ("pack", 2),
             ("patches", 4),
             ("pr", 5),

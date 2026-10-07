@@ -14939,6 +14939,9 @@ export function maybeInstallE2eTauriMocks() {
               ) as RelayEvent,
           ),
         );
+      // Key-mode fixtures have no bearer token; exercise the NIP-42 fallback.
+      case "get_ws_auth_frame":
+        return null;
       case "sign_event":
         window.__BUZZ_E2E_SIGNED_EVENTS__?.push({
           content: (payload as { content: string }).content,

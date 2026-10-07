@@ -44,6 +44,8 @@ pub mod private_managed_agent;
 pub mod relay;
 /// Tenant identity — the server-resolved community key carried on scoped paths.
 pub mod tenant;
+/// Shared thread name validation.
+pub mod thread_name;
 /// NIP-CW thread-mode normalized newest-first window contract.
 pub mod thread_window;
 /// Schnorr signature and event ID verification.

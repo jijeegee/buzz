@@ -63,6 +63,100 @@ void main() {
   });
   tearDown(() => messenger.setMockMethodCallHandler(channel, null));
 
+  test('engine discovery does not change playback engine', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call.method);
+      return ['com.samsung.SMT', 'com.google.android.tts'];
+    });
+    expect(await engine.installedEngines(), [
+      'com.google.android.tts',
+      'com.samsung.SMT',
+    ]);
+    expect(calls, ['getEngines']);
+  });
+
+  test(
+    'selected engine initializes before voice selection and can reset',
+    () async {
+      var selected = 'com.google.android.tts';
+      engine = SystemSpeechEngine(
+        audio: audio,
+        android: true,
+        selectedEngine: () => selected,
+      );
+      final native = <MethodCall>[];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        native.add(call);
+        if (call.method == 'getDefaultEngine') return 'com.samsung.SMT';
+        if (call.method == 'getEngines') {
+          return ['com.samsung.SMT', 'com.google.android.tts'];
+        }
+        if (call.method == 'getVoices') {
+          return [
+            {'name': 'offline', 'locale': 'ko-KR', 'network_required': '0'},
+          ];
+        }
+        return 1;
+      });
+      await engine.prepare('ko');
+      expect(
+        native.firstWhere((call) => call.method == 'setEngine').arguments,
+        'com.google.android.tts',
+      );
+      expect(
+        native.indexWhere((call) => call.method == 'setEngine'),
+        lessThan(native.indexWhere((call) => call.method == 'getVoices')),
+      );
+      await engine.prepare('ko');
+      expect(native.where((call) => call.method == 'setEngine').length, 1);
+      selected = '';
+      await engine.prepare('ko');
+      expect(
+        native.lastWhere((call) => call.method == 'setEngine').arguments,
+        'com.samsung.SMT',
+      );
+    },
+  );
+
+  test(
+    'removed engine and failed initialization cannot silently use another voice',
+    () async {
+      engine = SystemSpeechEngine(
+        audio: audio,
+        android: true,
+        selectedEngine: () => 'missing',
+      );
+      var installed = <String>[];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call.method);
+        if (call.method == 'getEngines') return installed;
+        if (call.method == 'setEngine') {
+          throw PlatformException(code: 'TtsError');
+        }
+        return 0;
+      });
+      await expectLater(engine.prepare('ko'), throwsA(isA<SpeechFailure>()));
+      expect(calls, ['getEngines']);
+      installed = ['missing'];
+      await expectLater(
+        engine.prepare('ko'),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(calls, ['getEngines', 'getEngines', 'setEngine']);
+    },
+  );
+
+  test('iOS never calls Android engine discovery or selection', () async {
+    engine = SystemSpeechEngine(
+      audio: audio,
+      android: false,
+      selectedEngine: () => 'android-only',
+    );
+    expect(await engine.installedEngines(), isEmpty);
+    await engine.prepare('ko');
+    expect(calls, ['getVoices', 'setVoice', 'setSpeechRate']);
+  });
+
   test(
     'stop drains cancellation and releases focus before next speech',
     () async {

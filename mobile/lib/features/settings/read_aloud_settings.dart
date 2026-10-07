@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/read_aloud/read_aloud_preferences.dart';
 import '../../shared/theme/grid.dart';
 import '../../shared/widgets/app_list_card.dart';
+import 'read_aloud_engine_settings.dart';
 
 /// Mobile-only display settings. The preference defaults to disabled.
 class ReadAloudSettings extends HookConsumerWidget {
@@ -44,6 +47,7 @@ class ReadAloudSettings extends HookConsumerWidget {
                   }
                 },
         ),
+        if (enabled && Platform.isAndroid) const ReadAloudEngineSettings(),
       ],
     );
   }
