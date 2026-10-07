@@ -102,6 +102,8 @@ void main() {
       find.byKey(const Key('settings-sign-out')),
       200,
     );
+    await tester.ensureVisible(find.byKey(const Key('settings-sign-out')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settings-sign-out')));
     await frames(tester);
     expect(find.byType(AlertDialog), findsNothing);

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:buzz/features/settings/read_aloud_settings.dart';
+import 'package:buzz/features/settings/experiments_settings.dart';
 import 'package:buzz/shared/community/community_provider.dart';
 import 'package:buzz/shared/read_aloud/speech_audio_gate.dart';
 import 'package:buzz/shared/read_aloud/read_aloud_controller.dart';
@@ -260,7 +260,7 @@ void main() {
             home: Scaffold(
               body: Column(
                 children: [
-                  const ReadAloudSettings(),
+                  const ExperimentsSettings(),
                   ReadAloudMessage(
                     messageId: 'one',
                     content: '하나 둘',
