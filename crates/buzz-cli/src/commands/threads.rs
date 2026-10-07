@@ -5,11 +5,13 @@
 //! - Kickoff reply in the thread: `["buzz:task", <title>]`,
 //!   `["buzz:parent", "main"]`, and a `p` tag for the requester.
 //! - Result on the channel main timeline: `["buzz:sent-from-thread", <root>,
-//!   <excerpt>]`, `["buzz:thread-closed", <root>]`, and a `p` tag for the
-//!   requester.
+//!   <excerpt>]`, `["buzz:thread-closed", <root>]`, a `p` tag for the
+//!   requester, and a `p` tag for the closing agent itself so its harness can
+//!   relay the result to its main-timeline session.
 //! - Close marker reply in the thread: `["buzz:thread-closed", <root>]` and a
 //!   NIP-18 `q` tag pointing at the result. A thread whose latest message is a
 //!   close marker reads as closed; any later message reopens it.
+//! - A best-effort `✅` reaction on the thread root.
 
 use clap::Subcommand;
 
@@ -27,6 +29,8 @@ const SENT_FROM_THREAD_TAG: &str = "buzz:sent-from-thread";
 /// Parent scope value for a task thread started from the channel main timeline.
 const PARENT_MAIN: &str = "main";
 const MAX_TITLE_CHARS: usize = 120;
+/// Reaction `close` adds to the thread root.
+const DONE_REACTION: &str = "✅";
 /// Matches Desktop's sent-from-thread excerpt limit.
 const MAX_EXCERPT_CHARS: usize = 64;
 
@@ -201,6 +205,10 @@ async fn close(
             extra_tags: vec![
                 nostr::Tag::parse(sent_from).map_err(|e| CliError::Other(e.to_string()))?,
                 tag([THREAD_CLOSED_TAG, &root_id])?,
+                // Self-address the result so this agent's own harness, which
+                // subscribes to its mentions, hands it to the main-timeline
+                // session. A raw `p` adds no `@` text or mention snapshot.
+                tag(["p", &client.pubkey().to_hex()])?,
             ],
         },
     )
@@ -227,10 +235,35 @@ async fn close(
     )
     .await?;
 
+    // Mark the thread root done so the closed task reads at a glance in the
+    // timeline. Best effort: the result and close marker are already posted.
+    let root_reaction = match react_done(client, &root_id).await {
+        Ok(()) => Some(DONE_REACTION),
+        Err(e) => {
+            eprintln!("warning: could not add {DONE_REACTION} to the thread root ({e})");
+            None
+        }
+    };
+
     println!(
         "{}",
-        serde_json::json!({ "thread_root": root_id, "result": result, "close_marker": marker })
+        serde_json::json!({
+            "thread_root": root_id,
+            "result": result,
+            "close_marker": marker,
+            "root_reaction": root_reaction,
+        })
     );
+    Ok(())
+}
+
+async fn react_done(client: &BuzzClient, root_id: &str) -> Result<(), CliError> {
+    let target = nostr::EventId::parse(root_id)
+        .map_err(|e| CliError::Usage(format!("invalid event ID: {e}")))?;
+    let builder = buzz_sdk::build_reaction(target, DONE_REACTION)
+        .map_err(|e| CliError::Other(format!("build_reaction failed: {e}")))?;
+    let event = client.sign_event(builder)?;
+    client.submit_event(event).await?;
     Ok(())
 }
 
