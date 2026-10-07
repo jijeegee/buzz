@@ -292,7 +292,7 @@ EVENT_ID=$(echo "$MSG" | jq -r '.event_id')
 
 # messages send with reply + broadcast
 REPLY=$(buzz messages send --channel "$CHANNEL_ID" --content "Reply" \
-  --reply-to "$EVENT_ID" --broadcast | jq .)
+  --reply-in-thread "$EVENT_ID" --broadcast | jq .)
 echo "$REPLY"
 REPLY_ID=$(echo "$REPLY" | jq -r '.event_id')
 

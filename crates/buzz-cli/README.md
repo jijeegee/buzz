@@ -30,7 +30,8 @@ export BUZZ_RELAY_URL="https://relay.example.com"
 
 # Messages
 buzz messages send --channel <uuid> --content "Hello"
-buzz messages send --channel <uuid> --content "Reply" --reply-to <event-id> --broadcast
+buzz messages send --channel <uuid> --content "Reply" --reply-in-thread <event-id> --broadcast
+buzz messages send --channel <uuid> --content "About this" --quote <event-id>   # quote without moving the conversation
 buzz messages send --channel <uuid> --content - < message.md   # read body from stdin
 buzz messages get --channel <uuid> --limit 20
 buzz messages thread --channel <uuid> --event <event-id>

@@ -4954,10 +4954,9 @@ fn dispatch_pending(
         // scope whose session owner is checked out (busy on another turn) is
         // held. `Conversation` scopes never hold — a busy owner there forks
         // onto another idle worker, so an active channel cannot starve a
-        // sibling channel on a shared worker. Under the `thread` policy a held
-        // thread that outwaits `HOLD_BUSY_OWNER_TIMEOUT` forks a fresh session;
-        // under `main-and-threads` it waits for the owner's (deadline-bounded)
-        // turn instead, so the session is never split.
+        // sibling channel on a shared worker. A held `Thread`/`Main` batch waits
+        // for the owner's (deadline-bounded) turn instead of forking, so the
+        // provider session is never split.
         let hold_timeout = pool::busy_owner_hold_timeout(ctx.session_policy);
         let forked_after_hold = match pool.hold_decision(&scope, now, hold_timeout) {
             pool::HoldDecision::Hold {

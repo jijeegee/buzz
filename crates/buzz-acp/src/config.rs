@@ -377,10 +377,10 @@ pub struct CliArgs {
     pub dedup: DedupMode,
 
     /// How ACP provider sessions are scoped in channels.
-    /// channel (default): one provider session per channel (legacy behavior).
-    /// thread: each canonical channel thread gets an isolated provider session.
-    /// main-and-threads: the channel main timeline shares one provider session
-    /// and each canonical thread gets its own.
+    /// channel (default): one provider session per channel, shared by the main
+    /// timeline and every thread (legacy behavior).
+    /// thread: the channel main timeline shares one provider session and each
+    /// canonical thread gets its own (`main-and-threads` is accepted as an alias).
     /// Direct messages stay conversation-scoped either way. Ships as `channel`
     /// so thread scoping can be canaried and rolled back without code changes.
     #[arg(
@@ -391,7 +391,7 @@ pub struct CliArgs {
     )]
     pub session_policy: crate::scope::SessionPolicy,
 
-    /// Directory for durable harness state. Under the `main-and-threads`
+    /// Directory for durable harness state. Under the `thread`
     /// session policy the harness keeps a per-agent, per-relay ledger of
     /// scope → provider-session ids here so it can resume those sessions
     /// (ACP `session/resume` or `session/load`) after a restart. Unset
@@ -3032,7 +3032,7 @@ channels = "ALL"
     }
 
     #[test]
-    fn test_session_policy_main_and_threads_flag_parses() {
+    fn test_session_policy_legacy_main_and_threads_spellings_parse_as_thread() {
         for spelling in ["main-and-threads", "main_and_threads"] {
             let args = CliArgs::parse_from([
                 "buzz-acp",
@@ -3041,10 +3041,7 @@ channels = "ALL"
                 "--session-policy",
                 spelling,
             ]);
-            assert_eq!(
-                args.session_policy,
-                crate::scope::SessionPolicy::MainAndThreads
-            );
+            assert_eq!(args.session_policy, crate::scope::SessionPolicy::Thread);
         }
     }
 

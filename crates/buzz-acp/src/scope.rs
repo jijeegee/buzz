@@ -7,27 +7,28 @@
 //! thread tags. Later code must never re-infer scope from the last event in a
 //! batch — it carries the resolved scope instead.
 //!
-//! Policy matrix (see the "Make ACP sessions thread-scoped" ticket):
+//! Policy matrix under [`SessionPolicy::Thread`] ("Main and each thread"):
 //!
 //! | Surface                             | Scope                                   |
 //! | ----------------------------------- | --------------------------------------- |
-//! | New top-level channel mention       | `Thread(channel_id, triggering_event)`  |
+//! | Top-level channel message           | `Main(channel_id)`                      |
 //! | Reply in a channel thread           | `Thread(channel_id, canonical_root)`    |
 //! | Repeated mention in the same thread | reuse that thread scope                 |
 //! | Direct message                      | `Conversation(channel_id)`              |
 //!
-//! Under [`SessionPolicy::MainAndThreads`] the thread rows are unchanged, but a
-//! top-level channel message (one with no NIP-10 thread root) scopes to the
-//! channel's single `Main(channel_id)` session instead of opening a new thread.
-//!
 //! Under [`SessionPolicy::Channel`] (the current default / rollback path) every
 //! surface collapses to `Conversation(channel_id)`, preserving today's
 //! channel-keyed behavior exactly.
+//!
+//! Scope only decides which provider session handles an event. Where the
+//! agent replies is a separate, policy-independent rule: a top-level channel
+//! message is answered on the main timeline, and a thread message in its
+//! thread (see the `<context>` reply instructions in `queue.rs`).
 
 use nostr::Event;
 use uuid::Uuid;
 
-use crate::queue::{reaction_target_id, routing_thread_tags, ResolvedEdit};
+use crate::queue::{routing_thread_tags, ResolvedEdit};
 
 /// Operator policy controlling how ACP provider sessions are scoped.
 ///
@@ -36,20 +37,18 @@ use crate::queue::{reaction_target_id, routing_thread_tags, ResolvedEdit};
 /// canaried, then flipped, then rolled back without code changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum SessionPolicy {
-    /// Legacy behavior: one provider session per channel. Every event in a
-    /// channel shares a `Conversation(channel_id)` scope.
+    /// One provider session per channel: the main timeline and every thread
+    /// share a `Conversation(channel_id)` scope.
     #[default]
     Channel,
-    /// Thread-scoped: each canonical channel thread gets an isolated provider
-    /// session. DMs remain conversation-scoped.
-    Thread,
-    /// Main timeline plus threads: every top-level channel message shares one
-    /// `Main(channel_id)` session, and each canonical channel thread gets an
+    /// Main and each thread: the channel main timeline shares one
+    /// `Main(channel_id)` session and each canonical channel thread gets an
     /// isolated provider session. DMs remain conversation-scoped.
     ///
-    /// Accepts the desktop storage spelling `main_and_threads` as an alias.
-    #[value(alias = "main_and_threads")]
-    MainAndThreads,
+    /// Also accepts `main-and-threads` / `main_and_threads`, the spellings an
+    /// earlier development build stored for this policy.
+    #[value(alias = "main-and-threads", alias = "main_and_threads")]
+    Thread,
 }
 
 impl SessionPolicy {
@@ -59,7 +58,6 @@ impl SessionPolicy {
         let session_model = match self {
             Self::Channel => include_str!("session_model_channel.md"),
             Self::Thread => include_str!("session_model_thread.md"),
-            Self::MainAndThreads => include_str!("session_model_main_and_threads.md"),
         };
         format!("{}\n\n{}", base_prompt.trim_end(), session_model.trim_end())
     }
@@ -70,7 +68,6 @@ impl std::fmt::Display for SessionPolicy {
         match self {
             Self::Channel => f.write_str("channel"),
             Self::Thread => f.write_str("thread"),
-            Self::MainAndThreads => f.write_str("main-and-threads"),
         }
     }
 }
@@ -92,7 +89,7 @@ pub enum SessionScope {
         root_event_id: String,
     },
     /// The channel's main timeline (top-level messages) under
-    /// [`SessionPolicy::MainAndThreads`]. Distinct from
+    /// [`SessionPolicy::Thread`]. Distinct from
     /// [`Conversation`](Self::Conversation): threads in the same channel keep
     /// their own [`Thread`](Self::Thread) scopes.
     Main { channel_id: Uuid },
@@ -138,15 +135,12 @@ impl SessionScope {
     /// Derive the scope for an admitted event.
     ///
     /// Resolution order:
-    /// 1. DMs are always [`Conversation`](Self::Conversation) — the ticket keeps
-    ///    direct messages conversation-scoped regardless of policy.
+    /// 1. DMs are always [`Conversation`](Self::Conversation) — direct
+    ///    messages stay conversation-scoped regardless of policy.
     /// 2. Under [`SessionPolicy::Channel`], every channel event is
     ///    conversation-scoped (legacy / rollback behavior).
     /// 3. Under [`SessionPolicy::Thread`], a channel event with a NIP-10 root
-    ///    tag scopes to that canonical root; a top-level mention (no thread
-    ///    tags) opens a new thread rooted at the triggering event id.
-    /// 4. Under [`SessionPolicy::MainAndThreads`], a channel event with a
-    ///    NIP-10 root scopes to that thread, and every other channel event
+    ///    scopes to that canonical thread, and every other channel event
     ///    (top-level messages, edits of top-level originals, unresolved edits)
     ///    scopes to the channel's [`Main`](Self::Main) session.
     ///
@@ -161,8 +155,7 @@ impl SessionScope {
     /// ingest, so `AB…` and `ab…` name the *same* thread. Without normalization
     /// those equivalent spellings would hash to different `Thread` keys and
     /// split one relay thread across two ACP sessions (queue state, provider
-    /// sessions, affinity, delivery ledgers). `nostr::EventId::to_hex()` is
-    /// already lowercase, so the top-level path is unaffected.
+    /// sessions, affinity, delivery ledgers).
     pub fn derive(policy: SessionPolicy, channel_id: Uuid, is_dm: bool, event: &Event) -> Self {
         Self::derive_routed(policy, channel_id, is_dm, event, None)
     }
@@ -170,10 +163,10 @@ impl SessionScope {
     /// [`derive`](Self::derive) for an event whose reply routing may come from
     /// an edited original message.
     ///
-    /// A kind:40003 edit belongs to its original message's thread, never to a
+    /// A kind:40003 edit belongs to its original message's place, never to a
     /// new thread rooted at the auxiliary edit event: a threaded original
     /// scopes to its root, and a top-level original (or one that could not be
-    /// fetched) scopes to the thread rooted at the original itself.
+    /// fetched) scopes to the main timeline.
     pub fn derive_routed(
         policy: SessionPolicy,
         channel_id: Uuid,
@@ -184,22 +177,12 @@ impl SessionScope {
         if is_dm || policy == SessionPolicy::Channel {
             return Self::Conversation { channel_id };
         }
-
-        let routed_root = routing_thread_tags(event, edit).root_event_id;
-        if policy == SessionPolicy::MainAndThreads {
-            return match routed_root {
-                Some(root) => Self::Thread {
-                    channel_id,
-                    root_event_id: root.to_ascii_lowercase(),
-                },
-                None => Self::Main { channel_id },
-            };
-        }
-
-        let root_event_id = routed_root.unwrap_or_else(|| reaction_target_id(event));
-        Self::Thread {
-            channel_id,
-            root_event_id: root_event_id.to_ascii_lowercase(),
+        match routing_thread_tags(event, edit).root_event_id {
+            Some(root) => Self::Thread {
+                channel_id,
+                root_event_id: root.to_ascii_lowercase(),
+            },
+            None => Self::Main { channel_id },
         }
     }
 
@@ -239,15 +222,25 @@ mod tests {
         event_with_tags(vec![])
     }
 
+    fn reply_in(root: &str) -> Event {
+        event_with_tags(vec![
+            vec!["e".into(), root.to_string(), String::new(), "root".into()],
+            vec!["e".into(), "f".repeat(64), String::new(), "reply".into()],
+        ])
+    }
+
+    fn thread_root(scope: &SessionScope) -> String {
+        match scope {
+            SessionScope::Thread { root_event_id, .. } => root_event_id.clone(),
+            other => panic!("expected thread scope, got {other:?}"),
+        }
+    }
+
     #[test]
     fn session_model_is_appended_once_and_matches_policy() {
         let base = include_str!("base_prompt.md");
         assert!(!base.contains("## Session Model"));
-        for policy in [
-            SessionPolicy::Channel,
-            SessionPolicy::Thread,
-            SessionPolicy::MainAndThreads,
-        ] {
+        for policy in [SessionPolicy::Channel, SessionPolicy::Thread] {
             let prompt = policy.append_session_model(base);
             assert!(prompt.starts_with(base.trim_end()));
             assert_eq!(prompt.matches("## Session Model").count(), 1);
@@ -261,14 +254,8 @@ mod tests {
                 SessionPolicy::Channel => {
                     assert!(prompt.contains("one per-channel session"));
                     assert!(!prompt.contains("each thread gets its own"));
-                    assert!(!prompt.contains("sibling channel thread"));
                 }
                 SessionPolicy::Thread => {
-                    assert!(prompt.contains("each thread gets its own"));
-                    assert!(prompt.contains("sibling channel thread"));
-                    assert!(!prompt.contains("one per-channel session"));
-                }
-                SessionPolicy::MainAndThreads => {
                     assert!(prompt.contains("main timeline (top-level messages) is one"));
                     assert!(prompt.contains("each thread gets its own"));
                     assert!(!prompt.contains("one per-channel session"));
@@ -279,68 +266,69 @@ mod tests {
     }
 
     #[test]
-    fn dm_is_always_conversation_scoped_under_thread_policy() {
+    fn dm_is_always_conversation_scoped() {
         let ch = Uuid::new_v4();
-        // Even a DM with a reply tag stays conversation-scoped.
-        let root = "a".repeat(64);
-        let reply = event_with_tags(vec![
-            vec!["e".into(), root.clone(), String::new(), "root".into()],
-            vec!["e".into(), "b".repeat(64), String::new(), "reply".into()],
-        ]);
-        let scope = SessionScope::derive(SessionPolicy::Thread, ch, true, &reply);
-        assert_eq!(scope, SessionScope::Conversation { channel_id: ch });
+        for policy in [SessionPolicy::Channel, SessionPolicy::Thread] {
+            for ev in [plain_event(), reply_in(&"a".repeat(64))] {
+                assert_eq!(
+                    SessionScope::derive(policy, ch, true, &ev),
+                    SessionScope::Conversation { channel_id: ch }
+                );
+            }
+        }
     }
 
     #[test]
     fn channel_policy_collapses_everything_to_conversation() {
         let ch = Uuid::new_v4();
-        let root = "a".repeat(64);
-        let reply = event_with_tags(vec![
-            vec!["e".into(), root.clone(), String::new(), "root".into()],
-            vec!["e".into(), "b".repeat(64), String::new(), "reply".into()],
-        ]);
-        // A threaded reply under Channel policy is still conversation-scoped.
-        let scope = SessionScope::derive(SessionPolicy::Channel, ch, false, &reply);
-        assert_eq!(scope, SessionScope::Conversation { channel_id: ch });
-        // As is a top-level mention.
-        let scope = SessionScope::derive(SessionPolicy::Channel, ch, false, &plain_event());
-        assert_eq!(scope, SessionScope::Conversation { channel_id: ch });
-    }
-
-    #[test]
-    fn top_level_mention_opens_thread_rooted_at_trigger() {
-        let ch = Uuid::new_v4();
-        let ev = plain_event();
-        let scope = SessionScope::derive(SessionPolicy::Thread, ch, false, &ev);
+        let conv = SessionScope::Conversation { channel_id: ch };
+        let reply = reply_in(&"a".repeat(64));
         assert_eq!(
-            scope,
-            SessionScope::Thread {
-                channel_id: ch,
-                root_event_id: ev.id.to_hex(),
-            }
+            SessionScope::derive(SessionPolicy::Channel, ch, false, &reply),
+            conv
+        );
+        assert_eq!(
+            SessionScope::derive(SessionPolicy::Channel, ch, false, &plain_event()),
+            conv
         );
     }
 
     #[test]
-    fn direct_reply_to_root_scopes_to_that_root() {
+    fn top_level_messages_share_the_main_session() {
         let ch = Uuid::new_v4();
-        let root = "c".repeat(64);
-        // A single `e` tag carrying only a `root` marker.
-        let ev = event_with_tags(vec![vec![
+        let main = SessionScope::Main { channel_id: ch };
+        // Two independent top-level mentions share the one main session.
+        let a = SessionScope::derive(SessionPolicy::Thread, ch, false, &plain_event());
+        let b = SessionScope::derive(SessionPolicy::Thread, ch, false, &plain_event());
+        assert_eq!(a, main);
+        assert_eq!(b, main);
+    }
+
+    #[test]
+    fn lone_root_marker_and_malformed_tags_are_top_level() {
+        let ch = Uuid::new_v4();
+        let main = SessionScope::Main { channel_id: ch };
+        // NIP-10: a lone `root` marker with no `reply` is top-level per ingest.
+        let lone_root = event_with_tags(vec![vec![
             "e".into(),
-            root.clone(),
+            "c".repeat(64),
             String::new(),
             "root".into(),
         ]]);
-        // NIP-10: lone `root` with no `reply` is top-level per ingest rules, so
-        // this yields a top-level scope rooted at the trigger, not `root`.
-        let scope = SessionScope::derive(SessionPolicy::Thread, ch, false, &ev);
         assert_eq!(
-            scope,
-            SessionScope::Thread {
-                channel_id: ch,
-                root_event_id: ev.id.to_hex(),
-            }
+            SessionScope::derive(SessionPolicy::Thread, ch, false, &lone_root),
+            main
+        );
+        // A non-64-hex marker id is ignored by the shared NIP-10 resolver.
+        let malformed = event_with_tags(vec![vec![
+            "e".into(),
+            "not-a-valid-hex-id".into(),
+            String::new(),
+            "reply".into(),
+        ]]);
+        assert_eq!(
+            SessionScope::derive(SessionPolicy::Thread, ch, false, &malformed),
+            main
         );
     }
 
@@ -348,46 +336,25 @@ mod tests {
     fn nested_reply_scopes_to_canonical_root_not_parent() {
         let ch = Uuid::new_v4();
         let root = "c".repeat(64);
-        let parent = "d".repeat(64);
         let ev = event_with_tags(vec![
             vec!["e".into(), root.clone(), String::new(), "root".into()],
-            vec!["e".into(), parent.clone(), String::new(), "reply".into()],
+            vec!["e".into(), "d".repeat(64), String::new(), "reply".into()],
         ]);
         let scope = SessionScope::derive(SessionPolicy::Thread, ch, false, &ev);
-        // Scope keys on the canonical ROOT, never the immediate parent.
-        assert_eq!(
-            scope,
-            SessionScope::Thread {
-                channel_id: ch,
-                root_event_id: root,
-            }
-        );
+        assert_eq!(thread_root(&scope), root);
     }
 
     #[test]
     fn repeated_replies_in_same_thread_share_scope() {
         let ch = Uuid::new_v4();
         let root = "e".repeat(64);
-        let mk_reply = || {
-            event_with_tags(vec![
-                vec!["e".into(), root.clone(), String::new(), "root".into()],
-                vec!["e".into(), "f".repeat(64), String::new(), "reply".into()],
-            ])
-        };
-        let a = SessionScope::derive(SessionPolicy::Thread, ch, false, &mk_reply());
-        let b = SessionScope::derive(SessionPolicy::Thread, ch, false, &mk_reply());
+        let a = SessionScope::derive(SessionPolicy::Thread, ch, false, &reply_in(&root));
+        let b = SessionScope::derive(SessionPolicy::Thread, ch, false, &reply_in(&root));
         assert_eq!(a, b, "same-root replies must reuse the same thread scope");
     }
 
-    fn thread_root(scope: &SessionScope) -> String {
-        match scope {
-            SessionScope::Thread { root_event_id, .. } => root_event_id.clone(),
-            other => panic!("expected thread scope, got {other:?}"),
-        }
-    }
-
     #[test]
-    fn edit_scopes_to_original_thread_never_the_edit_event() {
+    fn edits_follow_their_original() {
         use crate::edit_routing::test_support::{edit_event, message};
         let ch = Uuid::new_v4();
         let root = "ab".repeat(32);
@@ -403,170 +370,53 @@ mod tests {
             SessionScope::derive_routed(SessionPolicy::Thread, ch, false, &edit, Some(&resolved));
         assert_eq!(thread_root(&scope), root);
 
-        // Top-level original: the thread rooted at the original itself.
+        // Top-level or unresolved original: the main timeline, never a thread
+        // rooted at the edit event.
         let top = message(None);
         let edit = edit_event(&top.id.to_hex(), &[]);
         let resolved = ResolvedEdit {
             target_event_id: top.id.to_hex(),
             target_thread_tags: crate::queue::parse_thread_tags(&top),
         };
-        let scope =
-            SessionScope::derive_routed(SessionPolicy::Thread, ch, false, &edit, Some(&resolved));
-        assert_eq!(thread_root(&scope), top.id.to_hex());
-
-        // Unresolved original: still the target, never the edit event.
-        let target = "cd".repeat(32);
-        let edit = edit_event(&target, &[]);
-        let scope = SessionScope::derive_routed(SessionPolicy::Thread, ch, false, &edit, None);
-        assert_eq!(thread_root(&scope), target);
-        assert_ne!(thread_root(&scope), edit.id.to_hex());
-    }
-
-    #[test]
-    fn different_top_level_mentions_get_distinct_scopes() {
-        let ch = Uuid::new_v4();
-        let a = SessionScope::derive(SessionPolicy::Thread, ch, false, &plain_event());
-        let b = SessionScope::derive(SessionPolicy::Thread, ch, false, &plain_event());
-        assert_ne!(
-            a, b,
-            "two independent top-level mentions must not share a session"
+        let main = SessionScope::Main { channel_id: ch };
+        assert_eq!(
+            SessionScope::derive_routed(SessionPolicy::Thread, ch, false, &edit, Some(&resolved)),
+            main
+        );
+        let edit = edit_event(&"cd".repeat(32), &[]);
+        assert_eq!(
+            SessionScope::derive_routed(SessionPolicy::Thread, ch, false, &edit, None),
+            main
         );
     }
 
     #[test]
     fn mixed_case_root_spellings_share_one_thread_scope() {
-        // The relay decodes event ids to bytes, so `AB…` and `ab…` name the
-        // same thread. Equivalent-case root tags must resolve to the SAME
-        // `SessionScope::Thread` key, or thread state would split in two.
         let ch = Uuid::new_v4();
-        let root_lower = "a1b2c3d4e5f6".repeat(4) + &"0".repeat(16); // 64 hex
+        let root_lower = "a1b2c3d4e5f6".repeat(4) + &"0".repeat(16);
         assert_eq!(root_lower.len(), 64);
         let root_upper = root_lower.to_ascii_uppercase();
-
-        let mk = |root: &str| {
-            event_with_tags(vec![
-                vec!["e".into(), root.to_string(), String::new(), "root".into()],
-                vec!["e".into(), "f".repeat(64), String::new(), "reply".into()],
-            ])
-        };
-        let lower = SessionScope::derive(SessionPolicy::Thread, ch, false, &mk(&root_lower));
-        let upper = SessionScope::derive(SessionPolicy::Thread, ch, false, &mk(&root_upper));
-        assert_eq!(
-            lower, upper,
-            "case-equivalent root spellings must share one thread scope"
-        );
-        // And the stored key is normalized to lowercase.
+        let lower = SessionScope::derive(SessionPolicy::Thread, ch, false, &reply_in(&root_lower));
+        let upper = SessionScope::derive(SessionPolicy::Thread, ch, false, &reply_in(&root_upper));
+        assert_eq!(lower, upper);
         assert_eq!(upper.root_event_id(), Some(root_lower.as_str()));
     }
 
     #[test]
-    fn malformed_thread_tag_falls_back_to_top_level() {
-        let ch = Uuid::new_v4();
-        // A non-64-hex marker id is ignored by the shared NIP-10 resolver, so
-        // the event is treated as top-level (rooted at its own id).
-        let ev = event_with_tags(vec![vec![
-            "e".into(),
-            "not-a-valid-hex-id".into(),
-            String::new(),
-            "reply".into(),
-        ]]);
-        let scope = SessionScope::derive(SessionPolicy::Thread, ch, false, &ev);
-        assert_eq!(
-            scope,
-            SessionScope::Thread {
-                channel_id: ch,
-                root_event_id: ev.id.to_hex(),
-            }
-        );
-    }
-
-    #[test]
-    fn main_and_threads_routes_top_level_to_main_and_replies_to_thread() {
-        let ch = Uuid::new_v4();
-        let policy = SessionPolicy::MainAndThreads;
-        let main = SessionScope::Main { channel_id: ch };
-
-        // Two independent top-level mentions share the one main session.
-        assert_eq!(
-            SessionScope::derive(policy, ch, false, &plain_event()),
-            main
-        );
-        assert_eq!(
-            SessionScope::derive(policy, ch, false, &plain_event()),
-            main
-        );
-
-        // A threaded reply keeps its own canonical-root thread session,
-        // normalized to lowercase like the Thread policy.
-        let root = "AB".repeat(32);
-        let reply = event_with_tags(vec![
-            vec!["e".into(), root.clone(), String::new(), "root".into()],
-            vec!["e".into(), "f".repeat(64), String::new(), "reply".into()],
-        ]);
-        assert_eq!(
-            SessionScope::derive(policy, ch, false, &reply),
-            SessionScope::Thread {
-                channel_id: ch,
-                root_event_id: root.to_ascii_lowercase(),
-            }
-        );
-
-        // A lone `root` marker is top-level per ingest rules, so it is main.
-        let lone_root = event_with_tags(vec![vec![
-            "e".into(),
-            "c".repeat(64),
-            String::new(),
-            "root".into(),
-        ]]);
-        assert_eq!(SessionScope::derive(policy, ch, false, &lone_root), main);
-
-        // DMs stay conversation-scoped.
-        assert_eq!(
-            SessionScope::derive(policy, ch, true, &reply),
-            SessionScope::Conversation { channel_id: ch }
-        );
-    }
-
-    #[test]
-    fn main_and_threads_edits_follow_their_original() {
-        use crate::edit_routing::test_support::{edit_event, message};
-        let ch = Uuid::new_v4();
-        let policy = SessionPolicy::MainAndThreads;
-        let root = "ab".repeat(32);
-
-        let threaded = message(Some(&root));
-        let edit = edit_event(&threaded.id.to_hex(), &[]);
-        let resolved = ResolvedEdit {
-            target_event_id: threaded.id.to_hex(),
-            target_thread_tags: crate::queue::parse_thread_tags(&threaded),
-        };
-        let scope = SessionScope::derive_routed(policy, ch, false, &edit, Some(&resolved));
-        assert_eq!(thread_root(&scope), root);
-
-        let top = message(None);
-        let edit = edit_event(&top.id.to_hex(), &[]);
-        let resolved = ResolvedEdit {
-            target_event_id: top.id.to_hex(),
-            target_thread_tags: crate::queue::parse_thread_tags(&top),
-        };
-        let scope = SessionScope::derive_routed(policy, ch, false, &edit, Some(&resolved));
-        assert_eq!(scope, SessionScope::Main { channel_id: ch });
-    }
-
-    #[test]
-    fn session_policy_parses_cli_and_storage_spellings() {
+    fn session_policy_parses_cli_and_legacy_dev_spellings() {
         use clap::ValueEnum;
-        for spelling in ["main-and-threads", "main_and_threads"] {
+        for spelling in ["thread", "main-and-threads", "main_and_threads"] {
             assert_eq!(
                 SessionPolicy::from_str(spelling, false),
-                Ok(SessionPolicy::MainAndThreads),
+                Ok(SessionPolicy::Thread),
                 "{spelling}"
             );
         }
         assert_eq!(
-            SessionPolicy::MainAndThreads.to_string(),
-            "main-and-threads"
+            SessionPolicy::from_str("channel", false),
+            Ok(SessionPolicy::Channel)
         );
+        assert_eq!(SessionPolicy::Thread.to_string(), "thread");
     }
 
     #[test]
@@ -576,9 +426,10 @@ mod tests {
         assert_eq!(conv.channel_id(), ch);
         assert_eq!(conv.root_event_id(), None);
         assert!(!conv.is_thread());
+        assert!(!conv.holds_for_busy_owner());
         assert_eq!(conv.telemetry_label(), "conversation");
 
-        let root = "abcdef0123456789".repeat(4); // 64 hex chars
+        let root = "abcdef0123456789".repeat(4);
         let thread = SessionScope::Thread {
             channel_id: ch,
             root_event_id: root.clone(),
@@ -586,10 +437,9 @@ mod tests {
         assert_eq!(thread.channel_id(), ch);
         assert_eq!(thread.root_event_id(), Some(root.as_str()));
         assert!(thread.is_thread());
-        assert_eq!(thread.telemetry_label(), "thread:abcdef01");
         assert!(!thread.is_main());
         assert!(thread.holds_for_busy_owner());
-        assert!(!conv.holds_for_busy_owner());
+        assert_eq!(thread.telemetry_label(), "thread:abcdef01");
 
         let main = SessionScope::Main { channel_id: ch };
         assert_eq!(main.channel_id(), ch);
@@ -609,11 +459,13 @@ mod tests {
             channel_id: ch,
             root_event_id: "a".repeat(64),
         };
-        let s2 = SessionScope::Conversation { channel_id: ch };
         *map.entry(s1.clone()).or_insert(0) += 1;
         *map.entry(s1.clone()).or_insert(0) += 1;
-        *map.entry(s2).or_insert(0) += 1;
+        *map.entry(SessionScope::Main { channel_id: ch })
+            .or_insert(0) += 1;
+        *map.entry(SessionScope::Conversation { channel_id: ch })
+            .or_insert(0) += 1;
         assert_eq!(map.get(&s1), Some(&2));
-        assert_eq!(map.len(), 2);
+        assert_eq!(map.len(), 3);
     }
 }

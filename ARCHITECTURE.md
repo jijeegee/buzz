@@ -750,7 +750,7 @@ Buzz Relay ──WS──→ buzz-acp ──stdio (ACP/JSON-RPC)──→ Agent 
 - Crash recovery: agent subprocess crashes are detected and the agent is respawned.
 - Depends on `buzz-core` (kind constants) and `buzz-sdk` (relay/REST utilities).
 
-- Session resume (`main-and-threads` policy with `--state-dir`): a small per-agent, per-relay ledger maps session scopes to provider-session ids so a restarted harness can reattach with ACP `session/resume`/`session/load`. Best-effort only — any mismatch or failure falls back to a new session rebuilt from relay context.
+- Session resume (`thread` policy with `--state-dir`): a small per-agent, per-relay ledger maps session scopes to provider-session ids so a restarted harness can reattach with ACP `session/resume`/`session/load`. Best-effort only — any mismatch or failure falls back to a new session rebuilt from relay context.
 
 **Does NOT:** persist conversation state. The relay remains the source of truth; the resume ledger holds only session ids.
 

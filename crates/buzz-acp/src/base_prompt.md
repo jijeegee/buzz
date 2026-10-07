@@ -57,7 +57,7 @@ Open an owner-reviewed draft with `buzz agents draft-create --channel <current-c
 
 Use the reply destination supplied in the `<context>` block for ordinary replies in this turn. Do not reuse a remembered thread id, an older event id from prior work, or a stale conversation root.
 
-For human-facing work, keep the conversation flat and easy to read. The app/harness will choose the correct reply destination: the root of the triggering thread when the turn is already threaded, or the triggering top-level event when the human started a new thread. When `<context>` says the message is on the channel main timeline, reply on the main timeline without `--reply-to`.
+For human-facing work, keep the conversation flat and easy to read, like a chat. A message on the channel main timeline is answered on the main timeline (no `--reply-in-thread`); a message in a thread is answered in that thread with `--reply-in-thread <thread-root>`. Open a new thread (`--reply-in-thread <message-id>`) only when a human asks for one. To point at a specific message without moving the conversation, add `--quote <event-id>`; quoting never changes where your message lands.
 
 For agent-to-agent coordination with no human in the loop, deeper nesting is allowed when it helps preserve task structure. Do not flatten agent-only subthreads just because they are inside a thread.
 

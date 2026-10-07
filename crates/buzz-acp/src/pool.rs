@@ -1016,7 +1016,7 @@ pub struct PromptContext {
     /// Session scoping policy; selects the busy-owner hold behavior.
     pub session_policy: SessionPolicy,
     /// Durable scope → provider-session ledger for resume after restart.
-    /// `None` unless the main-and-threads policy has a state directory.
+    /// `None` unless the thread policy has a state directory.
     pub session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
 }
 
@@ -1611,14 +1611,14 @@ pub(crate) const HOLD_BUSY_OWNER_TIMEOUT: Duration = Duration::from_secs(10);
 /// bounded by the max-turn deadline, so the wait cannot be unbounded in time.
 pub(crate) const HOLD_BUSY_OWNER_UNBOUNDED: Duration = Duration::MAX;
 
-/// Busy-owner hold window for a session policy. `main-and-threads` never forks
+/// Busy-owner hold window for a session policy. The thread policy never forks
 /// a held main or thread session — forking abandons the owner's provider
-/// session and restarts from relay context. Existing policies keep the bounded
-/// [`HOLD_BUSY_OWNER_TIMEOUT`] fork fallback unchanged.
+/// session and restarts from relay context. The channel policy only produces
+/// `Conversation` scopes, which never hold, so its bounded window is moot.
 pub(crate) fn busy_owner_hold_timeout(policy: SessionPolicy) -> Duration {
     match policy {
-        SessionPolicy::MainAndThreads => HOLD_BUSY_OWNER_UNBOUNDED,
-        SessionPolicy::Channel | SessionPolicy::Thread => HOLD_BUSY_OWNER_TIMEOUT,
+        SessionPolicy::Thread => HOLD_BUSY_OWNER_UNBOUNDED,
+        SessionPolicy::Channel => HOLD_BUSY_OWNER_TIMEOUT,
     }
 }
 
@@ -4460,7 +4460,7 @@ enum ContextTarget {
     Thread(String),
     /// Fetch recent DM conversation history.
     Dm,
-    /// Fetch the channel main timeline (main-and-threads policy).
+    /// Fetch the channel main timeline (thread policy).
     Main,
     /// No supplementary context (new thread's first turn, or plain channel).
     None,
@@ -4470,7 +4470,7 @@ enum ContextTarget {
 /// [`SessionScope`] — never by inferring scope from the last event.
 ///
 /// - Thread scope: the canonical root is authoritative.
-/// - Main scope (main-and-threads policy): the channel main timeline.
+/// - Main scope (thread policy): the channel main timeline.
 /// - Conversation scope (DMs always; channels under `channel` policy): a
 ///   threaded reply fetches its reply chain; a DM non-reply fetches recent
 ///   conversation history; a plain top-level channel message has none.
@@ -9736,30 +9736,26 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
     }
 
     #[test]
-    fn busy_owner_hold_timeout_is_unbounded_only_for_main_and_threads() {
+    fn busy_owner_hold_timeout_is_unbounded_for_thread_policy() {
         assert_eq!(
             busy_owner_hold_timeout(SessionPolicy::Channel),
             HOLD_BUSY_OWNER_TIMEOUT
         );
         assert_eq!(
             busy_owner_hold_timeout(SessionPolicy::Thread),
-            HOLD_BUSY_OWNER_TIMEOUT
-        );
-        assert_eq!(
-            busy_owner_hold_timeout(SessionPolicy::MainAndThreads),
             HOLD_BUSY_OWNER_UNBOUNDED
         );
     }
 
     #[tokio::test(start_paused = true)]
-    async fn main_and_threads_hold_never_forks_and_arms_no_deadline() {
+    async fn thread_policy_hold_never_forks_and_arms_no_deadline() {
         // Main and thread scopes hold for their busy owner. Under the
-        // main-and-threads timeout the hold never expires into a fork (which
+        // thread-policy timeout the hold never expires into a fork (which
         // would discard the owner's session), and it arms no timer: the
         // owner's return is what wakes the dispatch loop.
         let channel_id = Uuid::new_v4();
         let idle_scope = thread_scope(channel_id, &"c".repeat(64));
-        let timeout = busy_owner_hold_timeout(SessionPolicy::MainAndThreads);
+        let timeout = busy_owner_hold_timeout(SessionPolicy::Thread);
         for scope in [
             SessionScope::Main { channel_id },
             thread_scope(channel_id, &"a".repeat(64)),
@@ -9782,7 +9778,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                     pool.hold_decision(&scope, much_later, timeout),
                     HoldDecision::Hold { .. }
                 ),
-                "{scope:?} must not fork under main-and-threads"
+                "{scope:?} must not fork under the thread policy"
             );
             // The bounded legacy window still forks the same scope.
             assert!(matches!(

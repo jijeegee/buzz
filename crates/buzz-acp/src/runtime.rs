@@ -129,14 +129,14 @@ fn make_prompt_context(
 }
 
 /// The durable resume ledger, enabled only for conversation sessions under the
-/// `main-and-threads` policy with a configured state directory. Other policies
+/// thread policy with a configured state directory. Other policies
 /// keep their existing restart-from-relay-context behavior unchanged.
 fn session_ledger_for(
     config: &Config,
     mode: SessionMode,
 ) -> Option<std::sync::Arc<crate::session_ledger::SessionLedger>> {
     if !matches!(mode, SessionMode::Conversation)
-        || config.session_policy != crate::scope::SessionPolicy::MainAndThreads
+        || config.session_policy != crate::scope::SessionPolicy::Thread
     {
         return None;
     }
