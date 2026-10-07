@@ -24,10 +24,12 @@ class TokenSignInPage extends HookConsumerWidget {
     this.lockedOrigin,
     this.backupOrigin,
     this.defaultCommunity = false,
+    this.resumeSignedOut = false,
   });
 
   /// Ordinary first-device entry uses the configured custody service.
   final bool defaultCommunity;
+  final bool resumeSignedOut;
 
   /// Link/recover a signed identity from Settings, separate from token mode.
   final String? backupOrigin;
@@ -145,21 +147,23 @@ class TokenSignInPage extends HookConsumerWidget {
       String principal, {
       bool Function()? isCurrent,
     }) async {
-      if (lockedOrigin != null) return;
+      if (lockedOrigin != null && !resumeSignedOut) return;
       completing.value = true;
       try {
+        final controller = ref.read(
+          keyBackup.value
+              ? keyBackupSessionControllerProvider(sessionOrigin)
+              : tokenSessionControllerProvider(sessionOrigin),
+        );
+        final sessionGeneration = controller.generation;
+        final authAtStart = ref.read(authProvider).value;
+        bool canCommit() =>
+            context.mounted &&
+            isCurrent?.call() != false &&
+            identical(ref.read(authProvider).value, authAtStart) &&
+            controller.generation == sessionGeneration &&
+            controller.state.status == TokenSessionStatus.signedIn;
         if (keyBackup.value) {
-          final controller = ref.read(
-            keyBackupSessionControllerProvider(sessionOrigin),
-          );
-          final sessionGeneration = controller.generation;
-          final authAtStart = ref.read(authProvider).value;
-          bool canCommit() =>
-              context.mounted &&
-              isCurrent?.call() != false &&
-              identical(ref.read(authProvider).value, authAtStart) &&
-              controller.generation == sessionGeneration &&
-              controller.state.status == TokenSessionStatus.signedIn;
           final community = await ref
               .read(googleKeyBackupServiceProvider(sessionOrigin))
               .resolve(isCurrent: canCommit);
@@ -168,13 +172,19 @@ class TokenSignInPage extends HookConsumerWidget {
           if (!canCommit()) return;
           await ref
               .read(authProvider.notifier)
-              .authenticateWithCommunity(community, isCurrent: canCommit);
+              .authenticateWithCommunity(
+                community,
+                isCurrent: canCommit,
+                resumeSignedOut: resumeSignedOut,
+              );
         } else {
           await ref
               .read(authProvider.notifier)
               .authenticateWithTokenSession(
                 relayUrl: sessionOrigin,
                 principalId: principal,
+                isCurrent: canCommit,
+                resumeSignedOut: resumeSignedOut,
               );
         }
       } catch (error) {
@@ -240,6 +250,7 @@ class TokenSignInPage extends HookConsumerWidget {
     final errorText = message.value ?? session?.errorMessage;
     final restoredPrincipal =
         !keyBackup.value &&
+            !resumeSignedOut &&
             lockedOrigin == null &&
             status == TokenSessionStatus.signedIn
         ? session?.principalId
@@ -255,7 +266,9 @@ class TokenSignInPage extends HookConsumerWidget {
           children: [
             const SizedBox(height: Grid.lg),
             Text(
-              keyBackup.value
+              resumeSignedOut
+                  ? '다시 로그인'
+                  : keyBackup.value
                   ? 'Welcome to Buzz'
                   : dualMode.value
                   ? 'Existing account sign-in'
@@ -266,7 +279,9 @@ class TokenSignInPage extends HookConsumerWidget {
             ),
             const SizedBox(height: Grid.xxs),
             Text(
-              keyBackup.value
+              resumeSignedOut
+                  ? '계정과 커뮤니티는 그대로 있어요. 로그인하면 이어서 사용할 수 있어요.'
+                  : keyBackup.value
                   ? 'Sign in on your first device or restore the same Buzz identity here. '
                         'If this account has no backup, your current key is linked, '
                         'or a new key is created on this device. The server encrypts '
@@ -329,7 +344,9 @@ class TokenSignInPage extends HookConsumerWidget {
               FilledButton(
                 key: const Key('token-sign-in-google'),
                 onPressed: busy ? null : () => unawaited(signIn()),
-                child: const Text('Sign in with Google'),
+                child: Text(
+                  resumeSignedOut ? 'Google로 로그인' : 'Sign in with Google',
+                ),
               ),
             if (dualMode.value && origin.value != null && !fixedOrigin)
               TextButton(
@@ -384,7 +401,7 @@ class TokenSignInPage extends HookConsumerWidget {
                 ),
               ),
             ],
-            if (lockedOrigin != null) ...[
+            if (lockedOrigin != null && !resumeSignedOut) ...[
               const SizedBox(height: Grid.md),
               const CommunityRecoveryActions(),
             ],

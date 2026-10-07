@@ -105,7 +105,9 @@ class DevicesPage extends HookConsumerWidget {
       cleanupError.value = null;
       busy.value = true;
       try {
-        await ref.read(authProvider.notifier).signOut(deviceOnly: true);
+        await ref
+            .read(authProvider.notifier)
+            .removeActiveCommunity(deviceOnly: true);
       } catch (failure) {
         if (context.mounted) cleanupError.value = '$failure';
         return;
@@ -254,12 +256,20 @@ class DevicesPage extends HookConsumerWidget {
             if (!accountDeleted.value)
               AppListCard(
                 children: [
-                  AppListRow(
-                    key: const Key('devices-delete-account'),
-                    icon: LucideIcons.trash2,
-                    title: 'Delete account',
-                    titleColor: context.colors.error,
-                    onTap: busy.value ? null : () => unawaited(deleteAccount()),
+                  ExpansionTile(
+                    key: const Key('devices-account-deletion'),
+                    title: const Text('Account deletion'),
+                    children: [
+                      AppListRow(
+                        key: const Key('devices-delete-account'),
+                        icon: LucideIcons.trash2,
+                        title: 'Delete account',
+                        titleColor: context.colors.error,
+                        onTap: busy.value
+                            ? null
+                            : () => unawaited(deleteAccount()),
+                      ),
+                    ],
                   ),
                 ],
               ),

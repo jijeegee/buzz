@@ -5,6 +5,7 @@ import 'package:nostr/nostr.dart' as nostr;
 
 import '../community/community.dart';
 import '../community/community_provider.dart';
+import '../community/community_token_session.dart';
 import '../push/push_bridge.dart';
 import '../push/push_subscription.dart';
 import 'token/relay_origin.dart';
@@ -14,13 +15,15 @@ enum AuthStatus { unknown, unauthenticated, authenticated }
 class AuthState {
   final AuthStatus status;
   final Community? community;
+  final String? logoutError;
 
-  const AuthState({required this.status, this.community});
+  const AuthState({required this.status, this.community, this.logoutError});
 }
 
 /// Restores the active community without making connectivity load-bearing.
 /// The relay session owns connection recovery after startup.
 class AuthNotifier extends AsyncNotifier<AuthState> {
+  int _logoutGeneration = 0;
   @override
   Future<AuthState> build() async {
     // Read from storage directly — NOT from community providers.
@@ -40,6 +43,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           ? communities.firstWhere((w) => w.id == activeId)
           : communities.first;
       await storage.saveActiveId(active.id);
+
+      if (active.signedOut) {
+        return _signedOutState(active);
+      }
 
       // Token communities authenticate through their relay token session
       // (see `TokenSessionGate`); legacy ones need a usable local key.
@@ -73,12 +80,33 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   Future<void> authenticateWithCommunity(
     Community community, {
     bool Function()? isCurrent,
+    bool resumeSignedOut = false,
   }) {
+    final generation = _logoutGeneration;
     return ref.read(communityTransitionProvider).runExclusive(() async {
-      if (isCurrent?.call() == false) throw StateError('Sign-in cancelled');
-      await ref.read(communityTransitionProvider).run();
-      if (isCurrent?.call() == false) throw StateError('Sign-in cancelled');
+      void guard() {
+        if (generation != _logoutGeneration || isCurrent?.call() == false) {
+          throw StateError('Sign-in cancelled');
+        }
+      }
+
+      guard();
       final storage = ref.read(communityStorageProvider);
+      final existing = (await storage.loadAll())
+          .where((saved) => saved.id == community.id)
+          .firstOrNull;
+      if (existing?.signedOut == true) {
+        final expected = existing!.pubkey ?? _pubkey(existing.nsec);
+        final supplied = community.pubkey ?? _pubkey(community.nsec);
+        if (!resumeSignedOut || expected == null || supplied != expected) {
+          throw StateError('기존 계정으로 다시 로그인해 주세요.');
+        }
+        community = community.resumeSession();
+      } else if (community.signedOut) {
+        throw StateError('이 계정으로 다시 로그인해 주세요.');
+      }
+      await ref.read(communityTransitionProvider).run();
+      guard();
       await storage.save(community);
       await storage.saveActiveId(community.id);
       await syncStoredCommunitySnapshot(ref);
@@ -107,7 +135,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   Future<void> authenticateWithTokenSession({
     required String relayUrl,
     required String principalId,
+    bool Function()? isCurrent,
+    bool resumeSignedOut = false,
   }) async {
+    final generation = _logoutGeneration;
     final origin = normalizeRelayOrigin(relayUrl);
     final existing = (await ref.read(communityStorageProvider).loadAll())
         .where((community) => _sameOrigin(community.relayUrl, origin))
@@ -143,7 +174,12 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
             pubkey: principalId,
             tokenAuth: true,
           );
-    await authenticateWithCommunity(community);
+    await authenticateWithCommunity(
+      community,
+      isCurrent: () =>
+          generation == _logoutGeneration && isCurrent?.call() != false,
+      resumeSignedOut: resumeSignedOut,
+    );
     if (revocationJournaled) {
       unawaited(
         ref
@@ -157,7 +193,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   /// revoked on the relay first; when the relay cannot be reached this throws
   /// `TokenSessionException` and removes nothing. [deviceOnly] skips the
   /// relay (see `CommunityListNotifier.removeCommunity`).
-  Future<void> signOut({bool deviceOnly = false}) {
+  Future<void> removeActiveCommunity({bool deviceOnly = false}) {
     return () async {
       final storage = ref.read(communityStorageProvider);
       await ref
@@ -177,6 +213,100 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       await future;
     }();
   }
+
+  /// Ends this app's sessions without removing accounts, communities or keys.
+  Future<void> signOut({bool deviceOnly = false}) {
+    _logoutGeneration++;
+    return ref.read(communityTransitionProvider).runExclusive(() async {
+      final storage = ref.read(communityStorageProvider);
+      final communities = await storage.loadAll();
+      var hasRevocations = false;
+      for (final community in communities.where((item) => !item.signedOut)) {
+        hasRevocations =
+            await ref.read(communityPushLeaseRevocationEnqueuerProvider)(
+              community,
+            ) ||
+            hasRevocations;
+        await ref.read(communityLogoutSessionEnderProvider)(
+          community,
+          deviceOnly: deviceOnly,
+        );
+      }
+      await ref.read(communityTransitionProvider).run();
+      final signedOut = [
+        for (final community in communities)
+          community.copyWith(signedOut: true),
+      ];
+      // One durable commit: all stored identities survive, all sessions stop.
+      await storage.saveAll(signedOut);
+      final activeId = await storage.loadActiveId();
+      final active =
+          signedOut.where((item) => item.id == activeId).firstOrNull ??
+          signedOut.firstOrNull;
+      state = AsyncData(
+        AuthState(
+          status: AuthStatus.unauthenticated,
+          community: active?.copyWith(
+            nsec: null,
+            pushNotificationsEnabled: false,
+          ),
+          logoutError: '로그아웃을 마무리하고 있어요.',
+        ),
+      );
+      state = AsyncData(await _signedOutState(active));
+      ref.invalidate(communityListProvider);
+      ref.invalidate(activeCommunityProvider);
+      if (hasRevocations) {
+        unawaited(
+          ref
+              .read(communityPushLeaseRevocationTriggerProvider)()
+              .catchError(reportPushLeaseCleanupError),
+        );
+      }
+    });
+  }
+
+  Future<AuthState> _signedOutState(Community? active) async {
+    String? error;
+    try {
+      await settleSignedOutCommunitySnapshot(ref);
+    } catch (_) {
+      error = '알림 정리를 마치지 못했어요. 다시 시도해 주세요.';
+    }
+    return AuthState(
+      status: AuthStatus.unauthenticated,
+      community: active?.copyWith(nsec: null, pushNotificationsEnabled: false),
+      logoutError: error,
+    );
+  }
+
+  /// Explicit proof for accounts which use a private key instead of Google.
+  Future<void> signInWithPrivateKey(String nsec) async {
+    final generation = _logoutGeneration;
+    final storage = ref.read(communityStorageProvider);
+    final activeId = await storage.loadActiveId();
+    final existing = (await storage.loadAll())
+        .where((community) => community.id == activeId)
+        .firstOrNull;
+    final supplied = _pubkey(nsec.trim());
+    final expected = existing?.pubkey ?? _pubkey(existing?.nsec);
+    if (existing == null ||
+        !existing.signedOut ||
+        supplied == null ||
+        supplied != expected) {
+      throw StateError('이 계정의 개인 키가 아니에요. 다시 확인해 주세요.');
+    }
+    await authenticateWithCommunity(
+      existing.copyWith(nsec: nsec.trim()),
+      resumeSignedOut: true,
+      isCurrent: () => generation == _logoutGeneration,
+    );
+  }
+}
+
+String? _pubkey(String? nsec) {
+  if (!_hasValidNsec(nsec)) return null;
+  return nostr.Keys(nostr.Nip19.decode(payload: nsec!).data).public;
 }
 
 bool _sameOrigin(String relayUrl, String origin) {

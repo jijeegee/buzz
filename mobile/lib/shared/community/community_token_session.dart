@@ -59,3 +59,25 @@ final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
     };
   },
 );
+
+/// Ends authentication without removing recovery material or membership.
+final communityLogoutSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
+  (ref) => (community, {required deviceOnly}) async {
+    if (!community.tokenAuth && community.googleBackupAccountId == null) return;
+    final origin = normalizeRelayOrigin(community.relayUrl);
+    final provider = community.googleBackupAccountId != null
+        ? keyBackupSessionControllerProvider(origin)
+        : tokenSessionControllerProvider(origin);
+    final controller = ref.read(provider);
+    if (!deviceOnly) {
+      if (controller.state.status == TokenSessionStatus.restoring) {
+        await controller.restore();
+      }
+      await controller.signOut();
+    }
+    // Propagate a secure-storage failure instead of claiming credentials were
+    // cleared. Pending backup material is deliberately untouched by logout.
+    await controller.forgetOnDevice();
+    ref.invalidate(provider);
+  },
+);

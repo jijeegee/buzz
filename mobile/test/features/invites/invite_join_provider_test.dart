@@ -18,6 +18,48 @@ import '../../shared/community/community_storage_test.dart';
 
 void main() {
   test(
+    'an invite cannot use the key retained by a signed-out community',
+    () async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final existing = Community.create(
+        name: 'Retained',
+        relayUrl: 'https://relay.example.com',
+        pubkey: keys.public,
+        nsec: keys.nsec,
+      ).copyWith(signedOut: true);
+      await storage.save(existing);
+      var requests = 0;
+      final container = ProviderContainer(
+        overrides: [
+          communityStorageProvider.overrideWithValue(storage),
+          inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
+          inviteJoinHttpClientProvider.overrideWithValue(
+            http_testing.MockClient((_) async {
+              requests++;
+              return http.Response('{}', 200);
+            }),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(inviteJoinProvider.notifier);
+      await notifier.prepare(
+        const InviteDeepLink(
+          relayUrl: 'wss://relay.example.com',
+          code: 'invite',
+        ),
+      );
+      await notifier.confirmJoin();
+      expect(requests, 0);
+      expect(
+        container.read(inviteJoinProvider).errorMessage,
+        contains('다시 로그인'),
+      );
+      expect((await storage.loadAll()).single.signedOut, isTrue);
+    },
+  );
+  test(
     'Google restored identity claims membership invite with the same key',
     () async {
       final keys = nostr.Keys.generate();
@@ -818,6 +860,7 @@ class _RecordingAuthNotifier extends AuthNotifier {
   Future<void> authenticateWithCommunity(
     Community community, {
     bool Function()? isCurrent,
+    bool resumeSignedOut = false,
   }) async {
     final storage = ref.read(communityStorageProvider);
     await storage.save(community);

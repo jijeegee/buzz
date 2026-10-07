@@ -635,6 +635,7 @@ pub fn run() {
             create_auth_event,
             auth::commands::get_token_auth_status,
             auth::commands::login_with_google,
+            auth::commands::cancel_google_login,
             auth::commands::logout,
             auth::commands::get_ws_auth_frame,
             auth::commands::list_devices,

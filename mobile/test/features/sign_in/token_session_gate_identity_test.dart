@@ -21,6 +21,8 @@ class _FlakyAuthNotifier extends AuthNotifier {
   Future<void> authenticateWithTokenSession({
     required String relayUrl,
     required String principalId,
+    bool Function()? isCurrent,
+    bool resumeSignedOut = false,
   }) async {
     attempts += 1;
     if (failuresLeft > 0) {

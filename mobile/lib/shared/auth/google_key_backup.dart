@@ -160,7 +160,7 @@ class GoogleKeyBackupService {
       }
       keys = await _restore(status, local, guard);
     } else {
-      if (missingLocalKey) {
+      if (missingLocalKey || existing?.signedOut == true) {
         throw const KeyBackupException(
           'This Google account has no backup for '
           'the saved identity. Recover its original key; no replacement was generated.',

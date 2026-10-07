@@ -16,6 +16,13 @@ Future<TokenSettingsHarness> _pumpDevices(WidgetTester tester) async {
 }
 
 Future<void> _tapAndConfirm(WidgetTester tester, Key key) async {
+  if (key == const Key('devices-delete-account')) {
+    await tester.ensureVisible(
+      find.byKey(const Key('devices-account-deletion')),
+    );
+    await tester.tap(find.byKey(const Key('devices-account-deletion')));
+    await tester.pumpAndSettle();
+  }
   await tester.ensureVisible(find.byKey(key));
   await tester.tap(find.byKey(key));
   await frames(tester);
@@ -24,6 +31,26 @@ Future<void> _tapAndConfirm(WidgetTester tester, Key key) async {
 }
 
 void main() {
+  testWidgets('account deletion is hidden and cancellation does not delete', (
+    tester,
+  ) async {
+    final h = await _pumpDevices(tester);
+    expect(find.byKey(const Key('devices-delete-account')), findsNothing);
+    await tester.ensureVisible(
+      find.byKey(const Key('devices-account-deletion')),
+    );
+    await tester.tap(find.byKey(const Key('devices-account-deletion')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('devices-delete-account')));
+    await tester.tap(find.byKey(const Key('devices-delete-account')));
+    await frames(tester);
+    expect(h.account.calls('DELETE', '/auth/account'), isEmpty);
+    await tester.tap(find.text('Cancel'));
+    await frames(tester);
+    expect(h.account.calls('DELETE', '/auth/account'), isEmpty);
+    expect(await h.storage.loadAll(), hasLength(1));
+  });
+
   testWidgets('lists devices and marks this one', (tester) async {
     await _pumpDevices(tester);
 
