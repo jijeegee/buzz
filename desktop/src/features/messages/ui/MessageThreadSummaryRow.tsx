@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ThreadNameLabel } from "./ThreadNameLabel";
 
 import type {
   TimelineThreadSummary,
@@ -109,6 +110,7 @@ export function MessageThreadSummaryRow({
   unreadCount?: number;
 }) {
   const indentRem = getThreadReplyIndentRem(depth);
+  const nameChannelId = message.tags?.find((tag) => tag[0] === "h")?.[1];
   const hoverLeftRem =
     indentRem + THREAD_REPLY_ROW_MARGIN_INLINE_REM + summaryIndentOffsetRem;
   const hoverLeft = threadReplyLength(hoverLeftRem);
@@ -269,6 +271,12 @@ export function MessageThreadSummaryRow({
         </div>
         <div className="relative z-10 min-w-0">
           <div>
+            {nameChannelId ? (
+              <ThreadNameLabel
+                channelId={nameChannelId}
+                threadId={message.id}
+              />
+            ) : null}
             <span className="font-medium transition-colors group-hover:text-foreground">
               {summary.replyCount} {replyLabel}
             </span>
