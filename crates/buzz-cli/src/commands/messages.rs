@@ -63,7 +63,10 @@ fn thread_ref_from_parent_tags(
 /// - Nested reply: `root` is the parent's own root marker; `parent` is unchanged.
 ///
 /// Ensures CLI-sent replies thread correctly using the same NIP-10 logic.
-async fn fetch_event(client: &BuzzClient, event_id: &str) -> Result<serde_json::Value, CliError> {
+pub(crate) async fn fetch_event(
+    client: &BuzzClient,
+    event_id: &str,
+) -> Result<serde_json::Value, CliError> {
     let filter = serde_json::json!({ "ids": [event_id], "limit": 1 });
     let raw = client.query(&filter).await?;
     let events: serde_json::Value = serde_json::from_str(&raw)
@@ -83,7 +86,10 @@ async fn resolve_thread_ref(
     thread_ref_from_event(parent_event_id, &event)
 }
 
-fn thread_ref_from_event(event_id: &str, event: &serde_json::Value) -> Result<ThreadRef, CliError> {
+pub(crate) fn thread_ref_from_event(
+    event_id: &str,
+    event: &serde_json::Value,
+) -> Result<ThreadRef, CliError> {
     let parent_eid = parse_event_id(event_id)?;
     let tags = event
         .get("tags")
@@ -604,6 +610,53 @@ fn quote_tag(event_id: &str) -> Result<nostr::Tag, CliError> {
         .map_err(|e| CliError::Other(format!("invalid quote tag: {e}")))
 }
 
+/// Publish a shared thread name (kind 40009) for `event` in `channel`.
+/// Returns the normalized relay write response.
+pub(crate) async fn set_thread_name(
+    client: &BuzzClient,
+    channel: &str,
+    event: &str,
+    name: &str,
+) -> Result<String, CliError> {
+    validate_hex64(event)?;
+    let event = event.to_lowercase();
+    let channel_id =
+        Uuid::parse_str(channel).map_err(|_| CliError::Usage("invalid channel UUID".into()))?;
+    buzz_core::thread_name::validate_thread_name(name).map_err(|e| CliError::Usage(e.into()))?;
+    let raw = client
+        .query(&serde_json::json!({
+            "kinds": [buzz_core::kind::KIND_THREAD_NAME],
+            "#h": [channel_id.to_string()], "#e": [&event], "limit": 1,
+        }))
+        .await?;
+    let previous: Vec<serde_json::Value> = serde_json::from_str(&raw)
+        .map_err(|e| CliError::Other(format!("invalid thread name response: {e}")))?;
+    let previous_time = previous
+        .iter()
+        .filter_map(|event| event.get("created_at").and_then(|v| v.as_u64()))
+        .max()
+        .unwrap_or(0);
+    let created_at = nostr::Timestamp::now()
+        .as_secs()
+        .max(previous_time.saturating_add(1));
+    let tags = [
+        nostr::Tag::parse(["h", &channel_id.to_string()]),
+        nostr::Tag::parse(["e", &event]),
+    ]
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| CliError::Usage(e.to_string()))?;
+    let builder = nostr::EventBuilder::new(
+        nostr::Kind::Custom(buzz_core::kind::KIND_THREAD_NAME as u16),
+        name,
+    )
+    .tags(tags)
+    .custom_created_at(nostr::Timestamp::from(created_at));
+    let event = client.sign_event(builder)?;
+    let resp = client.submit_event(event).await?;
+    Ok(normalize_write_response(&resp))
+}
+
 pub struct SendMessageParams {
     pub channel_id: String,
     pub content: String,
@@ -613,12 +666,20 @@ pub struct SendMessageParams {
     pub broadcast: bool,
     pub files: Vec<String>,
     pub mentions: Vec<String>,
+    /// Additional tags for kind 9 messages (e.g. task-thread markers).
+    pub extra_tags: Vec<nostr::Tag>,
 }
 
-pub async fn cmd_send_message(
+pub async fn cmd_send_message(client: &BuzzClient, p: SendMessageParams) -> Result<(), CliError> {
+    println!("{}", send_message(client, p).await?);
+    Ok(())
+}
+
+/// Send a message and return the relay write response with `mention_pubkeys`.
+pub(crate) async fn send_message(
     client: &BuzzClient,
     mut p: SendMessageParams,
-) -> Result<(), CliError> {
+) -> Result<serde_json::Value, CliError> {
     // Allow '-' to read content from stdin. This keeps callers from having to
     // jam shell-metacharacter-heavy text (backticks, $vars, etc.) through argv
     // quoting — the source of countless self-inflicted command-substitution
@@ -759,6 +820,7 @@ pub async fn cmd_send_message(
         Some(quoted) => builder.tags([quote_tag(quoted)?]),
         None => builder,
     };
+    let builder = builder.tags(p.extra_tags);
 
     let event = client.sign_event(builder)?;
     let emitted_mentions = event_mention_pubkeys(&event);
@@ -771,8 +833,7 @@ pub async fn cmd_send_message(
             serde_json::json!(emitted_mentions),
         );
     }
-    println!("{output}");
-    Ok(())
+    Ok(output)
 }
 
 pub struct SendDiffParams {
@@ -976,6 +1037,7 @@ pub async fn dispatch(
                     broadcast,
                     files,
                     mentions,
+                    extra_tags: Vec::new(),
                 },
             )
             .await
@@ -1018,45 +1080,8 @@ pub async fn dispatch(
             event,
             name,
         } => {
-            validate_hex64(&event)?;
-            let event = event.to_lowercase();
-            let channel_id = Uuid::parse_str(&channel)
-                .map_err(|_| CliError::Usage("invalid channel UUID".into()))?;
-            let name = name.trim();
-            buzz_core::thread_name::validate_thread_name(name)
-                .map_err(|e| CliError::Usage(e.into()))?;
-            let raw = client
-                .query(&serde_json::json!({
-                    "kinds": [buzz_core::kind::KIND_THREAD_NAME],
-                    "#h": [channel_id.to_string()], "#e": [&event], "limit": 1,
-                }))
-                .await?;
-            let previous: Vec<serde_json::Value> = serde_json::from_str(&raw)
-                .map_err(|e| CliError::Other(format!("invalid thread name response: {e}")))?;
-            let previous_time = previous
-                .iter()
-                .filter_map(|event| event.get("created_at").and_then(|v| v.as_u64()))
-                .max()
-                .unwrap_or(0);
-            let created_at = nostr::Timestamp::now()
-                .as_secs()
-                .max(previous_time.saturating_add(1));
-            let tags = [
-                nostr::Tag::parse(["h", &channel_id.to_string()]),
-                nostr::Tag::parse(["e", &event]),
-            ]
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| CliError::Usage(e.to_string()))?;
-            let builder = nostr::EventBuilder::new(
-                nostr::Kind::Custom(buzz_core::kind::KIND_THREAD_NAME as u16),
-                name,
-            )
-            .tags(tags)
-            .custom_created_at(nostr::Timestamp::from(created_at));
-            let event = client.sign_event(builder)?;
-            let resp = client.submit_event(event).await?;
-            println!("{}", normalize_write_response(&resp));
+            let resp = set_thread_name(client, &channel, &event, name.trim()).await?;
+            println!("{resp}");
             Ok(())
         }
         MessagesCmd::Edit { event, content } => cmd_edit_message(client, &event, &content).await,
@@ -1784,6 +1809,7 @@ mod tests {
             broadcast: false,
             files: vec![],
             mentions: vec![],
+            extra_tags: vec![],
         }
     }
 

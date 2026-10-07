@@ -3544,6 +3544,50 @@ async fn run_harness(
                                 continue;
                             }
 
+                            // A task thread this agent closed posts its result
+                            // on the main timeline. Hand it to the main-timeline
+                            // session so work queued behind the task (for
+                            // example "deploy when it's done") continues without
+                            // waiting for the next human mention. Checked before
+                            // the self-authored drop because the result is ours.
+                            if is_own_thread_result(
+                                &buzz_event.event,
+                                kind_u32,
+                                &pubkey_hex,
+                                config.session_policy,
+                            ) && !is_dm_channel(buzz_event.channel_id, &ctx.channel_info).await
+                            {
+                                let ingress = NormalListenerIngress {
+                                    buzz_event,
+                                    effective_author: pubkey_hex.clone(),
+                                    prompt_tag: THREAD_RESULT_PROMPT_TAG.to_string(),
+                                    edit: None,
+                                };
+                                let session_scope =
+                                    ingress.session_scope(config.session_policy, false);
+                                tracing::info!(
+                                    channel_id = %session_scope.channel_id(),
+                                    scope = %session_scope.telemetry_label(),
+                                    "task thread result — queued for the main-timeline session"
+                                );
+                                // No 👀 and no steer: this is a notice from
+                                // ourselves, not a request that interrupts. The
+                                // turn still shows 💬 on the result while it runs.
+                                ingress.push(&mut queue, session_scope);
+                                if pool_ready {
+                                    for (scope, thread_tags) in dispatch_pending(
+                                        &mut pool,
+                                        &mut queue,
+                                        &ctx,
+                                        &mut last_activity,
+                                        observer.as_ref(),
+                                    ) {
+                                        typing_channels.insert(scope, thread_tags);
+                                    }
+                                }
+                                continue;
+                            }
+
                             if config.ignore_self && buzz_event.event.pubkey.to_hex() == pubkey_hex {
                                 tracing::debug!(channel_id = %buzz_event.channel_id, "dropping self-authored event");
                                 continue;
@@ -4403,6 +4447,38 @@ fn event_mentions_agent(event: &nostr::Event, agent_pubkey_hex: &str) -> bool {
         t.as_slice().first().map(|s| s.as_str()) == Some("p")
             && t.as_slice().get(1).map(|s| s.as_str()) == Some(agent_pubkey_hex)
     })
+}
+
+/// Prompt tag (the `<buzz-event type>`) for a task thread result relayed to
+/// the main-timeline session.
+const THREAD_RESULT_PROMPT_TAG: &str = "thread-result";
+
+/// Whether `event` is a task thread result this agent posted on a channel
+/// main timeline with `buzz threads close`.
+///
+/// The result carries `buzz:sent-from-thread` and `buzz:thread-closed` and
+/// p-tags its own author so it reaches a mention-filtered subscription. The
+/// close marker inside the thread also carries `buzz:thread-closed` but never
+/// `buzz:sent-from-thread`. Only the main-and-threads policy has a separate
+/// main-timeline session to tell; under the channel policy the thread already
+/// ran in the one shared session.
+fn is_own_thread_result(
+    event: &nostr::Event,
+    kind_u32: u32,
+    agent_pubkey_hex: &str,
+    policy: scope::SessionPolicy,
+) -> bool {
+    let has_tag = |name: &str| {
+        event
+            .tags
+            .iter()
+            .any(|t| t.as_slice().first().map(String::as_str) == Some(name))
+    };
+    policy == scope::SessionPolicy::Thread
+        && kind_u32 == KIND_STREAM_MESSAGE
+        && event.pubkey.to_hex() == agent_pubkey_hex
+        && has_tag("buzz:sent-from-thread")
+        && has_tag("buzz:thread-closed")
 }
 
 fn is_owner_control_command(
@@ -6559,6 +6635,76 @@ mod owner_control_command_tests {
             KIND_STREAM_MESSAGE,
             "!rotate",
             &agent
+        ));
+    }
+
+    #[test]
+    fn own_thread_result_requires_policy_author_and_result_tags() {
+        let keys = Keys::generate();
+        let agent = keys.public_key().to_hex();
+        let root = "cd".repeat(32);
+        let sign = |keys: &Keys, tags: Vec<Tag>| {
+            EventBuilder::new(Kind::Custom(KIND_STREAM_MESSAGE as u16), "@akak done")
+                .tags(tags)
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        let result_tags = || {
+            vec![
+                Tag::parse(["buzz:sent-from-thread", root.as_str(), "Task"]).unwrap(),
+                Tag::parse(["buzz:thread-closed", root.as_str()]).unwrap(),
+                Tag::parse(["p", agent.as_str()]).unwrap(),
+            ]
+        };
+        let thread = scope::SessionPolicy::Thread;
+
+        let result = sign(&keys, result_tags());
+        assert!(is_own_thread_result(
+            &result,
+            KIND_STREAM_MESSAGE,
+            &agent,
+            thread
+        ));
+
+        // The channel policy has no separate main session to tell.
+        assert!(!is_own_thread_result(
+            &result,
+            KIND_STREAM_MESSAGE,
+            &agent,
+            scope::SessionPolicy::Channel
+        ));
+
+        // Another author's result belongs to that agent's harness.
+        let other = sign(&Keys::generate(), result_tags());
+        assert!(!is_own_thread_result(
+            &other,
+            KIND_STREAM_MESSAGE,
+            &agent,
+            thread
+        ));
+
+        // The in-thread close marker has no sent-from-thread tag.
+        let marker = sign(
+            &keys,
+            vec![
+                Tag::parse(["e", root.as_str(), "", "reply"]).unwrap(),
+                Tag::parse(["buzz:thread-closed", root.as_str()]).unwrap(),
+            ],
+        );
+        assert!(!is_own_thread_result(
+            &marker,
+            KIND_STREAM_MESSAGE,
+            &agent,
+            thread
+        ));
+
+        // An ordinary self-authored message is still dropped as self.
+        let plain = sign(&keys, vec![Tag::parse(["p", agent.as_str()]).unwrap()]);
+        assert!(!is_own_thread_result(
+            &plain,
+            KIND_STREAM_MESSAGE,
+            &agent,
+            thread
         ));
     }
 
