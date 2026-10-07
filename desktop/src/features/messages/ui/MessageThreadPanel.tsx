@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, CircleCheck } from "lucide-react";
 import { ThreadNameEditor } from "./ThreadNameEditor";
 
 import { HuddleTranscriptIntro } from "@/features/huddle/components/HuddleTranscriptIntro";
@@ -52,6 +52,7 @@ import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
+import { isTaskThreadClosed } from "@/features/messages/lib/taskThread";
 
 type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   channel: Channel | null;
@@ -348,6 +349,10 @@ export function MessageThreadPanel({
   const threadMessages = React.useMemo(
     () => deferredThreadReplies.map((entry) => entry.message),
     [deferredThreadReplies],
+  );
+  const isClosedTaskThread = React.useMemo(
+    () => !isHuddleTranscript && isTaskThreadClosed(threadMessages),
+    [isHuddleTranscript, threadMessages],
   );
   const shouldShowThreadBranchGuides = React.useMemo(
     () => hasNestedThreadBranches(deferredThreadReplies),
@@ -789,6 +794,7 @@ export function MessageThreadPanel({
               )
             }
           />
+          {isClosedTaskThread ? <TaskThreadClosedBanner /> : null}
         </div>
       </div>
     </AuxiliaryPanelBody>
@@ -861,7 +867,9 @@ export function MessageThreadPanel({
               placeholder={
                 isHuddleTranscript
                   ? "Message the huddle"
-                  : `Reply in thread to ${threadHead.author}`
+                  : isClosedTaskThread
+                    ? "Task closed. Start new work in the channel, or reply to reopen"
+                    : `Reply in thread to ${threadHead.author}`
               }
               profiles={profiles}
               recentMentionPubkeys={recentMentionPubkeys}
@@ -951,5 +959,21 @@ export function MessageThreadPanel({
         {threadScrollRegion}
       </AuxiliaryPanel>
     </VideoReviewNavigationProvider>
+  );
+}
+
+function TaskThreadClosedBanner() {
+  return (
+    <section
+      aria-label="Task closed"
+      className="mt-3 flex items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+      data-testid="task-thread-closed-banner"
+    >
+      <CircleCheck aria-hidden className="size-4 shrink-0 text-primary" />
+      <span>
+        Task closed. The result was reported in the channel. Start new work
+        there; replying here reopens this thread.
+      </span>
+    </section>
   );
 }
