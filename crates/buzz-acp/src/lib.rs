@@ -3571,7 +3571,8 @@ async fn run_harness(
                                     "task thread result — queued for the main-timeline session"
                                 );
                                 // No 👀 and no steer: this is a notice from
-                                // ourselves, not a request that interrupts.
+                                // ourselves, not a request that interrupts. The
+                                // turn still shows 💬 on the result while it runs.
                                 ingress.push(&mut queue, session_scope);
                                 if pool_ready {
                                     for (scope, thread_tags) in dispatch_pending(
