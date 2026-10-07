@@ -22,7 +22,7 @@ const MAX_REQUEST_BYTES: usize = 8 * 1024;
 const SUCCESS_PAGE: &str =
     "<!doctype html><html><head><meta charset=\"utf-8\"><title>Buzz</title></head>\
 <body style=\"font-family:system-ui,sans-serif;text-align:center;padding-top:4rem\">\
-<h1>Signed in</h1><p>You can close this tab and return to Buzz.</p></body></html>";
+<h1>Return to Buzz</h1><p>Your sign-in response was sent to Buzz. Continue in the app.</p><p>If Buzz did not open, select its icon. You can close this tab.</p></body></html>";
 
 const FAILURE_PAGE: &str =
     "<!doctype html><html><head><meta charset=\"utf-8\"><title>Buzz</title></head>\

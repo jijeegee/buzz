@@ -28,11 +28,12 @@ async function installDefaultCommunity(
     holdApply?: boolean;
     failApply?: boolean;
     profileExists?: boolean;
+    holdLogin?: boolean;
   } = {},
 ) {
   await seedActiveIdentity(page, { ...TEST_IDENTITIES.alice, username: "" });
   await page.addInitScript(
-    ({ origin, holdApply, failApply }) => {
+    ({ origin, holdApply, failApply, holdLogin }) => {
       const w = window as TestWindow;
       const state = {
         commands: [] as string[],
@@ -41,6 +42,8 @@ async function installDefaultCommunity(
       };
       w.defaultCommunityTest = state;
       let signedIn = false;
+      let pendingLogin: { id: string; reject: (error: Error) => void } | null =
+        null;
       let invoke: TestWindow["__TAURI_INTERNALS__"]["invoke"];
       w.__TAURI_INTERNALS__ = {} as TestWindow["__TAURI_INTERNALS__"];
       Object.defineProperty(w.__TAURI_INTERNALS__, "invoke", {
@@ -50,6 +53,23 @@ async function installDefaultCommunity(
         },
         get: () => async (command: string, args?: unknown) => {
           state.commands.push(command);
+          if (command === "cancel_google_login") {
+            const id = (args as { attemptId: string }).attemptId;
+            if (pendingLogin?.id !== id) return false;
+            pendingLogin.reject(new Error("Google sign-in cancelled."));
+            pendingLogin = null;
+            return true;
+          }
+          if (command === "login_with_google" && holdLogin) {
+            const id = (args as { attemptId: string }).attemptId;
+            return new Promise((_, reject) => {
+              pendingLogin = { id, reject };
+              window.__BUZZ_E2E_EMIT_TAURI_EVENT__?.("google-login-progress", {
+                attemptId: id,
+                phase: "waiting",
+              });
+            });
+          }
           if (command === "login_with_google") signedIn = true;
           if (
             command === "get_token_auth_status" ||
@@ -85,6 +105,7 @@ async function installDefaultCommunity(
     },
     {
       origin: ORIGIN,
+      holdLogin: options.holdLogin,
       holdApply: options.holdApply,
       failApply: options.failApply,
     },
@@ -311,4 +332,35 @@ test("configured users keep their chosen community", async ({ page }) => {
   expect(
     await page.evaluate((key) => localStorage.getItem(key), TRANSACTION),
   ).toBeNull();
+});
+
+test("closed login browser can be cancelled and retried without restarting onboarding", async ({
+  page,
+}) => {
+  await installDefaultCommunity(page, { holdLogin: true });
+  await page.goto("/");
+  const signIn = page.getByTestId("onboarding-google-sign-in");
+  await signIn.click();
+  await expect(
+    page.getByRole("button", { name: "Cancel sign-in", exact: true }),
+  ).toBeVisible();
+  await expect(signIn).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Cancel sign-in", exact: true })
+    .click();
+  await expect(signIn).toBeEnabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await signIn.click();
+  await expect(
+    page.getByRole("button", { name: "Cancel sign-in", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as TestWindow).defaultCommunityTest.commands.filter(
+          (c) => c === "login_with_google",
+        ).length,
+    ),
+  ).toBe(2);
+  expect(await savedCommunities(page)).toHaveLength(0);
 });

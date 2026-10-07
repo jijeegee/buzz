@@ -3,9 +3,10 @@ import { toast } from "sonner";
 
 import {
   getTokenAuthStatus,
-  loginWithGoogle,
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
+import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
+import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
@@ -25,6 +26,7 @@ export function GoogleSignInButton({
 }) {
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
   const [pending, setPending] = React.useState(false);
+  const login = useGoogleLogin();
 
   React.useEffect(() => {
     let cancelled = false;
@@ -42,11 +44,10 @@ export function GoogleSignInButton({
 
   function signIn(existingTokenAccount = false) {
     setPending(true);
-    loginWithGoogle(
-      existingTokenAccount ? false : allowRestore,
-      existingTokenAccount,
-    )
-      .then(async () => {
+    login
+      .run(existingTokenAccount ? false : allowRestore, existingTokenAccount)
+      .then(async (next) => {
+        if (!next) return;
         if (onComplete) await onComplete();
         else window.location.reload();
       })
@@ -59,7 +60,8 @@ export function GoogleSignInButton({
               ? error
               : "Google sign-in failed.",
         );
-      });
+      })
+      .finally(() => setPending(false));
   }
 
   return (
@@ -79,8 +81,9 @@ export function GoogleSignInButton({
         variant="outline"
       >
         {pending ? <Spinner aria-hidden className="h-4 w-4 border-2" /> : null}
-        {pending ? "Finish signing in in your browser…" : "Sign in with Google"}
+        {pending ? "Signing in…" : "Sign in with Google"}
       </Button>
+      <GoogleLoginProgress login={login} />
       {status.keyBackupSupported &&
       !status.keyBackup &&
       !status.legacyTokenAccount &&

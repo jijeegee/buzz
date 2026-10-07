@@ -6,7 +6,6 @@ import {
   deleteTokenAccount,
   getTokenAuthStatus,
   listAuthDevices,
-  loginWithGoogle,
   logoutTokenSession,
   onTokenAuthChanged,
   revokeAllBotTokens,
@@ -24,6 +23,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
+import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
+import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
@@ -55,6 +56,7 @@ function shortId(hex: string | null): string {
  * nothing on a relay that does not offer token sign-in.
  */
 export function AccountSettingsCard() {
+  const login = useGoogleLogin();
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
 
@@ -106,7 +108,8 @@ export function AccountSettingsCard() {
 
   const signIn = (existingTokenAccount = false) =>
     run("Sign in", async () => {
-      const next = await loginWithGoogle(false, existingTokenAccount);
+      const next = await login.run(false, existingTokenAccount);
+      if (!next) return;
       setStatus(next);
       if (!next.keyBackup) reloadIntoNewIdentity();
     });
@@ -132,6 +135,7 @@ export function AccountSettingsCard() {
         {status.state === "active" ? (
           <ActiveAccount
             busy={busy}
+            login={login}
             onStatus={setStatus}
             run={run}
             status={status}
@@ -166,7 +170,7 @@ export function AccountSettingsCard() {
                 <Spinner aria-hidden className="h-4 w-4 border-2" />
               ) : null}
               {busy === "Sign in"
-                ? "Waiting for browser…"
+                ? "Signing in…"
                 : status.state === "needs_login"
                   ? "Sign in again"
                   : status.keyBackupSupported && !status.legacyTokenAccount
@@ -203,6 +207,7 @@ export function AccountSettingsCard() {
             ) : null}
           </SettingsOptionRow>
         )}
+        <GoogleLoginProgress login={login} />
       </SettingsOptionGroup>
     </div>
   );
@@ -213,8 +218,10 @@ function ActiveAccount({
   busy,
   run,
   onStatus,
+  login,
 }: {
   status: TokenAuthStatus;
+  login: ReturnType<typeof useGoogleLogin>;
   busy: string | null;
   run: (label: string, action: () => Promise<unknown>) => Promise<void>;
   onStatus: (status: TokenAuthStatus) => void;
@@ -277,7 +284,9 @@ function ActiveAccount({
             disabled={disabled}
             onClick={() =>
               void run("Verify backup", async () => {
-                onStatus(await loginWithGoogle(false));
+                const next = await login.run(false);
+                if (!next) return;
+                onStatus(next);
                 toast.success(
                   "Google backup verified. Your signing identity is unchanged.",
                 );
