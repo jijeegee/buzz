@@ -42,6 +42,7 @@ import { useComposerSpoilerParticles } from "@/features/messages/lib/useComposer
 import { useTypingBroadcast } from "@/features/messages/useTypingBroadcast";
 import { cn } from "@/shared/lib/cn";
 import { ComposerReplyEditBanner } from "./ComposerReplyEditBanner";
+import { useComposerQuote } from "./messageQuoteScope";
 import { ComposerAttachments, DropZoneOverlay } from "./ComposerAttachments";
 import { focusMentionOptionsTrigger } from "./MentionAutocomplete";
 import { MessageComposerAutocompletes } from "./MessageComposerAutocompletes";
@@ -444,6 +445,12 @@ function MessageComposerImpl({
     if (!replyTarget || composerDisabled) return;
     richText.focusPreserve();
   }, [composerDisabled, replyTarget, richText.focusPreserve]);
+  const composerQuote = useComposerQuote();
+  const quoteTarget = composerQuote?.target ?? null;
+  React.useEffect(() => {
+    if (!quoteTarget || composerDisabled) return;
+    richText.focusPreserve();
+  }, [composerDisabled, quoteTarget, richText.focusPreserve]);
   useComposerAutofocus(richText.focus, effectiveDraftKey, composerDisabled);
   const applyAutocompleteEdit = React.useCallback(
     (edit: AutocompleteEdit) => {
@@ -860,7 +867,9 @@ function MessageComposerImpl({
             isEditing={editTarget != null}
             isEditCancelDisabled={isDeferredEditPending}
             replyTarget={replyTarget}
+            quoteTarget={quoteTarget}
             onCancelEdit={onCancelEdit}
+            onCancelQuote={composerQuote?.cancel}
             onCancelReply={onCancelReply}
           />
           {showBackgroundUploadProgress ? (

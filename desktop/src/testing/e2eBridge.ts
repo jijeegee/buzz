@@ -172,7 +172,7 @@ type MockPersonaSeed = {
   namePool?: string[];
   respondTo?: "owner-only" | "allowlist" | "anyone";
   respondToAllowlist?: string[];
-  sessionPolicy?: "channel" | "thread" | "main_and_threads";
+  sessionPolicy?: "channel" | "thread";
 };
 
 type MockTeamSeed = {
@@ -1060,7 +1060,7 @@ type RawPersona = {
   respond_to?: string | null;
   respond_to_allowlist?: string[];
   parallelism?: number | null;
-  session_policy?: "channel" | "thread" | "main_and_threads";
+  session_policy?: "channel" | "thread";
   created_at: string;
   updated_at: string;
 };
@@ -3638,9 +3638,11 @@ function mockPersonaCatalogPublications() {
     };
     const rawDescription = content.description;
     const sessionPolicy =
+      // `main_and_threads` was briefly stored by development builds for the
+      // same main-plus-per-thread scope; it reads as Thread like the backend.
       content.session_policy === "thread" ||
       content.session_policy === "main_and_threads"
-        ? content.session_policy
+        ? "thread"
         : "channel";
     if (
       typeof displayName !== "string" ||
@@ -8978,7 +8980,7 @@ type PersonaBehaviorInput = {
   respondTo?: "owner-only" | "allowlist" | "anyone";
   respondToAllowlist?: string[];
   parallelism?: number;
-  sessionPolicy?: "channel" | "thread" | "main_and_threads";
+  sessionPolicy?: "channel" | "thread";
 };
 
 /** Mirrors `apply_persona_behavior`: replace all four as a unit. */
@@ -10484,6 +10486,7 @@ async function handleSendChannelMessage(
     mentionTags?: string[][] | null;
     linkPreviewTags?: string[][] | null;
     sentFromThreadTag?: string[] | null;
+    quoteTag?: string[] | null;
     suppressLinkPreviews?: boolean;
     expectedRelayUrl?: string | null;
     expectedSignerPubkey?: string | null;
@@ -10561,6 +10564,8 @@ async function handleSendChannelMessage(
     ...mentionTags,
     ...linkPreviewTags,
     ...(args.sentFromThreadTag ? [args.sentFromThreadTag] : []),
+    // NIP-18 quote reference; never affects the thread placement above.
+    ...(args.quoteTag ? [args.quoteTag] : []),
     ...(args.suppressLinkPreviews ? [["link-preview", "none"]] : []),
   ];
   const identity = getIdentity(config);

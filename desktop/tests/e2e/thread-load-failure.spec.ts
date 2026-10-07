@@ -70,7 +70,7 @@ async function openWelcomeThread(page: Page) {
       '[data-testid="message-row"][data-message-id="mock-general-welcome"]',
     );
     await root.hover();
-    await root.getByRole("button", { name: "Reply" }).click();
+    await root.getByRole("button", { name: "Reply in thread" }).click();
   }
   await expect(page.getByTestId("message-thread-panel")).toBeVisible();
 }

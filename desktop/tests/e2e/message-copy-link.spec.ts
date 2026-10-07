@@ -89,7 +89,8 @@ test("message action rail copies the same canonical thread link as More", async 
     "React with :heart:",
     "React with :joy:",
     "Open reactions",
-    "Reply",
+    "Reply in thread",
+    "Quote",
     "Copy link",
     "More actions",
   ]);
@@ -104,7 +105,7 @@ test("message action rail copies the same canonical thread link as More", async 
   const [pickerBox, dividerBox, replyBox] = await Promise.all([
     actionBar.getByRole("button", { name: "Open reactions" }).boundingBox(),
     divider.boundingBox(),
-    actionBar.getByRole("button", { name: "Reply" }).boundingBox(),
+    actionBar.getByRole("button", { name: "Reply in thread" }).boundingBox(),
   ]);
   expect(pickerBox).not.toBeNull();
   expect(dividerBox).not.toBeNull();

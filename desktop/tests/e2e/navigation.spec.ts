@@ -212,7 +212,7 @@ test("back and forward restore open thread panels", async ({ page }) => {
     .getByTestId("message-row")
     .first();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
@@ -242,7 +242,7 @@ test("back undoes closing a thread panel", async ({ page }) => {
     .getByTestId("message-row")
     .first();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
@@ -265,7 +265,7 @@ test("open thread panels survive reload", async ({ page }) => {
     .getByTestId("message-row")
     .first();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
@@ -351,7 +351,7 @@ test("settings is a route: section survives reload, closing returns to the previ
     .getByTestId("message-row")
     .first();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
   const channelUrl = page.url();

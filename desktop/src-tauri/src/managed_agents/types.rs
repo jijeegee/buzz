@@ -1098,7 +1098,7 @@ pub fn resolve_mint_behavioral_defaults(
         parallelism,
         session_policy: definition
             .map(|definition| definition.session_policy)
-            .unwrap_or(super::AcpSessionPolicy::MainAndThreads),
+            .unwrap_or(super::AcpSessionPolicy::Thread),
     })
 }
 

@@ -15,7 +15,7 @@ use uuid::Uuid;
 mod message_tags;
 
 use message_tags::{
-    append_client_tags, append_sent_from_thread_tag, emoji_tags, imeta_tags,
+    append_client_tags, append_quote_tag, append_sent_from_thread_tag, emoji_tags, imeta_tags,
     mention_reference_tags, route_note_tag,
 };
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -260,6 +260,7 @@ pub fn build_message(
     mention_ref_tags: &[Vec<String>],
     link_preview_tags: &[Vec<String>],
     sent_from_thread_tag: Option<&[String]>,
+    quote_tag: Option<&[String]>,
     relay_base: &str,
 ) -> Result<EventBuilder, String> {
     build_message_with_client_tags(
@@ -272,6 +273,7 @@ pub fn build_message(
         mention_ref_tags,
         link_preview_tags,
         sent_from_thread_tag,
+        quote_tag,
         relay_base,
         &[],
     )
@@ -293,6 +295,7 @@ pub fn build_message_with_client_tags(
     mention_ref_tags: &[Vec<String>],
     link_preview_tags: &[Vec<String>],
     sent_from_thread_tag: Option<&[String]>,
+    quote_tag: Option<&[String]>,
     relay_base: &str,
     client_tags: &[Vec<String>],
 ) -> Result<EventBuilder, String> {
@@ -310,6 +313,9 @@ pub fn build_message_with_client_tags(
     mention_reference_tags(mention_ref_tags, &mut tags)?;
     crate::link_preview_tags::append(link_preview_tags, relay_base, &mut tags)?;
     append_sent_from_thread_tag(sent_from_thread_tag, &mut tags)?;
+    // A NIP-18 quote is a reference only: it is appended after the thread
+    // tags and never contributes `e` tags, so placement stays with `thread_ref`.
+    append_quote_tag(quote_tag, &mut tags)?;
     append_client_tags(client_tags, &mut tags)?;
     Ok(EventBuilder::new(Kind::Custom(9), content).tags(tags))
 }
@@ -803,6 +809,59 @@ pub use workflows::{
 mod tests {
     use super::*;
     use nostr::Keys;
+
+    fn signed_message_tags(
+        thread_ref: Option<&ThreadRef>,
+        quote_tag: Option<&[String]>,
+    ) -> Vec<Vec<String>> {
+        let builder = build_message(
+            Uuid::nil(),
+            "hello",
+            thread_ref,
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            None,
+            quote_tag,
+            "https://relay.example",
+        )
+        .unwrap();
+        let event = builder.sign_with_keys(&Keys::generate()).unwrap();
+        event.tags.iter().map(|t| t.as_slice().to_vec()).collect()
+    }
+
+    #[test]
+    fn quote_tag_is_a_reference_and_never_changes_placement() {
+        const QUOTED: &str = "d24da132115ca0a46233cf4c2ad8338fbf914250cbcaa9181a6dd59533cb5ac1";
+        const AUTHOR: &str = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+        let quote: Vec<String> = vec!["q".into(), QUOTED.into(), String::new(), AUTHOR.into()];
+        let is_e = |tag: &&Vec<String>| tag.first().map(String::as_str) == Some("e");
+        let is_p = |tag: &&Vec<String>| tag.first().map(String::as_str) == Some("p");
+
+        // Main timeline: top-level, no reply e-tags, no notification p-tag.
+        let top_level = signed_message_tags(None, Some(&quote));
+        assert!(top_level.contains(&quote));
+        assert_eq!(top_level.iter().filter(is_e).count(), 0);
+        assert_eq!(top_level.iter().filter(is_p).count(), 0);
+
+        // In a thread: the usual e-tags decide placement; the quote is extra.
+        let root = EventId::from_hex(&"a".repeat(64)).unwrap();
+        let parent = EventId::from_hex(&"b".repeat(64)).unwrap();
+        let thread_ref = ThreadRef {
+            root_event_id: root,
+            parent_event_id: parent,
+        };
+        let in_thread = signed_message_tags(Some(&thread_ref), Some(&quote));
+        let without_quote = signed_message_tags(Some(&thread_ref), None);
+        let e_tags: Vec<&Vec<String>> = in_thread.iter().filter(is_e).collect();
+        let e_tags_without_quote: Vec<&Vec<String>> = without_quote.iter().filter(is_e).collect();
+        assert_eq!(e_tags, e_tags_without_quote);
+        assert!(in_thread.contains(&quote));
+        assert!(!without_quote.iter().any(|t| t[0] == "q"));
+    }
+
     #[test]
     fn channel_builders_reject_hash_only_names() {
         let channel_id = Uuid::new_v4();

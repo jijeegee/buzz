@@ -883,11 +883,11 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Resolve once and stamp the same value onto the environment and snapshot.
     let acp_session_policy = super::effective_acp_session_policy(record, &personas);
     super::apply_acp_session_policy_env(&mut command, acp_session_policy);
-    // Main-and-threads agents keep a durable session ledger so a restarted
-    // harness can resume their provider sessions. Other policies are launched
-    // exactly as before.
+    // Thread-policy agents (main timeline + one session per thread) keep a
+    // durable session ledger so a restarted harness can resume their provider
+    // sessions. Channel-policy agents are launched exactly as before.
     command.env_remove(super::ACP_STATE_DIR_ENV_VAR);
-    if acp_session_policy == super::AcpSessionPolicy::MainAndThreads {
+    if acp_session_policy == super::AcpSessionPolicy::Thread {
         command.env(
             super::ACP_STATE_DIR_ENV_VAR,
             super::storage::managed_agents_state_dir(app)?,

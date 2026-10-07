@@ -441,7 +441,7 @@ test("Create: untouched defaults omit effortLevel and persist thread context", a
     "no pick must mean the key is absent — the definition default stays adapter default",
   );
   assert.equal("effortLevel" in instance, false);
-  assert.equal(persona.behavior.sessionPolicy, "main_and_threads");
+  assert.equal(persona.behavior.sessionPolicy, "thread");
 });
 
 test("Create: choosing Entire channel persists the explicit policy", async () => {
@@ -453,7 +453,7 @@ test("Create: choosing Entire channel persists the explicit policy", async () =>
   });
   const trigger = dom.window.document.getElementById("persona-session-policy");
   assert.ok(trigger, "Conversation context must be available in Advanced");
-  assert.equal(trigger.textContent.trim(), "Main timeline and each thread");
+  assert.equal(trigger.textContent.trim(), "Each thread");
   await act(async () => {
     fireEvent.pointerDown(
       trigger,

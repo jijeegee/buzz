@@ -368,11 +368,14 @@ export function splitOutgoingTags(tags: string[][] | undefined): {
   emojiTags: string[][];
   mentionTags: string[][];
   linkPreviewTags: string[][];
+  /** NIP-18 `q` quote references; validated again by the Tauri send path. */
+  quoteTags: string[][];
 } {
   const mediaTags: string[][] = [];
   const emojiTags: string[][] = [];
   const mentionTags: string[][] = [];
   const linkPreviewTags: string[][] = [];
+  const quoteTags: string[][] = [];
   for (const tag of tags ?? []) {
     if (tag[0] === "emoji") {
       emojiTags.push(tag);
@@ -380,9 +383,11 @@ export function splitOutgoingTags(tags: string[][] | undefined): {
       mentionTags.push(tag);
     } else if (tag[0] === "link-preview") {
       linkPreviewTags.push(tag);
+    } else if (tag[0] === "q") {
+      quoteTags.push(tag);
     } else {
       mediaTags.push(tag);
     }
   }
-  return { mediaTags, emojiTags, mentionTags, linkPreviewTags };
+  return { mediaTags, emojiTags, mentionTags, linkPreviewTags, quoteTags };
 }
