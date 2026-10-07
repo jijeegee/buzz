@@ -7,6 +7,7 @@ import '../../shared/profile/user_profile.dart';
 import 'channel.dart';
 import 'channel_messages_provider.dart';
 import 'message_mention_pubkeys.dart';
+import 'message_quote.dart';
 import 'local_message_send_animation_provider.dart';
 
 /// Sends messages by signing an event with the user's nsec and publishing it
@@ -51,6 +52,10 @@ class SendMessage {
   /// thread head). Tags are built to match the desktop's `buildReplyTags`
   /// convention with `root` / `reply` markers. Pass [mediaTags] to append
   /// relay-validated `imeta` tags and NIP-30 `emoji` tags.
+  ///
+  /// Pass [quote] to add exactly one NIP-18 `["q", id, "", author]` tag. A
+  /// quote is a reference only: it adds no `e` or `p` tags, so it never
+  /// changes where the message lands or who is notified.
   Future<void> call({
     required String channelId,
     required String content,
@@ -59,8 +64,16 @@ class SendMessage {
     List<String>? mentionPubkeys,
     Channel? channel,
     List<List<String>> mediaTags = const [],
+    QuoteTarget? quote,
   }) async {
     _ensureDeliveryValid();
+    // Validate before any network work so a malformed quote fails fast.
+    final quoteTag = quote == null
+        ? null
+        : buildQuoteTag(
+            eventId: quote.eventId,
+            authorPubkey: quote.authorPubkey,
+          );
     // Use explicitly passed pubkeys, or resolve @mentions against
     // channel members to avoid matching the wrong user.
     final explicitMentions =
@@ -91,7 +104,9 @@ class SendMessage {
       ['h', channelId],
       if (parentEventId != null) ..._buildReplyTags(parentEventId, rootEventId),
       for (final pk in normalizedMentions) ['p', pk],
-      ...mediaTags,
+      for (final tag in mediaTags)
+        if (quoteTag == null || tag.isEmpty || tag.first != quoteTagName) tag,
+      ?quoteTag,
     ];
 
     _ensureDeliveryValid();

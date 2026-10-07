@@ -53,6 +53,8 @@ import 'channel_typing_indicator.dart';
 import 'channels_provider.dart';
 import 'unread_badge/observed_unread_event.dart';
 import 'compose_bar.dart';
+import 'composer_quote_chip.dart';
+import 'composer_quote_provider.dart';
 import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
 import 'day_divider.dart';
@@ -70,6 +72,8 @@ import 'message_actions.dart';
 import 'message_action_backdrop_state.dart';
 import 'message_long_press_region.dart';
 import 'message_content.dart';
+import 'message_quote.dart';
+import 'message_quote_header.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
@@ -277,6 +281,9 @@ class ChannelDetailPage extends HookConsumerWidget {
     final composerFocusNode = useFocusNode();
     final restoreComposerFocus = useRef<VoidCallback?>(null);
     final sendMessage = ref.read(sendMessageProvider);
+    final quoteScope = ComposerQuoteScope(channelId: channel.id);
+    // Captured per build so a send carries the quote shown when it started.
+    final pendingQuote = ref.watch(composerQuoteProvider(quoteScope));
     final detailsAsync = ref.watch(channelDetailsProvider(channel.id));
     final channelsAsync = ref.watch(channelsProvider);
     final messagesState = ref.watch(channelMessagesProvider(channel.id));
@@ -781,6 +788,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                               restoreComposerFocus: showsComposer
                                   ? () => restoreComposerFocus.value?.call()
                                   : null,
+                              quoteScope: showsComposer ? quoteScope : null,
                             );
                           },
                         ),
@@ -833,6 +841,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                                 entries: typingEntries,
                               ),
                       ),
+                      ComposerQuoteChip(scope: quoteScope),
                       ComposeBar(
                         channelId: channel.id,
                         focusNode: composerFocusNode,
@@ -846,13 +855,27 @@ class ChannelDetailPage extends HookConsumerWidget {
                               content,
                               mentionPubkeys, {
                               mediaTags = const <List<String>>[],
-                            }) => sendMessage.call(
-                              channelId: channel.id,
-                              content: content,
-                              mentionPubkeys: mentionPubkeys,
-                              channel: resolvedChannel,
-                              mediaTags: mediaTags,
-                            ),
+                            }) async {
+                              // Main timeline: top-level message (no thread
+                              // tags) plus the optional quote reference.
+                              await sendMessage.call(
+                                channelId: channel.id,
+                                content: content,
+                                mentionPubkeys: mentionPubkeys,
+                                channel: resolvedChannel,
+                                mediaTags: mediaTags,
+                                quote: pendingQuote,
+                              );
+                              if (pendingQuote != null && context.mounted) {
+                                ref
+                                    .read(
+                                      composerQuoteProvider(
+                                        quoteScope,
+                                      ).notifier,
+                                    )
+                                    .clearIf(pendingQuote);
+                              }
+                            },
                       ),
                     ],
                   ),

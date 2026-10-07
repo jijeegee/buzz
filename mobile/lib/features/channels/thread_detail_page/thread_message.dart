@@ -12,6 +12,7 @@ class _ThreadMessage extends HookConsumerWidget {
   final bool isArchived;
   final FocusNode? composerFocusNode;
   final VoidCallback? restoreComposerFocus;
+  final ComposerQuoteScope? quoteScope;
 
   /// Whether this is the message the thread hangs off, which keeps a standing
   /// "+" where replies only get one once they carry a reaction.
@@ -30,6 +31,7 @@ class _ThreadMessage extends HookConsumerWidget {
     this.isThreadHead = false,
     this.composerFocusNode,
     this.restoreComposerFocus,
+    this.quoteScope,
   });
 
   @override
@@ -80,6 +82,9 @@ class _ThreadMessage extends HookConsumerWidget {
       message.mentionPubkeys,
     );
 
+    final quoteTarget = quoteScope == null
+        ? null
+        : quoteTargetFor(message, author: displayName);
     void openMessageActions(MessageLongPressDetails details) {
       showMessageActions(
         context: context,
@@ -97,6 +102,14 @@ class _ThreadMessage extends HookConsumerWidget {
         onPopoverDismissed: () => details.setSourceHidden(false),
         composerFocusNode: composerFocusNode,
         restoreComposerFocus: restoreComposerFocus,
+        onQuote: quoteTarget == null
+            ? null
+            : () {
+                ref
+                    .read(composerQuoteProvider(quoteScope!).notifier)
+                    .quote(quoteTarget);
+                restoreComposerFocus?.call();
+              },
       );
     }
 
@@ -238,6 +251,11 @@ class _ThreadMessage extends HookConsumerWidget {
                                       ],
                                     ),
                                   ),
+                                MessageQuoteHeader(
+                                  channelId: channelId,
+                                  tags: message.tags,
+                                  loadedMessages: allMessages,
+                                ),
                                 ReadAloudMessage(
                                   messageId: message.id,
                                   content: message.content,

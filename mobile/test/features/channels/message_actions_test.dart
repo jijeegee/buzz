@@ -112,6 +112,7 @@ Future<void> _pumpSheet(
   bool canManageMessage = false,
   List<TimelineMessage>? allMessages,
   ReminderService? reminderService,
+  VoidCallback? onQuote,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -142,6 +143,7 @@ Future<void> _pumpSheet(
                 allMessages: allMessages,
                 currentPubkey: 'self',
                 isMember: true,
+                onQuote: onQuote,
               ),
               child: const Text('open'),
             ),
@@ -222,6 +224,7 @@ Future<_MessageActionsPopoverHarness> _pumpMessageActionsPopover(
   bool launcherOnNestedRoute = false,
   ChannelActions Function(Ref ref)? createChannelActions,
   Rect anchorRect = const Rect.fromLTWH(32, 260, 300, 72),
+  VoidCallback? onQuote,
 }) async {
   final sourceHidden = ValueNotifier(false);
 
@@ -251,6 +254,7 @@ Future<_MessageActionsPopoverHarness> _pumpMessageActionsPopover(
               onPopoverDismissed: () => sourceHidden.value = false,
               composerFocusNode: composerFocusNode,
               restoreComposerFocus: composerFocusNode?.requestFocus,
+              onQuote: onQuote,
             ),
             child: const Text('open message actions'),
           ),
@@ -608,7 +612,10 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(BottomSheet), findsNothing);
-      expect(find.text('Reply'), findsOneWidget);
+      expect(find.text('Reply in thread'), findsOneWidget);
+      expect(find.text('Reply'), findsNothing);
+      // No composer to fill → no Quote action.
+      expect(find.text('Quote'), findsNothing);
       expect(find.text('Copy link'), findsOneWidget);
       expect(find.text('Remind me'), findsOneWidget);
       expect(find.text('Follow thread'), findsOneWidget);
@@ -884,6 +891,30 @@ void main() {
       await _dismissMessageActionsPopover(tester);
     });
 
+    testWidgets('Quote runs its callback after the popover dismisses', (
+      tester,
+    ) async {
+      final prefs = await _mockPrefs();
+      var quoted = 0;
+      await _pumpMessageActionsPopover(
+        tester,
+        message: _message(),
+        prefs: prefs,
+        allMessages: [_message()],
+        onQuote: () => quoted++,
+      );
+
+      expect(find.text('Quote'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('message-action-quote')));
+      await tester.pumpAndSettle();
+
+      expect(quoted, 1);
+      expect(
+        find.byKey(const ValueKey('message-action-surface')),
+        findsNothing,
+      );
+    });
+
     testWidgets('ignores repeat action taps once dismissal starts', (
       tester,
     ) async {
@@ -1008,10 +1039,12 @@ void main() {
         canManageMessage: true,
         allMessages: [_message()],
         reminderService: _stubReminderService(),
+        onQuote: () {},
       );
 
       const actionIds = [
         'reply',
+        'quote',
         'markUnread',
         'edit',
         'copyText',
@@ -1115,8 +1148,10 @@ void main() {
       expect(find.text('Copy link'), findsOneWidget);
       expect(find.text('Mark unread'), findsOneWidget);
       expect(find.text('Follow thread'), findsOneWidget);
-      // No thread context → no Reply fast action.
-      expect(find.text('Reply'), findsNothing);
+      // No thread context → no Reply in thread fast action.
+      expect(find.text('Reply in thread'), findsNothing);
+      // No sendable composer → no Quote fast action.
+      expect(find.text('Quote'), findsNothing);
       // No signing identity → no reminders; no manage rights → no edit/delete.
       expect(find.text('Remind me'), findsNothing);
       expect(find.text('Edit message'), findsNothing);
@@ -1139,8 +1174,8 @@ void main() {
       );
     });
 
-    testWidgets('promotes Reply, Copy link, and Remind me to the fast-actions '
-        'row', (tester) async {
+    testWidgets('promotes Reply in thread, Copy link, and Remind me to the '
+        'fast-actions row', (tester) async {
       final prefs = await _mockPrefs();
       await _pumpSheet(
         tester,
@@ -1150,12 +1185,50 @@ void main() {
         reminderService: _stubReminderService(),
       );
 
-      expect(find.text('Reply'), findsOneWidget);
+      expect(find.text('Reply in thread'), findsOneWidget);
       expect(find.text('Copy link'), findsOneWidget);
       expect(find.text('Remind me'), findsOneWidget);
-      // Promoted actions no longer appear under their old list-row labels.
-      expect(find.text('Reply in thread'), findsNothing);
+      // The old short label is gone; promoted actions keep one label each.
+      expect(find.text('Reply'), findsNothing);
       expect(find.text('Remind me later'), findsNothing);
+    });
+
+    testWidgets('offers Quote next to Reply in thread when a composer can '
+        'send', (tester) async {
+      final prefs = await _mockPrefs();
+      var quoted = 0;
+      await _pumpSheet(
+        tester,
+        message: _message(),
+        prefs: prefs,
+        allMessages: [_message()],
+        onQuote: () => quoted++,
+      );
+
+      expect(find.text('Reply in thread'), findsOneWidget);
+      expect(find.text('Quote'), findsOneWidget);
+      expect(
+        tester.getCenter(find.text('Quote')).dx,
+        greaterThan(tester.getCenter(find.text('Reply in thread')).dx),
+      );
+
+      await tester.tap(find.text('Quote'));
+      await tester.pumpAndSettle();
+
+      expect(quoted, 1);
+      expect(find.byType(BottomSheet), findsNothing);
+    });
+
+    testWidgets('hides Quote for system messages', (tester) async {
+      final prefs = await _mockPrefs();
+      await _pumpSheet(
+        tester,
+        message: _message(isSystem: true),
+        prefs: prefs,
+        onQuote: () {},
+      );
+
+      expect(find.text('Quote'), findsNothing);
     });
 
     testWidgets('hides utility actions for system messages', (tester) async {
@@ -1166,7 +1239,7 @@ void main() {
       expect(find.text('Copy link'), findsNothing);
       expect(find.text('Mark unread'), findsNothing);
       expect(find.text('Follow thread'), findsNothing);
-      expect(find.text('Reply'), findsNothing);
+      expect(find.text('Reply in thread'), findsNothing);
       expect(find.text('Remind me'), findsNothing);
       expect(find.byTooltip('Close sheet'), findsNothing);
       expect(

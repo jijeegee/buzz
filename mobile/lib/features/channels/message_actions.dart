@@ -71,6 +71,10 @@ final _messageActionBackdropFilter = ImageFilter.blur(
 /// [restoreComposerFocus] only after a dismissal with no selected action. The
 /// restorer must remain callable for the same lifetime and no-op if its composer
 /// is later disposed or replaced.
+///
+/// [onQuote] attaches [message] as a quote to the current conversation's
+/// composer. Pass it only where that composer can send (the "Quote" action is
+/// hidden otherwise, e.g. read-only or archived channels).
 void showMessageActions({
   required BuildContext context,
   required WidgetRef ref,
@@ -87,6 +91,7 @@ void showMessageActions({
   FocusNode? composerFocusNode,
   VoidCallback? restoreComposerFocus,
   bool isArchived = false,
+  VoidCallback? onQuote,
   EdgeInsets popoverSpotlightPadding = const EdgeInsets.all(Grid.xxs),
 }) {
   final hasReactionOnlyActions = message.isSystem && !canManageMessage;
@@ -111,6 +116,7 @@ void showMessageActions({
     currentPubkey: currentPubkey,
     isMember: isMember,
     isArchived: isArchived,
+    onQuote: onQuote,
     anchorRect: anchorRect,
     captureAnchorSnapshot: captureAnchorSnapshot,
     onPopoverPreviewVisibilityChanged: onPopoverPreviewVisibilityChanged,
@@ -160,6 +166,7 @@ void showMessageActions({
                       currentPubkey: currentPubkey,
                       isMember: isMember,
                       isArchived: isArchived,
+                      onQuote: onQuote,
                       pageContext: context,
                     ),
                     const SizedBox(height: Grid.xs),
@@ -546,6 +553,7 @@ class _FastActionsRow extends ConsumerWidget {
   final String? currentPubkey;
   final bool isMember;
   final bool isArchived;
+  final VoidCallback? onQuote;
 
   /// The long-pressed message's page context — survives the sheet pop, used
   /// for the thread push and the copy-link snackbar.
@@ -558,6 +566,7 @@ class _FastActionsRow extends ConsumerWidget {
     required this.currentPubkey,
     required this.isMember,
     required this.isArchived,
+    required this.onQuote,
     required this.pageContext,
   });
 
@@ -570,7 +579,7 @@ class _FastActionsRow extends ConsumerWidget {
       if (messages != null)
         _FastActionTile(
           icon: LucideIcons.messageSquareReply,
-          label: 'Reply',
+          label: 'Reply in thread',
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(pageContext).push(
@@ -585,6 +594,15 @@ class _FastActionsRow extends ConsumerWidget {
                 ),
               ),
             );
+          },
+        ),
+      if (onQuote case final quote?)
+        _FastActionTile(
+          icon: LucideIcons.quote,
+          label: 'Quote',
+          onTap: () {
+            Navigator.of(context).pop();
+            quote();
           },
         ),
       _FastActionTile(
@@ -674,7 +692,8 @@ class _FastActionTile extends StatelessWidget {
                 const SizedBox(height: Grid.xxs),
                 Text(
                   label,
-                  maxLines: 1,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
                   style: context.textTheme.labelMedium?.copyWith(
                     color: context.colors.onSurface,

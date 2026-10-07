@@ -50,6 +50,7 @@ bool _tryShowMessageActionsPopover({
   required String? currentPubkey,
   required bool isMember,
   required bool isArchived,
+  required VoidCallback? onQuote,
   required Rect? anchorRect,
   required Future<ui.Image> Function()? captureAnchorSnapshot,
   required ValueChanged<bool>? onPopoverPreviewVisibilityChanged,
@@ -70,6 +71,7 @@ bool _tryShowMessageActionsPopover({
       currentPubkey: currentPubkey,
       isMember: isMember,
       isArchived: isArchived,
+      onQuote: onQuote,
       anchorRect: anchorRect,
       captureAnchorSnapshot: captureAnchorSnapshot,
       onPopoverPreviewVisibilityChanged: onPopoverPreviewVisibilityChanged,
@@ -89,6 +91,7 @@ bool _tryShowMessageActionsPopover({
         currentPubkey: currentPubkey,
         isMember: isMember,
         isArchived: isArchived,
+        onQuote: onQuote,
       );
     }),
   );
@@ -105,6 +108,7 @@ Future<bool> _showMessageActionsPopover({
   required String? currentPubkey,
   required bool isMember,
   required bool isArchived,
+  required VoidCallback? onQuote,
   required Rect anchorRect,
   required Future<ui.Image> Function() captureAnchorSnapshot,
   required ValueChanged<bool>? onPopoverPreviewVisibilityChanged,
@@ -127,6 +131,7 @@ Future<bool> _showMessageActionsPopover({
       currentPubkey: currentPubkey,
       isMember: isMember,
       isArchived: isArchived,
+      onQuote: onQuote,
     );
     if (actions.isEmpty) return false;
     final nativeActionSurfaceSupport = _supportsIosNativeMessageActionSurface();
@@ -229,6 +234,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
   required String? currentPubkey,
   required bool isMember,
   required bool isArchived,
+  required VoidCallback? onQuote,
 }) {
   final actions = <_PopoverMessageAction>[];
   final messages = allMessages;
@@ -239,7 +245,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
       actions.add(
         _PopoverMessageAction(
           id: 'reply',
-          title: 'Reply',
+          title: 'Reply in thread',
           icon: LucideIcons.messageSquareReply,
           group: _PopoverMessageActionGroup.primary,
           onSelected: () {
@@ -256,6 +262,20 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
                 ),
               ),
             );
+          },
+        ),
+      );
+    }
+    if (onQuote != null) {
+      actions.add(
+        _PopoverMessageAction(
+          id: 'quote',
+          title: 'Quote',
+          icon: LucideIcons.quote,
+          group: _PopoverMessageActionGroup.primary,
+          onSelected: () {
+            if (!context.mounted) return;
+            onQuote();
           },
         ),
       );
@@ -405,15 +425,16 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
 
   const actionOrder = {
     'reply': 0,
-    'markRead': 1,
-    'markUnread': 1,
-    'edit': 2,
-    'copyText': 3,
-    'copyLink': 4,
-    'remind': 5,
-    'followThread': 6,
-    'unfollowThread': 6,
-    'delete': 7,
+    'quote': 1,
+    'markRead': 2,
+    'markUnread': 2,
+    'edit': 3,
+    'copyText': 4,
+    'copyLink': 5,
+    'remind': 6,
+    'followThread': 7,
+    'unfollowThread': 7,
+    'delete': 8,
   };
   actions.sort(
     (left, right) => actionOrder[left.id]!.compareTo(actionOrder[right.id]!),
@@ -442,6 +463,7 @@ class _PopoverMessageAction {
 
   String get iosSymbol => switch (id) {
     'reply' => 'arrowshape.turn.up.left',
+    'quote' => 'quote.opening',
     'markRead' => 'envelope.open',
     'markUnread' => 'envelope.badge',
     'edit' => 'pencil',

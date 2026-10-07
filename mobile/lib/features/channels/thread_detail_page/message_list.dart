@@ -27,6 +27,9 @@ class _ThreadMessageList extends StatelessWidget {
   final VoidCallback restoreComposerFocus;
   final Map<String, List<TimelineMessage>> childrenByParent;
 
+  /// The thread composer that "Quote" fills; null when it can't send.
+  final ComposerQuoteScope? quoteScope;
+
   const _ThreadMessageList({
     required this.viewport,
     required this.onUserScrollStart,
@@ -53,6 +56,7 @@ class _ThreadMessageList extends StatelessWidget {
     required this.composerFocusNode,
     required this.restoreComposerFocus,
     required this.childrenByParent,
+    required this.quoteScope,
   });
 
   String get _replySummary {
@@ -145,6 +149,7 @@ class _ThreadMessageList extends StatelessWidget {
                             isThreadHead: true,
                             composerFocusNode: composerFocusNode,
                             restoreComposerFocus: restoreComposerFocus,
+                            quoteScope: quoteScope,
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -254,6 +259,7 @@ class _ThreadMessageList extends StatelessWidget {
                             isArchived: isArchived,
                             composerFocusNode: composerFocusNode,
                             restoreComposerFocus: restoreComposerFocus,
+                            quoteScope: quoteScope,
                           ),
                           if (nestedSummary != null)
                             _NestedThreadSummaryRow(
