@@ -2,15 +2,33 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import 'read_aloud_preferences.dart';
 import 'speech_audio_session.dart';
 import 'speech_engine.dart';
+
+/// One native client for discovery and playback (the plugin shares a channel).
+final systemSpeechEngineProvider = Provider<SystemSpeechEngine>(
+  (ref) => SystemSpeechEngine(
+    selectedEngine: () => ref.read(readAloudEngineProvider),
+  ),
+);
+
+/// Friendly names for common engines; other installed packages remain usable.
+String speechEngineLabel(String engine) => switch (engine) {
+  '' => '휴대폰 기본 설정 따르기',
+  'com.google.android.tts' => 'Google 음성 인식 및 합성',
+  'com.samsung.SMT' => '삼성 TTS',
+  _ => engine,
+};
 
 /// Free system TTS adapter. Speech text never goes to a Buzz/cloud endpoint.
 class SystemSpeechEngine implements SpeechEngine {
   SystemSpeechEngine({
     SpeechAudioSession? audio,
     bool? android,
+    this.selectedEngine,
     this.setupTimeout = const Duration(seconds: 8),
     this.speechTimeout = const Duration(minutes: 2),
   }) : _audio = audio ?? DeviceSpeechAudioSession(),
@@ -18,6 +36,8 @@ class SystemSpeechEngine implements SpeechEngine {
 
   final SpeechAudioSession _audio;
   final bool _android;
+  final String Function()? selectedEngine;
+  String? _activeEngine;
   final Duration setupTimeout;
   final Duration speechTimeout;
   FlutterTts? _tts;
@@ -72,6 +92,48 @@ class SystemSpeechEngine implements SpeechEngine {
     }
   }
 
+  /// Reads installed Android engines without switching the playback engine.
+  Future<List<String>> installedEngines() async {
+    if (!_android) return [];
+    final result = await _client.getEngines.timeout(setupTimeout);
+    _checkAvailable();
+    if (result is! List) {
+      throw const SpeechFailure('설치된 음성 엔진 목록을 불러오지 못했습니다.');
+    }
+    return result
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  Future<void> _selectEngine(FlutterTts client) async {
+    if (!_android || selectedEngine == null) return;
+    var requested = selectedEngine!();
+    if (requested.isEmpty) {
+      final systemDefault = await client.getDefaultEngine;
+      _checkAvailable();
+      if (systemDefault is! String || systemDefault.isEmpty) {
+        throw const SpeechFailure('휴대폰 기본 음성 엔진이 없습니다. 읽어주기 설정에서 엔진을 선택해 주세요.');
+      }
+      requested = systemDefault;
+    }
+    // Recheck even when cached: the user may have removed an engine externally.
+    if (!(await installedEngines()).contains(requested)) {
+      throw const SpeechFailure(
+        '선택한 음성 엔진이 설치되어 있지 않습니다. 앱의 읽어주기 설정에서 다른 엔진을 선택해 주세요.',
+      );
+    }
+    if (_activeEngine == requested) return;
+    _activeEngine = null;
+    // flutter_tts discards the native success value; initialization failures
+    // propagate as PlatformException, while a successful Future returns null.
+    await client.setEngine(requested);
+    _checkAvailable();
+    _activeEngine = requested;
+  }
+
   @override
   Future<void> prepare(String language) async {
     try {
@@ -86,6 +148,7 @@ class SystemSpeechEngine implements SpeechEngine {
 
   Future<void> _prepare(String language) async {
     final client = _client;
+    await _selectEngine(client);
     final voices = await client.getVoices;
     _checkAvailable();
     final voice = offlineSpeechVoice(
@@ -96,7 +159,9 @@ class SystemSpeechEngine implements SpeechEngine {
     if (voice == null) {
       throw SpeechFailure(
         language == 'ko'
-            ? '한국어 오프라인 음성이 없습니다. 휴대폰 설정의 텍스트 음성 변환에서 한국어 음성을 설치한 뒤 다시 눌러 주세요.'
+            ? (_android
+                  ? '이 엔진에 한국어 오프라인 음성이 없습니다. 다른 엔진을 선택하거나 휴대폰의 글자 읽어주기 설정에서 한국어 음성을 설치해 주세요.'
+                  : '한국어 음성이 없습니다. iPhone 설정의 손쉬운 사용에서 한국어 음성을 다운로드해 주세요.')
             : '이 언어의 오프라인 음성이 없습니다. 휴대폰 음성 설정에서 음성을 설치한 뒤 다시 눌러 주세요.',
       );
     }
