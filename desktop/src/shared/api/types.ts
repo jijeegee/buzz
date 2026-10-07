@@ -116,6 +116,9 @@ export type UserProfileSummary = {
   nip05Handle: string | null;
   ownerPubkey: string | null;
   isAgent?: boolean;
+  /** Device tag of the computer running this agent (kind:0
+   * `buzz_host_device`); see `shared/lib/deviceRobot.ts`. */
+  hostDevice?: string | null;
 };
 
 export type UsersBatchResponse = {

@@ -21,6 +21,7 @@ type RawProfile = {
 type RawUserProfileSummary = Omit<RawProfile, "pubkey" | "about"> & {
   name?: string | null;
   is_agent?: boolean;
+  host_device?: string | null;
 };
 
 type RawUsersBatchResponse = {
@@ -57,6 +58,7 @@ function fromRawUserProfileSummary(
     nip05Handle: profile.nip05_handle,
     ownerPubkey: profile.owner_pubkey,
     isAgent: profile.is_agent ?? false,
+    hostDevice: profile.host_device ?? null,
   };
 }
 

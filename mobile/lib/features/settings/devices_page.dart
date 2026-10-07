@@ -7,6 +7,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
+import '../../shared/devices/device_robot.dart';
+import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -294,15 +296,24 @@ class _DeviceRow extends StatelessWidget {
       if (!device.current && device.lastSeenAt != null)
         'Last active ${_date(device.lastSeenAt!.toLocal())}',
     ].join(' · ');
-    return AppListRow(
-      icon: switch (device.platform) {
-        'mobile' => LucideIcons.smartphone,
-        'web' => LucideIcons.globe,
-        'cli' => LucideIcons.terminal,
-        _ => LucideIcons.monitor,
-      },
-      title: device.name,
-      subtitle: details.isEmpty ? null : details,
+    // The device's robot: agents running on this device show the same one
+    // to their owner, so the owner can match an agent to its computer.
+    return AppListRowRaw(
+      key: Key('device-row-${device.id}'),
+      leading: DeviceRobotIcon(
+        variant: deviceRobotVariantForDevice(device.id),
+        size: 24,
+        fallbackColor: context.colors.onSurfaceVariant,
+      ),
+      title: Text(device.name, style: context.textTheme.bodyLarge),
+      subtitle: details.isEmpty
+          ? null
+          : Text(
+              details,
+              style: context.textTheme.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
       trailing: device.current
           ? null
           : TextButton(

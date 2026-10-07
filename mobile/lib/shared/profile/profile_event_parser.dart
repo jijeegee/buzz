@@ -46,6 +46,7 @@ ParsedProfileEvent parseProfileEvent(NostrEvent event) {
       about: data.about,
       nip05Handle: data.nip05,
       ownerPubkey: verifiedOaOwnerPubkey(event.tags, event.pubkey),
+      hostDevice: data.hostDevice,
     ),
     createdAt: event.createdAt,
     eventId: event.id,

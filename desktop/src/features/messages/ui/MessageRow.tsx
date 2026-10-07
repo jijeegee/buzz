@@ -564,6 +564,7 @@ export const MessageRow = React.memo(
     );
     const agentOwnerNode = message.isAgent ? (
       <MessageAgentOwner
+        agentPubkey={message.pubkey}
         ownerLabel={message.ownerLabel}
         ownerPubkey={message.ownerPubkey}
       />

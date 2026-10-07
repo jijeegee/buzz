@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../devices/device_robot.dart';
+
 /// Nostr event kind constants.
 ///
 /// Keep in sync with `desktop/src/shared/constants/kinds.ts`.
@@ -275,12 +277,16 @@ class ProfileData {
   final String? about;
   final String? nip05;
 
+  /// Host device tag of an agent (`buzz_host_device`), see `device_robot.dart`.
+  final String? hostDevice;
+
   const ProfileData({
     required this.pubkey,
     this.displayName,
     this.avatarUrl,
     this.about,
     this.nip05,
+    this.hostDevice,
   });
 
   factory ProfileData.fromEvent(NostrEvent event) {
@@ -296,6 +302,7 @@ class ProfileData {
       avatarUrl: meta['picture'] as String?,
       about: meta['about'] as String?,
       nip05: meta['nip05'] as String?,
+      hostDevice: hostDeviceFromMetadata(meta),
     );
   }
 }

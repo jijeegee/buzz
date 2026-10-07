@@ -239,6 +239,7 @@ export function InboxMessageRow({
               {message.isAgent ? (
                 <>
                   <MessageAgentOwner
+                    agentPubkey={message.authorPubkey}
                     ownerLabel={message.ownerLabel}
                     ownerPubkey={message.ownerPubkey}
                   />

@@ -1,5 +1,6 @@
 import 'package:buzz/features/settings/devices_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/devices/device_robot.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -60,6 +61,22 @@ void main() {
     expect(find.textContaining('This device'), findsOneWidget);
     expect(find.byKey(const Key('device-sign-out-device-1')), findsNothing);
     expect(find.byKey(const Key('device-sign-out-device-2')), findsOneWidget);
+  });
+
+  testWidgets('each device row shows its device robot', (tester) async {
+    await _pumpDevices(tester);
+
+    for (final id in ['device-1', 'device-2', 'device-3']) {
+      final tag = deviceRobotVariantForDevice(id)!.tag;
+      expect(
+        find.descendant(
+          of: find.byKey(Key('device-row-$id')),
+          matching: find.byKey(ValueKey('device-robot-$tag')),
+        ),
+        findsOneWidget,
+        reason: id,
+      );
+    }
   });
 
   testWidgets('remote sign-out revokes the device and refreshes the list', (

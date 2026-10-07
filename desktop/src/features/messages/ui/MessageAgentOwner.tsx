@@ -1,14 +1,18 @@
-import { Bot } from "lucide-react";
-
+import { useAgentDeviceRobot } from "@/features/profile/lib/useAgentDeviceRobot";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
+import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
 
 export function MessageAgentOwner({
+  agentPubkey,
   ownerLabel,
   ownerPubkey,
 }: {
+  /** The agent; its owner sees the robot of the device it runs on. */
+  agentPubkey?: string | null;
   ownerLabel?: string | null;
   ownerPubkey?: string | null;
 }) {
+  const robot = useAgentDeviceRobot(agentPubkey);
   return (
     <span
       className="inline-flex min-w-0 max-w-56 items-baseline gap-1 text-xs leading-4 text-muted-foreground/65"
@@ -31,9 +35,9 @@ export function MessageAgentOwner({
        * band. In em so it holds under Cmd +/- zoom, and as a transform so it
        * shifts nothing else in the row.
        */}
-      <Bot
-        aria-hidden="true"
+      <DeviceRobotIcon
         className="h-3.5 w-3.5 shrink-0 translate-y-[0.125em] self-center"
+        variant={robot}
       />
       {ownerPubkey && ownerLabel ? (
         <>

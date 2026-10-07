@@ -8,6 +8,7 @@ mod builderlab;
 mod channel_head_cache;
 mod commands;
 mod deep_link;
+mod device_robot;
 mod egress_guard;
 mod event_sync;
 mod events;

@@ -1,0 +1,372 @@
+{
+  "_comment": "Cross-platform device robot vectors. Consumed by desktop (deviceRobot.test.mjs), the Tauri publisher (device_robot.rs) and mobile (device_robot_test.dart). tag = FNV-1a 32-bit of trimmed lowercase device id; colorIndex = tag % colors; shapeIndex = floor(tag / colors) % shapes.",
+  "colors": [
+    "#D93D42",
+    "#C2620A",
+    "#2E8540",
+    "#0F8478",
+    "#1F78C8",
+    "#5A5FD8",
+    "#9150C8",
+    "#C93A8A"
+  ],
+  "shapes": [
+    "classic",
+    "dome",
+    "boxy",
+    "visor",
+    "tall",
+    "hex"
+  ],
+  "devices": [
+    {
+      "deviceId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "tag": "e8c41c31",
+      "colorIndex": 1,
+      "shapeIndex": 0
+    },
+    {
+      "deviceId": "3F2504E0-4F89-41D3-9A0C-0305E82C3301",
+      "tag": "e8c41c31",
+      "colorIndex": 1,
+      "shapeIndex": 0
+    },
+    {
+      "deviceId": "  6ba7b810-9dad-11d1-80b4-00c04fd430c8  ",
+      "tag": "f108e530",
+      "colorIndex": 0,
+      "shapeIndex": 2
+    },
+    {
+      "deviceId": "00000000-0000-0000-0000-000000000000",
+      "tag": "be478ed1",
+      "colorIndex": 1,
+      "shapeIndex": 4
+    },
+    {
+      "deviceId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "tag": "2708ab91",
+      "colorIndex": 1,
+      "shapeIndex": 4
+    },
+    {
+      "deviceId": "a",
+      "tag": "e40c292c",
+      "colorIndex": 4,
+      "shapeIndex": 3
+    },
+    {
+      "deviceId": "9b2f7c1e-5d4a-4e8b-b3c6-1f0e2d3c4b5a",
+      "tag": "db0055db",
+      "colorIndex": 3,
+      "shapeIndex": 5
+    },
+    {
+      "deviceId": "c0ffee00-1234-4abc-8def-0123456789ab",
+      "tag": "0f067c7d",
+      "colorIndex": 5,
+      "shapeIndex": 5
+    },
+    {
+      "deviceId": "d1",
+      "tag": "881d13e6",
+      "colorIndex": 6,
+      "shapeIndex": 0
+    },
+    {
+      "deviceId": "e7c1d2f3-0a1b-4c2d-9e3f-4a5b6c7d8e9f",
+      "tag": "c73088c6",
+      "colorIndex": 6,
+      "shapeIndex": 4
+    },
+    {
+      "deviceId": "12345678-90ab-4cde-8f01-23456789abcd",
+      "tag": "db2af9b2",
+      "colorIndex": 2,
+      "shapeIndex": 4
+    },
+    {
+      "deviceId": "f00dbabe-cafe-4bad-beef-deadbeef0001",
+      "tag": "3260dd9e",
+      "colorIndex": 6,
+      "shapeIndex": 3
+    }
+  ],
+  "emptyDeviceIds": [
+    "",
+    "   "
+  ],
+  "invalidTags": [
+    "",
+    "e8c41c3",
+    "e8c41c311",
+    "E8C41C31",
+    "zzzzzzzz",
+    " e8c41c31"
+  ],
+  "extraTags": [
+    {
+      "tag": "00000000",
+      "colorIndex": 0,
+      "shapeIndex": 0
+    },
+    {
+      "tag": "ffffffff",
+      "colorIndex": 7,
+      "shapeIndex": 1
+    },
+    {
+      "tag": "0000002f",
+      "colorIndex": 7,
+      "shapeIndex": 5
+    }
+  ],
+  "geometry": {
+    "classic": [
+      {
+        "k": "rect",
+        "x": 4,
+        "y": 8,
+        "w": 16,
+        "h": 12,
+        "r": 2
+      },
+      {
+        "k": "line",
+        "x1": 12,
+        "y1": 8,
+        "x2": 12,
+        "y2": 4
+      },
+      {
+        "k": "dot",
+        "cx": 12,
+        "cy": 3.5,
+        "r": 1.5
+      },
+      {
+        "k": "line",
+        "x1": 2,
+        "y1": 14,
+        "x2": 4,
+        "y2": 14
+      },
+      {
+        "k": "line",
+        "x1": 20,
+        "y1": 14,
+        "x2": 22,
+        "y2": 14
+      },
+      {
+        "k": "line",
+        "x1": 9,
+        "y1": 13,
+        "x2": 9,
+        "y2": 15
+      },
+      {
+        "k": "line",
+        "x1": 15,
+        "y1": 13,
+        "x2": 15,
+        "y2": 15
+      }
+    ],
+    "dome": [
+      {
+        "k": "rect",
+        "x": 5,
+        "y": 8,
+        "w": 14,
+        "h": 13,
+        "r": 6.5
+      },
+      {
+        "k": "line",
+        "x1": 9,
+        "y1": 8.5,
+        "x2": 7,
+        "y2": 4
+      },
+      {
+        "k": "line",
+        "x1": 15,
+        "y1": 8.5,
+        "x2": 17,
+        "y2": 4
+      },
+      {
+        "k": "dot",
+        "cx": 9.5,
+        "cy": 14.5,
+        "r": 1.5
+      },
+      {
+        "k": "dot",
+        "cx": 14.5,
+        "cy": 14.5,
+        "r": 1.5
+      }
+    ],
+    "boxy": [
+      {
+        "k": "rect",
+        "x": 5,
+        "y": 6,
+        "w": 14,
+        "h": 14,
+        "r": 0.5
+      },
+      {
+        "k": "line",
+        "x1": 2,
+        "y1": 10,
+        "x2": 2,
+        "y2": 16
+      },
+      {
+        "k": "line",
+        "x1": 22,
+        "y1": 10,
+        "x2": 22,
+        "y2": 16
+      },
+      {
+        "k": "line",
+        "x1": 8.5,
+        "y1": 11,
+        "x2": 10.5,
+        "y2": 11
+      },
+      {
+        "k": "line",
+        "x1": 13.5,
+        "y1": 11,
+        "x2": 15.5,
+        "y2": 11
+      },
+      {
+        "k": "line",
+        "x1": 9,
+        "y1": 16,
+        "x2": 15,
+        "y2": 16
+      }
+    ],
+    "visor": [
+      {
+        "k": "rect",
+        "x": 3,
+        "y": 9,
+        "w": 18,
+        "h": 11,
+        "r": 5.5
+      },
+      {
+        "k": "line",
+        "x1": 7.5,
+        "y1": 14.5,
+        "x2": 16.5,
+        "y2": 14.5
+      },
+      {
+        "k": "line",
+        "x1": 12,
+        "y1": 9,
+        "x2": 12,
+        "y2": 5
+      },
+      {
+        "k": "line",
+        "x1": 9.5,
+        "y1": 5,
+        "x2": 14.5,
+        "y2": 5
+      }
+    ],
+    "tall": [
+      {
+        "k": "rect",
+        "x": 6,
+        "y": 3,
+        "w": 12,
+        "h": 18,
+        "r": 3
+      },
+      {
+        "k": "line",
+        "x1": 10,
+        "y1": 8.5,
+        "x2": 10,
+        "y2": 11.5
+      },
+      {
+        "k": "line",
+        "x1": 14,
+        "y1": 8.5,
+        "x2": 14,
+        "y2": 11.5
+      },
+      {
+        "k": "line",
+        "x1": 10,
+        "y1": 16,
+        "x2": 14,
+        "y2": 16
+      },
+      {
+        "k": "line",
+        "x1": 3,
+        "y1": 12,
+        "x2": 6,
+        "y2": 12
+      },
+      {
+        "k": "line",
+        "x1": 18,
+        "y1": 12,
+        "x2": 21,
+        "y2": 12
+      }
+    ],
+    "hex": [
+      {
+        "k": "poly",
+        "points": [
+          12,
+          3,
+          20,
+          7.5,
+          20,
+          16.5,
+          12,
+          21,
+          4,
+          16.5,
+          4,
+          7.5
+        ]
+      },
+      {
+        "k": "circle",
+        "cx": 9,
+        "cy": 12,
+        "r": 1.5
+      },
+      {
+        "k": "circle",
+        "cx": 15,
+        "cy": 12,
+        "r": 1.5
+      },
+      {
+        "k": "line",
+        "x1": 10.5,
+        "y1": 16.5,
+        "x2": 13.5,
+        "y2": 16.5
+      }
+    ]
+  }
+}

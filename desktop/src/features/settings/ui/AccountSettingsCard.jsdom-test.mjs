@@ -80,6 +80,7 @@ const React = (await import("react")).default;
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { AccountSettingsCard } = await import("./AccountSettingsCard.tsx");
+const { deviceRobotTag } = await import("../../../shared/lib/deviceRobot.ts");
 const { GoogleSignInButton } = await import(
   "../../onboarding/ui/GoogleSignInButton.tsx"
 );
@@ -193,6 +194,13 @@ test("a signed-in community lists devices with one labelled sign-out per other d
   const buttons = [...list.querySelectorAll("button")];
   assert.equal(buttons.length, 1, "the current device has no sign-out button");
   assert.equal(buttons[0].getAttribute("aria-label"), "Sign out Work PC");
+  // Each device shows its robot (the one its agents show their owner).
+  const robots = [...list.querySelectorAll("[data-testid=device-robot-icon]")];
+  assert.deepEqual(
+    robots.map((robot) => robot.getAttribute("data-robot-tag")),
+    devices.map((device) => deviceRobotTag(device.id)),
+  );
+  assert.ok(robots.every((robot) => robot.getAttribute("aria-hidden")));
   await act(async () => {
     fireEvent.click(buttons[0]);
   });
