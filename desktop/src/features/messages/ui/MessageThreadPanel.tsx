@@ -1,5 +1,6 @@
 import * as React from "react";
 import { ArrowDown } from "lucide-react";
+import { ThreadNameEditor } from "./ThreadNameEditor";
 
 import { HuddleTranscriptIntro } from "@/features/huddle/components/HuddleTranscriptIntro";
 import {
@@ -907,7 +908,24 @@ export function MessageThreadPanel({
         enterMotion={enterMotion ?? !isFocusMode}
         footer={threadFooter}
         header={
-          isHuddleTranscript ? undefined : (
+          isHuddleTranscript ? undefined : channelId && !threadHead.pending ? (
+            <ThreadNameEditor
+              key={`${channelId}:${threadHead.id}`}
+              channelId={channelId}
+              threadId={threadHead.id}
+              disabled={disabled}
+              headerProps={{
+                headerLeading,
+                headerTitle,
+                headerTitleAriaLabel,
+                isFocusMode,
+                isSinglePanelView,
+                onClose,
+                onHeaderTitleClick,
+                showBackButton,
+              }}
+            />
+          ) : (
             <MessageThreadPanelHeader
               headerLeading={headerLeading}
               headerTitle={headerTitle}

@@ -132,6 +132,25 @@ void main() {
   });
 
   test(
+    'changing engine persists locally and stops the old speech session',
+    () async {
+      final controller = container.read(readAloudControllerProvider.notifier);
+      await controller.play(Object(), '본문', 'ko');
+      await container
+          .read(readAloudEngineProvider.notifier)
+          .setEngine('com.google.android.tts');
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(readAloudControllerProvider).active, false);
+      expect(
+        prefs.getString(ReadAloudEnginePreference.key),
+        'com.google.android.tts',
+      );
+      container.invalidate(readAloudEngineProvider);
+      expect(container.read(readAloudEngineProvider), 'com.google.android.tts');
+    },
+  );
+
+  test(
     'preference disable, community transition and huddle stop speech',
     () async {
       final controller = container.read(readAloudControllerProvider.notifier);
