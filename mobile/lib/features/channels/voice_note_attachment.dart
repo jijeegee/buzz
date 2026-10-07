@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../shared/read_aloud/speech_audio_gate.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -46,6 +47,24 @@ class VoiceNoteAttachment extends HookConsumerWidget {
       source,
     ]);
     final playback = useListenable(player);
+    final speech = ref.read(speechAudioGateProvider);
+    final handoffPending = useState(false);
+    final playbackOperations = useRef(0);
+    useEffect(() {
+      void onPlayback() {
+        if (!player.state.isPlaying &&
+            !player.state.isLoading &&
+            playbackOperations.value == 0) {
+          speech.release(player);
+        }
+      }
+
+      player.addListener(onPlayback);
+      return () {
+        player.removeListener(onPlayback);
+        speech.release(player);
+      };
+    }, [player]);
     final playbackRate = useState(1.0);
     useEffect(() {
       if (isRemote) {
@@ -116,13 +135,45 @@ class VoiceNoteAttachment extends HookConsumerWidget {
         : Radii.md;
 
     final canCancelLoading = state.isLoading && state.canCancelLoading;
-    final onPlaybackPressed = state.isLoading && !canCancelLoading
+    final onPlaybackPressed =
+        handoffPending.value || (state.isLoading && !canCancelLoading)
         ? null
         : state.hasError && !isRemote
         ? null
-        : () {
+        : () async {
+            if (handoffPending.value) return;
+            playbackOperations.value++;
             unawaited(HapticFeedback.selectionClick());
-            unawaited(player.toggle());
+            try {
+              if (!state.isPlaying && !state.isLoading) {
+                handoffPending.value = true;
+                try {
+                  await speech.acquire(player);
+                } finally {
+                  if (context.mounted) handoffPending.value = false;
+                }
+              }
+              if (!context.mounted) {
+                speech.release(player);
+                return;
+              }
+              await player.toggle();
+            } catch (_) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('음성 재생을 시작하지 못했습니다. 다시 시도해 주세요.'),
+                  ),
+                );
+              }
+            } finally {
+              playbackOperations.value--;
+              if (playbackOperations.value == 0 &&
+                  !player.state.isPlaying &&
+                  !player.state.isLoading) {
+                speech.release(player);
+              }
+            }
           };
     final playbackControlLabel = state.isLoading
         ? state.isPlaying

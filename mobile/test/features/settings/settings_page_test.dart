@@ -120,7 +120,13 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Notifications'), findsNothing);
-      expect(find.byType(Switch), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('push-notifications-enabled')),
+          matching: find.byType(Switch),
+        ),
+        findsNothing,
+      );
       if (outcome == 'absent') {
         capability.complete(null);
       } else {
@@ -129,7 +135,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Notifications'), findsNothing);
       expect(find.text('Push notifications'), findsNothing);
-      expect(find.byType(Switch), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('push-notifications-enabled')),
+          matching: find.byType(Switch),
+        ),
+        findsNothing,
+      );
       expect(permissionReads, 0);
       expect(tester.takeException(), isNull);
       debugDefaultTargetPlatformOverride = null;
@@ -176,7 +188,17 @@ void main() {
       find.byKey(const ValueKey('push-notifications-enabled')),
       findsOneWidget,
     );
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+    expect(
+      tester
+          .widget<Switch>(
+            find.descendant(
+              of: find.byKey(const ValueKey('push-notifications-enabled')),
+              matching: find.byType(Switch),
+            ),
+          )
+          .value,
+      isTrue,
+    );
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -223,7 +245,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+    expect(
+      tester
+          .widget<Switch>(
+            find.descendant(
+              of: find.byKey(const ValueKey('push-notifications-enabled')),
+              matching: find.byType(Switch),
+            ),
+          )
+          .value,
+      isTrue,
+    );
     expect(
       find.text('Enabled in Buzz, but disabled in iOS Settings'),
       findsOneWidget,
