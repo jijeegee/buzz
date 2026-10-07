@@ -9,9 +9,24 @@ import {
   getGoalTreeHistory,
   restoreGoalTree,
 } from "@/shared/api/tauriGoals";
+import { setGoalsFeatureEnabled } from "@/shared/api/tauriLayer0";
+import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 
 /** Kind 40110 — see `buzz_core::kind::KIND_GOAL_TREE`. */
 export const KIND_GOAL_TREE = 40110;
+
+/**
+ * Keeps the desktop backend's copy of the "Goal layers" experiment toggle in
+ * step with the UI, so agents get goal rules and context only while it is on.
+ */
+export function useSyncGoalsFeatureToAgents() {
+  const enabled = useFeatureEnabled("goalTree");
+  React.useEffect(() => {
+    setGoalsFeatureEnabled(enabled).catch((error: unknown) => {
+      console.warn("[goals] failed to sync the goal layers toggle", error);
+    });
+  }, [enabled]);
+}
 
 const goalTreeKey = (channelId: string | null) => ["goal-tree", channelId];
 const goalHistoryKey = (channelId: string | null) => [

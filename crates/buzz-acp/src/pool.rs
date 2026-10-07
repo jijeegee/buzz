@@ -974,6 +974,8 @@ pub struct PromptContext {
     pub team_instructions: Option<String>,
     /// Rendered layer 0 goal sections, layered right after team instructions.
     pub layer0_goals: Option<String>,
+    /// Whether the experimental goal layers are on; gates `<goal-context>`.
+    pub goals_enabled: bool,
     pub heartbeat_prompt: Option<String>,
     /// Base instructions with the configured policy's Session Model appended,
     /// assembled once and shared by modern and legacy ACP standing context.
@@ -2488,11 +2490,7 @@ fn with_team(prompt: Option<String>, instructions: Option<&str>) -> Option<Strin
     }
 }
 
-/// Append the agent's core memory section onto the framed system prompt.
-///
-/// Core already carries its own `<core-memory>` boundary from
-/// `engram_fetch::build_core_section`, so it is joined with a blank-line
-/// separator and never re-labeled. Either side may be absent.
+/// Append rendered layer 0 goal sections after the framed prompt.
 fn with_layer0_goals(prompt: Option<String>, goals: Option<&str>) -> Option<String> {
     match (prompt, goals) {
         (Some(prompt), Some(goals)) => Some(format!("{prompt}\n\n{goals}")),
@@ -2501,6 +2499,11 @@ fn with_layer0_goals(prompt: Option<String>, goals: Option<&str>) -> Option<Stri
     }
 }
 
+/// Append the agent's core memory section onto the framed system prompt.
+///
+/// Core already carries its own `<core-memory>` boundary from
+/// `engram_fetch::build_core_section`, so it is joined with a blank-line
+/// separator and never re-labeled. Either side may be absent.
 fn with_core(framed: Option<String>, core: Option<&str>) -> Option<String> {
     let core = core.map(|core| {
         crate::prompt_framing::normalize_semantic_section(
@@ -3403,19 +3406,24 @@ pub async fn run_prompt_task(
 
         let profile_lookup =
             fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
-        let goal_context = crate::goal_context::fetch_goal_tree(b.channel_id, &ctx.rest_client)
-            .await
-            .and_then(|tree| {
-                crate::goal_context::render_goal_context(
-                    &tree,
-                    b.channel_id,
-                    // The thread this turn belongs to: the fetched thread,
-                    // or a thread session's own root on its first turn.
-                    hydrated_thread_root
-                        .map(String::as_str)
-                        .or_else(|| b.scope.root_event_id()),
-                )
-            });
+        let goal_context = if ctx.goals_enabled {
+            crate::goal_context::fetch_goal_tree(b.channel_id, &ctx.rest_client).await
+        } else {
+            None
+        }
+        .and_then(|tree| {
+            crate::goal_context::render_goal_context(
+                &tree,
+                b.channel_id,
+                // The thread this turn belongs to: the fetched thread,
+                // or a thread session's own root on its first turn.
+                match &context_target {
+                    ContextTarget::Thread(root) => Some(root.as_str()),
+                    _ => None,
+                }
+                .or_else(|| b.scope.root_event_id()),
+            )
+        });
 
         let known_names: Vec<&str> = profile_lookup
             .iter()
@@ -11418,6 +11426,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             session_title: None,
             team_instructions: None,
             layer0_goals: None,
+            goals_enabled: false,
             heartbeat_prompt: None,
             base_prompt: None,
             cwd: ".".to_string(),

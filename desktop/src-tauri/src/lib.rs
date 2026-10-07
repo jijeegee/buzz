@@ -679,6 +679,7 @@ pub fn run() {
             restore_goal_tree,
             get_layer0_goal,
             set_layer0_goal,
+            set_goals_feature_enabled,
             get_public_goal,
             get_feed,
             search_messages,

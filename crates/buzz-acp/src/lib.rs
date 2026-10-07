@@ -2628,6 +2628,7 @@ pub fn run() -> Result<()> {
         _ => {}
     }
     config::propagate_legacy_env_vars();
+    config::take_layer0_goal_env();
     if is_subcommand("run") {
         let runtime = tokio::runtime::Runtime::new()?;
         let code = runtime.block_on(run_task::run());
@@ -5913,6 +5914,17 @@ mod agent_draft_prompt_tests {
         assert!(prompt.contains("what it should do day-to-day"));
         assert!(prompt.contains("owner saves it"));
         assert!(prompt.contains("Do not ask about runtime, provider, model, credentials"));
+    }
+
+    #[test]
+    fn goal_rules_live_outside_the_shared_base_prompt() {
+        // Goal layers are an opt-in experiment; agents only see these rules
+        // when `--goals` appends `goals_prompt.md`.
+        assert!(!include_str!("base_prompt.md").contains("buzz goals"));
+        assert!(include_str!("goals_prompt.md").starts_with(
+            "## Goals
+"
+        ));
     }
 
     #[test]
@@ -9849,6 +9861,7 @@ mod build_mcp_servers_tests {
             heartbeat_prompt: None,
             system_prompt: None,
             team_instructions: None,
+            goals_enabled: false,
             layer0_goals: None,
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,
@@ -10715,6 +10728,7 @@ mod error_outcome_emission_tests {
             heartbeat_prompt: None,
             system_prompt: None,
             team_instructions: None,
+            goals_enabled: false,
             layer0_goals: None,
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,

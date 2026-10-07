@@ -553,6 +553,12 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_TEAM_INSTRUCTIONS")]
     pub team_instructions: Option<String>,
 
+    /// Enable the experimental goal layers: the `## Goals` base-prompt rules,
+    /// the per-turn `<goal-context>`, and layer 0 goal sections. Off by
+    /// default so agents behave exactly as before unless their owner opts in.
+    #[arg(long, env = "BUZZ_ACP_GOALS", default_value_t = false)]
+    pub goals: bool,
+
     /// This agent's own layer 0 goal (private; set by its owner).
     #[arg(long, env = "BUZZ_ACP_AGENT_GOAL")]
     pub agent_goal: Option<String>,
@@ -717,6 +723,8 @@ pub struct Config {
     pub system_prompt: Option<String>,
     /// Team-owned instructions layered separately from the agent system prompt.
     pub team_instructions: Option<String>,
+    /// Whether the experimental goal layers are on (`--goals`).
+    pub goals_enabled: bool,
     /// Rendered `<agent-goal>` / `<owner-goal>` sections (layer 0 goals).
     pub layer0_goals: Option<String>,
     pub initial_message: Option<String>,
@@ -1067,6 +1075,27 @@ pub fn normalize_agent_args(command: &str, agent_args: Vec<String>) -> Vec<Strin
     normalized
 }
 
+/// Layer 0 goals taken out of the environment by [`take_layer0_goal_env`].
+static LAYER0_GOAL_ENV: std::sync::OnceLock<(Option<String>, Option<String>)> =
+    std::sync::OnceLock::new();
+
+/// Move the private layer 0 goals out of the environment so child processes
+/// and their shell tools cannot print them; `Config::from_cli` reads the
+/// stashed copy. Only touches variables that are set.
+///
+/// Must be called before the tokio runtime starts, like
+/// [`propagate_legacy_env_vars`].
+pub fn take_layer0_goal_env() {
+    let take = |name: &str| {
+        let value = std::env::var(name).ok();
+        if value.is_some() {
+            std::env::remove_var(name);
+        }
+        value
+    };
+    let _ = LAYER0_GOAL_ENV.set((take("BUZZ_ACP_AGENT_GOAL"), take("BUZZ_ACP_OWNER_GOAL")));
+}
+
 /// Propagate legacy env-var aliases to their canonical names.
 ///
 /// Must be called **before** the tokio runtime starts — i.e. from the sync
@@ -1408,14 +1437,17 @@ impl Config {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string),
+            goals_enabled: args.goals,
             layer0_goals: {
-                let goals =
-                    render_layer0_goals(args.agent_goal.as_deref(), args.owner_goal.as_deref());
-                // The goals now live only in the prompt; child processes and
-                // their shell tools must not be able to print them.
-                std::env::remove_var("BUZZ_ACP_AGENT_GOAL");
-                std::env::remove_var("BUZZ_ACP_OWNER_GOAL");
-                goals
+                let (env_agent_goal, env_owner_goal) =
+                    LAYER0_GOAL_ENV.get().cloned().unwrap_or_default();
+                let agent_goal = args.agent_goal.or(env_agent_goal);
+                let owner_goal = args.owner_goal.or(env_owner_goal);
+                if args.goals {
+                    render_layer0_goals(agent_goal.as_deref(), owner_goal.as_deref())
+                } else {
+                    None
+                }
             },
             initial_message: args.initial_message,
             subscribe_mode: args.subscribe,
@@ -1894,6 +1926,7 @@ mod tests {
             heartbeat_prompt: None,
             system_prompt: None,
             team_instructions: None,
+            goals_enabled: false,
             layer0_goals: None,
             initial_message: None,
             subscribe_mode: mode,

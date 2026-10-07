@@ -38,6 +38,10 @@ struct Layer0Store {
     owners: BTreeMap<String, Layer0Goal>,
     #[serde(default)]
     agents: BTreeMap<String, Layer0Goal>,
+    /// Mirror of the desktop "Goal layers" experiment toggle. Agents only get
+    /// goal rules, goal context, and layer 0 goals while it is on.
+    #[serde(default)]
+    feature_enabled: bool,
 }
 
 fn store_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
@@ -58,6 +62,23 @@ fn save_store<R: tauri::Runtime>(app: &AppHandle<R>, store: &Layer0Store) -> Res
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, raw).map_err(|e| format!("failed to write layer 0 goals: {e}"))?;
     std::fs::rename(&tmp, &path).map_err(|e| format!("failed to save layer 0 goals: {e}"))
+}
+
+/// Whether the "Goal layers" experiment is on for agents spawned here.
+pub(crate) fn goals_feature_enabled<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
+    load_store(app).feature_enabled
+}
+
+/// Mirror the desktop experiment toggle so agent spawns can read it. Running
+/// agents pick up a change on their next restart.
+#[tauri::command]
+pub fn set_goals_feature_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut store = load_store(&app);
+    if store.feature_enabled == enabled {
+        return Ok(());
+    }
+    store.feature_enabled = enabled;
+    save_store(&app, &store)
 }
 
 /// Private goals handed to an agent at spawn: `(its own, its owner's)`.
@@ -234,6 +255,7 @@ mod tests {
         let store: Layer0Store = serde_json::from_str("{}").unwrap();
         assert!(store.owners.is_empty());
         assert!(store.agents.is_empty());
+        assert!(!store.feature_enabled);
         assert!(!Layer0Goal::default().public_enabled);
     }
 }

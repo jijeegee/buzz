@@ -106,7 +106,7 @@ pub use goals::*;
 pub use identity::*;
 pub use identity_archive::*;
 pub use join_policy::*;
-pub(crate) use layer0_goals::spawn_goals;
+pub(crate) use layer0_goals::{goals_feature_enabled, spawn_goals};
 pub use layer0_goals::*;
 pub use legacy_storage::*;
 pub use link_preview::*;

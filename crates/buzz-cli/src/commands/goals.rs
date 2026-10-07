@@ -80,7 +80,7 @@ fn is_goal_conflict(err: &CliError) -> bool {
 /// Apply `edit` to the live head and publish it, re-applying after conflicts.
 async fn write(client: &BuzzClient, channel: &str, edit: Edit) -> Result<Value, CliError> {
     let channel_uuid = parse_uuid(channel)?;
-    let editor = client.keys().public_key().to_hex();
+    let editor = client.pubkey().to_hex();
     for _ in 0..MAX_WRITE_ATTEMPTS {
         let head = fetch_head(client, channel, true).await?;
         let (revision, head_created_at, mut tree) = match head {

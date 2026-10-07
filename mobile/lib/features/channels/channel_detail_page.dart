@@ -22,6 +22,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
+import '../goals/goals_preferences.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
 import '../../shared/widgets/bouncing_dots_indicator.dart';
@@ -502,6 +503,7 @@ class ChannelDetailPage extends HookConsumerWidget {
             memberProfilesPreloadState.connectionState !=
                 ConnectionState.done ||
             memberProfilesPreloadState.data != true);
+    final goalsEnabled = ref.watch(goalsEnabledProvider);
     final showsHuddleAction =
         showsComposer &&
         !isAgentIdentityUnresolved &&
@@ -638,7 +640,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         ),
         actions: resolvedChannel.isDm
             ? [
-                _GoalsButton(channel: resolvedChannel),
+                if (goalsEnabled) _GoalsButton(channel: resolvedChannel),
                 if (showsHuddleAction)
                   _HuddleButton(
                     channel: resolvedChannel,
@@ -674,7 +676,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                 ),
               ]
             : [
-                if (!resolvedChannel.isForum)
+                if (goalsEnabled && !resolvedChannel.isForum)
                   _GoalsButton(channel: resolvedChannel),
                 if (showsComposer)
                   _HuddleButton(

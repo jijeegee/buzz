@@ -28,8 +28,7 @@
     {
       "id": "goalTree",
       "name": "Goal layers",
-      "description": "A layer 1 goal and sub-goal tree for every channel and DM, shared with agents",
-      "defaultEnabled": true,
+      "description": "A layer 1 goal and sub-goal tree for every channel and DM, shared with agents. Restart agents after changing this",
       "platforms": ["desktop"]
     },
     {
