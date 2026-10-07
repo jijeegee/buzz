@@ -1,0 +1,420 @@
+//! Task threads: a thread opened for one piece of work, linked to the place
+//! that asked for it, that reports its result back and then closes.
+//!
+//! Wire format (kind 9 only, no new relay kinds):
+//! - Kickoff reply in the thread: `["buzz:task", <title>]`,
+//!   `["buzz:parent", "main"]`, and a `p` tag for the requester.
+//! - Result on the channel main timeline: `["buzz:sent-from-thread", <root>,
+//!   <excerpt>]`, `["buzz:thread-closed", <root>]`, and a `p` tag for the
+//!   requester.
+//! - Close marker reply in the thread: `["buzz:thread-closed", <root>]` and a
+//!   NIP-18 `q` tag pointing at the result. A thread whose latest message is a
+//!   close marker reads as closed; any later message reopens it.
+
+use clap::Subcommand;
+
+use crate::client::BuzzClient;
+use crate::commands::messages::{
+    fetch_event, send_message, set_thread_name, thread_ref_from_event, SendMessageParams,
+};
+use crate::error::CliError;
+use crate::validate::{parse_uuid, read_or_stdin, validate_hex64};
+
+pub const TASK_TAG: &str = "buzz:task";
+pub const PARENT_TAG: &str = "buzz:parent";
+pub const THREAD_CLOSED_TAG: &str = "buzz:thread-closed";
+const SENT_FROM_THREAD_TAG: &str = "buzz:sent-from-thread";
+/// Parent scope value for a task thread started from the channel main timeline.
+const PARENT_MAIN: &str = "main";
+const MAX_TITLE_CHARS: usize = 120;
+/// Matches Desktop's sent-from-thread excerpt limit.
+const MAX_EXCERPT_CHARS: usize = 64;
+
+#[derive(Subcommand)]
+pub enum ThreadsCmd {
+    /// Open a task thread under a top-level message, linked back to the main timeline
+    #[command(
+        after_help = "Example:\n  printf 'Plan:\\n- step 1\\n' | buzz threads start --channel <UUID> --from <EVENT_ID> --title \"Quote rendering\" --brief -"
+    )]
+    Start {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Top-level message that becomes the thread root (64-char hex)
+        #[arg(long, value_name = "EVENT_ID")]
+        from: String,
+        /// Task title; also set as the shared thread name when it fits
+        #[arg(long)]
+        title: String,
+        /// Kickoff details (use '-' to read from stdin)
+        #[arg(long)]
+        brief: Option<String>,
+        /// Who the result is reported to (hex or npub); defaults to the author of --from
+        #[arg(long)]
+        requester: Option<String>,
+    },
+    /// Report a task thread's result to the main timeline and close the thread
+    #[command(
+        after_help = "Example:\n  printf '@akak Done: ...\\n' | buzz threads close --channel <UUID> --thread <ROOT_ID> --summary -"
+    )]
+    Close {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: String,
+        /// Result posted to the main timeline (use '-' to read from stdin)
+        #[arg(long)]
+        summary: String,
+        /// Override who the result is reported to (hex or npub)
+        #[arg(long)]
+        requester: Option<String>,
+    },
+}
+
+pub async fn dispatch(cmd: ThreadsCmd, client: &BuzzClient) -> Result<(), CliError> {
+    match cmd {
+        ThreadsCmd::Start {
+            channel,
+            from,
+            title,
+            brief,
+            requester,
+        } => start(client, &channel, &from, &title, brief, requester).await,
+        ThreadsCmd::Close {
+            channel,
+            thread,
+            summary,
+            requester,
+        } => close(client, &channel, &thread, &summary, requester).await,
+    }
+}
+
+async fn start(
+    client: &BuzzClient,
+    channel: &str,
+    from: &str,
+    title: &str,
+    brief: Option<String>,
+    requester: Option<String>,
+) -> Result<(), CliError> {
+    let title = validate_title(title)?;
+    let root = load_top_level_message(client, channel, from).await?;
+    let requester = match requester {
+        Some(requester) => requester,
+        None => event_author(&root)?,
+    };
+    let brief = brief.map(|b| read_or_stdin(&b)).transpose()?;
+    let content = match brief.as_deref().map(str::trim) {
+        Some(brief) if !brief.is_empty() => format!("**{title}**\n\n{brief}"),
+        _ => format!("**{title}**"),
+    };
+
+    let kickoff = send_message(
+        client,
+        SendMessageParams {
+            channel_id: channel.to_string(),
+            content,
+            kind: None,
+            reply_to: Some(from.to_ascii_lowercase()),
+            quote: None,
+            broadcast: false,
+            files: Vec::new(),
+            mentions: vec![requester],
+            extra_tags: vec![tag([TASK_TAG, title])?, tag([PARENT_TAG, PARENT_MAIN])?],
+        },
+    )
+    .await?;
+
+    // The shared thread name makes the task visible in reply summaries and the
+    // sidebar. It is best effort: an older relay rejects the kind.
+    let name = thread_name_for(title);
+    let thread_name = match set_thread_name(client, channel, from, &name).await {
+        Ok(_) => Some(name),
+        Err(e) => {
+            eprintln!("warning: could not set the thread name ({e})");
+            None
+        }
+    };
+
+    println!(
+        "{}",
+        serde_json::json!({
+            "thread_root": from.to_ascii_lowercase(),
+            "kickoff": kickoff,
+            "thread_name": thread_name,
+        })
+    );
+    Ok(())
+}
+
+async fn close(
+    client: &BuzzClient,
+    channel: &str,
+    thread: &str,
+    summary: &str,
+    requester: Option<String>,
+) -> Result<(), CliError> {
+    let summary = read_or_stdin(summary)?;
+    if summary.trim().is_empty() {
+        return Err(CliError::Usage("--summary must not be empty".into()));
+    }
+    let root_id = thread.to_ascii_lowercase();
+    let root = load_top_level_message(client, channel, &root_id).await?;
+
+    let replies = client
+        .query(&serde_json::json!({
+            "kinds": [9],
+            "#h": [channel],
+            "#e": [&root_id],
+            "limit": 500,
+        }))
+        .await?;
+    let replies: Vec<serde_json::Value> = serde_json::from_str(&replies)
+        .map_err(|e| CliError::Other(format!("invalid thread response: {e}")))?;
+    let task = find_task(&replies);
+
+    let requester = match requester.or_else(|| task.as_ref().and_then(|t| t.requester.clone())) {
+        Some(requester) => requester,
+        None => event_author(&root)?,
+    };
+    let excerpt = excerpt_for(
+        task.as_ref()
+            .map(|t| t.title.as_str())
+            .unwrap_or_else(|| root.get("content").and_then(|c| c.as_str()).unwrap_or("")),
+    );
+    let mut sent_from = vec![SENT_FROM_THREAD_TAG.to_string(), root_id.clone()];
+    sent_from.extend(excerpt);
+
+    let result = send_message(
+        client,
+        SendMessageParams {
+            channel_id: channel.to_string(),
+            content: summary,
+            kind: None,
+            reply_to: None,
+            quote: None,
+            broadcast: false,
+            files: Vec::new(),
+            mentions: vec![requester],
+            extra_tags: vec![
+                nostr::Tag::parse(sent_from).map_err(|e| CliError::Other(e.to_string()))?,
+                tag([THREAD_CLOSED_TAG, &root_id])?,
+            ],
+        },
+    )
+    .await?;
+    let result_id = result
+        .get("event_id")
+        .and_then(|id| id.as_str())
+        .ok_or_else(|| CliError::Other(format!("result was not accepted: {result}")))?
+        .to_string();
+
+    let marker = send_message(
+        client,
+        SendMessageParams {
+            channel_id: channel.to_string(),
+            content: "✅ Task closed. The result is posted on the channel timeline.".into(),
+            kind: None,
+            reply_to: Some(root_id.clone()),
+            quote: Some(result_id),
+            broadcast: false,
+            files: Vec::new(),
+            mentions: Vec::new(),
+            extra_tags: vec![tag([THREAD_CLOSED_TAG, &root_id])?],
+        },
+    )
+    .await?;
+
+    println!(
+        "{}",
+        serde_json::json!({ "thread_root": root_id, "result": result, "close_marker": marker })
+    );
+    Ok(())
+}
+
+/// Fetch `event_id` and require a top-level message in `channel`.
+async fn load_top_level_message(
+    client: &BuzzClient,
+    channel: &str,
+    event_id: &str,
+) -> Result<serde_json::Value, CliError> {
+    validate_hex64(event_id)?;
+    let channel_id = parse_uuid(channel)?.to_string();
+    let event = fetch_event(client, &event_id.to_ascii_lowercase()).await?;
+    let in_channel = event
+        .get("tags")
+        .and_then(|t| t.as_array())
+        .into_iter()
+        .flatten()
+        .any(|t| {
+            tag_name(t) == Some("h") && t.get(1).and_then(|v| v.as_str()) == Some(&channel_id)
+        });
+    if !in_channel {
+        return Err(CliError::Usage(format!(
+            "event {event_id} is not in channel {channel_id}"
+        )));
+    }
+    let thread = thread_ref_from_event(&event_id.to_ascii_lowercase(), &event)?;
+    if thread.root_event_id != thread.parent_event_id {
+        return Err(CliError::Usage(
+            "a task thread starts from a top-level message; nested task threads are not supported"
+                .into(),
+        ));
+    }
+    Ok(event)
+}
+
+fn event_author(event: &serde_json::Value) -> Result<String, CliError> {
+    event
+        .get("pubkey")
+        .and_then(|p| p.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| CliError::Other("event has no author".into()))
+}
+
+fn tag<const N: usize>(parts: [&str; N]) -> Result<nostr::Tag, CliError> {
+    nostr::Tag::parse(parts).map_err(|e| CliError::Other(format!("invalid tag: {e}")))
+}
+
+fn tag_name(tag: &serde_json::Value) -> Option<&str> {
+    tag.get(0).and_then(|v| v.as_str())
+}
+
+fn validate_title(title: &str) -> Result<&str, CliError> {
+    let title = title.trim();
+    if title.is_empty()
+        || title.chars().count() > MAX_TITLE_CHARS
+        || title.chars().any(char::is_control)
+    {
+        return Err(CliError::Usage(format!(
+            "--title must be one non-empty line of at most {MAX_TITLE_CHARS} characters"
+        )));
+    }
+    Ok(title)
+}
+
+/// Fit a title into the shared thread-name budget (ASCII one unit, other
+/// characters two, 40 units), ending clipped names with an ellipsis.
+fn thread_name_for(title: &str) -> String {
+    let weight = |c: char| if c.is_ascii() { 1 } else { 2 };
+    let max = buzz_core::thread_name::MAX_THREAD_NAME_WEIGHT;
+    if title.chars().map(weight).sum::<usize>() <= max {
+        return title.to_string();
+    }
+    let mut used = weight('…');
+    let mut name = String::new();
+    for c in title.chars() {
+        if used + weight(c) > max {
+            break;
+        }
+        used += weight(c);
+        name.push(c);
+    }
+    format!("{}…", name.trim_end())
+}
+
+/// Single-line excerpt for the sent-from-thread tag, or `None` when empty.
+fn excerpt_for(text: &str) -> Option<String> {
+    let line: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .replace(['*', '`', '#', '>', '_', '~', '|'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if line.is_empty() {
+        return None;
+    }
+    if line.chars().count() <= MAX_EXCERPT_CHARS {
+        return Some(line);
+    }
+    let clipped: String = line.chars().take(MAX_EXCERPT_CHARS - 1).collect();
+    Some(format!("{}…", clipped.trim_end()))
+}
+
+#[derive(Debug, PartialEq)]
+struct TaskInfo {
+    title: String,
+    requester: Option<String>,
+}
+
+/// The earliest kickoff (`buzz:task`) among the thread's replies.
+fn find_task(replies: &[serde_json::Value]) -> Option<TaskInfo> {
+    replies
+        .iter()
+        .filter_map(|event| {
+            let tags = event.get("tags")?.as_array()?;
+            let title = tags
+                .iter()
+                .find(|t| tag_name(t) == Some(TASK_TAG))?
+                .get(1)?
+                .as_str()?
+                .to_string();
+            let requester = tags
+                .iter()
+                .find(|t| tag_name(t) == Some("p"))
+                .and_then(|t| t.get(1))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            let created_at = event
+                .get("created_at")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            Some((created_at, TaskInfo { title, requester }))
+        })
+        .min_by_key(|(created_at, _)| *created_at)
+        .map(|(_, task)| task)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thread_name_fits_the_shared_budget() {
+        assert_eq!(thread_name_for("Quote rendering"), "Quote rendering");
+        assert_eq!(thread_name_for(&"가".repeat(20)), "가".repeat(20));
+        let clipped = thread_name_for(&"가".repeat(30));
+        assert_eq!(clipped, format!("{}…", "가".repeat(19)));
+        assert!(buzz_core::thread_name::validate_thread_name(&clipped).is_ok());
+        let clipped = thread_name_for(&"word ".repeat(20));
+        assert!(buzz_core::thread_name::validate_thread_name(&clipped).is_ok());
+    }
+
+    #[test]
+    fn title_must_be_one_short_line() {
+        assert_eq!(validate_title("  작업 스레드  ").unwrap(), "작업 스레드");
+        assert!(validate_title("").is_err());
+        assert!(validate_title("two\nlines").is_err());
+        assert!(validate_title(&"a".repeat(MAX_TITLE_CHARS + 1)).is_err());
+    }
+
+    #[test]
+    fn excerpt_is_single_line_and_bounded() {
+        assert_eq!(excerpt_for("**Fix**\n`quote`"), Some("Fix quote".into()));
+        assert_eq!(excerpt_for("  \n "), None);
+        let long = excerpt_for(&"a ".repeat(100)).unwrap();
+        assert!(long.chars().count() <= MAX_EXCERPT_CHARS);
+        assert!(long.ends_with('…'));
+    }
+
+    #[test]
+    fn find_task_uses_the_earliest_kickoff() {
+        let replies = vec![
+            serde_json::json!({"created_at": 5, "tags": [["e", "x"]]}),
+            serde_json::json!({"created_at": 9, "tags": [[TASK_TAG, "later"], ["p", "bb"]]}),
+            serde_json::json!({"created_at": 3, "tags": [[TASK_TAG, "first"], ["p", "aa"]]}),
+        ];
+        assert_eq!(
+            find_task(&replies),
+            Some(TaskInfo {
+                title: "first".into(),
+                requester: Some("aa".into())
+            })
+        );
+        assert_eq!(find_task(&replies[..1]), None);
+    }
+}

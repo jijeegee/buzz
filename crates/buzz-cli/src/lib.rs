@@ -251,6 +251,9 @@ enum Cmd {
     /// Send, read, search, and manage messages
     #[command(subcommand)]
     Messages(MessagesCmd),
+    /// Start and close task threads that report back to the main timeline
+    #[command(subcommand)]
+    Threads(commands::threads::ThreadsCmd),
     /// Create, configure, and manage channels
     #[command(subcommand)]
     Channels(ChannelsCmd),
@@ -2350,6 +2353,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Cmd::Agents(sub) => commands::agents::dispatch(sub, &client).await,
         Cmd::Messages(sub) => commands::messages::dispatch(sub, &client, &cli.format).await,
+        Cmd::Threads(sub) => commands::threads::dispatch(sub, &client).await,
         Cmd::Channels(sub) => commands::channels::dispatch(sub, &client, &cli.format).await,
         Cmd::Canvas(sub) => commands::channels::dispatch_canvas(sub, &client).await,
         Cmd::Reactions(sub) => commands::reactions::dispatch(sub, &client).await,
@@ -2574,6 +2578,7 @@ mod tests {
             "reactions",
             "repos",
             "social",
+            "threads",
             "upload",
             "users",
             "workflows",
@@ -2790,6 +2795,7 @@ mod tests {
             ("reactions", 3),
             ("repos", 6),
             ("social", 7),
+            ("threads", 2),
             ("upload", 1),
             ("users", 5),
             ("workflows", 8),
