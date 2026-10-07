@@ -2122,12 +2122,11 @@ fn handle_compact_session_control(
     };
     // Under the thread policy a channel's unthreaded session is its `Main`
     // scope; only DMs keep `Conversation`. The frame cannot say which, so a
-    // null root targets `Main` unless the `Conversation` scope has an owner.
+    // null root targets `Main` when only the `Main` scope has an owner.
     if let scope::SessionScope::Conversation { channel_id } = scope {
-        if ctx.session_policy == scope::SessionPolicy::Thread
-            && !pool.has_session_owner(&scope)
-        {
-            scope = scope::SessionScope::Main { channel_id };
+        let main = scope::SessionScope::Main { channel_id };
+        if !pool.has_session_owner(&scope) && pool.has_session_owner(&main) {
+            scope = main;
         }
     }
     let request_id = payload
@@ -7411,9 +7410,7 @@ mod owner_control_command_tests {
         let payload = serde_json::json!({
             "type": "compact_session", "channelId": ch.to_string(), "requestId": "req-3",
         });
-        let mut ctx = pool::tests::make_prompt_context_no_owner();
-        ctx.session_policy = scope::SessionPolicy::Thread;
-        let ctx = Arc::new(ctx);
+        let ctx = Arc::new(pool::tests::make_prompt_context_no_owner());
 
         // A channel's unthreaded session lives in its `Main` scope.
         let main = scope::SessionScope::Main { channel_id: ch };
