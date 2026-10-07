@@ -1198,19 +1198,13 @@ void main() {
     expect(activeSelection, findsNothing);
     expect(inactiveSelection, findsNothing);
 
-    await tester.tap(find.byTooltip('Remove Bravo'));
+    await tester.tap(find.byTooltip('Remove Bravo from this device'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Remove community?'), findsOneWidget);
-    expect(
-      find.text(
-        'Are you sure you want to remove “Bravo”? '
-        'You can sign in to it again later.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('커뮤니티를 이 기기에서 제거할까요?'), findsOneWidget);
+    expect(find.textContaining('서버의 계정과 가입 정보는 삭제하지 않습니다.'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+    await tester.tap(find.widgetWithText(FilledButton, '제거'));
     await tester.pumpAndSettle();
 
     expect(communityNotifier.removedIds, ['bravo']);

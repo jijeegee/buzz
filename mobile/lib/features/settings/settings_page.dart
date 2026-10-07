@@ -234,6 +234,7 @@ class SettingsPage extends HookConsumerWidget {
                   _AccountSection(origin: tokenOrigin)
                 else
                   const _ConnectionSection(),
+                const _SignOutSection(),
                 const _RemoveCommunitySection(),
               ],
             ),

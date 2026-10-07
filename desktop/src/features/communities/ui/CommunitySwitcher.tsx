@@ -47,6 +47,7 @@ import {
   useRelayConnection,
 } from "@/shared/api/useRelayConnection";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
+import { Button } from "@/shared/ui/button";
 import { useActiveCommunityIcon } from "@/features/communities/useCommunityIcons";
 import { EditCommunityDialog } from "./EditCommunityDialog";
 
@@ -127,6 +128,8 @@ export function CommunitySwitcher({
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
   const [leaveError, setLeaveError] = React.useState<string | null>(null);
   const [isLeaving, setIsLeaving] = React.useState(false);
+  const [leavingCommunity, setLeavingCommunity] =
+    React.useState<Community | null>(null);
   const [removingCommunity, setRemovingCommunity] =
     React.useState<Community | null>(null);
   const profileMenuHoverTimer = React.useRef<number | null>(null);
@@ -176,7 +179,7 @@ export function CommunitySwitcher({
   );
 
   const handleLeaveCommunity = React.useCallback(async () => {
-    if (!activeCommunity || isLeaving) return;
+    if (!leavingCommunity || isLeaving) return;
 
     if (profileMenuHoverTimer.current !== null) {
       window.clearTimeout(profileMenuHoverTimer.current);
@@ -185,7 +188,8 @@ export function CommunitySwitcher({
     setIsLeaving(true);
     setLeaveError(null);
     try {
-      const result = await onLeaveCommunity(activeCommunity.id);
+      const result = await onLeaveCommunity(leavingCommunity.id);
+      setLeavingCommunity(null);
       setDropdownOpen(false);
       if (result?.status === "already-absent") {
         toast("Community removed", {
@@ -202,10 +206,11 @@ export function CommunitySwitcher({
         `${message} If the community no longer exists, use Remove from this device.`,
       );
       setDropdownOpen(true);
+      setLeavingCommunity(null);
     } finally {
       setIsLeaving(false);
     }
-  }, [activeCommunity, isLeaving, onLeaveCommunity]);
+  }, [leavingCommunity, isLeaving, onLeaveCommunity]);
 
   const handleRemoveFromDevice = React.useCallback(async () => {
     if (!removingCommunity) return;
@@ -356,12 +361,16 @@ export function CommunitySwitcher({
                 <button
                   className="flex min-h-9 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-destructive outline-hidden transition-colors hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none focus-visible:bg-destructive/10 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
                   disabled={isLeaving}
-                  onClick={() => void handleLeaveCommunity()}
+                  onClick={() => {
+                    clearProfileMenuHoverTimer();
+                    setDropdownOpen(false);
+                    setLeavingCommunity(activeCommunity);
+                  }}
                   role="menuitem"
                   type="button"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span>{isLeaving ? "Leaving…" : "Leave community"}</span>
+                  <span>Community membership…</span>
                 </button>
                 <button
                   className="flex min-h-9 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-destructive outline-hidden transition-colors hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none focus-visible:bg-destructive/10 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
@@ -495,6 +504,32 @@ export function CommunitySwitcher({
           <SidebarMenuItem>{switcherDropdown}</SidebarMenuItem>
         </SidebarMenu>
       )}
+
+      <AlertDialog
+        open={leavingCommunity !== null}
+        onOpenChange={(open) => {
+          if (!open && !isLeaving) setLeavingCommunity(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave this community?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`You will leave "${leavingCommunity?.name ?? ""}". This is not sign-out. You may need a new invitation to return.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLeaving}>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={isLeaving}
+              onClick={() => void handleLeaveCommunity()}
+            >
+              {isLeaving ? "Leaving…" : "Leave community"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <EditCommunityDialog
         onOpenChange={(open) => {

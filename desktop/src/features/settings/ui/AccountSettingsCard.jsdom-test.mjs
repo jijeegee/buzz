@@ -8,6 +8,13 @@ import test from "node:test";
 
 const calls = [];
 let status;
+let loginBehavior;
+let cancelBehavior;
+const callbacks = new Map();
+let progressCallback;
+function progress(attemptId, phase) {
+  callbacks.get(progressCallback)?.({ payload: { attemptId, phase } });
+}
 const devices = [
   {
     id: "11111111-1111-1111-1111-111111111111",
@@ -37,11 +44,17 @@ const tauriMock = {
         return Promise.resolve(devices);
       case "revoke_device":
         return Promise.resolve(null);
-      case "logout":
+      case "cancel_google_login":
+        return cancelBehavior ? cancelBehavior(args) : Promise.resolve(false);
       case "login_with_google":
+        progress(args.attemptId, "waiting");
+        return loginBehavior ? loginBehavior(args) : new Promise(() => {});
+      case "logout":
         // Never settles: the real flow waits on the browser, then reloads.
         return new Promise(() => {});
       case "plugin:event|listen":
+        if (args.event === "google-login-progress")
+          progressCallback = args.handler;
         return Promise.resolve(1);
       case "plugin:event|unlisten":
         return Promise.resolve(null);
@@ -49,8 +62,10 @@ const tauriMock = {
         return Promise.reject(new Error(`unmocked Tauri command: ${command}`));
     }
   },
-  transformCallback() {
-    return Math.random();
+  transformCallback(callback) {
+    const id = Math.random();
+    callbacks.set(id, callback);
+    return id;
   },
   unregisterCallback() {},
 };
@@ -117,6 +132,32 @@ test("a relay without token sign-in renders nothing", async () => {
   await unmount();
 });
 
+test("account deletion is collapsed and opening or cancelling never deletes", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount();
+  const details = container.querySelector("details");
+  assert.equal(details.open, false);
+  await act(async () => fireEvent.click(details.querySelector("summary")));
+  assert.equal(details.open, true);
+  await act(async () => fireEvent.click(details.querySelector("button")));
+  const dialog = document.querySelector('[role="alertdialog"]');
+  assert.ok(dialog);
+  assert.equal(
+    calls.some((c) => c.command === "delete_account"),
+    false,
+  );
+  const cancel = [...dialog.querySelectorAll("button")].find(
+    (b) => b.textContent === "Cancel",
+  );
+  await act(async () => fireEvent.click(cancel));
+  assert.equal(document.querySelector('[role="alertdialog"]'), null);
+  assert.equal(
+    calls.some((c) => c.command === "delete_account"),
+    false,
+  );
+  await unmount();
+});
+
 test("a signed-out community offers Google sign-in through login_with_google", async () => {
   status = baseStatus();
   const { container, unmount } = await mount();
@@ -131,7 +172,7 @@ test("a signed-out community offers Google sign-in through login_with_google", a
     1,
     "exactly one login per click",
   );
-  await settle(() => button.textContent.includes("Waiting"));
+  await settle(() => button.textContent.includes("Signing"));
   assert.ok(button.disabled, "no second login while one is in flight");
   // Rule 7: the button's own text is the only announcement; the spinner is
   // decorative and adds no nested status region or screen-reader stop.
@@ -187,6 +228,8 @@ test("Google key backup links the existing identity explicitly and discloses cus
   await act(async () => fireEvent.click(button));
   assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
     allowRestore: false,
+    attemptId: calls.find((c) => c.command === "login_with_google").args
+      .attemptId,
   });
   await unmount();
 });
@@ -223,6 +266,8 @@ test("new-device Google onboarding explicitly requests same-key recovery", async
   await act(async () => fireEvent.click(button));
   assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
     allowRestore: true,
+    attemptId: calls.find((c) => c.command === "login_with_google").args
+      .attemptId,
   });
   assert.equal(button.disabled, true);
   await unmount();
@@ -246,8 +291,150 @@ test("previously signed-out token users have an explicit existing-account route"
       {
         allowRestore: false,
         existingTokenAccount: true,
+        attemptId: calls.find((c) => c.command === "login_with_google").args
+          .attemptId,
       },
     );
     await unmount();
   }
+});
+
+test("cancel ends the native wait and onboarding can immediately retry", async () => {
+  status = baseStatus();
+  let rejectLogin;
+  loginBehavior = () =>
+    new Promise((_, reject) => {
+      rejectLogin = reject;
+    });
+  cancelBehavior = () => {
+    rejectLogin("Google sign-in cancelled.");
+    return Promise.resolve(true);
+  };
+  const { container, unmount } = await mount(GoogleSignInButton);
+  try {
+    const button = container.querySelector(
+      "[data-testid='onboarding-google-sign-in']",
+    );
+    await act(async () => fireEvent.click(button));
+    const first = calls.find((c) => c.command === "login_with_google").args
+      .attemptId;
+    assert.ok(first);
+    const cancel = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Cancel sign-in",
+    );
+    assert.ok(cancel);
+    await act(async () => fireEvent.click(cancel));
+    assert.equal(button.disabled, false);
+    assert.equal(container.querySelector("[role='alert']"), null);
+    assert.equal(
+      calls.find((c) => c.command === "cancel_google_login").args.attemptId,
+      first,
+    );
+    await act(async () => fireEvent.click(button));
+    const second = calls.filter((c) => c.command === "login_with_google").at(-1)
+      .args.attemptId;
+    assert.notEqual(first, second);
+    await act(async () => progress(first, "completing"));
+    assert.match(container.textContent, /Cancel sign-in/);
+    await act(async () => progress(second, "completing"));
+    assert.doesNotMatch(container.textContent, /Cancel sign-in/);
+    assert.match(container.textContent, /Finishing sign-in in Buzz/);
+  } finally {
+    await unmount();
+    loginBehavior = cancelBehavior = undefined;
+  }
+});
+
+test("native failure stays visible and releases the settings sign-in button", async () => {
+  status = baseStatus();
+  loginBehavior = () => Promise.reject("sign-in timed out");
+  const { container, unmount } = await mount();
+  try {
+    const button = container.querySelector("[data-testid='account-sign-in']");
+    await act(async () => fireEvent.click(button));
+    assert.equal(button.disabled, false);
+    assert.match(
+      container.querySelector("[role='alert']").textContent,
+      /timed out/,
+    );
+  } finally {
+    await unmount();
+    loginBehavior = undefined;
+  }
+});
+
+test("completion winning cancellation finishes without restarting Google", async () => {
+  status = baseStatus();
+  let resolveLogin;
+  let completed = 0;
+  loginBehavior = () =>
+    new Promise((resolve) => {
+      resolveLogin = resolve;
+    });
+  cancelBehavior = () => Promise.resolve(false);
+  const { container, unmount } = await mount(GoogleSignInButton, {
+    onComplete: async () => {
+      completed++;
+    },
+  });
+  try {
+    await act(async () =>
+      fireEvent.click(
+        container.querySelector("[data-testid='onboarding-google-sign-in']"),
+      ),
+    );
+    const cancel = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Cancel sign-in",
+    );
+    await act(async () => fireEvent.click(cancel));
+    assert.match(container.textContent, /Finishing sign-in in Buzz/);
+    assert.doesNotMatch(container.textContent, /Cancel sign-in/);
+    await act(async () => resolveLogin(baseStatus({ state: "active" })));
+    assert.equal(completed, 1);
+    assert.equal(
+      calls.filter((c) => c.command === "login_with_google").length,
+      1,
+    );
+    assert.equal(calls.filter((c) => c.command === "logout").length, 0);
+  } finally {
+    await unmount();
+    loginBehavior = cancelBehavior = undefined;
+  }
+});
+
+test("navigation away cancels its attempt and cannot invoke stale completion", async () => {
+  status = baseStatus();
+  let resolveLogin;
+  let completed = 0;
+  loginBehavior = () =>
+    new Promise((resolve) => {
+      resolveLogin = resolve;
+    });
+  const { container, unmount } = await mount(GoogleSignInButton, {
+    onComplete: async () => {
+      completed++;
+    },
+  });
+  await act(async () =>
+    fireEvent.click(
+      container.querySelector("[data-testid='onboarding-google-sign-in']"),
+    ),
+  );
+  const id = calls.find((c) => c.command === "login_with_google").args
+    .attemptId;
+  await unmount();
+  assert.equal(
+    calls.find((c) => c.command === "cancel_google_login").args.attemptId,
+    id,
+  );
+  // Native registration can lag behind cleanup. The listener must still cancel it.
+  const count = calls.filter((c) => c.command === "cancel_google_login").length;
+  await act(async () => progress(id, "waiting"));
+  assert.equal(
+    calls.filter((c) => c.command === "cancel_google_login").length,
+    count + 1,
+  );
+  await act(async () => resolveLogin(baseStatus({ state: "active" })));
+  assert.equal(completed, 0);
+  loginBehavior = undefined;
 });

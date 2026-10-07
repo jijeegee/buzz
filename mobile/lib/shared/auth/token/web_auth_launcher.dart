@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 
@@ -60,6 +61,17 @@ class FlutterWebAuth2Launcher implements WebAuthLauncher {
         // and do not leave this login behind in the shared jar.
         options: const FlutterWebAuth2Options(preferEphemeral: true),
       );
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        try {
+          await const MethodChannel(
+            'buzz/auth_browser',
+          ).invokeMethod<void>('returnToApp');
+        } on PlatformException {
+          // Window recovery must not discard an already received callback.
+        } on MissingPluginException {
+          // Older host builds can still complete sign-in after manual return.
+        }
+      }
       return Uri.parse(result);
     } on PlatformException catch (error) {
       if (error.code == 'CANCELED') throw const WebAuthCancelledException();

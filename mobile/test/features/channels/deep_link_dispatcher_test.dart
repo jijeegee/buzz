@@ -292,7 +292,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(storage.loadCalls, 1);
+    // Preparing reads once; the serialized native snapshot re-reads persisted
+    // state rather than exporting a possibly stale caller-owned list.
+    expect(storage.loadCalls, 2);
     expect(pending.consumeCalls, 1);
     expect(find.text('Join this Buzz community?'), findsOneWidget);
   });

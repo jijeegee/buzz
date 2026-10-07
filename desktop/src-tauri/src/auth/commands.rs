@@ -5,7 +5,7 @@
 
 use nostr::PublicKey;
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use zeroize::Zeroizing;
 
@@ -170,70 +170,106 @@ pub async fn login_with_google(
     app: AppHandle,
     allow_restore: Option<bool>,
     existing_token_account: Option<bool>,
+    attempt_id: Option<String>,
 ) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
-    if !state.token_auth.begin_login() {
-        return Err("a Google sign-in is already in progress".into());
+    let id = attempt_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    if id.is_empty() || id.len() > 128 {
+        return Err("invalid sign-in attempt".into());
     }
-    let result = login_inner(
+    let mut attempt = state.token_auth.login.begin(id.clone())?;
+    let _ = app.emit(
+        "google-login-progress",
+        serde_json::json!({"attemptId": id, "phase": "waiting"}),
+    );
+    login_inner(
         &app,
         allow_restore == Some(true),
         existing_token_account == Some(true),
+        &id,
+        &mut attempt,
     )
-    .await;
-    state.token_auth.end_login();
-    result
+    .await
+}
+
+/// Cancel only this browser attempt; completed or unrelated attempts are untouched.
+#[tauri::command]
+pub fn cancel_google_login(app: AppHandle, attempt_id: String) -> bool {
+    app.state::<AppState>().token_auth.login.cancel(&attempt_id)
 }
 
 async fn login_inner(
     app: &AppHandle,
     allow_restore: bool,
     existing_token_account: bool,
+    attempt_id: &str,
+    attempt: &mut super::login_attempt::LoginAttempt,
 ) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let providers = support_for(&state, &origin)
-        .await
-        .ok_or("this community does not offer Google sign-in")?;
-    if !providers.iter().any(|p| p == "google") {
-        return Err("this community does not offer Google sign-in".into());
-    }
-    let pkce = super::pkce::pkce_pair()?;
-    let oauth_state = super::pkce::new_state()?;
-    let listener = LoopbackListener::bind().await.map_err(|e| e.to_string())?;
-    let mut url = api::start_url(
-        &origin,
-        "google",
-        &oauth_state,
-        &pkce.challenge,
-        &listener.redirect_uri(),
-        &device_name(),
+    let (providers, pkce, backup, code) = attempt
+        .wait(async {
+            let providers = support_for(&state, &origin)
+                .await
+                .ok_or("this community does not offer Google sign-in")?;
+            if !providers.iter().any(|p| p == "google") {
+                return Err("this community does not offer Google sign-in".into());
+            }
+            let pkce = super::pkce::pkce_pair()?;
+            let oauth_state = super::pkce::new_state()?;
+            let listener = LoopbackListener::bind().await.map_err(|e| e.to_string())?;
+            let mut url = api::start_url(
+                &origin,
+                "google",
+                &oauth_state,
+                &pkce.challenge,
+                &listener.redirect_uri(),
+                &device_name(),
+            );
+            let backup = requested_login_mode(
+                &state.token_auth,
+                &origin,
+                &KeyringRefreshStore,
+                existing_token_account,
+            )?;
+            if existing_token_account {
+                let _guard = state
+                    .managed_agents_store_lock
+                    .lock()
+                    .map_err(|_| "agent storage is busy")?;
+                ensure_existing_token_agents(
+                    &origin,
+                    &crate::managed_agents::load_managed_agents(app)?,
+                )?;
+            }
+            if backup {
+                url.push_str("&identity_mode=key_backup");
+            } else {
+                url.push_str("&identity_mode=token");
+            }
+            app.opener()
+                .open_url(url.as_str(), None::<&str>)
+                .map_err(|e| format!("could not open the browser: {e}"))?;
+            let code = listener
+                .wait_for_code(&oauth_state, LOGIN_TIMEOUT)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok((providers, pkce, backup, code))
+        })
+        .await?;
+    let _ = app.emit(
+        "google-login-progress",
+        serde_json::json!({"attemptId": attempt_id, "phase": "completing"}),
     );
-    let backup = requested_login_mode(
-        &state.token_auth,
-        &origin,
-        &KeyringRefreshStore,
-        existing_token_account,
-    )?;
-    if existing_token_account {
-        let _guard = state
-            .managed_agents_store_lock
-            .lock()
-            .map_err(|_| "agent storage is busy")?;
-        ensure_existing_token_agents(&origin, &crate::managed_agents::load_managed_agents(app)?)?;
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(error) = window
+            .unminimize()
+            .and_then(|_| window.show())
+            .and_then(|_| window.set_focus())
+        {
+            eprintln!("buzz-desktop: could not activate sign-in window: {error}");
+        }
     }
-    if backup {
-        url.push_str("&identity_mode=key_backup");
-    } else {
-        url.push_str("&identity_mode=token");
-    }
-    app.opener()
-        .open_url(url.as_str(), None::<&str>)
-        .map_err(|e| format!("could not open the browser: {e}"))?;
-    let code = listener
-        .wait_for_code(&oauth_state, LOGIN_TIMEOUT)
-        .await
-        .map_err(|e| e.to_string())?;
     let tokens = api::complete_login(&state.http_client, &origin, &code, &pkce.verifier)
         .await
         .map_err(|e| format!("sign-in could not be completed: {e}"))?;

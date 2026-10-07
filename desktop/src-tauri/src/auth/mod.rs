@@ -22,6 +22,7 @@ pub(crate) mod bots;
 pub(crate) mod commands;
 pub(crate) mod credential;
 pub(crate) mod key_recovery;
+pub(crate) mod login_attempt;
 pub(crate) mod loopback;
 pub(crate) mod pkce;
 pub(crate) mod redact;
@@ -169,7 +170,7 @@ pub struct TokenAuthState {
     support: Mutex<HashMap<String, SupportEntry>>,
     backup_support: Mutex<HashMap<String, bool>>,
     refresh_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-    login_in_flight: Mutex<bool>,
+    pub(crate) login: login_attempt::LoginControl,
     /// A rotated refresh token not yet folded into an `Active` session, keyed
     /// by origin and fenced by generation. Covers the window between
     /// `/auth/refresh` and `/auth/me` while restoring, so a failed `/auth/me`
@@ -318,26 +319,6 @@ impl TokenAuthState {
             .insert(origin.to_owned(), (Instant::now(), support));
     }
 
-    /// Claim the single login slot; `false` when a login is already running.
-    pub(crate) fn begin_login(&self) -> bool {
-        let mut flag = self
-            .login_in_flight
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if *flag {
-            return false;
-        }
-        *flag = true;
-        true
-    }
-
-    pub(crate) fn end_login(&self) {
-        *self
-            .login_in_flight
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = false;
-    }
-
     /// The identity mode for `origin`.
     pub(crate) fn mode(&self, origin: &str) -> CredentialMode {
         if self.signing_pubkey(origin).is_some() {
@@ -420,14 +401,5 @@ mod tests {
         assert!(matches!(auth.mode("o"), CredentialMode::Blocked(_)));
         auth.set("o", OriginAuth::SignedOut);
         assert!(matches!(auth.mode("o"), CredentialMode::Keys));
-    }
-
-    #[test]
-    fn single_login_slot() {
-        let auth = TokenAuthState::default();
-        assert!(auth.begin_login());
-        assert!(!auth.begin_login());
-        auth.end_login();
-        assert!(auth.begin_login());
     }
 }

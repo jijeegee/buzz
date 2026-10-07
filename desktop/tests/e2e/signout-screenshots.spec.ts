@@ -32,6 +32,7 @@ test.describe("signout screenshots", () => {
 
     const section = page.getByTestId("settings-signout");
     await section.scrollIntoViewIfNeeded();
+    await section.locator("summary").click();
     await expect(
       section.getByRole("button", { name: "Delete my data" }),
     ).toBeVisible();
@@ -54,13 +55,14 @@ test.describe("signout screenshots", () => {
 
     const section = page.getByTestId("settings-signout");
     await section.scrollIntoViewIfNeeded();
+    await section.locator("summary").click();
 
     // Open the confirmation dialog.
     await page.getByTestId("signout-open-dialog").click();
 
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible({ timeout: 5_000 });
-    await expect(dialog.getByText("Sign out and wipe all data?")).toBeVisible();
+    await expect(dialog.getByText("Delete all local data?")).toBeVisible();
     await expect(
       dialog.getByRole("button", { name: "Delete my data" }),
     ).toBeVisible();

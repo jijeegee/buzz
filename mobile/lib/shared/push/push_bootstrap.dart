@@ -366,19 +366,17 @@ class BuzzPushBootstrap extends HookConsumerWidget {
     final state = community.pushSubscriptionState;
     final desired = state.desired;
     final descriptor = await fetchBuzzPushLeaseDescriptor(config.baseUrl);
-    final grant = await enrollBuzzPush(
-      config.wsUrl,
-      Env.pushGatewayUrl,
-      communitiesForSnapshotRefresh:
-          ref.read(communityListProvider).value ?? [community],
-    );
+    final grant = await enrollBuzzPush(config.wsUrl, Env.pushGatewayUrl);
+    await ref.read(communityListProvider.notifier).syncSnapshot();
     // Relay lease replacement and gateway delegation are independent state
     // machines. Subscription changes advance only the kind-30350 generation;
     // the opaque grant remains reusable until its own authority changes.
     final notifier = ref.read(communityListProvider.notifier);
     await publishBuzzPushLeaseRecoverably(
-      reserveGeneration: () =>
-          notifier.reservePushLeaseGeneration(community.id),
+      reserveGeneration: () => notifier.reservePushLeaseGeneration(
+        community.id,
+        installationId: community.pushLeaseInstallationId,
+      ),
       publish: (leaseGeneration) => publishBuzzDevPushLeaseThroughRelay(
         grant: grant,
         leaseInstallationId: community.pushLeaseInstallationId,
@@ -393,6 +391,7 @@ class BuzzPushBootstrap extends HookConsumerWidget {
         community.id,
         subscriptions: desired,
         generation: leaseGeneration,
+        installationId: community.pushLeaseInstallationId,
       ),
     );
     return grant;

@@ -52,11 +52,18 @@ export function getTokenAuthStatus(): Promise<TokenAuthStatus> {
 export function loginWithGoogle(
   allowRestore = false,
   existingTokenAccount = false,
+  attemptId?: string,
 ): Promise<TokenAuthStatus> {
   return invokeTauri<TokenAuthStatus>("login_with_google", {
     allowRestore,
     ...(existingTokenAccount ? { existingTokenAccount: true } : {}),
+    ...(attemptId ? { attemptId } : {}),
   });
+}
+
+/** Cancel this attempt while waiting for the browser, without signing out. */
+export function cancelGoogleLogin(attemptId: string): Promise<boolean> {
+  return invokeTauri<boolean>("cancel_google_login", { attemptId });
 }
 
 /** Sign out of the current community (revokes this device's session). */

@@ -15,6 +15,8 @@ import 'community.dart';
 import 'community_storage.dart';
 import 'community_token_session.dart';
 
+const _unspecifiedInstallation = Object();
+
 final class CommunityTransitionCoordinator {
   final Map<Object, Future<void> Function()> _callbacks = {};
   Future<void>? _inFlight;
@@ -31,7 +33,7 @@ final class CommunityTransitionCoordinator {
   /// Cleanup alone is intentionally memoized by [run], but callers that also
   /// mutate credentials or the active community must queue the whole operation
   /// here so they cannot race after sharing the same cleanup future.
-  Future<void> runExclusive(Future<void> Function() operation) {
+  Future<T> runExclusive<T>(Future<T> Function() operation) {
     final result = _operationTail.then((_) => operation());
     _operationTail = result.then<void>(
       (_) {},
@@ -89,7 +91,10 @@ final communitySnapshotWriterProvider = Provider<CommunitySnapshotWriter>((
 });
 
 final _communitySnapshotSyncProvider = Provider<_CommunitySnapshotSync>((ref) {
-  return _CommunitySnapshotSync(ref.read(communitySnapshotWriterProvider));
+  return _CommunitySnapshotSync(
+    ref.read(communitySnapshotWriterProvider),
+    ref.read(communityStorageProvider).loadAll,
+  );
 });
 
 typedef CommunityPushLeaseDeactivator =
@@ -178,9 +183,10 @@ Future<void> _deactivateCommunityPushLease(
 }
 
 class _CommunitySnapshotSync {
-  _CommunitySnapshotSync(this._writer);
+  _CommunitySnapshotSync(this._writer, this._read);
 
   final CommunitySnapshotWriter _writer;
+  final Future<List<Community>> Function() _read;
   String? _lastSuccessfulSnapshot;
   Future<void> _mutationTail = Future.value();
 
@@ -196,8 +202,23 @@ class _CommunitySnapshotSync {
   Future<void> write(List<Community> communities) =>
       _serializeMutation(() => _write(communities));
 
+  Future<void> settleSignOut() => _serializeMutation(() async {
+    final communities = (await _read())
+        .where((community) => !community.signedOut)
+        .toList();
+    await registerBuzzPushCommunitySnapshotStrict(
+      communities,
+      settleFence: false,
+    );
+    _lastSuccessfulSnapshot = null;
+  });
+
   Future<void> _write(List<Community> communities) async {
-    final effectiveCommunities = communities;
+    // Read when the queued write executes: an enrollment or mutation captured
+    // before logout must never restore the old native signing-key snapshot.
+    final effectiveCommunities = (await _read())
+        .where((community) => !community.signedOut)
+        .toList();
     final contentFingerprint = effectiveCommunities
         .map(
           (community) => [
@@ -233,17 +254,18 @@ Future<void> syncStoredCommunitySnapshot(Ref ref) async {
   await syncCommunitySnapshot(ref, communities);
 }
 
+/// Acknowledges removal of signed-out accounts from native notification state.
+/// Errors propagate; persisted signed-out records make this retryable at startup.
+Future<void> settleSignedOutCommunitySnapshot(Ref ref) =>
+    ref.read(_communitySnapshotSyncProvider).settleSignOut();
+
 class CommunityListNotifier extends AsyncNotifier<List<Community>> {
-  Future<void> _pushMutationTail = Future.value();
   final Map<String, Future<void>> _tombstoneAttempts = {};
 
+  Future<void> syncSnapshot() => syncStoredCommunitySnapshot(ref);
+
   Future<T> _serializePushMutation<T>(Future<T> Function() operation) {
-    final result = _pushMutationTail.then((_) => operation());
-    _pushMutationTail = result.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    );
-    return result;
+    return ref.read(communityTransitionProvider).runExclusive(operation);
   }
 
   @override
@@ -256,35 +278,39 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
 
   /// Add a community. If one with the same relay URL already exists, update
   /// its credentials instead. Returns the effective community ID.
-  Future<String> addCommunity(Community community) async {
-    final storage = ref.read(communityStorageProvider);
-    final current = state.value ?? [];
+  Future<String> addCommunity(Community community) =>
+      ref.read(communityTransitionProvider).runExclusive(() async {
+        final storage = ref.read(communityStorageProvider);
+        final current = await storage.loadAll();
 
-    // If a community with the same relay URL exists, update its credentials
-    // instead of creating a duplicate entry.
-    final existingIndex = current.indexWhere(
-      (w) => w.relayUrl == community.relayUrl,
-    );
-    if (existingIndex >= 0) {
-      final existing = current[existingIndex];
-      final updated = existing.copyWith(
-        pubkey: community.pubkey,
-        nsec: community.nsec,
-      );
-      await storage.save(updated);
-      final updatedList = [...current];
-      updatedList[existingIndex] = updated;
-      state = AsyncData(updatedList);
-      await syncCommunitySnapshot(ref, updatedList);
-      return existing.id;
-    }
+        // If a community with the same relay URL exists, update its credentials
+        // instead of creating a duplicate entry.
+        final existingIndex = current.indexWhere(
+          (w) => w.relayUrl == community.relayUrl,
+        );
+        if (existingIndex >= 0) {
+          final existing = current[existingIndex];
+          if (existing.signedOut) {
+            throw StateError('Sign in to this community before changing it.');
+          }
+          final updated = existing.copyWith(
+            pubkey: community.pubkey,
+            nsec: community.nsec,
+          );
+          await storage.save(updated);
+          final updatedList = [...current];
+          updatedList[existingIndex] = updated;
+          state = AsyncData(updatedList);
+          await syncCommunitySnapshot(ref, updatedList);
+          return existing.id;
+        }
 
-    await storage.save(community);
-    final updatedList = [...current, community];
-    state = AsyncData(updatedList);
-    await syncCommunitySnapshot(ref, updatedList);
-    return community.id;
-  }
+        await storage.save(community);
+        final updatedList = [...current, community];
+        state = AsyncData(updatedList);
+        await syncCommunitySnapshot(ref, updatedList);
+        return community.id;
+      });
 
   /// Removes community [id]. A token community's device session is revoked
   /// on the relay first; when that fails (`TokenSessionException`) nothing
@@ -317,7 +343,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       final activeId = await storage.loadActiveId();
       final id = requestedId ?? activeId;
       if (id == null) return;
-      final current = state.value ?? await storage.loadAll();
+      final current = await storage.loadAll();
       final removedIndex = current.indexWhere(
         (community) => community.id == id,
       );
@@ -396,7 +422,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     List<BuzzPushSubscription> desired,
   ) => _serializePushMutation(() async {
     final storage = ref.read(communityStorageProvider);
-    final current = state.value ?? await storage.loadAll();
+    final current = await storage.loadAll();
     final index = current.indexWhere((community) => community.id == id);
     if (index < 0) return;
 
@@ -418,15 +444,21 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     await syncCommunitySnapshot(ref, updatedList);
   });
 
-  Future<int> reservePushLeaseGeneration(String id) {
+  Future<int> reservePushLeaseGeneration(
+    String id, {
+    Object? installationId = _unspecifiedInstallation,
+  }) {
     return _serializePushMutation(() async {
       final storage = ref.read(communityStorageProvider);
-      final current = state.value ?? await storage.loadAll();
+      final current = await storage.loadAll();
       final index = current.indexWhere((community) => community.id == id);
       if (index < 0) throw StateError('Push community is unavailable.');
 
       final community = current[index];
-      if (!community.pushNotificationsEnabled) {
+      if (community.signedOut ||
+          (installationId != _unspecifiedInstallation &&
+              community.pushLeaseInstallationId != installationId) ||
+          !community.pushNotificationsEnabled) {
         throw StateError('Push notifications are disabled.');
       }
       final cursor =
@@ -450,13 +482,19 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     String id, {
     required List<BuzzPushSubscription> subscriptions,
     required int generation,
+    Object? installationId = _unspecifiedInstallation,
   }) => _serializePushMutation(() async {
     final storage = ref.read(communityStorageProvider);
-    final current = state.value ?? await storage.loadAll();
+    final current = await storage.loadAll();
     final index = current.indexWhere((community) => community.id == id);
     if (index < 0) return false;
 
     final community = current[index];
+    if (community.signedOut ||
+        (installationId != _unspecifiedInstallation &&
+            community.pushLeaseInstallationId != installationId)) {
+      return false;
+    }
     final acceptedGeneration =
         community.pushSubscriptionState.acceptedGeneration ?? 0;
     final generationCursor =
@@ -485,7 +523,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     var shouldDeactivate = false;
     await _serializePushMutation(() async {
       final storage = ref.read(communityStorageProvider);
-      final current = state.value ?? await storage.loadAll();
+      final current = await storage.loadAll();
       final index = current.indexWhere((community) => community.id == id);
       if (index < 0) return;
 
@@ -557,7 +595,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     int? pendingGeneration;
     await _serializePushMutation(() async {
       final storage = ref.read(communityStorageProvider);
-      final current = state.value ?? await storage.loadAll();
+      final current = await storage.loadAll();
       final index = current.indexWhere((community) => community.id == id);
       if (index < 0) return;
       final community = current[index];
@@ -586,7 +624,11 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
         community,
         generation: generation,
       );
-      await _markPushLeaseTombstoneAccepted(id, generation);
+      await _markPushLeaseTombstoneAccepted(
+        id,
+        generation,
+        community.pushLeaseInstallationId,
+      );
       pushLeaseCleanupError.value = null;
     } catch (error, stackTrace) {
       reportPushLeaseCleanupError(error, stackTrace);
@@ -594,37 +636,43 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     }
   }
 
-  Future<void> _markPushLeaseTombstoneAccepted(String id, int generation) =>
-      _serializePushMutation(() async {
+  Future<void> _markPushLeaseTombstoneAccepted(
+    String id,
+    int generation,
+    String? installationId,
+  ) => _serializePushMutation(() async {
+    final storage = ref.read(communityStorageProvider);
+    final current = await storage.loadAll();
+    final index = current.indexWhere((community) => community.id == id);
+    if (index < 0) return;
+    final community = current[index];
+    if (community.pushLeaseInstallationId != installationId) return;
+    final updatedState = community.pushSubscriptionState.withAcceptedTombstone(
+      generation,
+    );
+    if (identical(updatedState, community.pushSubscriptionState)) return;
+    final updated = community.copyWith(pushSubscriptionState: updatedState);
+    await storage.save(updated);
+    final updatedList = [...current]..[index] = updated;
+    state = AsyncData(updatedList);
+    await syncCommunitySnapshot(ref, updatedList);
+  });
+
+  Future<void> renameCommunity(String id, String name) =>
+      ref.read(communityTransitionProvider).runExclusive(() async {
         final storage = ref.read(communityStorageProvider);
-        final current = state.value ?? await storage.loadAll();
-        final index = current.indexWhere((community) => community.id == id);
+        final current = await storage.loadAll();
+        final index = current.indexWhere((w) => w.id == id);
         if (index < 0) return;
-        final community = current[index];
-        final updatedState = community.pushSubscriptionState
-            .withAcceptedTombstone(generation);
-        if (identical(updatedState, community.pushSubscriptionState)) return;
-        final updated = community.copyWith(pushSubscriptionState: updatedState);
+
+        final updated = current[index].copyWith(name: name);
         await storage.save(updated);
-        final updatedList = [...current]..[index] = updated;
+
+        final updatedList = [...current];
+        updatedList[index] = updated;
         state = AsyncData(updatedList);
         await syncCommunitySnapshot(ref, updatedList);
       });
-
-  Future<void> renameCommunity(String id, String name) async {
-    final storage = ref.read(communityStorageProvider);
-    final current = state.value ?? [];
-    final index = current.indexWhere((w) => w.id == id);
-    if (index < 0) return;
-
-    final updated = current[index].copyWith(name: name);
-    await storage.save(updated);
-
-    final updatedList = [...current];
-    updatedList[index] = updated;
-    state = AsyncData(updatedList);
-    await syncCommunitySnapshot(ref, updatedList);
-  }
 }
 
 final communityListProvider =
@@ -644,8 +692,11 @@ final activeCommunityProvider = FutureProvider<Community?>((ref) async {
   // This projection can outlive the list it captured above. Never persist a
   // fallback here: a newer authentication may already have selected a community
   // absent from that list. Authentication owns durable active-ID repair.
-  return communities.firstWhere(
+  final active = communities.firstWhere(
     (community) => community.id == activeId,
     orElse: () => communities.first,
   );
+  return active.signedOut
+      ? active.copyWith(nsec: null, pushNotificationsEnabled: false)
+      : active;
 });

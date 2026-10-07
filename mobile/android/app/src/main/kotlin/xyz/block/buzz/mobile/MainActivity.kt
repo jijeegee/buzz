@@ -1,6 +1,7 @@
 package xyz.block.buzz.mobile
 
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -133,6 +134,29 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "buzz/auth_browser",
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "returnToApp") {
+                result.notImplemented()
+            } else {
+                try {
+                    // A Custom Tab callback can arrive in a separate task while
+                    // the original browser still covers this activity. Reuse this
+                    // task's existing Flutter activity without a global deep link.
+                    if (!hasWindowFocus()) {
+                        startActivity(Intent(this, MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        })
+                    }
+                    result.success(null)
+                } catch (error: Exception) {
+                    result.error("return_failed", "Return to Buzz manually.", null)
+                }
+            }
+        }
 
         huddleMediaPlugin = HuddleMediaPlugin(
             this,

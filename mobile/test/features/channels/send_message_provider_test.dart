@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
+import 'package:buzz/features/channels/message_quote.dart';
 import 'package:buzz/features/channels/send_message_provider.dart';
 import 'package:buzz/shared/relay/relay.dart';
 
@@ -216,6 +217,128 @@ void main() {
     await result;
   });
 
+  group('quote', () {
+    const quotedId =
+        'ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+    const quotedAuthor =
+        'FEDCBA9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+    const quote = QuoteTarget(
+      eventId: quotedId,
+      authorPubkey: quotedAuthor,
+      author: 'Alice',
+      excerpt: 'original',
+    );
+    const expectedTag = [
+      'q',
+      'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+      '',
+      'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',
+    ];
+
+    Future<NostrEvent> sendAndCapture({
+      String? parentEventId,
+      String? rootEventId,
+      List<List<String>> mediaTags = const [],
+    }) async {
+      final session = _PendingPublishRelaySession();
+      final send = _quoteTestSender(session);
+      final result = send(
+        channelId: _channelId,
+        content: 'quoting this',
+        mentionPubkeys: const [],
+        parentEventId: parentEventId,
+        rootEventId: rootEventId,
+        mediaTags: mediaTags,
+        quote: quote,
+      );
+      await session.published;
+      session.accept();
+      await result;
+      return session.event;
+    }
+
+    test('main-timeline quote adds exactly one q tag and no e tags', () async {
+      final event = await sendAndCapture();
+
+      expect(event.tags, [
+        ['h', _channelId],
+        expectedTag,
+      ]);
+      expect(event.tags.where((tag) => tag.first == 'e'), isEmpty);
+      expect(event.tags.where((tag) => tag.first == 'p'), isEmpty);
+    });
+
+    test('thread quote keeps the thread tags and adds the q tag', () async {
+      const root =
+          '1111111111111111111111111111111111111111111111111111111111111111';
+      const parent =
+          '2222222222222222222222222222222222222222222222222222222222222222';
+      final event = await sendAndCapture(
+        parentEventId: parent,
+        rootEventId: root,
+      );
+
+      expect(event.tags, [
+        ['h', _channelId],
+        ['e', root, '', 'root'],
+        ['e', parent, '', 'reply'],
+        expectedTag,
+      ]);
+    });
+
+    test('replaces any q tag smuggled in through media tags', () async {
+      final event = await sendAndCapture(
+        mediaTags: const [
+          ['q', 'other', '', 'other'],
+          ['emoji', 'wave', 'https://example.com/wave.png'],
+        ],
+      );
+
+      expect(event.tags, [
+        ['h', _channelId],
+        ['emoji', 'wave', 'https://example.com/wave.png'],
+        expectedTag,
+      ]);
+    });
+
+    test('without a quote no q tag is added', () async {
+      final session = _PendingPublishRelaySession();
+      final send = _quoteTestSender(session);
+      final result = send(
+        channelId: _channelId,
+        content: 'plain',
+        mentionPubkeys: const [],
+      );
+      await session.published;
+      session.accept();
+      await result;
+
+      expect(session.event.tags, [
+        ['h', _channelId],
+      ]);
+    });
+
+    test('rejects a malformed quote before publishing', () async {
+      final session = _PendingPublishRelaySession();
+      final send = _quoteTestSender(session);
+
+      await expectLater(
+        send(
+          channelId: _channelId,
+          content: 'bad quote',
+          mentionPubkeys: const [],
+          quote: const QuoteTarget(
+            eventId: 'not-hex',
+            authorPubkey: quotedAuthor,
+            author: 'Alice',
+            excerpt: '',
+          ),
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   test('cancels delivery after the active community changes', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -255,6 +378,19 @@ Channel _dmChannel(List<String> participantPubkeys) => Channel(
   participantPubkeys: participantPubkeys,
   isMember: true,
 );
+
+SendMessage _quoteTestSender(_PendingPublishRelaySession session) =>
+    SendMessage(
+      signedEventRelay: SignedEventRelay(
+        session: session,
+        nsec: nostr.Keys.generate().nsec,
+      ),
+      fetchMembers: (_) async => const [],
+      readUserCache: () => const {},
+      addLocalMessage: (_, _) {},
+      completeLocalMessage: (_, _) {},
+      removeLocalMessage: (_, _) {},
+    );
 
 ChannelMember _member(String pubkey, {String role = 'member'}) =>
     ChannelMember(pubkey: pubkey, role: role, joinedAt: DateTime(2025));

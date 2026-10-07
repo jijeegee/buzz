@@ -30,6 +30,8 @@ import 'thread_name_provider.dart';
 import 'thread_name_editor.dart';
 import 'channels_provider.dart';
 import 'compose_bar.dart';
+import 'composer_quote_chip.dart';
+import 'composer_quote_provider.dart';
 import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
 import 'day_divider.dart';
@@ -45,6 +47,8 @@ import 'message_actions.dart';
 import 'message_action_backdrop_state.dart';
 import 'message_long_press_region.dart';
 import 'message_content.dart';
+import 'message_quote.dart';
+import 'message_quote_header.dart';
 import 'reaction_row.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
@@ -113,6 +117,12 @@ class ThreadDetailPage extends HookConsumerWidget {
       return session.registerVisibleChannel(channelId);
     }, [channelId]);
     final sendMessage = ref.read(sendMessageProvider);
+    final quoteScope = ComposerQuoteScope(
+      channelId: channelId,
+      threadHeadId: threadHead.id,
+    );
+    // Captured per build so a send carries the quote shown when it started.
+    final pendingQuote = ref.watch(composerQuoteProvider(quoteScope));
     final localSendAnimations = ref.watch(
       localMessageSendAnimationProvider(channelId),
     );
@@ -937,6 +947,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                   restoreComposerFocus: () =>
                       restoreComposerFocus.value?.call(),
                   childrenByParent: childrenByParent,
+                  quoteScope: isMember && !isArchived ? quoteScope : null,
                 ),
               ),
               if (!isMember || isArchived)
@@ -971,6 +982,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                         channelId: channelId,
                         entries: threadTyping,
                       ),
+                      ComposerQuoteChip(scope: quoteScope),
                       ComposeBar(
                         channelId: channelId,
                         focusNode: composerFocusNode,
@@ -985,15 +997,29 @@ class ThreadDetailPage extends HookConsumerWidget {
                               content,
                               mentionPubkeys, {
                               mediaTags = const <List<String>>[],
-                            }) => sendMessage.call(
-                              channelId: channelId,
-                              content: content,
-                              mentionPubkeys: mentionPubkeys,
-                              channel: channel,
-                              parentEventId: threadHead.id,
-                              rootEventId: effectiveRootId,
-                              mediaTags: mediaTags,
-                            ),
+                            }) async {
+                              // Thread reply tags place the message; the
+                              // quote only adds a `q` reference.
+                              await sendMessage.call(
+                                channelId: channelId,
+                                content: content,
+                                mentionPubkeys: mentionPubkeys,
+                                channel: channel,
+                                parentEventId: threadHead.id,
+                                rootEventId: effectiveRootId,
+                                mediaTags: mediaTags,
+                                quote: pendingQuote,
+                              );
+                              if (pendingQuote != null && context.mounted) {
+                                ref
+                                    .read(
+                                      composerQuoteProvider(
+                                        quoteScope,
+                                      ).notifier,
+                                    )
+                                    .clearIf(pendingQuote);
+                              }
+                            },
                       ),
                     ],
                   ),

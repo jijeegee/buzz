@@ -100,11 +100,15 @@ test("Profile sections keep visible cards and aligned actions", async ({
 
   const signOut = page.getByTestId("settings-signout");
   const signOutCard = signOut.locator('[data-slot="settings-section-card"]');
+  await expect(signOutCard).not.toBeVisible();
+  await signOut.locator("summary").click();
   await expect(signOutCard).toBeVisible();
   await expect(
     signOutCard.getByRole("button", { name: "Delete my data" }),
   ).toBeVisible();
-  await expect(signOut.getByText("Sign out", { exact: true })).toHaveCount(1);
+  await expect(
+    signOut.getByText("Delete local data", { exact: true }),
+  ).toHaveCount(1);
   await expect(
     signOut.getByText("Sign out of Buzz", { exact: true }),
   ).toHaveCount(0);

@@ -12,6 +12,7 @@ class _MessageBubble extends HookConsumerWidget {
   final bool isArchived;
   final FocusNode? composerFocusNode;
   final VoidCallback? restoreComposerFocus;
+  final ComposerQuoteScope? quoteScope;
 
   const _MessageBubble({
     required this.message,
@@ -25,6 +26,7 @@ class _MessageBubble extends HookConsumerWidget {
     this.isArchived = false,
     this.composerFocusNode,
     this.restoreComposerFocus,
+    this.quoteScope,
   });
 
   @override
@@ -100,6 +102,9 @@ class _MessageBubble extends HookConsumerWidget {
       normalizedMentionPubkeys,
     );
 
+    final quoteTarget = quoteScope == null
+        ? null
+        : quoteTargetFor(message, author: displayName);
     void openMessageActions(MessageLongPressDetails details) {
       showMessageActions(
         context: context,
@@ -117,6 +122,14 @@ class _MessageBubble extends HookConsumerWidget {
         onPopoverDismissed: () => details.setSourceHidden(false),
         composerFocusNode: composerFocusNode,
         restoreComposerFocus: restoreComposerFocus,
+        onQuote: quoteTarget == null
+            ? null
+            : () {
+                ref
+                    .read(composerQuoteProvider(quoteScope!).notifier)
+                    .quote(quoteTarget);
+                restoreComposerFocus?.call();
+              },
       );
     }
 
@@ -245,6 +258,11 @@ class _MessageBubble extends HookConsumerWidget {
                                     ],
                                   ),
                                 ),
+                              MessageQuoteHeader(
+                                channelId: currentChannelId,
+                                tags: message.tags,
+                                loadedMessages: allMessages,
+                              ),
                               ReadAloudMessage(
                                 messageId: message.id,
                                 content: message.content,

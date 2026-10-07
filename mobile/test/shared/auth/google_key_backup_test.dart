@@ -99,6 +99,40 @@ Future<TokenSessionController> signedInSession({FakeAuthServer? server}) async {
 
 void main() {
   test(
+    'signed-out account never links its retained key to an absent Google backup',
+    () async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      await storage.save(
+        Community.create(
+          name: 'Saved',
+          relayUrl: origin,
+          pubkey: keys.public,
+          nsec: keys.nsec,
+          googleBackupAccountId: account,
+        ).copyWith(signedOut: true),
+      );
+      final server = BackupServer();
+      final service = GoogleKeyBackupService(
+        origin: origin,
+        client: server.client,
+        session: await signedInSession(),
+        communities: storage,
+        pending: PendingBackupKeyStore(storage: FakeSecureStorage()),
+        generateKeys: () =>
+            throw StateError('Must not generate on reauthentication'),
+      );
+      await expectLater(service.resolve(), throwsA(isA<KeyBackupException>()));
+      expect(server.proofs, isEmpty);
+      expect((await storage.loadAll()).single.nsec, keys.nsec);
+      server.secret = keys.secret;
+      final restored = await service.resolve();
+      expect(restored.pubkey, keys.public);
+      // Only the guarded auth commit, not restoration itself, clears logout.
+      expect((await storage.loadAll()).single.signedOut, isTrue);
+    },
+  );
+  test(
     'mobile-first upload and desktop-first restore share the exact wire key',
     () async {
       // Public secp256k1 test vector shared with Rust resolve_backup tests.

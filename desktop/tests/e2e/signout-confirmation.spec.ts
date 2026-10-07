@@ -17,6 +17,8 @@ async function openSignOutDialog(page: Page) {
   await openSettings(page, "profile");
   const section = page.getByTestId("settings-signout");
   await section.scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("signout-open-dialog")).not.toBeVisible();
+  await section.locator("summary").click();
   await page.getByTestId("signout-open-dialog").click();
   await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 5_000 });
 }

@@ -19,6 +19,9 @@ class _MessageList extends HookConsumerWidget {
   final FocusNode? composerFocusNode;
   final VoidCallback? restoreComposerFocus;
 
+  /// The main composer that "Quote" fills; null when the channel can't send.
+  final ComposerQuoteScope? quoteScope;
+
   const _MessageList({
     required this.entries,
     required this.allMessages,
@@ -37,6 +40,7 @@ class _MessageList extends HookConsumerWidget {
     required this.composerBottomInset,
     this.composerFocusNode,
     this.restoreComposerFocus,
+    this.quoteScope,
   });
 
   @override
@@ -860,6 +864,7 @@ class _MessageList extends HookConsumerWidget {
                             isArchived: isArchived,
                             composerFocusNode: composerFocusNode,
                             restoreComposerFocus: restoreComposerFocus,
+                            quoteScope: quoteScope,
                           ),
                           if (entry.summary != null)
                             _ThreadSummaryRow(
