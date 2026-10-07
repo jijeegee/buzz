@@ -2116,10 +2116,20 @@ fn handle_compact_session_control(
     ctx: &Arc<PromptContext>,
     observer: Option<&observer::ObserverHandle>,
 ) {
-    let Some(scope) = compact_target_scope(payload) else {
+    let Some(mut scope) = compact_target_scope(payload) else {
         tracing::warn!("observer compact_session control frame missing valid target");
         return;
     };
+    // Under main-and-threads a channel's unthreaded session is its `Main`
+    // scope; only DMs keep `Conversation`. The frame cannot say which, so a
+    // null root targets `Main` unless the `Conversation` scope has an owner.
+    if let scope::SessionScope::Conversation { channel_id } = scope {
+        if ctx.session_policy == scope::SessionPolicy::MainAndThreads
+            && !pool.has_session_owner(&scope)
+        {
+            scope = scope::SessionScope::Main { channel_id };
+        }
+    }
     let request_id = payload
         .get("requestId")
         .and_then(|value| value.as_str())
@@ -7393,6 +7403,37 @@ mod owner_control_command_tests {
             assert!(queue.is_scope_in_flight(&scope));
             pool.join_set.abort_all();
         }
+    }
+
+    #[tokio::test]
+    async fn compact_session_control_targets_main_scope_under_main_and_threads() {
+        let ch = Uuid::new_v4();
+        let payload = serde_json::json!({
+            "type": "compact_session", "channelId": ch.to_string(), "requestId": "req-3",
+        });
+        let mut ctx = pool::tests::make_prompt_context_no_owner();
+        ctx.session_policy = scope::SessionPolicy::MainAndThreads;
+        let ctx = Arc::new(ctx);
+
+        // A channel's unthreaded session lives in its `Main` scope.
+        let main = scope::SessionScope::Main { channel_id: ch };
+        let observer = observer::ObserverHandle::in_process();
+        let mut queue = EventQueue::new(DedupMode::Queue);
+        let mut pool = idle_owner_pool(&main, compact_test_agent(&main, true).await);
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+        assert_eq!(compact_statuses(&observer), ["started"]);
+        assert!(queue.is_scope_in_flight(&main));
+        pool.join_set.abort_all();
+
+        // A DM keeps its `Conversation` scope under the same policy.
+        let dm = scope::SessionScope::Conversation { channel_id: ch };
+        let observer = observer::ObserverHandle::in_process();
+        let mut queue = EventQueue::new(DedupMode::Queue);
+        let mut pool = idle_owner_pool(&dm, compact_test_agent(&dm, true).await);
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+        assert_eq!(compact_statuses(&observer), ["started"]);
+        assert!(queue.is_scope_in_flight(&dm));
+        pool.join_set.abort_all();
     }
 
     #[tokio::test]

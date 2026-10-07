@@ -1184,6 +1184,11 @@ impl AgentPool {
             .find(|agent| self.agent_owns_scope(agent, scope))
     }
 
+    /// Whether `scope` has a recorded session owner, idle or checked out.
+    pub(crate) fn has_session_owner(&self, scope: &SessionScope) -> bool {
+        self.session_owners.contains_key(scope)
+    }
+
     /// Whether `scope` has a recorded session owner that is currently checked
     /// out on a task.
     pub(crate) fn scope_owner_busy(&self, scope: &SessionScope) -> bool {
