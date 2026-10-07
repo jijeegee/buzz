@@ -2120,11 +2120,11 @@ fn handle_compact_session_control(
         tracing::warn!("observer compact_session control frame missing valid target");
         return;
     };
-    // Under main-and-threads a channel's unthreaded session is its `Main`
+    // Under the thread policy a channel's unthreaded session is its `Main`
     // scope; only DMs keep `Conversation`. The frame cannot say which, so a
     // null root targets `Main` unless the `Conversation` scope has an owner.
     if let scope::SessionScope::Conversation { channel_id } = scope {
-        if ctx.session_policy == scope::SessionPolicy::MainAndThreads
+        if ctx.session_policy == scope::SessionPolicy::Thread
             && !pool.has_session_owner(&scope)
         {
             scope = scope::SessionScope::Main { channel_id };
@@ -7406,13 +7406,13 @@ mod owner_control_command_tests {
     }
 
     #[tokio::test]
-    async fn compact_session_control_targets_main_scope_under_main_and_threads() {
+    async fn compact_session_control_targets_main_scope_under_thread_policy() {
         let ch = Uuid::new_v4();
         let payload = serde_json::json!({
             "type": "compact_session", "channelId": ch.to_string(), "requestId": "req-3",
         });
         let mut ctx = pool::tests::make_prompt_context_no_owner();
-        ctx.session_policy = scope::SessionPolicy::MainAndThreads;
+        ctx.session_policy = scope::SessionPolicy::Thread;
         let ctx = Arc::new(ctx);
 
         // A channel's unthreaded session lives in its `Main` scope.
