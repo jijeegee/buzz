@@ -1158,6 +1158,36 @@ impl AgentPool {
         idx.map(|i| self.agents[i].take().unwrap())
     }
 
+    /// Claim the idle worker that owns `scope`'s live session, and only that
+    /// worker. Used for harness-owned work that must run on that exact
+    /// session (owner-requested compaction); never falls back to another
+    /// worker, which would have no session to act on.
+    pub(crate) fn try_claim_scope_owner(&mut self, scope: &SessionScope) -> Option<OwnedAgent> {
+        let idx = self.agents.iter().position(|slot| {
+            slot.as_ref()
+                .is_some_and(|agent| self.agent_owns_scope(agent, scope))
+        })?;
+        self.agents[idx].take()
+    }
+
+    /// The idle worker that owns `scope`'s live session, without claiming it.
+    pub(crate) fn idle_scope_owner(&self, scope: &SessionScope) -> Option<&OwnedAgent> {
+        self.agents
+            .iter()
+            .flatten()
+            .find(|agent| self.agent_owns_scope(agent, scope))
+    }
+
+    /// Whether `scope` has a recorded session owner that is currently checked
+    /// out on a task.
+    pub(crate) fn scope_owner_busy(&self, scope: &SessionScope) -> bool {
+        self.session_owners.get(scope).is_some_and(|owner| {
+            self.task_map
+                .values()
+                .any(|meta| meta.agent_index == owner.agent_index)
+        })
+    }
+
     /// Return an agent to its slot after a task completes.
     pub fn return_agent(&mut self, mut agent: OwnedAgent) {
         let stale_scopes: Vec<SessionScope> = agent
@@ -1180,6 +1210,16 @@ impl AgentPool {
             .state
             .scope_owner_generations
             .retain(|scope, _| live_scopes.contains(scope));
+        let live_sessions: HashSet<&str> = agent
+            .state
+            .sessions
+            .values()
+            .chain(agent.state.heartbeat_session.as_ref())
+            .map(String::as_str)
+            .collect();
+        agent
+            .acp
+            .retain_context_usage(|session_id| live_sessions.contains(session_id));
         let idx = agent.index;
         if self.agents[idx].is_some() {
             // This is a bug: two tasks returned the same agent index. Log it
@@ -2597,6 +2637,227 @@ fn send_prompt_result(
     });
 }
 
+/// Wall-clock cap for one `/compact` run. Compaction is a single summarising
+/// model call; anything longer means the adapter is stuck.
+pub(crate) const COMPACT_MAX_DURATION: Duration = Duration::from_secs(300);
+
+/// Prompt sent to compact a session. ACP adapters that advertise the
+/// `compact` slash command (claude-agent-acp) handle it natively.
+const COMPACT_PROMPT: &str = "/compact";
+
+/// Owner-requested compaction of one scope's live session.
+///
+/// Runs `/compact` on the worker that owns `scope`, then reports the terminal
+/// `control_result` (`completed` / `failed` / `timeout`) and returns the
+/// worker through the normal [`PromptResult`] path so the main loop releases
+/// the scope's queue hold. The adapter's post-compaction `usage_update`
+/// refreshes the owner's context gauge.
+pub async fn run_compact_task(
+    mut agent: OwnedAgent,
+    scope: SessionScope,
+    request_id: Option<String>,
+    ctx: Arc<PromptContext>,
+    result_tx: mpsc::UnboundedSender<PromptResult>,
+    turn_id: String,
+) {
+    let channel_id = scope.channel_id();
+    let thread_root = scope.root_event_id().map(str::to_owned);
+    let session_id = agent.state.sessions.get(&scope).cloned();
+    agent.acp.set_observer_context(observer::context_for_turn(
+        Some(channel_id),
+        session_id.clone(),
+        turn_id.clone(),
+        chrono::Utc::now().to_rfc3339(),
+    ));
+    agent.acp.set_observer_thread_root(thread_root.clone());
+    let source = PromptSource::Channel(scope);
+
+    let (status, outcome) = match session_id.as_deref() {
+        // Ownership is checked before claiming; a missing session here means
+        // it was invalidated in between. Nothing ran, the worker is healthy.
+        None => ("no_session", PromptOutcome::Ok(StopReason::EndTurn)),
+        Some(session_id) => {
+            let result = agent
+                .acp
+                .session_prompt_with_idle_timeout(
+                    session_id,
+                    COMPACT_PROMPT,
+                    ctx.idle_timeout,
+                    COMPACT_MAX_DURATION,
+                )
+                .await;
+            let (status, outcome, stop) =
+                compact_outcome(&mut agent, session_id, &ctx, result).await;
+            // Compaction is a real model call; account for it like a turn so
+            // its cost is not folded into the session's next turn.
+            let usage = agent.acp.take_turn_usage();
+            publish_agent_turn_metric(
+                &ctx,
+                usage,
+                Some(channel_id),
+                session_id,
+                &turn_id,
+                Some(stop),
+            )
+            .await;
+            (status, outcome)
+        }
+    };
+
+    tracing::info!(
+        target: "pool::session",
+        agent = agent.index,
+        status,
+        "compact_session finished for {source:?}"
+    );
+    if let Some(observer) = agent.acp.observer_handle() {
+        observer.emit(
+            "control_result",
+            agent.acp.observer_agent_index(),
+            &observer::context_for(Some(channel_id), None, None),
+            compact_result_payload(status, request_id.as_deref(), thread_root.as_deref()),
+        );
+    }
+    send_prompt_result(&result_tx, &turn_id, agent, source, outcome, None);
+}
+
+/// Map a `/compact` prompt result to its reported status, the pool outcome
+/// that decides the worker's fate, and the turn-metric stop reason.
+async fn compact_outcome(
+    agent: &mut OwnedAgent,
+    session_id: &str,
+    ctx: &PromptContext,
+    result: Result<StopReason, AcpError>,
+) -> (
+    &'static str,
+    PromptOutcome,
+    buzz_core::agent_turn_metric::StopReason,
+) {
+    use buzz_core::agent_turn_metric::StopReason as MetricStop;
+    match result {
+        Ok(stop_reason) => (
+            "completed",
+            PromptOutcome::Ok(stop_reason),
+            MetricStop::EndTurn,
+        ),
+        Err(AcpError::IdleTimeout(_)) => {
+            tracing::warn!(
+                target: "pool::prompt",
+                "compact idle timeout — cancelling session {session_id}"
+            );
+            // A clean cancel leaves the session usable; anything else means
+            // the process is uncertain and the pool respawns it.
+            let outcome = match agent
+                .acp
+                .cancel_with_cleanup(session_id, ctx.idle_timeout)
+                .await
+            {
+                Ok(_) => PromptOutcome::Cancelled,
+                Err(AcpError::AgentExited) => {
+                    agent.state.invalidate_all();
+                    PromptOutcome::AgentExited
+                }
+                Err(_) => PromptOutcome::Timeout(TimeoutKind::Idle),
+            };
+            ("timeout", outcome, MetricStop::Cancelled)
+        }
+        Err(AcpError::HardTimeout { .. }) => {
+            agent.state.invalidate_all();
+            (
+                "timeout",
+                PromptOutcome::Timeout(TimeoutKind::Hard {
+                    recently_active: false,
+                }),
+                MetricStop::Error,
+            )
+        }
+        Err(AcpError::AgentExited) => {
+            agent.state.invalidate_all();
+            ("failed", PromptOutcome::AgentExited, MetricStop::Error)
+        }
+        Err(error) => ("failed", PromptOutcome::Error(error), MetricStop::Error),
+    }
+}
+
+/// A `compact_session` request is stale when its expected reading drifted
+/// from the live one by more than this many tokens, unless
+/// [`COMPACT_STALE_WINDOW_PERCENT`] of the window is larger.
+pub(crate) const COMPACT_STALE_MIN_TOKENS: u64 = 20_000;
+
+/// Share of the context window (percent) a `compact_session` expectation may
+/// drift from the live reading before the request is refused as stale.
+pub(crate) const COMPACT_STALE_WINDOW_PERCENT: u64 = 10;
+
+/// Whether the reading an owner confirmed no longer describes the live
+/// session: a different session id, or `used` moved by more than
+/// `max(10% of size, 20_000)` tokens. Absent expectations (older desktops)
+/// and sessions without a reading never count as stale.
+pub(crate) fn compact_expectation_is_stale(
+    expected_session_id: Option<&str>,
+    expected_used: Option<u64>,
+    session_id: &str,
+    reading: Option<&crate::acp::ContextUsageReading>,
+) -> bool {
+    if expected_session_id.is_some_and(|expected| expected != session_id) {
+        return true;
+    }
+    match (expected_used, reading) {
+        (Some(expected), Some(reading)) => {
+            let threshold = (reading.size.saturating_mul(COMPACT_STALE_WINDOW_PERCENT) / 100)
+                .max(COMPACT_STALE_MIN_TOKENS);
+            expected.abs_diff(reading.used) > threshold
+        }
+        _ => false,
+    }
+}
+
+/// The live context reading of `agent`'s session for `scope`, as reported to
+/// owners in `control_result` frames. `None` without a session or a reading.
+pub(crate) fn scope_context_reading(
+    agent: &OwnedAgent,
+    scope: &SessionScope,
+) -> Option<serde_json::Value> {
+    let session_id = agent.state.sessions.get(scope)?;
+    let reading = agent.acp.context_usage(session_id)?;
+    Some(serde_json::json!({
+        "sessionId": session_id,
+        "used": reading.used,
+        "size": reading.size,
+        "compactSupported": agent.acp.compact_supported(),
+        "updatedAt": reading.updated_at,
+    }))
+}
+
+/// `control_result` payload answering a `query_context_usage` request.
+pub(crate) fn context_query_result_payload(
+    status: &str,
+    request_id: Option<&str>,
+    thread_root: Option<&str>,
+    reading: Option<serde_json::Value>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "type": "query_context_usage",
+        "status": status,
+        "requestId": request_id,
+        "threadRootEventId": thread_root,
+        "reading": reading,
+    })
+}
+
+/// `control_result` payload for a `compact_session` request.
+pub(crate) fn compact_result_payload(
+    status: &str,
+    request_id: Option<&str>,
+    thread_root: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "type": "compact_session",
+        "status": status,
+        "requestId": request_id,
+        "threadRootEventId": thread_root,
+    })
+}
+
 /// Core async function spawned for each prompt.
 ///
 /// Lifecycle:
@@ -2634,6 +2895,9 @@ pub async fn run_prompt_task(
         turn_id.clone(),
         turn_started_at.clone(),
     ));
+    agent
+        .acp
+        .set_observer_thread_root(observer_thread_root.map(str::to_owned));
     let triggering_event_ids: Vec<String> = batch
         .as_ref()
         .map(|b| b.events.iter().map(|be| be.event.id.to_hex()).collect())
@@ -6165,7 +6429,7 @@ async fn clear_reactions(rest: crate::relay::RestClient, event_ids: Vec<String>)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
     use serde_json::json;
@@ -7703,6 +7967,179 @@ mod tests {
             timestamp: "2026-08-09T00:00:00Z".into(),
             content: content.into(),
         }
+    }
+
+    #[test]
+    fn compact_expectation_staleness_uses_session_and_drift_threshold() {
+        let reading = |used, size| crate::acp::ContextUsageReading {
+            used,
+            size,
+            updated_at: String::new(),
+        };
+        let small_window = reading(50_000, 100_000);
+        let large_window = reading(500_000, 1_000_000);
+        let stale = compact_expectation_is_stale;
+        // A different session is always stale.
+        assert!(stale(
+            Some("old"),
+            Some(50_000),
+            "live",
+            Some(&small_window)
+        ));
+        // Small windows use the 20k floor; large ones 10% of the window.
+        assert!(!stale(
+            Some("live"),
+            Some(70_000),
+            "live",
+            Some(&small_window)
+        ));
+        assert!(stale(None, Some(70_001), "live", Some(&small_window)));
+        assert!(!stale(None, Some(400_000), "live", Some(&large_window)));
+        assert!(stale(None, Some(399_999), "live", Some(&large_window)));
+        // Missing expectations or no live reading never block compaction.
+        assert!(!stale(None, None, "live", Some(&small_window)));
+        assert!(!stale(Some("live"), None, "live", Some(&small_window)));
+        assert!(!stale(Some("live"), Some(0), "live", None));
+    }
+
+    #[tokio::test]
+    async fn return_agent_prunes_context_readings_to_live_sessions() {
+        let live = thread_scope(Uuid::new_v4(), &"a".repeat(64));
+        let acp = AcpClient::spawn("bash", &["-c".into(), "exec sleep 30".into()], &[], false)
+            .await
+            .expect("spawn ACP");
+        let mut agent = OwnedAgent {
+            index: 0,
+            acp,
+            state: SessionState::default(),
+            model_capabilities: None,
+            desired_model: None,
+            model_overridden: false,
+            desired_model_request_id: None,
+            desired_model_pending_ack: false,
+            startup_effort: None,
+            agent_name: "prune-test-agent".into(),
+            goose_system_prompt_supported: None,
+            protocol_version: 1,
+        };
+        let reading = crate::acp::ContextUsageReading {
+            used: 1,
+            size: 10,
+            updated_at: String::new(),
+        };
+        agent.state.sessions.insert(live.clone(), "live".into());
+        agent
+            .acp
+            .set_context_usage_for_test("live", reading.clone());
+        agent.acp.set_context_usage_for_test("gone", reading);
+        let mut pool = AgentPool::from_slots(vec![None]);
+        let generation = pool.record_scope_owner(live.clone(), 0);
+        agent
+            .state
+            .set_scope_owner_generation(live.clone(), generation);
+
+        pool.return_agent(agent);
+
+        let agent = pool.idle_scope_owner(&live).expect("idle owner");
+        assert!(agent.acp.context_usage("live").is_some());
+        assert!(agent.acp.context_usage("gone").is_none());
+    }
+
+    #[tokio::test]
+    async fn run_compact_task_sends_compact_and_reports_completion() {
+        let channel_id = Uuid::new_v4();
+        let root = "c".repeat(64);
+        let scope = thread_scope(channel_id, &root);
+        let script = r#"IFS= read -r line
+printf '%s
+' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"live-session","update":{"sessionUpdate":"usage_update","used":12000,"size":200000}}}'
+printf '%s
+' '{"jsonrpc":"2.0","id":0,"result":{"stopReason":"end_turn"}}'"#
+            .to_string();
+        let acp = AcpClient::spawn("bash", &["-c".into(), script], &[], false)
+            .await
+            .expect("spawn compact ACP");
+        let mut agent = OwnedAgent {
+            index: 0,
+            acp,
+            state: SessionState::default(),
+            model_capabilities: None,
+            desired_model: None,
+            model_overridden: false,
+            desired_model_request_id: None,
+            desired_model_pending_ack: false,
+            startup_effort: None,
+            agent_name: "compact-test-agent".into(),
+            goose_system_prompt_supported: None,
+            protocol_version: 1,
+        };
+        agent
+            .state
+            .sessions
+            .insert(scope.clone(), "live-session".into());
+        let observer = observer::ObserverHandle::in_process();
+        agent.acp.set_observer(Some(observer.clone()), 0);
+
+        let (result_tx, mut result_rx) = mpsc::unbounded_channel();
+        run_compact_task(
+            agent,
+            scope.clone(),
+            Some("req-1".into()),
+            Arc::new(make_prompt_context_no_owner()),
+            result_tx,
+            "compact-turn".into(),
+        )
+        .await;
+        let result = result_rx.recv().await.expect("compact result");
+        assert!(matches!(
+            result.outcome,
+            PromptOutcome::Ok(StopReason::EndTurn)
+        ));
+        assert!(result.batch.is_none());
+        assert_eq!(result.source.scope(), Some(&scope));
+        assert_eq!(
+            result.agent.state.sessions.get(&scope).map(String::as_str),
+            Some("live-session"),
+            "compaction keeps the session"
+        );
+
+        let events = observer.snapshot();
+        let prompt = events
+            .iter()
+            .find(|event| event.kind == "acp_write")
+            .expect("prompt written to the adapter");
+        assert_eq!(prompt.payload["method"], "session/prompt");
+        assert_eq!(prompt.payload["params"]["sessionId"], "live-session");
+        assert_eq!(prompt.payload["params"]["prompt"][0]["text"], "/compact");
+        let usage = events
+            .iter()
+            .find(|event| event.kind == "context_usage")
+            .expect("post-compaction context_usage");
+        assert_eq!(usage.payload["used"], 12000);
+        assert_eq!(usage.payload["threadRootEventId"], root.as_str());
+        assert_eq!(
+            result
+                .agent
+                .acp
+                .context_usage("live-session")
+                .map(|reading| (reading.used, reading.size)),
+            Some((12000, 200000)),
+            "the harness keeps the post-compaction reading for owner queries"
+        );
+        assert_eq!(usage.channel_id, Some(channel_id.to_string()));
+        let done = events
+            .iter()
+            .find(|event| event.kind == "control_result")
+            .expect("terminal control_result");
+        assert_eq!(
+            done.payload,
+            json!({
+                "type": "compact_session",
+                "status": "completed",
+                "requestId": "req-1",
+                "threadRootEventId": root,
+            })
+        );
     }
 
     #[tokio::test]
@@ -11403,7 +11840,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         );
     }
 
-    pub(super) fn make_prompt_context_no_owner() -> PromptContext {
+    pub(crate) fn make_prompt_context_no_owner() -> PromptContext {
         let agent_keys = nostr::Keys::generate();
         make_prompt_context_impl(&agent_keys, None)
     }

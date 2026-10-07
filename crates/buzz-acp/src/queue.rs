@@ -541,6 +541,21 @@ impl EventQueue {
             .min()
     }
 
+    /// Mark `scope` in flight for harness-owned work that carries no batch
+    /// (owner-requested session compaction), so events arriving meanwhile
+    /// wait in the queue instead of forking a sibling session. Released by
+    /// [`mark_complete`](Self::mark_complete) like any dispatched batch.
+    /// Returns `false` when the scope is already in flight.
+    pub(crate) fn mark_scope_in_flight(&mut self, scope: SessionScope) -> bool {
+        if !self.in_flight_scopes.insert(scope.clone()) {
+            return false;
+        }
+        self.in_flight_deadlines
+            .insert(scope.clone(), Instant::now() + self.in_flight_deadline);
+        self.in_flight_batch_sizes.insert(scope, 0);
+        true
+    }
+
     /// Mark the prompt for `channel_id` as complete.
     ///
     /// Removes the channel from `in_flight_channels` and `in_flight_deadlines`.

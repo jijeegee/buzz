@@ -860,6 +860,11 @@ export function UserProfilePanel({
           isLoading={channelsQuery.isLoading}
           onAddToChannel={() => setAddToChannelOpen(true)}
           onOpenChannel={handleOpenChannel}
+          sessionAgent={
+            isBot && viewerIsOwner && effectivePubkey
+              ? { pubkey: effectivePubkey, name: displayName }
+              : null
+          }
         />
       ) : null}
       {view === "logs" ? (

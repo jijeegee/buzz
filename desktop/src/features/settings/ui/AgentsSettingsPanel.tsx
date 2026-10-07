@@ -1,5 +1,9 @@
 import { AgentDefaultsSettingsCard } from "./AgentDefaultsSettingsCard";
 import {
+  setContextGaugeEnabled,
+  useContextGaugeEnabled,
+} from "@/features/agents/lib/contextGaugePreference";
+import {
   setKeepMentionedAgentsPinned,
   useKeepMentionedAgentsPinned,
 } from "@/features/messages/lib/autoPinMentionedAgentsPreference";
@@ -16,6 +20,7 @@ import { SettingsSectionHeader } from "./SettingsSectionHeader";
 
 export function AgentsSettingsPanel() {
   const automaticallyMentionAgents = useKeepMentionedAgentsPinned();
+  const contextGaugeEnabled = useContextGaugeEnabled();
 
   return (
     <section className="min-w-0" data-testid="settings-agents">
@@ -49,6 +54,28 @@ export function AgentsSettingsPanel() {
             />
           </SettingsOptionRow>
           <ChannelRoutingSummaryRow />
+          <SettingsOptionRow data-testid="settings-context-gauge">
+            <div className="min-w-0">
+              <label
+                className="font-medium text-foreground"
+                htmlFor="settings-context-gauge-switch"
+              >
+                Show context gauge
+              </label>
+              <p
+                className="mt-0.5 text-sm text-muted-foreground/70"
+                data-settings-subcopy
+              >
+                Show each session's context usage on agent avatars, with Compact
+              </p>
+            </div>
+            <Switch
+              aria-label="Show context gauge"
+              checked={contextGaugeEnabled}
+              id="settings-context-gauge-switch"
+              onCheckedChange={setContextGaugeEnabled}
+            />
+          </SettingsOptionRow>
         </SettingsOptionGroup>
         <PreventSleepSettingsCard />
         <HarnessesSettingsPanel />
