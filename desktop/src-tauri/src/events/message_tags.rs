@@ -4,6 +4,8 @@ use super::check_pubkey;
 
 const MAX_THREAD_ROOT_EXCERPT_CHARS: usize = 64;
 const SENT_FROM_THREAD_TAG: &str = "buzz:sent-from-thread";
+const QUOTE_TAG: &str = "q";
+const MAX_QUOTE_RELAY_HINT_BYTES: usize = 2048;
 const AGENT_ADDRESS_MENTION_MARKER: &str = "agent-address";
 const AUTO_ROUTE_MENTION_MARKER: &str = "auto-route";
 /// An owner `@mention` in a routed channel: rendered, but with no `p` tag, so
@@ -117,6 +119,42 @@ pub(super) fn append_sent_from_thread_tag(
     Ok(())
 }
 
+/// NIP-18 quote reference: exactly `["q", <event id hex>, <relay url or "">,
+/// <author pubkey hex>]`. Only the `q` name is accepted, so this path cannot
+/// forge placement (`e`), routing (`h`), or notification (`p`) tags.
+pub(super) fn append_quote_tag(
+    quote_tag: Option<&[String]>,
+    tags: &mut Vec<Tag>,
+) -> Result<(), String> {
+    let Some(quote_tag) = quote_tag else {
+        return Ok(());
+    };
+    if quote_tag.len() != 4 || quote_tag[0] != QUOTE_TAG {
+        return Err("invalid quote tag shape".into());
+    }
+    let event_id = EventId::from_hex(quote_tag[1].trim())
+        .map_err(|_| "quote tag has invalid event ID")?
+        .to_hex();
+    let relay_hint = quote_tag[2].trim();
+    if !relay_hint.is_empty()
+        && (!(relay_hint.starts_with("wss://") || relay_hint.starts_with("ws://"))
+            || relay_hint.len() > MAX_QUOTE_RELAY_HINT_BYTES
+            || relay_hint
+                .chars()
+                .any(|c| c.is_control() || c.is_whitespace()))
+    {
+        return Err("quote tag has invalid relay hint".into());
+    }
+    let author = quote_tag[3].trim();
+    check_pubkey(author)?;
+    let author = author.to_ascii_lowercase();
+    tags.push(
+        Tag::parse([QUOTE_TAG, event_id.as_str(), relay_hint, author.as_str()])
+            .map_err(|e| format!("invalid quote tag: {e}"))?,
+    );
+    Ok(())
+}
+
 /// Validate and append imeta tags. Rejects any tag whose first element is not "imeta"
 /// to prevent injection of arbitrary tags (e.g., forged "h", "e", or "p" tags).
 pub(super) fn imeta_tags(media_tags: &[Vec<String>], tags: &mut Vec<Tag>) -> Result<(), String> {
@@ -226,5 +264,58 @@ mod tests {
             "not-an-event-id".to_string(),
         ];
         assert!(append_sent_from_thread_tag(Some(&invalid_root_tag), &mut Vec::new()).is_err());
+    }
+
+    fn quote(parts: [&str; 4]) -> Vec<String> {
+        parts.iter().map(|part| part.to_string()).collect()
+    }
+
+    #[test]
+    fn quote_tag_is_normalized_nip18_shape() {
+        let mut tags = Vec::new();
+        append_quote_tag(
+            Some(&quote([
+                "q",
+                &ROOT_HEX.to_ascii_uppercase(),
+                "",
+                &PUBKEY.to_ascii_uppercase(),
+            ])),
+            &mut tags,
+        )
+        .unwrap();
+        assert_eq!(tags[0].as_slice(), &["q", ROOT_HEX, "", PUBKEY]);
+
+        let mut tags = Vec::new();
+        append_quote_tag(
+            Some(&quote(["q", ROOT_HEX, "wss://relay.example", PUBKEY])),
+            &mut tags,
+        )
+        .unwrap();
+        assert_eq!(
+            tags[0].as_slice(),
+            &["q", ROOT_HEX, "wss://relay.example", PUBKEY]
+        );
+
+        append_quote_tag(None, &mut tags).unwrap();
+        assert_eq!(tags.len(), 1);
+    }
+
+    #[test]
+    fn quote_tag_rejects_forged_or_malformed_input() {
+        for bad in [
+            quote(["e", ROOT_HEX, "", PUBKEY]),
+            quote(["p", PUBKEY, "", PUBKEY]),
+            quote(["q", "not-an-event-id", "", PUBKEY]),
+            quote(["q", ROOT_HEX, "https://relay.example", PUBKEY]),
+            quote(["q", ROOT_HEX, "wss://relay example", PUBKEY]),
+            quote(["q", ROOT_HEX, "", "short"]),
+        ] {
+            assert!(
+                append_quote_tag(Some(&bad), &mut Vec::new()).is_err(),
+                "{bad:?}"
+            );
+        }
+        let three = vec!["q".to_string(), ROOT_HEX.to_string(), String::new()];
+        assert!(append_quote_tag(Some(&three), &mut Vec::new()).is_err());
     }
 }

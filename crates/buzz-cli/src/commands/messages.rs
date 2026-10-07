@@ -598,11 +598,18 @@ fn match_profiles_by_name(events: &[serde_json::Value], name: &str) -> Vec<(Stri
     matches
 }
 
+/// NIP-18 quote tag for a validated 64-hex event id: `["q", <event-id>]`.
+fn quote_tag(event_id: &str) -> Result<nostr::Tag, CliError> {
+    nostr::Tag::parse(["q", &event_id.to_ascii_lowercase()])
+        .map_err(|e| CliError::Other(format!("invalid quote tag: {e}")))
+}
+
 pub struct SendMessageParams {
     pub channel_id: String,
     pub content: String,
     pub kind: Option<u16>,
     pub reply_to: Option<String>,
+    pub quote: Option<String>,
     pub broadcast: bool,
     pub files: Vec<String>,
     pub mentions: Vec<String>,
@@ -620,6 +627,9 @@ pub async fn cmd_send_message(
     validate_content_size(&p.content)?;
     if let Some(ref r) = p.reply_to {
         validate_hex64(r)?;
+    }
+    if let Some(ref q) = p.quote {
+        validate_hex64(q)?;
     }
     let channel_uuid = parse_uuid(&p.channel_id)?;
 
@@ -670,7 +680,7 @@ pub async fn cmd_send_message(
         format!("{}{media_content}", p.content)
     };
 
-    // Build thread ref if replying. `--reply-to` is the immediate parent; the
+    // Build thread ref if replying. `--reply-in-thread` is the immediate parent; the
     // thread root is derived from the parent's NIP-10 tags via the relay.
     let thread_ref = if let Some(ref r) = p.reply_to {
         Some(resolve_thread_ref(client, r).await?)
@@ -687,7 +697,9 @@ pub async fn cmd_send_message(
         }
         Some(45003) => {
             let tr = thread_ref.as_ref().ok_or_else(|| {
-                CliError::Usage("--reply-to is required for forum comments (kind 45003)".into())
+                CliError::Usage(
+                    "--reply-in-thread is required for forum comments (kind 45003)".into(),
+                )
             })?;
             buzz_sdk::build_forum_comment(
                 channel_uuid,
@@ -740,6 +752,12 @@ pub async fn cmd_send_message(
                 "--kind {k} is not supported (use 9, 45001, or 45003)"
             )))
         }
+    };
+    // A quote is presentation only: placement comes from the thread e-tags
+    // above, never from `q`.
+    let builder = match &p.quote {
+        Some(quoted) => builder.tags([quote_tag(quoted)?]),
+        None => builder,
     };
 
     let event = client.sign_event(builder)?;
@@ -808,7 +826,7 @@ pub async fn cmd_send_diff_message(client: &BuzzClient, p: SendDiffParams) -> Re
         _ => "Diff".to_string(),
     };
 
-    // `--reply-to` is the immediate parent; the thread root is derived from
+    // `--reply-in-thread` is the immediate parent; the thread root is derived from
     // the parent's NIP-10 tags via the relay.
     let thread_ref = if let Some(r) = &p.reply_to {
         Some(resolve_thread_ref(client, r).await?)
@@ -942,6 +960,7 @@ pub async fn dispatch(
             content,
             kind,
             reply_to,
+            quote,
             broadcast,
             files,
             mentions,
@@ -953,6 +972,7 @@ pub async fn dispatch(
                     content,
                     kind,
                     reply_to,
+                    quote,
                     broadcast,
                     files,
                     mentions,
@@ -1760,9 +1780,76 @@ mod tests {
             content: content.to_string(),
             kind: None,
             reply_to: None,
+            quote: None,
             broadcast: false,
             files: vec![],
             mentions: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn cmd_send_message_quote_adds_q_tag_without_thread_tags() {
+        // A quote is presentation only: the message stays top-level (no NIP-10
+        // `e` tags) and carries a NIP-18 `q` tag for the quoted event.
+        let (url, _query_count, captured_event) = fake_send_relay(send_palette_response()).await;
+        let client = BuzzClient::new(url, Keys::generate(), None, None).unwrap();
+        let quoted = "AB".repeat(32);
+        let mut params = send_params("about this");
+        params.quote = Some(quoted.clone());
+
+        cmd_send_message(&client, params).await.unwrap();
+
+        let raw = captured_event.lock().unwrap();
+        let raw = raw.as_ref().expect("event must have been submitted");
+        let event: serde_json::Value = serde_json::from_str(&raw.body).unwrap();
+        let tags = event["tags"].as_array().unwrap();
+        let first = |t: &serde_json::Value| t[0].as_str().unwrap_or_default().to_string();
+        let q_tags: Vec<&serde_json::Value> = tags.iter().filter(|t| first(t) == "q").collect();
+        assert_eq!(q_tags.len(), 1, "exactly one q tag: {tags:?}");
+        assert_eq!(q_tags[0][1], serde_json::json!(quoted.to_ascii_lowercase()));
+        assert!(
+            !tags.iter().any(|t| first(t) == "e"),
+            "a quote must not add thread e-tags: {tags:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn cmd_send_message_rejects_malformed_quote_id() {
+        let client =
+            BuzzClient::new("http://127.0.0.1:1".into(), Keys::generate(), None, None).unwrap();
+        let mut params = send_params("about this");
+        params.quote = Some("not-hex".into());
+        assert!(cmd_send_message(&client, params).await.is_err());
+    }
+
+    #[test]
+    fn send_accepts_reply_in_thread_and_hidden_reply_to_alias() {
+        use clap::Parser;
+        let id = "a".repeat(64);
+        for flag in ["--reply-in-thread", "--reply-to"] {
+            let cli = crate::Cli::try_parse_from([
+                "buzz",
+                "messages",
+                "send",
+                "--channel",
+                "c",
+                "--content",
+                "x",
+                flag,
+                &id,
+                "--quote",
+                &id,
+            ])
+            .unwrap_or_else(|e| panic!("{flag}: {e}"));
+            match cli.command {
+                crate::Cmd::Messages(crate::MessagesCmd::Send {
+                    reply_to, quote, ..
+                }) => {
+                    assert_eq!(reply_to.as_deref(), Some(id.as_str()), "{flag}");
+                    assert_eq!(quote.as_deref(), Some(id.as_str()));
+                }
+                _ => panic!("expected messages send"),
+            }
         }
     }
 

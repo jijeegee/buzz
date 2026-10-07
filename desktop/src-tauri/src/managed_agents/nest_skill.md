@@ -136,7 +136,7 @@ buzz messages send --channel <UUID> \
 
 - Omitted or `9` → stream message (default)
 - `45001` → forum post (thread root)
-- `45003` → forum comment (requires `--reply-to <event-id>`)
+- `45003` → forum comment (requires `--reply-in-thread <event-id>`)
 
 Other kind values are rejected. Use `messages vote --event <id> --direction up|down` to vote on forum posts.
 

@@ -16,6 +16,8 @@ export async function sendChannelMessage(
   expectedRelayUrl?: string,
   expectedSignerPubkey?: string,
   rootEventId?: string | null,
+  /** NIP-18 `["q", id, relay, pubkey]`; a reference only, never placement. */
+  quoteTag?: string[],
 ): Promise<SendChannelMessageResult> {
   const response = await invokeTauri<RawSendChannelMessageResult>(
     "send_channel_message",
@@ -29,6 +31,7 @@ export async function sendChannelMessage(
       mentionTags: mentionTags ?? null,
       linkPreviewTags,
       sentFromThreadTag: sentFromThreadTag ?? null,
+      quoteTag: quoteTag ?? null,
       mentionPubkeys: mentionPubkeys ?? null,
       kind: kind ?? null,
       // Tenant scope captured by the caller before its first await; the

@@ -2843,7 +2843,7 @@ test("opens a single-level thread panel with inline expansion", async ({
   );
 
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
   await expect(threadPanel).toBeVisible();
   await expect(threadPanel.getByTestId("message-thread-head")).toContainText(
     "Welcome to general",
@@ -3002,7 +3002,7 @@ test("opens a single-level thread panel with inline expansion", async ({
     .filter({ hasText: firstReply })
     .first();
   await firstReplyRow.hover();
-  await firstReplyRow.getByRole("button", { name: "Reply" }).click();
+  await firstReplyRow.getByRole("button", { name: "Reply in thread" }).click();
 
   await expect(threadPanel.getByTestId("message-thread-head")).toContainText(
     "Welcome to general",
@@ -3187,7 +3187,7 @@ test("thread panel width uses session storage and reset handle", async ({
   );
 
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
   await expect(threadPanel).toBeVisible();
 
   await expect
@@ -3214,7 +3214,7 @@ test("thread panel width uses session storage and reset handle", async ({
   await expect(threadPanel).toBeHidden();
 
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
   await expect(threadPanel).toBeVisible();
 
   await expect
@@ -3343,7 +3343,7 @@ test("thread composer is focused after clicking the reply icon", async ({
     .getByTestId("message-row")
     .last();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
@@ -3371,7 +3371,7 @@ test("thread refetch preserves a live reply and reaction received in flight", as
   if (!rootId) throw new Error("Expected a thread root id.");
 
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
 
@@ -3430,7 +3430,7 @@ test("thread reply appears after relay closes and restores its live subscription
     .getByTestId("message-row")
     .last();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   const reply = `Thread reply after CLOSED ${Date.now()}`;
@@ -3460,7 +3460,7 @@ test("thread composer keeps focus after sending a thread reply", async ({
     .getByTestId("message-row")
     .last();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
@@ -3513,7 +3513,7 @@ test("editing the thread root uses and focuses the main composer", async ({
   const timelineRoot = timeline.getByTestId("message-row").last();
   await expect(timelineRoot).toContainText(root);
   await timelineRoot.hover();
-  await timelineRoot.getByRole("button", { name: "Reply" }).click();
+  await timelineRoot.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
@@ -3563,7 +3563,7 @@ test("editing a pre-seeded thread reply uses and focuses the thread composer", a
     .locator(`[data-message-id="${rootId}"]`);
   await expect(timelineRoot).toContainText(root);
   await timelineRoot.hover();
-  await timelineRoot.getByRole("button", { name: "Reply" }).click();
+  await timelineRoot.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
@@ -3621,7 +3621,7 @@ test("thread composer switches directly between visible reply edits", async ({
     .getByTestId("message-timeline")
     .locator(`[data-message-id="${rootId}"]`);
   await timelineRoot.hover();
-  await timelineRoot.getByRole("button", { name: "Reply" }).click();
+  await timelineRoot.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
@@ -3671,7 +3671,7 @@ test("editing a broadcast reply from a thread returns to the main composer", asy
   const timelineRoot = page.locator(`[data-message-id="${rootId}"]`);
   await timelineRoot.hover();
   await timelineRoot
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
   const threadPanel = page.getByTestId("message-thread-panel");
   const broadcastReply = threadPanel.locator(
@@ -3709,7 +3709,7 @@ test("editing a live thread reply uses and focuses the thread composer", async (
     .last();
   await timelineRoot.hover();
   await timelineRoot
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
 
   const threadPanel = page.getByTestId("message-thread-panel");
@@ -3744,7 +3744,7 @@ test("editing a thread root in single-panel view returns to the main composer", 
     .last();
   await timelineRoot.hover();
   await timelineRoot
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
 
   const threadPanel = page.getByTestId("message-thread-panel");
@@ -3782,7 +3782,7 @@ test("editing a thread root in focus mode dismisses the drawer before focusing t
     .last();
   await timelineRoot.hover();
   await timelineRoot
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
 
   const drawer = page.getByTestId("focus-thread-drawer");
@@ -3819,7 +3819,7 @@ test("focus mode preserves an active reply edit, then Escape makes root editing 
     .last();
   await timelineRoot.hover();
   await timelineRoot
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
 
   const drawer = page.getByTestId("focus-thread-drawer");
@@ -3914,7 +3914,7 @@ test("ArrowUp routes a narrow thread root without consuming into a hidden compos
     .last();
   await timelineRoot.hover();
   await timelineRoot
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
   const threadInput = page
     .getByTestId("message-thread-panel")
@@ -3951,7 +3951,7 @@ test("closing a thread while editing a reply preserves the typed edit", async ({
   await waitForAnimations(page);
   // Hover auto-scrolls and re-resolves the row if rendering replaces it.
   await timelineRoot.hover();
-  await timelineRoot.getByRole("button", { name: "Reply" }).click();
+  await timelineRoot.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
@@ -3994,7 +3994,7 @@ test("main ArrowUp ignores closed-thread replies and edits the visible timeline 
     .last();
   await timelineRoot.hover();
   await timelineRoot
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
 
   const threadPanel = page.getByTestId("message-thread-panel");
@@ -4014,7 +4014,7 @@ test("main ArrowUp ignores closed-thread replies and edits the visible timeline 
   await mainInput.press("Escape");
   await timelineRoot.hover();
   await timelineRoot
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
   await expect(threadPanel).toBeVisible();
 });
@@ -4041,7 +4041,7 @@ test("main ArrowUp refuses to replace a dirty thread edit", async ({
   await waitForAnimations(page);
   // Hover auto-scrolls and re-resolves the row if rendering replaces it.
   await timelineRoot.hover();
-  await timelineRoot.getByRole("button", { name: "Reply" }).click();
+  await timelineRoot.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
@@ -4159,7 +4159,7 @@ test("a refused message deep link retries after the thread edit is canceled", as
     .filter({ hasText: sourceRoot })
     .last();
   await source.hover();
-  await source.getByRole("button", { name: "Reply" }).click();
+  await source.getByRole("button", { name: "Reply in thread" }).click();
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
   await threadInput.fill(reply);
@@ -4246,7 +4246,7 @@ test("a refused sent-from-thread link preserves the edit and retries after cance
   const timeline = page.getByTestId("message-timeline");
   const source = timeline.locator(`[data-message-id="${sourceRootId}"]`);
   await source.hover();
-  await source.getByRole("button", { name: "Reply" }).click();
+  await source.getByRole("button", { name: "Reply in thread" }).click();
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
   const reply = threadPanel
@@ -4321,7 +4321,7 @@ test("a refused search result preserves the edit and retries after cancel", asyn
   const timeline = page.getByTestId("message-timeline");
   const source = timeline.locator(`[data-message-id="${sourceRootId}"]`);
   await source.hover();
-  await source.getByRole("button", { name: "Reply" }).click();
+  await source.getByRole("button", { name: "Reply in thread" }).click();
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
   const reply = threadPanel
@@ -4396,7 +4396,7 @@ test("a refused forum search result preserves the edit and retries after cancel"
     .getByTestId("message-timeline")
     .locator(`[data-message-id="${sourceRootId}"]`);
   await source.hover();
-  await source.getByRole("button", { name: "Reply" }).click();
+  await source.getByRole("button", { name: "Reply in thread" }).click();
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
   const reply = threadPanel
@@ -4482,7 +4482,7 @@ for (const targetKind of ["reply", "root"] as const) {
     const timeline = page.getByTestId("message-timeline");
     const source = timeline.locator(`[data-message-id="${sourceRootId}"]`);
     await source.hover();
-    await source.getByRole("button", { name: "Reply" }).click();
+    await source.getByRole("button", { name: "Reply in thread" }).click();
 
     const threadPanel = page.getByTestId("message-thread-panel");
     const threadInput = threadPanel.getByTestId("message-input");
@@ -4577,7 +4577,7 @@ test("a refused channel switch preserves the reply edit and retries after cancel
     .getByTestId("message-timeline")
     .locator(`[data-message-id="${sourceRootId}"]`);
   await source.hover();
-  await source.getByRole("button", { name: "Reply" }).click();
+  await source.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadInput = threadPanel.getByTestId("message-input");
@@ -4662,7 +4662,7 @@ for (const backInput of ["button", "keyboard"] as const) {
       .getByTestId("message-timeline")
       .locator(`[data-message-id="${sourceRootId}"]`);
     await source.hover();
-    await source.getByRole("button", { name: "Reply" }).click();
+    await source.getByRole("button", { name: "Reply in thread" }).click();
 
     const threadPanel = page.getByTestId("message-thread-panel");
     const threadInput = threadPanel.getByTestId("message-input");
@@ -4800,7 +4800,7 @@ test("ArrowUp edits your last thread reply right after sending it", async ({
     .getByTestId("message-row")
     .last();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
 
   const threadPanel = page.getByTestId("message-thread-panel");
   await expect(threadPanel).toBeVisible();
@@ -4844,7 +4844,7 @@ test("action bar stays within the timeline when the thread panel is open", async
 
   const rootMessage = timeline.getByTestId("message-row").first();
   await rootMessage.hover();
-  await rootMessage.getByRole("button", { name: "Reply" }).click();
+  await rootMessage.getByRole("button", { name: "Reply in thread" }).click();
   await expect(page.getByTestId("message-thread-panel")).toBeVisible();
 
   const wideRow = timeline.getByTestId("message-row").last();

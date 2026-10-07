@@ -544,7 +544,12 @@ export function useSendMessageMutation(
         emojiTags,
         mentionTags,
         linkPreviewTags,
+        quoteTags,
       } = splitOutgoingTags(mediaTags);
+      if (quoteTags.length > 1) {
+        throw new Error("A message can quote only one message.");
+      }
+      const quoteTag = quoteTags[0];
       const recipientPubkeys = messageMentionPubkeys(
         effectiveChannel,
         identity.pubkey,
@@ -566,13 +571,15 @@ export function useSendMessageMutation(
       // Messages carrying media OR custom-emoji tags MUST go through REST so
       // the relay's tag validation runs. The WebSocket path emits no extra
       // tags, so emoji-only messages would otherwise lose their emoji tag.
+      // The same holds for a NIP-18 quote tag.
       if (
         forceRest ||
         transport === "http" ||
         parentEventId ||
         imetaTags.length > 0 ||
         emojiTags.length > 0 ||
-        linkPreviewTags.length > 0
+        linkPreviewTags.length > 0 ||
+        quoteTag
       ) {
         const cachedMessages =
           queryClient.getQueryData<RelayEvent[]>(
@@ -603,6 +610,7 @@ export function useSendMessageMutation(
           undefined,
           undefined,
           suppliedRootEventId,
+          quoteTag,
         );
 
         // Build tags matching relay-emitted shape: h, author p, mention ps, reply es, imeta, emoji.
@@ -642,6 +650,7 @@ export function useSendMessageMutation(
             ...mentionTags,
             ...linkPreviewTags,
             ...(sentFromThreadTag ? [sentFromThreadTag] : []),
+            ...(quoteTag ? [quoteTag] : []),
           ],
           content: content.trim(),
           sig: "",

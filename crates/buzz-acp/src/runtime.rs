@@ -123,5 +123,31 @@ fn make_prompt_context(
         relay_url: config.relay_url.clone(),
         dispatcher: config.dispatcher,
         channel_roster: config.channel_roster,
+        session_policy: config.session_policy,
+        session_ledger: session_ledger_for(config, mode),
     })
+}
+
+/// The durable resume ledger, enabled only for conversation sessions under the
+/// thread policy with a configured state directory. Other policies
+/// keep their existing restart-from-relay-context behavior unchanged.
+fn session_ledger_for(
+    config: &Config,
+    mode: SessionMode,
+) -> Option<std::sync::Arc<crate::session_ledger::SessionLedger>> {
+    if !matches!(mode, SessionMode::Conversation)
+        || config.session_policy != crate::scope::SessionPolicy::Thread
+    {
+        return None;
+    }
+    let state_dir = config.state_dir.as_ref()?;
+    let path = crate::session_ledger::ledger_path(
+        state_dir,
+        &config.keys.public_key().to_hex(),
+        &config.relay_url,
+    );
+    tracing::info!(target: "acp::ledger", path = %path.display(), "session resume ledger enabled");
+    Some(std::sync::Arc::new(
+        crate::session_ledger::SessionLedger::open(path),
+    ))
 }

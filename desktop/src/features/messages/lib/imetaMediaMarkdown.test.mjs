@@ -671,13 +671,26 @@ const MENTION_REF = [
   "1111111111111111111111111111111111111111111111111111111111111111",
 ];
 
-test("splitOutgoingTags: undefined input yields three empty arrays", () => {
+test("splitOutgoingTags: undefined input yields empty arrays", () => {
   assert.deepEqual(splitOutgoingTags(undefined), {
     mediaTags: [],
     emojiTags: [],
     mentionTags: [],
     linkPreviewTags: [],
+    quoteTags: [],
   });
+});
+
+test("splitOutgoingTags: separates NIP-18 quote tags", () => {
+  const quote = ["q", "a".repeat(64), "", "b".repeat(64)];
+  const { mediaTags, emojiTags, quoteTags } = splitOutgoingTags([
+    IMETA,
+    quote,
+    EMOJI_A,
+  ]);
+  assert.deepEqual(mediaTags, [IMETA]);
+  assert.deepEqual(emojiTags, [EMOJI_A]);
+  assert.deepEqual(quoteTags, [quote]);
 });
 
 test("splitOutgoingTags: separates emoji tags from imeta tags", () => {

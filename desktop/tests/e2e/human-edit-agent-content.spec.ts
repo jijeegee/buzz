@@ -190,7 +190,7 @@ test("owner can delete their owned agent's message from the thread panel", async
 
   // Open the thread panel by hovering the message and clicking Reply.
   await agentRow.hover();
-  await agentRow.getByRole("button", { name: "Reply" }).click();
+  await agentRow.getByRole("button", { name: "Reply in thread" }).click();
 
   // Wait for the thread panel and confirm the thread head contains the agent message.
   const threadPanel = page.getByTestId("message-thread-panel");

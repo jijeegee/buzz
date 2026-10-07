@@ -745,7 +745,7 @@ test("the unfocused root composer keeps its dismissed mention menu closed throug
     `[data-testid="message-row"][data-message-id="${THREAD_ROOT_ID}"]`,
   );
   await rootMessage
-    .getByRole("button", { name: "Reply" })
+    .getByRole("button", { name: "Reply in thread" })
     .evaluate((button: HTMLButtonElement) => button.click());
 
   const threadPanel = page.getByTestId("message-thread-panel");
@@ -1198,7 +1198,7 @@ test("a removed root-inherited agent stays excluded after the thread reopens", a
     .locator(`[data-testid="message-row"][data-message-id="${rootId}"]`);
   await expect(rootRow).toBeVisible();
   await rootRow.hover();
-  await rootRow.getByRole("button", { name: "Reply" }).click();
+  await rootRow.getByRole("button", { name: "Reply in thread" }).click();
   await expect(page.getByTestId("message-thread-panel")).toBeVisible();
 
   let composer = threadComposer(page);
@@ -1224,7 +1224,7 @@ test("a removed root-inherited agent stays excluded after the thread reopens", a
   expect(loadedRootTags).toContainEqual(["p", AGENT_A]);
 
   await rootRow.hover();
-  await rootRow.getByRole("button", { name: "Reply" }).click();
+  await rootRow.getByRole("button", { name: "Reply in thread" }).click();
   await expect(threadPanel).toBeVisible();
 
   composer = threadComposer(page);

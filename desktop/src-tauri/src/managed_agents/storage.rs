@@ -42,6 +42,14 @@ pub fn managed_agents_base_dir<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<
     Ok(dir)
 }
 
+/// Durable harness state shared by managed agents (session resume ledgers).
+/// Each harness keys its files by agent pubkey and relay below this directory.
+pub(crate) fn managed_agents_state_dir<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<PathBuf, String> {
+    Ok(managed_agents_base_dir(app)?.join("state"))
+}
+
 pub(crate) fn managed_agents_store_path<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<PathBuf, String> {

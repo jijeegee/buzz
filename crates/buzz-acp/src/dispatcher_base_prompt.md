@@ -26,8 +26,8 @@ For each human request:
 Use the `buzz` CLI. Mentions must resolve by pubkey so delivery cannot fail on a name:
 
 ```
-buzz messages send --channel <channel-uuid> --reply-to <reply-destination> \
+buzz messages send --channel <channel-uuid> --reply-in-thread <thread-root> \
   --content "@<Exact Name> <requester> asks: <self-contained task>" --mention <agent-pubkey-hex>
 ```
 
-Take `<agent-pubkey-hex>` from the roster. Repeat `--mention` for each assignee. Do not format mentions with bold, italic, or backticks. Keep every message short.
+Use the reply destination from `<context>`: inside a thread, `--reply-in-thread <thread-root>`; on the channel main timeline, omit `--reply-in-thread` so the routing message stays on the main timeline. Take `<agent-pubkey-hex>` from the roster. Repeat `--mention` for each assignee. Do not format mentions with bold, italic, or backticks. Keep every message short.

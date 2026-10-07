@@ -3638,7 +3638,12 @@ function mockPersonaCatalogPublications() {
     };
     const rawDescription = content.description;
     const sessionPolicy =
-      content.session_policy === "thread" ? "thread" : "channel";
+      // `main_and_threads` was briefly stored by development builds for the
+      // same main-plus-per-thread scope; it reads as Thread like the backend.
+      content.session_policy === "thread" ||
+      content.session_policy === "main_and_threads"
+        ? "thread"
+        : "channel";
     if (
       typeof displayName !== "string" ||
       !displayName.trim() ||
@@ -10481,6 +10486,7 @@ async function handleSendChannelMessage(
     mentionTags?: string[][] | null;
     linkPreviewTags?: string[][] | null;
     sentFromThreadTag?: string[] | null;
+    quoteTag?: string[] | null;
     suppressLinkPreviews?: boolean;
     expectedRelayUrl?: string | null;
     expectedSignerPubkey?: string | null;
@@ -10558,6 +10564,8 @@ async function handleSendChannelMessage(
     ...mentionTags,
     ...linkPreviewTags,
     ...(args.sentFromThreadTag ? [args.sentFromThreadTag] : []),
+    // NIP-18 quote reference; never affects the thread placement above.
+    ...(args.quoteTag ? [args.quoteTag] : []),
     ...(args.suppressLinkPreviews ? [["link-preview", "none"]] : []),
   ];
   const identity = getIdentity(config);

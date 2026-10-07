@@ -2,6 +2,7 @@ import * as React from "react";
 
 import type { ParsedMessageLink } from "@/features/messages/lib/messageLink";
 import { summarizeMessageLinkContent } from "@/features/messages/lib/messageLinkMetadata";
+import { getThreadReference } from "@/features/messages/lib/threading";
 import { getEventById } from "@/shared/api/tauri";
 import { getUserProfile } from "@/shared/api/tauriProfiles";
 import { truncateNpub } from "@/shared/lib/pubkey";
@@ -30,6 +31,8 @@ type MessageLinkMetadata = {
   author: string;
   createdAt: number;
   snippet: string;
+  /** Thread root of the linked event, or null for a top-level message. */
+  threadRootId: string | null;
 };
 type MessageLinkMetadataState =
   | { kind: "idle" }
@@ -73,6 +76,7 @@ function fetchMetadata(
             truncateNpub(event.pubkey),
           createdAt: event.created_at,
           snippet: summarizeMessageLinkContent(event.content),
+          threadRootId: getThreadReference(event.tags).rootId,
         };
       })
       .catch((error) =>

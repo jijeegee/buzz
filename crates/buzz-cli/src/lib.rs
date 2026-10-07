@@ -445,7 +445,7 @@ buzz agents archived"
 pub enum MessagesCmd {
     /// Send a message to a channel
     #[command(
-        after_help = "Examples:\n  buzz messages send --channel <UUID> --content \"hello\"\n  buzz messages send --channel <UUID> --content \"@alice check this\"\n  echo \"hello from stdin\" | buzz messages send --channel <UUID> --content -"
+        after_help = "Examples:\n  buzz messages send --channel <UUID> --content \"hello\"\n  buzz messages send --channel <UUID> --content \"@alice check this\"\n  buzz messages send --channel <UUID> --reply-in-thread <EVENT_ID> --content \"in the thread\"\n  buzz messages send --channel <UUID> --quote <EVENT_ID> --content \"about this message\"\n  echo \"hello from stdin\" | buzz messages send --channel <UUID> --content -"
     )]
     Send {
         /// Channel UUID (from 'buzz channels list')
@@ -457,9 +457,14 @@ pub enum MessagesCmd {
         /// Nostr event kind (default: channel default)
         #[arg(long)]
         kind: Option<u16>,
-        /// Event ID to reply to (creates a thread)
-        #[arg(long)]
+        /// Reply in the thread of this event ID (opens a thread under it when it
+        /// is top-level). `--reply-to` is accepted as a deprecated alias.
+        #[arg(long = "reply-in-thread", alias = "reply-to", value_name = "EVENT_ID")]
         reply_to: Option<String>,
+        /// Quote this event ID: shows the original above your message without
+        /// changing where it is posted (adds a NIP-18 `q` tag).
+        #[arg(long, value_name = "EVENT_ID")]
+        quote: Option<String>,
         /// Also publish to the Nostr network
         #[arg(long, default_value_t = false)]
         broadcast: bool,
@@ -505,8 +510,9 @@ pub enum MessagesCmd {
         /// Human-readable description of the change
         #[arg(long)]
         description: Option<String>,
-        /// Event ID to reply to (creates a thread)
-        #[arg(long)]
+        /// Reply in the thread of this event ID. `--reply-to` is accepted as a
+        /// deprecated alias.
+        #[arg(long = "reply-in-thread", alias = "reply-to", value_name = "EVENT_ID")]
         reply_to: Option<String>,
     },
     /// Edit a previously sent message

@@ -841,7 +841,7 @@ test("project workspace sheet stays independent from an open thread", async ({
     .filter({ hasText: threadRootContent });
   await expect(threadRoot).toBeVisible();
   await threadRoot.hover();
-  await threadRoot.getByRole("button", { name: "Reply" }).click();
+  await threadRoot.getByRole("button", { name: "Reply in thread" }).click();
   await expect(page.getByTestId("message-thread-panel")).toBeVisible();
 
   await page.getByTestId("project-home-context-tasks").click();

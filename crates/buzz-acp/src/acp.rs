@@ -207,6 +207,12 @@ pub struct AcpClient {
     /// a JSON-RPC *success*, not `-32601` — which the main loop would read as
     /// a delivered steer and drop the user's message from the queue.
     steering_supported: bool,
+    /// Whether `initialize` advertised `sessionCapabilities.resume`
+    /// (`session/resume`: reattach without replaying history).
+    resume_session_supported: bool,
+    /// Whether `initialize` advertised `agentCapabilities.loadSession`
+    /// (`session/load`: reattach by replaying history).
+    load_session_supported: bool,
     /// Per-turn channel for receiving goose-native non-cancelling steer
     /// requests from the main loop. Installed by
     /// [`install_steer_rx`](Self::install_steer_rx) at dispatch and
@@ -649,6 +655,8 @@ impl AcpClient {
             observer_context: ObserverContext::default(),
             active_run_id: None,
             steering_supported: false,
+            resume_session_supported: false,
+            load_session_supported: false,
             steer_rx: None,
             goose_usage: UsageTracker::default(),
             standard_usage: StandardUsageTracker::default(),
@@ -706,6 +714,14 @@ impl AcpClient {
         let result = self.send_request("initialize", params).await?;
         self.steering_supported = result
             .pointer("/_meta/steering/supported")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let capabilities = result.get("agentCapabilities");
+        self.resume_session_supported = capabilities
+            .and_then(|c| c.pointer("/sessionCapabilities/resume"))
+            .is_some_and(|v| !v.is_null());
+        self.load_session_supported = capabilities
+            .and_then(|c| c.get("loadSession"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         tracing::debug!(target: "acp::init", "initialize response: {result}");
@@ -977,6 +993,46 @@ impl AcpClient {
     /// for the supervisor's post-initialize log line.
     pub fn steering_supported(&self) -> bool {
         self.steering_supported
+    }
+
+    /// Whether this agent can reattach to an existing provider session.
+    pub fn can_reattach_sessions(&self) -> bool {
+        self.resume_session_supported || self.load_session_supported
+    }
+
+    /// Reattach to an existing provider session after a harness restart.
+    ///
+    /// Prefers `session/resume`, which restores the session without replaying
+    /// its history; falls back to `session/load`, whose replayed history
+    /// notifications are read past like any other pre-response traffic. The
+    /// response has the same shape as `session/new` (models, config options,
+    /// modes), so callers apply models and modes exactly as for a new session.
+    pub async fn session_reattach(
+        &mut self,
+        session_id: &str,
+        cwd: &str,
+        mcp_servers: Vec<McpServer>,
+    ) -> Result<SessionNewResponse, AcpError> {
+        let method = if self.resume_session_supported {
+            "session/resume"
+        } else if self.load_session_supported {
+            "session/load"
+        } else {
+            return Err(AcpError::Protocol(
+                "agent advertises neither session/resume nor session/load".into(),
+            ));
+        };
+        let params = serde_json::json!({
+            "sessionId": session_id,
+            "cwd": cwd,
+            "mcpServers": mcp_servers,
+        });
+        let raw = self.send_request(method, params).await?;
+        tracing::info!(target: "acp::session", "session reattached via {method}: {session_id}");
+        Ok(SessionNewResponse {
+            session_id: session_id.to_owned(),
+            raw,
+        })
     }
 
     /// Consume per-turn usage for NIP-AM publishing. Goose/buzz-agent is an

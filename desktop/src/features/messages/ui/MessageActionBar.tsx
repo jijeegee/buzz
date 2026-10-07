@@ -10,6 +10,7 @@ import {
   MailCheck,
   MailOpen,
   Pencil,
+  Quote,
   SmilePlus,
   Trash2,
 } from "lucide-react";
@@ -21,6 +22,8 @@ import { EmojiPicker } from "@/features/custom-emoji/ui/EmojiPicker";
 import { useCustomEmoji } from "@/features/custom-emoji/hooks";
 import { buildMentionClipboardHtml } from "@/features/messages/lib/mentionClipboard";
 import { getThreadReference } from "@/features/messages/lib/threading";
+import { canQuoteMessage } from "@/features/messages/lib/messageQuote";
+import { useMessageQuoteAction } from "@/features/messages/ui/messageQuoteScope";
 import { useMessageMentionIdentities } from "@/features/messages/lib/useMessageMentionIdentities";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { ReportMessageDialog } from "@/features/moderation/ui/ReportMessageDialog";
@@ -458,6 +461,10 @@ export const MessageActionBar = React.memo(function MessageActionBar({
     [customEmoji, quickReactionEmojis],
   );
   const hasReplyAction = Boolean(onReply);
+  // Quote is offered only inside a conversation scope (main timeline or an
+  // open thread) whose composer can carry the quote.
+  const onQuote = useMessageQuoteAction();
+  const hasQuoteAction = Boolean(onQuote) && canQuoteMessage(message);
   const hasReactionAction = Boolean(onReactionSelect);
 
   const hasMoreMenuActions =
@@ -502,7 +509,12 @@ export const MessageActionBar = React.memo(function MessageActionBar({
     [onReactionBadgeBurstRequest, onReactionSelect, wouldAddReaction],
   );
 
-  if (!hasReplyAction && !hasReactionAction && !hasMoreMenuActions) {
+  if (
+    !hasReplyAction &&
+    !hasQuoteAction &&
+    !hasReactionAction &&
+    !hasMoreMenuActions
+  ) {
     return null;
   }
 
@@ -596,7 +608,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="Reply"
+                  aria-label="Reply in thread"
                   className={ACTION_BUTTON_CLASS}
                   data-testid={`reply-message-${message.id}`}
                   onClick={() => {
@@ -609,7 +621,28 @@ export const MessageActionBar = React.memo(function MessageActionBar({
                   <CornerUpLeft className={ACTION_ICON_CLASS} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Reply</TooltipContent>
+              <TooltipContent>Reply in thread</TooltipContent>
+            </Tooltip>
+          ) : null}
+
+          {hasQuoteAction ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label="Quote"
+                  className={ACTION_BUTTON_CLASS}
+                  data-testid={`quote-message-${message.id}`}
+                  onClick={() => {
+                    onQuote?.(message);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Quote className={ACTION_ICON_CLASS} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Quote</TooltipContent>
             </Tooltip>
           ) : null}
 

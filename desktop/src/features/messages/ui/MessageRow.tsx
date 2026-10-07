@@ -57,6 +57,8 @@ import {
 } from "./MessageHeader";
 import { MessageTimestamp } from "./MessageTimestamp";
 import { SentFromThreadLine } from "./SentFromThreadLine";
+import { MessageQuoteHeader } from "./MessageQuoteHeader";
+import { getQuoteReference } from "@/features/messages/lib/messageQuote";
 import { WaveMessageAttachment } from "./WaveMessageAttachment";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { useMessageAgentAddressPrefix } from "./MessageAgentAddressPrefix";
@@ -687,6 +689,13 @@ export const MessageRow = React.memo(
     const messageBodyNode = (
       <>
         <SentFromThreadLine channelId={channelId} tags={message.tags} />
+        {getQuoteReference(message.tags) ? (
+          <MessageQuoteHeader
+            channelId={channelId}
+            profiles={profiles}
+            tags={message.tags}
+          />
+        ) : null}
         {renderBody()}
         <MessageAutoRouteLine
           messageId={message.id}
