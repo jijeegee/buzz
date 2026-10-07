@@ -18,3 +18,23 @@ class ReadAloudPreference extends Notifier<bool> {
     if (ref.mounted) state = enabled;
   }
 }
+
+/// Android engine package for this app only; empty means the system default.
+final readAloudEngineProvider =
+    NotifierProvider<ReadAloudEnginePreference, String>(
+      ReadAloudEnginePreference.new,
+    );
+
+/// Keeps the engine choice on this device without changing Android settings.
+class ReadAloudEnginePreference extends Notifier<String> {
+  static const key = 'buzz_mobile_read_aloud_engine';
+
+  @override
+  String build() => ref.watch(savedPrefsProvider).getString(key) ?? '';
+
+  Future<void> setEngine(String engine) async {
+    final saved = await ref.read(savedPrefsProvider).setString(key, engine);
+    if (!saved) throw StateError('Could not save speech engine');
+    if (ref.mounted) state = engine;
+  }
+}
