@@ -27,6 +27,7 @@ import '../../shared/widgets/ios_glass_navigation_action.dart';
 import '../../shared/widgets/immediate_page_route.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import 'theme_picker_page.dart';
+import 'read_aloud_settings.dart';
 
 part 'settings_page/community_section.dart';
 part 'settings_page/connection_section.dart';
@@ -217,6 +218,7 @@ class SettingsPage extends HookConsumerWidget {
               children: [
                 profileHeader,
                 _CommunitySection(invitePageBuilder: invitePageBuilder),
+                const ReadAloudSettings(),
                 const _NotificationsSection(),
                 _ConnectionSection(
                   identityRecoveryPageBuilder: identityRecoveryPageBuilder,

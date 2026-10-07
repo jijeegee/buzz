@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'shared/read_aloud/read_aloud_message.dart';
 
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:flutter/material.dart';
@@ -385,7 +386,7 @@ class App extends HookConsumerWidget {
 
     return MaterialApp(
       navigatorKey: _mobileRootNavigatorKey,
-      navigatorObservers: [voiceNoteRouteObserver],
+      navigatorObservers: [voiceNoteRouteObserver, readAloudRouteObserver],
       title: 'Buzz',
       theme: AppTheme.light(
         colorScheme: lightScheme,
