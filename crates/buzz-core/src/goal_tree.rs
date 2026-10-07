@@ -891,6 +891,18 @@ mod tests {
         assert_eq!(tree.progress("root"), (1, 6));
     }
 
+    /// Written by the mobile client (`mobile/test/features/goals`); both
+    /// suites pin this exact string so the Dart port cannot drift from the
+    /// rules the relay enforces.
+    const MOBILE_FIXTURE: &str = r#"{"v":1,"nodes":[{"id":"root","parent":null,"title":"Ship it","note":"Key info","status":"open","order":0,"updated_by":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","updated_at":1700000000},{"id":"a","parent":"root","title":"A","status":"in_progress","threads":["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],"order":0,"updated_by":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","updated_at":1700000000}]}"#;
+
+    #[test]
+    fn accepts_tree_written_by_mobile_client() {
+        let tree = GoalTree::parse(MOBILE_FIXTURE).unwrap();
+        assert_eq!(tree.node("a").unwrap().status, GoalStatus::InProgress);
+        assert_eq!(tree.root().unwrap().note, "Key info");
+    }
+
     #[test]
     fn ops_deserialize_from_client_json() {
         let op: GoalOp =
