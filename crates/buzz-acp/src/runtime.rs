@@ -181,7 +181,6 @@ fn make_prompt_context(
         relay_url: config.relay_url.clone(),
         dispatcher: config.dispatcher,
         channel_roster: config.channel_roster,
-        session_policy: config.session_policy,
         session_ledger: session_ledger_for(config, mode),
     })
 }

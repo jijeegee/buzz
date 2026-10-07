@@ -71,11 +71,11 @@ pub struct SessionLedger {
 
 struct LedgerState {
     file: LedgerFile,
-    /// Keys loaded from disk at startup that have not been reattached yet.
-    /// Reattach is a once-per-process step: after a scope's first session in
-    /// this process (reattached or new), in-process rotation and forks must
-    /// create new sessions, never resume a recorded one another worker may be
-    /// running or that was deliberately rotated away.
+    /// Keys whose recorded session the next new session for that scope may
+    /// reattach: every key loaded from disk at startup, plus a key re-armed by
+    /// [`SessionLedger::allow_handoff`] when a busy owner's scope moves to
+    /// another worker. Otherwise in-process rotation must create new sessions,
+    /// never resume one that was deliberately rotated away.
     resumable: HashSet<String>,
 }
 
@@ -173,9 +173,10 @@ impl SessionLedger {
         ledger
     }
 
-    /// Claim the recorded provider session for `scope` for reattach, once per
-    /// process. Returns it only when it was loaded from disk at startup, has
-    /// not been claimed yet, and was created by an adapter with
+    /// Claim the recorded provider session for `scope` for reattach. Returns it
+    /// only when it was loaded from disk at startup or re-armed by
+    /// [`allow_handoff`](Self::allow_handoff), has not been claimed since, and
+    /// was created by an adapter with
     /// `agent_identity` running in `cwd`. Claiming consumes the chance even on
     /// a mismatch, so later sessions for the scope are always new ones.
     pub fn take_resumable(
@@ -195,6 +196,22 @@ impl SessionLedger {
             .get(&key)
             .filter(|entry| entry.agent_identity == agent_identity && entry.cwd == cwd)
             .map(|entry| entry.session_id.clone())
+    }
+
+    /// Let the next new session for `scope` reattach its recorded provider
+    /// session. Called when a busy owner's thread is handed to an idle worker:
+    /// the owner is mid-turn on a different scope, so this scope's session is
+    /// idle and the new worker can continue it instead of starting over. The
+    /// returning owner drops its stale copy (`AgentPool::return_agent`), so
+    /// only one worker drives the session. No-op when nothing is recorded.
+    pub fn allow_handoff(&self, scope: &SessionScope) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let key = scope_key(scope);
+        if state.file.entries.contains_key(&key) {
+            state.resumable.insert(key);
+        }
     }
 
     /// Record that `scope` is served by provider session `session_id`, replacing
@@ -381,7 +398,7 @@ mod tests {
             reopened.take_resumable(&main, "claude-agent-acp", cwd),
             Some("sess-main".into())
         );
-        // Claimed once per process: a later rotation or fork starts fresh.
+        // Claimed once: a later rotation starts fresh.
         assert!(reopened
             .take_resumable(&main, "claude-agent-acp", cwd)
             .is_none());
@@ -408,6 +425,38 @@ mod tests {
             path,
             ledger_path(dir.path(), &"ab".repeat(32), "wss://other.example")
         );
+    }
+
+    #[test]
+    fn handoff_rearms_the_recorded_session_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = ledger_path(dir.path(), &"ab".repeat(32), "wss://relay.example");
+        let ch = Uuid::new_v4();
+        let t = thread(ch, 'a');
+        let other = thread(ch, 'b');
+        let cwd = "/home/a/.buzz";
+
+        let ledger = SessionLedger::open(path);
+        ledger.record(&t, "sess-thread", "claude-agent-acp", cwd);
+        assert!(ledger.take_resumable(&t, "claude-agent-acp", cwd).is_none());
+
+        // A busy owner's thread moves to an idle worker: that worker's new
+        // session reattaches the recorded one, exactly once.
+        ledger.allow_handoff(&t);
+        assert_eq!(
+            ledger.take_resumable(&t, "claude-agent-acp", cwd),
+            Some("sess-thread".into())
+        );
+        assert!(ledger.take_resumable(&t, "claude-agent-acp", cwd).is_none());
+
+        // Nothing recorded (or rotated away): the handoff starts fresh.
+        ledger.allow_handoff(&other);
+        assert!(ledger
+            .take_resumable(&other, "claude-agent-acp", cwd)
+            .is_none());
+        ledger.remove(&t);
+        ledger.allow_handoff(&t);
+        assert!(ledger.take_resumable(&t, "claude-agent-acp", cwd).is_none());
     }
 
     #[test]

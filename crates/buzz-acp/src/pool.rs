@@ -42,7 +42,7 @@ use crate::queue::{
     PromptProfile, PromptProfileLookup, ThreadTags,
 };
 use crate::relay::{ChannelInfo, RestClient};
-use crate::scope::{SessionPolicy, SessionScope};
+use crate::scope::SessionScope;
 
 /// Window within which agent activity before a hard-cap death qualifies
 /// the turn as "recently active" (eligible for requeue instead of dead-letter).
@@ -1013,8 +1013,6 @@ pub struct PromptContext {
     /// Lead mode: inject the `<channel-roster>` section like a dispatcher, but
     /// proceed without it when the fetch fails.
     pub channel_roster: bool,
-    /// Session scoping policy; selects the busy-owner hold behavior.
-    pub session_policy: SessionPolicy,
     /// Durable scope → provider-session ledger for resume after restart.
     /// `None` unless the thread policy has a state directory.
     pub session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
@@ -1098,9 +1096,9 @@ impl AgentPool {
     /// Gated on the scope variant: `Conversation` scopes (channel-policy
     /// channels and all DMs) never hold — a busy owner there means fork onto
     /// another idle worker, the pre-thread-sessions behavior. `Thread` and
-    /// `Main` scopes hold, so a momentarily busy owner does not cause a
-    /// duplicate provider session. The session policy picks `timeout` (see
-    /// [`busy_owner_hold_timeout`]); [`HOLD_BUSY_OWNER_UNBOUNDED`] never forks.
+    /// `Main` scopes hold, so a momentarily busy owner keeps its session; after
+    /// `timeout` ([`HOLD_BUSY_OWNER_TIMEOUT`] in production) the scope is handed
+    /// to an idle worker instead of starving behind the owner's turn.
     pub fn hold_decision(
         &mut self,
         scope: &SessionScope,
@@ -1137,7 +1135,9 @@ impl AgentPool {
     /// Pass 1: prefer an agent that already has a session for this exact scope
     /// (thread affinity — repeated activity in a thread reuses that thread's
     /// provider session).
-    /// Pass 2: any idle agent.
+    /// Pass 2: the idle agent holding the fewest sessions (lowest index on a
+    /// tie), so distinct threads spread across workers instead of piling onto
+    /// slot 0 and then queueing behind whichever of them is busy.
     ///
     /// Returns `None` if all agents are checked out.
     pub fn try_claim(&mut self, scope: Option<&SessionScope>) -> Option<OwnedAgent> {
@@ -1153,8 +1153,14 @@ impl AgentPool {
             }
         }
 
-        // Pass 2: first idle agent.
-        let idx = self.agents.iter().position(|slot| slot.is_some());
+        // Pass 2: least-loaded idle agent.
+        let idx = self
+            .agents
+            .iter()
+            .enumerate()
+            .filter_map(|(i, slot)| slot.as_ref().map(|a| (i, a.state.sessions.len())))
+            .min_by_key(|&(i, sessions)| (sessions, i))
+            .map(|(i, _)| i);
         idx.map(|i| self.agents[i].take().unwrap())
     }
 
@@ -1640,27 +1646,15 @@ const CONTROL_CANCEL_GRACE: Duration = Duration::from_secs(5);
 /// Timeout for permission-mode requests (`session/set_config_option` with `configId: "mode"`).
 const PERMISSION_MODE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Bounded window a `Thread` batch waits for its busy session-owner before we
-/// stop holding and fork a fresh session on an idle worker. Kept below the 30s
-/// maintenance tick so even a silent system re-evaluates a held batch shortly
-/// after expiry, versus the max-turn deadline it could starve behind today.
+/// Bounded window a `Thread`/`Main` batch waits for its busy session-owner
+/// before we stop holding and hand the scope to an idle worker. When the
+/// session ledger is enabled the idle worker reattaches the owner's provider
+/// session (see [`SessionLedger::allow_handoff`](crate::session_ledger::SessionLedger::allow_handoff)),
+/// so the handoff keeps the conversation; otherwise it starts a fresh one.
+/// Kept below the 30s maintenance tick so even a silent system re-evaluates a
+/// held batch shortly after expiry, versus the max-turn deadline it could
+/// starve behind.
 pub(crate) const HOLD_BUSY_OWNER_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Hold window that never expires: a held batch waits for its session owner to
-/// return instead of forking a duplicate session. The owner's turn is itself
-/// bounded by the max-turn deadline, so the wait cannot be unbounded in time.
-pub(crate) const HOLD_BUSY_OWNER_UNBOUNDED: Duration = Duration::MAX;
-
-/// Busy-owner hold window for a session policy. The thread policy never forks
-/// a held main or thread session — forking abandons the owner's provider
-/// session and restarts from relay context. The channel policy only produces
-/// `Conversation` scopes, which never hold, so its bounded window is moot.
-pub(crate) fn busy_owner_hold_timeout(policy: SessionPolicy) -> Duration {
-    match policy {
-        SessionPolicy::Thread => HOLD_BUSY_OWNER_UNBOUNDED,
-        SessionPolicy::Channel => HOLD_BUSY_OWNER_TIMEOUT,
-    }
-}
 
 /// Placeholder [`fetch_channel_info`] substitutes when a channel's metadata
 /// event carries no `name` tag. Not a real channel name — consumers that need
@@ -10033,6 +10027,25 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         agent
     }
 
+    // A new scope goes to the idle worker holding the fewest sessions, so
+    // threads spread across workers instead of piling onto slot 0.
+    #[tokio::test]
+    async fn try_claim_prefers_least_loaded_idle_worker() {
+        let channel_id = Uuid::new_v4();
+        let busy_a = idle_agent_with_session(0, thread_scope(channel_id, &"a".repeat(64))).await;
+        let busy_b = idle_agent_with_session(1, thread_scope(channel_id, &"b".repeat(64))).await;
+        let mut empty = idle_agent_with_session(2, thread_scope(channel_id, &"c".repeat(64))).await;
+        empty.state.sessions.clear();
+        let mut pool = AgentPool::from_slots(vec![Some(busy_a), Some(busy_b), Some(empty)]);
+
+        let new_scope = thread_scope(channel_id, &"d".repeat(64));
+        let claimed = pool.try_claim(Some(&new_scope)).expect("idle worker");
+        assert_eq!(claimed.index, 2, "empty worker wins over loaded slot 0");
+        // Ties break toward the lowest index.
+        let next = pool.try_claim(Some(&new_scope)).expect("idle worker");
+        assert_eq!(next.index, 0);
+    }
+
     // `hold_decision` is gated on the scope variant (not session policy),
     // short-circuits when an idle worker already holds the session or no busy
     // owner is recorded, and only a busy `Thread` owner holds — for a bounded
@@ -10172,59 +10185,6 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         }
     }
 
-    #[test]
-    fn busy_owner_hold_timeout_is_unbounded_for_thread_policy() {
-        assert_eq!(
-            busy_owner_hold_timeout(SessionPolicy::Channel),
-            HOLD_BUSY_OWNER_TIMEOUT
-        );
-        assert_eq!(
-            busy_owner_hold_timeout(SessionPolicy::Thread),
-            HOLD_BUSY_OWNER_UNBOUNDED
-        );
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn thread_policy_hold_never_forks_and_arms_no_deadline() {
-        // Main and thread scopes hold for their busy owner. Under the
-        // thread-policy timeout the hold never expires into a fork (which
-        // would discard the owner's session), and it arms no timer: the
-        // owner's return is what wakes the dispatch loop.
-        let channel_id = Uuid::new_v4();
-        let idle_scope = thread_scope(channel_id, &"c".repeat(64));
-        let timeout = busy_owner_hold_timeout(SessionPolicy::Thread);
-        for scope in [
-            SessionScope::Main { channel_id },
-            thread_scope(channel_id, &"a".repeat(64)),
-        ] {
-            let idle_agent = idle_agent_with_session(0, idle_scope.clone()).await;
-            let mut pool = AgentPool::from_slots(vec![Some(idle_agent)]);
-            pool.record_scope_owner(scope.clone(), 1);
-            mark_agent_busy(&mut pool, 1, thread_scope(channel_id, &"b".repeat(64)));
-
-            let started = tokio::time::Instant::now();
-            assert!(matches!(
-                pool.hold_decision(&scope, started, timeout),
-                HoldDecision::Hold { .. }
-            ));
-            assert_eq!(pool.next_hold_deadline(timeout), None);
-            // Far beyond the bounded window (and any max-turn deadline), still held.
-            let much_later = started + Duration::from_secs(24 * 60 * 60);
-            assert!(
-                matches!(
-                    pool.hold_decision(&scope, much_later, timeout),
-                    HoldDecision::Hold { .. }
-                ),
-                "{scope:?} must not fork under the thread policy"
-            );
-            // The bounded legacy window still forks the same scope.
-            assert!(matches!(
-                pool.hold_decision(&scope, much_later, HOLD_BUSY_OWNER_TIMEOUT),
-                HoldDecision::ForkAfterHold { .. }
-            ));
-        }
-    }
-
     #[tokio::test]
     async fn conversation_scope_never_holds_even_with_unbounded_timeout() {
         let channel_id = Uuid::new_v4();
@@ -10233,11 +10193,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         pool.record_scope_owner(scope.clone(), 1);
         mark_agent_busy(&mut pool, 1, thread_scope(channel_id, &"b".repeat(64)));
         assert!(matches!(
-            pool.hold_decision(
-                &scope,
-                tokio::time::Instant::now(),
-                HOLD_BUSY_OWNER_UNBOUNDED
-            ),
+            pool.hold_decision(&scope, tokio::time::Instant::now(), Duration::MAX),
             HoldDecision::Dispatch
         ));
     }
@@ -11895,7 +11851,6 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             relay_url: "ws://127.0.0.1:3000".to_string(),
             dispatcher: false,
             channel_roster: false,
-            session_policy: SessionPolicy::default(),
             session_ledger: None,
         }
     }

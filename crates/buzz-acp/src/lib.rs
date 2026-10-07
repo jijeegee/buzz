@@ -3541,8 +3541,7 @@ async fn run_harness(
 
         // Borrow result_rx and join_set simultaneously via split-borrow helper.
         pool.retain_held_scopes(|scope| queue.has_pending_scope(scope));
-        let hold_deadline =
-            pool.next_hold_deadline(pool::busy_owner_hold_timeout(config.session_policy));
+        let hold_deadline = pool.next_hold_deadline(pool::HOLD_BUSY_OWNER_TIMEOUT);
         let pool_event: Option<PoolEvent> = {
             let (result_rx, join_set) = pool.rx_and_join_set();
             tokio::select! {
@@ -5265,9 +5264,10 @@ fn dispatch_pending(
         // held. `Conversation` scopes never hold — a busy owner there forks
         // onto another idle worker, so an active channel cannot starve a
         // sibling channel on a shared worker. A held `Thread`/`Main` batch waits
-        // for the owner's (deadline-bounded) turn instead of forking, so the
-        // provider session is never split.
-        let hold_timeout = pool::busy_owner_hold_timeout(ctx.session_policy);
+        // briefly for its owner, then moves to an idle worker that reattaches
+        // the same provider session, so threads run concurrently without
+        // splitting their conversation.
+        let hold_timeout = pool::HOLD_BUSY_OWNER_TIMEOUT;
         let forked_after_hold = match pool.hold_decision(&scope, now, hold_timeout) {
             pool::HoldDecision::Hold {
                 held_for,
@@ -5289,8 +5289,7 @@ fn dispatch_pending(
                             "scope": scope.telemetry_label(),
                             "ownerIndex": owner_index,
                             "heldForSecs": held_for.as_secs_f64(),
-                            "timeoutSecs": (hold_timeout != pool::HOLD_BUSY_OWNER_UNBOUNDED)
-                                .then(|| hold_timeout.as_secs_f64()),
+                            "timeoutSecs": hold_timeout.as_secs_f64(),
                         }),
                     );
                 }
@@ -5328,12 +5327,18 @@ fn dispatch_pending(
         // fresh timeout window.
         pool.clear_hold(&scope);
         if let Some((held_for, owner_index)) = forked_after_hold {
-            tracing::warn!(
+            // The owner is mid-turn on another scope, so this scope's session
+            // is idle: let the claimed worker reattach it.
+            if let Some(ledger) = &ctx.session_ledger {
+                ledger.allow_handoff(&scope);
+            }
+            tracing::info!(
                 channel = %channel_id,
                 scope = %scope.telemetry_label(),
                 owner_index,
+                agent = agent.index,
                 held_for_secs = held_for.as_secs_f64(),
-                "busy-owner hold expired — forking fresh session on an idle worker"
+                "busy-owner hold expired — handing session to an idle worker"
             );
             if let Some(observer) = observer {
                 observer.emit(
