@@ -763,7 +763,10 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     }
     // Layer 0 goals stay on this machine; only this agent's own process sees
     // its goal and its owner's private goal.
-    let (agent_goal, owner_goal) = crate::commands::spawn_goals(app, &record.pubkey);
+    let answers_owner_only = super::projected_access_with_policy(record, super::owner_only()).0
+        == super::RespondTo::OwnerOnly;
+    let (agent_goal, owner_goal) =
+        crate::commands::spawn_goals(app, &record.pubkey, owner_hex, answers_owner_only);
     for (key, value) in [
         ("BUZZ_ACP_AGENT_GOAL", agent_goal),
         ("BUZZ_ACP_OWNER_GOAL", owner_goal),

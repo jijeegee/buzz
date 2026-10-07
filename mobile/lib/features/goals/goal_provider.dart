@@ -80,6 +80,10 @@ class GoalActions {
       throw const GoalTreeException('Sign in to edit goals.');
     }
     for (var attempt = 0; attempt < _maxAttempts; attempt++) {
+      if (attempt > 0) {
+        // Let a lagging read catch up and spread out colliding writers.
+        await Future<void>.delayed(Duration(milliseconds: 150 << attempt));
+      }
       final head = _headFrom(
         await session.queryRelay([goalTreeFilter(channelId)]),
       );

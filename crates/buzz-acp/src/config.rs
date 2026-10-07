@@ -1408,10 +1408,15 @@ impl Config {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string),
-            layer0_goals: render_layer0_goals(
-                args.agent_goal.as_deref(),
-                args.owner_goal.as_deref(),
-            ),
+            layer0_goals: {
+                let goals =
+                    render_layer0_goals(args.agent_goal.as_deref(), args.owner_goal.as_deref());
+                // The goals now live only in the prompt; child processes and
+                // their shell tools must not be able to print them.
+                std::env::remove_var("BUZZ_ACP_AGENT_GOAL");
+                std::env::remove_var("BUZZ_ACP_OWNER_GOAL");
+                goals
+            },
             initial_message: args.initial_message,
             subscribe_mode: args.subscribe,
             dedup_mode: args.dedup,

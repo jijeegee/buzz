@@ -23,12 +23,23 @@ struct Head {
     tree: GoalTree,
 }
 
-fn head_filter(channel_id: &str) -> serde_json::Value {
-    serde_json::json!({ "kinds": [KIND_GOAL_TREE], "#h": [channel_id], "limit": 1 })
+/// `strong` pins the read to the writer pool. Every write is composed against
+/// a strong read so a lagging replica cannot hand it a stale revision.
+fn head_filter(channel_id: &str, strong: bool) -> serde_json::Value {
+    let mut filter =
+        serde_json::json!({ "kinds": [KIND_GOAL_TREE], "#h": [channel_id], "limit": 1 });
+    if strong {
+        filter["consistency"] = serde_json::json!("strong");
+    }
+    filter
 }
 
-async fn fetch_head(state: &AppState, channel_id: &str) -> Result<Option<Head>, String> {
-    let events = query_relay(state, &[head_filter(channel_id)]).await?;
+async fn fetch_head(
+    state: &AppState,
+    channel_id: &str,
+    strong: bool,
+) -> Result<Option<Head>, String> {
+    let events = query_relay(state, &[head_filter(channel_id, strong)]).await?;
     let Some(event) = events.first() else {
         return Ok(None);
     };
@@ -64,7 +75,7 @@ pub async fn get_goal_tree(
     channel_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    Ok(head_json(fetch_head(&state, &channel_id).await?))
+    Ok(head_json(fetch_head(&state, &channel_id, false).await?))
 }
 
 enum Edit {
@@ -72,12 +83,20 @@ enum Edit {
     Replace(GoalTree),
 }
 
-async fn write(state: &AppState, channel_id: &str, edit: Edit) -> Result<serde_json::Value, String> {
+async fn write(
+    state: &AppState,
+    channel_id: &str,
+    edit: Edit,
+) -> Result<serde_json::Value, String> {
     let uuid = uuid::Uuid::parse_str(channel_id)
         .map_err(|_| format!("invalid channel UUID: {channel_id}"))?;
     let editor = state.signing_keys()?.public_key().to_hex();
-    for _ in 0..MAX_WRITE_ATTEMPTS {
-        let head = fetch_head(state, channel_id).await?;
+    for attempt in 0..MAX_WRITE_ATTEMPTS {
+        if attempt > 0 {
+            // Spread out writers that collided on the same head.
+            tokio::time::sleep(std::time::Duration::from_millis(150 << attempt)).await;
+        }
+        let head = fetch_head(state, channel_id, true).await?;
         let (revision, head_created_at, mut tree) = match head {
             Some(h) => (h.id, Some(h.created_at), h.tree),
             None => ("none".to_string(), None, GoalTree::empty()),
@@ -89,9 +108,8 @@ async fn write(state: &AppState, channel_id: &str, edit: Edit) -> Result<serde_j
             }
             Edit::Replace(replacement) => tree = replacement.clone(),
         }
-        let builder =
-            buzz_sdk_pkg::build_set_goal_tree(uuid, &tree, &revision, head_created_at)
-                .map_err(|e| e.to_string())?;
+        let builder = buzz_sdk_pkg::build_set_goal_tree(uuid, &tree, &revision, head_created_at)
+            .map_err(|e| e.to_string())?;
         match submit_event(builder, state).await {
             Ok(result) => {
                 return Ok(serde_json::json!({ "event_id": result.event_id, "tree": tree }));
@@ -129,9 +147,7 @@ pub async fn get_goal_tree_history(
     let revisions: Vec<serde_json::Value> = events
         .iter()
         .map(|event| {
-            let goals = GoalTree::parse(&event.content)
-                .map(|t| t.nodes.len())
-                .ok();
+            let goals = GoalTree::parse(&event.content).map(|t| t.nodes.len()).ok();
             serde_json::json!({
                 "revision": event.id.to_hex(),
                 "created_at": event.created_at.as_secs(),

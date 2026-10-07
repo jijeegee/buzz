@@ -32,8 +32,10 @@ pub struct Layer0Goal {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Layer0Store {
+    /// Each identity's own goal, keyed by its pubkey (lowercase hex), so a
+    /// different identity on this device never inherits it.
     #[serde(default)]
-    owner: Layer0Goal,
+    owners: BTreeMap<String, Layer0Goal>,
     #[serde(default)]
     agents: BTreeMap<String, Layer0Goal>,
 }
@@ -59,9 +61,14 @@ fn save_store<R: tauri::Runtime>(app: &AppHandle<R>, store: &Layer0Store) -> Res
 }
 
 /// Private goals handed to an agent at spawn: `(its own, its owner's)`.
+///
+/// The owner's goal only reaches agents that answer the owner alone: an
+/// agent that answers others could be talked into repeating it.
 pub(crate) fn spawn_goals<R: tauri::Runtime>(
     app: &AppHandle<R>,
     agent_pubkey: &str,
+    owner_pubkey: Option<&str>,
+    answers_owner_only: bool,
 ) -> (Option<String>, Option<String>) {
     let store = load_store(app);
     let non_empty = |value: &str| {
@@ -72,7 +79,15 @@ pub(crate) fn spawn_goals<R: tauri::Runtime>(
         .agents
         .get(&agent_pubkey.to_ascii_lowercase())
         .and_then(|goal| non_empty(&goal.private));
-    (agent, non_empty(&store.owner.private))
+    let owner = owner_pubkey
+        .filter(|_| answers_owner_only)
+        .and_then(|owner| store.owners.get(&owner.to_ascii_lowercase()))
+        .and_then(|goal| non_empty(&goal.private));
+    (agent, owner)
+}
+
+fn current_identity(state: &AppState) -> Result<String, String> {
+    Ok(state.signing_keys()?.public_key().to_hex())
 }
 
 fn validate(goal: &Layer0Goal) -> Result<(), String> {
@@ -92,16 +107,23 @@ fn validate(goal: &Layer0Goal) -> Result<(), String> {
 /// Read a layer 0 goal. `agent_pubkey` selects one of your agents; `None`
 /// reads your own.
 #[tauri::command]
-pub fn get_layer0_goal(app: AppHandle, agent_pubkey: Option<String>) -> Layer0Goal {
+pub fn get_layer0_goal(
+    app: AppHandle,
+    agent_pubkey: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Layer0Goal, String> {
     let store = load_store(&app);
-    match agent_pubkey {
-        Some(pubkey) => store
-            .agents
-            .get(&pubkey.to_ascii_lowercase())
-            .cloned()
-            .unwrap_or_default(),
-        None => store.owner,
-    }
+    let key = match agent_pubkey {
+        Some(pubkey) => {
+            return Ok(store
+                .agents
+                .get(&pubkey.to_ascii_lowercase())
+                .cloned()
+                .unwrap_or_default())
+        }
+        None => current_identity(&state)?,
+    };
+    Ok(store.owners.get(&key).cloned().unwrap_or_default())
 }
 
 /// Save a layer 0 goal and publish (or clear) its public part. Agents pick
@@ -114,15 +136,14 @@ pub async fn set_layer0_goal(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validate(&goal)?;
+    let identity = current_identity(&state)?;
     let mut store = load_store(&app);
     let previous = match &agent_pubkey {
-        Some(pubkey) => store
-            .agents
-            .get(&pubkey.to_ascii_lowercase())
-            .cloned()
-            .unwrap_or_default(),
-        None => store.owner.clone(),
-    };
+        Some(pubkey) => store.agents.get(&pubkey.to_ascii_lowercase()),
+        None => store.owners.get(&identity),
+    }
+    .cloned()
+    .unwrap_or_default();
 
     let public_content = if goal.public_enabled {
         goal.public.trim().to_string()
@@ -164,7 +185,9 @@ pub async fn set_layer0_goal(
         Some(pubkey) => {
             store.agents.insert(pubkey.to_ascii_lowercase(), goal);
         }
-        None => store.owner = goal,
+        None => {
+            store.owners.insert(identity, goal);
+        }
     }
     save_store(&app, &store)
 }
@@ -207,9 +230,10 @@ mod tests {
     }
 
     #[test]
-    fn store_defaults_public_off() {
+    fn store_defaults_empty() {
         let store: Layer0Store = serde_json::from_str("{}").unwrap();
-        assert!(!store.owner.public_enabled);
+        assert!(store.owners.is_empty());
         assert!(store.agents.is_empty());
+        assert!(!Layer0Goal::default().public_enabled);
     }
 }

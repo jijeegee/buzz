@@ -2537,7 +2537,12 @@ async fn ingest_event_inner(
     // `validate_canvas_future_timestamp` for the rationale and invariant.
     if buzz_core::kind::is_channel_head_kind(kind_u32) {
         if let Err(msg) = validate_canvas_future_timestamp(event_ts, now) {
-            return Err(IngestError::Rejected(msg.into()));
+            let msg = if kind_u32 == KIND_GOAL_TREE {
+                msg.replace("canvas", "goal tree")
+            } else {
+                msg.to_string()
+            };
+            return Err(IngestError::Rejected(msg));
         }
     }
 
