@@ -30,6 +30,7 @@ use runtime::{AgentRuntime, PoolStartup, SessionMode};
 mod scope;
 mod session_ledger;
 mod setup_mode;
+mod task_threads;
 mod usage;
 
 pub use usage::TurnUsage;
@@ -10450,6 +10451,7 @@ mod build_mcp_servers_tests {
             base_prompt_content: None,
             dispatcher: false,
             channel_roster: false,
+            task_threads: Vec::new(),
             dispatcher_config: config::DispatcherConfig::default(),
         }
     }
@@ -11315,6 +11317,7 @@ mod error_outcome_emission_tests {
             base_prompt_content: None,
             dispatcher: false,
             channel_roster: false,
+            task_threads: Vec::new(),
             dispatcher_config: config::DispatcherConfig::default(),
         }
     }

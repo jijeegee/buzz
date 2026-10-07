@@ -84,6 +84,9 @@ pub(crate) struct SpawnConfigInputs<'a> {
     /// The channel routing role the launch applies (`routing_role_for`:
     /// saved mode × the record's star), which decides the routing env.
     pub routing_role: RoutingRole,
+    /// The desktop-wide task thread trigger list (`task-threads.json`); the
+    /// launch passes it on only under the thread policy.
+    pub task_threads: &'a str,
 }
 
 /// The effective spawn configuration of one managed-agent process.
@@ -163,6 +166,10 @@ pub(crate) struct SpawnConfigSnapshot {
     /// after user env, so it is captured explicitly like `session_policy`
     /// rather than read back out of `env`.
     pub routing_role: RoutingRole,
+    /// The `BUZZ_ACP_TASK_THREADS` list this launch applied (empty when none):
+    /// written on the spawn `Command` after user env, so it is captured
+    /// explicitly, and changing the setting raises the restart badge.
+    pub task_threads: String,
 }
 
 /// The startup effort a spawn actually applied, read from the single effort key
@@ -203,6 +210,7 @@ impl SpawnConfigSnapshot {
             enforced_owner_only,
             session_policy,
             routing_role,
+            task_threads,
         } = inputs;
         let (respond_to, respond_to_allowlist) =
             super::projected_access_with_policy(record, enforced_owner_only);
@@ -271,6 +279,9 @@ impl SpawnConfigSnapshot {
             effort_level: effective_effort(descriptor),
             session_policy: session_policy.as_str().to_string(),
             routing_role,
+            task_threads: super::task_threads::task_threads_env_for(session_policy, task_threads)
+                .unwrap_or_default()
+                .to_string(),
         }
     }
 
@@ -300,7 +311,8 @@ impl std::fmt::Debug for SpawnConfigSnapshot {
 /// Snapshot the effective spawn configuration `record` would get if it were
 /// started right now under the current `personas`/`teams`/`global`, resolving
 /// a blank record relay against `workspace_relay`. `routing_role` is the
-/// caller's `routing_role_for` under the saved channel routing mode.
+/// caller's `routing_role_for` under the saved channel routing mode, and
+/// `task_threads` the saved task thread trigger list.
 ///
 /// Pure — no `AppHandle`, no disk, no keyring. This is the *prospective* side
 /// of the comparison; the stamped side is built at spawn from the values that
@@ -313,6 +325,7 @@ pub(crate) fn prospective_spawn_config_snapshot(
     global: &GlobalAgentConfig,
     enforced_owner_only: bool,
     routing_role: RoutingRole,
+    task_threads: &str,
 ) -> SpawnConfigSnapshot {
     // Prospective re-snapshot: apply the same `apply_persona_snapshot` the
     // start/restore paths run right before spawning, so this describes what a
@@ -365,6 +378,7 @@ pub(crate) fn prospective_spawn_config_snapshot(
         enforced_owner_only,
         session_policy: record.session_policy,
         routing_role,
+        task_threads,
     })
 }
 

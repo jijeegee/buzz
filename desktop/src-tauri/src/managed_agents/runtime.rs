@@ -298,6 +298,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
                 ),
                 &super::channel_routing::live_local_roles(runtimes),
             ),
+            &super::task_threads::current_task_threads_env(app),
         );
         (runtime, current)
     });
@@ -893,6 +894,10 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             super::storage::managed_agents_state_dir(app)?,
         );
     }
+    // Self-opened task threads ride the thread policy, after user env like
+    // the policy itself; the snapshot below stamps the same value.
+    let task_threads = super::task_threads::current_task_threads_env(app);
+    super::task_threads::apply_task_threads_env(&mut command, acp_session_policy, &task_threads);
     // The channel routing role (saved mode × the record's star, held back
     // while another agent still runs a role it is losing) decides the
     // routing env. Written after the `descriptor.env` loop like the session
@@ -974,6 +979,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             enforced_owner_only: super::owner_only_access_build(),
             session_policy: acp_session_policy,
             routing_role,
+            task_threads: &task_threads,
         },
     );
 

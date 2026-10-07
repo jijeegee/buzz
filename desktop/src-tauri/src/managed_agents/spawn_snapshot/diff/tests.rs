@@ -31,6 +31,7 @@ fn base() -> SpawnConfigSnapshot {
         effort_level: Some("high".into()),
         session_policy: "channel".into(),
         routing_role: crate::managed_agents::channel_routing::RoutingRole::None,
+        task_threads: "long_running".into(),
     }
 }
 
@@ -78,6 +79,7 @@ fn mutations() -> Vec<Mutation> {
         ("routing_role", |s| {
             s.routing_role = crate::managed_agents::channel_routing::RoutingRole::Dispatcher
         }),
+        ("task_threads", |s| s.task_threads = "long_running,multi_step".into()),
     ]
 }
 

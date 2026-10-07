@@ -5,11 +5,12 @@ type DefaultAiCandidate = Pick<ManagedAgent, "pubkey" | "isDefaultAi">;
 
 /**
  * Shown wherever a default-AI affordance has nothing to act on. Names the one
- * place the star is chosen (the routing agent picker in the Agents page
- * "Channel routing" card) so the empty state is a pointer, not a dead end.
+ * place the star is chosen (the routing agent picker in the "Channel
+ * routing" card under Settings › Experiments) so the empty state is a
+ * pointer, not a dead end.
  */
 export const NO_DEFAULT_AI_HINT =
-  "No routing agent yet — choose one in Agents › Channel routing";
+  "No routing agent yet — choose one in Settings › Experiments › Channel routing";
 
 /**
  * A key-less definition record has no identity to star. This mirrors the

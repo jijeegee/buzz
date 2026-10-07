@@ -56,6 +56,7 @@ fn build_launch_block_for_policy(
     owner_pubkey: &str,
     session_policy: crate::managed_agents::AcpSessionPolicy,
     routing_role: crate::managed_agents::channel_routing::RoutingRole,
+    task_threads: &str,
 ) -> serde_json::Value {
     use crate::managed_agents::{
         known_acp_runtime, resolve_session_title, DISPLAY_NAME_ENV_VAR, SESSION_TITLE_ENV_VAR,
@@ -85,6 +86,14 @@ fn build_launch_block_for_policy(
     // The channel routing role comes from the same `routing_role_for` as the
     // local spawn path, so both launch paths agree.
     crate::managed_agents::insert_routing_env(&mut policy_env, routing_role);
+    if let Some(value) =
+        crate::managed_agents::task_threads::task_threads_env_for(session_policy, task_threads)
+    {
+        policy_env.insert(
+            crate::managed_agents::task_threads::TASK_THREADS_ENV_VAR.into(),
+            value.to_string(),
+        );
+    }
 
     if let Some(value) = effective_prompt {
         policy_env.insert("BUZZ_ACP_SYSTEM_PROMPT".into(), value.to_string());
@@ -142,6 +151,7 @@ fn build_launch_block_for_policy(
     let is_claude = runtime.map(|r| r.id == "claude").unwrap_or(false);
     let strip_key = |k: &str| {
         k.eq_ignore_ascii_case(crate::managed_agents::ACP_SESSION_POLICY_ENV_VAR)
+            || k.eq_ignore_ascii_case(crate::managed_agents::task_threads::TASK_THREADS_ENV_VAR)
             || (is_claude
                 && (k.eq_ignore_ascii_case("BUZZ_ACP_MODEL")
                     || k.eq_ignore_ascii_case("ANTHROPIC_MODEL")))
@@ -185,6 +195,7 @@ pub(super) fn build_launch_block(
             crate::managed_agents::channel_routing::ChannelRoutingMode::Host,
             Some(owner_pubkey),
         ),
+        "",
     )
 }
 
@@ -268,6 +279,7 @@ pub(super) fn build_deploy_payload_with_live_roles<R: tauri::Runtime>(
             ),
             live_roles,
         ),
+        &crate::managed_agents::task_threads::current_task_threads_env(app),
     );
 
     let effective_parallelism =
@@ -454,6 +466,7 @@ mod tests {
                 "owner-hex",
                 crate::managed_agents::AcpSessionPolicy::Channel,
                 routing_role_for(&record, mode, Some("owner-hex")),
+                "",
             );
             assert!(
                 launch["policy_env"]["BUZZ_ACP_DISPATCHER"].is_null(),
@@ -483,6 +496,7 @@ mod tests {
             "owner-hex",
             crate::managed_agents::AcpSessionPolicy::Thread,
             crate::managed_agents::channel_routing::RoutingRole::None,
+            "",
         );
 
         assert_eq!(launch["policy_env"]["BUZZ_ACP_SESSION_POLICY"], "thread");

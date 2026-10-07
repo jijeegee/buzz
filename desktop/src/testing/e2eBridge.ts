@@ -14387,6 +14387,10 @@ export function maybeInstallE2eTauriMocks() {
         return handleSetManagedAgentAutoRestart(
           payload as Parameters<typeof handleSetManagedAgentAutoRestart>[0],
         );
+      case "get_task_threads":
+        return { level: "minimal", triggers: ["long_running"] };
+      case "set_task_threads":
+        return (payload as { setting: unknown }).setting;
       case "get_channel_routing":
         return mockChannelRoutingStatus();
       case "set_channel_routing":
