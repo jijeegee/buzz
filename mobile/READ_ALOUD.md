@@ -1,6 +1,6 @@
 # Mobile message read-aloud
 
-Settings → 화면 설정 → 모바일 읽어주기 버튼. The device-local toggle defaults
+Settings → Experiments → 모바일 읽어주기 버튼. The device-local toggle defaults
 to off. It does not publish an event or change desktop preferences.
 
 When enabled, channel and thread messages show a speaker below the body on the
