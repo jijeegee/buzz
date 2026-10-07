@@ -32,9 +32,9 @@ use buzz_core::kind::{
     KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED,
     KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED,
     KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
-    KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
-    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_THREAD_NAME, KIND_USER_STATUS, KIND_WORKFLOW_DEF,
+    KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
+    RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -587,6 +587,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_STREAM_MESSAGE_V2
         | KIND_NIP29_DELETE_EVENT
         | KIND_STREAM_MESSAGE_EDIT
+        | KIND_THREAD_NAME
         | KIND_STREAM_MESSAGE_PINNED
         | KIND_STREAM_MESSAGE_BOOKMARKED
         | KIND_STREAM_MESSAGE_SCHEDULED
@@ -823,6 +824,7 @@ pub(crate) fn requires_h_channel_scope(kind: u32) -> bool {
         KIND_STREAM_MESSAGE
             | KIND_STREAM_MESSAGE_V2
             | KIND_STREAM_MESSAGE_EDIT
+            | KIND_THREAD_NAME
             | KIND_STREAM_MESSAGE_PINNED
             | KIND_STREAM_MESSAGE_BOOKMARKED
             | KIND_STREAM_MESSAGE_SCHEDULED
@@ -2982,6 +2984,27 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
+    if kind_u32 == KIND_THREAD_NAME {
+        let target_id = buzz_core::thread_name::thread_name_target(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        let head = state
+            .db
+            .get_event_by_id_for_event_write(tenant.community(), target_id.as_bytes())
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: loading thread head: {e}")))?
+            .ok_or_else(|| IngestError::Rejected("invalid: thread head not found".into()))?;
+        if head.channel_id != extract_channel_id(&event)
+            || !matches!(
+                event_kind_u32(&head.event),
+                KIND_STREAM_MESSAGE | KIND_STREAM_MESSAGE_V2 | KIND_STREAM_MESSAGE_DIFF
+            )
+        {
+            return Err(IngestError::Rejected(
+                "invalid: thread head must be a stream message in this channel".into(),
+            ));
+        }
+    }
+
     if kind_u32 == KIND_FORUM_VOTE {
         validate_forum_vote_target(tenant.community(), &event, state)
             .await
@@ -3251,7 +3274,8 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
-    let thread_meta = if requires_h_channel_scope(kind_u32) {
+    // A name references a thread head but is never itself a reply.
+    let thread_meta = if requires_h_channel_scope(kind_u32) && kind_u32 != KIND_THREAD_NAME {
         if let Some(ch_id) = channel_id {
             resolve_nip10_thread_meta(tenant.community(), &event, ch_id, state)
                 .await

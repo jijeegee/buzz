@@ -13,6 +13,7 @@ import {
   AuxiliaryPanelBody,
   AuxiliaryPanelHeader,
   AuxiliaryPanelHeaderGroup,
+  AuxiliaryPanelHeaderActions,
   AuxiliaryPanelTitle,
 } from "@/shared/layout/AuxiliaryPanel";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -20,6 +21,7 @@ import { Skeleton } from "@/shared/ui/skeleton";
 /** Shared title row so the skeleton and loaded panel keep the same chrome. */
 export function MessageThreadPanelHeader({
   headerLeading,
+  headerActions,
   headerTitle = "Thread",
   headerTitleAriaLabel,
   isFocusMode,
@@ -29,6 +31,7 @@ export function MessageThreadPanelHeader({
   showBackButton,
 }: {
   headerLeading?: React.ReactNode;
+  headerActions?: React.ReactNode;
   headerTitle?: string;
   headerTitleAriaLabel?: string;
   isFocusMode: boolean;
@@ -68,6 +71,11 @@ export function MessageThreadPanelHeader({
       >
         <AuxiliaryPanelTitle>{title}</AuxiliaryPanelTitle>
       </AuxiliaryPanelHeaderGroup>
+      {headerActions ? (
+        <AuxiliaryPanelHeaderActions>
+          {headerActions}
+        </AuxiliaryPanelHeaderActions>
+      ) : null}
     </AuxiliaryPanelHeader>
   );
 }

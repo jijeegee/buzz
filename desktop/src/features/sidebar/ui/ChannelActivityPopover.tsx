@@ -7,6 +7,7 @@ import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurn
 import { formatElapsed } from "@/features/agents/ui/agentSessionUtils";
 import { useOpenAgentActivity } from "@/features/agents/useOpenAgentActivity";
 import { buildInboxItems, type InboxItem } from "@/features/home/lib/inbox";
+import { ThreadNameLabel } from "@/features/messages/ui/ThreadNameLabel";
 import { getGroupedInboxItemIds } from "@/features/home/useHomeInboxReadState";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
@@ -120,6 +121,12 @@ function ThreadPreviewRow({
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
             <span>Thread</span>
+            {item.item.channelId ? (
+              <ThreadNameLabel
+                channelId={item.item.channelId}
+                threadId={item.conversationId}
+              />
+            ) : null}
             {item.unreadCount > 1 ? (
               <>
                 <span aria-hidden="true">·</span>

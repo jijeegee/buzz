@@ -46,6 +46,7 @@ export const KIND_HUDDLE_LIVENESS = 48104;
 // differentiates them by d-tag ("read-state:<slotId>", "channel-sections",
 // "channel-mutes", "channel-stars", "channel-sort", "project-sidebar-membership").
 export const KIND_READ_STATE = 30078;
+export const KIND_THREAD_NAME = 40009;
 export const KIND_CHANNEL_SECTIONS = 30078;
 export const KIND_CHANNEL_MUTES = 30078;
 export const KIND_CHANNEL_STARS = 30078;

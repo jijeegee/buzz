@@ -594,6 +594,10 @@ class _ThreadSummaryRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userCache = ref.watch(userCacheProvider);
+    final name = ref
+        .watch(threadNameProvider((channelId: channelId, headId: message.id)))
+        .value
+        ?.content;
 
     return GestureDetector(
       onTap: () {
@@ -644,9 +648,8 @@ class _ThreadSummaryRow extends ConsumerWidget {
                 TextSpan(
                   children: [
                     TextSpan(
-                      text: summary.isCountPending
-                          ? 'Replies'
-                          : '${summary.replyCount}${summary.isLowerBound ? '+' : ''} ${summary.replyCount == 1 ? 'reply' : 'replies'}',
+                      text:
+                          '${name != null && name.isNotEmpty ? '$name · ' : ''}${summary.isCountPending ? 'Replies' : '${summary.replyCount}${summary.isLowerBound ? '+' : ''} ${summary.replyCount == 1 ? 'reply' : 'replies'}'}',
                       style: replyPreviewTextStyle.copyWith(
                         color: context.colors.primary,
                       ),
