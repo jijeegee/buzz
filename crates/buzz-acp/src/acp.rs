@@ -186,6 +186,10 @@ pub struct AcpClient {
     observer_thread_root: Option<String>,
     /// Whether the adapter has advertised a `compact` slash command.
     compact_supported: bool,
+    /// Latest context-window reading per ACP session id, from `usage_update`.
+    /// Answers owner `query_context_usage` controls and guards
+    /// `compact_session`; the pool prunes it to live sessions on return.
+    context_usage: std::collections::HashMap<String, ContextUsageReading>,
     /// Most recently observed `_meta.goose.activeRunId` from a
     /// `session/update` notification of kind `session_info_update`.
     ///
@@ -654,6 +658,7 @@ impl AcpClient {
             observer_context: ObserverContext::default(),
             observer_thread_root: None,
             compact_supported: false,
+            context_usage: std::collections::HashMap::new(),
             active_run_id: None,
             steering_supported: false,
             steer_rx: None,
@@ -688,6 +693,26 @@ impl AcpClient {
     #[cfg(test)]
     pub(crate) fn set_compact_supported_for_test(&mut self, supported: bool) {
         self.compact_supported = supported;
+    }
+
+    /// Latest context reading this adapter reported for `session_id`.
+    pub(crate) fn context_usage(&self, session_id: &str) -> Option<&ContextUsageReading> {
+        self.context_usage.get(session_id)
+    }
+
+    /// Drop readings for sessions that are no longer live.
+    pub(crate) fn retain_context_usage(&mut self, mut is_live: impl FnMut(&str) -> bool) {
+        self.context_usage
+            .retain(|session_id, _| is_live(session_id));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_context_usage_for_test(
+        &mut self,
+        session_id: &str,
+        reading: ContextUsageReading,
+    ) {
+        self.context_usage.insert(session_id.to_owned(), reading);
     }
 
     /// Return a clone of the observer handle, if attached.
@@ -1975,16 +2000,34 @@ impl AcpClient {
         }
     }
 
-    /// Publish context-window occupancy to the observer feed. Claude sends
-    /// `used`/`size`; goose and buzz-agent send `used`/`contextLimit`.
-    fn observe_context_usage(&self, msg: &serde_json::Value) {
-        if let Some(payload) = context_usage_payload(
-            msg,
-            self.observer_thread_root.as_deref(),
-            self.compact_supported,
-        ) {
-            self.observe("context_usage", payload);
+    /// Record context-window occupancy for the session and publish it to the
+    /// observer feed. Claude sends `used`/`size`; goose and buzz-agent send
+    /// `used`/`contextLimit`.
+    fn observe_context_usage(&mut self, msg: &serde_json::Value) {
+        let Some((used, size)) = parse_context_usage(msg) else {
+            return;
+        };
+        let session_id = msg.pointer("/params/sessionId").and_then(|v| v.as_str());
+        if let Some(session_id) = session_id {
+            self.context_usage.insert(
+                session_id.to_owned(),
+                ContextUsageReading {
+                    used,
+                    size,
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                },
+            );
         }
+        self.observe(
+            "context_usage",
+            context_usage_payload(
+                session_id,
+                used,
+                size,
+                self.observer_thread_root.as_deref(),
+                self.compact_supported,
+            ),
+        );
     }
 
     /// Record the standard ACP cumulative cost notification when emitted by
@@ -2174,13 +2217,18 @@ impl AcpClient {
     }
 }
 
-/// Build the `context_usage` observer payload from a `usage_update`
-/// notification, or `None` when it carries no usable window size.
-fn context_usage_payload(
-    msg: &serde_json::Value,
-    thread_root: Option<&str>,
-    compact_supported: bool,
-) -> Option<serde_json::Value> {
+/// Latest context-window occupancy reported for one ACP session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ContextUsageReading {
+    pub(crate) used: u64,
+    pub(crate) size: u64,
+    /// RFC 3339 time the harness received the `usage_update`.
+    pub(crate) updated_at: String,
+}
+
+/// Read `(used, size)` from a `usage_update` notification, or `None` when it
+/// carries no usable window size.
+fn parse_context_usage(msg: &serde_json::Value) -> Option<(u64, u64)> {
     let update = msg.pointer("/params/update")?;
     let size = update
         .get("size")
@@ -2188,13 +2236,24 @@ fn context_usage_payload(
         .and_then(serde_json::Value::as_u64)
         .filter(|size| *size > 0)?;
     let used = update.get("used").and_then(serde_json::Value::as_u64)?;
-    Some(serde_json::json!({
-        "sessionId": msg.pointer("/params/sessionId"),
+    Some((used, size))
+}
+
+/// Build the `context_usage` observer payload for one session scope.
+pub(crate) fn context_usage_payload(
+    session_id: Option<&str>,
+    used: u64,
+    size: u64,
+    thread_root: Option<&str>,
+    compact_supported: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "sessionId": session_id,
         "used": used,
         "size": size,
         "threadRootEventId": thread_root,
         "compactSupported": compact_supported,
-    }))
+    })
 }
 
 /// Build `session/prompt` params from one or more text content blocks.
@@ -2519,15 +2578,16 @@ mod tests {
                 "update": {"sessionUpdate": "usage_update", "used": 50_000, "size": 200_000}
             }
         });
+        assert_eq!(parse_context_usage(&claude), Some((50_000, 200_000)));
         assert_eq!(
-            context_usage_payload(&claude, Some("root"), true),
-            Some(serde_json::json!({
+            context_usage_payload(Some("s-1"), 50_000, 200_000, Some("root"), true),
+            serde_json::json!({
                 "sessionId": "s-1",
                 "used": 50_000,
                 "size": 200_000,
                 "threadRootEventId": "root",
                 "compactSupported": true,
-            }))
+            })
         );
 
         let goose = serde_json::json!({
@@ -2536,8 +2596,8 @@ mod tests {
                 "update": {"sessionUpdate": "usage_update", "used": 10, "contextLimit": 100}
             }
         });
-        let payload = context_usage_payload(&goose, None, false).expect("goose payload");
-        assert_eq!(payload["size"], 100);
+        assert_eq!(parse_context_usage(&goose), Some((10, 100)));
+        let payload = context_usage_payload(Some("s-2"), 10, 100, None, false);
         assert!(payload["threadRootEventId"].is_null());
     }
 
@@ -2549,7 +2609,7 @@ mod tests {
             serde_json::json!({"size": 100}),
         ] {
             let msg = serde_json::json!({"params": {"sessionId": "s", "update": update}});
-            assert_eq!(context_usage_payload(&msg, None, false), None);
+            assert_eq!(parse_context_usage(&msg), None);
         }
     }
 

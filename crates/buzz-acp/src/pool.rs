@@ -1164,6 +1164,14 @@ impl AgentPool {
         self.agents[idx].take()
     }
 
+    /// The idle worker that owns `scope`'s live session, without claiming it.
+    pub(crate) fn idle_scope_owner(&self, scope: &SessionScope) -> Option<&OwnedAgent> {
+        self.agents
+            .iter()
+            .flatten()
+            .find(|agent| self.agent_owns_scope(agent, scope))
+    }
+
     /// Whether `scope` has a recorded session owner that is currently checked
     /// out on a task.
     pub(crate) fn scope_owner_busy(&self, scope: &SessionScope) -> bool {
@@ -1196,6 +1204,16 @@ impl AgentPool {
             .state
             .scope_owner_generations
             .retain(|scope, _| live_scopes.contains(scope));
+        let live_sessions: HashSet<&str> = agent
+            .state
+            .sessions
+            .values()
+            .chain(agent.state.heartbeat_session.as_ref())
+            .map(String::as_str)
+            .collect();
+        agent
+            .acp
+            .retain_context_usage(|session_id| live_sessions.contains(session_id));
         let idx = agent.index;
         if self.agents[idx].is_some() {
             // This is a bug: two tasks returned the same agent index. Log it
@@ -2677,6 +2695,71 @@ async fn compact_outcome(
         }
         Err(error) => ("failed", PromptOutcome::Error(error), MetricStop::Error),
     }
+}
+
+/// A `compact_session` request is stale when its expected reading drifted
+/// from the live one by more than this many tokens, unless
+/// [`COMPACT_STALE_WINDOW_PERCENT`] of the window is larger.
+pub(crate) const COMPACT_STALE_MIN_TOKENS: u64 = 20_000;
+
+/// Share of the context window (percent) a `compact_session` expectation may
+/// drift from the live reading before the request is refused as stale.
+pub(crate) const COMPACT_STALE_WINDOW_PERCENT: u64 = 10;
+
+/// Whether the reading an owner confirmed no longer describes the live
+/// session: a different session id, or `used` moved by more than
+/// `max(10% of size, 20_000)` tokens. Absent expectations (older desktops)
+/// and sessions without a reading never count as stale.
+pub(crate) fn compact_expectation_is_stale(
+    expected_session_id: Option<&str>,
+    expected_used: Option<u64>,
+    session_id: &str,
+    reading: Option<&crate::acp::ContextUsageReading>,
+) -> bool {
+    if expected_session_id.is_some_and(|expected| expected != session_id) {
+        return true;
+    }
+    match (expected_used, reading) {
+        (Some(expected), Some(reading)) => {
+            let threshold = (reading.size.saturating_mul(COMPACT_STALE_WINDOW_PERCENT) / 100)
+                .max(COMPACT_STALE_MIN_TOKENS);
+            expected.abs_diff(reading.used) > threshold
+        }
+        _ => false,
+    }
+}
+
+/// The live context reading of `agent`'s session for `scope`, as reported to
+/// owners in `control_result` frames. `None` without a session or a reading.
+pub(crate) fn scope_context_reading(
+    agent: &OwnedAgent,
+    scope: &SessionScope,
+) -> Option<serde_json::Value> {
+    let session_id = agent.state.sessions.get(scope)?;
+    let reading = agent.acp.context_usage(session_id)?;
+    Some(serde_json::json!({
+        "sessionId": session_id,
+        "used": reading.used,
+        "size": reading.size,
+        "compactSupported": agent.acp.compact_supported(),
+        "updatedAt": reading.updated_at,
+    }))
+}
+
+/// `control_result` payload answering a `query_context_usage` request.
+pub(crate) fn context_query_result_payload(
+    status: &str,
+    request_id: Option<&str>,
+    thread_root: Option<&str>,
+    reading: Option<serde_json::Value>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "type": "query_context_usage",
+        "status": status,
+        "requestId": request_id,
+        "threadRootEventId": thread_root,
+        "reading": reading,
+    })
 }
 
 /// `control_result` payload for a `compact_session` request.
@@ -7471,6 +7554,82 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn compact_expectation_staleness_uses_session_and_drift_threshold() {
+        let reading = |used, size| crate::acp::ContextUsageReading {
+            used,
+            size,
+            updated_at: String::new(),
+        };
+        let small_window = reading(50_000, 100_000);
+        let large_window = reading(500_000, 1_000_000);
+        let stale = compact_expectation_is_stale;
+        // A different session is always stale.
+        assert!(stale(
+            Some("old"),
+            Some(50_000),
+            "live",
+            Some(&small_window)
+        ));
+        // Small windows use the 20k floor; large ones 10% of the window.
+        assert!(!stale(
+            Some("live"),
+            Some(70_000),
+            "live",
+            Some(&small_window)
+        ));
+        assert!(stale(None, Some(70_001), "live", Some(&small_window)));
+        assert!(!stale(None, Some(400_000), "live", Some(&large_window)));
+        assert!(stale(None, Some(399_999), "live", Some(&large_window)));
+        // Missing expectations or no live reading never block compaction.
+        assert!(!stale(None, None, "live", Some(&small_window)));
+        assert!(!stale(Some("live"), None, "live", Some(&small_window)));
+        assert!(!stale(Some("live"), Some(0), "live", None));
+    }
+
+    #[tokio::test]
+    async fn return_agent_prunes_context_readings_to_live_sessions() {
+        let live = thread_scope(Uuid::new_v4(), &"a".repeat(64));
+        let acp = AcpClient::spawn("bash", &["-c".into(), "exec sleep 30".into()], &[], false)
+            .await
+            .expect("spawn ACP");
+        let mut agent = OwnedAgent {
+            index: 0,
+            acp,
+            state: SessionState::default(),
+            model_capabilities: None,
+            desired_model: None,
+            model_overridden: false,
+            desired_model_request_id: None,
+            desired_model_pending_ack: false,
+            startup_effort: None,
+            agent_name: "prune-test-agent".into(),
+            goose_system_prompt_supported: None,
+            protocol_version: 1,
+        };
+        let reading = crate::acp::ContextUsageReading {
+            used: 1,
+            size: 10,
+            updated_at: String::new(),
+        };
+        agent.state.sessions.insert(live.clone(), "live".into());
+        agent
+            .acp
+            .set_context_usage_for_test("live", reading.clone());
+        agent.acp.set_context_usage_for_test("gone", reading);
+        let mut pool = AgentPool::from_slots(vec![None]);
+        let generation = pool.record_scope_owner(live.clone(), 0);
+        agent
+            .state
+            .set_scope_owner_generation(live.clone(), generation);
+
+        pool.return_agent(agent);
+
+        let agent = pool.idle_scope_owner(&live).expect("idle owner");
+        assert!(agent.acp.context_usage("live").is_some());
+        assert!(agent.acp.context_usage("gone").is_none());
+    }
+
     #[tokio::test]
     async fn run_compact_task_sends_compact_and_reports_completion() {
         let channel_id = Uuid::new_v4();
@@ -7543,6 +7702,15 @@ printf '%s
             .expect("post-compaction context_usage");
         assert_eq!(usage.payload["used"], 12000);
         assert_eq!(usage.payload["threadRootEventId"], root.as_str());
+        assert_eq!(
+            result
+                .agent
+                .acp
+                .context_usage("live-session")
+                .map(|reading| (reading.used, reading.size)),
+            Some((12000, 200000)),
+            "the harness keeps the post-compaction reading for owner queries"
+        );
         assert_eq!(usage.channel_id, Some(channel_id.to_string()));
         let done = events
             .iter()
