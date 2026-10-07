@@ -1,6 +1,7 @@
 import { ArrowUpRight, CircleAlert, UserPlus } from "lucide-react";
 
 import { MemorySection } from "@/features/agent-memory/ui/MemorySection";
+import { useContextGaugeEnabled } from "@/features/agents/lib/contextGaugePreference";
 import {
   AgentChannelSessionsRow,
   useAgentChannelSessionGroups,
@@ -66,6 +67,7 @@ export function ChannelsFocusedView({
   sessionAgent?: { pubkey: string; name: string } | null;
   variant?: "embedded" | "focused";
 }) {
+  const contextGaugeEnabled = useContextGaugeEnabled();
   const sessionGroups = useAgentChannelSessionGroups(sessionAgent?.pubkey);
   return (
     <div className={variant === "focused" ? "pt-4" : undefined}>
@@ -112,7 +114,7 @@ export function ChannelsFocusedView({
           >
             {channels.map((channel) => (
               <li key={channel.id}>
-                {sessionAgent ? (
+                {sessionAgent && contextGaugeEnabled ? (
                   <AgentChannelSessionsRow
                     agentName={sessionAgent.name}
                     channel={channel}

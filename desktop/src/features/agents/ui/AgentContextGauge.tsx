@@ -15,6 +15,7 @@ import {
   formatContextUpdatedAgo,
   formatContextUsageLabel,
 } from "@/features/agents/lib/contextGauge";
+import { useContextGaugeEnabled } from "@/features/agents/lib/contextGaugePreference";
 import {
   type ContextReading,
   compactDialogView,
@@ -291,12 +292,13 @@ export function MessageAgentContextGauge({
   className?: string;
   threadRootCandidate: string | null;
 }) {
+  const enabled = useContextGaugeEnabled();
   const reading = useResolvedAgentContextUsage(
     agentPubkey,
     channelId,
     threadRootCandidate,
   );
-  if (!reading) return null;
+  if (!enabled || !reading) return null;
   return (
     <ContextGaugeButton
       agentName={agentName}
