@@ -18,15 +18,15 @@ Widget _settings() => SettingsPage(
 );
 
 Future<void> _tapRemoveAndConfirm(WidgetTester tester) async {
-  await tester.scrollUntilVisible(find.text('Remove community'), 200);
-  await tester.tap(find.text('Remove community'));
+  await tester.scrollUntilVisible(find.text('Sign out'), 200);
+  await tester.tap(find.text('Sign out'));
   await frames(tester);
-  await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+  await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
   await frames(tester);
 }
 
 void main() {
-  group('Remove community (token)', () {
+  group('Sign out (token)', () {
     testWidgets('signs the device out on the relay before removing', (
       tester,
     ) async {

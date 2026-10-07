@@ -270,11 +270,11 @@ class _CommunityActionSwap extends StatelessWidget {
         child: isEditing
             ? IconButton(
                 key: ValueKey('community-switcher-remove-$communityId'),
-                tooltip: 'Remove $communityName',
+                tooltip: 'Sign out of $communityName',
                 visualDensity: VisualDensity.compact,
                 onPressed: onRemove,
                 icon: Icon(
-                  LucideIcons.trash2,
+                  LucideIcons.logOut,
                   size: 18,
                   color: context.colors.error,
                 ),
@@ -379,10 +379,11 @@ Future<void> _confirmRemoveCommunity(
   final confirmed = await showBuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog.adaptive(
-      title: const Text('Remove community?'),
+      title: const Text('Sign out of this community?'),
       content: Text(
-        'Are you sure you want to remove “${community.name}”? '
-        'You can sign in to it again later.',
+        'Sign out of “${community.name}” on this device? '
+        'Your account and community membership are not deleted.'
+        '${!community.tokenAuth ? '\n\nThe saved private key for this community is removed from this device. Before continuing, make sure you have a saved key or backup, or have verified Google key recovery.' : ''}',
       ),
       actions: [
         TextButton(
@@ -392,7 +393,7 @@ Future<void> _confirmRemoveCommunity(
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
           style: FilledButton.styleFrom(backgroundColor: context.colors.error),
-          child: const Text('Remove'),
+          child: const Text('Sign out'),
         ),
       ],
     ),
@@ -413,9 +414,7 @@ Future<void> _confirmRemoveCommunity(
       Navigator.of(context).pop();
     }
   } catch (e) {
-    messenger.showSnackBar(
-      SnackBar(content: Text('Failed to remove community: $e')),
-    );
+    messenger.showSnackBar(SnackBar(content: Text('Could not sign out: $e')));
   }
 }
 

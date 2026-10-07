@@ -29,7 +29,7 @@ export const SIGNOUT_CONFIRM_PHRASE = "wipe all my data";
 /**
  * Sign-out card + destructive confirmation flow.
  *
- * Signing out wipes the identity key and all local data, so the confirm
+ * Deleting local data wipes the identity key and all local data, so the confirm
  * dialog gates the delete button behind two explicit steps:
  *
  * 1. Confirm recovery — Settings offers a tested password-protected backup;
@@ -116,38 +116,49 @@ export function SignOutSection() {
         setIsPending(false);
         setIsOpen(false);
         resetDialogState();
-        toast.error(err instanceof Error ? err.message : "Sign out failed.");
+        toast.error(
+          err instanceof Error ? err.message : "Could not delete local data.",
+        );
       });
   }
 
   return (
     <div className="mt-12 pb-6" data-testid="settings-signout">
-      <SettingsOptionGroup title="Sign out">
-        <SettingsOptionRow>
-          <div className="min-w-0">
-            <p
-              className="text-sm font-normal text-muted-foreground/70"
-              data-settings-subcopy
+      <details>
+        <summary className="cursor-pointer text-sm text-muted-foreground">
+          Local data deletion
+        </summary>
+        <SettingsOptionGroup title="Delete local data">
+          <SettingsOptionRow>
+            <div className="min-w-0">
+              <p
+                className="text-sm font-normal text-muted-foreground/70"
+                data-settings-subcopy
+              >
+                Removes your identity key and all local app data from this
+                device. This is not regular sign-out or account deletion. Create
+                and test a password-protected key backup above — this cannot be
+                undone.
+              </p>
+            </div>
+            <Button
+              data-testid="signout-open-dialog"
+              disabled={isPending}
+              onClick={() => void openDialog()}
+              type="button"
+              variant="destructive"
             >
-              Removes your identity key and all local app data from this device.
-              Before signing out, create and test a password-protected key
-              backup above — this cannot be undone.
-            </p>
-          </div>
-          <Button
-            data-testid="signout-open-dialog"
-            disabled={isPending}
-            onClick={() => void openDialog()}
-            type="button"
-            variant="destructive"
-          >
-            {isPending ? (
-              <Spinner aria-label="Signing out" className="h-4 w-4 border-2" />
-            ) : null}
-            {isPending ? "Signing out…" : "Delete my data"}
-          </Button>
-        </SettingsOptionRow>
-      </SettingsOptionGroup>
+              {isPending ? (
+                <Spinner
+                  aria-label="Deleting local data"
+                  className="h-4 w-4 border-2"
+                />
+              ) : null}
+              {isPending ? "Deleting local data…" : "Delete my data"}
+            </Button>
+          </SettingsOptionRow>
+        </SettingsOptionGroup>
+      </details>
       <AlertDialog
         onOpenChange={(open) => {
           if (!open && !isPending) {
@@ -159,7 +170,7 @@ export function SignOutSection() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Sign out and wipe all data?</AlertDialogTitle>
+            <AlertDialogTitle>Delete all local data?</AlertDialogTitle>
             <AlertDialogDescription>
               This will delete your identity key, all agent settings, and cached
               data from this device, then relaunch Buzz into first-run setup.
@@ -240,11 +251,11 @@ export function SignOutSection() {
             >
               {isPending ? (
                 <Spinner
-                  aria-label="Signing out"
+                  aria-label="Deleting local data"
                   className="h-4 w-4 border-2"
                 />
               ) : null}
-              {isPending ? "Signing out…" : "Delete my data"}
+              {isPending ? "Deleting local data…" : "Delete my data"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

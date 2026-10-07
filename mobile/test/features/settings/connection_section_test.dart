@@ -91,6 +91,14 @@ void main() {
     expect(clipboardCall?.method, 'Clipboard.setData');
     expect(clipboardCall?.arguments, {'text': expectedNpub});
     expect(find.text('Pubkey copied'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Sign out'), 200);
+    await tester.tap(find.text('Sign out'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('The saved private key'), findsOneWidget);
+    expect(find.textContaining('Before continuing'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
   });
 }
 

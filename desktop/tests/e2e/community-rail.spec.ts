@@ -7,6 +7,35 @@ const RELAY_URL = "ws://localhost:3000";
 const THEME_STORAGE_KEY = "buzz-theme";
 const OWNER_PUBKEY = "deadbeef".repeat(8);
 
+test("cancelling membership removal preserves the active community", async ({
+  page,
+}) => {
+  await installMockBridge(page, undefined, { skipCommunitySeed: true });
+  await seedCommunities(page, [COMMUNITY_A], COMMUNITY_A.id);
+  await page.goto("/");
+  await page.getByTestId("sidebar-profile-avatar-button").click();
+  await page.getByTestId("community-switcher").click();
+  const menu = page.getByRole("menu", { name: "Community actions" });
+  await expect(
+    menu.getByRole("menuitem", { name: "Leave community", exact: true }),
+  ).toHaveCount(0);
+  await menu.getByRole("menuitem", { name: "Community membership…" }).click();
+  const dialog = page.getByRole("alertdialog", {
+    name: "Leave this community?",
+  });
+  await expect(dialog).toContainText("not sign-out");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("buzz-active-community-id")),
+  ).toBe(COMMUNITY_A.id);
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("buzz-communities") ?? "[]"),
+    ),
+  ).toHaveLength(1);
+});
+
 function snapshotKey(relayUrl: string) {
   return `buzz-channels.v1:${relayUrl}:${OWNER_PUBKEY.toLowerCase()}`;
 }
@@ -391,7 +420,7 @@ test.describe("community rail", () => {
       menu.getByRole("menuitem", { name: "Community settings" }),
     ).toBeVisible();
     await expect(
-      menu.getByRole("menuitem", { name: "Leave community" }),
+      menu.getByRole("menuitem", { name: "Community membership…" }),
     ).toBeVisible();
     await expect(
       menu.getByRole("menuitem", { name: "Add a community" }),
@@ -1082,7 +1111,11 @@ test.describe("community rail", () => {
     await page.getByTestId("community-switcher").click();
     await page
       .getByRole("menu", { name: "Community actions" })
-      .getByRole("menuitem", { name: "Leave community" })
+      .getByRole("menuitem", { name: "Community membership…" })
+      .click();
+    await page
+      .getByRole("alertdialog", { name: "Leave this community?" })
+      .getByRole("button", { name: "Leave community", exact: true })
       .click();
 
     await expect(page).toHaveURL(randomUrl);
@@ -1116,7 +1149,11 @@ test.describe("community rail", () => {
     const menu = page.getByRole("menu", { name: "Community actions" });
     await page.getByTestId("sidebar-profile-avatar-button").click();
     await page.getByTestId("community-switcher").click();
-    await menu.getByRole("menuitem", { name: "Leave community" }).click();
+    await menu.getByRole("menuitem", { name: "Community membership…" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Leave this community?" })
+      .getByRole("button", { name: "Leave community", exact: true })
+      .click();
     await expect(menu.getByRole("alert")).toContainText(
       "relay info returned 404 If the community no longer exists, use Remove from this device.",
     );
@@ -1205,7 +1242,11 @@ test.describe("community rail", () => {
     const menu = page.getByRole("menu", { name: "Community actions" });
     await page.getByTestId("sidebar-profile-avatar-button").click();
     await page.getByTestId("community-switcher").click();
-    await menu.getByRole("menuitem", { name: "Leave community" }).click();
+    await menu.getByRole("menuitem", { name: "Community membership…" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Leave this community?" })
+      .getByRole("button", { name: "Leave community", exact: true })
+      .click();
     await menu
       .getByRole("menuitem", { name: "Remove from this device" })
       .click();
@@ -1303,7 +1344,11 @@ test.describe("community rail", () => {
     await page.getByTestId("community-switcher").click();
     await page
       .getByRole("menu", { name: "Community actions" })
-      .getByRole("menuitem", { name: "Leave community" })
+      .getByRole("menuitem", { name: "Community membership…" })
+      .click();
+    await page
+      .getByRole("alertdialog", { name: "Leave this community?" })
+      .getByRole("button", { name: "Leave community", exact: true })
       .click();
 
     await expect(page.getByText("Join or create a community")).toBeVisible();
@@ -1389,7 +1434,11 @@ test.describe("community rail", () => {
     await page.getByTestId("community-switcher").click();
     await page
       .getByRole("menu", { name: "Community actions" })
-      .getByRole("menuitem", { name: "Leave community" })
+      .getByRole("menuitem", { name: "Community membership…" })
+      .click();
+    await page
+      .getByRole("alertdialog", { name: "Leave this community?" })
+      .getByRole("button", { name: "Leave community", exact: true })
       .click();
 
     const error = page.getByTestId("community-apply-error");

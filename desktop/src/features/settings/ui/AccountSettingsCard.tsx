@@ -387,20 +387,25 @@ function ActiveAccount({
               Revoke agent tokens
             </Button>
           </SettingsOptionRow>
-          <SettingsOptionRow>
-            <p className="min-w-0 text-sm text-muted-foreground/70">
-              Delete your account on this community. Signing in again within 30
-              days restores it.
-            </p>
-            <Button
-              disabled={disabled}
-              onClick={() => setConfirmDelete(true)}
-              type="button"
-              variant="destructive"
-            >
-              Delete account
-            </Button>
-          </SettingsOptionRow>
+          <details className="px-4 py-3">
+            <summary className="cursor-pointer text-sm text-muted-foreground">
+              Account deletion
+            </summary>
+            <SettingsOptionRow>
+              <p className="min-w-0 text-sm text-muted-foreground/70">
+                Delete your account on this community. Signing in again within
+                30 days restores it.
+              </p>
+              <Button
+                disabled={disabled}
+                onClick={() => setConfirmDelete(true)}
+                type="button"
+                variant="destructive"
+              >
+                Delete account
+              </Button>
+            </SettingsOptionRow>
+          </details>
           <AlertDialog onOpenChange={setConfirmDelete} open={confirmDelete}>
             <AlertDialogContent>
               <AlertDialogHeader>

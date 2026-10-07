@@ -34,3 +34,12 @@ system-browser dismissal returning cancellation. This exercises the actual
 launcher/plugin and Activity stack with a local callback, not Google account
 authentication. Real Google login, newer Auth Tab browsers, iOS and a human
 acceptance pass remain release checks.
+
+Follow-up: settings must distinguish sign-out, community departure, account
+deletion, and local data deletion. Mobile's existing community-removal sign-out
+is labelled Sign out with the device/community scope explained. Account deletion
+is collapsed on both clients and retains its confirmation. Desktop's whole-device
+wipe is labelled and collapsed as local data deletion, retaining backup and typed
+confirmation gates. Actual community departure is behind membership management
+and an explicit confirmation for the selected community. No persistence or
+revocation behavior is changed by these presentation changes.

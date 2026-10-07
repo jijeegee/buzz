@@ -1194,23 +1194,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Done'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.trash2), findsNWidgets(2));
+    expect(find.byIcon(LucideIcons.logOut), findsNWidgets(2));
     expect(activeSelection, findsNothing);
     expect(inactiveSelection, findsNothing);
 
-    await tester.tap(find.byTooltip('Remove Bravo'));
+    await tester.tap(find.byTooltip('Sign out of Bravo'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Remove community?'), findsOneWidget);
+    expect(find.text('Sign out of this community?'), findsOneWidget);
     expect(
-      find.text(
-        'Are you sure you want to remove “Bravo”? '
-        'You can sign in to it again later.',
+      find.textContaining(
+        'Your account and community membership are not deleted.',
       ),
       findsOneWidget,
     );
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
     await tester.pumpAndSettle();
 
     expect(communityNotifier.removedIds, ['bravo']);

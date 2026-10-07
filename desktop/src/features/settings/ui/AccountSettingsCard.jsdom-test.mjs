@@ -132,6 +132,32 @@ test("a relay without token sign-in renders nothing", async () => {
   await unmount();
 });
 
+test("account deletion is collapsed and opening or cancelling never deletes", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount();
+  const details = container.querySelector("details");
+  assert.equal(details.open, false);
+  await act(async () => fireEvent.click(details.querySelector("summary")));
+  assert.equal(details.open, true);
+  await act(async () => fireEvent.click(details.querySelector("button")));
+  const dialog = document.querySelector('[role="alertdialog"]');
+  assert.ok(dialog);
+  assert.equal(
+    calls.some((c) => c.command === "delete_account"),
+    false,
+  );
+  const cancel = [...dialog.querySelectorAll("button")].find(
+    (b) => b.textContent === "Cancel",
+  );
+  await act(async () => fireEvent.click(cancel));
+  assert.equal(document.querySelector('[role="alertdialog"]'), null);
+  assert.equal(
+    calls.some((c) => c.command === "delete_account"),
+    false,
+  );
+  await unmount();
+});
+
 test("a signed-out community offers Google sign-in through login_with_google", async () => {
   status = baseStatus();
   const { container, unmount } = await mount();

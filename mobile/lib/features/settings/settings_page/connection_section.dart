@@ -38,8 +38,7 @@ class _ConnectionSection extends ConsumerWidget {
   }
 }
 
-/// Destructive, so it gets a container of its own rather than sitting at the
-/// bottom of the connection group.
+/// Signs this device out of the current community, without deleting the account.
 class _RemoveCommunitySection extends ConsumerWidget {
   const _RemoveCommunitySection();
 
@@ -50,8 +49,8 @@ class _RemoveCommunitySection extends ConsumerWidget {
       children: [
         AppListRow(
           icon: LucideIcons.logOut,
-          title: 'Remove community',
-          titleColor: context.colors.error,
+          title: 'Sign out',
+          subtitle: 'This community on this device',
           onTap: () => _confirmRemoveCommunity(context, ref),
         ),
       ],
@@ -96,13 +95,16 @@ class _IdentityRow extends StatelessWidget {
 }
 
 void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
+  final usesPrivateKey = !ref.read(relayConfigProvider).tokenAuth;
   showBuzzDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Remove Community'),
-      content: const Text(
-        'This will disconnect this community and sign this device out. '
-        'You can sign in to it again later.',
+      title: const Text('Sign out of this community?'),
+      content: Text(
+        'This signs this device out and removes the community from its list. '
+        'Your account and community membership are not deleted. '
+        'To return, sign in again or use your existing key or backup.'
+        '${usesPrivateKey ? '\n\nThe saved private key for this community is removed from this device. Before continuing, make sure you have a saved key or backup, or have verified Google key recovery.' : ''}',
       ),
       actions: [
         TextButton(
@@ -123,7 +125,7 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
             } catch (error) {
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Could not remove community: $error')),
+                SnackBar(content: Text('Could not sign out: $error')),
               );
               return;
             }
@@ -132,8 +134,7 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
             // to onboarding when auth state changes.
             Navigator.of(context).popUntil((route) => route.isFirst);
           },
-          style: FilledButton.styleFrom(backgroundColor: ctx.colors.error),
-          child: const Text('Remove'),
+          child: const Text('Sign out'),
         ),
       ],
     ),
