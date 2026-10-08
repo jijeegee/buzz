@@ -26,6 +26,12 @@
       "platforms": ["desktop"]
     },
     {
+      "id": "goalTree",
+      "name": "Goal layers",
+      "description": "A layer 1 goal and sub-goal tree for every channel and DM, shared with agents. Restart agents after changing this",
+      "platforms": ["desktop"]
+    },
+    {
       "id": "agentManagedProfiles",
       "name": "Agent-managed profiles",
       "description": "Let agents manage their own relay name and avatar instead of restoring the desktop copy",

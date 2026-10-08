@@ -630,6 +630,48 @@ pub fn build_set_canvas_unconditional_after_head(
         .custom_created_at(nostr::Timestamp::from(created_at)))
 }
 
+/// Build a goal tree write (kind 40110) for a channel or DM.
+///
+/// The relay requires every goal tree write to name the head it was composed
+/// against (`expected_revision`: a 64-hex event id, or `none` for the first
+/// tree), so concurrent editors conflict instead of silently overwriting each
+/// other. `head_created_at` applies the same writer discipline as canvas:
+/// `created_at = max(now, head + 1)` so the write sorts ahead of its head.
+/// The tree is validated before it is serialized.
+pub fn build_set_goal_tree(
+    channel_id: Uuid,
+    tree: &buzz_core::goal_tree::GoalTree,
+    expected_revision: &str,
+    head_created_at: Option<u64>,
+) -> Result<EventBuilder, SdkError> {
+    if expected_revision != "none"
+        && (expected_revision.len() != 64
+            || !expected_revision.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Err(SdkError::InvalidInput(format!(
+            "expected_revision must be the literal \"none\" or a 64-character hex event id (got {expected_revision:?})"
+        )));
+    }
+    let content = tree
+        .to_content()
+        .map_err(|e| SdkError::InvalidInput(e.to_string()))?;
+    let tags = vec![
+        tag(&["h", &channel_id.to_string()])?,
+        tag(&["expected-revision", expected_revision])?,
+    ];
+    let builder = EventBuilder::new(
+        Kind::Custom(buzz_core::kind::KIND_GOAL_TREE as u16),
+        content,
+    )
+    .tags(tags);
+    Ok(match head_created_at {
+        Some(head) => {
+            builder.custom_created_at(nostr::Timestamp::from(canvas_write_created_at(head)?))
+        }
+        None => builder,
+    })
+}
+
 /// Maximum future skew a canvas head may carry before a first-party client
 /// refuses to ratchet past it (seconds). A head timestamped beyond `now +
 /// CANVAS_MAX_FUTURE_SKEW_SECS` is treated as poisoned: stamping

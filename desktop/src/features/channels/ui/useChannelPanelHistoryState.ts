@@ -40,6 +40,8 @@ export type PanelValueSetter = (
 ) => void;
 
 const CHANNEL_MANAGEMENT_OPEN_VALUE = "1";
+/** `channelManagement` value that opens the panel straight into its goals view. */
+const CHANNEL_MANAGEMENT_GOALS_VALUE = "goals";
 
 export function useChannelPanelHistoryState() {
   const { applyPatch, values } = useHistorySearchState(CHANNEL_SEARCH_KEYS);
@@ -105,6 +107,15 @@ export function useChannelPanelHistoryState() {
     [applyPatch],
   );
 
+  const openGoalsPanel = React.useCallback(
+    (options?: PanelSetterOptions) =>
+      applyPatch(
+        { channelManagement: CHANNEL_MANAGEMENT_GOALS_VALUE },
+        options,
+      ),
+    [applyPatch],
+  );
+
   const clearMessageRouteTarget = React.useCallback(
     (options?: PanelSetterOptions) =>
       applyPatch({ messageId: null, threadRootId: null }, options),
@@ -123,6 +134,11 @@ export function useChannelPanelHistoryState() {
 
   return {
     channelManagementOpen: values.channelManagement != null,
+    channelManagementInitialView:
+      values.channelManagement === CHANNEL_MANAGEMENT_GOALS_VALUE
+        ? ("goals" as const)
+        : null,
+    openGoalsPanel,
     clearAutoSend,
     clearMessageRouteTarget,
     openAgentSessionChannelId: values.agentSessionChannel,

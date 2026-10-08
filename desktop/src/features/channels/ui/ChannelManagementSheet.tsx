@@ -2,6 +2,7 @@ import {
   Archive,
   ArchiveRestore,
   BookOpenText,
+  Target,
   DoorClosed,
   DoorOpen,
   Trash2,
@@ -58,6 +59,7 @@ import {
   PANEL_OVERLAY_CLASS,
 } from "@/shared/ui/OverlayPanelBackdrop";
 import { KeyedChannelCanvas } from "./KeyedChannelCanvas";
+import { GoalsPanel } from "@/features/goals/ui/GoalsPanel";
 import { ChannelWorkflowsSection } from "./ChannelWorkflowsSection";
 import {
   CHANNEL_FORM_FIELD_CONTROL_CLASS,
@@ -84,11 +86,17 @@ import {
 } from "./ChannelManagementModerationActions";
 import { ChannelMemberAvatarStack } from "./ChannelMemberAvatarStack";
 
+type ManagementView = "summary" | "canvas" | "workflows" | "goals";
+
 type ChannelManagementSheetProps = {
   channel: Channel | null;
   animateSplitEnter?: boolean;
   currentPubkey?: string;
+  /** View to show when the sheet opens (e.g. straight into goals). */
+  initialView?: "goals" | null;
   layout?: "overlay" | "split";
+  /** Opens a thread linked from the goals view. */
+  onOpenThread?: (threadRootId: string) => void;
   onDeleted?: () => void;
   onOpenMembers?: () => void;
   onOpenChange: (open: boolean) => void;
@@ -100,8 +108,10 @@ export function ChannelManagementSheet({
   animateSplitEnter = false,
   channel,
   currentPubkey,
+  initialView = null,
   layout = "overlay",
   onDeleted,
+  onOpenThread,
   onOpenMembers,
   onOpenChange,
   open,
@@ -120,6 +130,7 @@ export function ChannelManagementSheet({
   );
   const channelId = channel?.id ?? null;
   const workflowsEnabled = useFeatureEnabled("workflows");
+  const goalsEnabled = useFeatureEnabled("goalTree");
   const detailsQuery = useChannelDetailsQuery(channelId, open);
   const membersQuery = useChannelMembersQuery(channelId, open);
   const canvasQuery = useCanvasQuery(channelId, channelId !== null && open);
@@ -176,11 +187,17 @@ export function ChannelManagementSheet({
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [hasUserEditedChannelDraft, setHasUserEditedChannelDraft] =
     React.useState(false);
-  const [activeView, setActiveView] = React.useState<
-    "summary" | "canvas" | "workflows"
-  >("summary");
+  const [activeView, setActiveView] = React.useState<ManagementView>("summary");
   const visibleActiveView =
-    workflowsEnabled || activeView !== "workflows" ? activeView : "summary";
+    (activeView === "workflows" && !workflowsEnabled) ||
+    (activeView === "goals" && !goalsEnabled)
+      ? "summary"
+      : activeView;
+  const openingView: ManagementView = initialView ?? "summary";
+  // The goals chip can retarget an already-open sheet.
+  React.useEffect(() => {
+    if (open && initialView) setActiveView(initialView);
+  }, [initialView, open]);
   const { cancelDeferredModalOpen, openNextFrame: openModalNextFrame } =
     useDeferredModalOpen();
 
@@ -224,8 +241,8 @@ export function ChannelManagementSheet({
     setIsEphemeralDraft(detail.ttlSeconds !== null);
     setTtlSecondsDraft(detail.ttlSeconds ?? DEFAULT_EPHEMERAL_TTL_SECONDS);
     setHasUserEditedChannelDraft(false);
-    setActiveView("summary");
-  }, [cancelDeferredModalOpen, detail, open]);
+    setActiveView(openingView);
+  }, [cancelDeferredModalOpen, detail, open, openingView]);
 
   if (!channel) {
     return null;
@@ -420,6 +437,8 @@ export function ChannelManagementSheet({
             onOpenChange={handlePanelOpenChange}
             resolvedChannel={resolvedChannel}
             setActiveView={setActiveView}
+            goalsEnabled={goalsEnabled}
+            onOpenThread={onOpenThread}
             unarchiveChannelMutation={unarchiveChannelMutation}
           />
         </DialogPrimitive.Content>
@@ -472,6 +491,8 @@ export function ChannelManagementSheet({
               onOpenChange={handlePanelOpenChange}
               resolvedChannel={resolvedChannel}
               setActiveView={setActiveView}
+              goalsEnabled={goalsEnabled}
+              onOpenThread={onOpenThread}
               unarchiveChannelMutation={unarchiveChannelMutation}
             />
           </DialogPrimitive.Content>
@@ -626,7 +647,7 @@ type ChannelMutation<TArgs = void> = {
 };
 
 type ChannelManagementPanelContentProps = {
-  activeView: "summary" | "canvas" | "workflows";
+  activeView: ManagementView;
   archiveChannelMutation: ChannelMutation;
   canEditChannel: boolean;
   canEditNarrative: boolean;
@@ -637,6 +658,8 @@ type ChannelManagementPanelContentProps = {
   canvasQuery: { isLoading: boolean };
   channelId: string | null;
   currentPubkey?: string;
+  goalsEnabled: boolean;
+  onOpenThread?: (threadRootId: string) => void;
   workflowsEnabled: boolean;
   workflowsQuery: {
     data?: Workflow[];
@@ -664,9 +687,7 @@ type ChannelManagementPanelContentProps = {
   onOpenMembers?: () => void;
   onOpenChange: (open: boolean) => void;
   resolvedChannel: Channel;
-  setActiveView: React.Dispatch<
-    React.SetStateAction<"summary" | "canvas" | "workflows">
-  >;
+  setActiveView: React.Dispatch<React.SetStateAction<ManagementView>>;
   unarchiveChannelMutation: ChannelMutation;
 };
 
@@ -682,6 +703,8 @@ function ChannelManagementPanelContent({
   canvasQuery,
   channelId,
   currentPubkey,
+  goalsEnabled,
+  onOpenThread,
   workflowsEnabled,
   workflowsQuery,
   onCreateWorkflow,
@@ -744,9 +767,11 @@ function ChannelManagementPanelContent({
             <AuxiliaryPanelTitle>
               {activeView === "canvas"
                 ? "Canvas"
-                : activeView === "workflows"
-                  ? "Workflows"
-                  : "Channel Settings"}
+                : activeView === "goals"
+                  ? "Goals"
+                  : activeView === "workflows"
+                    ? "Workflows"
+                    : "Channel Settings"}
             </AuxiliaryPanelTitle>
           </DialogPrimitive.Title>
         </AuxiliaryPanelHeaderGroup>
@@ -819,6 +844,16 @@ function ChannelManagementPanelContent({
                 value={resolvedChannel.id}
               />
             </FieldGroup>
+
+            {goalsEnabled ? (
+              <IngressRow
+                helpText="One top goal for this conversation, split into smaller goals. Agents here see it every turn."
+                icon={Target}
+                label="Goals"
+                onClick={() => setActiveView("goals")}
+                testId="channel-goals-ingress"
+              />
+            ) : null}
 
             {canOpenCanvas ? (
               <div className="space-y-3">
@@ -974,6 +1009,8 @@ function ChannelManagementPanelContent({
               </p>
             ) : null}
           </div>
+        ) : activeView === "goals" && goalsEnabled && channelId ? (
+          <GoalsPanel channelId={channelId} onOpenThread={onOpenThread} />
         ) : activeView === "canvas" ? (
           <div data-testid="channel-canvas-section">
             <KeyedChannelCanvas

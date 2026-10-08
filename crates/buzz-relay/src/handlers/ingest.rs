@@ -19,7 +19,7 @@ use buzz_core::kind::{
     KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH,
     KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE,
     KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
-    KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
+    KIND_GOAL_TREE, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
     KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
     KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
     KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
@@ -28,12 +28,13 @@ use buzz_core::kind::{
     KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
     KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
     KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE,
-    KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION,
-    KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED,
-    KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED,
-    KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
-    KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_THREAD_NAME, KIND_USER_STATUS, KIND_WORKFLOW_DEF,
-    KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
+    KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT,
+    KIND_PUBLIC_GOAL, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
+    KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2,
+    KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_THREAD_NAME,
+    KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
+    RELAY_ADMIN_CHANGE_ROLE,
     RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
@@ -243,6 +244,22 @@ pub(crate) fn parse_canvas_expected_revision(
         .filter(|bytes| bytes.len() == 32)
         .ok_or_else(|| IngestError::Rejected("invalid: bad expected canvas revision".into()))?;
     Ok(Some(CanvasRevisionSpec::Head(bytes)))
+}
+
+/// Validate a goal tree (kind 40110) write before it reaches the database.
+///
+/// Unlike canvas, a goal tree is always edited read-modify-write by several
+/// humans and agents at once, so an unconditional write could silently drop a
+/// concurrent edit: the `expected-revision` precondition is mandatory. The
+/// content must be a structurally valid tree (one layer 1 goal, known parents,
+/// no cycles, bounded size) so no writer can leave a broken head behind.
+pub(crate) fn validate_goal_tree_write(event: &Event) -> Result<CanvasRevisionSpec, IngestError> {
+    let spec = parse_canvas_expected_revision(event)?.ok_or_else(|| {
+        IngestError::Rejected("invalid: goal tree writes require an expected-revision tag".into())
+    })?;
+    buzz_core::goal_tree::GoalTree::parse(&event.content)
+        .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    Ok(spec)
 }
 
 /// How the HTTP caller authenticated (for [`IngestAuth::Http`]).
@@ -579,6 +596,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // palette is the client-side union of every member's own set.
         | KIND_EMOJI_SET
         | KIND_EMOJI_LIST
+        | KIND_PUBLIC_GOAL
         | KIND_AGENT_PROFILE => Ok(Scope::UsersWrite),
         KIND_DELETION
         | KIND_REACTION
@@ -629,7 +647,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
                 Ok(Scope::ChannelsWrite)
             }
         }
-        KIND_NIP29_CREATE_GROUP | KIND_CANVAS => Ok(Scope::ChannelsWrite),
+        KIND_NIP29_CREATE_GROUP | KIND_CANVAS | KIND_GOAL_TREE => Ok(Scope::ChannelsWrite),
         KIND_NIP29_JOIN_REQUEST | KIND_NIP29_LEAVE_REQUEST | KIND_NIP43_LEAVE_REQUEST => {
             Ok(Scope::ChannelsRead)
         }
@@ -757,6 +775,8 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // keyed by (pubkey, kind[, d_tag]). A stray `h` tag must not channel-scope them.
             | KIND_EMOJI_SET
             | KIND_EMOJI_LIST
+            // A public layer 0 goal belongs to its author, never to a channel.
+            | KIND_PUBLIC_GOAL
             // NIP-AE agent engrams are addressed by (pubkey_a, kind, d_tag); never channel-scoped.
             | KIND_AGENT_ENGRAM
             // NIP-ER event reminders are addressed by (pubkey, kind, d_tag); never channel-scoped.
@@ -831,6 +851,7 @@ pub(crate) fn requires_h_channel_scope(kind: u32) -> bool {
             | KIND_STREAM_REMINDER
             | KIND_STREAM_MESSAGE_DIFF
             | KIND_CANVAS
+            | KIND_GOAL_TREE
             | KIND_FORUM_POST
             | KIND_FORUM_VOTE
             | KIND_FORUM_COMMENT
@@ -2514,10 +2535,24 @@ async fn ingest_event_inner(
 
     // kind:40100 canvas events carry a tighter future ceiling — see
     // `validate_canvas_future_timestamp` for the rationale and invariant.
-    if kind_u32 == KIND_CANVAS {
+    if buzz_core::kind::is_channel_head_kind(kind_u32) {
         if let Err(msg) = validate_canvas_future_timestamp(event_ts, now) {
-            return Err(IngestError::Rejected(msg.into()));
+            let msg = if kind_u32 == KIND_GOAL_TREE {
+                msg.replace("canvas", "goal tree")
+            } else {
+                msg.to_string()
+            };
+            return Err(IngestError::Rejected(msg));
         }
+    }
+
+    if kind_u32 == KIND_PUBLIC_GOAL
+        && event.content.chars().count() > buzz_core::kind::MAX_PUBLIC_GOAL_CHARS
+    {
+        return Err(IngestError::Rejected(format!(
+            "invalid: public goal exceeds {} characters",
+            buzz_core::kind::MAX_PUBLIC_GOAL_CHARS
+        )));
     }
 
     const MAX_EVENT_CONTENT_BYTES: usize = 256 * 1024; // 256 KB
@@ -3426,8 +3461,15 @@ async fn ingest_event_inner(
     // an absent tag yields `None`, routing canvas writes to the generic append.
     let canvas_revision_spec = if kind_u32 == KIND_CANVAS {
         parse_canvas_expected_revision(&event)?
+    } else if kind_u32 == KIND_GOAL_TREE {
+        Some(validate_goal_tree_write(&event)?)
     } else {
         None
+    };
+    let head_label = if kind_u32 == KIND_GOAL_TREE {
+        "goal tree"
+    } else {
+        "canvas"
     };
 
     let workflow_deletion = crate::handlers::side_effects::is_workflow_deletion(&event);
@@ -3467,8 +3509,9 @@ async fn ingest_event_inner(
         // append path below, preserving unconditional behavior. The channel is
         // guaranteed present here: KIND_CANVAS requires an `h` tag and step 5b
         // resolved it into `channel_id`.
-        let channel = channel_id
-            .ok_or_else(|| IngestError::Rejected("invalid: canvas event missing channel".into()))?;
+        let channel = channel_id.ok_or_else(|| {
+            IngestError::Rejected(format!("invalid: {head_label} event missing channel"))
+        })?;
         let precondition = match spec {
             CanvasRevisionSpec::NoHead => buzz_db::ChannelHeadPrecondition::ExpectNoHead,
             CanvasRevisionSpec::Head(id) => buzz_db::ChannelHeadPrecondition::ExpectedHead(id),
@@ -3480,19 +3523,19 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
         match status {
             buzz_db::ChannelHeadWriteStatus::RevisionMissing => {
-                return Err(IngestError::CanvasConflict(
-                    "conflict: canvas revision does not exist".into(),
-                ));
+                return Err(IngestError::CanvasConflict(format!(
+                    "conflict: {head_label} revision does not exist"
+                )));
             }
             buzz_db::ChannelHeadWriteStatus::RevisionMismatch => {
-                return Err(IngestError::CanvasConflict(
-                    "conflict: canvas changed since it was loaded".into(),
-                ));
+                return Err(IngestError::CanvasConflict(format!(
+                    "conflict: {head_label} changed since it was loaded"
+                )));
             }
             buzz_db::ChannelHeadWriteStatus::SupersedeFailed => {
-                return Err(IngestError::CanvasConflict(
-                    "conflict: canvas write does not supersede the current head".into(),
-                ));
+                return Err(IngestError::CanvasConflict(format!(
+                    "conflict: {head_label} write does not supersede the current head"
+                )));
             }
             buzz_db::ChannelHeadWriteStatus::Inserted => (stored_event, true),
             buzz_db::ChannelHeadWriteStatus::Duplicate => (stored_event, false),
@@ -6776,6 +6819,187 @@ mod postgres_tests {
         ingest_event_inner(&state, &tracer, &tenant, untagged, make_auth(&author))
             .await
             .expect("untagged canvas write must append unconditionally");
+    }
+
+    // ── Goal tree (kind 40110) ingest rules ──────────────────────────────────
+
+    fn goal_tree_event(content: &str, tags: Vec<nostr::Tag>) -> nostr::Event {
+        use nostr::{EventBuilder, Keys, Kind};
+        EventBuilder::new(Kind::Custom(KIND_GOAL_TREE as u16), content)
+            .tags(tags)
+            .sign_with_keys(&Keys::generate())
+            .expect("sign goal tree event")
+    }
+
+    const ONE_GOAL: &str = r#"{"v":1,"nodes":[{"id":"root","parent":null,"title":"Ship it"}]}"#;
+
+    #[test]
+    fn goal_tree_write_requires_expected_revision() {
+        let event = goal_tree_event(ONE_GOAL, vec![]);
+        assert!(matches!(
+            validate_goal_tree_write(&event),
+            Err(IngestError::Rejected(msg)) if msg.contains("require an expected-revision")
+        ));
+    }
+
+    #[test]
+    fn goal_tree_write_rejects_invalid_tree() {
+        let two_roots = r#"{"v":1,"nodes":[{"id":"a","title":"A"},{"id":"b","title":"B"}]}"#;
+        for content in ["not json", two_roots] {
+            let event = goal_tree_event(
+                content,
+                vec![nostr::Tag::parse(["expected-revision", "none"]).unwrap()],
+            );
+            assert!(
+                matches!(
+                    validate_goal_tree_write(&event),
+                    Err(IngestError::Rejected(_))
+                ),
+                "{content} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn goal_tree_write_accepts_valid_tree() {
+        let event = goal_tree_event(
+            ONE_GOAL,
+            vec![nostr::Tag::parse(["expected-revision", "none"]).unwrap()],
+        );
+        assert_eq!(
+            validate_goal_tree_write(&event).unwrap(),
+            CanvasRevisionSpec::NoHead
+        );
+    }
+
+    #[test]
+    fn public_goal_is_global_user_state() {
+        assert!(is_global_only_kind(KIND_PUBLIC_GOAL));
+        assert!(!requires_h_channel_scope(KIND_PUBLIC_GOAL));
+        assert!(matches!(
+            required_scope_for_kind(KIND_PUBLIC_GOAL, &goal_tree_event("", vec![])),
+            Ok(Scope::UsersWrite)
+        ));
+    }
+
+    #[test]
+    fn goal_tree_is_channel_scoped_and_needs_channel_write() {
+        assert!(requires_h_channel_scope(KIND_GOAL_TREE));
+        assert!(matches!(
+            required_scope_for_kind(KIND_GOAL_TREE, &goal_tree_event(ONE_GOAL, vec![])),
+            Ok(Scope::ChannelsWrite)
+        ));
+    }
+
+    /// End-to-end: a goal tree head advances under CAS in a DM-like private
+    /// channel, a stale writer gets `conflict:`, and an unconditional write is
+    /// rejected instead of silently overwriting the tree.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn goal_tree_cas_wired_through_ingest_event_inner() {
+        use buzz_db::channel::{ChannelType, ChannelVisibility};
+        use nostr::{Keys, Kind, Tag, Timestamp};
+
+        let db_url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+        let pool = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("connect test Postgres");
+        let state = build_canvas_ingest_state(&db_url, &pool).await;
+        let host = format!("goal-tree-cas-{}.test", Uuid::new_v4().simple());
+        let community = state
+            .db
+            .ensure_configured_community(&host)
+            .await
+            .expect("ensure community")
+            .id;
+        let tenant = TenantContext::resolved(community, &host);
+        let channel_id = Uuid::new_v4();
+        let creator = Keys::generate();
+        state
+            .db
+            .create_channel_with_id(
+                community,
+                channel_id,
+                &format!("goal-tree-cas-{}", channel_id.simple()),
+                ChannelType::Stream,
+                ChannelVisibility::Open,
+                None,
+                creator.public_key().to_bytes().as_slice(),
+                None,
+            )
+            .await
+            .expect("create test channel");
+
+        let now = chrono::Utc::now().timestamp() as u64;
+        let h = channel_id.to_string();
+        let tracer: Arc<dyn buzz_conformance::Tracer> = Arc::new(VecTracer::default());
+        let auth = |keys: &Keys| IngestAuth::Http {
+            pubkey: keys.public_key(),
+            scopes: vec![Scope::ChannelsWrite],
+            auth_method: HttpAuthMethod::Nip98,
+        };
+        let write = |content: &str, at: u64, revision: Option<&str>, keys: &Keys| {
+            let mut tags = vec![Tag::parse(["h", &h]).unwrap()];
+            if let Some(revision) = revision {
+                tags.push(Tag::parse(["expected-revision", revision]).unwrap());
+            }
+            nostr::EventBuilder::new(Kind::Custom(KIND_GOAL_TREE as u16), content)
+                .custom_created_at(Timestamp::from(at))
+                .tags(tags)
+                .sign_with_keys(keys)
+                .expect("sign goal tree")
+        };
+
+        let human = Keys::generate();
+        let agent = Keys::generate();
+        let first = write(ONE_GOAL, now, Some("none"), &human);
+        let first_id = first.id.to_hex();
+        ingest_event_inner(&state, &tracer, &tenant, first, auth(&human))
+            .await
+            .expect("first goal tree write");
+
+        // A different author advances the same head: the tree is shared, not
+        // per-author.
+        let edited = r#"{"v":1,"nodes":[{"id":"root","title":"Ship it"},{"id":"a","parent":"root","title":"Design"}]}"#;
+        ingest_event_inner(
+            &state,
+            &tracer,
+            &tenant,
+            write(edited, now + 1, Some(&first_id), &agent),
+            auth(&agent),
+        )
+        .await
+        .expect("second author advances the head");
+
+        let stale = ingest_event_inner(
+            &state,
+            &tracer,
+            &tenant,
+            write(ONE_GOAL, now + 2, Some(&first_id), &human),
+            auth(&human),
+        )
+        .await
+        .err();
+        assert!(
+            matches!(&stale, Some(IngestError::CanvasConflict(msg)) if msg.starts_with("conflict: goal tree")),
+            "stale goal tree write must conflict, got {stale:?}"
+        );
+
+        let unconditional = ingest_event_inner(
+            &state,
+            &tracer,
+            &tenant,
+            write(ONE_GOAL, now + 3, None, &human),
+            auth(&human),
+        )
+        .await
+        .err();
+        assert!(
+            matches!(&unconditional, Some(IngestError::Rejected(msg)) if msg.contains("expected-revision")),
+            "unconditional goal tree write must be rejected, got {unconditional:?}"
+        );
     }
 
     // ── Owner-aware ban/timeout coverage ─────────────────────────────────────

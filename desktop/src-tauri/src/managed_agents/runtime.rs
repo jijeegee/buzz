@@ -763,6 +763,33 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             }
         }
     }
+    // Goal layers are an experiment: with the desktop toggle off, agents get
+    // no goal rules, goal context, or layer 0 goals. Layer 0 goals stay on
+    // this machine; only this agent's own process sees its goal and its
+    // owner's private goal.
+    let goals_enabled = crate::commands::goals_feature_enabled(app);
+    let (agent_goal, owner_goal) = if goals_enabled {
+        let answers_owner_only =
+            super::projected_access_with_policy(record, super::owner_only()).0
+                == super::RespondTo::OwnerOnly;
+        crate::commands::spawn_goals(app, &record.pubkey, owner_hex, answers_owner_only)
+    } else {
+        (None, None)
+    };
+    if goals_enabled {
+        command.env("BUZZ_ACP_GOALS", "true");
+    } else {
+        command.env_remove("BUZZ_ACP_GOALS");
+    }
+    for (key, value) in [
+        ("BUZZ_ACP_AGENT_GOAL", agent_goal),
+        ("BUZZ_ACP_OWNER_GOAL", owner_goal),
+    ] {
+        match value {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        };
+    }
     let team_instructions = super::spawn_snapshot::effective_team_instructions(record, &teams);
     if let Some(instructions) = &team_instructions {
         command.env("BUZZ_ACP_TEAM_INSTRUCTIONS", instructions);

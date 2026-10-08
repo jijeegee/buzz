@@ -138,6 +138,37 @@ class _ChannelAppBarTitle extends ConsumerWidget {
   }
 }
 
+/// Opens the conversation's goals. Filled when a layer 1 goal is set.
+class _GoalsButton extends ConsumerWidget {
+  final Channel channel;
+
+  const _GoalsButton({required this.channel});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final root = ref
+        .watch(goalTreeProvider(channel.id))
+        .asData
+        ?.value
+        .tree
+        .root;
+    return IconButton(
+      key: const ValueKey('channel-goals-button'),
+      color: context.colors.primary,
+      tooltip: root?.title ?? 'Goals',
+      onPressed: () => showGoalsPage(
+        context: context,
+        channelId: channel.id,
+        channelName: channel.name,
+      ),
+      icon: Icon(
+        root == null ? LucideIcons.target : LucideIcons.crosshair,
+        size: 22,
+      ),
+    );
+  }
+}
+
 class _MembersButton extends ConsumerWidget {
   final String channelId;
   final Channel channel;

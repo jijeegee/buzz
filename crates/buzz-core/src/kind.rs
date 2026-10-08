@@ -32,6 +32,12 @@ pub const KIND_NIP65_RELAY_LIST_METADATA: u32 = 10002;
 pub const KIND_BOOKMARK_LIST: u32 = 10003;
 /// NIP-51: Emoji list (replaceable) — user preferred emojis and pointers to emoji sets.
 pub const KIND_EMOJI_LIST: u32 = 10030;
+/// Public layer 0 goal (replaceable, one per pubkey): the part of a person's
+/// or agent's own goal they chose to share. Empty content means none is
+/// shared. The private part never leaves the owner's machine.
+pub const KIND_PUBLIC_GOAL: u32 = 10110;
+/// Maximum characters in a public goal.
+pub const MAX_PUBLIC_GOAL_CHARS: usize = 1_000;
 /// NIP-51: Follow set (parameterized replaceable, 30000–39999 range) — named curated lists of pubkeys.
 ///
 /// User-owned, keyed by `(pubkey, kind, d_tag)`. Allows multiple named follow lists on top of
@@ -497,6 +503,10 @@ pub const KIND_STREAM_MESSAGE_DIFF: u32 = 40008;
 pub const KIND_THREAD_NAME: u32 = 40009;
 /// Canvas (shared document) for a channel.
 pub const KIND_CANVAS: u32 = 40100;
+/// Goal tree (layered goals) for a channel or DM — see [`crate::goal_tree`].
+/// Same head-per-channel storage as [`KIND_CANVAS`]; every write must carry an
+/// `expected-revision` precondition.
+pub const KIND_GOAL_TREE: u32 = 40110;
 /// System message for channel state changes (join, leave, rename, etc.).
 pub const KIND_SYSTEM_MESSAGE: u32 = 40099;
 
@@ -720,6 +730,8 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_REMINDER,
     KIND_STREAM_MESSAGE_DIFF,
     KIND_CANVAS,
+    KIND_GOAL_TREE,
+    KIND_PUBLIC_GOAL,
     KIND_SYSTEM_MESSAGE,
     KIND_CHANNEL_SUMMARY,
     KIND_PRESENCE_SNAPSHOT,
@@ -779,6 +791,14 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_GIT_STATUS_DRAFT,
     KIND_PROJECT,
 ];
+
+/// Returns `true` for kinds stored as one live head per channel: the newest
+/// non-deleted event of the kind in a channel, across all authors, is current
+/// and older events are history. Writes serialize on a per-channel lock and
+/// may carry an `expected-revision` precondition.
+pub const fn is_channel_head_kind(kind: u32) -> bool {
+    matches!(kind, KIND_CANVAS | KIND_GOAL_TREE)
+}
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
 pub const fn is_ephemeral(kind: u32) -> bool {
@@ -895,6 +915,7 @@ const _: () = assert!(
 // Compile-time: all Buzz kind constants fit in nostr's u16-backed Kind.
 const _: () = assert!(KIND_AUTH <= u16::MAX as u32);
 const _: () = assert!(KIND_CANVAS <= u16::MAX as u32);
+const _: () = assert!(KIND_GOAL_TREE <= u16::MAX as u32);
 const _: () = assert!(KIND_HUDDLE_GUIDELINES <= u16::MAX as u32);
 const _: () = assert!(EPHEMERAL_KIND_MIN < EPHEMERAL_KIND_MAX);
 // Compile-time: KIND_AGENT_TURN_METRIC is a regular stored kind (not ephemeral, not replaceable).

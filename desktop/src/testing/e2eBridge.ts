@@ -15625,6 +15625,8 @@ export function maybeInstallE2eTauriMocks() {
         }
         return null;
       }
+      case "set_goals_feature_enabled":
+        return null;
       default:
         throw new Error(`Unsupported mocked Tauri command: ${command}`);
     }

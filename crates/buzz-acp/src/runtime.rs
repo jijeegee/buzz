@@ -151,6 +151,8 @@ fn make_prompt_context(
         system_prompt: config.system_prompt.clone(),
         session_title: config.session_title.clone(),
         team_instructions: config.team_instructions.clone(),
+        layer0_goals: config.layer0_goals.clone(),
+        goals_enabled: config.goals_enabled,
         base_prompt: if config.no_base_prompt {
             None
         } else {
@@ -160,6 +162,15 @@ fn make_prompt_context(
             let base = base_prompt_content
                 .map(String::as_str)
                 .unwrap_or(include_str!("base_prompt.md"));
+            // Goal-layer rules only reach agents whose owner turned the
+            // experimental feature on.
+            let with_goals;
+            let base = if config.goals_enabled {
+                with_goals = format!("{base}\n\n{}", include_str!("goals_prompt.md"));
+                with_goals.as_str()
+            } else {
+                base
+            };
             Some(assemble_base_prompt(
                 config.session_policy,
                 config.dispatcher,

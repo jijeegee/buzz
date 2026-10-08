@@ -2083,6 +2083,9 @@ pub struct FormatPromptArgs<'a> {
     /// Owner-signed instructions for an active huddle channel.
     pub huddle_instructions: Option<&'a str>,
     pub channel_info: Option<&'a PromptChannelInfo>,
+    /// Rendered `<goal-context>` body — the conversation's goal tree, fetched
+    /// fresh each turn (see `goal_context`).
+    pub goal_context: Option<&'a str>,
     pub conversation_context: Option<&'a ConversationContext>,
     /// True when delta filtering removed context already available to this
     /// live session, either as prior input or as the agent's own reply.
@@ -2099,6 +2102,8 @@ pub struct FormatPromptArgs<'a> {
     pub system_prompt: Option<&'a str>,
     /// Team instructions for legacy agents, rendered after `<agent-instructions>`.
     pub team_instructions: Option<&'a str>,
+    /// Layer 0 goal sections for legacy agents, rendered after team instructions.
+    pub layer0_goals: Option<&'a str>,
     /// Rendered `<channel-canvas>` metadata section for legacy agents.
     ///
     /// For modern agents (protocol_version >= 2) the section is delivered via
@@ -2133,6 +2138,8 @@ pub(crate) struct StandingContext<'a> {
     pub base_prompt: Option<&'a str>,
     pub system_prompt: Option<&'a str>,
     pub team_instructions: Option<&'a str>,
+    /// Pre-rendered `<agent-goal>` / `<owner-goal>` sections.
+    pub layer0_goals: Option<&'a str>,
     pub agent_core: Option<&'a str>,
     pub huddle_instructions: Option<&'a str>,
     pub agent_canvas: Option<&'a str>,
@@ -2162,6 +2169,9 @@ impl StandingContext<'_> {
                 "team-instructions",
                 team,
             ));
+        }
+        if let Some(goals) = self.layer0_goals {
+            sections.push(goals.to_string());
         }
         if let Some(core) = self.agent_core {
             sections.push(crate::prompt_framing::normalize_semantic_section(
@@ -2269,6 +2279,7 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
                 base_prompt: args.base_prompt,
                 system_prompt: args.system_prompt,
                 team_instructions: args.team_instructions,
+                layer0_goals: args.layer0_goals,
                 agent_core: args.agent_core,
                 huddle_instructions: args.huddle_instructions,
                 agent_canvas: args.agent_canvas,
@@ -2311,6 +2322,12 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
         ),
         reply_anchor.as_deref(),
     ));
+    if let Some(goals) = args.goal_context {
+        sections.push(crate::prompt_framing::semantic_section(
+            "goal-context",
+            goals,
+        ));
+    }
     if let Some(follow_up) = &follow_up {
         sections.push(crate::prompt_framing::semantic_section(
             "follow-up",

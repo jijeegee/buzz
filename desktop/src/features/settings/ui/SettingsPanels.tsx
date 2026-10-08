@@ -83,6 +83,8 @@ import { ProfileSettingsCard } from "./ProfileSettingsCard";
 import { UpdateChecker } from "../UpdateChecker";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { VoiceSettingsCard } from "./VoiceSettingsCard";
+import { Layer0GoalCard } from "@/features/goals/ui/Layer0GoalCard";
+import { FeatureGate } from "@/shared/features/FeatureGate";
 
 export type SettingsSection =
   | "profile"
@@ -823,6 +825,11 @@ export function renderSettingsSection(
             fallbackDisplayName={props.fallbackDisplayName}
           />
           <AccountSettingsCard />
+          <FeatureGate feature="goalTree">
+            <div className="mt-6">
+              <Layer0GoalCard agentPubkey={null} />
+            </div>
+          </FeatureGate>
         </>
       );
     case "notifications":
