@@ -57,6 +57,7 @@ fn build_launch_block_for_policy(
     session_policy: crate::managed_agents::AcpSessionPolicy,
     routing_role: crate::managed_agents::channel_routing::RoutingRole,
     task_threads: &str,
+    context_history: &str,
 ) -> serde_json::Value {
     use crate::managed_agents::{
         known_acp_runtime, resolve_session_title, DISPLAY_NAME_ENV_VAR, SESSION_TITLE_ENV_VAR,
@@ -91,6 +92,15 @@ fn build_launch_block_for_policy(
     {
         policy_env.insert(
             crate::managed_agents::task_threads::TASK_THREADS_ENV_VAR.into(),
+            value.to_string(),
+        );
+    }
+    if let Some(value) = crate::managed_agents::context_history::context_history_env_for(
+        routing_role,
+        context_history,
+    ) {
+        policy_env.insert(
+            crate::managed_agents::context_history::CONTEXT_HISTORY_ENV_VAR.into(),
             value.to_string(),
         );
     }
@@ -152,6 +162,9 @@ fn build_launch_block_for_policy(
     let strip_key = |k: &str| {
         k.eq_ignore_ascii_case(crate::managed_agents::ACP_SESSION_POLICY_ENV_VAR)
             || k.eq_ignore_ascii_case(crate::managed_agents::task_threads::TASK_THREADS_ENV_VAR)
+            || k.eq_ignore_ascii_case(
+                crate::managed_agents::context_history::CONTEXT_HISTORY_ENV_VAR,
+            )
             || (is_claude
                 && (k.eq_ignore_ascii_case("BUZZ_ACP_MODEL")
                     || k.eq_ignore_ascii_case("ANTHROPIC_MODEL")))
@@ -195,6 +208,7 @@ pub(super) fn build_launch_block(
             crate::managed_agents::channel_routing::ChannelRoutingMode::Host,
             Some(owner_pubkey),
         ),
+        "",
         "",
     )
 }
@@ -280,6 +294,7 @@ pub(super) fn build_deploy_payload_with_live_roles<R: tauri::Runtime>(
             live_roles,
         ),
         &crate::managed_agents::task_threads::current_task_threads_env(app),
+        &crate::managed_agents::context_history::current_context_history_env(app),
     );
 
     let effective_parallelism =
@@ -467,6 +482,7 @@ mod tests {
                 crate::managed_agents::AcpSessionPolicy::Channel,
                 routing_role_for(&record, mode, Some("owner-hex")),
                 "",
+                "",
             );
             assert!(
                 launch["policy_env"]["BUZZ_ACP_DISPATCHER"].is_null(),
@@ -497,6 +513,7 @@ mod tests {
             crate::managed_agents::AcpSessionPolicy::Thread,
             crate::managed_agents::channel_routing::RoutingRole::None,
             "",
+            "",
         );
 
         assert_eq!(launch["policy_env"]["BUZZ_ACP_SESSION_POLICY"], "thread");
@@ -505,6 +522,41 @@ mod tests {
             "desktop policy must not be shadowed by descriptor env"
         );
         assert_eq!(launch["env"]["KEEP_ME"], "yes");
+    }
+
+    #[test]
+    fn launch_block_passes_context_history_except_to_dispatchers() {
+        use crate::managed_agents::channel_routing::RoutingRole;
+        let record = record();
+        let descriptor = EffectiveHarnessDescriptor {
+            command: "goose".into(),
+            args: vec![],
+            env: BTreeMap::from([("BUZZ_ACP_CONTEXT_HISTORY".to_string(), "small".to_string())]),
+        };
+        let launch_for = |role| {
+            build_launch_block_for_policy(
+                &record,
+                &descriptor,
+                &[],
+                None,
+                None,
+                "owner-hex",
+                crate::managed_agents::AcpSessionPolicy::Thread,
+                role,
+                "",
+                "large",
+            )
+        };
+
+        let launch = launch_for(RoutingRole::None);
+        assert_eq!(launch["policy_env"]["BUZZ_ACP_CONTEXT_HISTORY"], "large");
+        assert!(
+            launch["env"]["BUZZ_ACP_CONTEXT_HISTORY"].is_null(),
+            "the desktop setting must not be shadowed by descriptor env"
+        );
+        let dispatcher = launch_for(RoutingRole::Dispatcher);
+        assert!(dispatcher["policy_env"]["BUZZ_ACP_CONTEXT_HISTORY"].is_null());
+        assert!(dispatcher["env"]["BUZZ_ACP_CONTEXT_HISTORY"].is_null());
     }
 
     #[test]

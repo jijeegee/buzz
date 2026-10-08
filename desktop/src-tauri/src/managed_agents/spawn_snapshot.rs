@@ -87,6 +87,9 @@ pub(crate) struct SpawnConfigInputs<'a> {
     /// The desktop-wide task thread trigger list (`task-threads.json`); the
     /// launch passes it on only under the thread policy.
     pub task_threads: &'a str,
+    /// The desktop-wide new-session history budget (`context-history.json`);
+    /// the launch passes it on to every role except a dispatcher.
+    pub context_history: &'a str,
 }
 
 /// The effective spawn configuration of one managed-agent process.
@@ -170,6 +173,10 @@ pub(crate) struct SpawnConfigSnapshot {
     /// written on the spawn `Command` after user env, so it is captured
     /// explicitly, and changing the setting raises the restart badge.
     pub task_threads: String,
+    /// The `BUZZ_ACP_CONTEXT_HISTORY` budget this launch applied (empty when
+    /// none): written on the spawn `Command` after user env, so it is captured
+    /// explicitly, and changing the setting raises the restart badge.
+    pub context_history: String,
 }
 
 /// The startup effort a spawn actually applied, read from the single effort key
@@ -211,6 +218,7 @@ impl SpawnConfigSnapshot {
             session_policy,
             routing_role,
             task_threads,
+            context_history,
         } = inputs;
         let (respond_to, respond_to_allowlist) =
             super::projected_access_with_policy(record, enforced_owner_only);
@@ -282,6 +290,12 @@ impl SpawnConfigSnapshot {
             task_threads: super::task_threads::task_threads_env_for(session_policy, task_threads)
                 .unwrap_or_default()
                 .to_string(),
+            context_history: super::context_history::context_history_env_for(
+                routing_role,
+                context_history,
+            )
+            .unwrap_or_default()
+            .to_string(),
         }
     }
 
@@ -311,8 +325,9 @@ impl std::fmt::Debug for SpawnConfigSnapshot {
 /// Snapshot the effective spawn configuration `record` would get if it were
 /// started right now under the current `personas`/`teams`/`global`, resolving
 /// a blank record relay against `workspace_relay`. `routing_role` is the
-/// caller's `routing_role_for` under the saved channel routing mode, and
-/// `task_threads` the saved task thread trigger list.
+/// caller's `routing_role_for` under the saved channel routing mode,
+/// `task_threads` the saved task thread trigger list, and `context_history`
+/// the saved new-session history budget.
 ///
 /// Pure — no `AppHandle`, no disk, no keyring. This is the *prospective* side
 /// of the comparison; the stamped side is built at spawn from the values that
@@ -326,6 +341,7 @@ pub(crate) fn prospective_spawn_config_snapshot(
     enforced_owner_only: bool,
     routing_role: RoutingRole,
     task_threads: &str,
+    context_history: &str,
 ) -> SpawnConfigSnapshot {
     // Prospective re-snapshot: apply the same `apply_persona_snapshot` the
     // start/restore paths run right before spawning, so this describes what a
@@ -379,6 +395,7 @@ pub(crate) fn prospective_spawn_config_snapshot(
         session_policy: record.session_policy,
         routing_role,
         task_threads,
+        context_history,
     })
 }
 

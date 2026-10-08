@@ -121,6 +121,11 @@ pub struct ChannelDeliveryState {
     /// this ACP session. Hydrated threads use bounded overfetch so exact event-ID
     /// deduplication does not unnecessarily shrink the new-context window.
     pub hydrated_thread_roots: VecDeque<String>,
+    /// Whether this ACP session was reattached from the session ledger rather
+    /// than created. A resumed provider session already holds the earlier
+    /// conversation, so its context fetches keep the recent-N window instead
+    /// of a `--context-history` budget.
+    pub session_reattached: bool,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -312,6 +317,23 @@ impl SessionState {
             }
             delivery.hydrated_thread_roots.push_back(root);
         }
+    }
+
+    /// The `--context-history` budget for `scope`'s next context fetch, or
+    /// `None` to keep the recent-N window. `hydrated` is whether this session
+    /// already received the fetch target's context; a session reattached from
+    /// the ledger never gets a budget because the provider kept its history.
+    pub(crate) fn context_history_budget(
+        &self,
+        scope: &SessionScope,
+        hydrated: bool,
+        history: crate::context_history::ContextHistory,
+    ) -> Option<crate::context_history::ContextBudget> {
+        let reattached = self
+            .deliveries
+            .get(scope)
+            .is_some_and(|delivery| delivery.session_reattached);
+        history.budget_for_fetch(hydrated, reattached)
     }
 
     #[cfg(test)]
@@ -984,6 +1006,9 @@ pub struct PromptContext {
     pub channel_info: ChannelInfoResolver,
     /// Max messages to include in thread/DM context. 0 = disabled.
     pub context_message_limit: u32,
+    /// How much thread / main-timeline history a fresh session's first turn
+    /// reads; see [`crate::context_history`].
+    pub context_history: crate::context_history::ContextHistory,
     /// Max turns per session before proactive rotation. 0 = disabled.
     pub max_turns_per_session: u32,
     /// Permission mode to apply after session creation. `Default` = skip.
@@ -3242,10 +3267,13 @@ pub async fn run_prompt_task(
                             scope.telemetry_label()
                         );
                         agent.state.sessions.insert(scope.clone(), sid.clone());
-                        agent
-                            .state
-                            .deliveries
-                            .insert(scope.clone(), ChannelDeliveryState::default());
+                        agent.state.deliveries.insert(
+                            scope.clone(),
+                            ChannelDeliveryState {
+                                session_reattached: reattached,
+                                ..Default::default()
+                            },
+                        );
                         if let Some(ledger) = &ctx.session_ledger {
                             ledger.record(scope, &sid, &ctx.harness_name, &ctx.cwd);
                         }
@@ -3625,6 +3653,14 @@ pub async fn run_prompt_task(
             .map(|delivery| &delivery.delivered_event_ids)
             .cloned()
             .unwrap_or_default();
+        // A fresh session's first fetch of this thread or main timeline may
+        // read beyond the recent-N window (`--context-history`); a resumed
+        // session already holds that history.
+        let history_budget = agent.state.context_history_budget(
+            &b.scope,
+            thread_context_is_hydrated,
+            ctx.context_history,
+        );
         let conversation_context = if ctx.context_message_limit > 0 {
             fetch_conversation_context_for_target(
                 b.channel_id,
@@ -3632,6 +3668,7 @@ pub async fn run_prompt_task(
                 &ctx,
                 thread_context_is_hydrated,
                 &delivered_ids,
+                history_budget,
             )
             .await
         } else {
@@ -4679,15 +4716,20 @@ fn conversation_context_delta(
 /// The delivery-delta filter (`conversation_context_delta`) then removes any
 /// events this scope's live session already received, so subsequent turns
 /// deliver only intervening same-thread messages plus the trigger.
+///
+/// With a `history_budget`, thread and main-timeline targets read the whole
+/// relay page and keep as much of it as fits the budget (see
+/// [`context_fetch_window`]); DMs keep the recent-N window.
 async fn fetch_conversation_context_for_target(
     channel_id: Uuid,
     target: &ContextTarget,
     ctx: &PromptContext,
     overfetch_session_delta: bool,
     delivered_ids: &HashSet<String>,
+    history_budget: Option<crate::context_history::ContextBudget>,
 ) -> Option<ConversationContext> {
-    let limit = ctx.context_message_limit;
-    match target {
+    let (limit, budget) = context_fetch_window(ctx.context_message_limit, target, history_budget);
+    let context = match target {
         ContextTarget::Thread(root_id) => {
             fetch_thread_context(
                 channel_id,
@@ -4713,6 +4755,36 @@ async fn fetch_conversation_context_for_target(
             .await
         }
         ContextTarget::None => None,
+    }?;
+    Some(match budget {
+        Some(budget) => crate::context_history::apply_context_budget(
+            context,
+            ctx.context_message_limit as usize,
+            budget.tokens(),
+        ),
+        None => context,
+    })
+}
+
+/// The fetch window for one context fetch and the budget to trim it to.
+///
+/// A budget applies to thread and main-timeline targets only, which share one
+/// fetch path: they request [`HISTORY_FETCH_LIMIT`] rows (the main timeline
+/// is further clamped to its window cap) and are then trimmed to the budget,
+/// never below `limit` recent messages. Everything else keeps `limit`.
+///
+/// [`HISTORY_FETCH_LIMIT`]: crate::context_history::HISTORY_FETCH_LIMIT
+fn context_fetch_window(
+    limit: u32,
+    target: &ContextTarget,
+    history_budget: Option<crate::context_history::ContextBudget>,
+) -> (u32, Option<crate::context_history::ContextBudget>) {
+    match (target, history_budget) {
+        (ContextTarget::Thread(_) | ContextTarget::Main, Some(budget)) => (
+            limit.max(crate::context_history::HISTORY_FETCH_LIMIT),
+            Some(budget),
+        ),
+        _ => (limit, None),
     }
 }
 
@@ -7270,6 +7342,207 @@ pub(crate) mod tests {
             .is_none());
     }
 
+    fn history_id(i: usize) -> String {
+        format!("{:064x}", i + 1)
+    }
+
+    fn context_contents(context: &ConversationContext) -> Vec<&str> {
+        match context {
+            ConversationContext::Thread { messages, .. }
+            | ConversationContext::Dm { messages, .. } => {
+                messages.iter().map(|m| m.content.as_str()).collect()
+            }
+        }
+    }
+
+    #[test]
+    fn context_fetch_window_reads_further_only_for_budgeted_thread_and_main() {
+        use crate::context_history::{ContextBudget, HISTORY_FETCH_LIMIT};
+        let budget = Some(ContextBudget::Small);
+        let thread = ContextTarget::Thread("a".repeat(64));
+        assert_eq!(
+            context_fetch_window(12, &thread, budget),
+            (HISTORY_FETCH_LIMIT, budget)
+        );
+        assert_eq!(
+            context_fetch_window(12, &ContextTarget::Main, budget),
+            (HISTORY_FETCH_LIMIT, budget),
+            "main timeline and threads share one path"
+        );
+        assert_eq!(
+            context_fetch_window(12, &ContextTarget::Dm, budget),
+            (12, None)
+        );
+        assert_eq!(context_fetch_window(12, &thread, None), (12, None));
+        assert_eq!(
+            context_fetch_window(4, &ContextTarget::Main, None),
+            (4, None)
+        );
+    }
+
+    #[test]
+    fn context_history_budget_skips_resumed_and_hydrated_sessions() {
+        use crate::context_history::{ContextBudget, ContextHistory};
+        let large = ContextHistory::Budget(ContextBudget::Large);
+        let channel = Uuid::new_v4();
+        let created = conv(channel);
+        let resumed = conv(Uuid::new_v4());
+        let mut state = SessionState::default();
+        state
+            .deliveries
+            .insert(created.clone(), ChannelDeliveryState::default());
+        state.deliveries.insert(
+            resumed.clone(),
+            ChannelDeliveryState {
+                session_reattached: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(
+            state.context_history_budget(&created, false, large),
+            Some(ContextBudget::Large),
+            "a created session's first fetch reads within the budget"
+        );
+        assert_eq!(
+            state.context_history_budget(&created, true, large),
+            None,
+            "later turns keep the recent-N delta"
+        );
+        assert_eq!(
+            state.context_history_budget(&resumed, false, large),
+            None,
+            "a resumed session already holds the history"
+        );
+        assert_eq!(
+            state.context_history_budget(&created, false, ContextHistory::Recent),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn budgeted_main_timeline_fetch_reads_the_window_and_keeps_newest() {
+        use crate::context_history::{apply_context_budget, HISTORY_FETCH_LIMIT};
+        // 40 rows of 400 ASCII chars: 100 + 16 tokens each.
+        let rows = serde_json::Value::Array(
+            (0..40)
+                .rev()
+                .map(|i| {
+                    main_row(
+                        &history_id(i),
+                        "humanpub",
+                        &format!("{i:03}{}", "m".repeat(397)),
+                        1000 + i as u64,
+                    )
+                })
+                .collect(),
+        );
+        let fetched = fetch_main_for_test(
+            rows,
+            HISTORY_FETCH_LIMIT,
+            false,
+            &HashSet::new(),
+            MAIN_TIMELINE_WINDOW_MAX_LIMIT,
+        )
+        .await
+        .expect("main context");
+        assert_eq!(context_contents(&fetched).len(), 40, "whole window fetched");
+
+        let trimmed = apply_context_budget(fetched, 12, 116 * 25);
+        let contents = context_contents(&trimmed);
+        assert_eq!(contents.len(), 25);
+        assert!(contents[0].starts_with("015"), "oldest rows dropped first");
+        assert!(contents[24].starts_with("039"), "newest row kept");
+        match trimmed {
+            ConversationContext::Dm {
+                total, truncated, ..
+            } => {
+                assert!(truncated, "the header reports the trim");
+                assert_eq!(total, 40);
+            }
+            other => panic!("expected top-level conversation context, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn budgeted_thread_fetch_keeps_root_and_newest_replies() {
+        use crate::context_history::{apply_context_budget, HISTORY_FETCH_LIMIT};
+        let agent = Keys::generate();
+        let agent_pubkey = agent.public_key();
+        let root_id = "1".repeat(64);
+        let channel_id = Uuid::new_v4();
+        let mut events = vec![thread_event(&root_id, "rootpub", "root brief", 900)];
+        events.extend((0..30).map(|i| {
+            thread_event(
+                &history_id(i),
+                "humanpub",
+                &format!("{i:03}{}", "r".repeat(397)),
+                1000 + i as u64,
+            )
+        }));
+        let json = serde_json::Value::Array(events);
+        let root_for_query = root_id.clone();
+
+        let fetched = fetch_timeline_context_with(
+            channel_id,
+            TimelineTarget::Thread {
+                root_event_id: &root_id,
+            },
+            HISTORY_FETCH_LIMIT,
+            agent_pubkey,
+            move |filters| {
+                assert_thread_query_filters(
+                    &filters,
+                    channel_id,
+                    &root_for_query,
+                    agent_pubkey,
+                    u64::from(HISTORY_FETCH_LIMIT) + 1,
+                );
+                std::future::ready(Ok(json.clone()))
+            },
+            |_filters| -> std::future::Ready<Result<serde_json::Value, crate::relay::RelayError>> {
+                panic!("a window that fits needs no /count");
+            },
+            ThreadContextSessionDelta {
+                overfetch: false,
+                delivered_ids: &HashSet::new(),
+            },
+        )
+        .await
+        .expect("thread context");
+
+        // Fits: the whole thread survives a large budget untouched.
+        let whole = apply_context_budget(fetched.clone(), 12, 50_000);
+        assert_eq!(context_contents(&whole).len(), 31);
+        assert!(matches!(
+            whole,
+            ConversationContext::Thread {
+                truncated: false,
+                ..
+            }
+        ));
+
+        // Over budget: the root stays, then the newest replies that fit.
+        let trimmed = apply_context_budget(fetched, 12, 2_000);
+        let contents = context_contents(&trimmed);
+        assert_eq!(contents[0], "root brief");
+        assert_eq!(contents.len(), 1 + 17, "root + 17 replies of 116 tokens");
+        assert!(contents[1].starts_with("013"));
+        assert!(contents[17].starts_with("029"));
+        match trimmed {
+            ConversationContext::Thread {
+                total,
+                truncated,
+                root_present,
+                ..
+            } => {
+                assert!(truncated && root_present);
+                assert_eq!(total, 31);
+            }
+            other => panic!("expected Thread context, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
     async fn test_fetch_thread_context_uses_exact_count_when_above_sentinel_minimum() {
         let agent = Keys::generate();
@@ -9663,6 +9936,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 standing_context_sent: true,
                 delivered_event_ids: HashSet::from(["event-a".into()]),
                 hydrated_thread_roots: VecDeque::from(["root-a".into()]),
+                session_reattached: false,
             },
         );
         s.deliveries.insert(
@@ -9671,6 +9945,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 standing_context_sent: true,
                 delivered_event_ids: HashSet::from(["event-b".into()]),
                 hydrated_thread_roots: VecDeque::from(["root-b".into()]),
+                session_reattached: false,
             },
         );
         s.heartbeat_session = Some("sess-hb".into());
@@ -11847,6 +12122,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 },
             ),
             context_message_limit: 0,
+            context_history: crate::context_history::ContextHistory::Recent,
             max_turns_per_session: 0,
             permission_mode: PermissionMode::Default,
             agent_keys: agent_keys.clone().into(),

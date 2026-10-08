@@ -140,6 +140,7 @@ fn backfill_of_promptless_record_keeps_spawn_snapshot_stable() {
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
         "",
+        "",
     );
 
     backfill_standalone_agents_in_dir(&base(dir.path())).unwrap();
@@ -158,6 +159,7 @@ fn backfill_of_promptless_record_keeps_spawn_snapshot_stable() {
         &Default::default(),
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
+        "",
         "",
     );
 
@@ -196,6 +198,7 @@ fn backfill_of_prompted_record_keeps_spawn_snapshot_stable() {
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
         "",
+        "",
     );
 
     backfill_standalone_agents_in_dir(&base(dir.path())).unwrap();
@@ -214,6 +217,7 @@ fn backfill_of_prompted_record_keeps_spawn_snapshot_stable() {
         &Default::default(),
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
+        "",
         "",
     );
 

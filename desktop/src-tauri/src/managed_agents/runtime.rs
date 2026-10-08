@@ -299,6 +299,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
                 &super::channel_routing::live_local_roles(runtimes),
             ),
             &super::task_threads::current_task_threads_env(app),
+            &super::context_history::current_context_history_env(app),
         );
         (runtime, current)
     });
@@ -913,6 +914,10 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         ),
         live_routing_roles,
     );
+    // New-session history follows the routing role (dispatchers keep their
+    // own window); written after user env and stamped into the snapshot below.
+    let context_history = super::context_history::current_context_history_env(app);
+    super::context_history::apply_context_history_env(&mut command, routing_role, &context_history);
     super::apply_routing_env(
         &mut command,
         routing_role,
@@ -980,6 +985,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             session_policy: acp_session_policy,
             routing_role,
             task_threads: &task_threads,
+            context_history: &context_history,
         },
     );
 
