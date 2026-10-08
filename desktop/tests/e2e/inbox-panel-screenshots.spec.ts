@@ -191,6 +191,17 @@ test.describe("inbox rows land exactly where they point", () => {
     const drawer = page.getByTestId("focus-thread-drawer-overlay");
     await expect(drawer).toBeVisible({ timeout: 10_000 });
 
+    // Moving within the channel keeps the chat screen mounted (no reload of the
+    // main channel): tag its DOM node and expect the same node after each move.
+    const chatPane = page.getByTestId("channel-drop-zone");
+    await chatPane.evaluate((node) => {
+      (node as Element & { e2eKept?: boolean }).e2eKept = true;
+    });
+    const chatPaneKept = () =>
+      chatPane.evaluate(
+        (node) => (node as Element & { e2eKept?: boolean }).e2eKept === true,
+      );
+
     // Clicking the same row again lands there again, it never toggles.
     await page
       .getByTestId("inbox-panel")
@@ -199,6 +210,7 @@ test.describe("inbox rows land exactly where they point", () => {
       .first()
       .click();
     await expect(drawer).toBeVisible({ timeout: 10_000 });
+    expect(await chatPaneKept()).toBe(true);
 
     // The channel row lands on the room's newest message with no thread open.
     await page
@@ -214,6 +226,7 @@ test.describe("inbox rows land exactly where they point", () => {
         .getByTestId("message-timeline")
         .getByText("Newest message in general"),
     ).toBeInViewport({ timeout: 10_000 });
+    expect(await chatPaneKept()).toBe(true);
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/05-channel-row-latest.png` });
   });
