@@ -74,6 +74,62 @@ impl PoolStartup {
     }
 }
 
+/// The standing base for `mode`: task sessions get the task session model;
+/// conversation sessions get the configured policy's model, plus the
+/// self-opened task thread guidance for thread-policy agents that are not
+/// route-only dispatchers.
+fn assemble_base_prompt(
+    policy: crate::scope::SessionPolicy,
+    dispatcher: bool,
+    task_threads: &[crate::task_threads::TaskThreadTrigger],
+    mode: &SessionMode,
+    base: &str,
+) -> String {
+    if matches!(mode, SessionMode::Task) {
+        return format!("{base}\n\n{}", include_str!("session_model_task.md"));
+    }
+    let base = policy.append_session_model(base);
+    if policy == crate::scope::SessionPolicy::Thread && !dispatcher {
+        crate::task_threads::append_task_thread_guidance(base, task_threads)
+    } else {
+        base
+    }
+}
+
+#[cfg(test)]
+mod assemble_base_prompt_tests {
+    use super::*;
+    use crate::scope::SessionPolicy;
+    use crate::task_threads::TaskThreadTrigger;
+
+    const GUIDANCE: &str = "### Opening Task Threads Yourself";
+    const TRIGGERS: &[TaskThreadTrigger] = &[TaskThreadTrigger::LongRunning];
+
+    #[test]
+    fn thread_policy_conversation_gets_the_guidance() {
+        let prompt = assemble_base_prompt(
+            SessionPolicy::Thread,
+            false,
+            TRIGGERS,
+            &SessionMode::Conversation,
+            "base",
+        );
+        assert!(prompt.contains(GUIDANCE));
+    }
+
+    #[test]
+    fn channel_policy_dispatchers_and_task_sessions_do_not() {
+        for (policy, dispatcher, mode) in [
+            (SessionPolicy::Channel, false, SessionMode::Conversation),
+            (SessionPolicy::Thread, true, SessionMode::Conversation),
+            (SessionPolicy::Thread, false, SessionMode::Task),
+        ] {
+            let prompt = assemble_base_prompt(policy, dispatcher, TRIGGERS, &mode, "base");
+            assert!(!prompt.contains(GUIDANCE), "{policy} dispatcher={dispatcher}");
+        }
+    }
+}
+
 fn make_prompt_context(
     config: &Config,
     rest_client: relay::RestClient,
@@ -101,11 +157,13 @@ fn make_prompt_context(
             let base = base_prompt_content
                 .map(String::as_str)
                 .unwrap_or(include_str!("base_prompt.md"));
-            Some(if matches!(mode, SessionMode::Task) {
-                format!("{base}\n\n{}", include_str!("session_model_task.md"))
-            } else {
-                config.session_policy.append_session_model(base)
-            })
+            Some(assemble_base_prompt(
+                config.session_policy,
+                config.dispatcher,
+                &config.task_threads,
+                &mode,
+                base,
+            ))
         },
         heartbeat_prompt: config.heartbeat_prompt.clone(),
         cwd,

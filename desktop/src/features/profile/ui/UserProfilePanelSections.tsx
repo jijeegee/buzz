@@ -576,6 +576,11 @@ export function ProfileSummaryView({
                 isLoading={channelsLoading}
                 onAddToChannel={onAddToChannel}
                 onOpenChannel={onOpenChannel}
+                sessionAgent={
+                  isBot && isOwner === true && pubkey
+                    ? { pubkey, name: displayName }
+                    : null
+                }
                 variant="embedded"
               />
             ) : null}

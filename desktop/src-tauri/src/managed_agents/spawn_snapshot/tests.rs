@@ -21,6 +21,7 @@ fn snapshot_with_policy(
         global,
         enforced_owner_only,
         crate::managed_agents::channel_routing::RoutingRole::None,
+        "",
     )
     .canonical()
 }

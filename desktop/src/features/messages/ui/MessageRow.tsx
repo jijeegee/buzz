@@ -49,6 +49,7 @@ import { MessageActionBar } from "./MessageActionBar";
 import { editMessage } from "@/shared/api/tauri";
 import { hasLinkPreviewSuppression } from "@/features/messages/lib/formatTimelineMessages";
 import { toast } from "sonner";
+import { MessageAgentContextGauge } from "@/features/agents/ui/AgentContextGauge";
 import { MessageAgentOwner } from "./MessageAgentOwner";
 import {
   MessageAuthorText,
@@ -535,9 +536,7 @@ export const MessageRow = React.memo(
       </div>
     );
 
-    const avatarGutterNode = isDisplayedAsContinuation ? (
-      continuationTimestampGutter
-    ) : message.pubkey ? (
+    const avatarPopoverNode = message.pubkey ? (
       <UserProfilePopover
         pubkey={message.pubkey}
         role={profilePopoverRole}
@@ -553,6 +552,27 @@ export const MessageRow = React.memo(
           {avatarNode}
         </button>
       </UserProfilePopover>
+    ) : null;
+
+    // Agent avatars carry the owner's context gauge for this message's session
+    // scope: the thread root (or the message itself when top-level), falling
+    // back to the channel's whole-conversation scope. It is a sibling of the
+    // profile trigger, never nested inside it.
+    const avatarGutterNode = isDisplayedAsContinuation ? (
+      continuationTimestampGutter
+    ) : message.pubkey && isAuthorAgent && channelId ? (
+      <div className="relative flex shrink-0 items-start">
+        {avatarPopoverNode}
+        <MessageAgentContextGauge
+          agentName={message.author}
+          agentPubkey={message.pubkey}
+          channelId={channelId}
+          className="absolute -bottom-0.5 -left-0.5 h-3.5 w-3.5 bg-background"
+          threadRootCandidate={message.rootId ?? message.id}
+        />
+      </div>
+    ) : message.pubkey ? (
+      avatarPopoverNode
     ) : (
       <div className="flex shrink-0 items-start">{avatarNode}</div>
     );
@@ -969,6 +989,7 @@ export const MessageRow = React.memo(
     // old `time` prop was the same value pre-formatted; this row reads neither).
     prev.message.createdAt === next.message.createdAt &&
     prev.message.depth === next.message.depth &&
+    prev.message.rootId === next.message.rootId &&
     prev.message.kind === next.message.kind &&
     prev.message.pending === next.message.pending &&
     prev.message.edited === next.message.edited &&
@@ -981,6 +1002,7 @@ export const MessageRow = React.memo(
     prev.message.role === next.message.role &&
     prev.message.personaDisplayName === next.message.personaDisplayName &&
     prev.currentPubkey === next.currentPubkey &&
+    prev.channelId === next.channelId &&
     depthGuideActionsEqual(
       prev.collapseDepthGuideActions,
       next.collapseDepthGuideActions,

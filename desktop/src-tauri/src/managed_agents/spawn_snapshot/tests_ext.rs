@@ -404,6 +404,7 @@ fn snapshot_under(policy: AcpSessionPolicy) -> SpawnConfigSnapshot {
         &Default::default(),
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
+        "",
     )
 }
 
@@ -442,6 +443,7 @@ fn snapshot_with_star(
         &Default::default(),
         false,
         role,
+        "",
     )
 }
 

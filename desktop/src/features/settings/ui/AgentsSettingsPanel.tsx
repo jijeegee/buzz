@@ -4,7 +4,6 @@ import {
   useKeepMentionedAgentsPinned,
 } from "@/features/messages/lib/autoPinMentionedAgentsPreference";
 import { Switch } from "@/shared/ui/switch";
-import { ChannelRoutingSummaryRow } from "./ChannelRoutingSummaryRow";
 import { HarnessesSettingsPanel } from "./HarnessesSettingsPanel";
 import { PreventSleepSettingsCard } from "./PreventSleepSettingsCard";
 import {
@@ -48,7 +47,6 @@ export function AgentsSettingsPanel() {
               onCheckedChange={setKeepMentionedAgentsPinned}
             />
           </SettingsOptionRow>
-          <ChannelRoutingSummaryRow />
         </SettingsOptionGroup>
         <PreventSleepSettingsCard />
         <HarnessesSettingsPanel />

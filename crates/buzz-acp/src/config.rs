@@ -542,6 +542,13 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_CHANNEL_ROSTER", default_value_t = false)]
     pub channel_roster: bool,
 
+    /// Situations in which the agent may open a task thread unasked, as a
+    /// comma-separated list (`long_running`, `multi_step`, `parallel`,
+    /// `side_discussion`, `delegation`). Empty keeps the ask-first rule.
+    /// Applies under the thread session policy only.
+    #[arg(long, env = "BUZZ_ACP_TASK_THREADS")]
+    pub task_threads: Option<String>,
+
     /// Per-channel dispatcher policy as JSON:
     /// `{"<channel_uuid>": {"humans": ["<hex>", ...], "ais": ["<hex>", ...]}}`.
     /// Both arrays are optional. An empty or missing `humans` list admits the
@@ -790,6 +797,9 @@ pub struct Config {
     pub dispatcher: bool,
     /// Whether to inject the `<channel-roster>` section (`--channel-roster`).
     pub channel_roster: bool,
+    /// Situations in which the agent may open a task thread unasked
+    /// (`--task-threads`).
+    pub task_threads: Vec<crate::task_threads::TaskThreadTrigger>,
     /// Per-channel dispatcher author policy (`--dispatcher-config`).
     pub dispatcher_config: DispatcherConfig,
 }
@@ -1436,6 +1446,9 @@ impl Config {
             base_prompt_content,
             dispatcher: args.dispatcher,
             channel_roster: args.channel_roster,
+            task_threads: crate::task_threads::parse_task_thread_triggers(
+                args.task_threads.as_deref(),
+            ),
             dispatcher_config,
         };
 
@@ -1878,6 +1891,7 @@ mod tests {
             base_prompt_content: None,
             dispatcher: false,
             channel_roster: false,
+            task_threads: Vec::new(),
             dispatcher_config: DispatcherConfig::default(),
         }
     }

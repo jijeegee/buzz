@@ -590,6 +590,60 @@ void main() {
     expect(find.text('Invite to community'), findsNothing);
   });
 
+  testWidgets('groups read-aloud under Experiments before sign out', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          savedPrefsProvider.overrideWithValue(prefs),
+          currentCommunityRoleProvider.overrideWithValue(
+            const AsyncData<CommunityMemberRole?>(CommunityMemberRole.admin),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: SettingsPage(
+            profileHeader: const SizedBox.shrink(),
+            invitePageBuilder: (_) => const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final experiments = find.byKey(const ValueKey('settings-experiments'));
+    expect(experiments, findsOneWidget);
+    expect(
+      find.descendant(of: experiments, matching: find.text('Experiments')),
+      findsOneWidget,
+    );
+    final toggle = find.descendant(
+      of: experiments,
+      matching: find.byKey(const ValueKey('read-aloud-enabled')),
+    );
+    expect(toggle, findsOneWidget);
+    expect(find.text('화면 설정'), findsNothing);
+
+    final signOut = find.byKey(const Key('settings-sign-out'));
+    await tester.scrollUntilVisible(signOut, 200);
+    expect(
+      tester.getTopLeft(experiments).dy,
+      lessThan(tester.getTopLeft(signOut).dy),
+    );
+
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.getBool('buzz_mobile_read_aloud_enabled'), isTrue);
+  });
+
   testWidgets('uses a 24dp rhythm between profile settings groups', (
     tester,
   ) async {

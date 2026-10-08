@@ -72,5 +72,5 @@ test("a key-less record is never eligible and is ignored even if flagged", () =>
 
 test("the empty-state hint points at the Channel routing card", () => {
   // The hint must say where the star lives; a bare "none" is a dead end.
-  assert.match(NO_DEFAULT_AI_HINT, /Agents › Channel routing/);
+  assert.match(NO_DEFAULT_AI_HINT, /Experiments › Channel routing/);
 });

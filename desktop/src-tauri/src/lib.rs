@@ -744,6 +744,8 @@ pub fn run() {
             set_managed_agent_auto_restart,
             get_channel_routing,
             set_channel_routing,
+            get_task_threads,
+            set_task_threads,
             route_message,
             get_task_models,
             set_task_model,

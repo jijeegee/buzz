@@ -10,6 +10,7 @@ class AppListCard extends StatelessWidget {
   const AppListCard({
     super.key,
     this.label,
+    this.description,
     this.dividerIndent,
     this.verticalPadding = Grid.xxs,
     required this.children,
@@ -17,6 +18,9 @@ class AppListCard extends StatelessWidget {
 
   /// Rendered above the card in sentence case, as written — no uppercasing.
   final String? label;
+
+  /// Optional explanatory text rendered between [label] and the card.
+  final String? description;
 
   /// Separator inset from the card edge. Defaults to the standard row label
   /// column, clearing a leading icon. Icon-free cards can pass [_inset] so
@@ -77,6 +81,16 @@ class AppListCard extends StatelessWidget {
                 style: context.textTheme.labelMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          if (description != null)
+            Padding(
+              padding: const EdgeInsets.only(left: Grid.half, bottom: Grid.xxs),
+              child: Text(
+                description!,
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
                 ),
               ),
             ),

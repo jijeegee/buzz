@@ -30,6 +30,7 @@ use runtime::{AgentRuntime, PoolStartup, SessionMode};
 mod scope;
 mod session_ledger;
 mod setup_mode;
+mod task_threads;
 mod usage;
 
 pub use usage::TurnUsage;
@@ -1733,10 +1734,13 @@ async fn publish_relay_observer_event(
 /// Maximum age (seconds) for an observer control frame to be considered fresh.
 const OBSERVER_CONTROL_FRESHNESS_SECS: i64 = 300;
 
+#[allow(clippy::too_many_arguments)]
 fn handle_relay_observer_control_event(
     keys: &nostr::Keys,
     event: nostr::Event,
     pool: &mut AgentPool,
+    queue: &mut EventQueue,
+    ctx: &Arc<PromptContext>,
     observer: Option<&observer::ObserverHandle>,
     owner_pubkey_hex: &str,
     event_publisher: RelayEventPublisher,
@@ -1784,6 +1788,12 @@ fn handle_relay_observer_control_event(
         }
         Some("switch_model") => {
             handle_switch_model_control(&payload, pool, observer);
+        }
+        Some("compact_session") => {
+            handle_compact_session_control(&payload, pool, queue, ctx, observer);
+        }
+        Some("query_context_usage") => {
+            handle_query_context_usage_control(&payload, pool, queue, observer);
         }
         Some("publish_project_owner_announcements") => {
             handle_publish_project_owner_announcements_control(
@@ -1980,6 +1990,237 @@ fn handle_cancel_turn_control(
             }),
         );
     }
+}
+
+/// Resolve the exact session scope a `compact_session` frame targets: a
+/// thread scope when `threadRootEventId` is a 64-char hex id, the channel's
+/// conversation scope when it is absent or null.
+fn compact_target_scope(payload: &serde_json::Value) -> Option<scope::SessionScope> {
+    let channel_id = payload
+        .get("channelId")
+        .and_then(|value| value.as_str())
+        .and_then(|value| value.parse::<Uuid>().ok())?;
+    match payload.get("threadRootEventId") {
+        None | Some(serde_json::Value::Null) => {
+            Some(scope::SessionScope::Conversation { channel_id })
+        }
+        Some(root) => {
+            let root = root.as_str()?;
+            (root.len() == 64 && root.bytes().all(|b| b.is_ascii_hexdigit())).then(|| {
+                scope::SessionScope::Thread {
+                    channel_id,
+                    root_event_id: root.to_ascii_lowercase(),
+                }
+            })
+        }
+    }
+}
+
+/// Whether `scope` has a turn or compaction running, is held in flight by the
+/// queue, or its session owner is checked out — its live session is busy.
+fn session_scope_busy(pool: &AgentPool, queue: &EventQueue, scope: &scope::SessionScope) -> bool {
+    pool.task_map()
+        .values()
+        .any(|meta| meta.scope.as_ref() == Some(scope))
+        || queue.is_scope_in_flight(scope)
+        || pool.scope_owner_busy(scope)
+}
+
+/// Republish `agent`'s live reading for `scope` as a `context_usage` event,
+/// so the owner's gauge store refreshes through its normal ingestion path.
+fn republish_scope_context_usage(
+    observer: Option<&observer::ObserverHandle>,
+    agent: &pool::OwnedAgent,
+    scope: &scope::SessionScope,
+) {
+    let Some(observer) = observer else {
+        return;
+    };
+    let Some(session_id) = agent.state.sessions.get(scope) else {
+        return;
+    };
+    let Some(reading) = agent.acp.context_usage(session_id) else {
+        return;
+    };
+    observer.emit(
+        "context_usage",
+        agent.acp.observer_agent_index(),
+        &observer::context_for(Some(scope.channel_id()), Some(session_id.clone()), None),
+        acp::context_usage_payload(
+            Some(session_id),
+            reading.used,
+            reading.size,
+            scope.root_event_id(),
+            agent.acp.compact_supported(),
+        ),
+    );
+}
+
+/// Handle a `query_context_usage` control frame: report the latest context
+/// reading the harness holds for one exact session scope.
+///
+/// Statuses: `ok` (with `reading`), `no_reading` (live session that has not
+/// reported usage yet), `busy` (its turn is running, the reading is moving),
+/// `no_session` (no live session, e.g. after a harness restart). An `ok`
+/// answer also republishes the reading as a `context_usage` event.
+fn handle_query_context_usage_control(
+    payload: &serde_json::Value,
+    pool: &AgentPool,
+    queue: &EventQueue,
+    observer: Option<&observer::ObserverHandle>,
+) {
+    let Some(scope) = compact_target_scope(payload) else {
+        tracing::warn!("observer query_context_usage control frame missing valid target");
+        return;
+    };
+    let Some(observer) = observer else {
+        return;
+    };
+    let request_id = payload.get("requestId").and_then(|value| value.as_str());
+    let (status, reading) = if session_scope_busy(pool, queue, &scope) {
+        ("busy", None)
+    } else if let Some(agent) = pool.idle_scope_owner(&scope) {
+        match pool::scope_context_reading(agent, &scope) {
+            Some(reading) => {
+                republish_scope_context_usage(Some(observer), agent, &scope);
+                ("ok", Some(reading))
+            }
+            None => ("no_reading", None),
+        }
+    } else {
+        ("no_session", None)
+    };
+    observer.emit(
+        "control_result",
+        None,
+        &observer::context_for(Some(scope.channel_id()), None, None),
+        pool::context_query_result_payload(status, request_id, scope.root_event_id(), reading),
+    );
+}
+
+/// Handle a `compact_session` control frame: run `/compact` on the live
+/// session of one exact scope while holding that scope's queue.
+///
+/// Only an idle scope is compacted. A running turn (`busy`) is never
+/// interrupted, and events that arrive during compaction wait in the queue
+/// for the compacted session instead of forking a sibling. Optional
+/// `expectedSessionId` / `expectedUsed` carry the reading the owner
+/// confirmed; when the live session no longer matches it the request is
+/// refused as `stale` with the current `reading`. Immediate statuses: `busy`,
+/// `no_session`, `unsupported`, `stale`, `started`; the task reports the
+/// terminal `completed` / `failed` / `timeout`.
+fn handle_compact_session_control(
+    payload: &serde_json::Value,
+    pool: &mut AgentPool,
+    queue: &mut EventQueue,
+    ctx: &Arc<PromptContext>,
+    observer: Option<&observer::ObserverHandle>,
+) {
+    let Some(mut scope) = compact_target_scope(payload) else {
+        tracing::warn!("observer compact_session control frame missing valid target");
+        return;
+    };
+    // Under the thread policy a channel's unthreaded session is its `Main`
+    // scope; only DMs keep `Conversation`. The frame cannot say which, so a
+    // null root targets `Main` when only the `Main` scope has an owner.
+    if let scope::SessionScope::Conversation { channel_id } = scope {
+        let main = scope::SessionScope::Main { channel_id };
+        if !pool.has_session_owner(&scope) && pool.has_session_owner(&main) {
+            scope = main;
+        }
+    }
+    let request_id = payload
+        .get("requestId")
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+    let channel_id = scope.channel_id();
+    let thread_root = scope.root_event_id().map(str::to_owned);
+    let emit = |status: &str| {
+        if let Some(observer) = observer {
+            observer.emit(
+                "control_result",
+                None,
+                &observer::context_for(Some(channel_id), None, None),
+                pool::compact_result_payload(status, request_id.as_deref(), thread_root.as_deref()),
+            );
+        }
+    };
+
+    if session_scope_busy(pool, queue, &scope) {
+        emit("busy");
+        return;
+    }
+    let Some(agent) = pool.try_claim_scope_owner(&scope) else {
+        emit("no_session");
+        return;
+    };
+    if !agent.acp.compact_supported() {
+        pool.return_agent(agent);
+        emit("unsupported");
+        return;
+    }
+    let expected_session_id = payload
+        .get("expectedSessionId")
+        .and_then(|value| value.as_str());
+    let expected_used = payload
+        .get("expectedUsed")
+        .and_then(serde_json::Value::as_u64);
+    let stale = agent.state.sessions.get(&scope).is_some_and(|session_id| {
+        pool::compact_expectation_is_stale(
+            expected_session_id,
+            expected_used,
+            session_id,
+            agent.acp.context_usage(session_id),
+        )
+    });
+    if stale {
+        let reading = pool::scope_context_reading(&agent, &scope);
+        republish_scope_context_usage(observer, &agent, &scope);
+        pool.return_agent(agent);
+        if let Some(observer) = observer {
+            let mut result = pool::compact_result_payload(
+                "stale",
+                request_id.as_deref(),
+                thread_root.as_deref(),
+            );
+            result["reading"] = reading.unwrap_or(serde_json::Value::Null);
+            observer.emit(
+                "control_result",
+                None,
+                &observer::context_for(Some(channel_id), None, None),
+                result,
+            );
+        }
+        return;
+    }
+    // Checked above: the scope is not in flight, so this always claims it.
+    queue.mark_scope_in_flight(scope.clone());
+    emit("started");
+
+    let agent_index = agent.index;
+    let turn_id = Uuid::new_v4().to_string();
+    let task_turn_id = turn_id.clone();
+    let task_scope = scope.clone();
+    let result_tx = pool.result_tx();
+    let ctx = Arc::clone(ctx);
+    let abort_handle = pool.join_set.spawn(async move {
+        pool::run_compact_task(agent, task_scope, request_id, ctx, result_tx, task_turn_id).await;
+    });
+    // No control or steer channel: compaction is not cancellable or
+    // steerable, so concurrent events for this scope simply stay queued.
+    pool.task_map_mut().insert(
+        abort_handle.id(),
+        pool::TaskMeta {
+            agent_index,
+            channel_id: Some(channel_id),
+            scope: Some(scope),
+            turn_id,
+            recoverable_batch: None,
+            control_tx: None,
+            steer_tx: None,
+            successful_steer_deliveries: HashSet::new(),
+        },
+    );
 }
 
 /// Handle a `switch_model` control frame (Phase 3a, Option ii).
@@ -3398,6 +3639,8 @@ async fn run_harness(
                                     keys,
                                     event,
                                     &mut pool,
+                                    &mut queue,
+                                    &ctx,
                                     observer.as_ref(),
                                     owner_hex,
                                     relay.event_publisher(),
@@ -6822,6 +7065,374 @@ mod owner_control_command_tests {
         );
     }
 
+    #[test]
+    fn compact_target_scope_maps_thread_root_or_conversation() {
+        let ch = Uuid::new_v4();
+        let root = "AB".repeat(32);
+        assert_eq!(
+            compact_target_scope(&serde_json::json!({
+                "channelId": ch.to_string(), "threadRootEventId": root,
+            })),
+            Some(thread_scope(ch, &root.to_ascii_lowercase()))
+        );
+        for payload in [
+            serde_json::json!({"channelId": ch.to_string()}),
+            serde_json::json!({"channelId": ch.to_string(), "threadRootEventId": null}),
+        ] {
+            assert_eq!(
+                compact_target_scope(&payload),
+                Some(scope::SessionScope::Conversation { channel_id: ch })
+            );
+        }
+        for payload in [
+            serde_json::json!({"channelId": "not-a-uuid"}),
+            serde_json::json!({"channelId": ch.to_string(), "threadRootEventId": "short"}),
+            serde_json::json!({"channelId": ch.to_string(), "threadRootEventId": 7}),
+        ] {
+            assert_eq!(compact_target_scope(&payload), None);
+        }
+    }
+
+    async fn compact_test_agent(scope: &scope::SessionScope, supported: bool) -> pool::OwnedAgent {
+        let acp = acp::AcpClient::spawn("bash", &["-c".into(), "exec sleep 30".into()], &[], false)
+            .await
+            .expect("spawn compact control test ACP");
+        let mut agent = pool::OwnedAgent {
+            index: 0,
+            acp,
+            state: pool::SessionState::default(),
+            model_capabilities: None,
+            desired_model: None,
+            model_overridden: false,
+            desired_model_request_id: None,
+            desired_model_pending_ack: false,
+            startup_effort: None,
+            agent_name: "compact-control-agent".into(),
+            goose_system_prompt_supported: None,
+            protocol_version: 1,
+        };
+        agent.acp.set_compact_supported_for_test(supported);
+        agent.state.sessions.insert(scope.clone(), "live".into());
+        agent
+    }
+
+    /// A one-slot pool whose idle worker owns `scope`'s live session.
+    fn idle_owner_pool(scope: &scope::SessionScope, mut agent: pool::OwnedAgent) -> AgentPool {
+        let mut pool = AgentPool::from_slots(vec![None]);
+        let generation = pool.record_scope_owner(scope.clone(), 0);
+        agent
+            .state
+            .set_scope_owner_generation(scope.clone(), generation);
+        pool.return_agent(agent);
+        pool
+    }
+
+    fn compact_statuses(observer: &observer::ObserverHandle) -> Vec<String> {
+        observer
+            .snapshot()
+            .into_iter()
+            .filter(|event| event.payload["type"] == "compact_session")
+            .map(|event| {
+                event.payload["status"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn compact_session_control_rejects_busy_missing_and_unsupported_targets() {
+        let ch = Uuid::new_v4();
+        let root = "d".repeat(64);
+        let scope = thread_scope(ch, &root);
+        let payload = serde_json::json!({
+            "type": "compact_session", "channelId": ch.to_string(),
+            "threadRootEventId": root, "requestId": "req-1",
+        });
+        let ctx = Arc::new(pool::tests::make_prompt_context_no_owner());
+        let observer = observer::ObserverHandle::in_process();
+        let mut queue = EventQueue::new(DedupMode::Queue);
+
+        // No worker owns the scope (e.g. the harness restarted).
+        let mut pool = AgentPool::from_slots(vec![None]);
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+
+        // A running turn on the scope is never interrupted.
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        insert_task_meta(&mut pool, 0, scope.clone(), tx);
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+        assert_eq!(
+            rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        );
+
+        // The runtime never advertised /compact: the worker goes back idle.
+        let mut pool = idle_owner_pool(&scope, compact_test_agent(&scope, false).await);
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+        assert!(
+            pool.has_session_for(&scope),
+            "unsupported keeps the worker idle"
+        );
+        assert!(!queue.is_scope_in_flight(&scope));
+
+        assert_eq!(
+            compact_statuses(&observer),
+            ["no_session", "busy", "unsupported"]
+        );
+        for event in observer.snapshot() {
+            assert_eq!(event.payload["requestId"], "req-1");
+            assert_eq!(event.channel_id, Some(ch.to_string()));
+        }
+    }
+
+    #[tokio::test]
+    async fn compact_session_control_holds_scope_queue_while_compacting() {
+        let ch = Uuid::new_v4();
+        let scope = scope::SessionScope::Conversation { channel_id: ch };
+        let payload = serde_json::json!({
+            "type": "compact_session", "channelId": ch.to_string(), "requestId": "req-2",
+        });
+        let ctx = Arc::new(pool::tests::make_prompt_context_no_owner());
+        let observer = observer::ObserverHandle::in_process();
+        let mut queue = EventQueue::new(DedupMode::Queue);
+        let mut pool = idle_owner_pool(&scope, compact_test_agent(&scope, true).await);
+
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+
+        assert_eq!(compact_statuses(&observer), ["started"]);
+        assert!(
+            queue.is_scope_in_flight(&scope),
+            "new events wait for compaction"
+        );
+        assert!(!pool.any_idle(), "the owning worker is checked out");
+        let meta = pool
+            .task_map()
+            .values()
+            .next()
+            .expect("compaction task tracked");
+        assert_eq!(meta.scope.as_ref(), Some(&scope));
+        assert!(meta.control_tx.is_none() && meta.steer_tx.is_none());
+
+        // A second request while compacting reports busy instead of stacking.
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+        assert_eq!(compact_statuses(&observer), ["started", "busy"]);
+        pool.join_set.abort_all();
+    }
+
+    fn usage_reading(used: u64, size: u64) -> acp::ContextUsageReading {
+        acp::ContextUsageReading {
+            used,
+            size,
+            updated_at: "2026-10-07T00:00:00+00:00".into(),
+        }
+    }
+
+    fn control_results(observer: &observer::ObserverHandle, kind: &str) -> Vec<serde_json::Value> {
+        observer
+            .snapshot()
+            .into_iter()
+            .filter(|event| event.kind == "control_result" && event.payload["type"] == kind)
+            .map(|event| event.payload)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn query_context_usage_reports_missing_busy_and_unreported_sessions() {
+        let ch = Uuid::new_v4();
+        let root = "e".repeat(64);
+        let scope = thread_scope(ch, &root);
+        let payload = serde_json::json!({
+            "type": "query_context_usage", "channelId": ch.to_string(),
+            "threadRootEventId": root, "requestId": "q-1",
+        });
+        let observer = observer::ObserverHandle::in_process();
+        let queue = EventQueue::new(DedupMode::Queue);
+
+        // No worker owns the scope (e.g. the harness restarted).
+        let mut pool = AgentPool::from_slots(vec![None]);
+        handle_query_context_usage_control(&payload, &pool, &queue, Some(&observer));
+
+        // The scope's turn is running: its reading is still moving.
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        insert_task_meta(&mut pool, 0, scope.clone(), tx);
+        handle_query_context_usage_control(&payload, &pool, &queue, Some(&observer));
+
+        // A live session that has not reported usage yet.
+        let pool = idle_owner_pool(&scope, compact_test_agent(&scope, true).await);
+        handle_query_context_usage_control(&payload, &pool, &queue, Some(&observer));
+
+        let results = control_results(&observer, "query_context_usage");
+        let statuses: Vec<_> = results.iter().map(|r| r["status"].clone()).collect();
+        assert_eq!(statuses, ["no_session", "busy", "no_reading"]);
+        for result in &results {
+            assert_eq!(result["requestId"], "q-1");
+            assert_eq!(result["threadRootEventId"], root.as_str());
+            assert!(result["reading"].is_null());
+        }
+        assert!(
+            observer
+                .snapshot()
+                .iter()
+                .all(|e| e.kind != "context_usage"),
+            "nothing to republish without a reading"
+        );
+        assert!(
+            pool.has_session_for(&scope),
+            "a query never claims the worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn query_context_usage_answers_with_the_live_reading() {
+        let ch = Uuid::new_v4();
+        let scope = scope::SessionScope::Conversation { channel_id: ch };
+        let payload = serde_json::json!({
+            "type": "query_context_usage", "channelId": ch.to_string(), "requestId": "q-2",
+        });
+        let observer = observer::ObserverHandle::in_process();
+        let queue = EventQueue::new(DedupMode::Queue);
+        let mut agent = compact_test_agent(&scope, true).await;
+        agent
+            .acp
+            .set_context_usage_for_test("live", usage_reading(90_000, 200_000));
+        let pool = idle_owner_pool(&scope, agent);
+
+        handle_query_context_usage_control(&payload, &pool, &queue, Some(&observer));
+
+        assert_eq!(
+            control_results(&observer, "query_context_usage"),
+            [serde_json::json!({
+                "type": "query_context_usage",
+                "status": "ok",
+                "requestId": "q-2",
+                "threadRootEventId": null,
+                "reading": {
+                    "sessionId": "live",
+                    "used": 90_000,
+                    "size": 200_000,
+                    "compactSupported": true,
+                    "updatedAt": "2026-10-07T00:00:00+00:00",
+                },
+            })]
+        );
+        let republished = observer
+            .snapshot()
+            .into_iter()
+            .find(|event| event.kind == "context_usage")
+            .expect("reading republished for the owner's gauge store");
+        assert_eq!(republished.payload["used"], 90_000);
+        assert_eq!(republished.session_id.as_deref(), Some("live"));
+        assert_eq!(republished.channel_id, Some(ch.to_string()));
+        assert!(pool.has_session_for(&scope));
+    }
+
+    /// Run one `compact_session` with the given expectation against an idle
+    /// owner whose live session `live` reports 100k of a 200k window.
+    async fn compact_with_expectation(
+        expected: serde_json::Value,
+    ) -> (
+        observer::ObserverHandle,
+        AgentPool,
+        EventQueue,
+        scope::SessionScope,
+    ) {
+        let ch = Uuid::new_v4();
+        let scope = scope::SessionScope::Conversation { channel_id: ch };
+        let mut payload = serde_json::json!({
+            "type": "compact_session", "channelId": ch.to_string(), "requestId": "c-1",
+        });
+        if let (Some(payload), Some(expected)) = (payload.as_object_mut(), expected.as_object()) {
+            payload.extend(expected.clone());
+        }
+        let ctx = Arc::new(pool::tests::make_prompt_context_no_owner());
+        let observer = observer::ObserverHandle::in_process();
+        let mut queue = EventQueue::new(DedupMode::Queue);
+        let mut agent = compact_test_agent(&scope, true).await;
+        agent
+            .acp
+            .set_context_usage_for_test("live", usage_reading(100_000, 200_000));
+        let mut pool = idle_owner_pool(&scope, agent);
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+        (observer, pool, queue, scope)
+    }
+
+    #[tokio::test]
+    async fn compact_session_refuses_stale_expectations_with_the_live_reading() {
+        for expected in [
+            // The session was replaced since the owner looked.
+            serde_json::json!({"expectedSessionId": "older", "expectedUsed": 100_000}),
+            // Usage moved more than max(10% of 200k, 20k) = 20k tokens.
+            serde_json::json!({"expectedSessionId": "live", "expectedUsed": 79_999}),
+            serde_json::json!({"expectedUsed": 120_001}),
+        ] {
+            let (observer, pool, queue, scope) = compact_with_expectation(expected.clone()).await;
+            let results = control_results(&observer, "compact_session");
+            assert_eq!(results.len(), 1, "{expected}");
+            assert_eq!(results[0]["status"], "stale", "{expected}");
+            assert_eq!(results[0]["requestId"], "c-1");
+            assert_eq!(results[0]["reading"]["sessionId"], "live");
+            assert_eq!(results[0]["reading"]["used"], 100_000);
+            assert!(
+                observer
+                    .snapshot()
+                    .iter()
+                    .any(|e| e.kind == "context_usage"),
+                "stale refusal refreshes the owner's gauge store"
+            );
+            assert!(pool.has_session_for(&scope), "worker returned idle");
+            assert!(!queue.is_scope_in_flight(&scope), "nothing compacting");
+            assert!(pool.task_map().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn compact_session_runs_when_expectation_matches_or_is_absent() {
+        for expected in [
+            // Drift within the threshold still matches.
+            serde_json::json!({"expectedSessionId": "live", "expectedUsed": 80_000}),
+            serde_json::json!({"expectedSessionId": "live", "expectedUsed": 120_000}),
+            // Older desktops send no expectation.
+            serde_json::json!({}),
+            serde_json::json!({"expectedSessionId": "live"}),
+        ] {
+            let (observer, mut pool, queue, scope) =
+                compact_with_expectation(expected.clone()).await;
+            assert_eq!(compact_statuses(&observer), ["started"], "{expected}");
+            assert!(queue.is_scope_in_flight(&scope));
+            pool.join_set.abort_all();
+        }
+    }
+
+    #[tokio::test]
+    async fn compact_session_control_targets_main_scope_under_thread_policy() {
+        let ch = Uuid::new_v4();
+        let payload = serde_json::json!({
+            "type": "compact_session", "channelId": ch.to_string(), "requestId": "req-3",
+        });
+        let ctx = Arc::new(pool::tests::make_prompt_context_no_owner());
+
+        // A channel's unthreaded session lives in its `Main` scope.
+        let main = scope::SessionScope::Main { channel_id: ch };
+        let observer = observer::ObserverHandle::in_process();
+        let mut queue = EventQueue::new(DedupMode::Queue);
+        let mut pool = idle_owner_pool(&main, compact_test_agent(&main, true).await);
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+        assert_eq!(compact_statuses(&observer), ["started"]);
+        assert!(queue.is_scope_in_flight(&main));
+        pool.join_set.abort_all();
+
+        // A DM keeps its `Conversation` scope under the same policy.
+        let dm = scope::SessionScope::Conversation { channel_id: ch };
+        let observer = observer::ObserverHandle::in_process();
+        let mut queue = EventQueue::new(DedupMode::Queue);
+        let mut pool = idle_owner_pool(&dm, compact_test_agent(&dm, true).await);
+        handle_compact_session_control(&payload, &mut pool, &mut queue, &ctx, Some(&observer));
+        assert_eq!(compact_statuses(&observer), ["started"]);
+        assert!(queue.is_scope_in_flight(&dm));
+        pool.join_set.abort_all();
+    }
+
     #[tokio::test]
     async fn observer_channel_controls_reject_sibling_sessions_without_signalling() {
         let mut pool = AgentPool::from_slots(vec![]);
@@ -9883,6 +10494,7 @@ mod build_mcp_servers_tests {
             base_prompt_content: None,
             dispatcher: false,
             channel_roster: false,
+            task_threads: Vec::new(),
             dispatcher_config: config::DispatcherConfig::default(),
         }
     }
@@ -10748,6 +11360,7 @@ mod error_outcome_emission_tests {
             base_prompt_content: None,
             dispatcher: false,
             channel_roster: false,
+            task_threads: Vec::new(),
             dispatcher_config: config::DispatcherConfig::default(),
         }
     }

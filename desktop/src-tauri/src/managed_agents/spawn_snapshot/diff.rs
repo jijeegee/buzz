@@ -109,6 +109,7 @@ fn policy_for(path: &str) -> MaskPolicy {
         //                                       — numeric limits
         //   adapter_availability                — an enum variant name
         //   routing_role                        — none / dispatcher / lead
+        //   task_threads                        — trigger names
         _ => MaskPolicy::Plain,
     }
 }
