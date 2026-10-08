@@ -8,6 +8,8 @@ import {
 } from "@/features/messages/lib/threading";
 
 type UseHomeInboxReadStateOptions = {
+  /** The signed-in user: a conversation whose latest message is theirs is read. */
+  currentPubkey?: string;
   /** Inbox items to project read-state across. */
   items: InboxItem[];
   /** NIP-RS read marker resolver for channel-backed items (unix seconds, or null when unknown). */
@@ -144,7 +146,20 @@ export function resolveInboxItemReadAt(
  * unread" keeps its per-item local override and also restores the source
  * channel's forced-unread indicator so channel surfaces agree with Inbox.
  */
+function isLatestByCurrentUser(
+  item: InboxItem,
+  currentPubkey: string | undefined,
+): boolean {
+  if (!currentPubkey) return false;
+  const events = item.groupItems.length > 0 ? item.groupItems : [item.item];
+  const latest = events.reduce((newest, event) =>
+    event.createdAt > newest.createdAt ? event : newest,
+  );
+  return latest.pubkey.toLowerCase() === currentPubkey.toLowerCase();
+}
+
 export function useHomeInboxReadState({
+  currentPubkey,
   items,
   getChannelReadAt,
   getThreadReadAt,
@@ -175,6 +190,12 @@ export function useHomeInboxReadState({
         continue;
       }
 
+      // Your own message is the latest in the conversation: you have seen it.
+      if (isLatestByCurrentUser(item, currentPubkey)) {
+        result.add(item.id);
+        continue;
+      }
+
       const threadRootId = getInboxThreadRootId(item);
       const readAt = resolveInboxItemReadAt(item, {
         getChannelReadAt,
@@ -198,6 +219,7 @@ export function useHomeInboxReadState({
     }
     return result;
   }, [
+    currentPubkey,
     getChannelReadAt,
     getThreadReadAt,
     getMessageReadAt,

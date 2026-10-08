@@ -9,7 +9,6 @@ import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
 import { ChannelManagementSheet } from "@/features/channels/ui/ChannelManagementSheet";
 import {
   type InboxFilter,
-  parseInboxFilter,
   type InboxReply,
   buildInboxItems,
   findInboxItemByEventId,
@@ -45,6 +44,10 @@ import {
   useResizableInboxListWidth,
 } from "@/features/home/useResizableInboxListWidth";
 import { getHomePaneLayout } from "@/features/home/lib/homePaneLayout";
+import {
+  setInboxFilter,
+  useInboxFilter,
+} from "@/features/home/lib/inboxFilterPreference";
 import {
   recordInboxRoomLanding,
   setInboxPanelOpen,
@@ -98,7 +101,6 @@ const INBOX_SEARCH_KEYS = [
 ] as const;
 
 const INBOX_UNREAD_ONLY_STORAGE_KEY = "buzz.desktop.inbox-unread-only";
-const INBOX_FILTER_STORAGE_KEY = "buzz.desktop.inbox-filter";
 
 type HomeViewProps = {
   feed?: HomeFeedResponse;
@@ -141,9 +143,7 @@ export function HomeView({
     homeInboxWidthPx > 0 &&
     homeInboxWidthPx < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
   // The chosen filter is a device-level preference that survives restarts.
-  const [filter, setFilter] = React.useState<InboxFilter>(() =>
-    parseInboxFilter(getStorageItem(INBOX_FILTER_STORAGE_KEY)),
-  );
+  const filter = useInboxFilter();
   const [unreadOnly, setUnreadOnly] = React.useState(
     () => getStorageItem(INBOX_UNREAD_ONLY_STORAGE_KEY) === "true",
   );
@@ -449,6 +449,8 @@ export function HomeView({
   ]);
   const { effectiveDoneSet, markItemRead, markItemUnread } =
     useHomeInboxReadState({
+      // In the chat list, a room whose latest message is yours is read.
+      currentPubkey: filter === "conversations" ? currentPubkey : undefined,
       items: inboxItems,
       getChannelReadAt,
       getThreadReadAt,
@@ -638,8 +640,7 @@ export function HomeView({
       setUnreadBoundary(null);
       setSelectedDraftKey(null);
       setSelectedReminderId(null);
-      setFilter(nextFilter);
-      setStorageItem(INBOX_FILTER_STORAGE_KEY, nextFilter);
+      setInboxFilter(nextFilter);
 
       if (
         nextFilter === "reminders" ||

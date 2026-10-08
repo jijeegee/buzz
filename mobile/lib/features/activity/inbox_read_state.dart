@@ -30,9 +30,21 @@ bool isInboxItemDone(
   required int? Function(String contextId) markerOf,
   required Set<String> localUnreadOverrides,
   required Set<String> localDoneSet,
+  String? currentPubkey,
 }) {
   final ids = groupedInboxItemIds(item);
   if (ids.any(localUnreadOverrides.contains)) return false;
+
+  // Your own message is the latest in the conversation: you have seen it.
+  if (currentPubkey != null) {
+    final events = item.groupItems.isEmpty ? [item.item] : item.groupItems;
+    final latest = events.reduce(
+      (newest, event) => event.createdAt > newest.createdAt ? event : newest,
+    );
+    if (latest.pubkey.toLowerCase() == currentPubkey.toLowerCase()) {
+      return true;
+    }
+  }
 
   final readAt = resolveInboxItemReadAt(item, markerOf: markerOf);
   if (readAt != null) return item.latestActivityAt <= readAt;
