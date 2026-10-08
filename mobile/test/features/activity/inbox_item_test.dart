@@ -282,4 +282,62 @@ void main() {
       );
     });
   });
+
+  group('Channels + Threads view', () {
+    test('collapses each channel main timeline into one row', () {
+      final rows = collapseChannelMainRows(
+        buildInboxItems([
+          item(id: 'b-new', channelId: 'b', createdAt: 50),
+          item(
+            id: 'reply',
+            channelId: 'a',
+            createdAt: 40,
+            tags: replyTags('root', 'root'),
+          ),
+          item(id: 'a-new', channelId: 'a', createdAt: 30),
+          item(id: 'b-old', channelId: 'b', createdAt: 20),
+          item(id: 'a-old', channelId: 'a', createdAt: 10),
+        ]),
+      );
+
+      expect(
+        [for (final row in rows) (row.conversationId, row.id)],
+        [('channel:b', 'b-new'), ('root', 'reply'), ('channel:a', 'a-new')],
+      );
+      expect(rows.last.groupItems.map((i) => i.id).toSet(), {'a-new', 'a-old'});
+    });
+
+    test('keeps DM rows grouped by DM channel', () {
+      final rows = collapseChannelMainRows(
+        buildInboxItems([
+          item(id: 'dm1', channelId: 'dm'),
+          item(id: 'dm2', channelId: 'dm'),
+        ], isDmChannel: (id) => id == 'dm'),
+      );
+
+      expect(rows.single.conversationId, 'dm:dm');
+    });
+
+    test('matches threads and channel messages but not agent jobs', () {
+      InboxItem rowOf(FeedItem feedItem) => buildInboxItems([feedItem]).single;
+      const filter = InboxFilter.conversations;
+
+      expect(matchesInboxFilter(rowOf(item(id: 'main')), filter), isTrue);
+      expect(
+        matchesInboxFilter(
+          rowOf(item(id: 'reply', tags: replyTags('root', 'root'))),
+          filter,
+        ),
+        isTrue,
+      );
+      expect(
+        matchesInboxFilter(rowOf(item(id: 'job', kind: 43001)), filter),
+        isFalse,
+      );
+      expect(
+        matchesInboxFilter(rowOf(item(id: 'main')), InboxFilter.thread),
+        isFalse,
+      );
+    });
+  });
 }

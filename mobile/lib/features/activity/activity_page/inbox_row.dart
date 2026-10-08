@@ -54,6 +54,10 @@ class _InboxRow extends HookConsumerWidget {
   final VoidCallback onMarkRead;
   final VoidCallback onMarkUnread;
 
+  /// Chat-list presentation for the Channels + Threads view: the room's
+  /// avatar and name lead the row and the sender is omitted.
+  final bool conversationView;
+
   const _InboxRow({
     super.key,
     required this.item,
@@ -63,6 +67,7 @@ class _InboxRow extends HookConsumerWidget {
     required this.onTap,
     required this.onMarkRead,
     required this.onMarkUnread,
+    this.conversationView = false,
   });
 
   @override
@@ -128,9 +133,44 @@ class _InboxRow extends HookConsumerWidget {
     );
 
     final isDm = channel?.isDm ?? false;
-    final channelName = channel != null && !isDm
-        ? (channel!.name.isNotEmpty ? channel!.name : null)
+    final feedChannelName = item.item.channelName.trim();
+    final channelName = isDm
+        ? null
+        : channel != null && channel!.name.isNotEmpty
+        ? channel!.name
+        : feedChannelName.isNotEmpty
+        ? feedChannelName
         : null;
+    final threadRootId = isDm ? null : item.threadRootId;
+    final threadName = channelId != null && threadRootId != null
+        ? ref
+              .watch(
+                threadNameProvider((
+                  channelId: channelId,
+                  headId: threadRootId,
+                )),
+              )
+              .value
+              ?.content
+        : null;
+    // In the conversations view the row is the chat room, not the message.
+    final room = conversationView
+        ? resolveConversationRoom(
+            item,
+            channel: channel,
+            currentPubkey: currentPubkey,
+            senderLabel: senderLabel,
+            names: ref.watch(identityNameSourcesProvider),
+          )
+        : null;
+    final roomTitle = room == null
+        ? null
+        : conversationRoomTitle(room, threadName: threadName);
+    final channelChipLabel = channelName == null
+        ? null
+        : threadRootId == null
+        ? '#$channelName'
+        : '#$channelName › ${threadName ?? 'Thread'}';
     final label = inboxTypeLabel(
       item,
       channelName: channelName,
@@ -244,101 +284,158 @@ class _InboxRow extends HookConsumerWidget {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _RowAvatar(
-                              pubkey: item.item.pubkey,
-                              profile: profile,
-                              isAgent: isAgent,
-                            ),
+                            if (room != null)
+                              _ConversationRoomAvatar(
+                                room: room,
+                                knownAgentPubkeys: knownAgentPubkeys,
+                              )
+                            else
+                              _RowAvatar(
+                                pubkey: item.item.pubkey,
+                                profile: profile,
+                                isAgent: isAgent,
+                              ),
                             const SizedBox(width: messageAvatarContentGap),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Sender + unread dot + timestamp.
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: MessageAuthorMeta(
-                                          displayName: senderLabel,
-                                          username: messageUsernameLabel(
-                                            profile,
+                                  if (roomTitle != null)
+                                    // Room name + time + unread dot.
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            roomTitle,
+                                            key: ValueKey(
+                                              'activity-conversation-${item.id}',
+                                            ),
+                                            style: activityUsernameTextStyle
+                                                .copyWith(
+                                                  color:
+                                                      context.colors.onSurface,
+                                                ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          timestamp: _inboxTimestamp(
+                                        ),
+                                        const SizedBox(width: Grid.xxs),
+                                        Text(
+                                          _inboxTimestamp(
                                             item.latestActivityAt,
                                           ),
-                                          nameColor: context.colors.onSurface,
-                                          metadataColor: mutedColor,
-                                          nameStyle: activityUsernameTextStyle,
-                                          timestampStyle:
-                                              activityTimestampTextStyle,
-                                          displayNameKey: ValueKey(
-                                            'activity-author-${item.id}',
-                                          ),
-                                          usernameKey: ValueKey(
-                                            'activity-username-${item.id}',
-                                          ),
-                                          timestampKey: ValueKey(
-                                            'activity-timestamp-${item.id}',
-                                          ),
+                                          style: activityTimestampTextStyle
+                                              .copyWith(color: mutedColor),
                                         ),
-                                      ),
-                                      if (!isDone) ...[
-                                        const SizedBox(width: Grid.xxs),
-                                        Container(
-                                          key: ValueKey(
-                                            'inbox-unread-dot-${item.id}',
-                                          ),
-                                          width: 6,
-                                          height: 6,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: context.colors.primary,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  const SizedBox(height: Grid.quarter),
-                                  // Contextual label: "Mentioned in #channel" etc.
-                                  Row(
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          label.text,
-                                          style: activityContextTextStyle
-                                              .copyWith(color: labelColor),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      if (label.channelLabel != null) ...[
-                                        const SizedBox(width: Grid.half),
-                                        Flexible(
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal:
-                                                  Grid.half + Grid.quarter,
-                                              vertical: Grid.quarter / 2,
+                                        if (!isDone) ...[
+                                          const SizedBox(width: Grid.xxs),
+                                          Container(
+                                            key: ValueKey(
+                                              'inbox-unread-dot-${item.id}',
                                             ),
+                                            width: 6,
+                                            height: 6,
                                             decoration: BoxDecoration(
-                                              color: context
-                                                  .colors
-                                                  .surfaceContainerHighest,
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                    Grid.half,
-                                                  ),
+                                              shape: BoxShape.circle,
+                                              color: context.colors.primary,
                                             ),
-                                            child: Text(
-                                              '#${label.channelLabel}',
-                                              style: activityContextTextStyle
-                                                  .copyWith(color: mutedColor),
-                                              overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ],
+                                    )
+                                  else ...[
+                                    // Sender + unread dot + timestamp.
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: MessageAuthorMeta(
+                                            displayName: senderLabel,
+                                            username: messageUsernameLabel(
+                                              profile,
+                                            ),
+                                            timestamp: _inboxTimestamp(
+                                              item.latestActivityAt,
+                                            ),
+                                            nameColor: context.colors.onSurface,
+                                            metadataColor: mutedColor,
+                                            nameStyle:
+                                                activityUsernameTextStyle,
+                                            timestampStyle:
+                                                activityTimestampTextStyle,
+                                            displayNameKey: ValueKey(
+                                              'activity-author-${item.id}',
+                                            ),
+                                            usernameKey: ValueKey(
+                                              'activity-username-${item.id}',
+                                            ),
+                                            timestampKey: ValueKey(
+                                              'activity-timestamp-${item.id}',
                                             ),
                                           ),
                                         ),
+                                        if (!isDone) ...[
+                                          const SizedBox(width: Grid.xxs),
+                                          Container(
+                                            key: ValueKey(
+                                              'inbox-unread-dot-${item.id}',
+                                            ),
+                                            width: 6,
+                                            height: 6,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: context.colors.primary,
+                                            ),
+                                          ),
+                                        ],
                                       ],
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(height: Grid.quarter),
+                                    // Contextual label: "Mentioned in #channel" etc.
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            label.text,
+                                            style: activityContextTextStyle
+                                                .copyWith(color: labelColor),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (label.channelLabel != null) ...[
+                                          const SizedBox(width: Grid.half),
+                                          Flexible(
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal:
+                                                        Grid.half +
+                                                        Grid.quarter,
+                                                    vertical: Grid.quarter / 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: context
+                                                    .colors
+                                                    .surfaceContainerHighest,
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                      Grid.half,
+                                                    ),
+                                              ),
+                                              child: Text(
+                                                channelChipLabel ??
+                                                    '#${label.channelLabel}',
+                                                style: activityContextTextStyle
+                                                    .copyWith(
+                                                      color: mutedColor,
+                                                    ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
                                   const SizedBox(height: Grid.half),
                                   // Message preview.
                                   MessageContent(
@@ -504,6 +601,129 @@ class _RowAvatar extends StatelessWidget {
         ),
       ),
       isAgent: isAgent,
+    );
+  }
+}
+
+/// Room avatar for the Channels + Threads view. A DM room's picture is the
+/// other participant's profile; channel and thread rooms share the channel's
+/// letter on a color fixed per channel, and a thread adds a badge.
+class _ConversationRoomAvatar extends HookConsumerWidget {
+  final ConversationRoom room;
+  final Set<String> knownAgentPubkeys;
+
+  const _ConversationRoomAvatar({
+    required this.room,
+    required this.knownAgentPubkeys,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final room = this.room;
+    final personPubkey = switch (room) {
+      DmConversationRoom(:final personPubkey) => personPubkey,
+      _ => null,
+    };
+    final personProfile = ref.watch(
+      userCacheProvider.select(
+        (cache) => personPubkey == null ? null : cache[personPubkey],
+      ),
+    );
+    useEffect(() {
+      if (personPubkey != null && personProfile == null) {
+        Future.microtask(
+          () => ref.read(userCacheProvider.notifier).preload([personPubkey]),
+        );
+      }
+      return null;
+    }, [personPubkey]);
+
+    switch (room) {
+      case DmConversationRoom(:final personPubkey):
+        return _RowAvatar(
+          pubkey: personPubkey,
+          profile: personProfile,
+          isAgent:
+              knownAgentPubkeys.contains(personPubkey) ||
+              personProfile?.ownerPubkey != null ||
+              personProfile?.isAgent == true,
+        );
+      case ChannelConversationRoom(:final channelId, :final channelName):
+        return _ChannelLetterAvatar(
+          seed: channelId.isEmpty ? channelName : channelId,
+          label: channelName,
+          isThread: false,
+        );
+      case ThreadConversationRoom(:final channelId, :final channelName):
+        return _ChannelLetterAvatar(
+          seed: channelId.isEmpty ? channelName : channelId,
+          label: channelName,
+          isThread: true,
+        );
+    }
+  }
+}
+
+class _ChannelLetterAvatar extends StatelessWidget {
+  final String seed;
+  final String label;
+  final bool isThread;
+
+  const _ChannelLetterAvatar({
+    required this.seed,
+    required this.label,
+    required this.isThread,
+  });
+  @override
+  Widget build(BuildContext context) {
+    var hash = 0;
+    for (final unit in seed.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    final color = HSLColor.fromAHSL(1, (hash % 360).toDouble(), 0.55, 0.48);
+    final trimmed = label.trim();
+    final initial = trimmed.isEmpty
+        ? '#'
+        : String.fromCharCode(trimmed.runes.first).toUpperCase();
+    return SizedBox.square(
+      dimension: activityAvatarSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          CircleAvatar(
+            key: const ValueKey('activity-conversation-avatar'),
+            radius: activityAvatarSize / 2,
+            backgroundColor: color.toColor(),
+            child: Text(
+              initial,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          if (isThread)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: context.colors.surface,
+                  border: Border.all(color: context.colors.outlineVariant),
+                ),
+                child: Icon(
+                  LucideIcons.messagesSquare,
+                  size: 10,
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

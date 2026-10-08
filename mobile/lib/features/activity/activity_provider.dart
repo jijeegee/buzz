@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -663,4 +664,105 @@ final inboxItemsProvider = Provider<List<InboxItem>>((ref) {
       if (channel.isDm) channel.id,
   };
   return buildInboxItems(feed.all, isDmChannel: dmChannelIds.contains);
+});
+
+/// Recent main-timeline and thread traffic across joined channels. Loaded only
+/// while the Channels + Threads view is open, so the default inbox and the
+/// Home badge keep their addressed-to-me scope. Mirrors the desktop feed's
+/// `activity` source.
+final channelActivityProvider = FutureProvider.autoDispose<List<FeedItem>>((
+  ref,
+) async {
+  ref.watch(relayConfigProvider);
+  final connected = ref.watch(
+    relaySessionProvider.select((s) => s.status == SessionStatus.connected),
+  );
+  final channelKey = ref.watch(channelsProvider.select(_joinedChannelKey));
+  if (!connected || channelKey == null || channelKey.isEmpty) return const [];
+
+  // One filter per channel so busy rooms cannot crowd quiet ones out of a
+  // shared limit; batched to the relay's per-request filter cap.
+  final filters = [
+    for (final channelId in channelKey.split(','))
+      NostrFilter(
+        kinds: const [9, 40002, 45001, 45003],
+        tags: {
+          '#h': [channelId],
+        },
+        limit: _channelActivityPerChannelLimit,
+      ),
+  ];
+  final session = ref.read(relaySessionProvider.notifier);
+  Future<List<NostrEvent>> loadBatch(List<NostrFilter> batch) async {
+    try {
+      return await session.queryRelay(batch);
+    } catch (error) {
+      debugPrint(
+        '[channelActivity] batched query failed; using websocket: $error',
+      );
+      final results = await Future.wait(batch.map(session.fetchHistory));
+      return [for (final events in results) ...events];
+    }
+  }
+
+  final batches = await Future.wait([
+    for (var i = 0; i < filters.length; i += _relayFilterBatchSize)
+      loadBatch(
+        filters.sublist(i, math.min(i + _relayFilterBatchSize, filters.length)),
+      ),
+  ]);
+  final events = [for (final batch in batches) ...batch];
+  return [
+    for (final event in events)
+      FeedItem(
+        id: event.id,
+        kind: event.kind,
+        pubkey: event.pubkey,
+        content: event.content,
+        createdAt: event.createdAt,
+        channelId: event.channelId,
+        channelName: '',
+        tags: event.tags,
+        category: 'activity',
+      ),
+  ];
+});
+
+const _channelActivityPerChannelLimit = 30;
+const _relayFilterBatchSize = 10;
+
+/// Sorted ids of joined, non-archived channels (DMs included), or null while
+/// channels are loading.
+String? _joinedChannelKey(AsyncValue<List<Channel>> channels) {
+  final value = channels.asData?.value;
+  if (value == null) return null;
+  final ids = [
+    for (final channel in value)
+      if (channel.isMember && !channel.isArchived) channel.id,
+  ]..sort();
+  return ids.join(',');
+}
+
+/// Inbox rows for the Channels + Threads view: the regular feed plus recent
+/// channel traffic, with each channel's main timeline collapsed to one row.
+final conversationInboxItemsProvider = Provider.autoDispose<List<InboxItem>>((
+  ref,
+) {
+  final feed = ref.watch(activityProvider).value;
+  final channelActivity =
+      ref.watch(channelActivityProvider).value ?? const <FeedItem>[];
+  // Feed items win on duplicate ids: their category (mention, needs action)
+  // is more specific than plain channel activity.
+  final byId = <String, FeedItem>{
+    for (final item in channelActivity) item.id: item,
+    for (final item in feed?.all ?? const <FeedItem>[]) item.id: item,
+  };
+  final dmChannelIds = {
+    for (final channel
+        in ref.watch(channelsProvider).asData?.value ?? const <Channel>[])
+      if (channel.isDm) channel.id,
+  };
+  return collapseChannelMainRows(
+    buildInboxItems(byId.values, isDmChannel: dmChannelIds.contains),
+  );
 });

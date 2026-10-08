@@ -5,6 +5,7 @@ import {
   buildInboxItems,
   findInboxItemByEventId,
   getInboxConversationId,
+  getInboxThreadRootId,
   getInboxTypeLabel,
 } from "./inbox.ts";
 
@@ -593,4 +594,41 @@ test("nested-anchor: old selected event stays resolvable by conversationId after
 
   // The new representative is the latest reply.
   assert.equal(inboxItem.id, LATEST_EVENT_ID);
+});
+
+test("thread rows expose their root for the thread name; main rows do not", () => {
+  const items = buildInboxItems({
+    channels,
+    feed: feedWith({
+      activity: [
+        item({
+          id: "reply",
+          category: "activity",
+          createdAt: 2,
+          tags: [
+            ["h", CHANNEL_ID],
+            ["e", "root-event", "", "root"],
+            ["e", "parent-event", "", "reply"],
+          ],
+        }),
+        item({ id: "main", category: "activity", createdAt: 1 }),
+        item({
+          id: "dm",
+          category: "activity",
+          channelId: DM_CHANNEL_ID,
+          createdAt: 0,
+          tags: [
+            ["h", DM_CHANNEL_ID],
+            ["e", "dm-root", "", "root"],
+            ["e", "dm-root", "", "reply"],
+          ],
+        }),
+      ],
+    }),
+  });
+  const byId = new Map(items.map((row) => [row.id, row]));
+
+  assert.equal(getInboxThreadRootId(byId.get("reply")), "root-event");
+  assert.equal(getInboxThreadRootId(byId.get("main")), null);
+  assert.equal(getInboxThreadRootId(byId.get("dm")), null);
 });

@@ -4,6 +4,7 @@ import test from "node:test";
 import { formatTimelineMessages } from "../../messages/lib/formatTimelineMessages.ts";
 import { getConfigNudgeAuthorPubkey } from "../../messages/ui/configNudgeAuthPubkey.ts";
 import {
+  collapseChannelMainRows,
   filterInboxItems,
   getContextMessageDepth,
   getReactionTargetId,
@@ -506,4 +507,126 @@ test("inbox mappings: unknown signer never enables the card", () => {
     getConfigNudgeAuthorPubkey(message, () => false),
     undefined,
   );
+});
+
+// --- conversations filter ---
+
+function conversationRow({
+  channelId = "channel",
+  channelType = "stream",
+  conversationId,
+  id,
+  kind = 9,
+  latestActivityAt,
+  tags = [["h", channelId]],
+  unreadCount = 0,
+}) {
+  const item = {
+    id,
+    kind,
+    pubkey: "author",
+    content: id,
+    createdAt: latestActivityAt,
+    channelId,
+    channelName: channelId,
+    channelType,
+    tags,
+    category: "activity",
+  };
+  return {
+    categories: ["activity"],
+    conversationId: conversationId ?? id,
+    groupItems: [item],
+    id,
+    isActionRequired: false,
+    item,
+    latestActivityAt,
+    unreadCount,
+  };
+}
+
+const threadReplyTags = (channelId, rootId) => [
+  ["h", channelId],
+  ["e", rootId, "", "root"],
+  ["e", rootId, "", "reply"],
+];
+
+test("conversations filter keeps channel main messages, DMs, and threads", () => {
+  const main = conversationRow({ id: "main", latestActivityAt: 1 });
+  const dm = conversationRow({
+    channelId: "dm-1",
+    channelType: "dm",
+    conversationId: "dm:dm-1",
+    id: "dm",
+    latestActivityAt: 2,
+  });
+  const thread = conversationRow({
+    conversationId: "root",
+    id: "reply",
+    latestActivityAt: 3,
+    tags: threadReplyTags("channel", "root"),
+  });
+  const agentJob = conversationRow({
+    id: "job",
+    kind: 43001,
+    latestActivityAt: 4,
+  });
+
+  assert.equal(matchesInboxFilter(main, "conversations"), true);
+  assert.equal(matchesInboxFilter(dm, "conversations"), true);
+  assert.equal(matchesInboxFilter(thread, "conversations"), true);
+  assert.equal(matchesInboxFilter(agentJob, "conversations"), false);
+  assert.equal(matchesInboxFilter(main, "thread"), false);
+});
+
+test("collapseChannelMainRows groups each channel main timeline into one row", () => {
+  const rows = collapseChannelMainRows([
+    conversationRow({ id: "b-new", channelId: "b", latestActivityAt: 50 }),
+    conversationRow({
+      conversationId: "root",
+      id: "reply",
+      latestActivityAt: 40,
+      tags: threadReplyTags("a", "root"),
+      channelId: "a",
+    }),
+    conversationRow({
+      id: "a-new",
+      channelId: "a",
+      latestActivityAt: 30,
+      unreadCount: 1,
+    }),
+    conversationRow({ id: "b-old", channelId: "b", latestActivityAt: 20 }),
+    conversationRow({
+      id: "a-old",
+      channelId: "a",
+      latestActivityAt: 10,
+      unreadCount: 2,
+    }),
+  ]);
+
+  assert.deepEqual(
+    rows.map((row) => [row.conversationId, row.id, row.latestActivityAt]),
+    [
+      ["channel:b", "b-new", 50],
+      ["root", "reply", 40],
+      ["channel:a", "a-new", 30],
+    ],
+  );
+  assert.deepEqual(
+    rows[2].groupItems.map((item) => item.id),
+    ["a-new", "a-old"],
+  );
+  assert.equal(rows[2].unreadCount, 3);
+});
+
+test("collapseChannelMainRows leaves DM rows grouped by DM channel", () => {
+  const dm = conversationRow({
+    channelId: "dm-1",
+    channelType: "dm",
+    conversationId: "dm:dm-1",
+    id: "dm",
+    latestActivityAt: 5,
+  });
+
+  assert.deepEqual(collapseChannelMainRows([dm]), [dm]);
 });

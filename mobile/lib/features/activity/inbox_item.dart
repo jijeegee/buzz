@@ -8,6 +8,7 @@ enum InboxFilter {
   all,
   mention,
   thread,
+  conversations,
   needsAction,
   activity,
   agentActivity,
@@ -182,6 +183,9 @@ bool matchesInboxFilter(InboxItem item, InboxFilter filter) {
       item.item,
       ...item.groupItems,
     ].any((i) => isThreadReply(i.tags)),
+    InboxFilter.conversations =>
+      [item.item, ...item.groupItems].any((i) => isThreadReply(i.tags)) ||
+          [item.item, ...item.groupItems].every(isChannelMainItem),
     InboxFilter.mention => item.categories.contains('mention'),
     InboxFilter.needsAction => item.categories.contains('needs_action'),
     InboxFilter.activity => item.categories.contains('activity'),
@@ -189,6 +193,76 @@ bool matchesInboxFilter(InboxItem item, InboxFilter filter) {
     InboxFilter.reminders || InboxFilter.drafts => false,
   };
 }
+
+const _channelMessageKinds = {9, 40002, 45001};
+
+/// A top-level channel or DM message (not a thread reply, job, or approval).
+bool isChannelMainItem(FeedItem item) =>
+    item.channelId != null &&
+    _channelMessageKinds.contains(item.kind) &&
+    !isThreadReply(item.tags);
+
+/// The Channels + Threads view treats each channel's main timeline like one
+/// thread: top-level rows from the same channel collapse into a single row
+/// keyed `channel:<id>`, ordered by latest activity alongside thread rows.
+/// DM rows are already grouped per channel and pass through unchanged.
+/// Mirrors desktop's `collapseChannelMainRows`.
+List<InboxItem> collapseChannelMainRows(Iterable<InboxItem> items) {
+  final rows = <InboxItem>[];
+  final channelRowIndex = <String, int>{};
+
+  for (final item in items) {
+    final channelId = item.item.channelId;
+    final isMainRow =
+        channelId != null &&
+        !item.conversationId.startsWith('dm:') &&
+        [item.item, ...item.groupItems].every(isChannelMainItem);
+    if (!isMainRow) {
+      rows.add(item);
+      continue;
+    }
+
+    final index = channelRowIndex[channelId];
+    if (index == null) {
+      channelRowIndex[channelId] = rows.length;
+      rows.add(_withConversationId(item, 'channel:$channelId'));
+      continue;
+    }
+
+    final existing = rows[index];
+    final latest = item.latestActivityAt > existing.latestActivityAt
+        ? item
+        : existing;
+    final categories = {...existing.categories, ...item.categories}.toList()
+      ..sort((a, b) => categoryPriority(a).compareTo(categoryPriority(b)));
+    rows[index] = InboxItem(
+      conversationId: existing.conversationId,
+      id: latest.id,
+      item: latest.item,
+      groupItems: List.unmodifiable([
+        ...existing.groupItems,
+        ...item.groupItems,
+      ]),
+      categories: List.unmodifiable(categories),
+      isActionRequired: existing.isActionRequired || item.isActionRequired,
+      latestActivityAt: latest.latestActivityAt,
+    );
+  }
+
+  rows.sort((a, b) => b.latestActivityAt.compareTo(a.latestActivityAt));
+  return rows;
+}
+
+InboxItem _withConversationId(InboxItem item, String conversationId) =>
+    InboxItem(
+      conversationId: conversationId,
+      id: item.id,
+      item: item.item,
+      groupItems: item.groupItems,
+      categories: item.categories,
+      isActionRequired: item.isActionRequired,
+      latestActivityAt: item.latestActivityAt,
+    );
 
 /// Group raw feed items into conversation rows sorted by latest activity.
 /// [isDmChannel] identifies DM channels so their ordinary top-level messages
