@@ -189,9 +189,9 @@ void main() {
       );
       await h.pump(tester, _settings());
 
-      await tester.scrollUntilVisible(
+      await _centerInView(
+        tester,
         find.byKey(const Key('settings-account-row')),
-        200,
       );
       await tester.tap(find.byKey(const Key('settings-account-row')));
       await frames(tester);
@@ -199,6 +199,10 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
 
+      await _centerInView(
+        tester,
+        find.byKey(const Key('settings-devices-row')),
+      );
       await tester.tap(find.byKey(const Key('settings-devices-row')));
       await frames(tester);
       expect(find.byType(DevicesPage), findsOneWidget);
