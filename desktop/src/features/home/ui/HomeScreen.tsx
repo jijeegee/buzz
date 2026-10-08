@@ -16,15 +16,18 @@ type HomeScreenProps = {
   currentPubkey?: string;
   onOpenContext: (
     channelId: string,
-    messageId: string,
+    messageId: string | null,
     threadRootId?: string | null,
   ) => void;
+  /** `panel` renders only the list, beside a channel's chat screen. */
+  variant?: "page" | "panel";
 };
 
 export function HomeScreen({
   availableChannelIds,
   currentPubkey,
   onOpenContext,
+  variant = "page",
 }: HomeScreenProps) {
   const homeFeedQuery = useHomeFeedQuery();
   const { threadActivityFeedItems } = useAppShell();
@@ -49,7 +52,13 @@ export function HomeScreen({
   }, [hiddenDmIds, homeFeedQuery.data, threadActivityFeedItems]);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div
+      className={
+        variant === "panel"
+          ? "flex min-h-0 shrink-0 flex-col overflow-hidden"
+          : "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      }
+    >
       <HomeView
         availableChannelIds={availableChannelIds}
         currentPubkey={currentPubkey}
@@ -68,6 +77,7 @@ export function HomeScreen({
         onRefresh={() => {
           void homeFeedQuery.refetch();
         }}
+        variant={variant}
       />
     </div>
   );

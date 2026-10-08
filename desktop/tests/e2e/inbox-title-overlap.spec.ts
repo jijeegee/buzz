@@ -12,6 +12,11 @@ import { expect, test } from "@playwright/test";
 import type { RelayEvent } from "../../src/shared/api/types";
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
+
+test.beforeEach(async ({ page }) => {
+  await openInboxOnNeedsAction(page);
+});
 
 const SHOTS = "test-results/inbox-title-overlap";
 
@@ -86,7 +91,7 @@ test.describe("inbox detail title overflow", () => {
           pubkey: senderPubkey,
         });
         push({
-          category: "mention",
+          category: "needs_action",
           channel_id: channelId,
           channel_name: "engineering",
           content: event.content,

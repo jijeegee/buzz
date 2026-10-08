@@ -11,7 +11,14 @@ import {
 } from "@/features/profile/ui/UserProfilePanelUtils";
 import { HuddleStartingView } from "@/features/huddle/components/HuddleStartingView";
 import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
+import { cn } from "@/shared/lib/cn";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
+import {
+  type ThreadViewMode,
+  ThreadViewModeOverrideProvider,
+} from "@/features/channels/lib/threadViewModePreference";
+import { useInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
+import { InboxPanel } from "@/features/home/ui/InboxPanel";
 
 type ChannelRouteSearch = {
   agentSession?: string;
@@ -65,8 +72,24 @@ function ChannelRouteComponent() {
     select: selectSearchHighlightRouteState,
   });
   const isHuddleTranscript = huddleWindowChannelId() !== null;
+  const inboxPanelOpen = useInboxPanelOpen() && !isHuddleTranscript;
+  // With the inbox pulled out, threads open maximized over the collapsed
+  // channel. The layout toggle only switches this view while the panel is open;
+  // the saved channel default is untouched.
+  const [inboxThreadViewMode, setInboxThreadViewMode] =
+    React.useState<ThreadViewMode>("focus");
+  React.useEffect(() => {
+    if (inboxPanelOpen) setInboxThreadViewMode("focus");
+  }, [inboxPanelOpen]);
+  const threadViewModeOverride = React.useMemo(
+    () =>
+      inboxPanelOpen
+        ? { mode: inboxThreadViewMode, setMode: setInboxThreadViewMode }
+        : null,
+    [inboxPanelOpen, inboxThreadViewMode],
+  );
 
-  return (
+  const channelScreen = (
     <React.Suspense
       fallback={
         isHuddleTranscript ? (
@@ -76,15 +99,36 @@ function ChannelRouteComponent() {
         )
       }
     >
-      <ChannelRouteScreen
-        autoSendDraftKey={search.autoSend ?? null}
-        channelId={channelId}
-        searchHighlight={searchHighlight}
-        selectedPostId={null}
-        targetMessageId={search.messageId ?? null}
-        targetReplyId={null}
-        targetThreadRootId={search.threadRootId ?? search.thread ?? null}
-      />
+      <ThreadViewModeOverrideProvider value={threadViewModeOverride}>
+        <ChannelRouteScreen
+          autoSendDraftKey={search.autoSend ?? null}
+          channelId={channelId}
+          searchHighlight={searchHighlight}
+          selectedPostId={null}
+          targetMessageId={search.messageId ?? null}
+          targetReplyId={null}
+          targetThreadRootId={search.threadRootId ?? search.thread ?? null}
+        />
+      </ThreadViewModeOverrideProvider>
     </React.Suspense>
+  );
+
+  // One stable tree whether or not the panel is out, so toggling the inbox
+  // never remounts the chat screen (scroll, drafts and thread stay put).
+  return (
+    <div
+      className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+      data-testid="channel-route-layout"
+    >
+      {inboxPanelOpen ? <InboxPanel /> : null}
+      <div
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+          inboxPanelOpen && "border-l border-border/35",
+        )}
+      >
+        {channelScreen}
+      </div>
+    </div>
   );
 }

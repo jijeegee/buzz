@@ -92,6 +92,10 @@ export type AppSidebarProps = {
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
   onSelectHome: () => void;
+  /** Inbox button; on a channel it toggles the inbox panel beside the room. */
+  onSelectInbox?: () => void;
+  /** The inbox panel is pulled out beside the current channel. */
+  inboxPanelOpen?: boolean;
   onSelectChannel: (channelId: string) => void;
   onOpenSearchResult: (hit: SearchHit, query: string) => void;
   /** Full channel set for global search, including channels outside the joined sidebar list. */

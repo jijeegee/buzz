@@ -2,11 +2,16 @@ import { expect, test } from "@playwright/test";
 
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge } from "../helpers/bridge";
+import {
+  openInboxOnNeedsAction,
+  openNeedsActionDetail,
+} from "../helpers/inboxDetailFilter";
 
 test.describe("home inbox chrome", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
 
   test.beforeEach(async ({ page }) => {
+    await openInboxOnNeedsAction(page);
     await installMockBridge(page);
     await page.goto("/");
     await expect(page.getByTestId("home-inbox-list")).toBeVisible();
@@ -19,7 +24,7 @@ test.describe("home inbox chrome", () => {
     const options = page.getByTestId("inbox-options-trigger");
 
     await expect(filter).toBeVisible();
-    await expect(filter).toContainText("All");
+    await expect(filter).toContainText("Needs action");
     await expect(options).toBeVisible();
 
     const [filterBox, optionsBox] = await Promise.all([
@@ -34,6 +39,7 @@ test.describe("home inbox chrome", () => {
   test("shares a blurred header backdrop across list and detail", async ({
     page,
   }) => {
+    await openNeedsActionDetail(page, "Approve the release checklist.");
     await expect(page.getByTestId("home-inbox-detail")).toBeVisible();
 
     const homeInbox = page.getByTestId("home-inbox");
@@ -72,6 +78,7 @@ test.describe("home inbox chrome", () => {
   test("reserves the measured composer height and masks content behind it", async ({
     page,
   }) => {
+    await openNeedsActionDetail(page, "Approve the release checklist.");
     const detailScroller = page.getByTestId("home-inbox-detail-scroll");
     const composerOverlay = page.getByTestId(
       "home-inbox-detail-composer-overlay",

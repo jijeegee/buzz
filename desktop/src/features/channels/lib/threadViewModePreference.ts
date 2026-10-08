@@ -73,7 +73,37 @@ export function setThreadViewMode(mode: ThreadViewMode): void {
   }
 }
 
+type ThreadViewModeOverride = {
+  mode: ThreadViewMode;
+  setMode: (mode: ThreadViewMode) => void;
+};
+
+const ThreadViewModeOverrideContext =
+  React.createContext<ThreadViewModeOverride | null>(null);
+
+/**
+ * Scopes the thread layout to one surface without touching the saved
+ * preference: the inbox opens threads maximized whatever the channel default is,
+ * and its toggle only switches that inbox view.
+ */
+export const ThreadViewModeOverrideProvider =
+  ThreadViewModeOverrideContext.Provider;
+
 /** How threads should open in a channel: as a focus drawer or a split pane. */
 export function useThreadViewMode(): ThreadViewMode {
-  return React.useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const override = React.useContext(ThreadViewModeOverrideContext);
+  const stored = React.useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
+  return override?.mode ?? stored;
+}
+
+/** Setter for the layout in effect here: the scoped override or the preference. */
+export function useSetThreadViewMode(): (mode: ThreadViewMode) => void {
+  return (
+    React.useContext(ThreadViewModeOverrideContext)?.setMode ??
+    setThreadViewMode
+  );
 }

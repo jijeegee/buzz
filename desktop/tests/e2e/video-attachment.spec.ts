@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { installMockBridge } from "../helpers/bridge";
 import { expectCornerRadiusPx, expectSmoothCorners } from "../helpers/css";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
 
 const VIDEO_SHA = "b".repeat(64);
 const VIDEO_URL = `http://localhost:3000/media/${VIDEO_SHA}.mp4`;
@@ -92,13 +93,17 @@ function emitMockMessage(
   );
 }
 
-function pushMockFeedItems(page: Page, messages: MockFeedMessage[]) {
+function pushMockFeedItems(
+  page: Page,
+  messages: MockFeedMessage[],
+  category: "mention" | "needs_action" = "mention",
+) {
   return page.evaluate(
-    ({ channelId, messages }) => {
+    ({ category, channelId, messages }) => {
       const pushFeedItem = (
         window as Window & {
           __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
-            category: "mention";
+            category: "mention" | "needs_action";
             channel_id: string;
             channel_name: string;
             content: string;
@@ -113,7 +118,7 @@ function pushMockFeedItems(page: Page, messages: MockFeedMessage[]) {
       if (!pushFeedItem) throw new Error("Mock feed helper is unavailable.");
       for (const message of messages) {
         pushFeedItem({
-          category: "mention",
+          category,
           channel_id: channelId,
           channel_name: "general",
           content: message.content,
@@ -125,7 +130,7 @@ function pushMockFeedItems(page: Page, messages: MockFeedMessage[]) {
         });
       }
     },
-    { channelId: GENERAL_CHANNEL_ID, messages },
+    { category, channelId: GENERAL_CHANNEL_ID, messages },
   );
 }
 
@@ -1199,6 +1204,7 @@ test("Inbox recognizes reference-style video ancestors with custom alt text", as
   page,
 }) => {
   await installVideoReviewHarness(page);
+  await openInboxOnNeedsAction(page);
 
   await page.goto("/");
   await page.getByTestId("channel-general").click();
@@ -1222,7 +1228,7 @@ test("Inbox recognizes reference-style video ancestors with custom alt text", as
     "[00:01] Tighten this transition.",
     { parentEventId: video.id },
   )) as MockFeedMessage;
-  await pushMockFeedItems(page, [video, comment]);
+  await pushMockFeedItems(page, [video, comment], "needs_action");
 
   await page.getByRole("button", { name: "Inbox", exact: true }).click();
   const inboxRow = page.getByTestId(`home-inbox-item-${comment.id}`);

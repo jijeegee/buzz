@@ -95,7 +95,10 @@ function HomeRouteComponent() {
       availableChannelIds={availableChannelIds}
       currentPubkey={identityQuery.data?.pubkey}
       onOpenContext={(channelId, messageId, threadRootId) => {
-        void goChannel(channelId, { messageId, threadRootId });
+        void goChannel(channelId, {
+          messageId: messageId ?? undefined,
+          threadRootId,
+        });
       }}
     />
   );

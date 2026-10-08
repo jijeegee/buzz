@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useOpenDmMutation } from "@/features/channels/hooks";
 import { useCommunities } from "@/features/communities/useCommunities";
+import type { InboxRoomEntry } from "@/features/home/lib/inboxRoomEntry";
 import type { InboxItem } from "@/features/home/lib/inbox";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { getChannelMembers } from "@/shared/api/tauriChannels";
@@ -14,7 +15,7 @@ type UseHiddenDmInboxNavigationOptions = {
   currentPubkey: string | undefined;
   onOpenContext: (
     channelId: string,
-    messageId: string,
+    messageId: string | null,
     threadRootId?: string | null,
   ) => void;
   selectedItem: InboxItem | null;
@@ -56,7 +57,7 @@ export function useHiddenDmInboxNavigation({
     async (
       item: InboxItem,
       channelId: string,
-      messageId: string,
+      messageId: string | null,
       threadRootId?: string | null,
     ) => {
       const generation = generationRef.current;
@@ -114,6 +115,13 @@ export function useHiddenDmInboxNavigation({
       (channelId: string | null | undefined) =>
         Boolean(channelId && errorChannelIdsRef.current.has(channelId)),
       [],
+    ),
+    /** Enters an inbox row's chat room, reopening a hidden DM first. */
+    handleEnterRoom: React.useCallback(
+      (item: InboxItem, entry: InboxRoomEntry) => {
+        void openContext(item, entry.channelId, entry.messageId);
+      },
+      [openContext],
     ),
     handleOpenDirect: React.useCallback(
       (item: InboxItem) => {

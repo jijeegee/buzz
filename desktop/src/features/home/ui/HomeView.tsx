@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { RefreshCcw } from "lucide-react";
 
@@ -44,6 +45,11 @@ import {
   useResizableInboxListWidth,
 } from "@/features/home/useResizableInboxListWidth";
 import { getHomePaneLayout } from "@/features/home/lib/homePaneLayout";
+import { setInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
+import {
+  getInboxRoomEntry,
+  opensInChatRoom,
+} from "@/features/home/lib/inboxRoomEntry";
 import { getHomeMessageCapabilities } from "@/features/home/lib/homeMessageCapabilities";
 import { HomeLoadingState } from "@/features/home/ui/HomeLoadingState";
 import { InboxDetailPane } from "@/features/home/ui/InboxDetailPane";
@@ -99,10 +105,15 @@ type HomeViewProps = {
   availableChannelIds: ReadonlySet<string>;
   onOpenContext: (
     channelId: string,
-    messageId: string,
+    messageId: string | null,
     threadRootId?: string | null,
   ) => void;
   onRefresh: () => void;
+  /**
+   * `page` is the Inbox route: list plus detail for work without a chat room.
+   * `panel` is the same list pulled out beside the chat screen of a channel.
+   */
+  variant?: "page" | "panel";
 };
 
 export function HomeView({
@@ -113,7 +124,14 @@ export function HomeView({
   availableChannelIds,
   onOpenContext,
   onRefresh,
+  variant = "page",
 }: HomeViewProps) {
+  const isPanel = variant === "panel";
+  const navigate = useNavigate();
+  // The row whose chat room was last entered from this list.
+  const [enteredConversationId, setEnteredConversationId] = React.useState<
+    string | null
+  >(null);
   const relaySelfPubkey = useRelaySelfQuery().data;
   const [homeInboxRef, homeInboxWidthPx] = useElementWidth<HTMLDivElement>();
   const isNarrowHomeViewport =
@@ -275,7 +293,13 @@ export function HomeView({
       availableChannelIds,
     });
 
-  const threadContextFeedItem = activeLatchedItem;
+  // Chat messages open in the real chat screen, so the inbox only loads its own
+  // context for work that keeps the inbox detail (approvals, agent updates,
+  // project items, and the non-chat filters).
+  const threadContextFeedItem =
+    activeLatchedItem !== null && !opensInChatRoom(activeLatchedItem, filter)
+      ? activeLatchedItem
+      : null;
   // Derive the default composer parent from the active anchor's own tags so
   // that InboxDetailPane can recover the original reply target even when the
   // anchor event has been displaced from the current groupItems. This is null
@@ -501,6 +525,7 @@ export function HomeView({
   }, [filteredItems, selectedConversationId, selectedEventId]);
   const {
     canOpenSelected,
+    handleEnterRoom,
     handleOpenDirect,
     handleOpenDm,
     handleOpenSelectedContext,
@@ -558,9 +583,16 @@ export function HomeView({
     const contextIds = new Set(contextMessages.map((message) => message.id));
     return localReplies.filter((reply) => !contextIds.has(reply.id));
   }, [contextMessages, localRepliesByItemId, selectedItem]);
+  // Only work that opens in the inbox detail is auto-selected; chat rooms are
+  // entered by choice.
+  const autoSelectableItems = React.useMemo(
+    () =>
+      filteredItems.filter((item) => getInboxRoomEntry(item, filter) === null),
+    [filter, filteredItems],
+  );
   useHomeInboxAutoSelection({
     coldResolutionPending,
-    filteredItems,
+    filteredItems: autoSelectableItems,
     hasFeed: Boolean(feed),
     hasPersonalSelection:
       selectedDraftItem !== null || selectedReminder !== null,
@@ -619,7 +651,15 @@ export function HomeView({
       }
 
       applyInboxSearchPatch({ item: null });
-      setAutoSelectedEventId(selection.autoSelectedEventId);
+      const autoSelected = selection.autoSelectedEventId
+        ? findInboxItemByEventId(nextItems, selection.autoSelectedEventId)
+        : null;
+      // Rooms are entered by choice, never by auto-selection.
+      setAutoSelectedEventId(
+        autoSelected && getInboxRoomEntry(autoSelected, nextFilter) === null
+          ? selection.autoSelectedEventId
+          : null,
+      );
     },
     [
       applyInboxSearchPatch,
@@ -697,6 +737,115 @@ export function HomeView({
     threadPanelWidthPx,
   });
 
+  const inboxListPane = (
+    <InboxListPane
+      activeReminderEventIds={activeReminderEventIds}
+      agentPubkeys={inboxAgentPubkeys}
+      dmChannelLabels={dmChannelLabels}
+      dmParticipantsByChannelId={dmParticipantsByChannelId}
+      activeDraftCount={activeDraftCount}
+      draftItems={draftItems}
+      doneSet={effectiveDoneSet}
+      dueReminderCount={dueReminderCount}
+      filter={filter}
+      items={filteredItems}
+      onDeleteDraft={handleDeleteDraft}
+      onFilterChange={handleFilterChange}
+      onMarkRead={markItemRead}
+      onMarkUnread={markItemUnread}
+      onOpenDirect={handleOpenDirect}
+      isReopenPending={isReopenPending}
+      isReopenErrored={isReopenErrored}
+      onRemindLater={(item) => {
+        const channelId = item.item.channelId;
+        if (!channelId) {
+          return;
+        }
+        openReminder({
+          authorPubkey: item.item.pubkey,
+          channelId,
+          eventId: item.id,
+          preview: item.preview.slice(0, 100),
+        });
+      }}
+      onSelect={(itemId) => {
+        const row = findInboxItemByEventId(viewItems, itemId);
+        const roomEntry = row ? getInboxRoomEntry(row, filter) : null;
+        if (row && roomEntry) {
+          // The inbox is a way into the chat screen: enter the room
+          // and keep the list pulled out beside it.
+          markItemRead(itemId);
+          setEnteredConversationId(row.conversationId);
+          setInboxPanelOpen(true);
+          handleEnterRoom(row, roomEntry);
+          return;
+        }
+        if (isPanel) {
+          // Work without a chat room opens on the Inbox page.
+          void navigate({ to: "/", search: { item: itemId } });
+          return;
+        }
+        const item = findInboxItemByEventId(inboxItems, itemId);
+        setUnreadBoundary(
+          item && !effectiveDoneSet.has(item.id)
+            ? {
+                conversationId: item.conversationId,
+                eventId: item.id,
+              }
+            : null,
+        );
+        setSelectedDraftKey(null);
+        setSelectedReminderId(null);
+        handleUserSelectItem(itemId);
+        markItemRead(itemId);
+      }}
+      onSelectDraft={(draftKey) => {
+        if (isPanel) {
+          void navigate({ to: "/" });
+          return;
+        }
+        setUnreadBoundary(null);
+        setSelectedReminderId(null);
+        handleUserSelectItem(null);
+        setSelectedDraftKey(draftKey);
+      }}
+      onSelectReminder={(reminderId) => {
+        if (isPanel) {
+          void navigate({ to: "/" });
+          return;
+        }
+        setUnreadBoundary(null);
+        setSelectedDraftKey(null);
+        handleUserSelectItem(null);
+        setSelectedReminderId(reminderId);
+      }}
+      onUnreadOnlyChange={handleUnreadOnlyChange}
+      reminderPubkey={currentPubkey}
+      reminders={pendingReminders}
+      selectedConversationId={
+        isPanel ? enteredConversationId : selectedConversationId
+      }
+      selectedDraftKey={selectedDraftKey}
+      selectedReminderId={selectedReminderId}
+      showRightDivider={isPanel || (showListPane && showDetailPane)}
+      unreadOnly={unreadOnly}
+    />
+  );
+
+  if (isPanel) {
+    return (
+      <ProfilePanelProvider onOpenProfilePanel={handleOpenProfilePanel}>
+        <div
+          className="relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden"
+          data-testid="inbox-panel"
+          style={{ width: `${inboxListWidthPx}px` }}
+        >
+          {inboxListPane}
+        </div>
+      </ProfilePanelProvider>
+    );
+  }
+
   return (
     <ProfilePanelProvider onOpenProfilePanel={handleOpenProfilePanel}>
       <DeleteMessageConfirmDialog
@@ -743,74 +892,7 @@ export function HomeView({
             />
           ) : null}
 
-          {showListPane ? (
-            <InboxListPane
-              activeReminderEventIds={activeReminderEventIds}
-              agentPubkeys={inboxAgentPubkeys}
-              dmChannelLabels={dmChannelLabels}
-              dmParticipantsByChannelId={dmParticipantsByChannelId}
-              activeDraftCount={activeDraftCount}
-              draftItems={draftItems}
-              doneSet={effectiveDoneSet}
-              dueReminderCount={dueReminderCount}
-              filter={filter}
-              items={filteredItems}
-              onDeleteDraft={handleDeleteDraft}
-              onFilterChange={handleFilterChange}
-              onMarkRead={markItemRead}
-              onMarkUnread={markItemUnread}
-              onOpenDirect={handleOpenDirect}
-              isReopenPending={isReopenPending}
-              isReopenErrored={isReopenErrored}
-              onRemindLater={(item) => {
-                const channelId = item.item.channelId;
-                if (!channelId) {
-                  return;
-                }
-                openReminder({
-                  authorPubkey: item.item.pubkey,
-                  channelId,
-                  eventId: item.id,
-                  preview: item.preview.slice(0, 100),
-                });
-              }}
-              onSelect={(itemId) => {
-                const item = findInboxItemByEventId(inboxItems, itemId);
-                setUnreadBoundary(
-                  item && !effectiveDoneSet.has(item.id)
-                    ? {
-                        conversationId: item.conversationId,
-                        eventId: item.id,
-                      }
-                    : null,
-                );
-                setSelectedDraftKey(null);
-                setSelectedReminderId(null);
-                handleUserSelectItem(itemId);
-                markItemRead(itemId);
-              }}
-              onSelectDraft={(draftKey) => {
-                setUnreadBoundary(null);
-                setSelectedReminderId(null);
-                handleUserSelectItem(null);
-                setSelectedDraftKey(draftKey);
-              }}
-              onSelectReminder={(reminderId) => {
-                setUnreadBoundary(null);
-                setSelectedDraftKey(null);
-                handleUserSelectItem(null);
-                setSelectedReminderId(reminderId);
-              }}
-              onUnreadOnlyChange={handleUnreadOnlyChange}
-              reminderPubkey={currentPubkey}
-              reminders={pendingReminders}
-              selectedConversationId={selectedConversationId}
-              selectedDraftKey={selectedDraftKey}
-              selectedReminderId={selectedReminderId}
-              showRightDivider={showListPane && showDetailPane}
-              unreadOnly={unreadOnly}
-            />
-          ) : null}
+          {showListPane ? inboxListPane : null}
 
           <button
             aria-label="Resize inbox list"
@@ -851,7 +933,11 @@ export function HomeView({
               isSinglePanelView={isSinglePanelDetailView}
               hasThreadContextLoadError={threadContext.hasLoadError}
               isThreadContextLoading={threadContext.isLoading}
-              item={selectedItem}
+              item={
+                selectedItem && getInboxRoomEntry(selectedItem, filter) === null
+                  ? selectedItem
+                  : null
+              }
               latchedDefaultParentId={latchedDefaultParentId}
               messages={contextMessages}
               profiles={feedProfiles}
