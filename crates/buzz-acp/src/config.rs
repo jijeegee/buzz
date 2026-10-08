@@ -423,6 +423,13 @@ pub struct CliArgs {
           value_parser = clap::value_parser!(u32).range(0..=100))]
     pub context_message_limit: Option<u32>,
 
+    /// How much history a fresh session reads on its first thread or main
+    /// timeline turn: `recent` (the `--context-message-limit` window, the
+    /// default) or a size budget, `small` / `medium` / `large` (about 8k /
+    /// 20k / 50k tokens). Resumed sessions and dispatchers always use recent.
+    #[arg(long, env = "BUZZ_ACP_CONTEXT_HISTORY")]
+    pub context_history: Option<String>,
+
     /// Maximum turns per session before proactive rotation. 0 = disabled
     /// (rotate only on MaxTokens / MaxTurnRequests).
     #[arg(long, env = "BUZZ_ACP_MAX_TURNS_PER_SESSION", default_value_t = 0,
@@ -730,6 +737,9 @@ pub struct Config {
     pub no_mention_filter: bool,
     pub config_path: PathBuf,
     pub context_message_limit: u32,
+    /// How much history a fresh session reads (`--context-history`); always
+    /// `Recent` in dispatcher mode.
+    pub context_history: crate::context_history::ContextHistory,
     /// Maximum turns per session before proactive rotation. 0 = disabled.
     pub max_turns_per_session: u32,
     pub presence_enabled: bool,
@@ -1220,6 +1230,12 @@ impl Config {
         } else {
             DEFAULT_CONTEXT_MESSAGE_LIMIT
         });
+        // A router keeps its small window; only ordinary agents read further.
+        let context_history = if args.dispatcher {
+            crate::context_history::ContextHistory::Recent
+        } else {
+            crate::context_history::parse_context_history(args.context_history.as_deref())
+        };
 
         if matches!(args.subscribe, SubscribeMode::Config) {
             if args.kinds.is_some() {
@@ -1420,6 +1436,7 @@ impl Config {
             no_mention_filter: args.no_mention_filter,
             config_path: args.config,
             context_message_limit,
+            context_history,
             max_turns_per_session: args.max_turns_per_session,
             presence_enabled: !args.no_presence,
             typing_enabled: !args.no_typing,
@@ -1868,6 +1885,7 @@ mod tests {
             no_mention_filter: false,
             config_path: PathBuf::from("./buzz-acp.toml"),
             context_message_limit: 12,
+            context_history: crate::context_history::ContextHistory::Recent,
             max_turns_per_session: 0,
             presence_enabled: true,
             typing_enabled: true,
@@ -3603,6 +3621,34 @@ channels = "ALL"
                 .to_string();
             assert!(err.contains(needle), "{json}: {err}");
         }
+    }
+
+    #[test]
+    fn context_history_defaults_to_recent_and_never_reaches_dispatchers() {
+        use crate::context_history::{ContextBudget, ContextHistory};
+        assert_eq!(
+            from_cli(&[]).unwrap().context_history,
+            ContextHistory::Recent
+        );
+        assert_eq!(
+            from_cli(&["--context-history", "medium"])
+                .unwrap()
+                .context_history,
+            ContextHistory::Budget(ContextBudget::Medium)
+        );
+        assert_eq!(
+            from_cli(&["--context-history", "bogus"])
+                .unwrap()
+                .context_history,
+            ContextHistory::Recent,
+            "an unknown value must not stop the harness"
+        );
+        let dispatcher = from_cli(&["--dispatcher", "--context-history", "large"]).unwrap();
+        assert_eq!(dispatcher.context_history, ContextHistory::Recent);
+        assert_eq!(
+            dispatcher.context_message_limit,
+            DISPATCHER_CONTEXT_MESSAGE_LIMIT
+        );
     }
 
     #[test]

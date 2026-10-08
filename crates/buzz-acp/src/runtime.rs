@@ -125,7 +125,10 @@ mod assemble_base_prompt_tests {
             (SessionPolicy::Thread, false, SessionMode::Task),
         ] {
             let prompt = assemble_base_prompt(policy, dispatcher, TRIGGERS, &mode, "base");
-            assert!(!prompt.contains(GUIDANCE), "{policy} dispatcher={dispatcher}");
+            assert!(
+                !prompt.contains(GUIDANCE),
+                "{policy} dispatcher={dispatcher}"
+            );
         }
     }
 }
@@ -170,6 +173,7 @@ fn make_prompt_context(
         rest_client: rest_client.clone(),
         channel_info: pool::ChannelInfoResolver::new(channels, rest_client),
         context_message_limit: config.context_message_limit,
+        context_history: config.context_history,
         max_turns_per_session: config.max_turns_per_session,
         permission_mode: config.permission_mode,
         agent_keys: config.keys.clone(),

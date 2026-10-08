@@ -9,6 +9,7 @@ pub mod token_refresh;
 
 mod acp;
 mod config;
+mod context_history;
 mod dispatcher;
 mod edit_routing;
 mod engram_fetch;
@@ -10471,6 +10472,7 @@ mod build_mcp_servers_tests {
             no_mention_filter: false,
             config_path: std::path::PathBuf::from("./buzz-acp.toml"),
             context_message_limit: 12,
+            context_history: crate::context_history::ContextHistory::Recent,
             max_turns_per_session: 0,
             presence_enabled: true,
             typing_enabled: true,
@@ -11337,6 +11339,7 @@ mod error_outcome_emission_tests {
             no_mention_filter: false,
             config_path: std::path::PathBuf::from("./buzz-acp.toml"),
             context_message_limit: 12,
+            context_history: crate::context_history::ContextHistory::Recent,
             max_turns_per_session: 0,
             presence_enabled: true,
             typing_enabled: true,
