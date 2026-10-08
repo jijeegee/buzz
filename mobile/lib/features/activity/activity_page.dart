@@ -39,6 +39,7 @@ import 'conversation_room.dart';
 import 'dm_resurface.dart';
 import 'inbox_item.dart';
 import 'inbox_local_state_provider.dart';
+import 'inbox_view_preferences_provider.dart';
 import 'inbox_read_state.dart';
 import 'reminders_provider.dart';
 
@@ -77,8 +78,9 @@ class ActivityPage extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final feedAsync = ref.watch(activityProvider);
     final channelsAsync = ref.watch(channelsProvider);
-    final filter = useState(InboxFilter.all);
-    final unreadOnly = useState(false);
+    final viewPreferences = ref.watch(inboxViewPreferencesProvider);
+    final filter = viewPreferences.filter;
+    final unreadOnly = viewPreferences.unreadOnly;
     final scrollController = useScrollController();
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
     useEffect(() {
@@ -119,7 +121,7 @@ class ActivityPage extends HookConsumerWidget {
     final readState = ref.watch(readStateProvider);
     final localState = ref.watch(inboxLocalStateProvider);
     final drafts = ref.watch(composeDraftsProvider);
-    final allItems = filter.value == InboxFilter.conversations
+    final allItems = filter == InboxFilter.conversations
         ? ref.watch(conversationInboxItemsProvider)
         : ref.watch(inboxItemsProvider);
     final myPk = ref.watch(myPubkeyProvider);
@@ -141,8 +143,7 @@ class ActivityPage extends HookConsumerWidget {
 
     final visibleItems = [
       for (final item in allItems)
-        if (matchesInboxFilter(item, filter.value) &&
-            (!unreadOnly.value || !isDone(item)))
+        if (matchesInboxFilter(item, filter) && (!unreadOnly || !isDone(item)))
           item,
     ];
 
@@ -331,20 +332,20 @@ class ActivityPage extends HookConsumerWidget {
       await Future.wait([
         ref.read(activityProvider.notifier).refresh(),
         ref.read(remindersProvider.notifier).refresh(),
-        if (filter.value == InboxFilter.conversations)
+        if (filter == InboxFilter.conversations)
           ref.refresh(channelActivityProvider.future),
       ]);
     }
 
     late final Widget body;
     var bodyRidesOverTopSection = false;
-    if (filter.value == InboxFilter.reminders) {
+    if (filter == InboxFilter.reminders) {
       body = _RemindersList(
         scrollController: scrollController,
         onOpen: openReminder,
         onRefresh: refresh,
       );
-    } else if (filter.value == InboxFilter.drafts) {
+    } else if (filter == InboxFilter.drafts) {
       body = _DraftsList(
         drafts: drafts,
         scrollController: scrollController,
@@ -359,16 +360,13 @@ class ActivityPage extends HookConsumerWidget {
     } else if (!hasLoadedOnce.value && allItems.isEmpty) {
       body = _LoadingSkeleton(scrollController: scrollController);
     } else if (visibleItems.isEmpty) {
-      body = _EmptyFilterState(
-        filter: filter.value,
-        unreadOnly: unreadOnly.value,
-      );
+      body = _EmptyFilterState(filter: filter, unreadOnly: unreadOnly);
     } else {
       // Compute the "New" boundary: index of the first unread row when the
       // rows above it are read (list is newest-first, so unread rows sit on
       // top; the divider marks where the unread block ends).
       final firstReadIndex = visibleItems.indexWhere(isDone);
-      final newBoundaryIndex = !unreadOnly.value && firstReadIndex > 0
+      final newBoundaryIndex = !unreadOnly && firstReadIndex > 0
           ? firstReadIndex
           : -1;
 
@@ -410,8 +408,7 @@ class ActivityPage extends HookConsumerWidget {
                           onTap: () => unawaited(openItem(item)),
                           onMarkRead: () => markItemRead(item),
                           onMarkUnread: () => markItemUnread(item),
-                          conversationView:
-                              filter.value == InboxFilter.conversations,
+                          conversationView: filter == InboxFilter.conversations,
                         ),
                       ],
                     );
@@ -435,11 +432,14 @@ class ActivityPage extends HookConsumerWidget {
         titleStyle: headerTitleStyle,
         actions: [
           _ActivityActionsPill(
-            filter: filter.value,
-            unreadOnly: unreadOnly.value,
+            filter: filter,
+            unreadOnly: unreadOnly,
             unreadCount: unreadVisibleCount,
-            onFilterChanged: (f) => filter.value = f,
-            onUnreadOnlyChanged: (v) => unreadOnly.value = v,
+            onFilterChanged: (f) =>
+                ref.read(inboxViewPreferencesProvider.notifier).setFilter(f),
+            onUnreadOnlyChanged: (v) => ref
+                .read(inboxViewPreferencesProvider.notifier)
+                .setUnreadOnly(v),
             onMarkAllRead: () {
               for (final item in visibleItems) {
                 if (!isDone(item)) markItemRead(item);

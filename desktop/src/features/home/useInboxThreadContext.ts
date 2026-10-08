@@ -3,7 +3,10 @@ import * as React from "react";
 import { isInboxThreadContextEvent } from "@/features/home/lib/inboxViewHelpers";
 import { relayEventFromFeedItem } from "@/features/home/lib/inbox";
 import { fetchStructuralAuxForMessages } from "@/features/messages/lib/auxBackfill";
-import { getThreadReference } from "@/features/messages/lib/threading";
+import {
+  getThreadReference,
+  isBroadcastReply,
+} from "@/features/messages/lib/threading";
 import { relayClient } from "@/shared/api/relayClient";
 import { buildChannelReactionAuxFilter } from "@/shared/api/relayChannelFilters";
 import { getEventById } from "@/shared/api/tauri";
@@ -41,6 +44,13 @@ function dedupeEvents(events: RelayEvent[]): RelayEvent[] {
   return [...eventsById.values()].sort((a, b) => a.created_at - b.created_at);
 }
 
+function isMainTimelineEvent(event: RelayEvent): boolean {
+  return (
+    getThreadReference(event.tags).parentId === null ||
+    isBroadcastReply(event.tags)
+  );
+}
+
 function getThreadRootId(event: RelayEvent): string {
   const thread = getThreadReference(event.tags);
   return thread.rootId ?? thread.parentId ?? event.id;
@@ -51,6 +61,8 @@ export function useInboxThreadContext(
   channelMessages: RelayEvent[] | undefined,
   options: {
     fullChannel?: boolean;
+    /** With `fullChannel`, keep only the main timeline (no thread replies). */
+    mainTimelineOnly?: boolean;
     hasChannelLoadError?: boolean;
     isChannelLoading?: boolean;
   } = {},
@@ -77,6 +89,7 @@ export function useInboxThreadContext(
     : null;
   const selectedChannelId = item?.channelId ?? null;
   const fullChannel = options.fullChannel === true;
+  const mainTimelineOnly = options.mainTimelineOnly === true;
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -221,8 +234,10 @@ export function useInboxThreadContext(
     if (fullChannel) {
       return dedupeEvents([
         selectedEvent,
-        ...(channelMessages ?? []).filter((event) =>
-          CHANNEL_CONTEXT_EVENT_KINDS.has(event.kind),
+        ...(channelMessages ?? []).filter(
+          (event) =>
+            CHANNEL_CONTEXT_EVENT_KINDS.has(event.kind) &&
+            (!mainTimelineOnly || isMainTimelineEvent(event)),
         ),
       ]);
     }
@@ -254,6 +269,7 @@ export function useInboxThreadContext(
     channelMessages,
     fetchedEvents,
     fullChannel,
+    mainTimelineOnly,
     selectedChannelId,
     selectedEvent,
     selectedParentId,

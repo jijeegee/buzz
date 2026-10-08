@@ -35,6 +35,25 @@ export type InboxFilter =
   | "reminders"
   | "drafts";
 
+const INBOX_FILTERS: readonly InboxFilter[] = [
+  "all",
+  "project",
+  "mention",
+  "thread",
+  "conversations",
+  "needs_action",
+  "agent_activity",
+  "reminders",
+  "drafts",
+];
+
+/** A stored filter value, or "all" when missing or no longer known. */
+export function parseInboxFilter(
+  value: string | null | undefined,
+): InboxFilter {
+  return INBOX_FILTERS.find((filter) => filter === value) ?? "all";
+}
+
 export type InboxItem = {
   avatarUrl: string | null;
   /**

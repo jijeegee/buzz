@@ -107,6 +107,13 @@ export function matchesInboxFilter(
   return item.categories.includes(filter);
 }
 
+const CHANNEL_MAIN_ROW_PREFIX = "channel:";
+
+/** True for a row that stands for a whole channel main timeline. */
+export function isChannelMainRoomItem(item: InboxItem | null | undefined) {
+  return item?.conversationId.startsWith(CHANNEL_MAIN_ROW_PREFIX) === true;
+}
+
 /**
  * The "conversations" view treats each channel's main timeline like one
  * thread: top-level rows from the same channel collapse into a single row
@@ -132,7 +139,7 @@ export function collapseChannelMainRows(items: readonly InboxItem[]) {
     if (!existing) {
       const row = {
         ...item,
-        conversationId: `channel:${channelId}`,
+        conversationId: `${CHANNEL_MAIN_ROW_PREFIX}${channelId}`,
         groupItems: [...item.groupItems],
       };
       channelRows.set(channelId, row);

@@ -5,6 +5,7 @@ import { formatTimelineMessages } from "../../messages/lib/formatTimelineMessage
 import { getConfigNudgeAuthorPubkey } from "../../messages/ui/configNudgeAuthPubkey.ts";
 import {
   collapseChannelMainRows,
+  isChannelMainRoomItem,
   filterInboxItems,
   getContextMessageDepth,
   getReactionTargetId,
@@ -629,4 +630,21 @@ test("collapseChannelMainRows leaves DM rows grouped by DM channel", () => {
   });
 
   assert.deepEqual(collapseChannelMainRows([dm]), [dm]);
+});
+
+test("isChannelMainRoomItem marks only collapsed channel main rows", () => {
+  const [channelRow, threadRow] = collapseChannelMainRows([
+    conversationRow({ id: "main", channelId: "a", latestActivityAt: 20 }),
+    conversationRow({
+      conversationId: "root",
+      id: "reply",
+      latestActivityAt: 10,
+      tags: threadReplyTags("a", "root"),
+      channelId: "a",
+    }),
+  ]);
+
+  assert.equal(isChannelMainRoomItem(channelRow), true);
+  assert.equal(isChannelMainRoomItem(threadRow), false);
+  assert.equal(isChannelMainRoomItem(null), false);
 });

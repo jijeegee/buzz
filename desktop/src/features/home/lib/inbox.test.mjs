@@ -7,6 +7,7 @@ import {
   getInboxConversationId,
   getInboxThreadRootId,
   getInboxTypeLabel,
+  parseInboxFilter,
 } from "./inbox.ts";
 
 const CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
@@ -631,4 +632,11 @@ test("thread rows expose their root for the thread name; main rows do not", () =
   assert.equal(getInboxThreadRootId(byId.get("reply")), "root-event");
   assert.equal(getInboxThreadRootId(byId.get("main")), null);
   assert.equal(getInboxThreadRootId(byId.get("dm")), null);
+});
+
+test("parseInboxFilter restores a stored filter and falls back to all", () => {
+  assert.equal(parseInboxFilter("conversations"), "conversations");
+  assert.equal(parseInboxFilter("thread"), "thread");
+  assert.equal(parseInboxFilter("retired-filter"), "all");
+  assert.equal(parseInboxFilter(null), "all");
 });
