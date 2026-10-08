@@ -384,14 +384,7 @@ class _MessageList extends HookConsumerWidget {
       return () => cancelled = true;
     }, [latestNavigationRequest.value]);
 
-    Future<void> scrollToOldestUnread() async {
-      final targetIndex = reversedIndexOf(oldestUnreadMessageId.value);
-      if (targetIndex == null ||
-          !itemScrollController.isAttached ||
-          isAutoScrolling.value) {
-        return;
-      }
-      isUnreadNavigationDismissed.value = true;
+    Future<void> scrollToOlderEntry(int targetIndex) async {
       followsLatest.value = false;
       hasUserScrolled.value = false;
       isAtLatest.value = false;
@@ -406,6 +399,28 @@ class _MessageList extends HookConsumerWidget {
       } finally {
         isAutoScrolling.value = false;
       }
+    }
+
+    Future<void> scrollToOldestUnread() async {
+      final targetIndex = reversedIndexOf(oldestUnreadMessageId.value);
+      if (targetIndex == null ||
+          !itemScrollController.isAttached ||
+          isAutoScrolling.value) {
+        return;
+      }
+      isUnreadNavigationDismissed.value = true;
+      await scrollToOlderEntry(targetIndex);
+    }
+
+    // A quote of a row this list already shows scrolls in place instead of
+    // stacking a second copy of this channel through the deep link.
+    bool jumpToQuotedMessage(String messageId) {
+      final targetIndex = reversedIndexOf(messageId);
+      if (targetIndex == null || !itemScrollController.isAttached) {
+        return false;
+      }
+      if (!isAutoScrolling.value) unawaited(scrollToOlderEntry(targetIndex));
+      return true;
     }
 
     bool latestIsAtBoundary() {
@@ -715,228 +730,236 @@ class _MessageList extends HookConsumerWidget {
       }
     });
 
-    return Stack(
-      children: [
-        NotificationListener<Notification>(
-          onNotification: (notification) {
-            if (notification is ScrollMetricsNotification &&
-                notification.depth != 0) {
-              return false;
-            }
-            if (notification is ScrollNotification && notification.depth != 0) {
-              return false;
-            }
-            if (notification is ScrollMetricsNotification) {
+    return QuoteJumpScope(
+      channelId: channelId,
+      jumpToMessage: jumpToQuotedMessage,
+      child: Stack(
+        children: [
+          NotificationListener<Notification>(
+            onNotification: (notification) {
+              if (notification is ScrollMetricsNotification &&
+                  notification.depth != 0) {
+                return false;
+              }
+              if (notification is ScrollNotification &&
+                  notification.depth != 0) {
+                return false;
+              }
+              if (notification is ScrollMetricsNotification) {
+                timelineViewportHeight.value =
+                    notification.metrics.viewportDimension;
+                return false;
+              }
+              if (notification is! ScrollNotification) return false;
               timelineViewportHeight.value =
                   notification.metrics.viewportDimension;
-              return false;
-            }
-            if (notification is! ScrollNotification) return false;
-            timelineViewportHeight.value =
-                notification.metrics.viewportDimension;
-            distanceFromLatest.value = max(
-              0.0,
-              notification.metrics.pixels -
-                  notification.metrics.minScrollExtent,
-            );
-            updateJumpToLatestVisibility(
-              itemPositionsListener.itemPositions.value,
-              viewportDimension: notification.metrics.viewportDimension,
-            );
-            if (notification is UserScrollNotification &&
-                notification.direction != ScrollDirection.idle) {
-              hasUserScrolled.value = true;
-              followsLatest.value = false;
-              if (showUnreadNavigation) {
-                detachedWhileUnreadShown.value = true;
+              distanceFromLatest.value = max(
+                0.0,
+                notification.metrics.pixels -
+                    notification.metrics.minScrollExtent,
+              );
+              updateJumpToLatestVisibility(
+                itemPositionsListener.itemPositions.value,
+                viewportDimension: notification.metrics.viewportDimension,
+              );
+              if (notification is UserScrollNotification &&
+                  notification.direction != ScrollDirection.idle) {
+                hasUserScrolled.value = true;
+                followsLatest.value = false;
+                if (showUnreadNavigation) {
+                  detachedWhileUnreadShown.value = true;
+                }
+              } else if (notification is ScrollEndNotification &&
+                  hasUserScrolled.value) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!context.mounted || !latestIsAtBoundary()) return;
+                  hasUserScrolled.value = false;
+                  followsLatest.value = true;
+                  if (!isAtLatest.value) isAtLatest.value = true;
+                });
               }
-            } else if (notification is ScrollEndNotification &&
-                hasUserScrolled.value) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!context.mounted || !latestIsAtBoundary()) return;
-                hasUserScrolled.value = false;
-                followsLatest.value = true;
-                if (!isAtLatest.value) isAtLatest.value = true;
-              });
-            }
-            return false;
-          },
-          child: KeyboardDismissOnDrag(
-            child: ScrollablePositionedList.builder(
-              key: const ValueKey('channel-message-list'),
-              itemScrollController: itemScrollController,
-              itemPositionsListener: itemPositionsListener,
-              reverse: true,
-              padding: EdgeInsets.only(
-                left: Grid.gutter,
-                right: Grid.gutter,
-                top: frostedAppBarHeight(
-                  context,
-                  titleContentHeight: appBarTitleContentHeight,
+              return false;
+            },
+            child: KeyboardDismissOnDrag(
+              child: ScrollablePositionedList.builder(
+                key: const ValueKey('channel-message-list'),
+                itemScrollController: itemScrollController,
+                itemPositionsListener: itemPositionsListener,
+                reverse: true,
+                padding: EdgeInsets.only(
+                  left: Grid.gutter,
+                  right: Grid.gutter,
+                  top: frostedAppBarHeight(
+                    context,
+                    titleContentHeight: appBarTitleContentHeight,
+                  ),
+                  bottom: timelineBottomInset,
                 ),
-                bottom: timelineBottomInset,
-              ),
-              itemCount: displayEntries.length + (isLoadingOlder.value ? 1 : 0),
-              itemBuilder: (context, index) {
-                // Loading indicator at the top (last index in reversed list).
-                if (index >= displayEntries.length) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: Grid.xs),
-                    child: Center(
-                      child: BuzzLoadingIndicator(
-                        size: 24,
-                        semanticLabel: 'Loading older messages',
+                itemCount:
+                    displayEntries.length + (isLoadingOlder.value ? 1 : 0),
+                itemBuilder: (context, index) {
+                  // Loading indicator at the top (last index in reversed list).
+                  if (index >= displayEntries.length) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: Grid.xs),
+                      child: Center(
+                        child: BuzzLoadingIndicator(
+                          size: 24,
+                          semanticLabel: 'Loading older messages',
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Reversed list: index 0 = newest (bottom of screen).
+                  final chronIdx = displayEntries.length - 1 - index;
+                  final entryGroup = displayEntries[chronIdx];
+                  final entry = entryGroup.first;
+                  final message = entry.message;
+
+                  // Day boundary check — applies to all messages including system.
+                  final prevEntry = chronIdx > 0
+                      ? displayEntries[chronIdx - 1].last
+                      : null;
+                  final prevMessage = prevEntry?.message;
+                  final showDayDivider =
+                      prevMessage == null ||
+                      !isSameDay(prevMessage.createdAt, message.createdAt);
+
+                  final showAuthor =
+                      !message.isSystem &&
+                      (message.hasAttachments ||
+                          prevMessage == null ||
+                          prevMessage.isSystem ||
+                          showDayDivider ||
+                          prevMessage.pubkey.toLowerCase() !=
+                              message.pubkey.toLowerCase() ||
+                          (message.createdAt - prevMessage.createdAt) > 300);
+
+                  return LocalMessageSendTransition(
+                    key: ValueKey('channel-message-send-${message.id}'),
+                    animate: isRecentLocalMessageSendAnimation(
+                      localSendAnimations,
+                      message.id,
+                    ),
+                    startOffsetFactor: showAuthor
+                        ? localMessageSendTransitionAvatarStartOffset
+                        : localMessageSendTransitionStartOffset,
+                    child: Padding(
+                      key: ValueKey('channel-message-group-${message.id}'),
+                      padding: EdgeInsets.only(
+                        bottom: index == 0 ? Grid.xs : 0,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (showDayDivider)
+                            DayDivider(
+                              label: formatDayHeading(message.createdAt),
+                              dayTimestamp: message.createdAt,
+                              stickyDayTimestamp: stickyDayTimestamp,
+                            ),
+                          if (message.isSystem)
+                            _SystemMessageRow(
+                              message: message,
+                              groupedMessages: entryGroup.length > 1
+                                  ? entryGroup
+                                        .map((entry) => entry.message)
+                                        .toList()
+                                  : null,
+                              channelId: channelId,
+                              currentPubkey: currentPubkey,
+                              allMessages: allMessages,
+                              isMember: isMember,
+                              isArchived: isArchived,
+                            )
+                          else ...[
+                            _MessageBubble(
+                              message: message,
+                              showAuthor: showAuthor,
+                              hasReplies: entry.summary != null,
+                              channelNames: channelNamesMap,
+                              currentChannelId: channelId,
+                              currentPubkey: currentPubkey,
+                              allMessages: allMessages,
+                              isMember: isMember,
+                              isArchived: isArchived,
+                              composerFocusNode: composerFocusNode,
+                              restoreComposerFocus: restoreComposerFocus,
+                              quoteScope: quoteScope,
+                            ),
+                            if (entry.summary != null)
+                              _ThreadSummaryRow(
+                                summary: entry.summary!,
+                                message: message,
+                                allMessages: allMessages,
+                                channelId: channelId,
+                                currentPubkey: currentPubkey,
+                                isMember: isMember,
+                                isArchived: isArchived,
+                              ),
+                          ],
+                        ],
                       ),
                     ),
                   );
-                }
-
-                // Reversed list: index 0 = newest (bottom of screen).
-                final chronIdx = displayEntries.length - 1 - index;
-                final entryGroup = displayEntries[chronIdx];
-                final entry = entryGroup.first;
-                final message = entry.message;
-
-                // Day boundary check — applies to all messages including system.
-                final prevEntry = chronIdx > 0
-                    ? displayEntries[chronIdx - 1].last
-                    : null;
-                final prevMessage = prevEntry?.message;
-                final showDayDivider =
-                    prevMessage == null ||
-                    !isSameDay(prevMessage.createdAt, message.createdAt);
-
-                final showAuthor =
-                    !message.isSystem &&
-                    (message.hasAttachments ||
-                        prevMessage == null ||
-                        prevMessage.isSystem ||
-                        showDayDivider ||
-                        prevMessage.pubkey.toLowerCase() !=
-                            message.pubkey.toLowerCase() ||
-                        (message.createdAt - prevMessage.createdAt) > 300);
-
-                return LocalMessageSendTransition(
-                  key: ValueKey('channel-message-send-${message.id}'),
-                  animate: isRecentLocalMessageSendAnimation(
-                    localSendAnimations,
-                    message.id,
-                  ),
-                  startOffsetFactor: showAuthor
-                      ? localMessageSendTransitionAvatarStartOffset
-                      : localMessageSendTransitionStartOffset,
-                  child: Padding(
-                    key: ValueKey('channel-message-group-${message.id}'),
-                    padding: EdgeInsets.only(bottom: index == 0 ? Grid.xs : 0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (showDayDivider)
-                          DayDivider(
-                            label: formatDayHeading(message.createdAt),
-                            dayTimestamp: message.createdAt,
-                            stickyDayTimestamp: stickyDayTimestamp,
-                          ),
-                        if (message.isSystem)
-                          _SystemMessageRow(
-                            message: message,
-                            groupedMessages: entryGroup.length > 1
-                                ? entryGroup
-                                      .map((entry) => entry.message)
-                                      .toList()
-                                : null,
-                            channelId: channelId,
-                            currentPubkey: currentPubkey,
-                            allMessages: allMessages,
-                            isMember: isMember,
-                            isArchived: isArchived,
-                          )
-                        else ...[
-                          _MessageBubble(
-                            message: message,
-                            showAuthor: showAuthor,
-                            hasReplies: entry.summary != null,
-                            channelNames: channelNamesMap,
-                            currentChannelId: channelId,
-                            currentPubkey: currentPubkey,
-                            allMessages: allMessages,
-                            isMember: isMember,
-                            isArchived: isArchived,
-                            composerFocusNode: composerFocusNode,
-                            restoreComposerFocus: restoreComposerFocus,
-                            quoteScope: quoteScope,
-                          ),
-                          if (entry.summary != null)
-                            _ThreadSummaryRow(
-                              summary: entry.summary!,
-                              message: message,
-                              allMessages: allMessages,
-                              channelId: channelId,
-                              currentPubkey: currentPubkey,
-                              isMember: isMember,
-                              isArchived: isArchived,
-                            ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
+                },
+              ),
             ),
           ),
-        ),
-        if (!showUnreadNavigation)
-          Positioned(
-            left: 0,
-            right: 0,
-            top:
-                frostedAppBarHeight(
-                  context,
-                  titleContentHeight: appBarTitleContentHeight,
-                ) +
-                Grid.twelve,
-            child: StickyDateHeader(
-              key: const ValueKey('channel-sticky-date-header'),
-              state: stickyDateHeaderState,
+          if (!showUnreadNavigation)
+            Positioned(
+              left: 0,
+              right: 0,
+              top:
+                  frostedAppBarHeight(
+                    context,
+                    titleContentHeight: appBarTitleContentHeight,
+                  ) +
+                  Grid.twelve,
+              child: StickyDateHeader(
+                key: const ValueKey('channel-sticky-date-header'),
+                state: stickyDateHeaderState,
+              ),
             ),
-          ),
-        if (showUnreadNavigation)
-          Positioned(
-            left: 0,
-            right: 0,
-            top:
-                frostedAppBarHeight(
-                  context,
-                  titleContentHeight: appBarTitleContentHeight,
-                ) +
-                Grid.xs,
-            child: Center(
-              child: IconButton.filled(
-                key: const ValueKey('channel-jump-to-oldest-unread'),
-                onPressed: scrollToOldestUnread,
-                tooltip: 'Jump to oldest unread message',
-                style: IconButton.styleFrom(
-                  backgroundColor: context.colors.primaryContainer,
-                  foregroundColor: context.colors.onPrimaryContainer,
+          if (showUnreadNavigation)
+            Positioned(
+              left: 0,
+              right: 0,
+              top:
+                  frostedAppBarHeight(
+                    context,
+                    titleContentHeight: appBarTitleContentHeight,
+                  ) +
+                  Grid.xs,
+              child: Center(
+                child: IconButton.filled(
+                  key: const ValueKey('channel-jump-to-oldest-unread'),
+                  onPressed: scrollToOldestUnread,
+                  tooltip: 'Jump to oldest unread message',
+                  style: IconButton.styleFrom(
+                    backgroundColor: context.colors.primaryContainer,
+                    foregroundColor: context.colors.onPrimaryContainer,
+                  ),
+                  icon: const Icon(LucideIcons.chevronUp, size: 20),
                 ),
-                icon: const Icon(LucideIcons.chevronUp, size: 20),
+              ),
+            )
+          else
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: navigationBottomInset + Grid.xs,
+              child: Center(
+                child: JumpToLatestSwitcher(
+                  id: 'channel',
+                  visible: isJumpToLatestVisible.value,
+                  onPressed: scrollToLatest,
+                ),
               ),
             ),
-          )
-        else
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: navigationBottomInset + Grid.xs,
-            child: Center(
-              child: JumpToLatestSwitcher(
-                id: 'channel',
-                visible: isJumpToLatestVisible.value,
-                onPressed: scrollToLatest,
-              ),
-            ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

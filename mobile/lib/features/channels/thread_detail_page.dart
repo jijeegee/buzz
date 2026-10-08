@@ -527,6 +527,63 @@ class ThreadDetailPage extends HookConsumerWidget {
       unawaited(navigateToTail());
     }
 
+    final quoteJumpHighlightTimer = useRef<Timer?>(null);
+    useEffect(
+      () =>
+          () => quoteJumpHighlightTimer.value?.cancel(),
+      const [],
+    );
+
+    // A quote of a row this thread already shows scrolls in place and flashes
+    // the deep-link landing highlight instead of pushing a duplicate thread.
+    bool jumpToQuotedMessage(String messageId) {
+      final chronologicalIndex = replies.indexWhere(
+        (reply) => reply.id == messageId,
+      );
+      final targetIndex = messageId == liveHead.id
+          ? headIndex
+          : chronologicalIndex < 0
+          ? null
+          : indexForReply(chronologicalIndex);
+      if (targetIndex == null || !itemScrollController.isAttached) {
+        return false;
+      }
+      // Like Latest, this explicit navigation supersedes a pending deep-link
+      // jump, its landing highlight, and any in-flight tail correction.
+      tailCorrectionGeneration.value++;
+      tailCorrectionInProgress.value = false;
+      isNavigatingToThreadTail.value = false;
+      didJumpToInitialMessage.value = true;
+      initialHighlightTargetIndex.value = null;
+      initialTargetReadyForHighlight.value = false;
+      initialTailSettle.abandon();
+      tailIntent.detach();
+      userOptedOutOfTailFollow.value = true;
+      userDragDetachedTailFollow.value = false;
+      followsThreadTail.value = false;
+      isAtThreadTail.value = false;
+      unawaited(
+        itemScrollController.scrollTo(
+          index: targetIndex,
+          alignment: 0.35,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+      highlightedMessageId.value = messageId;
+      quoteJumpHighlightTimer.value?.cancel();
+      quoteJumpHighlightTimer.value = Timer(
+        _landingHighlightDuration +
+            (reducedLandingHighlightMotion
+                ? Duration.zero
+                : _landingHighlightTransitionDuration),
+        () {
+          if (context.mounted) highlightedMessageId.value = null;
+        },
+      );
+      return true;
+    }
+
     useEffect(
       () {
         final messageId = initialMessageId;
@@ -888,66 +945,70 @@ class ThreadDetailPage extends HookConsumerWidget {
           Column(
             children: [
               Expanded(
-                child: _ThreadMessageList(
-                  viewport: listViewport,
-                  onUserScrollStart: () {
-                    hidesLatestForInitialTailSettle.value = false;
-                    hidesLatestForComposerTailCorrection.value = false;
-                    initialTailSettle.abandon();
-                    initialViewportReady.value = true;
-                    tailCorrectionInProgress.value = false;
-                    isNavigatingToThreadTail.value = false;
-                    tailIntent.beginDrag();
-                    userOptedOutOfTailFollow.value = true;
-                    userDragDetachedTailFollow.value = true;
-                    followsThreadTail.value = false;
-                  },
-                  onUserScrollEnd: () {
-                    tailIntent.endDrag();
-                    tailIntent.schedule(
-                      allowed: userOptedOutOfTailFollow.value,
-                      revalidate: () =>
-                          context.mounted &&
-                          itemScrollController.isAttached &&
-                          !tailIntent.isDragging &&
-                          userOptedOutOfTailFollow.value,
-                      action: () {
-                        _resumeThreadTailFollow(
-                          isVisible: threadTailIsVisible,
-                          userOptedOut: userOptedOutOfTailFollow,
-                          followsTail: followsThreadTail,
-                        );
-                        if (!userOptedOutOfTailFollow.value) {
-                          userDragDetachedTailFollow.value = false;
-                        }
-                      },
-                    );
-                  },
-                  visible: threadViewportVisible,
-                  itemScrollController: itemScrollController,
-                  itemPositionsListener: itemPositionsListener,
-                  bottomInset: timelineBottomInset,
-                  replies: replies,
-                  relayReplyState: relayReplyState,
-                  onRetryReplies: () =>
-                      ref.invalidate(threadRepliesProvider(repliesArgs)),
-                  localSendAnimations: localSendAnimations,
-                  trackActiveScrollPosition: trackActiveScrollPosition,
-                  headIsDeleted: liveDeletionHidesHead,
-                  head: liveHead,
-                  stickyDayTimestamp: stickyDayTimestamp,
-                  channelNames: channelNamesMap,
+                child: QuoteJumpScope(
                   channelId: channelId,
-                  currentPubkey: currentPubkey,
-                  highlightedMessageId: highlightedMessageId.value,
-                  allMessages: allMsgs,
-                  isMember: isMember,
-                  isArchived: isArchived,
-                  composerFocusNode: composerFocusNode,
-                  restoreComposerFocus: () =>
-                      restoreComposerFocus.value?.call(),
-                  childrenByParent: childrenByParent,
-                  quoteScope: isMember && !isArchived ? quoteScope : null,
+                  jumpToMessage: jumpToQuotedMessage,
+                  child: _ThreadMessageList(
+                    viewport: listViewport,
+                    onUserScrollStart: () {
+                      hidesLatestForInitialTailSettle.value = false;
+                      hidesLatestForComposerTailCorrection.value = false;
+                      initialTailSettle.abandon();
+                      initialViewportReady.value = true;
+                      tailCorrectionInProgress.value = false;
+                      isNavigatingToThreadTail.value = false;
+                      tailIntent.beginDrag();
+                      userOptedOutOfTailFollow.value = true;
+                      userDragDetachedTailFollow.value = true;
+                      followsThreadTail.value = false;
+                    },
+                    onUserScrollEnd: () {
+                      tailIntent.endDrag();
+                      tailIntent.schedule(
+                        allowed: userOptedOutOfTailFollow.value,
+                        revalidate: () =>
+                            context.mounted &&
+                            itemScrollController.isAttached &&
+                            !tailIntent.isDragging &&
+                            userOptedOutOfTailFollow.value,
+                        action: () {
+                          _resumeThreadTailFollow(
+                            isVisible: threadTailIsVisible,
+                            userOptedOut: userOptedOutOfTailFollow,
+                            followsTail: followsThreadTail,
+                          );
+                          if (!userOptedOutOfTailFollow.value) {
+                            userDragDetachedTailFollow.value = false;
+                          }
+                        },
+                      );
+                    },
+                    visible: threadViewportVisible,
+                    itemScrollController: itemScrollController,
+                    itemPositionsListener: itemPositionsListener,
+                    bottomInset: timelineBottomInset,
+                    replies: replies,
+                    relayReplyState: relayReplyState,
+                    onRetryReplies: () =>
+                        ref.invalidate(threadRepliesProvider(repliesArgs)),
+                    localSendAnimations: localSendAnimations,
+                    trackActiveScrollPosition: trackActiveScrollPosition,
+                    headIsDeleted: liveDeletionHidesHead,
+                    head: liveHead,
+                    stickyDayTimestamp: stickyDayTimestamp,
+                    channelNames: channelNamesMap,
+                    channelId: channelId,
+                    currentPubkey: currentPubkey,
+                    highlightedMessageId: highlightedMessageId.value,
+                    allMessages: allMsgs,
+                    isMember: isMember,
+                    isArchived: isArchived,
+                    composerFocusNode: composerFocusNode,
+                    restoreComposerFocus: () =>
+                        restoreComposerFocus.value?.call(),
+                    childrenByParent: childrenByParent,
+                    quoteScope: isMember && !isArchived ? quoteScope : null,
+                  ),
                 ),
               ),
               if (!isMember || isArchived)
