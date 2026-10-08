@@ -31,6 +31,8 @@ export type InboxRoomEntry = {
   messageId: string | null;
   /** A thread reply opens its thread; anything else only scrolls to it. */
   opensThread: boolean;
+  /** Thread the entry opens, so the thread panel opens with the navigation. */
+  threadHeadId: string | null;
 };
 
 function isThreadReplyEvent(event: FeedItem) {
@@ -75,10 +77,13 @@ export function getInboxRoomEntry(
   const events = item.groupItems.length > 0 ? item.groupItems : [item.item];
   const threadReplies = events.filter(isThreadReplyEvent);
   if (threadReplies.length > 0) {
+    const latestReply = latestEvent(threadReplies);
+    const thread = getThreadReference(latestReply.tags);
     return {
       channelId,
-      messageId: latestEvent(threadReplies).id,
+      messageId: latestReply.id,
       opensThread: true,
+      threadHeadId: thread.rootId ?? thread.parentId,
     };
   }
 
@@ -93,6 +98,7 @@ export function getInboxRoomEntry(
     channelId,
     messageId: isRoomRow ? null : latestEvent(events).id,
     opensThread: false,
+    threadHeadId: null,
   };
 }
 

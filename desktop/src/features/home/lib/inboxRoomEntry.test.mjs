@@ -43,6 +43,7 @@ test("a thread row opens its thread at the latest reply", () => {
     channelId: "chan-1",
     messageId: "newest",
     opensThread: true,
+    threadHeadId: ROOT,
   });
 });
 
@@ -58,6 +59,7 @@ test("a channel main row lands on the room's newest message", () => {
     channelId: "chan-1",
     messageId: null,
     opensThread: false,
+    threadHeadId: null,
   });
 });
 
@@ -70,6 +72,7 @@ test("a DM lands on the room's newest message in any chat filter", () => {
     channelId: "chan-1",
     messageId: null,
     opensThread: false,
+    threadHeadId: null,
   });
 });
 
@@ -107,5 +110,6 @@ test("a single top-level mention lands on itself without a thread", () => {
     channelId: "chan-1",
     messageId: "mention",
     opensThread: false,
+    threadHeadId: null,
   });
 });
