@@ -80,39 +80,38 @@ void main() {
     expect(hostDeviceFromMetadata({hostDeviceField: 'e8c41c31'}), 'e8c41c31');
   });
 
-  test('only the verified owner sees the device robot', () {
+  test('agent badge: device robot for the owner, owner mark for others', () {
     final owner = 'a' * 64;
     const tag = 'e8c41c31';
+    final mine = agentBadge(
+      hostDevice: tag,
+      ownerPubkey: owner,
+      viewerPubkey: owner.toUpperCase(),
+    );
+    expect(mine, isA<AgentDeviceBadge>());
+    expect((mine! as AgentDeviceBadge).variant.tag, tag);
+    final theirs = agentBadge(
+      hostDevice: tag,
+      ownerPubkey: owner.toUpperCase(),
+      viewerPubkey: 'b' * 64,
+    );
+    expect(theirs, isA<AgentOwnerBadge>());
+    expect((theirs! as AgentOwnerBadge).ownerPubkey, owner);
     expect(
-      agentDeviceRobotVariant(
-        hostDevice: tag,
-        ownerPubkey: owner,
-        viewerPubkey: owner.toUpperCase(),
-      )?.tag,
-      tag,
+      agentBadge(hostDevice: null, ownerPubkey: 'c' * 64, viewerPubkey: owner),
+      isA<AgentOwnerBadge>(),
+      reason: 'others see the owner even without a host device',
     );
     expect(
-      agentDeviceRobotVariant(
-        hostDevice: tag,
-        ownerPubkey: owner,
-        viewerPubkey: 'b' * 64,
-      ),
+      agentBadge(hostDevice: tag, ownerPubkey: null, viewerPubkey: owner),
       isNull,
     );
     expect(
-      agentDeviceRobotVariant(
-        hostDevice: tag,
-        ownerPubkey: null,
-        viewerPubkey: owner,
-      ),
+      agentBadge(hostDevice: null, ownerPubkey: owner, viewerPubkey: owner),
       isNull,
     );
     expect(
-      agentDeviceRobotVariant(
-        hostDevice: null,
-        ownerPubkey: owner,
-        viewerPubkey: owner,
-      ),
+      agentBadge(hostDevice: tag, ownerPubkey: owner, viewerPubkey: null),
       isNull,
     );
   });

@@ -151,6 +151,16 @@ class AccountApi {
   Future<void> revokeDevice(String deviceId) =>
       _send('DELETE', '/auth/devices/${Uri.encodeComponent(deviceId)}');
 
+  /// Rename [deviceId] (any of this account's devices).
+  Future<AccountDevice> renameDevice(String deviceId, String name) async {
+    final response = await _send(
+      'PATCH',
+      '/auth/devices/${Uri.encodeComponent(deviceId)}',
+      body: {'name': name},
+    );
+    return AccountDevice.fromJson(_object(response));
+  }
+
   /// Sign out every other human session; bots are untouched.
   Future<void> revokeOtherSessions() =>
       _send('POST', '/auth/sessions/revoke-others');

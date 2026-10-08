@@ -345,6 +345,28 @@ pub(crate) async fn list_devices(
     .await
 }
 
+/// `PATCH /auth/devices/{id}` — rename; returns the updated row.
+pub(crate) async fn rename_device(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    device_id: &str,
+    name: &str,
+) -> Result<DeviceInfo, ApiError> {
+    let device_id = uuid::Uuid::parse_str(device_id).map_err(|_| ApiError {
+        status: None,
+        code: None,
+        message: "invalid device id".into(),
+    })?;
+    send_json(
+        client
+            .patch(format!("{origin}/auth/devices/{device_id}"))
+            .header("Authorization", bearer(access))
+            .json(&serde_json::json!({ "name": name })),
+    )
+    .await
+}
+
 /// `DELETE /auth/devices/{id}`.
 pub(crate) async fn revoke_device(
     client: &reqwest::Client,

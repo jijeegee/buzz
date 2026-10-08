@@ -179,8 +179,8 @@ class _ThreadMessage extends HookConsumerWidget {
                               message.pubkey,
                               names: channelIdentityNamesProvider(channelId),
                             ),
-                            child: DeviceRobotAvatarBadge(
-                              robot: agentDeviceRobotVariant(
+                            child: AgentAvatarBadge(
+                              badge: agentBadge(
                                 hostDevice: profile?.hostDevice,
                                 ownerPubkey: profile?.ownerPubkey,
                                 viewerPubkey: currentPubkey,

@@ -96,20 +96,40 @@ String? hostDeviceFromMetadata(Map<String, dynamic> metadata) {
   return value is String && _tagPattern.hasMatch(value) ? value : null;
 }
 
-/// The robot an agent shows to [viewerPubkey]: only the agent's verified
-/// NIP-OA owner sees the device robot, so another account's agent cannot pose
-/// as one of the viewer's own computers. Everyone else gets `null`.
-DeviceRobotVariant? agentDeviceRobotVariant({
+/// What sits in an agent's robot slot for a viewer (see [agentBadge]).
+@immutable
+sealed class AgentBadge {
+  const AgentBadge();
+}
+
+/// The owner's view: the robot of the device the agent runs on.
+final class AgentDeviceBadge extends AgentBadge {
+  const AgentDeviceBadge(this.variant);
+  final DeviceRobotVariant variant;
+}
+
+/// Everyone else: a mark showing whose agent this is.
+final class AgentOwnerBadge extends AgentBadge {
+  const AgentOwnerBadge(this.ownerPubkey);
+  final String ownerPubkey;
+}
+
+/// The agent's verified NIP-OA owner sees its device robot; any other viewer
+/// sees an owner mark; `null` (no badge) when the agent has no verified owner
+/// or the owner's agent carries no host device.
+AgentBadge? agentBadge({
   required String? hostDevice,
   required String? ownerPubkey,
   required String? viewerPubkey,
 }) {
   final owner = ownerPubkey?.toLowerCase();
   final viewer = viewerPubkey?.toLowerCase();
-  if (owner == null || viewer == null || owner.isEmpty || owner != viewer) {
+  if (owner == null || owner.isEmpty || viewer == null || viewer.isEmpty) {
     return null;
   }
-  return deviceRobotVariantFromTag(hostDevice);
+  if (owner != viewer) return AgentOwnerBadge(owner);
+  final variant = deviceRobotVariantFromTag(hostDevice);
+  return variant == null ? null : AgentDeviceBadge(variant);
 }
 
 /// A drawing primitive on the 24×24 robot grid (stroke 2, round caps/joins).

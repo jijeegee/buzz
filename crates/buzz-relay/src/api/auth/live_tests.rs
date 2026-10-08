@@ -214,6 +214,10 @@ impl Instance {
         self.http.delete(self.url(path)).header("host", &self.host)
     }
 
+    fn patch(&self, path: &str) -> reqwest::RequestBuilder {
+        self.http.patch(self.url(path)).header("host", &self.host)
+    }
+
     async fn ws(&self) -> Ws {
         let mut request = format!("ws://{}/", self.addr)
             .into_client_request()
@@ -981,6 +985,36 @@ async fn every_revocation_path_revokes_its_tokens() {
         .as_str()
         .unwrap()
         .to_owned();
+    // Renaming trims, rejects empty names and other principals' devices.
+    let renamed: Value = inst
+        .patch(&format!("/auth/devices/{device}"))
+        .bearer_auth(&other.access)
+        .json(&json!({ "name": "  Office PC  " }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(renamed["name"], "Office PC");
+    assert_eq!(renamed["current"], true);
+    let empty = inst
+        .patch(&format!("/auth/devices/{device}"))
+        .bearer_auth(&other.access)
+        .json(&json!({ "name": "   " }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(empty.status(), 400);
+    let foreign = inst
+        .patch(&format!("/auth/devices/{device}"))
+        .bearer_auth(&owner.access)
+        .json(&json!({ "name": "stolen" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(foreign.status(), 404);
+
     let revoked = inst
         .delete(&format!("/auth/devices/{device}"))
         .bearer_auth(&other.access)

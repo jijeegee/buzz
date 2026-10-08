@@ -641,6 +641,7 @@ pub fn run() {
             auth::commands::get_ws_auth_frame,
             auth::commands::list_devices,
             auth::commands::revoke_device,
+            auth::commands::rename_device,
             auth::commands::revoke_other_sessions,
             auth::commands::revoke_all_bot_tokens,
             auth::commands::delete_account,

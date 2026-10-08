@@ -19,7 +19,7 @@ import {
   isManagedAgentActive,
 } from "@/features/agents/lib/managedAgentControlActions";
 import { AgentManagementMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
-import { useAgentDeviceRobot } from "@/features/profile/lib/useAgentDeviceRobot";
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import {
@@ -28,7 +28,6 @@ import {
   type ManagedAgentPairAction,
 } from "@/features/agents/managedAgentRuntimeStatus";
 import { truncateNpub } from "@/shared/lib/pubkey";
-import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
 import type {
   ChannelMember,
   ManagedAgent,
@@ -149,7 +148,6 @@ export function MembersSidebarMemberCard({
   viewerIsOwner,
 }: MembersSidebarMemberCardProps) {
   const roleLabel = formatRoleLabel(member, memberIsBot);
-  const robot = useAgentDeviceRobot(memberIsBot ? member.pubkey : null);
   const disabled = isActionPending || isArchived;
   const canViewActivity =
     memberIsBot &&
@@ -191,7 +189,10 @@ export function MembersSidebarMemberCard({
                   {memberLabel}
                 </span>
                 <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                  <DeviceRobotIcon className="h-4 w-4" variant={robot} />
+                  <AgentBadgeIcon
+                    agentPubkey={member.pubkey}
+                    className="h-4 w-4"
+                  />
                   {roleLabel}
                 </span>
               </div>

@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/animated_avatar.dart';
 import '../../shared/devices/device_robot.dart';
+import '../../shared/devices/agent_badge_widgets.dart';
 import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/identity_names/identity_names.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
@@ -71,7 +72,7 @@ class UserProfileSheet extends HookConsumerWidget {
     final profile =
         ref.watch(userCacheProvider.select((cache) => cache[pk])) ??
         ref.read(userCacheProvider.notifier).get(pk);
-    final deviceRobot = agentDeviceRobotVariant(
+    final badge = agentBadge(
       hostDevice: profile?.hostDevice,
       ownerPubkey: profile?.ownerPubkey,
       viewerPubkey: currentPubkey,
@@ -213,14 +214,25 @@ class UserProfileSheet extends HookConsumerWidget {
                               ),
                             ),
                           ),
-                          if (deviceRobot != null) ...[
+                          if (badge case AgentDeviceBadge(:final variant)) ...[
                             const SizedBox(width: Grid.half),
                             DeviceRobotIcon(
                               key: const Key('profile-device-robot'),
-                              variant: deviceRobot,
+                              variant: variant,
                               size: 22,
                               semanticLabel:
                                   'Robot of the device this agent runs on',
+                            ),
+                          ],
+                          if (badge case AgentOwnerBadge(
+                            :final ownerPubkey,
+                          )) ...[
+                            const SizedBox(width: Grid.half),
+                            OwnerAvatarMark(
+                              key: const Key('profile-agent-owner-mark'),
+                              ownerPubkey: ownerPubkey,
+                              size: 22,
+                              showRobot: true,
                             ),
                           ],
                         ],

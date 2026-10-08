@@ -93,19 +93,28 @@ export function deviceRobotVariantForDevice(
   return deviceRobotVariantFromTag(deviceRobotTag(deviceId));
 }
 
+export type AgentBadge =
+  | { kind: "device"; variant: DeviceRobotVariant }
+  | { kind: "owner"; ownerPubkey: string }
+  | { kind: "default" };
+
 /**
- * The robot an agent shows to `viewerPubkey`: only the agent's verified
- * NIP-OA owner sees the device robot, so another account's agent cannot
- * pose as one of the viewer's own computers. Everyone else gets `null`
- * (the default robot).
+ * What sits in an agent's robot slot for `viewerPubkey`: its owner sees the
+ * robot of the device it runs on; everyone else sees an owner mark (the
+ * owner's avatar with a robot badge) so they can tell whose agent it is; an
+ * agent without a verified owner, or an owner viewing an agent with no host
+ * device, keeps the default robot.
  */
-export function agentDeviceRobotVariant(input: {
+export function agentBadge(input: {
   hostDevice: string | null | undefined;
   ownerPubkey: string | null | undefined;
   viewerPubkey: string | null | undefined;
-}): DeviceRobotVariant | null {
+}): AgentBadge {
   const owner = input.ownerPubkey?.toLowerCase();
+  if (!owner) return { kind: "default" };
   const viewer = input.viewerPubkey?.toLowerCase();
-  if (!owner || !viewer || owner !== viewer) return null;
-  return deviceRobotVariantFromTag(input.hostDevice);
+  if (!viewer) return { kind: "default" };
+  if (owner !== viewer) return { kind: "owner", ownerPubkey: owner };
+  const variant = deviceRobotVariantFromTag(input.hostDevice);
+  return variant ? { kind: "device", variant } : { kind: "default" };
 }

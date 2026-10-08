@@ -44,6 +44,11 @@ const tauriMock = {
         return Promise.resolve(devices);
       case "revoke_device":
         return Promise.resolve(null);
+      case "rename_device": {
+        const device = devices.find((d) => d.id === args.deviceId);
+        device.name = args.name;
+        return Promise.resolve({ ...device });
+      }
       case "cancel_google_login":
         return cancelBehavior ? cancelBehavior(args) : Promise.resolve(false);
       case "login_with_google":
@@ -191,7 +196,9 @@ test("a signed-in community lists devices with one labelled sign-out per other d
   await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
   const list = container.querySelector("ul[aria-labelledby]");
   assert.ok(list, "device list is labelled by its heading");
-  const buttons = [...list.querySelectorAll("button")];
+  const buttons = [...list.querySelectorAll("button")].filter((b) =>
+    b.getAttribute("aria-label")?.startsWith("Sign out"),
+  );
   assert.equal(buttons.length, 1, "the current device has no sign-out button");
   assert.equal(buttons[0].getAttribute("aria-label"), "Sign out Work PC");
   // Each device shows its robot (the one its agents show their owner).
@@ -208,6 +215,39 @@ test("a signed-in community lists devices with one labelled sign-out per other d
   assert.deepEqual(calls.find((c) => c.command === "revoke_device").args, {
     deviceId: devices[1].id,
   });
+  await unmount();
+});
+
+test("any device can be renamed; the saved name is trimmed and Escape cancels", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount();
+  await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
+  const rename = (label) =>
+    container.querySelector(`button[aria-label='Rename ${label}']`);
+  assert.ok(rename("This Mac"), "this device is renamable");
+  assert.ok(rename("Work PC"), "other devices are renamable");
+
+  await act(async () => fireEvent.click(rename("Work PC")));
+  let input = container.querySelector(
+    "input[aria-label='New name for Work PC']",
+  );
+  await act(async () => fireEvent.keyDown(input, { key: "Escape" }));
+  assert.equal(container.querySelector("input"), null, "Escape cancels");
+
+  await act(async () => fireEvent.click(rename("Work PC")));
+  input = container.querySelector("input[aria-label='New name for Work PC']");
+  await act(async () =>
+    fireEvent.change(input, { target: { value: "  Office PC  " } }),
+  );
+  await act(async () => fireEvent.submit(input.closest("form")));
+  await settle(() => calls.some((c) => c.command === "rename_device"));
+  assert.deepEqual(calls.find((c) => c.command === "rename_device").args, {
+    deviceId: devices[1].id,
+    name: "Office PC",
+  });
+  await settle(() => container.textContent.includes("Office PC"));
+  assert.ok(rename("Office PC"), "list shows the new name");
+  devices[1].name = "Work PC";
   await unmount();
 });
 

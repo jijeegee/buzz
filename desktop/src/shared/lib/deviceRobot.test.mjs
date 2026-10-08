@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
-  agentDeviceRobotVariant,
+  agentBadge,
   DEVICE_ROBOT_COLORS,
   DEVICE_ROBOT_SHAPES,
   deviceRobotTag,
@@ -60,39 +60,38 @@ test("unknown devices fall back to the default robot", () => {
   }
 });
 
-test("only the agent's verified owner sees the device robot", () => {
+test("agent badge: device robot for the owner, owner mark for others", () => {
   const owner = "a".repeat(64);
   const hostDevice = GOLDEN.devices[0].tag;
-  assert.equal(
-    agentDeviceRobotVariant({
-      hostDevice,
-      ownerPubkey: owner,
-      viewerPubkey: owner.toUpperCase(),
-    })?.tag,
+  const mine = agentBadge({
     hostDevice,
-  );
-  assert.equal(
-    agentDeviceRobotVariant({
+    ownerPubkey: owner,
+    viewerPubkey: owner.toUpperCase(),
+  });
+  assert.equal(mine.kind, "device");
+  assert.equal(mine.variant.tag, hostDevice);
+  assert.deepEqual(
+    agentBadge({
       hostDevice,
+      ownerPubkey: owner.toUpperCase(),
+      viewerPubkey: "b".repeat(64),
+    }),
+    { kind: "owner", ownerPubkey: owner },
+  );
+  assert.deepEqual(
+    agentBadge({
+      hostDevice: null,
       ownerPubkey: owner,
       viewerPubkey: "b".repeat(64),
     }),
-    null,
+    { kind: "owner", ownerPubkey: owner },
+    "others see the owner even without a host device",
   );
-  assert.equal(
-    agentDeviceRobotVariant({
-      hostDevice,
-      ownerPubkey: null,
-      viewerPubkey: owner,
-    }),
-    null,
-  );
-  assert.equal(
-    agentDeviceRobotVariant({
-      hostDevice: null,
-      ownerPubkey: owner,
-      viewerPubkey: owner,
-    }),
-    null,
-  );
+  for (const input of [
+    { hostDevice, ownerPubkey: null, viewerPubkey: owner },
+    { hostDevice: null, ownerPubkey: owner, viewerPubkey: owner },
+    { hostDevice, ownerPubkey: owner, viewerPubkey: null },
+  ]) {
+    assert.deepEqual(agentBadge(input), { kind: "default" });
+  }
 });

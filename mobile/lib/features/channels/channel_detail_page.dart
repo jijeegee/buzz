@@ -13,7 +13,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../shared/devices/device_robot.dart';
-import '../../shared/devices/device_robot_icon.dart';
+import '../../shared/devices/agent_badge_widgets.dart';
 
 import '../../shared/animated_avatar.dart';
 import '../../shared/emoji/emoji_burst.dart';

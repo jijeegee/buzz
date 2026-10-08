@@ -40,8 +40,7 @@ import {
   PopoverContent,
 } from "@/shared/ui/popover";
 import { BotIdenticon } from "@/features/messages/ui/BotIdenticon";
-import { useAgentDeviceRobot } from "@/features/profile/lib/useAgentDeviceRobot";
-import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { useNow } from "@/shared/lib/useNow";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
@@ -319,7 +318,6 @@ function UserProfilePopoverBody({
   // shape as the pane/sidebar/memory fixes. Every real boundary is server-side;
   // this only decides whether to paint the "View activity log" button.
   const isOwner = useIsManagedAgent(isBotProfile ? pubkey : null);
-  const deviceRobot = useAgentDeviceRobot(isBotProfile ? pubkey : null);
   const identityQuery = useIdentityQuery();
   const currentPubkey = identityQuery.data?.pubkey;
   const ownerLabel = isBotProfile
@@ -417,11 +415,11 @@ function UserProfilePopoverBody({
             ownerPubkey={ownerPubkey}
             testId="user-profile-popover-agent-provenance"
           />
-          {isBotProfile && deviceRobot ? (
-            <DeviceRobotIcon
+          {isBotProfile ? (
+            <AgentBadgeIcon
+              agentPubkey={pubkey}
               className="h-4 w-4"
-              label="Robot of the device this agent runs on"
-              variant={deviceRobot}
+              fallback="none"
             />
           ) : null}
           {isBotProfile && botIdenticonValue ? (

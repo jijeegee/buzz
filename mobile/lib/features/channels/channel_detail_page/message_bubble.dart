@@ -186,8 +186,8 @@ class _MessageBubble extends HookConsumerWidget {
                               currentChannelId,
                             ),
                           ),
-                          child: DeviceRobotAvatarBadge(
-                            robot: agentDeviceRobotVariant(
+                          child: AgentAvatarBadge(
+                            badge: agentBadge(
                               hostDevice: profile?.hostDevice,
                               ownerPubkey: profile?.ownerPubkey,
                               viewerPubkey: currentPubkey,

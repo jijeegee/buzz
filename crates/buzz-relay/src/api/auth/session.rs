@@ -18,7 +18,7 @@ use super::oidc::{issue_session_tokens, refresh_cookie};
 use super::{
     auth_error, authenticate_session, authenticate_user, authenticate_user_session, bad_request,
     internal, json_object, not_found, optional_string, rate_limit, unavailable,
-    validate_avatar_url, validate_display_name,
+    validate_avatar_url, validate_device_name, validate_display_name,
 };
 use crate::identity::{kv, publish_revocations};
 use crate::state::AppState;
@@ -242,6 +242,19 @@ pub(super) async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMa
     }
 }
 
+fn device_json(
+    device: &buzz_db::identity::DeviceRecord,
+    current: Option<Uuid>,
+) -> serde_json::Value {
+    json!({
+        "id": device.id,
+        "name": device.name,
+        "platform": device.platform,
+        "last_seen_at": device.last_seen_at,
+        "current": Some(device.id) == current,
+    })
+}
+
 /// `GET /auth/devices`.
 pub(super) async fn list_devices(
     State(state): State<Arc<AppState>>,
@@ -254,20 +267,46 @@ pub(super) async fn list_devices(
     match state.db.list_devices(&binding.principal).await {
         Ok(devices) => axum::Json(
             devices
-                .into_iter()
-                .map(|device| {
-                    json!({
-                        "id": device.id,
-                        "name": device.name,
-                        "platform": device.platform,
-                        "last_seen_at": device.last_seen_at,
-                        "current": Some(device.id) == binding.device_id,
-                    })
-                })
+                .iter()
+                .map(|device| device_json(device, binding.device_id))
                 .collect::<Vec<_>>(),
         )
         .into_response(),
         Err(error) => internal("list_devices", &error),
+    }
+}
+
+/// `PATCH /auth/devices/{id}` — `{"name": "..."}`; any of the caller's live
+/// devices, not only the current one.
+pub(super) async fn rename_device(
+    State(state): State<Arc<AppState>>,
+    Path(device_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let binding = match authenticate_user_session(&state, &headers).await {
+        Ok(binding) => binding,
+        Err(response) => return response,
+    };
+    let body = match json_object(&body) {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let name = match body.get("name").and_then(serde_json::Value::as_str) {
+        Some(name) => name.trim(),
+        None => return bad_request("name must be a string"),
+    };
+    if let Err(response) = validate_device_name(name) {
+        return response;
+    }
+    match state
+        .db
+        .rename_device(&binding.principal, device_id, name)
+        .await
+    {
+        Ok(Some(device)) => axum::Json(device_json(&device, binding.device_id)).into_response(),
+        Ok(None) => not_found("device not found"),
+        Err(error) => internal("rename_device", &error),
     }
 }
 

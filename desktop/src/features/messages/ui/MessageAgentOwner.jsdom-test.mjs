@@ -21,6 +21,16 @@ function renderOwner({ viewer, hostDevice = TAG, ownerPubkey = OWNER }) {
   // What `useUsersBatchQuery` leaves behind for a resolved author, and the
   // signed-in identity: the robot needs no fetch of its own.
   queryClient.setQueryData(["identity"], { pubkey: viewer });
+  queryClient.setQueryData(usersBatchEntryKey(OWNER), {
+    fetchedAt: Date.now(),
+    summary: {
+      avatarUrl: null,
+      displayName: "Owner",
+      isAgent: false,
+      nip05Handle: null,
+      ownerPubkey: null,
+    },
+  });
   queryClient.setQueryData(usersBatchEntryKey(AGENT), {
     fetchedAt: Date.now(),
     summary: {
@@ -59,12 +69,24 @@ test("the owner sees the robot of the device the agent runs on", () => {
   assert.equal(robot.getAttribute("aria-hidden"), "true");
 });
 
-test("anyone else sees the default robot", () => {
+test("anyone else sees the owner mark instead of the device robot", () => {
   const { container } = renderOwner({ viewer: "b".repeat(64) });
   assert.equal(
     container.querySelector("[data-testid=device-robot-icon]"),
     null,
   );
+  const mark = container.querySelector("[data-testid=agent-owner-mark]");
+  assert.ok(mark, "owner mark rendered");
+  assert.equal(mark.getAttribute("data-owner-pubkey"), OWNER);
+  assert.equal(mark.getAttribute("title"), "Agent owned by Owner");
+});
+
+test("an agent without a verified owner shows the default robot", () => {
+  const { container } = renderOwner({
+    viewer: "b".repeat(64),
+    ownerPubkey: null,
+  });
+  assert.equal(container.querySelector("[data-testid=agent-owner-mark]"), null);
   assert.ok(container.querySelector("svg.lucide-bot"), "default bot shown");
 });
 
