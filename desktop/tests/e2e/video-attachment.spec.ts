@@ -1008,6 +1008,7 @@ test("video replies in threads open the review comments view", async ({
   page,
 }) => {
   await installVideoReviewHarness(page);
+  await openInboxOnNeedsAction(page);
 
   await page.goto("/");
   await page.getByTestId("channel-general").click();
@@ -1046,7 +1047,7 @@ test("video replies in threads open the review comments view", async ({
     "[00:01] > Tighten this transition.",
     { parentEventId: videoReply.id },
   )) as MockFeedMessage;
-  await pushMockFeedItems(page, [videoReply, reviewComment]);
+  await pushMockFeedItems(page, [videoReply, reviewComment], "needs_action");
 
   const threadSummary = page.locator(`[data-thread-head-id="${root.id}"]`);
   await expect(threadSummary).toBeVisible();
