@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { channelsQueryKey } from "@/features/channels/hooks";
+import { INBOX_DELETIONS_QUERY_KEY } from "@/features/home/lib/inboxDeletions";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
 import { mergeTimelineCacheMessages } from "@/features/messages/hooks";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
@@ -18,6 +19,8 @@ import {
   CHANNEL_EVENT_KINDS,
   CHANNEL_MESSAGE_EVENT_KINDS,
   HOME_MENTION_EVENT_KINDS,
+  KIND_DELETION,
+  KIND_NIP29_DELETE_EVENT,
 } from "@/shared/constants/kinds";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 import {
@@ -246,6 +249,16 @@ export function useLiveChannelUpdates(
     const channelId = getChannelIdFromTags(event.tags);
     if (!channelId) {
       return;
+    }
+
+    // A deleted message or thread must drop out of the inbox right away.
+    if (
+      event.kind === KIND_DELETION ||
+      event.kind === KIND_NIP29_DELETE_EVENT
+    ) {
+      void queryClient.invalidateQueries({
+        queryKey: INBOX_DELETIONS_QUERY_KEY,
+      });
     }
 
     if (!liveChannelIds.has(channelId)) {

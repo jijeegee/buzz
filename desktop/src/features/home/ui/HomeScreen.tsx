@@ -3,7 +3,14 @@ import * as React from "react";
 import { useAppShell } from "@/app/AppShellContext";
 import { markHiddenDmFeedItems } from "@/features/channels/dmResurface";
 import { useHiddenDmIds } from "@/features/channels/useHiddenDmIds";
-import { useHomeFeedQuery } from "@/features/home/hooks";
+import {
+  useHomeFeedQuery,
+  useInboxDeletedEventIds,
+} from "@/features/home/hooks";
+import {
+  collectInboxReferencedEventIds,
+  withoutDeletedFeedItems,
+} from "@/features/home/lib/inboxDeletions";
 import { HomeView } from "@/features/home/ui/HomeView";
 import type { HomeFeedResponse } from "@/shared/api/types";
 import {
@@ -50,6 +57,20 @@ export function HomeScreen({
           };
     return markHiddenDmFeedItems(withThreadActivity, hiddenDmIds);
   }, [hiddenDmIds, homeFeedQuery.data, threadActivityFeedItems]);
+  const referencedEventIds = React.useMemo(
+    () =>
+      augmentedFeed ? collectInboxReferencedEventIds(augmentedFeed.feed) : [],
+    [augmentedFeed],
+  );
+  const deletedEventIds = useInboxDeletedEventIds(referencedEventIds).data;
+  // A deleted message, or a deleted thread root, takes its inbox rows with it.
+  const visibleFeed = React.useMemo(
+    () =>
+      augmentedFeed && deletedEventIds
+        ? withoutDeletedFeedItems(augmentedFeed, deletedEventIds)
+        : augmentedFeed,
+    [augmentedFeed, deletedEventIds],
+  );
 
   return (
     <div
@@ -71,7 +92,7 @@ export function HomeScreen({
                 : undefined
             : undefined
         }
-        feed={augmentedFeed}
+        feed={visibleFeed}
         isLoading={homeFeedQuery.isLoading}
         onOpenContext={onOpenContext}
         onRefresh={() => {

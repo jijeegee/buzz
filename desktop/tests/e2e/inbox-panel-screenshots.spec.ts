@@ -147,3 +147,74 @@ test.describe("inbox panel beside the chat screen", () => {
     await page.screenshot({ path: `${SHOTS}/04-panel-shown.png` });
   });
 });
+
+test.describe("inbox rows land exactly where they point", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("re-clicking a thread keeps it open; a channel row lands on the newest message", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("buzz.desktop.inbox-filter", "conversations");
+    });
+    await installMockBridge(page, { mode: "mock" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await seedGeneralMessages(page);
+
+    // Make #general long enough to scroll, ending in a message the inbox
+    // never lists: "the channel's newest" must mean the room, not the feed.
+    await page.evaluate(() => {
+      const emit = (window as MockFeedWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      if (!emit) throw new Error("Mock bridge helpers missing.");
+      const now = Math.floor(Date.now() / 1000);
+      for (let index = 0; index < 40; index += 1) {
+        emit({
+          channelName: "general",
+          content: `Filler message ${index}`,
+          createdAt: now - 20 + index * 0.1,
+        });
+      }
+      emit({
+        channelName: "general",
+        content: "Newest message in general",
+        createdAt: now + 5,
+      });
+    });
+
+    const inboxRow = (text: string) =>
+      page
+        .locator('[data-testid^="home-inbox-item-"]')
+        .filter({ hasText: text })
+        .first();
+    const threadRow = inboxRow("Left two comments on the checklist thread.");
+    await threadRow.click();
+    const drawer = page.getByTestId("focus-thread-drawer-overlay");
+    await expect(drawer).toBeVisible({ timeout: 10_000 });
+
+    // Clicking the same row again lands there again, it never toggles.
+    await page
+      .getByTestId("inbox-panel")
+      .locator('[data-testid^="home-inbox-item-"]')
+      .filter({ hasText: "Left two comments on the checklist thread." })
+      .first()
+      .click();
+    await expect(drawer).toBeVisible({ timeout: 10_000 });
+
+    // The channel row lands on the room's newest message with no thread open.
+    await page
+      .getByTestId("inbox-panel")
+      .locator('[data-testid^="home-inbox-item-"]')
+      .filter({ hasNotText: "Left two comments" })
+      .filter({ hasText: "#general" })
+      .first()
+      .click();
+    await expect(drawer).toHaveCount(0);
+    await expect(
+      page
+        .getByTestId("message-timeline")
+        .getByText("Newest message in general"),
+    ).toBeInViewport({ timeout: 10_000 });
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/05-channel-row-latest.png` });
+  });
+});

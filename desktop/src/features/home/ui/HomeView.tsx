@@ -45,7 +45,10 @@ import {
   useResizableInboxListWidth,
 } from "@/features/home/useResizableInboxListWidth";
 import { getHomePaneLayout } from "@/features/home/lib/homePaneLayout";
-import { setInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
+import {
+  recordInboxRoomLanding,
+  setInboxPanelOpen,
+} from "@/features/home/lib/inboxPanelPreference";
 import {
   getInboxRoomEntry,
   opensInChatRoom,
@@ -777,6 +780,7 @@ export function HomeView({
           markItemRead(itemId);
           setEnteredConversationId(row.conversationId);
           setInboxPanelOpen(true);
+          recordInboxRoomLanding(roomEntry);
           handleEnterRoom(row, roomEntry);
           return;
         }

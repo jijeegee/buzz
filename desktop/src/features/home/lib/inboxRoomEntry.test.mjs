@@ -5,60 +5,107 @@ import { getInboxRoomEntry } from "./inboxRoomEntry.ts";
 
 const ROOT = "a".repeat(64);
 
-function row({
-  channelId = "chan-1",
-  channelType = "stream",
-  conversationId = "evt-1",
-  id = "evt-1",
-  kind = 9,
-  tags = [],
-} = {}) {
-  const item = { channelId, channelType, id, kind, pubkey: "p", tags };
+function event({ id, createdAt = 10, kind = 9, tags = [] }) {
   return {
-    conversationId,
-    groupItems: [item],
+    channelId: "chan-1",
+    channelType: "stream",
+    createdAt,
     id,
-    isActionRequired: false,
+    kind,
+    pubkey: "p",
+    tags,
+  };
+}
+
+function row(
+  groupItems,
+  { channelType = "stream", isActionRequired = false } = {},
+) {
+  const item = { ...groupItems[0], channelType };
+  return {
+    conversationId: item.id,
+    groupItems: groupItems.map((entry) => ({ ...entry, channelType })),
+    id: item.id,
+    isActionRequired,
     item,
   };
 }
 
-test("a thread reply lands on itself so its thread opens", () => {
-  const entry = getInboxRoomEntry(
-    row({ id: "reply", tags: [["e", ROOT, "", "reply"]] }),
-    "all",
-  );
-  assert.deepEqual(entry, { channelId: "chan-1", messageId: "reply" });
-});
+const reply = (id, createdAt) =>
+  event({ createdAt, id, tags: [["e", ROOT, "", "reply"]] });
 
-test("a channel main row opens the room without a target", () => {
+test("a thread row opens its thread at the latest reply", () => {
   const entry = getInboxRoomEntry(
-    row({ conversationId: "channel:chan-1" }),
+    row([reply("older", 10), reply("newest", 30), reply("middle", 20)]),
     "conversations",
   );
-  assert.deepEqual(entry, { channelId: "chan-1", messageId: null });
+  assert.deepEqual(entry, {
+    channelId: "chan-1",
+    messageId: "newest",
+    opensThread: true,
+  });
 });
 
-test("a DM opens the room without a target in any filter", () => {
-  const entry = getInboxRoomEntry(row({ channelType: "dm" }), "mention");
-  assert.deepEqual(entry, { channelId: "chan-1", messageId: null });
+test("a channel main row lands on the room's newest message", () => {
+  const entry = getInboxRoomEntry(
+    row([
+      event({ createdAt: 5, id: "old" }),
+      event({ createdAt: 50, id: "new" }),
+    ]),
+    "conversations",
+  );
+  assert.deepEqual(entry, {
+    channelId: "chan-1",
+    messageId: null,
+    opensThread: false,
+  });
 });
 
-test("a top-level mention outside the conversations view lands on it", () => {
-  const entry = getInboxRoomEntry(row(), "mention");
-  assert.deepEqual(entry, { channelId: "chan-1", messageId: "evt-1" });
+test("a DM lands on the room's newest message in any chat filter", () => {
+  const entry = getInboxRoomEntry(
+    row([event({ id: "dm" })], { channelType: "dm" }),
+    "mention",
+  );
+  assert.deepEqual(entry, {
+    channelId: "chan-1",
+    messageId: null,
+    opensThread: false,
+  });
 });
 
 test("rows without a channel have no chat room", () => {
-  assert.equal(getInboxRoomEntry(row({ channelId: null }), "all"), null);
+  const item = row([event({ id: "x" })]);
+  item.item.channelId = null;
+  assert.equal(getInboxRoomEntry(item, "all"), null);
 });
 
 test("work that is not a chat message keeps the inbox detail", () => {
-  assert.equal(getInboxRoomEntry(row(), "needs_action"), null);
-  assert.equal(getInboxRoomEntry(row(), "agent_activity"), null);
-  assert.equal(getInboxRoomEntry(row({ kind: 45001 }), "all"), null);
   assert.equal(
-    getInboxRoomEntry({ ...row(), isActionRequired: true }, "all"),
+    getInboxRoomEntry(row([event({ id: "a" })]), "needs_action"),
     null,
   );
+  assert.equal(
+    getInboxRoomEntry(row([event({ id: "a" })]), "agent_activity"),
+    null,
+  );
+  assert.equal(
+    getInboxRoomEntry(row([event({ id: "a", kind: 45001 })]), "all"),
+    null,
+  );
+  assert.equal(
+    getInboxRoomEntry(
+      row([event({ id: "a" })], { isActionRequired: true }),
+      "all",
+    ),
+    null,
+  );
+});
+
+test("a single top-level mention lands on itself without a thread", () => {
+  const entry = getInboxRoomEntry(row([event({ id: "mention" })]), "mention");
+  assert.deepEqual(entry, {
+    channelId: "chan-1",
+    messageId: "mention",
+    opensThread: false,
+  });
 });

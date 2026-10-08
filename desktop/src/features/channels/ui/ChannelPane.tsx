@@ -40,6 +40,10 @@ import { ThreadViewModeToggle } from "@/features/channels/ui/ThreadViewModeToggl
 import { FocusThreadDrawer } from "@/features/channels/ui/FocusThreadDrawer";
 import { THREAD_SURFACE_KEY } from "@/features/channels/lib/threadFocusLayout";
 import { getThreadPanelLayout } from "@/features/channels/lib/threadPanelLayout";
+import {
+  useLandAtLatest,
+  useLandAtLatestOnMount,
+} from "@/features/channels/lib/landAtLatest";
 import { useThreadViewMode } from "@/features/channels/lib/threadViewModePreference";
 import { useThreadViewModeSwitch } from "@/features/channels/ui/useThreadViewModeSwitch";
 import { useFocusDrawerPresence } from "@/features/channels/ui/useFocusDrawerPresence";
@@ -243,6 +247,11 @@ export const ChannelPane = React.memo(function ChannelPane({
     composerWrapperRef,
     `${activeChannelId}:${isSinglePanelView}:${hasMainComposerOverlay}`,
     "css-variable",
+    () => messageTimelineRef.current?.settleAtBottom() ?? false,
+  );
+  // Entered from the inbox as a chat room: land on the newest message.
+  useLandAtLatestOnMount(
+    useLandAtLatest(),
     () => messageTimelineRef.current?.settleAtBottom() ?? false,
   );
   const {
