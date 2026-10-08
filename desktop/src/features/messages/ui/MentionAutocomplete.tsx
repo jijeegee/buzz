@@ -211,7 +211,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     Automatically mention agents
                   </span>
                   <span className="text-2xs text-muted-foreground">
-                    Address selected agents in thread replies
+                    Address selected agents in channel and thread replies
                   </span>
                 </label>
                 <Switch
@@ -399,7 +399,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     <TooltipTrigger asChild>
                       <span className="absolute right-3 top-1/2 inline-flex -translate-y-1/2">
                         <Toggle
-                          aria-label={`${isAlwaysAddressed ? "Don't automatically mention" : "Automatically mention"} ${suggestion.displayName}${isAlwaysAddressed ? " in this thread" : ""}`}
+                          aria-label={`${isAlwaysAddressed ? "Don't automatically mention" : "Automatically mention"} ${suggestion.displayName}${isAlwaysAddressed ? " here" : ""}`}
                           className="h-6 w-6 p-0 data-[state=on]:bg-primary/15 data-[state=on]:text-primary"
                           data-always-address-pubkey={suggestion.pubkey?.toLowerCase()}
                           data-testid={`mention-always-address-${suggestion.pubkey}`}
@@ -430,7 +430,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     >
                       <span>
                         {isAlwaysAddressed
-                          ? "Don't automatically mention in this thread"
+                          ? "Don't automatically mention here"
                           : "Automatically mention"}
                       </span>
                       {alwaysAddressShortcut ? (

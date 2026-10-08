@@ -2,9 +2,9 @@ part of '../compose_bar.dart';
 
 const _autoMentionConfirmationDuration = Duration(seconds: 3);
 
-/// Thread-reply automatic agent mentions, matching desktop's
-/// `useThreadAgentAudience` + `useAgentAddressLockPicker`: the thread root's
-/// agents and agents the user mentions in the thread are inserted as
+/// Automatic agent mentions, matching desktop's `useThreadAgentAudience` +
+/// `useAgentAddressLockPicker`: the thread root's agents and agents the user
+/// mentions in a thread (or on the channel main timeline) are inserted as
 /// `@Name` at the start of every reply until removed.
 class _ThreadAgentPins {
   final bool active;
@@ -399,8 +399,7 @@ class _ThreadAgentPinChips extends StatelessWidget {
               padding: const EdgeInsets.only(right: Grid.xxs),
               child: Semantics(
                 button: true,
-                label:
-                    "Don't automatically mention ${agent.label} in this thread",
+                label: "Don't automatically mention ${agent.label} here",
                 excludeSemantics: true,
                 child: InputChip(
                   key: ValueKey('composer-address-lock-${agent.pubkey}'),

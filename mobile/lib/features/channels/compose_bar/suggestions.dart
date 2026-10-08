@@ -51,7 +51,7 @@ class _MentionSuggestions extends StatelessWidget {
                   style: context.textTheme.titleSmall,
                 ),
                 subtitle: Text(
-                  'Address selected agents in thread replies',
+                  'Address selected agents in channel and thread replies',
                   style: context.textTheme.labelSmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
@@ -102,7 +102,7 @@ class _MentionSuggestions extends StatelessWidget {
                         'mention-always-address-${candidate.pubkey}',
                       ),
                       tooltip: pinned
-                          ? "Don't automatically mention in this thread"
+                          ? "Don't automatically mention here"
                           : 'Automatically mention',
                       isSelected: pinned,
                       visualDensity: VisualDensity.compact,

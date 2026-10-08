@@ -9,11 +9,13 @@ void threadAgentPinTests() {
 
     Widget build({
       String? thread = 'thread-head',
+      bool channelMain = false,
       List<List<String>> rootTags = const [],
       void Function(List<String>)? onSent,
     }) => _buildComposeBar(
       threadHeadId: thread,
       threadRootTags: rootTags,
+      channelMainAgentAudience: channelMain,
       currentPubkey: owner,
       uploadService: _testUploadService(signer.nsec),
       relayConfig: () => _SwitchableRelayConfigNotifier(
@@ -322,7 +324,40 @@ void threadAgentPinTests() {
       expect(popover, findsNothing);
     });
 
-    testWidgets('channel composers have no automatic mentions', (tester) async {
+    testWidgets('channel main timeline keeps mentioned agents too', (
+      tester,
+    ) async {
+      final sent = <List<String>>[];
+      await tester.pumpWidget(
+        build(thread: null, channelMain: true, onSent: sent.add),
+      );
+      await enable(tester);
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), '@hel');
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(ValueKey('mention-always-address-$agent')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Helper Bot'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(ValueKey('composer-address-lock-$agent')),
+        findsOneWidget,
+      );
+      await tester.enterText(find.byType(TextField), '@Helper Bot hi');
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
+      await tester.pumpAndSettle();
+      expect(sent, [
+        [agent],
+      ]);
+      expect(draft(tester), '@Helper Bot ');
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('composers that do not opt in have no automatic mentions', (
+      tester,
+    ) async {
       await tester.pumpWidget(build(thread: null));
       await enable(tester);
       await _expandComposer(tester);

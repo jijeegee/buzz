@@ -93,7 +93,7 @@ test("agent rows offer automatic mention controls", async () => {
     }),
   );
   const selectedAction = view.getByRole("button", {
-    name: "Don't automatically mention Agent Ada in this thread",
+    name: "Don't automatically mention Agent Ada here",
   });
   assert.equal(selectedAction.getAttribute("aria-pressed"), "true");
   assert.equal(selectedAction.getAttribute("data-state"), "on");
@@ -135,7 +135,9 @@ test("automatic mention setting is visible by default without an options ingress
     name: "Automatically mention agents",
   });
   assert.equal(toggle.getAttribute("data-state"), "checked");
-  assert.ok(view.getByText("Address selected agents in thread replies"));
+  assert.ok(
+    view.getByText("Address selected agents in channel and thread replies"),
+  );
   assert.ok(view.getByRole("button", { name: "Mention Agent Ada" }));
 
   fireEvent.click(toggle);

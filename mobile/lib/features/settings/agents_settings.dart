@@ -28,7 +28,7 @@ class AgentsSettings extends ConsumerWidget {
           key: const ValueKey('settings-automatic-agent-mentions'),
           icon: LucideIcons.atSign,
           title: 'Automatically mention agents',
-          subtitle: 'Address selected agents in thread replies',
+          subtitle: 'Address selected agents in channel and thread replies',
           trailing: Switch.adaptive(value: enabled, onChanged: setEnabled),
           onTap: () => setEnabled(!enabled),
         ),

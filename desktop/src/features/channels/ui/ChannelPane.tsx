@@ -782,6 +782,11 @@ export const ChannelPane = React.memo(function ChannelPane({
                     {timeoutActive ? <ComposerTimeoutBanner /> : null}
                     <ComposerDockBackdrop gutterClassName="inset-x-5" />
                     <MessageComposer
+                      audienceContext={
+                        activeChannel && activeChannel.channelType !== "dm"
+                          ? { type: "channel" }
+                          : null
+                      }
                       channelId={activeChannel?.id ?? null}
                       channelName={activeChannel?.name ?? "channel"}
                       channelType={activeChannel?.channelType ?? null}

@@ -21,6 +21,10 @@ class ComposeBar extends HookConsumerWidget {
 
   /// Thread head tags; its agent `p` tags seed automatic mentions.
   final List<List<String>> threadRootTags;
+
+  /// Channel main timeline composers also retain mentioned agents (fork
+  /// behavior: agents converse on the main timeline too). Never for DMs.
+  final bool channelMainAgentAudience;
   const ComposeBar({
     super.key,
     required this.channelId,
@@ -29,6 +33,7 @@ class ComposeBar extends HookConsumerWidget {
     this.threadHeadId,
     this.rootId,
     this.threadRootTags = const [],
+    this.channelMainAgentAudience = false,
     this.focusNode,
     this.onFocusRestorerChanged,
     this.onFocusRequested,
@@ -414,6 +419,7 @@ class ComposeBar extends HookConsumerWidget {
       ownerPubkey: currentPubkey,
       channelId: channelId,
       threadHeadId: threadHeadId,
+      channelMain: channelMainAgentAudience && !isDmChannel,
     );
     List<MentionCandidate>? agentCandidates;
     MentionCandidate agentCandidate(String pubkey) {
