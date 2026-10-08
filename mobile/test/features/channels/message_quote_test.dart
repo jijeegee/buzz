@@ -280,20 +280,22 @@ void main() {
       List<TimelineMessage>? loadedMessages,
       QuotedMessage? fetched,
       List<List<String>>? tags,
+      QuoteJumpScope Function(Widget child)? wrap,
     }) async {
+      final header = MessageQuoteHeader(
+        channelId: _channelId,
+        tags:
+            tags ??
+            [
+              ['h', _channelId],
+              ['q', _quotedId, '', _alice],
+            ],
+        loadedMessages: loadedMessages,
+      );
       await tester.pumpWidget(
         WidgetHelpers.testable(
           overrides: overrides(fetched: fetched),
-          child: MessageQuoteHeader(
-            channelId: _channelId,
-            tags:
-                tags ??
-                [
-                  ['h', _channelId],
-                  ['q', _quotedId, '', _alice],
-                ],
-            loadedMessages: loadedMessages,
-          ),
+          child: wrap?.call(header) ?? header,
         ),
       );
       await tester.pumpAndSettle();
@@ -342,6 +344,88 @@ void main() {
           messageId: _quotedId,
           threadRootId: _rootId,
         ),
+      );
+    });
+
+    testWidgets('scrolls in place when the enclosing list shows it', (
+      tester,
+    ) async {
+      final jumps = <String>[];
+      final container = await pumpHeader(
+        tester,
+        loadedMessages: [_message(id: _quotedId, pubkey: _alice)],
+        wrap: (child) => QuoteJumpScope(
+          channelId: _channelId,
+          jumpToMessage: (messageId) {
+            jumps.add(messageId);
+            return true;
+          },
+          child: child,
+        ),
+      );
+
+      await tester.tap(find.byKey(ValueKey('message-quote-header-$_quotedId')));
+      await tester.pump();
+
+      expect(jumps, [_quotedId]);
+      expect(container.read(pendingDeepLinkProvider), isNull);
+    });
+
+    testWidgets('opens the deep link when the enclosing list lacks it', (
+      tester,
+    ) async {
+      final jumps = <String>[];
+      final container = await pumpHeader(
+        tester,
+        loadedMessages: [_message(id: _quotedId, pubkey: _alice)],
+        wrap: (child) => QuoteJumpScope(
+          channelId: _channelId,
+          jumpToMessage: (messageId) {
+            jumps.add(messageId);
+            return false;
+          },
+          child: child,
+        ),
+      );
+
+      await tester.tap(find.byKey(ValueKey('message-quote-header-$_quotedId')));
+      await tester.pump();
+
+      expect(jumps, [_quotedId]);
+      expect(
+        container.read(pendingDeepLinkProvider),
+        MessageDeepLink(channelId: _channelId, messageId: _quotedId),
+      );
+    });
+
+    testWidgets('opens the deep link for a quote from another channel', (
+      tester,
+    ) async {
+      const otherChannelId = '22222222-2222-4222-8222-222222222222';
+      final jumps = <String>[];
+      final container = await pumpHeader(
+        tester,
+        fetched: (
+          channelId: otherChannelId,
+          message: _message(id: _quotedId, pubkey: _alice, content: 'Fetched'),
+        ),
+        wrap: (child) => QuoteJumpScope(
+          channelId: _channelId,
+          jumpToMessage: (messageId) {
+            jumps.add(messageId);
+            return true;
+          },
+          child: child,
+        ),
+      );
+
+      await tester.tap(find.byKey(ValueKey('message-quote-header-$_quotedId')));
+      await tester.pump();
+
+      expect(jumps, isEmpty);
+      expect(
+        container.read(pendingDeepLinkProvider),
+        MessageDeepLink(channelId: otherChannelId, messageId: _quotedId),
       );
     });
 

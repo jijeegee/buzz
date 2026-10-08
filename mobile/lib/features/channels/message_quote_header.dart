@@ -14,9 +14,10 @@ import 'timeline_message.dart';
 /// Compact header for a message carrying a NIP-18 `q` tag.
 ///
 /// Resolves the quoted message from [loadedMessages] first and falls back to
-/// an event lookup by id. Tapping it opens the original message through the
-/// same `buzz://message` deep-link navigation used by message links. Renders
-/// nothing when [tags] has no well-formed quote.
+/// an event lookup by id. Tapping it scrolls to the original in place when the
+/// enclosing [QuoteJumpScope] already shows it; otherwise it opens the original
+/// through the same `buzz://message` deep-link navigation used by message
+/// links. Renders nothing when [tags] has no well-formed quote.
 class MessageQuoteHeader extends ConsumerWidget {
   final String channelId;
   final List<List<String>> tags;
@@ -81,19 +82,28 @@ class MessageQuoteHeader extends ConsumerWidget {
           child: InkWell(
             key: ValueKey('message-quote-header-$quotedMessageId'),
             borderRadius: BorderRadius.circular(Radii.md),
-            onTap: () => ref
-                .read(pendingDeepLinkProvider.notifier)
-                .open(
-                  Uri.parse(
-                    buildMessageLink(
-                      channelId: quotedChannelId,
-                      messageId: quotedMessageId,
-                      threadRootId: threadRootId == quotedMessageId
-                          ? null
-                          : threadRootId,
+            onTap: () {
+              final scope = context
+                  .getInheritedWidgetOfExactType<QuoteJumpScope>();
+              if (scope != null &&
+                  scope.channelId == quotedChannelId &&
+                  scope.jumpToMessage(quotedMessageId)) {
+                return;
+              }
+              ref
+                  .read(pendingDeepLinkProvider.notifier)
+                  .open(
+                    Uri.parse(
+                      buildMessageLink(
+                        channelId: quotedChannelId,
+                        messageId: quotedMessageId,
+                        threadRootId: threadRootId == quotedMessageId
+                            ? null
+                            : threadRootId,
+                      ),
                     ),
-                  ),
-                ),
+                  );
+            },
             child: _QuoteHeaderFrame(
               children: [
                 ConstrainedBox(
@@ -126,6 +136,27 @@ class MessageQuoteHeader extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Lets a message list scroll to a quoted message it already shows.
+///
+/// [jumpToMessage] returns `true` when the message is one of the list's
+/// loaded rows and the list has moved to it; `false` sends the quote header
+/// down the deep-link path instead. Read only at tap time, so rebuilding the
+/// scope never rebuilds its dependents.
+class QuoteJumpScope extends InheritedWidget {
+  final String channelId;
+  final bool Function(String messageId) jumpToMessage;
+
+  const QuoteJumpScope({
+    super.key,
+    required this.channelId,
+    required this.jumpToMessage,
+    required super.child,
+  });
+
+  @override
+  bool updateShouldNotify(QuoteJumpScope oldWidget) => false;
 }
 
 class _QuoteHeaderPlaceholder extends StatelessWidget {
