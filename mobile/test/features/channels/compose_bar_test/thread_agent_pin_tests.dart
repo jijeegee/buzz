@@ -220,6 +220,46 @@ void threadAgentPinTests() {
       expect(draft(tester), '@Helper Bot ');
     });
 
+    final popover = find.byKey(const ValueKey('mention-suggestions-popover'));
+
+    testWidgets('an automatic mention prefix does not open the picker', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(
+          rootTags: [
+            ['p', agent],
+          ],
+        ),
+      );
+      await enable(tester);
+      await _expandComposer(tester);
+      await tester.pumpAndSettle();
+      expect(draft(tester), '@Helper Bot ');
+      // Tapping back into the field puts the cursor after the prefix.
+      final field = tester.widget<TextField>(find.byType(TextField));
+      field.controller!.selection = const TextSelection.collapsed(offset: 12);
+      await tester.pumpAndSettle();
+      expect(popover, findsNothing);
+      await tester.enterText(find.byType(TextField), '@Helper Bot @hel');
+      await tester.pumpAndSettle();
+      expect(popover, findsOneWidget);      // Let the draft store's debounced write finish.
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('closing the composer dismisses the mention picker', (
+      tester,
+    ) async {
+      await tester.pumpWidget(build());
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), '@hel');
+      await tester.pumpAndSettle();
+      expect(popover, findsOneWidget);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      expect(popover, findsNothing);
+    });
+
     testWidgets('channel composers have no automatic mentions', (tester) async {
       await tester.pumpWidget(build(thread: null));
       await enable(tester);

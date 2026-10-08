@@ -366,6 +366,19 @@ class ComposeBar extends HookConsumerWidget {
       return () => controller.removeListener(listener);
     }, [controller]);
 
+    // Suggestions belong to an active composer. Once it loses focus (keyboard
+    // dismissed) the popup must not keep covering the input field.
+    useEffect(() {
+      void dismissSuggestionsWhenUnfocused() {
+        if (focusNode.hasFocus) return;
+        mentionQuery.value = null;
+        channelQuery.value = null;
+      }
+
+      focusNode.addListener(dismissSuggestionsWhenUnfocused);
+      return () => focusNode.removeListener(dismissSuggestionsWhenUnfocused);
+    }, [focusNode]);
+
     // Ranked mention candidates (desktop-parity ordering + eligibility).
     final suggestions = mentionQuery.value == null
         ? const <MentionCandidate>[]
