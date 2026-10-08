@@ -29,6 +29,7 @@ export type InboxFilter =
   | "project"
   | "mention"
   | "thread"
+  | "conversations"
   | "needs_action"
   | "agent_activity"
   | "reminders"
@@ -216,6 +217,22 @@ export function isThreadActivityItem(item: FeedItem) {
 function isThreadReplyItem(item: FeedItem) {
   const thread = getThreadReference(item.tags);
   return thread.parentId !== null && !isBroadcastReply(item.tags);
+}
+
+/**
+ * Thread root for a channel thread row, or null for channel main timeline,
+ * DM, and project rows. Used to resolve the thread's display name.
+ */
+export function getInboxThreadRootId(item: InboxItem): string | null {
+  if (item.item.channelType === "dm" || !item.item.channelId) return null;
+  if (item.groupItems.some(isProjectInboxItem)) return null;
+  for (const candidate of [item.item, ...item.groupItems]) {
+    if (isThreadReplyItem(candidate)) {
+      const thread = getThreadReference(candidate.tags);
+      return thread.rootId ?? thread.parentId;
+    }
+  }
+  return null;
 }
 
 function uniqueItemsById(items: readonly FeedItem[]) {

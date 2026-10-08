@@ -16,13 +16,33 @@ import type {
   RelayEvent,
   UserProfileSummary,
 } from "@/shared/api/types";
-import { KIND_REMINDER } from "@/shared/constants/kinds";
+import {
+  KIND_FORUM_POST,
+  KIND_REMINDER,
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+} from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
 
 function hasThreadReplyTags(tags: string[][]) {
   const thread = getThreadReference(tags);
   return thread.parentId !== null && !isBroadcastReply(tags);
+}
+
+const CHANNEL_MESSAGE_KINDS = new Set([
+  KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_V2,
+  KIND_FORUM_POST,
+]);
+
+function isChannelMainItem(item: FeedItem | undefined) {
+  return Boolean(
+    item?.channelId &&
+      CHANNEL_MESSAGE_KINDS.has(item.kind) &&
+      !isProjectInboxItem(item) &&
+      !hasThreadReplyTags(item.tags),
+  );
 }
 
 export function filterInboxItems(items: InboxItem[]) {
@@ -59,6 +79,18 @@ export function matchesInboxFilter(
     );
   }
 
+  if (filter === "conversations") {
+    const groupItems = [item.item, ...(item.groupItems ?? [])];
+    return (
+      groupItems.some((groupItem) =>
+        groupItem ? hasThreadReplyTags(groupItem.tags) : false,
+      ) ||
+      groupItems.every(
+        (groupItem) => !groupItem || isChannelMainItem(groupItem),
+      )
+    );
+  }
+
   if (filter === "project") {
     return [item.item, ...(item.groupItems ?? [])].some(
       (groupItem) => groupItem && isProjectInboxItem(groupItem),
@@ -73,6 +105,64 @@ export function matchesInboxFilter(
   }
 
   return item.categories.includes(filter);
+}
+
+/**
+ * The "conversations" view treats each channel's main timeline like one
+ * thread: top-level rows from the same channel collapse into a single row
+ * keyed `channel:<id>`, ordered by latest activity alongside thread rows.
+ * DM rows are already grouped per channel and pass through unchanged.
+ */
+export function collapseChannelMainRows(items: readonly InboxItem[]) {
+  const rows: InboxItem[] = [];
+  const channelRows = new Map<string, InboxItem>();
+
+  for (const item of items) {
+    const channelId = item.item.channelId;
+    const isMainRow =
+      channelId &&
+      item.item.channelType !== "dm" &&
+      [item.item, ...item.groupItems].every(isChannelMainItem);
+    if (!channelId || !isMainRow) {
+      rows.push(item);
+      continue;
+    }
+
+    const existing = channelRows.get(channelId);
+    if (!existing) {
+      const row = {
+        ...item,
+        conversationId: `channel:${channelId}`,
+        groupItems: [...item.groupItems],
+      };
+      channelRows.set(channelId, row);
+      rows.push(row);
+      continue;
+    }
+
+    const [latest, earlier] =
+      item.latestActivityAt > existing.latestActivityAt
+        ? [item, existing]
+        : [existing, item];
+    const merged: InboxItem = {
+      ...latest,
+      conversationId: existing.conversationId,
+      categories: [...new Set([...latest.categories, ...earlier.categories])],
+      groupItems: [...existing.groupItems, ...item.groupItems],
+      isActionRequired: existing.isActionRequired || item.isActionRequired,
+      latestActivityAt: Math.max(
+        existing.latestActivityAt,
+        item.latestActivityAt,
+      ),
+      unreadCount: existing.unreadCount + item.unreadCount,
+    };
+    channelRows.set(channelId, merged);
+    rows[rows.indexOf(existing)] = merged;
+  }
+
+  return rows.sort(
+    (left, right) => right.latestActivityAt - left.latestActivityAt,
+  );
 }
 
 export function matchesInboxAllView(

@@ -4,6 +4,7 @@ const _filterLabels = <InboxFilter, String>{
   InboxFilter.all: 'All',
   InboxFilter.mention: 'Mentions',
   InboxFilter.thread: 'Threads',
+  InboxFilter.conversations: 'Channels + Threads',
   InboxFilter.needsAction: 'Needs Action',
   InboxFilter.activity: 'Activity',
   InboxFilter.agentActivity: 'Agents',

@@ -129,6 +129,10 @@ class _EmptyFilterState extends StatelessWidget {
         LucideIcons.messageSquare,
         'No thread replies yet',
       ),
+      InboxFilter.conversations => (
+        LucideIcons.messagesSquare,
+        'No recent conversations',
+      ),
       InboxFilter.needsAction => (
         LucideIcons.circleAlert,
         'Nothing needs your action',

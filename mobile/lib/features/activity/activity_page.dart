@@ -28,12 +28,14 @@ import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
 import '../channels/dm_channel_labels.dart';
 import '../channels/message_content.dart';
+import '../channels/thread_name_provider.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import 'activity_provider.dart';
 import 'compose_drafts_provider.dart';
+import 'conversation_room.dart';
 import 'dm_resurface.dart';
 import 'inbox_item.dart';
 import 'inbox_local_state_provider.dart';
@@ -117,7 +119,9 @@ class ActivityPage extends HookConsumerWidget {
     final readState = ref.watch(readStateProvider);
     final localState = ref.watch(inboxLocalStateProvider);
     final drafts = ref.watch(composeDraftsProvider);
-    final allItems = ref.watch(inboxItemsProvider);
+    final allItems = filter.value == InboxFilter.conversations
+        ? ref.watch(conversationInboxItemsProvider)
+        : ref.watch(inboxItemsProvider);
     final myPk = ref.watch(myPubkeyProvider);
 
     // Cache the last non-empty feed so the UI doesn't flash on rebuild.
@@ -327,6 +331,8 @@ class ActivityPage extends HookConsumerWidget {
       await Future.wait([
         ref.read(activityProvider.notifier).refresh(),
         ref.read(remindersProvider.notifier).refresh(),
+        if (filter.value == InboxFilter.conversations)
+          ref.refresh(channelActivityProvider.future),
       ]);
     }
 
@@ -404,6 +410,8 @@ class ActivityPage extends HookConsumerWidget {
                           onTap: () => unawaited(openItem(item)),
                           onMarkRead: () => markItemRead(item),
                           onMarkUnread: () => markItemUnread(item),
+                          conversationView:
+                              filter.value == InboxFilter.conversations,
                         ),
                       ],
                     );

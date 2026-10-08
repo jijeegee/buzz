@@ -6,18 +6,26 @@ import {
   ExternalLink,
   LoaderCircle,
   MailOpen,
+  MessagesSquare,
 } from "lucide-react";
 import * as React from "react";
 
 import {
+  getInboxThreadRootId,
   getInboxTypeLabel,
   type InboxFilter,
   type InboxItem,
   type InboxTypeLabel,
 } from "@/features/home/lib/inbox";
+import {
+  formatInboxConversationRoomTitle,
+  type InboxConversationRoom,
+  resolveInboxConversationRoom,
+} from "@/features/home/lib/inboxConversationRoom";
 import { buildInboxListRows } from "@/features/home/lib/inboxListRows";
 import { hasRenderedVideoAttachment } from "@/features/messages/lib/videoReviewContext";
 import { getThreadReference } from "@/features/messages/lib/threading";
+import { useThreadNameLabel } from "@/features/messages/lib/useThreadName";
 import { InboxFilterMenu } from "@/features/home/ui/InboxFilterMenu";
 import {
   DraftsPanel,
@@ -32,6 +40,7 @@ import {
 } from "@/features/reminders/ui/RemindersPanel";
 import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
 import { cn } from "@/shared/lib/cn";
+import type { SidebarDmParticipant } from "@/features/sidebar/ui/SidebarSection";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
   ContextMenu,
@@ -57,6 +66,7 @@ const INBOX_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
   project: "No project work found",
   mention: "No mentions found",
   thread: "No threads found",
+  conversations: "No conversations found",
   needs_action: "Nothing needs action",
   agent_activity: "No agent updates found",
   reminders: "No reminders",
@@ -68,6 +78,7 @@ const INBOX_UNREAD_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
   project: "No unread project work",
   mention: "No unread mentions",
   thread: "No unread threads",
+  conversations: "No unread conversations",
   needs_action: "No unread items needing action",
   agent_activity: "No unread agent updates",
   reminders: "No unread reminders",
@@ -80,14 +91,19 @@ const INBOX_PANE_RIGHT_DIVIDER_CLASS =
   "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']";
 
 function InboxLabel({
+  channelId,
   isDone,
   isActionRequired,
   label,
+  threadId,
 }: {
+  channelId?: string | null;
   isDone: boolean;
   isActionRequired: boolean;
   label: InboxTypeLabel;
+  threadId?: string | null;
 }) {
+  const threadName = useThreadNameLabel(channelId, threadId);
   return (
     <div
       className={cn(
@@ -110,10 +126,92 @@ function InboxLabel({
           )}
           data-channel-link=""
         >
-          <span className="truncate">#{label.channelLabel}</span>
+          <span className="truncate">
+            #{label.channelLabel}
+            {threadId ? ` › ${threadName || "Thread"}` : null}
+          </span>
         </span>
       ) : null}
     </div>
+  );
+}
+
+/** Stable per-channel hue so each room keeps the same avatar color. */
+function conversationHue(channelId: string) {
+  let hash = 0;
+  for (const char of channelId) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  return hash % 360;
+}
+
+function ConversationRoomAvatar({
+  room,
+  testId,
+}: {
+  room: InboxConversationRoom;
+  testId: string;
+}) {
+  if (room.kind === "dm") {
+    // A DM room's picture is the other participant's profile.
+    const { person } = room;
+    return (
+      <div className="relative shrink-0" data-inbox-profile-trigger="true">
+        <UserProfilePopover
+          botIdenticonValue={person.label}
+          pubkey={person.pubkey}
+          role={person.isAgent ? "bot" : undefined}
+          triggerClassName={cn(
+            "shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+            person.isAgent ? "rounded-[30%]" : "rounded-full",
+          )}
+          triggerElement="span"
+          triggerTestId={testId}
+        >
+          <span className="inline-flex shrink-0">
+            <UserAvatar
+              avatarUrl={person.avatarUrl}
+              className="h-9 w-9"
+              displayName={person.label}
+              shape={person.isAgent ? "squircle" : "circle"}
+              size="md"
+            />
+          </span>
+        </UserProfilePopover>
+      </div>
+    );
+  }
+
+  // Channel and thread rooms share the channel's letter and color; a thread
+  // adds a badge.
+  const initial = Array.from(room.channelLabel)[0]?.toUpperCase() ?? "#";
+  const hue = conversationHue(room.channelId || room.channelLabel);
+  return (
+    <span
+      aria-hidden="true"
+      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
+      data-testid="home-inbox-conversation-avatar"
+      style={{ backgroundColor: `hsl(${hue} 55% 48%)` }}
+    >
+      {initial}
+      {room.kind === "thread" ? (
+        <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border">
+          <MessagesSquare className="h-2.5 w-2.5" />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function ConversationRoomTitle({ room }: { room: InboxConversationRoom }) {
+  const threadName = useThreadNameLabel(
+    room.kind === "thread" ? room.channelId : null,
+    room.kind === "thread" ? room.threadId : null,
+  );
+  return (
+    <span className="block min-w-0 flex-1 truncate text-sm font-semibold leading-4 text-foreground">
+      {formatInboxConversationRoomTitle(room, threadName)}
+    </span>
   );
 }
 
@@ -213,6 +311,9 @@ function PersonalItemRow({
 type InboxListPaneProps = {
   activeReminderEventIds?: ReadonlySet<string>;
   agentPubkeys?: ReadonlySet<string>;
+  /** DM room labels and counterparts, keyed by channel id. */
+  dmChannelLabels?: Readonly<Record<string, string>>;
+  dmParticipantsByChannelId?: Readonly<Record<string, SidebarDmParticipant[]>>;
   activeDraftCount: number;
   draftItems: DraftViewItem[];
   doneSet: ReadonlySet<string>;
@@ -243,6 +344,8 @@ type InboxListPaneProps = {
 export function InboxListPane({
   activeReminderEventIds,
   agentPubkeys,
+  dmChannelLabels,
+  dmParticipantsByChannelId,
   activeDraftCount,
   draftItems,
   doneSet,
@@ -272,6 +375,8 @@ export function InboxListPane({
   const isReminders = filter === "reminders";
   const isDrafts = filter === "drafts";
   const isMixedInboxView = filter === "all";
+  // Chat-list presentation: the conversation, not the sender, leads the row.
+  const isConversationView = filter === "conversations";
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inboxRows = React.useMemo(
     () =>
@@ -324,10 +429,20 @@ export function InboxListPane({
         ? "Reopening…"
         : "Open in channel";
     const typeLabel = getInboxTypeLabel(item);
+    const threadRootId = getInboxThreadRootId(item);
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);
     const isSenderAgent =
       agentPubkeys?.has(normalizePubkey(item.item.pubkey)) === true;
     const profileRole = isSenderAgent ? "bot" : undefined;
+    // In the conversations view the row is the chat room, not the message.
+    const conversationRoom = isConversationView
+      ? resolveInboxConversationRoom(item, {
+          dmChannelLabels,
+          dmParticipantsByChannelId,
+          isAgentPubkey: (pubkey) =>
+            agentPubkeys?.has(normalizePubkey(pubkey)) === true,
+        })
+      : null;
     const rowHighlightColor = isSelected
       ? "color-mix(in srgb, hsl(var(--background)) 70%, hsl(var(--muted)) 30%)"
       : "color-mix(in srgb, hsl(var(--background)) 75%, hsl(var(--muted)) 25%)";
@@ -375,50 +490,61 @@ export function InboxListPane({
           onClick={handleRowContentClick}
         >
           <div className="flex min-w-0 items-start gap-2.5">
-            <div
-              className="relative shrink-0"
-              data-inbox-profile-trigger="true"
-            >
-              <UserProfilePopover
-                botIdenticonValue={item.senderLabel}
-                pubkey={item.item.pubkey}
-                role={profileRole}
-                triggerClassName={cn(
-                  "shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                  isSenderAgent ? "rounded-[30%]" : "rounded-full",
-                )}
-                triggerElement="span"
-                triggerTestId={`home-inbox-avatar-${item.id}`}
+            {conversationRoom ? (
+              <ConversationRoomAvatar
+                room={conversationRoom}
+                testId={`home-inbox-avatar-${item.id}`}
+              />
+            ) : (
+              <div
+                className="relative shrink-0"
+                data-inbox-profile-trigger="true"
               >
-                <span className="inline-flex shrink-0">
-                  <UserAvatar
-                    avatarUrl={item.avatarUrl}
-                    className="h-9 w-9"
-                    displayName={item.senderLabel}
-                    shape={isSenderAgent ? "squircle" : "circle"}
-                    size="md"
-                  />
-                </span>
-              </UserProfilePopover>
-            </div>
+                <UserProfilePopover
+                  botIdenticonValue={item.senderLabel}
+                  pubkey={item.item.pubkey}
+                  role={profileRole}
+                  triggerClassName={cn(
+                    "shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                    isSenderAgent ? "rounded-[30%]" : "rounded-full",
+                  )}
+                  triggerElement="span"
+                  triggerTestId={`home-inbox-avatar-${item.id}`}
+                >
+                  <span className="inline-flex shrink-0">
+                    <UserAvatar
+                      avatarUrl={item.avatarUrl}
+                      className="h-9 w-9"
+                      displayName={item.senderLabel}
+                      shape={isSenderAgent ? "squircle" : "circle"}
+                      size="md"
+                    />
+                  </span>
+                </UserProfilePopover>
+              </div>
+            )}
 
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-start gap-2">
-                <span
-                  className="flex min-w-0 flex-1 items-start leading-4"
-                  data-inbox-profile-trigger="true"
-                >
-                  <UserProfilePopover
-                    botIdenticonValue={item.senderLabel}
-                    pubkey={item.item.pubkey}
-                    role={profileRole}
-                    triggerElement="span"
+                {conversationRoom ? (
+                  <ConversationRoomTitle room={conversationRoom} />
+                ) : (
+                  <span
+                    className="flex min-w-0 flex-1 items-start leading-4"
+                    data-inbox-profile-trigger="true"
                   >
-                    <span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
-                      {item.senderLabel}
-                    </span>
-                  </UserProfilePopover>
-                </span>
+                    <UserProfilePopover
+                      botIdenticonValue={item.senderLabel}
+                      pubkey={item.item.pubkey}
+                      role={profileRole}
+                      triggerElement="span"
+                    >
+                      <span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
+                        {item.senderLabel}
+                      </span>
+                    </UserProfilePopover>
+                  </span>
+                )}
                 <span
                   className={cn(
                     "flex shrink-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground/70 transition-opacity group-hover/inbox-item:opacity-0 group-focus-within/inbox-item:opacity-0",
@@ -439,11 +565,15 @@ export function InboxListPane({
                   {item.timestampLabel}
                 </span>
               </div>
-              <InboxLabel
-                isActionRequired={item.isActionRequired}
-                isDone={isDone}
-                label={typeLabel}
-              />
+              {conversationRoom ? null : (
+                <InboxLabel
+                  channelId={item.item.channelId}
+                  isActionRequired={item.isActionRequired}
+                  isDone={isDone}
+                  label={typeLabel}
+                  threadId={threadRootId}
+                />
+              )}
               {dueReminder ? (
                 <div
                   className="mt-1 flex items-center gap-1 text-2xs font-medium text-amber-600/80 dark:text-amber-300/80"

@@ -463,7 +463,7 @@ void main() {
     expect(find.text('Unsent review note'), findsOneWidget);
   });
 
-  testWidgets('rows lead with sender, contextual label, and preview', (
+  testWidgets('rows lead with conversation, sender, and preview', (
     tester,
   ) async {
     await tester.pumpWidget(await buildTestable());
@@ -479,7 +479,8 @@ void main() {
     expect(find.text('Mentioned in'), findsOneWidget);
     expect(find.text('Thread in'), findsOneWidget);
     expect(find.text('#general'), findsNWidgets(2)); // mention + agent
-    expect(find.text('#engineering'), findsOneWidget);
+    // Thread rows name the thread after the channel; unnamed ones say so.
+    expect(find.text('#engineering › Thread'), findsOneWidget);
 
     // Context labels and channel pills share the compact Activity style.
     final contextLabel = tester.widget<Text>(find.text('Mentioned in'));
@@ -740,6 +741,38 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Nothing needs your action'), findsOneWidget);
+  });
+
+  testWidgets('Channels + Threads rows lead with the room, not the sender', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      await buildTestable(
+        overrides: [
+          channelActivityProvider.overrideWith((ref) async => const []),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('activity-filter-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Channels + Threads'));
+    await tester.pumpAndSettle();
+
+    // Room avatars and names replace sender avatars and names.
+    expect(
+      find.byKey(const ValueKey('activity-conversation-avatar')),
+      findsWidgets,
+    );
+    expect(find.text('#general'), findsOneWidget);
+    expect(find.text('#engineering › Thread'), findsOneWidget);
+    expect(find.text('Alice'), findsNothing);
+    expect(find.text('Bob'), findsNothing);
+    expect(find.text('Thread in'), findsNothing);
+
+    // The latest message still previews under the room name.
+    expect(find.textContaining('Deployed the fix'), findsOneWidget);
   });
 
   testWidgets('filter menu supports accessibility text scaling', (

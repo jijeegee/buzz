@@ -6,6 +6,36 @@ import type { RelayEvent } from "@/shared/api/types";
 import { KIND_THREAD_NAME } from "@/shared/constants/kinds";
 import { isValidThreadName, selectThreadName } from "./threadName";
 
+/**
+ * Read-only thread name for list rows. Shares the `useThreadName` cache key so
+ * renames made in an open thread show up immediately, without opening a live
+ * subscription per row.
+ */
+export function useThreadNameLabel(
+  channelId: string | null | undefined,
+  threadId: string | null | undefined,
+) {
+  const query = useQuery<RelayEvent | null>({
+    queryKey: ["thread-name", channelId, threadId],
+    enabled: Boolean(channelId && threadId),
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      if (!channelId || !threadId) throw new Error("No thread selected");
+      const events = await relayClient.fetchEvents({
+        kinds: [KIND_THREAD_NAME],
+        "#h": [channelId],
+        "#e": [threadId],
+        limit: 1,
+      });
+      return events.reduce<RelayEvent | null>(
+        (head, event) => selectThreadName(head, event, channelId, threadId),
+        null,
+      );
+    },
+  });
+  return query.data?.content ?? "";
+}
+
 export function useThreadName(
   channelId: string | null | undefined,
   threadId: string | null | undefined,

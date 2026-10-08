@@ -19,6 +19,7 @@ import { useInboxEditMessage } from "@/features/home/useInboxEditMessage";
 import { useOwnedAgentPubkeys } from "@/features/home/useOwnedAgentPubkeys";
 import {
   filterInboxItems,
+  collapseChannelMainRows,
   matchesInboxFilter,
 } from "@/features/home/lib/inboxViewHelpers";
 import { resolveInboxFilterSelection } from "@/features/home/lib/inboxSelection";
@@ -59,6 +60,7 @@ import { getThreadReference } from "@/features/messages/lib/threading";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
+import { useDmSidebarMetadata } from "@/features/sidebar/useDmSidebarMetadata";
 import { useRemindLater } from "@/features/reminders/ui/RemindMeLaterProvider";
 import { deleteMessage, sendChannelMessage } from "@/shared/api/tauri";
 import type { Channel, HomeFeedResponse } from "@/shared/api/types";
@@ -357,6 +359,15 @@ export function HomeView({
     enabled: feedOwnerPubkeys.length > 0,
   });
   const feedOwnerProfiles = feedOwnerProfilesQuery.data?.profiles;
+  const directMessages = React.useMemo(
+    () => (channels ?? []).filter((channel) => channel.channelType === "dm"),
+    [channels],
+  );
+  const { dmChannelLabels, dmParticipantsByChannelId } = useDmSidebarMetadata({
+    currentPubkey,
+    directMessages,
+    enabled: filter === "conversations",
+  });
   const communityAgentPubkeys = useKnownAgentPubkeys();
   const inboxAgentPubkeys = React.useMemo(() => {
     const pubkeys = new Set(communityAgentPubkeys);
@@ -410,13 +421,22 @@ export function HomeView({
       undoDoneLocal: undoDone,
       undoUnreadLocal: undoUnread,
     });
+  // The conversations view regroups channel main timelines into one row per
+  // channel, so selection and filtering must resolve against those rows.
+  const viewItems = React.useMemo(
+    () =>
+      filter === "conversations"
+        ? collapseChannelMainRows(inboxItems)
+        : inboxItems,
+    [filter, inboxItems],
+  );
   // Resolve selection before filtering so unread-only can retain its active row.
   const selectedItemFromAll = React.useMemo(
     () =>
       selectedEventId
-        ? findInboxItemByEventId(inboxItems, selectedEventId)
+        ? findInboxItemByEventId(viewItems, selectedEventId)
         : null,
-    [inboxItems, selectedEventId],
+    [viewItems, selectedEventId],
   );
   // selectedConversationId: prefer the InboxItem-derived conversationId (stable
   // group key). Fall back to deriving it from the latched FeedItem when the
@@ -430,7 +450,7 @@ export function HomeView({
     selectedItemFromAll?.conversationId ?? latchedConversationId;
 
   const filteredItems = React.useMemo(() => {
-    return inboxItems.filter(
+    return viewItems.filter(
       (item) =>
         matchesInboxFilter(item, filter, ownedAgentPubkeys) &&
         (!unreadOnly ||
@@ -440,10 +460,10 @@ export function HomeView({
   }, [
     effectiveDoneSet,
     filter,
-    inboxItems,
     ownedAgentPubkeys,
     selectedConversationId,
     unreadOnly,
+    viewItems,
   ]);
   // A filter change may only retain detail for a conversation that remains
   // visible. The filter handler selects the next valid row in the same update,
@@ -545,7 +565,11 @@ export function HomeView({
 
   const handleFilterChange = React.useCallback(
     (nextFilter: InboxFilter) => {
-      const nextItems = inboxItems.filter(
+      const nextItems = (
+        nextFilter === "conversations"
+          ? collapseChannelMainRows(inboxItems)
+          : inboxItems
+      ).filter(
         (item) =>
           matchesInboxFilter(item, nextFilter, ownedAgentPubkeys) &&
           (!unreadOnly ||
@@ -704,6 +728,8 @@ export function HomeView({
             <InboxListPane
               activeReminderEventIds={activeReminderEventIds}
               agentPubkeys={inboxAgentPubkeys}
+              dmChannelLabels={dmChannelLabels}
+              dmParticipantsByChannelId={dmParticipantsByChannelId}
               activeDraftCount={activeDraftCount}
               draftItems={draftItems}
               doneSet={effectiveDoneSet}
