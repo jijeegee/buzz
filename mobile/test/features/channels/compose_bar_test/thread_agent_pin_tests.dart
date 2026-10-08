@@ -4,6 +4,8 @@ void threadAgentPinTests() {
   group('thread automatic agent mentions', () {
     final owner = 'd' * 64;
     final agent = 'e' * 64;
+    // A stable signer keeps the draft store's identity across remounts.
+    final signer = nostr.Keys.generate();
 
     Widget build({
       String? thread = 'thread-head',
@@ -13,7 +15,10 @@ void threadAgentPinTests() {
       threadHeadId: thread,
       threadRootTags: rootTags,
       currentPubkey: owner,
-      uploadService: _testUploadService(nostr.Keys.generate().nsec),
+      uploadService: _testUploadService(signer.nsec),
+      relayConfig: () => _SwitchableRelayConfigNotifier(
+        RelayConfig(baseUrl: 'http://localhost:3000', nsec: signer.nsec),
+      ),
       relayAgents: [_testAgent(agent)],
       channels: [_makeCurrentChannel()],
       members: [
@@ -205,6 +210,60 @@ void threadAgentPinTests() {
       expect(chips, findsNothing);
     });
 
+    testWidgets('confirmation sits above the input and clears after 3s', (
+      tester,
+    ) async {
+      await tester.pumpWidget(build());
+      await enable(tester);
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), '@hel');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Helper Bot'));
+      await tester.pump();
+      final notice = find.byKey(
+        const ValueKey('composer-auto-pin-confirmation'),
+      );
+      expect(notice, findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(
+        tester.getRect(notice).bottom,
+        lessThanOrEqualTo(tester.getRect(find.byType(TextField)).top),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(notice, findsNothing);
+      expect(container(tester).read(keepMentionedAgentsPinnedProvider), true);
+    });
+
+    testWidgets('a restored draft shows its agent mention as a chip', (
+      tester,
+    ) async {
+      final agentChip = find.byWidgetPredicate(
+        (widget) =>
+            widget.runtimeType.toString() == '_ComposerAgentMentionChip',
+      );
+      await tester.pumpWidget(build());
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), '@hel');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Helper Bot'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '@Helper Bot hello');
+      await tester.pumpAndSettle();
+      expect(agentChip, findsOneWidget);
+
+      // Leave the thread and come back: the draft reloads from storage.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpWidget(build());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('@Helper Bot hello'));
+      await tester.pumpAndSettle();
+      expect(draft(tester), '@Helper Bot hello');
+      expect(agentChip, findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+    });
+
     testWidgets('picker pin turns the preference on', (tester) async {
       await tester.pumpWidget(build());
       await _expandComposer(tester);
@@ -243,7 +302,10 @@ void threadAgentPinTests() {
       expect(popover, findsNothing);
       await tester.enterText(find.byType(TextField), '@Helper Bot @hel');
       await tester.pumpAndSettle();
-      expect(popover, findsOneWidget);      // Let the draft store's debounced write finish.
+      expect(
+        popover,
+        findsOneWidget,
+      ); // Let the draft store's debounced write finish.
       await tester.pump(const Duration(seconds: 5));
     });
 

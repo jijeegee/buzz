@@ -253,7 +253,10 @@ class ComposeBar extends HookConsumerWidget {
     // owners so @mention suggestions show names ("managed by …" included).
     final relayAgents = ref.watch(agentDirectoryProvider).asData?.value;
     final agentOwners = ref.watch(agentOwnersProvider).asData?.value;
-    final agentMentionLabels = _agentMentionLabels(bindings: mentionMap.value);
+    final agentMentionLabels = _agentMentionLabels(
+      bindings: mentionMap.value,
+      knownAgentPubkeys: ref.watch(knownAgentPubkeysProvider),
+    );
     final agentMentionLabelsKey = ([
       for (final entry in agentMentionLabels.entries)
         '${entry.key}\u0001${entry.value.pubkey}'
@@ -1069,6 +1072,11 @@ class ComposeBar extends HookConsumerWidget {
               uploadProgress.value = 0;
             },
           ),
+          if (agentPins.confirmationTitle case final title?)
+            _AutoMentionConfirmation(
+              title: title,
+              onTurnOff: agentPins.turnOffConfirmation,
+            ),
           if (agentPins.pinnedAgents.isNotEmpty)
             _ThreadAgentPinChips(
               agents: agentPins.pinnedAgents,

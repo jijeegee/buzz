@@ -1,6 +1,6 @@
 part of '../compose_bar.dart';
 
-const _autoMentionConfirmationDuration = Duration(seconds: 4);
+const _autoMentionConfirmationDuration = Duration(seconds: 3);
 
 /// Thread-reply automatic agent mentions, matching desktop's
 /// `useThreadAgentAudience` + `useAgentAddressLockPicker`: the thread root's
@@ -18,6 +18,10 @@ class _ThreadAgentPins {
   final ValueChanged<String> remove;
   final ValueChanged<bool> setEnabled;
 
+  /// "X will be mentioned automatically", shown above the composer briefly.
+  final String? confirmationTitle;
+  final VoidCallback turnOffConfirmation;
+
   const _ThreadAgentPins({
     required this.active,
     required this.enabled,
@@ -29,6 +33,8 @@ class _ThreadAgentPins {
     required this.togglePin,
     required this.remove,
     required this.setEnabled,
+    required this.confirmationTitle,
+    required this.turnOffConfirmation,
   });
 }
 
@@ -68,19 +74,16 @@ _ThreadAgentPins _useThreadAgentPins({
     implicitPubkeys.value.clear();
     return null;
   }, [scope]);
-  // The confirmation outlives the thread route in the app-level messenger.
-  final confirmation =
-      useRef<ScaffoldFeatureController<SnackBar, SnackBarClosedReason>?>(null);
-  useEffect(
-    () => () {
-      try {
-        confirmation.value?.close();
-      } catch (_) {
-        // Already dismissed or the messenger is gone.
-      }
-    },
-    [scope],
-  );
+  // Inline above the composer so it never covers the input; it belongs to
+  // the scope that raised it and clears itself.
+  final confirmation = useState<({String scope, String title})?>(null);
+  useEffect(() {
+    if (confirmation.value == null) return null;
+    final timer = Timer(_autoMentionConfirmationDuration, () {
+      if (context.mounted) confirmation.value = null;
+    });
+    return timer.cancel;
+  }, [confirmation.value]);
   final latest = useRef(pubkeys)..value = pubkeys;
 
   String labelFor(String pubkey) {
@@ -208,18 +211,7 @@ _ThreadAgentPins _useThreadAgentPins({
         : promoted.length == 1
         ? 'Agent will be mentioned automatically'
         : '${promoted.length} agents will be mentioned automatically';
-    final preference = ref.read(keepMentionedAgentsPinnedProvider.notifier);
-    confirmation.value = ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(
-        key: const ValueKey('composer-auto-pin-confirmation'),
-        content: Text(title),
-        duration: _autoMentionConfirmationDuration,
-        action: SnackBarAction(
-          label: 'Turn off',
-          onPressed: () => unawaited(preference.setEnabled(false)),
-        ),
-      ),
-    );
+    if (scope != null) confirmation.value = (scope: scope, title: title);
   }
 
   void stripLeadingMention(String pubkey) {
@@ -319,7 +311,57 @@ _ThreadAgentPins _useThreadAgentPins({
     },
     remove: remove,
     setEnabled: setEnabled,
+    confirmationTitle: confirmation.value?.scope == scope
+        ? confirmation.value?.title
+        : null,
+    turnOffConfirmation: () {
+      confirmation.value = null;
+      setEnabled(false);
+    },
   );
+}
+
+/// Desktop's auto-pin confirmation popover, as a row above the composer.
+class _AutoMentionConfirmation extends StatelessWidget {
+  final String title;
+  final VoidCallback onTurnOff;
+
+  const _AutoMentionConfirmation({
+    required this.title,
+    required this.onTurnOff,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      liveRegion: true,
+      child: Padding(
+        key: const ValueKey('composer-auto-pin-confirmation'),
+        padding: const EdgeInsets.symmetric(horizontal: Grid.xs),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: context.textTheme.labelMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onTurnOff,
+              child: const Text('Turn off'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Pinned agents shown above a thread reply; tapping one stops automatically
