@@ -14,9 +14,11 @@ import 'package:http/testing.dart' as http_testing;
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
+import 'package:buzz/features/activity/compose_drafts_provider.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/compose_bar.dart';
+import 'package:buzz/features/channels/mentions/thread_agent_audience.dart';
 import 'package:buzz/features/channels/send_message_provider.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:buzz/features/channels/photo_library.dart';
@@ -38,6 +40,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 part 'compose_bar_test/exact_mention_tests.dart';
 part 'compose_bar_test/durable_mention_tests.dart';
+part 'compose_bar_test/thread_agent_pin_tests.dart';
 
 final _pngBytes = Uint8List.fromList([
   0x89,
@@ -200,6 +203,7 @@ Widget _buildComposeBar({
   AppLifecycleNotifier Function()? appLifecycle,
   String composeBarKey = 'compose-bar',
   String? threadHeadId,
+  List<List<String>> threadRootTags = const [],
   VoiceNoteRecorder Function()? voiceNoteRecorderFactory,
   VoiceNotePlayerController Function()? voiceNotePlayerFactory,
   List<Override> extraOverrides = const [],
@@ -266,6 +270,7 @@ Widget _buildComposeBar({
                   key: ValueKey(composeBarKey),
                   channelId: 'channel-1',
                   threadHeadId: threadHeadId,
+                  threadRootTags: threadRootTags,
                   focusNode: focusNode,
                   onFocusRestorerChanged: onFocusRestorerChanged,
                   onFocusRequested: onFocusRequested,
@@ -656,6 +661,7 @@ class _FakeChannelsNotifier extends ChannelsNotifier {
 void main() {
   exactMentionTests();
   durableMentionTests();
+  threadAgentPinTests();
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {

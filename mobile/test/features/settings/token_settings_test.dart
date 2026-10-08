@@ -17,8 +17,15 @@ Widget _settings() => SettingsPage(
   invitePageBuilder: (_) => const SizedBox.shrink(),
 );
 
+/// Scrolls [finder] to the middle of the page, clear of the frosted bars.
+Future<void> _centerInView(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(finder, 200);
+  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
+  await tester.pumpAndSettle();
+}
+
 Future<void> _tapRemoveAndConfirm(WidgetTester tester) async {
-  await tester.scrollUntilVisible(find.text('탈퇴·삭제 관리'), 200);
+  await _centerInView(tester, find.text('탈퇴·삭제 관리'));
   await tester.tap(find.text('탈퇴·삭제 관리'));
   await frames(tester);
   await tester.ensureVisible(
@@ -151,6 +158,10 @@ void main() {
           }
           return null;
         },
+      );
+      await _centerInView(
+        tester,
+        find.byKey(const Key('settings-account-id-row')),
       );
       await tester.tap(find.byKey(const Key('settings-account-id-row')));
       await frames(tester);

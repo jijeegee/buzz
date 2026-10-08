@@ -7,12 +7,18 @@ class _MentionSuggestions extends StatelessWidget {
   final bool isDmChannel;
   final void Function(MentionCandidate) onSelect;
 
+  /// Thread composers only: per-agent pin toggles and the preference switch.
+  final _ThreadAgentPins? agentPins;
+  final ValueChanged<MentionCandidate>? onTogglePin;
+
   const _MentionSuggestions({
     required this.suggestions,
     required this.userCache,
     required this.currentPubkey,
     required this.isDmChannel,
     required this.onSelect,
+    this.agentPins,
+    this.onTogglePin,
   });
 
   @override
@@ -31,11 +37,34 @@ class _MentionSuggestions extends StatelessWidget {
         child: ListView.separated(
           shrinkWrap: true,
           padding: const EdgeInsets.symmetric(vertical: Grid.xxs),
-          itemCount: suggestions.length,
+          itemCount: suggestions.length + (agentPins == null ? 0 : 1),
           separatorBuilder: (_, _) => const SizedBox.shrink(),
           itemBuilder: (context, index) {
+            final pins = agentPins;
+            if (pins != null && index == suggestions.length) {
+              return SwitchListTile.adaptive(
+                key: const ValueKey('mention-keep-agents-pinned-toggle'),
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                title: Text(
+                  'Automatically mention agents',
+                  style: context.textTheme.titleSmall,
+                ),
+                subtitle: Text(
+                  'Address selected agents in thread replies',
+                  style: context.textTheme.labelSmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+                value: pins.enabled,
+                onChanged: pins.setEnabled,
+              );
+            }
             final candidate = suggestions[index];
             final name = candidate.pickerLabel;
+            final pinned =
+                pins?.pinnedPubkeys.contains(candidate.pubkey.toLowerCase()) ??
+                false;
             final avatarUrl =
                 candidate.avatarUrl ?? userCache[candidate.pubkey]?.avatarUrl;
 
@@ -66,6 +95,24 @@ class _MentionSuggestions extends StatelessWidget {
                 isDmChannel: isDmChannel,
                 userCache: userCache,
               ),
+              trailing: pins == null || !candidate.isAgent
+                  ? null
+                  : IconButton(
+                      key: ValueKey(
+                        'mention-always-address-${candidate.pubkey}',
+                      ),
+                      tooltip: pinned
+                          ? "Don't automatically mention in this thread"
+                          : 'Automatically mention',
+                      isSelected: pinned,
+                      visualDensity: VisualDensity.compact,
+                      color: pinned ? context.colors.primary : null,
+                      icon: const Icon(LucideIcons.pin),
+                      iconSize: 16,
+                      onPressed: () => _runComposerAction(
+                        () => onTogglePin?.call(candidate),
+                      ),
+                    ),
               onTap: () => _runComposerAction(() => onSelect(candidate)),
             );
           },
