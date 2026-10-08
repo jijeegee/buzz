@@ -301,7 +301,7 @@ test("inbox unread-only choice survives navigation and reload", async ({
   }
 });
 
-test("home inbox selection survives reload and back restores it", async ({
+test("an inbox row enters its chat room; reload keeps it and back returns", async ({
   page,
 }) => {
   await page.goto("/");
@@ -310,29 +310,21 @@ test("home inbox selection survives reload and back restores it", async ({
   await expect(inboxList).toBeVisible();
   const items = inboxList.locator('[data-testid^="home-inbox-item-"]');
   await expect(items.first()).toBeVisible();
-
-  // The wide-viewport default selection stays local-only — the URL records
-  // explicit selections, so background loads never touch the history stack.
-  await expect(page.getByTestId("home-inbox-detail")).toBeVisible();
+  // Chat rooms are entered by choice: nothing touches history on load.
   expect(page.url()).not.toContain("item=");
   const defaultUrl = page.url();
 
-  const selectedItem = items.first();
-  const selectedTestId = await selectedItem.getAttribute("data-testid");
-  const selectedItemId = selectedTestId?.replace("home-inbox-item-", "");
-  expect(selectedItemId).toBeTruthy();
-  await selectedItem.click();
-  await expect
-    .poll(() => page.url())
-    .toContain(`item=${encodeURIComponent(selectedItemId ?? "")}`);
+  // A chat-message row enters the real chat screen with the inbox list
+  // pulled out beside it.
+  await items.first().click();
+  await expect.poll(() => page.url()).toContain("/channels/");
+  await expect(page.getByTestId("inbox-panel")).toBeVisible();
+  await expect(page.getByTestId("message-timeline")).toBeVisible();
+  const roomUrl = page.url();
 
   await page.reload();
-
-  await expect(inboxList).toBeVisible();
-  await expect(page.getByTestId("home-inbox-detail")).toBeVisible();
-  expect(page.url()).toContain(
-    `item=${encodeURIComponent(selectedItemId ?? "")}`,
-  );
+  await expect.poll(() => page.url()).toBe(roomUrl);
+  await expect(page.getByTestId("inbox-panel")).toBeVisible();
 
   await page.getByTestId("global-back").click();
   await expect.poll(() => page.url()).toBe(defaultUrl);

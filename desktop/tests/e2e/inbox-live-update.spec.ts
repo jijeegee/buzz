@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 import type { RelayEvent } from "../../src/shared/api/types";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
+
+test.beforeEach(async ({ page }) => {
+  await openInboxOnNeedsAction(page);
+});
 
 /**
  * Focused regression suite for inbox-stable-conversation (#inbox-regressions):
@@ -213,7 +218,7 @@ async function seedNestedAnchor(page: import("@playwright/test").Page) {
         channel_id: channelId,
         channel_name: "general",
         tags: anchor.tags,
-        category: "mention",
+        category: "needs_action",
       });
 
       return { root, anchor };
@@ -261,7 +266,7 @@ async function injectNewerSibling(
         channel_id: channelId,
         channel_name: "general",
         tags: sibling.tags,
-        category: "mention",
+        category: "needs_action",
       });
 
       return { sibling, oldAnchorId };
@@ -450,7 +455,7 @@ test.describe("inbox stable-conversation regressions", () => {
           channel_id: channelId,
           channel_name: "general",
           tags: replyB.tags,
-          category: "mention",
+          category: "needs_action",
         });
         return replyB;
       },
@@ -594,7 +599,7 @@ test.describe("inbox stable-conversation regressions", () => {
           channel_id: channelId,
           channel_name: "general",
           tags: coldSibling.tags,
-          category: "mention",
+          category: "needs_action",
         });
         return { coldRoot, coldAnchor, coldSibling };
       },
@@ -805,7 +810,7 @@ test.describe("inbox stable-conversation regressions", () => {
           channel_id: channelId,
           channel_name: "general",
           tags: coldSibling.tags,
-          category: "mention",
+          category: "needs_action",
         });
         return { coldRoot, coldAnchor, coldSibling };
       },
@@ -872,7 +877,7 @@ test.describe("inbox stable-conversation regressions", () => {
           channel_id: channelId,
           channel_name: "general",
           tags: unrelated.tags,
-          category: "mention",
+          category: "needs_action",
         });
       },
       {
@@ -1013,7 +1018,7 @@ test.describe("inbox stable-conversation regressions", () => {
           channel_id: channelId,
           channel_name: "general",
           tags: fetchNewest.tags,
-          category: "mention",
+          category: "needs_action",
         });
 
         return { fetchRoot, fetchNewest };
@@ -1097,7 +1102,7 @@ test.describe("inbox stable-conversation regressions", () => {
           channel_id: channelId,
           channel_name: "general",
           tags: passive.tags,
-          category: "mention",
+          category: "needs_action",
         });
       },
       {
@@ -1209,7 +1214,7 @@ test.describe("inbox stable-conversation regressions", () => {
           channel_id: channelId,
           channel_name: "general",
           tags: fetchNewest.tags,
-          category: "mention",
+          category: "needs_action",
         });
 
         return { fetchNewest, olderReplyIds };
@@ -1428,7 +1433,7 @@ test.describe("inbox stable-conversation regressions", () => {
           channel_id: channelId,
           channel_name: "general",
           tags: fetchNewest.tags,
-          category: "mention",
+          category: "needs_action",
         });
 
         return { fetchNewest, olderReplyIds };

@@ -13,6 +13,7 @@ import {
   openCreateChannelDialog,
   openNewMessagePage,
 } from "../helpers/bridge";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
 
 const GENERAL_CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 const RANDOM_CHANNEL_ID = "9dae0116-799b-5071-a0a8-fdd30a91a35d";
@@ -3414,7 +3415,15 @@ async function seedHomeInboxMention(
   page: import("@playwright/test").Page,
   itemId: string,
   tags?: string[][],
-  { navigate = true }: { navigate?: boolean } = {},
+  {
+    category = "mention",
+    navigate = true,
+    open = true,
+  }: {
+    category?: "mention" | "needs_action";
+    navigate?: boolean;
+    open?: boolean;
+  } = {},
 ) {
   if (navigate) {
     await page.goto("/");
@@ -3434,6 +3443,7 @@ async function seedHomeInboxMention(
       itemId: id,
       senderPubkey,
       tags: seededTags,
+      category: seededCategory,
     }) => {
       const pushFeedItem = (window as MockFeedWindow)
         .__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
@@ -3453,10 +3463,11 @@ async function seedHomeInboxMention(
           ["e", channelId],
           ["p", currentPubkey],
         ],
-        category: "mention",
+        category: seededCategory,
       });
     },
     {
+      category,
       channelId: GENERAL_CHANNEL_ID,
       createdAt: Math.floor(Date.now() / 1000),
       currentPubkey: TEST_IDENTITIES.tyler.pubkey,
@@ -3466,7 +3477,9 @@ async function seedHomeInboxMention(
     },
   );
 
-  await page.getByTestId(`home-inbox-item-${itemId}`).click();
+  if (open) {
+    await page.getByTestId(`home-inbox-item-${itemId}`).click();
+  }
 }
 
 test("Inbox All excludes generic channel traffic", async ({ page }) => {
@@ -3927,7 +3940,15 @@ test("Inbox reminder rows and detail identify DM context", async ({ page }) => {
 test("Inbox detail title and source action navigate to the conversation", async ({
   page,
 }) => {
-  await seedHomeInboxMention(page, "mock-feed-home-channel-navigate");
+  await openInboxOnNeedsAction(page);
+  await seedHomeInboxMention(
+    page,
+    "mock-feed-home-channel-navigate",
+    undefined,
+    {
+      category: "needs_action",
+    },
+  );
 
   const detail = page.getByTestId("home-inbox-detail");
   await expect(detail.getByRole("heading")).toHaveText("Message in #general");
@@ -3949,11 +3970,17 @@ test("home inbox thread reply mention carries threadRootId to the channel", asyn
   page,
 }) => {
   const rootEventId = "mock-feed-home-thread-root";
-  await seedHomeInboxMention(page, "mock-feed-home-thread-navigate", [
-    ["e", rootEventId, "", "root"],
-    ["e", "mock-feed-home-thread-parent", "", "reply"],
-    ["p", TEST_IDENTITIES.tyler.pubkey],
-  ]);
+  await openInboxOnNeedsAction(page);
+  await seedHomeInboxMention(
+    page,
+    "mock-feed-home-thread-navigate",
+    [
+      ["e", rootEventId, "", "root"],
+      ["e", "mock-feed-home-thread-parent", "", "reply"],
+      ["p", TEST_IDENTITIES.tyler.pubkey],
+    ],
+    { category: "needs_action" },
+  );
 
   const detail = page.getByTestId("home-inbox-detail");
   await expect(detail.getByRole("heading")).toHaveText("Thread in #general");
@@ -3969,16 +3996,21 @@ test("home inbox thread reply mention carries threadRootId to the channel", asyn
   await expect(page.getByTestId("home-inbox-list")).toHaveCount(0);
 });
 
-test("Inbox filter changes preserve valid detail and directly select a replacement", async ({
+test("Inbox filter changes never auto-enter a chat room and select detail work", async ({
   page,
 }) => {
   const threadItemId = "inbox-filter-thread";
   const actionItemId = "inbox-filter-action";
-  await seedHomeInboxMention(page, threadItemId, [
-    ["e", "inbox-filter-root", "", "root"],
-    ["e", "inbox-filter-parent", "", "reply"],
-    ["p", TEST_IDENTITIES.tyler.pubkey],
-  ]);
+  await seedHomeInboxMention(
+    page,
+    threadItemId,
+    [
+      ["e", "inbox-filter-root", "", "root"],
+      ["e", "inbox-filter-parent", "", "reply"],
+      ["p", TEST_IDENTITIES.tyler.pubkey],
+    ],
+    { open: false },
+  );
 
   await page.evaluate(
     ({ actionId, channelId, senderPubkey }) => {
@@ -4006,16 +4038,21 @@ test("Inbox filter changes preserve valid detail and directly select a replaceme
   );
 
   await page.getByTestId("inbox-filter-trigger").click();
-  await page.getByRole("menuitemradio", { name: "Threads" }).click();
+  await page
+    .getByRole("menuitemradio", { name: "Threads", exact: true })
+    .click();
+  // A chat room is entered by choice, so the filter change selects nothing
+  // and stays on the inbox.
   await expect(
     page.getByTestId(`home-inbox-item-${threadItemId}`),
-  ).toHaveAttribute("aria-current", "true");
-  await expect(page.getByTestId("home-inbox-detail")).toContainText(
-    "Please review the home panel routing.",
-  );
+  ).toBeVisible();
+  await expect(
+    page.getByTestId(`home-inbox-item-${threadItemId}`),
+  ).not.toHaveAttribute("aria-current", "true");
+  expect(page.url()).not.toContain("/channels/");
 
   await expect(
-    page.getByRole("menuitemradio", { name: "Threads" }),
+    page.getByRole("menuitemradio", { name: "Threads", exact: true }),
   ).toHaveCount(0);
   await page.getByTestId("inbox-filter-trigger").click();
   await page.getByRole("menuitemradio", { name: "Needs action" }).click();
@@ -4030,6 +4067,7 @@ test("Inbox filter changes preserve valid detail and directly select a replaceme
 test("Inbox keeps the unread boundary for replies from multiple agents", async ({
   page,
 }) => {
+  await openInboxOnNeedsAction(page);
   await page.goto("/");
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
   await page.waitForFunction(() => {
@@ -4078,7 +4116,7 @@ test("Inbox keeps the unread boundary for replies from multiple agents", async (
           pubkey: agentPubkeys[index % agentPubkeys.length],
         });
         pushFeedItem({
-          category: "activity",
+          category: "needs_action",
           channel_id: channelId,
           channel_name: "general",
           channel_type: "stream",
@@ -4134,6 +4172,7 @@ test("home inbox groups consecutive DMs and opens the full conversation", async 
   const dmChannelId = "f48efb06-0c93-5025-aac9-2e646bb6bfa8";
   const dmIds = ["inbox-dm-first", "inbox-dm-second", "inbox-dm-third"];
 
+  await openInboxOnNeedsAction(page);
   await page.goto("/");
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
   await page.waitForFunction(() => {
@@ -4163,7 +4202,7 @@ test("home inbox groups consecutive DMs and opens the full conversation", async 
             pubkey: senderPubkey,
           });
           pushFeedItem({
-            category: "activity",
+            category: "needs_action",
             channel_id: channelId,
             channel_name: "alice-tyler",
             channel_type: null,
@@ -4213,7 +4252,10 @@ test("home inbox groups consecutive DMs and opens the full conversation", async 
 test("home inbox manage affordance opens management without leaving home", async ({
   page,
 }) => {
-  await seedHomeInboxMention(page, "mock-feed-home-channel-panel");
+  await openInboxOnNeedsAction(page);
+  await seedHomeInboxMention(page, "mock-feed-home-channel-panel", undefined, {
+    category: "needs_action",
+  });
 
   await page
     .getByTestId("home-inbox-detail")
@@ -4261,6 +4303,7 @@ test("home inbox manage affordance opens management without leaving home", async
 test("home channel settings keeps agent lifecycle actions scoped to the active community", async ({
   page,
 }) => {
+  await openInboxOnNeedsAction(page);
   await page.goto("/");
   const agentPubkey = await addGenericAgent(
     page,
@@ -4282,7 +4325,7 @@ test("home channel settings keeps agent lifecycle actions scoped to the active c
     page,
     "mock-feed-home-agent-lifecycle",
     undefined,
-    { navigate: false },
+    { category: "needs_action", navigate: false },
   );
   await page
     .getByTestId("home-inbox-detail")

@@ -14,6 +14,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
 
 const SHOTS = "test-results/inbox-refactor";
 
@@ -259,6 +260,7 @@ test.describe("inbox refactor screenshots", () => {
   test("03 — consecutive DMs group into one conversation row", async ({
     page,
   }) => {
+    await openInboxOnNeedsAction(page);
     await installMockBridge(page, { mode: "mock" });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -287,7 +289,7 @@ test.describe("inbox refactor screenshots", () => {
             pubkey: senderPubkey,
           });
           pushFeedItem({
-            category: "activity",
+            category: "needs_action",
             channel_id: channelId,
             channel_name: "alice-tyler",
             channel_type: null,
@@ -328,6 +330,7 @@ test.describe("inbox refactor screenshots", () => {
   });
 
   test("04 — thread opens at the oldest unread reply", async ({ page }) => {
+    await openInboxOnNeedsAction(page);
     await seedConversationPreferences(page, "default", "comfortable");
     await installMockBridge(page, { mode: "mock" });
 
@@ -371,7 +374,7 @@ test.describe("inbox refactor screenshots", () => {
             pubkey: agentPubkeys[index % agentPubkeys.length],
           });
           pushFeedItem({
-            category: "activity",
+            category: "needs_action",
             channel_id: channelId,
             channel_name: "general",
             channel_type: "stream",

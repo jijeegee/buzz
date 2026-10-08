@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
 
 /**
  * Copying a mention and pasting it back must preserve the identity.
@@ -184,7 +185,7 @@ async function openInboxMentionItem(page: Page) {
         pubkey,
       });
       push({
-        category: "mention",
+        category: "needs_action",
         channel_id: channelId,
         channel_name: "general",
         content: event.content,
@@ -806,6 +807,7 @@ test("forum post and reply selection copies carry the mention", async ({
 test("home inbox copy message carries the mention out of the detail pane", async ({
   page,
 }) => {
+  await openInboxOnNeedsAction(page);
   await page.goto("/");
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
   const item = await openInboxMentionItem(page);
@@ -843,6 +845,7 @@ test("home inbox copy message carries the mention out of the detail pane", async
 test("home inbox selection copy carries the mention out of the detail pane", async ({
   page,
 }) => {
+  await openInboxOnNeedsAction(page);
   await page.goto("/");
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
   await openInboxMentionItem(page);

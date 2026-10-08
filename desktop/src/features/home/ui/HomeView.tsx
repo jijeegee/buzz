@@ -583,9 +583,16 @@ export function HomeView({
     const contextIds = new Set(contextMessages.map((message) => message.id));
     return localReplies.filter((reply) => !contextIds.has(reply.id));
   }, [contextMessages, localRepliesByItemId, selectedItem]);
+  // Only work that opens in the inbox detail is auto-selected; chat rooms are
+  // entered by choice.
+  const autoSelectableItems = React.useMemo(
+    () =>
+      filteredItems.filter((item) => getInboxRoomEntry(item, filter) === null),
+    [filter, filteredItems],
+  );
   useHomeInboxAutoSelection({
     coldResolutionPending,
-    filteredItems,
+    filteredItems: autoSelectableItems,
     hasFeed: Boolean(feed),
     hasPersonalSelection:
       selectedDraftItem !== null || selectedReminder !== null,
