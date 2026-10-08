@@ -179,10 +179,17 @@ class _ThreadMessage extends HookConsumerWidget {
                               message.pubkey,
                               names: channelIdentityNamesProvider(channelId),
                             ),
-                            child: _Avatar(
-                              profile: profile,
-                              pubkey: message.pubkey,
-                              isAgent: isAgent,
+                            child: AgentAvatarBadge(
+                              badge: agentBadge(
+                                hostDevice: profile?.hostDevice,
+                                ownerPubkey: profile?.ownerPubkey,
+                                viewerPubkey: currentPubkey,
+                              ),
+                              child: _Avatar(
+                                profile: profile,
+                                pubkey: message.pubkey,
+                                isAgent: isAgent,
+                              ),
                             ),
                           )
                         else

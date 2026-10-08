@@ -1,11 +1,14 @@
-import { Bot } from "lucide-react";
-
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 
 export function MessageAgentOwner({
+  agentPubkey,
   ownerLabel,
   ownerPubkey,
 }: {
+  /** The agent; its owner sees the robot of the device it runs on, everyone
+   * else an owner mark. */
+  agentPubkey?: string | null;
   ownerLabel?: string | null;
   ownerPubkey?: string | null;
 }) {
@@ -31,8 +34,8 @@ export function MessageAgentOwner({
        * band. In em so it holds under Cmd +/- zoom, and as a transform so it
        * shifts nothing else in the row.
        */}
-      <Bot
-        aria-hidden="true"
+      <AgentBadgeIcon
+        agentPubkey={agentPubkey}
         className="h-3.5 w-3.5 shrink-0 translate-y-[0.125em] self-center"
       />
       {ownerPubkey && ownerLabel ? (

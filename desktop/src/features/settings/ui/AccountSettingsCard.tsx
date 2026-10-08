@@ -27,6 +27,7 @@ import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
+import { AccountDeviceRow } from "./AccountDeviceRow";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
 
 function errorText(error: unknown, fallback: string): string {
@@ -312,36 +313,19 @@ function ActiveAccount({
               className="mt-2 space-y-2"
             >
               {devices.map((device) => (
-                <li
-                  className="flex items-center justify-between gap-3"
+                <AccountDeviceRow
+                  device={device}
+                  disabled={disabled}
                   key={device.id}
-                >
-                  <span className="min-w-0 truncate text-sm">
-                    {device.name}
-                    <span className="text-muted-foreground/70">
-                      {" "}
-                      · {device.platform}
-                      {device.current ? " · this device" : ""}
-                    </span>
-                  </span>
-                  {device.current ? null : (
-                    <Button
-                      aria-label={`Sign out ${device.name}`}
-                      disabled={disabled}
-                      onClick={() =>
-                        void run("Sign out device", async () => {
-                          await revokeAuthDevice(device.id);
-                          await loadDevices();
-                        })
-                      }
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Sign out
-                    </Button>
-                  )}
-                </li>
+                  onChanged={loadDevices}
+                  onSignOut={() =>
+                    void run("Sign out device", async () => {
+                      await revokeAuthDevice(device.id);
+                      await loadDevices();
+                    })
+                  }
+                  run={run}
+                />
               ))}
             </ul>
           )}

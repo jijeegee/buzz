@@ -16,6 +16,10 @@ class UserProfile {
 
   bool get isAgent => ownerPubkey != null;
 
+  /// Device tag of the computer running this agent (kind:0
+  /// `buzz_host_device`); see `shared/devices/device_robot.dart`.
+  final String? hostDevice;
+
   const UserProfile({
     required this.pubkey,
     this.displayName,
@@ -23,6 +27,7 @@ class UserProfile {
     this.about,
     this.nip05Handle,
     this.ownerPubkey,
+    this.hostDevice,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(

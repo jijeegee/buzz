@@ -567,6 +567,21 @@ pub async fn list_devices(app: AppHandle) -> Result<Vec<api::DeviceInfo>, String
         .map_err(api_error)
 }
 
+/// Rename one of this account's devices (any device, not only this one).
+#[tauri::command]
+pub async fn rename_device(
+    app: AppHandle,
+    device_id: String,
+    name: String,
+) -> Result<api::DeviceInfo, String> {
+    let state = app.state::<AppState>();
+    let origin = state.current_auth_origin();
+    let session = fresh_session(&state, &origin).await?;
+    api::rename_device(&state.http_client, &origin, &session.access, &device_id, &name)
+        .await
+        .map_err(api_error)
+}
+
 /// Remote sign-out of another device.
 #[tauri::command]
 pub async fn revoke_device(app: AppHandle, device_id: String) -> Result<(), String> {

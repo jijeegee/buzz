@@ -61,7 +61,10 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .route("/auth/refresh", post(session::refresh))
         .route("/auth/logout", post(session::logout))
         .route("/auth/devices", get(session::list_devices))
-        .route("/auth/devices/{id}", delete(session::revoke_device))
+        .route(
+            "/auth/devices/{id}",
+            delete(session::revoke_device).patch(session::rename_device),
+        )
         .route("/auth/sessions/revoke-others", post(session::revoke_others))
         .route("/auth/me", get(session::me))
         .route("/auth/profile", patch(session::update_profile))
@@ -318,6 +321,14 @@ fn validate_display_name(name: &str) -> Result<(), Response> {
         return Err(bad_request(
             "display_name must be 1-64 printable characters",
         ));
+    }
+    Ok(())
+}
+
+fn validate_device_name(name: &str) -> Result<(), Response> {
+    let len = name.chars().count();
+    if len == 0 || len > 64 || name.chars().any(char::is_control) {
+        return Err(bad_request("name must be 1-64 printable characters"));
     }
     Ok(())
 }

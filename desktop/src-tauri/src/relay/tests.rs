@@ -2,9 +2,9 @@
 //! Extracted from `relay.rs` to keep that module under the file-size ratchet.
 
 use super::{
-    build_authenticated_relay_request, build_profile_event, classify_intercepted_response,
-    effective_agent_relay_url, extract_retry_in_hint, parse_command_response, relay_http_base_url,
-    MALFORMED_RESPONSE_MESSAGE,
+    build_agent_profile_event, build_authenticated_relay_request, build_profile_event,
+    classify_intercepted_response, effective_agent_relay_url, extract_retry_in_hint,
+    parse_command_response, relay_http_base_url, MALFORMED_RESPONSE_MESSAGE,
 };
 use serde::Deserialize;
 
@@ -790,5 +790,44 @@ fn profile_event_rejects_invalid_auth_tag() {
     assert!(
         result.unwrap_err().contains("verification failed"),
         "error message should mention verification failure"
+    );
+}
+
+#[test]
+fn agent_profile_event_carries_host_device_beside_the_auth_tag() {
+    let agent_keys = nostr::Keys::generate();
+    let tag_json = make_valid_auth_tag(&agent_keys);
+    let event = build_agent_profile_event(
+        &agent_keys,
+        "TestBot",
+        Some("https://example.com/a.png"),
+        Some("About"),
+        Some(&tag_json),
+        Some("e8c41c31"),
+    )
+    .expect("should succeed with a host device");
+    let content: serde_json::Value =
+        serde_json::from_str(&event.content).expect("kind:0 content is JSON");
+    assert_eq!(content["buzz_host_device"], "e8c41c31");
+    assert_eq!(content["display_name"], "TestBot");
+    assert_eq!(content["picture"], "https://example.com/a.png");
+    assert_eq!(content["about"], "About");
+    assert_eq!(
+        crate::device_robot::host_device_from_content(&content).as_deref(),
+        Some("e8c41c31")
+    );
+    assert!(event
+        .tags
+        .iter()
+        .any(|t| t.as_slice().first().map(|s| s.as_str()) == Some("auth")));
+
+    let untagged = build_agent_profile_event(&agent_keys, "TestBot", None, None, None, None)
+        .expect("should succeed without a host device");
+    let content: serde_json::Value =
+        serde_json::from_str(&untagged.content).expect("kind:0 content is JSON");
+    assert!(content.get("buzz_host_device").is_none());
+
+    assert!(
+        build_agent_profile_event(&agent_keys, "TestBot", None, None, None, Some("nope")).is_err()
     );
 }

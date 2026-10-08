@@ -361,6 +361,7 @@ pub fn users_batch_from_events(
             nip05_handle: v.get("nip05").and_then(Value::as_str).map(str::to_string),
             is_agent: owner_pubkey.is_some(),
             owner_pubkey,
+            host_device: crate::device_robot::host_device_from_content(&v),
         };
         profiles.insert(pk.clone(), summary);
     }

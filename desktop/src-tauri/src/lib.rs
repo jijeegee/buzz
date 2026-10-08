@@ -8,6 +8,7 @@ mod builderlab;
 mod channel_head_cache;
 mod commands;
 mod deep_link;
+mod device_robot;
 mod egress_guard;
 mod event_sync;
 mod events;
@@ -640,6 +641,7 @@ pub fn run() {
             auth::commands::get_ws_auth_frame,
             auth::commands::list_devices,
             auth::commands::revoke_device,
+            auth::commands::rename_device,
             auth::commands::revoke_other_sessions,
             auth::commands::revoke_all_bot_tokens,
             auth::commands::delete_account,

@@ -7,6 +7,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
+import '../../shared/devices/device_robot.dart';
+import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -68,6 +70,12 @@ class DevicesPage extends HookConsumerWidget {
       );
       if (!ok) return;
       await run((api) => api.revokeDevice(device.id));
+    }
+
+    Future<void> renameDevice(AccountDevice device) async {
+      final name = await _askDeviceName(context, device.name);
+      if (name == null || name == device.name) return;
+      await run((api) => api.renameDevice(device.id, name));
     }
 
     Future<void> signOutOthers() async {
@@ -198,6 +206,9 @@ class DevicesPage extends HookConsumerWidget {
                   for (final device in list)
                     _DeviceRow(
                       device: device,
+                      onRename: busy.value
+                          ? null
+                          : () => unawaited(renameDevice(device)),
                       onSignOut: busy.value || device.current
                           ? null
                           : () => unawaited(signOutDevice(device)),
@@ -281,9 +292,14 @@ class DevicesPage extends HookConsumerWidget {
 }
 
 class _DeviceRow extends StatelessWidget {
-  const _DeviceRow({required this.device, required this.onSignOut});
+  const _DeviceRow({
+    required this.device,
+    required this.onRename,
+    required this.onSignOut,
+  });
 
   final AccountDevice device;
+  final VoidCallback? onRename;
   final VoidCallback? onSignOut;
 
   @override
@@ -294,18 +310,36 @@ class _DeviceRow extends StatelessWidget {
       if (!device.current && device.lastSeenAt != null)
         'Last active ${_date(device.lastSeenAt!.toLocal())}',
     ].join(' · ');
-    return AppListRow(
-      icon: switch (device.platform) {
-        'mobile' => LucideIcons.smartphone,
-        'web' => LucideIcons.globe,
-        'cli' => LucideIcons.terminal,
-        _ => LucideIcons.monitor,
-      },
-      title: device.name,
-      subtitle: details.isEmpty ? null : details,
-      trailing: device.current
+    // The device's robot: agents running on this device show the same one
+    // to their owner, so the owner can match an agent to its computer.
+    return AppListRowRaw(
+      key: Key('device-row-${device.id}'),
+      onTap: onRename,
+      leading: DeviceRobotIcon(
+        variant: deviceRobotVariantForDevice(device.id),
+        size: 24,
+        fallbackColor: context.colors.onSurfaceVariant,
+      ),
+      title: Text(device.name, style: context.textTheme.bodyLarge),
+      subtitle: details.isEmpty
           ? null
-          : TextButton(
+          : Text(
+              details,
+              style: context.textTheme.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            key: Key('device-rename-${device.id}'),
+            onPressed: onRename,
+            tooltip: 'Rename ${device.name}',
+            icon: const Icon(LucideIcons.pencil, size: 18),
+          ),
+          if (!device.current)
+            TextButton(
               key: Key('device-sign-out-${device.id}'),
               onPressed: onSignOut,
               child: Semantics(
@@ -314,6 +348,8 @@ class _DeviceRow extends StatelessWidget {
                 child: const Text('Sign out'),
               ),
             ),
+        ],
+      ),
     );
   }
 
@@ -328,6 +364,64 @@ class _DeviceRow extends StatelessWidget {
   static String _date(DateTime at) =>
       '${at.year}-${at.month.toString().padLeft(2, '0')}-'
       '${at.day.toString().padLeft(2, '0')}';
+}
+
+/// The new name for a device, trimmed; `null` when cancelled or empty.
+Future<String?> _askDeviceName(BuildContext context, String current) async {
+  final name = await showBuzzDialog<String>(
+    context: context,
+    builder: (_) => _DeviceNameDialog(initial: current),
+  );
+  final trimmed = name?.trim() ?? '';
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+class _DeviceNameDialog extends StatefulWidget {
+  const _DeviceNameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_DeviceNameDialog> createState() => _DeviceNameDialogState();
+}
+
+class _DeviceNameDialogState extends State<_DeviceNameDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename device'),
+      content: TextField(
+        key: const Key('device-rename-field'),
+        controller: _controller,
+        autofocus: true,
+        maxLength: 64,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(labelText: 'Device name'),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('device-rename-save'),
+          onPressed: _submit,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }
 
 Future<bool> _confirm(

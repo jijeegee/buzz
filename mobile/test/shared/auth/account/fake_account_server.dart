@@ -104,6 +104,14 @@ class FakeAccountServer {
       case ('DELETE', '/auth/account'):
         return http.Response('', 204);
     }
+    if (request.method == 'PATCH' && path.startsWith('/auth/devices/')) {
+      final id = path.substring('/auth/devices/'.length);
+      final name = (jsonDecode(request.body) as Map<String, Object?>)['name'];
+      final index = devices.indexWhere((device) => device['id'] == id);
+      if (index < 0) return jsonResponse({'error': 'not found'}, status: 404);
+      devices = [...devices]..[index] = {...devices[index], 'name': name};
+      return jsonResponse(devices[index]);
+    }
     if (request.method == 'DELETE' && path.startsWith('/auth/devices/')) {
       final id = path.substring('/auth/devices/'.length);
       final before = devices.length;

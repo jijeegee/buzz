@@ -8,6 +8,9 @@ import 'package:hooks_riverpod/misc.dart' show ProviderListenable;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/animated_avatar.dart';
+import '../../shared/devices/device_robot.dart';
+import '../../shared/devices/agent_badge_widgets.dart';
+import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/identity_names/identity_names.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/relay/relay.dart';
@@ -69,6 +72,11 @@ class UserProfileSheet extends HookConsumerWidget {
     final profile =
         ref.watch(userCacheProvider.select((cache) => cache[pk])) ??
         ref.read(userCacheProvider.notifier).get(pk);
+    final badge = agentBadge(
+      hostDevice: profile?.hostDevice,
+      ownerPubkey: profile?.ownerPubkey,
+      viewerPubkey: currentPubkey,
+    );
     final presenceMap = ref.watch(presenceCacheProvider);
     final presence = presenceMap[pk];
     final statusCache = ref.watch(userStatusCacheProvider);
@@ -195,11 +203,39 @@ class UserProfileSheet extends HookConsumerWidget {
 
                     // Display name — centered, large
                     Center(
-                      child: Text(
-                        displayName,
-                        style: context.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              style: context.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          if (badge case AgentDeviceBadge(:final variant)) ...[
+                            const SizedBox(width: Grid.half),
+                            DeviceRobotIcon(
+                              key: const Key('profile-device-robot'),
+                              variant: variant,
+                              size: 22,
+                              semanticLabel:
+                                  'Robot of the device this agent runs on',
+                            ),
+                          ],
+                          if (badge case AgentOwnerBadge(
+                            :final ownerPubkey,
+                          )) ...[
+                            const SizedBox(width: Grid.half),
+                            OwnerAvatarMark(
+                              key: const Key('profile-agent-owner-mark'),
+                              ownerPubkey: ownerPubkey,
+                              size: 22,
+                              showRobot: true,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     // Match Settings: status is quiet, centered copy directly

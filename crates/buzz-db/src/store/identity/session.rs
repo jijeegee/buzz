@@ -369,6 +369,37 @@ pub(super) async fn list_devices(
         .collect()
 }
 
+/// Rename live `device_id` (owned by `principal`). Returns `None` when the
+/// device does not belong to `principal` or is revoked.
+pub(super) async fn rename_device(
+    pool: &PgPool,
+    principal: &PrincipalId,
+    device_id: Uuid,
+    name: &str,
+) -> Result<Option<DeviceRecord>> {
+    let mut tx = begin(pool).await?;
+    let row = sqlx::query(
+        "UPDATE devices SET name = $3 \
+         WHERE id = $1 AND principal_id = $2 AND revoked_at IS NULL \
+         RETURNING id, name, platform, last_seen_at",
+    )
+    .bind(device_id)
+    .bind(principal.as_bytes().as_slice())
+    .bind(name)
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    row.map(|row| {
+        Ok(DeviceRecord {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            platform: row.try_get("platform")?,
+            last_seen_at: row.try_get("last_seen_at")?,
+        })
+    })
+    .transpose()
+}
+
 impl crate::Db {
     /// Persist a completed login: device, session, refresh and access token.
     #[datastore_span(name = "complete_login", system = "postgresql")]
@@ -430,5 +461,16 @@ impl crate::Db {
     #[datastore_span(name = "list_devices", system = "postgresql")]
     pub async fn list_devices(&self, principal: &PrincipalId) -> Result<Vec<DeviceRecord>> {
         list_devices(&self.pool, principal).await
+    }
+
+    /// Rename a live device of `principal`.
+    #[datastore_span(name = "rename_device", system = "postgresql")]
+    pub async fn rename_device(
+        &self,
+        principal: &PrincipalId,
+        device_id: Uuid,
+        name: &str,
+    ) -> Result<Option<DeviceRecord>> {
+        rename_device(&self.pool, principal, device_id, name).await
     }
 }

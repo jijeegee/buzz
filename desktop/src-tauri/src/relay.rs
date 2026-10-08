@@ -504,6 +504,7 @@ pub fn parse_command_response<T: DeserializeOwned>(message: &str) -> Result<T, S
 /// `buzz-sdk` uses `nostr 0.36` while the desktop crate uses `nostr 0.37`. Cross-version
 /// bridging is done via hex-encoded public keys and raw tag slices — both versions share the
 /// same wire format.
+#[cfg(test)]
 fn build_profile_event(
     agent_keys: &nostr::Keys,
     display_name: &str,
@@ -511,7 +512,32 @@ fn build_profile_event(
     about: Option<&str>,
     auth_tag_json: Option<&str>,
 ) -> Result<nostr::Event, String> {
-    let builder = crate::events::build_profile(Some(display_name), None, avatar_url, about, None)?;
+    build_agent_profile_event(
+        agent_keys,
+        display_name,
+        avatar_url,
+        about,
+        auth_tag_json,
+        None,
+    )
+}
+
+/// [`build_profile_event`] plus the agent's `buzz_host_device` tag (see
+/// `device_robot`), when this desktop knows the device it runs on.
+fn build_agent_profile_event(
+    agent_keys: &nostr::Keys,
+    display_name: &str,
+    avatar_url: Option<&str>,
+    about: Option<&str>,
+    auth_tag_json: Option<&str>,
+    host_device: Option<&str>,
+) -> Result<nostr::Event, String> {
+    let builder = crate::events::build_profile_with_host_device(
+        Some(display_name),
+        avatar_url,
+        about,
+        host_device,
+    )?;
 
     let builder = if let Some(tag_json) = auth_tag_json {
         // Bridge nostr 0.37 PublicKey → nostr 0.36 PublicKey via hex encoding.
@@ -578,12 +604,18 @@ pub async fn sync_managed_agent_profile(
     // leaves the previous kind:0 untouched and the saved source available to retry.
     let avatar_url =
         profile_avatar::localize_avatar(state, relay_url, agent_keys, avatar_url, auth_tag).await?;
-    let event = build_profile_event(
+    let host_device = crate::device_robot::local_host_device_tag(
+        state,
+        relay_url,
+        &agent_keys.public_key().to_hex(),
+    );
+    let event = build_agent_profile_event(
         agent_keys,
         display_name,
         avatar_url.as_deref(),
         about,
         auth_tag,
+        host_device.as_deref(),
     )?;
     let event_json = event.as_json();
     let body_bytes = event_json.into_bytes();
@@ -667,6 +699,7 @@ pub async fn query_agent_profile(
             .get("about")
             .and_then(|v| v.as_str())
             .map(str::to_string),
+        host_device: crate::device_robot::host_device_from_content(&content),
     }))
 }
 
@@ -677,6 +710,8 @@ pub struct AgentProfileInfo {
     pub picture: Option<String>,
     /// Published public description (kind:0 `about`).
     pub about: Option<String>,
+    /// Published host device tag (kind:0 `buzz_host_device`).
+    pub host_device: Option<String>,
 }
 
 // ── Signed-event submission ─────────────────────────────────────────────────

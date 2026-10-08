@@ -87,6 +87,13 @@ export function revokeAuthDevice(deviceId: string): Promise<void> {
   return invokeTauri<void>("revoke_device", { deviceId });
 }
 
+export function renameAuthDevice(
+  deviceId: string,
+  name: string,
+): Promise<AuthDevice> {
+  return invokeTauri<AuthDevice>("rename_device", { deviceId, name });
+}
+
 export function revokeOtherSessions(): Promise<void> {
   return invokeTauri<void>("revoke_other_sessions");
 }

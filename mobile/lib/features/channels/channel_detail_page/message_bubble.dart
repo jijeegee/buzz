@@ -186,10 +186,17 @@ class _MessageBubble extends HookConsumerWidget {
                               currentChannelId,
                             ),
                           ),
-                          child: _UserAvatar(
-                            profile: profile,
-                            pubkey: message.pubkey,
-                            isAgent: isAgent,
+                          child: AgentAvatarBadge(
+                            badge: agentBadge(
+                              hostDevice: profile?.hostDevice,
+                              ownerPubkey: profile?.ownerPubkey,
+                              viewerPubkey: currentPubkey,
+                            ),
+                            child: _UserAvatar(
+                              profile: profile,
+                              pubkey: message.pubkey,
+                              isAgent: isAgent,
+                            ),
                           ),
                         )
                       else

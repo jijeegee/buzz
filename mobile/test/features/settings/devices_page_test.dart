@@ -1,5 +1,6 @@
 import 'package:buzz/features/settings/devices_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/devices/device_robot.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -62,6 +63,22 @@ void main() {
     expect(find.byKey(const Key('device-sign-out-device-2')), findsOneWidget);
   });
 
+  testWidgets('each device row shows its device robot', (tester) async {
+    await _pumpDevices(tester);
+
+    for (final id in ['device-1', 'device-2', 'device-3']) {
+      final tag = deviceRobotVariantForDevice(id)!.tag;
+      expect(
+        find.descendant(
+          of: find.byKey(Key('device-row-$id')),
+          matching: find.byKey(ValueKey('device-robot-$tag')),
+        ),
+        findsOneWidget,
+        reason: id,
+      );
+    }
+  });
+
   testWidgets('remote sign-out revokes the device and refreshes the list', (
     tester,
   ) async {
@@ -73,6 +90,44 @@ void main() {
     expect(h.account.calls('GET', '/auth/devices'), hasLength(2));
     expect(find.text('Work laptop'), findsNothing);
     expect(find.text('Old browser'), findsOneWidget);
+  });
+
+  testWidgets('renaming a device saves the trimmed name and refreshes', (
+    tester,
+  ) async {
+    final h = await _pumpDevices(tester);
+
+    await tester.tap(find.byKey(const Key('device-rename-device-1')));
+    await frames(tester);
+    await tester.enterText(
+      find.byKey(const Key('device-rename-field')),
+      '  Pocket phone  ',
+    );
+    await tester.tap(find.byKey(const Key('device-rename-save')));
+    await frames(tester);
+
+    final patches = h.account.calls('PATCH', '/auth/devices/device-1');
+    expect(patches, hasLength(1));
+    expect(patches.single.body, '{"name":"Pocket phone"}');
+    expect(find.text('Pocket phone'), findsOneWidget);
+    expect(find.text('Test phone'), findsNothing);
+  });
+
+  testWidgets('cancelling or clearing a rename sends nothing', (tester) async {
+    final h = await _pumpDevices(tester);
+
+    await tester.tap(find.byKey(const Key('device-rename-device-2')));
+    await frames(tester);
+    await tester.tap(find.text('Cancel'));
+    await frames(tester);
+    await tester.tap(find.byKey(const Key('device-rename-device-2')));
+    await frames(tester);
+    await tester.enterText(find.byKey(const Key('device-rename-field')), '  ');
+    await tester.tap(find.byKey(const Key('device-rename-save')));
+    await frames(tester);
+
+    expect(h.account.calls('PATCH', '/auth/devices/device-2'), isEmpty);
+    expect(find.text('Work laptop'), findsOneWidget);
   });
 
   testWidgets('a failed remote sign-out is shown and the list kept', (
