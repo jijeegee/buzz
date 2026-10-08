@@ -43,6 +43,15 @@ void main() {
     );
     expect(
       threadAgentAudienceScope(
+        ownerPubkey: owner,
+        channelId: 'channel',
+        threadHeadId: null,
+        channelMain: true,
+      ),
+      '$owner:channel:channel',
+    );
+    expect(
+      threadAgentAudienceScope(
         ownerPubkey: 'nope',
         channelId: 'channel',
         threadHeadId: 'head',

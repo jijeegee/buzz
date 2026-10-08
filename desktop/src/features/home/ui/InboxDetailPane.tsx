@@ -826,7 +826,9 @@ function InboxMessageDetailPane({
             <MessageComposer
               audienceContext={
                 isRoomTimeline
-                  ? null
+                  ? isDirectMessage
+                    ? null
+                    : { type: "channel" }
                   : {
                       type: "thread",
                       rootTags: threadRootTags,

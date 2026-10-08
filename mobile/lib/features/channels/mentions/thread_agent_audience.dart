@@ -27,22 +27,23 @@ class KeepMentionedAgentsPinnedPreference extends Notifier<bool> {
   }
 }
 
-/// Audience scope for one thread composer, matching desktop's
-/// `owner:channel:thread:<headId>` key. Null outside threads.
+/// Audience scope for one composer, matching desktop's keys:
+/// `owner:channel:thread:<headId>` for a thread and `owner:channel:channel`
+/// for the channel main timeline when [channelMain] opts in. Null otherwise.
 String? threadAgentAudienceScope({
   required String? ownerPubkey,
   required String channelId,
   required String? threadHeadId,
+  bool channelMain = false,
 }) {
   final owner = ownerPubkey?.trim().toLowerCase();
-  if (owner == null ||
-      !_hexPubkey.hasMatch(owner) ||
-      channelId.isEmpty ||
-      threadHeadId == null ||
-      threadHeadId.isEmpty) {
+  if (owner == null || !_hexPubkey.hasMatch(owner) || channelId.isEmpty) {
     return null;
   }
-  return '$owner:$channelId:thread:$threadHeadId';
+  if (threadHeadId != null && threadHeadId.isNotEmpty) {
+    return '$owner:$channelId:thread:$threadHeadId';
+  }
+  return channelMain ? '$owner:$channelId:channel' : null;
 }
 
 final _hexPubkey = RegExp(r'^[0-9a-f]{64}$');
