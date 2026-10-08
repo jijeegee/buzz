@@ -1,8 +1,8 @@
 import * as React from "react";
 
 import {
-  setThreadViewMode,
   type ThreadViewMode,
+  useSetThreadViewMode,
 } from "@/features/channels/lib/threadViewModePreference";
 
 export function findTopVisibleThreadMessageId(
@@ -62,6 +62,7 @@ export function useThreadViewModeSwitch({
   onExternalTargetResolved,
   onModeChange,
 }: ThreadViewModeSwitchOptions) {
+  const setThreadViewMode = useSetThreadViewMode();
   const [layoutScrollTarget, setLayoutScrollTarget] =
     React.useState<LayoutScrollTarget | null>(null);
   const layoutScrollTargetId = getScopedLayoutScrollTargetId({
@@ -101,7 +102,7 @@ export function useThreadViewModeSwitch({
         });
       });
     },
-    [activeThreadHeadId, onModeChange],
+    [activeThreadHeadId, onModeChange, setThreadViewMode],
   );
 
   const resolveScrollTarget = React.useCallback(
