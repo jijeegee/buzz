@@ -1278,6 +1278,7 @@ fn make_pair_runtime_placeholder() -> crate::managed_agents::ManagedAgentPairRun
             false,
             crate::managed_agents::channel_routing::RoutingRole::None,
             "",
+            "",
         ),
         setup_mode: false,
         adapter_availability: None,

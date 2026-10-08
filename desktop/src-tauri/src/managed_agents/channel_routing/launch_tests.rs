@@ -163,6 +163,7 @@ fn a_held_gainer_has_no_restart_badge_until_the_old_host_restarts() {
             false,
             role,
             "",
+            "",
         )
     };
     let badge = |stamped: RoutingRole, current: RoutingRole| {

@@ -110,6 +110,7 @@ fn policy_for(path: &str) -> MaskPolicy {
         //   adapter_availability                — an enum variant name
         //   routing_role                        — none / dispatcher / lead
         //   task_threads                        — trigger names
+        //   context_history                     — a budget name
         _ => MaskPolicy::Plain,
     }
 }

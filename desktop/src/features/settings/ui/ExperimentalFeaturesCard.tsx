@@ -13,6 +13,7 @@ import {
 } from "@/shared/features";
 import type { FeatureDefinition } from "@/shared/features";
 import { Switch } from "@/shared/ui/switch";
+import { ContextHistoryExperimentGroup } from "./ContextHistoryExperimentGroup";
 import {
   SettingsOptionGroup,
   SettingsOptionGroupList,
@@ -138,6 +139,7 @@ export function ExperimentalFeaturesCard() {
               <ContextGaugeRow />
             </SettingsOptionGroup>
             <TaskThreadsExperimentGroup />
+            <ContextHistoryExperimentGroup />
             <ExperimentsChannelRouting />
           </>
         ) : null}

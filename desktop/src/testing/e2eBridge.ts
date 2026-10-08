@@ -14391,6 +14391,10 @@ export function maybeInstallE2eTauriMocks() {
         return { level: "minimal", triggers: ["long_running"] };
       case "set_task_threads":
         return (payload as { setting: unknown }).setting;
+      case "get_context_history":
+        return { mode: "recent", budget: "medium" };
+      case "set_context_history":
+        return (payload as { setting: unknown }).setting;
       case "get_channel_routing":
         return mockChannelRoutingStatus();
       case "set_channel_routing":
