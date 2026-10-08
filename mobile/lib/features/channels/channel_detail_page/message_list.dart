@@ -136,7 +136,9 @@ class _MessageList extends HookConsumerWidget {
             hasUnreadDeepLink ||
             oldestUnreadMessageId.value != null ||
             unreadBoundaryLoadFailed.value ||
-            entries.isEmpty) {
+            entries.isEmpty ||
+            // Wait for the relay page: cached rows omit unread arrivals.
+            notifier.isShowingCachedHead) {
           return null;
         }
 
@@ -208,6 +210,7 @@ class _MessageList extends HookConsumerWidget {
         initialForcedUnreadMessageIds,
         entries.length,
         notifier.reachedOldest,
+        notifier.isShowingCachedHead,
         unreadBoundaryLoadFailed.value,
       ],
     );
