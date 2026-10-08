@@ -163,6 +163,8 @@ Widget _composerSuggestionPanel({
   required bool isDmChannel,
   required ValueChanged<Channel> onChannelSelect,
   required ValueChanged<MentionCandidate> onMentionSelect,
+  required _ThreadAgentPins agentPins,
+  required ValueChanged<MentionCandidate> onToggleAgentPin,
 }) => channelSuggestions.isNotEmpty
     ? KeyedSubtree(
         key: const ValueKey('channel-suggestions'),
@@ -180,6 +182,8 @@ Widget _composerSuggestionPanel({
           currentPubkey: currentPubkey,
           isDmChannel: isDmChannel,
           onSelect: onMentionSelect,
+          agentPins: agentPins.active ? agentPins : null,
+          onTogglePin: onToggleAgentPin,
         ),
       )
     : const SizedBox.shrink(key: ValueKey('no-suggestions'));

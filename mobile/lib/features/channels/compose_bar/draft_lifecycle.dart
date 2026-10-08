@@ -62,8 +62,26 @@ Future<void> _sendTextOnlyDraft({
   }
 }
 
+/// Drops the leading `@Agent ` mentions inserted by automatic thread mentions.
+String _stripImplicitAgentPrefix(
+  String text,
+  Set<String> pubkeys,
+  Map<String, MentionCandidate> bindings,
+) {
+  if (pubkeys.isEmpty) return text;
+  var offset = 0;
+  for (final range in mentionOccurrences(text, bindings.keys)) {
+    final pubkey = bindings[range.label]?.pubkey.toLowerCase();
+    if (range.start != offset || !pubkeys.contains(pubkey)) break;
+    offset = range.end;
+    if (offset < text.length && text[offset] == ' ') offset += 1;
+  }
+  return text.substring(offset);
+}
+
 void _useComposeDraftLifecycle({
   required ObjectRef<Map<String, MentionCandidate>> mentionMap,
+  required ObjectRef<Set<String>> implicitAgentPubkeys,
   required WidgetRef ref,
   required _MarkdownEditingController controller,
   required String draftKey,
@@ -161,7 +179,11 @@ void _useComposeDraftLifecycle({
             key: draftKey,
             channelId: channelId,
             threadHeadId: threadHeadId,
-            text: text,
+            text: _stripImplicitAgentPrefix(
+              text,
+              implicitAgentPubkeys.value,
+              mentionMap.value,
+            ),
             mentionKeys: bindings,
           );
     }

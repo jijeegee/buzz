@@ -18,6 +18,9 @@ class ComposeBar extends HookConsumerWidget {
   /// Optional thread IDs for thread-scoped typing indicators.
   final String? threadHeadId;
   final String? rootId;
+
+  /// Thread head tags; its agent `p` tags seed automatic mentions.
+  final List<List<String>> threadRootTags;
   const ComposeBar({
     super.key,
     required this.channelId,
@@ -25,6 +28,7 @@ class ComposeBar extends HookConsumerWidget {
     this.hintText,
     this.threadHeadId,
     this.rootId,
+    this.threadRootTags = const [],
     this.focusNode,
     this.onFocusRestorerChanged,
     this.onFocusRequested,
@@ -87,8 +91,12 @@ class ComposeBar extends HookConsumerWidget {
     );
     final voiceNoteRef = useRef(voiceNote)..value = voiceNote;
     final mentionMap = useRef(<String, MentionCandidate>{});
+    // Agents whose leading `@Agent ` text was inserted by automatic thread
+    // mentions; it is not authored draft content (desktop's provenance).
+    final implicitAgentPubkeys = useRef(<String>{});
     _useComposeDraftLifecycle(
       mentionMap: mentionMap,
+      implicitAgentPubkeys: implicitAgentPubkeys,
       ref: ref,
       controller: controller,
       draftKey: draftKey,
@@ -384,6 +392,50 @@ class ComposeBar extends HookConsumerWidget {
     final channels = channelsAsync.asData?.value ?? <Channel>[];
     final channelSuggestions = filterChannels(channels, channelQuery.value);
 
+    // Automatic thread agent mentions (desktop "Automatically mention agents").
+    final agentDisplayNames = ref.watch(agentDirectoryDisplayNamesProvider);
+    final audienceScope = threadAgentAudienceScope(
+      ownerPubkey: currentPubkey,
+      channelId: channelId,
+      threadHeadId: threadHeadId,
+    );
+    List<MentionCandidate>? agentCandidates;
+    MentionCandidate agentCandidate(String pubkey) {
+      agentCandidates ??= buildMentionCandidates(
+        members: membersAsync.asData?.value ?? cachedMembers,
+        relayAgents: relayAgents ?? const [],
+        sharedChannelIds: {
+          for (final c in channelsAsync.asData?.value ?? const <Channel>[])
+            if (c.isMember && !c.isArchived) c.id,
+        },
+        userCache: userCache,
+        ownerByAgentPubkey: agentOwners ?? const {},
+        currentPubkey: currentPubkey,
+      );
+      return agentCandidates!
+              .where((c) => c.pubkey.toLowerCase() == pubkey)
+              .firstOrNull ??
+          MentionCandidate(
+            pubkey: pubkey,
+            displayName:
+                userCache[pubkey]?.displayName ?? agentDisplayNames[pubkey],
+            avatarUrl: userCache[pubkey]?.avatarUrl,
+            isAgent: true,
+          );
+    }
+
+    final agentPins = _useThreadAgentPins(
+      context: context,
+      ref: ref,
+      scope: audienceScope,
+      rootTags: threadRootTags,
+      controller: controller,
+      mentionMap: mentionMap,
+      implicitPubkeys: implicitAgentPubkeys,
+      isModifyingText: isModifyingText,
+      agentCandidate: agentCandidate,
+    );
+
     // Insert a selected mention into the text field.
     void insertMention(MentionCandidate candidate) {
       final name = selectedMentionLabel(candidate.label, candidate.pubkey, {
@@ -407,6 +459,28 @@ class ComposeBar extends HookConsumerWidget {
         isModifyingText.value = false;
       }
       mentionQuery.value = null;
+      agentPins.onInlineAgentSelected(candidate);
+    }
+
+    // Pin or unpin an agent from the picker; drops the typed `@query` first.
+    void toggleAgentPin(MentionCandidate candidate) {
+      final start = mentionStartIdx.value.clamp(0, controller.text.length);
+      final selection = controller.selection;
+      final end = selection.isValid && selection.isCollapsed
+          ? selection.baseOffset.clamp(start, controller.text.length)
+          : start;
+      isModifyingText.value = true;
+      try {
+        controller.value = TextEditingValue(
+          text: controller.text.replaceRange(start, end, ''),
+          selection: TextSelection.collapsed(offset: start),
+        );
+      } finally {
+        isModifyingText.value = false;
+      }
+      mentionQuery.value = null;
+      agentPins.togglePin(candidate);
+      focusNode.requestFocus();
     }
 
     // Insert a selected channel into the text field.
@@ -448,9 +522,11 @@ class ComposeBar extends HookConsumerWidget {
 
     void clearComposer() {
       draftRevision.value += 1;
-      controller.clear();
+      agentPins.clearAndRestore(() {
+        controller.clear();
+        mentionMap.value.clear();
+      });
       attachments.value = [];
-      mentionMap.value.clear();
       mentionQuery.value = null;
       channelQuery.value = null;
       attachmentSurface.value = _AttachmentSurface.closed;
@@ -915,6 +991,8 @@ class ComposeBar extends HookConsumerWidget {
       isDmChannel: isDmChannel,
       onChannelSelect: insertChannel,
       onMentionSelect: insertMention,
+      agentPins: agentPins,
+      onToggleAgentPin: toggleAgentPin,
     );
     Widget buildOverlayPanel(_AttachmentSurface surface) {
       return _composerAttachmentPanel(
@@ -976,6 +1054,12 @@ class ComposeBar extends HookConsumerWidget {
               uploadProgress.value = 0;
             },
           ),
+          if (agentPins.pinnedAgents.isNotEmpty)
+            _ThreadAgentPinChips(
+              agents: agentPins.pinnedAgents,
+              userCache: userCache,
+              onRemove: agentPins.remove,
+            ),
           _ComposerOverlayPortal(
             controller: suggestionOverlayController,
             attachmentSurface: attachmentSurface,

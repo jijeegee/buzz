@@ -1,0 +1,239 @@
+part of '../compose_bar_test.dart';
+
+void threadAgentPinTests() {
+  group('thread automatic agent mentions', () {
+    final owner = 'd' * 64;
+    final agent = 'e' * 64;
+
+    Widget build({
+      String? thread = 'thread-head',
+      List<List<String>> rootTags = const [],
+      void Function(List<String>)? onSent,
+    }) => _buildComposeBar(
+      threadHeadId: thread,
+      threadRootTags: rootTags,
+      currentPubkey: owner,
+      uploadService: _testUploadService(nostr.Keys.generate().nsec),
+      relayAgents: [_testAgent(agent)],
+      channels: [_makeCurrentChannel()],
+      members: [
+        ChannelMember(
+          pubkey: agent,
+          displayName: 'Helper Bot',
+          role: 'bot',
+          joinedAt: DateTime(2025),
+        ),
+      ],
+      onSend: (_, mentions, {mediaTags = const []}) async {
+        onSent?.call(mentions);
+      },
+    );
+
+    String draft(WidgetTester tester) =>
+        tester.widget<TextField>(find.byType(TextField)).controller!.text;
+
+    ProviderContainer container(WidgetTester tester) =>
+        ProviderScope.containerOf(tester.element(find.byType(ComposeBar)));
+
+    Future<void> enable(WidgetTester tester) => container(
+      tester,
+    ).read(keepMentionedAgentsPinnedProvider.notifier).setEnabled(true);
+
+    final chips = find.byKey(const ValueKey('composer-address-locks'));
+
+    testWidgets('is off by default: root agents are not added', (tester) async {
+      await tester.pumpWidget(
+        build(
+          rootTags: [
+            ['p', agent],
+          ],
+        ),
+      );
+      await _expandComposer(tester);
+      await tester.pumpAndSettle();
+      expect(draft(tester), isEmpty);
+      expect(chips, findsNothing);
+    });
+
+    testWidgets('adds root agents and keeps them after each reply', (
+      tester,
+    ) async {
+      final sent = <List<String>>[];
+      await tester.pumpWidget(
+        build(
+          rootTags: [
+            ['p', agent],
+            ['p', owner],
+          ],
+          onSent: sent.add,
+        ),
+      );
+      await enable(tester);
+      await _expandComposer(tester);
+      await tester.pumpAndSettle();
+      expect(draft(tester), '@Helper Bot ');
+      expect(
+        find.byKey(ValueKey('composer-address-lock-$agent')),
+        findsOneWidget,
+      );
+
+      await tester.enterText(find.byType(TextField), '@Helper Bot hello');
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
+      await tester.pumpAndSettle();
+      expect(sent, [
+        [agent],
+      ]);
+      expect(draft(tester), '@Helper Bot ');
+      // The automatic prefix alone is not an authored draft.
+      final drafts = container(tester).read(composeDraftsProvider.notifier);
+      final key = composeDraftKey('channel-1', threadHeadId: 'thread-head');
+      expect(drafts.draftFor(key), isNull);
+      await tester.enterText(find.byType(TextField), '@Helper Bot later');
+      await tester.pumpAndSettle();
+      expect(drafts.draftFor(key)?.text, 'later');
+      // Let the draft store's debounced write finish.
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('deleting the mention or the chip stops auto-mentioning', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(
+          rootTags: [
+            ['p', agent],
+          ],
+        ),
+      );
+      await enable(tester);
+      await _expandComposer(tester);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'hello');
+      await tester.pumpAndSettle();
+      expect(chips, findsNothing);
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
+      await tester.pumpAndSettle();
+      expect(draft(tester), isEmpty);
+
+      // Re-pin through the picker, then remove it with the chip.
+      await tester.enterText(find.byType(TextField), 'hi @hel');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('mention-always-address-$agent')));
+      await tester.pumpAndSettle();
+      expect(draft(tester), '@Helper Bot hi ');
+      await tester.tap(find.byKey(ValueKey('composer-address-lock-$agent')));
+      await tester.pumpAndSettle();
+      expect(draft(tester), 'hi ');
+      expect(chips, findsNothing);
+    });
+
+    testWidgets('deleting one automatic mention saves no phantom draft', (
+      tester,
+    ) async {
+      final second = 'f' * 64;
+      await tester.pumpWidget(
+        _buildComposeBar(
+          threadHeadId: 'thread-head',
+          threadRootTags: [
+            ['p', agent],
+            ['p', second],
+          ],
+          currentPubkey: owner,
+          uploadService: _testUploadService(nostr.Keys.generate().nsec),
+          relayAgents: [
+            _testAgent(agent),
+            AgentDirectoryEntry(pubkey: second, displayName: 'Scout'),
+          ],
+          channels: [_makeCurrentChannel()],
+          members: [
+            ChannelMember(
+              pubkey: agent,
+              displayName: 'Helper Bot',
+              role: 'bot',
+              joinedAt: DateTime(2025),
+            ),
+            ChannelMember(
+              pubkey: second,
+              displayName: 'Scout',
+              role: 'bot',
+              joinedAt: DateTime(2025),
+            ),
+          ],
+          onSend: (_, _, {mediaTags = const []}) async {},
+        ),
+      );
+      await enable(tester);
+      await _expandComposer(tester);
+      await tester.pumpAndSettle();
+      expect(draft(tester), '@Helper Bot @Scout ');
+      await tester.enterText(find.byType(TextField), '@Scout ');
+      await tester.pumpAndSettle();
+      final drafts = container(tester).read(composeDraftsProvider.notifier);
+      final key = composeDraftKey('channel-1', threadHeadId: 'thread-head');
+      expect(drafts.draftFor(key), isNull);
+      await tester.enterText(find.byType(TextField), '@Scout hello');
+      await tester.pumpAndSettle();
+      expect(drafts.draftFor(key)?.text, 'hello');
+      expect(
+        find.byKey(ValueKey('composer-address-lock-$agent')),
+        findsNothing,
+      );
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('mentioning an agent pins it and offers Turn off', (
+      tester,
+    ) async {
+      await tester.pumpWidget(build());
+      await enable(tester);
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), '@hel');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Helper Bot'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Helper Bot will be mentioned automatically'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('composer-address-lock-$agent')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Turn off'));
+      await tester.pumpAndSettle();
+      expect(container(tester).read(keepMentionedAgentsPinnedProvider), false);
+      expect(chips, findsNothing);
+    });
+
+    testWidgets('picker pin turns the preference on', (tester) async {
+      await tester.pumpWidget(build());
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), '@hel');
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mention-keep-agents-pinned-toggle')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(ValueKey('mention-always-address-$agent')));
+      await tester.pumpAndSettle();
+      expect(container(tester).read(keepMentionedAgentsPinnedProvider), true);
+      expect(draft(tester), '@Helper Bot ');
+    });
+
+    testWidgets('channel composers have no automatic mentions', (tester) async {
+      await tester.pumpWidget(build(thread: null));
+      await enable(tester);
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), '@hel');
+      await tester.pumpAndSettle();
+      expect(find.text('Helper Bot'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('mention-always-address-$agent')),
+        findsNothing,
+      );
+      await tester.tap(find.text('Helper Bot'));
+      await tester.pumpAndSettle();
+      expect(chips, findsNothing);
+    });
+  });
+}

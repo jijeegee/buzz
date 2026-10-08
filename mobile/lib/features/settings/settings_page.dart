@@ -29,6 +29,7 @@ import '../../shared/widgets/ios_glass_navigation_action.dart';
 import '../../shared/widgets/immediate_page_route.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import 'account_page.dart';
+import 'agents_settings.dart';
 import 'devices_page.dart';
 import 'experiments_settings.dart';
 import 'theme_picker_page.dart';
@@ -229,6 +230,7 @@ class SettingsPage extends HookConsumerWidget {
                 profileHeader,
                 _CommunitySection(invitePageBuilder: invitePageBuilder),
                 const _NotificationsSection(),
+                const AgentsSettings(),
                 const ExperimentsSettings(),
                 if (tokenOrigin != null)
                   _AccountSection(origin: tokenOrigin)
