@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
+import 'channel_head_cache.dart';
 import 'pending_local_messages_provider.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
@@ -33,6 +36,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool _usingChannelWindow = false;
   bool _initialWindowQueryInFlight = false;
   int _initVersion = 0;
+  bool _headRestoreStarted = false;
+  bool _relayHistoryArrived = false;
+  Set<String> _cachedHeadIds = const {};
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
   final Set<String> _liveSummaryRootsDuringInitialWindowQuery = {};
   final Map<String, NostrEvent> _deepLinkEvents = {};
@@ -128,6 +134,13 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _summaryRefreshes.pause();
       _clearSubscription();
     });
+    if (!_headRestoreStarted && _lastKnownMessages == null) {
+      final scope = _readHeadScope();
+      if (scope != null) {
+        _headRestoreStarted = true;
+        unawaited(_restoreCachedHead(scope));
+      }
+    }
 
     if (sessionState.status != SessionStatus.connected) {
       _initVersion++;
@@ -195,7 +208,14 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       if (!_isCurrentInit(initVersion)) return;
       _confirmLocalMessages(history.map((event) => event.id));
 
-      final existing = state.value ?? const <NostrEvent>[];
+      // The relay page is authoritative: drop cached rows it no longer has
+      // (e.g. deleted while the app was closed), keeping live arrivals.
+      final cachedHeadIds = _cachedHeadIds;
+      _cachedHeadIds = const {};
+      final existing = [
+        for (final event in state.value ?? const <NostrEvent>[])
+          if (!cachedHeadIds.contains(event.id)) event,
+      ];
       final existingIds = existing.map((event) => event.id).toSet();
       final merged = _withDeepLinkEvents([
         ...existing,
@@ -231,13 +251,16 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     try {
       _initialWindowQueryInFlight = true;
       final pageVersion = ++_threadQuerySerial;
-      final page = await _fetchWindowPage(session, null);
+      final response = await session.queryRelay([_channelWindowFilter(null)]);
+      _relayHistoryArrived = true;
+      final page = parseChannelWindowResponse(response, channelId, null);
       _initialWindowQueryInFlight = false;
       _windowStore = replaceNewestChannelWindow(
         _windowStore,
         page,
         retainLiveSummaryRootIds: _liveSummaryRootsDuringInitialWindowQuery,
       );
+      _persistHead(response);
       _liveSummaryRootsDuringInitialWindowQuery.clear();
       _pruneOffWindowReplies();
       _usingChannelWindow = true;
@@ -253,12 +276,78 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         '[ChannelMessagesNotifier] channel window unavailable for $channelId, falling back to WS history: $error',
       );
       _usingChannelWindow = false;
+      // A restored head must not keep supplying summaries or deletion
+      // evidence once this channel's history comes from websocket fallback.
+      _windowStore = ChannelWindowStore(
+        pages: const [],
+        liveOverlay: _windowStore.liveOverlay,
+        liveAux: _windowStore.liveAux,
+        liveThreadSummaries: _windowStore.liveThreadSummaries,
+      );
       final history = await session.fetchHistory(
         NostrFilters.messages(channelId),
       );
+      _relayHistoryArrived = true;
       history.sort(compareChannelTimelineEventsChronologically);
       return history;
     }
+  }
+
+  /// Paints the persisted newest page while the relay query is in flight.
+  /// Relay-loaded or live state always wins, and the next relay page replaces
+  /// the cached rows.
+  Future<void> _restoreCachedHead(ChannelHeadScope scope) async {
+    try {
+      final events = await ref
+          .read(channelHeadCacheProvider)
+          .load(scope, channelId);
+      if (events == null ||
+          !ref.mounted ||
+          _relayHistoryArrived ||
+          _lastKnownMessages != null ||
+          _readHeadScope() != scope) {
+        return;
+      }
+      _windowStore = replaceNewestChannelWindow(
+        _windowStore,
+        parseChannelWindowResponse(events, channelId, null),
+      );
+      final messages = flattenChannelWindowEvents(_windowStore);
+      _cachedHeadIds = {for (final event in messages) event.id};
+      _lastKnownMessages = messages;
+      state = AsyncData(messages);
+    } catch (error) {
+      debugPrint(
+        '[ChannelMessagesNotifier] cached head unavailable for $channelId: $error',
+      );
+    }
+  }
+
+  ChannelHeadScope? _readHeadScope() {
+    try {
+      return ref.read(channelHeadScopeProvider);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Whether the visible rows are a persisted head awaiting the relay page.
+  /// Such rows cannot be paged or used as unread targets yet.
+  bool get isShowingCachedHead => _cachedHeadIds.isNotEmpty;
+
+  void _persistHead(List<NostrEvent> response) {
+    final scope = _readHeadScope();
+    if (scope == null) return;
+    unawaited(
+      ref
+          .read(channelHeadCacheProvider)
+          .store(scope, channelId, response)
+          .catchError((Object error) {
+            debugPrint(
+              '[ChannelMessagesNotifier] failed to persist head for $channelId: $error',
+            );
+          }),
+    );
   }
 
   Future<ChannelWindowPage> _fetchWindowPage(
@@ -870,7 +959,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
     final existing = state.value ?? const <NostrEvent>[];
     for (final event in existing) {
-      if (ids.contains(event.id)) _deepLinkEvents[event.id] = event;
+      // Cached rows may have been deleted since; fetch those from the relay.
+      if (ids.contains(event.id) && !_cachedHeadIds.contains(event.id)) {
+        _deepLinkEvents[event.id] = event;
+      }
     }
     ids.removeAll(_deepLinkEvents.keys);
     if (ids.isEmpty) return;
@@ -920,7 +1012,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   }
 
   Future<bool> fetchOlder() async {
-    if (_reachedOldest || _initInFlight) return false;
+    if (_reachedOldest || _initInFlight || isShowingCachedHead) return false;
 
     final session = ref.read(relaySessionProvider.notifier);
     if (_usingChannelWindow) {
