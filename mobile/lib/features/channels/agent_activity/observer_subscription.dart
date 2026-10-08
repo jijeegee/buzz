@@ -220,8 +220,14 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
       normalizedAgent,
       () => <ObserverFrame>[],
     );
-    frames.add(frame);
-    frames.sort(_compareObserverFrames);
+    // Frames almost always arrive in order, so insert from the tail instead of
+    // re-sorting (and re-parsing every timestamp) on each frame.
+    var insertAt = frames.length;
+    while (insertAt > 0 &&
+        _compareObserverFrames(frame, frames[insertAt - 1]) < 0) {
+      insertAt -= 1;
+    }
+    frames.insert(insertAt, frame);
 
     if (frames.length > _maxObserverEvents) {
       final removeCount = frames.length - _maxObserverEvents;
