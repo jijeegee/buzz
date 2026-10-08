@@ -183,11 +183,7 @@ async fn close(
         Some(requester) => requester,
         None => event_author(&root)?,
     };
-    let excerpt = excerpt_for(
-        task.as_ref()
-            .map(|t| t.title.as_str())
-            .unwrap_or_else(|| root.get("content").and_then(|c| c.as_str()).unwrap_or("")),
-    );
+    let excerpt = result_excerpt(task.as_ref(), &root);
     let mut sent_from = vec![SENT_FROM_THREAD_TAG.to_string(), root_id.clone()];
     sent_from.extend(excerpt);
 
@@ -348,13 +344,37 @@ fn thread_name_for(title: &str) -> String {
     format!("{}…", name.trim_end())
 }
 
-/// Single-line excerpt for the sent-from-thread tag, or `None` when empty.
+/// Single-line excerpt of markdown content for the sent-from-thread tag, or
+/// `None` when empty. Markdown syntax characters are dropped.
 fn excerpt_for(text: &str) -> Option<String> {
+    clip_excerpt(&text.replace(['*', '`', '#', '>', '_', '~', '|'], " "))
+}
+
+/// Single-line excerpt of a plain-text task title for the sent-from-thread
+/// tag. Clients render the excerpt as plain text, so every character the
+/// title carries (`~`, `*`, `_`, `` ` ``, `[`) is kept as written.
+fn title_excerpt(title: &str) -> Option<String> {
+    clip_excerpt(title)
+}
+
+/// Excerpt shown as the result's "Sent from thread" label: the task title
+/// when the thread has a kickoff, otherwise the root message's content.
+fn result_excerpt(task: Option<&TaskInfo>, root: &serde_json::Value) -> Option<String> {
+    match task {
+        // A task title is plain text, so it is shown verbatim; only the
+        // root's markdown content needs its syntax stripped.
+        Some(task) => title_excerpt(&task.title),
+        None => excerpt_for(root.get("content").and_then(|c| c.as_str()).unwrap_or("")),
+    }
+}
+
+/// Collapse control characters and whitespace to single spaces and clip to
+/// the excerpt limit, or `None` when nothing remains.
+fn clip_excerpt(text: &str) -> Option<String> {
     let line: String = text
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect::<String>()
-        .replace(['*', '`', '#', '>', '_', '~', '|'], " ")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
@@ -432,6 +452,36 @@ mod tests {
         let long = excerpt_for(&"a ".repeat(100)).unwrap();
         assert!(long.chars().count() <= MAX_EXCERPT_CHARS);
         assert!(long.ends_with('…'));
+    }
+
+    #[test]
+    fn title_excerpt_keeps_markdown_characters_literally() {
+        assert_eq!(
+            title_excerpt("1~100 소수 개수"),
+            Some("1~100 소수 개수".into())
+        );
+        assert_eq!(
+            title_excerpt("fix *a* _b_ `c` [d](e) ~~f~~ #g > h | i"),
+            Some("fix *a* _b_ `c` [d](e) ~~f~~ #g > h | i".into())
+        );
+        assert_eq!(title_excerpt(" a\tb\n "), Some("a b".into()));
+        assert_eq!(title_excerpt("  "), None);
+        let long = title_excerpt(&"~".repeat(100)).unwrap();
+        assert_eq!(long, format!("{}…", "~".repeat(MAX_EXCERPT_CHARS - 1)));
+    }
+
+    #[test]
+    fn result_excerpt_shows_the_task_title_literally() {
+        let root = serde_json::json!({"content": "**root** ~~body~~"});
+        let task = TaskInfo {
+            title: "1~100 소수 개수 *a* _b_ `c` [d]".into(),
+            requester: None,
+        };
+        assert_eq!(
+            result_excerpt(Some(&task), &root),
+            Some("1~100 소수 개수 *a* _b_ `c` [d]".into())
+        );
+        assert_eq!(result_excerpt(None, &root), Some("root body".into()));
     }
 
     #[test]
