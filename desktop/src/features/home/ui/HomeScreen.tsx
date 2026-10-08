@@ -3,10 +3,13 @@ import * as React from "react";
 import { useAppShell } from "@/app/AppShellContext";
 import { markHiddenDmFeedItems } from "@/features/channels/dmResurface";
 import { useHiddenDmIds } from "@/features/channels/useHiddenDmIds";
+import { useChannelsQuery } from "@/features/channels/hooks";
 import {
+  useConversationChannelActivity,
   useHomeFeedQuery,
   useInboxDeletedEventIds,
 } from "@/features/home/hooks";
+import { useInboxFilter } from "@/features/home/lib/inboxFilterPreference";
 import {
   collectInboxReferencedEventIds,
   withoutDeletedFeedItems,
@@ -40,23 +43,53 @@ export function HomeScreen({
   const { threadActivityFeedItems } = useAppShell();
   const hiddenDmIds = useHiddenDmIds(currentPubkey);
 
+  // Channels + Threads is a chat list: it also loads the rooms' recent
+  // traffic, including the user's own messages, so every room appears and
+  // sorts by its real latest activity.
+  const isConversationView = useInboxFilter() === "conversations";
+  const conversationActivity = useConversationChannelActivity(
+    useChannelsQuery().data,
+    isConversationView,
+  );
   const augmentedFeed = React.useMemo((): HomeFeedResponse | undefined => {
     if (!homeFeedQuery.data) return undefined;
+    const extraActivity = [
+      ...threadActivityFeedItems,
+      ...(isConversationView ? (conversationActivity ?? []) : []),
+    ];
+    // Feed items win on duplicate ids: their category is more specific.
+    const feedIds = new Set(
+      [
+        ...homeFeedQuery.data.feed.mentions,
+        ...homeFeedQuery.data.feed.needsAction,
+        ...homeFeedQuery.data.feed.activity,
+        ...homeFeedQuery.data.feed.agentActivity,
+      ].map((item) => item.id),
+    );
+    const seen = new Set<string>();
+    const newActivity = extraActivity.filter((item) => {
+      if (feedIds.has(item.id) || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
     const withThreadActivity =
-      threadActivityFeedItems.length === 0
+      newActivity.length === 0
         ? homeFeedQuery.data
         : {
             ...homeFeedQuery.data,
             feed: {
               ...homeFeedQuery.data.feed,
-              activity: [
-                ...homeFeedQuery.data.feed.activity,
-                ...threadActivityFeedItems,
-              ],
+              activity: [...homeFeedQuery.data.feed.activity, ...newActivity],
             },
           };
     return markHiddenDmFeedItems(withThreadActivity, hiddenDmIds);
-  }, [hiddenDmIds, homeFeedQuery.data, threadActivityFeedItems]);
+  }, [
+    conversationActivity,
+    hiddenDmIds,
+    homeFeedQuery.data,
+    isConversationView,
+    threadActivityFeedItems,
+  ]);
   const referencedEventIds = React.useMemo(
     () =>
       augmentedFeed ? collectInboxReferencedEventIds(augmentedFeed.feed) : [],

@@ -218,3 +218,49 @@ test.describe("inbox rows land exactly where they point", () => {
     await page.screenshot({ path: `${SHOTS}/05-channel-row-latest.png` });
   });
 });
+
+test.describe("Channels + Threads is a chat list", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("my own latest message brings its room to the top", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("buzz.desktop.inbox-filter", "conversations");
+    });
+    await installMockBridge(page, { mode: "mock" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("home-inbox-list")).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.waitForFunction(
+      () =>
+        typeof (window as MockFeedWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
+        "function",
+    );
+
+    // A message I send never reaches the mention feed; the chat list must
+    // still show its room, newest first.
+    await page.evaluate(() => {
+      const emit = (window as MockFeedWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      if (!emit) throw new Error("Mock bridge helpers missing.");
+      emit({
+        channelName: "random",
+        content: "My own note in random",
+        createdAt: Math.floor(Date.now() / 1000) + 30,
+        pubkey: "deadbeef".repeat(8),
+      });
+    });
+    // The live update moves the room's last-message time, which refetches
+    // just that room.
+
+    const firstRow = page
+      .getByTestId("home-inbox-list")
+      .locator('[data-testid^="home-inbox-item-"]')
+      .first();
+    await expect(firstRow).toContainText("My own note in random", {
+      timeout: 10_000,
+    });
+    await expect(firstRow).toContainText("#random");
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/06-own-message-room.png` });
+  });
+});

@@ -56,6 +56,30 @@ void main() {
   });
 
   group('isInboxItemDone', () {
+    test('a conversation whose latest message is mine is read', () {
+      final row = buildInboxItems([item(id: 'a', createdAt: 50)]).single;
+      expect(
+        isInboxItemDone(
+          row,
+          markerOf: markers({}),
+          localUnreadOverrides: const {},
+          localDoneSet: const {},
+          currentPubkey: 'PK1',
+        ),
+        isTrue,
+      );
+      expect(
+        isInboxItemDone(
+          row,
+          markerOf: markers({}),
+          localUnreadOverrides: const {},
+          localDoneSet: const {},
+          currentPubkey: 'someone-else',
+        ),
+        isFalse,
+      );
+    });
+
     test('done when no grouped activity is newer than the marker', () {
       final row = buildInboxItems([item(id: 'a', createdAt: 50)]).single;
       expect(
