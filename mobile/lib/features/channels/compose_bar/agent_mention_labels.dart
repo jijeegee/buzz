@@ -1,10 +1,15 @@
 part of '../compose_bar.dart';
 
+/// Labels rendered as agent chips. Draft-restored bindings carry no role, so
+/// a known agent key also counts (otherwise they reappear as plain text).
 Set<String> _agentMentionLabels({
   required Map<String, MentionCandidate> bindings,
+  Set<String> knownAgentPubkeys = const {},
 }) => {
   for (final entry in bindings.entries)
-    if (entry.value.isAgent) entry.key,
+    if (entry.value.isAgent ||
+        knownAgentPubkeys.contains(entry.value.pubkey.toLowerCase()))
+      entry.key,
 };
 
 List<MentionCandidate> _resolveComposerMentions(
