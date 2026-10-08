@@ -21,6 +21,7 @@ import { useCommunities } from "@/features/communities/useCommunities";
 import { formatInboxTypeLabel } from "@/features/home/lib/inbox";
 import {
   hasInboxThreadContext,
+  isChannelMainRoomItem,
   toTimelineMessage,
 } from "@/features/home/lib/inboxViewHelpers";
 import {
@@ -215,6 +216,10 @@ function InboxMessageDetailPane({
   const conversationId = item?.conversationId ?? null;
   const selectedChannelId = item?.item.channelId ?? null;
   const isDirectMessage = item?.item.channelType === "dm";
+  // A channel row in the conversations view is the channel's main timeline:
+  // like a DM, it shows the whole room and the composer posts top-level.
+  const isChannelMainRoom = !isDirectMessage && isChannelMainRoomItem(item);
+  const isRoomTimeline = isDirectMessage || isChannelMainRoom;
   // Build the plain, non-virtualized timeline the shared hook anchors against.
   // Live arrivals rerun its layout compensation without changing the target.
 
@@ -480,7 +485,7 @@ function InboxMessageDetailPane({
   // not change when a live incoming message advances the representative item.
   const composerParentEventId =
     replyTarget?.id ??
-    (isDirectMessage ? null : (capturedDefaultParentId ?? item.id));
+    (isRoomTimeline ? null : (capturedDefaultParentId ?? item.id));
   const composerReplyTarget =
     replyTarget && replyTarget.id !== item.id
       ? {
@@ -497,7 +502,7 @@ function InboxMessageDetailPane({
       ? item.item.channelType
       : null;
   const isThreadContext =
-    !isDirectMessage && hasInboxThreadContext(item, messages);
+    !isRoomTimeline && hasInboxThreadContext(item, messages);
   const threadRootTags = isThreadContext
     ? (displayMessages.find((message) => message.id === item.conversationId)
         ?.tags ?? [])
@@ -510,9 +515,11 @@ function InboxMessageDetailPane({
         : "Thread"
     : isDirectMessage
       ? `DM with ${item.senderLabel}`
-      : channelContextName
-        ? `Message in #${channelContextName}`
-        : formatInboxTypeLabel(item);
+      : isChannelMainRoom && channelContextName
+        ? `#${channelContextName}`
+        : channelContextName
+          ? `Message in #${channelContextName}`
+          : formatInboxTypeLabel(item);
   const contextChannelId = item.item.channelId;
   const sourceEventId = selectedEventId ?? item.id;
   const contextThreadRootId = isThreadContext ? item.conversationId : null;
@@ -818,7 +825,7 @@ function InboxMessageDetailPane({
           <div className="pointer-events-auto">
             <MessageComposer
               audienceContext={
-                isDirectMessage
+                isRoomTimeline
                   ? null
                   : {
                       type: "thread",
@@ -831,7 +838,7 @@ function InboxMessageDetailPane({
               containerClassName="px-4 pb-4 sm:px-4"
               disabled={!canReply && !composerEditTarget}
               draftKey={
-                isDirectMessage
+                isRoomTimeline
                   ? (item.item.channelId ?? item.conversationId)
                   : `thread:${item.conversationId}`
               }
@@ -876,7 +883,9 @@ function InboxMessageDetailPane({
                 canReply
                   ? isDirectMessage
                     ? `Message ${item.senderLabel}`
-                    : `Send reply to ${item.channelLabel ? `#${item.channelLabel} thread` : "channel thread"}`
+                    : isChannelMainRoom
+                      ? `Message #${item.channelLabel ?? "channel"}`
+                      : `Send reply to ${item.channelLabel ? `#${item.channelLabel} thread` : "channel thread"}`
                   : (disabledReplyReason ??
                     "Replies are not available for this item.")
               }

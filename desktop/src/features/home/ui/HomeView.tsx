@@ -8,6 +8,7 @@ import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
 import { ChannelManagementSheet } from "@/features/channels/ui/ChannelManagementSheet";
 import {
   type InboxFilter,
+  parseInboxFilter,
   type InboxReply,
   buildInboxItems,
   findInboxItemByEventId,
@@ -56,7 +57,10 @@ import { collectMessageMentionPubkeys } from "@/features/messages/lib/formatTime
 import { formatTime } from "@/features/messages/lib/dateFormatters";
 import { DeleteMessageConfirmDialog } from "@/features/messages/ui/DeleteMessageConfirmDialog";
 import { splitOutgoingTags } from "@/features/messages/lib/imetaMediaMarkdown";
-import { getThreadReference } from "@/features/messages/lib/threading";
+import {
+  getThreadReference,
+  isBroadcastReply,
+} from "@/features/messages/lib/threading";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
@@ -85,6 +89,7 @@ const INBOX_SEARCH_KEYS = [
 ] as const;
 
 const INBOX_UNREAD_ONLY_STORAGE_KEY = "buzz.desktop.inbox-unread-only";
+const INBOX_FILTER_STORAGE_KEY = "buzz.desktop.inbox-filter";
 
 type HomeViewProps = {
   feed?: HomeFeedResponse;
@@ -114,7 +119,10 @@ export function HomeView({
   const isNarrowHomeViewport =
     homeInboxWidthPx > 0 &&
     homeInboxWidthPx < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
-  const [filter, setFilter] = React.useState<InboxFilter>("all");
+  // The chosen filter is a device-level preference that survives restarts.
+  const [filter, setFilter] = React.useState<InboxFilter>(() =>
+    parseInboxFilter(getStorageItem(INBOX_FILTER_STORAGE_KEY)),
+  );
   const [unreadOnly, setUnreadOnly] = React.useState(
     () => getStorageItem(INBOX_UNREAD_ONLY_STORAGE_KEY) === "true",
   );
@@ -305,13 +313,23 @@ export function HomeView({
   const channelMessagesQuery = useChannelMessagesQuery(selectedChannel);
   const toggleReactionMutation = useToggleReactionMutation();
   const channelMessages = channelMessagesQuery.data;
+  const isDmSelection =
+    selectedChannel?.channelType === "dm" ||
+    threadContextFeedItem?.channelType === "dm";
+  // In the conversations view a channel row is the channel's main timeline
+  // room, so it opens the whole main timeline like a DM opens the whole DM.
+  const isChannelMainSelection =
+    filter === "conversations" &&
+    !isDmSelection &&
+    threadContextFeedItem !== null &&
+    (getThreadReference(threadContextFeedItem.tags).parentId === null ||
+      isBroadcastReply(threadContextFeedItem.tags));
   const threadContext = useInboxThreadContext(
     threadContextFeedItem,
     channelMessages,
     {
-      fullChannel:
-        selectedChannel?.channelType === "dm" ||
-        threadContextFeedItem?.channelType === "dm",
+      fullChannel: isDmSelection || isChannelMainSelection,
+      mainTimelineOnly: isChannelMainSelection,
       hasChannelLoadError: channelMessagesQuery.isError,
       isChannelLoading: channelMessagesQuery.isPending,
     },
@@ -586,6 +604,7 @@ export function HomeView({
       setSelectedDraftKey(null);
       setSelectedReminderId(null);
       setFilter(nextFilter);
+      setStorageItem(INBOX_FILTER_STORAGE_KEY, nextFilter);
 
       if (
         nextFilter === "reminders" ||
