@@ -134,13 +134,10 @@ fn backfill_of_promptless_record_keeps_spawn_snapshot_stable() {
     let before = prospective_spawn_config_snapshot(
         pre_instance,
         &[],
-        &[],
         "wss://ws.example",
         &Default::default(),
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
-        "",
-        "",
     );
 
     backfill_standalone_agents_in_dir(&base(dir.path())).unwrap();
@@ -154,13 +151,10 @@ fn backfill_of_promptless_record_keeps_spawn_snapshot_stable() {
     let after = prospective_spawn_config_snapshot(
         post_instance,
         &personas,
-        &[],
         "wss://ws.example",
         &Default::default(),
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
-        "",
-        "",
     );
 
     assert_eq!(
@@ -192,13 +186,10 @@ fn backfill_of_prompted_record_keeps_spawn_snapshot_stable() {
     let before = prospective_spawn_config_snapshot(
         pre_instance,
         &[],
-        &[],
         "wss://ws.example",
         &Default::default(),
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
-        "",
-        "",
     );
 
     backfill_standalone_agents_in_dir(&base(dir.path())).unwrap();
@@ -212,13 +203,10 @@ fn backfill_of_prompted_record_keeps_spawn_snapshot_stable() {
     let after = prospective_spawn_config_snapshot(
         post_instance,
         &personas,
-        &[],
         "wss://ws.example",
         &Default::default(),
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
-        "",
-        "",
     );
 
     assert_eq!(before.canonical(), after.canonical());

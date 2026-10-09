@@ -17,8 +17,6 @@ fn base() -> SpawnConfigSnapshot {
             ("BUZZ_LOG".to_string(), "info".to_string()),
         ]),
         relay_url: "wss://relay.example".into(),
-        team_instructions: Some("Team says hello.".into()),
-        system_prompt: Some("You are a test agent.".into()),
         model: Some("gpt-5".into()),
         provider: Some("openai".into()),
         session_title: Some("Fizz".into()),
@@ -31,8 +29,6 @@ fn base() -> SpawnConfigSnapshot {
         effort_level: Some("high".into()),
         session_policy: "channel".into(),
         routing_role: crate::managed_agents::channel_routing::RoutingRole::None,
-        task_threads: "long_running".into(),
-        context_history: "".into(),
     }
 }
 
@@ -62,8 +58,6 @@ fn mutations() -> Vec<Mutation> {
                 .insert("OPENAI_API_KEY".into(), "sk-live-rotated-9999".into());
         }),
         ("relay_url", |s| s.relay_url = "wss://other.example".into()),
-        ("team_instructions", |s| s.team_instructions = None),
-        ("system_prompt", |s| s.system_prompt = None),
         ("model", |s| s.model = None),
         ("provider", |s| s.provider = None),
         ("session_title", |s| s.session_title = None),
@@ -80,10 +74,6 @@ fn mutations() -> Vec<Mutation> {
         ("routing_role", |s| {
             s.routing_role = crate::managed_agents::channel_routing::RoutingRole::Dispatcher
         }),
-        ("task_threads", |s| {
-            s.task_threads = "long_running,multi_step".into()
-        }),
-        ("context_history", |s| s.context_history = "medium".into()),
     ]
 }
 
@@ -385,28 +375,6 @@ fn auth_tag_is_masked_with_a_suffix() {
     );
 }
 
-#[test]
-fn large_text_fields_report_character_counts_only() {
-    let mut after = base();
-    after.system_prompt = Some("Longer replacement prompt.".into());
-    after.team_instructions = None;
-    let entries = diff(&base(), &after);
-    assert_eq!(
-        change_at(&entries, "system_prompt"),
-        &RestartChange::Text {
-            before_chars: Some("You are a test agent.".chars().count()),
-            after_chars: Some("Longer replacement prompt.".chars().count()),
-        }
-    );
-    assert_eq!(
-        change_at(&entries, "team_instructions"),
-        &RestartChange::Text {
-            before_chars: Some("Team says hello.".chars().count()),
-            after_chars: None,
-        }
-    );
-}
-
 // ── secrecy sentinels ────────────────────────────────────────────────────
 
 /// A snapshot whose every secret-bearing leaf carries a sentinel.
@@ -450,8 +418,6 @@ fn no_sentinel_reaches_snapshot_debug_output() {
     let rendered = format!("{:?}", seeded_with_sentinels());
     assert!(!rendered.contains("SENTINEL"), "Debug leaked: {rendered}");
     assert!(!rendered.contains("token="), "Debug leaked: {rendered}");
-    // Large text is summarized rather than dumped.
-    assert!(!rendered.contains("You are a test agent."));
     // Non-secret leaves stay legible, or the log line is useless.
     assert!(rendered.contains("goose"));
 }

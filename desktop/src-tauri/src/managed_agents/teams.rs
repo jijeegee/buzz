@@ -209,7 +209,10 @@ pub fn save_teams<R: tauri::Runtime>(
     let path = teams_store_path(app)?;
     let payload = serde_json::to_vec_pretty(&sorted)
         .map_err(|error| format!("failed to serialize teams store: {error}"))?;
-    crate::managed_agents::storage::atomic_write_json(&path, &payload)
+    crate::managed_agents::storage::atomic_write_json(&path, &payload)?;
+    // Running agents pick up team instruction edits from their live settings.
+    crate::managed_agents::live_settings::schedule_live_settings_sync(app);
+    Ok(())
 }
 
 /// Names of managed agents that still reference `team` — either via the

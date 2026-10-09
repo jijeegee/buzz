@@ -175,7 +175,6 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     record: &ManagedAgentRecord,
     runtimes: &HashMap<ManagedAgentRuntimeKey, ManagedAgentPairRuntime>,
     personas: &[crate::managed_agents::types::AgentDefinition],
-    teams: &[crate::managed_agents::TeamRecord],
     global_config: &crate::managed_agents::GlobalAgentConfig,
     routing_mode: super::channel_routing::ChannelRoutingMode,
 ) -> Result<ManagedAgentSummary, String> {
@@ -281,7 +280,6 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         let current = crate::managed_agents::spawn_snapshot::prospective_spawn_config_snapshot(
             record,
             personas,
-            teams,
             &key.relay_url,
             global_config,
             super::owner_only_access_build(),
@@ -298,8 +296,6 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
                 ),
                 &super::channel_routing::live_local_roles(runtimes),
             ),
-            &super::task_threads::current_task_threads_env(app),
-            &super::context_history::current_context_history_env(app),
         );
         (runtime, current)
     });
@@ -948,6 +944,25 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         owner_hex,
         super::channel_routing::generated_routing_dir(app),
     )?;
+    // Text settings also go into a per-agent file the harness re-reads every
+    // turn, so later edits reach this process without a restart. Built from
+    // the values resolved above, under this launch's policy and routing role,
+    // and written after user env so the path cannot be overridden.
+    let live_settings = super::live_settings::LiveSettingsFile::from_inputs(
+        super::live_settings::LiveSettingsInputs {
+            system_prompt: effective_prompt.as_deref(),
+            user_env: &descriptor.env,
+            team_instructions: team_instructions.as_deref(),
+            task_threads: &task_threads,
+            context_history: &context_history,
+            session_policy: acp_session_policy,
+            routing_role,
+        },
+    );
+    match super::live_settings::write_spawn_live_settings(app, record, &live_settings) {
+        Ok(path) => command.env(super::live_settings::LIVE_SETTINGS_ENV_VAR, path),
+        Err(_) => command.env_remove(super::live_settings::LIVE_SETTINGS_ENV_VAR),
+    };
 
     crate::build_identity::apply_demo_config_home(&mut command)?;
     // Publish-first replay floor: written AFTER the `descriptor.env` loop, the
@@ -993,15 +1008,11 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             record,
             descriptor: &descriptor,
             relay_url: &effective_relay_url,
-            team_instructions: team_instructions.as_deref(),
-            system_prompt: effective_prompt.as_deref(),
             model: effective_model.as_deref(),
             provider: effective_provider.as_deref(),
             enforced_owner_only: super::owner_only_access_build(),
             session_policy: acp_session_policy,
             routing_role,
-            task_threads: &task_threads,
-            context_history: &context_history,
         },
     );
 

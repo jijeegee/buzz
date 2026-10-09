@@ -3,11 +3,12 @@
 //!
 //! One desktop-wide setting stored in `<app-data>/agents/context-history.json`
 //! (`{ "mode": "budget", "budget": "medium" }`). Like task threads it is
-//! deliberately not a `GlobalAgentConfig` field, so changing it only raises the
-//! restart badge instead of restarting every agent. The harness receives the
-//! budget as `BUZZ_ACP_CONTEXT_HISTORY`; `Recent` (the default) sends nothing,
-//! and channel dispatchers never receive it because a router keeps its own
-//! small window.
+//! deliberately not a `GlobalAgentConfig` field, so changing it never restarts
+//! an agent: running agents read it from their live settings file
+//! (`live_settings`) and apply it to their next new session. The harness
+//! receives the budget (at launch as `BUZZ_ACP_CONTEXT_HISTORY`, then through
+//! that file); `Recent` (the default) sends nothing, and channel dispatchers
+//! never receive it because a router keeps its own small window.
 
 use std::path::{Path, PathBuf};
 
@@ -114,7 +115,10 @@ pub fn save_context_history<R: tauri::Runtime>(
     app: &AppHandle<R>,
     setting: &ContextHistorySetting,
 ) -> Result<(), String> {
-    save_context_history_at(&context_history_path(app)?, setting)
+    save_context_history_at(&context_history_path(app)?, setting)?;
+    // Running agents pick the change up from their live settings files.
+    super::live_settings::schedule_live_settings_sync(app);
+    Ok(())
 }
 
 pub(crate) fn save_context_history_at(

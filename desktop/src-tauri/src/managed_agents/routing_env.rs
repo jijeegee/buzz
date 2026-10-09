@@ -155,14 +155,19 @@ pub(crate) fn apply_lead_env(
             None => String::new(),
         },
     };
-    let prompt = if base.trim().is_empty() {
+    command.env_remove(SYSTEM_PROMPT_FILE_ENV_VAR);
+    command.env(SYSTEM_PROMPT_ENV_VAR, lead_system_prompt(&base, addendum));
+    Ok(())
+}
+
+/// A lead's system prompt: `base` (possibly empty) followed by `addendum`.
+/// The live settings file builds a running lead's prompt the same way.
+pub(crate) fn lead_system_prompt(base: &str, addendum: &str) -> String {
+    if base.trim().is_empty() {
         addendum.to_string()
     } else {
         format!("{}\n\n{addendum}", base.trim_end())
-    };
-    command.env_remove(SYSTEM_PROMPT_FILE_ENV_VAR);
-    command.env(SYSTEM_PROMPT_ENV_VAR, prompt);
-    Ok(())
+    }
 }
 
 /// The `launch.policy_env` twin of [`apply_routing_env`] for provider

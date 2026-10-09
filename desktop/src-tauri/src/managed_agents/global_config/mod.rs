@@ -233,7 +233,10 @@ pub fn save_global_agent_config(app: &AppHandle, config: &GlobalAgentConfig) -> 
     let path = global_config_path(app)?;
     let payload = serde_json::to_vec_pretty(&config)
         .map_err(|e| format!("failed to serialize global agent config: {e}"))?;
-    atomic_write_json_restricted(&path, &payload)
+    atomic_write_json_restricted(&path, &payload)?;
+    // A global prompt env tier can change a running agent's live prompt.
+    super::live_settings::schedule_live_settings_sync(app);
+    Ok(())
 }
 
 /// Resolve the effective model and provider for an agent.

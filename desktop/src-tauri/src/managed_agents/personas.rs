@@ -393,6 +393,18 @@ pub fn load_personas<R: tauri::Runtime>(
     Ok(records)
 }
 
+/// [`load_personas`] without its write-back: for background readers that
+/// must not race a concurrent persona save.
+pub(crate) fn load_personas_readonly<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Vec<AgentDefinition>, String> {
+    let records = crate::managed_agents::storage::load_agent_definitions(app)?
+        .iter()
+        .filter_map(|record| record.to_definition_view())
+        .collect();
+    Ok(merge_personas(records, &now_iso()).0)
+}
+
 /// Read the raw persona records at `path` — no built-in merge, no write-back.
 /// The single disk-read seam for persona definitions: `load_personas` layers
 /// the built-in merge on top, and the boot-time readers that need raw records
