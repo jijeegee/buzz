@@ -52,16 +52,6 @@ function getRouteMainTimelineTargetId(
   return targetMessage.rootId ?? targetMessage.parentId;
 }
 
-/**
- * Whether a route target on a top-level message opens its reply panel. A
- * message link does; entering a chat room from the inbox lands on the room's
- * latest message and leaves threads closed.
- */
-const RootTargetOpensThreadContext = React.createContext(true);
-
-export const RootTargetOpensThreadProvider =
-  RootTargetOpensThreadContext.Provider;
-
 export function useChannelRouteTarget({
   activeChannel,
   activeChannelId,
@@ -101,7 +91,6 @@ export function useChannelRouteTarget({
     targetTimelineMessage,
   );
   const handledThreadRouteTargetRef = React.useRef<string | null>(null);
-  const rootTargetOpensThread = React.useContext(RootTargetOpensThreadContext);
 
   React.useEffect(() => {
     if (!targetMessageId) {
@@ -128,10 +117,6 @@ export function useChannelRouteTarget({
     }
 
     if (!targetMessage.parentId) {
-      if (!rootTargetOpensThread) {
-        handledThreadRouteTargetRef.current = targetKey;
-        return;
-      }
       if (!requireThreadEditResolution()) {
         return;
       }
@@ -178,7 +163,6 @@ export function useChannelRouteTarget({
     activeChannelId,
     closeAgentSession,
     requireThreadEditResolution,
-    rootTargetOpensThread,
     setEditTargetId,
     setExpandedThreadReplyIds,
     setOpenThreadHeadId,

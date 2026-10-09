@@ -42,7 +42,6 @@ test("a thread row opens its thread at the latest reply", () => {
   assert.deepEqual(entry, {
     channelId: "chan-1",
     messageId: "newest",
-    opensThread: true,
   });
 });
 
@@ -57,7 +56,6 @@ test("a channel main row lands on the room's newest message", () => {
   assert.deepEqual(entry, {
     channelId: "chan-1",
     messageId: null,
-    opensThread: false,
   });
 });
 
@@ -69,7 +67,6 @@ test("a DM lands on the room's newest message in any chat filter", () => {
   assert.deepEqual(entry, {
     channelId: "chan-1",
     messageId: null,
-    opensThread: false,
   });
 });
 
@@ -106,6 +103,5 @@ test("a single top-level mention lands on itself without a thread", () => {
   assert.deepEqual(entry, {
     channelId: "chan-1",
     messageId: "mention",
-    opensThread: false,
   });
 });

@@ -27,10 +27,11 @@ const CHAT_MESSAGE_KINDS: ReadonlySet<number> = new Set([
 /** Where an inbox row enters the chat screen. */
 export type InboxRoomEntry = {
   channelId: string;
-  /** Message to land on; null lands on the room's newest message. */
+  /**
+   * Message to land on, as a message link does (a thread reply opens its
+   * thread). Null opens the room and lands on its newest message.
+   */
   messageId: string | null;
-  /** A thread reply opens its thread; anything else only scrolls to it. */
-  opensThread: boolean;
 };
 
 function isThreadReplyEvent(event: FeedItem) {
@@ -48,10 +49,10 @@ function latestEvent(events: readonly FeedItem[]) {
 
 /**
  * The inbox is another way into the chat screen Chats uses, so a chat message
- * row enters that room rather than a separate inbox view. Clicking a row puts
- * you exactly there: a thread row opens its thread at the latest reply; a room
- * row (a channel main timeline or a DM) lands on the room's newest message; a
- * single message lands on itself.
+ * row enters that room rather than a separate inbox view, moving the chat
+ * screen the way a message link does. A thread row links its latest reply; a
+ * room row (a channel main timeline or a DM) opens the room at its newest
+ * message; a single message elsewhere links itself.
  *
  * Work that is not a chat message keeps the inbox's own detail and returns
  * null: approval requests, agent updates, project items, forum posts, and the
@@ -75,25 +76,16 @@ export function getInboxRoomEntry(
   const events = item.groupItems.length > 0 ? item.groupItems : [item.item];
   const threadReplies = events.filter(isThreadReplyEvent);
   if (threadReplies.length > 0) {
-    return {
-      channelId,
-      messageId: latestEvent(threadReplies).id,
-      opensThread: true,
-    };
+    return { channelId, messageId: latestEvent(threadReplies).id };
   }
 
-  // A room row (a channel main timeline or a DM) lands on the room's newest
-  // message, which may be newer than anything in the inbox; a single message
-  // elsewhere lands on itself.
+  // A room row lands on the room's newest message, which may be newer than
+  // anything in the inbox.
   const isRoomRow =
     item.item.channelType === "dm" ||
     isChannelMainRoomItem(item) ||
     filter === "conversations";
-  return {
-    channelId,
-    messageId: isRoomRow ? null : latestEvent(events).id,
-    opensThread: false,
-  };
+  return { channelId, messageId: isRoomRow ? null : latestEvent(events).id };
 }
 
 /**

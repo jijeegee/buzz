@@ -13,6 +13,7 @@ import { useInboxFilter } from "@/features/home/lib/inboxFilterPreference";
 import {
   collectInboxReferencedEventIds,
   withoutDeletedFeedItems,
+  withoutUnavailableRoomItems,
 } from "@/features/home/lib/inboxDeletions";
 import { HomeView } from "@/features/home/ui/HomeView";
 import type { HomeFeedResponse } from "@/shared/api/types";
@@ -47,8 +48,9 @@ export function HomeScreen({
   // traffic, including the user's own messages, so every room appears and
   // sorts by its real latest activity.
   const isConversationView = useInboxFilter() === "conversations";
+  const channels = useChannelsQuery().data;
   const conversationActivity = useConversationChannelActivity(
-    useChannelsQuery().data,
+    channels,
     isConversationView,
   );
   const augmentedFeed = React.useMemo((): HomeFeedResponse | undefined => {
@@ -97,13 +99,17 @@ export function HomeScreen({
   );
   const deletedEventIds = useInboxDeletedEventIds(referencedEventIds).data;
   // A deleted message, or a deleted thread root, takes its inbox rows with it.
-  const visibleFeed = React.useMemo(
-    () =>
-      augmentedFeed && deletedEventIds
-        ? withoutDeletedFeedItems(augmentedFeed, deletedEventIds)
-        : augmentedFeed,
-    [augmentedFeed, deletedEventIds],
-  );
+  // So does a room the user can no longer open (deleted, or left), once the
+  // channel list has loaded.
+  const visibleFeed = React.useMemo(() => {
+    if (!augmentedFeed) return augmentedFeed;
+    const withoutDeleted = deletedEventIds
+      ? withoutDeletedFeedItems(augmentedFeed, deletedEventIds)
+      : augmentedFeed;
+    return channels
+      ? withoutUnavailableRoomItems(withoutDeleted, availableChannelIds)
+      : withoutDeleted;
+  }, [augmentedFeed, availableChannelIds, channels, deletedEventIds]);
 
   return (
     <div
