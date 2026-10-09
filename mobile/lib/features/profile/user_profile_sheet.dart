@@ -72,8 +72,9 @@ class UserProfileSheet extends HookConsumerWidget {
     final profile =
         ref.watch(userCacheProvider.select((cache) => cache[pk])) ??
         ref.read(userCacheProvider.notifier).get(pk);
-    final badge = agentBadge(
-      hostDevice: profile?.hostDevice,
+    final badge = watchAgentBadge(
+      ref,
+      agentPubkey: pk,
       ownerPubkey: profile?.ownerPubkey,
       viewerPubkey: currentPubkey,
     );
@@ -214,14 +215,20 @@ class UserProfileSheet extends HookConsumerWidget {
                               ),
                             ),
                           ),
-                          if (badge case AgentDeviceBadge(:final variant)) ...[
+                          if (badge case AgentDeviceBadge(
+                            :final deviceId,
+                            :final variant,
+                          )) ...[
                             const SizedBox(width: Grid.half),
-                            DeviceRobotIcon(
-                              key: const Key('profile-device-robot'),
-                              variant: variant,
-                              size: 22,
-                              semanticLabel:
-                                  'Robot of the device this agent runs on',
+                            AgentHostDeviceTooltip(
+                              deviceId: deviceId,
+                              child: DeviceRobotIcon(
+                                key: const Key('profile-device-robot'),
+                                variant: variant,
+                                size: 22,
+                                semanticLabel:
+                                    'Robot of the device this agent runs on',
+                              ),
                             ),
                           ],
                           if (badge case AgentOwnerBadge(

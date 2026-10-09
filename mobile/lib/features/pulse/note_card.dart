@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../../shared/clipboard_utils.dart';
+import '../../shared/devices/agent_badge_widgets.dart';
 import '../../shared/identity_names/identity_names.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/mentions/mention_tags.dart';
@@ -130,8 +131,9 @@ class NoteCard extends HookConsumerWidget {
                                   ),
                                   if (isAgent) ...[
                                     const SizedBox(width: Grid.half),
-                                    Icon(
-                                      LucideIcons.bot,
+                                    AgentRobotGlyph(
+                                      agentPubkey: pubkey,
+                                      ownerPubkey: profile?.ownerPubkey,
                                       size: 13,
                                       color: context.colors.primary,
                                     ),

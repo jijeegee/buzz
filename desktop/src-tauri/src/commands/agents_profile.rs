@@ -312,17 +312,11 @@ pub(crate) async fn reconcile_profile_at(
     )
     .await?;
 
-    // A changed host device (first sign-in, or a new sign-in on this computer)
-    // republishes too, so the owner sees the robot of the device it runs on.
-    let expected_host = crate::device_robot::local_host_device_tag(state, relay_url, &data.pubkey);
     if !profile_needs_sync(
         existing,
         &data.name,
         expected_avatar.as_deref(),
         data.about.as_deref(),
-    ) && !crate::device_robot::host_device_stale(
-        existing.and_then(|info| info.host_device.as_deref()),
-        expected_host.as_deref(),
     ) {
         return Ok(ProfileReconcileOutcome::Reconciled);
     }
@@ -364,7 +358,7 @@ pub(super) fn profile_needs_sync(
             let name_matches = info.display_name.as_deref() == Some(expected_name);
             let picture_matches = info.picture.as_deref() == expected_avatar;
             let about_matches = info.about.as_deref().unwrap_or("") == expected_about.unwrap_or("");
-            !name_matches || !picture_matches || !about_matches
+            !name_matches || !picture_matches || !about_matches || info.carries_host_device
         }
     }
 }

@@ -492,38 +492,6 @@ pub fn build_profile(
     Ok(EventBuilder::new(Kind::Custom(0), content))
 }
 
-/// An agent's kind:0: [`build_profile`] fields plus the `buzz_host_device`
-/// tag of the device that runs it (see `device_robot`).
-pub fn build_profile_with_host_device(
-    display_name: Option<&str>,
-    picture: Option<&str>,
-    about: Option<&str>,
-    host_device: Option<&str>,
-) -> Result<EventBuilder, String> {
-    let Some(tag) = host_device else {
-        return build_profile(display_name, None, picture, about, None);
-    };
-    if !crate::device_robot::is_device_tag(tag) {
-        return Err(format!("invalid host device tag: {tag}"));
-    }
-    let mut map = serde_json::Map::new();
-    if let Some(v) = display_name {
-        map.insert("display_name".into(), serde_json::Value::String(v.into()));
-    }
-    if let Some(v) = picture {
-        map.insert("picture".into(), serde_json::Value::String(v.into()));
-    }
-    if let Some(v) = about {
-        map.insert("about".into(), serde_json::Value::String(v.into()));
-    }
-    map.insert(
-        crate::device_robot::HOST_DEVICE_FIELD.into(),
-        serde_json::Value::String(tag.into()),
-    );
-    let content = serde_json::Value::Object(map).to_string();
-    Ok(EventBuilder::new(Kind::Custom(0), content))
-}
-
 // ── Huddles ──────────────────────────────────────────────────────────────────
 
 /// Validate that a string is a valid UUID (defense-in-depth for `&str` channel IDs).

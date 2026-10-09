@@ -54,9 +54,6 @@ pub struct UserProfileSummaryInfo {
     pub owner_pubkey: Option<String>,
     #[serde(default)]
     pub is_agent: bool,
-    /// Host device tag of an agent (kind:0 `buzz_host_device`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host_device: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

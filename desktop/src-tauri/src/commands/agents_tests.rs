@@ -373,8 +373,26 @@ fn profile_with_about(
         display_name: name.map(str::to_string),
         picture: picture.map(str::to_string),
         about: about.map(str::to_string),
-        host_device: None,
+        carries_host_device: false,
     }
+}
+
+#[test]
+fn profile_needs_sync_to_drop_the_retired_host_device_field() {
+    let mut existing = profile(Some("Bot"), Some("https://x/a.png"));
+    assert!(!profile_needs_sync(
+        Some(&existing),
+        "Bot",
+        Some("https://x/a.png"),
+        None
+    ));
+    existing.carries_host_device = true;
+    assert!(profile_needs_sync(
+        Some(&existing),
+        "Bot",
+        Some("https://x/a.png"),
+        None
+    ));
 }
 
 #[test]

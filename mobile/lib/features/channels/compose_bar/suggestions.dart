@@ -71,21 +71,10 @@ class _MentionSuggestions extends StatelessWidget {
             return ListTile(
               dense: true,
               visualDensity: VisualDensity.compact,
-              leading: AvatarImage(
-                imageUrl: avatarUrl,
-                radius: 18,
-                backgroundColor: context.colors.primaryContainer,
-                fallback: Text(
-                  // Name-derived for named candidates; keyed to the hex
-                  // public key for unnamed ones so the compact-npub label
-                  // doesn't render `N` for everyone.
-                  candidate.initial,
-                  style: context.textTheme.labelMedium?.copyWith(
-                    color: context.colors.onPrimaryContainer,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                isAgent: candidate.isAgent,
+              leading: _MentionSuggestionAvatar(
+                candidate: candidate,
+                avatarUrl: avatarUrl,
+                currentPubkey: currentPubkey,
               ),
               title: Text(name, style: context.textTheme.titleSmall),
               subtitle: _MentionSuggestionInfo.build(
@@ -122,9 +111,56 @@ class _MentionSuggestions extends StatelessWidget {
   }
 }
 
+/// A suggestion's avatar, badged exactly like a chat message author: the
+/// device robot (name on long-press) for the agent's owner, the owner's mark
+/// for anyone else.
+class _MentionSuggestionAvatar extends ConsumerWidget {
+  final MentionCandidate candidate;
+  final String? avatarUrl;
+  final String? currentPubkey;
+
+  const _MentionSuggestionAvatar({
+    required this.candidate,
+    required this.avatarUrl,
+    required this.currentPubkey,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return AgentAvatarBadge(
+      key: ValueKey('mention-suggestion-avatar-${candidate.pubkey}'),
+      badge: candidate.isAgent
+          ? watchAgentBadge(
+              ref,
+              agentPubkey: candidate.pubkey,
+              ownerPubkey: candidate.ownerPubkey,
+              viewerPubkey: currentPubkey,
+            )
+          : null,
+      child: AvatarImage(
+        imageUrl: avatarUrl,
+        radius: 18,
+        backgroundColor: context.colors.primaryContainer,
+        fallback: Text(
+          // Name-derived for named candidates; keyed to the hex
+          // public key for unnamed ones so the compact-npub label
+          // doesn't render `N` for everyone.
+          candidate.initial,
+          style: context.textTheme.labelMedium?.copyWith(
+            color: context.colors.onPrimaryContainer,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        isAgent: candidate.isAgent,
+      ),
+    );
+  }
+}
+
 /// The secondary info line under a mention suggestion — mirrors desktop's
 /// `MentionAutocomplete` subtitle: bot icon + "agent" (or an "admin" badge
-/// for human admins), then "managed by …" / "not in channel".
+/// for human admins), then "managed by …" / "not in channel". The device
+/// robot sits on the avatar ([_MentionSuggestionAvatar]).
 abstract final class _MentionSuggestionInfo {
   static Widget? build(
     BuildContext context, {

@@ -3,18 +3,15 @@
  *
  * Every relay device (one Google sign-in on one computer or phone) gets a
  * deterministic robot: a colour and a silhouette derived from the device id.
- * A desktop that runs an agent stamps its device tag into the agent's signed
- * kind:0 profile (`buzz_host_device`), so the agent's owner can tell at a
- * glance which computer the agent runs on, and the device list shows the same
- * robot next to each device.
+ * A desktop that runs agents lists them in the owner's own kind:30180 event
+ * for its device (see `shared/api/ownerDevices.ts`), so the
+ * agent's owner can tell at a glance which computer the agent runs on, and the
+ * device list shows the same robot next to each device.
  *
  * The mapping is shared with the mobile app (`device_robot.dart`) and the
  * Tauri publisher (`device_robot.rs`); `test-fixtures/device-robots.json`
  * pins identical results on every platform. Change all three together.
  */
-
-/** kind:0 content field carrying the host device tag of an agent. */
-export const HOST_DEVICE_FIELD = "buzz_host_device";
 
 /** Robot stroke colours, each ≥3:1 against both light and dark surfaces. */
 export const DEVICE_ROBOT_COLORS = [
@@ -41,7 +38,7 @@ export const DEVICE_ROBOT_SHAPES = [
 export type DeviceRobotShape = (typeof DEVICE_ROBOT_SHAPES)[number];
 
 export type DeviceRobotVariant = {
-  /** Eight lowercase hex digits; also the published `buzz_host_device`. */
+  /** Eight lowercase hex digits (FNV-1a of the device id). */
   tag: string;
   colorIndex: number;
   color: string;
@@ -93,8 +90,84 @@ export function deviceRobotVariantForDevice(
   return deviceRobotVariantFromTag(deviceRobotTag(deviceId));
 }
 
+/**
+ * The owner's own choice of robot for one of their devices (kind:30181,
+ * content `{"v":1,"shape":"<shape>","color":<palette index>}`), replacing the
+ * hashed default everywhere that device's robot appears.
+ */
+export type DeviceRobotOverride = {
+  shape: DeviceRobotShape;
+  colorIndex: number;
+};
+
+/** The override a kind:30181 content carries; `null` when malformed. */
+export function parseDeviceRobotContent(
+  content: string,
+): DeviceRobotOverride | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const { v, shape, color } = parsed as {
+    v?: unknown;
+    shape?: unknown;
+    color?: unknown;
+  };
+  if (v !== 1) return null;
+  if (
+    typeof shape !== "string" ||
+    !(DEVICE_ROBOT_SHAPES as readonly string[]).includes(shape)
+  ) {
+    return null;
+  }
+  if (
+    typeof color !== "number" ||
+    !Number.isInteger(color) ||
+    color < 0 ||
+    color >= DEVICE_ROBOT_COLORS.length
+  ) {
+    return null;
+  }
+  return { shape: shape as DeviceRobotShape, colorIndex: color };
+}
+
+/** The kind:30181 content for an override. */
+export function deviceRobotContent(override: DeviceRobotOverride): string {
+  return JSON.stringify({
+    v: 1,
+    shape: override.shape,
+    color: override.colorIndex,
+  });
+}
+
+/**
+ * The robot a device shows: the owner's override when there is a valid one,
+ * else the hashed default. The tag stays the hashed one, since it identifies
+ * the device (e.g. for its name), not its look.
+ */
+export function resolveDeviceRobotVariant(
+  deviceId: string | null | undefined,
+  override: DeviceRobotOverride | null | undefined,
+): DeviceRobotVariant | null {
+  const base = deviceRobotVariantForDevice(deviceId);
+  if (!base || !override) return base;
+  const shapeIndex = DEVICE_ROBOT_SHAPES.indexOf(override.shape);
+  const color = DEVICE_ROBOT_COLORS[override.colorIndex];
+  if (shapeIndex < 0 || color === undefined) return base;
+  return {
+    tag: base.tag,
+    colorIndex: override.colorIndex,
+    color,
+    shapeIndex,
+    shape: override.shape,
+  };
+}
+
 export type AgentBadge =
-  | { kind: "device"; variant: DeviceRobotVariant }
+  | { kind: "device"; deviceId: string; variant: DeviceRobotVariant }
   | { kind: "owner"; ownerPubkey: string }
   | { kind: "default" };
 
@@ -102,11 +175,14 @@ export type AgentBadge =
  * What sits in an agent's robot slot for `viewerPubkey`: its owner sees the
  * robot of the device it runs on; everyone else sees an owner mark (the
  * owner's avatar with a robot badge) so they can tell whose agent it is; an
- * agent without a verified owner, or an owner viewing an agent with no host
- * device, keeps the default robot.
+ * agent without a verified owner, or an owner viewing an agent with no known
+ * host device, keeps the default robot. `hostDeviceId` is the relay device id
+ * from the owner's own host-device map.
  */
 export function agentBadge(input: {
-  hostDevice: string | null | undefined;
+  hostDeviceId: string | null | undefined;
+  /** The owner's robot choice for that device, if any. */
+  robotOverride?: DeviceRobotOverride | null;
   ownerPubkey: string | null | undefined;
   viewerPubkey: string | null | undefined;
 }): AgentBadge {
@@ -115,6 +191,7 @@ export function agentBadge(input: {
   const viewer = input.viewerPubkey?.toLowerCase();
   if (!viewer) return { kind: "default" };
   if (owner !== viewer) return { kind: "owner", ownerPubkey: owner };
-  const variant = deviceRobotVariantFromTag(input.hostDevice);
-  return variant ? { kind: "device", variant } : { kind: "default" };
+  const deviceId = input.hostDeviceId?.trim().toLowerCase() ?? "";
+  const variant = resolveDeviceRobotVariant(deviceId, input.robotOverride);
+  return variant ? { kind: "device", deviceId, variant } : { kind: "default" };
 }

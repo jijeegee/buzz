@@ -74,44 +74,80 @@ void main() {
     final invalid = (_golden['invalidTags'] as List<dynamic>).cast<String>();
     for (final tag in invalid) {
       expect(deviceRobotVariantFromTag(tag), isNull, reason: tag);
-      expect(hostDeviceFromMetadata({hostDeviceField: tag}), isNull);
     }
-    expect(hostDeviceFromMetadata({hostDeviceField: 7}), isNull);
-    expect(hostDeviceFromMetadata({hostDeviceField: 'e8c41c31'}), 'e8c41c31');
+  });
+
+  test('chosen robots cover every shape and colour, in range only', () {
+    for (var shape = 0; shape < deviceRobotShapes.length; shape++) {
+      for (var color = 0; color < deviceRobotColors.length; color++) {
+        final robot = deviceRobotVariantFromIndices(
+          colorIndex: color,
+          shapeIndex: shape,
+        )!;
+        expect(robot.colorIndex, color);
+        expect(robot.shapeIndex, shape);
+      }
+    }
+    expect(deviceRobotVariantFromIndices(colorIndex: 8, shapeIndex: 0), isNull);
+    expect(deviceRobotVariantFromIndices(colorIndex: 0, shapeIndex: 6), isNull);
+    expect(
+      deviceRobotVariantFromIndices(colorIndex: -1, shapeIndex: 0),
+      isNull,
+    );
+    final chosen = deviceRobotVariantFromIndices(colorIndex: 3, shapeIndex: 5);
+    expect(resolveDeviceRobot('device-1', override: chosen), chosen);
+    expect(
+      resolveDeviceRobot('device-1'),
+      deviceRobotVariantForDevice('device-1'),
+    );
   });
 
   test('agent badge: device robot for the owner, owner mark for others', () {
     final owner = 'a' * 64;
-    const tag = 'e8c41c31';
+    const device = 'Device-1';
+    final tag = deviceRobotTag(device);
     final mine = agentBadge(
-      hostDevice: tag,
+      hostDeviceId: device,
       ownerPubkey: owner,
       viewerPubkey: owner.toUpperCase(),
     );
     expect(mine, isA<AgentDeviceBadge>());
     expect((mine! as AgentDeviceBadge).variant.tag, tag);
+    expect((mine as AgentDeviceBadge).deviceId, 'device-1');
+    final chosen = deviceRobotVariantFromIndices(colorIndex: 2, shapeIndex: 4)!;
+    final customised = agentBadge(
+      hostDeviceId: device,
+      ownerPubkey: owner,
+      viewerPubkey: owner,
+      robotOverride: chosen,
+    );
+    expect((customised! as AgentDeviceBadge).variant, chosen);
     final theirs = agentBadge(
-      hostDevice: tag,
+      hostDeviceId: device,
       ownerPubkey: owner.toUpperCase(),
       viewerPubkey: 'b' * 64,
     );
     expect(theirs, isA<AgentOwnerBadge>());
     expect((theirs! as AgentOwnerBadge).ownerPubkey, owner);
     expect(
-      agentBadge(hostDevice: null, ownerPubkey: 'c' * 64, viewerPubkey: owner),
+      agentBadge(
+        hostDeviceId: null,
+        ownerPubkey: 'c' * 64,
+        viewerPubkey: owner,
+      ),
       isA<AgentOwnerBadge>(),
       reason: 'others see the owner even without a host device',
     );
     expect(
-      agentBadge(hostDevice: tag, ownerPubkey: null, viewerPubkey: owner),
+      agentBadge(hostDeviceId: device, ownerPubkey: null, viewerPubkey: owner),
       isNull,
     );
     expect(
-      agentBadge(hostDevice: null, ownerPubkey: owner, viewerPubkey: owner),
+      agentBadge(hostDeviceId: null, ownerPubkey: owner, viewerPubkey: owner),
       isNull,
     );
     expect(
-      agentBadge(hostDevice: tag, ownerPubkey: owner, viewerPubkey: null),
+      agentBadge(hostDeviceId: device, ownerPubkey: owner, viewerPubkey: null),
       isNull,
     );
   });

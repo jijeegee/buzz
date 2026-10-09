@@ -8,15 +8,12 @@ import 'package:flutter/foundation.dart';
 ///
 /// Every relay device (one Google sign-in on one computer or phone) gets a
 /// deterministic robot: a colour and a silhouette derived from its device id.
-/// A desktop that runs an agent stamps its device tag into the agent's signed
-/// kind:0 profile ([hostDeviceField]), so the agent's owner can tell which
-/// computer it runs on, and the device list shows the same robot per device.
+/// A desktop that runs agents lists them in its owner-only kind:30180 event
+/// (`agent_host_devices.dart`), so the owner sees on which computer each agent
+/// runs, and the device list shows the same robot per device.
 ///
 /// Mirrors desktop `shared/lib/deviceRobot.ts` + `deviceRobotGeometry.ts`;
 /// `test-fixtures/device-robots.json` pins identical results on both.
-
-/// kind:0 content field carrying the host device tag of an agent.
-const hostDeviceField = 'buzz_host_device';
 
 /// Robot stroke colours, each ≥3:1 against both light and dark surfaces.
 const deviceRobotColors = <Color>[
@@ -47,7 +44,7 @@ final _tagPattern = RegExp(r'^[0-9a-f]{8}$');
 class DeviceRobotVariant {
   const DeviceRobotVariant._(this.tag, this.colorIndex, this.shapeIndex);
 
-  /// Eight lowercase hex digits; also the published [hostDeviceField].
+  /// Eight lowercase hex digits ([deviceRobotTag] of the device id).
   final String tag;
   final int colorIndex;
   final int shapeIndex;
@@ -90,11 +87,25 @@ DeviceRobotVariant? deviceRobotVariantFromTag(String? tag) {
 DeviceRobotVariant? deviceRobotVariantForDevice(String? deviceId) =>
     deviceRobotVariantFromTag(deviceRobotTag(deviceId));
 
-/// The well-formed [hostDeviceField] of decoded kind:0 content, if any.
-String? hostDeviceFromMetadata(Map<String, dynamic> metadata) {
-  final value = metadata[hostDeviceField];
-  return value is String && _tagPattern.hasMatch(value) ? value : null;
+/// The robot with [colorIndex] in [deviceRobotColors] and [shapeIndex] in
+/// [deviceRobotShapes]; `null` when either is out of range. Its tag is the
+/// smallest one with that look.
+DeviceRobotVariant? deviceRobotVariantFromIndices({
+  required int colorIndex,
+  required int shapeIndex,
+}) {
+  if (colorIndex < 0 || colorIndex >= deviceRobotColors.length) return null;
+  if (shapeIndex < 0 || shapeIndex >= deviceRobotShapes.length) return null;
+  final value = shapeIndex * deviceRobotColors.length + colorIndex;
+  return deviceRobotVariantFromTag(value.toRadixString(16).padLeft(8, '0'));
 }
+
+/// The owner's chosen robot for a device ([override], see kind:30181) or
+/// else the device's hashed default.
+DeviceRobotVariant? resolveDeviceRobot(
+  String? deviceId, {
+  DeviceRobotVariant? override,
+}) => override ?? deviceRobotVariantForDevice(deviceId);
 
 /// What sits in an agent's robot slot for a viewer (see [agentBadge]).
 @immutable
@@ -104,7 +115,10 @@ sealed class AgentBadge {
 
 /// The owner's view: the robot of the device the agent runs on.
 final class AgentDeviceBadge extends AgentBadge {
-  const AgentDeviceBadge(this.variant);
+  const AgentDeviceBadge(this.deviceId, this.variant);
+
+  /// Relay device id (lowercase), for looking up the device's name.
+  final String deviceId;
   final DeviceRobotVariant variant;
 }
 
@@ -114,13 +128,26 @@ final class AgentOwnerBadge extends AgentBadge {
   final String ownerPubkey;
 }
 
-/// The agent's verified NIP-OA owner sees its device robot; any other viewer
-/// sees an owner mark; `null` (no badge) when the agent has no verified owner
-/// or the owner's agent carries no host device.
-AgentBadge? agentBadge({
-  required String? hostDevice,
+/// Whether [viewerPubkey] is the agent's verified NIP-OA [ownerPubkey].
+bool isAgentOwnerViewer({
   required String? ownerPubkey,
   required String? viewerPubkey,
+}) {
+  final owner = ownerPubkey?.toLowerCase();
+  final viewer = viewerPubkey?.toLowerCase();
+  return owner != null && owner.isNotEmpty && owner == viewer;
+}
+
+/// The agent's verified NIP-OA owner sees the robot of [hostDeviceId] (from
+/// the owner's kind:30180 map; [robotOverride] is the owner's chosen robot
+/// for that device); any other viewer sees an owner mark; `null` (no badge)
+/// when the agent has no verified owner, or the owner has no known host
+/// device for it.
+AgentBadge? agentBadge({
+  required String? hostDeviceId,
+  required String? ownerPubkey,
+  required String? viewerPubkey,
+  DeviceRobotVariant? robotOverride,
 }) {
   final owner = ownerPubkey?.toLowerCase();
   final viewer = viewerPubkey?.toLowerCase();
@@ -128,8 +155,12 @@ AgentBadge? agentBadge({
     return null;
   }
   if (owner != viewer) return AgentOwnerBadge(owner);
-  final variant = deviceRobotVariantFromTag(hostDevice);
-  return variant == null ? null : AgentDeviceBadge(variant);
+  final variant = deviceRobotVariantForDevice(hostDeviceId) == null
+      ? null
+      : resolveDeviceRobot(hostDeviceId, override: robotOverride);
+  return variant == null
+      ? null
+      : AgentDeviceBadge(hostDeviceId!.trim().toLowerCase(), variant);
 }
 
 /// A drawing primitive on the 24×24 robot grid (stroke 2, round caps/joins).

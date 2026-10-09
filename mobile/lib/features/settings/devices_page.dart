@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
+import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/theme/theme.dart';
@@ -76,6 +77,32 @@ class DevicesPage extends HookConsumerWidget {
       final name = await _askDeviceName(context, device.name);
       if (name == null || name == device.name) return;
       await run((api) => api.renameDevice(device.id, name));
+    }
+
+    Future<void> chooseRobot(AccountDevice device) async {
+      final current = resolveDeviceRobot(
+        device.id,
+        override: ref.read(
+          deviceRobotOverridesProvider,
+        )[device.id.trim().toLowerCase()],
+      );
+      final chosen = await _askDeviceRobot(context, device.name, current);
+      if (chosen == null ||
+          (chosen.colorIndex == current?.colorIndex &&
+              chosen.shapeIndex == current?.shapeIndex)) {
+        return;
+      }
+      error.value = null;
+      busy.value = true;
+      try {
+        await ref
+            .read(ownDeviceEventsProvider.notifier)
+            .publishDeviceRobot(device.id, chosen);
+      } catch (failure) {
+        if (context.mounted) error.value = 'Couldn’t save the robot: $failure';
+      } finally {
+        if (context.mounted) busy.value = false;
+      }
     }
 
     Future<void> signOutOthers() async {
@@ -209,6 +236,9 @@ class DevicesPage extends HookConsumerWidget {
                       onRename: busy.value
                           ? null
                           : () => unawaited(renameDevice(device)),
+                      onChooseRobot: busy.value
+                          ? null
+                          : () => unawaited(chooseRobot(device)),
                       onSignOut: busy.value || device.current
                           ? null
                           : () => unawaited(signOutDevice(device)),
@@ -291,19 +321,26 @@ class DevicesPage extends HookConsumerWidget {
   }
 }
 
-class _DeviceRow extends StatelessWidget {
+class _DeviceRow extends ConsumerWidget {
   const _DeviceRow({
     required this.device,
     required this.onRename,
+    required this.onChooseRobot,
     required this.onSignOut,
   });
 
   final AccountDevice device;
   final VoidCallback? onRename;
+  final VoidCallback? onChooseRobot;
   final VoidCallback? onSignOut;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final robotOverride = ref.watch(
+      deviceRobotOverridesProvider.select(
+        (robots) => robots[device.id.trim().toLowerCase()],
+      ),
+    );
     final details = [
       if (device.current) 'This device',
       if (device.platform.isNotEmpty) _platformLabel(device.platform),
@@ -312,13 +349,19 @@ class _DeviceRow extends StatelessWidget {
     ].join(' · ');
     // The device's robot: agents running on this device show the same one
     // to their owner, so the owner can match an agent to its computer.
+    // Tapping it picks another shape and colour.
     return AppListRowRaw(
       key: Key('device-row-${device.id}'),
       onTap: onRename,
-      leading: DeviceRobotIcon(
-        variant: deviceRobotVariantForDevice(device.id),
-        size: 24,
-        fallbackColor: context.colors.onSurfaceVariant,
+      leading: IconButton(
+        key: Key('device-robot-${device.id}'),
+        onPressed: onChooseRobot,
+        tooltip: 'Change robot for ${device.name}',
+        icon: DeviceRobotIcon(
+          variant: resolveDeviceRobot(device.id, override: robotOverride),
+          size: 24,
+          fallbackColor: context.colors.onSurfaceVariant,
+        ),
       ),
       title: Text(device.name, style: context.textTheme.bodyLarge),
       subtitle: details.isEmpty
@@ -364,6 +407,150 @@ class _DeviceRow extends StatelessWidget {
   static String _date(DateTime at) =>
       '${at.year}-${at.month.toString().padLeft(2, '0')}-'
       '${at.day.toString().padLeft(2, '0')}';
+}
+
+/// The robot the user picks for [deviceName]; `null` when cancelled.
+Future<DeviceRobotVariant?> _askDeviceRobot(
+  BuildContext context,
+  String deviceName,
+  DeviceRobotVariant? current,
+) => showBuzzDialog<DeviceRobotVariant>(
+  context: context,
+  builder: (_) => DeviceRobotPickerDialog(
+    deviceName: deviceName,
+    initial:
+        current ?? deviceRobotVariantFromIndices(colorIndex: 0, shapeIndex: 0)!,
+  ),
+);
+
+/// Picks a device robot: one of [deviceRobotShapes] in one of
+/// [deviceRobotColors], each option drawn as the robot it gives.
+@visibleForTesting
+class DeviceRobotPickerDialog extends StatefulWidget {
+  const DeviceRobotPickerDialog({
+    super.key,
+    required this.deviceName,
+    required this.initial,
+  });
+
+  final String deviceName;
+  final DeviceRobotVariant initial;
+
+  @override
+  State<DeviceRobotPickerDialog> createState() =>
+      _DeviceRobotPickerDialogState();
+}
+
+class _DeviceRobotPickerDialogState extends State<DeviceRobotPickerDialog> {
+  late int _color = widget.initial.colorIndex;
+  late int _shape = widget.initial.shapeIndex;
+
+  DeviceRobotVariant _robot(int color, int shape) =>
+      deviceRobotVariantFromIndices(colorIndex: color, shapeIndex: shape)!;
+
+  Widget _option({
+    required Key key,
+    required String label,
+    required bool selected,
+    required DeviceRobotVariant robot,
+    required VoidCallback onTap,
+  }) {
+    return Semantics(
+      label: label,
+      selected: selected,
+      button: true,
+      excludeSemantics: true,
+      child: InkWell(
+        key: key,
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? context.colors.primary : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: DeviceRobotIcon(variant: robot, size: 28),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sectionStyle = context.textTheme.labelMedium?.copyWith(
+      color: context.colors.onSurfaceVariant,
+    );
+    return AlertDialog(
+      title: Text('Robot for ${widget.deviceName}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: DeviceRobotIcon(
+                key: const Key('device-robot-preview'),
+                variant: _robot(_color, _shape),
+                size: 56,
+                semanticLabel: 'Selected robot',
+              ),
+            ),
+            const SizedBox(height: Grid.xs),
+            Text('Shape', style: sectionStyle),
+            const SizedBox(height: Grid.half),
+            Wrap(
+              spacing: Grid.half,
+              runSpacing: Grid.half,
+              children: [
+                for (var shape = 0; shape < deviceRobotShapes.length; shape++)
+                  _option(
+                    key: Key('device-robot-shape-${deviceRobotShapes[shape]}'),
+                    label: 'Shape ${deviceRobotShapes[shape]}',
+                    selected: shape == _shape,
+                    robot: _robot(_color, shape),
+                    onTap: () => setState(() => _shape = shape),
+                  ),
+              ],
+            ),
+            const SizedBox(height: Grid.xs),
+            Text('Colour', style: sectionStyle),
+            const SizedBox(height: Grid.half),
+            Wrap(
+              spacing: Grid.half,
+              runSpacing: Grid.half,
+              children: [
+                for (var color = 0; color < deviceRobotColors.length; color++)
+                  _option(
+                    key: Key('device-robot-color-$color'),
+                    label: 'Colour ${color + 1}',
+                    selected: color == _color,
+                    robot: _robot(color, _shape),
+                    onTap: () => setState(() => _color = color),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('device-robot-save'),
+          onPressed: () => Navigator.of(context).pop(_robot(_color, _shape)),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }
 
 /// The new name for a device, trimmed; `null` when cancelled or empty.

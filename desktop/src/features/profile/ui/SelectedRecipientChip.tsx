@@ -1,4 +1,4 @@
-import { Bot, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import type { UserSearchResult } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
@@ -10,6 +10,7 @@ import {
 import { PubKey } from "@/shared/ui/PubKey";
 import { Popover, PopoverAnchor, PopoverContent } from "@/shared/ui/popover";
 
+import { AgentBadgeIcon } from "./AgentBadgeIcon";
 import { ProfileAvatar } from "./ProfileAvatar";
 
 type SelectedRecipientChipTestIds = {
@@ -124,9 +125,12 @@ export function SelectedRecipientChip({
         <span className="min-w-0 truncate font-medium">{label}</span>
       )}
       {user.isAgent ? (
-        <Bot
-          aria-label="agent"
+        <AgentBadgeIcon
+          agentPubkey={user.pubkey}
           className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          defaultLabel="agent"
+          othersSee="bot"
+          ownerPubkey={user.ownerPubkey}
         />
       ) : null}
     </div>

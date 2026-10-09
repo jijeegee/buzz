@@ -9,6 +9,9 @@ import {
   deviceRobotTag,
   deviceRobotVariantForDevice,
   deviceRobotVariantFromTag,
+  deviceRobotContent,
+  parseDeviceRobotContent,
+  resolveDeviceRobotVariant,
 } from "./deviceRobot.ts";
 import { DEVICE_ROBOT_GEOMETRY } from "./deviceRobotGeometry.ts";
 
@@ -62,17 +65,23 @@ test("unknown devices fall back to the default robot", () => {
 
 test("agent badge: device robot for the owner, owner mark for others", () => {
   const owner = "a".repeat(64);
-  const hostDevice = GOLDEN.devices[0].tag;
+  const device = GOLDEN.devices[0];
   const mine = agentBadge({
-    hostDevice,
+    hostDeviceId: device.deviceId.toUpperCase(),
     ownerPubkey: owner,
     viewerPubkey: owner.toUpperCase(),
   });
   assert.equal(mine.kind, "device");
-  assert.equal(mine.variant.tag, hostDevice);
+  assert.equal(mine.deviceId, device.deviceId.trim().toLowerCase());
+  assert.equal(mine.variant.tag, device.tag);
+  assert.deepEqual(
+    mine.variant,
+    deviceRobotVariantForDevice(device.deviceId),
+    "same robot as the device list row",
+  );
   assert.deepEqual(
     agentBadge({
-      hostDevice,
+      hostDeviceId: device.deviceId,
       ownerPubkey: owner.toUpperCase(),
       viewerPubkey: "b".repeat(64),
     }),
@@ -80,7 +89,7 @@ test("agent badge: device robot for the owner, owner mark for others", () => {
   );
   assert.deepEqual(
     agentBadge({
-      hostDevice: null,
+      hostDeviceId: null,
       ownerPubkey: owner,
       viewerPubkey: "b".repeat(64),
     }),
@@ -88,10 +97,74 @@ test("agent badge: device robot for the owner, owner mark for others", () => {
     "others see the owner even without a host device",
   );
   for (const input of [
-    { hostDevice, ownerPubkey: null, viewerPubkey: owner },
-    { hostDevice: null, ownerPubkey: owner, viewerPubkey: owner },
-    { hostDevice, ownerPubkey: owner, viewerPubkey: null },
+    { hostDeviceId: device.deviceId, ownerPubkey: null, viewerPubkey: owner },
+    { hostDeviceId: null, ownerPubkey: owner, viewerPubkey: owner },
+    { hostDeviceId: "  ", ownerPubkey: owner, viewerPubkey: owner },
+    { hostDeviceId: device.deviceId, ownerPubkey: owner, viewerPubkey: null },
   ]) {
     assert.deepEqual(agentBadge(input), { kind: "default" });
   }
+});
+
+test("a valid robot override wins over the hashed default", () => {
+  const device = GOLDEN.devices[0];
+  const hashed = deviceRobotVariantForDevice(device.deviceId);
+  const shape = hashed.shape === "visor" ? "boxy" : "visor";
+  const colorIndex = (hashed.colorIndex + 3) % DEVICE_ROBOT_COLORS.length;
+  const resolved = resolveDeviceRobotVariant(device.deviceId, {
+    shape,
+    colorIndex,
+  });
+  assert.equal(resolved.shape, shape);
+  assert.equal(resolved.shapeIndex, DEVICE_ROBOT_SHAPES.indexOf(shape));
+  assert.equal(resolved.colorIndex, colorIndex);
+  assert.equal(resolved.color, DEVICE_ROBOT_COLORS[colorIndex]);
+  assert.equal(resolved.tag, hashed.tag, "the tag still names the device");
+  assert.deepEqual(resolveDeviceRobotVariant(device.deviceId, null), hashed);
+  assert.equal(resolveDeviceRobotVariant("", { shape, colorIndex }), null);
+
+  const badge = agentBadge({
+    hostDeviceId: device.deviceId,
+    robotOverride: { shape, colorIndex },
+    ownerPubkey: "a".repeat(64),
+    viewerPubkey: "a".repeat(64),
+  });
+  assert.equal(badge.variant.shape, shape);
+});
+
+test("invalid robot overrides are ignored", () => {
+  const device = GOLDEN.devices[0];
+  const hashed = deviceRobotVariantForDevice(device.deviceId);
+  for (const bad of [
+    { shape: "blob", colorIndex: 1 },
+    { shape: "dome", colorIndex: 8 },
+    { shape: "dome", colorIndex: -1 },
+  ]) {
+    assert.deepEqual(
+      resolveDeviceRobotVariant(device.deviceId, bad),
+      hashed,
+      JSON.stringify(bad),
+    );
+  }
+  for (const content of [
+    "",
+    "{}",
+    '{"v":1,"shape":"blob","color":1}',
+    '{"v":1,"shape":"dome","color":8}',
+    '{"v":1,"shape":"dome","color":2.5}',
+    '{"v":1,"shape":"dome"}',
+    '{"v":2,"shape":"dome","color":1}',
+  ]) {
+    assert.equal(parseDeviceRobotContent(content), null, content);
+  }
+  assert.deepEqual(
+    parseDeviceRobotContent(
+      deviceRobotContent({ shape: "hex", colorIndex: 7 }),
+    ),
+    { shape: "hex", colorIndex: 7 },
+  );
+  assert.equal(
+    deviceRobotContent({ shape: "hex", colorIndex: 7 }),
+    '{"v":1,"shape":"hex","color":7}',
+  );
 });

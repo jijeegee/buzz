@@ -35,9 +35,29 @@ afterEach(async () => {
 
 after(() => dom.window.close());
 
+// Agent rows draw the shared agent badge, which reads the query cache; the
+// identity is seeded so it never reaches for Tauri.
+async function importTestingLibrary() {
+  const library = await import("@testing-library/react");
+  const React = await import("react");
+  const { QueryClient, QueryClientProvider } = await import(
+    "@tanstack/react-query"
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(["identity"], { pubkey: "f".repeat(64) });
+  const wrapper = ({ children }) =>
+    React.createElement(QueryClientProvider, { client: queryClient }, children);
+  return {
+    ...library,
+    render: (ui, options) => library.render(ui, { wrapper, ...options }),
+  };
+}
+
 test("agent rows offer automatic mention controls", async () => {
   const React = await import("react");
-  const { fireEvent, render } = await import("@testing-library/react");
+  const { fireEvent, render } = await importTestingLibrary();
   const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
   const { TooltipProvider } = await import("@/shared/ui/tooltip");
   const suggestion = {
@@ -107,7 +127,7 @@ test("agent rows offer automatic mention controls", async () => {
 
 test("automatic mention setting is visible by default without an options ingress", async () => {
   const React = await import("react");
-  const { fireEvent, render } = await import("@testing-library/react");
+  const { fireEvent, render } = await importTestingLibrary();
   const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
   const changes = [];
   const suggestion = {
@@ -144,7 +164,7 @@ test("automatic mention setting is visible by default without an options ingress
 
 test("automatic selection updates the visible setting in place", async () => {
   const React = await import("react");
-  const { render } = await import("@testing-library/react");
+  const { render } = await importTestingLibrary();
   const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
   const suggestion = {
     pubkey: "agent-pubkey",
@@ -178,7 +198,7 @@ test("automatic selection updates the visible setting in place", async () => {
 
 test("clicking outside dismisses the tray without intercepting its trigger", async () => {
   const React = await import("react");
-  const { fireEvent, render } = await import("@testing-library/react");
+  const { fireEvent, render } = await importTestingLibrary();
   const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
   const suggestion = {
     pubkey: "agent-pubkey",
@@ -240,7 +260,7 @@ test("clicking outside dismisses the tray without intercepting its trigger", asy
 
 test("collision npubs sit inline with agent metadata", async () => {
   const React = await import("react");
-  const { render } = await import("@testing-library/react");
+  const { render } = await importTestingLibrary();
   const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
   const suggestions = [
     {
@@ -279,7 +299,7 @@ test("collision npubs sit inline with agent metadata", async () => {
 
 test("does not intercept Tab from the editor", async () => {
   const React = await import("react");
-  const { fireEvent, render } = await import("@testing-library/react");
+  const { fireEvent, render } = await importTestingLibrary();
   const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
   const { TooltipProvider } = await import("@/shared/ui/tooltip");
   const suggestions = [
@@ -361,7 +381,7 @@ test("agents without trustworthy provenance omit management provenance", () => {
 for (const duplicate of [false, true]) {
   test(`rendered provenance is truthful (${duplicate ? "duplicate" : "unique"} names)`, async () => {
     const React = await import("react");
-    const { render } = await import("@testing-library/react");
+    const { render } = await importTestingLibrary();
     const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
     const { TooltipProvider } = await import("@/shared/ui/tooltip");
     const remote = suggestion("managed-elsewhere");

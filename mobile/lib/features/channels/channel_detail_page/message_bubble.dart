@@ -187,8 +187,9 @@ class _MessageBubble extends HookConsumerWidget {
                             ),
                           ),
                           child: AgentAvatarBadge(
-                            badge: agentBadge(
-                              hostDevice: profile?.hostDevice,
+                            badge: watchAgentBadge(
+                              ref,
+                              agentPubkey: message.pubkey,
                               ownerPubkey: profile?.ownerPubkey,
                               viewerPubkey: currentPubkey,
                             ),
