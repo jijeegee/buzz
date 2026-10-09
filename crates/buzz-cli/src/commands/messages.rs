@@ -72,7 +72,7 @@ fn ensure_reply_depth(
         return Ok(());
     }
     Err(CliError::Usage(format!(
-        "threads are one level deep: {target_event_id} is already a reply inside a thread.          Reply to the thread and point at that message instead:          --reply-in-thread {root} --quote {target_event_id}",
+        "threads are one level deep: {target_event_id} is already a reply inside a thread. Reply to the thread and point at that message instead: --reply-in-thread {root} --quote {target_event_id}",
         root = thread.root_event_id.to_hex(),
     )))
 }
@@ -2144,6 +2144,7 @@ mod tests {
             assert!(matches!(error, CliError::Usage(_)));
             let message = error.to_string();
             assert!(message.contains("one level deep"), "{message}");
+            assert!(!message.contains("  "), "no space runs: {message:?}");
             assert!(
                 message.contains(&format!("--reply-in-thread {ID_A} --quote {ID_B}")),
                 "{message}"
