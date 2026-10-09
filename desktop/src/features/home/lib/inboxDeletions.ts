@@ -88,3 +88,30 @@ export function withoutDeletedFeedItems(
     },
   };
 }
+
+/**
+ * Drops rows from rooms the user can no longer open: a deleted channel or one
+ * they left. DMs stay, since a hidden DM reopens from its row.
+ */
+export function withoutUnavailableRoomItems(
+  feed: HomeFeedResponse,
+  availableChannelIds: ReadonlySet<string>,
+): HomeFeedResponse {
+  const keep = (items: FeedItem[]) =>
+    items.filter(
+      (item) =>
+        item.channelId === null ||
+        item.channelType === "dm" ||
+        availableChannelIds.has(item.channelId),
+    );
+  return {
+    ...feed,
+    feed: {
+      ...feed.feed,
+      activity: keep(feed.feed.activity),
+      agentActivity: keep(feed.feed.agentActivity),
+      mentions: keep(feed.feed.mentions),
+      needsAction: keep(feed.feed.needsAction),
+    },
+  };
+}

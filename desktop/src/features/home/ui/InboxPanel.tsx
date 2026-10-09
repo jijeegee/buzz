@@ -25,11 +25,8 @@ export function InboxPanel() {
       availableChannelIds={availableChannelIds}
       currentPubkey={identityQuery.data?.pubkey}
       onOpenContext={(channelId, messageId, threadRootId) => {
-        // A thread row opens its thread with the navigation itself, so moving
-        // between threads swaps only the thread panel.
         void goChannel(channelId, {
           messageId: messageId ?? undefined,
-          thread: messageId ? (threadRootId ?? undefined) : undefined,
           threadRootId,
         });
       }}

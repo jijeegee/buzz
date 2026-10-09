@@ -17,12 +17,7 @@ import {
   type ThreadViewMode,
   ThreadViewModeOverrideProvider,
 } from "@/features/channels/lib/threadViewModePreference";
-import { LandAtLatestProvider } from "@/features/channels/lib/landAtLatest";
-import { RouteTargetEntryProvider } from "@/features/channels/ui/useChannelRouteTarget";
-import {
-  useInboxPanelOpen,
-  useInboxRoomLanding,
-} from "@/features/home/lib/inboxPanelPreference";
+import { useInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
 import { InboxPanel } from "@/features/home/ui/InboxPanel";
 
 type ChannelRouteSearch = {
@@ -78,28 +73,6 @@ function ChannelRouteComponent() {
   });
   const isHuddleTranscript = huddleWindowChannelId() !== null;
   const inboxPanelOpen = useInboxPanelOpen() && !isHuddleTranscript;
-  // An inbox entry lands exactly where its row points, in place: the chat
-  // screen stays mounted, so moving within a channel (main to thread, thread to
-  // thread, thread to main) only moves the view. Each entry carries a nonce so
-  // clicking the same row again lands again; a room row scrolls to its latest
-  // message without opening a thread. The landing is recorded before the URL
-  // catches up, so it only applies once the URL points at the same target.
-  const landing = useInboxRoomLanding();
-  const landingHere = landing?.channelId === channelId ? landing : null;
-  const landingMatchesUrl =
-    landingHere !== null &&
-    (landingHere.messageId ?? undefined) === search.messageId;
-  const landAtLatest =
-    landingMatchesUrl && landingHere.messageId === null
-      ? landingHere.nonce
-      : null;
-  const routeTargetEntry = React.useMemo(
-    () => ({
-      entry: landingMatchesUrl ? landingHere.nonce : null,
-      rootOpensThread: !landingMatchesUrl || landingHere.opensThread,
-    }),
-    [landingHere, landingMatchesUrl],
-  );
   // With the inbox pulled out, threads open maximized over the collapsed
   // channel. The layout toggle only switches this view while the panel is open;
   // the saved channel default is untouched.
@@ -127,19 +100,15 @@ function ChannelRouteComponent() {
       }
     >
       <ThreadViewModeOverrideProvider value={threadViewModeOverride}>
-        <RouteTargetEntryProvider value={routeTargetEntry}>
-          <LandAtLatestProvider value={landAtLatest}>
-            <ChannelRouteScreen
-              autoSendDraftKey={search.autoSend ?? null}
-              channelId={channelId}
-              searchHighlight={searchHighlight}
-              selectedPostId={null}
-              targetMessageId={search.messageId ?? null}
-              targetReplyId={null}
-              targetThreadRootId={search.threadRootId ?? search.thread ?? null}
-            />
-          </LandAtLatestProvider>
-        </RouteTargetEntryProvider>
+        <ChannelRouteScreen
+          autoSendDraftKey={search.autoSend ?? null}
+          channelId={channelId}
+          searchHighlight={searchHighlight}
+          selectedPostId={null}
+          targetMessageId={search.messageId ?? null}
+          targetReplyId={null}
+          targetThreadRootId={search.threadRootId ?? search.thread ?? null}
+        />
       </ThreadViewModeOverrideProvider>
     </React.Suspense>
   );

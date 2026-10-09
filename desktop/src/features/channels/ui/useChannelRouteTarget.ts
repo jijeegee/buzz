@@ -52,22 +52,6 @@ function getRouteMainTimelineTargetId(
   return targetMessage.rootId ?? targetMessage.parentId;
 }
 
-/**
- * How a route target is entered. `rootOpensThread`: whether a target on a
- * top-level message opens its reply panel (a message link does; entering a
- * chat room from the inbox leaves threads closed). `entry`: identifies an
- * inbox entry, so clicking the same row again re-applies its target in place
- * instead of remounting the chat screen.
- */
-type RouteTargetEntry = { entry: number | null; rootOpensThread: boolean };
-
-const RouteTargetEntryContext = React.createContext<RouteTargetEntry>({
-  entry: null,
-  rootOpensThread: true,
-});
-
-export const RouteTargetEntryProvider = RouteTargetEntryContext.Provider;
-
 export function useChannelRouteTarget({
   activeChannel,
   activeChannelId,
@@ -107,10 +91,6 @@ export function useChannelRouteTarget({
     targetTimelineMessage,
   );
   const handledThreadRouteTargetRef = React.useRef<string | null>(null);
-  const handledEntryRef = React.useRef<number | null>(null);
-  const { entry, rootOpensThread: rootTargetOpensThread } = React.useContext(
-    RouteTargetEntryContext,
-  );
 
   React.useEffect(() => {
     if (!targetMessageId) {
@@ -119,14 +99,9 @@ export function useChannelRouteTarget({
     }
 
     const targetKey = `${activeChannelId ?? "none"}:${targetMessageId}`;
-    // A new inbox entry for this same target applies it again in place.
-    if (
-      handledThreadRouteTargetRef.current !== targetKey ||
-      (entry !== null && entry !== handledEntryRef.current)
-    ) {
+    if (handledThreadRouteTargetRef.current !== targetKey) {
       handledThreadRouteTargetRef.current = null;
     }
-    if (entry !== null) handledEntryRef.current = entry;
 
     if (
       handledThreadRouteTargetRef.current === targetKey ||
@@ -142,10 +117,6 @@ export function useChannelRouteTarget({
     }
 
     if (!targetMessage.parentId) {
-      if (!rootTargetOpensThread) {
-        handledThreadRouteTargetRef.current = targetKey;
-        return;
-      }
       if (!requireThreadEditResolution()) {
         return;
       }
@@ -191,9 +162,7 @@ export function useChannelRouteTarget({
     activeChannel,
     activeChannelId,
     closeAgentSession,
-    entry,
     requireThreadEditResolution,
-    rootTargetOpensThread,
     setEditTargetId,
     setExpandedThreadReplyIds,
     setOpenThreadHeadId,

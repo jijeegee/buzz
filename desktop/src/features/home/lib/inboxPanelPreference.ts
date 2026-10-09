@@ -1,7 +1,5 @@
 import * as React from "react";
 
-import type { InboxRoomEntry } from "@/features/home/lib/inboxRoomEntry";
-
 /**
  * Whether the inbox list is pulled out beside the chat screen.
  *
@@ -58,39 +56,4 @@ export function toggleInboxPanel(): void {
 
 export function useInboxPanelOpen(): boolean {
   return React.useSyncExternalStore(subscribe, getSnapshot, () => false);
-}
-
-/**
- * The latest chat-room entry made from the inbox. Each entry gets a new nonce
- * so the mounted chat screen lands exactly where the row points, even when the
- * same row is clicked again: "click a row, you are there".
- */
-export type InboxRoomLanding = InboxRoomEntry & { nonce: number };
-
-const landingListeners = new Set<() => void>();
-
-let landing: InboxRoomLanding | null = null;
-
-export function recordInboxRoomLanding(
-  entry: Omit<InboxRoomLanding, "nonce">,
-): void {
-  landing = { ...entry, nonce: (landing?.nonce ?? 0) + 1 };
-  for (const listener of landingListeners) {
-    listener();
-  }
-}
-
-function subscribeLanding(listener: () => void): () => void {
-  landingListeners.add(listener);
-  return () => {
-    landingListeners.delete(listener);
-  };
-}
-
-export function useInboxRoomLanding(): InboxRoomLanding | null {
-  return React.useSyncExternalStore(
-    subscribeLanding,
-    () => landing,
-    () => null,
-  );
 }

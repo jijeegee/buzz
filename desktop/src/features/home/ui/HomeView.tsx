@@ -48,10 +48,8 @@ import {
   setInboxFilter,
   useInboxFilter,
 } from "@/features/home/lib/inboxFilterPreference";
-import {
-  recordInboxRoomLanding,
-  setInboxPanelOpen,
-} from "@/features/home/lib/inboxPanelPreference";
+import { setInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
+import { requestLandAtLatest } from "@/features/channels/lib/landAtLatest";
 import {
   getInboxRoomEntry,
   opensInChatRoom,
@@ -781,7 +779,9 @@ export function HomeView({
           markItemRead(itemId);
           setEnteredConversationId(row.conversationId);
           setInboxPanelOpen(true);
-          recordInboxRoomLanding(roomEntry);
+          if (roomEntry.messageId === null) {
+            requestLandAtLatest(roomEntry.channelId);
+          }
           handleEnterRoom(row, roomEntry);
           return;
         }

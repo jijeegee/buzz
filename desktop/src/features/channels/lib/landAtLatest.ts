@@ -1,17 +1,33 @@
 import * as React from "react";
 
 /**
- * Set by a surface that opens a channel "as a chat room" (the inbox): the main
- * timeline lands on the channel's newest message instead of restoring an older
- * reading position. The value identifies the entry (null when none), so each
- * new entry lands again without remounting the chat screen.
+ * A request to land a channel's main timeline on its newest message, made when
+ * the inbox opens a channel row. It only scrolls the already-mounted timeline;
+ * opening the channel itself is ordinary navigation.
  */
-const LandAtLatestContext = React.createContext<number | null>(null);
+type LandAtLatestRequest = { channelId: string; seq: number; at: number };
 
-export const LandAtLatestProvider = LandAtLatestContext.Provider;
+/** A request the channel never picked up (a failed open) expires. */
+const REQUEST_TTL_MS = 10_000;
 
-export function useLandAtLatest(): number | null {
-  return React.useContext(LandAtLatestContext);
+const listeners = new Set<() => void>();
+
+let request: LandAtLatestRequest | null = null;
+/** Requests are consumed once, so a later visit restores position as usual. */
+let handledSeq = 0;
+
+export function requestLandAtLatest(channelId: string): void {
+  request = { channelId, seq: (request?.seq ?? 0) + 1, at: Date.now() };
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 /** Frames to keep the timeline pinned while late layout and history settle. */
@@ -19,28 +35,49 @@ const MAX_LAND_FRAMES = 120;
 const SETTLED_FRAMES = 15;
 
 /**
- * Pins the timeline to its bottom once per entry, retrying each frame until the
- * timeline can settle and then briefly holding it there.
+ * Pins `channelId`'s timeline to its bottom once per request, retrying each
+ * frame until the timeline can settle and then briefly holding it there.
  */
-export function useLandAtLatestOnEntry(
-  entry: number | null,
+export function useLandAtLatest(
+  channelId: string | null,
   settleAtBottom: () => boolean,
 ) {
+  const current = React.useSyncExternalStore(
+    subscribe,
+    () => request,
+    () => null,
+  );
   const settleRef = React.useRef(settleAtBottom);
   settleRef.current = settleAtBottom;
+  const frameRef = React.useRef(0);
+
+  // A re-render must not cut a landing short; only a channel change or
+  // unmount stops it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stop a landing when the channel changes
+  React.useEffect(
+    () => () => window.cancelAnimationFrame(frameRef.current),
+    [channelId],
+  );
 
   React.useEffect(() => {
-    if (entry === null) return;
+    if (
+      current === null ||
+      current.channelId !== channelId ||
+      current.seq <= handledSeq ||
+      Date.now() - current.at > REQUEST_TTL_MS
+    ) {
+      return;
+    }
+    handledSeq = current.seq;
+    window.cancelAnimationFrame(frameRef.current);
     let frame = 0;
     let settledFrames = 0;
-    let handle = 0;
     const step = () => {
       frame += 1;
       if (settleRef.current()) settledFrames += 1;
       if (frame >= MAX_LAND_FRAMES || settledFrames >= SETTLED_FRAMES) return;
-      handle = window.requestAnimationFrame(step);
+      frameRef.current = window.requestAnimationFrame(step);
     };
-    handle = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(handle);
-  }, [entry]);
+    frameRef.current = window.requestAnimationFrame(step);
+  }, [channelId, current]);
 }

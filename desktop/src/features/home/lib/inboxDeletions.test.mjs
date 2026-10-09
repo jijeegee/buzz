@@ -5,6 +5,7 @@ import {
   collectInboxReferencedEventIds,
   getDeletedEventIds,
   withoutDeletedFeedItems,
+  withoutUnavailableRoomItems,
 } from "./inboxDeletions.ts";
 
 const ROOT = "a".repeat(64);
@@ -74,4 +75,27 @@ test("a deleted thread root takes its replies' rows with it", () => {
 test("no deletions keeps the same feed object", () => {
   const original = feed([item(MAIN)]);
   assert.equal(withoutDeletedFeedItems(original, new Set()), original);
+});
+
+test("rows from a deleted or left channel drop out; DMs and channel-less rows stay", () => {
+  const room = (id, channelId, channelType) => ({
+    id,
+    kind: 9,
+    tags: [],
+    channelId,
+    channelType,
+  });
+  const result = withoutUnavailableRoomItems(
+    feed([
+      room(ROOT, "kept", "stream"),
+      room(REPLY, "gone", "stream"),
+      room(OTHER, "hidden-dm", "dm"),
+      room(MAIN, null, undefined),
+    ]),
+    new Set(["kept"]),
+  );
+  assert.deepEqual(
+    result.feed.mentions.map((row) => row.id),
+    [ROOT, OTHER, MAIN],
+  );
 });
