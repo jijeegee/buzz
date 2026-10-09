@@ -441,12 +441,34 @@ class LinkThread extends GoalOp {
         node.id == id
             ? node.copyWith(
                 threads: [...node.threads.where((t) => t != thread), thread],
+                // Work has started on a goal once a thread is linked to it.
+                status: node.status == GoalStatus.open
+                    ? GoalStatus.inProgress
+                    : null,
                 updatedBy: editor,
                 updatedAt: now,
               )
             : node.copyWith(
                 threads: node.threads.where((t) => t != thread).toList(),
               ),
+    ]);
+  }
+}
+
+class UnlinkThread extends GoalOp {
+  const UnlinkThread({required this.thread});
+  final String thread;
+
+  @override
+  GoalTree _apply(GoalTree tree, String editor, int now) {
+    final thread = this.thread.toLowerCase();
+    return GoalTree([
+      for (final node in tree.nodes)
+        node.threads.contains(thread)
+            ? node.copyWith(
+                threads: node.threads.where((t) => t != thread).toList(),
+              )
+            : node,
     ]);
   }
 }

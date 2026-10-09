@@ -126,6 +126,10 @@ pub struct ChannelDeliveryState {
     /// conversation, so its context fetches keep the recent-N window instead
     /// of a `--context-history` budget.
     pub session_reattached: bool,
+    /// The rendered layer 0 goals this session last received, or `None` when
+    /// unknown (a reattached provider session keeps its original prompt).
+    /// A turn whose current goals differ carries a `<goal-update>`.
+    pub layer0_goals_seen: Option<Option<String>>,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -296,6 +300,11 @@ impl SessionState {
         self.roster_sections.clear();
         self.deliveries.clear();
         self.scope_owner_generations.clear();
+    }
+
+    /// Record the layer 0 goals a successful turn left `scope`'s session with.
+    pub(crate) fn mark_layer0_goals_seen(&mut self, scope: SessionScope, goals: Option<String>) {
+        self.deliveries.entry(scope).or_default().layer0_goals_seen = Some(goals);
     }
 
     pub(crate) fn mark_scope_delivery_success(
@@ -994,9 +1003,12 @@ pub struct PromptContext {
     /// ID prefix. Never part of the prompt.
     pub session_title: Option<String>,
     pub team_instructions: Option<String>,
-    /// Rendered layer 0 goal sections, layered right after team instructions.
-    pub layer0_goals: Option<String>,
-    /// Whether the experimental goal layers are on; gates `<goal-context>`.
+    /// Source of the layer 0 goal sections, layered right after team
+    /// instructions in each new session's system prompt and re-read every
+    /// turn so live sessions get a one-time `<goal-update>` after an edit.
+    pub layer0_goals: crate::layer0_goals::Layer0Goals,
+    /// Goal layers kill switch (`--no-goals` turns it off). When on, the
+    /// per-turn `<goal-context>` appears only where a goal tree exists.
     pub goals_enabled: bool,
     pub heartbeat_prompt: Option<String>,
     /// Base instructions with the configured policy's Session Model appended,
@@ -1753,9 +1765,17 @@ async fn create_session_and_apply_model(
     agent_core: Option<&str>,
     channel: NewSessionChannelContext<'_>,
 ) -> Result<String, AcpError> {
-    open_session_and_apply_model(agent, ctx, agent_core, channel, None)
-        .await
-        .map(|opened| opened.session_id)
+    let layer0_goals = ctx.layer0_goals.current();
+    open_session_and_apply_model(
+        agent,
+        ctx,
+        agent_core,
+        layer0_goals.as_deref(),
+        channel,
+        None,
+    )
+    .await
+    .map(|opened| opened.session_id)
 }
 
 /// A provider session opened for a scope: newly created, or reattached from
@@ -1779,6 +1799,7 @@ async fn open_session_and_apply_model(
     agent: &mut OwnedAgent,
     ctx: &PromptContext,
     agent_core: Option<&str>,
+    layer0_goals: Option<&str>,
     channel: NewSessionChannelContext<'_>,
     reattach_session_id: Option<&str>,
 ) -> Result<OpenedSession, AcpError> {
@@ -1802,7 +1823,7 @@ async fn open_session_and_apply_model(
                             ),
                             ctx.team_instructions.as_deref(),
                         ),
-                        ctx.layer0_goals.as_deref(),
+                        layer0_goals,
                     ),
                     agent_core,
                 ),
@@ -2130,7 +2151,7 @@ pub(crate) async fn run_isolated_prompt(
             base_prompt: ctx.base_prompt.as_deref(),
             system_prompt: ctx.system_prompt.as_deref(),
             team_instructions: ctx.team_instructions.as_deref(),
-            layer0_goals: ctx.layer0_goals.as_deref(),
+            layer0_goals: ctx.layer0_goals.current().as_deref(),
             agent_core: core.as_deref(),
             ..Default::default()
         },
@@ -3241,6 +3262,11 @@ pub async fn run_prompt_task(
         PromptSource::Heartbeat => None,
     };
 
+    // Layer 0 goals as of this turn, read once. A session created now carries
+    // them in its standing context; a live session that last saw different
+    // values gets a one-time `<goal-update>` below.
+    let layer0_now = ctx.layer0_goals.current();
+
     let (session_id, is_new_session) = match &source {
         PromptSource::Channel(scope) => {
             let cid = &scope.channel_id();
@@ -3261,6 +3287,7 @@ pub async fn run_prompt_task(
                     &mut agent,
                     &ctx,
                     agent_core.as_deref(),
+                    layer0_now.as_deref(),
                     NewSessionChannelContext {
                         huddle_instructions: huddle_instructions.as_deref(),
                         canvas: agent_canvas.as_deref(),
@@ -3288,6 +3315,13 @@ pub async fn run_prompt_task(
                             scope.clone(),
                             ChannelDeliveryState {
                                 session_reattached: reattached,
+                                // A new system-prompt session holds this turn's
+                                // layer 0 goals. A reattached one keeps its old
+                                // prompt (unknown); legacy agents learn them with
+                                // the standing context in their first message.
+                                layer0_goals_seen: (!reattached
+                                    && agent.has_system_prompt_support())
+                                .then(|| layer0_now.clone()),
                                 ..Default::default()
                             },
                         );
@@ -3425,7 +3459,7 @@ pub async fn run_prompt_task(
         base_prompt: ctx.base_prompt.as_deref(),
         system_prompt: ctx.system_prompt.as_deref(),
         team_instructions: ctx.team_instructions.as_deref(),
-        layer0_goals: ctx.layer0_goals.as_deref(),
+        layer0_goals: layer0_now.as_deref(),
         agent_core: agent_core.as_deref(),
         huddle_instructions: huddle_instructions.as_deref(),
         agent_canvas: agent_canvas.as_deref(),
@@ -3484,6 +3518,9 @@ pub async fn run_prompt_task(
                         agent
                             .state
                             .mark_scope_delivery_success(scope.clone(), true, [], []);
+                        agent
+                            .state
+                            .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
                     }
                     let usage = agent.acp.take_turn_usage();
                     publish_agent_turn_metric(
@@ -3679,19 +3716,32 @@ pub async fn run_prompt_task(
             thread_context_is_hydrated,
             ctx.context_history,
         );
-        let conversation_context = if ctx.context_message_limit > 0 {
-            fetch_conversation_context_for_target(
-                b.channel_id,
-                &context_target,
-                &ctx,
-                thread_context_is_hydrated,
-                &delivered_ids,
-                history_budget,
-            )
-            .await
-        } else {
-            None
+        // The goal tree is fetched alongside the conversation context so the
+        // extra relay query adds no latency of its own.
+        let conversation_context_fetch = async {
+            if ctx.context_message_limit > 0 {
+                fetch_conversation_context_for_target(
+                    b.channel_id,
+                    &context_target,
+                    &ctx,
+                    thread_context_is_hydrated,
+                    &delivered_ids,
+                    history_budget,
+                )
+                .await
+            } else {
+                None
+            }
         };
+        let goal_tree_fetch = async {
+            if ctx.goals_enabled {
+                crate::goal_context::fetch_goal_tree(b.channel_id, &ctx.rest_client).await
+            } else {
+                None
+            }
+        };
+        let (conversation_context, goal_tree) =
+            tokio::join!(conversation_context_fetch, goal_tree_fetch);
         if let Some(root) =
             fetched_thread_root_to_hydrate(&context_target, conversation_context.as_ref(), is_dm)
         {
@@ -3712,12 +3762,8 @@ pub async fn run_prompt_task(
 
         let profile_lookup =
             fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
-        let goal_context = if ctx.goals_enabled {
-            crate::goal_context::fetch_goal_tree(b.channel_id, &ctx.rest_client).await
-        } else {
-            None
-        }
-        .and_then(|tree| {
+        // Present only where the conversation has a goal tree.
+        let goal_context = goal_tree.and_then(|tree| {
             crate::goal_context::render_goal_context(
                 &tree,
                 b.channel_id,
@@ -3730,6 +3776,21 @@ pub async fn run_prompt_task(
                 .or_else(|| b.scope.root_event_id()),
             )
         });
+
+        // Standing context sent with this prompt already carries the current
+        // layer 0 goals; otherwise tell a live session once that they changed.
+        let goal_update = if !agent.has_system_prompt_support() && !standing_context_sent {
+            None
+        } else {
+            crate::layer0_goals::render_goal_update(
+                agent
+                    .state
+                    .deliveries
+                    .get(&b.scope)
+                    .and_then(|delivery| delivery.layer0_goals_seen.as_ref()),
+                layer0_now.as_deref(),
+            )
+        };
 
         let known_names: Vec<&str> = profile_lookup
             .iter()
@@ -3754,6 +3815,7 @@ pub async fn run_prompt_task(
                 huddle_instructions: standing.huddle_instructions,
                 channel_info: channel_info.as_ref(),
                 goal_context: goal_context.as_deref(),
+                goal_update: goal_update.as_deref(),
                 conversation_context: conversation_context.as_ref(),
                 conversation_context_had_session_events,
                 profile_lookup: profile_lookup.as_ref(),
@@ -3992,6 +4054,9 @@ pub async fn run_prompt_task(
                                 &pending_delivered_event_ids,
                                 &pending_hydrated_thread_roots,
                             );
+                            agent
+                                .state
+                                .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
                         }
                         apply_completed_before_control_signal(
                             &mut agent.state,
@@ -4036,6 +4101,12 @@ pub async fn run_prompt_task(
                     &pending_delivered_event_ids,
                     &pending_hydrated_thread_roots,
                 );
+                // Whatever this session knew, this turn left it holding the
+                // current layer 0 goals (system prompt, standing context, or
+                // `<goal-update>`).
+                agent
+                    .state
+                    .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
                 // Keep a session in steady use from aging out of the ledger.
                 if let Some(ledger) = &ctx.session_ledger {
                     ledger.touch(scope, &session_id);
@@ -6546,7 +6617,7 @@ pub(crate) mod tests {
     /// A capture path for a `bash` script's single-quoted string. Forward
     /// slashes, because bash keeps Windows `\` literally and the file would
     /// land in the crate directory under a mangled name.
-    fn shell_quoted_path(path: &std::path::Path) -> String {
+    pub(crate) fn shell_quoted_path(path: &std::path::Path) -> String {
         path.to_string_lossy()
             .replace('\\', "/")
             .replace('\'', "'\\''")
@@ -9976,6 +10047,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 delivered_event_ids: HashSet::from(["event-a".into()]),
                 hydrated_thread_roots: VecDeque::from(["root-a".into()]),
                 session_reattached: false,
+                layer0_goals_seen: Some(None),
             },
         );
         s.deliveries.insert(
@@ -9985,6 +10057,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 delivered_event_ids: HashSet::from(["event-b".into()]),
                 hydrated_thread_roots: VecDeque::from(["root-b".into()]),
                 session_reattached: false,
+                layer0_goals_seen: Some(None),
             },
         );
         s.heartbeat_session = Some("sess-hb".into());
@@ -12142,8 +12215,8 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             system_prompt: None,
             session_title: None,
             team_instructions: None,
-            layer0_goals: None,
-            goals_enabled: false,
+            layer0_goals: Default::default(),
+            goals_enabled: true,
             heartbeat_prompt: None,
             base_prompt: None,
             cwd: ".".to_string(),
@@ -14150,3 +14223,7 @@ done"#
 #[cfg(all(test, unix))]
 #[path = "pool/pi_prompt_tests.rs"]
 mod pi_prompt_tests;
+
+#[cfg(test)]
+#[path = "pool/goal_prompt_tests.rs"]
+mod goal_prompt_tests;

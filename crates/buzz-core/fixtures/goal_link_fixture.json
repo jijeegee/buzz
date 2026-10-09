@@ -1,0 +1,19 @@
+{
+  "_comment": "Shared by buzz-core (goal_tree.rs) and mobile (goal_tree_test.dart): linking a thread starts an open goal and never reopens a done one. Both must produce `after` byte for byte.",
+  "editor": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "now": 50,
+  "before": "{\"v\":1,\"nodes\":[{\"id\":\"root\",\"parent\":null,\"title\":\"Ship it\",\"status\":\"open\",\"order\":0,\"updated_by\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"updated_at\":1},{\"id\":\"a\",\"parent\":\"root\",\"title\":\"A\",\"status\":\"open\",\"order\":0,\"updated_by\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"updated_at\":1},{\"id\":\"b\",\"parent\":\"root\",\"title\":\"B\",\"status\":\"done\",\"threads\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"order\":1,\"updated_by\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"updated_at\":1}]}",
+  "ops": [
+    {
+      "op": "link",
+      "id": "a",
+      "thread": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "op": "link",
+      "id": "b",
+      "thread": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ],
+  "after": "{\"v\":1,\"nodes\":[{\"id\":\"root\",\"parent\":null,\"title\":\"Ship it\",\"status\":\"open\",\"order\":0,\"updated_by\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"updated_at\":1},{\"id\":\"a\",\"parent\":\"root\",\"title\":\"A\",\"status\":\"in_progress\",\"order\":0,\"updated_by\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"updated_at\":50},{\"id\":\"b\",\"parent\":\"root\",\"title\":\"B\",\"status\":\"done\",\"threads\":[\"1111111111111111111111111111111111111111111111111111111111111111\",\"2222222222222222222222222222222222222222222222222222222222222222\"],\"order\":1,\"updated_by\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"updated_at\":50}]}"
+}

@@ -16,6 +16,7 @@ mod engram_fetch;
 mod filter;
 mod goal_context;
 mod isolated_execution;
+mod layer0_goals;
 #[cfg(test)]
 mod lead_rules_fixture_tests;
 mod observer;
@@ -6548,13 +6549,10 @@ mod agent_draft_prompt_tests {
 
     #[test]
     fn goal_rules_live_outside_the_shared_base_prompt() {
-        // Goal layers are an opt-in experiment; agents only see these rules
-        // when `--goals` appends `goals_prompt.md`.
+        // Goal rules ride in each turn's `<goal-context>`, only where the
+        // conversation has a goal tree; the system prompt never mentions them.
         assert!(!include_str!("base_prompt.md").contains("buzz goals"));
-        assert!(include_str!("goals_prompt.md").starts_with(
-            "## Goals
-"
-        ));
+        assert!(!include_str!("base_prompt.md").contains("goal-context"));
     }
 
     #[test]
@@ -10871,8 +10869,8 @@ mod build_mcp_servers_tests {
             heartbeat_prompt: None,
             system_prompt: None,
             team_instructions: None,
-            goals_enabled: false,
-            layer0_goals: None,
+            goals_enabled: true,
+            layer0_goals: Default::default(),
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,
             dedup_mode: config::DedupMode::Queue,
@@ -11740,8 +11738,8 @@ mod error_outcome_emission_tests {
             heartbeat_prompt: None,
             system_prompt: None,
             team_instructions: None,
-            goals_enabled: false,
-            layer0_goals: None,
+            goals_enabled: true,
+            layer0_goals: Default::default(),
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,
             dedup_mode: config::DedupMode::Queue,

@@ -84,6 +84,18 @@ export async function applyGoalOp(
   return { eventId: raw.event_id, tree: raw.tree };
 }
 
+/** Apply several edits as one revision: all of them or none. */
+export async function applyGoalOps(
+  channelId: string,
+  ops: GoalOp[],
+): Promise<{ eventId: string; tree: GoalTree }> {
+  const raw = await invokeTauri<{ event_id: string; tree: GoalTree }>(
+    "apply_goal_ops",
+    { channelId, ops },
+  );
+  return { eventId: raw.event_id, tree: raw.tree };
+}
+
 export async function getGoalTreeHistory(
   channelId: string,
 ): Promise<GoalTreeRevision[]> {

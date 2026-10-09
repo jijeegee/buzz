@@ -64,14 +64,17 @@ bool isGoalTreeConflict(Object error) =>
     error.toString().contains('conflict: goal tree');
 
 /// Writes goal edits with the relay's compare-and-swap: read the head, apply
-/// the op, publish with `expected-revision`, and on a conflict re-apply the
-/// same op to the newer head.
+/// the ops, publish with `expected-revision`, and on a conflict re-apply the
+/// same ops to the newer head.
 class GoalActions {
   GoalActions(this._ref);
   final Ref _ref;
   static const _maxAttempts = 4;
 
-  Future<void> apply(String channelId, GoalOp op) async {
+  Future<void> apply(String channelId, GoalOp op) => applyAll(channelId, [op]);
+
+  /// Applies [ops] in order and publishes them as one revision: all or none.
+  Future<void> applyAll(String channelId, List<GoalOp> ops) async {
     final relayConfig = _ref.read(relayConfigProvider);
     final session = _ref.read(relaySessionProvider.notifier);
     final signer = SignedEventRelay(session: session, nsec: relayConfig.nsec);
@@ -88,7 +91,10 @@ class GoalActions {
         await session.queryRelay([goalTreeFilter(channelId)]),
       );
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final next = head.tree.apply(op, editor: editor, now: now);
+      var next = head.tree;
+      for (final op in ops) {
+        next = next.apply(op, editor: editor, now: now);
+      }
       try {
         await signer.submit(
           kind: kindGoalTree,

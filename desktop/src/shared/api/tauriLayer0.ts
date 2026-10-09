@@ -44,8 +44,3 @@ export async function setLayer0Goal(
 export async function getPublicGoal(pubkey: string): Promise<string | null> {
   return invokeTauri<string | null>("get_public_goal", { pubkey });
 }
-
-/** Mirror the "Goal layers" experiment toggle for agent spawns. */
-export async function setGoalsFeatureEnabled(enabled: boolean): Promise<void> {
-  await invokeTauri<void>("set_goals_feature_enabled", { enabled });
-}

@@ -50,7 +50,8 @@ import { UnreadDivider } from "./UnreadDivider";
 import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
-import { ThreadGoalChip } from "@/features/goals/ui/GoalChips";
+import { threadGoalRootId } from "@/features/goals/goalTree";
+import { ThreadGoalPanel } from "@/features/goals/ui/GoalChips";
 import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
@@ -551,9 +552,9 @@ export function MessageThreadPanel({
             data-testid="message-thread-head"
           >
             {goalsEnabled && channelId ? (
-              <ThreadGoalChip
+              <ThreadGoalPanel
                 channelId={channelId}
-                threadRootId={threadHead.id}
+                threadRootId={threadGoalRootId(threadHead)}
               />
             ) : null}
             <div className="rounded-2xl">

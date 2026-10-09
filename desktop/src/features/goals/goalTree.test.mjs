@@ -8,6 +8,7 @@ import {
   goalProgress,
   goalSubtreeIds,
   goalTitleError,
+  threadGoalRootId,
 } from "./goalTree.ts";
 
 const node = (id, parent, extra = {}) => ({
@@ -66,4 +67,10 @@ test("title rules mirror the relay", () => {
   assert.ok(goalTitleError("  "));
   assert.ok(goalTitleError("one\ntwo"));
   assert.ok(goalTitleError("x".repeat(201)));
+});
+
+test("threads link to goals by their chain root, like mobile and agents", () => {
+  assert.equal(threadGoalRootId({ id: "head", rootId: "root" }), "root");
+  assert.equal(threadGoalRootId({ id: "root", rootId: null }), "root");
+  assert.equal(threadGoalRootId({ id: "root" }), "root");
 });

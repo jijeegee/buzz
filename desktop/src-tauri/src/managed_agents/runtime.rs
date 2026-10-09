@@ -763,33 +763,22 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             }
         }
     }
-    // Goal layers are an experiment: with the desktop toggle off, agents get
-    // no goal rules, goal context, or layer 0 goals. Layer 0 goals stay on
-    // this machine; only this agent's own process sees its goal and its
-    // owner's private goal.
-    let goals_enabled = crate::commands::goals_feature_enabled(app);
-    let (agent_goal, owner_goal) = if goals_enabled {
-        let answers_owner_only =
-            super::projected_access_with_policy(record, super::owner_only()).0
-                == super::RespondTo::OwnerOnly;
-        crate::commands::spawn_goals(app, &record.pubkey, owner_hex, answers_owner_only)
-    } else {
-        (None, None)
-    };
-    if goals_enabled {
-        command.env("BUZZ_ACP_GOALS", "true");
-    } else {
-        command.env_remove("BUZZ_ACP_GOALS");
-    }
-    for (key, value) in [
-        ("BUZZ_ACP_AGENT_GOAL", agent_goal),
-        ("BUZZ_ACP_OWNER_GOAL", owner_goal),
+    // Layer 0 goals stay on this machine. The harness re-reads this agent's
+    // goals file every turn, so goal edits reach it without a restart; only
+    // the path rides in the environment, never the private goal text. Goal
+    // context itself needs no switch: the harness adds it only in
+    // conversations that have a goal tree.
+    for key in [
+        "BUZZ_ACP_GOALS",
+        "BUZZ_ACP_AGENT_GOAL",
+        "BUZZ_ACP_OWNER_GOAL",
     ] {
-        match value {
-            Some(value) => command.env(key, value),
-            None => command.env_remove(key),
-        };
+        command.env_remove(key);
     }
+    match crate::commands::sync_agent_goals_file(app, record, owner_hex) {
+        Ok(path) => command.env("BUZZ_ACP_LAYER0_GOALS_FILE", path),
+        Err(_) => command.env_remove("BUZZ_ACP_LAYER0_GOALS_FILE"),
+    };
     let team_instructions = super::spawn_snapshot::effective_team_instructions(record, &teams);
     if let Some(instructions) = &team_instructions {
         command.env("BUZZ_ACP_TEAM_INSTRUCTIONS", instructions);

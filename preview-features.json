@@ -28,7 +28,7 @@
     {
       "id": "goalTree",
       "name": "Goal layers",
-      "description": "A layer 1 goal and sub-goal tree for every channel and DM, shared with agents. Restart agents after changing this",
+      "description": "Show and edit the layer 1 goal and sub-goal tree of channels, DMs, and threads. Agents see a conversation's goals whenever it has them; no restart needed",
       "platforms": ["desktop"]
     },
     {

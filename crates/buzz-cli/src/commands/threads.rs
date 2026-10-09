@@ -13,6 +13,7 @@
 //!   close marker reads as closed; any later message reopens it.
 //! - A best-effort `✅` reaction on the thread root.
 
+use buzz_core::goal_tree::{GoalStatus, GoalTree};
 use clap::Subcommand;
 
 use crate::client::BuzzClient;
@@ -74,6 +75,12 @@ pub enum ThreadsCmd {
         /// Override who the result is reported to (hex or npub)
         #[arg(long)]
         requester: Option<String>,
+        /// Also mark the goal this thread is linked to as done
+        #[arg(long)]
+        goal_done: bool,
+        /// With --goal-done: what was delivered, saved as the goal's note
+        #[arg(long, requires = "goal_done")]
+        goal_note: Option<String>,
     },
 }
 
@@ -91,7 +98,13 @@ pub async fn dispatch(cmd: ThreadsCmd, client: &BuzzClient) -> Result<(), CliErr
             thread,
             summary,
             requester,
-        } => close(client, &channel, &thread, &summary, requester).await,
+            goal_done,
+            goal_note,
+        } => {
+            let goal_done = goal_done.then(|| goal_note.map(|n| read_or_stdin(&n)).transpose());
+            let goal_done = goal_done.transpose()?;
+            close(client, &channel, &thread, &summary, requester, goal_done).await
+        }
     }
 }
 
@@ -159,6 +172,7 @@ async fn close(
     thread: &str,
     summary: &str,
     requester: Option<String>,
+    goal_done: Option<Option<String>>,
 ) -> Result<(), CliError> {
     let summary = read_or_stdin(summary)?;
     if summary.trim().is_empty() {
@@ -166,6 +180,9 @@ async fn close(
     }
     let root_id = thread.to_ascii_lowercase();
     let root = load_top_level_message(client, channel, &root_id).await?;
+    // Before anything is posted, so a failed goal write leaves the thread
+    // open and the whole close can simply be retried.
+    let goal = close_goal(client, channel, &root_id, goal_done).await?;
 
     let replies = client
         .query(&serde_json::json!({
@@ -248,9 +265,89 @@ async fn close(
             "result": result,
             "close_marker": marker,
             "root_reaction": root_reaction,
+            "goal": goal.json(),
+            "warning": goal.warning(),
         })
     );
     Ok(())
+}
+
+/// What closing a thread does to the goal it is linked to.
+#[derive(Debug, PartialEq, Eq)]
+enum CloseGoal {
+    /// The thread is not linked to a goal (or the conversation has none).
+    Unlinked,
+    /// `--goal-done`: the linked goal was marked done.
+    MarkedDone {
+        id: String,
+        report: serde_json::Value,
+    },
+    /// The linked goal was left as it was.
+    Left { id: String, status: GoalStatus },
+}
+
+impl CloseGoal {
+    fn plan(tree: &GoalTree, root_id: &str, goal_done: bool) -> Self {
+        match tree.node_for_thread(root_id) {
+            None => Self::Unlinked,
+            Some(node) if goal_done => Self::MarkedDone {
+                id: node.id.clone(),
+                report: serde_json::Value::Null,
+            },
+            Some(node) => Self::Left {
+                id: node.id.clone(),
+                status: node.status,
+            },
+        }
+    }
+
+    fn json(&self) -> serde_json::Value {
+        match self {
+            Self::Unlinked => serde_json::Value::Null,
+            Self::MarkedDone { id, report } => {
+                let mut out = serde_json::json!({ "id": id, "status": "done" });
+                if let (Some(out), Some(report)) = (out.as_object_mut(), report.as_object()) {
+                    out.extend(report.clone());
+                }
+                out
+            }
+            Self::Left { id, status } => {
+                serde_json::json!({ "id": id, "status": status.as_str() })
+            }
+        }
+    }
+
+    fn warning(&self) -> Option<String> {
+        match self {
+            Self::Left { id, status } if *status == GoalStatus::InProgress => Some(format!(
+                "linked goal {id} is still {}; pass --goal-done to mark it done",
+                status.as_str()
+            )),
+            _ => None,
+        }
+    }
+}
+
+async fn close_goal(
+    client: &BuzzClient,
+    channel: &str,
+    root_id: &str,
+    goal_done: Option<Option<String>>,
+) -> Result<CloseGoal, CliError> {
+    let Some(head) = super::goals::fetch_head(client, channel, goal_done.is_some()).await? else {
+        return Ok(CloseGoal::Unlinked);
+    };
+    let mut goal = CloseGoal::plan(&head.tree, root_id, goal_done.is_some());
+    if let (CloseGoal::MarkedDone { id, report }, Some(note)) = (&mut goal, goal_done) {
+        let op = super::goals::status_note_op(id, GoalStatus::Done, note);
+        *report = super::goals::update_goal(client, channel, op).await?;
+        // Keep only the tree report; the event id is not this goal's concern.
+        if let Some(r) = report.as_object_mut() {
+            r.remove("event_id");
+            r.remove("accepted");
+        }
+    }
+    Ok(goal)
 }
 
 async fn react_done(client: &BuzzClient, root_id: &str) -> Result<(), CliError> {
@@ -425,6 +522,61 @@ fn find_task(replies: &[serde_json::Value]) -> Option<TaskInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn close_marks_or_warns_about_the_linked_goal() {
+        use buzz_core::goal_tree::GoalOp;
+        let ed = "a".repeat(64);
+        let thread = "b".repeat(64);
+        let mut tree = GoalTree::empty();
+        for op in [
+            GoalOp::SetRoot {
+                id: "r".into(),
+                title: "Root".into(),
+                note: None,
+            },
+            GoalOp::Add {
+                id: "g".into(),
+                parent: "r".into(),
+                title: "Goal".into(),
+                note: None,
+                assignees: vec![],
+            },
+            GoalOp::Link {
+                id: "g".into(),
+                thread: thread.clone(),
+            },
+        ] {
+            tree.apply(&op, &ed, 1).unwrap();
+        }
+        assert_eq!(
+            CloseGoal::plan(&tree, &thread, true),
+            CloseGoal::MarkedDone {
+                id: "g".into(),
+                report: serde_json::Value::Null
+            }
+        );
+        // Linking started the goal, so closing without --goal-done warns.
+        let left = CloseGoal::plan(&tree, &thread, false);
+        let open = CloseGoal::Left {
+            id: "g".into(),
+            status: GoalStatus::Open,
+        };
+        assert!(open.warning().is_none(), "only an in_progress goal warns");
+        assert!(left
+            .warning()
+            .unwrap()
+            .contains("linked goal g is still in_progress"));
+        assert_eq!(left.json()["id"], "g");
+        let unlinked = CloseGoal::plan(&tree, &"c".repeat(64), false);
+        assert_eq!(unlinked, CloseGoal::Unlinked);
+        assert!(unlinked.warning().is_none() && unlinked.json().is_null());
+        let done = CloseGoal::Left {
+            id: "g".into(),
+            status: GoalStatus::Done,
+        };
+        assert!(done.warning().is_none());
+    }
 
     #[test]
     fn thread_name_fits_the_shared_budget() {
