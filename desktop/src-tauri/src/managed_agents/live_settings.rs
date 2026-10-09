@@ -13,16 +13,19 @@
 //!
 //! What applies to an agent still depends on how its process was launched:
 //! task thread rules only under the thread session policy, no history budget
-//! for a dispatcher, the lead addendum on a lead's prompt. A running agent's
-//! file follows the policy and routing role it was launched with; changing
-//! those still needs a restart.
+//! for a dispatcher, the lead addendum on a lead's prompt. The file records
+//! the policy and routing role it was launched with (`launch`, which the
+//! harness ignores), so a refresh keeps following them, also for a process
+//! that outlived a desktop restart; changing them still needs a restart.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use serde::Serialize;
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use super::channel_routing::RoutingRole;
@@ -32,6 +35,7 @@ use super::{AcpSessionPolicy, GlobalAgentConfig};
 /// The harness flag naming the live settings file (`buzz-acp
 /// --live-settings-file`).
 pub(crate) const LIVE_SETTINGS_ENV_VAR: &str = "BUZZ_ACP_LIVE_SETTINGS_FILE";
+const SYSTEM_PROMPT_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT";
 const SYSTEM_PROMPT_FILE_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT_FILE";
 const TEAM_INSTRUCTIONS_ENV_VAR: &str = "BUZZ_ACP_TEAM_INSTRUCTIONS";
 
@@ -48,6 +52,24 @@ pub(crate) struct LiveSettingsFile {
     pub task_threads: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_history: Option<String>,
+    /// How the process reading this file was launched. Desktop-only: the
+    /// harness ignores it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launch: Option<LaunchStamp>,
+}
+
+/// The launch inputs that decide which settings apply to a process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct LaunchStamp {
+    pub session_policy: AcpSessionPolicy,
+    pub routing_role: RoutingRole,
+}
+
+/// The part of a written file a refresh reads back.
+#[derive(Deserialize)]
+struct WrittenLaunch {
+    #[serde(default)]
+    launch: Option<LaunchStamp>,
 }
 
 /// The already-resolved values the file is built from.
@@ -84,6 +106,12 @@ impl LiveSettingsFile {
             session_policy,
             routing_role,
         } = inputs;
+        // User env is written after the Buzz-set prompt, so an explicit
+        // `BUZZ_ACP_SYSTEM_PROMPT` is what the process launches with.
+        let system_prompt = user_env
+            .get(SYSTEM_PROMPT_ENV_VAR)
+            .map(String::as_str)
+            .or(system_prompt);
         let system_prompt = if routing_role == RoutingRole::Lead {
             // Mirror `apply_lead_env`: the inline prompt, else the prompt
             // file's contents, then the lead addendum.
@@ -118,14 +146,44 @@ impl LiveSettingsFile {
                 context_history,
             )
             .map(str::to_string),
+            launch: Some(LaunchStamp {
+                session_policy,
+                routing_role,
+            }),
         }
     }
 }
 
+fn live_settings_dir(base_dir: &Path) -> PathBuf {
+    base_dir.join("live-settings")
+}
+
 fn live_settings_path(base_dir: &Path, agent_pubkey: &str) -> PathBuf {
-    base_dir
-        .join("live-settings")
-        .join(format!("{}.json", agent_pubkey.to_ascii_lowercase()))
+    live_settings_dir(base_dir).join(format!("{}.json", agent_pubkey.to_ascii_lowercase()))
+}
+
+/// The agents with a live settings file and how each was launched, read
+/// from the files themselves. A file exists only because a process was
+/// launched with it, possibly by an earlier desktop run.
+fn written_launches(base_dir: &Path) -> HashMap<String, Option<LaunchStamp>> {
+    let Ok(entries) = std::fs::read_dir(live_settings_dir(base_dir)) else {
+        return HashMap::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "json") {
+                return None;
+            }
+            let pubkey = path.file_stem()?.to_str()?.to_ascii_lowercase();
+            let launch = std::fs::read(&path)
+                .ok()
+                .and_then(|raw| serde_json::from_slice::<WrittenLaunch>(&raw).ok())
+                .and_then(|written| written.launch);
+            Some((pubkey, launch))
+        })
+        .collect()
 }
 
 /// Replace the file atomically, so the harness never reads a half-written
@@ -208,8 +266,9 @@ static SYNC_QUEUED: AtomicBool = AtomicBool::new(false);
 /// Serializes syncs, so the last one to run always read the newest state.
 static SYNC_LOCK: Mutex<()> = Mutex::new(());
 
-/// Refresh the live settings file of every running local agent, on a
-/// background thread. Called after every save of a store these settings come
+/// Refresh the live settings file of every local agent process, on a
+/// background thread: those this desktop runs and those with a file from an
+/// earlier run (which may have outlived a desktop restart). Called after every save of a store these settings come
 /// from; saves made while a sync is queued are picked up by that sync, which
 /// reads the stores only when it starts.
 pub(crate) fn schedule_live_settings_sync<R: tauri::Runtime>(app: &AppHandle<R>) {
@@ -229,34 +288,40 @@ pub(crate) fn schedule_live_settings_sync<R: tauri::Runtime>(app: &AppHandle<R>)
 }
 
 fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    // The policy and role each running process was launched with.
-    let running: Vec<(String, AcpSessionPolicy, RoutingRole)> = {
+    let base_dir = super::managed_agents_base_dir(app)?;
+    // How each process was launched: the stamp of a process this desktop
+    // runs, else the one recorded in its file.
+    let mut targets: HashMap<String, Option<LaunchStamp>> = written_launches(&base_dir);
+    {
         let state = app.state::<crate::app_state::AppState>();
         let runtimes = state
             .managed_agent_processes
             .lock()
             .map_err(|e| e.to_string())?;
-        runtimes
-            .iter()
-            .map(|(key, runtime)| {
-                let policy =
-                    if runtime.spawn_config.session_policy == AcpSessionPolicy::Thread.as_str() {
-                        AcpSessionPolicy::Thread
-                    } else {
-                        AcpSessionPolicy::Channel
-                    };
-                (
-                    key.pubkey.clone(),
-                    policy,
-                    runtime.spawn_config.routing_role,
-                )
-            })
-            .collect()
-    };
-    if running.is_empty() {
+        for (key, runtime) in runtimes.iter() {
+            let session_policy =
+                if runtime.spawn_config.session_policy == AcpSessionPolicy::Thread.as_str() {
+                    AcpSessionPolicy::Thread
+                } else {
+                    AcpSessionPolicy::Channel
+                };
+            targets.insert(
+                key.pubkey.to_ascii_lowercase(),
+                Some(LaunchStamp {
+                    session_policy,
+                    routing_role: runtime.spawn_config.routing_role,
+                }),
+            );
+        }
+    }
+    // A file without a stamp predates it; its launch is unknown, so leave it.
+    let targets: Vec<(String, LaunchStamp)> = targets
+        .into_iter()
+        .filter_map(|(pubkey, launch)| launch.map(|launch| (pubkey, launch)))
+        .collect();
+    if targets.is_empty() {
         return Ok(());
     }
-    let base_dir = super::managed_agents_base_dir(app)?;
     let records = super::storage::load_managed_agents_without_keys(app)?;
     let personas = super::personas::load_personas_readonly(app)?;
     let teams = super::teams::load_teams_readonly(&super::teams::teams_store_path(app)?)?;
@@ -264,8 +329,11 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
     let task_threads = super::task_threads::current_task_threads_env(app);
     let context_history = super::context_history::current_context_history_env(app);
     let mut failures = Vec::new();
-    for (pubkey, policy, role) in running {
-        let Some(record) = records.iter().find(|record| record.pubkey == pubkey) else {
+    for (pubkey, launch) in targets {
+        let Some(record) = records
+            .iter()
+            .find(|record| record.pubkey.eq_ignore_ascii_case(&pubkey))
+        else {
             continue;
         };
         let settings = current_live_settings(
@@ -275,8 +343,8 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
             &global,
             &task_threads,
             &context_history,
-            policy,
-            role,
+            launch.session_policy,
+            launch.routing_role,
         );
         if let Err(error) =
             write_live_settings_file(&live_settings_path(&base_dir, &pubkey), &settings)
@@ -326,6 +394,10 @@ mod tests {
                 team_instructions: Some("Ship small.".into()),
                 task_threads: Some("long_running,multi_step".into()),
                 context_history: Some("medium".into()),
+                launch: Some(LaunchStamp {
+                    session_policy: AcpSessionPolicy::Thread,
+                    routing_role: RoutingRole::None,
+                }),
             }
         );
 
@@ -355,6 +427,72 @@ mod tests {
             channel_dispatcher.system_prompt.as_deref(),
             Some("You are Eva.")
         );
+    }
+
+    #[test]
+    fn a_user_env_prompt_wins_like_at_launch() {
+        // Spawn writes user env after the Buzz-set prompt, so the env value
+        // is what the process launched with; the file must not replace it.
+        let env = BTreeMap::from([(SYSTEM_PROMPT_ENV_VAR.to_string(), "From env.".to_string())]);
+        let plain = LiveSettingsFile::from_inputs(inputs(
+            &env,
+            AcpSessionPolicy::Channel,
+            RoutingRole::None,
+        ));
+        assert_eq!(plain.system_prompt.as_deref(), Some("From env."));
+
+        let lead = LiveSettingsFile::from_inputs(inputs(
+            &env,
+            AcpSessionPolicy::Channel,
+            RoutingRole::Lead,
+        ));
+        let mut command = std::process::Command::new("buzz-acp");
+        command.env(SYSTEM_PROMPT_ENV_VAR, "You are Eva.");
+        command.env(SYSTEM_PROMPT_ENV_VAR, "From env.");
+        super::super::routing_env::apply_lead_env(
+            &mut command,
+            Path::new("rules.toml"),
+            super::super::channel_routing::lead_rules::LEAD_LISTEN_ADDENDUM,
+        )
+        .unwrap();
+        let launched = command
+            .get_envs()
+            .find(|(key, _)| *key == SYSTEM_PROMPT_ENV_VAR)
+            .and_then(|(_, value)| value)
+            .map(|value| value.to_string_lossy().into_owned());
+        assert_eq!(lead.system_prompt, launched);
+        assert!(launched.unwrap().starts_with("From env.\n\n"));
+    }
+
+    #[test]
+    fn refresh_targets_come_from_written_files_with_their_launch() {
+        // A process that outlived a desktop restart is known only by its file.
+        let dir = tempfile::tempdir().unwrap();
+        let env = BTreeMap::new();
+        let thread_lead = LiveSettingsFile::from_inputs(inputs(
+            &env,
+            AcpSessionPolicy::Thread,
+            RoutingRole::Lead,
+        ));
+        write_live_settings_file(&live_settings_path(dir.path(), "AAAA"), &thread_lead).unwrap();
+        write_live_settings_file(
+            &live_settings_path(dir.path(), "bbbb"),
+            &LiveSettingsFile::default(),
+        )
+        .unwrap();
+        std::fs::write(live_settings_dir(dir.path()).join("cccc.json.tmp"), "{}").unwrap();
+
+        let launches = written_launches(dir.path());
+        assert_eq!(launches.len(), 2, "{launches:?}");
+        assert_eq!(
+            launches["aaaa"],
+            Some(LaunchStamp {
+                session_policy: AcpSessionPolicy::Thread,
+                routing_role: RoutingRole::Lead,
+            })
+        );
+        assert_eq!(launches["bbbb"], None, "an unstamped file has no launch");
+        assert!(written_launches(&dir.path().join("missing")).is_empty());
     }
 
     #[test]

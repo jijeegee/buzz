@@ -54,6 +54,13 @@ pub struct LedgerEntry {
     /// Unix seconds of the last recorded use (create, reattach, or a turn;
     /// turn refreshes are coarsened to [`TOUCH_INTERVAL`]).
     pub last_used_at: u64,
+    /// Fingerprints of the standing context the session holds (instructions,
+    /// team instructions, task thread rules, layer 0 goals), so a session
+    /// reattached after a restart is told only about parts that changed.
+    /// Absent in entries written before this field existed: every current
+    /// part is then restated once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub standing: Option<crate::live_settings::StandingHashes>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -234,12 +241,14 @@ impl SessionLedger {
             return;
         };
         state.resumable.remove(&key);
-        let created_at = state
+        let same_session = state
             .file
             .entries
             .get(&key)
-            .filter(|entry| entry.session_id == session_id)
-            .map_or(now, |entry| entry.created_at);
+            .filter(|entry| entry.session_id == session_id);
+        let created_at = same_session.map_or(now, |entry| entry.created_at);
+        // A reattached session still holds what it held before.
+        let standing = same_session.and_then(|entry| entry.standing.clone());
         state.file.entries.insert(
             key,
             LedgerEntry {
@@ -248,6 +257,7 @@ impl SessionLedger {
                 cwd: cwd.to_string(),
                 created_at,
                 last_used_at: now,
+                standing,
             },
         );
         prune(&mut state.file, now);
@@ -271,6 +281,43 @@ impl SessionLedger {
             return;
         }
         entry.last_used_at = now;
+        self.persist_locked(&state.file);
+    }
+
+    /// The standing context fingerprints recorded for `scope`'s session
+    /// `session_id`, or `None` when unknown.
+    pub fn standing(
+        &self,
+        scope: &SessionScope,
+        session_id: &str,
+    ) -> Option<crate::live_settings::StandingHashes> {
+        let state = self.state.lock().ok()?;
+        state
+            .file
+            .entries
+            .get(&scope_key(scope))
+            .filter(|entry| entry.session_id == session_id)
+            .and_then(|entry| entry.standing.clone())
+    }
+
+    /// Record that `scope`'s session `session_id` now holds `standing`.
+    /// Persists only when it changed, so steady turns cost nothing.
+    pub fn set_standing(
+        &self,
+        scope: &SessionScope,
+        session_id: &str,
+        standing: &crate::live_settings::StandingHashes,
+    ) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let Some(entry) = state.file.entries.get_mut(&scope_key(scope)) else {
+            return;
+        };
+        if entry.session_id != session_id || entry.standing.as_ref() == Some(standing) {
+            return;
+        }
+        entry.standing = Some(standing.clone());
         self.persist_locked(&state.file);
     }
 
@@ -544,6 +591,7 @@ mod tests {
             cwd: "/c".into(),
             created_at: last_used_at,
             last_used_at,
+            standing: None,
         };
         let mut entries = BTreeMap::new();
         entries.insert(
@@ -607,6 +655,70 @@ mod tests {
         assert!(refreshed > stale);
         ledger.touch(&main, "s");
         assert_eq!(last_used(&ledger), refreshed, "refreshes are coarsened");
+    }
+
+    #[test]
+    fn standing_fingerprints_persist_and_survive_reattach() {
+        use crate::live_settings::{LiveText, StandingHashes};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.json");
+        let main = main_scope(Uuid::new_v4());
+        let ledger = SessionLedger::open(path.clone());
+        ledger.record(&main, "s", "id", "/c");
+        assert_eq!(ledger.standing(&main, "s"), None, "unknown until set");
+
+        let text = LiveText {
+            system_prompt: Some("You are Eva.".into()),
+            ..Default::default()
+        };
+        let standing = StandingHashes::new(&text, Some("goals"));
+        ledger.set_standing(&main, "s", &standing);
+        ledger.set_standing(&main, "other", &StandingHashes::default());
+        assert_eq!(ledger.standing(&main, "s"), Some(standing.clone()));
+        assert_eq!(ledger.standing(&main, "other"), None);
+
+        // A restart reattaches and records the same session: it still holds
+        // what it held, and the fingerprints are on disk.
+        let reopened = SessionLedger::open(path.clone());
+        assert_eq!(
+            reopened.take_resumable(&main, "id", "/c").as_deref(),
+            Some("s")
+        );
+        reopened.record(&main, "s", "id", "/c");
+        assert_eq!(reopened.standing(&main, "s"), Some(standing));
+        assert!(!std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("You are Eva."));
+
+        // A different session for the scope starts unknown.
+        reopened.record(&main, "s2", "id", "/c");
+        assert_eq!(reopened.standing(&main, "s2"), None);
+    }
+
+    #[test]
+    fn entries_without_fingerprints_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sessions.json");
+        let main = main_scope(Uuid::new_v4());
+        let now = now_unix();
+        std::fs::write(
+            &path,
+            serde_json::json!({
+                "version": LEDGER_VERSION,
+                "entries": { scope_key(&main): {
+                    "session_id": "old", "agent_identity": "id", "cwd": "/c",
+                    "created_at": now, "last_used_at": now,
+                }},
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let ledger = SessionLedger::open(path);
+        assert_eq!(
+            ledger.take_resumable(&main, "id", "/c").as_deref(),
+            Some("old")
+        );
+        assert_eq!(ledger.standing(&main, "old"), None);
     }
 
     #[test]

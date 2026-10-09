@@ -142,7 +142,7 @@ done"#
             scope,
             ChannelDeliveryState {
                 layer0_goals_seen: Some(None),
-                live_text_seen: Some(started_with.clone()),
+                live_text_seen: Some(started_with.hashes()),
                 ..Default::default()
             },
         );
@@ -214,7 +214,7 @@ done"#
     let second_scope = SessionScope::Conversation { channel_id: second };
     assert_eq!(
         agent.state.deliveries[&second_scope].live_text_seen,
-        Some(ctx.live_now().text)
+        Some(ctx.live_now().text.hashes())
     );
 }
 
@@ -279,7 +279,7 @@ done"#
         "a new session already holds the current settings"
     );
     let delivery = &result.agent.state.deliveries[&SessionScope::Conversation { channel_id }];
-    assert_eq!(delivery.live_text_seen, Some(ctx.live_now().text));
+    assert_eq!(delivery.live_text_seen, Some(ctx.live_now().text.hashes()));
 }
 
 #[test]
@@ -308,4 +308,141 @@ fn launch_values_apply_without_a_live_file() {
     let base = live.base_prompt.unwrap();
     assert!(base.starts_with("BASE\n\n### Opening Task Threads Yourself"));
     assert!(base.contains("**Several independent tasks"));
+}
+
+#[tokio::test]
+async fn reattached_sessions_hear_only_about_parts_changed_while_down() {
+    use crate::live_settings::{LiveText, StandingHashes};
+    use crate::session_ledger::SessionLedger;
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("agent.json");
+    write_settings(&file, "You are Eva.", "long_running");
+    let mut ctx = thread_policy_context(live_settings(&file));
+    let current = ctx.live_now().text;
+
+    // Before the restart: one session holds exactly the current settings,
+    // one holds an older team instruction, and one was recorded before the
+    // ledger kept fingerprints.
+    let unchanged = Uuid::new_v4();
+    let team_changed = Uuid::new_v4();
+    let unknown = Uuid::new_v4();
+    let ledger_path = dir.path().join("sessions.json");
+    {
+        let ledger = SessionLedger::open(ledger_path.clone());
+        for channel_id in [unchanged, team_changed, unknown] {
+            let scope = SessionScope::Conversation { channel_id };
+            ledger.record(
+                &scope,
+                &format!("s-{channel_id}"),
+                &ctx.harness_name,
+                &ctx.cwd,
+            );
+        }
+        let held = |text: &LiveText| StandingHashes::new(text, None);
+        ledger.set_standing(
+            &SessionScope::Conversation {
+                channel_id: unchanged,
+            },
+            &format!("s-{unchanged}"),
+            &held(&current),
+        );
+        let older_team = LiveText {
+            team_instructions: Some("Ship big.".into()),
+            ..current.clone()
+        };
+        ledger.set_standing(
+            &SessionScope::Conversation {
+                channel_id: team_changed,
+            },
+            &format!("s-{team_changed}"),
+            &held(&older_team),
+        );
+    }
+    ctx.session_ledger = Some(Arc::new(SessionLedger::open(ledger_path)));
+    let ctx = Arc::new(ctx);
+
+    let capture =
+        std::env::temp_dir().join(format!("buzz-acp-live-resume-{}.ndjson", Uuid::new_v4()));
+    let quoted_capture = tests::shell_quoted_path(&capture);
+    // Every request gets one result that advertises `session/load` and ends
+    // a turn, which is all initialize, session/load, and session/prompt read.
+    let script = format!(
+        r#"count=0
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> '{quoted_capture}'
+  printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$count,\"result\":{{\"agentCapabilities\":{{\"loadSession\":true}},\"stopReason\":\"end_turn\"}}}}"
+  count=$((count + 1))
+done"#
+    );
+    let mut acp = crate::acp::AcpClient::spawn(bash(), &["-c".to_string(), script], &[], false)
+        .await
+        .unwrap();
+    acp.initialize().await.unwrap();
+    assert!(acp.can_reattach_sessions());
+    let mut agent = modern_agent(acp);
+    let (result_tx, mut result_rx) = mpsc::unbounded_channel();
+    for (turn, channel_id) in [unchanged, team_changed, unknown].into_iter().enumerate() {
+        run_prompt_task(
+            agent,
+            Some(batch(channel_id, &format!("message {turn}"))),
+            None,
+            Arc::clone(&ctx),
+            result_tx.clone(),
+            None,
+            format!("turn-{turn}"),
+        )
+        .await;
+        let result = result_rx.recv().await.unwrap();
+        assert!(matches!(
+            result.outcome,
+            PromptOutcome::Ok(StopReason::EndTurn)
+        ));
+        agent = result.agent;
+    }
+    agent.acp.shutdown().await;
+
+    let requests = captured_requests(&capture);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.contains("\"session/load\""))
+            .count(),
+        3,
+        "every session was reattached"
+    );
+    let prompts: Vec<String> = requests
+        .iter()
+        .filter(|request| request.contains("\"session/prompt\""))
+        .map(|request| prompt_text(request))
+        .collect();
+    assert_eq!(prompts.len(), 3);
+    assert!(
+        !prompts[0].contains("<settings-update>"),
+        "nothing changed while down: {}",
+        prompts[0]
+    );
+    assert!(prompts[1].contains("<settings-update>"), "{}", prompts[1]);
+    assert!(prompts[1].contains("<team-instructions>\nShip small."));
+    assert!(
+        !prompts[1].contains("<agent-instructions>"),
+        "{}",
+        prompts[1]
+    );
+    assert!(!prompts[1].contains("Opening Task Threads Yourself"));
+    // No fingerprints: today's behaviour, every current part once.
+    assert!(prompts[2].contains("<agent-instructions>\nYou are Eva."));
+    assert!(prompts[2].contains("<team-instructions>"));
+    assert!(prompts[2].contains("Opening Task Threads Yourself"));
+    // After the turn the ledger knows what each session holds.
+    let ledger = ctx.session_ledger.as_ref().unwrap();
+    for channel_id in [unchanged, team_changed, unknown] {
+        assert_eq!(
+            ledger.standing(
+                &SessionScope::Conversation { channel_id },
+                &format!("s-{channel_id}")
+            ),
+            Some(StandingHashes::new(&current, None))
+        );
+    }
 }

@@ -18,8 +18,10 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::context_history::ContextHistory;
 use crate::task_threads::TaskThreadTrigger;
@@ -66,8 +68,31 @@ struct FileSource {
     path: PathBuf,
     pins: LivePins,
     /// The last successfully read values, primed with the launch values so
-    /// a missing or unreadable file never looks like "settings cleared".
-    last_good: Mutex<LiveValues>,
+    /// a missing or unreadable file never looks like "settings cleared", and
+    /// when a read failure was last logged as a warning.
+    state: Mutex<FileState>,
+}
+
+#[derive(Debug)]
+struct FileState {
+    last_good: LiveValues,
+    last_warned: Option<Instant>,
+}
+
+/// How often a file that stays unreadable may log a warning; the rest go to
+/// debug, like goal tree fetch failures.
+const READ_WARN_INTERVAL: Duration = Duration::from_secs(10 * 60);
+
+impl FileState {
+    fn should_warn(&mut self, now: Instant) -> bool {
+        let due = self
+            .last_warned
+            .is_none_or(|last| now.duration_since(last) >= READ_WARN_INTERVAL);
+        if due {
+            self.last_warned = Some(now);
+        }
+        due
+    }
 }
 
 /// Where the current live settings come from. Cheap to clone. The default
@@ -85,7 +110,10 @@ impl LiveSettings {
             file: Some(Arc::new(FileSource {
                 path,
                 pins,
-                last_good: Mutex::new(launch),
+                state: Mutex::new(FileState {
+                    last_good: launch,
+                    last_warned: None,
+                }),
             })),
         };
         let _ = this.current();
@@ -101,7 +129,7 @@ impl LiveSettings {
             .and_then(|raw| {
                 serde_json::from_str::<LiveSettingsFile>(&raw).map_err(|e| e.to_string())
             });
-        let mut last_good = source.last_good.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = source.state.lock().unwrap_or_else(|e| e.into_inner());
         match read {
             Ok(file) => {
                 let mut values = LiveValues {
@@ -116,12 +144,20 @@ impl LiveSettings {
                     ),
                 };
                 if source.pins.system_prompt {
-                    values.system_prompt = last_good.system_prompt.clone();
+                    values.system_prompt = state.last_good.system_prompt.clone();
                 }
                 if source.pins.recent_history_only {
                     values.context_history = ContextHistory::Recent;
                 }
-                *last_good = values;
+                state.last_good = values;
+                state.last_warned = None;
+            }
+            Err(e) if state.should_warn(Instant::now()) => {
+                tracing::warn!(
+                    target: "acp::live_settings",
+                    path = %source.path.display(),
+                    "live settings unreadable; keeping the last values (repeats are logged at debug for 10 minutes): {e}"
+                );
             }
             Err(e) => {
                 tracing::debug!(
@@ -131,7 +167,7 @@ impl LiveSettings {
                 );
             }
         }
-        Some(last_good.clone())
+        Some(state.last_good.clone())
     }
 }
 
@@ -171,6 +207,55 @@ impl LiveText {
             && self.team_instructions.is_none()
             && self.task_thread_rules.is_none()
     }
+
+    /// Per-part fingerprints of this text: what a session remembers having
+    /// received, in memory and in the resume ledger.
+    pub fn hashes(&self) -> LiveTextHashes {
+        LiveTextHashes {
+            system_prompt: part_hash(self.system_prompt.as_deref()),
+            team_instructions: part_hash(self.team_instructions.as_deref()),
+            task_thread_rules: part_hash(self.task_thread_rules.as_deref()),
+        }
+    }
+}
+
+/// Fingerprint of one standing part (`None` when the part is absent): the
+/// first 16 bytes of its SHA-256, hex encoded. Enough to tell versions apart
+/// without keeping the text itself.
+pub(crate) fn part_hash(value: Option<&str>) -> Option<String> {
+    value.map(|value| hex::encode(&Sha256::digest(value.as_bytes())[..16]))
+}
+
+/// Per-part fingerprints of a [`LiveText`] a session received.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveTextHashes {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_instructions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_thread_rules: Option<String>,
+}
+
+/// What a provider session's standing context holds, recorded in the resume
+/// ledger so a session reattached after a restart is only told about parts
+/// that changed while the harness was down.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StandingHashes {
+    #[serde(flatten)]
+    pub text: LiveTextHashes,
+    /// Fingerprint of the rendered layer 0 goal sections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer0_goals: Option<String>,
+}
+
+impl StandingHashes {
+    pub fn new(text: &LiveText, layer0_goals: Option<&str>) -> Self {
+        Self {
+            text: text.hashes(),
+            layer0_goals: part_hash(layer0_goals),
+        }
+    }
 }
 
 /// The body of a `<settings-update>` section when a live session last saw
@@ -181,16 +266,17 @@ impl LiveText {
 /// restart keeps its original system prompt); every current part is then
 /// restated once, if there is any.
 pub(crate) fn render_settings_update(
-    seen: Option<&LiveText>,
+    seen: Option<&LiveTextHashes>,
     current: &LiveText,
 ) -> Option<String> {
+    let current_hashes = current.hashes();
     match seen {
-        Some(seen) if seen == current => return None,
+        Some(seen) if *seen == current_hashes => return None,
         None if current.is_empty() => return None,
         _ => {}
     }
-    let changed = |part: fn(&LiveText) -> &Option<String>| {
-        seen.is_none_or(|seen| part(seen) != part(current))
+    let changed = |part: fn(&LiveTextHashes) -> &Option<String>| {
+        seen.is_none_or(|seen| part(seen) != part(&current_hashes))
     };
     let mut parts = Vec::new();
     if changed(|text| &text.system_prompt) {
@@ -278,6 +364,8 @@ mod tests {
                 "team_instructions": "  Ship small.  ",
                 "task_threads": "multi_step,long_running",
                 "context_history": "medium",
+                // Desktop's own launch record; the harness ignores it.
+                "launch": { "session_policy": "thread", "routing_role": "lead" },
             }),
         );
         let first = settings.current().unwrap();
@@ -307,6 +395,31 @@ mod tests {
             Some(LiveValues::default()),
             "absent and blank fields clear their setting"
         );
+    }
+
+    #[test]
+    fn read_failures_warn_at_most_once_per_interval() {
+        let mut state = FileState {
+            last_good: LiveValues::default(),
+            last_warned: None,
+        };
+        let t0 = Instant::now();
+        assert!(state.should_warn(t0));
+        assert!(!state.should_warn(t0 + Duration::from_secs(60)));
+        assert!(state.should_warn(t0 + READ_WARN_INTERVAL));
+
+        // A successful read re-arms the warning.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agent.json");
+        let settings = LiveSettings::file(path.clone(), launch(), LivePins::default());
+        let source = settings.file.as_deref().unwrap();
+        assert!(
+            source.state.lock().unwrap().last_warned.is_some(),
+            "missing file warned"
+        );
+        write(&path, serde_json::json!({}));
+        settings.current();
+        assert!(source.state.lock().unwrap().last_warned.is_none());
     }
 
     #[test]
@@ -348,7 +461,10 @@ mod tests {
     #[test]
     fn settings_update_only_when_changed_and_only_the_changed_parts() {
         let before = LiveText::new(&launch(), true);
-        assert_eq!(render_settings_update(Some(&before), &before), None);
+        assert_eq!(
+            render_settings_update(Some(&before.hashes()), &before),
+            None
+        );
         assert_eq!(
             render_settings_update(None, &LiveText::default()),
             None,
@@ -359,7 +475,7 @@ mod tests {
             system_prompt: Some("New prompt".into()),
             ..before.clone()
         };
-        let update = render_settings_update(Some(&before), &after).unwrap();
+        let update = render_settings_update(Some(&before.hashes()), &after).unwrap();
         assert!(update.contains("<agent-instructions>\nNew prompt\n</agent-instructions>"));
         assert!(!update.contains("<team-instructions>"), "{update}");
         assert!(
@@ -372,7 +488,7 @@ mod tests {
             task_thread_rules: None,
             ..before.clone()
         };
-        let update = render_settings_update(Some(&before), &cleared).unwrap();
+        let update = render_settings_update(Some(&before.hashes()), &cleared).unwrap();
         assert!(update.contains("`<team-instructions>` were removed"));
         assert!(update.contains("open a task thread only when a human asks"));
         assert!(!update.contains("<agent-instructions>"));

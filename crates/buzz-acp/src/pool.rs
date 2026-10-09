@@ -133,7 +133,7 @@ pub struct ChannelDeliveryState {
     /// The live text settings this session last received, or `None` when
     /// unknown, like `layer0_goals_seen`. A turn whose current settings
     /// differ carries a `<settings-update>`.
-    pub live_text_seen: Option<crate::live_settings::LiveText>,
+    pub live_text_seen: Option<crate::live_settings::LiveTextHashes>,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -316,9 +316,9 @@ impl SessionState {
     pub(crate) fn mark_live_text_seen(
         &mut self,
         scope: SessionScope,
-        text: crate::live_settings::LiveText,
+        text: &crate::live_settings::LiveText,
     ) {
-        self.deliveries.entry(scope).or_default().live_text_seen = Some(text);
+        self.deliveries.entry(scope).or_default().live_text_seen = Some(text.hashes());
     }
 
     pub(crate) fn mark_scope_delivery_success(
@@ -3400,25 +3400,41 @@ pub async fn run_prompt_task(
                             scope.telemetry_label()
                         );
                         agent.state.sessions.insert(scope.clone(), sid.clone());
+                        let standing_now = crate::live_settings::StandingHashes::new(
+                            &live_now.text,
+                            layer0_now.as_deref(),
+                        );
+                        // A new system-prompt session holds this turn's layer 0
+                        // goals and live text settings. A reattached one holds
+                        // what the ledger recorded for it, if anything (unknown
+                        // parts are restated once); legacy agents learn them
+                        // with the standing context in their first message.
+                        let held = if reattached {
+                            ctx.session_ledger
+                                .as_ref()
+                                .and_then(|ledger| ledger.standing(scope, &sid))
+                        } else {
+                            agent
+                                .has_system_prompt_support()
+                                .then(|| standing_now.clone())
+                        };
                         agent.state.deliveries.insert(
                             scope.clone(),
                             ChannelDeliveryState {
                                 session_reattached: reattached,
-                                // A new system-prompt session holds this turn's
-                                // layer 0 goals. A reattached one keeps its old
-                                // prompt (unknown); legacy agents learn them with
-                                // the standing context in their first message.
-                                layer0_goals_seen: (!reattached
-                                    && agent.has_system_prompt_support())
-                                .then(|| layer0_now.clone()),
-                                // Same rule for the live text settings.
-                                live_text_seen: (!reattached && agent.has_system_prompt_support())
-                                    .then(|| live_now.text.clone()),
+                                layer0_goals_seen: held
+                                    .as_ref()
+                                    .filter(|held| held.layer0_goals == standing_now.layer0_goals)
+                                    .map(|_| layer0_now.clone()),
+                                live_text_seen: held.as_ref().map(|held| held.text.clone()),
                                 ..Default::default()
                             },
                         );
                         if let Some(ledger) = &ctx.session_ledger {
                             ledger.record(scope, &sid, &ctx.harness_name, &ctx.cwd);
+                            if !reattached && agent.has_system_prompt_support() {
+                                ledger.set_standing(scope, &sid, &standing_now);
+                            }
                         }
                         // Seed a zero usage baseline only for a session buzz-acp
                         // spawned: prior usage is zero by definition, so the first
@@ -3615,7 +3631,7 @@ pub async fn run_prompt_task(
                             .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
                         agent
                             .state
-                            .mark_live_text_seen(scope.clone(), live_now.text.clone());
+                            .mark_live_text_seen(scope.clone(), &live_now.text);
                     }
                     let usage = agent.acp.take_turn_usage();
                     publish_agent_turn_metric(
@@ -4162,7 +4178,7 @@ pub async fn run_prompt_task(
                                 .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
                             agent
                                 .state
-                                .mark_live_text_seen(scope.clone(), live_now.text.clone());
+                                .mark_live_text_seen(scope.clone(), &live_now.text);
                         }
                         apply_completed_before_control_signal(
                             &mut agent.state,
@@ -4215,10 +4231,19 @@ pub async fn run_prompt_task(
                     .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
                 agent
                     .state
-                    .mark_live_text_seen(scope.clone(), live_now.text.clone());
-                // Keep a session in steady use from aging out of the ledger.
+                    .mark_live_text_seen(scope.clone(), &live_now.text);
+                // Keep a session in steady use from aging out of the ledger,
+                // and remember what it now holds for a reattach after restart.
                 if let Some(ledger) = &ctx.session_ledger {
                     ledger.touch(scope, &session_id);
+                    ledger.set_standing(
+                        scope,
+                        &session_id,
+                        &crate::live_settings::StandingHashes::new(
+                            &live_now.text,
+                            layer0_now.as_deref(),
+                        ),
+                    );
                 }
             } else if !agent.has_system_prompt_support() {
                 agent.state.heartbeat_standing_context_sent = true;
