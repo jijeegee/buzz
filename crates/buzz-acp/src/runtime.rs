@@ -162,15 +162,8 @@ fn make_prompt_context(
             let base = base_prompt_content
                 .map(String::as_str)
                 .unwrap_or(include_str!("base_prompt.md"));
-            // Goal-layer rules only reach agents whose owner turned the
-            // experimental feature on.
-            let with_goals;
-            let base = if config.goals_enabled {
-                with_goals = format!("{base}\n\n{}", include_str!("goals_prompt.md"));
-                with_goals.as_str()
-            } else {
-                base
-            };
+            // Goal rules are not part of the base: they ride in each turn's
+            // `<goal-context>`, only where a goal tree exists.
             Some(assemble_base_prompt(
                 config.session_policy,
                 config.dispatcher,

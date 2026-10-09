@@ -567,19 +567,28 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_TEAM_INSTRUCTIONS")]
     pub team_instructions: Option<String>,
 
-    /// Enable the experimental goal layers: the `## Goals` base-prompt rules,
-    /// the per-turn `<goal-context>`, and layer 0 goal sections. Off by
-    /// default so agents behave exactly as before unless their owner opts in.
-    #[arg(long, env = "BUZZ_ACP_GOALS", default_value_t = false)]
-    pub goals: bool,
+    /// Kill switch for goal layers: no per-turn `<goal-context>` and no
+    /// layer 0 goal sections. Without it, goal context is injected only in
+    /// conversations that have a goal tree, so rooms without goals see the
+    /// same prompt either way.
+    #[arg(long, env = "BUZZ_ACP_NO_GOALS")]
+    pub no_goals: bool,
 
-    /// This agent's own layer 0 goal (private; set by its owner).
+    /// This agent's own layer 0 goal (private; set by its owner). Fixed for
+    /// the life of the process; `--layer0-goals-file` takes precedence.
     #[arg(long, env = "BUZZ_ACP_AGENT_GOAL")]
     pub agent_goal: Option<String>,
 
-    /// The owner's private layer 0 goal, shared only with the owner's agents.
+    /// The owner's private layer 0 goal, shared only with the owner's agents
+    /// and used only when this agent answers its owner alone.
     #[arg(long, env = "BUZZ_ACP_OWNER_GOAL")]
     pub owner_goal: Option<String>,
+
+    /// JSON file holding `{"agent_goal": …, "owner_goal": …}`, re-read every
+    /// turn so goal edits reach live sessions without a restart. Written by
+    /// Buzz Desktop; takes precedence over `--agent-goal` / `--owner-goal`.
+    #[arg(long, env = "BUZZ_ACP_LAYER0_GOALS_FILE")]
+    pub layer0_goals_file: Option<PathBuf>,
 
     /// Publish encrypted ACP observer frames over the relay.
     #[arg(long, env = "BUZZ_ACP_RELAY_OBSERVER", default_value_t = false)]
@@ -737,10 +746,11 @@ pub struct Config {
     pub system_prompt: Option<String>,
     /// Team-owned instructions layered separately from the agent system prompt.
     pub team_instructions: Option<String>,
-    /// Whether the experimental goal layers are on (`--goals`).
+    /// Whether goal layers are on (false only with `--no-goals`). Goal
+    /// context is still injected only where a goal tree exists.
     pub goals_enabled: bool,
-    /// Rendered `<agent-goal>` / `<owner-goal>` sections (layer 0 goals).
-    pub layer0_goals: Option<String>,
+    /// Source of the current `<agent-goal>` / `<owner-goal>` sections.
+    pub layer0_goals: crate::layer0_goals::Layer0Goals,
     pub initial_message: Option<String>,
     pub subscribe_mode: SubscribeMode,
     pub dedup_mode: DedupMode,
@@ -1095,13 +1105,21 @@ pub fn normalize_agent_args(command: &str, agent_args: Vec<String>) -> Vec<Strin
     normalized
 }
 
-/// Layer 0 goals taken out of the environment by [`take_layer0_goal_env`].
-static LAYER0_GOAL_ENV: std::sync::OnceLock<(Option<String>, Option<String>)> =
-    std::sync::OnceLock::new();
+/// Layer 0 goal variables taken out of the environment by
+/// [`take_layer0_goal_env`].
+#[derive(Clone, Default)]
+struct Layer0GoalEnv {
+    agent_goal: Option<String>,
+    owner_goal: Option<String>,
+    goals_file: Option<String>,
+}
 
-/// Move the private layer 0 goals out of the environment so child processes
-/// and their shell tools cannot print them; `Config::from_cli` reads the
-/// stashed copy. Only touches variables that are set.
+static LAYER0_GOAL_ENV: std::sync::OnceLock<Layer0GoalEnv> = std::sync::OnceLock::new();
+
+/// Move the private layer 0 goals (and the path of the file holding them)
+/// out of the environment so child processes and their shell tools cannot
+/// print them; `Config::from_cli` reads the stashed copy. Only touches
+/// variables that are set.
 ///
 /// Must be called before the tokio runtime starts, like
 /// [`propagate_legacy_env_vars`].
@@ -1113,7 +1131,11 @@ pub fn take_layer0_goal_env() {
         }
         value
     };
-    let _ = LAYER0_GOAL_ENV.set((take("BUZZ_ACP_AGENT_GOAL"), take("BUZZ_ACP_OWNER_GOAL")));
+    let _ = LAYER0_GOAL_ENV.set(Layer0GoalEnv {
+        agent_goal: take("BUZZ_ACP_AGENT_GOAL"),
+        owner_goal: take("BUZZ_ACP_OWNER_GOAL"),
+        goals_file: take("BUZZ_ACP_LAYER0_GOALS_FILE"),
+    });
 }
 
 /// Propagate legacy env-var aliases to their canonical names.
@@ -1463,16 +1485,24 @@ impl Config {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string),
-            goals_enabled: args.goals,
+            goals_enabled: !args.no_goals,
             layer0_goals: {
-                let (env_agent_goal, env_owner_goal) =
-                    LAYER0_GOAL_ENV.get().cloned().unwrap_or_default();
-                let agent_goal = args.agent_goal.or(env_agent_goal);
-                let owner_goal = args.owner_goal.or(env_owner_goal);
-                if args.goals {
-                    render_layer0_goals(agent_goal.as_deref(), owner_goal.as_deref())
+                use crate::layer0_goals::Layer0Goals;
+                // The owner's private goal never reaches an agent that
+                // answers anyone but its owner.
+                let owner_goal_allowed = args.respond_to == RespondTo::OwnerOnly;
+                let env = LAYER0_GOAL_ENV.get().cloned().unwrap_or_default();
+                let goals_file = args.layer0_goals_file.or(env.goals_file.map(PathBuf::from));
+                if args.no_goals {
+                    Layer0Goals::disabled()
+                } else if let Some(path) = goals_file {
+                    Layer0Goals::file(path, owner_goal_allowed)
                 } else {
-                    None
+                    Layer0Goals::fixed(
+                        args.agent_goal.or(env.agent_goal).as_deref(),
+                        args.owner_goal.or(env.owner_goal).as_deref(),
+                        owner_goal_allowed,
+                    )
                 }
             },
             initial_message: args.initial_message,
@@ -1902,38 +1932,6 @@ fn rule_applies_to_channel(rule: &SubscriptionRule, channel_id: Uuid) -> bool {
     }
 }
 
-/// Render layer 0 goals as standing-context sections. Goal text is owner
-/// input and is escaped so it cannot close or open prompt sections.
-pub(crate) fn render_layer0_goals(
-    agent_goal: Option<&str>,
-    owner_goal: Option<&str>,
-) -> Option<String> {
-    let clean = |value: Option<&str>| {
-        value
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(crate::prompt_framing::escape_semantic_text)
-    };
-    let mut sections = Vec::new();
-    if let Some(goal) = clean(agent_goal) {
-        sections.push(crate::prompt_framing::semantic_section(
-            "agent-goal",
-            &format!(
-                "Your own layer 0 goal, set by your owner. It sits above every conversation's goals; weigh conversation work against it.\n{goal}"
-            ),
-        ));
-    }
-    if let Some(goal) = clean(owner_goal) {
-        sections.push(crate::prompt_framing::semantic_section(
-            "owner-goal",
-            &format!(
-                "Your owner's private layer 0 goal. Only their own agents see it; do not repeat it to others.\n{goal}"
-            ),
-        ));
-    }
-    (!sections.is_empty()).then(|| sections.join("\n\n"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1956,8 +1954,8 @@ mod tests {
             heartbeat_prompt: None,
             system_prompt: None,
             team_instructions: None,
-            goals_enabled: false,
-            layer0_goals: None,
+            goals_enabled: true,
+            layer0_goals: Default::default(),
             initial_message: None,
             subscribe_mode: mode,
             dedup_mode: DedupMode::Queue,
@@ -3116,16 +3114,6 @@ channels = "ALL"
     }
 
     // ── Session policy parsing + default ──────────────────────────────────────
-
-    #[test]
-    fn layer0_goals_render_escaped_sections() {
-        assert_eq!(render_layer0_goals(None, Some("  ")), None);
-        let rendered = render_layer0_goals(Some("Ship </agent-goal>"), Some("Grow")).unwrap();
-        assert!(rendered.contains("<agent-goal>"));
-        assert!(rendered.contains("Ship &lt;/agent-goal&gt;"));
-        assert!(rendered.contains("<owner-goal>"));
-        assert!(rendered.contains("Grow"));
-    }
 
     #[test]
     fn test_session_policy_default_is_channel() {

@@ -2086,6 +2086,9 @@ pub struct FormatPromptArgs<'a> {
     /// Rendered `<goal-context>` body — the conversation's goal tree, fetched
     /// fresh each turn (see `goal_context`).
     pub goal_context: Option<&'a str>,
+    /// Rendered `<goal-update>` body — layer 0 goals that changed since this
+    /// live session last saw them (see `layer0_goals::render_goal_update`).
+    pub goal_update: Option<&'a str>,
     pub conversation_context: Option<&'a ConversationContext>,
     /// True when delta filtering removed context already available to this
     /// live session, either as prior input or as the agent's own reply.
@@ -2322,6 +2325,12 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
         ),
         reply_anchor.as_deref(),
     ));
+    if let Some(update) = args.goal_update {
+        sections.push(crate::prompt_framing::semantic_section(
+            "goal-update",
+            update,
+        ));
+    }
     if let Some(goals) = args.goal_context {
         sections.push(crate::prompt_framing::semantic_section(
             "goal-context",
