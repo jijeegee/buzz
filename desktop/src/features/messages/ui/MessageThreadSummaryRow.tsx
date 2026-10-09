@@ -80,6 +80,7 @@ function ParticipantAvatar({
 }
 
 export function MessageThreadSummaryRow({
+  alignEnd = false,
   collapseDepthGuideActions,
   depth = 0,
   depthGuideDepths,
@@ -93,6 +94,8 @@ export function MessageThreadSummaryRow({
   summaryIndentOffsetRem = 0,
   unreadCount,
 }: {
+  /** Sit under a right-aligned own bubble instead of the avatar column. */
+  alignEnd?: boolean;
   collapseDepthGuideActions?: ReadonlyArray<ThreadDepthGuideAction>;
   depth?: number;
   depthGuideDepths?: ReadonlyArray<number>;
@@ -136,7 +139,7 @@ export function MessageThreadSummaryRow({
   );
 
   return (
-    <div className="relative pb-1 pt-0.5">
+    <div className={cn("relative pb-1 pt-0.5", alignEnd && "flex justify-end")}>
       {showDepthGuides && depthGuideItems.length > 0 ? (
         <div
           aria-hidden={
@@ -240,11 +243,15 @@ export function MessageThreadSummaryRow({
         data-thread-head-id={message.id}
         data-testid="message-thread-summary"
         onClick={() => onOpenThread(message)}
-        style={{
-          marginLeft: hoverLeft,
-          maxWidth: `calc(100% - ${hoverLeft})`,
-          paddingLeft: contentPaddingStart,
-        }}
+        style={
+          alignEnd
+            ? { marginRight: "0.75rem", paddingLeft: "0.5rem" }
+            : {
+                marginLeft: hoverLeft,
+                maxWidth: `calc(100% - ${hoverLeft})`,
+                paddingLeft: contentPaddingStart,
+              }
+        }
         type="button"
       >
         <span
@@ -252,7 +259,7 @@ export function MessageThreadSummaryRow({
           className="pointer-events-none absolute bottom-[-0.125rem] top-[-0.125rem] rounded-full opacity-0 ring-border/70 transition-[background-color,box-shadow,opacity] group-hover:bg-background/95 group-hover:opacity-100 group-hover:ring-1 group-focus-visible:bg-background/95 group-focus-visible:opacity-100 group-focus-visible:ring-1 group-focus-visible:ring-ring"
           data-testid="message-thread-summary-surface"
           style={{
-            left: surfaceInsetStart,
+            left: alignEnd ? 0 : surfaceInsetStart,
             right: 0,
           }}
         />

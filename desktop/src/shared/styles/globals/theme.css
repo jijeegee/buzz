@@ -192,6 +192,49 @@
   --sidebar-row-subtle-active-surface: rgb(255 255 255 / 16%);
 }
 
+/*
+ * Chat timeline: canvas behind the bubbles, other people's bubbles, and the
+ * signed-in user's own bubbles. Non-Buzz themes derive them from their own
+ * palette; Buzz paints them from the app icon's yellow below.
+ */
+:root {
+  --buzz-chat-canvas: hsl(var(--background));
+  --buzz-bubble-other: hsl(var(--muted));
+  --buzz-bubble-other-shadow: none;
+  --buzz-bubble-own: hsl(var(--primary) / 0.15);
+  --buzz-bubble-inset: rgb(0 0 0 / 5%);
+}
+
+:root[data-buzz-sidebar] {
+  --buzz-chat-canvas: #f1f2ea;
+  --buzz-bubble-other: #ffffff;
+  --buzz-bubble-other-shadow:
+    0 0 0 1px rgb(0 0 0 / 5%), 0 1px 2px rgb(0 0 0 / 6%);
+  --buzz-bubble-own: #f3eb9e;
+}
+
+:root[data-buzz-sidebar].dark {
+  --buzz-chat-canvas: #14181f;
+  --buzz-bubble-other: #262b33;
+  --buzz-bubble-other-shadow: none;
+  --buzz-bubble-own: #57511f;
+}
+
+:root.dark {
+  --buzz-bubble-inset: rgb(0 0 0 / 24%);
+}
+
+/*
+ * Code, tables, and quote previews sit on a translucent inset inside a chat
+ * bubble so they stay distinct on both the white and the yellow bubble.
+ * Unlayered so it wins over the blocks' own utility backgrounds.
+ */
+[data-chat-bubble] [data-code-block] > pre,
+[data-chat-bubble] [data-table-block],
+[data-chat-bubble] [data-testid="message-quote-header"] {
+  background-color: var(--buzz-bubble-inset);
+}
+
 /* The prominent treatment is exclusive to Buzz's painted gradient. */
 :root[data-buzz-sidebar] {
   --sidebar-row-active-surface: rgb(255 255 255 / 82%);
