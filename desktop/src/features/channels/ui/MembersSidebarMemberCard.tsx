@@ -192,6 +192,7 @@ export function MembersSidebarMemberCard({
                   <AgentBadgeIcon
                     agentPubkey={member.pubkey}
                     className="h-4 w-4"
+                    ownerPubkey={profileOwnerPubkey}
                   />
                   {roleLabel}
                 </span>

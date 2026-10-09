@@ -1,25 +1,52 @@
-//! Per-device robot tags for agent profiles.
+//! Which device each of the owner's agents runs on.
 //!
-//! A relay device (one Google sign-in on one computer) is identified to other
-//! clients only by an 8-hex-digit tag: FNV-1a (32-bit) of its lowercased
-//! device id. When this desktop signs a kind:0 for an agent it runs locally,
-//! it stamps the tag as `buzz_host_device`, so the agent's owner sees the
-//! robot of the computer it runs on and finds the same robot in the device
-//! list. The frontend (`shared/lib/deviceRobot.ts`) and mobile
-//! (`device_robot.dart`) derive identical robots from the tag;
-//! `test-fixtures/device-robots.json` pins all three.
+//! Every relay device (one Google sign-in on one computer) gets a robot the
+//! frontend (`shared/lib/deviceRobot.ts`) and mobile (`device_robot.dart`)
+//! derive from FNV-1a of its device id; `test-fixtures/device-robots.json`
+//! pins the hash for all three.
+//!
+//! This desktop tells the owner which agents it hosts by publishing one
+//! author-only `kind:30180` event per device (`d` = device id, content =
+//! `{"v":1,"agents":[...]}`), signed with the owner's credential. The relay
+//! serves it only to its author, so nobody else learns where an agent runs.
+//! Agent kind:0 profiles no longer carry a device; [`RETIRED_HOST_DEVICE_FIELD`]
+//! is only read so reconciliation can republish profiles without it.
 
-use serde_json::Value;
+use std::sync::Mutex;
+
+use nostr::{EventBuilder, Kind, Tag};
+use tauri::Manager;
 
 use crate::app_state::AppState;
 use crate::auth::OriginAuth;
-use crate::managed_agents::BackendKind;
+use crate::managed_agents::{BackendKind, ManagedAgentRecord};
 
-/// kind:0 content field carrying the host device tag of an agent.
-pub(crate) const HOST_DEVICE_FIELD: &str = "buzz_host_device";
+/// Retired kind:0 field that once published an agent's host device tag.
+pub(crate) const RETIRED_HOST_DEVICE_FIELD: &str = "buzz_host_device";
+
+/// Author-only agent host-devices kind (see `buzz_core::kind`).
+pub(crate) const KIND_AGENT_HOST_DEVICES: u16 = 30180;
+
+/// `(origin, d tag, content)` of the last accepted publish, so repeated
+/// triggers (token refreshes, agent restarts) do not republish an unchanged list.
+static LAST_PUBLISHED: Mutex<Option<(String, String, String)>> = Mutex::new(None);
+
+/// Serializes publishes end to end (read list, compare, sign, submit), so a
+/// burst of triggers cannot let an older list land after a newer one.
+static PUBLISH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// `created_at` of the last publish: replaceable events tie-break same-second
+/// writes by id, so each publish must be strictly newer than the previous one.
+static LAST_CREATED_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// `now`, or one second after `previous` when that is not earlier.
+pub(crate) fn next_created_at(now: u64, previous: u64) -> u64 {
+    now.max(previous.saturating_add(1))
+}
 
 /// FNV-1a (32-bit) of the trimmed, lowercased device id as 8 hex digits;
 /// `None` for an empty id.
+#[cfg(test)]
 pub(crate) fn device_tag(device_id: &str) -> Option<String> {
     let normalized = device_id.trim().to_lowercase();
     if normalized.is_empty() {
@@ -31,76 +58,92 @@ pub(crate) fn device_tag(device_id: &str) -> Option<String> {
     Some(format!("{hash:08x}"))
 }
 
-/// Whether `tag` is a well-formed device tag (8 lowercase hex digits).
-pub(crate) fn is_device_tag(tag: &str) -> bool {
-    tag.len() == 8
-        && tag
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-/// The well-formed `buzz_host_device` of parsed kind:0 content, if any.
-pub(crate) fn host_device_from_content(content: &Value) -> Option<String> {
-    content
-        .get(HOST_DEVICE_FIELD)
-        .and_then(Value::as_str)
-        .filter(|tag| is_device_tag(tag))
-        .map(str::to_string)
-}
-
-/// The tag of this desktop's relay device for `relay_url`, when an agent with
-/// `agent_pubkey` runs here. `None` when this desktop has no signed-in device
-/// on that relay (key-only sign-in, session restoring) or the agent runs on a
-/// provider backend elsewhere: such profiles carry no tag and show the
-/// default robot.
-pub(crate) fn local_host_device_tag(
-    state: &AppState,
-    relay_url: &str,
-    agent_pubkey: &str,
-) -> Option<String> {
-    let origin = crate::auth::origin_for(relay_url);
-    let device_id = match state.token_auth.get(&origin) {
-        Some((_, OriginAuth::Active(session))) => session.device_id?,
-        _ => return None,
-    };
-    if runs_on_provider_backend(state, agent_pubkey) {
-        return None;
+/// This desktop's relay device id for the current workspace relay, when it is
+/// signed in there.
+fn local_device_id(state: &AppState) -> Option<(String, String)> {
+    let origin = state.current_auth_origin();
+    match state.token_auth.get(&origin) {
+        Some((_, OriginAuth::Active(session))) => {
+            let id = session.device_id?.trim().to_lowercase();
+            (!id.is_empty()).then_some((origin, id))
+        }
+        _ => None,
     }
-    device_tag(&device_id)
 }
 
-/// Whether the stored record for `agent_pubkey` runs on a provider backend
-/// (another machine). An agent without a readable record is treated as local:
-/// every kind:0 this desktop signs for it comes from a local create flow.
-fn runs_on_provider_backend(state: &AppState, agent_pubkey: &str) -> bool {
-    let app = state
-        .app_handle
+/// Pubkeys of the agents this desktop runs itself, sorted and deduplicated.
+/// Provider-backend agents run elsewhere and are left out.
+pub(crate) fn hosted_agent_pubkeys(records: &[ManagedAgentRecord]) -> Vec<String> {
+    let mut pubkeys: Vec<String> = records
+        .iter()
+        .filter(|record| record.backend == BackendKind::Local)
+        .map(|record| record.pubkey.trim().to_lowercase())
+        .filter(|pubkey| pubkey.len() == 64 && pubkey.bytes().all(|b| b.is_ascii_hexdigit()))
+        .collect();
+    pubkeys.sort();
+    pubkeys.dedup();
+    pubkeys
+}
+
+/// Content of a `kind:30180` event listing `agents`.
+pub(crate) fn host_devices_content(agents: &[String]) -> String {
+    serde_json::json!({ "v": 1, "agents": agents }).to_string()
+}
+
+/// Publish this device's hosted-agent list for the owner, unless it is
+/// unchanged since the last publish. No-op when this desktop is not signed in
+/// to the current relay with a known device.
+pub(crate) async fn publish_agent_host_devices(app: &tauri::AppHandle) -> Result<(), String> {
+    let _publishing = PUBLISH_LOCK.lock().await;
+    let state = app.state::<AppState>();
+    let Some((origin, device_id)) = local_device_id(&state) else {
+        return Ok(());
+    };
+    let records = crate::managed_agents::load_managed_agents_without_keys(app)?;
+    let content = host_devices_content(&hosted_agent_pubkeys(&records));
+    let key = (origin, device_id.clone(), content.clone());
+    if LAST_PUBLISHED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
-    let Some(app) = app else {
-        return false;
-    };
-    crate::managed_agents::load_managed_agents_without_keys(&app)
-        .ok()
-        .and_then(|records| {
-            records
-                .into_iter()
-                .find(|record| record.pubkey.eq_ignore_ascii_case(agent_pubkey))
-        })
-        .is_some_and(|record| matches!(record.backend, BackendKind::Provider { .. }))
+        .as_ref()
+        == Some(&key)
+    {
+        return Ok(());
+    }
+    let created_at = next_created_at(
+        nostr::Timestamp::now().as_u64(),
+        LAST_CREATED_AT.load(std::sync::atomic::Ordering::Acquire),
+    );
+    let builder = EventBuilder::new(Kind::Custom(KIND_AGENT_HOST_DEVICES), content)
+        .tags([Tag::identifier(device_id)])
+        .custom_created_at(nostr::Timestamp::from(created_at));
+    crate::relay::submit_event(builder, &state).await?;
+    LAST_CREATED_AT.store(created_at, std::sync::atomic::Ordering::Release);
+    *LAST_PUBLISHED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(key);
+    Ok(())
 }
 
-/// Whether a published profile's host device differs from `expected`. An
-/// unknown `expected` (no signed-in device right now) never forces a
-/// republish, so a restoring session cannot strip a valid tag.
-pub(crate) fn host_device_stale(published: Option<&str>, expected: Option<&str>) -> bool {
-    expected.is_some_and(|expected| published != Some(expected))
+/// Fire-and-forget [`publish_agent_host_devices`].
+pub(crate) fn spawn_publish_agent_host_devices<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(app) = app
+        .try_state::<AppState>()
+        .and_then(|state| state.app_handle.lock().ok().and_then(|guard| guard.clone()))
+    else {
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = publish_agent_host_devices(&app).await {
+            eprintln!("buzz-desktop: could not publish agent host devices: {error}");
+        }
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     fn fixture() -> Value {
         let path = concat!(
@@ -130,39 +173,17 @@ mod tests {
     }
 
     #[test]
-    fn only_well_formed_tags_are_read_from_profiles() {
-        let fixture = fixture();
-        for tag in fixture["invalidTags"].as_array().expect("invalid tags") {
-            let content = serde_json::json!({ HOST_DEVICE_FIELD: tag });
-            assert_eq!(host_device_from_content(&content), None, "{tag}");
-        }
-        let content = serde_json::json!({ HOST_DEVICE_FIELD: "e8c41c31" });
-        assert_eq!(
-            host_device_from_content(&content).as_deref(),
-            Some("e8c41c31")
-        );
-        assert_eq!(host_device_from_content(&serde_json::json!({})), None);
-        assert_eq!(
-            host_device_from_content(&serde_json::json!({ HOST_DEVICE_FIELD: 7 })),
-            None
-        );
+    fn each_publish_is_strictly_newer_than_the_last() {
+        assert_eq!(next_created_at(100, 0), 100);
+        assert_eq!(next_created_at(100, 100), 101);
+        assert_eq!(next_created_at(100, 150), 151);
     }
 
     #[test]
-    fn unknown_local_device_never_forces_a_republish() {
-        assert!(!host_device_stale(Some("e8c41c31"), None));
-        assert!(!host_device_stale(None, None));
-        assert!(!host_device_stale(Some("e8c41c31"), Some("e8c41c31")));
-        assert!(host_device_stale(None, Some("e8c41c31")));
-        assert!(host_device_stale(Some("f108e530"), Some("e8c41c31")));
-    }
-
-    #[test]
-    fn signed_in_device_tags_local_agents_only_for_its_relay() {
+    fn local_device_id_needs_an_active_session_on_the_current_relay() {
         let state = crate::app_state::build_app_state();
-        let relay = "wss://relay.example.com";
-        let origin = crate::auth::origin_for(relay);
-        assert_eq!(local_host_device_tag(&state, relay, "a"), None);
+        assert_eq!(local_device_id(&state), None);
+        let origin = state.current_auth_origin();
         state.token_auth.set(
             &origin,
             OriginAuth::Active(crate::auth::UserSession {
@@ -175,14 +196,66 @@ mod tests {
             }),
         );
         assert_eq!(
-            local_host_device_tag(&state, relay, "a").as_deref(),
-            Some("e8c41c31")
-        );
-        assert_eq!(
-            local_host_device_tag(&state, "wss://other.example.com", "a"),
-            None
+            local_device_id(&state),
+            Some((
+                origin.clone(),
+                "3f2504e0-4f89-41d3-9a0c-0305e82c3301".into()
+            ))
         );
         state.token_auth.set(&origin, OriginAuth::Restoring);
-        assert_eq!(local_host_device_tag(&state, relay, "a"), None);
+        assert_eq!(local_device_id(&state), None);
+    }
+
+    #[test]
+    fn hosted_agents_are_local_sorted_and_unique() {
+        let record = |pubkey: &str, backend: BackendKind| {
+            let mut record: ManagedAgentRecord = serde_json::from_value(serde_json::json!({
+                "pubkey": pubkey,
+                "name": "Scout",
+                "private_key_nsec": "",
+                "relay_url": "",
+                "acp_command": "buzz-acp",
+                "agent_command": "goose",
+                "agent_args": [],
+                "mcp_command": "",
+                "turn_timeout_seconds": 320,
+                "system_prompt": null,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+                "last_started_at": null,
+                "last_stopped_at": null,
+                "last_exit_code": null,
+                "last_error": null
+            }))
+            .expect("minimal record");
+            record.backend = backend;
+            record
+        };
+        let a = "b".repeat(64);
+        let b = "A".repeat(64);
+        let records = vec![
+            record(&a, BackendKind::Local),
+            record(&b, BackendKind::Local),
+            record(&a, BackendKind::Local),
+            record("", BackendKind::Local),
+            record(
+                &"c".repeat(64),
+                BackendKind::Provider {
+                    id: "p".into(),
+                    config: serde_json::Value::Null,
+                },
+            ),
+        ];
+        assert_eq!(
+            hosted_agent_pubkeys(&records),
+            vec!["a".repeat(64), "b".repeat(64)]
+        );
+        let content: Value =
+            serde_json::from_str(&host_devices_content(&hosted_agent_pubkeys(&records)))
+                .expect("content is JSON");
+        assert_eq!(
+            content,
+            serde_json::json!({ "v": 1, "agents": ["a".repeat(64), "b".repeat(64)] })
+        );
     }
 }

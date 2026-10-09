@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/devices/agent_badge_widgets.dart';
 import '../../../shared/theme/theme.dart';
 import '../../../shared/widgets/buzz_loading_indicator.dart';
 import '../../../shared/profile/user_cache_provider.dart';
@@ -83,8 +84,8 @@ class AgentActivitySheet extends HookConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        LucideIcons.bot,
+                      AgentRobotGlyph(
+                        agentPubkey: agentPubkey,
                         size: 18,
                         color: context.colors.onSurface,
                       ),

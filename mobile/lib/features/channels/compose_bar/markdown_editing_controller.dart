@@ -15,7 +15,8 @@ class _MarkdownRule {
 }
 
 class _MarkdownEditingController extends TextEditingController {
-  final Set<String> _agentMentionNames = <String>{};
+  /// Agent mentions by lowercase label: the agent and its verified owner.
+  final Map<String, ({String pubkey, String? ownerPubkey})> _agentMentions = {};
   TextSpan? _cachedTextSpan;
   String? _cachedText;
   TextRange? _cachedComposingRange;
@@ -50,13 +51,17 @@ class _MarkdownEditingController extends TextEditingController {
   /// Updates the known agent labels which should render as agent mention
   /// chips. The editor still stores the literal `@Name` text, matching the
   /// markdown sent to the relay.
-  void setAgentMentionNames(Iterable<String> names) {
+  void setAgentMentions(Map<String, MentionCandidate> mentions) {
     final next = {
-      for (final name in names)
-        if (name.trim().isNotEmpty) name.trim().toLowerCase(),
+      for (final entry in mentions.entries)
+        if (entry.key.trim().isNotEmpty)
+          entry.key.trim().toLowerCase(): (
+            pubkey: entry.value.pubkey,
+            ownerPubkey: entry.value.ownerPubkey,
+          ),
     };
-    if (setEquals(_agentMentionNames, next)) return;
-    _agentMentionNames
+    if (mapEquals(_agentMentions, next)) return;
+    _agentMentions
       ..clear()
       ..addAll(next);
     _cachedTextSpan = null;
@@ -257,11 +262,11 @@ class _MarkdownEditingController extends TextEditingController {
         ? _buildComposerTokenSpans(context, source, style)
         : null;
     if (tokenSpans != null) return tokenSpans;
-    if (_agentMentionNames.isEmpty) {
+    if (_agentMentions.isEmpty) {
       return [TextSpan(text: source, style: style)];
     }
 
-    final escapedNames = _agentMentionNames.toList()
+    final escapedNames = _agentMentions.keys.toList()
       ..sort((a, b) => b.length.compareTo(a.length));
     final expression = RegExp(
       r'(^|\s)@(' +
@@ -296,7 +301,11 @@ class _MarkdownEditingController extends TextEditingController {
         WidgetSpan(
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
-          child: _ComposerAgentMentionChip(label: label, textStyle: style),
+          child: _ComposerAgentMentionChip(
+            label: label,
+            agent: _agentMentions[label.toLowerCase()],
+            textStyle: style,
+          ),
         ),
       );
       // The visual chip replaces the `@` placeholder. Keep the label as
@@ -549,10 +558,12 @@ class _ComposerBuzzLinkChip extends StatelessWidget {
 
 class _ComposerAgentMentionChip extends StatelessWidget {
   final String label;
+  final ({String pubkey, String? ownerPubkey})? agent;
   final TextStyle textStyle;
 
   const _ComposerAgentMentionChip({
     required this.label,
+    required this.agent,
     required this.textStyle,
   });
 
@@ -590,11 +601,21 @@ class _ComposerAgentMentionChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              LucideIcons.bot,
-              size: fontSize * 0.95,
-              color: context.colors.primary,
-            ),
+            if (agent case final agent?)
+              // Long-press in the editor selects text: no device-name tooltip.
+              AgentRobotGlyph(
+                agentPubkey: agent.pubkey,
+                ownerPubkey: agent.ownerPubkey,
+                size: fontSize * 0.95,
+                color: context.colors.primary,
+                showDeviceName: false,
+              )
+            else
+              Icon(
+                LucideIcons.bot,
+                size: fontSize * 0.95,
+                color: context.colors.primary,
+              ),
             const SizedBox(width: Grid.quarter),
             Text(label, style: style),
           ],

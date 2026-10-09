@@ -417,7 +417,10 @@ pub fn save_managed_agents<R: tauri::Runtime>(
     // keyring is unreachable, the key stays inline.
     persist_agent_keys(&mut sorted);
 
-    write_agent_store(app, definitions, sorted)
+    write_agent_store(app, definitions, sorted)?;
+    // A created, moved or deleted agent changes the list this device hosts.
+    crate::device_robot::spawn_publish_agent_host_devices(app);
+    Ok(())
 }
 
 /// Save the key-less agent *definitions*, preserving the keyed instances —

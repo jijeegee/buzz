@@ -64,6 +64,13 @@ export const KIND_MANAGED_AGENT = 30177;
 // publisher's personas. Separate from KIND_TEAM (30176, the team's own wire
 // body) so an ordinary team edit cannot disturb catalog share state.
 export const KIND_TEAM_CATALOG = 30178;
+// Agent host devices: one event per relay device (d = device id), authored by
+// the agents' owner, listing the agents that device runs. The relay serves it
+// to its author only, so just the owner can tell which computer runs an agent.
+export const KIND_AGENT_HOST_DEVICES = 30180;
+// The owner's chosen robot (shape + colour) for one of their devices; d = the
+// device id. Author-only like 30180.
+export const KIND_DEVICE_ROBOT = 30181;
 export const KIND_USER_STATUS = 30315;
 export const KIND_AGENT_OBSERVER_FRAME = 24200;
 export const KIND_AGENT_TURN_METRIC = 44200;

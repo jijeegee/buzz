@@ -254,11 +254,13 @@ class ComposeBar extends HookConsumerWidget {
     final relayAgents = ref.watch(agentDirectoryProvider).asData?.value;
     final agentOwners = ref.watch(agentOwnersProvider).asData?.value;
     final agentMentionLabels = _agentMentionLabels(bindings: mentionMap.value);
-    final agentMentionLabelsKey = (agentMentionLabels.toList()..sort()).join(
-      '\u0000',
-    );
+    final agentMentionLabelsKey = ([
+      for (final entry in agentMentionLabels.entries)
+        '${entry.key}\u0001${entry.value.pubkey}'
+            '\u0001${entry.value.ownerPubkey}',
+    ]..sort()).join('\u0000');
     useEffect(() {
-      controller.setAgentMentionNames(agentMentionLabels);
+      controller.setAgentMentions(agentMentionLabels);
       return null;
     }, [controller, agentMentionLabelsKey]);
     useEffect(

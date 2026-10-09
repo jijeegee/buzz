@@ -1,5 +1,5 @@
 import { AgentManagementMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
-import { Bot } from "lucide-react";
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import type { UserSearchResult } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
@@ -58,7 +58,11 @@ export function AddMemberSearchResultRow({
                 {formatAddCandidateName(user)}
               </span>
               <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                <Bot aria-hidden="true" className="h-4 w-4" />
+                <AgentBadgeIcon
+                  agentPubkey={user.pubkey}
+                  className="pointer-events-auto h-4 w-4"
+                  ownerPubkey={user.ownerPubkey}
+                />
                 agent
               </span>
               <AgentManagementMarker

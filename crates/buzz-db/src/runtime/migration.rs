@@ -713,7 +713,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 61);
+        assert_eq!(migrations.len(), 62);
         assert_eq!(migrations[48].version, 49);
         assert_eq!(migrations[49].version, 50);
         assert_eq!(migrations[50].version, 51);
@@ -974,8 +974,15 @@ mod postgres_tests {
         assert!(migrations[32].sql.as_str().contains("kind = 30179"));
         assert!(migrations[32].sql.as_str().contains("search_tsv"));
         assert!(!migrations[0].sql.as_str().contains("30179"));
-        assert!(include_str!("../../../../schema/schema.sql")
-            .contains("kind IN (1059, 30179, 30300, 30350, 30622, 44100, 44101, 44200)"));
+        assert!(include_str!("../../../../schema/schema.sql").contains(
+            "kind IN (1059, 30179, 30180, 30181, 30300, 30350, 30622, 44100, 44101, 44200)"
+        ));
+
+        // Agent host devices / device robot FTS exclusion (0062): same shape
+        // as 0033 for the author-only kinds 30180 and 30181.
+        assert_eq!(migrations[61].version, 62);
+        assert!(migrations[61].sql.as_str().contains("kind IN (30180, 30181)"));
+        assert!(migrations[61].sql.as_str().contains("search_tsv"));
 
         // Public push-gateway authority is intentionally deployment-global and
         // durable: immediate revocation and hostile-relay admission cannot be

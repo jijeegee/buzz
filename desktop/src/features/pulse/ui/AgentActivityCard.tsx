@@ -1,7 +1,8 @@
-import { Bot, ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import * as React from "react";
 
 import type { AgentNoteGroup } from "@/features/pulse/lib/groupAgentNotes";
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import type { UserProfileSummary } from "@/shared/api/types";
 import { Markdown } from "@/shared/ui/markdown";
@@ -77,7 +78,12 @@ export function AgentActivityCard({
               displayName={displayName}
               shape="squircle"
             />
-            <Bot className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-background p-0.5 text-muted-foreground" />
+            <AgentBadgeIcon
+              agentPubkey={group.pubkey}
+              className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-background p-0.5 text-muted-foreground"
+              othersSee="bot"
+              ownerPubkey={profile?.ownerPubkey}
+            />
           </button>
         </UserProfilePopover>
         <div className="min-w-0 flex-1">

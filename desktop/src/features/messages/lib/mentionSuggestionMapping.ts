@@ -76,6 +76,7 @@ export function mapMentionCandidateToSuggestion(opts: {
       channelType !== "dm" &&
       candidate.isMember === false,
     ownerLabel,
+    ownerPubkey: candidate.isAgent ? (candidate.ownerPubkey ?? null) : null,
     role: !candidate.isAgent && candidate.role === "admin" ? "admin" : null,
   };
 }

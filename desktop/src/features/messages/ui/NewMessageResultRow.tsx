@@ -1,6 +1,6 @@
 import { AgentManagementMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
-import { Bot } from "lucide-react";
 
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { formatOwnerLabel } from "@/features/profile/lib/identity";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
@@ -127,10 +127,11 @@ export function NewMessageResultRow({
                   />
                 </div>
                 <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                  <Bot
-                    aria-hidden="true"
+                  <AgentBadgeIcon
+                    agentPubkey={user.pubkey}
                     className="h-3 w-3"
-                    data-testid="new-dm-agent-icon"
+                    ownerPubkey={user.ownerPubkey}
+                    testId="new-dm-agent-icon"
                   />
                   agent
                 </span>
