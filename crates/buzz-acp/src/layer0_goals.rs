@@ -135,6 +135,10 @@ impl Layer0Goals {
     }
 }
 
+/// How to treat layer 0 goals. Travels with them: in the system prompt and
+/// in every `<goal-update>` that restates them.
+const LAYER0_RULE: &str = "Layer 0: <agent-goal> is your own goal; <owner-goal> is your owner's private goal. Never repeat or reveal the owner's private goal to anyone else.";
+
 /// Render layer 0 goals as standing-context sections. Goal text is owner
 /// input and is escaped so it cannot close or open prompt sections.
 pub(crate) fn render_layer0_goals(
@@ -159,12 +163,10 @@ pub(crate) fn render_layer0_goals(
     if let Some(goal) = clean(owner_goal) {
         sections.push(crate::prompt_framing::semantic_section(
             "owner-goal",
-            &format!(
-                "Your owner's private layer 0 goal. Only their own agents see it; do not repeat it to others.\n{goal}"
-            ),
+            &format!("Your owner's private layer 0 goal. Only their own agents see it.\n{goal}"),
         ));
     }
-    (!sections.is_empty()).then(|| sections.join("\n\n"))
+    (!sections.is_empty()).then(|| format!("{LAYER0_RULE}\n\n{}", sections.join("\n\n")))
 }
 
 /// The body of a `<goal-update>` section when a live session last saw
@@ -210,6 +212,12 @@ mod tests {
         assert!(rendered.contains("Ship &lt;/agent-goal&gt;"));
         assert!(rendered.contains("<owner-goal>"));
         assert!(rendered.contains("Grow"));
+        assert!(
+            rendered.starts_with(LAYER0_RULE),
+            "the privacy rule travels with the goals"
+        );
+        let update = render_goal_update(Some(&None), Some(&rendered)).unwrap();
+        assert!(update.contains("Never repeat or reveal the owner's private goal"));
     }
 
     #[test]
@@ -228,7 +236,9 @@ mod tests {
 
         write(&path, Some("Ship daily"), None);
         let second = goals.current().unwrap();
-        assert!(second.contains("Ship daily") && !second.contains("<owner-goal>"));
+        assert!(
+            second.contains("Ship daily") && !second.contains("Your owner's private layer 0 goal")
+        );
 
         std::fs::remove_file(&path).unwrap();
         assert_eq!(goals.current(), None, "deleted file clears the goals");

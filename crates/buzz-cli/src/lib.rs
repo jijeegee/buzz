@@ -897,6 +897,10 @@ pub enum GoalsCmd {
         /// Assignee pubkey (hex or npub); repeatable
         #[arg(long)]
         assignee: Vec<String>,
+        /// Also link this thread (root event id) to the new goal and mark it
+        /// in_progress, in the same write
+        #[arg(long)]
+        thread: Option<String>,
     },
     /// Change a goal's title, note, status, or assignees
     Update {
@@ -921,6 +925,28 @@ pub enum GoalsCmd {
         /// Pubkey to unassign (hex or npub); repeatable
         #[arg(long)]
         unassign: Vec<String>,
+    },
+    /// Mark a goal in_progress (same as `update --status in_progress`)
+    Start {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Goal id
+        #[arg(long)]
+        node: String,
+    },
+    /// Mark a goal done (same as `update --status done`); reports sub-goals
+    /// still open and when every sibling under the parent is done
+    Done {
+        /// Channel or DM UUID
+        #[arg(long)]
+        channel: String,
+        /// Goal id
+        #[arg(long)]
+        node: String,
+        /// What was delivered, saved as the goal's note; '-' reads stdin
+        #[arg(long)]
+        note: Option<String>,
     },
     /// Move a goal under a different parent
     Move {
@@ -949,7 +975,8 @@ pub enum GoalsCmd {
         #[arg(long)]
         recursive: bool,
     },
-    /// Link a thread to the goal it works on (moves it off any other goal)
+    /// Link a thread to the goal it works on (moves it off any other goal);
+    /// an open goal becomes in_progress
     Link {
         /// Channel or DM UUID
         #[arg(long)]

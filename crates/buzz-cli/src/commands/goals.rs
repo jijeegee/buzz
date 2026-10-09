@@ -17,11 +17,11 @@ use crate::GoalsCmd;
 /// Attempts at a conflicting write before giving up.
 const MAX_WRITE_ATTEMPTS: usize = 4;
 
-struct Head {
+pub(crate) struct Head {
     id: String,
     created_at: u64,
     pubkey: String,
-    tree: GoalTree,
+    pub(crate) tree: GoalTree,
 }
 
 fn parse_head(event: &Value) -> Result<Head, CliError> {
@@ -44,7 +44,7 @@ async fn query_events(client: &BuzzClient, filter: Value) -> Result<Vec<Value>, 
 
 /// The live head. `strong` pins the read to the writer pool so a write is
 /// always composed against the newest head.
-async fn fetch_head(
+pub(crate) async fn fetch_head(
     client: &BuzzClient,
     channel: &str,
     strong: bool,
@@ -68,9 +68,123 @@ async fn event_exists(client: &BuzzClient, channel: &str, id: &str) -> Result<bo
     Ok(!query_events(client, filter).await?.is_empty())
 }
 
-enum Edit {
-    Op(GoalOp),
+pub(crate) enum Edit {
+    /// Operations applied in order and published as one revision.
+    Ops(Vec<GoalOp>),
+    /// Link a thread to a goal; an `open` goal also becomes `in_progress`.
+    Link {
+        id: String,
+        thread: String,
+    },
     Replace(GoalTree),
+}
+
+/// The operations `edit` makes against the live `tree`. Decided per attempt,
+/// so a conflict re-plans against the newer head.
+fn plan(edit: &Edit, tree: &GoalTree) -> Vec<GoalOp> {
+    match edit {
+        Edit::Ops(ops) => ops.clone(),
+        Edit::Link { id, thread } => {
+            let mut ops = vec![GoalOp::Link {
+                id: id.clone(),
+                thread: thread.clone(),
+            }];
+            if tree.node(id).is_some_and(|n| n.status == GoalStatus::Open) {
+                ops.push(start_op(id));
+            }
+            ops
+        }
+        Edit::Replace(_) => Vec::new(),
+    }
+}
+
+fn start_op(id: &str) -> GoalOp {
+    status_op(id, GoalStatus::InProgress)
+}
+
+pub(crate) fn status_op(id: &str, status: GoalStatus) -> GoalOp {
+    status_note_op(id, status, None)
+}
+
+pub(crate) fn status_note_op(id: &str, status: GoalStatus, note: Option<String>) -> GoalOp {
+    GoalOp::Update {
+        id: id.to_string(),
+        title: None,
+        note,
+        status: Some(status),
+        add_assignees: vec![],
+        remove_assignees: vec![],
+    }
+}
+
+/// What finishing `id` means for the tree around it: sub-goals still open,
+/// and whether every sibling under its parent is now finished. The parent is
+/// never completed automatically; people decide that.
+pub(crate) fn done_report(tree: &GoalTree, id: &str) -> Value {
+    let unfinished = |n: &GoalNode| matches!(n.status, GoalStatus::Open | GoalStatus::InProgress);
+    let open_sub_goals = tree
+        .subtree(id)
+        .iter()
+        .filter(|(_, n)| n.id != id && unfinished(n))
+        .count();
+    let mut out = json!({});
+    if open_sub_goals > 0 {
+        out["open_sub_goals"] = json!(open_sub_goals);
+        out["warning"] = json!(format!(
+            "goal {id} is done but {open_sub_goals} of its sub-goals are still open"
+        ));
+    }
+    let parent = tree.node(id).and_then(|n| n.parent.clone());
+    if let Some(parent) = parent {
+        let siblings = tree.children(&parent);
+        if siblings.iter().all(|n| !unfinished(n)) && tree.node(&parent).is_some_and(unfinished) {
+            out["parent_all_done"] = json!(parent);
+        }
+    }
+    out
+}
+
+/// The one status/title/note change path behind `update`, `start`, `done`,
+/// and `threads close --goal-done`.
+pub(crate) async fn update_goal(
+    client: &BuzzClient,
+    channel: &str,
+    op: GoalOp,
+) -> Result<Value, CliError> {
+    let done = match &op {
+        GoalOp::Update {
+            id,
+            status: Some(GoalStatus::Done),
+            ..
+        } => Some(id.clone()),
+        _ => None,
+    };
+    let (mut out, tree) = write_tree(client, channel, Edit::Ops(vec![op])).await?;
+    if let Some(id) = done {
+        if let (Some(out), Value::Object(report)) = (out.as_object_mut(), done_report(&tree, &id)) {
+            out.extend(report);
+        }
+    }
+    Ok(out)
+}
+
+/// `add --thread`: create the goal, link the thread, and start it — one write.
+fn add_ops(add: GoalOp, thread: Option<String>) -> Vec<GoalOp> {
+    let GoalOp::Add { id, .. } = &add else {
+        return vec![add];
+    };
+    let id = id.clone();
+    match thread {
+        Some(thread) => vec![
+            add,
+            GoalOp::Link {
+                id: id.clone(),
+                thread,
+            },
+            start_op(&id),
+        ],
+        None => vec![add],
+    }
 }
 
 fn is_goal_conflict(err: &CliError) -> bool {
@@ -78,7 +192,20 @@ fn is_goal_conflict(err: &CliError) -> bool {
 }
 
 /// Apply `edit` to the live head and publish it, re-applying after conflicts.
-async fn write(client: &BuzzClient, channel: &str, edit: Edit) -> Result<Value, CliError> {
+pub(crate) async fn write(
+    client: &BuzzClient,
+    channel: &str,
+    edit: Edit,
+) -> Result<Value, CliError> {
+    write_tree(client, channel, edit).await.map(|(out, _)| out)
+}
+
+/// [`write`], also returning the tree as published.
+pub(crate) async fn write_tree(
+    client: &BuzzClient,
+    channel: &str,
+    edit: Edit,
+) -> Result<(Value, GoalTree), CliError> {
     let channel_uuid = parse_uuid(channel)?;
     let editor = client.pubkey().to_hex();
     for _ in 0..MAX_WRITE_ATTEMPTS {
@@ -88,12 +215,14 @@ async fn write(client: &BuzzClient, channel: &str, edit: Edit) -> Result<Value, 
             None => ("none".to_string(), None, GoalTree::empty()),
         };
         match &edit {
-            Edit::Op(op) => {
-                let now = chrono::Utc::now().timestamp().max(0) as u64;
-                tree.apply(op, &editor, now)
-                    .map_err(|e| CliError::Usage(e.to_string()))?;
-            }
             Edit::Replace(replacement) => tree = replacement.clone(),
+            _ => {
+                let now = chrono::Utc::now().timestamp().max(0) as u64;
+                for op in plan(&edit, &tree) {
+                    tree.apply(&op, &editor, now)
+                        .map_err(|e| CliError::Usage(e.to_string()))?;
+                }
+            }
         }
         let builder =
             buzz_sdk::build_set_goal_tree(channel_uuid, &tree, &revision, head_created_at)
@@ -101,12 +230,12 @@ async fn write(client: &BuzzClient, channel: &str, edit: Edit) -> Result<Value, 
         let event = client.sign_event(builder)?;
         let event_id = event.id.to_hex();
         match client.submit_event(event).await {
-            Ok(_) => return Ok(json!({ "event_id": event_id, "accepted": true })),
+            Ok(_) => return Ok((json!({ "event_id": event_id, "accepted": true }), tree)),
             // A lost response can surface the retry of our own stored write as
             // a conflict; only re-apply when our event is really absent.
             Err(e) if is_goal_conflict(&e) => {
                 if event_exists(client, channel, &event_id).await? {
-                    return Ok(json!({ "event_id": event_id, "accepted": true }));
+                    return Ok((json!({ "event_id": event_id, "accepted": true }), tree));
                 }
             }
             Err(e) => return Err(e),
@@ -198,14 +327,14 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
                 return Ok(());
             };
             let tree = &head.tree;
-            let focus_id = match (node, thread) {
-                (Some(node), _) => Some(node),
-                (None, Some(thread)) => {
-                    validate_hex64(&thread)?;
-                    tree.node_for_thread(&thread).map(|n| n.id.clone())
-                }
-                (None, None) => None,
-            };
+            if let Some(thread) = &thread {
+                validate_hex64(thread)?;
+            }
+            let this_thread_goal = thread
+                .as_deref()
+                .and_then(|t| tree.node_for_thread(t))
+                .map(|n| n.id.clone());
+            let focus_id = node.or_else(|| this_thread_goal.clone());
             let outline: Vec<Value> = tree
                 .outline()
                 .iter()
@@ -218,6 +347,10 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
                 "updated_by": head.pubkey,
                 "outline": outline,
             });
+            if thread.is_some() {
+                // The goal the asked-about thread works on, or null.
+                out["this_thread_goal"] = json!(this_thread_goal);
+            }
             if let Some(id) = focus_id {
                 out["focus"] = focus_json(tree, &id)?;
             }
@@ -233,7 +366,7 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
                 title,
                 note: optional_text(note)?,
             };
-            print(&write(client, &channel, Edit::Op(op)).await?);
+            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
         }
         GoalsCmd::Add {
             channel,
@@ -241,7 +374,11 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
             title,
             note,
             assignee,
+            thread,
         } => {
+            if let Some(thread) = &thread {
+                validate_hex64(thread)?;
+            }
             let id = new_node_id();
             let op = GoalOp::Add {
                 id: id.clone(),
@@ -253,7 +390,7 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
                     .map(|a| parse_pubkey(a))
                     .collect::<Result<_, _>>()?,
             };
-            let mut out = write(client, &channel, Edit::Op(op)).await?;
+            let mut out = write(client, &channel, Edit::Ops(add_ops(op, thread))).await?;
             out["goal_id"] = json!(id);
             print(&out);
         }
@@ -280,7 +417,19 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
                     .map(|a| parse_pubkey(a))
                     .collect::<Result<_, _>>()?,
             };
-            print(&write(client, &channel, Edit::Op(op)).await?);
+            print(&update_goal(client, &channel, op).await?);
+        }
+        GoalsCmd::Start { channel, node } => {
+            let op = status_op(&node, GoalStatus::InProgress);
+            print(&update_goal(client, &channel, op).await?);
+        }
+        GoalsCmd::Done {
+            channel,
+            node,
+            note,
+        } => {
+            let op = status_note_op(&node, GoalStatus::Done, optional_text(note)?);
+            print(&update_goal(client, &channel, op).await?);
         }
         GoalsCmd::Move {
             channel,
@@ -293,7 +442,7 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
                 parent,
                 order,
             };
-            print(&write(client, &channel, Edit::Op(op)).await?);
+            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
         }
         GoalsCmd::Remove {
             channel,
@@ -304,7 +453,7 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
                 id: node,
                 recursive,
             };
-            print(&write(client, &channel, Edit::Op(op)).await?);
+            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
         }
         GoalsCmd::Link {
             channel,
@@ -312,13 +461,12 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
             thread,
         } => {
             validate_hex64(&thread)?;
-            let op = GoalOp::Link { id: node, thread };
-            print(&write(client, &channel, Edit::Op(op)).await?);
+            print(&write(client, &channel, Edit::Link { id: node, thread }).await?);
         }
         GoalsCmd::Unlink { channel, thread } => {
             validate_hex64(&thread)?;
             let op = GoalOp::Unlink { thread };
-            print(&write(client, &channel, Edit::Op(op)).await?);
+            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
         }
         GoalsCmd::History { channel, limit } => {
             parse_uuid(&channel)?;
@@ -416,6 +564,103 @@ mod tests {
         assert_eq!(ids("subtree"), ["a", "a1"]);
         assert_eq!(ids("same_layer"), ["b"]);
         assert_eq!(focus["layer"], 2);
+    }
+
+    #[test]
+    fn link_starts_an_open_goal_only() {
+        let mut tree = tree();
+        let thread = "f".repeat(64);
+        let link = Edit::Link {
+            id: "a".into(),
+            thread: thread.clone(),
+        };
+        let ops = plan(&link, &tree);
+        assert_eq!(ops.len(), 2);
+        assert_eq!(ops[1], start_op("a"));
+        for op in &ops {
+            tree.apply(op, ED, 2).unwrap();
+        }
+        assert_eq!(tree.node("a").unwrap().status, GoalStatus::InProgress);
+        assert_eq!(tree.node_for_thread(&thread).unwrap().id, "a");
+
+        tree.apply(&status_op("b", GoalStatus::Done), ED, 3)
+            .unwrap();
+        let ops = plan(
+            &Edit::Link {
+                id: "b".into(),
+                thread,
+            },
+            &tree,
+        );
+        assert_eq!(ops.len(), 1, "a done goal is not reopened");
+    }
+
+    #[test]
+    fn add_with_thread_links_and_starts_in_one_write() {
+        let thread = "e".repeat(64);
+        let add = GoalOp::Add {
+            id: "n".into(),
+            parent: "a".into(),
+            title: "New".into(),
+            note: None,
+            assignees: vec![],
+        };
+        assert_eq!(add_ops(add.clone(), None).len(), 1);
+        let ops = add_ops(add, Some(thread.clone()));
+        assert_eq!(ops.len(), 3);
+        let mut tree = tree();
+        for op in &ops {
+            tree.apply(op, ED, 2).unwrap();
+        }
+        let node = tree.node_for_thread(&thread).unwrap();
+        assert_eq!(
+            (node.id.as_str(), node.status),
+            ("n", GoalStatus::InProgress)
+        );
+    }
+
+    #[test]
+    fn done_reports_open_sub_goals_and_finished_siblings_without_closing_the_parent() {
+        let mut tree = tree();
+        // a has an open sub-goal a1; b is still open.
+        tree.apply(&status_op("a", GoalStatus::Done), ED, 2)
+            .unwrap();
+        let report = done_report(&tree, "a");
+        assert_eq!(report["open_sub_goals"], 1);
+        assert!(report["warning"].as_str().unwrap().contains("still open"));
+        assert!(report.get("parent_all_done").is_none());
+
+        tree.apply(&status_op("b", GoalStatus::Done), ED, 3)
+            .unwrap();
+        let report = done_report(&tree, "b");
+        assert_eq!(report["parent_all_done"], "r");
+        assert!(report.get("open_sub_goals").is_none());
+        assert_eq!(
+            tree.node("r").unwrap().status,
+            GoalStatus::Open,
+            "parent untouched"
+        );
+
+        tree.apply(&status_op("a1", GoalStatus::Done), ED, 4)
+            .unwrap();
+        let report = done_report(&tree, "a1");
+        assert_eq!(report["parent_all_done"], json!(null), "a is already done");
+    }
+
+    #[test]
+    fn start_and_done_are_status_updates() {
+        assert_eq!(
+            status_note_op("a", GoalStatus::Done, Some("shipped".into())),
+            GoalOp::Update {
+                id: "a".into(),
+                title: None,
+                note: Some("shipped".into()),
+                status: Some(GoalStatus::Done),
+                add_assignees: vec![],
+                remove_assignees: vec![],
+            }
+        );
+        assert_eq!(start_op("a"), status_op("a", GoalStatus::InProgress));
     }
 
     #[test]
