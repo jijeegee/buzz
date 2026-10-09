@@ -1,3 +1,4 @@
+import { SEARCH_HIT_PLACEHOLDER_TAG } from "@/features/messages/lib/searchHitPlaceholder";
 import type { RelayEvent, SearchHit } from "@/shared/api/types";
 
 const MAX_CACHED_EVENTS = 200;
@@ -25,7 +26,10 @@ export function buildSearchHitEvent(hit: SearchHit): RelayEvent {
     pubkey: hit.pubkey,
     created_at: hit.createdAt,
     kind: hit.kind,
-    tags: hit.channelId ? [["h", hit.channelId]] : [],
+    tags: [
+      ...(hit.channelId ? [["h", hit.channelId]] : []),
+      [SEARCH_HIT_PLACEHOLDER_TAG],
+    ],
     content: hit.content,
     sig: "",
   };
