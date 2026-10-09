@@ -203,6 +203,9 @@
   --buzz-bubble-other-shadow: none;
   --buzz-bubble-own: hsl(var(--primary) / 0.15);
   --buzz-bubble-inset: rgb(0 0 0 / 5%);
+  /* The thread panel floats one layer above the channel timeline. */
+  --buzz-thread-canvas: hsl(var(--background));
+  --buzz-thread-layer-shadow: -8px 0 24px rgb(0 0 0 / 8%);
 }
 
 :root[data-buzz-sidebar] {
@@ -211,6 +214,7 @@
   --buzz-bubble-other-shadow:
     0 0 0 1px rgb(0 0 0 / 5%), 0 1px 2px rgb(0 0 0 / 6%);
   --buzz-bubble-own: #f3eb9e;
+  --buzz-thread-canvas: #f8f9f3;
 }
 
 :root[data-buzz-sidebar].dark {
@@ -218,10 +222,12 @@
   --buzz-bubble-other: #262b33;
   --buzz-bubble-other-shadow: none;
   --buzz-bubble-own: #57511f;
+  --buzz-thread-canvas: #1b2029;
 }
 
 :root.dark {
   --buzz-bubble-inset: rgb(0 0 0 / 24%);
+  --buzz-thread-layer-shadow: -8px 0 24px rgb(0 0 0 / 40%);
 }
 
 /*

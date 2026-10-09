@@ -11,7 +11,10 @@ import { useTimeoutActive } from "@/features/moderation/lib/timeoutStore";
 import { isModerationDm } from "@/features/moderation/lib/moderationDm";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import { DropZoneOverlay } from "@/features/messages/ui/ComposerAttachments";
-import { MessageThreadPanel } from "@/features/messages/ui/MessageThreadPanel";
+import {
+  MessageThreadPanel,
+  THREAD_LAYER_CLASS,
+} from "@/features/messages/ui/MessageThreadPanel";
 import { MessageQuoteScope } from "@/features/messages/ui/messageQuoteScope";
 import { useComposerQuotes } from "@/features/channels/ui/useComposerQuotes";
 import { MessageThreadPanelSkeleton } from "@/features/messages/ui/MessageThreadPanelSkeleton";
@@ -529,11 +532,12 @@ export const ChannelPane = React.memo(function ChannelPane({
   const wrapAux = (
     panel: React.ReactNode,
     testId: string,
-    options: { key?: string } = {},
+    options: { className?: string; key?: string } = {},
   ) =>
     useSplitAuxiliaryPane ? (
       <RightAuxiliaryPane
         canResetWidth={canResetThreadPanelWidth}
+        className={options.className}
         key={options.key ?? testId}
         onResetWidth={onResetThreadPanelWidth}
         onResizeStart={onThreadPanelResizeStart}
@@ -555,7 +559,11 @@ export const ChannelPane = React.memo(function ChannelPane({
       onClose={onCloseThread}
       ref={threadSurface.ref}
     >
-      {useFocusThreadDrawer ? panel : wrapAux(panel, "message-thread-panel")}
+      {useFocusThreadDrawer
+        ? panel
+        : wrapAux(panel, "message-thread-panel", {
+            className: THREAD_LAYER_CLASS,
+          })}
     </ThreadPanelSurface>
   );
   const wrapIdlePanel = (panel: React.ReactNode) =>
