@@ -1251,10 +1251,23 @@ pub struct AppState {
     /// Shared Redis-backed admission limits for ordinary HTTP and WebSocket work.
     pub admission_rate_limiter: Arc<RedisRateLimiter>,
 
-    /// Per-agent sliding-window rate limiter for observer frames (kind 24200).
-    /// Key: (community_id, agent pubkey bytes). Value: (count, window_start).
-    /// 100 events/sec per agent — prevents relay/DB pressure from bursty telemetry.
-    pub observer_rate_limiter: Arc<ScopedRateLimiter>,
+    /// Shared observer telemetry tier counters (kind 24200 telemetry and
+    /// agent typing). Redis in production; tests may swap in memory.
+    pub observer_quota: Arc<dyn crate::observer_quota::ObserverQuotaStore>,
+    /// Observer tier overrides. Key: (community_id, owner pubkey bytes).
+    /// Value: the `observer_tiers` row, `None` when the owner uses the
+    /// configured default. 60 s TTL bounds how long a tier change takes.
+    pub observer_tier_cache:
+        Arc<moka::sync::Cache<ScopedPubkeyKey, Option<crate::observer_quota::ObserverTier>>>,
+    /// Agent → owner lookups for observer typing caps and the policy endpoint.
+    /// Key: (community_id, pubkey bytes). Value: owner pubkey bytes, `None` for
+    /// non-agents (re-checked after the 60 s TTL).
+    pub agent_owner_cache: Arc<moka::sync::Cache<ScopedPubkeyKey, Option<[u8; 32]>>>,
+    /// Per-connection telemetry frame counters checked before signature
+    /// verification. Key: conn_id. Value: (Unix second, frames in it). Idle
+    /// entries expire, so closed connections need no cleanup.
+    #[allow(clippy::type_complexity)]
+    pub observer_conn_frames: Arc<moka::sync::Cache<Uuid, Arc<std::sync::Mutex<(u64, u64)>>>>,
     /// Per-uploader sliding-window rate limiter for media upload starts.
     /// Key: (community_id, uploader pubkey bytes). Value: (count, window_start).
     pub media_upload_rate_limiter: Arc<ScopedRateLimiter>,
@@ -1432,6 +1445,9 @@ impl AppState {
             Arc::new(RedisCommandReplayGuard::new(redis_pool.clone()));
         let gif_http_client = crate::api::gifs::build_gif_http_client();
         let admission_rate_limiter = Arc::new(RedisRateLimiter::new(redis_pool.clone()));
+        let observer_quota: Arc<dyn crate::observer_quota::ObserverQuotaStore> = Arc::new(
+            crate::observer_quota::RedisObserverQuota::new(redis_pool.clone()),
+        );
         let audit_enabled = audit_arc.is_some();
         // Build NIP-FI components before moving config into the state Arc.
         let (nip_fi_verifier, nip_fi_jwks_source) = build_nip_fi_components(&config);
@@ -1500,7 +1516,25 @@ impl AppState {
             nip98_replay,
             gif_http_client,
             admission_rate_limiter,
-            observer_rate_limiter: Arc::new(DashMap::new()),
+            observer_quota,
+            observer_tier_cache: Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(10_000)
+                    .time_to_live(std::time::Duration::from_secs(60))
+                    .build(),
+            ),
+            agent_owner_cache: Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(10_000)
+                    .time_to_live(std::time::Duration::from_secs(60))
+                    .build(),
+            ),
+            observer_conn_frames: Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(max_connections as u64)
+                    .time_to_idle(std::time::Duration::from_secs(5))
+                    .build(),
+            ),
             media_upload_rate_limiter: Arc::new(DashMap::new()),
             invite_claim_rate_limiter: Arc::new(
                 moka::sync::Cache::builder()

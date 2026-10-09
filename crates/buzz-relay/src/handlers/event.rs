@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 use buzz_core::event::StoredEvent;
 use buzz_core::kind::{
     event_kind_u32, is_ephemeral, is_unshared_gated_event, AUTHOR_ONLY_KINDS,
-    KIND_AGENT_OBSERVER_FRAME, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE,
+    KIND_AGENT_OBSERVER_FRAME, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE, KIND_TYPING_INDICATOR,
 };
 use buzz_core::observer::{
     content_looks_like_nip44, OBSERVER_AGENT_TAG, OBSERVER_FRAME_CONTROL, OBSERVER_FRAME_TAG,
@@ -1020,6 +1020,15 @@ async fn handle_ephemeral_event(
             .await
             .map_err(IngestError::Rejected)?;
 
+        // Agent typing indicators share the owner's "working agents" cap.
+        // Over-cap indicators are dropped silently (OK true): a rejection would
+        // make the executor gate its whole connection.
+        if event_kind_u32(&event) == KIND_TYPING_INDICATOR
+            && !crate::observer_quota::typing_admitted(&state, &conn, &auth_pubkey).await
+        {
+            return Ok(());
+        }
+
         // Mark as local before Redis publish to prevent double-delivery when
         // the event comes back through the Redis subscriber loop.
         state.mark_local_event(conn.tenant.community(), &event.id);
@@ -1085,32 +1094,6 @@ struct AgentObserverRoute {
     agent: PublicKey,
     owner: PublicKey,
     direction: AgentObserverDirection,
-}
-
-/// Check + bump the per-agent observer telemetry limit (100/sec window).
-///
-/// Observer frames are ephemeral, but the rejection is visible to the sender.
-/// Scope the counter by community so an agent key active in one tenant does not
-/// consume another tenant's logical rate budget.
-fn observer_frame_rate_limited(
-    state: &AppState,
-    community_id: CommunityId,
-    agent_key: [u8; 32],
-) -> bool {
-    let now = std::time::Instant::now();
-    let mut entry = state
-        .observer_rate_limiter
-        .entry((community_id, agent_key))
-        .or_insert((0, now));
-    let (count, window_start) = entry.value_mut();
-    if now.duration_since(*window_start).as_secs() >= 1 {
-        *count = 1;
-        *window_start = now;
-        false
-    } else {
-        *count += 1;
-        *count > 100
-    }
 }
 
 /// Handle encrypted agent observer frames (kind 24200).
@@ -1232,17 +1215,20 @@ async fn handle_agent_observer_event(
         return;
     }
 
-    // Rate limit telemetry frames only (100/sec per agent).
+    // Telemetry frames are limited by the owner's observer tier.
     // Control frames (owner → agent) bypass the limiter — they are rare and must not
     // be starved by bursty telemetry from the agent.
     if matches!(route.direction, AgentObserverDirection::Telemetry) {
-        let agent_key: [u8; 32] = agent_bytes.as_slice().try_into().unwrap_or([0u8; 32]);
-        if observer_frame_rate_limited(&state, conn.tenant.community(), agent_key) {
-            conn.send(RelayMessage::ok(
-                event_id_hex,
-                false,
-                "rate-limited: observer frame rate exceeded (100/sec per agent)",
-            ));
+        if let Err(rejection) = crate::observer_quota::admit_telemetry_frame(
+            &state,
+            conn.tenant.community(),
+            &route.owner,
+            &route.agent,
+            event.content.len(),
+        )
+        .await
+        {
+            conn.send(RelayMessage::ok(event_id_hex, false, &rejection.message()));
             return;
         }
     }
@@ -1493,29 +1479,134 @@ mod tests {
         assert!(err.contains("NIP-44"));
     }
 
+    /// Drives `handle_agent_observer_event` against an in-memory quota store:
+    /// the tier limiter runs after owner authorization, rejects oversize frames
+    /// as `invalid`, and denies the third active agent of a two-agent account
+    /// with the parseable `retry in {N}s` hint and the executor share.
     #[tokio::test]
-    async fn observer_frame_rate_limiter_is_scoped_by_community() {
-        let state = fanout_access::test_state().await;
-        let agent_key = Keys::generate().public_key().to_bytes();
-        let community_a = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::from_u128(0xAAAA));
-        let community_b = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::from_u128(0xBBBB));
+    async fn observer_telemetry_is_limited_by_owner_tier() {
+        use crate::observer_quota::{MemoryObserverQuota, ObserverTier};
 
-        for _ in 0..100 {
-            assert!(!super::observer_frame_rate_limited(
-                &state,
-                community_a,
-                agent_key
-            ));
-        }
-        assert!(super::observer_frame_rate_limited(
-            &state,
-            community_a,
-            agent_key
-        ));
-        assert!(
-            !super::observer_frame_rate_limited(&state, community_b, agent_key),
-            "A's exhausted budget must not rate-limit the same agent key in B"
+        let mut state = (*fanout_access::test_state().await).clone();
+        let mut config = (*state.config).clone();
+        config.observer_quota.free.account_agents = 1; // Server cap: ceil(1 × 1.5) = 2.
+        state.config = Arc::new(config);
+        state.observer_quota = Arc::new(MemoryObserverQuota::default());
+        let state = Arc::new(state);
+
+        let owner = Keys::generate();
+        let community = buzz_core::CommunityId::from_uuid(Uuid::new_v4());
+        state.observer_tier_cache.insert(
+            (community, owner.public_key().to_bytes()),
+            Some(ObserverTier::Free),
         );
+
+        let (send_tx, mut send_rx) = mpsc::channel(16);
+        let (ctrl_tx, _ctrl_rx) = mpsc::channel(1);
+        let (terminal_ctrl_tx, _terminal_ctrl_rx) = mpsc::channel(1);
+        let conn = Arc::new(crate::connection::ConnectionState {
+            conn_id: Uuid::new_v4(),
+            tenant: buzz_core::TenantContext::resolved(community, "tier.example"),
+            remote_addr: "127.0.0.1:1234".parse().expect("socket addr"),
+            auth_state: std::sync::Mutex::new(crate::connection::AuthState::Authenticated(
+                buzz_auth::AuthContext {
+                    pubkey: Keys::generate().public_key(),
+                    scopes: vec![],
+                    channel_ids: None,
+                    auth_method: buzz_auth::AuthMethod::Nip42,
+                    // Session fast path: the owner check needs no database.
+                    agent_owner_pubkey: Some(owner.public_key()),
+                    token: None,
+                },
+            )),
+            subscriptions: Arc::new(Mutex::new(HashMap::new())),
+            send_tx,
+            ctrl_tx,
+            terminal_ctrl_tx,
+            cancel: CancellationToken::new(),
+            backpressure_count: Arc::new(AtomicU8::new(0)),
+            grace_limit: 3,
+            nip_fi_assertion: None,
+            session_deadline: None,
+            nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
+                CancellationToken::new(),
+            ),
+            community_control: crate::state::CommunityConnectionControl::new(
+                CancellationToken::new(),
+            ),
+        });
+
+        let send = |agent: &Keys, padding: usize| {
+            let encrypted = encrypt_observer_payload(
+                agent,
+                &owner.public_key(),
+                &serde_json::json!({"type": "acp_read", "pad": "x".repeat(padding)}),
+            )
+            .expect("encrypt observer payload");
+            let event =
+                EventBuilder::new(Kind::Custom(KIND_AGENT_OBSERVER_FRAME as u16), encrypted)
+                    .tags([
+                        Tag::parse(["p", &owner.public_key().to_hex()]).expect("p tag"),
+                        Tag::parse([OBSERVER_AGENT_TAG, &agent.public_key().to_hex()])
+                            .expect("agent tag"),
+                        Tag::parse([OBSERVER_FRAME_TAG, OBSERVER_FRAME_TELEMETRY])
+                            .expect("frame tag"),
+                    ])
+                    .sign_with_keys(agent)
+                    .expect("sign event");
+            let conn = Arc::clone(&conn);
+            let state = Arc::clone(&state);
+            async move {
+                super::handle_agent_observer_event(
+                    event.clone(),
+                    conn.conn_id,
+                    &event.id.to_hex(),
+                    false,
+                    conn,
+                    state,
+                )
+                .await;
+            }
+        };
+        let mut next_ok = || {
+            let axum::extract::ws::Message::Text(text) = send_rx.try_recv().expect("OK frame")
+            else {
+                panic!("expected text relay message");
+            };
+            let frame: serde_json::Value = serde_json::from_str(&text).expect("relay frame JSON");
+            assert_eq!(frame[0], "OK");
+            (
+                frame[2].as_bool().expect("ok flag"),
+                frame[3].as_str().unwrap_or("").to_owned(),
+            )
+        };
+
+        let agents = [Keys::generate(), Keys::generate(), Keys::generate()];
+        send(&agents[0], 7_000).await;
+        assert_eq!(
+            next_ok(),
+            (
+                false,
+                "invalid: observer frame exceeds 6144 bytes for tier free".to_owned()
+            )
+        );
+        for agent in &agents[..2] {
+            send(agent, 10).await;
+            assert_eq!(next_ok(), (true, String::new()));
+        }
+        send(&agents[2], 10).await;
+        let (accepted, message) = next_ok();
+        assert!(!accepted);
+        let retry = message
+            .strip_prefix(
+                "rate-limited: observer active agents per account exceeded (tier free); retry in ",
+            )
+            .and_then(|rest| rest.strip_suffix("s; share frames_per_min=60 bytes_per_min=100000"))
+            .unwrap_or_else(|| panic!("unexpected rejection: {message}"));
+        assert!((1..=60).contains(&retry.parse::<u64>().expect("retry seconds")));
+        // Agents already holding a slot keep sending.
+        send(&agents[0], 10).await;
+        assert_eq!(next_ok(), (true, String::new()));
     }
 
     #[tokio::test]
