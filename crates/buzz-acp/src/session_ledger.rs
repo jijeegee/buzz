@@ -102,11 +102,22 @@ pub(crate) fn scope_key(scope: &SessionScope) -> String {
 /// Ledger file path for one agent on one relay under `state_dir`:
 /// `<state_dir>/<agent_pubkey_hex>/sessions-<sha256(relay_url)[..16]>.json`.
 pub fn ledger_path(state_dir: &Path, agent_pubkey_hex: &str, relay_url: &str) -> PathBuf {
+    agent_state_file(state_dir, agent_pubkey_hex, relay_url, "sessions")
+}
+
+/// Per-(agent, relay) state file under `state_dir`:
+/// `<state_dir>/<agent_pubkey_hex>/<prefix>-<sha256(relay_url)[..16]>.json`.
+pub(crate) fn agent_state_file(
+    state_dir: &Path,
+    agent_pubkey_hex: &str,
+    relay_url: &str,
+    prefix: &str,
+) -> PathBuf {
     let digest = Sha256::digest(relay_url.trim_end_matches('/').as_bytes());
     let relay_tag = hex::encode(&digest[..8]);
     state_dir
         .join(agent_pubkey_hex.to_ascii_lowercase())
-        .join(format!("sessions-{relay_tag}.json"))
+        .join(format!("{prefix}-{relay_tag}.json"))
 }
 
 fn now_unix() -> u64 {
@@ -335,11 +346,11 @@ fn prune(file: &mut LedgerFile, now: u64) -> bool {
     before != file.entries.len()
 }
 
-fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let dir = path
         .parent()
-        .ok_or_else(|| std::io::Error::other("ledger path has no parent directory"))?;
+        .ok_or_else(|| std::io::Error::other("state file path has no parent directory"))?;
     std::fs::create_dir_all(dir)?;
     let mut temp = tempfile::NamedTempFile::new_in(dir)?;
     temp.write_all(bytes)?;

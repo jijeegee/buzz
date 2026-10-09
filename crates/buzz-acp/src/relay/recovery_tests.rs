@@ -105,6 +105,7 @@ async fn socket_owner_services_ping_shutdown_and_coalesces_overflow_ticks() {
         VecDeque::new(),
         tx,
         control_tx,
+        tokio::sync::watch::channel(Default::default()).0,
         cmd_rx,
         Keys::generate().into(),
         "ws://127.0.0.1:1".into(),
