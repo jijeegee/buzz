@@ -23,6 +23,12 @@ use buzz_sdk::mentions::{
 /// - A root-only or marker-less parent returns `None` (it is top-level and its
 ///   own root).
 fn find_root_from_tags(tags: &serde_json::Value) -> Option<String> {
+    resolve_thread_markers(tags).map(|(root, _)| root)
+}
+
+/// Collapse a tag array's NIP-10 markers into `(root, reply)`; `None` for a
+/// top-level event.
+fn resolve_thread_markers(tags: &serde_json::Value) -> Option<(String, String)> {
     let parts: Vec<Vec<String>> = tags
         .as_array()?
         .iter()
@@ -34,9 +40,41 @@ fn find_root_from_tags(tags: &serde_json::Value) -> Option<String> {
             })
         })
         .collect();
-    buzz_core::nip10::parse_thread_markers_from_parts(parts.iter().map(Vec::as_slice))
-        .resolve()
-        .map(|(root, _)| root)
+    buzz_core::nip10::parse_thread_markers_from_parts(parts.iter().map(Vec::as_slice)).resolve()
+}
+
+/// Threads are one level deep (Slack-style): `--reply-in-thread` may target
+/// only messages shallower than this, so replies inside a thread stay flat.
+/// Mirrors `MAX_THREAD_DEPTH` in the desktop and mobile clients.
+const MAX_THREAD_DEPTH: u32 = 1;
+
+/// Thread depth of an event from its own NIP-10 tags: 0 for a top-level
+/// message, 1 for a direct reply to the thread head, and 2 for anything nested
+/// deeper (telling 2 from 3+ would need more relay lookups).
+fn thread_depth_from_tags(tags: &serde_json::Value) -> u32 {
+    match resolve_thread_markers(tags) {
+        None => 0,
+        Some((root, reply)) if root == reply => 1,
+        Some(_) => 2,
+    }
+}
+
+/// Reject a reply whose target is already at the thread depth limit, pointing
+/// the caller at the flat equivalent: reply to the thread head and quote the
+/// target.
+fn ensure_reply_depth(
+    target_event_id: &str,
+    event: &serde_json::Value,
+    thread: &ThreadRef,
+) -> Result<(), CliError> {
+    let tags = event.get("tags").unwrap_or(&serde_json::Value::Null);
+    if thread_depth_from_tags(tags) < MAX_THREAD_DEPTH {
+        return Ok(());
+    }
+    Err(CliError::Usage(format!(
+        "threads are one level deep: {target_event_id} is already a reply inside a thread.          Reply to the thread and point at that message instead:          --reply-in-thread {root} --quote {target_event_id}",
+        root = thread.root_event_id.to_hex(),
+    )))
 }
 
 fn thread_ref_from_parent_tags(
@@ -78,12 +116,20 @@ pub(crate) async fn fetch_event(
         .ok_or_else(|| CliError::NotFound(format!("event {event_id} not found")))
 }
 
+/// Like [`thread_ref_from_event`] for a fetched reply target, but enforces
+/// [`MAX_THREAD_DEPTH`] unless `allow_nested` (forum comments keep their own
+/// nesting).
 async fn resolve_thread_ref(
     client: &BuzzClient,
     parent_event_id: &str,
+    allow_nested: bool,
 ) -> Result<ThreadRef, CliError> {
     let event = fetch_event(client, parent_event_id).await?;
-    thread_ref_from_event(parent_event_id, &event)
+    let thread = thread_ref_from_event(parent_event_id, &event)?;
+    if !allow_nested {
+        ensure_reply_depth(parent_event_id, &event, &thread)?;
+    }
+    Ok(thread)
 }
 
 pub(crate) fn thread_ref_from_event(
@@ -744,7 +790,7 @@ pub(crate) async fn send_message(
     // Build thread ref if replying. `--reply-in-thread` is the immediate parent; the
     // thread root is derived from the parent's NIP-10 tags via the relay.
     let thread_ref = if let Some(ref r) = p.reply_to {
-        Some(resolve_thread_ref(client, r).await?)
+        Some(resolve_thread_ref(client, r, p.kind == Some(45003)).await?)
     } else {
         None
     };
@@ -890,7 +936,7 @@ pub async fn cmd_send_diff_message(client: &BuzzClient, p: SendDiffParams) -> Re
     // `--reply-in-thread` is the immediate parent; the thread root is derived from
     // the parent's NIP-10 tags via the relay.
     let thread_ref = if let Some(r) = &p.reply_to {
-        Some(resolve_thread_ref(client, r).await?)
+        Some(resolve_thread_ref(client, r, false).await?)
     } else {
         None
     };
@@ -1175,11 +1221,12 @@ pub async fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::{
-        channel_id_from_event, cmd_get_thread, cmd_send_message, event_mention_pubkeys,
-        find_root_from_tags, format_events, match_profiles_by_name, merge_message_mentions,
-        missing_members, normalize_explicit_mentions, parse_member_pubkeys,
-        resolve_names_to_pubkeys, resolve_thread_target, thread_ref_from_event,
-        thread_ref_from_parent_tags, BuzzClient, CliError, Uuid,
+        channel_id_from_event, cmd_get_thread, cmd_send_message, ensure_reply_depth,
+        event_mention_pubkeys, find_root_from_tags, format_events, match_profiles_by_name,
+        merge_message_mentions, missing_members, normalize_explicit_mentions, parse_member_pubkeys,
+        resolve_names_to_pubkeys, resolve_thread_target, thread_depth_from_tags,
+        thread_ref_from_event, thread_ref_from_parent_tags, BuzzClient, CliError, Uuid,
+        MAX_THREAD_DEPTH,
     };
     use buzz_sdk::mentions::{
         extract_at_mentions_with_known, extract_at_names, match_names_to_profiles, MentionProfile,
@@ -2046,5 +2093,61 @@ mod tests {
             emoji_tags.is_empty(),
             "palette-error fallback must produce no emoji tags, got: {emoji_tags:?}"
         );
+    }
+
+    const ID_C: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+    #[test]
+    fn thread_depth_reads_the_target_event_tags() {
+        assert_eq!(MAX_THREAD_DEPTH, 1);
+        assert_eq!(thread_depth_from_tags(&json!([["h", "chan"]])), 0);
+        assert_eq!(thread_depth_from_tags(&json!([])), 0);
+        assert_eq!(
+            thread_depth_from_tags(&json!([["e", ID_A, "", "root"], ["e", ID_A, "", "reply"]])),
+            1
+        );
+        assert_eq!(
+            thread_depth_from_tags(&json!([["e", ID_A, "", "reply"]])),
+            1,
+            "a reply-only marker is a direct reply"
+        );
+        assert_eq!(
+            thread_depth_from_tags(&json!([["e", ID_A, "", "root"], ["e", ID_B, "", "reply"]])),
+            2
+        );
+    }
+
+    #[test]
+    fn reply_to_a_top_level_message_is_allowed() {
+        let event = json!({ "tags": [["h", "chan"]] });
+        let thread = thread_ref_from_event(ID_A, &event).unwrap();
+        ensure_reply_depth(ID_A, &event, &thread).unwrap();
+    }
+
+    #[test]
+    fn reply_to_a_thread_reply_is_rejected_with_the_flat_command() {
+        for tags in [
+            json!([
+                ["h", "chan"],
+                ["e", ID_A, "", "root"],
+                ["e", ID_A, "", "reply"]
+            ]),
+            json!([
+                ["h", "chan"],
+                ["e", ID_A, "", "root"],
+                ["e", ID_C, "", "reply"]
+            ]),
+        ] {
+            let event = json!({ "tags": tags });
+            let thread = thread_ref_from_event(ID_B, &event).unwrap();
+            let error = ensure_reply_depth(ID_B, &event, &thread).unwrap_err();
+            assert!(matches!(error, CliError::Usage(_)));
+            let message = error.to_string();
+            assert!(message.contains("one level deep"), "{message}");
+            assert!(
+                message.contains(&format!("--reply-in-thread {ID_A} --quote {ID_B}")),
+                "{message}"
+            );
+        }
     }
 }

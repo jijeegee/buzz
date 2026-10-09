@@ -27,6 +27,7 @@ import 'channel_link_navigation.dart';
 import 'channel_messages_provider.dart';
 import 'channel_typing_provider.dart';
 import 'channel_typing_indicator.dart';
+import 'thread_depth.dart';
 import 'thread_replies_provider.dart';
 import 'thread_name_provider.dart';
 import 'thread_name_editor.dart';

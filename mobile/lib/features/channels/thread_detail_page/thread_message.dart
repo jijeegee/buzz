@@ -278,7 +278,14 @@ class _ThreadMessage extends HookConsumerWidget {
                                     ),
                                     scaleEmojiOnly: true,
                                     mediaCarouselTrailingOverflow: Grid.gutter,
-                                    onMediaReply: allMessages == null
+                                    onMediaReply:
+                                        allMessages == null ||
+                                            !canReplyInThread(
+                                              threadDepthOf(
+                                                message,
+                                                allMessages!,
+                                              ),
+                                            )
                                         ? null
                                         : () {
                                             if (!context.mounted) return;

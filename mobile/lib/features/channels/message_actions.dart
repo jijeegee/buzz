@@ -36,6 +36,7 @@ import 'recent_emoji_provider.dart';
 import '../../shared/read_state/message_read_state.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
+import 'thread_depth.dart';
 import 'thread_detail_page.dart';
 import 'thread_follows/thread_follows_provider.dart';
 import 'timeline_message.dart';
@@ -576,7 +577,8 @@ class _FastActionsRow extends ConsumerWidget {
     final canRemind = ref.watch(reminderServiceProvider) != null;
 
     final tiles = <Widget>[
-      if (messages != null)
+      if (messages != null &&
+          canReplyInThread(threadDepthOf(message, messages)))
         _FastActionTile(
           icon: LucideIcons.messageSquareReply,
           label: 'Reply in thread',

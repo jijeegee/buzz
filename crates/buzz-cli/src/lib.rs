@@ -464,7 +464,9 @@ pub enum MessagesCmd {
         #[arg(long)]
         kind: Option<u16>,
         /// Reply in the thread of this event ID (opens a thread under it when it
-        /// is top-level). `--reply-to` is accepted as a deprecated alias.
+        /// is top-level). Threads are one level deep: a message already inside a
+        /// thread is rejected — reply to its thread root and `--quote` it.
+        /// `--reply-to` is accepted as a deprecated alias.
         #[arg(long = "reply-in-thread", alias = "reply-to", value_name = "EVENT_ID")]
         reply_to: Option<String>,
         /// Quote this event ID: shows the original above your message without
@@ -516,8 +518,8 @@ pub enum MessagesCmd {
         /// Human-readable description of the change
         #[arg(long)]
         description: Option<String>,
-        /// Reply in the thread of this event ID. `--reply-to` is accepted as a
-        /// deprecated alias.
+        /// Reply in the thread of this event ID; must not be a message already
+        /// inside a thread. `--reply-to` is accepted as a deprecated alias.
         #[arg(long = "reply-in-thread", alias = "reply-to", value_name = "EVENT_ID")]
         reply_to: Option<String>,
     },

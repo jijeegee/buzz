@@ -34,6 +34,7 @@ const { ComposerReplyEditBanner } = await import(
   "./ComposerReplyEditBanner.tsx"
 );
 const { MessageQuoteScope } = await import("./messageQuoteScope.tsx");
+const { canReplyInThread } = await import("../lib/threadDepth.ts");
 
 const EVENT_ID = "a".repeat(64);
 const AUTHOR = "b".repeat(64);
@@ -151,6 +152,37 @@ test("Quote is hidden outside a scope and for pending messages", async () => {
   );
   assert.equal(actionLabels(pending.container).includes("Quote"), false);
   await pending.unmount();
+});
+
+test("thread replies offer Quote but not Reply in thread", async () => {
+  // Mirrors MessageThreadPanel: rows at or past MAX_THREAD_DEPTH get no
+  // onReply, so the action bar drops "Reply in thread".
+  const onReply = () => {};
+  for (const [depth, expectReply] of [
+    [0, true],
+    [1, false],
+    [2, false],
+  ]) {
+    const { container, unmount } = await render(
+      React.createElement(
+        MessageQuoteScope,
+        { value: { cancel() {}, quote() {}, target: null } },
+        React.createElement(MessageActionBar, {
+          message: timelineMessage({ depth }),
+          onReply: canReplyInThread(depth) ? onReply : undefined,
+          reactions: [],
+        }),
+      ),
+    );
+    const labels = actionLabels(container);
+    assert.equal(
+      labels.includes("Reply in thread"),
+      expectReply,
+      `depth ${depth}`,
+    );
+    assert.equal(labels.includes("Quote"), true, `depth ${depth}`);
+    await unmount();
+  }
 });
 
 test("the composer banner shows a removable quote chip", async () => {
