@@ -1,10 +1,15 @@
 import * as React from "react";
-import { Link2, Target, Unlink } from "lucide-react";
+import { Target } from "lucide-react";
 
-import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
-import { goalForThread, goalOutline, goalPath, goalRoot } from "../goalTree";
-import { useApplyGoalOpMutation, useGoalTreeQuery } from "../hooks";
+import { goalRoot } from "../goalTree";
+import {
+  useApplyGoalOpMutation,
+  useGoalAssigneeNames,
+  useGoalTreeQuery,
+} from "../hooks";
+import type { Apply } from "./GoalRows";
+import { ThreadGoalPanelView } from "./ThreadGoalPanelView";
 
 /**
  * Channel/DM header chip: always shows the layer 1 goal; opens the goals
@@ -47,9 +52,10 @@ export function GoalHeaderChip({
 }
 
 /**
- * Thread chip: the goal path this thread works on, or a picker to link it.
+ * Thread head goal panel: the goal this thread works on with its sub-goals,
+ * or a picker to link one. See `ThreadGoalPanelView`.
  */
-export function ThreadGoalChip({
+export function ThreadGoalPanel({
   channelId,
   threadRootId,
 }: {
@@ -58,81 +64,25 @@ export function ThreadGoalChip({
 }) {
   const goalQuery = useGoalTreeQuery(channelId);
   const applyMutation = useApplyGoalOpMutation(channelId);
-  const [open, setOpen] = React.useState(false);
   const tree = goalQuery.data?.tree;
-  if (!tree || !goalRoot(tree)) return null;
-
-  const goal = goalForThread(tree, threadRootId);
-  const path = goal ? goalPath(tree, goal.id) : [];
-  // The layer 1 goal is already in the channel header; show the rest.
-  const shown = path.length > 1 ? path.slice(1) : path;
-
+  const nameOf = useGoalAssigneeNames(tree);
+  const applyGoalOp = applyMutation.mutateAsync;
+  const apply = React.useCallback<Apply>(
+    (op) => applyGoalOp(op),
+    [applyGoalOp],
+  );
+  if (!tree) return null;
   return (
-    <div
-      className="flex min-w-0 items-center gap-1.5 px-4 pb-2 text-xs"
-      data-testid="thread-goal-chip"
-    >
-      <Target className="h-3.5 w-3.5 shrink-0 text-primary" />
-      <Popover onOpenChange={setOpen} open={open}>
-        <PopoverTrigger asChild>
-          <button
-            className="min-w-0 truncate rounded-md px-1 py-0.5 text-left hover:bg-muted"
-            type="button"
-          >
-            {goal ? (
-              <span className="text-foreground">
-                {shown.map((node) => node.title).join(" › ")}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-muted-foreground">
-                <Link2 className="h-3 w-3" />
-                Link this thread to a goal
-              </span>
-            )}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          className="max-h-80 w-80 overflow-y-auto p-1"
-        >
-          {goalOutline(tree).map(({ layer, node }) => (
-            <button
-              className={`flex w-full items-start gap-1 rounded-md px-2 py-1 text-left text-xs hover:bg-muted ${node.id === goal?.id ? "bg-muted" : ""}`}
-              data-testid={`thread-goal-option-${node.id}`}
-              key={node.id}
-              onClick={() => {
-                setOpen(false);
-                void applyMutation.mutateAsync({
-                  op: "link",
-                  id: node.id,
-                  thread: threadRootId,
-                });
-              }}
-              style={{ paddingLeft: `${0.5 + (layer - 1) * 0.75}rem` }}
-              type="button"
-            >
-              <span className="text-muted-foreground">L{layer}</span>
-              <span className="min-w-0 break-words">{node.title}</span>
-            </button>
-          ))}
-          {goal ? (
-            <button
-              className="mt-1 flex w-full items-center gap-1 rounded-md border-t border-border/60 px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted"
-              onClick={() => {
-                setOpen(false);
-                void applyMutation.mutateAsync({
-                  op: "unlink",
-                  thread: threadRootId,
-                });
-              }}
-              type="button"
-            >
-              <Unlink className="h-3 w-3" />
-              Unlink from goal
-            </button>
-          ) : null}
-        </PopoverContent>
-      </Popover>
-    </div>
+    <ThreadGoalPanelView
+      apply={apply}
+      error={
+        applyMutation.error instanceof Error
+          ? applyMutation.error.message
+          : null
+      }
+      nameOf={nameOf}
+      threadRootId={threadRootId}
+      tree={tree}
+    />
   );
 }
