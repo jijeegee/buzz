@@ -105,6 +105,11 @@ const REQ_PACING_INTERVAL: Duration = Duration::from_millis(125);
 /// below the relay's 50-frames/5s budget, and ensures the select! loop is never
 /// blocked for more than one REQ's worth of I/O between drain ticks.
 const DRAIN_BUDGET_PER_ITER: usize = 1;
+/// Minimum spacing between parked observer frames drained after a gate
+/// clears. Matches the executor's per-agent burst (5 frames/s on every tier),
+/// which keeps a drained backlog below the relay's per-agent burst cap
+/// (5 × 1.5 = 8/s) instead of draining at the REQ pacing rate of exactly 8/s.
+const OBSERVER_DRAIN_SPACING: Duration = Duration::from_millis(200);
 /// Maximum observer telemetry frames parked while the rate-limit gate is armed
 /// (or the socket is down). The upstream publisher ships at most ONE batched
 /// frame per second GLOBALLY (one publish slot per tick, regardless of how
@@ -1448,6 +1453,9 @@ struct BgState {
     /// Frames evicted from the bounded pending/in-flight observer buffers since
     /// summary log. Makes overflow loss visible instead of silent.
     gated_observer_dropped: u64,
+    /// When the last parked observer frame was drained; spaces the drain by
+    /// [`OBSERVER_DRAIN_SPACING`].
+    last_observer_drain: Option<tokio::time::Instant>,
     /// Channels whose REQ failed during `resubscribe_after_reconnect`.
     ///
     /// A single failed channel REQ is parked here instead of aborting the whole
@@ -1491,6 +1499,7 @@ impl BgState {
             gated_observer_pending: VecDeque::new(),
             observer_in_flight: VecDeque::new(),
             gated_observer_dropped: 0,
+            last_observer_drain: None,
             resubscribe_retry: HashSet::new(),
             connection_generation: 0,
             backoff_step: 0,
@@ -2240,6 +2249,13 @@ async fn run_background_task(
                 drain_pacing_next = state
                     .check_observer_publish_gate()
                     .or_else(|| Some(tokio::time::Instant::now() + REQ_PACING_INTERVAL));
+            }
+            // Parked observer frames wait out the drain spacing, not just
+            // the REQ pacing tick.
+            if let (Some(next), Some(last)) = (drain_pacing_next, state.last_observer_drain) {
+                if !state.gated_observer_pending.is_empty() {
+                    drain_pacing_next = Some(next.max(last + OBSERVER_DRAIN_SPACING));
+                }
             }
         }
 
@@ -3183,6 +3199,13 @@ async fn drain_gated_observer_pending(
         if state.check_observer_publish_gate().is_some() {
             break;
         }
+        let now = tokio::time::Instant::now();
+        if state
+            .last_observer_drain
+            .is_some_and(|last| now < last + OBSERVER_DRAIN_SPACING)
+        {
+            break;
+        }
         let Some(event) = state.gated_observer_pending.pop_front() else {
             break;
         };
@@ -3193,6 +3216,7 @@ async fn drain_gated_observer_pending(
             break;
         }
         state.track_observer_in_flight(event);
+        state.last_observer_drain = Some(now);
         sent += 1;
     }
     if state.gated_observer_pending.is_empty() && state.gated_observer_dropped > 0 {
@@ -7119,6 +7143,42 @@ mod tests {
         .expect("sign test observer frame")
     }
 
+    /// Parked observer frames drain no faster than one per
+    /// `OBSERVER_DRAIN_SPACING`, below the relay's per-agent burst cap.
+    /// Falsifying mutation: drop the spacing check → the second drain sends.
+    #[tokio::test]
+    async fn parked_observer_frames_drain_at_the_executor_burst_rate() {
+        let (mut client, mut server) = test_ws_pair().await;
+        let mut state = BgState::new();
+        let keys = Keys::generate();
+        state
+            .gated_observer_pending
+            .push_back(Box::new(make_observer_frame(&keys)));
+        state
+            .gated_observer_pending
+            .push_back(Box::new(make_observer_frame(&keys)));
+
+        assert_eq!(
+            drain_gated_observer_pending(&mut client, &mut state, 1).await,
+            1
+        );
+        assert_eq!(next_test_frame(&mut server).await[0], "EVENT");
+        assert_eq!(
+            drain_gated_observer_pending(&mut client, &mut state, 1).await,
+            0,
+            "a second frame inside the spacing must wait"
+        );
+        assert_eq!(state.gated_observer_pending.len(), 1);
+
+        tokio::time::sleep(OBSERVER_DRAIN_SPACING).await;
+        assert_eq!(
+            drain_gated_observer_pending(&mut client, &mut state, 1).await,
+            1
+        );
+        assert_eq!(next_test_frame(&mut server).await[0], "EVENT");
+        assert!(state.gated_observer_pending.is_empty());
+    }
+
     /// While the rate-limit gate is armed, an observer frame (kind 24200) is
     /// parked — not silently dropped — and delivered by the drain once the
     /// gate clears. A typing indicator in the same window stays dropped.
@@ -7238,6 +7298,8 @@ mod tests {
         );
 
         for expected in [&first, &second, &third] {
+            // Parked frames drain one per `OBSERVER_DRAIN_SPACING`.
+            state.last_observer_drain = None;
             assert_eq!(
                 drain_gated_observer_pending(&mut client, &mut state, 1).await,
                 1
