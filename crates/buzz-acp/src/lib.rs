@@ -24,6 +24,7 @@ mod observer_policy;
 mod observer_summary;
 #[cfg(test)]
 mod observer_tier_tests;
+mod observer_watch;
 mod pool;
 mod pool_lifecycle;
 mod prompt_framing;
@@ -1054,6 +1055,9 @@ struct ObserverPacer {
     policy: observer_policy::ObserverPolicy,
     window: observer_policy::SendWindow,
     share: observer_policy::AdoptedShare,
+    /// Whether the owner is watching: outside the window every tier is
+    /// summarised at the free level ([`observer_watch`]).
+    watch: observer_watch::ObserverWatch,
     /// Observer-only relay gate: no frame before this instant.
     gate_until: Option<tokio::time::Instant>,
     /// A slot was refused (relay gate or own budget) since the queue was last
@@ -1063,13 +1067,14 @@ struct ObserverPacer {
 }
 
 impl ObserverPacer {
-    fn new(policy: observer_policy::ObserverPolicy) -> Self {
+    fn new(policy: observer_policy::ObserverPolicy, watch: observer_watch::ObserverWatch) -> Self {
         let mut pacer = Self {
             queue: ObserverPublishQueue::default(),
             summarizer: Default::default(),
             policy,
             window: Default::default(),
             share: Default::default(),
+            watch,
             gate_until: None,
             limited: false,
         };
@@ -1086,8 +1091,16 @@ impl ObserverPacer {
         self.share.clear();
     }
 
+    /// Summarise `event` at the detail level in effect NOW (the tier while
+    /// watched, free otherwise) and queue it. Events keep the level they were
+    /// queued at, so opening the window never upgrades an older summary.
+    /// Rate and size limits stay the tier's either way: free summaries fit
+    /// them trivially, and they are what the relay enforces per tier.
     fn ingest(&mut self, event: observer::ObserverEvent) {
-        if let Some(event) = self.summarizer.apply(self.policy.tier, event) {
+        let tier = self
+            .watch
+            .effective_tier(self.policy.tier, tokio::time::Instant::now());
+        if let Some(event) = self.summarizer.apply(tier, event) {
             self.queue.ingest(event);
         }
     }
@@ -1376,7 +1389,8 @@ impl ObserverPublishQueue {
                 .map(|&index| (self.events[index].1, &self.events[index].2))
                 .collect();
             let source_events = entries.iter().map(|(count, _)| count).sum();
-            let gap = observer_summary::gap_event(&entries, self.detail);
+            let detail = observer_summary::gap_detail(&entries, self.detail);
+            let gap = observer_summary::gap_event(&entries, detail);
             gaps.insert(members[0], (source_events, gap));
         }
 
@@ -1585,7 +1599,7 @@ async fn run_relay_observer_publisher(
     let (policy, source) = observer_policy::initial_policy(fetched, tiers.persisted);
     tracing::info!(tier = ?policy.tier, ?source, "relay observer telemetry policy");
 
-    let mut pacer = ObserverPacer::new(policy);
+    let mut pacer = ObserverPacer::new(policy, tiers.watch.clone());
     let max_snapshot_seq = snapshot.iter().map(|event| event.seq).max().unwrap_or(0);
     for event in snapshot {
         pacer.ingest(event);
@@ -2100,6 +2114,7 @@ fn handle_relay_observer_control_event(
     observer: Option<&observer::ObserverHandle>,
     owner_pubkey_hex: &str,
     event_publisher: RelayEventPublisher,
+    watch: &observer_watch::ObserverWatch,
 ) {
     // Defense-in-depth: verify signature even though the relay already checked.
     if let Err(e) = buzz_core::verify_event(&event) {
@@ -2150,6 +2165,9 @@ fn handle_relay_observer_control_event(
         }
         Some("query_context_usage") => {
             handle_query_context_usage_control(&payload, pool, queue, observer);
+        }
+        Some("watching") => {
+            observer_watch::apply_watching_control(&payload, watch, tokio::time::Instant::now());
         }
         Some("publish_project_owner_announcements") => {
             handle_publish_project_owner_announcements_control(
@@ -3527,6 +3545,8 @@ async fn run_harness(
     let owner_cache = OwnerCache::new(startup_owner.clone());
 
     let mut relay_observer_control_rx = None;
+    // Shared by the control-frame handler (writer) and the publisher (reader).
+    let observer_watch = observer_watch::ObserverWatch::default();
     let mut relay_observer_publisher_task = None;
     let mut relay_observer_publisher = None;
     // The relay observer encrypts frames to the owner with NIP-44, which needs
@@ -3573,6 +3593,7 @@ async fn run_harness(
                         persisted,
                         refresh,
                         feedback: relay.observer_feedback(),
+                        watch: observer_watch.clone(),
                     };
                     relay_observer_publisher = Some((
                         observer,
@@ -4034,6 +4055,7 @@ async fn run_harness(
                                     observer.as_ref(),
                                     owner_hex,
                                     relay.event_publisher(),
+                                    &observer_watch,
                                 );
                             } else {
                                 tracing::warn!("observer control frame received but no owner resolved — dropping");
