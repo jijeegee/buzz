@@ -173,6 +173,51 @@ void main() {
     expect((linked.id, linked.thread), (add.id, _otherThread));
   });
 
+  testWidgets('the goal card toggles the linked goal and relinks', (
+    tester,
+  ) async {
+    final actions = await _pump(
+      tester,
+      const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
+    );
+    // Linking started srv; the card's status button moves it on.
+    await tester.tap(find.byKey(const ValueKey('goal-status-srv')));
+    await tester.pumpAndSettle();
+    final toggle = actions.batches.single.single as UpdateGoal;
+    expect((toggle.id, toggle.status), ('srv', GoalStatus.done));
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('thread-goal-change')),
+    );
+    await tester.tap(find.byKey(const ValueKey('thread-goal-change')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('thread-goal-link-ui')).last);
+    await tester.pumpAndSettle();
+    final link = actions.batches.last.single as LinkThread;
+    expect((link.id, link.thread), ('ui', _thread));
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('thread-goal-change')),
+    );
+    await tester.tap(find.byKey(const ValueKey('thread-goal-change')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('thread-goal-create-under-ui')).last,
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-editor-title')),
+      'Relinked work',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('goal-editor-save')));
+    await tester.pumpAndSettle();
+    final batch = actions.batches.last;
+    expect(batch, hasLength(2));
+    expect((batch[0] as AddGoal).parent, 'ui');
+    expect((batch[1] as LinkThread).thread, _thread);
+  });
+
   test('unlink removes the thread from every goal', () {
     final tree = _tree().apply(
       const UnlinkThread(thread: _thread),

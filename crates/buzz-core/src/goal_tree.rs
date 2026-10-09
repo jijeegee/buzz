@@ -558,7 +558,12 @@ impl GoalTree {
                 for node in &mut self.nodes {
                     node.threads.retain(|t| *t != thread);
                 }
-                self.node_mut(id)?.threads.push(thread);
+                let node = self.node_mut(id)?;
+                node.threads.push(thread);
+                // Work has started on a goal once a thread is linked to it.
+                if node.status == GoalStatus::Open {
+                    node.status = GoalStatus::InProgress;
+                }
                 self.touch(id, editor, now)?;
             }
             GoalOp::Unlink { thread } => {
@@ -847,6 +852,22 @@ mod tests {
         .unwrap();
         assert!(tree.nodes.is_empty());
         assert!(tree.validate().is_ok());
+    }
+
+    /// Same fixture as `mobile/test/features/goals/goal_tree_test.dart`: the
+    /// Rust and Dart implementations must link identically.
+    #[test]
+    fn link_fixture_matches_mobile() {
+        let fx: serde_json::Value =
+            serde_json::from_str(include_str!("../fixtures/goal_link_fixture.json")).unwrap();
+        let mut tree = GoalTree::parse(fx["before"].as_str().unwrap()).unwrap();
+        let editor = fx["editor"].as_str().unwrap();
+        let now = fx["now"].as_u64().unwrap();
+        for op in fx["ops"].as_array().unwrap() {
+            let op: GoalOp = serde_json::from_value(op.clone()).unwrap();
+            tree.apply(&op, editor, now).unwrap();
+        }
+        assert_eq!(tree.to_content().unwrap(), fx["after"].as_str().unwrap());
     }
 
     #[test]

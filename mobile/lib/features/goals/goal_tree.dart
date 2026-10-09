@@ -441,6 +441,10 @@ class LinkThread extends GoalOp {
         node.id == id
             ? node.copyWith(
                 threads: [...node.threads.where((t) => t != thread), thread],
+                // Work has started on a goal once a thread is linked to it.
+                status: node.status == GoalStatus.open
+                    ? GoalStatus.inProgress
+                    : null,
                 updatedBy: editor,
                 updatedAt: now,
               )

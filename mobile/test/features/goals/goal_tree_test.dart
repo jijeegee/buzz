@@ -1,5 +1,8 @@
 import 'package:buzz/features/goals/goal_provider.dart';
 import 'package:buzz/features/goals/goal_tree.dart';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 const _editor =
@@ -23,6 +26,27 @@ const _relayFixture =
     r'{"v":1,"nodes":[{"id":"root","parent":null,"title":"Ship it","note":"Key info","status":"open","order":0,"updated_by":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","updated_at":1700000000},{"id":"a","parent":"root","title":"A","status":"in_progress","threads":["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],"order":0,"updated_by":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","updated_at":1700000000}]}';
 
 void main() {
+  test('links exactly like buzz-core (shared fixture)', () {
+    final fixture =
+        jsonDecode(
+              File(
+                '../crates/buzz-core/fixtures/goal_link_fixture.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    var tree = GoalTree.parse(fixture['before'] as String);
+    for (final raw in fixture['ops'] as List) {
+      final op = raw as Map<String, dynamic>;
+      expect(op['op'], 'link');
+      tree = tree.apply(
+        LinkThread(id: op['id'] as String, thread: op['thread'] as String),
+        editor: fixture['editor'] as String,
+        now: fixture['now'] as int,
+      );
+    }
+    expect(tree.toContent(), fixture['after']);
+  });
+
   test('writes the format the relay validates', () {
     var tree = GoalTree.empty;
     for (final op in <GoalOp>[

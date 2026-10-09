@@ -33,6 +33,7 @@ import { switchManagedAgentModel } from "@/shared/api/agentControl";
 import { getAudioMediaLoadSchedulerSnapshot } from "@/features/messages/lib/audioMediaLoadScheduler";
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
 import { selectMockHistory } from "./e2eBridgeHistory.ts";
+import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
 import {
   createMockSubscription,
   hasMockSubscription,
@@ -15625,8 +15626,11 @@ export function maybeInstallE2eTauriMocks() {
         }
         return null;
       }
-      default:
+      default: {
+        const goals = handleGoalsMockCommand(command, payload);
+        if (goals) return goals.value;
         throw new Error(`Unsupported mocked Tauri command: ${command}`);
+      }
     }
   };
   window.__BUZZ_E2E_INVOKE_MOCK_COMMAND__ = (command, payload) =>
