@@ -63,7 +63,7 @@ fn gate(pacer: &mut ObserverPacer, message: &str) {
 
 #[tokio::test(start_paused = true)]
 async fn gated_events_coalesce_into_the_next_allowed_frame() {
-    let mut pacer = ObserverPacer::new(ObserverPolicy::FREE);
+    let mut pacer = ObserverPacer::new(ObserverPolicy::FREE, Default::default());
     gate(
         &mut pacer,
         "rate-limited: observer agent frames per minute exceeded (tier free); retry in 3s",
@@ -89,7 +89,7 @@ async fn gated_events_coalesce_into_the_next_allowed_frame() {
 
 #[tokio::test(start_paused = true)]
 async fn limited_backlog_folds_oldest_completed_pairs_and_keeps_running_tools() {
-    let mut pacer = ObserverPacer::new(ObserverPolicy::FREE);
+    let mut pacer = ObserverPacer::new(ObserverPolicy::FREE, Default::default());
     gate(
         &mut pacer,
         "rate-limited: observer x exceeded (tier free); retry in 1s",
@@ -139,7 +139,7 @@ async fn limited_backlog_folds_oldest_completed_pairs_and_keeps_running_tools() 
 
 #[tokio::test(start_paused = true)]
 async fn completion_of_an_already_sent_start_is_never_folded() {
-    let mut pacer = ObserverPacer::new(ObserverPolicy::FREE);
+    let mut pacer = ObserverPacer::new(ObserverPolicy::FREE, Default::default());
     pacer.ingest(tool(1, "early", true, "in_progress", 10));
     let frame = pacer.next_frame(Instant::now()).unwrap().unwrap();
     assert_eq!(frame_events(&frame).len(), 1, "start sent on its own");
@@ -179,7 +179,7 @@ async fn completion_of_an_already_sent_start_is_never_folded() {
 
 #[tokio::test(start_paused = true)]
 async fn relay_share_narrows_the_minute_budget_until_policy_changes() {
-    let mut pacer = ObserverPacer::new(ObserverPolicy::PREMIUM);
+    let mut pacer = ObserverPacer::new(ObserverPolicy::PREMIUM, Default::default());
     gate(
         &mut pacer,
         "rate-limited: observer agent frames per minute exceeded (tier premium); retry in 1s; \
@@ -207,7 +207,7 @@ async fn relay_share_narrows_the_minute_budget_until_policy_changes() {
 
 #[tokio::test(start_paused = true)]
 async fn own_budget_caps_frames_and_bytes_per_minute() {
-    let mut pacer = ObserverPacer::new(ObserverPolicy::FREE);
+    let mut pacer = ObserverPacer::new(ObserverPolicy::FREE, Default::default());
     let start = Instant::now();
     let mut now = start;
     let mut sent = 0usize;
@@ -428,4 +428,239 @@ async fn relay_refusal_pauses_the_publisher_and_requests_a_policy_refresh() {
     tokio::time::sleep(Duration::from_millis(1_100)).await;
     assert!(published_rx.try_recv().is_ok(), "sent once the gate lifts");
     task.abort();
+}
+
+// ── Watching window ─────────────────────────────────────────────────────────
+
+/// Every inner event the pacer releases for everything queued.
+fn drain(pacer: &mut ObserverPacer) -> Vec<Value> {
+    let mut events = Vec::new();
+    let mut now = Instant::now();
+    loop {
+        match pacer.next_frame(now) {
+            Ok(Some(frame)) => events.extend(frame_events(&frame)),
+            Ok(None) => return events,
+            Err(at) => now = at,
+        }
+    }
+}
+
+fn command_len(event: &Value) -> Option<usize> {
+    event["payload"]["params"]["update"]["rawInput"]["command"]
+        .as_str()
+        .map(str::len)
+}
+
+fn on_channel(mut event: observer::ObserverEvent, channel: &str) -> observer::ObserverEvent {
+    event.channel_id = Some(channel.to_string());
+    event
+}
+
+#[tokio::test(start_paused = true)]
+async fn unwatched_premium_sends_free_summaries_marked_free() {
+    let mut pacer = ObserverPacer::new(ObserverPolicy::PREMIUM, Default::default());
+    pacer.ingest(event(
+        1,
+        "turn_started",
+        json!({ "prompt": "p".repeat(500) }),
+    ));
+    pacer.ingest(tool(2, "a", true, "pending", 20_000));
+    pacer.ingest(event(
+        3,
+        "turn_completed",
+        json!({ "stopReason": "end_turn" }),
+    ));
+    let events = drain(&mut pacer);
+    assert_eq!(events.len(), 3);
+    assert_eq!(
+        events[1]["detail"], "free",
+        "premium owner, nobody watching"
+    );
+    assert_eq!(
+        command_len(&events[1]),
+        None,
+        "arguments reduced to a preview"
+    );
+    let preview = &events[1]["payload"]["params"]["update"]["rawInput"]["preview"];
+    assert_eq!(preview.as_str().unwrap().chars().count(), 41);
+    for lifecycle in [&events[0], &events[2]] {
+        assert!(lifecycle.get("detail").is_none(), "lifecycle unchanged");
+    }
+    assert_eq!(events[0]["payload"]["prompt"].as_str().unwrap().len(), 500);
+}
+
+#[tokio::test(start_paused = true)]
+async fn watching_window_switches_detail_and_expires_after_a_minute() {
+    let watch = observer_watch::ObserverWatch::default();
+    let mut pacer = ObserverPacer::new(ObserverPolicy::PREMIUM, watch.clone());
+    let control = json!({ "type": "watching", "channelId": "chan" });
+    assert!(observer_watch::apply_watching_control(
+        &control,
+        &watch,
+        Instant::now()
+    ));
+
+    pacer.ingest(event(1, "turn_started", json!({})));
+    pacer.ingest(tool(2, "a", true, "pending", 20_000));
+    let events = drain(&mut pacer);
+    assert!(events[1].get("detail").is_none(), "watched premium: full");
+    assert_eq!(command_len(&events[1]), Some(20_000));
+
+    tokio::time::advance(Duration::from_secs(59)).await;
+    pacer.ingest(tool(3, "b", true, "pending", 20_000));
+    assert_eq!(command_len(&drain(&mut pacer)[0]), Some(20_000));
+
+    tokio::time::advance(Duration::from_secs(1)).await;
+    pacer.ingest(tool(4, "c", true, "pending", 20_000));
+    pacer.ingest(event(5, "turn_completed", json!({})));
+    let events = drain(&mut pacer);
+    assert_eq!(events[0]["detail"], "free", "window expired after 60 s");
+    assert!(events[1].get("detail").is_none(), "lifecycle unchanged");
+
+    observer_watch::apply_watching_control(&control, &watch, Instant::now());
+    pacer.ingest(tool(6, "d", true, "pending", 20_000));
+    let events = drain(&mut pacer);
+    assert!(events[0].get("detail").is_none(), "re-opened: full again");
+    assert_eq!(command_len(&events[0]), Some(20_000));
+}
+
+#[tokio::test(start_paused = true)]
+async fn watched_standard_keeps_standard_and_unwatched_drops_to_free() {
+    let watch = observer_watch::ObserverWatch::default();
+    let mut pacer = ObserverPacer::new(ObserverPolicy::STANDARD, watch.clone());
+    pacer.ingest(tool(1, "a", true, "pending", 1_000));
+    assert_eq!(drain(&mut pacer)[0]["detail"], "free");
+    watch.open(Instant::now());
+    pacer.ingest(tool(2, "b", true, "pending", 1_000));
+    assert_eq!(drain(&mut pacer)[0]["detail"], "standard");
+}
+
+#[tokio::test(start_paused = true)]
+async fn events_queued_before_the_window_opens_stay_summarised() {
+    let watch = observer_watch::ObserverWatch::default();
+    let mut pacer = ObserverPacer::new(ObserverPolicy::PREMIUM, watch.clone());
+    pacer.ingest(tool(1, "a", true, "pending", 20_000));
+    watch.open(Instant::now());
+    pacer.ingest(tool(2, "b", true, "pending", 20_000));
+    let events = drain(&mut pacer);
+    assert_eq!(events[0]["detail"], "free");
+    assert!(events[1].get("detail").is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_window_is_agent_wide_across_channels() {
+    let watch = observer_watch::ObserverWatch::default();
+    let mut pacer = ObserverPacer::new(ObserverPolicy::PREMIUM, watch.clone());
+    // The app watches channel "viewed"; work in another channel is full too.
+    observer_watch::apply_watching_control(
+        &json!({ "type": "watching", "channelId": "viewed" }),
+        &watch,
+        Instant::now(),
+    );
+    pacer.ingest(on_channel(tool(1, "a", true, "pending", 20_000), "viewed"));
+    pacer.ingest(on_channel(tool(2, "b", true, "pending", 20_000), "other"));
+    let events = drain(&mut pacer);
+    assert_eq!(events.len(), 2);
+    assert!(events
+        .iter()
+        .all(|event| command_len(event) == Some(20_000)));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_gap_folding_unwatched_summaries_is_marked_free_on_premium() {
+    let mut pacer = ObserverPacer::new(ObserverPolicy::PREMIUM, Default::default());
+    // Fill the queue with unwatched (free) completed pairs, then force a fold.
+    for i in 0..40u64 {
+        let id = format!("t{i}");
+        pacer.ingest(tool(i * 2, &id, true, "pending", 10));
+        pacer.ingest(tool(i * 2 + 1, &id, false, "completed", 10));
+    }
+    let entries: Vec<usize> = (0..pacer.queue.events.len()).collect();
+    assert!(pacer.queue.fold_oldest(&entries, usize::MAX));
+    let gap = &pacer.queue.events[0].2;
+    assert_eq!(gap.kind, observer_summary::OBSERVER_GAP_KIND);
+    assert_eq!(gap.detail.as_deref(), Some("free"));
+
+    let full = tool(3, "b", true, "pending", 10);
+    assert_eq!(observer_summary::gap_detail(&[(1, &full)], None), None);
+    assert_eq!(
+        observer_summary::gap_detail(&[(1, &full)], Some("standard")),
+        Some("standard")
+    );
+}
+
+/// The real publisher loop running with `watch`, and its decrypted frames.
+struct WatchedPublisher {
+    observer: observer::ObserverHandle,
+    owner_keys: Keys,
+    published_rx: tokio::sync::mpsc::Receiver<nostr::Event>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl WatchedPublisher {
+    fn start(policy: ObserverPolicy, watch: observer_watch::ObserverWatch) -> Self {
+        let observer = observer::ObserverHandle::in_process();
+        let agent_keys = Keys::generate();
+        let owner_keys = Keys::generate();
+        let (publisher, published_rx) = RelayEventPublisher::test_pair();
+        let (links, _feedback) = ObserverTierLinks::fixed(policy);
+        let links = ObserverTierLinks { watch, ..links };
+        let rx = observer.subscribe();
+        let task = tokio::spawn(run_relay_observer_publisher(
+            observer.snapshot(),
+            rx,
+            publisher,
+            agent_keys.clone(),
+            agent_keys.public_key().to_hex(),
+            owner_keys.public_key().to_hex(),
+            owner_keys.public_key(),
+            links,
+        ));
+        Self {
+            observer,
+            owner_keys,
+            published_rx,
+            task,
+        }
+    }
+
+    fn emit_tool(&self) {
+        let payload = tool(0, "call", true, "pending", 20_000).payload;
+        let context = observer::context_for(None, None, Some("turn".into()));
+        self.observer.emit("acp_read", Some(0), &context, payload);
+    }
+
+    async fn next(&mut self) -> Value {
+        tokio::time::sleep(Duration::from_millis(1_100)).await;
+        let frame = self.published_rx.try_recv().expect("one frame published");
+        decrypt_observer_payload(&self.owner_keys, &frame).expect("decrypt frame")
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn publisher_follows_the_shared_watch_and_a_restart_starts_closed() {
+    let watch = observer_watch::ObserverWatch::default();
+    let mut publisher = WatchedPublisher::start(ObserverPolicy::PREMIUM, watch.clone());
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    publisher.emit_tool();
+    assert_eq!(publisher.next().await["detail"], "free");
+
+    // The control handler and the publisher share one window.
+    observer_watch::apply_watching_control(
+        &json!({ "type": "watching", "channelId": "c" }),
+        &watch,
+        Instant::now(),
+    );
+    publisher.emit_tool();
+    let frame = publisher.next().await;
+    assert!(frame.get("detail").is_none());
+    assert_eq!(command_len(&frame), Some(20_000));
+    publisher.task.abort();
+
+    // A restarted executor has a fresh window: closed.
+    let mut restarted = WatchedPublisher::start(ObserverPolicy::PREMIUM, Default::default());
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    restarted.emit_tool();
+    assert_eq!(restarted.next().await["detail"], "free");
+    restarted.task.abort();
 }

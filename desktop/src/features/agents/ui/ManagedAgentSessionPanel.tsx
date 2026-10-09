@@ -26,6 +26,7 @@ import type {
 import type { AgentSessionTranscriptVariant } from "./agentSessionTranscriptContext";
 import {
   deriveLatestSessionId,
+  isLiveSessionView,
   mergeObserverEventWindows,
   resolveDisplayEvents,
   resolveRawRailLayout,
@@ -38,6 +39,7 @@ import {
 } from "./useObserverEvents";
 import { buildTranscriptState } from "./agentSessionTranscript";
 import { isObserverSummaryView } from "./agentSessionObserverSummary";
+import { useObserverWatching } from "../useObserverWatching";
 
 type ManagedAgentSessionPanelProps = {
   agent: Pick<ManagedAgent, "pubkey" | "name"> & {
@@ -85,6 +87,15 @@ export function ManagedAgentSessionPanel({
   const { connectionState, errorMessage, events } = useObserverEvents(
     hasObserver,
     agent.pubkey,
+  );
+  // A visible live view asks the executor for tier-level detail.
+  useObserverWatching(
+    agent.pubkey,
+    channelId,
+    isLiveSessionView(
+      hasObserver,
+      transcriptOverride != null || rawEventsOverride != null,
+    ),
   );
 
   // Channel-scoped live events (capped at MAX_OBSERVER_EVENTS) and uncapped

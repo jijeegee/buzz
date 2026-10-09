@@ -477,6 +477,32 @@ fn tool_name(event: &ObserverEvent) -> Option<String> {
         .map(|name| truncate_chars(name, TITLE_CHARS))
 }
 
+/// `detail` of a gap folding `folded`: the lowest level among its members,
+/// where an unmarked member counts as `tier_detail`. A gap that folds free
+/// summaries (queued while nobody watched) is marked free even on premium.
+pub(crate) fn gap_detail(
+    folded: &[(u64, &ObserverEvent)],
+    tier_detail: Option<&'static str>,
+) -> Option<&'static str> {
+    fn rank(detail: Option<&str>) -> u8 {
+        match detail {
+            Some("free") => 0,
+            Some(_) => 1,
+            None => 2,
+        }
+    }
+    folded
+        .iter()
+        .map(|(_, event)| match event.detail.as_deref() {
+            Some("free") => Some("free"),
+            Some("standard") => Some("standard"),
+            _ => tier_detail,
+        })
+        .chain(std::iter::once(tier_detail))
+        .min_by_key(|detail| rank(*detail))
+        .flatten()
+}
+
 /// Build the `observer_gap` event standing in for `folded` (oldest first),
 /// each paired with the number of source events it represents.
 pub(crate) fn gap_event(folded: &[(u64, &ObserverEvent)], detail: Option<&str>) -> ObserverEvent {

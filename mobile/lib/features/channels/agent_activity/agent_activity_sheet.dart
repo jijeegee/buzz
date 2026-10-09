@@ -10,6 +10,7 @@ import '../../../shared/profile/user_cache_provider.dart';
 import '../channel_identity_names_provider.dart';
 import 'observer_models.dart';
 import 'observer_subscription.dart';
+import 'observer_watching.dart';
 import 'transcript_item_widget.dart';
 
 /// Full-screen modal bottom sheet showing the live agent activity transcript.
@@ -33,6 +34,9 @@ class AgentActivitySheet extends HookConsumerWidget {
     );
     final transcript = observerState.transcript;
     final connection = observerState.connection;
+
+    // While open in the foreground, ask the agent for tier-level detail.
+    useObserverWatching(ref, channelId: channelId, agentPubkey: agentPubkey);
 
     // Resolve bot name.
     final botName = watchChannelIdentityLabel(ref, channelId, agentPubkey);

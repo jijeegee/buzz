@@ -207,6 +207,8 @@ pub(crate) struct ObserverTierLinks {
     pub refresh: Arc<Notify>,
     /// Observer rejections reported by the relay socket.
     pub feedback: watch::Receiver<crate::relay::ObserverRelayFeedback>,
+    /// The owner's watching window, opened by `watching` control frames.
+    pub watch: crate::observer_watch::ObserverWatch,
 }
 
 impl ObserverTierLinks {
@@ -225,6 +227,8 @@ impl ObserverTierLinks {
                 persisted: None,
                 refresh: Arc::new(Notify::new()),
                 feedback: feedback_rx,
+                // Pinned links describe tier behavior: always watched.
+                watch: crate::observer_watch::ObserverWatch::pinned_open(),
             },
             feedback_tx,
         )

@@ -112,3 +112,15 @@ export function resolveRawRailLayout(
   if (rawLayout === "exclusive") return { mode: "exclusive" };
   return { mode: "side" };
 }
+
+/**
+ * Whether a session panel shows the agent's live activity, as opposed to
+ * archived history of a stopped agent or a caller-supplied (E2E) snapshot.
+ * Only live views send the observer `watching` signal.
+ */
+export function isLiveSessionView(
+  hasObserver: boolean,
+  hasOverride: boolean,
+): boolean {
+  return hasObserver && !hasOverride;
+}
