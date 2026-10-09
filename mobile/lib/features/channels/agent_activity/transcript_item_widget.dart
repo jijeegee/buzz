@@ -347,6 +347,22 @@ class _ToolItemWidget extends HookWidget {
                 ),
               ],
             ),
+            // Summarised tools carry only a short argument preview; show it
+            // inline instead of behind the Arguments toggle.
+            if (item.argsPreview case final preview?) ...[
+              const SizedBox(height: Grid.half),
+              Text(
+                preview,
+                key: const Key('tool-args-preview'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ],
             // Args section
             if (item.args.isNotEmpty) ...[
               const SizedBox(height: Grid.half),

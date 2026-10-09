@@ -1,0 +1,263 @@
+{
+  "_comment": "Turn boundaries close leftover tools: turn_completed marks that turn's running tools completed; a turn_error for the turn (sent after turn_completed by buzz-acp) marks them failed. Tools that finished on their own, and tools of turns that have not ended, keep their status.",
+  "events": [
+    {
+      "seq": 1,
+      "timestamp": "2026-10-10T00:00:01.000000+00:00",
+      "kind": "turn_started",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-a",
+      "payload": {
+        "source": "channel",
+        "triggeringEventIds": []
+      }
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-10-10T00:00:02.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-a",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "a-1",
+            "status": "in_progress",
+            "kind": "execute",
+            "title": "Run tests",
+            "rawInput": {
+              "preview": "{\"command\":\"cargo test\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "timestamp": "2026-10-10T00:00:03.000000+00:00",
+      "kind": "observer_gap",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-a",
+      "detail": "free",
+      "payload": {
+        "folded_events": 4,
+        "folded_tools": 1,
+        "tool_names": [
+          "Bash"
+        ],
+        "from_seq": 3,
+        "to_seq": 6
+      }
+    },
+    {
+      "seq": 7,
+      "timestamp": "2026-10-10T00:00:07.000000+00:00",
+      "kind": "turn_started",
+      "agentIndex": 0,
+      "channelId": "0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-c",
+      "payload": {
+        "source": "channel",
+        "triggeringEventIds": []
+      }
+    },
+    {
+      "seq": 8,
+      "timestamp": "2026-10-10T00:00:08.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-c",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "c-1",
+            "status": "in_progress",
+            "kind": "execute",
+            "title": "Watch logs",
+            "rawInput": {
+              "preview": "{\"command\":\"tail -f app.log\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 9,
+      "timestamp": "2026-10-10T00:00:09.000000+00:00",
+      "kind": "turn_completed",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-a",
+      "payload": {}
+    },
+    {
+      "seq": 10,
+      "timestamp": "2026-10-10T00:00:10.000000+00:00",
+      "kind": "turn_started",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-b",
+      "payload": {
+        "source": "channel",
+        "triggeringEventIds": []
+      }
+    },
+    {
+      "seq": 11,
+      "timestamp": "2026-10-10T00:00:11.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-b",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "b-1",
+            "status": "pending",
+            "kind": "read",
+            "title": "Read file",
+            "rawInput": {
+              "preview": "{\"path\":\"Cargo.toml\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 12,
+      "timestamp": "2026-10-10T00:00:12.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-b",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "b-1",
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "seq": 13,
+      "timestamp": "2026-10-10T00:00:13.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-b",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "b-2",
+            "status": "in_progress",
+            "kind": "execute",
+            "title": "Build",
+            "rawInput": {
+              "preview": "{\"command\":\"cargo build\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 14,
+      "timestamp": "2026-10-10T00:00:14.000000+00:00",
+      "kind": "turn_completed",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-b",
+      "payload": {}
+    },
+    {
+      "seq": 15,
+      "timestamp": "2026-10-10T00:00:15.000000+00:00",
+      "kind": "turn_error",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-b",
+      "payload": {
+        "outcome": "agent_exited",
+        "error": "agent process exited"
+      }
+    }
+  ],
+  "expected": {
+    "summaryView": true,
+    "rows": [
+      {
+        "type": "tool",
+        "title": "Run tests",
+        "status": "completed",
+        "args": "{\"command\":\"cargo test\"}",
+        "result": ""
+      },
+      {
+        "type": "gap",
+        "text": "1 tool ran in between (Bash)"
+      },
+      {
+        "type": "tool",
+        "title": "Watch logs",
+        "status": "executing",
+        "args": "{\"command\":\"tail -f app.log\"}",
+        "result": ""
+      },
+      {
+        "type": "tool",
+        "title": "Read file",
+        "status": "completed",
+        "args": "{\"path\":\"Cargo.toml\"}",
+        "result": ""
+      },
+      {
+        "type": "tool",
+        "title": "Build",
+        "status": "failed",
+        "args": "{\"command\":\"cargo build\"}",
+        "result": ""
+      }
+    ]
+  }
+}

@@ -82,7 +82,11 @@ export function buildCompactToolSummary(item: ToolItem): CompactToolSummary {
     action: descriptor.action ?? null,
     kind: descriptor.renderClass,
     label: labelForStatus(descriptor, item.status, failed, running),
-    preview: fileEditSummary?.filename ?? descriptor.preview,
+    preview:
+      fileEditSummary?.filename ??
+      descriptor.preview ??
+      item.argsPreview ??
+      null,
     fileEditSummary,
     fileEditDiff,
     fileReadContent,

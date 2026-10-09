@@ -1,0 +1,203 @@
+{
+  "_comment": "Real buzz-acp output on the free observer tier (one mock-agent turn with one large tool read), batch envelopes unwrapped and keys/paths replaced. Assistant text and thoughts are dropped by the tier; the tool keeps only its title and a rawInput preview.",
+  "events": [
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "kind": "turn_started",
+      "payload": {
+        "source": "channel",
+        "triggeringEventIds": [
+          "081afd8443d54213a799764f1272627c1aa3cecfc3df2a1e1b441da3074570ee"
+        ]
+      },
+      "seq": 5,
+      "sessionId": null,
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "timestamp": "2026-10-09T19:18:17.608774500+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    },
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "detail": "free",
+      "kind": "acp_write",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "session/new"
+      },
+      "seq": 6,
+      "sessionId": null,
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "timestamp": "2026-10-09T19:18:17.807044700+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    },
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "detail": "free",
+      "kind": "acp_read",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": {}
+      },
+      "seq": 7,
+      "sessionId": null,
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "timestamp": "2026-10-09T19:18:17.810451100+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    },
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "kind": "session_config_captured",
+      "payload": {
+        "configOptions": null,
+        "modelOverridden": false,
+        "models": null,
+        "modes": null,
+        "relayUrl": "ws://127.0.0.1:3198"
+      },
+      "seq": 8,
+      "sessionId": null,
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "timestamp": "2026-10-09T19:18:17.810592100+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    },
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "kind": "session_resolved",
+      "payload": {
+        "isNewSession": true,
+        "sessionId": "mock-43628"
+      },
+      "seq": 9,
+      "sessionId": "mock-43628",
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "timestamp": "2026-10-09T19:18:17.810699200+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    },
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "kind": "prompt_context_delivery",
+      "payload": {
+        "eventDeltaCount": 1,
+        "promptBytes": 1385,
+        "standingContextIncluded": false
+      },
+      "seq": 10,
+      "sessionId": "mock-43628",
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "timestamp": "2026-10-09T19:18:18.361914900+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    },
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "detail": "free",
+      "kind": "acp_write",
+      "payload": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "method": "session/prompt",
+        "params": {
+          "prompt": [
+            {
+              "text": "<context>\nScope: channel\nSession scope: …",
+              "type": "text"
+            }
+          ],
+          "sessionId": "mock-43628"
+        }
+      },
+      "seq": 11,
+      "sessionId": "mock-43628",
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "timestamp": "2026-10-09T19:18:18.362239+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    },
+    {
+      "seq": 13,
+      "timestamp": "2026-10-09T19:18:20.863594500+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "mock-43628",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777",
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "mock-43628",
+          "update": {
+            "kind": "read",
+            "rawInput": {
+              "preview": "{\"path\":\"big.txt\"}"
+            },
+            "sessionUpdate": "tool_call",
+            "status": "completed",
+            "title": "big read",
+            "toolCallId": "big-1"
+          }
+        }
+      }
+    },
+    {
+      "seq": 16,
+      "timestamp": "2026-10-09T19:18:27.614318100+00:00",
+      "kind": "turn_liveness",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "mock-43628",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777",
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "payload": {}
+    },
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "detail": "free",
+      "kind": "acp_read",
+      "payload": {
+        "id": 2,
+        "jsonrpc": "2.0",
+        "result": {
+          "stopReason": "end_turn"
+        }
+      },
+      "seq": 17,
+      "sessionId": "mock-43628",
+      "startedAt": "2026-10-09T19:18:17.608735700+00:00",
+      "timestamp": "2026-10-09T19:18:28.628723200+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    },
+    {
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "kind": "turn_completed",
+      "payload": {},
+      "seq": 18,
+      "sessionId": null,
+      "timestamp": "2026-10-09T19:18:28.629087900+00:00",
+      "turnId": "01b89902-6a76-4e0f-be9d-21023addc777"
+    }
+  ],
+  "expected": {
+    "summaryView": true,
+    "rows": [
+      {
+        "type": "tool",
+        "title": "big read",
+        "status": "completed",
+        "args": "{\"path\":\"big.txt\"}",
+        "result": ""
+      }
+    ]
+  }
+}

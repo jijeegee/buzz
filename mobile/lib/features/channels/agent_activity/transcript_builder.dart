@@ -364,10 +364,66 @@ List<String> _collectToolNameCandidates(Map<String, dynamic> update) {
   ];
 }
 
+/// Argument preview of a summarised tool update (`rawInput.preview`).
+String? _extractToolArgsPreview(Map<String, dynamic> update) =>
+    _asString(_asRecord(update['rawInput'])['preview']);
+
+bool _isTerminal(ToolStatus status) =>
+    status == ToolStatus.completed || status == ToolStatus.failed;
+
 String _extractToolResult(Map<String, dynamic> update) {
   final contentText = _extractContentText(update['content']);
   if (contentText.isNotEmpty) return contentText;
   return _extractBlockText(update['rawOutput']);
+}
+
+/// Observer frame kind standing in for frames folded by a summary tier.
+const observerGapKind = 'observer_gap';
+
+// Kinds a summary tier rewrites (and marks with `detail`). Lifecycle kinds are
+// never summarised, so they say nothing about the current tier.
+const _summarisedKinds = <String>{
+  'acp_read',
+  'acp_write',
+  'acp_parse_error',
+  observerGapKind,
+};
+
+/// Whether a frame was summarised by the free or standard observer tier.
+bool isSummaryDetail(String? detail) =>
+    detail == 'free' || detail == 'standard';
+
+/// Whether the feed is currently a summary view: the latest frame a tier could
+/// have summarised carries a summary `detail`. Latest wins so an upgrade to
+/// full detail mid-session drops the badge.
+bool isObserverSummaryView(List<ObserverFrame> events) {
+  for (final event in events.reversed) {
+    if (_summarisedKinds.contains(event.kind)) {
+      return isSummaryDetail(event.detail);
+    }
+  }
+  return false;
+}
+
+/// One-line description of an `observer_gap` payload.
+String describeObserverGap(dynamic payload) {
+  final record = _asRecord(payload);
+  final tools = record['folded_tools'] is int
+      ? record['folded_tools'] as int
+      : 0;
+  if (tools == 0) {
+    final events = record['folded_events'] is int
+        ? record['folded_events'] as int
+        : 0;
+    return '$events ${events == 1 ? 'update' : 'updates'} skipped';
+  }
+  final names = record['tool_names'] is List
+      ? (record['tool_names'] as List).whereType<String>().toList()
+      : const <String>[];
+  final summary = '$tools ${tools == 1 ? 'tool' : 'tools'} ran in between';
+  if (names.isEmpty) return summary;
+  final more = tools > names.length ? '…' : '';
+  return '$summary (${names.join(', ')}$more)';
 }
 
 String _describeTurnStarted(dynamic payload) {
@@ -512,9 +568,10 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
     String? buzzToolName,
     ToolStatus status,
     Map<String, dynamic> args,
+    String? argsPreview,
     String result,
     bool isError,
-    String timestamp,
+    ObserverFrame event,
   ) {
     final existing = itemsById[id];
     final canonicalBuzzToolName =
@@ -530,8 +587,11 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
           !_isGenericToolTitle(toolName)) {
         existing.toolName = toolName;
       }
+      // A tool's own terminal update supersedes a close by the turn ending.
+      if (_isTerminal(status)) existing.closedByTurnEnd = false;
       existing.status = status;
       existing.args = args.isNotEmpty ? args : existing.args;
+      existing.argsPreview = argsPreview ?? existing.argsPreview;
       if (result.isNotEmpty) existing.result = result;
       existing.isError = isError || existing.isError;
       return;
@@ -544,15 +604,60 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
       buzzToolName: canonicalBuzzToolName,
       status: status,
       args: args,
+      argsPreview: argsPreview,
       result: result,
       isError: isError,
-      timestamp: timestamp,
+      channelId: event.channelId,
+      turnId: event.turnId,
+      timestamp: event.timestamp,
     );
     items.add(item);
     itemsById[id] = item;
   }
 
+  // Settle tools a turn left running once the turn ends. Summary tiers can
+  // fold or drop a tool's terminal update, so `turn_completed` closes the
+  // turn's running tools as completed. buzz-acp sends `turn_error` after
+  // `turn_completed`, so an error also re-marks the tools that completion
+  // closed, but never a tool that reported its own result.
+  void closeTurnTools(ObserverFrame event, ToolStatus status) {
+    final turnId = event.turnId;
+    if (turnId == null) return;
+    for (final item in items) {
+      if (item is! ToolItem ||
+          item.turnId != turnId ||
+          (event.channelId != null && item.channelId != event.channelId)) {
+        continue;
+      }
+      final reclose = status == ToolStatus.failed && item.closedByTurnEnd;
+      if (_isTerminal(item.status) && !reclose) continue;
+      item.status = status;
+      item.closedByTurnEnd = true;
+    }
+  }
+
   for (final event in events) {
+    if (event.kind == 'turn_completed') {
+      closeTurnTools(event, ToolStatus.completed);
+      continue;
+    }
+
+    if (event.kind == 'turn_error') {
+      closeTurnTools(event, ToolStatus.failed);
+      continue;
+    }
+
+    if (event.kind == observerGapKind) {
+      upsertTextItem(
+        'gap:${event.seq}',
+        'lifecycle',
+        describeObserverGap(event.payload),
+        '',
+        event.timestamp,
+      );
+      continue;
+    }
+
     if (event.kind == 'turn_started') {
       upsertTextItem(
         'turn:${event.turnId ?? '${event.seq}'}',
@@ -627,6 +732,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
     final updateType = _asString(update['sessionUpdate']) ?? 'unknown';
     final turnKey = event.turnId ?? event.sessionId ?? 'unknown';
     final messageId = _asString(update['messageId']);
+    final summarised = isSummaryDetail(event.detail);
 
     if (updateType == 'agent_message_chunk') {
       upsertMessage(
@@ -670,10 +776,11 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
         identity.toolName,
         identity.buzzToolName,
         _normalizeToolStatus(_asString(update['status']) ?? 'executing'),
-        _extractToolArgs(update),
+        summarised ? const {} : _extractToolArgs(update),
+        summarised ? _extractToolArgsPreview(update) : null,
         _extractToolResult(update),
         false,
-        event.timestamp,
+        event,
       );
       continue;
     }
@@ -690,10 +797,11 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
         identity.toolName,
         identity.buzzToolName,
         status,
-        _extractToolArgs(update),
+        summarised ? const {} : _extractToolArgs(update),
+        summarised ? _extractToolArgsPreview(update) : null,
         _extractToolResult(update),
         status == ToolStatus.failed,
-        event.timestamp,
+        event,
       );
       continue;
     }
