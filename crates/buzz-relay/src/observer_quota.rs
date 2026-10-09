@@ -152,7 +152,7 @@ impl TierLimits {
         tick_ms: 1_000,
         agent_frames_per_min: 60,
         agent_burst_per_sec: 5,
-        agent_frame_max_bytes: 65_536,
+        agent_frame_max_bytes: 65_535,
         agent_bytes_per_min: 4_000_000,
         account_agents: 200,
         account_frames_per_min: 6_000,
