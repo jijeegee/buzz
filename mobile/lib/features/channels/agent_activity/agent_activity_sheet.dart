@@ -99,6 +99,10 @@ class AgentActivitySheet extends HookConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if (observerState.summaryView) ...[
+                        const _SummaryViewBadge(),
+                        const SizedBox(width: Grid.half),
+                      ],
                       _ConnectionBadge(connection: connection),
                     ],
                   ),
@@ -201,6 +205,34 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Marks a feed sent at a summary observer tier (names and short previews).
+class _SummaryViewBadge extends StatelessWidget {
+  const _SummaryViewBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.colors.onSurfaceVariant;
+    return Container(
+      key: const Key('observer-summary-badge'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: Grid.xxs,
+        vertical: Grid.quarter,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        'Summary view',
+        style: context.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

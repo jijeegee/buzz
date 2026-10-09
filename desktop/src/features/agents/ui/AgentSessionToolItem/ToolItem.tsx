@@ -34,7 +34,8 @@ export function ToolItem({
   profiles?: UserProfileLookup;
 }) {
   const [isExpanded, setIsExpanded] = React.useState(false);
-  const hasArgs = Object.keys(item.args).length > 0;
+  const hasArgs =
+    Object.keys(item.args).length > 0 || Boolean(item.argsPreview);
   const hasResult = item.result.trim().length > 0;
   const canonicalToolName = item.buzzToolName ?? item.toolName;
   const buzzTool = getBuzzToolInfo(canonicalToolName);
@@ -119,6 +120,7 @@ export function ToolItem({
         >
           <CompactToolSummaryRow
             action={compactSummary.action}
+            argsPreview={item.argsPreview}
             duration={duration}
             fileEditSummary={compactSummary.fileEditSummary}
             kind={compactSummary.kind}
@@ -130,6 +132,7 @@ export function ToolItem({
 
         <ToolDetailBlocks
           args={item.args}
+          argsPreview={item.argsPreview ?? null}
           description={buzzTool?.label}
           fileEditDiff={compactSummary.fileEditDiff}
           fileReadContent={compactSummary.fileReadContent}

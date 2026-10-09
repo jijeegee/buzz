@@ -1,0 +1,285 @@
+{
+  "_comment": "Free tier with observer_gap events: one line each, in chronological position, never expandable. An ellipsis marks more folded tools than names listed; zero folded tools reads as skipped updates.",
+  "events": [
+    {
+      "seq": 1,
+      "timestamp": "2026-10-10T00:00:01.000000+00:00",
+      "kind": "turn_started",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "payload": {
+        "source": "channel",
+        "triggeringEventIds": []
+      }
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-10-10T00:00:02.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "read-1",
+            "status": "pending",
+            "kind": "read",
+            "title": "Read file",
+            "rawInput": {
+              "preview": "{\"path\":\"src/main.rs\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "timestamp": "2026-10-10T00:00:03.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "read-1",
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "timestamp": "2026-10-10T00:00:04.000000+00:00",
+      "kind": "observer_gap",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "folded_events": 30,
+        "folded_tools": 12,
+        "tool_names": [
+          "Read",
+          "Bash",
+          "Edit"
+        ],
+        "from_seq": 4,
+        "to_seq": 33
+      }
+    },
+    {
+      "seq": 34,
+      "timestamp": "2026-10-10T00:00:34.000000+00:00",
+      "kind": "observer_gap",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "folded_events": 2,
+        "folded_tools": 1,
+        "tool_names": [
+          "Read"
+        ],
+        "from_seq": 34,
+        "to_seq": 35
+      }
+    },
+    {
+      "seq": 36,
+      "timestamp": "2026-10-10T00:00:36.000000+00:00",
+      "kind": "observer_gap",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "folded_events": 4,
+        "folded_tools": 2,
+        "tool_names": [
+          "Bash"
+        ],
+        "from_seq": 36,
+        "to_seq": 39
+      }
+    },
+    {
+      "seq": 40,
+      "timestamp": "2026-10-10T00:00:40.000000+00:00",
+      "kind": "observer_gap",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "folded_events": 6,
+        "folded_tools": 5,
+        "tool_names": [
+          "Read",
+          "Bash",
+          "Edit",
+          "Grep",
+          "Write"
+        ],
+        "from_seq": 40,
+        "to_seq": 45
+      }
+    },
+    {
+      "seq": 46,
+      "timestamp": "2026-10-10T00:00:46.000000+00:00",
+      "kind": "observer_gap",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "folded_events": 3,
+        "folded_tools": 0,
+        "tool_names": [],
+        "from_seq": 46,
+        "to_seq": 48
+      }
+    },
+    {
+      "seq": 49,
+      "timestamp": "2026-10-10T00:00:49.000000+00:00",
+      "kind": "observer_gap",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "folded_events": 1,
+        "folded_tools": 0,
+        "tool_names": [],
+        "from_seq": 49,
+        "to_seq": 49
+      }
+    },
+    {
+      "seq": 50,
+      "timestamp": "2026-10-10T00:00:50.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "bash-1",
+            "status": "pending",
+            "kind": "execute",
+            "title": "Run tests",
+            "rawInput": {
+              "preview": "{\"command\":\"cargo test -p buzz-acp\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 51,
+      "timestamp": "2026-10-10T00:00:51.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "bash-1",
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "seq": 52,
+      "timestamp": "2026-10-10T00:00:52.000000+00:00",
+      "kind": "turn_completed",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-gap",
+      "payload": {}
+    }
+  ],
+  "expected": {
+    "summaryView": true,
+    "rows": [
+      {
+        "type": "tool",
+        "title": "Read file",
+        "status": "completed",
+        "args": "{\"path\":\"src/main.rs\"}",
+        "result": ""
+      },
+      {
+        "type": "gap",
+        "text": "12 tools ran in between (Read, Bash, Edit…)"
+      },
+      {
+        "type": "gap",
+        "text": "1 tool ran in between (Read)"
+      },
+      {
+        "type": "gap",
+        "text": "2 tools ran in between (Bash…)"
+      },
+      {
+        "type": "gap",
+        "text": "5 tools ran in between (Read, Bash, Edit, Grep, Write)"
+      },
+      {
+        "type": "gap",
+        "text": "3 updates skipped"
+      },
+      {
+        "type": "gap",
+        "text": "1 update skipped"
+      },
+      {
+        "type": "tool",
+        "title": "Run tests",
+        "status": "completed",
+        "args": "{\"command\":\"cargo test -p buzz-acp\"}",
+        "result": ""
+      }
+    ]
+  }
+}

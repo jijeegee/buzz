@@ -739,6 +739,19 @@ export function describeSessionResolved(payload: unknown): string {
   return isNewSession ? "New session created." : "";
 }
 
+export function stringifyPayload(value: unknown) {
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+export function rawPayloadTitle(payload: unknown) {
+  const record = asRecord(payload);
+  return asString(record.method) ?? asString(record.type) ?? "raw_json_rpc";
+}
+
 export function describeRawEvent(event: ObserverEvent): string {
   const payload = asRecord(event.payload);
   const method = asString(payload.method);

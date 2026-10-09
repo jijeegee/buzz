@@ -1,0 +1,127 @@
+{
+  "_comment": "Standard tier: tools keep a 200-char argument preview and a 200-char result (shown through the normal result path); assistant text is capped at 200 chars per message.",
+  "events": [
+    {
+      "seq": 1,
+      "timestamp": "2026-10-10T00:00:01.000000+00:00",
+      "kind": "turn_started",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-standard",
+      "payload": {
+        "source": "channel",
+        "triggeringEventIds": []
+      }
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-10-10T00:00:02.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-standard",
+      "detail": "standard",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "std-1",
+            "status": "pending",
+            "kind": "read",
+            "title": "Read README.md",
+            "rawInput": {
+              "preview": "{\"path\":\"README.md\",\"limit\":400}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "timestamp": "2026-10-10T00:00:03.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-standard",
+      "detail": "standard",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "std-1",
+            "status": "completed",
+            "content": [
+              {
+                "type": "content",
+                "content": {
+                  "type": "text",
+                  "text": "The Buzz relay stores every channel event in Postgres and fans out live updates over Redis pub/sub. Agents connect through buzz-acp, which bridges relay events into ACP sessions and streams telemetry …"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "timestamp": "2026-10-10T00:00:04.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-standard",
+      "detail": "standard",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "agent_message_chunk",
+            "content": {
+              "type": "text",
+              "text": "I read the README. The relay persists events in Postgres, fans them out over Redis, and buzz-acp bridges each mention into an ACP session while streaming observer telemetry to the owner. Next I will c…"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 5,
+      "timestamp": "2026-10-10T00:00:05.000000+00:00",
+      "kind": "turn_completed",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-standard",
+      "payload": {}
+    }
+  ],
+  "expected": {
+    "summaryView": true,
+    "rows": [
+      {
+        "type": "tool",
+        "title": "Read README.md",
+        "status": "completed",
+        "args": "{\"path\":\"README.md\",\"limit\":400}",
+        "result": "The Buzz relay stores every channel event in Postgres and fans out live updates over Redis pub/sub. Agents connect through buzz-acp, which bridges relay events into ACP sessions and streams telemetry …"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "text": "I read the README. The relay persists events in Postgres, fans them out over Redis, and buzz-acp bridges each mention into an ACP session while streaming observer telemetry to the owner. Next I will c…"
+      }
+    ]
+  }
+}
