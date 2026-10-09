@@ -650,6 +650,10 @@ function upsertTool(
       status: mergedStatus,
       args: updatedArgs,
       ...(argsPreview ? { argsPreview } : {}),
+      // A tool's own terminal update supersedes a close by the turn ending.
+      ...(existing.closedByTurnEnd && isTerminalToolStatus(status)
+        ? { closedByTurnEnd: false }
+        : {}),
       result: updatedResult,
       isError: updatedIsError,
       completedAt:

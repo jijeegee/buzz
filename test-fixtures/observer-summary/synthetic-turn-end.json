@@ -1,5 +1,5 @@
 {
-  "_comment": "Turn boundaries close leftover tools: turn_completed marks that turn's running tools completed; a turn_error for the turn (sent after turn_completed by buzz-acp) marks them failed. Tools that finished on their own, and tools of turns that have not ended, keep their status.",
+  "_comment": "Turn boundaries close leftover tools: turn_completed marks that turn's running tools completed; a turn_error for the turn (sent after turn_completed by buzz-acp) marks them failed. Tools that finished on their own, and tools of turns that have not ended, keep their status. A tool's own completion that arrives after the turn closed it keeps it completed through a later turn_error.",
   "events": [
     {
       "seq": 1,
@@ -221,6 +221,91 @@
         "outcome": "agent_exited",
         "error": "agent process exited"
       }
+    },
+    {
+      "seq": 16,
+      "timestamp": "2026-10-10T00:00:16.000000+00:00",
+      "kind": "turn_started",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-d",
+      "payload": {
+        "source": "channel",
+        "triggeringEventIds": []
+      }
+    },
+    {
+      "seq": 17,
+      "timestamp": "2026-10-10T00:00:17.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-d",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "d-1",
+            "status": "in_progress",
+            "kind": "execute",
+            "title": "Deploy",
+            "rawInput": {
+              "preview": "{\"command\":\"./deploy.sh\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 18,
+      "timestamp": "2026-10-10T00:00:18.000000+00:00",
+      "kind": "turn_completed",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-d",
+      "payload": {}
+    },
+    {
+      "seq": 19,
+      "timestamp": "2026-10-10T00:00:19.000000+00:00",
+      "kind": "acp_read",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-d",
+      "detail": "free",
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "sess-fixture",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "d-1",
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "seq": 20,
+      "timestamp": "2026-10-10T00:00:20.000000+00:00",
+      "kind": "turn_error",
+      "agentIndex": 0,
+      "channelId": "6f900efb-e0b7-4d65-9a45-a47b9cf9ff96",
+      "sessionId": "sess-fixture",
+      "turnId": "turn-d",
+      "payload": {
+        "outcome": "agent_exited",
+        "error": "agent process exited"
+      }
     }
   ],
   "expected": {
@@ -256,6 +341,13 @@
         "title": "Build",
         "status": "failed",
         "args": "{\"command\":\"cargo build\"}",
+        "result": ""
+      },
+      {
+        "type": "tool",
+        "title": "Deploy",
+        "status": "completed",
+        "args": "{\"command\":\"./deploy.sh\"}",
         "result": ""
       }
     ]
