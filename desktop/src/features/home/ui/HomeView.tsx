@@ -845,6 +845,11 @@ export function HomeView({
           data-testid="inbox-panel"
           style={{ width: `${inboxListWidthPx}px` }}
         >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 z-30 h-13 bg-background/80 backdrop-blur-md supports-backdrop-filter:bg-background/70 dark:bg-background/70 dark:backdrop-blur-xl dark:supports-backdrop-filter:bg-background/55"
+            data-testid="inbox-panel-header-backdrop"
+          />
           {inboxListPane}
         </div>
       </ProfilePanelProvider>
