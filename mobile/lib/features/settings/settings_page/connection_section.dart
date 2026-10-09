@@ -137,10 +137,11 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
               );
               if (!removed) return;
             } catch (error) {
+              debugPrint('[Settings] remove community failed: $error');
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Couldn’t remove the community: $error'),
+                const SnackBar(
+                  content: Text('Couldn’t remove the community. Try again.'),
                 ),
               );
               return;

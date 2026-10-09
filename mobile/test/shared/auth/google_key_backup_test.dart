@@ -122,7 +122,17 @@ void main() {
         generateKeys: () =>
             throw StateError('Must not generate on reauthentication'),
       );
-      await expectLater(service.resolve(), throwsA(isA<KeyBackupException>()));
+      // The linked account itself was chosen: not a wrong-account error.
+      await expectLater(
+        service.resolve(),
+        throwsA(
+          isA<KeyBackupException>().having(
+            (e) => e.isAccountMismatch,
+            'isAccountMismatch',
+            isFalse,
+          ),
+        ),
+      );
       expect(server.proofs, isEmpty);
       expect((await storage.loadAll()).single.nsec, keys.nsec);
       server.secret = keys.secret;

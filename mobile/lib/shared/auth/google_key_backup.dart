@@ -177,6 +177,13 @@ class GoogleKeyBackupService {
       if (missingLocalKey ||
           (existing?.signedOut == true &&
               existing?.googleBackupAccountId != null)) {
+        // The right Google account with no backup on the server is not a
+        // wrong-account choice; don't send the user to another account.
+        if (existing?.googleBackupAccountId == account) {
+          throw const KeyBackupException(
+            'Couldn’t restore this account. Try again later.',
+          );
+        }
         throw const KeyBackupException(
           'This Google account isn’t connected to this community. '
           'Try a different Google account.',

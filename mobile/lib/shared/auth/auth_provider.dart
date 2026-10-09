@@ -290,7 +290,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     );
   }
 
-  /// Explicit proof for accounts which use a private key instead of Google.
+  /// Explicit key proof for resuming a signed-out key account. No screen calls
+  /// this: users only come back through Google. Kept as the tested seam for the
+  /// resume fence and push-lease renewal (non_destructive_sign_out_test.dart).
+  @visibleForTesting
   Future<void> signInWithPrivateKey(String nsec) async {
     final generation = _logoutGeneration;
     final storage = ref.read(communityStorageProvider);
