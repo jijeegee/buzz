@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Bot, Pin, Users } from "lucide-react";
 import { OtherSetupAgentMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import type { TeamMentionMember } from "@/features/messages/lib/mentionCandidates";
 
 import { Badge } from "@/shared/ui/badge";
@@ -30,6 +31,8 @@ export type MentionSuggestion = {
   agentProvenance?: "managed-here" | "managed-elsewhere";
   notInChannel?: boolean;
   ownerLabel?: string | null;
+  /** The agent's owner; lets the owner see the robot of its host device. */
+  ownerPubkey?: string | null;
   role?: string | null;
 };
 
@@ -345,11 +348,20 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                           </span>
                         ) : suggestion.isAgent ? (
                           <span className="inline-flex shrink-0 items-center gap-1">
-                            <Bot
-                              aria-hidden="true"
-                              className="h-3.5 w-3.5"
-                              data-testid="mention-agent-icon"
-                            />
+                            {suggestion.pubkey ? (
+                              <AgentBadgeIcon
+                                agentPubkey={suggestion.pubkey}
+                                className="h-3.5 w-3.5"
+                                ownerPubkey={suggestion.ownerPubkey}
+                                testId="mention-agent-icon"
+                              />
+                            ) : (
+                              <Bot
+                                aria-hidden="true"
+                                className="h-3.5 w-3.5"
+                                data-testid="mention-agent-icon"
+                              />
+                            )}
                             agent
                             {showAgentProvenanceMarker ? (
                               <OtherSetupAgentMarker testId="mention-agent-provenance" />

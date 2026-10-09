@@ -12,6 +12,7 @@ import { useAuthDeviceNames } from "@/shared/api/useAuthDeviceNames";
 import { cn } from "@/shared/lib/cn";
 import { truncateNpub } from "@/shared/lib/pubkey";
 import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 /**
  * Another account's agent: the owner's avatar, shrunk into the robot slot
@@ -21,9 +22,11 @@ import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
 function OwnerMark({
   ownerPubkey,
   className,
+  testId,
 }: {
   ownerPubkey: string;
   className?: string;
+  testId?: string;
 }) {
   // Reuse the batch entry a surrounding list resolved; fetch only when absent.
   const entry = useQuery<UsersBatchEntry>({
@@ -40,8 +43,9 @@ function OwnerMark({
   return (
     <span
       className={cn("relative inline-flex shrink-0", className)}
+      data-agent-badge="owner"
       data-owner-pubkey={ownerPubkey}
-      data-testid="agent-owner-mark"
+      data-testid={testId ?? "agent-owner-mark"}
       title={`Agent owned by ${name}`}
     >
       <ProfileAvatar
@@ -57,37 +61,89 @@ function OwnerMark({
   );
 }
 
+/** Tooltip copy for the device an agent runs on. */
+export function agentHostDeviceLabel(deviceName: string | null | undefined) {
+  const name = deviceName?.trim();
+  return name ? `Running on ${name}` : "Running on another device";
+}
+
 /**
- * The agent's robot slot as the viewer sees it: the device robot (titled with
- * the device's name) for the owner, an owner mark for everyone else, or the
- * default robot. `fallback="none"` renders nothing instead of the default.
+ * The agent's robot slot as the viewer sees it: for the agent's owner, the
+ * robot of the device it runs on, with the device's name on hover; for
+ * everyone else an owner mark (or, with `othersSee="bot"`, the plain robot
+ * a row showed before device robots existed); otherwise the default robot.
+ * `fallback="none"` renders nothing instead of the default.
  */
 export function AgentBadgeIcon({
   agentPubkey,
+  ownerPubkey,
   className,
+  defaultLabel,
   fallback = "bot",
+  othersSee = "owner",
+  testId,
 }: {
   agentPubkey: string | null | undefined;
+  /** The agent's owner as the surrounding row knows it; see `useAgentBadge`. */
+  ownerPubkey?: string | null;
   className?: string;
+  /** Accessible name for the default robot; decorative when omitted. */
+  defaultLabel?: string;
   fallback?: "bot" | "none";
+  othersSee?: "owner" | "bot";
+  testId?: string;
 }) {
-  const badge = useAgentBadge(agentPubkey);
+  const badge = useAgentBadge(agentPubkey, ownerPubkey);
   const deviceNames = useAuthDeviceNames(badge.kind === "device");
-  if (badge.kind === "owner") {
-    return <OwnerMark className={className} ownerPubkey={badge.ownerPubkey} />;
-  }
-  if (badge.kind === "device") {
-    const deviceName = deviceNames.get(badge.variant.tag);
+  if (badge.kind === "owner" && othersSee === "owner") {
     return (
-      <span
-        className={cn("inline-flex shrink-0", className)}
-        title={deviceName ? `Running on ${deviceName}` : undefined}
-      >
-        <DeviceRobotIcon className="h-full w-full" variant={badge.variant} />
-      </span>
+      <OwnerMark
+        className={className}
+        ownerPubkey={badge.ownerPubkey}
+        testId={testId}
+      />
     );
   }
-  return fallback === "none" ? null : (
-    <DeviceRobotIcon className={className} variant={null} />
+  if (badge.kind === "device") {
+    const label = agentHostDeviceLabel(deviceNames.get(badge.variant.tag));
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            aria-label={label}
+            className={cn("inline-flex shrink-0", className)}
+            data-agent-badge="device"
+            data-device-id={badge.deviceId}
+            data-testid={testId}
+            role="img"
+          >
+            <DeviceRobotIcon
+              className="h-full w-full"
+              variant={badge.variant}
+            />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent data-testid="agent-host-device-tooltip">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  if (fallback === "none") return null;
+  return defaultLabel ? (
+    <Bot
+      aria-label={defaultLabel}
+      className={className}
+      data-agent-badge="default"
+      data-testid={testId}
+      role="img"
+    />
+  ) : (
+    <Bot
+      aria-hidden="true"
+      className={className}
+      data-agent-badge="default"
+      data-testid={testId}
+    />
   );
 }

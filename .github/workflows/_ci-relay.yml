@@ -509,7 +509,7 @@ jobs:
         run: |
           cargo nextest run \
             --archive-file target/ci/backend-integration-tests.tar.zst \
-            -E 'package(buzz-relay) and (test(/^rejection::/) or test(/^admission::/))' \
+            -E 'package(buzz-relay) and (test(/^rejection::/) or test(/^admission::/) or (test(/^observer_quota::/) and not test(/postgres_tests/)))' \
             --run-ignored all
       - name: NIP-FI cross-pod command replay regressions
         env:

@@ -84,6 +84,9 @@ const { fireEvent } = await import("@testing-library/react");
 const React = (await import("react")).default;
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { QueryClient, QueryClientProvider } = await import(
+  "@tanstack/react-query"
+);
 const { AccountSettingsCard } = await import("./AccountSettingsCard.tsx");
 const { deviceRobotTag } = await import("../../../shared/lib/deviceRobot.ts");
 const { GoogleSignInButton } = await import(
@@ -114,8 +117,18 @@ async function mount(Component = AccountSettingsCard, props) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  // Device rows read the owner's device records from the query cache.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   await act(async () => {
-    root.render(React.createElement(Component, props));
+    root.render(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(Component, props),
+      ),
+    );
   });
   await settle(() => calls.some((c) => c.command === "get_token_auth_status"));
   await act(() => new Promise((resolve) => setTimeout(resolve, 10)));

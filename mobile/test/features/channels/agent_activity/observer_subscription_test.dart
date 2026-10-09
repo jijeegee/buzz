@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -289,6 +290,60 @@ void main() {
       expect(otherChannelState.transcript, isEmpty);
     },
   );
+
+  // Real buzz-acp frames shared with desktop; see test-fixtures/observer-summary.
+  for (final (fixture, summaryView) in [
+    ('captured-free.json', true),
+    ('captured-premium.json', false),
+  ]) {
+    test('derives summaryView from decrypted $fixture frames', () async {
+      final ownerKeychain = nostr.Keys.generate();
+      final agentKeychain = nostr.Keys.generate();
+      final relaySession = _RecordingRelaySession();
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(() => relaySession),
+          relayConfigProvider.overrideWith(
+            () => _FakeRelayConfigNotifier(nsec: ownerKeychain.nsec),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final events =
+          (jsonDecode(
+                    File(
+                      '../test-fixtures/observer-summary/$fixture',
+                    ).readAsStringSync(),
+                  )
+                  as Map<String, dynamic>)['events']
+              as List;
+      final first = events.first as Map<String, dynamic>;
+      final key = (
+        channelId: first['channelId'] as String,
+        agentPubkey: agentKeychain.public,
+      );
+      container.read(observerSubscriptionProvider(key));
+      await Future<void>.delayed(Duration.zero);
+
+      relaySession.emit(
+        _observerEvent(
+          ownerKeychain: ownerKeychain,
+          agentKeychain: agentKeychain,
+          payload: {
+            ...first,
+            'kind': 'batch',
+            'payload': {'events': events},
+          },
+        ),
+      );
+
+      final state = container.read(observerSubscriptionProvider(key));
+      expect(state.summaryView, summaryView);
+      final tool = state.transcript.whereType<ToolItem>().single;
+      expect(tool.argsPreview, summaryView ? '{"path":"big.txt"}' : isNull);
+    });
+  }
 
   test('expands batch envelopes through ordering and dedupe', () async {
     final ownerKeychain = nostr.Keys.generate();

@@ -436,7 +436,7 @@ async fn startup_reconcile_compares_local_projection_retries_saved_edit_and_hono
         display_name: Some("Carl".into()),
         picture: Some(first.clone()),
         about: None,
-        host_device: None,
+        carries_host_device: false,
     };
     run(&state, &b.state.base, &data, Some(existing.clone()))
         .await

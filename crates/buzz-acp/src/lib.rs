@@ -21,6 +21,10 @@ mod layer0_goals;
 mod lead_rules_fixture_tests;
 mod live_settings;
 mod observer;
+mod observer_policy;
+mod observer_summary;
+#[cfg(test)]
+mod observer_tier_tests;
 mod pool;
 mod pool_lifecycle;
 mod prompt_framing;
@@ -1034,22 +1038,116 @@ async fn check_sibling_via_profile(
     false
 }
 
-/// Observer frames are published at a global rate of AT MOST ONE relay frame
-/// per tick — not one per channel, and not one per drain. Everything that
-/// accumulates between ticks waits in [`ObserverPublishQueue`] as events and
-/// is packed greedily into that single frame. One update per second is smooth
-/// enough for a human watching the session viewer, and the global budget is
-/// what makes the relay cost model flat: observer frames bill the agent's
-/// `LimitType::Messages` quota (`agent_standard_messages_per_min` = 120,
-/// enforced in relay `connection.rs::enforce_ws_admission`), shared with the
-/// agent's real chat messages. At 1 frame/s telemetry spends at most 60/min —
-/// half that budget — regardless of how many channels are active. A slower
-/// tick (e.g. 2s → 30/min) would leave more quota headroom for chat at the
-/// price of doubled viewer latency; this constant is the knob.
-const OBSERVER_PUBLISH_TICK: Duration = Duration::from_secs(1);
+/// Observer frames are paced per agent, not per channel or per drain, by the
+/// owner's observer tier ([`observer_policy`]): ONE relay frame per tier tick
+/// (1.5s free, 1s otherwise) while nothing is backlogged, a burst drain of at
+/// most `agent_burst_per_sec` frames/s while a backlog remains, and sliding
+/// per-minute frame and byte caps. Everything that accumulates between slots
+/// waits in [`ObserverPublishQueue`] as events and is packed greedily into the
+/// next frame. Telemetry is billed only by the relay's dedicated observer
+/// quota (per agent and per owner account) — it is an ephemeral kind, so it
+/// never spends the chat `Messages` quota, and the relay keeps it out of the
+/// per-connection WS flood limiter. Pacing below the tier limits is what lets
+/// a conforming executor never see a rejection.
+struct ObserverPacer {
+    queue: ObserverPublishQueue,
+    summarizer: observer_summary::ObserverSummarizer,
+    policy: observer_policy::ObserverPolicy,
+    window: observer_policy::SendWindow,
+    share: observer_policy::AdoptedShare,
+    /// Observer-only relay gate: no frame before this instant.
+    gate_until: Option<tokio::time::Instant>,
+    /// A slot was refused (relay gate or own budget) since the queue was last
+    /// empty. While set, a frame folds the oldest completed work of its
+    /// backlog so the newest state still fits.
+    limited: bool,
+}
+
+impl ObserverPacer {
+    fn new(policy: observer_policy::ObserverPolicy) -> Self {
+        let mut pacer = Self {
+            queue: ObserverPublishQueue::default(),
+            summarizer: Default::default(),
+            policy,
+            window: Default::default(),
+            share: Default::default(),
+            gate_until: None,
+            limited: false,
+        };
+        pacer.set_policy(policy);
+        pacer
+    }
+
+    /// Switch to a (re)fetched policy. A share adopted under the old policy
+    /// no longer applies.
+    fn set_policy(&mut self, policy: observer_policy::ObserverPolicy) {
+        self.policy = policy;
+        self.queue.frame_cap = policy.frame_cap();
+        self.queue.detail = policy.tier.detail();
+        self.share.clear();
+    }
+
+    fn ingest(&mut self, event: observer::ObserverEvent) {
+        if let Some(event) = self.summarizer.apply(self.policy.tier, event) {
+            self.queue.ingest(event);
+        }
+    }
+
+    /// Apply a relay refusal of one of our frames. Returns whether the policy
+    /// should be refreshed.
+    fn on_refusal(&mut self, message: &str, now: tokio::time::Instant) -> bool {
+        if message.starts_with("rate-limited:") {
+            let secs = relay::parse_rate_limit_retry_secs(message)
+                .filter(|secs| *secs > 0)
+                .unwrap_or(5);
+            let until = now + Duration::from_secs(secs);
+            self.gate_until = Some(self.gate_until.map_or(until, |gate| gate.max(until)));
+            if let Some(share) = observer_policy::parse_share(message) {
+                self.share.adopt(share, now);
+            }
+            self.limited = true;
+            return true;
+        }
+        message.starts_with("invalid: observer")
+    }
+
+    /// The next frame to publish now, `Ok(None)` when nothing is waiting, or
+    /// `Err(at)` when the relay gate or the tier budget defers it until `at`.
+    fn next_frame(
+        &mut self,
+        now: tokio::time::Instant,
+    ) -> Result<Option<observer::ObserverEvent>, tokio::time::Instant> {
+        let Some(needed) = self.queue.front_len() else {
+            return Ok(None);
+        };
+        if let Some(gate) = self.gate_until {
+            if now < gate {
+                self.limited = true;
+                return Err(gate);
+            }
+            self.gate_until = None;
+        }
+        let limits = observer_policy::EffectiveLimits::new(&self.policy, self.share.current(now));
+        let allowance = match self.window.admit(now, needed, &limits) {
+            Ok(allowance) => allowance,
+            Err(at) => {
+                self.limited = true;
+                return Err(at);
+            }
+        };
+        let Some(frame) = self.queue.next_frame_within(allowance, self.limited) else {
+            return Ok(None);
+        };
+        self.window.record(now, serialized_len(&frame));
+        if self.queue.is_empty() {
+            self.limited = false;
+        }
+        Ok(Some(frame))
+    }
+}
 
 /// Byte budget for EVERYTHING retained while awaiting a publish slot: the
-/// event FIFO (serialized, post-`fit_observer_event_to_budget` bytes) PLUS
+/// event FIFO (serialized, post-`fit_observer_event_to_cap` bytes) PLUS
 /// the chunk coalescer's pending buffer (serialized event skeletons + raw
 /// accumulated text). Both stores count against this one cap — a
 /// high-cardinality chunk flood (many distinct coalescer keys) is bounded
@@ -1066,6 +1164,10 @@ const OBSERVER_PUBLISH_TICK: Duration = Duration::from_secs(1);
 /// degrade to designed, visible loss — strictly better than the
 /// pre-batching pacer's silent 90/min drop.
 const OBSERVER_PENDING_QUEUE_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// Bytes a folding frame reserves for its batch envelope and `observer_gap`
+/// event, so the folded backlog really fits one frame.
+const OBSERVER_FOLD_HEADROOM_BYTES: usize = 1_024;
 
 /// Observer event kind for a batch envelope wrapping multiple events.
 ///
@@ -1087,13 +1189,18 @@ const OBSERVER_BATCH_KIND: &str = "batch";
 /// compacting into full frames instead of freezing into a frame queue.
 ///
 /// The queue is bounded by [`OBSERVER_PENDING_QUEUE_MAX_BYTES`]. When a
-/// sustained flood outruns the one-frame-per-tick drain for longer than the
-/// budget, the OLDEST events are dropped (the viewer wants recent state) with
+/// sustained flood outruns the paced drain for longer than the budget, the
+/// oldest completed tool calls and text chunks first fold into
+/// `observer_gap` events ([`observer_summary`]); only if that is not enough
+/// are the OLDEST events dropped (the viewer wants recent state) with
 /// accounting: a warning carrying the dropped-event count, and
 /// `dropped_events` for tests.
-#[derive(Default)]
 struct ObserverPublishQueue {
     coalescer: ObserverChunkCoalescer,
+    /// Largest frame (serialized plaintext bytes) of the current tier.
+    frame_cap: usize,
+    /// `detail` marker of the current tier, carried by `observer_gap` events.
+    detail: Option<&'static str>,
     /// `(serialized_len, source_events, event)`, oldest first. Length is
     /// captured at enqueue (post-fit) so byte accounting never re-serializes
     /// on eviction; `source_events` is how many GENERATED observer events the
@@ -1107,6 +1214,19 @@ struct ObserverPublishQueue {
     /// delivers all N sources' text in one event, so the invariant is
     /// `ingested == dropped_events + Σ source_events over published events`.
     dropped_events: u64,
+}
+
+impl Default for ObserverPublishQueue {
+    fn default() -> Self {
+        Self {
+            coalescer: ObserverChunkCoalescer::default(),
+            frame_cap: OBSERVER_MAX_PLAINTEXT_LEN,
+            detail: None,
+            events: VecDeque::new(),
+            pending_bytes: 0,
+            dropped_events: 0,
+        }
+    }
 }
 
 impl ObserverPublishQueue {
@@ -1126,7 +1246,7 @@ impl ObserverPublishQueue {
         // Pre-trim at enqueue so (a) byte accounting reflects what will ship
         // and (b) one oversized leaf cannot force every frame it touches into
         // whole-envelope elision downstream.
-        fit_observer_event_to_budget(&mut event);
+        fit_observer_event_to_cap(&mut event, self.frame_cap);
         let bytes = serialized_len(&event);
         self.pending_bytes += bytes;
         self.events.push_back((bytes, source_events, event));
@@ -1148,6 +1268,11 @@ impl ObserverPublishQueue {
     /// front. The `> 1` guard never drops the sole remaining item (any single
     /// fitted event or pre-flush-capped chunk entry is far under the budget).
     fn enforce_byte_budget(&mut self) {
+        if self.total_pending_bytes() > OBSERVER_PENDING_QUEUE_MAX_BYTES {
+            let excess = self.total_pending_bytes() - OBSERVER_PENDING_QUEUE_MAX_BYTES;
+            let all: Vec<usize> = (0..self.events.len()).collect();
+            self.fold_oldest(&all, excess);
+        }
         let mut dropped = 0u64;
         while self.total_pending_bytes() > OBSERVER_PENDING_QUEUE_MAX_BYTES
             && self.events.len() + self.coalescer.pending.len() > 1
@@ -1176,10 +1301,107 @@ impl ObserverPublishQueue {
         self.events.is_empty() && self.coalescer.pending.is_empty()
     }
 
-    /// Pack and remove AT MOST ONE publishable frame: the front event's
-    /// channel, gathered queue-wide in FIFO order (packed greedily until
-    /// adding the next event would push the envelope over
-    /// `OBSERVER_MAX_PLAINTEXT_LEN`). Singletons ship unwrapped.
+    #[cfg(test)]
+    fn next_frame(&mut self) -> Option<observer::ObserverEvent> {
+        self.next_frame_within(self.frame_cap, false)
+    }
+
+    /// Serialized size of the event that leads the next frame, after flushing
+    /// pending chunks; `None` when nothing is waiting.
+    fn front_len(&mut self) -> Option<usize> {
+        for (source_events, ready) in self.coalescer.flush() {
+            self.enqueue(source_events, ready);
+        }
+        self.events.front().map(|(bytes, _, _)| *bytes)
+    }
+
+    /// Queue indices the next frame gathers from: the front event's channel,
+    /// stopping at a null-channel barrier (see [`Self::next_frame_within`]).
+    fn gather_indices(&self) -> Vec<usize> {
+        let Some((_, _, front)) = self.events.front() else {
+            return Vec::new();
+        };
+        let channel = &front.channel_id;
+        let mut indices = Vec::new();
+        for (index, (_, _, event)) in self.events.iter().enumerate() {
+            if &event.channel_id == channel {
+                indices.push(index);
+            } else if channel.is_none() || event.channel_id.is_none() {
+                break;
+            }
+        }
+        indices
+    }
+
+    /// Fold the oldest foldable units among `candidates` (queue indices,
+    /// ascending) until at least `excess` bytes are gone or nothing foldable
+    /// is left. Folded events of one (channel, turn) become one
+    /// `observer_gap` placed where the first of them stood. Returns whether
+    /// anything was folded.
+    fn fold_oldest(&mut self, candidates: &[usize], excess: usize) -> bool {
+        let refs: Vec<&observer::ObserverEvent> = candidates
+            .iter()
+            .map(|&index| &self.events[index].2)
+            .collect();
+        let mut folded = Vec::new();
+        let mut freed = 0usize;
+        for unit in observer_summary::foldable_units(&refs) {
+            if freed >= excess {
+                break;
+            }
+            for member in unit {
+                let index = candidates[member];
+                freed += self.events[index].0;
+                folded.push(index);
+            }
+        }
+        if folded.is_empty() {
+            return false;
+        }
+        folded.sort_unstable();
+
+        type GroupKey = (Option<String>, Option<String>);
+        let mut groups: Vec<(GroupKey, Vec<usize>)> = Vec::new();
+        for &index in &folded {
+            let event = &self.events[index].2;
+            let key = (event.channel_id.clone(), event.turn_id.clone());
+            match groups.iter_mut().find(|(known, _)| *known == key) {
+                Some((_, members)) => members.push(index),
+                None => groups.push((key, vec![index])),
+            }
+        }
+        let mut gaps: HashMap<usize, (u64, observer::ObserverEvent)> = HashMap::new();
+        for (_, members) in &groups {
+            let entries: Vec<(u64, &observer::ObserverEvent)> = members
+                .iter()
+                .map(|&index| (self.events[index].1, &self.events[index].2))
+                .collect();
+            let source_events = entries.iter().map(|(count, _)| count).sum();
+            let gap = observer_summary::gap_event(&entries, self.detail);
+            gaps.insert(members[0], (source_events, gap));
+        }
+
+        let folded: HashSet<usize> = folded.into_iter().collect();
+        let events = std::mem::take(&mut self.events);
+        for (index, entry) in events.into_iter().enumerate() {
+            if let Some((source_events, gap)) = gaps.remove(&index) {
+                let bytes = serialized_len(&gap);
+                self.pending_bytes += bytes;
+                self.events.push_back((bytes, source_events, gap));
+            }
+            if folded.contains(&index) {
+                self.pending_bytes -= entry.0;
+            } else {
+                self.events.push_back(entry);
+            }
+        }
+        true
+    }
+
+    /// Pack and remove AT MOST ONE publishable frame of at most `max_bytes`:
+    /// the front event's channel, gathered queue-wide in FIFO order (packed
+    /// greedily until adding the next event would push the envelope over
+    /// `max_bytes`). Singletons ship unwrapped.
     ///
     /// Two invariants bound the gather:
     /// - A frame never mixes channels (the desktop archive indexes a frame
@@ -1203,9 +1425,27 @@ impl ObserverPublishQueue {
     ///
     /// Pending coalesced chunks are flushed into the queue first, so a
     /// publish slot never leaves merged chunk text stranded behind the tick.
-    fn next_frame(&mut self) -> Option<observer::ObserverEvent> {
-        for (source_events, ready) in self.coalescer.flush() {
-            self.enqueue(source_events, ready);
+    ///
+    /// When `fold` is set (the publisher is being held back), the gathered
+    /// backlog first folds its oldest completed work so its newest state
+    /// fits one frame.
+    fn next_frame_within(
+        &mut self,
+        max_bytes: usize,
+        fold: bool,
+    ) -> Option<observer::ObserverEvent> {
+        self.front_len()?;
+        if fold {
+            let gather = self.gather_indices();
+            // Headroom for the batch envelope and the gap event itself.
+            let gathered: usize = gather
+                .iter()
+                .map(|&index| self.events[index].0)
+                .sum::<usize>()
+                + OBSERVER_FOLD_HEADROOM_BYTES;
+            if gathered > max_bytes {
+                self.fold_oldest(&gather, gathered - max_bytes);
+            }
         }
         let channel = self.events.front()?.2.channel_id.clone();
 
@@ -1216,9 +1456,7 @@ impl ObserverPublishQueue {
         while let Some((bytes, source_events, event)) = self.events.pop_front() {
             if gathering && event.channel_id == channel {
                 picked.push(event);
-                if picked.len() > 1
-                    && serialized_len(&batch_envelope(&picked)) > OBSERVER_MAX_PLAINTEXT_LEN
-                {
+                if picked.len() > 1 && serialized_len(&batch_envelope(&picked)) > max_bytes {
                     // Frame full: the overflow event stays queued and leads
                     // its channel's next slot.
                     let event = picked.pop().expect("len > 1");
@@ -1237,7 +1475,11 @@ impl ObserverPublishQueue {
             }
         }
         self.events = kept;
-        Some(seal_batch(picked))
+        let mut frame = seal_batch(picked);
+        // A lone event queued under a larger cap (or a smaller byte
+        // allowance) is trimmed to what this slot may carry.
+        fit_observer_event_to_cap(&mut frame, max_bytes);
+        Some(frame)
     }
 }
 
@@ -1267,6 +1509,7 @@ fn batch_envelope(events: &[observer::ObserverEvent]) -> observer::ObserverEvent
         session_id: last.session_id.clone(),
         turn_id: last.turn_id.clone(),
         started_at: last.started_at.clone(),
+        detail: None,
         payload: serde_json::json!({
             "events": serde_json::to_value(events).unwrap_or_default(),
         }),
@@ -1280,6 +1523,7 @@ fn spawn_relay_observer_publisher(
     agent_pubkey_hex: String,
     owner_pubkey_hex: String,
     owner_pubkey: PublicKey,
+    tiers: observer_policy::ObserverTierLinks,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Subscribe BEFORE snapshotting so an event emitted between the two
@@ -1296,11 +1540,28 @@ fn spawn_relay_observer_publisher(
             agent_pubkey_hex,
             owner_pubkey_hex,
             owner_pubkey,
+            tiers,
         )
         .await;
     })
 }
 
+/// Publisher links pinned to the premium tier (today's full-detail behavior).
+#[cfg(test)]
+fn premium_tiers() -> observer_policy::ObserverTierLinks {
+    observer_policy::ObserverTierLinks::fixed(observer_policy::ObserverPolicy::PREMIUM).0
+}
+
+fn observer_publish_interval(period: Duration) -> tokio::time::Interval {
+    // `interval_at` starts the first tick a full period out, so a pre-loaded
+    // snapshot (up to the 1,000-event replay buffer on reconnect) cannot
+    // burst at t=0.
+    let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run_relay_observer_publisher(
     snapshot: Vec<observer::ObserverEvent>,
     mut rx: tokio::sync::broadcast::Receiver<observer::ObserverEvent>,
@@ -1309,25 +1570,37 @@ async fn run_relay_observer_publisher(
     agent_pubkey_hex: String,
     owner_pubkey_hex: String,
     owner_pubkey: PublicKey,
+    mut tiers: observer_policy::ObserverTierLinks,
 ) {
-    let mut queue = ObserverPublishQueue::default();
+    // Summaries depend on the tier, so nothing is queued before it is known:
+    // wait briefly for the first fetch, then fall back to the persisted
+    // policy, then to free. Live events wait in the broadcast buffer.
+    let fetched = tokio::time::timeout(
+        observer_policy::INITIAL_POLICY_WAIT,
+        tiers.policy.wait_for(Option::is_some),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .and_then(|policy| *policy);
+    let (policy, source) = observer_policy::initial_policy(fetched, tiers.persisted);
+    tracing::info!(tier = ?policy.tier, ?source, "relay observer telemetry policy");
+
+    let mut pacer = ObserverPacer::new(policy);
     let max_snapshot_seq = snapshot.iter().map(|event| event.seq).max().unwrap_or(0);
     for event in snapshot {
-        queue.ingest(event);
+        pacer.ingest(event);
     }
 
-    // Global pacer: AT MOST ONE relay frame per tick, no matter how many
-    // channels are active or how large the backlog is. `interval_at` starts
-    // the first tick a full period out, so a pre-loaded snapshot (up to the
-    // 1,000-event replay buffer on reconnect) cannot burst at t=0 — the old
-    // pacer's explicit "no initial burst" property, restored.
-    let mut publish_tick = tokio::time::interval_at(
-        tokio::time::Instant::now() + OBSERVER_PUBLISH_TICK,
-        OBSERVER_PUBLISH_TICK,
-    );
-    publish_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // One frame per tier tick; a backlog additionally drains at the burst
+    // rate via `wake_at`, which also carries gate and budget deadlines.
+    let mut publish_tick = observer_publish_interval(pacer.policy.tick());
+    let mut wake_at: Option<tokio::time::Instant> = None;
     let mut closed = false;
+    let mut policy_open = true;
+    let mut feedback_open = true;
     loop {
+        let mut attempt = false;
         tokio::select! {
             result = rx.recv(), if !closed => {
                 match result {
@@ -1337,31 +1610,81 @@ async fn run_relay_observer_publisher(
                         if event.seq <= max_snapshot_seq {
                             continue;
                         }
-                        queue.ingest(event);
+                        pacer.ingest(event);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                         tracing::warn!(dropped = count, "relay observer publisher lagged");
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         // Producer gone: stop selecting on the receiver and let
-                        // the tick arm drain what remains — still one frame per
-                        // tick. An unpaced final drain would be a burst bypass
-                        // around everything the pacer exists to prevent.
+                        // the paced slots drain what remains. An unpaced final
+                        // drain would be a burst bypass around everything the
+                        // pacer exists to prevent.
                         closed = true;
                     }
                 }
             }
-            _ = publish_tick.tick() => {
-                if let Some(frame) = queue.next_frame() {
-                    publish_relay_observer_event(
-                        &publisher, &keys, &agent_pubkey_hex,
-                        &owner_pubkey_hex, &owner_pubkey, frame,
-                    ).await;
+            changed = tiers.policy.changed(), if policy_open => {
+                if changed.is_err() {
+                    policy_open = false;
+                    continue;
                 }
-                if closed && queue.is_empty() {
-                    break;
+                match *tiers.policy.borrow_and_update() {
+                    Some(policy) if policy != pacer.policy => {
+                        tracing::info!(tier = ?policy.tier, "relay observer telemetry policy changed");
+                        if policy.tick() != pacer.policy.tick() {
+                            publish_tick = observer_publish_interval(policy.tick());
+                        }
+                        pacer.set_policy(policy);
+                    }
+                    _ => {}
                 }
             }
+            changed = tiers.feedback.changed(), if feedback_open => {
+                if changed.is_err() {
+                    feedback_open = false;
+                    continue;
+                }
+                let message = tiers.feedback.borrow_and_update().message.clone();
+                if pacer.on_refusal(&message, tokio::time::Instant::now()) {
+                    tiers.refresh.notify_one();
+                }
+                if let Some(gate) = pacer.gate_until {
+                    wake_at = Some(gate);
+                }
+            }
+            _ = publish_tick.tick() => attempt = true,
+            _ = tokio::time::sleep_until(wake_at.unwrap_or_else(tokio::time::Instant::now)),
+                if wake_at.is_some() =>
+            {
+                wake_at = None;
+                attempt = true;
+            }
+        }
+        if !attempt {
+            continue;
+        }
+        let now = tokio::time::Instant::now();
+        match pacer.next_frame(now) {
+            Ok(Some(frame)) => {
+                if !pacer.queue.is_empty() {
+                    wake_at = Some(now + pacer.policy.burst_spacing());
+                }
+                publish_relay_observer_event(
+                    &publisher,
+                    &keys,
+                    &agent_pubkey_hex,
+                    &owner_pubkey_hex,
+                    &owner_pubkey,
+                    frame,
+                )
+                .await;
+            }
+            Ok(None) => {}
+            Err(at) => wake_at = Some(at),
+        }
+        if closed && pacer.queue.is_empty() {
+            break;
         }
     }
 }
@@ -1534,11 +1857,18 @@ fn set_observer_chunk_text(payload: &mut serde_json::Value, text: String) {
 /// Bytes of head and tail to retain from an elided string leaf — the value
 /// shown to the renderer at each end. The ONLY tuning knob here: large enough
 /// that a clipped diff/tool-result still shows real content, small enough that
-/// eliding actually shrinks the frame.
+/// eliding actually shrinks the frame. Smaller tier frame caps retain
+/// proportionally less (an eighth of the cap at each end), so elision can
+/// still fit them.
 const OBSERVER_LEAF_RETAIN_BYTES: usize = 3_000;
 
+fn leaf_retain_bytes(cap: usize) -> usize {
+    (cap / 8).min(OBSERVER_LEAF_RETAIN_BYTES)
+}
+
 /// Trim an oversized observer telemetry frame so its SERIALIZED form fits under
-/// `OBSERVER_MAX_PLAINTEXT_LEN`, instead of dropping the whole frame (silent
+/// `cap` — the tier's frame cap or the slot's byte allowance, never above
+/// `OBSERVER_MAX_PLAINTEXT_LEN` — instead of dropping the whole frame (silent
 /// telemetry loss). The common case — a frame already under budget — is left
 /// byte-identical.
 ///
@@ -1562,10 +1892,11 @@ const OBSERVER_LEAF_RETAIN_BYTES: usize = 3_000;
 /// `encrypt_observer_payload` signature or adding a parallel encrypt path; both
 /// are out of this change's scope (buzz-core stays untouched). The clean `&mut`
 /// signature with one cheap redundant serialize is the deliberate tradeoff.
-fn fit_observer_event_to_budget(event: &mut observer::ObserverEvent) {
-    if serialized_len(event) <= OBSERVER_MAX_PLAINTEXT_LEN {
+fn fit_observer_event_to_cap(event: &mut observer::ObserverEvent, cap: usize) {
+    if serialized_len(event) <= cap {
         return;
     }
+    let retain = leaf_retain_bytes(cap);
 
     // Raw size of the payload we are about to trim, captured before mutation so
     // the stub's `originalBytes` reports source bytes discarded, not serialized
@@ -1577,9 +1908,9 @@ fn fit_observer_event_to_budget(event: &mut observer::ObserverEvent) {
     // Elide the largest shrinkable leaf, reserialize, repeat. Each successful
     // elision strictly shrinks the serialized frame, and a floored leaf can
     // never be re-elided, so the loop is bounded by the leaf count.
-    while let Some(leaf) = largest_shrinkable_leaf(&mut event.payload) {
-        elide_leaf(leaf);
-        if serialized_len(event) <= OBSERVER_MAX_PLAINTEXT_LEN {
+    while let Some(leaf) = largest_shrinkable_leaf(&mut event.payload, retain) {
+        elide_leaf(leaf, retain);
+        if serialized_len(event) <= cap {
             return;
         }
     }
@@ -1592,6 +1923,11 @@ fn fit_observer_event_to_budget(event: &mut observer::ObserverEvent) {
     });
 }
 
+#[cfg(test)]
+fn fit_observer_event_to_budget(event: &mut observer::ObserverEvent) {
+    fit_observer_event_to_cap(event, OBSERVER_MAX_PLAINTEXT_LEN);
+}
+
 fn serialized_len(event: &observer::ObserverEvent) -> usize {
     serde_json::to_string(event).map(|s| s.len()).unwrap_or(0)
 }
@@ -1601,21 +1937,30 @@ fn serialized_len(event: &observer::ObserverEvent) -> usize {
 /// shorter than its current value (the marker-pushback guard); a leaf already at
 /// its retained floor fails this test and is skipped, which is what bounds the
 /// loop. Returns `None` when no leaf can shrink.
-fn largest_shrinkable_leaf(value: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
+fn largest_shrinkable_leaf(
+    value: &mut serde_json::Value,
+    retain: usize,
+) -> Option<&mut serde_json::Value> {
     // First pass: find the byte length of the best candidate without holding a
     // borrow, then re-descend to return the matching mutable reference. Two
     // immutable-style passes keep the borrow checker happy without unsafe.
-    let best_len = max_shrinkable_len(value)?;
-    find_leaf_with_len(value, best_len)
+    let best_len = max_shrinkable_len(value, retain)?;
+    find_leaf_with_len(value, best_len, retain)
 }
 
 /// Largest current length among string leaves that can strictly shrink.
-fn max_shrinkable_len(value: &serde_json::Value) -> Option<usize> {
+fn max_shrinkable_len(value: &serde_json::Value, retain: usize) -> Option<usize> {
     match value {
-        serde_json::Value::String(s) if leaf_shrinks(s) => Some(s.len()),
+        serde_json::Value::String(s) if leaf_shrinks_with(s, retain) => Some(s.len()),
         serde_json::Value::String(_) => None,
-        serde_json::Value::Array(items) => items.iter().filter_map(max_shrinkable_len).max(),
-        serde_json::Value::Object(map) => map.values().filter_map(max_shrinkable_len).max(),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .filter_map(|item| max_shrinkable_len(item, retain))
+            .max(),
+        serde_json::Value::Object(map) => map
+            .values()
+            .filter_map(|item| max_shrinkable_len(item, retain))
+            .max(),
         _ => None,
     }
 }
@@ -1626,15 +1971,18 @@ fn max_shrinkable_len(value: &serde_json::Value) -> Option<usize> {
 fn find_leaf_with_len(
     value: &mut serde_json::Value,
     target: usize,
+    retain: usize,
 ) -> Option<&mut serde_json::Value> {
     match value {
-        serde_json::Value::String(s) if s.len() == target && leaf_shrinks(s) => Some(value),
+        serde_json::Value::String(s) if s.len() == target && leaf_shrinks_with(s, retain) => {
+            Some(value)
+        }
         serde_json::Value::Array(items) => items
             .iter_mut()
-            .find_map(|item| find_leaf_with_len(item, target)),
+            .find_map(|item| find_leaf_with_len(item, target, retain)),
         serde_json::Value::Object(map) => map
             .values_mut()
-            .find_map(|item| find_leaf_with_len(item, target)),
+            .find_map(|item| find_leaf_with_len(item, target, retain)),
         _ => None,
     }
 }
@@ -1642,8 +1990,13 @@ fn find_leaf_with_len(
 /// True when eliding `s` to head + marker + tail yields a strictly shorter raw
 /// string. The marker width grows with `N` (bytes removed), so a leaf only
 /// marginally larger than the retained ends must NOT be touched.
+#[cfg(test)]
 fn leaf_shrinks(s: &str) -> bool {
-    let (head_end, tail_start) = elision_boundaries(s);
+    leaf_shrinks_with(s, OBSERVER_LEAF_RETAIN_BYTES)
+}
+
+fn leaf_shrinks_with(s: &str, retain: usize) -> bool {
+    let (head_end, tail_start) = elision_boundaries(s, retain);
     tail_start > head_end && {
         let removed = tail_start - head_end;
         let marker = elision_marker(removed);
@@ -1653,11 +2006,11 @@ fn leaf_shrinks(s: &str) -> bool {
 
 /// Replace the middle of a string leaf with `…[elided N bytes]…`, keeping a head
 /// and tail slice on UTF-8 char boundaries. `N` is RAW bytes removed.
-fn elide_leaf(leaf: &mut serde_json::Value) {
+fn elide_leaf(leaf: &mut serde_json::Value, retain: usize) {
     let serde_json::Value::String(s) = leaf else {
         return;
     };
-    let (head_end, tail_start) = elision_boundaries(s);
+    let (head_end, tail_start) = elision_boundaries(s, retain);
     let removed = tail_start - head_end;
     let mut elided = String::with_capacity(head_end + 32 + (s.len() - tail_start));
     elided.push_str(&s[..head_end]);
@@ -1673,9 +2026,9 @@ fn elision_marker(removed_bytes: usize) -> String {
 /// Byte offsets bounding the elided middle, snapped to char boundaries so we
 /// never split a multi-byte char. Returns `(head_end, tail_start)` with
 /// `head_end <= tail_start`.
-fn elision_boundaries(s: &str) -> (usize, usize) {
-    let head_end = floor_char_boundary(s, OBSERVER_LEAF_RETAIN_BYTES.min(s.len()));
-    let tail_start = ceil_char_boundary(s, s.len().saturating_sub(OBSERVER_LEAF_RETAIN_BYTES));
+fn elision_boundaries(s: &str, retain: usize) -> (usize, usize) {
+    let head_end = floor_char_boundary(s, retain.min(s.len()));
+    let tail_start = ceil_char_boundary(s, s.len().saturating_sub(retain));
     (head_end, tail_start.max(head_end))
 }
 
@@ -1703,7 +2056,7 @@ async fn publish_relay_observer_event(
 ) {
     // Trim oversized frames to fit the plaintext cap rather than letting
     // encrypt_observer_payload reject and drop them whole (silent telemetry loss).
-    fit_observer_event_to_budget(&mut event);
+    fit_observer_event_to_cap(&mut event, OBSERVER_MAX_PLAINTEXT_LEN);
     let encrypted = match encrypt_observer_payload(keys, owner_pubkey, &event) {
         Ok(encrypted) => encrypted,
         Err(error) => {
@@ -3191,6 +3544,37 @@ async fn run_harness(
         {
             match PublicKey::from_hex(&owner_pubkey_hex) {
                 Ok(owner_pubkey) => {
+                    // Fetch the owner's observer tier now so the policy is
+                    // usually known by the time the publisher starts.
+                    // The policy is not secret and must survive restarts even
+                    // when no state dir is configured (the desktop sets one only
+                    // for the thread session policy), so fall back to temp.
+                    let policy_dir = config
+                        .state_dir
+                        .clone()
+                        .unwrap_or_else(|| std::env::temp_dir().join("buzz-acp"));
+                    let policy_path = Some(observer_policy::policy_path(
+                        &policy_dir,
+                        &pubkey_hex,
+                        &config.relay_url,
+                    ));
+                    let persisted = policy_path
+                        .as_deref()
+                        .and_then(observer_policy::load_persisted);
+                    let rest = relay.rest_client();
+                    let (policy, refresh, _policy_task) = observer_policy::spawn_policy_task(
+                        move || {
+                            let rest = rest.clone();
+                            async move { rest.observer_policy().await.map_err(|e| e.to_string()) }
+                        },
+                        policy_path,
+                    );
+                    let tiers = observer_policy::ObserverTierLinks {
+                        policy,
+                        persisted,
+                        refresh,
+                        feedback: relay.observer_feedback(),
+                    };
                     relay_observer_publisher = Some((
                         observer,
                         relay.event_publisher(),
@@ -3198,6 +3582,7 @@ async fn run_harness(
                         pubkey_hex.clone(),
                         owner_pubkey_hex,
                         owner_pubkey,
+                        tiers,
                     ));
                     relay
                         .subscribe_observer_controls()
@@ -3242,7 +3627,7 @@ async fn run_harness(
         }
     }
 
-    if let Some((observer, publisher, keys, agent_pubkey, owner_pubkey, owner)) =
+    if let Some((observer, publisher, keys, agent_pubkey, owner_pubkey, owner, tiers)) =
         relay_observer_publisher.take()
     {
         relay_observer_publisher_task = Some(spawn_relay_observer_publisher(
@@ -3252,6 +3637,7 @@ async fn run_harness(
             agent_pubkey,
             owner_pubkey,
             owner,
+            tiers,
         ));
     }
 
@@ -9454,6 +9840,7 @@ mod observer_snapshot_race_tests {
             agent_keys.public_key().to_hex(),
             owner_keys.public_key().to_hex(),
             owner_keys.public_key(),
+            premium_tiers(),
         )
         .await;
 
@@ -9497,6 +9884,7 @@ mod observer_publish_queue_tests {
             session_id: Some("session-1".to_string()),
             turn_id: Some("turn-1".to_string()),
             started_at: None,
+            detail: None,
             payload: serde_json::json!({ "seq": seq }),
         }
     }
@@ -10150,9 +10538,10 @@ mod observer_publish_cadence_tests {
     /// (two channels — a frame never mixes channels, so the backlog takes two
     /// publish slots), no frame publishes before its tick. Startup publishes
     /// NOTHING at t=0 (Sami's Finding 1: a full replay buffer must not burst
-    /// on reconnect), frame 1 arrives at +1s, frame 2 no earlier than +2s.
+    /// on reconnect), frame 1 arrives at +1s, and the remaining backlog drains
+    /// at the tier's burst rate (5/s): frame 2 no earlier than +1.2s.
     #[tokio::test(start_paused = true)]
-    async fn one_frame_per_second_and_no_startup_burst() {
+    async fn first_frame_waits_a_tick_and_backlog_drains_at_burst_rate() {
         let observer = observer::ObserverHandle::in_process();
         let agent_keys = Keys::generate();
         let owner_keys = Keys::generate();
@@ -10178,6 +10567,7 @@ mod observer_publish_cadence_tests {
             agent_keys.public_key().to_hex(),
             owner_keys.public_key().to_hex(),
             owner_keys.public_key(),
+            premium_tiers(),
         ));
 
         // t=0: nothing may publish, no matter how full the snapshot was.
@@ -10205,19 +10595,23 @@ mod observer_publish_cadence_tests {
         assert_eq!(frames.len(), 1, "tick 1 publishes exactly one frame");
         assert_eq!(count_inner(&owner_keys, &frames[0]), 2, "a1 + a2 gathered");
 
-        // t=1.5s: between ticks, nothing.
-        tokio::time::advance(Duration::from_millis(500)).await;
+        // t=1.199s: the burst slot has not opened yet.
+        tokio::time::advance(Duration::from_millis(199)).await;
         settle().await;
         assert_eq!(
             recv_all(&mut published_rx).len(),
             0,
-            "frame 2 must wait for tick 2"
+            "backlog frames are spaced by 1s / burst_per_sec"
         );
 
-        // t=2s: the chan-b frame drains on its own tick.
-        tokio::time::advance(Duration::from_millis(500)).await;
+        // t=1.2s: the chan-b frame drains in the next burst slot.
+        tokio::time::advance(Duration::from_millis(1)).await;
         settle().await;
-        assert_eq!(recv_all(&mut published_rx).len(), 1, "tick 2: one frame");
+        assert_eq!(
+            recv_all(&mut published_rx).len(),
+            1,
+            "burst slot: one frame"
+        );
 
         // Backlog drained; a quiet tick publishes nothing.
         tokio::time::advance(Duration::from_secs(1)).await;
@@ -10257,6 +10651,7 @@ mod observer_publish_cadence_tests {
             agent_keys.public_key().to_hex(),
             owner_keys.public_key().to_hex(),
             owner_keys.public_key(),
+            premium_tiers(),
         ));
 
         settle().await;
@@ -10323,6 +10718,7 @@ mod observer_publish_cadence_tests {
             agent_keys.public_key().to_hex(),
             owner_keys.public_key().to_hex(),
             owner_keys.public_key(),
+            premium_tiers(),
         ));
         settle().await;
 
@@ -10365,6 +10761,7 @@ mod observer_chunk_coalescer_tests {
             session_id: Some("session-1".to_string()),
             turn_id: Some("turn-1".to_string()),
             started_at: None,
+            detail: None,
             payload: serde_json::json!({
                 "jsonrpc": "2.0",
                 "method": "session/update",
@@ -10393,6 +10790,7 @@ mod observer_chunk_coalescer_tests {
             session_id: Some("session-1".to_string()),
             turn_id: Some("turn-1".to_string()),
             started_at: None,
+            detail: None,
             payload: serde_json::json!({ "type": "turn_started" }),
         }
     }
@@ -13390,6 +13788,7 @@ mod observer_payload_trim_tests {
             session_id: Some("sess-1".to_string()),
             turn_id: Some("turn-1".to_string()),
             started_at: None,
+            detail: None,
             payload,
         }
     }

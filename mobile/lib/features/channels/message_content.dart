@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../shared/clipboard_utils.dart';
+import '../../shared/devices/agent_badge_widgets.dart';
 import '../../shared/mentions/mention_bindings.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/deeplink/deep_link.dart';
@@ -913,7 +914,7 @@ class _MentionMd extends InlineMd {
     final pill = _MentionPill(
       label: visibleLabel,
       semanticsLabel: fullLabel,
-      isAgent: isAgent,
+      agentPubkey: isAgent ? pubkey : null,
       textStyle: config.style,
     );
 
@@ -930,13 +931,15 @@ class _MentionMd extends InlineMd {
 class _MentionPill extends StatelessWidget {
   final String label;
   final String? semanticsLabel;
-  final bool isAgent;
+
+  /// The mentioned agent; `null` for a person.
+  final String? agentPubkey;
   final TextStyle? textStyle;
 
   const _MentionPill({
     required this.label,
     this.semanticsLabel,
-    required this.isAgent,
+    this.agentPubkey,
     this.textStyle,
   });
 
@@ -970,11 +973,13 @@ class _MentionPill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (isAgent) ...[
-            Icon(
-              LucideIcons.bot,
+          if (agentPubkey case final agent?) ...[
+            // Long-press here opens message actions: no device-name tooltip.
+            AgentRobotGlyph(
+              agentPubkey: agent,
               size: fontSize * 0.95,
               color: context.colors.primary,
+              showDeviceName: false,
             ),
             const SizedBox(width: Grid.quarter + 1),
           ] else

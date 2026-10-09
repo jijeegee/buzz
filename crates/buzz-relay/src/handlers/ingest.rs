@@ -12,30 +12,30 @@ use uuid::Uuid;
 use buzz_auth::Scope;
 use buzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
-    is_relay_admin_kind, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE, KIND_AGENT_TURN_METRIC,
-    KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET,
-    KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN,
-    KIND_EMOJI_LIST, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT,
-    KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH,
-    KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE,
-    KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
-    KIND_GOAL_TREE, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
-    KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
-    KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
-    KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
-    KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST,
-    KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP,
-    KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
-    KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
-    KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE,
-    KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT,
-    KIND_PUBLIC_GOAL, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE,
-    KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
-    KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2,
-    KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_THREAD_NAME,
-    KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
-    RELAY_ADMIN_CHANGE_ROLE,
-    RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    is_relay_admin_kind, KIND_AGENT_ENGRAM, KIND_AGENT_HOST_DEVICES, KIND_AGENT_PROFILE,
+    KIND_AGENT_TURN_METRIC, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH, KIND_BOOKMARK_LIST,
+    KIND_BOOKMARK_SET, KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION, KIND_DEVICE_ROBOT,
+    KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET,
+    KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE,
+    KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
+    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
+    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_TREE, KIND_HUDDLE_ENDED,
+    KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT,
+    KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM,
+    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
+    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
+    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
+    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
+    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST,
+    KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE,
+    KIND_PROJECT, KIND_PUBLIC_GOAL, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
+    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF,
+    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED,
+    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE,
+    KIND_THREAD_NAME, KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
+    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
+    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -570,7 +570,9 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         KIND_TEXT_NOTE | KIND_LONG_FORM | buzz_core::kind::KIND_ARTIFACT => Ok(Scope::MessagesWrite),
         KIND_CONTACT_LIST | KIND_READ_STATE | KIND_USER_STATUS | KIND_AGENT_ENGRAM
         | KIND_EVENT_REMINDER | KIND_PERSONA | KIND_TEAM | KIND_MANAGED_AGENT
-        | KIND_PRIVATE_MANAGED_AGENT | KIND_TEAM_CATALOG | super::push_lease::KIND_PUSH_LEASE => {
+        | KIND_PRIVATE_MANAGED_AGENT | KIND_AGENT_HOST_DEVICES | KIND_DEVICE_ROBOT
+        | KIND_TEAM_CATALOG
+        | super::push_lease::KIND_PUSH_LEASE => {
             Ok(Scope::UsersWrite)
         }
         // NIP-AM: agent turn metrics are agent-authored global events (encrypted to owner).
@@ -791,6 +793,10 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_TEAM
             | KIND_MANAGED_AGENT
             | KIND_PRIVATE_MANAGED_AGENT
+            // Agent host devices (30180): owner-authored, keyed by (pubkey, kind, device id).
+            | KIND_AGENT_HOST_DEVICES
+            // Device robot appearance (30181): owner-authored, keyed by (pubkey, kind, device id).
+            | KIND_DEVICE_ROBOT
             | KIND_TEAM_CATALOG
             // NIP-34: git events use `a` tags (repo reference), not `h` tags (channel scope).
             // Parameterized replaceable kinds are keyed by (pubkey, kind, d_tag).
@@ -2164,6 +2170,89 @@ fn validate_not_before(tag_value: &str) -> Result<u64, &'static str> {
     Ok(value)
 }
 
+/// Most agents one device may list in a `kind:30180` host-devices event.
+const MAX_AGENT_HOST_DEVICE_AGENTS: usize = 256;
+
+/// Validate a `kind:30180` agent host-devices event: exactly one `d` tag
+/// holding a device id (uuid), and content `{"v":1,"agents":[<64-hex>...]}`.
+/// The relay does not check that the device belongs to the author; readers
+/// only ever see their own events.
+fn validate_agent_host_devices(event: &Event) -> Result<(), &'static str> {
+    validate_device_id_d_tag(event)?;
+    let content: serde_json::Value =
+        serde_json::from_str(&event.content).map_err(|_| "content must be JSON")?;
+    if content.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err("unsupported content version");
+    }
+    let agents = content
+        .get("agents")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("agents must be an array")?;
+    if agents.len() > MAX_AGENT_HOST_DEVICE_AGENTS {
+        return Err("too many agents");
+    }
+    let all_pubkeys = agents.iter().all(|agent| {
+        agent
+            .as_str()
+            .is_some_and(|hex| hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+    });
+    if !all_pubkeys {
+        return Err("agents must be hex pubkeys");
+    }
+    Ok(())
+}
+
+/// Exactly one `d` tag holding a device id (uuid).
+fn validate_device_id_d_tag(event: &Event) -> Result<(), &'static str> {
+    let mut d: Option<&str> = None;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        if parts.first().map(String::as_str) != Some("d") {
+            continue;
+        }
+        if d.is_some() {
+            return Err("duplicate d tag");
+        }
+        d = Some(parts.get(1).map(String::as_str).unwrap_or(""));
+    }
+    let d = d.ok_or("missing d tag")?;
+    if Uuid::parse_str(d).is_err() {
+        return Err("d tag must be a device id");
+    }
+    Ok(())
+}
+
+/// Validate a `kind:30181` device robot: a device-id `d` tag and content
+/// `{"v":1,"shape":"<name>","color":<index>}`. Shape names and palette size
+/// belong to clients; the relay only bounds them.
+fn validate_device_robot(event: &Event) -> Result<(), &'static str> {
+    validate_device_id_d_tag(event)?;
+    let content: serde_json::Value =
+        serde_json::from_str(&event.content).map_err(|_| "content must be JSON")?;
+    if content.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err("unsupported content version");
+    }
+    let shape_ok = content
+        .get("shape")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|shape| {
+            !shape.is_empty()
+                && shape.len() <= 32
+                && shape.bytes().all(|b| b.is_ascii_lowercase() || b == b'-')
+        });
+    if !shape_ok {
+        return Err("shape must be a short lowercase name");
+    }
+    if !content
+        .get("color")
+        .and_then(serde_json::Value::as_u64)
+        .is_some_and(|color| color < 64)
+    {
+        return Err("color must be a palette index");
+    }
+    Ok(())
+}
+
 /// Validate the public tag envelope of a NIP-ER `kind:30300` event before it
 /// reaches NIP-33 parameterized replacement.
 ///
@@ -3094,6 +3183,16 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_EVENT_REMINDER {
         validate_event_reminder(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_DEVICE_ROBOT {
+        validate_device_robot(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_AGENT_HOST_DEVICES {
+        validate_agent_host_devices(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -4259,6 +4358,96 @@ mod postgres_tests {
                 "kind {kind} is both global-only and channel-scoped"
             );
         }
+    }
+
+    #[test]
+    fn agent_host_devices_kind_is_author_only_global_user_data() {
+        let event = make_dummy_event();
+        assert_eq!(
+            required_scope_for_kind(KIND_AGENT_HOST_DEVICES, &event),
+            Ok(Scope::UsersWrite)
+        );
+        assert!(is_global_only_kind(KIND_AGENT_HOST_DEVICES));
+        assert!(!requires_h_channel_scope(KIND_AGENT_HOST_DEVICES));
+        assert!(buzz_core::kind::AUTHOR_ONLY_KINDS.contains(&KIND_AGENT_HOST_DEVICES));
+    }
+
+    #[test]
+    fn device_robot_is_author_only_and_validated() {
+        const DEVICE: &str = "bd5fcb77-c83d-4590-b6e6-78db532c66f3";
+        let event = make_dummy_event();
+        assert_eq!(
+            required_scope_for_kind(KIND_DEVICE_ROBOT, &event),
+            Ok(Scope::UsersWrite)
+        );
+        assert!(is_global_only_kind(KIND_DEVICE_ROBOT));
+        assert!(buzz_core::kind::AUTHOR_ONLY_KINDS.contains(&KIND_DEVICE_ROBOT));
+        let robot = |content: &str, tags: &[&[&str]]| {
+            validate_device_robot(&make_event_with_tags(KIND_DEVICE_ROBOT, content, tags))
+        };
+        assert_eq!(
+            robot(r#"{"v":1,"shape":"dome","color":3}"#, &[&["d", DEVICE]]),
+            Ok(())
+        );
+        assert_eq!(
+            robot(r#"{"v":1,"shape":"dome","color":3}"#, &[&["d", "pc"]]),
+            Err("d tag must be a device id")
+        );
+        assert_eq!(
+            robot(r#"{"v":1,"shape":"<b>","color":3}"#, &[&["d", DEVICE]]),
+            Err("shape must be a short lowercase name")
+        );
+        assert_eq!(
+            robot(r#"{"v":1,"shape":"dome","color":-1}"#, &[&["d", DEVICE]]),
+            Err("color must be a palette index")
+        );
+        assert_eq!(
+            robot(r#"{"v":1,"shape":"dome"}"#, &[&["d", DEVICE]]),
+            Err("color must be a palette index")
+        );
+    }
+
+    #[test]
+    fn agent_host_devices_envelope_validation() {
+        const DEVICE: &str = "bd5fcb77-c83d-4590-b6e6-78db532c66f3";
+        let agent = "8cf9a7e7deebdc7d1fe172b9af4c6796b224e43e8f03e80dbd357f6c61fdeff9";
+        let valid = format!(r#"{{"v":1,"agents":["{agent}"]}}"#);
+        let event = |content: &str, tags: &[&[&str]]| {
+            make_event_with_tags(KIND_AGENT_HOST_DEVICES, content, tags)
+        };
+
+        assert_eq!(
+            validate_agent_host_devices(&event(&valid, &[&["d", DEVICE]])),
+            Ok(())
+        );
+        assert_eq!(
+            validate_agent_host_devices(&event(r#"{"v":1,"agents":[]}"#, &[&["d", DEVICE]])),
+            Ok(())
+        );
+        assert_eq!(
+            validate_agent_host_devices(&event(&valid, &[])),
+            Err("missing d tag")
+        );
+        assert_eq!(
+            validate_agent_host_devices(&event(&valid, &[&["d", DEVICE], &["d", DEVICE]])),
+            Err("duplicate d tag")
+        );
+        assert_eq!(
+            validate_agent_host_devices(&event(&valid, &[&["d", "laptop"]])),
+            Err("d tag must be a device id")
+        );
+        assert_eq!(
+            validate_agent_host_devices(&event("not json", &[&["d", DEVICE]])),
+            Err("content must be JSON")
+        );
+        assert_eq!(
+            validate_agent_host_devices(&event(r#"{"v":2,"agents":[]}"#, &[&["d", DEVICE]])),
+            Err("unsupported content version")
+        );
+        assert_eq!(
+            validate_agent_host_devices(&event(r#"{"v":1,"agents":["zz"]}"#, &[&["d", DEVICE]])),
+            Err("agents must be hex pubkeys")
+        );
     }
 
     #[test]

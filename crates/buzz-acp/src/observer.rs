@@ -74,6 +74,10 @@ pub struct ObserverEvent {
     /// RFC3339 timestamp at which the current turn began, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<String>,
+    /// Summary level (`free` or `standard`) when the payload was summarised
+    /// for the owner's observer tier; absent on full-detail events.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
     /// Raw or semantic event payload.
     pub payload: serde_json::Value,
 }
@@ -117,6 +121,7 @@ impl ObserverHandle {
             session_id: context.session_id.clone(),
             turn_id: context.turn_id.clone(),
             started_at: context.started_at.clone(),
+            detail: None,
             payload,
         };
 

@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import type { TimelineMessage } from "@/features/messages/types";
+import { isSearchHitPlaceholder } from "@/features/messages/lib/searchHitPlaceholder";
 import { isBroadcastReply } from "@/features/messages/lib/threading";
 import type { Channel } from "@/shared/api/types";
 import type { PanelValueSetter } from "./useChannelPanelHistoryState";
@@ -42,6 +43,12 @@ function getRouteMainTimelineTargetId(
   targetMessage: TimelineMessage | null,
 ): string | null {
   if (!targetMessageId) {
+    return null;
+  }
+
+  // Scrolling to a placeholder row would mark the target reached and clear the
+  // route before the relay copy reveals where the message actually lives.
+  if (targetMessage && isSearchHitPlaceholder(targetMessage.tags)) {
     return null;
   }
 
@@ -112,7 +119,9 @@ export function useChannelRouteTarget({
     }
 
     const targetMessage = timelineMessageById.get(targetMessageId) ?? null;
-    if (!targetMessage) {
+    // A search-hit placeholder has no thread tags yet; acting on it would open
+    // a reply's own empty panel. Wait for the relay copy to replace it.
+    if (!targetMessage || isSearchHitPlaceholder(targetMessage.tags)) {
       return;
     }
 

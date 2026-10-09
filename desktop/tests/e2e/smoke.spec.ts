@@ -435,7 +435,7 @@ test("ordinary same-channel activation clears a prior search highlight", async (
     "shipped",
   );
   await expect(page).toHaveURL(
-    /#\/channels\/1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9(?:\?thread=mock-engineering-shipped)?$/,
+    /#\/channels\/1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9\?thread=mock-engineering-shipped$/,
   );
 
   await page.getByTestId("channel-engineering").click();

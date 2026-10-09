@@ -8,7 +8,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/agent_badge_widgets.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/relay/relay.dart';
@@ -18,7 +17,6 @@ import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/keyboard_dismiss_on_drag.dart';
-import '../../shared/widgets/message_author_meta.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import 'android_ime_lift.dart';
@@ -36,6 +34,8 @@ import 'composer_quote_chip.dart';
 import 'composer_quote_provider.dart';
 import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
+import 'chat_bubble_row.dart';
+import '../../shared/theme/chat_palette.dart';
 import 'day_divider.dart';
 import 'ime_metrics_settle_observer.dart';
 import 'initial_thread_tail_settle.dart';
@@ -907,6 +907,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         Theme.of(context).platform == TargetPlatform.iOS;
 
     return FrostedScaffold(
+      backgroundColor: ChatPalette.of(context).canvas,
       resizeToAvoidBottomInset: !usesFixedAndroidImeViewport,
       appBar: FrostedAppBar(
         leading: usesNativeIosGlassBackButton

@@ -37,16 +37,8 @@ import {
   toInlineName,
 } from "../lib/systemEventCopy";
 import { MessageAgentOwner } from "./MessageAgentOwner";
-import {
-  MessageAuthorText,
-  MessageHeaderRow,
-  MessageMetaSeparator,
-} from "./MessageHeader";
 import { MessageTimestamp } from "./MessageTimestamp";
-import {
-  MembershipAvatarStack,
-  SystemMessageAvatar,
-} from "./SystemMessageAvatars";
+import { MembershipAvatarStack } from "./SystemMessageAvatars";
 
 const SYSTEM_ACTION_BUTTON_CLASS = "h-6 w-6 rounded-full p-0";
 const SYSTEM_ACTION_ICON_CLASS = "!h-4 !w-4";
@@ -881,9 +873,7 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
     <div
       className={cn(
         "group/message relative mx-1 transition-colors",
-        isMembershipActivity
-          ? "pb-2 pt-4"
-          : "rounded-2xl px-2 py-1 hover:bg-muted/50 focus-within:bg-muted/50",
+        isMembershipActivity ? "pb-2 pt-4" : "py-2",
       )}
       data-testid="system-message-row"
     >
@@ -906,59 +896,31 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
           <div className="flex justify-center">{reactionsContent}</div>
         </div>
       ) : (
-        <div className="flex items-start gap-2.5">
-          <SystemMessageAvatar
-            actorPubkey={isMembershipArrival ? payload.target : payload.actor}
-            agentPubkeys={agentPubkeys}
-            currentPubkey={currentPubkey}
-            personaLookup={personaLookup}
-            profiles={profiles}
-            targetPubkey={isMembershipArrival ? undefined : payload.target}
-          />
-          <div
-            className={cn(
-              MESSAGE_MARKDOWN_CLASS,
-              "flex min-w-0 flex-1 flex-col gap-0.5",
-            )}
-          >
-            <MessageHeaderRow>
-              <MessageAuthorText as="div" className="text-foreground">
-                {description.title}
-              </MessageAuthorText>
-              <AgentManagementMarker
-                pubkey={displayedIdentityPubkey}
-                ownerPubkey={displayedOwnerPubkey}
-              />
+        // Channel notices read as a centered caption, like membership
+        // activity, so they never compete with chat bubbles.
+        <div className={cn(MESSAGE_MARKDOWN_CLASS, "flex flex-col gap-1.5")}>
+          <div className="flex justify-center">
+            <div className="flex min-w-0 max-w-[min(40rem,80%)] flex-wrap items-baseline justify-center gap-x-1.5 text-center text-xs text-muted-foreground/70">
+              <span className="font-medium">{description.title}</span>
               {displayedIdentityIsAgent ? (
-                <>
-                  <MessageAgentOwner
-                    agentPubkey={displayedIdentityPubkey}
-                    ownerLabel={displayedOwnerLabel}
-                    ownerPubkey={displayedOwnerPubkey}
-                  />
-                  {/* Grouped with the timestamp so the two wrap together. */}
-                  <span className="inline-flex min-w-0 items-baseline gap-x-1.5">
-                    <MessageMetaSeparator />
-                    <MessageTimestamp createdAt={message.createdAt} />
-                  </span>
-                </>
-              ) : (
-                <MessageTimestamp createdAt={message.createdAt} />
-              )}
-            </MessageHeaderRow>
-            <p className="-mt-0.5 text-sm leading-snug text-foreground">
-              {description.action}
-            </p>
-            {reactionsContent}
+                <MessageAgentOwner
+                  agentPubkey={displayedIdentityPubkey}
+                  ownerLabel={displayedOwnerLabel}
+                  ownerPubkey={displayedOwnerPubkey}
+                />
+              ) : null}
+              <span>{description.action}</span>
+              <MessageTimestamp
+                className="text-2xs"
+                clockOnly
+                createdAt={message.createdAt}
+              />
+            </div>
           </div>
+          <div className="flex justify-center">{reactionsContent}</div>
         </div>
       )}
-      <div
-        className={cn(
-          "absolute right-2 z-10",
-          isMembershipActivity ? "top-2" : "top-1 sm:top-0 sm:-translate-y-1/2",
-        )}
-      >
+      <div className={cn("absolute right-2 z-10", "top-2")}>
         {reactionPicker}
       </div>
     </div>

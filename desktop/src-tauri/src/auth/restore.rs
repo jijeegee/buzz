@@ -24,6 +24,9 @@ pub(crate) const RESTORE_TIMEOUT: Duration =
 /// Emit the token-auth-changed event for `origin`.
 pub(crate) fn emit_changed<R: tauri::Runtime>(app: &tauri::AppHandle<R>, origin: &str) {
     let _ = app.emit(TOKEN_AUTH_CHANGED_EVENT, origin.to_owned());
+    // A session that just became active (restore or sign-in) knows this
+    // device: tell the owner which agents it hosts. Unchanged lists are skipped.
+    crate::device_robot::spawn_publish_agent_host_devices(app);
 }
 
 /// Start the background refresh loop for `origin`'s login `generation`.

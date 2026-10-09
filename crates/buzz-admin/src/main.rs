@@ -81,6 +81,19 @@ enum Command {
     },
     /// List all relay members.
     ListMembers,
+    /// Set an owner's observer telemetry tier; agents inherit it.
+    ///
+    /// `default` removes the override so the owner follows
+    /// BUZZ_OBSERVER_DEFAULT_TIER. Relays pick up the change within 60 s.
+    SetObserverTier {
+        /// Owner public key — bech32 npub or 64-char hex.
+        #[arg(long)]
+        pubkey: String,
+
+        /// One of: free, standard, premium, default.
+        #[arg(long)]
+        tier: String,
+    },
     /// Generate a new Nostr keypair (for bootstrapping).
     GenerateKey,
     /// Run pending database migrations.
@@ -178,6 +191,7 @@ async fn run(cli: Cli) -> Result<i32> {
         Command::AddMember { pubkey, role } => cmd_add_member(pubkey, role).await,
         Command::RemoveMember { pubkey, role } => cmd_remove_member(pubkey, role).await,
         Command::ListMembers => cmd_list_members().await,
+        Command::SetObserverTier { pubkey, tier } => cmd_set_observer_tier(pubkey, tier).await,
         Command::ProductFeedback {
             command: ProductFeedbackCommand::List { limit },
         } => cmd_list_product_feedback(limit).await,
@@ -445,6 +459,48 @@ async fn cmd_add_member(pubkey_arg: String, role: String) -> Result<i32> {
     }
 
     Ok(0)
+}
+
+async fn cmd_set_observer_tier(pubkey_arg: String, tier: String) -> Result<i32> {
+    if let Err(msg) = validate_observer_tier(&tier) {
+        eprintln!("error: {msg}");
+        return Ok(1);
+    }
+    let pubkey = match nostr::PublicKey::parse(&pubkey_arg) {
+        Ok(pubkey) => pubkey,
+        Err(e) => {
+            eprintln!("error: invalid pubkey '{pubkey_arg}': {e}");
+            return Ok(1);
+        }
+    };
+
+    let db = connect_db().await?;
+    let tenant = resolve_admin_tenant(&db).await?;
+    let owner = pubkey.to_bytes();
+    let result = if tier == "default" {
+        db.clear_observer_tier(tenant.community(), &owner)
+            .await
+            .map(|_| ())
+    } else {
+        db.set_observer_tier(tenant.community(), &owner, &tier)
+            .await
+    };
+    if let Err(e) = result {
+        eprintln!("error: DB write failed: {e}");
+        return Ok(5);
+    }
+    println!("observer tier for {} set to {tier}", pubkey.to_hex());
+    Ok(0)
+}
+
+fn validate_observer_tier(tier: &str) -> std::result::Result<(), String> {
+    if tier == "default" || buzz_db::observer_tier::OBSERVER_TIER_NAMES.contains(&tier) {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid tier '{tier}': must be free, standard, premium, or default"
+        ))
+    }
 }
 
 async fn cmd_remove_member(pubkey_arg: String, role_filter: Option<String>) -> Result<i32> {
@@ -910,5 +966,28 @@ mod tests {
             cli.command,
             Command::PartitionAudit { months_ahead: 6 }
         ));
+    }
+
+    #[test]
+    fn parses_set_observer_tier_and_validates_tier_names() {
+        let cli = Cli::try_parse_from([
+            "buzz-admin",
+            "set-observer-tier",
+            "--pubkey",
+            "npub1example",
+            "--tier",
+            "free",
+        ])
+        .expect("parse set-observer-tier command");
+        assert!(matches!(
+            cli.command,
+            Command::SetObserverTier { ref tier, .. } if tier == "free"
+        ));
+        for tier in ["free", "standard", "premium", "default"] {
+            assert!(validate_observer_tier(tier).is_ok(), "{tier}");
+        }
+        for tier in ["Free", "gold", ""] {
+            assert!(validate_observer_tier(tier).is_err(), "{tier:?}");
+        }
     }
 }

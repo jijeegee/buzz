@@ -71,35 +71,7 @@ async fn event_exists(client: &BuzzClient, channel: &str, id: &str) -> Result<bo
 pub(crate) enum Edit {
     /// Operations applied in order and published as one revision.
     Ops(Vec<GoalOp>),
-    /// Link a thread to a goal; an `open` goal also becomes `in_progress`.
-    Link {
-        id: String,
-        thread: String,
-    },
     Replace(GoalTree),
-}
-
-/// The operations `edit` makes against the live `tree`. Decided per attempt,
-/// so a conflict re-plans against the newer head.
-fn plan(edit: &Edit, tree: &GoalTree) -> Vec<GoalOp> {
-    match edit {
-        Edit::Ops(ops) => ops.clone(),
-        Edit::Link { id, thread } => {
-            let mut ops = vec![GoalOp::Link {
-                id: id.clone(),
-                thread: thread.clone(),
-            }];
-            if tree.node(id).is_some_and(|n| n.status == GoalStatus::Open) {
-                ops.push(start_op(id));
-            }
-            ops
-        }
-        Edit::Replace(_) => Vec::new(),
-    }
-}
-
-fn start_op(id: &str) -> GoalOp {
-    status_op(id, GoalStatus::InProgress)
 }
 
 pub(crate) fn status_op(id: &str, status: GoalStatus) -> GoalOp {
@@ -168,21 +140,16 @@ pub(crate) async fn update_goal(
     Ok(out)
 }
 
-/// `add --thread`: create the goal, link the thread, and start it — one write.
+/// `add --thread`: create the goal and link the thread (which starts it) —
+/// one write.
 fn add_ops(add: GoalOp, thread: Option<String>) -> Vec<GoalOp> {
     let GoalOp::Add { id, .. } = &add else {
         return vec![add];
     };
     let id = id.clone();
+    // Linking starts the goal (`GoalTree::apply`), so no separate status op.
     match thread {
-        Some(thread) => vec![
-            add,
-            GoalOp::Link {
-                id: id.clone(),
-                thread,
-            },
-            start_op(&id),
-        ],
+        Some(thread) => vec![add, GoalOp::Link { id, thread }],
         None => vec![add],
     }
 }
@@ -216,10 +183,10 @@ pub(crate) async fn write_tree(
         };
         match &edit {
             Edit::Replace(replacement) => tree = replacement.clone(),
-            _ => {
+            Edit::Ops(ops) => {
                 let now = chrono::Utc::now().timestamp().max(0) as u64;
-                for op in plan(&edit, &tree) {
-                    tree.apply(&op, &editor, now)
+                for op in ops {
+                    tree.apply(op, &editor, now)
                         .map_err(|e| CliError::Usage(e.to_string()))?;
                 }
             }
@@ -461,7 +428,8 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
             thread,
         } => {
             validate_hex64(&thread)?;
-            print(&write(client, &channel, Edit::Link { id: node, thread }).await?);
+            let op = GoalOp::Link { id: node, thread };
+            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
         }
         GoalsCmd::Unlink { channel, thread } => {
             validate_hex64(&thread)?;
@@ -567,35 +535,6 @@ mod tests {
     }
 
     #[test]
-    fn link_starts_an_open_goal_only() {
-        let mut tree = tree();
-        let thread = "f".repeat(64);
-        let link = Edit::Link {
-            id: "a".into(),
-            thread: thread.clone(),
-        };
-        let ops = plan(&link, &tree);
-        assert_eq!(ops.len(), 2);
-        assert_eq!(ops[1], start_op("a"));
-        for op in &ops {
-            tree.apply(op, ED, 2).unwrap();
-        }
-        assert_eq!(tree.node("a").unwrap().status, GoalStatus::InProgress);
-        assert_eq!(tree.node_for_thread(&thread).unwrap().id, "a");
-
-        tree.apply(&status_op("b", GoalStatus::Done), ED, 3)
-            .unwrap();
-        let ops = plan(
-            &Edit::Link {
-                id: "b".into(),
-                thread,
-            },
-            &tree,
-        );
-        assert_eq!(ops.len(), 1, "a done goal is not reopened");
-    }
-
-    #[test]
     fn add_with_thread_links_and_starts_in_one_write() {
         let thread = "e".repeat(64);
         let add = GoalOp::Add {
@@ -607,7 +546,7 @@ mod tests {
         };
         assert_eq!(add_ops(add.clone(), None).len(), 1);
         let ops = add_ops(add, Some(thread.clone()));
-        assert_eq!(ops.len(), 3);
+        assert_eq!(ops.len(), 2);
         let mut tree = tree();
         for op in &ops {
             tree.apply(op, ED, 2).unwrap();
@@ -660,7 +599,6 @@ mod tests {
                 remove_assignees: vec![],
             }
         );
-        assert_eq!(start_op("a"), status_op("a", GoalStatus::InProgress));
     }
 
     #[test]

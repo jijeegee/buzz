@@ -6,6 +6,7 @@ import {
   channelWindowThreadSummaries,
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
+import { isSearchHitPlaceholder } from "@/features/messages/lib/searchHitPlaceholder";
 import { useThreadRepliesForRoots } from "@/features/messages/useThreadReplies";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 
@@ -33,7 +34,13 @@ export function useHuddleChannelMessages({
   windowStore,
 }: HuddleChannelMessagesOptions) {
   const resolvedChannelMessages = React.useMemo(() => {
-    const extraEvents = targetMessageEvents;
+    // A search-hit placeholder must not replace the feed's own copy: it lacks
+    // thread tags, so it would render a loaded thread reply as a channel row.
+    const loadedIds = new Set(messages.map((message) => message.id));
+    const extraEvents = targetMessageEvents.filter(
+      (event) =>
+        !isSearchHitPlaceholder(event.tags) || !loadedIds.has(event.id),
+    );
     if (!activeChannel || extraEvents.length === 0) return messages;
     return extraEvents.reduce(mergeMessages, messages);
   }, [activeChannel, messages, targetMessageEvents]);

@@ -1,4 +1,6 @@
-import { Activity, Bot } from "lucide-react";
+import { Activity } from "lucide-react";
+
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 
 import type { UserNote } from "@/shared/api/socialTypes";
 import type { UserProfileSummary } from "@/shared/api/types";
@@ -68,7 +70,12 @@ export function RecentNotesSection({
                   size="sm"
                 />
                 {isAgent ? (
-                  <Bot className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-background p-0.5 text-muted-foreground" />
+                  <AgentBadgeIcon
+                    agentPubkey={note.pubkey}
+                    className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-background p-0.5 text-muted-foreground"
+                    othersSee="bot"
+                    ownerPubkey={profile?.ownerPubkey}
+                  />
                 ) : null}
               </div>
               <div className="min-w-0 flex-1">

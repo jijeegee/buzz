@@ -2,14 +2,30 @@
 //! conversation's goal tree.
 //!
 //! Each goal has a private part and an optional public part. The private
-//! part never leaves this machine: it lives in `layer0-goals.json`, and each
-//! of the owner's agents gets its own copy in `layer0-goals/<agent>.json`
-//! (see [`AgentGoalsFile`]). The harness re-reads that file every turn, so an
-//! edit reaches running agents on their next message, with no restart. Only
-//! the file's path is passed at spawn (`BUZZ_ACP_LAYER0_GOALS_FILE`); goal
-//! text never rides in the environment. The public part is off by default;
-//! when enabled it is published as the subject's replaceable kind 10110
-//! event, and disabling it publishes empty content.
+//! part never leaves this machine. The public part is off by default; when
+//! enabled it is published as the subject's replaceable kind 10110 event,
+//! and disabling it publishes empty content.
+//!
+//! # Where private goals live
+//!
+//! All under the app data directory's `agents/` folder
+//! ([`managed_agents_base_dir`]):
+//!
+//! - `layer0-goals.json` — the store: every owner's and agent's goal.
+//! - `.ctx/<agent pubkey>.json` — one derived file per local agent with only
+//!   the goals that agent may see (see [`AgentGoalsFile`]). Desktop rewrites
+//!   every agent's file whenever a goal is saved and at each spawn, and
+//!   deletes it with the agent. The harness re-reads it every turn, so an
+//!   edit reaches running agents on their next message, with no restart.
+//!   Only the path is passed at spawn (`BUZZ_ACP_LAYER0_GOALS_FILE`, which
+//!   the harness removes from its own environment); goal text never rides
+//!   in environment variables.
+//!
+//! These files are plaintext. Any process running as the same OS user can
+//! read them, including an agent's own shell tools if it goes looking. That
+//! is acceptable for a single-user desktop, where the goals' owner is that
+//! user; the folder name only keeps the files out of casual view and is not
+//! a protection.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -107,7 +123,7 @@ fn answers_owner_only(record: &ManagedAgentRecord) -> bool {
 }
 
 fn agent_goals_dir(base_dir: &Path) -> PathBuf {
-    base_dir.join("layer0-goals")
+    base_dir.join(".ctx")
 }
 
 fn agent_goals_path(base_dir: &Path, agent_pubkey: &str) -> PathBuf {
@@ -369,7 +385,7 @@ mod tests {
     fn agent_goals_file_is_rewritten_in_place_in_the_harness_format() {
         let dir = tempfile::tempdir().unwrap();
         let path = agent_goals_path(dir.path(), AGENT);
-        assert!(path.ends_with("layer0-goals/aaaa.json"));
+        assert!(path.ends_with(".ctx/aaaa.json"));
 
         write_agent_goals_file(&path, &agent_goals(&store(), AGENT, Some(OWNER), true)).unwrap();
         let raw: serde_json::Value =

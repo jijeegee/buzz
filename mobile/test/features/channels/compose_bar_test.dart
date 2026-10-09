@@ -27,6 +27,9 @@ import 'package:buzz/features/channels/voice_note_recording.dart';
 import 'package:buzz/features/channels/voice_note_waveform.dart';
 import 'package:buzz/shared/custom_emoji/custom_emoji.dart';
 import 'package:buzz/shared/custom_emoji/custom_emoji_provider.dart';
+import 'package:buzz/shared/devices/agent_badge_widgets.dart';
+import 'package:buzz/shared/devices/agent_host_devices.dart';
+import 'package:buzz/shared/devices/device_robot.dart';
 import 'package:buzz/shared/mentions/agent_identity_provider.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/profile/user_cache_provider.dart';
@@ -207,6 +210,7 @@ Widget _buildComposeBar({
   VoiceNoteRecorder Function()? voiceNoteRecorderFactory,
   VoiceNotePlayerController Function()? voiceNotePlayerFactory,
   List<Override> extraOverrides = const [],
+  Map<String, String> agentOwners = const {},
 }) {
   return ProviderScope(
     overrides: [
@@ -227,7 +231,7 @@ Widget _buildComposeBar({
         'channel-1',
       ).overrideWith((ref) => membersFuture ?? Future.value(members)),
       agentDirectoryProvider.overrideWith((ref) async => relayAgents),
-      agentOwnersProvider.overrideWith((ref) async => const <String, String>{}),
+      agentOwnersProvider.overrideWith((ref) async => agentOwners),
       relayClientProvider.overrideWithValue(
         RelayClient(baseUrl: 'http://localhost:3000'),
       ),
@@ -1766,6 +1770,73 @@ void main() {
       expect(_suggestionAvatarInitial(tester, shortPubkey(a11ce)), 'A');
       expect(_suggestionAvatarInitial(tester, 'Carol'), 'C');
     });
+
+    testWidgets(
+      'agent suggestions carry the chat badge: device robot for the owner',
+      (tester) async {
+        final owner = 'c' * 64;
+        final mine = 'd' * 64;
+        final theirs = 'e' * 64;
+        final chosen = deviceRobotVariantFromIndices(
+          colorIndex: 6,
+          shapeIndex: 3,
+        )!;
+        await tester.pumpWidget(
+          _buildComposeBar(
+            uploadService: _testUploadService(nostr.Keys.generate().nsec),
+            currentPubkey: owner,
+            relayAgents: [
+              _testAgent(mine),
+              AgentDirectoryEntry(
+                pubkey: theirs,
+                displayName: 'Other Bot',
+                respondTo: 'anyone',
+                channelIds: const ['shared-channel'],
+              ),
+            ],
+            agentOwners: {mine: owner, theirs: 'f' * 64},
+            channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
+            extraOverrides: [
+              agentHostDevicesProvider.overrideWithValue({mine: 'device-1'}),
+              deviceRobotOverridesProvider.overrideWithValue({
+                'device-1': chosen,
+              }),
+              agentHostDeviceNamesProvider.overrideWithValue(const {
+                'device-1': 'Work laptop',
+              }),
+            ],
+            onSend: (_, _, {mediaTags = const <List<String>>[]}) async {},
+          ),
+        );
+
+        await _expandComposer(tester);
+        await tester.enterText(find.byType(TextField), '@');
+        await tester.pumpAndSettle();
+
+        final mineAvatar = find.byKey(
+          ValueKey('mention-suggestion-avatar-$mine'),
+        );
+        final mineBadge = tester.widget<AgentAvatarBadge>(mineAvatar);
+        expect(mineBadge.badge, isA<AgentDeviceBadge>());
+        expect((mineBadge.badge! as AgentDeviceBadge).variant, chosen);
+        expect(
+          find.descendant(
+            of: mineAvatar,
+            matching: find.byKey(ValueKey('device-robot-badge-${chosen.tag}')),
+          ),
+          findsOneWidget,
+        );
+        final tooltip = tester.widget<Tooltip>(
+          find.descendant(of: mineAvatar, matching: find.byType(Tooltip)),
+        );
+        expect(tooltip.message, 'Running on Work laptop');
+
+        final theirsBadge = tester.widget<AgentAvatarBadge>(
+          find.byKey(ValueKey('mention-suggestion-avatar-$theirs')),
+        );
+        expect(theirsBadge.badge, isA<AgentOwnerBadge>());
+      },
+    );
 
     testWidgets('dismisses mention suggestions in the selection frame', (
       tester,

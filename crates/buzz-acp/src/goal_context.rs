@@ -235,9 +235,53 @@ pub(crate) fn render_goal_context(
     Some(body.trim_end().to_string())
 }
 
+/// How often a failing channel may log a warning; the rest go to debug.
+const FETCH_WARN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+/// Channels remembered by the limiter before it starts over.
+const FETCH_WARN_MAX_CHANNELS: usize = 1024;
+
+/// Rate limit for goal-tree fetch warnings: a relay that keeps failing must
+/// be visible without logging on every turn.
+#[derive(Default)]
+struct FetchWarnLimiter {
+    last: std::collections::HashMap<Uuid, std::time::Instant>,
+}
+
+impl FetchWarnLimiter {
+    fn should_warn(&mut self, channel_id: Uuid, now: std::time::Instant) -> bool {
+        if let Some(last) = self.last.get(&channel_id) {
+            if now.saturating_duration_since(*last) < FETCH_WARN_INTERVAL {
+                return false;
+            }
+        }
+        if self.last.len() >= FETCH_WARN_MAX_CHANNELS {
+            self.last.clear();
+        }
+        self.last.insert(channel_id, now);
+        true
+    }
+}
+
+fn fetch_failed(channel_id: Uuid, what: std::fmt::Arguments<'_>) {
+    static LIMITER: std::sync::Mutex<Option<FetchWarnLimiter>> = std::sync::Mutex::new(None);
+    let warn = LIMITER
+        .lock()
+        .map(|mut limiter| {
+            limiter
+                .get_or_insert_with(FetchWarnLimiter::default)
+                .should_warn(channel_id, std::time::Instant::now())
+        })
+        .unwrap_or(true);
+    if warn {
+        tracing::warn!(target: "goals::fetch", channel = %channel_id, "{what}; this turn has no goal context (repeats are logged at debug for 10 minutes)");
+    } else {
+        tracing::debug!(target: "goals::fetch", channel = %channel_id, "{what}");
+    }
+}
+
 /// Fetch the live goal tree head: one relay query per turn. No tree and any
 /// failure both yield `None` — the turn goes ahead without goals rather than
-/// failing, and nothing is logged above debug level.
+/// failing. Failures warn at most once per channel per 10 minutes.
 pub(crate) async fn fetch_goal_tree(channel_id: Uuid, rest: &RestClient) -> Option<GoalTree> {
     use nostr::{Alphabet, SingleLetterTag};
 
@@ -255,11 +299,14 @@ pub(crate) async fn fetch_goal_tree(channel_id: Uuid, rest: &RestClient) -> Opti
     {
         Ok(Ok(json)) => json,
         Ok(Err(e)) => {
-            tracing::debug!(target: "goals::fetch", channel = %channel_id, "goal tree query failed: {e}");
+            fetch_failed(channel_id, format_args!("goal tree query failed: {e}"));
             return None;
         }
         Err(_) => {
-            tracing::debug!(target: "goals::fetch", channel = %channel_id, "goal tree fetch timed out");
+            fetch_failed(
+                channel_id,
+                format_args!("goal tree fetch timed out after {TIMEOUT:?}"),
+            );
             return None;
         }
     };
@@ -267,7 +314,7 @@ pub(crate) async fn fetch_goal_tree(channel_id: Uuid, rest: &RestClient) -> Opti
     match GoalTree::parse(content) {
         Ok(tree) => Some(tree),
         Err(e) => {
-            tracing::debug!(target: "goals::fetch", channel = %channel_id, "unreadable goal tree head: {e}");
+            fetch_failed(channel_id, format_args!("unreadable goal tree head: {e}"));
             None
         }
     }
@@ -319,6 +366,24 @@ mod tests {
 
     fn channel() -> Uuid {
         Uuid::nil()
+    }
+
+    #[test]
+    fn fetch_warnings_are_rate_limited_per_channel() {
+        let mut limiter = FetchWarnLimiter::default();
+        let (a, b) = (Uuid::from_u128(1), Uuid::from_u128(2));
+        let t0 = std::time::Instant::now();
+        assert!(limiter.should_warn(a, t0));
+        assert!(!limiter.should_warn(a, t0 + std::time::Duration::from_secs(60)));
+        assert!(
+            limiter.should_warn(b, t0),
+            "other channels warn on their own"
+        );
+        assert!(limiter.should_warn(a, t0 + FETCH_WARN_INTERVAL));
+        for i in 0..(FETCH_WARN_MAX_CHANNELS as u128 + 5) {
+            limiter.should_warn(Uuid::from_u128(100 + i), t0);
+        }
+        assert!(limiter.last.len() <= FETCH_WARN_MAX_CHANNELS, "bounded");
     }
 
     #[test]
@@ -394,6 +459,8 @@ mod tests {
             2,
         )
         .unwrap();
+        // Linking starts a goal; reopen it to see the open-goal commands.
+        set_status(&mut tree, "cas", GoalStatus::Open);
         let open = commands(&tree, Some(THREAD));
         assert!(
             open[0].starts_with("- Start: buzz goals start") && open[0].ends_with("--node cas")
@@ -473,6 +540,8 @@ mod tests {
             )
             .unwrap();
         }
+        // The sample's layer 2 goal was linked before linking started goals.
+        set_status(&mut tree, l2, GoalStatus::Open);
         tree.apply(
             &GoalOp::Update {
                 id: goal.into(),
@@ -545,7 +614,10 @@ mod tests {
         );
         let path = body.split("This thread's goal").next().unwrap();
         assert!(path.contains("L1 [open] Launch") && path.contains("L2 [open] Server"));
-        assert!(body.contains("L3 [open] CAS writes (id: cas) — 1/1 sub-goals done"));
+        assert!(
+            body.contains("L3 [in_progress] CAS writes (id: cas) — 1/1 sub-goals done"),
+            "linking started the goal"
+        );
         assert!(body.contains("L4 [done] Retry on conflict"));
         let others = body.split("Other layer 3 goals").nth(1).unwrap();
         assert!(others.contains("Validation") && others.contains("Goals panel"));

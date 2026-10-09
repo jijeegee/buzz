@@ -35,19 +35,25 @@ const TIMESTAMP_TOOLTIP_DELAY_MS = 500;
  * - `hideDayPeriod` — clock only, minus the AM/PM marker. This renders in a
  *   36px-wide gutter where the avatar would be, so it has room for "9:05" and
  *   nothing more.
+ * - `clockOnly` — clock with its AM/PM marker ("9:05 AM"), for the corner of a
+ *   chat bubble. The day divider anchors the date.
  */
 export function MessageTimestamp({
   className,
+  clockOnly = false,
   createdAt,
   hideDayPeriod = false,
 }: {
   className?: string;
+  clockOnly?: boolean;
   createdAt: number;
   hideDayPeriod?: boolean;
 }) {
   const displayTime = hideDayPeriod
     ? formatTimeWithoutDayPeriod(formatTime(createdAt))
-    : formatItemTimestamp(createdAt, { withTime: true });
+    : clockOnly
+      ? formatTime(createdAt)
+      : formatItemTimestamp(createdAt, { withTime: true });
 
   return (
     <TooltipProvider

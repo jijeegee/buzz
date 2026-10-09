@@ -420,6 +420,8 @@ pub fn save_managed_agents<R: tauri::Runtime>(
     write_agent_store(app, definitions, sorted)?;
     // Prompt and team edits reach running agents through their live settings.
     super::live_settings::schedule_live_settings_sync(app);
+    // A created, moved or deleted agent changes the list this device hosts.
+    crate::device_robot::spawn_publish_agent_host_devices(app);
     Ok(())
 }
 

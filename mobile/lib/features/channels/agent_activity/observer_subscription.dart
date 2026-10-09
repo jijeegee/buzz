@@ -23,16 +23,21 @@ class ObserverState {
   final List<TranscriptItem> transcript;
   final String? errorMessage;
 
+  /// The agent's telemetry arrives summarised (free or standard tier).
+  final bool summaryView;
+
   const ObserverState({
     required this.connection,
     required this.transcript,
     this.errorMessage,
+    this.summaryView = false,
   });
 
   const ObserverState.initial()
     : connection = ObserverConnectionState.idle,
       transcript = const [],
-      errorMessage = null;
+      errorMessage = null,
+      summaryView = false;
 }
 
 @immutable
@@ -375,5 +380,6 @@ final observerSubscriptionProvider =
         connection: relayState.connection,
         transcript: buildTranscript(channelFrames),
         errorMessage: relayState.errorMessage,
+        summaryView: isObserverSummaryView(channelFrames),
       );
     });

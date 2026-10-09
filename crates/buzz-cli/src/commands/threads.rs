@@ -556,12 +556,13 @@ mod tests {
                 report: serde_json::Value::Null
             }
         );
-        let open = CloseGoal::plan(&tree, &thread, false);
-        assert!(open.warning().is_none(), "only an in_progress goal warns");
-        let left = CloseGoal::Left {
+        // Linking started the goal, so closing without --goal-done warns.
+        let left = CloseGoal::plan(&tree, &thread, false);
+        let open = CloseGoal::Left {
             id: "g".into(),
-            status: GoalStatus::InProgress,
+            status: GoalStatus::Open,
         };
+        assert!(open.warning().is_none(), "only an in_progress goal warns");
         assert!(left
             .warning()
             .unwrap()

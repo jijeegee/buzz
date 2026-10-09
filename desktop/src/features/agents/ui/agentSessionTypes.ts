@@ -9,6 +9,11 @@ export type ObserverEvent = {
   sessionId: string | null;
   turnId: string | null;
   startedAt?: string | null;
+  /**
+   * Observer tier that summarised this event (`"free"` or `"standard"`);
+   * absent on full-detail events.
+   */
+  detail?: string | null;
   payload: unknown;
 };
 
@@ -137,6 +142,10 @@ export type TranscriptItem =
       timestamp: string;
       startedAt: string;
       completedAt: string | null;
+      /** Truncated argument text of a summarised tool call, shown as its arguments. */
+      argsPreview?: string | null;
+      /** Status was set by the turn ending rather than by a tool update. */
+      closedByTurnEnd?: boolean;
       acpSource?: TranscriptAcpSource;
     } & TranscriptItemIdentity);
 

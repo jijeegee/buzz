@@ -25,6 +25,7 @@ import {
   GoalEditor,
   GoalRow,
   GoalStatusButton,
+  runGoalEdit,
 } from "./GoalRows";
 
 type ThreadGoalPanelViewProps = {
@@ -242,7 +243,9 @@ export function GoalLinkPicker({
             data-testid={`thread-goal-option-${node.id}`}
             onClick={() => {
               onDone();
-              void apply({ op: "link", id: node.id, thread: threadRootId });
+              runGoalEdit(
+                apply({ op: "link", id: node.id, thread: threadRootId }),
+              );
             }}
             style={{ paddingLeft: `${0.5 + (layer - 1) * 0.75}rem` }}
             type="button"
@@ -267,7 +270,7 @@ export function GoalLinkPicker({
           data-testid="thread-goal-unlink"
           onClick={() => {
             onDone();
-            void apply({ op: "unlink", thread: threadRootId });
+            runGoalEdit(apply({ op: "unlink", thread: threadRootId }));
           }}
           type="button"
         >

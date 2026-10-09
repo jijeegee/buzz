@@ -55,6 +55,17 @@ export function goalProgress(
   return { done, total };
 }
 
+/**
+ * The id a thread is linked to goals by: the root of its reply chain, the
+ * same id mobile and agents use. A nested thread head links its chain root.
+ */
+export function threadGoalRootId(head: {
+  id: string;
+  rootId?: string | null;
+}): string {
+  return head.rootId ?? head.id;
+}
+
 export function goalForThread(
   tree: GoalTree,
   threadRootId: string,

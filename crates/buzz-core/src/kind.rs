@@ -123,6 +123,21 @@ pub const KIND_PUSH_LEASE: u32 = 30350;
 /// plus exact public projection bindings. See `docs/nips/NIP-PMA.md`.
 pub const KIND_PRIVATE_MANAGED_AGENT: u32 = 30179;
 
+/// Agent host devices (parameterized replaceable, author-only).
+///
+/// Published by the agents' owner from each device that hosts agents:
+/// `d` = the relay device id, content = `{"v":1,"agents":["<hex>",...]}`.
+/// Lets the owner see which computer each of their agents runs on without
+/// revealing it to anyone else; reads are author-only (see [`AUTHOR_ONLY_KINDS`]).
+pub const KIND_AGENT_HOST_DEVICES: u32 = 30180;
+
+/// Device robot appearance (parameterized replaceable, author-only).
+///
+/// The owner's chosen robot for one of their devices: `d` = the relay device
+/// id, content = `{"v":1,"shape":"<name>","color":<index>}`. Clients fall back
+/// to the robot derived from the device id when absent or unknown.
+pub const KIND_DEVICE_ROBOT: u32 = 30181;
+
 /// Kinds whose stored events are readable only by their author.
 ///
 /// The relay must never reveal the existence, count, tags, content, schedule,
@@ -136,6 +151,8 @@ pub const AUTHOR_ONLY_KINDS: &[u32] = &[
     KIND_EVENT_REMINDER,
     KIND_PUSH_LEASE,
     KIND_PRIVATE_MANAGED_AGENT,
+    KIND_AGENT_HOST_DEVICES,
+    KIND_DEVICE_ROBOT,
 ];
 
 /// Kinds that require a result-level read gate beyond the filter-layer
@@ -677,6 +694,8 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_MANAGED_AGENT,
     KIND_TEAM_CATALOG,
     KIND_PRIVATE_MANAGED_AGENT,
+    KIND_AGENT_HOST_DEVICES,
+    KIND_DEVICE_ROBOT,
     KIND_REPORT,
     KIND_PRODUCT_FEEDBACK,
     KIND_NIP29_PUT_USER,
@@ -895,6 +914,8 @@ const _: () = assert!(is_parameterized_replaceable(KIND_TEAM)); // 30176 ∈ 300
 const _: () = assert!(is_parameterized_replaceable(KIND_MANAGED_AGENT)); // 30177 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_TEAM_CATALOG)); // 30178 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_PRIVATE_MANAGED_AGENT)); // 30179 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_AGENT_HOST_DEVICES)); // 30180 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_DEVICE_ROBOT)); // 30181 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WORKFLOW_DEF)); // 30620 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_EVENT_REMINDER)); // 30300 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_DM_VISIBILITY)); // 30622 ∈ 30000–39999

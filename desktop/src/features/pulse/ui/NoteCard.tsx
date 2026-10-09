@@ -1,5 +1,4 @@
 import {
-  Bot,
   Heart,
   MessageCircle,
   PenSquare,
@@ -9,6 +8,7 @@ import * as React from "react";
 
 import { ForumComposer } from "@/features/forum/ui/ForumComposer";
 import { useUserProfileQuery } from "@/features/profile/hooks";
+import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import { useNoteByIdQuery } from "@/features/pulse/hooks";
 import { getReplyParent, noteSnippet } from "@/features/pulse/lib/replies";
@@ -179,7 +179,12 @@ export function NoteCard({
             shape={isAgent ? "squircle" : "circle"}
           />
           {isAgent ? (
-            <Bot className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-background p-0.5 text-muted-foreground" />
+            <AgentBadgeIcon
+              agentPubkey={note.pubkey}
+              className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-background p-0.5 text-muted-foreground"
+              othersSee="bot"
+              ownerPubkey={profile?.ownerPubkey}
+            />
           ) : null}
         </button>
       </UserProfilePopover>

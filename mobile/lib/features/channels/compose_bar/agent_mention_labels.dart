@@ -1,10 +1,11 @@
 part of '../compose_bar.dart';
 
-Set<String> _agentMentionLabels({
+/// Bound agent mentions by label, for the composer's agent chips.
+Map<String, MentionCandidate> _agentMentionLabels({
   required Map<String, MentionCandidate> bindings,
 }) => {
   for (final entry in bindings.entries)
-    if (entry.value.isAgent) entry.key,
+    if (entry.value.isAgent) entry.key: entry.value,
 };
 
 List<MentionCandidate> _resolveComposerMentions(

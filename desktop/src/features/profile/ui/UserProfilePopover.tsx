@@ -420,6 +420,7 @@ function UserProfilePopoverBody({
               agentPubkey={pubkey}
               className="h-4 w-4"
               fallback="none"
+              ownerPubkey={ownerPubkey}
             />
           ) : null}
           {isBotProfile && botIdenticonValue ? (

@@ -105,6 +105,11 @@ const REQ_PACING_INTERVAL: Duration = Duration::from_millis(125);
 /// below the relay's 50-frames/5s budget, and ensures the select! loop is never
 /// blocked for more than one REQ's worth of I/O between drain ticks.
 const DRAIN_BUDGET_PER_ITER: usize = 1;
+/// Minimum spacing between parked observer frames drained after a gate
+/// clears. Matches the executor's per-agent burst (5 frames/s on every tier),
+/// which keeps a drained backlog below the relay's per-agent burst cap
+/// (5 × 1.5 = 8/s) instead of draining at the REQ pacing rate of exactly 8/s.
+const OBSERVER_DRAIN_SPACING: Duration = Duration::from_millis(200);
 /// Maximum observer telemetry frames parked while the rate-limit gate is armed
 /// (or the socket is down). The upstream publisher ships at most ONE batched
 /// frame per second GLOBALLY (one publish slot per tick, regardless of how
@@ -127,7 +132,7 @@ use crate::identity::{AgentIdentity, BotToken};
 #[cfg(test)]
 use nostr::Keys;
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::{debug, info, warn};
@@ -577,6 +582,28 @@ impl RestClient {
         .await
     }
 
+    /// Fetch this agent's observer telemetry policy:
+    /// `GET /api/observer/policy` with NIP-98 auth. The relay answers with the
+    /// owner's tier and its executor limits.
+    pub async fn observer_policy(&self) -> Result<Value, RelayError> {
+        const PATH: &str = "/api/observer/policy";
+        let url = format!("{}{PATH}", self.base_url);
+        let auth_tag_header = self.auth_tag_json.clone();
+        let resp = self
+            .request_with_retry("GET", PATH, || {
+                let auth = self.nip98_header("GET", &url, None).unwrap_or_default();
+                let mut req = self.http.get(&url).header("Authorization", auth);
+                if let Some(ref tag) = auth_tag_header {
+                    req = req.header("x-auth-tag", tag);
+                }
+                req.send()
+            })
+            .await?;
+        resp.json()
+            .await
+            .map_err(|e| RelayError::Http(e.to_string()))
+    }
+
     /// Query events via the HTTP bridge: `POST /query` with NIP-98 auth.
     ///
     /// Accepts a slice of `nostr::Filter` (serialized as JSON array).
@@ -837,6 +864,8 @@ pub struct HarnessRelay {
     event_rx: mpsc::Receiver<Option<BuzzEvent>>,
     /// Receiver for encrypted observer control events addressed to this agent.
     observer_control_rx: Option<mpsc::Receiver<Event>>,
+    /// Observer telemetry refusals reported by the background task.
+    observer_feedback_rx: watch::Receiver<ObserverRelayFeedback>,
     /// Sender for commands to the background task.
     cmd_tx: mpsc::Sender<RelayCommand>,
     /// HTTP client for HTTP bridge calls.
@@ -851,6 +880,17 @@ pub struct HarnessRelay {
     /// Wrapped in `Option` so `shutdown()` can take ownership without conflicting
     /// with `Drop` (which only has `&mut self`).
     bg_handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+/// The latest observer telemetry refusal seen on the relay socket.
+///
+/// The background task reports every refused observer frame here so the
+/// observer publisher can pause, adopt the relay's share, and refresh its
+/// policy. `seq` increments per refusal; `message` is the relay's OK text.
+#[derive(Debug, Clone, Default)]
+pub struct ObserverRelayFeedback {
+    pub seq: u64,
+    pub message: String,
 }
 
 /// Cloneable publisher handle for signed events on the relay background socket.
@@ -960,6 +1000,8 @@ impl HarnessRelay {
         let (observer_control_tx, observer_control_rx) =
             mpsc::channel::<Event>(event_channel_capacity());
         let (cmd_tx, cmd_rx) = mpsc::channel::<RelayCommand>(CMD_CHANNEL_CAPACITY);
+        let (observer_feedback_tx, observer_feedback_rx) =
+            watch::channel(ObserverRelayFeedback::default());
 
         let bg_keys = keys.clone();
         let bg_relay_url = relay_url.to_string();
@@ -972,6 +1014,7 @@ impl HarnessRelay {
                 handshake_buffer,
                 event_tx,
                 observer_control_tx,
+                observer_feedback_tx,
                 cmd_rx,
                 bg_keys,
                 bg_relay_url,
@@ -984,6 +1027,7 @@ impl HarnessRelay {
         Ok(Self {
             event_rx,
             observer_control_rx: Some(observer_control_rx),
+            observer_feedback_rx,
             cmd_tx,
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
@@ -1129,6 +1173,11 @@ impl HarnessRelay {
             .await
             .map_err(|_| RelayError::ConnectionClosed)?;
         Ok(())
+    }
+
+    /// Observer telemetry refusals reported by the relay socket.
+    pub fn observer_feedback(&self) -> watch::Receiver<ObserverRelayFeedback> {
+        self.observer_feedback_rx.clone()
     }
 
     /// Take the observer-control receiver for polling outside this relay object.
@@ -1371,6 +1420,12 @@ struct BgState {
     /// admission-counted frames (REQ, EVENT) are deferred or dropped.
     /// `check_rate_gate` lazily clears this to `None` once it expires.
     rate_limit_gate: Option<tokio::time::Instant>,
+    /// Observer-only gate deadline, armed when the relay refuses observer
+    /// telemetry with `rate-limited:`. Telemetry has its own relay quota, so
+    /// this parks observer frames only; typing and subscriptions keep flowing.
+    observer_gate: Option<tokio::time::Instant>,
+    /// Where observer refusals are reported to the observer publisher.
+    observer_feedback: watch::Sender<ObserverRelayFeedback>,
     /// Channels parked because a CLOSED "rate-limited:" was received.
     ///
     /// Drained by the main loop when the gate clears, one REQ per
@@ -1398,6 +1453,9 @@ struct BgState {
     /// Frames evicted from the bounded pending/in-flight observer buffers since
     /// summary log. Makes overflow loss visible instead of silent.
     gated_observer_dropped: u64,
+    /// When the last parked observer frame was drained; spaces the drain by
+    /// [`OBSERVER_DRAIN_SPACING`].
+    last_observer_drain: Option<tokio::time::Instant>,
     /// Channels whose REQ failed during `resubscribe_after_reconnect`.
     ///
     /// A single failed channel REQ is parked here instead of aborting the whole
@@ -1433,12 +1491,15 @@ impl BgState {
             startup_watermark: None,
             subscribe_since: HashMap::new(),
             rate_limit_gate: None,
+            observer_gate: None,
+            observer_feedback: watch::channel(ObserverRelayFeedback::default()).0,
             rate_limited_pending: HashMap::new(),
             membership_resub_needed: false,
             observer_resub_needed: false,
             gated_observer_pending: VecDeque::new(),
             observer_in_flight: VecDeque::new(),
             gated_observer_dropped: 0,
+            last_observer_drain: None,
             resubscribe_retry: HashSet::new(),
             connection_generation: 0,
             backoff_step: 0,
@@ -1551,6 +1612,50 @@ impl BgState {
             self.rate_limit_gate = None;
         }
         None
+    }
+
+    /// Arm or extend the observer-only gate from the relay's `retry in {N}s`
+    /// hint (no hint: 5s). Like [`Self::set_rate_limit_gate`] it never shortens
+    /// an existing deadline.
+    fn set_observer_gate(&mut self, retry_secs: u64) -> tokio::time::Instant {
+        let secs = if retry_secs == 0 { 5 } else { retry_secs };
+        let deadline = tokio::time::Instant::now() + jittered_duration(Duration::from_secs(secs));
+        let gate = self
+            .observer_gate
+            .map_or(deadline, |gate| gate.max(deadline));
+        self.observer_gate = Some(gate);
+        gate
+    }
+
+    /// The later of the connection and observer gate deadlines while either
+    /// is armed: observer frames wait for both.
+    fn check_observer_publish_gate(&mut self) -> Option<tokio::time::Instant> {
+        let observer = match self.observer_gate {
+            Some(deadline) if tokio::time::Instant::now() < deadline => Some(deadline),
+            _ => {
+                self.observer_gate = None;
+                None
+            }
+        };
+        match (self.check_rate_gate(), observer) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// Whether `event_id` is an observer frame awaiting its OK.
+    fn is_observer_in_flight(&self, event_id: &str) -> bool {
+        self.observer_in_flight
+            .iter()
+            .any(|event| event.id.to_hex() == event_id)
+    }
+
+    /// Report an observer refusal to the observer publisher.
+    fn report_observer_refusal(&self, message: &str) {
+        self.observer_feedback.send_modify(|feedback| {
+            feedback.seq = feedback.seq.wrapping_add(1);
+            feedback.message = message.to_string();
+        });
     }
 
     /// Park an observer telemetry frame while the rate-limit gate is armed.
@@ -1883,7 +1988,8 @@ async fn execute_connected_command(
             // order is preserved — then let the main-loop drain deliver them
             // one per pacing tick once the gate clears.
             if event.kind.as_u16() as u32 == KIND_AGENT_OBSERVER_FRAME
-                && (state.check_rate_gate().is_some() || !state.gated_observer_pending.is_empty())
+                && (state.check_observer_publish_gate().is_some()
+                    || !state.gated_observer_pending.is_empty())
             {
                 debug!(
                     pending = state.gated_observer_pending.len(),
@@ -1974,6 +2080,7 @@ async fn run_background_task(
     initial_handshake_buffer: std::collections::VecDeque<RelayMessage>,
     event_tx: mpsc::Sender<Option<BuzzEvent>>,
     observer_control_tx: mpsc::Sender<Event>,
+    observer_feedback_tx: watch::Sender<ObserverRelayFeedback>,
     mut cmd_rx: mpsc::Receiver<RelayCommand>,
     keys: AgentIdentity,
     relay_url: String,
@@ -1981,6 +2088,7 @@ async fn run_background_task(
     auth_tag: Option<nostr::Tag>,
 ) {
     let mut state = BgState::new();
+    state.observer_feedback = observer_feedback_tx;
     state.bot_token = keys.bot_token().cloned();
 
     let handshake_ok = process_handshake_buffer(
@@ -2139,8 +2247,15 @@ async fn run_background_task(
                 // timer to the gate deadline so parked observer frames drain
                 // promptly even when no other traffic wakes the select loop.
                 drain_pacing_next = state
-                    .check_rate_gate()
+                    .check_observer_publish_gate()
                     .or_else(|| Some(tokio::time::Instant::now() + REQ_PACING_INTERVAL));
+            }
+            // Parked observer frames wait out the drain spacing, not just
+            // the REQ pacing tick.
+            if let (Some(next), Some(last)) = (drain_pacing_next, state.last_observer_drain) {
+                if !state.gated_observer_pending.is_empty() {
+                    drain_pacing_next = Some(next.max(last + OBSERVER_DRAIN_SPACING));
+                }
             }
         }
 
@@ -2770,6 +2885,30 @@ async fn handle_ws_message(
                     // backoff must arm here — not only in the NOTICE arm. Without
                     // this the harness would publish straight back into the same
                     // quota it was just refused on.
+                    let observer_refusal = !accepted
+                        && (state.is_observer_in_flight(&event_id)
+                            || message.starts_with("rate-limited: observer")
+                            || message.starts_with("invalid: observer"));
+                    if observer_refusal {
+                        state.report_observer_refusal(&message);
+                    }
+                    // Observer telemetry is billed by its own relay quota, so a
+                    // telemetry refusal gates telemetry only. Arming the
+                    // connection gate here would drop typing indicators and
+                    // defer subscriptions for a quota they do not use.
+                    if observer_refusal && message.starts_with("rate-limited:") {
+                        let secs = parse_rate_limit_retry_secs(&message).unwrap_or(0);
+                        let deadline = state.set_observer_gate(secs);
+                        state.requeue_rejected_observer_frame(&event_id);
+                        warn!(
+                            "observer gate armed via OK for event {event_id} until ~{:.1}s from now: {message}",
+                            deadline
+                                .checked_duration_since(tokio::time::Instant::now())
+                                .unwrap_or_default()
+                                .as_secs_f64()
+                        );
+                        return true;
+                    }
                     if !accepted && message.starts_with("rate-limited:") {
                         let secs = parse_rate_limit_retry_secs(&message).unwrap_or(0);
                         let deadline = state.set_rate_limit_gate(secs);
@@ -3057,7 +3196,14 @@ async fn drain_gated_observer_pending(
 ) -> usize {
     let mut sent = 0;
     while sent < budget {
-        if state.check_rate_gate().is_some() {
+        if state.check_observer_publish_gate().is_some() {
+            break;
+        }
+        let now = tokio::time::Instant::now();
+        if state
+            .last_observer_drain
+            .is_some_and(|last| now < last + OBSERVER_DRAIN_SPACING)
+        {
             break;
         }
         let Some(event) = state.gated_observer_pending.pop_front() else {
@@ -3070,6 +3216,7 @@ async fn drain_gated_observer_pending(
             break;
         }
         state.track_observer_in_flight(event);
+        state.last_observer_drain = Some(now);
         sent += 1;
     }
     if state.gated_observer_pending.is_empty() && state.gated_observer_dropped > 0 {
@@ -6746,13 +6893,15 @@ mod tests {
         );
     }
 
-    /// A rate-limited `OK(id, false, …)` must arm the backoff gate and re-park
-    /// the refused frame, driven through the real frame dispatcher.
+    /// A rate-limited `OK(id, false, …)` for an observer frame must arm the
+    /// OBSERVER gate (not the connection gate), re-park the refused frame, and
+    /// report the refusal to the publisher, driven through the real frame
+    /// dispatcher.
     ///
     /// This is the buzz-acp side of the relay's rejection-correlation change:
     /// a refused EVENT is now acknowledged on its own channel instead of via
-    /// NOTICE. Reverting either the gate arming or the requeue in the `Ok` arm
-    /// must fail this test.
+    /// NOTICE. Reverting the gate arming, the requeue, or the gate split in
+    /// the `Ok` arm must fail this test.
     #[tokio::test]
     async fn rate_limited_ok_arms_gate_and_reparks_refused_observer_frame() {
         let (mut client, _server) = test_ws_pair().await;
@@ -6769,13 +6918,11 @@ mod tests {
             state.check_rate_gate().is_none(),
             "gate must start disarmed"
         );
+        let mut feedback = state.observer_feedback.subscribe();
 
-        let frame = json!([
-            "OK",
-            refused.id.to_hex(),
-            false,
-            "rate-limited: retry in 5s"
-        ]);
+        let message = "rate-limited: observer agent frames per minute exceeded (tier free); \
+                       retry in 5s; share frames_per_min=20 bytes_per_min=30000";
+        let frame = json!(["OK", refused.id.to_hex(), false, message]);
         let should_continue = handle_ws_message(
             Message::Text(frame.to_string().into()),
             &mut client,
@@ -6791,10 +6938,16 @@ mod tests {
 
         assert!(should_continue, "a rate-limited OK must keep the socket");
         assert!(
-            state.check_rate_gate().is_some(),
-            "a rate-limited OK must arm the backoff gate, or the harness \
+            state.check_observer_publish_gate().is_some(),
+            "a rate-limited OK must arm the observer gate, or the harness \
              republishes straight into the same quota"
         );
+        assert!(
+            state.check_rate_gate().is_none(),
+            "telemetry has its own quota: its refusal must not gate the connection"
+        );
+        assert!(feedback.has_changed().unwrap());
+        assert_eq!(feedback.borrow_and_update().message, message);
         let parked: Vec<_> = state
             .gated_observer_pending
             .iter()
@@ -6814,6 +6967,85 @@ mod tests {
             in_flight,
             [still_pending.id],
             "frames still awaiting their own verdict must stay in flight"
+        );
+    }
+
+    /// A rate-limited OK for anything other than observer telemetry keeps
+    /// arming the connection-wide gate.
+    #[tokio::test]
+    async fn non_observer_rate_limited_ok_arms_connection_gate() {
+        let (mut client, _server) = test_ws_pair().await;
+        let (event_tx, _event_rx) = mpsc::channel::<Option<BuzzEvent>>(4);
+        let (observer_control_tx, _observer_control_rx) = mpsc::channel::<Event>(4);
+        let keys = Keys::generate();
+        let mut state = BgState::new();
+        let feedback = state.observer_feedback.subscribe();
+
+        let frame = json!(["OK", "ab".repeat(32), false, "rate-limited: retry in 5s"]);
+        assert!(
+            handle_ws_message(
+                Message::Text(frame.to_string().into()),
+                &mut client,
+                &event_tx,
+                &observer_control_tx,
+                &mut state,
+                &crate::identity::AgentIdentity::from(keys.clone()),
+                "wss://relay.test",
+                "agent-pubkey",
+                None,
+            )
+            .await
+        );
+        assert!(state.check_rate_gate().is_some());
+        assert!(state.observer_gate.is_none());
+        assert!(!feedback.has_changed().unwrap(), "not an observer refusal");
+    }
+
+    /// While only the observer gate is armed, observer frames park but typing
+    /// indicators still reach the wire.
+    #[tokio::test]
+    async fn observer_gate_parks_telemetry_but_typing_keeps_flowing() {
+        let (mut client, mut server) = test_ws_pair().await;
+        let mut state = BgState::new();
+        let keys = Keys::generate();
+        state.set_observer_gate(5);
+
+        let observer_frame = make_observer_frame(&keys);
+        assert!(
+            execute_connected_command(
+                &mut client,
+                &mut state,
+                "agent-pubkey",
+                RelayCommand::PublishEvent {
+                    event: Box::new(observer_frame),
+                },
+            )
+            .await
+        );
+        assert_eq!(state.gated_observer_pending.len(), 1, "telemetry parked");
+
+        let typing = EventBuilder::new(Kind::Custom(KIND_TYPING_INDICATOR as u16), "")
+            .tags([Tag::parse(["h", &Uuid::new_v4().to_string()]).unwrap()])
+            .sign_with_keys(&keys)
+            .expect("sign typing indicator");
+        assert!(
+            execute_connected_command(
+                &mut client,
+                &mut state,
+                "agent-pubkey",
+                RelayCommand::PublishEvent {
+                    event: Box::new(typing.clone()),
+                },
+            )
+            .await
+        );
+        let frame = next_test_frame(&mut server).await;
+        assert_eq!(frame[0], "EVENT");
+        assert_eq!(frame[1]["id"], typing.id.to_hex(), "typing is not gated");
+        assert_eq!(
+            drain_gated_observer_pending(&mut client, &mut state, 1).await,
+            0,
+            "parked telemetry waits for the observer gate"
         );
     }
 
@@ -6909,6 +7141,42 @@ mod tests {
         .expect("build test observer frame")
         .sign_with_keys(keys)
         .expect("sign test observer frame")
+    }
+
+    /// Parked observer frames drain no faster than one per
+    /// `OBSERVER_DRAIN_SPACING`, below the relay's per-agent burst cap.
+    /// Falsifying mutation: drop the spacing check → the second drain sends.
+    #[tokio::test]
+    async fn parked_observer_frames_drain_at_the_executor_burst_rate() {
+        let (mut client, mut server) = test_ws_pair().await;
+        let mut state = BgState::new();
+        let keys = Keys::generate();
+        state
+            .gated_observer_pending
+            .push_back(Box::new(make_observer_frame(&keys)));
+        state
+            .gated_observer_pending
+            .push_back(Box::new(make_observer_frame(&keys)));
+
+        assert_eq!(
+            drain_gated_observer_pending(&mut client, &mut state, 1).await,
+            1
+        );
+        assert_eq!(next_test_frame(&mut server).await[0], "EVENT");
+        assert_eq!(
+            drain_gated_observer_pending(&mut client, &mut state, 1).await,
+            0,
+            "a second frame inside the spacing must wait"
+        );
+        assert_eq!(state.gated_observer_pending.len(), 1);
+
+        tokio::time::sleep(OBSERVER_DRAIN_SPACING).await;
+        assert_eq!(
+            drain_gated_observer_pending(&mut client, &mut state, 1).await,
+            1
+        );
+        assert_eq!(next_test_frame(&mut server).await[0], "EVENT");
+        assert!(state.gated_observer_pending.is_empty());
     }
 
     /// While the rate-limit gate is armed, an observer frame (kind 24200) is
@@ -7030,6 +7298,8 @@ mod tests {
         );
 
         for expected in [&first, &second, &third] {
+            // Parked frames drain one per `OBSERVER_DRAIN_SPACING`.
+            state.last_observer_drain = None;
             assert_eq!(
                 drain_gated_observer_pending(&mut client, &mut state, 1).await,
                 1

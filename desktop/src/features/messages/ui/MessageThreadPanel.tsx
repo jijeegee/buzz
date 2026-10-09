@@ -50,6 +50,7 @@ import { UnreadDivider } from "./UnreadDivider";
 import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
+import { threadGoalRootId } from "@/features/goals/goalTree";
 import { ThreadGoalPanel } from "@/features/goals/ui/GoalChips";
 import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
@@ -144,6 +145,13 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
 };
 
 const EMPTY_THREAD_REPLIES: MainTimelineEntry[] = [];
+/**
+ * Lifts the whole thread panel (header, replies, composer) one layer above the
+ * channel timeline: a brighter canvas plus a shadow falling onto the channel.
+ * Applied to the outermost pane so scrolling never clips the shadow.
+ */
+export const THREAD_LAYER_CLASS =
+  "bg-[var(--buzz-thread-canvas)] shadow-[var(--buzz-thread-layer-shadow)]";
 const THREAD_PANEL_SUMMARY_INDENT_OFFSET_REM = 0;
 
 export function MessageThreadPanel({
@@ -514,7 +522,7 @@ export function MessageThreadPanel({
   }
   const threadScrollRegion = (
     <AuxiliaryPanelBody
-      className="overflow-y-auto overflow-x-hidden overscroll-contain pb-24"
+      className="overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--buzz-thread-canvas)] pb-24"
       data-buzz-conversation-scroll
       data-testid="message-thread-body"
       mode={isHuddleTranscript ? "panel" : undefined}
@@ -546,7 +554,7 @@ export function MessageThreadPanel({
             {goalsEnabled && channelId ? (
               <ThreadGoalPanel
                 channelId={channelId}
-                threadRootId={threadHead.id}
+                threadRootId={threadGoalRootId(threadHead)}
               />
             ) : null}
             <div className="rounded-2xl">
@@ -921,7 +929,7 @@ export function MessageThreadPanel({
     <VideoReviewNavigationProvider>
       <AuxiliaryPanel
         canResetWidth={canResetWidth}
-        className="relative"
+        className={cn("relative", THREAD_LAYER_CLASS)}
         enterMotion={enterMotion ?? !isFocusMode}
         footer={threadFooter}
         header={

@@ -43,6 +43,17 @@ const STATUS_DOT: Record<GoalStatus, string> = {
 /** One edit, or several applied as a single revision. */
 export type Apply = (op: GoalOp | GoalOp[]) => Promise<unknown>;
 
+/**
+ * Run a goal edit from a click handler. The failure is already shown by the
+ * panel (from the mutation's error state); this only keeps the rejected
+ * promise from going unhandled.
+ */
+export function runGoalEdit(edit: Promise<unknown>): void {
+  edit.catch((error: unknown) => {
+    console.warn("[goals] edit failed", error);
+  });
+}
+
 /** The circle that cycles a goal through its statuses. */
 export function GoalStatusButton({
   apply,
@@ -62,7 +73,7 @@ export function GoalStatusButton({
       className={`${className} h-3 w-3 shrink-0 rounded-full border-2 ${STATUS_DOT[status]}`}
       data-testid={`goal-status-${node.id}`}
       onClick={() =>
-        void apply({ op: "update", id: node.id, status: nextStatus })
+        runGoalEdit(apply({ op: "update", id: node.id, status: nextStatus }))
       }
       title={GOAL_STATUS_LABEL[status]}
       type="button"
@@ -102,6 +113,9 @@ export function GoalEditor({
         setTitle("");
         setNote("");
       }
+    } catch (error) {
+      // Keep the draft open; the panel shows the failure.
+      console.warn("[goals] save failed", error);
     } finally {
       setSaving(false);
     }
@@ -323,11 +337,13 @@ export function GoalRow({
           <Button
             data-testid={`goal-remove-confirm-${node.id}`}
             onClick={() =>
-              void apply({
-                op: "remove",
-                id: node.id,
-                recursive: subtreeSize > 0,
-              })
+              runGoalEdit(
+                apply({
+                  op: "remove",
+                  id: node.id,
+                  recursive: subtreeSize > 0,
+                }),
+              )
             }
             size="sm"
             type="button"

@@ -16,6 +16,10 @@ class ObserverFrame {
   final String? channelId;
   final String? sessionId;
   final String? turnId;
+
+  /// Observer tier that summarised this frame (`free` or `standard`); null on
+  /// full-detail frames.
+  final String? detail;
   final dynamic payload;
 
   const ObserverFrame({
@@ -26,6 +30,7 @@ class ObserverFrame {
     this.channelId,
     this.sessionId,
     this.turnId,
+    this.detail,
     this.payload,
   });
 
@@ -37,6 +42,7 @@ class ObserverFrame {
     channelId: json['channelId'] as String?,
     sessionId: json['sessionId'] as String?,
     turnId: json['turnId'] as String?,
+    detail: json['detail'] as String?,
     payload: json['payload'],
   );
 }
@@ -130,8 +136,17 @@ class ToolItem extends TranscriptItem {
   String? buzzToolName;
   ToolStatus status;
   Map<String, dynamic> args;
+
+  /// Truncated argument text of a summarised tool call, shown as its
+  /// arguments.
+  String? argsPreview;
   String result;
   bool isError;
+
+  /// Status was set by the turn ending rather than by a tool update.
+  bool closedByTurnEnd = false;
+  final String? channelId;
+  final String? turnId;
   @override
   final String timestamp;
 
@@ -142,8 +157,11 @@ class ToolItem extends TranscriptItem {
     this.buzzToolName,
     required this.status,
     required this.args,
+    this.argsPreview,
     required this.result,
     required this.isError,
+    this.channelId,
+    this.turnId,
     required this.timestamp,
   });
 }

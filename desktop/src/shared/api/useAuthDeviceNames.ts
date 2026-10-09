@@ -1,16 +1,39 @@
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
-import { listAuthDevices } from "@/shared/api/tokenAuth";
+import { type AuthDevice, listAuthDevices } from "@/shared/api/tokenAuth";
 import { deviceRobotTag } from "@/shared/lib/deviceRobot";
 
-const AUTH_DEVICES_QUERY_KEY = ["auth-devices"] as const;
+export const AUTH_DEVICES_QUERY_KEY = ["auth-devices"] as const;
 
 /** Window event fired after the device list changes (e.g. a rename). */
 export const AUTH_DEVICES_CHANGED_EVENT = "buzz:auth-devices-changed";
 
 export function notifyAuthDevicesChanged() {
   window.dispatchEvent(new Event(AUTH_DEVICES_CHANGED_EVENT));
+}
+
+/**
+ * After a successful rename: write the new name into the cached device list
+ * so every "Running on …" tooltip shows it at once, then refetch. Works even
+ * when no `useAuthDeviceNames` is mounted to hear `notifyAuthDevicesChanged`.
+ */
+export function applyAuthDeviceRename(
+  queryClient: QueryClient,
+  deviceId: string,
+  name: string,
+) {
+  queryClient.setQueryData<AuthDevice[]>(AUTH_DEVICES_QUERY_KEY, (devices) =>
+    devices?.map((device) =>
+      device.id === deviceId ? { ...device, name } : device,
+    ),
+  );
+  void queryClient.invalidateQueries({ queryKey: AUTH_DEVICES_QUERY_KEY });
+  notifyAuthDevicesChanged();
 }
 
 /**

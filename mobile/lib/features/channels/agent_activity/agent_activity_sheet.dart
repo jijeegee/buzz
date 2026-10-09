@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/devices/agent_badge_widgets.dart';
 import '../../../shared/theme/theme.dart';
 import '../../../shared/widgets/buzz_loading_indicator.dart';
 import '../../../shared/profile/user_cache_provider.dart';
@@ -83,8 +84,8 @@ class AgentActivitySheet extends HookConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        LucideIcons.bot,
+                      AgentRobotGlyph(
+                        agentPubkey: agentPubkey,
                         size: 18,
                         color: context.colors.onSurface,
                       ),
@@ -98,6 +99,10 @@ class AgentActivitySheet extends HookConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if (observerState.summaryView) ...[
+                        const _SummaryViewBadge(),
+                        const SizedBox(width: Grid.half),
+                      ],
                       _ConnectionBadge(connection: connection),
                     ],
                   ),
@@ -200,6 +205,34 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Marks a feed sent at a summary observer tier (names and short previews).
+class _SummaryViewBadge extends StatelessWidget {
+  const _SummaryViewBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.colors.onSurfaceVariant;
+    return Container(
+      key: const Key('observer-summary-badge'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: Grid.xxs,
+        vertical: Grid.quarter,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        'Summary view',
+        style: context.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

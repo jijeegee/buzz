@@ -2,8 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import '../devices/device_robot.dart';
-
 /// Nostr event kind constants.
 ///
 /// Keep in sync with `desktop/src/shared/constants/kinds.ts`.
@@ -28,6 +26,13 @@ abstract final class EventKind {
   static const agentObserverFrame = 24200;
   static const huddleReaction = 24810;
   static const readState = 30078;
+
+  /// Kind:30180 owner-authored map of one relay device (`d`) to the agents it
+  /// runs; see `shared/devices/agent_host_devices.dart`.
+  static const agentHostDevices = 30180;
+
+  /// Kind:30181 owner-authored robot choice for one relay device (`d`).
+  static const deviceRobot = 30181;
   static const eventReminder = 30300;
   static const userStatus = 30315;
   static const dmVisibility = 30622;
@@ -277,16 +282,12 @@ class ProfileData {
   final String? about;
   final String? nip05;
 
-  /// Host device tag of an agent (`buzz_host_device`), see `device_robot.dart`.
-  final String? hostDevice;
-
   const ProfileData({
     required this.pubkey,
     this.displayName,
     this.avatarUrl,
     this.about,
     this.nip05,
-    this.hostDevice,
   });
 
   factory ProfileData.fromEvent(NostrEvent event) {
@@ -302,7 +303,6 @@ class ProfileData {
       avatarUrl: meta['picture'] as String?,
       about: meta['about'] as String?,
       nip05: meta['nip05'] as String?,
-      hostDevice: hostDeviceFromMetadata(meta),
     );
   }
 }

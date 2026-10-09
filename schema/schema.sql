@@ -223,9 +223,9 @@ CREATE TABLE events (
     -- Privacy: encrypted/private routing wrappers and p-gated membership notices
     -- must never be discoverable through NIP-50 full-text search. NULL tsvector
     -- never matches `@@`.
-    -- Keep in sync with migrations (final state: 0001 + 0005 + 0014 + 0033).
+    -- Keep in sync with migrations (final state: 0001 + 0005 + 0014 + 0033 + 0062).
     search_tsv  TSVECTOR GENERATED ALWAYS AS (
-        CASE WHEN kind IN (1059, 30179, 30300, 30350, 30622, 44100, 44101, 44200) THEN NULL::tsvector
+        CASE WHEN kind IN (1059, 30179, 30180, 30181, 30300, 30350, 30622, 44100, 44101, 44200) THEN NULL::tsvector
              ELSE to_tsvector('simple', content)
         END
     ) STORED,
@@ -2191,6 +2191,18 @@ SELECT attach_community_write_fence('artifact_revisions');
 -- The relay does not expire events. Any future row retention or partition
 -- retirement must skip payloads referenced by `artifact_heads.event_id`
 -- (NIP-AR: expiring earlier revisions MUST NOT remove the current revision).
+
+-- Per-owner observer telemetry tier overrides (migration 0061). Owners
+-- without a row use the relay's configured default tier.
+CREATE TABLE observer_tiers (
+    community_id UUID NOT NULL REFERENCES communities(id),
+    owner_pubkey BYTEA NOT NULL CHECK (length(owner_pubkey) = 32),
+    tier TEXT NOT NULL CHECK (tier IN ('free', 'standard', 'premium')),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, owner_pubkey)
+);
+
+SELECT attach_community_write_fence('observer_tiers');
 
 -- Channel history acceptance ordering (migration 0060).
 CREATE FUNCTION stamp_channel_event_sequence() RETURNS TRIGGER
