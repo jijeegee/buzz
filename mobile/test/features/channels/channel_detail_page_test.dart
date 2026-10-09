@@ -14,6 +14,7 @@ import 'package:flutter/rendering.dart'
     show
         RenderParagraph,
         RenderRepaintBoundary,
+        RenderRepaintBoundary,
         ScrollDirection,
         SemanticsAction;
 import 'package:flutter/services.dart';
@@ -27,6 +28,7 @@ import 'package:pointycastle/digests/sha256.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_detail_page.dart';
+import 'package:buzz/features/channels/chat_bubble_row.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channel_messages_provider.dart';
 import 'package:buzz/features/channels/channel_window.dart';
@@ -82,6 +84,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 part 'thread_reply_refresh_cases.dart';
 part 'channel_detail_page_test/presence_tests.dart';
 part 'channel_detail_page_test/quote_tests.dart';
+part 'channel_detail_page_test/bubble_tests.dart';
 
 const _channelId = '11111111-2222-4333-8444-555555555555';
 const _huddleChannelId = '8d764100-fd8f-44cf-9c98-6d8fbd739b8c';
@@ -265,6 +268,7 @@ Widget _buildTestable({
   String? huddleCurrentPubkey,
   http.Client? mediaClient,
   Widget? home,
+  ThemeData? theme,
 }) {
   final resolvedChannel = channel ?? _testChannel;
   final navigatorKey = GlobalKey<NavigatorState>();
@@ -399,13 +403,16 @@ Widget _buildTestable({
     ],
     child: MaterialApp(
       navigatorKey: navigatorKey,
-      theme: AppTheme.light(),
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: textScaler,
-          disableAnimations: disableAnimations,
+      theme: theme ?? AppTheme.light(),
+      builder: (context, child) => RepaintBoundary(
+        key: _appShotKey,
+        child: MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: textScaler,
+            disableAnimations: disableAnimations,
+          ),
+          child: MobileHuddleShell(navigatorKey: navigatorKey, child: child!),
         ),
-        child: MobileHuddleShell(navigatorKey: navigatorKey, child: child!),
       ),
       navigatorObservers: navigatorObservers,
       home:
@@ -499,6 +506,7 @@ void main() {
   threadReplyRefreshTests();
   presenceTests();
   quoteTests();
+  bubbleTests();
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     _testPrefs = await SharedPreferences.getInstance();
