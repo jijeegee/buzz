@@ -34,7 +34,6 @@ import {
 } from "@/shared/constants/kinds";
 import { getConfigNudgeAuthorPubkey } from "@/features/messages/ui/configNudgeAuthPubkey";
 import { cn } from "@/shared/lib/cn";
-import { useMeasuredCssVariable } from "@/shared/layout/useMeasuredCssVariable";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { useChannelNavigation } from "@/shared/context/ChannelNavigationContext";
@@ -219,19 +218,6 @@ export const MessageRow = React.memo(
     } = useReactionHandler(message, onToggleReaction);
     const { openReminder, activeReminderEventIds } = useRemindLater();
     const hasActiveReminder = activeReminderEventIds.has(message.id);
-    // The hover/focus action rail is absolutely positioned over the row, so it
-    // takes no layout space of its own. Measure its rendered footprint and
-    // reserve it in the message-header row (see `headerNode`) so a long author
-    // name ellipsizes before the rail instead of painting underneath it. The
-    // reservation is unconditional — the rail appears on hover AND
-    // focus-within, and padding must not reflow the header mid-interaction.
-    const articleRef = React.useRef<HTMLElement | null>(null);
-    const actionRailMeasureRef = useMeasuredCssVariable({
-      cssVariable: "--message-action-rail-width",
-      dimension: "inline",
-      resetValue: "0px",
-      targetRef: articleRef,
-    });
     const handleRemindLater = React.useCallback(
       (msg: TimelineMessage) => {
         openReminder({
@@ -470,6 +456,10 @@ export const MessageRow = React.memo(
     };
 
     const isThreadReplyLayout = layoutVariant === "thread-reply";
+    // Only the signed-in account's own messages sit on the right. `accent` is
+    // set from an exact author == current pubkey match, so messages from
+    // agents the user owns stay on the left with everyone else.
+    const isOwnMessage = message.accent === true;
     const guideBleedRem = isThreadReplyLayout ? 0.25 : 0;
     const avatarButtonRadiusClass = isAuthorAgent
       ? "rounded-[30%]"
@@ -520,20 +510,10 @@ export const MessageRow = React.memo(
       </div>
     );
 
-    const continuationTimestampGutter = (
-      <div
-        aria-hidden="true"
-        className={cn(
-          "flex w-9 shrink-0 justify-end items-start pt-0.5",
-          isThreadReplyLayout ? "self-start" : "self-stretch",
-        )}
-      >
-        <MessageTimestamp
-          className="opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100"
-          createdAt={message.createdAt}
-          hideDayPeriod
-        />
-      </div>
+    // Grouped bubbles keep the avatar column so they line up under the first
+    // bubble; the time already sits inside every bubble.
+    const continuationGutter = (
+      <div aria-hidden="true" className="w-9 shrink-0" />
     );
 
     const avatarPopoverNode = message.pubkey ? (
@@ -558,8 +538,8 @@ export const MessageRow = React.memo(
     // scope: the thread root (or the message itself when top-level), falling
     // back to the channel's whole-conversation scope. It is a sibling of the
     // profile trigger, never nested inside it.
-    const avatarGutterNode = isDisplayedAsContinuation ? (
-      continuationTimestampGutter
+    const avatarGutterNode = isOwnMessage ? null : isDisplayedAsContinuation ? (
+      continuationGutter
     ) : message.pubkey && isAuthorAgent && channelId ? (
       <div className="relative flex shrink-0 items-start">
         {avatarPopoverNode}
@@ -603,7 +583,6 @@ export const MessageRow = React.memo(
       >
         <MessageActionBar
           channelId={channelId}
-          ref={actionRailMeasureRef}
           isFollowingThread={isFollowingThread}
           isUnread={isUnread}
           message={message}
@@ -655,10 +634,17 @@ export const MessageRow = React.memo(
         </>
       ) : null;
 
-    const inlineMetadataNode = (
-      <div className="flex shrink-0 items-baseline gap-2 text-xs">
-        <MessageTimestamp createdAt={message.createdAt} />
+    const bubbleMetaNode = (
+      <div
+        className="mt-0.5 flex items-baseline justify-end gap-1.5 text-2xs"
+        data-testid="message-bubble-meta"
+      >
         {statusMetadataNode}
+        <MessageTimestamp
+          className="text-2xs"
+          clockOnly
+          createdAt={message.createdAt}
+        />
       </div>
     );
 
@@ -670,60 +656,73 @@ export const MessageRow = React.memo(
         </span>
       ) : null;
 
-    const continuationMetadataNode =
-      isDisplayedAsContinuation && statusMetadataNode ? (
-        <div className="mt-0.5 flex items-baseline gap-2 text-xs">
-          {statusMetadataNode}
-        </div>
-      ) : null;
+    // Own bubbles carry no name: the right-hand side already says "me".
+    const headerNode =
+      isDisplayedAsContinuation || isOwnMessage ? null : (
+        <MessageHeaderRow>
+          {message.pubkey ? (
+            <MessageAuthorWithIndicators
+              authorName={message.author}
+              ownerPubkey={message.ownerPubkey}
+              pubkey={message.pubkey}
+              role={profilePopoverRole}
+            >
+              {authorNode}
+            </MessageAuthorWithIndicators>
+          ) : (
+            authorNode
+          )}
+          <MessageMetaSegments
+            segments={[
+              { key: "owner", node: agentOwnerNode },
+              { key: "persona", node: personaNode },
+            ]}
+          />
+        </MessageHeaderRow>
+      );
+    const bodyContainerClass = headerNode ? bodyOffsetClass : "mt-0";
 
-    const headerNode = isDisplayedAsContinuation ? null : (
-      // pe reserves the measured action-rail footprint (0px until measured) so
-      // header content ends before the rail's left edge in every rail state.
-      <MessageHeaderRow className="pe-[var(--message-action-rail-width,0px)]">
-        {message.pubkey ? (
-          <MessageAuthorWithIndicators
-            authorName={message.author}
-            ownerPubkey={message.ownerPubkey}
-            pubkey={message.pubkey}
-            role={profilePopoverRole}
-          >
-            {authorNode}
-          </MessageAuthorWithIndicators>
-        ) : (
-          authorNode
+    const bubbleNode = (
+      <div
+        className={cn(
+          "relative min-w-0",
+          // Own bubbles stay chat-narrow; others get room for agent reports.
+          isOwnMessage ? "max-w-[75%]" : "max-w-[92%]",
+          emojiOnly
+            ? "px-1"
+            : cn(
+                "rounded-2xl px-3 py-1.5",
+                isOwnMessage
+                  ? "rounded-br-md bg-[var(--buzz-bubble-own)]"
+                  : "rounded-bl-md bg-[var(--buzz-bubble-other)] shadow-[var(--buzz-bubble-other-shadow)]",
+              ),
         )}
-        {/* Author is not a segment: "Alice 9:53 AM" needs no divider. */}
-        <MessageMetaSegments
-          segments={[
-            { key: "owner", node: agentOwnerNode },
-            { key: "timestamp", node: inlineMetadataNode },
-            { key: "persona", node: personaNode },
-          ]}
-        />
-      </MessageHeaderRow>
-    );
-    const bodyContainerClass = isDisplayedAsContinuation
-      ? "mt-0"
-      : bodyOffsetClass;
-
-    const messageBodyNode = (
-      <>
-        <SentFromThreadLine channelId={channelId} tags={message.tags} />
-        {getQuoteReference(message.tags) ? (
-          <MessageQuoteHeader
-            channelId={channelId}
+        data-chat-bubble=""
+        data-testid="message-bubble"
+      >
+        {headerNode}
+        <div className={bodyContainerClass} data-testid="message-body">
+          <SentFromThreadLine channelId={channelId} tags={message.tags} />
+          {getQuoteReference(message.tags) ? (
+            <MessageQuoteHeader
+              channelId={channelId}
+              profiles={profiles}
+              tags={message.tags}
+            />
+          ) : null}
+          {renderBody()}
+          <MessageAutoRouteLine
+            messageId={message.id}
             profiles={profiles}
             tags={message.tags}
           />
-        ) : null}
-        {renderBody()}
-        <MessageAutoRouteLine
-          messageId={message.id}
-          profiles={profiles}
-          tags={message.tags}
-        />
-        {continuationMetadataNode}
+        </div>
+        {bubbleMetaNode}
+      </div>
+    );
+
+    const belowBubbleNode = (
+      <>
         <MessageReactions
           messageId={message.id}
           reactions={reactions}
@@ -930,44 +929,29 @@ export const MessageRow = React.memo(
             "group/message relative z-10 rounded-2xl transition-colors",
             playEntrance && "motion-enter-conversation",
             "py-conversation-row",
-            hoverBackground
-              ? "mx-1 px-2 hover:bg-muted/50 focus-within:bg-muted/50"
-              : isThreadReplyLayout
-                ? "mx-1 px-2"
-                : "px-2",
-            "flex gap-2.5",
-            isDisplayedAsContinuation ? "items-center" : "items-start",
+            hoverBackground || isThreadReplyLayout ? "mx-1 px-2" : "px-2",
+            "flex items-start gap-2.5",
+            isOwnMessage && "justify-end",
             hasActiveReminder ? "bg-blue-500/10" : "",
             highlighted
               ? "-mx-4 rounded-none px-6 before:absolute before:-inset-y-1.5 before:inset-x-0 before:animate-[route-target-highlight-fade_2s_ease-out_forwards] before:bg-primary/10 before:content-[''] motion-reduce:before:animate-none sm:-mx-6 sm:px-8"
               : "",
           )}
           data-message-id={message.id}
+          data-own-message={isOwnMessage ? "" : undefined}
           data-testid="message-row"
           onAnimationEnd={handleEntranceAnimationEnd}
-          ref={articleRef}
         >
-          {isThreadReplyLayout ? (
-            <>
-              {avatarGutterNode}
-              <div className="flex min-w-0 flex-1 flex-col">
-                {headerNode}
-                <div className={bodyContainerClass} data-testid="message-body">
-                  {messageBodyNode}
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              {avatarGutterNode}
-              <div className="flex min-w-0 flex-1 flex-col">
-                {headerNode}
-                <div className={bodyContainerClass} data-testid="message-body">
-                  {messageBodyNode}
-                </div>
-              </div>
-            </>
-          )}
+          {avatarGutterNode}
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 flex-col",
+              isOwnMessage ? "items-end" : "items-start",
+            )}
+          >
+            {bubbleNode}
+            {belowBubbleNode}
+          </div>
           {actionBarNode}
         </article>
       </div>

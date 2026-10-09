@@ -6,7 +6,7 @@ import type { OpenDmInput } from "@/shared/api/tauriChannels";
 type HiddenDmInboxActionOptions = {
   item: InboxItem;
   channelId: string;
-  messageId: string;
+  messageId: string | null;
   threadRootId?: string | null;
   availableChannelIds: ReadonlySet<string>;
   expectedRelayUrl: string;
@@ -17,7 +17,7 @@ type HiddenDmInboxActionOptions = {
   isCurrent: () => boolean;
   onOpenContext: (
     channelId: string,
-    messageId: string,
+    messageId: string | null,
     threadRootId?: string | null,
   ) => void;
   onError: () => void;

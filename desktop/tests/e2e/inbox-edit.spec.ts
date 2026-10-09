@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
+
+test.beforeEach(async ({ page }) => {
+  await openInboxOnNeedsAction(page);
+});
 
 const GENERAL_CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 const CURRENT_PUBKEY = "deadbeef".repeat(8);
@@ -27,7 +32,7 @@ const ATTACHMENT_FILENAME = "inbox-edit-proof.pdf";
 const SHOTS = "test-results/inbox-edit";
 
 type MockFeedItem = {
-  category: "mention";
+  category: "needs_action";
   channel_id: string;
   channel_name: string;
   content: string;
@@ -116,7 +121,7 @@ async function seedEmptyDeleteThread(page: import("@playwright/test").Page) {
         pubkey: currentPubkey,
       });
       push({
-        category: "mention",
+        category: "needs_action",
         channel_id: channelId,
         channel_name: "general",
         content: reply.content,
@@ -205,7 +210,7 @@ test("editing an immediate attachment reply preserves its media tags", async ({
       }
 
       pushFeedItem({
-        category: "mention",
+        category: "needs_action",
         channel_id: channelId,
         channel_name: "general",
         content: "Inbox thread root.",
@@ -366,7 +371,7 @@ test("Inbox offers Edit and Delete actions only for manageable messages", async 
 
       for (const message of messages) {
         pushFeedItem({
-          category: "mention",
+          category: "needs_action",
           channel_id: channelId,
           channel_name: "general",
           content: message.content,
@@ -684,7 +689,7 @@ test("cold Inbox open drops an edit that was itself deleted", async ({
       });
 
       push({
-        category: "mention",
+        category: "needs_action",
         channel_id: channelId,
         channel_name: "general",
         content: selectedReply.content,

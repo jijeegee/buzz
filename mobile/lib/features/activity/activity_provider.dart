@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/read_state/read_state_time.dart';
 import '../../shared/relay/relay.dart';
 import '../channels/channel.dart';
 import '../channels/channel_management_provider.dart';
@@ -712,21 +713,56 @@ final channelActivityProvider = FutureProvider.autoDispose<List<FeedItem>>((
       ),
   ]);
   final events = [for (final batch in batches) ...batch];
-  return [
-    for (final event in events)
-      FeedItem(
-        id: event.id,
-        kind: event.kind,
-        pubkey: event.pubkey,
-        content: event.content,
-        createdAt: event.createdAt,
-        channelId: event.channelId,
-        channelName: '',
-        tags: event.tags,
-        category: 'activity',
-      ),
-  ];
+  return [for (final event in events) _channelActivityItem(event)];
 });
+
+/// One room's recent traffic, refetched whenever its `lastMessageAt` moves.
+/// [channelActivityProvider] loads once when the view opens; this keeps rooms
+/// that got newer messages since then current, including the user's own
+/// sends, which the addressed-to-me feed never carries. A rebuild keeps the
+/// previous value while loading, so the row does not drop out meanwhile.
+/// Mirrors desktop's per-room `conversation-room-activity` query.
+final roomActivityRefreshProvider = FutureProvider.autoDispose
+    .family<List<FeedItem>, String>((ref, channelId) async {
+      ref.watch(
+        channelsProvider.select(
+          (channels) => channels.asData?.value
+              .where((channel) => channel.id == channelId)
+              .firstOrNull
+              ?.lastMessageAt,
+        ),
+      );
+      final filter = NostrFilter(
+        kinds: const [9, 40002, 45001, 45003],
+        tags: {
+          '#h': [channelId],
+        },
+        limit: _channelActivityPerChannelLimit,
+      );
+      final session = ref.read(relaySessionProvider.notifier);
+      List<NostrEvent> events;
+      try {
+        events = await session.queryRelay([filter]);
+      } catch (error) {
+        debugPrint(
+          '[channelActivity] room query failed; using websocket: $error',
+        );
+        events = await session.fetchHistory(filter);
+      }
+      return [for (final event in events) _channelActivityItem(event)];
+    });
+
+FeedItem _channelActivityItem(NostrEvent event) => FeedItem(
+  id: event.id,
+  kind: event.kind,
+  pubkey: event.pubkey,
+  content: event.content,
+  createdAt: event.createdAt,
+  channelId: event.channelId,
+  channelName: '',
+  tags: event.tags,
+  category: 'activity',
+);
 
 const _channelActivityPerChannelLimit = 30;
 const _relayFilterBatchSize = 10;
@@ -751,15 +787,37 @@ final conversationInboxItemsProvider = Provider.autoDispose<List<InboxItem>>((
   final feed = ref.watch(activityProvider).value;
   final channelActivity =
       ref.watch(channelActivityProvider).value ?? const <FeedItem>[];
+  final channels =
+      ref.watch(channelsProvider).asData?.value ?? const <Channel>[];
+  // Rooms that moved past the initial load (a new message, often the user's
+  // own) refetch on their own so they re-sort by their real latest activity.
+  final loadedLatestAt = <String, int>{};
+  for (final item in channelActivity) {
+    final channelId = item.channelId;
+    if (channelId == null) continue;
+    loadedLatestAt[channelId] = math.max(
+      loadedLatestAt[channelId] ?? 0,
+      item.createdAt,
+    );
+  }
+  final refreshed = [
+    if (ref.watch(channelActivityProvider).hasValue)
+      for (final channel in channels)
+        if (channel.isMember &&
+            !channel.isArchived &&
+            (dateTimeToUnixSeconds(channel.lastMessageAt) ?? 0) >
+                (loadedLatestAt[channel.id] ?? 0))
+          ...?ref.watch(roomActivityRefreshProvider(channel.id)).value,
+  ];
   // Feed items win on duplicate ids: their category (mention, needs action)
   // is more specific than plain channel activity.
   final byId = <String, FeedItem>{
     for (final item in channelActivity) item.id: item,
+    for (final item in refreshed) item.id: item,
     for (final item in feed?.all ?? const <FeedItem>[]) item.id: item,
   };
   final dmChannelIds = {
-    for (final channel
-        in ref.watch(channelsProvider).asData?.value ?? const <Channel>[])
+    for (final channel in channels)
       if (channel.isDm) channel.id,
   };
   return collapseChannelMainRows(

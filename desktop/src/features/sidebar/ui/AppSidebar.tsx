@@ -108,6 +108,8 @@ export function AppSidebar({
   onSelectPulse,
   onSelectWorkflows,
   onSelectHome,
+  onSelectInbox,
+  inboxPanelOpen = false,
   onSelectChannel,
   onOpenSearchResult,
   searchChannels,
@@ -440,7 +442,8 @@ export function AppSidebar({
               <AppSidebarPrimaryMenu
                 homeBadgeCount={homeBadgeCount}
                 onSelectAgents={onSelectAgents}
-                onSelectHome={onSelectHome}
+                inboxActive={inboxPanelOpen}
+                onSelectHome={onSelectInbox ?? onSelectHome}
                 onSelectProjects={onSelectProjects}
                 onSelectPulse={onSelectPulse}
                 onSelectWorkflows={onSelectWorkflows}

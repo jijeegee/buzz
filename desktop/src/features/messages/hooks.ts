@@ -81,6 +81,7 @@ import {
   KIND_STREAM_MESSAGE,
   KIND_SYSTEM_MESSAGE,
 } from "@/shared/constants/kinds";
+import { INBOX_DELETIONS_QUERY_KEY } from "@/features/home/lib/inboxDeletions";
 
 type MessageQueryContext = {
   optimisticId: string;
@@ -822,6 +823,9 @@ export function useDeleteMessageMutation(channel: Channel | null) {
         channelMessagesKey(channel.id),
         (current = []) => current.filter((message) => message.id !== eventId),
       );
+      void queryClient.invalidateQueries({
+        queryKey: INBOX_DELETIONS_QUERY_KEY,
+      });
     },
     onError: (error) => {
       toast.error(`Failed to delete message: ${error.message}`);

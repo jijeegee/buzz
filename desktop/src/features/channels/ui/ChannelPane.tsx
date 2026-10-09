@@ -11,7 +11,10 @@ import { useTimeoutActive } from "@/features/moderation/lib/timeoutStore";
 import { isModerationDm } from "@/features/moderation/lib/moderationDm";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import { DropZoneOverlay } from "@/features/messages/ui/ComposerAttachments";
-import { MessageThreadPanel } from "@/features/messages/ui/MessageThreadPanel";
+import {
+  MessageThreadPanel,
+  THREAD_LAYER_CLASS,
+} from "@/features/messages/ui/MessageThreadPanel";
 import { MessageQuoteScope } from "@/features/messages/ui/messageQuoteScope";
 import { useComposerQuotes } from "@/features/channels/ui/useComposerQuotes";
 import { MessageThreadPanelSkeleton } from "@/features/messages/ui/MessageThreadPanelSkeleton";
@@ -40,6 +43,7 @@ import { ThreadViewModeToggle } from "@/features/channels/ui/ThreadViewModeToggl
 import { FocusThreadDrawer } from "@/features/channels/ui/FocusThreadDrawer";
 import { THREAD_SURFACE_KEY } from "@/features/channels/lib/threadFocusLayout";
 import { getThreadPanelLayout } from "@/features/channels/lib/threadPanelLayout";
+import { useLandAtLatest } from "@/features/channels/lib/landAtLatest";
 import { useThreadViewMode } from "@/features/channels/lib/threadViewModePreference";
 import { useThreadViewModeSwitch } from "@/features/channels/ui/useThreadViewModeSwitch";
 import { useFocusDrawerPresence } from "@/features/channels/ui/useFocusDrawerPresence";
@@ -243,6 +247,11 @@ export const ChannelPane = React.memo(function ChannelPane({
     composerWrapperRef,
     `${activeChannelId}:${isSinglePanelView}:${hasMainComposerOverlay}`,
     "css-variable",
+    () => messageTimelineRef.current?.settleAtBottom() ?? false,
+  );
+  // A channel row in the inbox lands on the channel's newest message.
+  useLandAtLatest(
+    activeChannelId,
     () => messageTimelineRef.current?.settleAtBottom() ?? false,
   );
   const {
@@ -523,11 +532,12 @@ export const ChannelPane = React.memo(function ChannelPane({
   const wrapAux = (
     panel: React.ReactNode,
     testId: string,
-    options: { key?: string } = {},
+    options: { className?: string; key?: string } = {},
   ) =>
     useSplitAuxiliaryPane ? (
       <RightAuxiliaryPane
         canResetWidth={canResetThreadPanelWidth}
+        className={options.className}
         key={options.key ?? testId}
         onResetWidth={onResetThreadPanelWidth}
         onResizeStart={onThreadPanelResizeStart}
@@ -549,7 +559,11 @@ export const ChannelPane = React.memo(function ChannelPane({
       onClose={onCloseThread}
       ref={threadSurface.ref}
     >
-      {useFocusThreadDrawer ? panel : wrapAux(panel, "message-thread-panel")}
+      {useFocusThreadDrawer
+        ? panel
+        : wrapAux(panel, "message-thread-panel", {
+            className: THREAD_LAYER_CLASS,
+          })}
     </ThreadPanelSurface>
   );
   const wrapIdlePanel = (panel: React.ReactNode) =>

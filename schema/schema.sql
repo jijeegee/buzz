@@ -2192,6 +2192,18 @@ SELECT attach_community_write_fence('artifact_revisions');
 -- retirement must skip payloads referenced by `artifact_heads.event_id`
 -- (NIP-AR: expiring earlier revisions MUST NOT remove the current revision).
 
+-- Per-owner observer telemetry tier overrides (migration 0061). Owners
+-- without a row use the relay's configured default tier.
+CREATE TABLE observer_tiers (
+    community_id UUID NOT NULL REFERENCES communities(id),
+    owner_pubkey BYTEA NOT NULL CHECK (length(owner_pubkey) = 32),
+    tier TEXT NOT NULL CHECK (tier IN ('free', 'standard', 'premium')),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, owner_pubkey)
+);
+
+SELECT attach_community_write_fence('observer_tiers');
+
 -- Channel history acceptance ordering (migration 0060).
 CREATE FUNCTION stamp_channel_event_sequence() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$

@@ -41,6 +41,7 @@ type AppSidebarPinnedHeaderProps = {
 
 type AppSidebarPrimaryMenuProps = {
   homeBadgeCount: number;
+  inboxActive?: boolean;
   onSelectAgents: () => void;
   onSelectHome: () => void;
   onSelectProjects: () => void;
@@ -91,6 +92,7 @@ export function AppSidebarPinnedHeader({
 
 export function AppSidebarPrimaryMenu({
   homeBadgeCount,
+  inboxActive = false,
   onSelectAgents,
   onSelectHome,
   onSelectProjects,
@@ -110,7 +112,7 @@ export function AppSidebarPrimaryMenu({
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[active=true]:font-normal"
-              isActive={selectedView === "home"}
+              isActive={selectedView === "home" || inboxActive}
               onClick={onSelectHome}
               tooltip="Inbox"
               type="button"

@@ -1421,6 +1421,11 @@ mod postgres_tests {
             .sql
             .as_str()
             .contains("CREATE TABLE artifact_heads"));
+        assert_eq!(migrations[60].version, 61);
+        assert!(migrations[60]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE observer_tiers"));
     }
 
     #[test]
@@ -2083,7 +2088,8 @@ mod postgres_tests {
         let mut expected_fences = migration.fence_attachments.clone();
         expected_fences.remove("product_feedback");
         expected_fences.remove("rate_limit_violations");
-        expected_fences.extend(["artifact_heads", "artifact_revisions"].map(str::to_owned));
+        expected_fences
+            .extend(["artifact_heads", "artifact_revisions", "observer_tiers"].map(str::to_owned));
         assert_eq!(
             expected_fences, schema.fence_attachments,
             "write-fence attachment targets differ after recovery policy"

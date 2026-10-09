@@ -139,6 +139,8 @@ class ActivityPage extends HookConsumerWidget {
       markerOf: markerOf,
       localUnreadOverrides: localState.unreadIds,
       localDoneSet: localState.doneIds,
+      // In the chat list, a room whose latest message is yours is read.
+      currentPubkey: filter == InboxFilter.conversations ? myPk : null,
     );
 
     final visibleItems = [

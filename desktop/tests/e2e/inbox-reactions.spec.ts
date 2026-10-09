@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 import type { RelayEvent } from "../../src/shared/api/types";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
+
+test.beforeEach(async ({ page }) => {
+  await openInboxOnNeedsAction(page);
+});
 
 const GENERAL_CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 const SHOTS = "test-results/inbox-reactions";
@@ -84,7 +89,7 @@ test("inbox reaction on a thread-reply mention persists after refetch", async ({
         channel_id: channelId,
         channel_name: "general",
         tags: reply.tags,
-        category: "mention",
+        category: "needs_action",
       });
 
       const other = emitMessage({
@@ -103,7 +108,7 @@ test("inbox reaction on a thread-reply mention persists after refetch", async ({
         channel_id: channelId,
         channel_name: "general",
         tags: other.tags,
-        category: "mention",
+        category: "needs_action",
       });
       return { replyEvent: reply, otherEvent: other };
     },

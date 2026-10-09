@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
+import { openInboxOnNeedsAction } from "../helpers/inboxDetailFilter";
 
 const IMAGE_SHA = "c".repeat(64);
 const IMAGE_URL = "http://127.0.0.1:4173/buzz.svg";
@@ -316,6 +317,7 @@ test("non-interactive inbox preview spoilers let row clicks pass through", async
   page,
 }) => {
   await installSpoilerBridge(page);
+  await openInboxOnNeedsAction(page);
   await page.goto("/");
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
   await page.waitForFunction(
@@ -344,7 +346,7 @@ test("non-interactive inbox preview spoilers let row clicks pass through", async
           ["e", channelId],
           ["p", currentPubkey],
         ],
-        category: "mention",
+        category: "needs_action",
       });
     },
     {

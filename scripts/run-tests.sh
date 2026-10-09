@@ -191,6 +191,13 @@ run_unit_tests() {
   run_test_step "buzz-relay NIP-FI session tests" \
     cargo test -p buzz-relay --lib nip_fi_session::tests:: -- --nocapture
 
+  # Observer tier quotas: infra-free; Redis and PostgreSQL cases are ignored.
+  run_test_step "buzz-relay observer quota tests" \
+    cargo test -p buzz-relay --lib observer_quota::tests:: -- --nocapture
+
+  run_test_step "buzz-relay observer telemetry handler test" \
+    cargo test -p buzz-relay --lib handlers::event::tests::observer_telemetry_is_limited_by_owner_tier -- --exact --nocapture
+
   # Mirror the NIP-FI (S3) stanza from `just test-unit`: module filters, then
   # each exact name. Keep this list in step with that stanza's `test(=...)`s.
   run_test_step "buzz-relay NIP-FI config tests" \

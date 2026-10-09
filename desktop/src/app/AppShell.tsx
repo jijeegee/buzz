@@ -111,6 +111,10 @@ import { AppProfilePanelProvider } from "@/app/AppProfilePanelProvider";
 import { AppWorkflowEditorOverlayProvider } from "@/app/AppWorkflowEditorOverlayProvider";
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { useSyncGoalsFeatureToAgents } from "@/features/goals/hooks";
+import {
+  toggleInboxPanel,
+  useInboxPanelOpen,
+} from "@/features/home/lib/inboxPanelPreference";
 const EMPTY_CHANNELS: Channel[] = [];
 export function AppShell() {
   useWebviewZoomShortcuts();
@@ -163,6 +167,7 @@ export function AppShell() {
   } = useAppNavigation();
   const { canGoBack, canGoForward, goBack, goForward } =
     useBackForwardControls();
+  const inboxPanelOpen = useInboxPanelOpen();
   const { selectedChannelId, selectedView } = React.useMemo(
     () => deriveShellRoute(location.pathname),
     [location.pathname],
@@ -918,6 +923,18 @@ export function AppShell() {
                             scopeSearchFocusRequest,
                           ]}
                           onSelectHome={() => void goHome()}
+                          inboxPanelOpen={
+                            selectedView === "channel" && inboxPanelOpen
+                          }
+                          onSelectInbox={() => {
+                            // Inbox and Chats are one screen: on a channel the
+                            // Inbox button pulls the list out beside the room.
+                            if (selectedView === "channel") {
+                              toggleInboxPanel();
+                              return;
+                            }
+                            void goHome();
+                          }}
                           onSelectProjects={() => void goProjects()}
                           onSelectPulse={() => void goPulse()}
                           onSelectSettings={handleOpenSettings}

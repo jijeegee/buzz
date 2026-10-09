@@ -386,6 +386,8 @@ pub struct Config {
     pub nip_fi: crate::nip_fi_config::NipFiRelayConfig,
     /// Centralized-identity token auth (`AUTH_TOKEN_ENABLED`, default off).
     pub auth_token: crate::identity::AuthTokenConfig,
+    /// Observer telemetry tier limits (`BUZZ_OBSERVER_*`).
+    pub observer_quota: crate::observer_quota::ObserverQuotaConfig,
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -393,7 +395,7 @@ fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
         .map_err(|e| ConfigError::InvalidBindAddr(e.to_string()))
 }
 
-fn positive_u64_from_env(name: &str, default: u64) -> Result<u64, ConfigError> {
+pub(crate) fn positive_u64_from_env(name: &str, default: u64) -> Result<u64, ConfigError> {
     match std::env::var(name) {
         Ok(raw) => raw
             .parse::<u64>()
@@ -1399,6 +1401,7 @@ impl Config {
             serve_git_web_gui,
             nip_fi: crate::nip_fi_config::NipFiRelayConfig::from_env()?,
             auth_token,
+            observer_quota: crate::observer_quota::ObserverQuotaConfig::from_env()?,
         })
     }
 
@@ -2430,6 +2433,57 @@ mod tests {
         assert_eq!(config.auth.rate_limits.gif_searches_per_min, 1004);
         assert_eq!(config.auth.rate_limits.human_api_calls_per_min, 1002);
         assert_eq!(config.auth.rate_limits.human_ws_events_per_sec, 1003);
+    }
+
+    #[test]
+    fn observer_quota_can_be_overridden() {
+        use crate::observer_quota::ObserverTier;
+
+        let _guards = env_guards();
+        let vars = [
+            ("BUZZ_OBSERVER_DEFAULT_TIER", "free"),
+            ("BUZZ_OBSERVER_HEADROOM_PCT", "200"),
+            ("BUZZ_OBSERVER_CONN_FRAMES_PER_SEC", "7"),
+            ("BUZZ_OBSERVER_FREE_ACCOUNT_AGENTS", "3"),
+            ("BUZZ_OBSERVER_PREMIUM_TICK_MS", "750"),
+        ];
+        for (key, value) in vars {
+            std::env::set_var(key, value);
+        }
+        let config = Config::from_env();
+        for (key, _) in vars {
+            std::env::remove_var(key);
+        }
+        let observer = config.expect("config").observer_quota;
+
+        assert_eq!(observer.default_tier, ObserverTier::Free);
+        assert_eq!(observer.headroom_pct, 200);
+        assert_eq!(observer.conn_frames_per_sec, 7);
+        assert_eq!(observer.free.account_agents, 3);
+        assert_eq!(observer.server_limits(ObserverTier::Free).account_agents, 6);
+        assert_eq!(observer.premium.tick_ms, 750);
+        assert_eq!(
+            observer.standard,
+            crate::observer_quota::TierLimits::STANDARD
+        );
+    }
+
+    #[test]
+    fn observer_quota_rejects_invalid_values() {
+        let _guards = env_guards();
+        for (key, value) in [
+            ("BUZZ_OBSERVER_HEADROOM_PCT", "99"),
+            ("BUZZ_OBSERVER_DEFAULT_TIER", "gold"),
+            ("BUZZ_OBSERVER_STANDARD_AGENT_FRAMES_PER_MIN", "0"),
+        ] {
+            std::env::set_var(key, value);
+            let result = Config::from_env();
+            std::env::remove_var(key);
+            assert!(
+                matches!(result, Err(ConfigError::InvalidValue(ref message)) if message.contains(key)),
+                "{key}={value} must be rejected"
+            );
+        }
     }
 
     #[test]
