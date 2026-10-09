@@ -325,6 +325,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/workflows/{workflow_id}/runs/{run_id}/approvals",
             get(api::workflows::run_approvals),
         )
+        // Observer telemetry tier limits for executors (NIP-98 auth).
+        .route(api::observer::POLICY_PATH, get(api::observer::policy))
         .route(
             "/operator/communities",
             get(api::operator::list_owned_communities).post(api::operator::provision_community),
@@ -2885,6 +2887,10 @@ mod tests {
         assert!(
             !is_exempt("/workflows/abc/runs"),
             "GET /workflows must be protected"
+        );
+        assert!(
+            !is_exempt("/api/observer/policy"),
+            "GET /api/observer/policy must be protected"
         );
         assert!(
             !is_exempt("/moderation/reports"),

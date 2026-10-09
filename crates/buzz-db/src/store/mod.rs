@@ -28,6 +28,8 @@ pub mod git_repo;
 pub mod identity;
 /// Community moderation: reports, bans/timeouts, audit actions.
 pub mod moderation;
+/// Per-owner observer telemetry tier overrides.
+pub mod observer_tier;
 /// Deployment-global operator-listener mention registrations and delivery queues.
 pub mod operator_listener;
 /// Monthly table partition management.

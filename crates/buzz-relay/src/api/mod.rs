@@ -11,6 +11,7 @@ pub mod media;
 pub mod mesh_demo;
 pub mod nip05;
 pub mod nip_fi;
+pub mod observer;
 pub mod operator;
 pub mod workflows;
 

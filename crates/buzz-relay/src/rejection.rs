@@ -76,6 +76,24 @@ pub(crate) async fn enforce_ws_admission(
         }
     };
 
+    // Observer telemetry is budgeted by the owner's tier after verification,
+    // so it leaves the shared flood limiter: a burst of progress frames must
+    // not gate the agent's typing and chat. A per-connection cap still bounds
+    // the signature verifications one connection can request.
+    if let ClientMessage::Event(event) = msg {
+        if crate::observer_quota::is_telemetry_frame(event) {
+            if crate::observer_quota::conn_frame_admitted(state, conn.conn_id) {
+                return true;
+            }
+            metrics::counter!("buzz_admission_rejections_total", "transport" => "websocket", "reason" => "quota", "bucket" => "observer_connection").increment(1);
+            conn.send(request_rejection_message(
+                rejection_target_for(msg),
+                "rate-limited: observer frames per connection exceeded; retry in 1s",
+            ));
+            return false;
+        }
+    }
+
     let limits = &state.auth.config().rate_limits;
     let (ws_window_secs, ws_limit) =
         crate::admission::ws_admission_budget(limits.human_ws_events_per_sec);
@@ -385,6 +403,62 @@ mod tests {
 
         assert_eq!(frame[0], "CLOSED");
         assert_eq!(frame[1], "history-abc");
+    }
+
+    fn observer_frame(direction: &str) -> ClientMessage {
+        let event = EventBuilder::new(Kind::Custom(24200), "")
+            .tags([
+                nostr::Tag::parse([buzz_core::observer::OBSERVER_FRAME_TAG, direction])
+                    .expect("frame tag"),
+            ])
+            .sign_with_keys(&Keys::generate())
+            .expect("sign event");
+        ClientMessage::parse(&serde_json::json!(["EVENT", event]).to_string()).expect("parse EVENT")
+    }
+
+    /// Telemetry frames skip the shared (here unreachable) Redis flood limiter
+    /// and are capped per connection instead; control frames stay on it.
+    /// Falsifying mutation: drop the telemetry branch → the first frame hits
+    /// the unavailable shared limiter and is rejected.
+    #[tokio::test]
+    async fn telemetry_frames_use_the_connection_cap_not_the_shared_limiter() {
+        let state = crate::state::tests::test_state().await;
+        let cap = state.config.observer_quota.conn_frames_per_sec;
+        let (conn, mut rx) = test_conn_with_auth(authenticated_state());
+
+        // At most one second boundary passes, so two windows bound admissions.
+        let mut admitted = 0;
+        let mut rejection = None;
+        for _ in 0..=2 * cap {
+            let msg = observer_frame(buzz_core::observer::OBSERVER_FRAME_TELEMETRY);
+            if enforce_ws_admission(&msg, &conn, &state).await {
+                admitted += 1;
+            } else {
+                rejection = Some((msg, sent_frame(&mut rx)));
+                break;
+            }
+        }
+        let (msg, frame) = rejection.expect("the per-connection cap must reject");
+        assert!(admitted >= cap, "admitted {admitted} of cap {cap}");
+        let ClientMessage::Event(event) = msg else {
+            unreachable!()
+        };
+        assert_eq!(
+            frame,
+            serde_json::json!([
+                "OK",
+                event.id.to_hex(),
+                false,
+                "rate-limited: observer frames per connection exceeded; retry in 1s"
+            ])
+        );
+
+        let control = observer_frame(buzz_core::observer::OBSERVER_FRAME_CONTROL);
+        assert!(!enforce_ws_admission(&control, &conn, &state).await);
+        assert_eq!(
+            sent_frame(&mut rx)[3],
+            "rate-limited: shared admission unavailable"
+        );
     }
 }
 
