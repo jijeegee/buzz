@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:buzz/shared/auth/auth_provider.dart';
+import 'package:buzz/shared/auth/token/token.dart';
 import 'package:buzz/features/sign_in/signed_out_page.dart';
 import 'package:buzz/shared/community/community.dart';
 import 'package:buzz/shared/community/community_provider.dart';
@@ -14,6 +15,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../community/community_storage_test.dart';
+import 'token/token_auth_test_fakes.dart';
 
 class _Harness {
   final storage = CommunityStorage(secure: FakeSecureStorage());
@@ -50,6 +52,15 @@ class _Harness {
     container = ProviderContainer(
       overrides: [
         communityStorageProvider.overrideWithValue(storage),
+        // The signed-out page offers Google; keep its session stores fake.
+        keyBackupRefreshTokenStoreProvider.overrideWithValue(
+          FakeRefreshTokenStore(),
+        ),
+        refreshTokenStoreProvider.overrideWithValue(FakeRefreshTokenStore()),
+        authHttpClientProvider.overrideWithValue(FakeAuthServer().client),
+        webAuthLauncherProvider.overrideWithValue(
+          FakeWebAuthLauncher(FakeWebAuthLauncher.success),
+        ),
         communitySnapshotWriterProvider.overrideWithValue((items) async {
           snapshots.add(List.of(items));
         }),
@@ -102,7 +113,7 @@ void main() {
   );
 
   testWidgets(
-    'choose another retained account without unlocking; proof resumes only it',
+    'choose another retained account without unlocking; only Google resumes',
     (tester) async {
       final h = _Harness();
       await h.start();
@@ -137,16 +148,22 @@ void main() {
         h.container.read(authProvider).value?.status,
         AuthStatus.unauthenticated,
       );
-      await tester.enterText(
-        find.byKey(const Key('signed-out-private-key')),
-        h.keys.nsec,
+      // A key-based community resumes through Google only: no key field,
+      // no one-tap unlock, and nothing key-related on screen.
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('Sign in again'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('token-sign-in-google')),
+          matching: find.text('Continue with Google'),
+        ),
+        findsOneWidget,
       );
-      await tester.tap(find.byKey(const Key('signed-out-continue')));
-      await tester.pumpAndSettle();
-      expect(find.text('Signed in'), findsOneWidget);
+      expect(find.textContaining('nsec'), findsNothing);
+      expect(find.textContaining('key'), findsNothing);
+      expect(find.text('Signed in'), findsNothing);
       final saved = await h.storage.loadAll();
-      expect(saved.first.signedOut, isTrue);
-      expect(saved.last.signedOut, isFalse);
+      expect(saved.every((c) => c.signedOut && c.nsec == h.keys.nsec), isTrue);
     },
   );
 

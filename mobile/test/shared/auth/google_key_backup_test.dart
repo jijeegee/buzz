@@ -133,6 +133,72 @@ void main() {
     },
   );
   test(
+    'signed-out unlinked key links its retained key, never a new one',
+    () async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      await storage.save(
+        Community.create(
+          name: 'Saved',
+          relayUrl: origin,
+          pubkey: keys.public,
+          nsec: keys.nsec,
+        ).copyWith(signedOut: true),
+      );
+      final server = BackupServer();
+      final restored = await GoogleKeyBackupService(
+        origin: origin,
+        client: server.client,
+        session: await signedInSession(),
+        communities: storage,
+        pending: PendingBackupKeyStore(storage: FakeSecureStorage()),
+        generateKeys: () => throw StateError('Must not generate on resume'),
+      ).resolve();
+      expect(server.secret, keys.secret);
+      expect(server.proofs.single.pubkey, keys.public);
+      expect(restored.nsec, keys.nsec);
+      expect(restored.googleBackupAccountId, account);
+      // Only the guarded auth commit clears the signed-out flag.
+      expect((await storage.loadAll()).single.signedOut, isTrue);
+    },
+  );
+  test(
+    'signed-out key meets a Google backup of another identity: mismatch, key kept',
+    () async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      await storage.save(
+        Community.create(
+          name: 'Saved',
+          relayUrl: origin,
+          pubkey: keys.public,
+          nsec: keys.nsec,
+        ).copyWith(signedOut: true),
+      );
+      final server = BackupServer()..secret = nostr.Keys.generate().secret;
+      await expectLater(
+        GoogleKeyBackupService(
+          origin: origin,
+          client: server.client,
+          session: await signedInSession(),
+          communities: storage,
+          pending: PendingBackupKeyStore(storage: FakeSecureStorage()),
+        ).resolve(),
+        throwsA(
+          isA<KeyBackupException>().having(
+            (e) => e.isAccountMismatch,
+            'isAccountMismatch',
+            isTrue,
+          ),
+        ),
+      );
+      final saved = (await storage.loadAll()).single;
+      expect(saved.nsec, keys.nsec);
+      expect(saved.googleBackupAccountId, isNull);
+      expect(server.proofs, isEmpty);
+    },
+  );
+  test(
     'mobile-first upload and desktop-first restore share the exact wire key',
     () async {
       // Public secp256k1 test vector shared with Rust resolve_backup tests.

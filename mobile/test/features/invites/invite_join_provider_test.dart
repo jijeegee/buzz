@@ -54,7 +54,7 @@ void main() {
       expect(requests, 0);
       expect(
         container.read(inviteJoinProvider).errorMessage,
-        contains('다시 로그인'),
+        contains('Sign in to this community again'),
       );
       expect((await storage.loadAll()).single.signedOut, isTrue);
     },

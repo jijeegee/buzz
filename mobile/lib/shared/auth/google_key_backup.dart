@@ -20,7 +20,25 @@ class KeyBackupException implements Exception {
   final int? statusCode;
   @override
   String toString() => message;
+
+  /// [code] for a Google account that belongs to a different Buzz account
+  /// than this community; the user should pick another Google account.
+  static const accountMismatch = 'account_mismatch';
+
+  /// Whether choosing a different Google account is the way forward.
+  bool get isAccountMismatch =>
+      code == accountMismatch || code == 'key_already_linked';
 }
+
+// User-visible copy: plain English, no key or server jargon (product rule).
+const _tryAgain = KeyBackupException(
+  'Couldn’t connect your Google account. Try again.',
+);
+const _mismatch = KeyBackupException(
+  'This Google account is linked to a different Buzz account. '
+  'Try a different Google account.',
+  code: KeyBackupException.accountMismatch,
+);
 
 /// Keeps an uncommitted client key across uncertain uploads and app restarts.
 /// It is never the active messaging identity until initialization succeeds.
@@ -86,13 +104,13 @@ class GoogleKeyBackupService {
       existing = await _existing();
     } catch (_) {
       throw const KeyBackupException(
-        'Could not read the saved identity securely. Try again.',
+        'Couldn’t read your sign-in on this device. Try again.',
       );
     }
     if (existing?.tokenAuth == true) {
       throw const KeyBackupException(
-        'This device has a separate token account on this relay. '
-        'It cannot be merged with a signing-key account. Its data is unchanged.',
+        'This community already has a different sign-in on this device. '
+        'Nothing was changed.',
       );
     }
   }
@@ -103,10 +121,7 @@ class GoogleKeyBackupService {
       _inFlight ??= _resolve(isCurrent)
           .onError((Object error, StackTrace stack) {
             if (error is KeyBackupException) throw error;
-            throw const KeyBackupException(
-              'Could not read or save the signing key securely. '
-              'Your existing identity is unchanged; try again.',
-            );
+            throw _tryAgain;
           })
           .whenComplete(() {
             _inFlight = null;
@@ -128,9 +143,7 @@ class GoogleKeyBackupService {
     await checkLocalCompatibility();
     guard();
     if (_session.identityMode != 'key_backup') {
-      throw const KeyBackupException(
-        'Sign in with Google for key recovery first.',
-      );
+      throw const KeyBackupException('Sign in with Google first.');
     }
     final account = _session.state.principalId;
     if (account == null) throw const KeyBackupException('Sign in again.');
@@ -145,25 +158,29 @@ class GoogleKeyBackupService {
                 existing.pubkey != null &&
                 existing.pubkey != local.public))) {
       throw const KeyBackupException(
-        'The saved identity is inconsistent. '
-        'Recover its original key before linking Google; nothing was replaced.',
+        'Couldn’t sign in to this community on this device. '
+        'Nothing was changed.',
       );
     }
     final status = await _status(account, guard);
     late nostr.Keys keys;
     if (status['state'] == 'ready') {
       if (existing?.pubkey != null && existing!.pubkey != status['pubkey']) {
-        throw const KeyBackupException(
-          'This Google backup belongs to a different '
-          'Buzz identity. The saved identity was preserved.',
-        );
+        throw _mismatch;
       }
       keys = await _restore(status, local, guard);
     } else {
-      if (missingLocalKey || existing?.signedOut == true) {
+      // A signed-out community that was never linked to Google may link the
+      // key it retained at sign-out (`local`, always used below as the
+      // candidate, so nothing is generated). One already linked to a Google
+      // account must be resumed by that account's backup, never re-linked.
+      if (missingLocalKey ||
+          (existing?.signedOut == true &&
+              existing?.googleBackupAccountId != null)) {
         throw const KeyBackupException(
-          'This Google account has no backup for '
-          'the saved identity. Recover its original key; no replacement was generated.',
+          'This Google account isn’t connected to this community. '
+          'Try a different Google account.',
+          code: KeyBackupException.accountMismatch,
         );
       }
       // Only a verified successful absent status authorizes key generation.
@@ -172,10 +189,7 @@ class GoogleKeyBackupService {
       final candidate =
           local ?? (pending == null ? _generateKeys() : _keys(pending));
       if (candidate == null) {
-        throw const KeyBackupException(
-          'The pending key cannot be read. '
-          'No replacement identity was generated.',
-        );
+        throw _tryAgain;
       }
       await _pending.write(origin, account, candidate.nsec);
       guard();
@@ -207,8 +221,7 @@ class GoogleKeyBackupService {
         now?.pubkey != existing?.pubkey ||
         now?.tokenAuth != existing?.tokenAuth) {
       throw const KeyBackupException(
-        'This community changed during sign-in. '
-        'Its identity was preserved; try again.',
+        'This community changed during sign-in. Try again.',
       );
     }
     return existing?.copyWith(
@@ -243,9 +256,7 @@ class GoogleKeyBackupService {
         status['version'] != 1 ||
         !(status['state'] == 'absent' && status['pubkey'] == null ||
             status['state'] == 'ready' && _validHex(status['pubkey']))) {
-      throw const KeyBackupException(
-        'The relay returned an invalid backup status.',
-      );
+      throw _tryAgain;
     }
     return status;
   }
@@ -256,10 +267,7 @@ class GoogleKeyBackupService {
     void Function() guard,
   ) async {
     if (local != null && local.public != status['pubkey']) {
-      throw const KeyBackupException(
-        'This Google account backs up another Buzz '
-        'identity. Your existing identity and conversations were preserved.',
-      );
+      throw _mismatch;
     }
     final result = await _request(
       'POST',
@@ -271,22 +279,16 @@ class GoogleKeyBackupService {
     if (!_validHex(secret) ||
         result['version'] != 1 ||
         result['pubkey'] != status['pubkey']) {
-      throw const KeyBackupException(
-        'The restored backup is invalid. No key was replaced.',
-      );
+      throw _tryAgain;
     }
     final nostr.Keys keys;
     try {
       keys = nostr.Keys(secret as String);
     } catch (_) {
-      throw const KeyBackupException(
-        'The restored key is invalid. No key was replaced.',
-      );
+      throw _tryAgain;
     }
     if (keys.public != status['pubkey']) {
-      throw const KeyBackupException(
-        'The restored key does not match its identity.',
-      );
+      throw _tryAgain;
     }
     return keys;
   }
@@ -305,9 +307,7 @@ class GoogleKeyBackupService {
     if (challenge['account_id'] != account ||
         challenge['url'] != '$origin/auth/key-backup' ||
         !_validHex(challenge['challenge'])) {
-      throw const KeyBackupException(
-        'The relay returned an invalid linking challenge.',
-      );
+      throw _tryAgain;
     }
     final proof = nostr.Event.from(
       kind: 27235,
@@ -328,9 +328,7 @@ class GoogleKeyBackupService {
       body: {'secret_key': keys.secret, 'proof': proof.toMap()},
     );
     if (result['pubkey'] != keys.public || result['version'] != 1) {
-      throw const KeyBackupException(
-        'The relay did not confirm this key backup.',
-      );
+      throw _tryAgain;
     }
   }
 
@@ -364,24 +362,20 @@ class GoogleKeyBackupService {
       guard();
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
-        throw const KeyBackupException(
-          'The relay returned an invalid backup response.',
-        );
+        throw _tryAgain;
       }
       if (response.statusCode != 200) {
         final code = decoded['code'];
         throw KeyBackupException(
           switch (code) {
-            'reauth_required' =>
-              'Sign in with Google again to recover or back up your key.',
-            'backup_exists' =>
-              'This account already has an immutable key backup.',
+            'reauth_required' => 'Sign in with Google again.',
             'key_already_linked' =>
-              'This key is already linked to another Google account.',
+              'This community is linked to a different Google account. '
+                  'Try a different Google account.',
             'account_mode_conflict' =>
-              'This Google account has separate token-mode data. It cannot be merged.',
-            _ =>
-              'Key backup request failed (HTTP ${response.statusCode}). Try again; your identity is unchanged.',
+              'This Google account can’t be used with this community. '
+                  'Try a different Google account.',
+            _ => _tryAgain.message,
           },
           code: code is String ? code : null,
           statusCode: response.statusCode,
@@ -392,10 +386,7 @@ class GoogleKeyBackupService {
       rethrow;
     } catch (_) {
       // Never include a key-bearing response/body or a transport exception.
-      throw const KeyBackupException(
-        'Could not complete key recovery. '
-        'Try again; no replacement identity was generated.',
-      );
+      throw _tryAgain;
     }
   }
 
@@ -403,7 +394,7 @@ class GoogleKeyBackupService {
     final bytes = <int>[];
     await for (final chunk in response.stream) {
       if (bytes.length + chunk.length > 16384) {
-        throw const KeyBackupException('The backup response was too large.');
+        throw _tryAgain;
       }
       bytes.addAll(chunk);
     }
@@ -419,7 +410,9 @@ class GoogleKeyBackupService {
         !(allowLocal &&
             uri.scheme == 'http' &&
             ['localhost', '127.0.0.1', '::1'].contains(uri.host))) {
-      throw const KeyBackupException('Google key recovery requires HTTPS.');
+      throw const KeyBackupException(
+        'Signing in with Google needs a secure connection to this community.',
+      );
     }
   }
 

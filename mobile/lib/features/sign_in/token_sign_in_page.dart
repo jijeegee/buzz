@@ -53,6 +53,10 @@ class TokenSignInPage extends HookConsumerWidget {
     final checking = useState(false);
     final completing = useState(false);
     final message = useState<String?>(null);
+    // The Google account chosen belongs to another Buzz account: the way
+    // forward is choosing a different Google account (the relay always asks
+    // Google for the account chooser), never switching identities.
+    final accountMismatch = useState(false);
     // Fences relay checks: only the newest one may write its result.
     final checkGeneration = useRef(0);
     final attemptGeneration = useRef(0);
@@ -190,9 +194,11 @@ class TokenSignInPage extends HookConsumerWidget {
       } catch (error) {
         if (context.mounted) {
           completing.value = false;
+          accountMismatch.value =
+              error is KeyBackupException && error.isAccountMismatch;
           message.value = error is KeyBackupException
               ? error.message
-              : 'Could not save this community. Your existing identity is unchanged.';
+              : 'Couldn’t finish signing in. Nothing was changed; try again.';
         }
         return;
       }
@@ -213,6 +219,7 @@ class TokenSignInPage extends HookConsumerWidget {
           context.mounted && generation == attemptGeneration.value;
       try {
         message.value = null;
+        accountMismatch.value = false;
         if (keyBackup.value) {
           try {
             await ref
@@ -220,7 +227,10 @@ class TokenSignInPage extends HookConsumerWidget {
                 .checkLocalCompatibility();
             if (!context.mounted) return;
           } on KeyBackupException catch (error) {
-            if (context.mounted) message.value = error.message;
+            if (context.mounted) {
+              accountMismatch.value = error.isAccountMismatch;
+              message.value = error.message;
+            }
             return;
           }
         }
@@ -267,7 +277,7 @@ class TokenSignInPage extends HookConsumerWidget {
             const SizedBox(height: Grid.lg),
             Text(
               resumeSignedOut
-                  ? '다시 로그인'
+                  ? 'Sign in again'
                   : keyBackup.value
                   ? 'Welcome to Buzz'
                   : dualMode.value
@@ -280,7 +290,8 @@ class TokenSignInPage extends HookConsumerWidget {
             const SizedBox(height: Grid.xxs),
             Text(
               resumeSignedOut
-                  ? '계정과 커뮤니티는 그대로 있어요. 로그인하면 이어서 사용할 수 있어요.'
+                  ? 'Your communities and messages are still on this device. '
+                        'Sign in to pick up where you left off.'
                   : keyBackup.value
                   ? 'Sign in on your first device or restore the same Buzz identity here. '
                         'If this account has no backup, your current key is linked, '
@@ -345,7 +356,11 @@ class TokenSignInPage extends HookConsumerWidget {
                 key: const Key('token-sign-in-google'),
                 onPressed: busy ? null : () => unawaited(signIn()),
                 child: Text(
-                  resumeSignedOut ? 'Google로 로그인' : 'Sign in with Google',
+                  accountMismatch.value
+                      ? 'Use a different Google account'
+                      : resumeSignedOut
+                      ? 'Continue with Google'
+                      : 'Sign in with Google',
                 ),
               ),
             if (dualMode.value && origin.value != null && !fixedOrigin)
@@ -401,7 +416,10 @@ class TokenSignInPage extends HookConsumerWidget {
                 ),
               ),
             ],
-            if (lockedOrigin != null && !resumeSignedOut) ...[
+            // A resume that fails (e.g. a different Google account) must
+            // still leave a way out (AGENTS.md rule 6).
+            if (lockedOrigin != null && !resumeSignedOut ||
+                resumeSignedOut && errorText != null) ...[
               const SizedBox(height: Grid.md),
               const CommunityRecoveryActions(),
             ],

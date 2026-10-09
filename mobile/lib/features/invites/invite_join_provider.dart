@@ -175,7 +175,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
         invite: invite,
         host: _hostFromRelay(invite.relayUrl),
         communityName: existing!.name,
-        errorMessage: '먼저 이 계정으로 다시 로그인해 주세요.',
+        errorMessage: 'Sign in to this community again first.',
       );
       return;
     }
@@ -262,7 +262,9 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       final communities = await ref.read(communityListProvider.future);
       final existing = _existingCommunity(communities, invite.relayUrl);
       if (existing?.signedOut == true) {
-        throw const InviteClaimException('먼저 이 계정으로 다시 로그인해 주세요.');
+        throw const InviteClaimException(
+          'Sign in to this community again first.',
+        );
       }
       if (existing != null && existing.tokenAuth) {
         final wasActive =
@@ -579,7 +581,9 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       if (current == null ||
           current.signedOut ||
           current.pubkey != community.pubkey) {
-        throw const InviteClaimException('먼저 이 계정으로 다시 로그인해 주세요.');
+        throw const InviteClaimException(
+          'Sign in to this community again first.',
+        );
       }
       final updated = current.copyWith(starterSetupIncomplete: incomplete);
       await storage.save(updated);
