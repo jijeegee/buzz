@@ -1,32 +1,20 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { relayClient } from "@/shared/api/relayClient";
 import {
   applyGoalOp,
+  applyGoalOps,
   type GoalOp,
+  type GoalTree,
   getGoalTree,
   getGoalTreeHistory,
   restoreGoalTree,
 } from "@/shared/api/tauriGoals";
-import { setGoalsFeatureEnabled } from "@/shared/api/tauriLayer0";
-import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 
 /** Kind 40110 — see `buzz_core::kind::KIND_GOAL_TREE`. */
 export const KIND_GOAL_TREE = 40110;
-
-/**
- * Keeps the desktop backend's copy of the "Goal layers" experiment toggle in
- * step with the UI, so agents get goal rules and context only while it is on.
- */
-export function useSyncGoalsFeatureToAgents() {
-  const enabled = useFeatureEnabled("goalTree");
-  React.useEffect(() => {
-    setGoalsFeatureEnabled(enabled).catch((error: unknown) => {
-      console.warn("[goals] failed to sync the goal layers toggle", error);
-    });
-  }, [enabled]);
-}
 
 const goalTreeKey = (channelId: string | null) => ["goal-tree", channelId];
 const goalHistoryKey = (channelId: string | null) => [
@@ -90,12 +78,15 @@ export function useGoalTreeQuery(channelId: string | null, enabled = true) {
   });
 }
 
+/** Apply one edit, or several as a single revision (all or none). */
 export function useApplyGoalOpMutation(channelId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (op: GoalOp) => {
+    mutationFn: (op: GoalOp | GoalOp[]) => {
       if (!channelId) return Promise.reject(new Error("No channel selected"));
-      return applyGoalOp(channelId, op);
+      return Array.isArray(op)
+        ? applyGoalOps(channelId, op)
+        : applyGoalOp(channelId, op);
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: goalTreeKey(channelId) });
@@ -104,6 +95,20 @@ export function useApplyGoalOpMutation(channelId: string | null) {
       });
     },
   });
+}
+
+/** Display names for everyone assigned to a goal in `tree`. */
+export function useGoalAssigneeNames(tree: GoalTree | undefined) {
+  const assigneePubkeys = React.useMemo(
+    () => [...new Set((tree?.nodes ?? []).flatMap((n) => n.assignees ?? []))],
+    [tree],
+  );
+  const usersQuery = useUsersBatchQuery(assigneePubkeys);
+  return React.useCallback(
+    (pubkey: string) =>
+      usersQuery.data?.profiles[pubkey]?.displayName ?? "Unknown member",
+    [usersQuery.data],
+  );
 }
 
 export function useGoalHistoryQuery(

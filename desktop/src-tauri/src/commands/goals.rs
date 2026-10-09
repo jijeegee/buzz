@@ -79,7 +79,8 @@ pub async fn get_goal_tree(
 }
 
 enum Edit {
-    Op(GoalOp),
+    /// Operations applied in order and published as one revision.
+    Ops(Vec<GoalOp>),
     Replace(GoalTree),
 }
 
@@ -102,9 +103,11 @@ async fn write(
             None => ("none".to_string(), None, GoalTree::empty()),
         };
         match &edit {
-            Edit::Op(op) => {
+            Edit::Ops(ops) => {
                 let now = chrono::Utc::now().timestamp().max(0) as u64;
-                tree.apply(op, &editor, now).map_err(|e| e.to_string())?;
+                for op in ops {
+                    tree.apply(op, &editor, now).map_err(|e| e.to_string())?;
+                }
             }
             Edit::Replace(replacement) => tree = replacement.clone(),
         }
@@ -128,7 +131,21 @@ pub async fn apply_goal_op(
     op: GoalOp,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    write(&state, &channel_id, Edit::Op(op)).await
+    write(&state, &channel_id, Edit::Ops(vec![op])).await
+}
+
+/// Apply several operations as one revision — all of them or none, e.g.
+/// "add a sub-goal and link this thread to it" from a thread.
+#[tauri::command]
+pub async fn apply_goal_ops(
+    channel_id: String,
+    ops: Vec<GoalOp>,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    if ops.is_empty() {
+        return Err("no goal changes to save".into());
+    }
+    write(&state, &channel_id, Edit::Ops(ops)).await
 }
 
 /// List previous goal tree revisions, newest first.

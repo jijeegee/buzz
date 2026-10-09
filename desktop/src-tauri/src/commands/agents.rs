@@ -1366,6 +1366,7 @@ async fn delete_managed_agent_locally(
                 save_managed_agents(&app, records)
             })?;
             crate::managed_agents::delete_agent_key(&pubkey);
+            crate::commands::remove_agent_goals_file(&app, &pubkey);
             // Tombstone after confirmed removal (inside lock; every published
             // agent tombstones). The NIP-IA kind:9035 archive request — which
             // stops the identity appearing in member pickers and autocomplete —

@@ -113,7 +113,7 @@ export function Layer0GoalCard({
       ) : null}
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Running agents use a changed goal after their next restart.
+          Running agents use a changed goal from their next message.
         </p>
         <Button
           data-testid="layer0-save"
