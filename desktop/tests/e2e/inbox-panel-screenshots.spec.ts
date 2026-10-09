@@ -146,6 +146,82 @@ test.describe("inbox panel beside the chat screen", () => {
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/04-panel-shown.png` });
   });
+
+  test("rows scrolled under the filter header stay behind its backdrop", async ({
+    page,
+  }) => {
+    await installMockBridge(page, { mode: "mock" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await seedGeneralMessages(page);
+    await page.evaluate(
+      ({ channelId, senderPubkey }) => {
+        const win = window as MockFeedWindow;
+        const emit = win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+        const push = win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+        if (!emit || !push) throw new Error("Mock bridge helpers missing.");
+        const now = Math.floor(Date.now() / 1000);
+        for (let index = 0; index < 20; index += 1) {
+          const event = emit({
+            channelName: "general",
+            content: `Filler mention ${index}`,
+            createdAt: now - 600 - index,
+            id: `panel-filler-${index}`,
+            pubkey: senderPubkey,
+          });
+          push({
+            category: "mention",
+            channel_id: channelId,
+            channel_name: "general",
+            channel_type: "stream",
+            content: event.content,
+            created_at: event.created_at,
+            id: event.id,
+            kind: event.kind,
+            pubkey: event.pubkey,
+            tags: event.tags,
+          });
+        }
+      },
+      {
+        channelId: GENERAL_CHANNEL_ID,
+        senderPubkey: TEST_IDENTITIES.alice.pubkey,
+      },
+    );
+
+    await page
+      .locator('[data-testid^="home-inbox-item-"]')
+      .filter({ hasText: "Filler mention 0" })
+      .first()
+      .click();
+    const panel = page.getByTestId("inbox-panel");
+    await expect(panel).toBeVisible();
+    const list = panel.getByTestId("home-inbox-list");
+    await list.evaluate((element) => {
+      element.scrollTop = 200;
+    });
+    await expect
+      .poll(() => list.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(100);
+    await waitForAnimations(page);
+
+    // The filter header itself is transparent; the backdrop behind it must
+    // cover the header row so scrolled rows do not show through.
+    const backdrop = panel.getByTestId("inbox-panel-header-backdrop");
+    await expect(backdrop).toBeVisible();
+    const panelBox = await panel.boundingBox();
+    const backdropBox = await backdrop.boundingBox();
+    if (!panelBox || !backdropBox) throw new Error("Missing layout boxes.");
+    expect(backdropBox.y).toBeLessThanOrEqual(panelBox.y);
+    expect(backdropBox.height).toBeGreaterThanOrEqual(48);
+    expect(backdropBox.width).toBeGreaterThanOrEqual(panelBox.width - 1);
+    const backgroundAlpha = await backdrop.evaluate((element) => {
+      const color = getComputedStyle(element).backgroundColor;
+      const match = color.match(/[\d.]+/g);
+      return match && match.length === 4 ? Number(match[3]) : 1;
+    });
+    expect(backgroundAlpha).toBeGreaterThan(0.5);
+    await page.screenshot({ path: `${SHOTS}/04b-panel-scrolled.png` });
+  });
 });
 
 test.describe("inbox rows land exactly where they point", () => {
