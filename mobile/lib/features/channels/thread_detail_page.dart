@@ -45,6 +45,8 @@ import 'jump_to_latest_switcher.dart';
 import 'local_message_send_animation_provider.dart';
 import 'local_message_send_transition.dart';
 import '../profile/user_profile_sheet.dart';
+import '../goals/goals_preferences.dart';
+import '../goals/thread_goal_chip.dart';
 import 'message_actions.dart';
 import 'message_action_backdrop_state.dart';
 import 'message_long_press_region.dart';
@@ -790,6 +792,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     // The root of the entire thread chain. If the current thread head is
     // itself a root message its rootId is null, so fall back to its own id.
     final effectiveRootId = threadHead.rootId ?? threadHead.id;
+    final goalsEnabled = ref.watch(goalsEnabledProvider);
 
     // Composer size changes and keyboard metrics changes are independent:
     // the dock grows first, then the Scaffold's viewport shrinks once the
@@ -1010,6 +1013,12 @@ class ThreadDetailPage extends HookConsumerWidget {
                         restoreComposerFocus.value?.call(),
                     childrenByParent: childrenByParent,
                     quoteScope: isMember && !isArchived ? quoteScope : null,
+                    headAccessory: goalsEnabled
+                        ? ThreadGoalChip(
+                            channelId: channelId,
+                            threadRootId: effectiveRootId,
+                          )
+                        : null,
                   ),
                 ),
               ),

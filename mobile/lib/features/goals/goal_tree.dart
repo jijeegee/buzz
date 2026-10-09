@@ -450,3 +450,21 @@ class LinkThread extends GoalOp {
     ]);
   }
 }
+
+class UnlinkThread extends GoalOp {
+  const UnlinkThread({required this.thread});
+  final String thread;
+
+  @override
+  GoalTree _apply(GoalTree tree, String editor, int now) {
+    final thread = this.thread.toLowerCase();
+    return GoalTree([
+      for (final node in tree.nodes)
+        node.threads.contains(thread)
+            ? node.copyWith(
+                threads: node.threads.where((t) => t != thread).toList(),
+              )
+            : node,
+    ]);
+  }
+}
