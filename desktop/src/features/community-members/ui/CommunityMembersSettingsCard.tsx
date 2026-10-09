@@ -12,6 +12,7 @@ import {
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
+import { SettingsConfirmDialog } from "@/features/settings/ui/SettingsConfirmDialog";
 import { SettingsOptionGroup } from "@/features/settings/ui/SettingsOptionGroup";
 import { SettingsSectionHeader } from "@/features/settings/ui/SettingsSectionHeader";
 import type {
@@ -113,6 +114,7 @@ function RelayMemberRow({
   const canDemote = currentRole === "owner" && member.role === "admin";
   const hasActions = canRemove || canPromote || canDemote;
   const displayName = formatDisplayName(member, profile?.displayName);
+  const [confirmRemove, setConfirmRemove] = React.useState(false);
 
   async function mutateWithToast(
     action: () => Promise<unknown>,
@@ -232,18 +234,30 @@ function RelayMemberRow({
             {canRemove ? (
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
-                onClick={() =>
-                  void mutateWithToast(
-                    () => removeMutation.mutateAsync(member.pubkey),
-                    "Removed community member",
-                  )
-                }
+                onClick={() => setConfirmRemove(true)}
               >
                 Remove from community
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
+      ) : null}
+      {canRemove ? (
+        <SettingsConfirmDialog
+          confirmLabel="Remove"
+          description={`${displayName} will lose access to this community's channels and conversations. You can invite them again later.`}
+          destructive
+          onConfirm={() =>
+            void mutateWithToast(
+              () => removeMutation.mutateAsync(member.pubkey),
+              "Removed community member",
+            )
+          }
+          onOpenChange={setConfirmRemove}
+          open={confirmRemove}
+          testId="relay-member-remove-dialog"
+          title={`Remove ${displayName}?`}
+        />
       ) : null}
     </div>
   );

@@ -43,6 +43,8 @@ const tauriMock = {
       case "list_devices":
         return Promise.resolve(devices);
       case "revoke_device":
+      case "revoke_other_sessions":
+      case "revoke_all_bot_tokens":
         return Promise.resolve(null);
       case "rename_device": {
         const device = devices.find((d) => d.id === args.deviceId);
@@ -279,13 +281,19 @@ test("sign-out stays reachable while a sign-in restore is stuck (Rule 6)", async
   await unmount();
 });
 
-test("Google key backup links the existing identity explicitly and discloses custody", async () => {
+test("a local-only account is invited to protect itself with Google, in plain words", async () => {
   status = baseStatus({ keyBackupSupported: true });
   const { container, unmount } = await mount();
   const button = container.querySelector("[data-testid='account-sign-in']");
-  assert.equal(button.textContent.trim(), "Link key with Google");
-  assert.match(container.textContent, /server operator/);
-  assert.match(container.textContent, /cannot overwrite/);
+  assert.equal(button.textContent.trim(), "Continue with Google");
+  assert.match(container.textContent, /Protect your account/);
+  assert.match(container.textContent, /protected copy/);
+  assert.doesNotMatch(container.textContent, /bkeyb|signing|nostr|npub/i);
+  assert.equal(
+    container.querySelector("[data-testid='account-sign-out']"),
+    null,
+    "a local-only account offers no sign-out",
+  );
   await act(async () => fireEvent.click(button));
   assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
     allowRestore: false,
@@ -304,12 +312,12 @@ test("Google backup sessions do not offer token-agent revocation or identity del
     signingPubkey: "cd".repeat(32),
   });
   const { container, unmount } = await mount();
-  assert.match(container.textContent, /Backed-up signing key/);
-  assert.match(container.textContent, /cannot revoke a copied/);
-  assert.match(container.textContent, /Verify Google backup/);
+  assert.match(container.textContent, /Signed in with Google/);
+  assert.match(container.textContent, /Check Google sign-in/);
+  assert.doesNotMatch(container.textContent, /bkeyb|signing|backup/i);
   assert.doesNotMatch(
     container.textContent,
-    /Revoke agent tokens|Delete account/,
+    /Disconnect all agents|Delete account/,
   );
   await unmount();
 });
@@ -323,7 +331,11 @@ test("new-device Google onboarding explicitly requests same-key recovery", async
     "[data-testid='onboarding-google-sign-in']",
   );
   assert.ok(button);
-  assert.match(container.textContent, /server operator/);
+  assert.match(
+    container.textContent,
+    /Sign in with your Google account to get started\./,
+  );
+  assert.doesNotMatch(container.textContent, /bkeyb|signing/i);
   await act(async () => fireEvent.click(button));
   assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
     allowRestore: true,
@@ -345,7 +357,7 @@ test("previously signed-out token users have an explicit existing-account route"
       button,
       "existing account recovery remains reachable before mode is known",
     );
-    assert.match(button.textContent, /existing token account/);
+    assert.equal(button.textContent, "Sign in to an older Buzz account");
     await act(async () => fireEvent.click(button));
     assert.deepEqual(
       calls.find((c) => c.command === "login_with_google").args,
@@ -498,4 +510,96 @@ test("navigation away cancels its attempt and cannot invoke stale completion", a
   await act(async () => resolveLogin(baseStatus({ state: "active" })));
   assert.equal(completed, 0);
   loginBehavior = undefined;
+});
+
+function dialogButton(label) {
+  const dialog = document.querySelector('[role="alertdialog"]');
+  assert.ok(dialog, "confirmation dialog is open");
+  return [...dialog.querySelectorAll("button")].find(
+    (b) => b.textContent.trim() === label,
+  );
+}
+
+test("signing out, signing out other devices and disconnecting agents each confirm first", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount();
+  await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
+  // Sign out last: the mocked logout never settles (the real one reloads).
+  const cases = [
+    [
+      "account-sign-out-others",
+      "Sign out other devices?",
+      "Sign out other devices",
+      "revoke_other_sessions",
+    ],
+    [
+      "account-disconnect-agents",
+      "Disconnect all agents?",
+      "Disconnect agents",
+      "revoke_all_bot_tokens",
+    ],
+    ["account-sign-out", "Sign out of Buzz?", "Sign out", "logout"],
+  ];
+  for (const [testId, title, confirmLabel, command] of cases) {
+    const open = container.querySelector(`[data-testid='${testId}']`);
+    await act(async () => fireEvent.click(open));
+    const dialog = document.querySelector('[role="alertdialog"]');
+    assert.ok(dialog, `${testId} opens a confirmation`);
+    assert.ok(dialog.textContent.includes(title));
+    assert.equal(
+      calls.some((c) => c.command === command),
+      false,
+      `${testId} does nothing before confirmation`,
+    );
+    await act(async () => fireEvent.click(dialogButton("Cancel")));
+    assert.equal(document.querySelector('[role="alertdialog"]'), null);
+    assert.equal(
+      calls.some((c) => c.command === command),
+      false,
+    );
+
+    await act(async () => fireEvent.click(open));
+    await act(async () => fireEvent.click(dialogButton(confirmLabel)));
+    await settle(() => calls.some((c) => c.command === command));
+    assert.equal(
+      calls.filter((c) => c.command === command).length,
+      1,
+      `${testId} runs once after confirmation`,
+    );
+  }
+  await unmount();
+});
+
+test("the sign-out confirmation tells the user how to get back in", async () => {
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+  });
+  const { container, unmount } = await mount();
+  await act(async () =>
+    fireEvent.click(
+      container.querySelector("[data-testid='account-sign-out']"),
+    ),
+  );
+  const dialog = document.querySelector('[role="alertdialog"]');
+  assert.match(
+    dialog.textContent,
+    /You'll need to sign in with Google again to use Buzz on this computer\. Your communities and conversations are kept\./,
+  );
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  await unmount();
+});
+
+test("onStatusChange reports each settled status to the Profile panel", async () => {
+  status = baseStatus({ state: "active", keyBackup: true });
+  const seen = [];
+  const { unmount } = await mount(AccountSettingsCard, {
+    onStatusChange: (next) => seen.push(next),
+  });
+  assert.ok(seen.length >= 1);
+  assert.ok(seen.every((next) => next !== null));
+  assert.equal(seen.at(-1).keyBackup, true);
+  await unmount();
 });

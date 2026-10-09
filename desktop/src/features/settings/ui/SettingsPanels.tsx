@@ -78,7 +78,6 @@ import {
   SettingsOptionRow,
 } from "./SettingsOptionGroup";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
-import { AccountSettingsCard } from "./AccountSettingsCard";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
 import { UpdateChecker } from "../UpdateChecker";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
@@ -824,7 +823,6 @@ export function renderSettingsSection(
             currentPubkey={props.currentPubkey}
             fallbackDisplayName={props.fallbackDisplayName}
           />
-          <AccountSettingsCard />
           <FeatureGate feature="goalTree">
             <div className="mt-6">
               <Layer0GoalCard agentPubkey={null} />

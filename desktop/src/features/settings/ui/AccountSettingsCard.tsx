@@ -23,11 +23,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
+import {
+  OLDER_ACCOUNT_SIGN_IN_LABEL,
+  OLDER_ACCOUNT_SIGN_IN_TITLE,
+} from "@/features/onboarding/ui/GoogleSignInButton";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
+import { needsGoogleProtection } from "@/shared/lib/signingKeyUi";
 import { Spinner } from "@/shared/ui/spinner";
 import { AccountDeviceRow } from "./AccountDeviceRow";
+import { SettingsConfirmDialog } from "./SettingsConfirmDialog";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
 
 function errorText(error: unknown, fallback: string): string {
@@ -47,19 +53,26 @@ function reloadIntoNewIdentity() {
   window.location.reload();
 }
 
-function shortId(hex: string | null): string {
-  return hex ? `${hex.slice(0, 8)}…${hex.slice(-4)}` : "";
-}
-
 /**
  * Settings › Profile › Account: Google sign-in for the active community and,
  * once signed in, its devices and account-level security actions. Renders
- * nothing on a relay that does not offer token sign-in.
+ * nothing on a relay that does not offer token sign-in. `onStatusChange`
+ * lets the Profile panel adapt to whether Google holds the account.
  */
-export function AccountSettingsCard() {
+export function AccountSettingsCard({
+  onStatusChange,
+}: {
+  onStatusChange?: (status: TokenAuthStatus | null) => void;
+} = {}) {
   const login = useGoogleLogin();
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    // Only settled statuses: the Profile panel may remount this card to move
+    // it, and a fresh mount's initial null must not bounce it back.
+    if (status) onStatusChange?.(status);
+  }, [onStatusChange, status]);
 
   const refresh = React.useCallback(async () => {
     try {
@@ -122,16 +135,18 @@ export function AccountSettingsCard() {
       if (!next.keyBackup) reloadIntoNewIdentity();
     });
 
+  // Not yet held by Google: invite the user to protect the account with it.
+  const protect = needsGoogleProtection(status);
+
   return (
-    <div className="mt-12" data-testid="settings-account">
+    <div className={protect ? "mb-8" : "mt-12"} data-testid="settings-account">
       <SettingsOptionGroup
         description={
-          (status.keyBackupSupported && !status.legacyTokenAccount) ||
-          status.keyBackup
-            ? "Google provides recovery for your existing Buzz signing key. The server operator or someone with access to your Google account can recover the key."
-            : "This community uses Google sign-in. Your account, devices and agents are managed by the community's server."
+          protect
+            ? "Continue with Google so you can sign in to Buzz on other computers and get back into your account if this one is lost. Your Buzz server keeps a protected copy for this."
+            : "You sign in to Buzz with your Google account."
         }
-        title="Account"
+        title={protect ? "Protect your account" : "Account"}
       >
         {status.state === "active" ? (
           <ActiveAccount
@@ -149,15 +164,17 @@ export function AccountSettingsCard() {
                   ? "Restoring your sign-in…"
                   : status.state === "needs_login"
                     ? "Your sign-in has ended"
-                    : "Not signed in"}
+                    : protect
+                      ? "Not connected to Google yet"
+                      : "Not signed in"}
               </p>
               <p className="text-sm text-muted-foreground/70">
                 {status.state === "needs_login"
                   ? status.keyBackup
-                    ? "Sign in again to manage recovery. Your signing key and agents keep working."
+                    ? "Sign in with Google again to manage your account. Buzz and your agents keep working."
                     : "Sign in with Google again to keep using this community and its agents."
-                  : status.keyBackupSupported && !status.legacyTokenAccount
-                    ? "Link this existing Buzz identity to Google and back it up. A different backed-up identity cannot overwrite this one."
+                  : protect
+                    ? "Your browser opens to finish. Your profile, communities and agents stay the same."
                     : "Sign in with Google to use your account on this community. Your browser opens to finish signing in."}
               </p>
             </div>
@@ -174,8 +191,8 @@ export function AccountSettingsCard() {
                 ? "Signing in…"
                 : status.state === "needs_login"
                   ? "Sign in again"
-                  : status.keyBackupSupported && !status.legacyTokenAccount
-                    ? "Link key with Google"
+                  : protect
+                    ? "Continue with Google"
                     : "Sign in with Google"}
             </Button>
             {status.keyBackupSupported &&
@@ -188,9 +205,9 @@ export function AccountSettingsCard() {
                 onClick={() => void signIn(true)}
                 type="button"
                 variant="outline"
-                title="Return to an existing account created before Google key backup. This does not link or replace your Buzz signing key."
+                title={OLDER_ACCOUNT_SIGN_IN_TITLE}
               >
-                Use an existing token account
+                {OLDER_ACCOUNT_SIGN_IN_LABEL}
               </Button>
             ) : null}
             {status.state === "restoring" ? (
@@ -229,6 +246,12 @@ function ActiveAccount({
 }) {
   const [devices, setDevices] = React.useState<AuthDevice[] | null>(null);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [confirming, setConfirming] = React.useState<
+    "sign-out" | "sign-out-others" | "disconnect-agents" | null
+  >(null);
+  const closeConfirm = (open: boolean) => {
+    if (!open) setConfirming(null);
+  };
 
   const loadDevices = React.useCallback(async () => {
     try {
@@ -249,37 +272,37 @@ function ActiveAccount({
       <SettingsOptionRow>
         <div className="min-w-0">
           <p className="font-medium">Signed in with Google</p>
-          <p className="text-sm text-muted-foreground/70">
-            {status.keyBackup ? "Backed-up signing key" : "Account"}{" "}
-            {shortId(
-              status.keyBackup
-                ? (status.signingPubkey ?? null)
-                : status.principal,
-            )}
-          </p>
         </div>
         <Button
           data-testid="account-sign-out"
           disabled={disabled}
-          onClick={() =>
-            void run("Sign out", async () => {
-              const next = await logoutTokenSession();
-              onStatus(next);
-              if (!next.keyBackup) window.location.reload();
-            })
-          }
+          onClick={() => setConfirming("sign-out")}
           type="button"
           variant="outline"
         >
           Sign out
         </Button>
       </SettingsOptionRow>
+      <SettingsConfirmDialog
+        confirmLabel="Sign out"
+        description="You'll need to sign in with Google again to use Buzz on this computer. Your communities and conversations are kept."
+        onConfirm={() =>
+          void run("Sign out", async () => {
+            const next = await logoutTokenSession();
+            onStatus(next);
+            if (!next.keyBackup) window.location.reload();
+          })
+        }
+        onOpenChange={closeConfirm}
+        open={confirming === "sign-out"}
+        testId="account-sign-out-dialog"
+        title="Sign out of Buzz?"
+      />
       {status.keyBackup ? (
         <SettingsOptionRow>
           <p className="min-w-0 text-sm text-muted-foreground/70">
-            Signing out only blocks future backup access. It cannot revoke a
-            copied signing key. Existing agents keep their keys and continue
-            running.
+            Check that your Google account can get you back into Buzz on a new
+            computer. Your agents keep running.
           </p>
           <Button
             disabled={disabled}
@@ -289,14 +312,14 @@ function ActiveAccount({
                 if (!next) return;
                 onStatus(next);
                 toast.success(
-                  "Google backup verified. Your signing identity is unchanged.",
+                  "Google sign-in checked. Your account is unchanged.",
                 );
               })
             }
             type="button"
             variant="outline"
           >
-            Verify Google backup
+            Check Google sign-in
           </Button>
         </SettingsOptionRow>
       ) : null}
@@ -336,41 +359,62 @@ function ActiveAccount({
           Sign out every other device. Your agents keep running.
         </p>
         <Button
+          data-testid="account-sign-out-others"
           disabled={disabled}
-          onClick={() =>
-            void run("Sign out other devices", async () => {
-              await revokeOtherSessions();
-              await loadDevices();
-              toast.success("Signed out of all other devices.");
-            })
-          }
+          onClick={() => setConfirming("sign-out-others")}
           type="button"
           variant="outline"
         >
           Sign out other devices
         </Button>
       </SettingsOptionRow>
+      <SettingsConfirmDialog
+        confirmLabel="Sign out other devices"
+        description="Every other computer and phone using your account is signed out and will need to sign in with Google again. This computer stays signed in, and your agents keep running."
+        onConfirm={() =>
+          void run("Sign out other devices", async () => {
+            await revokeOtherSessions();
+            await loadDevices();
+            toast.success("Signed out of all other devices.");
+          })
+        }
+        onOpenChange={closeConfirm}
+        open={confirming === "sign-out-others"}
+        testId="account-sign-out-others-dialog"
+        title="Sign out other devices?"
+      />
       {!status.keyBackup ? (
         <>
           <SettingsOptionRow>
             <p className="min-w-0 text-sm text-muted-foreground/70">
-              Disconnect every agent right away. Agents on this computer get a
-              new token the next time they start.
+              Disconnect every agent right away. Agents on this computer
+              reconnect the next time they start.
             </p>
             <Button
+              data-testid="account-disconnect-agents"
               disabled={disabled}
-              onClick={() =>
-                void run("Revoke agent tokens", async () => {
-                  await revokeAllBotTokens();
-                  toast.success("All agent tokens were revoked.");
-                })
-              }
+              onClick={() => setConfirming("disconnect-agents")}
               type="button"
               variant="outline"
             >
-              Revoke agent tokens
+              Disconnect all agents
             </Button>
           </SettingsOptionRow>
+          <SettingsConfirmDialog
+            confirmLabel="Disconnect agents"
+            description="All of your agents are disconnected from this community right away. Agents on this computer reconnect on their own the next time they start."
+            destructive
+            onConfirm={() =>
+              void run("Disconnect agents", async () => {
+                await revokeAllBotTokens();
+                toast.success("All agents were disconnected.");
+              })
+            }
+            onOpenChange={closeConfirm}
+            open={confirming === "disconnect-agents"}
+            testId="account-disconnect-agents-dialog"
+            title="Disconnect all agents?"
+          />
           <details className="px-4 py-3">
             <summary className="cursor-pointer text-sm text-muted-foreground">
               Account deletion

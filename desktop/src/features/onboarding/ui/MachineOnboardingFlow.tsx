@@ -7,8 +7,18 @@ import {
   importIdentity,
   persistCurrentIdentity,
 } from "@/shared/api/tauriIdentity";
+import {
+  getTokenAuthStatus,
+  onTokenAuthChanged,
+  type TokenAuthStatus,
+} from "@/shared/api/tokenAuth";
 import type { IdentityStorage } from "@/shared/api/types";
+import {
+  onboardingLandingMode,
+  signingKeyUiTestSeam,
+} from "@/shared/lib/signingKeyUi";
 import { Button } from "@/shared/ui/button";
+import { Spinner } from "@/shared/ui/spinner";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 import { BackupStep } from "./BackupStep";
 import { DefaultConfigStep } from "./DefaultConfigStep";
@@ -73,9 +83,43 @@ export function MachineOnboardingFlow({
   initialPage?: MachineOnboardingPage;
   queryClient: QueryClient;
 }) {
+  // Users only ever sign in with Google; the key screens are an E2E seam.
+  const keyUiSeam = signingKeyUiTestSeam();
   const [page, setPage] = React.useState<MachineOnboardingPage>(
-    identityLost ? "key-import" : (initialPage ?? "identity"),
+    identityLost && keyUiSeam ? "key-import" : (initialPage ?? "identity"),
   );
+  const [authStatus, setAuthStatus] = React.useState<
+    TokenAuthStatus | "loading" | "error"
+  >("loading");
+  const loadAuthStatus = React.useCallback(async () => {
+    try {
+      setAuthStatus(await getTokenAuthStatus());
+    } catch {
+      setAuthStatus("error");
+    }
+  }, []);
+  React.useEffect(() => {
+    void loadAuthStatus();
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void onTokenAuthChanged(() => void loadAuthStatus())
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [loadAuthStatus]);
+  const baseLandingMode = onboardingLandingMode(authStatus);
+  // A lost local identity must go back through Google to be restored, even
+  // when the Google session itself survived.
+  const landingMode =
+    identityLost && baseLandingMode === "signed-in"
+      ? "google"
+      : baseLandingMode;
   const [transitionDirection, setTransitionDirection] =
     React.useState<OnboardingTransitionDirection>("forward");
   const [error, setError] = React.useState<string | null>(null);
@@ -256,6 +300,12 @@ export function MachineOnboardingFlow({
   }, [backupSession]);
 
   const backFromSetup = React.useCallback(() => {
+    if (landingMode !== "key-fallback") {
+      // Google-only onboarding has no key screens to return to.
+      setTransitionDirection("backward");
+      setPage("identity");
+      return;
+    }
     if (identityWasImported) {
       setKeyImportFormKey((current) => current + 1);
       setKeyImportStage("key-entry");
@@ -270,7 +320,7 @@ export function MachineOnboardingFlow({
     setTransitionDirection("backward");
     setReturningFromSecurity(false);
     setPage("backup");
-  }, [backupSession, backupSubview, identityWasImported]);
+  }, [backupSession, backupSubview, identityWasImported, landingMode]);
 
   const backFromConfig = React.useCallback(() => {
     setupSelectionHandoffRef.current = false;
@@ -353,55 +403,111 @@ export function MachineOnboardingFlow({
               {error ? (
                 <p className="mt-4 text-sm text-destructive">{error}</p>
               ) : null}
-              <div className="mt-10 flex flex-col items-center gap-3">
-                <GoogleSignInButton
-                  allowRestore
-                  disabled={isPending}
-                  onComplete={loadRecoveredIdentity}
-                />
-                <Button
-                  className={ONBOARDING_LANDING_CTA_CLASS}
-                  disabled={isPending}
-                  onClick={() => {
-                    if (selectedPubkey) {
-                      void loadFreshIdentity();
-                      return;
-                    }
-                    setTransitionDirection("forward");
-                    setPage("identity-key-intro");
-                  }}
-                  type="button"
+              {landingMode === "key-fallback" ? (
+                <>
+                  <div className="mt-10 flex flex-col items-center gap-3">
+                    <GoogleSignInButton
+                      allowRestore
+                      disabled={isPending}
+                      onComplete={loadRecoveredIdentity}
+                    />
+                    <Button
+                      className={ONBOARDING_LANDING_CTA_CLASS}
+                      disabled={isPending}
+                      onClick={() => {
+                        if (selectedPubkey) {
+                          void loadFreshIdentity();
+                          return;
+                        }
+                        setTransitionDirection("forward");
+                        setPage("identity-key-intro");
+                      }}
+                      type="button"
+                    >
+                      {isPending
+                        ? "Loading identity…"
+                        : selectedPubkey
+                          ? "Continue setup"
+                          : "Create a new identity key"}
+                    </Button>
+                    <Button
+                      className={`${ONBOARDING_SECONDARY_CTA_CLASS} px-5`}
+                      disabled={isPending}
+                      onClick={() => {
+                        setKeyImportDialog(null);
+                        setKeyImportStage("key-entry");
+                        setTransitionDirection("forward");
+                        setPage("key-import");
+                      }}
+                      type="button"
+                      variant="ghost"
+                    >
+                      {selectedPubkey
+                        ? "Use a different key instead"
+                        : "Use an existing key"}
+                    </Button>
+                  </div>
+                  <IdentityKeyHelpDialog
+                    onOpen={() => {
+                      setIdentityKeyHelpReturnPage("identity");
+                      setTransitionDirection("forward");
+                      setPage("identity-key-help");
+                    }}
+                  />
+                </>
+              ) : (
+                <div
+                  className="mt-10 flex flex-col items-center gap-3"
+                  data-testid="onboarding-google-landing"
                 >
-                  {isPending
-                    ? "Loading identity…"
-                    : selectedPubkey
-                      ? "Continue setup"
-                      : "Create a new identity key"}
-                </Button>
-                <Button
-                  className={`${ONBOARDING_SECONDARY_CTA_CLASS} px-5`}
-                  disabled={isPending}
-                  onClick={() => {
-                    setKeyImportDialog(null);
-                    setKeyImportStage("key-entry");
-                    setTransitionDirection("forward");
-                    setPage("key-import");
-                  }}
-                  type="button"
-                  variant="ghost"
-                >
-                  {selectedPubkey
-                    ? "Use a different key instead"
-                    : "Use an existing key"}
-                </Button>
-              </div>
-              <IdentityKeyHelpDialog
-                onOpen={() => {
-                  setIdentityKeyHelpReturnPage("identity");
-                  setTransitionDirection("forward");
-                  setPage("identity-key-help");
-                }}
-              />
+                  {landingMode === "google" ? (
+                    <GoogleSignInButton
+                      allowRestore
+                      disabled={isPending}
+                      note={
+                        identityLost
+                          ? "Sign in with Google to restore your account."
+                          : undefined
+                      }
+                      onComplete={loadRecoveredIdentity}
+                      showWhenSignedIn={identityLost}
+                    />
+                  ) : landingMode === "signed-in" ? (
+                    <Button
+                      className={ONBOARDING_LANDING_CTA_CLASS}
+                      data-testid="onboarding-google-continue"
+                      disabled={isPending}
+                      onClick={() => void loadRecoveredIdentity()}
+                      type="button"
+                    >
+                      {isPending ? "Loading…" : "Continue"}
+                    </Button>
+                  ) : landingMode === "unavailable" ? (
+                    <>
+                      <p
+                        className="max-w-[420px] text-sm text-muted-foreground"
+                        role="alert"
+                      >
+                        We couldn’t reach Buzz sign-in. Check your internet
+                        connection and try again.
+                      </p>
+                      <Button
+                        className={ONBOARDING_LANDING_CTA_CLASS}
+                        data-testid="onboarding-google-retry"
+                        onClick={() => {
+                          setAuthStatus("loading");
+                          void loadAuthStatus();
+                        }}
+                        type="button"
+                      >
+                        Retry
+                      </Button>
+                    </>
+                  ) : (
+                    <Spinner aria-label="Loading sign-in" className="h-5 w-5" />
+                  )}
+                </div>
+              )}
             </OnboardingSlideTransition>
           </div>
         </OnboardingFooterProvider>

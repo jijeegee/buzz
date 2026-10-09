@@ -12,6 +12,7 @@ import {
   resolveEnabled,
   useFeatureSnapshot,
 } from "@/shared/features";
+import { shouldEscapeCloseSettings } from "@/features/settings/lib/settingsEscape";
 import { topChromeBackdrop } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -193,7 +194,7 @@ export function SettingsView({
 
   React.useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !event.defaultPrevented) {
+      if (shouldEscapeCloseSettings(event)) {
         event.preventDefault();
         event.stopPropagation();
         onClose();
