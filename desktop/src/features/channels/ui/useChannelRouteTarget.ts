@@ -53,20 +53,14 @@ function getRouteMainTimelineTargetId(
 }
 
 /**
- * How a route target is entered. `rootOpensThread`: whether a target on a
- * top-level message opens its reply panel (a message link does; entering a
- * chat room from the inbox leaves threads closed). `entry`: identifies an
- * inbox entry, so clicking the same row again re-applies its target in place
- * instead of remounting the chat screen.
+ * Whether a route target on a top-level message opens its reply panel. A
+ * message link does; entering a chat room from the inbox lands on the room's
+ * latest message and leaves threads closed.
  */
-type RouteTargetEntry = { entry: number | null; rootOpensThread: boolean };
+const RootTargetOpensThreadContext = React.createContext(true);
 
-const RouteTargetEntryContext = React.createContext<RouteTargetEntry>({
-  entry: null,
-  rootOpensThread: true,
-});
-
-export const RouteTargetEntryProvider = RouteTargetEntryContext.Provider;
+export const RootTargetOpensThreadProvider =
+  RootTargetOpensThreadContext.Provider;
 
 export function useChannelRouteTarget({
   activeChannel,
@@ -107,10 +101,7 @@ export function useChannelRouteTarget({
     targetTimelineMessage,
   );
   const handledThreadRouteTargetRef = React.useRef<string | null>(null);
-  const handledEntryRef = React.useRef<number | null>(null);
-  const { entry, rootOpensThread: rootTargetOpensThread } = React.useContext(
-    RouteTargetEntryContext,
-  );
+  const rootTargetOpensThread = React.useContext(RootTargetOpensThreadContext);
 
   React.useEffect(() => {
     if (!targetMessageId) {
@@ -119,14 +110,9 @@ export function useChannelRouteTarget({
     }
 
     const targetKey = `${activeChannelId ?? "none"}:${targetMessageId}`;
-    // A new inbox entry for this same target applies it again in place.
-    if (
-      handledThreadRouteTargetRef.current !== targetKey ||
-      (entry !== null && entry !== handledEntryRef.current)
-    ) {
+    if (handledThreadRouteTargetRef.current !== targetKey) {
       handledThreadRouteTargetRef.current = null;
     }
-    if (entry !== null) handledEntryRef.current = entry;
 
     if (
       handledThreadRouteTargetRef.current === targetKey ||
@@ -191,7 +177,6 @@ export function useChannelRouteTarget({
     activeChannel,
     activeChannelId,
     closeAgentSession,
-    entry,
     requireThreadEditResolution,
     rootTargetOpensThread,
     setEditTargetId,

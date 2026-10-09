@@ -119,12 +119,7 @@ export function useHiddenDmInboxNavigation({
     /** Enters an inbox row's chat room, reopening a hidden DM first. */
     handleEnterRoom: React.useCallback(
       (item: InboxItem, entry: InboxRoomEntry) => {
-        void openContext(
-          item,
-          entry.channelId,
-          entry.messageId,
-          entry.threadHeadId,
-        );
+        void openContext(item, entry.channelId, entry.messageId);
       },
       [openContext],
     ),

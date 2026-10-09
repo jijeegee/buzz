@@ -18,7 +18,7 @@ import {
   ThreadViewModeOverrideProvider,
 } from "@/features/channels/lib/threadViewModePreference";
 import { LandAtLatestProvider } from "@/features/channels/lib/landAtLatest";
-import { RouteTargetEntryProvider } from "@/features/channels/ui/useChannelRouteTarget";
+import { RootTargetOpensThreadProvider } from "@/features/channels/ui/useChannelRouteTarget";
 import {
   useInboxPanelOpen,
   useInboxRoomLanding,
@@ -78,28 +78,19 @@ function ChannelRouteComponent() {
   });
   const isHuddleTranscript = huddleWindowChannelId() !== null;
   const inboxPanelOpen = useInboxPanelOpen() && !isHuddleTranscript;
-  // An inbox entry lands exactly where its row points, in place: the chat
-  // screen stays mounted, so moving within a channel (main to thread, thread to
-  // thread, thread to main) only moves the view. Each entry carries a nonce so
-  // clicking the same row again lands again; a room row scrolls to its latest
-  // message without opening a thread. The landing is recorded before the URL
-  // catches up, so it only applies once the URL points at the same target.
+  // An inbox entry lands exactly where its row points: a fresh chat mount per
+  // entry (so clicking the same row again lands again), and a room row scrolls
+  // to its latest message without opening a thread.
   const landing = useInboxRoomLanding();
   const landingHere = landing?.channelId === channelId ? landing : null;
-  const landingMatchesUrl =
-    landingHere !== null &&
-    (landingHere.messageId ?? undefined) === search.messageId;
   const landAtLatest =
-    landingMatchesUrl && landingHere.messageId === null
-      ? landingHere.nonce
-      : null;
-  const routeTargetEntry = React.useMemo(
-    () => ({
-      entry: landingMatchesUrl ? landingHere.nonce : null,
-      rootOpensThread: !landingMatchesUrl || landingHere.opensThread,
-    }),
-    [landingHere, landingMatchesUrl],
-  );
+    landingHere !== null &&
+    landingHere.messageId === null &&
+    search.messageId === undefined;
+  const rootTargetOpensThread =
+    landingHere === null ||
+    search.messageId !== landingHere.messageId ||
+    landingHere.opensThread;
   // With the inbox pulled out, threads open maximized over the collapsed
   // channel. The layout toggle only switches this view while the panel is open;
   // the saved channel default is untouched.
@@ -127,9 +118,10 @@ function ChannelRouteComponent() {
       }
     >
       <ThreadViewModeOverrideProvider value={threadViewModeOverride}>
-        <RouteTargetEntryProvider value={routeTargetEntry}>
+        <RootTargetOpensThreadProvider value={rootTargetOpensThread}>
           <LandAtLatestProvider value={landAtLatest}>
             <ChannelRouteScreen
+              key={landingHere?.nonce ?? 0}
               autoSendDraftKey={search.autoSend ?? null}
               channelId={channelId}
               searchHighlight={searchHighlight}
@@ -139,7 +131,7 @@ function ChannelRouteComponent() {
               targetThreadRootId={search.threadRootId ?? search.thread ?? null}
             />
           </LandAtLatestProvider>
-        </RouteTargetEntryProvider>
+        </RootTargetOpensThreadProvider>
       </ThreadViewModeOverrideProvider>
     </React.Suspense>
   );

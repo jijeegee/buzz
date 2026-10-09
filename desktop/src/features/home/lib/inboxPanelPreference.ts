@@ -1,7 +1,5 @@
 import * as React from "react";
 
-import type { InboxRoomEntry } from "@/features/home/lib/inboxRoomEntry";
-
 /**
  * Whether the inbox list is pulled out beside the chat screen.
  *
@@ -62,10 +60,16 @@ export function useInboxPanelOpen(): boolean {
 
 /**
  * The latest chat-room entry made from the inbox. Each entry gets a new nonce
- * so the mounted chat screen lands exactly where the row points, even when the
- * same row is clicked again: "click a row, you are there".
+ * so the chat screen remounts and lands exactly where the row points, even
+ * when the same row is clicked again: "click a row, you are there".
  */
-export type InboxRoomLanding = InboxRoomEntry & { nonce: number };
+export type InboxRoomLanding = {
+  channelId: string;
+  messageId: string | null;
+  nonce: number;
+  /** A thread reply opens its thread; a room row only scrolls the timeline. */
+  opensThread: boolean;
+};
 
 const landingListeners = new Set<() => void>();
 

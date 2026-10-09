@@ -3,14 +3,13 @@ import * as React from "react";
 /**
  * Set by a surface that opens a channel "as a chat room" (the inbox): the main
  * timeline lands on the channel's newest message instead of restoring an older
- * reading position. The value identifies the entry (null when none), so each
- * new entry lands again without remounting the chat screen.
+ * reading position.
  */
-const LandAtLatestContext = React.createContext<number | null>(null);
+const LandAtLatestContext = React.createContext(false);
 
 export const LandAtLatestProvider = LandAtLatestContext.Provider;
 
-export function useLandAtLatest(): number | null {
+export function useLandAtLatest(): boolean {
   return React.useContext(LandAtLatestContext);
 }
 
@@ -19,18 +18,18 @@ const MAX_LAND_FRAMES = 120;
 const SETTLED_FRAMES = 15;
 
 /**
- * Pins the timeline to its bottom once per entry, retrying each frame until the
- * timeline can settle and then briefly holding it there.
+ * Pins the timeline to its bottom once per mount when `active`, retrying each
+ * frame until the timeline can settle and then briefly holding it there.
  */
-export function useLandAtLatestOnEntry(
-  entry: number | null,
+export function useLandAtLatestOnMount(
+  active: boolean,
   settleAtBottom: () => boolean,
 ) {
   const settleRef = React.useRef(settleAtBottom);
   settleRef.current = settleAtBottom;
 
   React.useEffect(() => {
-    if (entry === null) return;
+    if (!active) return;
     let frame = 0;
     let settledFrames = 0;
     let handle = 0;
@@ -42,5 +41,5 @@ export function useLandAtLatestOnEntry(
     };
     handle = window.requestAnimationFrame(step);
     return () => window.cancelAnimationFrame(handle);
-  }, [entry]);
+  }, [active]);
 }
