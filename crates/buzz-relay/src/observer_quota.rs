@@ -207,6 +207,51 @@ pub struct ObserverQuotaConfig {
     pub standard: TierLimits,
     /// Executor limits for [`ObserverTier::Premium`].
     pub premium: TierLimits,
+    /// Devices per tier that may hold the owner's observer subscription.
+    pub receiving_devices: ReceivingDevices,
+}
+
+/// Devices of one owner that may receive observer frames at once, per tier.
+///
+/// A device count is not a rate, so `headroom_pct` never scales it: the
+/// number apps show is the number the relay enforces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReceivingDevices {
+    /// [`ObserverTier::Free`].
+    pub free: u64,
+    /// [`ObserverTier::Standard`].
+    pub standard: u64,
+    /// [`ObserverTier::Premium`].
+    pub premium: u64,
+}
+
+impl Default for ReceivingDevices {
+    fn default() -> Self {
+        Self {
+            free: 2,
+            standard: 3,
+            premium: 5,
+        }
+    }
+}
+
+impl ReceivingDevices {
+    /// The cap of `tier`.
+    pub fn get(&self, tier: ObserverTier) -> u64 {
+        match tier {
+            ObserverTier::Free => self.free,
+            ObserverTier::Standard => self.standard,
+            ObserverTier::Premium => self.premium,
+        }
+    }
+
+    fn get_mut(&mut self, tier: ObserverTier) -> &mut u64 {
+        match tier {
+            ObserverTier::Free => &mut self.free,
+            ObserverTier::Standard => &mut self.standard,
+            ObserverTier::Premium => &mut self.premium,
+        }
+    }
 }
 
 impl Default for ObserverQuotaConfig {
@@ -219,6 +264,7 @@ impl Default for ObserverQuotaConfig {
             free: TierLimits::FREE,
             standard: TierLimits::STANDARD,
             premium: TierLimits::PREMIUM,
+            receiving_devices: ReceivingDevices::default(),
         }
     }
 }
@@ -266,13 +312,15 @@ impl ObserverQuotaConfig {
             executor: *self.executor_limits(tier),
             server: self.server_limits(tier),
             conn_frames_per_sec: self.conn_frames_per_sec,
+            receiving_devices: self.receiving_devices.get(tier),
         }
     }
 
     /// Load from `BUZZ_OBSERVER_DEFAULT_TIER`, `BUZZ_OBSERVER_HEADROOM_PCT`,
     /// `BUZZ_OBSERVER_CONN_FRAMES_PER_SEC` and per-tier
     /// `BUZZ_OBSERVER_{FREE|STANDARD|PREMIUM}_{FIELD}` (e.g.
-    /// `BUZZ_OBSERVER_FREE_ACCOUNT_AGENTS`). Unset values keep the defaults.
+    /// `BUZZ_OBSERVER_FREE_ACCOUNT_AGENTS`), including
+    /// `BUZZ_OBSERVER_{TIER}_RECEIVING_DEVICES`. Unset values keep the defaults.
     pub(crate) fn from_env() -> Result<Self, ConfigError> {
         let defaults = Self::default();
         let default_tier = match std::env::var("BUZZ_OBSERVER_DEFAULT_TIER") {
@@ -315,6 +363,11 @@ impl ObserverQuotaConfig {
                     *value,
                 )?;
             }
+            let devices = config.receiving_devices.get_mut(tier);
+            *devices = crate::config::positive_u64_from_env(
+                &format!("BUZZ_OBSERVER_{prefix}_RECEIVING_DEVICES"),
+                *devices,
+            )?;
         }
         Ok(config)
     }
@@ -333,6 +386,9 @@ pub struct ObserverPolicy {
     pub server: TierLimits,
     /// Pre-verification telemetry frames per second per connection.
     pub conn_frames_per_sec: u64,
+    /// Devices of the owner that may hold an observer subscription at once.
+    /// Not scaled by `headroom_pct`.
+    pub receiving_devices: u64,
 }
 
 /// Upper bound on the plaintext length of a NIP-44 v2 ciphertext of
@@ -443,7 +499,7 @@ pub enum Decision {
 /// The quota store could not make a decision.
 #[derive(Debug, thiserror::Error)]
 #[error("observer quota store unavailable: {0}")]
-pub struct QuotaError(String);
+pub struct QuotaError(pub(crate) String);
 
 /// Shared observer quota counters.
 #[async_trait]
@@ -499,7 +555,7 @@ struct TelemetryPlan {
 
 /// Key prefix of one owner's counters. The owner is a Redis Cluster hash tag so
 /// every key of one decision lands in one slot.
-fn owner_key_prefix(community: CommunityId, owner: &PublicKey) -> String {
+pub(crate) fn owner_key_prefix(community: CommunityId, owner: &PublicKey) -> String {
     format!("buzz:{community}:obsq:{{{}}}", owner.to_hex())
 }
 
@@ -857,7 +913,7 @@ impl ObserverQuotaStore for MemoryObserverQuota {
     }
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     u64::try_from(chrono::Utc::now().timestamp_millis()).unwrap_or(0)
 }
 
@@ -990,7 +1046,7 @@ pub(crate) async fn admit_telemetry_frame(
     }
 }
 
-fn reject_metric(reason: &'static str) {
+pub(crate) fn reject_metric(reason: &'static str) {
     metrics::counter!("buzz_observer_quota_rejections_total", "reason" => reason).increment(1);
 }
 

@@ -52,6 +52,8 @@ pub mod nip_fi_config;
 /// NIP-FI HTTP ingress enforcement: assertion extraction, verification,
 /// key-pairing check, and deny-map gate for every protected HTTP surface.
 pub(crate) mod nip_fi_http;
+/// Observer receiving-device cap.
+pub mod observer_devices;
 /// Observer telemetry tier quotas.
 pub mod observer_quota;
 /// Deployment-global operator-listener mention delivery worker.
