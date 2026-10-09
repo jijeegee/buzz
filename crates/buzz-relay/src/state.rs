@@ -1254,6 +1254,11 @@ pub struct AppState {
     /// Shared observer telemetry tier counters (kind 24200 telemetry and
     /// agent typing). Redis in production; tests may swap in memory.
     pub observer_quota: Arc<dyn crate::observer_quota::ObserverQuotaStore>,
+    /// Shared observer receiving-device counters. Redis in production; tests
+    /// may swap in memory.
+    pub observer_devices: Arc<dyn crate::observer_devices::ObserverDeviceStore>,
+    /// This node's counted observer subscriptions and AUTH device tags.
+    pub observer_device_leases: Arc<crate::observer_devices::DeviceLeases>,
     /// Observer tier overrides. Key: (community_id, owner pubkey bytes).
     /// Value: the `observer_tiers` row, `None` when the owner uses the
     /// configured default. 60 s TTL bounds how long a tier change takes.
@@ -1448,6 +1453,9 @@ impl AppState {
         let observer_quota: Arc<dyn crate::observer_quota::ObserverQuotaStore> = Arc::new(
             crate::observer_quota::RedisObserverQuota::new(redis_pool.clone()),
         );
+        let observer_devices: Arc<dyn crate::observer_devices::ObserverDeviceStore> = Arc::new(
+            crate::observer_devices::RedisObserverDevices::new(redis_pool.clone()),
+        );
         let audit_enabled = audit_arc.is_some();
         // Build NIP-FI components before moving config into the state Arc.
         let (nip_fi_verifier, nip_fi_jwks_source) = build_nip_fi_components(&config);
@@ -1517,6 +1525,8 @@ impl AppState {
             gif_http_client,
             admission_rate_limiter,
             observer_quota,
+            observer_devices,
+            observer_device_leases: Arc::default(),
             observer_tier_cache: Arc::new(
                 moka::sync::Cache::builder()
                     .max_capacity(10_000)

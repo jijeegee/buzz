@@ -341,6 +341,8 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
     // The tag is integrity-protected by the event's Schnorr signature — if
     // tampered, NIP-42 verification will fail before we ever inspect it.
     let auth_tag_json = extract_auth_tag_json(&event);
+    // Optional client device for the observer receiving-device cap.
+    let device_tag = crate::observer_devices::auth_device_tag(&event);
     let signed_auth_created_at = event.created_at.as_secs();
 
     let relay_url =
@@ -683,7 +685,15 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             }
 
             info!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), "NIP-42 auth successful");
+            // Recorded before the auth commit so the first REQ after it sees
+            // the device; dropped again if the commit loses to a disconnect.
+            if let Some(device) = device_tag {
+                state
+                    .observer_device_leases
+                    .set_auth_device(conn_id, device);
+            }
             if !conn.authenticate(auth_ctx) {
+                state.observer_device_leases.forget_auth_device(conn_id);
                 return;
             }
             // The permit is held through the deny-set check and the OK send so

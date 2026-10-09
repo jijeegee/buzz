@@ -38,7 +38,8 @@ pub(crate) fn next_owner() -> u64 {
 // retention, and the terminal CLOSED frame. Neither the registry nor pubsub
 // takes it, so holding it across their awaits cannot invert lock order.
 
-/// Drop `sub_id` from the map, the fan-out index, and its topic retention.
+/// Drop `sub_id` from the map, its observer device lease, the fan-out index,
+/// and its topic retention.
 /// The caller holds the lifecycle lock (`subs`).
 pub(crate) async fn retire_locked(
     subs: &mut HashMap<String, u64>,
@@ -47,6 +48,7 @@ pub(crate) async fn retire_locked(
     state: &AppState,
 ) {
     subs.remove(sub_id);
+    crate::observer_devices::release_subscription(state, conn.conn_id, sub_id).await;
     if let Some(removed) = state.sub_registry.remove_subscription(conn.conn_id, sub_id) {
         #[cfg(test)]
         test_seam::pause_at(&test_seam::RELEASE_PAUSE).await;
@@ -91,6 +93,7 @@ pub(crate) async fn release_connection_subscriptions(conn: &ConnectionState, sta
     debug_assert!(conn.cancel.is_cancelled());
     let mut subs = conn.subscriptions.lock().await;
     subs.clear();
+    crate::observer_devices::release_connection(state, conn.conn_id).await;
     for removed in state.sub_registry.remove_connection(conn.conn_id) {
         release_scope_topics(state, &conn.tenant, &removed.scope).await;
     }

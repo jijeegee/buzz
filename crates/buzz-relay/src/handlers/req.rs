@@ -356,15 +356,37 @@ pub async fn handle_req(
         }
     };
 
+    // Owner observer subscriptions count against the receiving-device cap.
+    // Only global subscriptions can receive kind 24200, and the p-gate above
+    // already limited their `#p` to the caller. A refusal closes only this
+    // REQ; the connection's other subscriptions and publishes are untouched.
+    let observer_lease = if channel_id.is_none() {
+        match crate::observer_devices::admit_subscription(&state, &conn, &sub_id, &filters).await
+        {
+            crate::observer_devices::ObserverAdmission::Uncounted => None,
+            crate::observer_devices::ObserverAdmission::Counted(lease) => Some(lease),
+            crate::observer_devices::ObserverAdmission::Rejected(reason) => {
+                conn.send(RelayMessage::closed(&sub_id, &reason));
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
     let Some(owner) = claim_live_subscription(
         &sub_id,
         &filters,
         authorized_requested_channels.as_deref(),
+        observer_lease.clone(),
         &conn,
         &state,
     )
     .await
     else {
+        if let Some(lease) = observer_lease {
+            crate::observer_devices::release_unclaimed(&state, &lease).await;
+        }
         return;
     };
 
@@ -1380,12 +1402,15 @@ async fn handle_huddle_liveness_req(
 
 /// Claim `sub_id` for a live REQ under the lifecycle lock: record a fresh
 /// owner token, register for fan-out (replacing any same-ID entry), retain its
-/// topics, and release the replaced scope's. Returns the owner token, or
-/// `None` once the connection is closing — the caller then exits silently.
+/// topics, and release the replaced scope's. `observer_lease` replaces the
+/// observer device lease the ID held, releasing a displaced one. Returns the
+/// owner token, or `None` once the connection is closing — the caller then
+/// releases `observer_lease` and exits silently.
 async fn claim_live_subscription(
     sub_id: &str,
     filters: &[Filter],
     channel_ids: Option<&[uuid::Uuid]>,
+    observer_lease: Option<crate::observer_devices::DeviceLease>,
     conn: &ConnectionState,
     state: &AppState,
 ) -> Option<u64> {
@@ -1395,6 +1420,7 @@ async fn claim_live_subscription(
     }
     let owner = super::close::next_owner();
     subs.insert(sub_id.to_string(), owner);
+    crate::observer_devices::record_claim(state, conn.conn_id, sub_id, observer_lease).await;
     let community = conn.tenant.community();
     let replaced = match channel_ids {
         Some(ids) => state.sub_registry.register_channels_scoped(
@@ -1807,7 +1833,7 @@ mod tests {
         let channel = uuid::Uuid::new_v4();
         let topic = EventTopic::Channel(channel);
         let owner =
-            claim_live_subscription("thread", &text_filters(), Some(&[channel]), &conn, &state)
+            claim_live_subscription("thread", &text_filters(), Some(&[channel]), None, &conn, &state)
                 .await
                 .expect("claim");
         assert_eq!(state.pubsub.topic_refcount(&conn.tenant, topic).await, 1);
@@ -1842,11 +1868,11 @@ mod tests {
             EventTopic::Channel(new_channel),
         );
         let old =
-            claim_live_subscription("x", &text_filters(), Some(&[old_channel]), &conn, &state)
+            claim_live_subscription("x", &text_filters(), Some(&[old_channel]), None, &conn, &state)
                 .await
                 .expect("claim");
         let new =
-            claim_live_subscription("x", &text_filters(), Some(&[new_channel]), &conn, &state)
+            claim_live_subscription("x", &text_filters(), Some(&[new_channel]), None, &conn, &state)
                 .await
                 .expect("claim");
         assert_eq!(
@@ -1880,7 +1906,7 @@ mod tests {
         let (conn, mut send_rx) = lifecycle_conn();
         let channel = uuid::Uuid::new_v4();
         let topic = EventTopic::Channel(channel);
-        claim_live_subscription("x", &text_filters(), Some(&[channel]), &conn, &state)
+        claim_live_subscription("x", &text_filters(), Some(&[channel]), None, &conn, &state)
             .await
             .expect("claim");
 
@@ -1893,7 +1919,7 @@ mod tests {
         );
         assert_eq!(state.pubsub.topic_refcount(&conn.tenant, topic).await, 0);
 
-        let live = claim_live_subscription("x", &text_filters(), Some(&[channel]), &conn, &state)
+        let live = claim_live_subscription("x", &text_filters(), Some(&[channel]), None, &conn, &state)
             .await
             .expect("claim");
         close_timed_out_subscription("x", search, &conn, &state).await;
@@ -1913,7 +1939,7 @@ mod tests {
         let conn = Arc::new(conn);
         let channel = uuid::Uuid::new_v4();
         let topic = EventTopic::Channel(channel);
-        let stale = claim_live_subscription("x", &text_filters(), Some(&[channel]), &conn, &state)
+        let stale = claim_live_subscription("x", &text_filters(), Some(&[channel]), None, &conn, &state)
             .await
             .expect("claim");
 
@@ -1921,7 +1947,7 @@ mod tests {
             let (conn, state) = (Arc::clone(&conn), Arc::clone(&state));
             tokio::spawn(async move {
                 if i % 2 == 0 {
-                    claim_live_subscription("x", &text_filters(), Some(&[channel]), &conn, &state)
+                    claim_live_subscription("x", &text_filters(), Some(&[channel]), None, &conn, &state)
                         .await
                         .expect("claim");
                 } else {
@@ -1974,7 +2000,7 @@ mod tests {
         let (conn, mut send_rx) = lifecycle_conn();
         let conn = Arc::new(conn);
         let (a, b) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
-        let old = claim_live_subscription("x", &text_filters(), Some(&[a]), &conn, &state)
+        let old = claim_live_subscription("x", &text_filters(), Some(&[a]), None, &conn, &state)
             .await
             .expect("claim");
 
@@ -1989,6 +2015,7 @@ mod tests {
             "x",
             &filters,
             Some(&b_scope),
+            None,
             &conn,
             &state,
         ));
@@ -2038,7 +2065,7 @@ mod tests {
             crate::state::CommunityConnectionControl::new(conn.cancel.clone()),
         );
         let (a, b) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
-        claim_live_subscription("x", &text_filters(), Some(&[a]), &conn, &state)
+        claim_live_subscription("x", &text_filters(), Some(&[a]), None, &conn, &state)
             .await
             .expect("claim");
 
@@ -2057,6 +2084,7 @@ mod tests {
             "x",
             &filters,
             Some(&b_scope),
+            None,
             &conn,
             &state,
         ));
@@ -2093,14 +2121,14 @@ mod tests {
         let (conn, mut send_rx) = lifecycle_conn();
         let channel = uuid::Uuid::new_v4();
         let topic = EventTopic::Channel(channel);
-        claim_live_subscription("live", &text_filters(), Some(&[channel]), &conn, &state)
+        claim_live_subscription("live", &text_filters(), Some(&[channel]), None, &conn, &state)
             .await
             .expect("claim");
 
         conn.cancel.cancel();
         super::super::close::release_connection_subscriptions(&conn, &state).await;
         let late_live =
-            claim_live_subscription("late", &text_filters(), Some(&[channel]), &conn, &state).await;
+            claim_live_subscription("late", &text_filters(), Some(&[channel]), None, &conn, &state).await;
         let late_search = claim_search_subscription("search", &conn, &state).await;
 
         assert_eq!((late_live, late_search), (None, None));
@@ -2152,7 +2180,7 @@ mod tests {
         });
 
         // Claim, then fill the send buffer so the next `send` returns false.
-        let owner = claim_live_subscription("x", &text_filters(), None, &conn, &state)
+        let owner = claim_live_subscription("x", &text_filters(), None, None, &conn, &state)
             .await
             .expect("claim");
         // Occupy the one slot so try_send returns Full on the CLOSED.
@@ -2227,7 +2255,7 @@ mod tests {
         );
 
         let channel = uuid::Uuid::new_v4();
-        claim_live_subscription("x", &text_filters(), Some(&[channel]), &conn, &state)
+        claim_live_subscription("x", &text_filters(), Some(&[channel]), None, &conn, &state)
             .await
             .expect("claim");
 

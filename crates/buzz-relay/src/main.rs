@@ -991,6 +991,11 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     tokio::spawn(buzz_relay::operator_listener::run_reaper(Arc::clone(
         &state,
     )));
+    // Keeps this node's live observer subscriptions from aging out of the
+    // shared receiving-device counts.
+    tokio::spawn(buzz_relay::observer_devices::run_refresh(Arc::clone(
+        &state,
+    )));
     if !state.config.operator_listener_delivery_urls.is_empty() {
         tokio::spawn(buzz_relay::operator_listener::run_delivery_worker(
             Arc::clone(&state),
