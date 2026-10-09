@@ -214,13 +214,28 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
     String deviceId,
     DeviceRobotVariant robot,
   ) async {
+    final d = deviceId.trim().toLowerCase();
+    // Same-second choices tie on created_at and the relay keeps the lower id;
+    // stay strictly newer than the choice this one replaces.
+    final previous = _events.values
+        .where(
+          (e) =>
+              e.kind == kindDeviceRobot &&
+              e.getTagValue('d')?.trim().toLowerCase() == d,
+        )
+        .fold<int>(
+          0,
+          (latest, e) => e.createdAt > latest ? e.createdAt : latest,
+        );
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final event = buildOutgoingEvent(
       ref.read(relayConfigProvider),
       kind: kindDeviceRobot,
       content: deviceRobotChoiceContent(robot),
       tags: [
-        ['d', deviceId.trim().toLowerCase()],
+        ['d', d],
       ],
+      createdAt: now > previous ? now : previous + 1,
     );
     await ref.read(relaySessionProvider.notifier).publish(event);
     _add(event);

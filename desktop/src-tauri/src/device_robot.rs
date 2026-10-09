@@ -31,6 +31,19 @@ pub(crate) const KIND_AGENT_HOST_DEVICES: u16 = 30180;
 /// triggers (token refreshes, agent restarts) do not republish an unchanged list.
 static LAST_PUBLISHED: Mutex<Option<(String, String, String)>> = Mutex::new(None);
 
+/// Serializes publishes end to end (read list, compare, sign, submit), so a
+/// burst of triggers cannot let an older list land after a newer one.
+static PUBLISH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// `created_at` of the last publish: replaceable events tie-break same-second
+/// writes by id, so each publish must be strictly newer than the previous one.
+static LAST_CREATED_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// `now`, or one second after `previous` when that is not earlier.
+pub(crate) fn next_created_at(now: u64, previous: u64) -> u64 {
+    now.max(previous.saturating_add(1))
+}
+
 /// FNV-1a (32-bit) of the trimmed, lowercased device id as 8 hex digits;
 /// `None` for an empty id.
 #[cfg(test)]
@@ -81,6 +94,7 @@ pub(crate) fn host_devices_content(agents: &[String]) -> String {
 /// unchanged since the last publish. No-op when this desktop is not signed in
 /// to the current relay with a known device.
 pub(crate) async fn publish_agent_host_devices(app: &tauri::AppHandle) -> Result<(), String> {
+    let _publishing = PUBLISH_LOCK.lock().await;
     let state = app.state::<AppState>();
     let Some((origin, device_id)) = local_device_id(&state) else {
         return Ok(());
@@ -96,9 +110,15 @@ pub(crate) async fn publish_agent_host_devices(app: &tauri::AppHandle) -> Result
     {
         return Ok(());
     }
+    let created_at = next_created_at(
+        nostr::Timestamp::now().as_u64(),
+        LAST_CREATED_AT.load(std::sync::atomic::Ordering::Acquire),
+    );
     let builder = EventBuilder::new(Kind::Custom(KIND_AGENT_HOST_DEVICES), content)
-        .tags([Tag::identifier(device_id)]);
+        .tags([Tag::identifier(device_id)])
+        .custom_created_at(nostr::Timestamp::from(created_at));
     crate::relay::submit_event(builder, &state).await?;
+    LAST_CREATED_AT.store(created_at, std::sync::atomic::Ordering::Release);
     *LAST_PUBLISHED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(key);
@@ -153,6 +173,13 @@ mod tests {
     }
 
     #[test]
+    fn each_publish_is_strictly_newer_than_the_last() {
+        assert_eq!(next_created_at(100, 0), 100);
+        assert_eq!(next_created_at(100, 100), 101);
+        assert_eq!(next_created_at(100, 150), 151);
+    }
+
+    #[test]
     fn local_device_id_needs_an_active_session_on_the_current_relay() {
         let state = crate::app_state::build_app_state();
         assert_eq!(local_device_id(&state), None);
@@ -170,7 +197,10 @@ mod tests {
         );
         assert_eq!(
             local_device_id(&state),
-            Some((origin.clone(), "3f2504e0-4f89-41d3-9a0c-0305e82c3301".into()))
+            Some((
+                origin.clone(),
+                "3f2504e0-4f89-41d3-9a0c-0305e82c3301".into()
+            ))
         );
         state.token_auth.set(&origin, OriginAuth::Restoring);
         assert_eq!(local_device_id(&state), None);
