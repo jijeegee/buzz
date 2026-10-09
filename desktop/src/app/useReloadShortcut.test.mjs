@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isBrowserReloadKey } from "./useReloadShortcut.ts";
+import { isBrowserReloadKey, isBrowserUiKey } from "./useReloadShortcut.ts";
 
 function key(overrides = {}) {
   return {
@@ -29,4 +29,16 @@ test("other chords are not reload keys", () => {
     isBrowserReloadKey(key({ key: "F5", ctrlKey: false, altKey: true })),
     false,
   );
+});
+
+test("find, print and caret browsing keys are browser UI keys", () => {
+  assert.equal(isBrowserUiKey(key({ key: "f" })), true);
+  assert.equal(isBrowserUiKey(key({ key: "g", shiftKey: true })), true);
+  assert.equal(isBrowserUiKey(key({ key: "p" })), true);
+  assert.equal(isBrowserUiKey(key({ key: "F3", ctrlKey: false })), true);
+  assert.equal(isBrowserUiKey(key({ key: "F7", ctrlKey: false })), true);
+  assert.equal(isBrowserUiKey(key({ key: "k" })), false);
+  assert.equal(isBrowserUiKey(key({ key: "f", ctrlKey: false })), false);
+  assert.equal(isBrowserUiKey(key({ key: "f", altKey: true })), false);
+  assert.equal(isBrowserUiKey(key()), false);
 });
