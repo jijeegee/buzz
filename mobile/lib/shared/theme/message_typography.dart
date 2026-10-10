@@ -5,16 +5,22 @@ import 'grid.dart';
 const _fontFamily = 'Inter';
 
 /// Avatar size for full channel and thread messages.
-const messageAvatarSize = 42.0;
+const messageAvatarSize = 36.0;
 
 /// Avatar size for conversation-oriented Activity rows.
-const activityAvatarSize = messageAvatarSize;
+const activityAvatarSize = 42.0;
 
 /// Avatar size for compact message-result rows.
-const compactMessageAvatarSize = messageAvatarSize;
+const compactMessageAvatarSize = 42.0;
 
 /// Horizontal space between a message avatar and its content.
-const messageAvatarContentGap = Grid.twelve;
+const messageAvatarContentGap = Grid.xxs;
+
+/// Vertical space between consecutive messages from the same author.
+const messageGroupedRowSpacing = 6.0;
+
+/// Vertical space before a message that starts a new author group.
+const messageGroupStartSpacing = 14.0;
 
 /// Primary message copy: 15sp regular on a 20sp line height.
 const messageBodyTextStyle = TextStyle(
@@ -40,6 +46,24 @@ const messageMetadataTextStyle = TextStyle(
   fontSize: 15,
   fontWeight: FontWeight.w400,
   height: 17 / 15,
+  letterSpacing: 0,
+);
+
+/// Channel and thread row author names: 13sp medium on a 16sp line height.
+const chatAuthorNameTextStyle = TextStyle(
+  fontFamily: _fontFamily,
+  fontSize: 13,
+  fontWeight: FontWeight.w500,
+  height: 16 / 13,
+  letterSpacing: 0,
+);
+
+/// Channel and thread row timestamps: 11sp regular on a 16sp line height.
+const chatTimestampTextStyle = TextStyle(
+  fontFamily: _fontFamily,
+  fontSize: 11,
+  fontWeight: FontWeight.w400,
+  height: 16 / 11,
   letterSpacing: 0,
 );
 

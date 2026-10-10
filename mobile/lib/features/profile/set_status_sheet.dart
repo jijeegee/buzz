@@ -486,4 +486,4 @@ Future<DateTime?> _showNativeDateTimePicker(
 }
 
 String _formatUntil(DateTime value) =>
-    DateFormat('EEE, MMM d \u00B7 h:mm a').format(value);
+    DateFormat('EEE, MMM d \u00B7 HH:mm').format(value);

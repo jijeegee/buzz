@@ -22,39 +22,71 @@ class _SpeechRouteAware with RouteAware {
   void didPop() => stop();
 }
 
+/// Width of the speaker control's tap target.
+const readAloudButtonWidth = 36.0;
+
+/// Height of the speaker control, matching one line of message body copy.
+const readAloudButtonHeight = 20.0;
+
+/// Speaker button and spoken-text body wrapper for one message row.
+///
+/// The row places [button] outside the message body column so read-aloud
+/// controls never narrow the message content or add height while idle.
+class ReadAloudSlots {
+  const ReadAloudSlots({required this.button, required this.wrapBody});
+
+  /// Compact play/stop control for an empty slot in the message row.
+  final Widget button;
+
+  /// Wraps the message body with highlighting and, while speaking, status.
+  final Widget Function(Widget body) wrapBody;
+}
+
 /// Opt-in message controls, shared by channel and thread timelines.
+///
+/// [builder] receives null slots while read-aloud is disabled.
 class ReadAloudMessage extends HookConsumerWidget {
   const ReadAloudMessage({
     super.key,
     required this.messageId,
     required this.content,
-    required this.child,
+    required this.builder,
   });
   final String messageId;
   final String content;
-  final Widget child;
+  final Widget Function(BuildContext context, ReadAloudSlots? slots) builder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(readAloudEnabledProvider);
-    if (!enabled) return child;
+    if (!enabled) return builder(context, null);
     return _EnabledReadAloudMessage(
       messageId: messageId,
       content: content,
-      child: child,
+      builder: builder,
     );
   }
+}
+
+/// Places [child] inside [slots]' body wrapper when read-aloud is enabled.
+class ReadAloudBody extends StatelessWidget {
+  const ReadAloudBody({super.key, required this.slots, required this.child});
+  final ReadAloudSlots? slots;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => slots?.wrapBody(child) ?? child;
 }
 
 class _EnabledReadAloudMessage extends HookConsumerWidget {
   const _EnabledReadAloudMessage({
     required this.messageId,
     required this.content,
-    required this.child,
+    required this.builder,
   });
   final String messageId;
   final String content;
-  final Widget child;
+  final Widget Function(BuildContext context, ReadAloudSlots? slots) builder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -86,8 +118,7 @@ class _EnabledReadAloudMessage extends HookConsumerWidget {
       final surface = surfaceKey.currentContext?.findRenderObject();
       if (surface is! SpokenTextRenderBox) return;
       final text = surface.captureText();
-      final language =
-          RegExp(r'[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]').hasMatch(text)
+      final language = RegExp(r'[ᄀ-ᇿ㄰-㆏가-힯]').hasMatch(text)
           ? 'ko'
           : RegExp(r'[a-zA-Z]').hasMatch(text)
           ? 'en'
@@ -96,32 +127,41 @@ class _EnabledReadAloudMessage extends HookConsumerWidget {
     }
 
     final paused = session?.phase == ReadAloudPhase.paused;
-    return DecoratedBox(
-      key: ValueKey('read-aloud-message-$messageId'),
-      decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(
-            width: 2,
-            color: active ? context.colors.primary : Colors.transparent,
-          ),
+    final button = _ReadAloudIconButton(
+      key: ValueKey('read-aloud-play-$messageId'),
+      tooltip: active ? '읽어주기 중지' : '메시지 읽어주기',
+      icon: active ? LucideIcons.square : LucideIcons.volume2,
+      onPressed: active ? () => unawaited(controller.stop()) : play,
+    );
+
+    Widget wrapBody(Widget body) {
+      return DecoratedBox(
+        key: ValueKey('read-aloud-message-$messageId'),
+        decoration: BoxDecoration(
+          border: active
+              ? Border(
+                  left: BorderSide(width: 2, color: context.colors.primary),
+                )
+              : null,
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SpokenTextSurface(
-            key: surfaceKey,
-            spokenText: active ? session?.text : null,
-            start: session?.start ?? 0,
-            end: session?.end ?? 0,
-            color: context.colors.primary,
-            child: child,
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: active
-                    ? Text(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SpokenTextSurface(
+              key: surfaceKey,
+              spokenText: active ? session?.text : null,
+              start: session?.start ?? 0,
+              end: session?.end ?? 0,
+              color: context.colors.primary,
+              child: body,
+            ),
+            if (active)
+              Padding(
+                padding: const EdgeInsets.only(top: Grid.quarter),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
                         session?.phase == ReadAloudPhase.preparing
                             ? '음성 준비 중…'
                             : paused
@@ -134,43 +174,61 @@ class _EnabledReadAloudMessage extends HookConsumerWidget {
                         style: context.textTheme.labelSmall?.copyWith(
                           color: context.colors.primary,
                         ),
-                      )
-                    : const SizedBox.shrink(),
+                      ),
+                    ),
+                    _ReadAloudIconButton(
+                      key: ValueKey('read-aloud-pause-$messageId'),
+                      tooltip: paused ? '이어 읽기' : '일시정지',
+                      icon: paused ? LucideIcons.play : LucideIcons.pause,
+                      onPressed: () => unawaited(
+                        paused ? controller.resume() : controller.pause(),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              if (active)
-                IconButton(
-                  key: ValueKey('read-aloud-pause-$messageId'),
-                  tooltip: paused ? '이어 읽기' : '일시정지',
-                  onPressed: () => unawaited(
-                    paused ? controller.resume() : controller.pause(),
+            if (session?.error case final String error)
+              Padding(
+                padding: const EdgeInsets.only(bottom: Grid.xxs),
+                child: Text(
+                  error,
+                  style: context.textTheme.bodySmall?.copyWith(
+                    color: context.colors.error,
                   ),
-                  icon: Icon(
-                    paused ? LucideIcons.play : LucideIcons.pause,
-                    size: 18,
-                  ),
-                ),
-              IconButton(
-                key: ValueKey('read-aloud-play-$messageId'),
-                tooltip: active ? '읽어주기 중지' : '메시지 읽어주기',
-                onPressed: active ? () => unawaited(controller.stop()) : play,
-                icon: Icon(
-                  active ? LucideIcons.square : LucideIcons.volume2,
-                  size: 18,
                 ),
               ),
-            ],
-          ),
-          if (session?.error case final String error)
-            Padding(
-              padding: const EdgeInsets.only(bottom: Grid.xxs),
-              child: Text(
-                error,
-                style: context.textTheme.bodySmall?.copyWith(
-                  color: context.colors.error,
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
+      );
+    }
+
+    return builder(context, ReadAloudSlots(button: button, wrapBody: wrapBody));
+  }
+}
+
+class _ReadAloudIconButton extends StatelessWidget {
+  const _ReadAloudIconButton({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkResponse(
+        onTap: onPressed,
+        radius: readAloudButtonWidth / 2,
+        child: SizedBox(
+          width: readAloudButtonWidth,
+          height: readAloudButtonHeight,
+          child: Icon(icon, size: 18, color: context.colors.onSurfaceVariant),
+        ),
       ),
     );
   }

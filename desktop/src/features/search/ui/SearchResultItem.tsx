@@ -207,7 +207,8 @@ function formatRelativeTime(unixSeconds: number) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
+    hourCycle: "h23",
     minute: "2-digit",
   }).format(new Date(unixSeconds * 1_000));
 }

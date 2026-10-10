@@ -1,12 +1,12 @@
 /**
  * Shared date/time formatters for the message timeline.
  *
- * - `formatTime` — short clock time ("2:34 PM"), used in message rows.
+ * - `formatTime` — short 24-hour clock time ("14:34"), used in message rows.
  * - `formatFullDateTime` — verbose string for tooltips
- *   ("Wednesday, April 2, 2026 at 2:34 PM").
+ *   ("Wednesday, April 2, 2026 at 14:34").
  * - `isSameDay` — compare two unix-second timestamps.
  *
- * Relative labels ("Today", "Yesterday", "June 20", "Yesterday at 9:05 AM") are
+ * Relative labels ("Today", "Yesterday", "June 20", "Yesterday at 09:05") are
  * not here: chat and the Inbox share them from `shared/lib/datetime.ts`. What
  * stays in this file is the absolute end of the range — a bare clock time, the
  * verbose tooltip string, and same-day comparison.
@@ -18,7 +18,8 @@
  */
 
 const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  hour: "numeric",
+  hour: "2-digit",
+  hourCycle: "h23",
   minute: "2-digit",
 });
 
@@ -29,7 +30,8 @@ const FULL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "long",
   day: "numeric",
-  hour: "numeric",
+  hour: "2-digit",
+  hourCycle: "h23",
   minute: "2-digit",
 });
 
@@ -38,12 +40,12 @@ const SHORT_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
-/** Short clock time, e.g. "2:34 PM". */
+/** Short 24-hour clock time, e.g. "14:34". */
 export function formatTime(unixSeconds: number): string {
   return TIME_FORMATTER.format(new Date(unixSeconds * 1_000));
 }
 
-/** Short clock time with the AM/PM marker removed, e.g. "2:34". */
+/** Short clock time with any AM/PM marker removed, e.g. "14:34". */
 export function formatTimeWithoutDayPeriod(time: string): string {
   return time.replace(DAY_PERIOD_SUFFIX_RE, "").trim();
 }

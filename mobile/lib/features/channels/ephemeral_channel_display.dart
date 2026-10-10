@@ -122,8 +122,7 @@ String formatAbsoluteDeadline(DateTime deadline) {
     'Dec',
   ];
   final local = deadline.toLocal();
-  final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
-  final period = local.hour < 12 ? 'AM' : 'PM';
-  return '${months[local.month - 1]} ${local.day}, $hour12:$minute $period';
+  return '${months[local.month - 1]} ${local.day}, $hour:$minute';
 }

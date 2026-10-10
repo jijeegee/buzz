@@ -168,4 +168,12 @@ void main() {
       );
     });
   });
+
+  group('formatMessageTime', () {
+    test('uses a 24-hour clock without a day period', () {
+      expect(formatMessageTime(_ts(DateTime(2026, 4, 23, 14, 34))), '14:34');
+      expect(formatMessageTime(_ts(DateTime(2026, 4, 23, 9, 5))), '09:05');
+      expect(formatMessageTime(_ts(DateTime(2026, 4, 23, 0, 1))), '00:01');
+    });
+  });
 }

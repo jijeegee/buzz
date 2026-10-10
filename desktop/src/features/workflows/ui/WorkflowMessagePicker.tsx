@@ -38,7 +38,8 @@ function formatTimestamp(unixSeconds: number | null): string | null {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
+    hourCycle: "h23",
     minute: "2-digit",
   }).format(new Date(unixSeconds * 1_000));
 }

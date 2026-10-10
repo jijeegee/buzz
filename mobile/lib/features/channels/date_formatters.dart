@@ -8,7 +8,7 @@ final _weekdayFormat = DateFormat('EEEE');
 final _weekdayMonthDayFormat = DateFormat('EEEE, MMMM d');
 final _monthDayYearFormat = DateFormat('MMMM d, y');
 final _shortMonthDayFormat = DateFormat('MMM d');
-final _messageTimeFormat = DateFormat('h:mm a', 'en_US');
+final _messageTimeFormat = DateFormat('HH:mm', 'en_US');
 
 /// Days in a week, past which the weekday name stops being unambiguous.
 const _weekdayBandDays = 7;

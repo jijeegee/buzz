@@ -237,8 +237,8 @@ export function shortenMiddle(value: string, maxLength: number) {
 }
 
 const transcriptTimeFormat = new Intl.DateTimeFormat("en-US", {
-  hour: "numeric",
-  hour12: true,
+  hour: "2-digit",
+  hourCycle: "h23",
   minute: "2-digit",
 });
 
@@ -247,7 +247,8 @@ const transcriptTitleTimeFormat = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "long",
   day: "numeric",
-  hour: "numeric",
+  hour: "2-digit",
+  hourCycle: "h23",
   minute: "2-digit",
   second: "2-digit",
 });

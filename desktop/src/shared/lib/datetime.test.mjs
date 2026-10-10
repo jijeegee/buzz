@@ -8,7 +8,7 @@ function at(year, monthIndex, day, hour = 12, minute = 0) {
   return new Date(year, monthIndex, day, hour, minute).getTime() / 1_000;
 }
 
-const NOW = at(2026, 6, 30, 14, 30); // Thu Jul 30 2026, 2:30 PM local
+const NOW = at(2026, 6, 30, 14, 30); // Thu Jul 30 2026, 14:30 local
 
 test("the same calendar day reads Today", () => {
   assert.equal(formatDayGroupLabel(at(2026, 6, 30, 9, 5), NOW), "Today");
@@ -107,10 +107,10 @@ test("the label follows the current clock, not a captured one", () => {
 
 test("today is a bare clock time in both modes", () => {
   const today = at(2026, 6, 30, 9, 5);
-  assert.equal(formatItemTimestamp(today, { nowSeconds: NOW }), "9:05 AM");
+  assert.equal(formatItemTimestamp(today, { nowSeconds: NOW }), "09:05");
   assert.equal(
     formatItemTimestamp(today, { withTime: true, nowSeconds: NOW }),
-    "9:05 AM",
+    "09:05",
   );
 });
 
@@ -129,19 +129,19 @@ test("roomy mode keeps the time at every band, joined with 'at'", () => {
   const opts = { withTime: true, nowSeconds: NOW };
   assert.equal(
     formatItemTimestamp(at(2026, 6, 29, 9, 5), opts),
-    "Yesterday at 9:05 AM",
+    "Yesterday at 09:05",
   );
   assert.equal(
     formatItemTimestamp(at(2026, 6, 27, 14, 34), opts),
-    "Monday at 2:34 PM",
+    "Monday at 14:34",
   );
   assert.equal(
     formatItemTimestamp(at(2026, 5, 20, 14, 34), opts),
-    "Sat, Jun 20 at 2:34 PM",
+    "Sat, Jun 20 at 14:34",
   );
   assert.equal(
     formatItemTimestamp(at(2025, 5, 20, 14, 34), opts),
-    "Jun 20, 2025 at 2:34 PM",
+    "Jun 20, 2025 at 14:34",
   );
 });
 

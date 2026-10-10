@@ -84,7 +84,8 @@ function toLocalTimeValue(date: Date) {
 
 function formattedTime(date: Date) {
   return date.toLocaleTimeString(undefined, {
-    hour: "numeric",
+    hour: "2-digit",
+    hourCycle: "h23",
     minute: "2-digit",
   });
 }

@@ -61,8 +61,8 @@ test("formatDurationMs carries a rounded 60s into the next minute", () => {
   assert.equal(formatDurationMs(89700), "1m 30s");
 });
 
-test("formatTranscriptTime renders a short 12-hour time without seconds", () => {
-  assert.equal(formatTranscriptTime("2026-06-30T17:00:02.000"), "5:00 PM");
+test("formatTranscriptTime renders a short 24-hour time without seconds", () => {
+  assert.equal(formatTranscriptTime("2026-06-30T17:00:02.000"), "17:00");
 });
 
 // ---- parseToolResultValue (JSON double-parse) ----

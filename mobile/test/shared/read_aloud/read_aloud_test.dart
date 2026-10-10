@@ -264,7 +264,21 @@ void main() {
                   ReadAloudMessage(
                     messageId: 'one',
                     content: '하나 둘',
-                    child: const Text('하나 둘'),
+                    builder: (context, slots) => Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: ReadAloudBody(
+                            slots: slots,
+                            child: const Text(
+                              '하나 둘',
+                              key: ValueKey('read-aloud-test-body'),
+                            ),
+                          ),
+                        ),
+                        ?slots?.button,
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -277,6 +291,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(prefs.getBool(ReadAloudPreference.key), true);
       expect(find.byTooltip('메시지 읽어주기'), findsOneWidget);
+      // Idle controls sit beside the body and add no rows beneath it.
+      final bodyBox = tester.getRect(
+        find.byKey(const ValueKey('read-aloud-test-body')),
+      );
+      final wrapperBox = tester.getRect(
+        find.byKey(const ValueKey('read-aloud-message-one')),
+      );
+      expect(wrapperBox.height, bodyBox.height);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('read-aloud-play-one'))).left,
+        greaterThanOrEqualTo(bodyBox.right),
+      );
       await tester.tap(find.byTooltip('메시지 읽어주기'));
       await tester.pump();
       expect(engine.chunks.single, '하나 둘\n');

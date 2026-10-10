@@ -3263,7 +3263,8 @@ void main() {
       expect(findRichText('Hello world!'), findsOneWidget);
       expect(findRichText('Hey Alice!'), findsOneWidget);
       expect(find.text('Alice'), findsOneWidget);
-      expect(find.text('alice@example.com'), findsOneWidget);
+      // Chat rows show only the display name, never the account handle.
+      expect(find.text('alice@example.com'), findsNothing);
       expect(find.text('Bob'), findsOneWidget);
       final messageAvatars = find.byType(CircleAvatar);
       expect(messageAvatars, findsNWidgets(2));
@@ -3275,22 +3276,14 @@ void main() {
       }
       final aliceName = find.text('Alice');
       final aliceText = tester.widget<Text>(aliceName);
-      expect(aliceText.style?.fontSize, messageUsernameTextStyle.fontSize);
-      expect(aliceText.style?.fontWeight, messageUsernameTextStyle.fontWeight);
-      expect(aliceText.style?.height, messageUsernameTextStyle.height);
-      final aliceUsername = tester.widget<Text>(
-        find.byKey(const ValueKey('message-username-msg1')),
-      );
+      expect(aliceText.style?.fontSize, chatAuthorNameTextStyle.fontSize);
+      expect(aliceText.style?.fontWeight, chatAuthorNameTextStyle.fontWeight);
+      expect(aliceText.style?.height, chatAuthorNameTextStyle.height);
+      expect(find.byKey(const ValueKey('message-username-msg1')), findsNothing);
       final aliceTimestamp = tester.widget<Text>(
         find.byKey(const ValueKey('message-timestamp-msg1')),
       );
-      expect(aliceUsername.style?.fontSize, messageMetadataTextStyle.fontSize);
-      expect(aliceUsername.style?.fontWeight, FontWeight.w400);
-      expect(aliceUsername.style?.height, messageMetadataTextStyle.height);
-      expect(
-        aliceTimestamp.style?.fontSize,
-        messageTimestampTextStyle.fontSize,
-      );
+      expect(aliceTimestamp.style?.fontSize, chatTimestampTextStyle.fontSize);
       expect(aliceTimestamp.style?.fontWeight, FontWeight.w400);
       expect(
         aliceTimestamp.style?.fontSize,
@@ -5702,11 +5695,8 @@ void main() {
       );
       final nameRect = tester.getRect(find.text('Alice'));
       final nameText = tester.widget<Text>(find.text('Alice'));
-      expect(nameText.style?.fontSize, systemMessageHeadingTextStyle.fontSize);
-      expect(
-        nameText.style?.fontWeight,
-        systemMessageHeadingTextStyle.fontWeight,
-      );
+      expect(nameText.style?.fontSize, chatAuthorNameTextStyle.fontSize);
+      expect(nameText.style?.fontWeight, chatAuthorNameTextStyle.fontWeight);
       expect(
         find.byKey(const ValueKey('system-message-username-alice')),
         findsNothing,
@@ -11800,10 +11790,7 @@ void main() {
       final threadTimestamp = tester.widget<Text>(
         find.byKey(const ValueKey('thread-message-timestamp-thread-root')),
       );
-      expect(
-        threadTimestamp.style?.fontSize,
-        messageTimestampTextStyle.fontSize,
-      );
+      expect(threadTimestamp.style?.fontSize, chatTimestampTextStyle.fontSize);
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('thread-message-row-thread-root')),

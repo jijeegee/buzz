@@ -43,7 +43,8 @@ const SHORT_MONTH_DAY_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
 });
 
 const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  hour: "numeric",
+  hour: "2-digit",
+  hourCycle: "h23",
   minute: "2-digit",
 });
 
@@ -107,18 +108,18 @@ export function formatDayGroupLabel(
  *
  * ```
  * withTime: false (narrow rows)   withTime: true (roomy rows)
- * Today   → "2:34 PM"             Today   → "2:34 PM"
- * Yest.   → "Yesterday"           Yest.   → "Yesterday at 2:34 PM"
- * 2–6d    → "Monday"              2–6d    → "Monday at 2:34 PM"
- * year    → "Sat, Jun 20"         year    → "Sat, Jun 20 at 2:34 PM"
- * older   → "Jun 20, 2025"        older   → "Jun 20, 2025 at 2:34 PM"
+ * Today   → "14:34"             Today   → "14:34"
+ * Yest.   → "Yesterday"           Yest.   → "Yesterday at 14:34"
+ * 2–6d    → "Monday"              2–6d    → "Monday at 14:34"
+ * year    → "Sat, Jun 20"         year    → "Sat, Jun 20 at 14:34"
+ * older   → "Jun 20, 2025"        older   → "Jun 20, 2025 at 14:34"
  * ```
  *
  * The weekday stays through the current year (abbreviated, matching the month)
  * and drops once the year appears — see `formatDayGroupLabel` for why.
  *
  * Today needs no date word in either mode: a bare clock time already reads as
- * today, and "Today at 2:34 PM" is longer without saying more.
+ * today, and "Today at 14:34" is longer without saying more.
  *
  * `withTime` is a surface decision, not a preference. Somewhere you read
  * conversation, the time is part of the content, so pass `true`. In a narrow

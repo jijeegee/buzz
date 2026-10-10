@@ -38,7 +38,8 @@ export function formatLastChangedAt(timestamp: number | null) {
   return new Date(timestamp * 1_000).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
+    hourCycle: "h23",
     minute: "2-digit",
   });
 }
@@ -302,7 +303,8 @@ export function formatExactTimestamp(createdAt: number) {
     year: "numeric",
     month: "short",
     day: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
+    hourCycle: "h23",
     minute: "2-digit",
     second: "2-digit",
   });

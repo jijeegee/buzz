@@ -118,7 +118,7 @@ class _SystemMessageRow extends HookConsumerWidget {
         highlightColor: context.colors.primary.withValues(alpha: 0.1),
         child: Padding(
           padding: EdgeInsets.only(
-            top: usesMessageStyleLayout ? Grid.xs : Grid.xxs,
+            top: usesMessageStyleLayout ? messageGroupStartSpacing : Grid.xxs,
             bottom: usesMessageStyleLayout ? 0 : Grid.xxs,
           ),
           child: Column(
@@ -416,13 +416,11 @@ class _MessageStyleSystemMessageContent extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: Grid.quarter),
                   child: MessageAuthorMeta(
                     displayName: resolveLabel(displayPubkey),
-                    username: messageUsernameLabel(
-                      userCache[displayPubkey.toLowerCase()],
-                    ),
                     timestamp: formatMessageTime(createdAt),
                     nameColor: context.colors.onSurface,
                     metadataColor: context.colors.onSurfaceVariant,
-                    nameStyle: systemMessageHeadingTextStyle,
+                    nameStyle: chatAuthorNameTextStyle,
+                    timestampStyle: chatTimestampTextStyle,
                     displayNameKey: ValueKey(
                       'system-message-author-$displayPubkey',
                     ),
