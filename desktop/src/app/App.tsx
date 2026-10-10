@@ -64,6 +64,7 @@ import { setAvatarProfileSyncQueryClient } from "@/features/profile/avatarProfil
 import { refreshRostersOnMembershipChange } from "@/features/channels/rosterFreshness";
 import { seedProjectSnapshot } from "@/features/projects/projectSnapshot";
 import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
+import { OwnerDevicesProvider } from "@/shared/api/OwnerDevicesContext";
 import { createBuzzQueryClient } from "@/shared/api/queryClient";
 import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -264,7 +265,9 @@ function CommunityQueryProvider({
   }, [queryClient]);
 
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <OwnerDevicesProvider>{children}</OwnerDevicesProvider>
+    </QueryClientProvider>
   );
 }
 

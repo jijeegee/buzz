@@ -8,6 +8,7 @@ import {
 } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
+import { AGENT_DEVICE_ROBOT_CHIP_CLASS } from "@/shared/lib/deviceRobotMask";
 import {
   inlineChipIconClasses,
   MENTION_CHIP_BASE_CLASSES,
@@ -217,7 +218,20 @@ export type MentionHighlightStorage = {
   names: string[];
   agentNames: string[];
   channelNames: string[];
+  /** Lowercase agent name → inline style drawing its device robot. */
+  agentRobotStyles: Readonly<Record<string, string>>;
 };
+
+function sameStyleRecord(
+  current: Readonly<Record<string, string>> | undefined,
+  next: Readonly<Record<string, string>>,
+): boolean {
+  const keys = Object.keys(next);
+  return (
+    Object.keys(current ?? {}).length === keys.length &&
+    keys.every((key) => current?.[key] === next[key])
+  );
+}
 
 function sameNameList(current: string[], next: string[]): boolean {
   return (
@@ -231,17 +245,20 @@ export function assignMentionHighlightNames(
   names: string[],
   agentNames: string[],
   channelNames: string[],
+  agentRobotStyles: Readonly<Record<string, string>> = {},
 ): boolean {
   if (
     sameNameList(storage.names, names) &&
     sameNameList(storage.agentNames, agentNames) &&
-    sameNameList(storage.channelNames, channelNames)
+    sameNameList(storage.channelNames, channelNames) &&
+    sameStyleRecord(storage.agentRobotStyles, agentRobotStyles)
   ) {
     return false;
   }
   storage.names = names;
   storage.agentNames = agentNames;
   storage.channelNames = channelNames;
+  storage.agentRobotStyles = agentRobotStyles;
   return true;
 }
 
@@ -290,6 +307,7 @@ export function syncMentionHighlightFromProps(
   names: string[] | undefined,
   agentNames: string[] | undefined,
   channelNames: string[] | undefined,
+  agentRobotStyles?: Readonly<Record<string, string>>,
 ): void {
   const storage = mentionHighlightStorage(editor);
   if (
@@ -299,6 +317,7 @@ export function syncMentionHighlightFromProps(
       names ?? [],
       agentNames ?? [],
       channelNames ?? [],
+      agentRobotStyles,
     )
   ) {
     return;
@@ -321,6 +340,7 @@ export const MentionHighlightExtension = Extension.create({
       names: [] as string[],
       agentNames: [] as string[],
       channelNames: [] as string[],
+      agentRobotStyles: {} as Readonly<Record<string, string>>,
     };
   },
 
@@ -343,6 +363,7 @@ export const MentionHighlightExtension = Extension.create({
               extension.storage.names,
               extension.storage.agentNames,
               extension.storage.channelNames,
+              extension.storage.agentRobotStyles,
             );
           },
           apply(tr, oldDecorations) {
@@ -367,6 +388,7 @@ export const MentionHighlightExtension = Extension.create({
                 extension.storage.names,
                 extension.storage.agentNames,
                 extension.storage.channelNames,
+                extension.storage.agentRobotStyles,
               );
             }
 
@@ -385,6 +407,7 @@ export const MentionHighlightExtension = Extension.create({
                 extension.storage.names,
                 extension.storage.agentNames,
                 extension.storage.channelNames,
+                extension.storage.agentRobotStyles,
               );
             }
 
@@ -396,6 +419,7 @@ export const MentionHighlightExtension = Extension.create({
                 extension.storage.names,
                 extension.storage.agentNames,
                 extension.storage.channelNames,
+                extension.storage.agentRobotStyles,
               );
             }
 
@@ -766,6 +790,7 @@ function buildDecorations(
   names: string[],
   agentNames: string[],
   channelNames: string[],
+  agentRobotStyles: Readonly<Record<string, string>> = {},
 ): DecorationSet {
   if (
     names.length === 0 &&
@@ -802,7 +827,10 @@ function buildDecorations(
       pos,
       agentMentionPatterns,
       `${MENTION_CHIP_BASE_CLASSES} ${inlineChipIconClasses("agent")}`,
-      { hidePrefix: true },
+      {
+        hidePrefix: true,
+        styleFor: (label) => agentRobotStyles[label.trim().toLowerCase()],
+      },
     );
     addMatchesForPatterns(
       decorations,
@@ -823,7 +851,11 @@ function addMatchesForPatterns(
   position: number,
   patterns: RegExp[],
   className: string,
-  options?: { hidePrefix?: boolean },
+  options?: {
+    hidePrefix?: boolean;
+    /** Inline style for a match, keyed by its label without the sigil. */
+    styleFor?: (label: string) => string | undefined;
+  },
 ) {
   for (const pattern of patterns) {
     pattern.lastIndex = 0;
@@ -837,6 +869,14 @@ function addMatchesForPatterns(
       const literalClass = / \([0-9a-f]{64}\)(?: \d+)?$/i.test(match[0])
         ? " mention-literal-key"
         : "";
+      const style = options?.styleFor?.(match[0].replace(/^[@#]/, ""));
+      const chipAttrs = style
+        ? {
+            class: `${className} ${AGENT_DEVICE_ROBOT_CHIP_CLASS}${literalClass}`,
+            spellcheck: "false",
+            style,
+          }
+        : { class: `${className}${literalClass}`, spellcheck: "false" };
       if (options?.hidePrefix && /^[@#]/.test(match[0])) {
         decorations.push(
           Decoration.inline(
@@ -850,28 +890,10 @@ function addMatchesForPatterns(
           ),
         );
         decorations.push(
-          Decoration.inline(
-            from + 1,
-            to,
-            {
-              class: `${className}${literalClass}`,
-              spellcheck: "false",
-            },
-            outsideEnd,
-          ),
+          Decoration.inline(from + 1, to, chipAttrs, outsideEnd),
         );
       } else {
-        decorations.push(
-          Decoration.inline(
-            from,
-            to,
-            {
-              class: `${className}${literalClass}`,
-              spellcheck: "false",
-            },
-            outsideEnd,
-          ),
-        );
+        decorations.push(Decoration.inline(from, to, chipAttrs, outsideEnd));
       }
       match = pattern.exec(text);
     }

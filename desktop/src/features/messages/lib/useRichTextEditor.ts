@@ -39,6 +39,11 @@ import { useComposerCustomEmoji } from "./useComposerCustomEmoji";
 import { buildPlainTextProjection } from "./plainTextProjection";
 import { parseSnapshotClipboardHtml } from "./agentSnapshotClipboard";
 import { buildPreviewUpdate } from "./linkPreviewContent";
+import { useOwnerDevicesContext } from "@/shared/api/OwnerDevicesContext";
+import {
+  deviceRobotChipStyleText,
+  ownAgentDeviceRobot,
+} from "@/shared/lib/deviceRobotMask";
 import { createLinkInteractionExtension } from "./linkInteractionExtension";
 import { LinkPasteTrailingSpace } from "./linkPasteTrailingSpace";
 import {
@@ -587,35 +592,70 @@ export function useRichTextEditor({
     editor.view.dispatch(editor.state.tr);
   }, [editor, placeholder]);
 
+  // The viewer's own agents draw the robot of the device they run on.
+  const ownerDevices = useOwnerDevicesContext();
+  const agentRobotStylesFor = React.useCallback(
+    (agentNames: readonly string[]): Record<string, string> => {
+      const wanted = new Set(
+        agentNames.map((name) => name.trim().toLowerCase()),
+      );
+      const styles: Record<string, string> = {};
+      for (const identity of getMentionIdentitiesRef.current?.() ?? []) {
+        const key = identity.label.toLowerCase();
+        if (!wanted.has(key) || key in styles) continue;
+        const robot = ownAgentDeviceRobot(identity.pubkey, ownerDevices);
+        if (robot) styles[key] = deviceRobotChipStyleText(robot);
+      }
+      return styles;
+    },
+    [ownerDevices],
+  );
+
   // Keep mention/channel-highlight decorations in sync with known names.
   // Mutate `editor.storage.mentionHighlight`; the extension getter copies storage.
   React.useEffect(() => {
     if (!editor) return;
+    const agentNames = [
+      ...new Set([
+        ...(agentMentionNames ?? []),
+        ...addressedAgentMentionNamesRef.current,
+      ]),
+    ];
     syncMentionHighlightFromProps(
       editor,
       mentionNames,
-      [
-        ...new Set([
-          ...(agentMentionNames ?? []),
-          ...addressedAgentMentionNamesRef.current,
-        ]),
-      ],
+      agentNames,
       channelNames,
+      agentRobotStylesFor(agentNames),
     );
-  }, [editor, mentionNames, agentMentionNames, channelNames]);
+  }, [
+    editor,
+    mentionNames,
+    agentMentionNames,
+    channelNames,
+    agentRobotStylesFor,
+  ]);
 
   const syncAddressedAgentMentionNames = React.useCallback(
     (names: readonly string[]) => {
       addressedAgentMentionNamesRef.current = names;
       if (!editor) return;
+      const agentNames = [...new Set([...(agentMentionNames ?? []), ...names])];
       syncMentionHighlightFromProps(
         editor,
         mentionNames,
-        [...new Set([...(agentMentionNames ?? []), ...names])],
+        agentNames,
         channelNames,
+        agentRobotStylesFor(agentNames),
       );
     },
-    [agentMentionNames, channelNames, editor, mentionNames],
+    [
+      agentMentionNames,
+      agentRobotStylesFor,
+      channelNames,
+      editor,
+      mentionNames,
+    ],
   );
 
   // Custom-emoji set changes: re-resolve the `src` attr on any existing

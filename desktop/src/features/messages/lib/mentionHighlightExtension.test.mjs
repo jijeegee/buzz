@@ -604,3 +604,48 @@ for (const [kind, label, literal] of [
     );
   });
 }
+
+test("agent decoration carries the device robot style for its label", () => {
+  const style = "--agent-robot-mask: url(x); --agent-robot-color: #f00";
+  const plugins = MentionHighlightExtension.config.addProseMirrorPlugins.call({
+    storage: {
+      names: [],
+      agentNames: ["Scout", "Other"],
+      channelNames: [],
+      agentRobotStyles: { scout: style },
+    },
+  });
+  const state = EditorState.create({
+    doc: document(paragraph(text("@Scout and @Other "))),
+    schema,
+    plugins,
+  });
+  const chips = mentionHighlightKey
+    .getState(state)
+    .find()
+    .filter((decoration) =>
+      decoration.type.attrs.class.includes("inline-chip-icon-agent"),
+    );
+  assert.equal(chips.length, 2);
+  assert.equal(chips[0].type.attrs.style, style);
+  assert.match(chips[0].type.attrs.class, /agent-device-robot/);
+  assert.equal(chips[1].type.attrs.style, undefined);
+  assert.doesNotMatch(chips[1].type.attrs.class, /agent-device-robot/);
+});
+
+test("assignMentionHighlightNames updates when a robot style changes", () => {
+  const storage = {
+    names: [],
+    agentNames: ["scout"],
+    channelNames: [],
+    agentRobotStyles: {},
+  };
+  assert.equal(
+    assignMentionHighlightNames(storage, [], ["scout"], [], { scout: "a" }),
+    true,
+  );
+  assert.equal(
+    assignMentionHighlightNames(storage, [], ["scout"], [], { scout: "a" }),
+    false,
+  );
+});

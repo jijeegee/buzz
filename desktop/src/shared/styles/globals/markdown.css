@@ -341,6 +341,16 @@
     center / contain no-repeat;
 }
 
+/* The viewer's own agent: the robot and colour of the device it runs on
+   (custom properties from `deviceRobotChipStyle`). Wrapping chips draw the
+   icon on their leading fragment, which inherits the properties. */
+.message-markdown .inline-chip-icon-agent.agent-device-robot::before,
+.message-markdown .agent-device-robot .inline-chip-icon-agent::before {
+  -webkit-mask: var(--agent-robot-mask) center / contain no-repeat;
+  mask: var(--agent-robot-mask) center / contain no-repeat;
+  background: var(--agent-robot-color);
+}
+
 @keyframes route-target-highlight-fade {
   0%,
   60% {

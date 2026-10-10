@@ -1,7 +1,13 @@
 import type * as React from "react";
 import { AgentManagementMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
+import { useOwnerDevicesContext } from "@/shared/api/OwnerDevicesContext";
 import { cn } from "@/shared/lib/cn";
+import {
+  AGENT_DEVICE_ROBOT_CHIP_CLASS,
+  deviceRobotChipStyle,
+  ownAgentDeviceRobot,
+} from "@/shared/lib/deviceRobotMask";
 import { formatMentionDisplayLabel } from "@/shared/lib/mentionDisplay";
 import {
   inlineChipIconClasses,
@@ -24,6 +30,7 @@ export function createMarkdownMention(interactive: boolean) {
   }) {
     const { agentMentionPubkeysByName, mentionPubkeysByName } =
       useMarkdownRuntime();
+    const ownerDevices = useOwnerDevicesContext();
     const mentionText = String(children ?? "");
     const mentionName = mentionText.replace(/^@/, "").trim().toLowerCase();
     const pubkey = mentionPubkeysByName?.[mentionName];
@@ -33,6 +40,9 @@ export function createMarkdownMention(interactive: boolean) {
       pubkey !== undefined &&
       agentMentionPubkeysByName?.[mentionName] === pubkey;
     const mentionLabel = mentionText.replace(/^@/, "");
+    const deviceRobot = isAgentMention
+      ? ownAgentDeviceRobot(pubkey, ownerDevices)
+      : null;
     const displayLabel = formatMentionDisplayLabel(mentionLabel, pubkey);
     const icon = isAgentMention ? "agent" : "human";
     const leadingEnd = inlineChipLeadingEnd(displayLabel);
@@ -51,7 +61,9 @@ export function createMarkdownMention(interactive: boolean) {
         className={cn(
           WRAPPING_INLINE_CHIP_CLASSES,
           isAgentMention && "agent-mention-highlight",
+          deviceRobot && AGENT_DEVICE_ROBOT_CHIP_CLASS,
         )}
+        style={deviceRobot ? deviceRobotChipStyle(deviceRobot) : undefined}
         title={mentionLabel}
         aria-label={mentionLabel}
         icon={icon}
