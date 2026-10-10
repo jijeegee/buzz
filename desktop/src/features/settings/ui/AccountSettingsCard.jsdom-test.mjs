@@ -10,6 +10,8 @@ const calls = [];
 let status;
 let loginBehavior;
 let cancelBehavior;
+let logoutBehavior;
+let runtimes = [];
 const callbacks = new Map();
 let progressCallback;
 function progress(attemptId, phase) {
@@ -57,8 +59,12 @@ const tauriMock = {
         progress(args.attemptId, "waiting");
         return loginBehavior ? loginBehavior(args) : new Promise(() => {});
       case "logout":
-        // Never settles: the real flow waits on the browser, then reloads.
-        return new Promise(() => {});
+        // Never settles by default: the real flow reloads afterwards.
+        return logoutBehavior ? logoutBehavior(args) : new Promise(() => {});
+      case "list_managed_agent_runtimes":
+        return Promise.resolve(runtimes);
+      case "stop_managed_agent_runtime":
+        return Promise.resolve({ ...args, lifecycle: "stopped" });
       case "plugin:event|listen":
         if (args.event === "google-login-progress")
           progressCallback = args.handler;
@@ -586,9 +592,124 @@ test("the sign-out confirmation tells the user how to get back in", async () => 
   const dialog = document.querySelector('[role="alertdialog"]');
   assert.match(
     dialog.textContent,
-    /You'll need to sign in with Google again to use Buzz on this computer\. Your communities and conversations are kept\./,
+    /You'll be signed out on this computer\. Sign in with Google to get back to your conversations\. Nothing is deleted\./,
+  );
+  assert.doesNotMatch(dialog.textContent, /agent/i, "no agent claims");
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  await unmount();
+});
+
+const agentA = "a1".repeat(32);
+const agentB = "b2".repeat(32);
+
+async function openSignOutDialog() {
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+  });
+  const mounted = await mount();
+  await act(async () =>
+    fireEvent.click(
+      mounted.container.querySelector("[data-testid='account-sign-out']"),
+    ),
+  );
+  await settle(() =>
+    calls.some((c) => c.command === "list_managed_agent_runtimes"),
+  );
+  await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+  return mounted;
+}
+
+function stopAgentsCheckbox() {
+  return document.querySelector("[data-testid='account-sign-out-stop-agents']");
+}
+
+test("the stop-agents choice appears only while agents run on this computer", async () => {
+  runtimes = [];
+  let { unmount } = await openSignOutDialog();
+  assert.equal(stopAgentsCheckbox(), null, "no agents: no checkbox");
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  await unmount();
+
+  runtimes = [
+    { pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" },
+    { pubkey: agentA, relayUrl: "wss://b.test", lifecycle: "listening" },
+    { pubkey: agentB, relayUrl: "wss://a.test", lifecycle: "starting" },
+    { pubkey: "c3".repeat(32), relayUrl: "wss://a.test", lifecycle: "stopped" },
+  ];
+  ({ unmount } = await openSignOutDialog());
+  const checkbox = stopAgentsCheckbox();
+  assert.ok(checkbox, "running agents: checkbox shown");
+  assert.equal(
+    checkbox.getAttribute("aria-checked"),
+    "false",
+    "off by default",
+  );
+  assert.match(
+    document.querySelector('[role="alertdialog"]').textContent,
+    /Also stop the 2 agents running on this computer/,
   );
   await act(async () => fireEvent.click(dialogButton("Cancel")));
+  runtimes = [];
+  await unmount();
+});
+
+test("signing out without the choice leaves agents running", async () => {
+  runtimes = [{ pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" }];
+  logoutBehavior = () => Promise.resolve(baseStatus({ deviceSignedOut: true }));
+  const { unmount } = await openSignOutDialog();
+  await act(async () => fireEvent.click(dialogButton("Sign out")));
+  await settle(() => calls.some((c) => c.command === "logout"));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  assert.deepEqual(calls.find((c) => c.command === "logout").args, {
+    stopAgents: [],
+  });
+  assert.equal(
+    calls.some((c) => c.command === "stop_managed_agent_runtime"),
+    false,
+    "unchecked sign-out stops no agents",
+  );
+  logoutBehavior = undefined;
+  runtimes = [];
+  await unmount();
+});
+
+test("signing out with the choice records and stops every running pair", async () => {
+  runtimes = [
+    { pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" },
+    { pubkey: agentA, relayUrl: "wss://b.test", lifecycle: "listening" },
+  ];
+  const order = [];
+  logoutBehavior = () => {
+    order.push("logout");
+    return Promise.resolve(baseStatus({ deviceSignedOut: true }));
+  };
+  const { unmount } = await openSignOutDialog();
+  await act(async () => fireEvent.click(stopAgentsCheckbox()));
+  assert.equal(stopAgentsCheckbox().getAttribute("aria-checked"), "true");
+  await act(async () => fireEvent.click(dialogButton("Sign out")));
+  await settle(
+    () =>
+      calls.filter((c) => c.command === "stop_managed_agent_runtime").length ===
+      2,
+  );
+  assert.deepEqual(calls.find((c) => c.command === "logout").args, {
+    stopAgents: [agentA],
+  });
+  const stops = calls.filter((c) => c.command === "stop_managed_agent_runtime");
+  assert.deepEqual(stops.map((c) => c.args.relayUrl).sort(), [
+    "wss://a.test",
+    "wss://b.test",
+  ]);
+  assert.ok(
+    calls.findIndex((c) => c.command === "logout") <
+      calls.findIndex((c) => c.command === "stop_managed_agent_runtime"),
+    "signed out (and the choice persisted) before stopping",
+  );
+  logoutBehavior = undefined;
+  runtimes = [];
   await unmount();
 });
 

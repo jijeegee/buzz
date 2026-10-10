@@ -296,6 +296,12 @@ pub fn run() {
                 eprintln!("buzz-desktop: fatal: identity resolution failed: {e}");
                 std::process::exit(1);
             }
+            // "Signed out on this computer" markers, before anything can sign.
+            // Without a data dir, sign-out cannot be saved and reports so.
+            match app_handle.path().app_data_dir() {
+                Ok(data_dir) => state.token_auth.signed_out.load(&data_dir),
+                Err(e) => eprintln!("buzz-desktop: sign-out markers unavailable: {e}"),
+            }
 
             // When the identity is in recovery mode (lost = keyring empty after
             // migration, or keyring-locked = keyring unreachable but marker

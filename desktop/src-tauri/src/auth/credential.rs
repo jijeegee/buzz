@@ -117,6 +117,19 @@ impl AppState {
         super::origin_for(&crate::relay::relay_ws_url_with_override(self))
     }
 
+    /// `Err` while this device is signed out of the current community: no
+    /// user-identity relay work (signing, HTTP auth, socket auth) may run.
+    pub(crate) fn ensure_signed_in_here(&self) -> Result<(), String> {
+        if self
+            .token_auth
+            .signed_out
+            .is_signed_out(&self.current_auth_origin())
+        {
+            return Err(super::signed_out::SIGNED_OUT_MESSAGE.into());
+        }
+        Ok(())
+    }
+
     /// The token-auth mode of the current workspace relay.
     pub(crate) fn current_credential_mode(&self) -> CredentialMode {
         self.token_auth.mode(&self.current_auth_origin())
@@ -126,6 +139,7 @@ impl AppState {
     /// principal when signed in there, otherwise the local key (subject to
     /// the same recovery-mode gate as [`AppState::signing_keys`]).
     pub(crate) fn user_credential(&self) -> Result<UserCredential, String> {
+        self.ensure_signed_in_here()?;
         match self.current_credential_mode() {
             CredentialMode::Token(session) => Ok(UserCredential::Token {
                 principal: session.principal,
@@ -138,6 +152,7 @@ impl AppState {
 
     /// Native relay session auth for the current community.
     pub(crate) fn native_auth(&self) -> Result<crate::native_relay_client::NativeAuth, String> {
+        self.ensure_signed_in_here()?;
         match self.current_credential_mode() {
             CredentialMode::Token(session) => Ok(crate::native_relay_client::NativeAuth::Token {
                 principal: session.principal,
@@ -166,6 +181,9 @@ impl AppState {
     /// `Some(reason)` when local-key signing must be refused for the current
     /// community because it is in (or entering) token mode.
     pub(crate) fn key_signing_blocked(&self) -> Option<String> {
+        if let Err(reason) = self.ensure_signed_in_here() {
+            return Some(reason);
+        }
         match self.current_credential_mode() {
             CredentialMode::Keys => None,
             CredentialMode::Token(_) => Some(key_required_message("This action")),

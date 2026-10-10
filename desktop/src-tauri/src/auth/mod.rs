@@ -16,6 +16,8 @@
 //! - [`refresh`]: background refresh, terminal "sign in again".
 //! - [`commands`]: Tauri commands for login, devices, account actions.
 //! - [`bots`]: managed-agent bot registration, bot tokens, exit-78 restarts.
+//! - [`signed_out`]: durable "signed out on this computer" markers that fence
+//!   user-identity work until the same Google account signs in again.
 
 pub(crate) mod api;
 pub(crate) mod bots;
@@ -28,6 +30,7 @@ pub(crate) mod pkce;
 pub(crate) mod redact;
 pub(crate) mod refresh;
 pub(crate) mod restore;
+pub(crate) mod signed_out;
 pub(crate) mod watchdog;
 
 use std::collections::HashMap;
@@ -179,6 +182,8 @@ pub struct TokenAuthState {
     pending_refresh: Mutex<HashMap<String, (u64, Zeroizing<String>)>>,
     /// Managed-agent bot tokens and exit-78 restart accounting.
     pub(crate) bots: bots::BotRuntime,
+    /// Origins signed out on this device (durable, outside the keyring).
+    pub(crate) signed_out: signed_out::SignedOutMarkers,
 }
 
 impl TokenAuthState {

@@ -300,3 +300,65 @@ fn backup_session_refresh_and_expiry_leave_signed_identity_and_mentions_unchange
         assert_eq!(event.tags.public_keys().next(), Some(&mentioned));
     }
 }
+
+#[tokio::test]
+async fn signed_out_resume_restores_only_this_devices_account() {
+    let original = Keys::generate();
+    let relay = Relay::default();
+    *relay.key.lock().unwrap() = Some(original.clone());
+    let (origin, task) = server(relay.clone()).await;
+    let client = crate::app_state::build_media_fetch_client().unwrap();
+
+    // A Google account backing up a different identity is refused before any
+    // key is downloaded or uploaded, even when replacement would be allowed.
+    let other = Keys::generate();
+    let error = resolve_backup_resuming(
+        &client,
+        &origin,
+        "test-session",
+        "account-a",
+        &other,
+        true,
+        Some(other.public_key()),
+        |_| panic!("a signed-out device never uploads its key"),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, super::super::signed_out::ACCOUNT_MISMATCH_MESSAGE);
+
+    // The same account resumes with the identical signer.
+    let resumed = resolve_backup_resuming(
+        &client,
+        &origin,
+        "test-session",
+        "account-a",
+        &original,
+        false,
+        Some(original.public_key()),
+        |_| panic!("resume must not replace the backup"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(resumed.public_key(), original.public_key());
+    task.abort();
+
+    // A Google account with no backup is a different account: no link.
+    let empty = Relay::default();
+    let (origin, task) = server(empty.clone()).await;
+    let error = resolve_backup_resuming(
+        &client,
+        &origin,
+        "test-session",
+        "account-a",
+        &original,
+        false,
+        Some(original.public_key()),
+        |_| panic!("a signed-out device never links its key to another account"),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, super::super::signed_out::ACCOUNT_MISMATCH_MESSAGE);
+    assert_eq!(empty.uploads.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(empty.key.lock().unwrap().is_none());
+    task.abort();
+}

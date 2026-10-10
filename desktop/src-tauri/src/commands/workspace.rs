@@ -315,8 +315,15 @@ pub async fn apply_workspace(
     // Backfill this exact relay+owner scope only after the workspace has been
     // applied. Running at process boot would target the fallback relay and
     // collapse every community into one pending-event store.
-    match crate::managed_agents::retention::active_retention_scope(&restore_app, &state) {
-        Ok(scope) => {
+    //
+    // Signed out on this device: the owner-signed sync must not publish as the
+    // user. Its pending events stay queued and sync on the apply after sign-in.
+    let signed_out = state.ensure_signed_in_here().is_err();
+    match (!signed_out)
+        .then(|| crate::managed_agents::retention::active_retention_scope(&restore_app, &state))
+    {
+        None => {}
+        Some(Ok(scope)) => {
             // Adopt whatever the pre-scoping release left queued in the global
             // retention database BEFORE the scoped reconcile and flush run, so
             // stranded tombstones and archive requests publish on this boot
@@ -344,7 +351,7 @@ pub async fn apply_workspace(
             )
             .await?;
         }
-        Err(error) => {
+        Some(Err(error)) => {
             // Scope resolution is a prerequisite for establishing the
             // superseding head, so its failure is fatal for the same reason:
             // without a scope we cannot retain the repaired roster ahead of an

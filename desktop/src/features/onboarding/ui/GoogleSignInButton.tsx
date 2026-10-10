@@ -30,6 +30,7 @@ export function GoogleSignInButton({
   note = "Sign in with your Google account to get started.",
   onComplete,
   showWhenSignedIn = false,
+  unavailable = null,
 }: {
   disabled?: boolean;
   allowRestore?: boolean;
@@ -37,6 +38,8 @@ export function GoogleSignInButton({
   onComplete?: () => Promise<void>;
   /** Restoring a lost identity signs in again over a surviving session. */
   showWhenSignedIn?: boolean;
+  /** Shown instead of nothing once the relay turns out not to offer Google. */
+  unavailable?: React.ReactNode;
 }) {
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
   const [pending, setPending] = React.useState(false);
@@ -54,7 +57,8 @@ export function GoogleSignInButton({
     };
   }, []);
 
-  if (!status?.supported) return null;
+  if (!status) return null;
+  if (!status.supported) return <>{unavailable}</>;
   if (status.state === "active" && !showWhenSignedIn) return null;
 
   function signIn(existingTokenAccount = false) {

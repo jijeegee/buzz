@@ -27,7 +27,13 @@ import {
   OLDER_ACCOUNT_SIGN_IN_LABEL,
   OLDER_ACCOUNT_SIGN_IN_TITLE,
 } from "@/features/onboarding/ui/GoogleSignInButton";
+import {
+  listRunningLocalAgents,
+  type RunningLocalAgents,
+  stopRunningLocalAgents,
+} from "@/features/agents/lib/runningLocalAgents";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
+import { Checkbox } from "@/shared/ui/checkbox";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
 import { needsGoogleProtection } from "@/shared/lib/signingKeyUi";
@@ -47,10 +53,20 @@ function errorText(error: unknown, fallback: string): string {
 /**
  * A signed-in identity change re-initialises every community-scoped store;
  * reloading is the one path that guarantees nothing keyed to the previous
- * identity survives (AGENTS.md "Community Switching").
+ * identity survives (AGENTS.md "Community Switching"). After sign-out it lands
+ * on the signed-out screen.
  */
 function reloadIntoNewIdentity() {
   window.location.reload();
+}
+
+export const SIGN_OUT_DESCRIPTION =
+  "You'll be signed out on this computer. Sign in with Google to get back to your conversations. Nothing is deleted.";
+
+export function stopAgentsLabel(count: number): string {
+  return count === 1
+    ? "Also stop the 1 agent running on this computer"
+    : `Also stop the ${count} agents running on this computer`;
 }
 
 /**
@@ -132,7 +148,7 @@ export function AccountSettingsCard({
     run("Sign out", async () => {
       const next = await logoutTokenSession();
       setStatus(next);
-      if (!next.keyBackup) reloadIntoNewIdentity();
+      reloadIntoNewIdentity();
     });
 
   // Not yet held by Google: invite the user to protect the account with it.
@@ -249,6 +265,17 @@ function ActiveAccount({
   const [confirming, setConfirming] = React.useState<
     "sign-out" | "sign-out-others" | "disconnect-agents" | null
   >(null);
+  // Read fresh each time the sign-out dialog opens; the choice starts off.
+  const [runningAgents, setRunningAgents] =
+    React.useState<RunningLocalAgents | null>(null);
+  const [stopAgents, setStopAgents] = React.useState(false);
+  const openSignOut = () => {
+    setRunningAgents(null);
+    setStopAgents(false);
+    setConfirming("sign-out");
+    void listRunningLocalAgents().then(setRunningAgents);
+  };
+  const runningCount = runningAgents?.pubkeys.length ?? 0;
   const closeConfirm = (open: boolean) => {
     if (!open) setConfirming(null);
   };
@@ -276,7 +303,7 @@ function ActiveAccount({
         <Button
           data-testid="account-sign-out"
           disabled={disabled}
-          onClick={() => setConfirming("sign-out")}
+          onClick={openSignOut}
           type="button"
           variant="outline"
         >
@@ -285,19 +312,38 @@ function ActiveAccount({
       </SettingsOptionRow>
       <SettingsConfirmDialog
         confirmLabel="Sign out"
-        description="You'll need to sign in with Google again to use Buzz on this computer. Your communities and conversations are kept."
-        onConfirm={() =>
+        description={SIGN_OUT_DESCRIPTION}
+        onConfirm={() => {
+          const stopping = stopAgents && runningAgents ? runningAgents : null;
           void run("Sign out", async () => {
-            const next = await logoutTokenSession();
+            const next = await logoutTokenSession(stopping?.pubkeys ?? []);
             onStatus(next);
-            if (!next.keyBackup) window.location.reload();
-          })
-        }
+            // Signed out first, so a stop failure never keeps the user in.
+            // Anything still running is reported on the signed-out screen.
+            if (stopping) await stopRunningLocalAgents(stopping);
+            reloadIntoNewIdentity();
+          });
+        }}
         onOpenChange={closeConfirm}
         open={confirming === "sign-out"}
         testId="account-sign-out-dialog"
         title="Sign out of Buzz?"
-      />
+      >
+        {runningCount > 0 ? (
+          <label
+            className="flex items-center gap-2 text-sm"
+            htmlFor="account-sign-out-stop-agents"
+          >
+            <Checkbox
+              checked={stopAgents}
+              data-testid="account-sign-out-stop-agents"
+              id="account-sign-out-stop-agents"
+              onCheckedChange={(checked) => setStopAgents(checked === true)}
+            />
+            {stopAgentsLabel(runningCount)}
+          </label>
+        ) : null}
+      </SettingsConfirmDialog>
       {status.keyBackup ? (
         <SettingsOptionRow>
           <p className="min-w-0 text-sm text-muted-foreground/70">

@@ -25,6 +25,7 @@ export function SettingsConfirmDialog({
   onConfirm,
   destructive = false,
   testId,
+  children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -34,6 +35,8 @@ export function SettingsConfirmDialog({
   onConfirm: () => void;
   destructive?: boolean;
   testId?: string;
+  /** Extra choices shown between the description and the buttons. */
+  children?: React.ReactNode;
 }) {
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
@@ -42,6 +45,7 @@ export function SettingsConfirmDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline">

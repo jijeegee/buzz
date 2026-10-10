@@ -123,6 +123,8 @@ type CommunityInitResult =
       needsSetup: false;
       appliedKey: string;
       identityPubkey: string | null;
+      /** This computer is signed out of the community: show no chats. */
+      deviceSignedOut: boolean;
     }
   | {
       isReady: false;
@@ -414,8 +416,10 @@ export function useCommunityInit(
       // the relay socket and "me" use the account principal, not the key.
       // The status call awaits any restore already in flight (single-flight
       // on the Rust side), so it reads a settled state.
+      let deviceSignedOut = false;
       try {
         const tokenAuth = await getTokenAuthStatus();
+        deviceSignedOut = tokenAuth.deviceSignedOut === true;
         if (tokenAuth.state === "active") {
           identityPubkey = (await getIdentity()).pubkey;
           appliedPubkeyRef.current = identityPubkey;
@@ -436,7 +440,8 @@ export function useCommunityInit(
               .then((next) => {
                 if (
                   !cancelled &&
-                  tokenIdentityChanged(appliedPrincipal, next)
+                  (tokenIdentityChanged(appliedPrincipal, next) ||
+                    (next.deviceSignedOut === true) !== deviceSignedOut)
                 ) {
                   identityReload.reload();
                 }
@@ -480,6 +485,7 @@ export function useCommunityInit(
           needsSetup: false,
           appliedKey: communityKey,
           identityPubkey,
+          deviceSignedOut,
         });
       }
     }

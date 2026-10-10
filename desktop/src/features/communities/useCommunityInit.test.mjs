@@ -247,3 +247,27 @@ test("an unchanged signed-in identity does not reload", async (t) => {
   await act(async () => {});
   assert.equal(reload.mock.callCount(), 0);
 });
+
+test("a signed-out computer reports it, and signing out later reloads into it", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  tokenStatus = { ...tokenStatusOf("signed_out"), deviceSignedOut: true };
+  let { result, unmount } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  assert.equal(result.current.deviceSignedOut, true);
+  unmount();
+
+  tokenStatus = { ...tokenStatusOf("active", "c".repeat(64)), keyBackup: true };
+  ({ result } = mount([a, b]));
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  assert.equal(result.current.deviceSignedOut, false);
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+  tokenStatus = {
+    ...tokenStatusOf("signed_out"),
+    keyBackup: true,
+    deviceSignedOut: true,
+  };
+  await act(async () => emitTokenAuthChanged());
+  await waitFor(() => assert.equal(reload.mock.callCount(), 1));
+});

@@ -552,11 +552,15 @@ pub async fn reconcile_managed_agent_runtimes(
     // Captured before the probes: a community removed while they run is refused.
     let admission = super::AdmissionSnapshot::capture(&app.state::<AppState>());
     let records = load_managed_agents(&app)?;
+    let auth_state = app.state::<AppState>();
+    let signed_out = &auth_state.token_auth.signed_out;
     let mut jobs = Vec::new();
     for community in communities {
         for record in records
             .iter()
             .filter(|record| record.start_on_app_launch && record.backend == BackendKind::Local)
+            // Stopped by the user when signing out: stays stopped until sign-in.
+            .filter(|record| !signed_out.suppresses_agent(&record.pubkey))
         // The legacy per-record relay pin is deliberately ignored here — see
         // `effective_agent_relay_url`. Every local auto-start agent fans out
         // to every configured community.

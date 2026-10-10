@@ -44,6 +44,9 @@ pub struct TokenAuthStatus {
     pub legacy_token_account: bool,
     /// Messaging identity, never the backup authorization account id.
     pub signing_pubkey: Option<String>,
+    /// Signed out on this computer: chats stay closed until the same Google
+    /// account signs in again. Keys and data are kept.
+    pub device_signed_out: bool,
 }
 
 fn status_of(
@@ -74,6 +77,7 @@ fn status_of(
         key_backup: false,
         legacy_token_account: false,
         signing_pubkey: None,
+        device_signed_out: false,
     }
 }
 
@@ -100,6 +104,7 @@ fn current_status(
                 .map(|keys| keys.public_key().to_hex())
         })
         .flatten();
+    status.device_signed_out = state.token_auth.signed_out.is_signed_out(origin);
     status
 }
 
@@ -124,7 +129,9 @@ async fn support_for(state: &AppState, origin: &str) -> Option<Vec<String>> {
                 None | Some((_, OriginAuth::SignedOut))
             );
             let has_stored = matches!(KeyringRefreshStore.load(origin), Ok(Some(_)));
-            (has_session || has_stored).then(|| vec!["google".to_owned()])
+            // A signed-out device must keep its only way back (Rule 6).
+            let signed_out = state.token_auth.signed_out.is_signed_out(origin);
+            (has_session || has_stored || signed_out).then(|| vec!["google".to_owned()])
         }
     }
 }
@@ -276,6 +283,18 @@ async fn login_inner(
     verify_login_mode(backup, tokens.identity_mode.as_deref())?;
     let principal = PublicKey::from_hex(&tokens.principal_id)
         .map_err(|_| "the relay returned an invalid account id".to_string())?;
+    if !backup {
+        if let Some(expected) = state.token_auth.signed_out.get(&origin) {
+            if let Err(error) = super::signed_out::verify_resumed_identity(expected, principal) {
+                // Do not leave the other account's fresh session alive.
+                if let Err(revoke) = api::logout(&state.http_client, &origin, &tokens.access).await
+                {
+                    eprintln!("buzz-desktop: auth: revoking a mismatched sign-in: {revoke}");
+                }
+                return Err(error);
+            }
+        }
+    }
     // Under the refresh lock: an in-flight refresh of an older generation can
     // neither write its token over this one nor revive the old session.
     let _refresh_guard = state.token_auth.refresh_lock(&origin).lock_owned().await;
@@ -311,6 +330,9 @@ async fn login_inner(
             eprintln!("buzz-desktop: auth: could not store the session in the keyring: {error}");
         }
     }
+    // The same account proved itself with Google (key-backup identity checked
+    // in `key_recovery::complete`, token principal above): resume this device.
+    state.token_auth.signed_out.clear(&origin)?;
     state.token_auth.clear_pending_refresh(&origin);
     let now = chrono::Utc::now().timestamp();
     let session = UserSession {
@@ -483,13 +505,25 @@ pub(crate) fn fresh_session_for_spawn(
         })
 }
 
+/// The relay-socket credential mode for `origin`; refused outright while the
+/// device is signed out there, so no frontend connection can authenticate.
+pub(crate) fn ws_auth_mode(
+    auth: &super::TokenAuthState,
+    origin: &str,
+) -> Result<CredentialMode, String> {
+    if auth.signed_out.is_signed_out(origin) {
+        return Err(super::signed_out::SIGNED_OUT_MESSAGE.into());
+    }
+    Ok(auth.mode(origin))
+}
+
 /// WebSocket AUTH payload for the current community: `{"token": …}` in token
 /// mode, `null` in key mode (the caller signs a NIP-42 event instead).
 #[tauri::command]
 pub async fn get_ws_auth_frame(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    match state.token_auth.mode(&origin) {
+    match ws_auth_mode(&state.token_auth, &origin)? {
         CredentialMode::Keys => Ok(None),
         CredentialMode::Blocked(reason) => Err(reason),
         CredentialMode::Token(_) => {
@@ -505,13 +539,24 @@ fn api_error(error: ApiError) -> String {
     error.to_string()
 }
 
-/// Sign out of the current community: revoke the session server-side, then
-/// forget it locally. A network failure keeps the session so the user can
-/// retry (the server-side session would otherwise stay alive unrevoked).
+/// Sign out of the current community on this computer: revoke the session
+/// server-side, durably mark the device signed out, then forget the session.
+/// Keys, agents, communities and history are never deleted. A network failure
+/// keeps everything so the user can retry (the server-side session would
+/// otherwise stay alive unrevoked).
+///
+/// `stop_agents` lists running local agents the user chose to stop with this
+/// sign-out. They are recorded in the same marker write, so they stay stopped
+/// (no launch restore or auto-start) until the user signs in again; the caller
+/// stops them through the existing runtime stop command afterwards.
 #[tauri::command]
-pub async fn logout(app: AppHandle) -> Result<TokenAuthStatus, String> {
+pub async fn logout(
+    app: AppHandle,
+    stop_agents: Option<Vec<String>>,
+) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
+    let stop_agents = normalize_agent_pubkeys(stop_agents.unwrap_or_default())?;
     // Let an in-flight restore or refresh settle first (sign-out is offered
     // while restoring, Rule 6), so a session it just activated is revoked
     // server-side rather than only forgotten locally.
@@ -525,10 +570,75 @@ pub async fn logout(app: AppHandle) -> Result<TokenAuthStatus, String> {
             Err(error) => return Err(format!("could not sign out: {error}")),
         }
     }
-    forget_session(&state.token_auth, &origin, &KeyringRefreshStore).await?;
+    // AGENT POLICY SEAM: running local agents keep running unless the user
+    // ticked "Also stop" in the sign-out dialog; that choice is persisted here
+    // with the marker and carried out by the UI's existing per-pair stop.
+    sign_out_device(
+        &state.token_auth,
+        &origin,
+        &KeyringRefreshStore,
+        &stop_agents,
+    )
+    .await?;
     emit_changed(&app, &origin);
     let support = state.token_auth.cached_support(&origin).flatten();
     Ok(current_status(&state, &origin, support))
+}
+
+/// Device sign-out of `origin`: write the durable signed-out marker first (it
+/// is what fences chats and relay auth), then forget the session. A local-only
+/// account that Google cannot bring back gets no marker (Rule 6).
+pub(crate) async fn sign_out_device(
+    auth: &super::TokenAuthState,
+    origin: &str,
+    store: &dyn RefreshStore,
+    stop_agents: &[String],
+) -> Result<(), String> {
+    if let Some(identity) = signed_out_identity(auth, origin, store)? {
+        auth.signed_out.mark(origin, identity, stop_agents)?;
+    } else if !stop_agents.is_empty() {
+        return Err("Sign-out is not available for this account.".into());
+    }
+    forget_session(auth, origin, store).await
+}
+
+/// Validate agent pubkeys from the UI: bounded, lowercase hex.
+fn normalize_agent_pubkeys(agents: Vec<String>) -> Result<Vec<String>, String> {
+    if agents.len() > 1024 {
+        return Err("too many agents".into());
+    }
+    agents
+        .into_iter()
+        .map(|agent| {
+            if agent.len() == 64 && agent.bytes().all(|b| b.is_ascii_hexdigit()) {
+                Ok(agent.to_ascii_lowercase())
+            } else {
+                Err("invalid agent id".to_owned())
+            }
+        })
+        .collect()
+}
+
+/// The identity a later Google sign-in must resume: `Some(Some(pubkey))` when
+/// known, `Some(None)` for a token account whose principal is unknown, `None`
+/// when Google does not hold this account at all.
+fn signed_out_identity(
+    auth: &super::TokenAuthState,
+    origin: &str,
+    store: &dyn RefreshStore,
+) -> Result<Option<Option<PublicKey>>, String> {
+    if let Some(bound) = auth.signing_pubkey(origin) {
+        return Ok(Some(Some(bound)));
+    }
+    if let Some(bound) = store.signing_pubkey(origin)? {
+        return Ok(Some(Some(bound)));
+    }
+    Ok(match auth.get(origin) {
+        Some((_, OriginAuth::Active(session))) => Some(Some(session.principal)),
+        Some((_, OriginAuth::Restoring | OriginAuth::NeedsLogin(_))) => Some(None),
+        _ if store.legacy_token_account(origin)? || store.load(origin)?.is_some() => Some(None),
+        _ => None,
+    })
 }
 
 /// Forget `origin`'s session locally: keyring token and in-memory state.
@@ -577,9 +687,15 @@ pub async fn rename_device(
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let session = fresh_session(&state, &origin).await?;
-    api::rename_device(&state.http_client, &origin, &session.access, &device_id, &name)
-        .await
-        .map_err(api_error)
+    api::rename_device(
+        &state.http_client,
+        &origin,
+        &session.access,
+        &device_id,
+        &name,
+    )
+    .await
+    .map_err(api_error)
 }
 
 /// Remote sign-out of another device.
@@ -896,6 +1012,172 @@ mod tests {
         );
     }
 
+    struct SignOutStore {
+        binding: Option<PublicKey>,
+        refresh: std::sync::Mutex<Option<String>>,
+    }
+
+    impl RefreshStore for SignOutStore {
+        fn load(&self, _: &str) -> Result<Option<String>, String> {
+            Ok(self.refresh.lock().unwrap().clone())
+        }
+        fn store(&self, _: &str, _: &str) -> Result<(), String> {
+            panic!("sign-out cannot create a credential")
+        }
+        fn delete(&self, _: &str) -> Result<(), String> {
+            self.refresh.lock().unwrap().take();
+            Ok(())
+        }
+        fn signing_pubkey(&self, _: &str) -> Result<Option<PublicKey>, String> {
+            Ok(self.binding)
+        }
+    }
+
+    fn loaded_auth(dir: &tempfile::TempDir) -> super::super::TokenAuthState {
+        let auth = super::super::TokenAuthState::default();
+        auth.signed_out.load(dir.path());
+        auth
+    }
+
+    #[tokio::test]
+    async fn sign_out_marks_the_device_and_keeps_the_key_binding() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = "https://relay.test";
+        let identity = nostr::Keys::generate().public_key();
+        let store = SignOutStore {
+            binding: Some(identity),
+            refresh: std::sync::Mutex::new(Some("test-refresh".into())),
+        };
+        let auth = loaded_auth(&dir);
+        let agent = "cd".repeat(32);
+        sign_out_device(&auth, origin, &store, std::slice::from_ref(&agent))
+            .await
+            .unwrap();
+        assert_eq!(auth.signed_out.get(origin), Some(Some(identity)));
+        assert!(auth.signed_out.suppresses_agent(&agent));
+        assert!(store.load(origin).unwrap().is_none(), "session forgotten");
+        assert_eq!(store.binding, Some(identity), "key binding kept");
+        // Durable: a restarted app is still signed out.
+        assert_eq!(
+            loaded_auth(&dir).signed_out.get(origin),
+            Some(Some(identity))
+        );
+        // Matching Google sign-in clears it; a different account is refused.
+        let other = nostr::Keys::generate().public_key();
+        let expected = auth.signed_out.get(origin).unwrap();
+        assert_eq!(
+            super::super::signed_out::verify_resumed_identity(expected, other).unwrap_err(),
+            super::super::signed_out::ACCOUNT_MISMATCH_MESSAGE
+        );
+        assert!(auth.signed_out.is_signed_out(origin), "kept on mismatch");
+        super::super::signed_out::verify_resumed_identity(expected, identity).unwrap();
+        auth.signed_out.clear(origin).unwrap();
+        assert!(!loaded_auth(&dir).signed_out.is_signed_out(origin));
+        assert!(!loaded_auth(&dir).signed_out.suppresses_agent(&agent));
+    }
+
+    #[tokio::test]
+    async fn sign_out_of_an_active_token_account_remembers_its_principal() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = "https://relay.test";
+        let principal = nostr::Keys::generate().public_key();
+        let auth = loaded_auth(&dir);
+        auth.set(
+            origin,
+            OriginAuth::Active(UserSession {
+                principal,
+                device_id: None,
+                access: Zeroizing::new("test-access".into()),
+                refresh: Zeroizing::new("test-refresh".into()),
+                access_issued_at: 0,
+                access_expires_at: i64::MAX,
+            }),
+        );
+        struct TokenStore(std::sync::atomic::AtomicBool);
+        impl RefreshStore for TokenStore {
+            fn load(&self, _: &str) -> Result<Option<String>, String> {
+                Ok(None)
+            }
+            fn store(&self, _: &str, _: &str) -> Result<(), String> {
+                unreachable!()
+            }
+            fn delete(&self, _: &str) -> Result<(), String> {
+                Ok(())
+            }
+            fn remember_legacy_token_account(&self, _: &str) -> Result<(), String> {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        sign_out_device(
+            &auth,
+            origin,
+            &TokenStore(std::sync::atomic::AtomicBool::new(false)),
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(auth.signed_out.get(origin), Some(Some(principal)));
+        assert!(matches!(auth.get(origin), Some((_, OriginAuth::SignedOut))));
+    }
+
+    #[tokio::test]
+    async fn local_only_accounts_get_no_marker_so_they_are_never_locked_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = "https://relay.test";
+        let store = SignOutStore {
+            binding: None,
+            refresh: std::sync::Mutex::new(None),
+        };
+        let auth = loaded_auth(&dir);
+        sign_out_device(&auth, origin, &store, &[]).await.unwrap();
+        assert!(!auth.signed_out.is_signed_out(origin));
+        assert!(sign_out_device(&auth, origin, &store, &["ab".repeat(32)])
+            .await
+            .is_err());
+    }
+
+    #[test]
+    fn ws_auth_and_user_signing_are_refused_while_signed_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = crate::app_state::build_app_state();
+        state.token_auth.signed_out.load(dir.path());
+        let origin = state.current_auth_origin();
+        assert!(matches!(
+            ws_auth_mode(&state.token_auth, &origin),
+            Ok(CredentialMode::Keys)
+        ));
+        assert!(state.user_credential().is_ok());
+        let identity = state.keys.lock().unwrap().public_key();
+        state
+            .token_auth
+            .signed_out
+            .mark(&origin, Some(identity), &[])
+            .unwrap();
+        let message = super::super::signed_out::SIGNED_OUT_MESSAGE;
+        assert_eq!(
+            ws_auth_mode(&state.token_auth, &origin).err().as_deref(),
+            Some(message)
+        );
+        assert_eq!(state.user_credential().err().as_deref(), Some(message));
+        assert_eq!(state.signing_keys().err().as_deref(), Some(message));
+        assert!(state.native_auth().is_err());
+        // The retained key itself is untouched.
+        assert_eq!(state.keys.lock().unwrap().public_key(), identity);
+        state.token_auth.signed_out.clear(&origin).unwrap();
+        assert!(ws_auth_mode(&state.token_auth, &origin).is_ok());
+        assert!(state.signing_keys().is_ok());
+    }
+
+    #[test]
+    fn stop_agent_ids_are_validated() {
+        assert_eq!(
+            normalize_agent_pubkeys(vec!["AB".repeat(32)]).unwrap(),
+            vec!["ab".repeat(32)]
+        );
+        assert!(normalize_agent_pubkeys(vec!["nope".into()]).is_err());
+    }
+
     #[test]
     fn status_shape() {
         let signed_out = status_of("http://o", Some(vec!["google".into()]), None);
@@ -912,5 +1194,6 @@ mod tests {
         assert_eq!(needs.reason.as_deref(), Some("refresh_reused"));
         let json = serde_json::to_value(&needs).unwrap();
         assert!(json.get("deviceId").is_some(), "camelCase wire shape");
+        assert_eq!(json.get("deviceSignedOut"), Some(&serde_json::json!(false)));
     }
 }

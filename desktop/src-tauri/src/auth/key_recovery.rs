@@ -176,6 +176,8 @@ async fn restore(
 
 /// Production network state machine. Only authenticated `absent` can upload;
 /// every restore/status failure propagates without generating another key.
+/// Production calls [`resolve_backup_resuming`]; tests use this form.
+#[cfg(test)]
 pub(crate) async fn resolve_backup(
     client: &reqwest::Client,
     origin: &str,
@@ -183,6 +185,33 @@ pub(crate) async fn resolve_backup(
     account: &str,
     local: &Keys,
     allow_restore: bool,
+    persist_pending: impl FnOnce(&Keys) -> Result<(), String>,
+) -> Result<Keys, String> {
+    resolve_backup_resuming(
+        client,
+        origin,
+        access,
+        account,
+        local,
+        allow_restore,
+        None,
+        persist_pending,
+    )
+    .await
+}
+
+/// [`resolve_backup`] for a device that is signed out of `resume`'s account:
+/// only that account's own backup may resume it. Any other backup, or none,
+/// is refused before a key is downloaded or this device's key is uploaded.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn resolve_backup_resuming(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    account: &str,
+    local: &Keys,
+    allow_restore: bool,
+    resume: Option<PublicKey>,
     persist_pending: impl FnOnce(&Keys) -> Result<(), String>,
 ) -> Result<Keys, String> {
     let parsed = url::Url::parse(origin).map_err(|_| "invalid recovery origin")?;
@@ -193,6 +222,18 @@ pub(crate) async fn resolve_backup(
         return Err("Google key recovery requires HTTPS outside local development.".into());
     }
     let current = status(client, origin, access, account).await?;
+    if let Some(expected) = resume {
+        let backed_up = current
+            .pubkey
+            .as_deref()
+            .and_then(|value| PublicKey::from_hex(value).ok());
+        if current.state != "ready" || backed_up != Some(expected) {
+            return Err(super::signed_out::ACCOUNT_MISMATCH_MESSAGE.into());
+        }
+        // Verified to be this device's own account; `restore` re-checks the
+        // downloaded key against it.
+        return restore(client, origin, access, local, true, current).await;
+    }
     if current.state == "ready" {
         return restore(client, origin, access, local, allow_restore, current).await;
     }
@@ -302,6 +343,9 @@ pub(crate) async fn complete<R: tauri::Runtime>(
     let recovering = state
         .identity_lost
         .load(std::sync::atomic::Ordering::Acquire);
+    // Signed out on this device: only the identity that signed out resumes.
+    // The fence blocks `signing_keys`, so read the retained key directly.
+    let signed_out = state.token_auth.signed_out.get(origin);
     if state
         .keyring_locked
         .load(std::sync::atomic::Ordering::Acquire)
@@ -310,7 +354,7 @@ pub(crate) async fn complete<R: tauri::Runtime>(
             "Unlock your OS keyring and relaunch Buzz before recovering with Google.".into(),
         );
     }
-    let local = if recovering && allow_restore {
+    let local = if (recovering && allow_restore) || signed_out.is_some() {
         state
             .keys
             .lock()
@@ -320,6 +364,15 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         state.signing_keys()?
     };
     let local_pubkey = local.public_key();
+    let resume = match signed_out {
+        Some(known) => Some(match known {
+            Some(identity) => identity,
+            None => super::KeyringRefreshStore
+                .signing_pubkey(origin)?
+                .unwrap_or(local_pubkey),
+        }),
+        None => None,
+    };
     // Only an explicitly marked, unused bootstrap key can be replaced. Old
     // installs without the marker are established; no relay membership query
     // is needed, so recovery also works on closed communities.
@@ -336,13 +389,14 @@ pub(crate) async fn complete<R: tauri::Runtime>(
     } else {
         false
     };
-    let keys = resolve_backup(
+    let keys = resolve_backup_resuming(
         &state.media_fetch_client,
         origin,
         &tokens.access,
         &tokens.principal_id,
         &local,
         can_restore,
+        resume,
         |keys| {
             if recovering {
                 return Err(
@@ -354,6 +408,9 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         },
     )
     .await?;
+    if let Some(expected) = resume {
+        super::signed_out::verify_resumed_identity(Some(expected), keys.public_key())?;
+    }
     if tokens
         .signing_pubkey
         .as_deref()

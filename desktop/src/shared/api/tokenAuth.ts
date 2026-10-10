@@ -30,6 +30,11 @@ export type TokenAuthStatus = {
   keyBackup?: boolean;
   legacyTokenAccount?: boolean;
   signingPubkey?: string | null;
+  /**
+   * Signed out on this computer: chats stay closed (and native relay auth is
+   * refused) until the same Google account signs in again. Nothing is deleted.
+   */
+  deviceSignedOut?: boolean;
 };
 
 export type AuthDevice = {
@@ -66,9 +71,15 @@ export function cancelGoogleLogin(attemptId: string): Promise<boolean> {
   return invokeTauri<boolean>("cancel_google_login", { attemptId });
 }
 
-/** Sign out of the current community (revokes this device's session). */
-export function logoutTokenSession(): Promise<TokenAuthStatus> {
-  return invokeTauri<TokenAuthStatus>("logout");
+/**
+ * Sign out of the current community on this computer (revokes this device's
+ * session). `stopAgents` are running local agents the user chose to stop with
+ * it: they stay stopped until the next sign-in. The caller stops them.
+ */
+export function logoutTokenSession(
+  stopAgents: string[] = [],
+): Promise<TokenAuthStatus> {
+  return invokeTauri<TokenAuthStatus>("logout", { stopAgents });
 }
 
 /**

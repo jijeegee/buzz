@@ -204,6 +204,8 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
         let candidates: Vec<String> = records
             .iter()
             .filter(|record| record.start_on_app_launch && record.backend == BackendKind::Local)
+            // Stopped by the user when signing out: stays stopped until sign-in.
+            .filter(|record| !state.token_auth.signed_out.suppresses_agent(&record.pubkey))
             .map(|record| record.pubkey.clone())
             .collect();
 

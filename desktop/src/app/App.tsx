@@ -44,6 +44,7 @@ import { PendingInviteGate } from "@/features/onboarding/ui/PendingInviteGate";
 import { KeyringLockedScreen } from "@/features/onboarding/ui/KeyringLockedScreen";
 import { RelaunchRequiredScreen } from "@/features/onboarding/ui/RelaunchRequiredScreen";
 import { ResetFailedScreen } from "@/features/onboarding/ui/ResetFailedScreen";
+import { SignedOutGate } from "@/features/onboarding/ui/SignedOutScreen";
 import { loadCommunityDiscoveryAfterLeave } from "@/features/communities/communityStorage";
 import { useCommunityInit } from "@/features/communities/useCommunityInit";
 import { useNestNotifications } from "@/features/communities/useNestNotifications";
@@ -749,36 +750,40 @@ function CommunityApp({
     }
   }, [communityApplied]);
   if (appContent === null && (!transaction || isEnteringCurtain)) {
+    // Signed out on this computer: nothing that shows or connects to chats
+    // mounts (native relay auth is refused as well) until Google sign-in.
     appContent = communityApplied ? (
-      <CommunityQueryProvider
-        key={communityKey}
-        pubkey={community.identityPubkey}
-        relayUrl={activeCommunity?.relayUrl ?? null}
-      >
-        <CommunityIdentityReplacementSentinel
-          onIdentityReplaced={bumpSignerEpoch}
-        />
-        <CommunityThemeController />
-        <AppReady
-          continueOnboarding={isContinuingOnboarding}
-          isCommunitySwitch={isCommunitySwitch}
+      <SignedOutGate signedOut={community.isReady && community.deviceSignedOut}>
+        <CommunityQueryProvider
           key={communityKey}
-          isSharedIdentity={sharedIdentity}
-        />
-        {showBootSplashOverlay ? (
-          <div
-            aria-hidden="true"
-            className={cn(
-              "fixed inset-0 z-50 transition-opacity",
-              bootSplashPhase === "fading" ? "opacity-0" : "opacity-100",
-            )}
-            data-testid="boot-splash-overlay"
-            style={{ transitionDuration: `${BOOT_SPLASH_FADE_MS}ms` }}
-          >
-            <AppLoadingGate />
-          </div>
-        ) : null}
-      </CommunityQueryProvider>
+          pubkey={community.identityPubkey}
+          relayUrl={activeCommunity?.relayUrl ?? null}
+        >
+          <CommunityIdentityReplacementSentinel
+            onIdentityReplaced={bumpSignerEpoch}
+          />
+          <CommunityThemeController />
+          <AppReady
+            continueOnboarding={isContinuingOnboarding}
+            isCommunitySwitch={isCommunitySwitch}
+            key={communityKey}
+            isSharedIdentity={sharedIdentity}
+          />
+          {showBootSplashOverlay ? (
+            <div
+              aria-hidden="true"
+              className={cn(
+                "fixed inset-0 z-50 transition-opacity",
+                bootSplashPhase === "fading" ? "opacity-0" : "opacity-100",
+              )}
+              data-testid="boot-splash-overlay"
+              style={{ transitionDuration: `${BOOT_SPLASH_FADE_MS}ms` }}
+            >
+              <AppLoadingGate />
+            </div>
+          ) : null}
+        </CommunityQueryProvider>
+      </SignedOutGate>
     ) : isCommunitySwitch || isContinuingOnboarding ? (
       <CommunitySwitchGate />
     ) : (
