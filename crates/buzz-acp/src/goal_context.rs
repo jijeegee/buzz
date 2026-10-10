@@ -96,7 +96,7 @@ fn next_commands(channel_id: Uuid, focus: Focus<'_>) -> Vec<String> {
     let c = channel_id;
     match focus {
         Focus::Main => vec![format!(
-            "- Add a goal (only where people here ask): buzz goals add --channel {c} \
+            "- Add a goal (layer 2 or below): buzz goals add --channel {c} \
              --parent <goal id> {ADD_TITLE}"
         )],
         Focus::Unlinked(root) => vec![
@@ -410,6 +410,14 @@ mod tests {
         assert!(body.starts_with(goal_rules()));
         assert!(goal_rules().starts_with("Goals for this conversation."));
         assert!(goal_rules().contains("`buzz threads close --goal-done` does both"));
+        // Agents own the goals of their work, but never layers 0 and 1.
+        assert!(goal_rules().contains("Never change layer 0 or 1;"));
+        assert!(goal_rules().contains("propose layer 1 changes on the main timeline"));
+        assert!(goal_rules().contains("add and update layer 2 and below"));
+        assert!(goal_rules().contains("add one under the closest goal"));
+        assert!(goal_rules().contains("Do it yourself, without asking."));
+        assert!(goal_rules().contains("edit only its goal and sub-goals"));
+        assert!(!goal_rules().contains("only under your own goal"));
         assert!(
             !goal_rules().contains('…'),
             "placeholders are <...>, never …"
@@ -420,7 +428,7 @@ mod tests {
     fn main_timeline_offers_only_the_add_command() {
         let body = render_goal_context(&sample(), channel(), None).unwrap();
         let expected = format!(
-            "\nNext commands:\n- Add a goal (only where people here ask): buzz goals add \
+            "\nNext commands:\n- Add a goal (layer 2 or below): buzz goals add \
              --channel {} --parent <goal id> --title \"<one-line goal>\"\n\nL1 [open]",
             channel()
         );
@@ -572,7 +580,7 @@ mod tests {
         let expected = include_str!("goal_context_thread_sample.txt");
         assert_eq!(body, expected.trim_end());
         assert!(
-            body.chars().count() < 2_000,
+            body.chars().count() < 2_200,
             "{} chars",
             body.chars().count()
         );
