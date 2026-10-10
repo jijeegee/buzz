@@ -14,8 +14,9 @@ import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
 import { cn } from "@/shared/lib/cn";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 import {
-  type ThreadViewMode,
+  setInboxThreadViewMode,
   ThreadViewModeOverrideProvider,
+  useInboxThreadViewMode,
 } from "@/features/channels/lib/threadViewModePreference";
 import { useInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
 import { InboxPanel } from "@/features/home/ui/InboxPanel";
@@ -73,14 +74,10 @@ function ChannelRouteComponent() {
   });
   const isHuddleTranscript = huddleWindowChannelId() !== null;
   const inboxPanelOpen = useInboxPanelOpen() && !isHuddleTranscript;
-  // With the inbox pulled out, threads open maximized over the collapsed
-  // channel. The layout toggle only switches this view while the panel is open;
-  // the saved channel default is untouched.
-  const [inboxThreadViewMode, setInboxThreadViewMode] =
-    React.useState<ThreadViewMode>("focus");
-  React.useEffect(() => {
-    if (inboxPanelOpen) setInboxThreadViewMode("focus");
-  }, [inboxPanelOpen]);
+  // With the inbox pulled out, threads use the inbox's own remembered layout
+  // (maximized over the collapsed channel unless switched). The toggle here
+  // changes only that inbox layout; the channel default is untouched.
+  const inboxThreadViewMode = useInboxThreadViewMode();
   const threadViewModeOverride = React.useMemo(
     () =>
       inboxPanelOpen

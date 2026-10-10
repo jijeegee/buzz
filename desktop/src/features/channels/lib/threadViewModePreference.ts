@@ -73,6 +73,64 @@ export function setThreadViewMode(mode: ThreadViewMode): void {
   }
 }
 
+// The inbox keeps its own thread layout: threads entered from the inbox open
+// maximized by default, and the layout toggle there is remembered on its own,
+// across closing the inbox panel and restarts, without touching the channel
+// default above.
+const INBOX_STORAGE_KEY = "buzz.channels.inboxThreadViewMode";
+const DEFAULT_INBOX_THREAD_VIEW_MODE: ThreadViewMode = "focus";
+
+const inboxListeners = new Set<() => void>();
+
+let inboxThreadViewMode = readStoredInboxThreadViewMode();
+
+function readStoredInboxThreadViewMode(): ThreadViewMode {
+  try {
+    const value = globalThis.localStorage?.getItem(INBOX_STORAGE_KEY);
+    return value === "focus" || value === "split"
+      ? value
+      : DEFAULT_INBOX_THREAD_VIEW_MODE;
+  } catch {
+    return DEFAULT_INBOX_THREAD_VIEW_MODE;
+  }
+}
+
+function subscribeInbox(listener: () => void): () => void {
+  inboxListeners.add(listener);
+  return () => {
+    inboxListeners.delete(listener);
+  };
+}
+
+/** Read the persisted inbox thread layout outside of React. */
+export function getInboxThreadViewMode(): ThreadViewMode {
+  return inboxThreadViewMode;
+}
+
+/** Update the inbox thread layout and notify all subscribed components. */
+export function setInboxThreadViewMode(mode: ThreadViewMode): void {
+  inboxThreadViewMode = mode;
+
+  try {
+    globalThis.localStorage?.setItem(INBOX_STORAGE_KEY, mode);
+  } catch {
+    // Persistence is best-effort; the in-memory value still applies.
+  }
+
+  for (const listener of inboxListeners) {
+    listener();
+  }
+}
+
+/** The remembered layout for threads entered from the inbox. */
+export function useInboxThreadViewMode(): ThreadViewMode {
+  return React.useSyncExternalStore(
+    subscribeInbox,
+    () => inboxThreadViewMode,
+    () => DEFAULT_INBOX_THREAD_VIEW_MODE,
+  );
+}
+
 type ThreadViewModeOverride = {
   mode: ThreadViewMode;
   setMode: (mode: ThreadViewMode) => void;
@@ -82,9 +140,9 @@ const ThreadViewModeOverrideContext =
   React.createContext<ThreadViewModeOverride | null>(null);
 
 /**
- * Scopes the thread layout to one surface without touching the saved
- * preference: the inbox opens threads maximized whatever the channel default is,
- * and its toggle only switches that inbox view.
+ * Scopes the thread layout to one surface without touching the channel
+ * preference: the inbox uses its own remembered layout, and its toggle only
+ * switches that inbox layout.
  */
 export const ThreadViewModeOverrideProvider =
   ThreadViewModeOverrideContext.Provider;

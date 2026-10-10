@@ -78,3 +78,26 @@ test("keeps the in-memory choice when persistence fails", async () => {
     },
   );
 });
+
+test("the inbox layout defaults to focus and is remembered on its own", async () => {
+  const stored = new Map();
+  const storage = {
+    getItem: (key) => stored.get(key) ?? null,
+    setItem: (key, value) => stored.set(key, value),
+  };
+  await withStorage(
+    storage,
+    ({ getInboxThreadViewMode, getThreadViewMode, setInboxThreadViewMode }) => {
+      assert.equal(getInboxThreadViewMode(), "focus");
+      setInboxThreadViewMode("split");
+      assert.equal(getInboxThreadViewMode(), "split");
+      // The channel default is untouched.
+      assert.equal(getThreadViewMode(), "split");
+      assert.equal(stored.get(KEY), undefined);
+    },
+  );
+  // A fresh load (panel reopened or app restarted) keeps the choice.
+  await withStorage(storage, ({ getInboxThreadViewMode }) => {
+    assert.equal(getInboxThreadViewMode(), "split");
+  });
+});
