@@ -147,6 +147,54 @@ test.describe("inbox panel beside the chat screen", () => {
     await page.screenshot({ path: `${SHOTS}/04-panel-shown.png` });
   });
 
+  test("the inbox thread layout is remembered across closing the panel", async ({
+    page,
+  }) => {
+    await installMockBridge(page, { mode: "mock" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await seedGeneralMessages(page);
+
+    const replyRow = page
+      .locator('[data-testid^="home-inbox-item-"]')
+      .filter({ hasText: "Left two comments on the checklist thread." })
+      .first();
+    await replyRow.click();
+    const drawer = page.getByTestId("focus-thread-drawer-overlay");
+    await expect(drawer).toBeVisible({ timeout: 10_000 });
+
+    // Switch the inbox thread to side by side.
+    await page.getByTestId("thread-view-mode-toggle").click();
+    await expect(drawer).toHaveCount(0);
+    await expect(page.getByTestId("message-thread-panel")).toBeVisible();
+
+    // Closing and reopening the panel keeps that choice.
+    const inboxButton = page
+      .getByTestId("sidebar-primary-menu")
+      .getByRole("button", { name: "Inbox", exact: true });
+    await inboxButton.click();
+    await expect(page.getByTestId("inbox-panel")).toHaveCount(0);
+    await inboxButton.click();
+    await expect(page.getByTestId("inbox-panel")).toBeVisible();
+    await page
+      .getByTestId("inbox-panel")
+      .locator('[data-testid^="home-inbox-item-"]')
+      .filter({ hasText: "Left two comments on the checklist thread." })
+      .first()
+      .click();
+    await expect(page.getByTestId("message-thread-panel")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(drawer).toHaveCount(0);
+
+    // And so does a restart.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(
+      page.evaluate(() =>
+        window.localStorage.getItem("buzz.channels.inboxThreadViewMode"),
+      ),
+    ).resolves.toBe("split");
+  });
+
   test("rows scrolled under the filter header stay behind its backdrop", async ({
     page,
   }) => {
