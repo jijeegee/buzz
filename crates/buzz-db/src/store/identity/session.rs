@@ -14,15 +14,12 @@ use super::{
 use crate::error::{DbError, Result};
 
 /// The device and new session of a completed login.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct LoginSession {
     /// Device id: new, or the reused one for a known install id.
     pub device_id: Uuid,
     /// New session id.
     pub session_id: Uuid,
-    /// Access-token hashes of the reused device's earlier sessions, revoked
-    /// because this login replaces them.
-    pub revoked: Vec<[u8; 32]>,
 }
 
 /// A live device of a principal.
@@ -75,8 +72,9 @@ pub enum RefreshOutcome {
 /// Create (or, for an install id the principal already used, reuse) the
 /// device, then session + first refresh + first access token, in one
 /// transaction (one login = one atomic persist). A reused device keeps its id
-/// and name, is un-revoked, and its earlier sessions are revoked: the install
-/// that logs in again has lost or dropped their tokens.
+/// and name and is un-revoked. Its earlier sessions are left alone: the client
+/// may still discard this grant (a failed mode check, a lost response), and
+/// must then keep the session it had.
 pub(super) async fn complete_login(
     pool: &PgPool,
     principal: &PrincipalId,
@@ -104,7 +102,8 @@ pub(super) async fn complete_login(
         None => None,
     };
     let live_devices: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM devices WHERE principal_id = $1 AND revoked_at IS NULL          AND id IS DISTINCT FROM $2",
+        "SELECT count(*) FROM devices \
+         WHERE principal_id = $1 AND revoked_at IS NULL AND id IS DISTINCT FROM $2",
     )
     .bind(principal.as_bytes().as_slice())
     .bind(known)
@@ -113,29 +112,22 @@ pub(super) async fn complete_login(
     if live_devices >= MAX_DEVICES_PER_PRINCIPAL {
         return Err(DbError::AccessDenied("device limit reached".into()));
     }
-    let mut revoked = Vec::new();
     let device_id = match known {
         Some(device_id) => {
             sqlx::query(
-                "UPDATE devices SET revoked_at = NULL, last_seen_at = now(), platform = $2                  WHERE id = $1",
+                "UPDATE devices SET revoked_at = NULL, last_seen_at = now(), platform = $2 \
+                 WHERE id = $1",
             )
             .bind(device_id)
             .bind(platform)
             .execute(&mut *tx)
             .await?;
-            let sessions: Vec<Uuid> = sqlx::query_scalar(
-                "UPDATE sessions SET revoked_at = now(), revoked_reason = $2                  WHERE device_id = $1 AND revoked_at IS NULL RETURNING id",
-            )
-            .bind(device_id)
-            .bind(RevokeReason::Relogin.as_str())
-            .fetch_all(&mut *tx)
-            .await?;
-            revoked = revoke_session_tokens(&mut tx, &sessions, RevokeReason::Relogin).await?;
             device_id
         }
         None => {
             sqlx::query_scalar(
-                "INSERT INTO devices (principal_id, name, platform, install_id)                  VALUES ($1, $2, $3, $4) RETURNING id",
+                "INSERT INTO devices (principal_id, name, platform, install_id) \
+                 VALUES ($1, $2, $3, $4) RETURNING id",
             )
             .bind(principal.as_bytes().as_slice())
             .bind(device_name)
@@ -173,7 +165,6 @@ pub(super) async fn complete_login(
     Ok(LoginSession {
         device_id,
         session_id,
-        revoked,
     })
 }
 

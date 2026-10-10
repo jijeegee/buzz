@@ -75,8 +75,6 @@ pub enum RevokeReason {
     RevokeAll,
     /// A consumed refresh token was replayed.
     RefreshReused,
-    /// The same install logged in again, replacing its earlier sessions.
-    Relogin,
 }
 
 impl RevokeReason {
@@ -92,7 +90,6 @@ impl RevokeReason {
             Self::AccountDisabled => "account_disabled",
             Self::RevokeAll => "revoke_all",
             Self::RefreshReused => "refresh_reused",
-            Self::Relogin => "relogin",
         }
     }
 }

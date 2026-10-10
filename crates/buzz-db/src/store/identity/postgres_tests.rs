@@ -619,7 +619,8 @@ async fn relogin_with_install_id_reuses_device() {
         .await
         .unwrap();
 
-    // Same install, still signed in (tokens lost): same device, old session revoked.
+    // Same install, still signed in: same device, a new session, and the
+    // earlier one stays usable (the client may still discard this grant).
     let second = db
         .complete_login(
             &owner,
@@ -633,7 +634,13 @@ async fn relogin_with_install_id_reuses_device() {
         .unwrap();
     assert_eq!(second.device_id, first.device_id);
     assert_ne!(second.session_id, first.session_id);
-    assert_eq!(second.revoked, vec![first_access.hash]);
+    assert!(db
+        .lookup_access_token(&first_access.hash)
+        .await
+        .unwrap()
+        .unwrap()
+        .check(Utc::now())
+        .is_ok());
 
     // Logged out, then back in: the device comes back with its name.
     db.revoke_device(&owner, second.device_id, RevokeReason::Logout)
@@ -689,4 +696,39 @@ async fn relogin_with_install_id_reuses_device() {
         .await
         .unwrap();
     assert_ne!(theirs.device_id, first.device_id);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn relogin_with_install_id_is_not_blocked_by_the_device_limit() {
+    let db = Db::from_pool(pool().await);
+    let owner = new_user(&db).await;
+    let install = Some("7c9e6679-7425-40de-944b-e07fc1f90ae7");
+    let mine = db
+        .complete_login(&owner, "Phone", "mobile", install, token(24), token(1))
+        .await
+        .unwrap();
+    for _ in 1..MAX_DEVICES_PER_PRINCIPAL {
+        db.complete_login(&owner, "other", "desktop", None, token(24), token(1))
+            .await
+            .unwrap();
+    }
+    assert!(db
+        .complete_login(&owner, "one more", "desktop", None, token(24), token(1))
+        .await
+        .is_err());
+    // At the limit, live or logged out, the known install still signs in.
+    let again = db
+        .complete_login(&owner, "Phone", "mobile", install, token(24), token(1))
+        .await
+        .unwrap();
+    assert_eq!(again.device_id, mine.device_id);
+    db.revoke_device(&owner, mine.device_id, RevokeReason::Logout)
+        .await
+        .unwrap();
+    let back = db
+        .complete_login(&owner, "Phone", "mobile", install, token(24), token(1))
+        .await
+        .unwrap();
+    assert_eq!(back.device_id, mine.device_id);
 }

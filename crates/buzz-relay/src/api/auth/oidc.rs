@@ -12,13 +12,13 @@ use axum::{
 };
 use buzz_auth::token::{generate_token, verify_pkce, TokenKind};
 use buzz_core::principal::PrincipalId;
-use buzz_db::identity::{IssuedToken, RevokeReason};
+use buzz_db::identity::IssuedToken;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::{auth_error, bad_request, internal, json_object, rate_limit_client, unavailable};
-use crate::identity::{kv, publish_revocations};
+use crate::identity::kv;
 use crate::state::AppState;
 
 /// Pending-login lifetime (`state` → callback).
@@ -580,15 +580,6 @@ pub(super) async fn complete(
         }
         Err(error) => return internal("complete_login", &error),
     };
-    if !session.revoked.is_empty() {
-        publish_revocations(
-            &state,
-            &session.revoked,
-            RevokeReason::Relogin.as_str(),
-            None,
-        )
-        .await;
-    }
     tracing::info!(principal = %principal, device = %session.device_id, "auth.login");
     let expires_in = state.identity.config().access_ttl.as_secs();
     if record.client == "web" {
