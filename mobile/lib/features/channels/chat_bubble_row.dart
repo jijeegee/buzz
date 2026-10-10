@@ -10,8 +10,17 @@ import 'date_formatters.dart';
 const chatOwnBubbleWidthFactor = 0.75;
 
 /// Widest another person's (or agent's) bubble may grow, as a share of the
-/// space right of the avatar column (desktop's value).
-const chatOtherBubbleWidthFactor = 0.92;
+/// space right of the avatar column. Narrower than desktop's 92% so the time
+/// fits beside the bubble.
+const chatOtherBubbleWidthFactor = 0.80;
+
+/// Vertical padding inside a bubble.
+const chatBubbleVerticalPadding = 10.0;
+
+/// Timeline gutters, KakaoTalk-tight: the avatar column hugs the left edge and
+/// own bubbles stop a little short of the right edge.
+const chatListLeftInset = 8.0;
+const chatListRightInset = 12.0;
 
 const _bubbleRadius = Radius.circular(16);
 const _bubbleTailRadius = Radius.circular(6);
@@ -65,9 +74,9 @@ class ChatBubbleColors {
 /// The signed-in user's own messages ([isOwn]) sit on the right with no
 /// avatar or name. Everyone else, including agents the user owns, sits on the
 /// left behind [leading] (the avatar, or an empty avatar-width slot), with the
-/// group's [header] above the first bubble. The time sits outside the bubble,
-/// under its outer corner, and only when [showTime] is set (the last message
-/// of a group). [ownLeading] (the speaker control) sits in the free space left
+/// group's [header] above the first bubble. The time sits beside the bubble
+/// on its outer side, level with its bottom edge, and only when [showTime] is
+/// set (the last message of a group). [ownLeading] (the speaker control) sits in the free space left
 /// of an own bubble so it never narrows the bubble.
 class ChatBubbleRow extends StatelessWidget {
   final bool isOwn;
@@ -115,74 +124,70 @@ class ChatBubbleRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: Grid.twelve,
-          vertical: Grid.half + Grid.quarter,
+          vertical: chatBubbleVerticalPadding,
         ),
         child: child,
       ),
     );
 
     final meta = showTime || edited
-        ? Padding(
-            padding: const EdgeInsets.only(top: Grid.quarter),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (edited)
-                  Text(
-                    '(edited)',
-                    style: chatTimestampTextStyle.copyWith(
-                      color: metaColor,
-                      fontStyle: FontStyle.italic,
-                    ),
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (edited)
+                Text(
+                  '(edited)',
+                  style: chatTimestampTextStyle.copyWith(
+                    color: metaColor,
+                    fontStyle: FontStyle.italic,
                   ),
-                if (edited && showTime) const SizedBox(width: Grid.half),
-                if (showTime)
-                  Text(
-                    key: timestampKey,
-                    formatMessageTime(createdAt),
-                    maxLines: 1,
-                    style: chatTimestampTextStyle.copyWith(color: metaColor),
-                  ),
-              ],
-            ),
+                ),
+              if (edited && showTime) const SizedBox(width: Grid.half),
+              if (showTime)
+                Text(
+                  key: timestampKey,
+                  formatMessageTime(createdAt),
+                  maxLines: 1,
+                  style: chatTimestampTextStyle.copyWith(color: metaColor),
+                ),
+            ],
           )
         : null;
 
-    // A Column sizes to its widest child, so the meta line lines up with the
-    // bubble's outer edge: left under own bubbles, right under others.
-    final bubbleWithMeta = Column(
+    // The time sits beside the bubble on its outer side, level with the
+    // bubble's bottom edge: right of others' bubbles, left of own bubbles.
+    Widget bubbleWithMeta(double maxBubbleWidth) => Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: isOwn
-          ? CrossAxisAlignment.start
-          : CrossAxisAlignment.end,
-      children: [bubble, ?meta],
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (isOwn && meta != null) ...[meta, const SizedBox(width: Grid.half)],
+        Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+            child: bubble,
+          ),
+        ),
+        if (!isOwn && meta != null) ...[const SizedBox(width: Grid.half), meta],
+      ],
     );
 
     if (isOwn) {
       return LayoutBuilder(
-        builder: (context, constraints) {
-          final maxBubbleWidth =
-              constraints.maxWidth * chatOwnBubbleWidthFactor;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (ownLeading != null) ...[
-                    ownLeading!,
-                    const SizedBox(width: Grid.half),
-                  ],
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-                    child: bubbleWithMeta,
-                  ),
-                ],
-              ),
+        builder: (context, constraints) => Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (ownLeading != null) ...[
+              ownLeading!,
+              const SizedBox(width: Grid.half),
             ],
-          );
-        },
+            Flexible(
+              child: bubbleWithMeta(
+                constraints.maxWidth * chatOwnBubbleWidthFactor,
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -197,11 +202,8 @@ class ChatBubbleRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ?header,
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: constraints.maxWidth * chatOtherBubbleWidthFactor,
-                  ),
-                  child: bubbleWithMeta,
+                bubbleWithMeta(
+                  constraints.maxWidth * chatOtherBubbleWidthFactor,
                 ),
               ],
             ),

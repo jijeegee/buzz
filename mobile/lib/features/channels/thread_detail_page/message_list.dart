@@ -99,8 +99,8 @@ class _ThreadMessageList extends StatelessWidget {
               // the content, which jammed the head against the composer
               // whenever a thread had only a handful of replies.
               padding: EdgeInsets.only(
-                left: Grid.gutter,
-                right: Grid.gutter,
+                left: chatListLeftInset,
+                right: chatListRightInset,
                 top: frostedAppBarHeight(context),
                 bottom: Grid.xs + bottomInset,
               ),

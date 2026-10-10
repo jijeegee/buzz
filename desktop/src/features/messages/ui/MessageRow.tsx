@@ -646,10 +646,14 @@ export const MessageRow = React.memo(
       </div>
     ) : null;
 
-    // The time sits outside the bubble, under its outer corner, on the last
-    // message of a group only (mobile follows the same rule).
+    // The time sits beside the bubble on its outer side, level with the
+    // bubble's bottom edge, on the last message of a group only (mobile
+    // follows the same rule).
     const bubbleTimeNode = showTimestamp ? (
-      <div className="mt-0.5 px-1 text-2xs" data-testid="message-bubble-time">
+      <div
+        className="shrink-0 whitespace-nowrap text-2xs"
+        data-testid="message-bubble-time"
+      >
         <MessageTimestamp
           className="text-2xs"
           clockOnly
@@ -695,7 +699,9 @@ export const MessageRow = React.memo(
     const bubbleNode = (
       <div
         className={cn(
-          "relative min-w-0 max-w-full",
+          "relative min-w-0",
+          // Own bubbles stay chat-narrow; others get room for agent reports.
+          isOwnMessage ? "max-w-[75%]" : "max-w-[92%]",
           emojiOnly
             ? "px-1"
             : cn(
@@ -959,11 +965,8 @@ export const MessageRow = React.memo(
           >
             <div
               className={cn(
-                "flex min-w-0 flex-col",
-                // Own bubbles stay chat-narrow; others get room for agent reports.
-                isOwnMessage
-                  ? "max-w-[75%] items-start"
-                  : "max-w-[92%] items-end",
+                "flex w-full min-w-0 items-end gap-1",
+                isOwnMessage && "flex-row-reverse",
               )}
             >
               {bubbleNode}

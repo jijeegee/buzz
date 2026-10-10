@@ -790,8 +790,8 @@ class _MessageList extends HookConsumerWidget {
                 itemPositionsListener: itemPositionsListener,
                 reverse: true,
                 padding: EdgeInsets.only(
-                  left: Grid.gutter,
-                  right: Grid.gutter,
+                  left: chatListLeftInset,
+                  right: chatListRightInset,
                   top: frostedAppBarHeight(
                     context,
                     titleContentHeight: appBarTitleContentHeight,

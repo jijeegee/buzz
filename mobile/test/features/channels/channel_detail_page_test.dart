@@ -27,6 +27,7 @@ import 'package:pointycastle/digests/sha256.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_detail_page.dart';
+import 'package:buzz/features/channels/chat_bubble_row.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channel_messages_provider.dart';
 import 'package:buzz/features/channels/channel_window.dart';
@@ -3918,19 +3919,19 @@ void main() {
         final otherBubble = tester.getRect(
           find.byKey(const ValueKey('message-bubble-other-1')),
         );
-        final listRight = 400 - Grid.gutter;
+        const listRight = 400 - chatListRightInset;
         expect(ownBubble.right, closeTo(listRight, 0.01));
         expect(
           otherBubble.left,
           closeTo(
-            Grid.gutter + messageAvatarSize + messageAvatarContentGap,
+            chatListLeftInset + messageAvatarSize + messageAvatarContentGap,
             0.01,
           ),
         );
         expect(otherBubble.right, lessThan(listRight));
 
-        // The time shows only under the last bubble of each group, outside it:
-        // under the right corner for others, the left corner for own.
+        // The time shows only beside the last bubble of each group, level with
+        // its bottom edge: right of others' bubbles, left of own bubbles.
         for (final id in ['other-1', 'own-1']) {
           expect(find.byKey(ValueKey('message-timestamp-$id')), findsNothing);
         }
@@ -3940,16 +3941,16 @@ void main() {
         final otherLast = tester.getRect(
           find.byKey(const ValueKey('message-bubble-other-2')),
         );
-        expect(otherTime.top, greaterThanOrEqualTo(otherLast.bottom));
-        expect(otherTime.right, closeTo(otherLast.right, 0.01));
+        expect(otherTime.bottom, closeTo(otherLast.bottom, 0.01));
+        expect(otherTime.left, closeTo(otherLast.right + Grid.half, 0.01));
         final ownTime = tester.getRect(
           find.byKey(const ValueKey('message-timestamp-own-2')),
         );
         final ownLast = tester.getRect(
           find.byKey(const ValueKey('message-bubble-own-2')),
         );
-        expect(ownTime.top, greaterThanOrEqualTo(ownLast.bottom));
-        expect(ownTime.left, closeTo(ownLast.left, 0.01));
+        expect(ownTime.bottom, closeTo(ownLast.bottom, 0.01));
+        expect(ownTime.right, closeTo(ownLast.left - Grid.half, 0.01));
       },
     );
 
@@ -8746,7 +8747,12 @@ void main() {
           // A regular body sits inside its bubble, one bubble padding lower.
           expect(
             huddleBody.top - huddleAuthor.bottom,
-            closeTo(regularBody.top - regularAuthor.bottom - 6, 0.01),
+            closeTo(
+              regularBody.top -
+                  regularAuthor.bottom -
+                  chatBubbleVerticalPadding,
+              0.01,
+            ),
           );
         },
       );
@@ -12352,7 +12358,7 @@ void main() {
               id: 'reply-$i',
               pubkey: 'bob',
               content: i == 29
-                  ? List.filled(31, 'Tall latest reply').join('\n')
+                  ? List.filled(31, 'Tall reply').join('\n')
                   : 'Reply $i',
               createdAt: 1100 + i,
               extraTags: const [
@@ -12535,7 +12541,8 @@ void main() {
           findsNothing,
         );
 
-        for (var i = 0; i < 12; i++) {
+        // Drag past the tail; extra drags clamp at the end of the list.
+        for (var i = 0; i < 20; i++) {
           await tester.drag(list, const Offset(0, -100));
           await tester.pumpAndSettle();
         }
@@ -12718,7 +12725,7 @@ void main() {
               id: 'reply-$i',
               pubkey: 'bob',
               content: i == 29
-                  ? List.filled(13, 'Tall latest reply').join('\n')
+                  ? List.filled(13, 'Tall reply').join('\n')
                   : 'Reply $i',
               createdAt: 1100 + i,
               extraTags: const [
@@ -13304,7 +13311,7 @@ void main() {
                   id: 'reply-$i',
                   pubkey: 'bob',
                   content: i == replyCount - 1 && tail.isLong
-                      ? List.filled(8, 'Tall latest reply').join('\n')
+                      ? List.filled(8, 'Tall reply').join('\n')
                       : 'Reply $i',
                   createdAt: 1100 + i,
                   extraTags: const [
