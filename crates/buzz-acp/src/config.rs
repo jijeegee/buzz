@@ -590,6 +590,14 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_LAYER0_GOALS_FILE")]
     pub layer0_goals_file: Option<PathBuf>,
 
+    /// JSON file holding the agent's text settings (`system_prompt`,
+    /// `team_instructions`, `task_threads`, `context_history`), re-read every
+    /// turn so edits reach running sessions without a restart. Written by
+    /// Buzz Desktop; its values replace the matching flags once it is read.
+    /// A prompt given with `--system-prompt-file` stays fixed.
+    #[arg(long, env = "BUZZ_ACP_LIVE_SETTINGS_FILE")]
+    pub live_settings_file: Option<PathBuf>,
+
     /// Publish encrypted ACP observer frames over the relay.
     #[arg(long, env = "BUZZ_ACP_RELAY_OBSERVER", default_value_t = false)]
     pub relay_observer: bool,
@@ -751,6 +759,10 @@ pub struct Config {
     pub goals_enabled: bool,
     /// Source of the current `<agent-goal>` / `<owner-goal>` sections.
     pub layer0_goals: crate::layer0_goals::Layer0Goals,
+    /// Source of the current text settings when Desktop keeps them in a live
+    /// file (`--live-settings-file`); `system_prompt`, `team_instructions`,
+    /// `context_history`, and `task_threads` hold the launch values.
+    pub live_settings: crate::live_settings::LiveSettings,
     pub initial_message: Option<String>,
     pub subscribe_mode: SubscribeMode,
     pub dedup_mode: DedupMode,
@@ -1112,14 +1124,15 @@ struct Layer0GoalEnv {
     agent_goal: Option<String>,
     owner_goal: Option<String>,
     goals_file: Option<String>,
+    live_settings_file: Option<String>,
 }
 
 static LAYER0_GOAL_ENV: std::sync::OnceLock<Layer0GoalEnv> = std::sync::OnceLock::new();
 
-/// Move the private layer 0 goals (and the path of the file holding them)
-/// out of the environment so child processes and their shell tools cannot
-/// print them; `Config::from_cli` reads the stashed copy. Only touches
-/// variables that are set.
+/// Move the private layer 0 goals (and the paths of the files holding them
+/// and the live settings) out of the environment so child processes and
+/// their shell tools cannot print them; `Config::from_cli` reads the stashed
+/// copy. Only touches variables that are set.
 ///
 /// Must be called before the tokio runtime starts, like
 /// [`propagate_legacy_env_vars`].
@@ -1135,6 +1148,7 @@ pub fn take_layer0_goal_env() {
         agent_goal: take("BUZZ_ACP_AGENT_GOAL"),
         owner_goal: take("BUZZ_ACP_OWNER_GOAL"),
         goals_file: take("BUZZ_ACP_LAYER0_GOALS_FILE"),
+        live_settings_file: take("BUZZ_ACP_LIVE_SETTINGS_FILE"),
     });
 }
 
@@ -1224,6 +1238,8 @@ impl Config {
             }
         };
 
+        let system_prompt_from_file =
+            args.system_prompt.is_none() && args.system_prompt_file.is_some();
         let system_prompt = if let Some(text) = args.system_prompt {
             Some(text)
         } else if let Some(ref path) = args.system_prompt_file {
@@ -1296,6 +1312,37 @@ impl Config {
             crate::context_history::ContextHistory::Recent
         } else {
             crate::context_history::parse_context_history(args.context_history.as_deref())
+        };
+        let team_instructions = args
+            .team_instructions
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let task_threads =
+            crate::task_threads::parse_task_thread_triggers(args.task_threads.as_deref());
+        let live_settings = {
+            use crate::live_settings::{LivePins, LiveSettings, LiveValues};
+            let env_file = LAYER0_GOAL_ENV
+                .get()
+                .and_then(|env| env.live_settings_file.clone())
+                .map(PathBuf::from);
+            match args.live_settings_file.clone().or(env_file) {
+                Some(path) => LiveSettings::file(
+                    path,
+                    LiveValues {
+                        system_prompt: system_prompt.clone(),
+                        team_instructions: team_instructions.clone(),
+                        task_threads: task_threads.clone(),
+                        context_history,
+                    },
+                    LivePins {
+                        system_prompt: system_prompt_from_file,
+                        recent_history_only: args.dispatcher,
+                    },
+                ),
+                None => LiveSettings::default(),
+            }
         };
 
         if matches!(args.subscribe, SubscribeMode::Config) {
@@ -1479,12 +1526,8 @@ impl Config {
             turn_liveness_secs,
             heartbeat_prompt,
             system_prompt,
-            team_instructions: args
-                .team_instructions
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string),
+            team_instructions,
+            live_settings,
             goals_enabled: !args.no_goals,
             layer0_goals: {
                 use crate::layer0_goals::Layer0Goals;
@@ -1544,9 +1587,7 @@ impl Config {
             base_prompt_content,
             dispatcher: args.dispatcher,
             channel_roster: args.channel_roster,
-            task_threads: crate::task_threads::parse_task_thread_triggers(
-                args.task_threads.as_deref(),
-            ),
+            task_threads,
             dispatcher_config,
         };
 
@@ -1956,6 +1997,7 @@ mod tests {
             team_instructions: None,
             goals_enabled: true,
             layer0_goals: Default::default(),
+            live_settings: Default::default(),
             initial_message: None,
             subscribe_mode: mode,
             dedup_mode: DedupMode::Queue,
@@ -3732,6 +3774,51 @@ channels = "ALL"
             dispatcher.context_message_limit,
             DISPATCHER_CONTEXT_MESSAGE_LIMIT
         );
+    }
+
+    #[test]
+    fn live_settings_file_replaces_launch_values_except_pinned_ones() {
+        use crate::context_history::{ContextBudget, ContextHistory};
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("live.json");
+        std::fs::write(
+            &live,
+            r#"{"system_prompt":"Live prompt","team_instructions":"Live team","context_history":"large"}"#,
+        )
+        .unwrap();
+        let live_arg = live.to_str().unwrap();
+
+        assert_eq!(from_cli(&[]).unwrap().live_settings.current(), None);
+
+        let config = from_cli(&[
+            "--system-prompt",
+            "Launch prompt",
+            "--live-settings-file",
+            live_arg,
+        ])
+        .unwrap();
+        let values = config.live_settings.current().unwrap();
+        assert_eq!(values.system_prompt.as_deref(), Some("Live prompt"));
+        assert_eq!(values.team_instructions.as_deref(), Some("Live team"));
+        assert_eq!(
+            values.context_history,
+            ContextHistory::Budget(ContextBudget::Large)
+        );
+
+        // A prompt file and a dispatcher's recent window stay fixed.
+        let prompt_file = dir.path().join("prompt.md");
+        std::fs::write(&prompt_file, "File prompt").unwrap();
+        let config = from_cli(&[
+            "--dispatcher",
+            "--system-prompt-file",
+            prompt_file.to_str().unwrap(),
+            "--live-settings-file",
+            live_arg,
+        ])
+        .unwrap();
+        let values = config.live_settings.current().unwrap();
+        assert_eq!(values.system_prompt.as_deref(), Some("File prompt"));
+        assert_eq!(values.context_history, ContextHistory::Recent);
     }
 
     #[test]

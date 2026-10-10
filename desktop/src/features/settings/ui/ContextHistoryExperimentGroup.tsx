@@ -17,7 +17,7 @@ import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
  * Settings › Experiments › "New session history": how much earlier
  * conversation an agent reads when it starts a fresh session for a channel
  * main timeline or a thread. Resumed sessions and channel hosts keep the
- * recent messages. Running agents apply a change after a restart.
+ * recent messages. Running agents apply a change to their next new session.
  */
 export function ContextHistoryExperimentGroup() {
   const query = useContextHistoryQuery();
@@ -29,7 +29,7 @@ export function ContextHistoryExperimentGroup() {
   return (
     <SettingsOptionGroup
       data-testid="settings-context-history"
-      description="What an agent reads when it starts a new session for a channel or thread, for example when its previous session could not be resumed. Resumed sessions and channel hosts keep the recent messages. Applies after agents restart."
+      description="What an agent reads when it starts a new session for a channel or thread, for example when its previous session could not be resumed. Resumed sessions and channel hosts keep the recent messages. Applies to the next new session, without a restart."
       title="New session history"
     >
       <SettingsOptionRow>

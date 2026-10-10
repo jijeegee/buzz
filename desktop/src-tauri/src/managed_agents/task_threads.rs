@@ -2,10 +2,11 @@
 //! thread without being asked.
 //!
 //! One desktop-wide setting stored in `<app-data>/agents/task-threads.json`
-//! (`{ "level": "standard", "triggers": [...] }`). Like channel routing it is
-//! deliberately not a `GlobalAgentConfig` field, so changing it only raises the
-//! restart badge instead of restarting every agent. The harness receives the
-//! enabled triggers as `BUZZ_ACP_TASK_THREADS`, and only under the thread
+//! (`{ "level": "standard", "triggers": [...] }`). It is deliberately not a
+//! `GlobalAgentConfig` field, so changing it never restarts an agent: running
+//! agents read it from their live settings file (`live_settings`) on their
+//! next message. The harness receives the enabled triggers (at launch as
+//! `BUZZ_ACP_TASK_THREADS`, then through that file) only under the thread
 //! session policy, where task threads get their own session and report back.
 
 use std::path::{Path, PathBuf};
@@ -64,7 +65,9 @@ impl TaskThreadLevel {
             Self::Off => Some(&[]),
             Self::Minimal => Some(&[LongRunning]),
             Self::Standard => Some(&[LongRunning, MultiStep, Parallel]),
-            Self::Proactive => Some(&[LongRunning, MultiStep, Parallel, SideDiscussion, Delegation]),
+            Self::Proactive => {
+                Some(&[LongRunning, MultiStep, Parallel, SideDiscussion, Delegation])
+            }
             Self::Custom => None,
         }
     }
@@ -142,10 +145,16 @@ pub fn save_task_threads<R: tauri::Runtime>(
     app: &AppHandle<R>,
     setting: &TaskThreadsSetting,
 ) -> Result<(), String> {
-    save_task_threads_at(&task_threads_path(app)?, setting)
+    save_task_threads_at(&task_threads_path(app)?, setting)?;
+    // Running agents pick the change up from their live settings files.
+    super::live_settings::schedule_live_settings_sync(app);
+    Ok(())
 }
 
-pub(crate) fn save_task_threads_at(path: &Path, setting: &TaskThreadsSetting) -> Result<(), String> {
+pub(crate) fn save_task_threads_at(
+    path: &Path,
+    setting: &TaskThreadsSetting,
+) -> Result<(), String> {
     let payload = serde_json::to_vec_pretty(setting)
         .map_err(|error| format!("failed to serialize task threads setting: {error}"))?;
     atomic_write_json(path, &payload)
@@ -236,7 +245,10 @@ mod tests {
             task_threads_env_for(AcpSessionPolicy::Thread, "long_running"),
             Some("long_running")
         );
-        assert_eq!(task_threads_env_for(AcpSessionPolicy::Channel, "long_running"), None);
+        assert_eq!(
+            task_threads_env_for(AcpSessionPolicy::Channel, "long_running"),
+            None
+        );
         assert_eq!(task_threads_env_for(AcpSessionPolicy::Thread, ""), None);
 
         let mut command = std::process::Command::new("true");

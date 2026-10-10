@@ -26,6 +26,7 @@ mod env_vars;
 pub(crate) mod git_bash;
 pub(crate) mod global_config;
 pub(crate) mod hermes_profile;
+pub(crate) mod live_settings;
 mod managed_node_paths;
 mod nest;
 mod pair_admission;

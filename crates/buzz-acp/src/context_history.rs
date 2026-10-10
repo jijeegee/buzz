@@ -2,7 +2,10 @@
 //!
 //! The desktop passes the choice in `BUZZ_ACP_CONTEXT_HISTORY` as `small`,
 //! `medium`, or `large`; anything else (including unset) keeps the default of
-//! the most recent `context_message_limit` messages. A budget applies only to
+//! the most recent `context_message_limit` messages. Buzz Desktop also keeps
+//! it in the live settings file (see `live_settings`), read when a session's
+//! context is fetched, so a change applies to the next new session without a
+//! restart. A budget applies only to
 //! the first `<thread-context>` / `<conversation-context>` fetch of a thread or
 //! main-timeline scope in a session this harness created: a reattached
 //! (resumed) session already holds the earlier conversation, and later turns

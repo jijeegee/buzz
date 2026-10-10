@@ -19,6 +19,7 @@ mod isolated_execution;
 mod layer0_goals;
 #[cfg(test)]
 mod lead_rules_fixture_tests;
+mod live_settings;
 mod observer;
 mod observer_policy;
 mod observer_summary;
@@ -10893,6 +10894,7 @@ mod build_mcp_servers_tests {
             team_instructions: None,
             goals_enabled: true,
             layer0_goals: Default::default(),
+            live_settings: Default::default(),
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,
             dedup_mode: config::DedupMode::Queue,
@@ -11762,6 +11764,7 @@ mod error_outcome_emission_tests {
             team_instructions: None,
             goals_enabled: true,
             layer0_goals: Default::default(),
+            live_settings: Default::default(),
             initial_message: None,
             subscribe_mode: config::SubscribeMode::All,
             dedup_mode: config::DedupMode::Queue,

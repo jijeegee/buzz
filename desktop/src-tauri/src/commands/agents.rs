@@ -32,7 +32,7 @@ mod pending;
 use pending::build_agent_archive_request;
 pub(crate) use pending::{retain_managed_agent_pending, tombstone_managed_agent_pending};
 
-/// Build a summary from fresh disk state (personas, teams, global config).
+/// Build a summary from fresh disk state (personas, global config).
 /// For one-shot command paths only — the 5s list poll calls
 /// `build_managed_agent_summary` directly with stores loaded once per call,
 /// not once per record.
@@ -49,7 +49,6 @@ pub(super) fn summarize_from_disk(
         record,
         runtimes,
         &load_personas(app).unwrap_or_default(),
-        &load_teams(app).unwrap_or_default(),
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
     )
@@ -357,7 +356,6 @@ where
         record,
         &runtimes,
         &personas,
-        &load_teams(app).unwrap_or_default(),
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
     )
@@ -397,9 +395,8 @@ pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSumma
 
         let personas = load_personas(&app).unwrap_or_default();
         // One disk read for the whole list — build_managed_agent_summary takes
-        // teams and config as parameters precisely so this poll-every-5s call
-        // does not re-read them per record.
-        let teams = load_teams(&app).unwrap_or_default();
+        // personas and config as parameters precisely so this poll-every-5s
+        // call does not re-read them per record.
         let global_config =
             crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
         let routing_mode =
@@ -412,7 +409,6 @@ pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSumma
                     record,
                     &runtimes,
                     &personas,
-                    &teams,
                     &global_config,
                     routing_mode,
                 )
@@ -1367,6 +1363,7 @@ async fn delete_managed_agent_locally(
             })?;
             crate::managed_agents::delete_agent_key(&pubkey);
             crate::commands::remove_agent_goals_file(&app, &pubkey);
+            crate::managed_agents::live_settings::remove_live_settings_file(&app, &pubkey);
             // Tombstone after confirmed removal (inside lock; every published
             // agent tombstones). The NIP-IA kind:9035 archive request — which
             // stops the identity appearing in member pickers and autocomplete —

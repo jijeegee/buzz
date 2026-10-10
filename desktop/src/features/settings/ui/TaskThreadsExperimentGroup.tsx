@@ -18,7 +18,7 @@ import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
  * Settings › Experiments › "Agents open task threads": how readily agents
  * with the "Each thread" conversation context move work into a task thread
  * without being asked. A level presets the situations; ticking one directly
- * makes the level Custom. Running agents apply a change after a restart.
+ * makes the level Custom. Running agents apply a change on their next message.
  */
 export function TaskThreadsExperimentGroup() {
   const query = useTaskThreadsQuery();
@@ -31,7 +31,7 @@ export function TaskThreadsExperimentGroup() {
   return (
     <SettingsOptionGroup
       data-testid="settings-task-threads"
-      description="When agents move work into its own thread without being asked. Applies to agents whose conversation context is Each thread, after they restart."
+      description="When agents move work into its own thread without being asked. Applies to agents whose conversation context is Each thread, from their next message."
       title="Agents open task threads"
     >
       <SettingsOptionRow>

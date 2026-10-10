@@ -418,6 +418,8 @@ pub fn save_managed_agents<R: tauri::Runtime>(
     persist_agent_keys(&mut sorted);
 
     write_agent_store(app, definitions, sorted)?;
+    // Prompt and team edits reach running agents through their live settings.
+    super::live_settings::schedule_live_settings_sync(app);
     // A created, moved or deleted agent changes the list this device hosts.
     crate::device_robot::spawn_publish_agent_host_devices(app);
     Ok(())
@@ -433,7 +435,10 @@ pub(crate) fn save_agent_definitions<R: tauri::Runtime>(
     instances.retain(|record| !record.pubkey.is_empty());
     let mut definitions = definitions.to_vec();
     definitions.retain(|record| record.pubkey.is_empty());
-    write_agent_store(app, definitions, instances)
+    write_agent_store(app, definitions, instances)?;
+    // Persona prompt edits reach running agents through their live settings.
+    super::live_settings::schedule_live_settings_sync(app);
+    Ok(())
 }
 
 /// Serialize definitions + instances into the single unified store file.

@@ -1272,13 +1272,10 @@ fn make_pair_runtime_placeholder() -> crate::managed_agents::ManagedAgentPairRun
         spawn_config: crate::managed_agents::spawn_snapshot::prospective_spawn_config_snapshot(
             &minimal_record(&"cc".repeat(32)),
             &[],
-            &[],
             "wss://relay.example",
             &Default::default(),
             false,
             crate::managed_agents::channel_routing::RoutingRole::None,
-            "",
-            "",
         ),
         setup_mode: false,
         adapter_availability: None,

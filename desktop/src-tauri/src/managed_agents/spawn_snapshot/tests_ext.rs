@@ -399,13 +399,10 @@ fn snapshot_under(policy: AcpSessionPolicy) -> SpawnConfigSnapshot {
     prospective_spawn_config_snapshot(
         &record,
         &[definition],
-        &[],
         "wss://ws.example",
         &Default::default(),
         false,
         crate::managed_agents::channel_routing::RoutingRole::None,
-        "",
-        "",
     )
 }
 
@@ -439,13 +436,10 @@ fn snapshot_with_star(
     prospective_spawn_config_snapshot(
         &record,
         &[],
-        &[],
         "wss://ws.example",
         &Default::default(),
         false,
         role,
-        "",
-        "",
     )
 }
 

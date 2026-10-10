@@ -1,7 +1,7 @@
 //! Settings › Experiments › "New session history" commands.
 //!
-//! The saved setting is read by every launch; running agents pick a change up
-//! on restart, which the restart badge surfaces through the spawn snapshot.
+//! The saved setting is read by every launch, and running agents pick a change
+//! up for their next new session through their live settings file.
 
 use tauri::AppHandle;
 

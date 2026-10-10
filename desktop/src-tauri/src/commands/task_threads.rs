@@ -1,11 +1,13 @@
 //! Settings › Experiments › "Agents open task threads" commands.
 //!
-//! The saved setting is read by every launch; running agents pick a change up
-//! on restart, which the restart badge surfaces through the spawn snapshot.
+//! The saved setting is read by every launch, and running agents pick a change
+//! up on their next message through their live settings file.
 
 use tauri::AppHandle;
 
-use crate::managed_agents::task_threads::{load_task_threads, save_task_threads, TaskThreadsSetting};
+use crate::managed_agents::task_threads::{
+    load_task_threads, save_task_threads, TaskThreadsSetting,
+};
 
 #[tauri::command]
 pub async fn get_task_threads(app: AppHandle) -> Result<TaskThreadsSetting, String> {

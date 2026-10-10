@@ -54,15 +54,6 @@ function ChangeDescription({ change }: { change: RestartChange }) {
           <span>{formatJsonValue(change.after)}</span>
         </span>
       );
-    case "text": {
-      const before = change.before_chars ?? 0;
-      const after = change.after_chars ?? 0;
-      return (
-        <span>
-          {before} chars → {after} chars
-        </span>
-      );
-    }
     case "masked":
       return (
         <span>

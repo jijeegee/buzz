@@ -2089,6 +2089,10 @@ pub struct FormatPromptArgs<'a> {
     /// Rendered `<goal-update>` body — layer 0 goals that changed since this
     /// live session last saw them (see `layer0_goals::render_goal_update`).
     pub goal_update: Option<&'a str>,
+    /// Rendered `<settings-update>` body — live text settings that changed
+    /// since this live session last saw them (see
+    /// `live_settings::render_settings_update`).
+    pub settings_update: Option<&'a str>,
     pub conversation_context: Option<&'a ConversationContext>,
     /// True when delta filtering removed context already available to this
     /// live session, either as prior input or as the agent's own reply.
@@ -2325,6 +2329,12 @@ pub fn format_prompt(batch: &FlushBatch, args: &FormatPromptArgs<'_>) -> Vec<Str
         ),
         reply_anchor.as_deref(),
     ));
+    if let Some(update) = args.settings_update {
+        sections.push(crate::prompt_framing::semantic_section(
+            "settings-update",
+            update,
+        ));
+    }
     if let Some(update) = args.goal_update {
         sections.push(crate::prompt_framing::semantic_section(
             "goal-update",

@@ -22,6 +22,11 @@
 //!   change what runs.
 //! - Channel membership is not an input: agents pick up channel changes live
 //!   (#1468), never via restart.
+//! - Text-only settings are not inputs either: the system prompt, team
+//!   instructions, task thread rules, and new-session history budget reach
+//!   running agents through their live settings file (`live_settings`), so
+//!   editing them never needs a restart. A prompt or team instruction set as
+//!   a user env var is still part of `env` like any other variable.
 //!
 //! The snapshot never crosses a process or persistence boundary — it is
 //! runtime state only, held on the running `ManagedAgentProcess`.
@@ -69,8 +74,6 @@ pub(crate) struct SpawnConfigInputs<'a> {
     pub descriptor: &'a EffectiveHarnessDescriptor,
     /// Resolved workspace/pair relay — never the record's legacy pin.
     pub relay_url: &'a str,
-    pub team_instructions: Option<&'a str>,
-    pub system_prompt: Option<&'a str>,
     pub model: Option<&'a str>,
     pub provider: Option<&'a str>,
     /// Compile-time distribution capability projected at this runtime boundary.
@@ -84,12 +87,6 @@ pub(crate) struct SpawnConfigInputs<'a> {
     /// The channel routing role the launch applies (`routing_role_for`:
     /// saved mode × the record's star), which decides the routing env.
     pub routing_role: RoutingRole,
-    /// The desktop-wide task thread trigger list (`task-threads.json`); the
-    /// launch passes it on only under the thread policy.
-    pub task_threads: &'a str,
-    /// The desktop-wide new-session history budget (`context-history.json`);
-    /// the launch passes it on to every role except a dispatcher.
-    pub context_history: &'a str,
 }
 
 /// The effective spawn configuration of one managed-agent process.
@@ -121,8 +118,6 @@ pub(crate) struct SpawnConfigSnapshot {
     /// definition -> global -> persona -> agent.
     pub env: BTreeMap<String, String>,
     pub relay_url: String,
-    pub team_instructions: Option<String>,
-    pub system_prompt: Option<String>,
     pub model: Option<String>,
     pub provider: Option<String>,
     /// `None` when a user env override shadows `BUZZ_ACP_SESSION_TITLE`: spawn
@@ -169,14 +164,6 @@ pub(crate) struct SpawnConfigSnapshot {
     /// after user env, so it is captured explicitly like `session_policy`
     /// rather than read back out of `env`.
     pub routing_role: RoutingRole,
-    /// The `BUZZ_ACP_TASK_THREADS` list this launch applied (empty when none):
-    /// written on the spawn `Command` after user env, so it is captured
-    /// explicitly, and changing the setting raises the restart badge.
-    pub task_threads: String,
-    /// The `BUZZ_ACP_CONTEXT_HISTORY` budget this launch applied (empty when
-    /// none): written on the spawn `Command` after user env, so it is captured
-    /// explicitly, and changing the setting raises the restart badge.
-    pub context_history: String,
 }
 
 /// The startup effort a spawn actually applied, read from the single effort key
@@ -210,15 +197,11 @@ impl SpawnConfigSnapshot {
             record,
             descriptor,
             relay_url,
-            team_instructions,
-            system_prompt,
             model,
             provider,
             enforced_owner_only,
             session_policy,
             routing_role,
-            task_threads,
-            context_history,
         } = inputs;
         let (respond_to, respond_to_allowlist) =
             super::projected_access_with_policy(record, enforced_owner_only);
@@ -255,8 +238,6 @@ impl SpawnConfigSnapshot {
                 env
             },
             relay_url: relay_url.to_string(),
-            team_instructions: team_instructions.map(str::to_string),
-            system_prompt: system_prompt.map(str::to_string),
             model: model.map(str::to_string),
             provider: provider.map(str::to_string),
             session_title: (!descriptor.env.contains_key(SESSION_TITLE_ENV_VAR))
@@ -287,15 +268,6 @@ impl SpawnConfigSnapshot {
             effort_level: effective_effort(descriptor),
             session_policy: session_policy.as_str().to_string(),
             routing_role,
-            task_threads: super::task_threads::task_threads_env_for(session_policy, task_threads)
-                .unwrap_or_default()
-                .to_string(),
-            context_history: super::context_history::context_history_env_for(
-                routing_role,
-                context_history,
-            )
-            .unwrap_or_default()
-            .to_string(),
         }
     }
 
@@ -323,11 +295,9 @@ impl std::fmt::Debug for SpawnConfigSnapshot {
 }
 
 /// Snapshot the effective spawn configuration `record` would get if it were
-/// started right now under the current `personas`/`teams`/`global`, resolving
+/// started right now under the current `personas`/`global`, resolving
 /// a blank record relay against `workspace_relay`. `routing_role` is the
-/// caller's `routing_role_for` under the saved channel routing mode,
-/// `task_threads` the saved task thread trigger list, and `context_history`
-/// the saved new-session history budget.
+/// caller's `routing_role_for` under the saved channel routing mode.
 ///
 /// Pure — no `AppHandle`, no disk, no keyring. This is the *prospective* side
 /// of the comparison; the stamped side is built at spawn from the values that
@@ -335,13 +305,10 @@ impl std::fmt::Debug for SpawnConfigSnapshot {
 pub(crate) fn prospective_spawn_config_snapshot(
     record: &ManagedAgentRecord,
     personas: &[AgentDefinition],
-    teams: &[TeamRecord],
     workspace_relay: &str,
     global: &GlobalAgentConfig,
     enforced_owner_only: bool,
     routing_role: RoutingRole,
-    task_threads: &str,
-    context_history: &str,
 ) -> SpawnConfigSnapshot {
     // Prospective re-snapshot: apply the same `apply_persona_snapshot` the
     // start/restore paths run right before spawning, so this describes what a
@@ -368,17 +335,15 @@ pub(crate) fn prospective_spawn_config_snapshot(
                 }
             });
 
-    // Prompt, model, and provider all come from ONE `resolve_effective_config`
-    // call — the SAME resolve `spawn_agent_child` performs for the env write,
-    // so env write and this badge cannot disagree. An orphaned link (missing
-    // definition) resolves as if all three were absent: `spawn_agent_child`
+    // Model and provider come from ONE `resolve_effective_config` call — the
+    // SAME resolve `spawn_agent_child` performs for the env write, so env
+    // write and this badge cannot disagree. An orphaned link (missing
+    // definition) resolves as if both were absent: `spawn_agent_child`
     // refuses to spawn an orphan regardless, and `eligible_restart_diff`
     // suppresses the badge for one.
-    let (prompt, model, provider) = match resolve_effective_config(record, personas, global) {
-        EffectiveConfigResult::Resolved(cfg) => {
-            (cfg.system_prompt.value, cfg.model.value, cfg.provider.value)
-        }
-        EffectiveConfigResult::OrphanedInstance { .. } => (None, None, None),
+    let (model, provider) = match resolve_effective_config(record, personas, global) {
+        EffectiveConfigResult::Resolved(cfg) => (cfg.model.value, cfg.provider.value),
+        EffectiveConfigResult::OrphanedInstance { .. } => (None, None),
     };
 
     SpawnConfigSnapshot::from_inputs(SpawnConfigInputs {
@@ -387,15 +352,11 @@ pub(crate) fn prospective_spawn_config_snapshot(
         // Resolved, not stored: every record spawns on the workspace relay
         // (legacy pins ignored), so a workspace relay change must badge.
         relay_url: &crate::relay::effective_agent_relay_url(&record.relay_url, workspace_relay),
-        team_instructions: effective_team_instructions(record, teams).as_deref(),
-        system_prompt: prompt.as_deref(),
         model: model.as_deref(),
         provider: provider.as_deref(),
         enforced_owner_only,
         session_policy: record.session_policy,
         routing_role,
-        task_threads,
-        context_history,
     })
 }
 

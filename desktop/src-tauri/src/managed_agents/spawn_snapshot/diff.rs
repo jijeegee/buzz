@@ -39,11 +39,6 @@ pub struct RestartDiffEntry {
 pub enum RestartChange {
     /// Safe scalar or array shown verbatim. `null` means absent.
     Value { before: Value, after: Value },
-    /// Large text shown as character counts only. `null` means absent.
-    Text {
-        before_chars: Option<usize>,
-        after_chars: Option<usize>,
-    },
     /// Secret-bearing leaf. `null` means absent.
     Masked {
         before: Option<String>,
@@ -61,8 +56,6 @@ pub enum RestartChange {
 enum MaskPolicy {
     /// Shown verbatim.
     Plain,
-    /// Character counts only.
-    Text,
     /// `••••` plus the last four characters when longer than eight.
     MaskedSuffix,
     /// `••••` and nothing else.
@@ -76,9 +69,6 @@ enum MaskPolicy {
 /// is too large to render; everything else falls through to `Plain`.
 fn policy_for(path: &str) -> MaskPolicy {
     match path {
-        // Arbitrary user text — a rendered before/after would be unbounded as
-        // well as unreadable.
-        "system_prompt" | "team_instructions" => MaskPolicy::Text,
         // Arbitrary CLI arguments: `--token=...` is legal, so no part of the
         // value may be disclosed. Same for the relay URL — `normalize_relay_url`
         // rejects userinfo but deliberately preserves query strings, so
@@ -109,8 +99,6 @@ fn policy_for(path: &str) -> MaskPolicy {
         //                                       — numeric limits
         //   adapter_availability                — an enum variant name
         //   routing_role                        — none / dispatcher / lead
-        //   task_threads                        — trigger names
-        //   context_history                     — a budget name
         _ => MaskPolicy::Plain,
     }
 }
@@ -125,16 +113,6 @@ fn mask(value: &str) -> String {
     match chars.len() {
         len if len > 8 => format!("{MASK}{}", chars[len - 4..].iter().collect::<String>()),
         _ => MASK.to_string(),
-    }
-}
-
-/// Character count of a text leaf; `None` when the leaf is absent.
-fn char_count(value: &Value) -> Option<usize> {
-    match value {
-        Value::Null => None,
-        Value::String(text) => Some(text.chars().count()),
-        // Fail closed on an unexpected shape: count it, never show it.
-        other => Some(other.to_string().chars().count()),
     }
 }
 
@@ -154,10 +132,6 @@ fn change_for(policy: MaskPolicy, before: &Value, after: &Value) -> RestartChang
         MaskPolicy::Plain => RestartChange::Value {
             before: before.clone(),
             after: after.clone(),
-        },
-        MaskPolicy::Text => RestartChange::Text {
-            before_chars: char_count(before),
-            after_chars: char_count(after),
         },
         MaskPolicy::MaskedSuffix | MaskPolicy::MaskedBare => RestartChange::Masked {
             before: masked(policy, before),
@@ -297,9 +271,6 @@ pub(crate) fn redacted_canonical(value: &Value) -> String {
             ),
             leaf => match policy_for(path) {
                 MaskPolicy::Plain => leaf.clone(),
-                MaskPolicy::Text => char_count(leaf).map_or(Value::Null, |count| {
-                    Value::String(format!("<{count} chars>"))
-                }),
                 policy => masked(policy, leaf).map_or(Value::Null, Value::String),
             },
         }

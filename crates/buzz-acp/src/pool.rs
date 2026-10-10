@@ -130,6 +130,10 @@ pub struct ChannelDeliveryState {
     /// unknown (a reattached provider session keeps its original prompt).
     /// A turn whose current goals differ carries a `<goal-update>`.
     pub layer0_goals_seen: Option<Option<String>>,
+    /// The live text settings this session last received, or `None` when
+    /// unknown, like `layer0_goals_seen`. A turn whose current settings
+    /// differ carries a `<settings-update>`.
+    pub live_text_seen: Option<crate::live_settings::LiveTextHashes>,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -305,6 +309,16 @@ impl SessionState {
     /// Record the layer 0 goals a successful turn left `scope`'s session with.
     pub(crate) fn mark_layer0_goals_seen(&mut self, scope: SessionScope, goals: Option<String>) {
         self.deliveries.entry(scope).or_default().layer0_goals_seen = Some(goals);
+    }
+
+    /// Record the live text settings a successful turn left `scope`'s
+    /// session with.
+    pub(crate) fn mark_live_text_seen(
+        &mut self,
+        scope: SessionScope,
+        text: &crate::live_settings::LiveText,
+    ) {
+        self.deliveries.entry(scope).or_default().live_text_seen = Some(text.hashes());
     }
 
     pub(crate) fn mark_scope_delivery_success(
@@ -997,12 +1011,23 @@ pub struct PromptContext {
     /// from `heartbeat_prompt` (agent self-prompting).
     pub turn_liveness_interval: Duration,
     pub dedup_mode: DedupMode,
+    /// Agent instructions given at launch; superseded by `live_settings`
+    /// when Desktop keeps them live. Read through [`PromptContext::live_now`].
     pub system_prompt: Option<String>,
     /// Sanitized agent name used to compose `_meta.sessionTitle` on session/new.
     /// Channel sessions add the channel name; thread sessions also add the root
     /// ID prefix. Never part of the prompt.
     pub session_title: Option<String>,
+    /// Team instructions given at launch; see `system_prompt`.
     pub team_instructions: Option<String>,
+    /// Self-opened task thread situations given at launch; see `system_prompt`.
+    pub task_threads: Vec<crate::task_threads::TaskThreadTrigger>,
+    /// Whether this context's sessions get the self-opened task thread rules
+    /// appended to `<base>` (thread policy, not a dispatcher, conversation).
+    pub task_thread_rules_apply: bool,
+    /// Source of the current text settings when Desktop keeps them in a
+    /// live file; otherwise the launch values above apply.
+    pub live_settings: crate::live_settings::LiveSettings,
     /// Source of the layer 0 goal sections, layered right after team
     /// instructions in each new session's system prompt and re-read every
     /// turn so live sessions get a one-time `<goal-update>` after an edit.
@@ -1013,7 +1038,8 @@ pub struct PromptContext {
     pub heartbeat_prompt: Option<String>,
     /// Base instructions with the configured policy's Session Model appended,
     /// assembled once and shared by modern and legacy ACP standing context.
-    /// `None` when `--no-base-prompt` was passed.
+    /// The live task thread rules are appended per turn (see
+    /// [`PromptContext::live_now`]). `None` when `--no-base-prompt` was passed.
     pub base_prompt: Option<String>,
     pub cwd: String,
     /// REST client for pre-prompt context fetches (thread/DM history).
@@ -1023,7 +1049,8 @@ pub struct PromptContext {
     /// Max messages to include in thread/DM context. 0 = disabled.
     pub context_message_limit: u32,
     /// How much thread / main-timeline history a fresh session's first turn
-    /// reads; see [`crate::context_history`].
+    /// reads, as given at launch; see `system_prompt` and
+    /// [`crate::context_history`].
     pub context_history: crate::context_history::ContextHistory,
     /// Max turns per session before proactive rotation. 0 = disabled.
     pub max_turns_per_session: u32,
@@ -1759,18 +1786,74 @@ struct NewSessionChannelContext<'a> {
     channel_type: Option<&'a str>,
 }
 
+/// The live settings as of one turn, read once (see [`crate::live_settings`]).
+pub(crate) struct LiveNow {
+    /// `<base>` with the self-opened task thread rules where they apply.
+    pub base_prompt: Option<String>,
+    pub text: crate::live_settings::LiveText,
+    pub context_history: crate::context_history::ContextHistory,
+}
+
+impl PromptContext {
+    /// The current text settings: the live file's when Desktop keeps one,
+    /// else the launch values.
+    pub(crate) fn live_now(&self) -> LiveNow {
+        let values =
+            self.live_settings
+                .current()
+                .unwrap_or_else(|| crate::live_settings::LiveValues {
+                    system_prompt: self.system_prompt.clone(),
+                    team_instructions: self.team_instructions.clone(),
+                    task_threads: self.task_threads.clone(),
+                    context_history: self.context_history,
+                });
+        let text = crate::live_settings::LiveText::new(&values, self.task_thread_rules_apply);
+        LiveNow {
+            base_prompt: self.base_prompt.clone().map(|base| {
+                crate::task_threads::append_task_thread_guidance(
+                    base,
+                    text.task_thread_rules.as_deref(),
+                )
+            }),
+            text,
+            context_history: values.context_history,
+        }
+    }
+}
+
+/// The live parts of a new session's system prompt, read once per turn.
+#[derive(Clone, Copy, Default)]
+struct LiveStanding<'a> {
+    base_prompt: Option<&'a str>,
+    system_prompt: Option<&'a str>,
+    team_instructions: Option<&'a str>,
+    layer0_goals: Option<&'a str>,
+}
+
+impl<'a> LiveStanding<'a> {
+    fn new(live: &'a LiveNow, layer0_goals: Option<&'a str>) -> Self {
+        Self {
+            base_prompt: live.base_prompt.as_deref(),
+            system_prompt: live.text.system_prompt.as_deref(),
+            team_instructions: live.text.team_instructions.as_deref(),
+            layer0_goals,
+        }
+    }
+}
+
 async fn create_session_and_apply_model(
     agent: &mut OwnedAgent,
     ctx: &PromptContext,
     agent_core: Option<&str>,
     channel: NewSessionChannelContext<'_>,
 ) -> Result<String, AcpError> {
+    let live = ctx.live_now();
     let layer0_goals = ctx.layer0_goals.current();
     open_session_and_apply_model(
         agent,
         ctx,
         agent_core,
-        layer0_goals.as_deref(),
+        LiveStanding::new(&live, layer0_goals.as_deref()),
         channel,
         None,
     )
@@ -1799,7 +1882,7 @@ async fn open_session_and_apply_model(
     agent: &mut OwnedAgent,
     ctx: &PromptContext,
     agent_core: Option<&str>,
-    layer0_goals: Option<&str>,
+    standing: LiveStanding<'_>,
     channel: NewSessionChannelContext<'_>,
     reattach_session_id: Option<&str>,
 ) -> Result<OpenedSession, AcpError> {
@@ -1818,12 +1901,12 @@ async fn open_session_and_apply_model(
                         with_team(
                             framed_system_prompt(
                                 &ctx.cwd,
-                                ctx.base_prompt.as_deref(),
-                                ctx.system_prompt.as_deref(),
+                                standing.base_prompt,
+                                standing.system_prompt,
                             ),
-                            ctx.team_instructions.as_deref(),
+                            standing.team_instructions,
                         ),
-                        layer0_goals,
+                        standing.layer0_goals,
                     ),
                     agent_core,
                 ),
@@ -2141,6 +2224,8 @@ pub(crate) async fn run_isolated_prompt(
     )
     .await?;
     *active_session = Some(session_id.clone());
+    let live = ctx.live_now();
+    let layer0_goals = ctx.layer0_goals.current();
     let prompt = prepend_standing_for_legacy(
         if agent.has_system_prompt_support() {
             2
@@ -2148,10 +2233,10 @@ pub(crate) async fn run_isolated_prompt(
             1
         },
         &crate::queue::StandingContext {
-            base_prompt: ctx.base_prompt.as_deref(),
-            system_prompt: ctx.system_prompt.as_deref(),
-            team_instructions: ctx.team_instructions.as_deref(),
-            layer0_goals: ctx.layer0_goals.current().as_deref(),
+            base_prompt: live.base_prompt.as_deref(),
+            system_prompt: live.text.system_prompt.as_deref(),
+            team_instructions: live.text.team_instructions.as_deref(),
+            layer0_goals: layer0_goals.as_deref(),
             agent_core: core.as_deref(),
             ..Default::default()
         },
@@ -3266,6 +3351,10 @@ pub async fn run_prompt_task(
     // them in its standing context; a live session that last saw different
     // values gets a one-time `<goal-update>` below.
     let layer0_now = ctx.layer0_goals.current();
+    // Live text settings, read once like the layer 0 goals: a new session
+    // takes them into its system prompt, a live one that last saw different
+    // values gets a one-time `<settings-update>` below.
+    let live_now = ctx.live_now();
 
     let (session_id, is_new_session) = match &source {
         PromptSource::Channel(scope) => {
@@ -3287,7 +3376,7 @@ pub async fn run_prompt_task(
                     &mut agent,
                     &ctx,
                     agent_core.as_deref(),
-                    layer0_now.as_deref(),
+                    LiveStanding::new(&live_now, layer0_now.as_deref()),
                     NewSessionChannelContext {
                         huddle_instructions: huddle_instructions.as_deref(),
                         canvas: agent_canvas.as_deref(),
@@ -3311,22 +3400,41 @@ pub async fn run_prompt_task(
                             scope.telemetry_label()
                         );
                         agent.state.sessions.insert(scope.clone(), sid.clone());
+                        let standing_now = crate::live_settings::StandingHashes::new(
+                            &live_now.text,
+                            layer0_now.as_deref(),
+                        );
+                        // A new system-prompt session holds this turn's layer 0
+                        // goals and live text settings. A reattached one holds
+                        // what the ledger recorded for it, if anything (unknown
+                        // parts are restated once); legacy agents learn them
+                        // with the standing context in their first message.
+                        let held = if reattached {
+                            ctx.session_ledger
+                                .as_ref()
+                                .and_then(|ledger| ledger.standing(scope, &sid))
+                        } else {
+                            agent
+                                .has_system_prompt_support()
+                                .then(|| standing_now.clone())
+                        };
                         agent.state.deliveries.insert(
                             scope.clone(),
                             ChannelDeliveryState {
                                 session_reattached: reattached,
-                                // A new system-prompt session holds this turn's
-                                // layer 0 goals. A reattached one keeps its old
-                                // prompt (unknown); legacy agents learn them with
-                                // the standing context in their first message.
-                                layer0_goals_seen: (!reattached
-                                    && agent.has_system_prompt_support())
-                                .then(|| layer0_now.clone()),
+                                layer0_goals_seen: held
+                                    .as_ref()
+                                    .filter(|held| held.layer0_goals == standing_now.layer0_goals)
+                                    .map(|_| layer0_now.clone()),
+                                live_text_seen: held.as_ref().map(|held| held.text.clone()),
                                 ..Default::default()
                             },
                         );
                         if let Some(ledger) = &ctx.session_ledger {
                             ledger.record(scope, &sid, &ctx.harness_name, &ctx.cwd);
+                            if !reattached && agent.has_system_prompt_support() {
+                                ledger.set_standing(scope, &sid, &standing_now);
+                            }
                         }
                         // Seed a zero usage baseline only for a session buzz-acp
                         // spawned: prior usage is zero by definition, so the first
@@ -3456,9 +3564,9 @@ pub async fn run_prompt_task(
     // whenever a session is invalidated — so the replacement session re-delivers
     // rather than leaving the agent unbriefed.
     let standing = crate::queue::StandingContext {
-        base_prompt: ctx.base_prompt.as_deref(),
-        system_prompt: ctx.system_prompt.as_deref(),
-        team_instructions: ctx.team_instructions.as_deref(),
+        base_prompt: live_now.base_prompt.as_deref(),
+        system_prompt: live_now.text.system_prompt.as_deref(),
+        team_instructions: live_now.text.team_instructions.as_deref(),
         layer0_goals: layer0_now.as_deref(),
         agent_core: agent_core.as_deref(),
         huddle_instructions: huddle_instructions.as_deref(),
@@ -3521,6 +3629,9 @@ pub async fn run_prompt_task(
                         agent
                             .state
                             .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
+                        agent
+                            .state
+                            .mark_live_text_seen(scope.clone(), &live_now.text);
                     }
                     let usage = agent.acp.take_turn_usage();
                     publish_agent_turn_metric(
@@ -3666,7 +3777,7 @@ pub async fn run_prompt_task(
                     1
                 },
                 &crate::queue::StandingContext {
-                    base_prompt: ctx.base_prompt.as_deref(),
+                    base_prompt: live_now.base_prompt.as_deref(),
                     ..Default::default()
                 },
                 &text,
@@ -3714,7 +3825,7 @@ pub async fn run_prompt_task(
         let history_budget = agent.state.context_history_budget(
             &b.scope,
             thread_context_is_hydrated,
-            ctx.context_history,
+            live_now.context_history,
         );
         // The goal tree is fetched alongside the conversation context so the
         // extra relay query adds no latency of its own.
@@ -3779,16 +3890,23 @@ pub async fn run_prompt_task(
 
         // Standing context sent with this prompt already carries the current
         // layer 0 goals; otherwise tell a live session once that they changed.
-        let goal_update = if !agent.has_system_prompt_support() && !standing_context_sent {
+        let standing_in_this_prompt = !agent.has_system_prompt_support() && !standing_context_sent;
+        let delivery = agent.state.deliveries.get(&b.scope);
+        let goal_update = if standing_in_this_prompt {
             None
         } else {
             crate::layer0_goals::render_goal_update(
-                agent
-                    .state
-                    .deliveries
-                    .get(&b.scope)
-                    .and_then(|delivery| delivery.layer0_goals_seen.as_ref()),
+                delivery.and_then(|delivery| delivery.layer0_goals_seen.as_ref()),
                 layer0_now.as_deref(),
+            )
+        };
+        // Same for the live text settings.
+        let settings_update = if standing_in_this_prompt {
+            None
+        } else {
+            crate::live_settings::render_settings_update(
+                delivery.and_then(|delivery| delivery.live_text_seen.as_ref()),
+                &live_now.text,
             )
         };
 
@@ -3816,6 +3934,7 @@ pub async fn run_prompt_task(
                 channel_info: channel_info.as_ref(),
                 goal_context: goal_context.as_deref(),
                 goal_update: goal_update.as_deref(),
+                settings_update: settings_update.as_deref(),
                 conversation_context: conversation_context.as_ref(),
                 conversation_context_had_session_events,
                 profile_lookup: profile_lookup.as_ref(),
@@ -3869,7 +3988,7 @@ pub async fn run_prompt_task(
     let prompt_bytes: usize = prompt_blocks.iter().map(|block| block.len()).sum();
     let has_standing_context = match &source {
         PromptSource::Channel(_) => !standing.sections().is_empty(),
-        PromptSource::Heartbeat => ctx.base_prompt.is_some(),
+        PromptSource::Heartbeat => live_now.base_prompt.is_some(),
     };
     let standing_context_included =
         !agent.has_system_prompt_support() && !standing_context_sent && has_standing_context;
@@ -4057,6 +4176,9 @@ pub async fn run_prompt_task(
                             agent
                                 .state
                                 .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
+                            agent
+                                .state
+                                .mark_live_text_seen(scope.clone(), &live_now.text);
                         }
                         apply_completed_before_control_signal(
                             &mut agent.state,
@@ -4107,9 +4229,21 @@ pub async fn run_prompt_task(
                 agent
                     .state
                     .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
-                // Keep a session in steady use from aging out of the ledger.
+                agent
+                    .state
+                    .mark_live_text_seen(scope.clone(), &live_now.text);
+                // Keep a session in steady use from aging out of the ledger,
+                // and remember what it now holds for a reattach after restart.
                 if let Some(ledger) = &ctx.session_ledger {
                     ledger.touch(scope, &session_id);
+                    ledger.set_standing(
+                        scope,
+                        &session_id,
+                        &crate::live_settings::StandingHashes::new(
+                            &live_now.text,
+                            layer0_now.as_deref(),
+                        ),
+                    );
                 }
             } else if !agent.has_system_prompt_support() {
                 agent.state.heartbeat_standing_context_sent = true;
@@ -10048,6 +10182,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 hydrated_thread_roots: VecDeque::from(["root-a".into()]),
                 session_reattached: false,
                 layer0_goals_seen: Some(None),
+                live_text_seen: Some(Default::default()),
             },
         );
         s.deliveries.insert(
@@ -10058,6 +10193,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 hydrated_thread_roots: VecDeque::from(["root-b".into()]),
                 session_reattached: false,
                 layer0_goals_seen: Some(None),
+                live_text_seen: Some(Default::default()),
             },
         );
         s.heartbeat_session = Some("sess-hb".into());
@@ -12215,6 +12351,9 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             system_prompt: None,
             session_title: None,
             team_instructions: None,
+            task_threads: Vec::new(),
+            task_thread_rules_apply: false,
+            live_settings: Default::default(),
             layer0_goals: Default::default(),
             goals_enabled: true,
             heartbeat_prompt: None,
@@ -14227,3 +14366,7 @@ mod pi_prompt_tests;
 #[cfg(test)]
 #[path = "pool/goal_prompt_tests.rs"]
 mod goal_prompt_tests;
+
+#[cfg(test)]
+#[path = "pool/live_settings_prompt_tests.rs"]
+mod live_settings_prompt_tests;

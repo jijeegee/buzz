@@ -18,11 +18,10 @@ export type JsonValue =
 
 /**
  * One change in a restart diff. The `kind` discriminant is a closed set of
- * five values; unknown `field` paths must render gracefully in the UI.
+ * four values; unknown `field` paths must render gracefully in the UI.
  */
 export type RestartChange =
   | { kind: "value"; before: JsonValue; after: JsonValue }
-  | { kind: "text"; before_chars: number | null; after_chars: number | null }
   | { kind: "masked"; before: string | null; after: string | null }
   | { kind: "added" }
   | { kind: "removed" };

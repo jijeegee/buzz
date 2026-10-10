@@ -75,25 +75,30 @@ impl PoolStartup {
 }
 
 /// The standing base for `mode`: task sessions get the task session model;
-/// conversation sessions get the configured policy's model, plus the
-/// self-opened task thread guidance for thread-policy agents that are not
-/// route-only dispatchers.
+/// conversation sessions get the configured policy's model. The self-opened
+/// task thread rules are a live setting, appended per session where
+/// [`task_thread_rules_apply`].
 fn assemble_base_prompt(
     policy: crate::scope::SessionPolicy,
-    dispatcher: bool,
-    task_threads: &[crate::task_threads::TaskThreadTrigger],
     mode: &SessionMode,
     base: &str,
 ) -> String {
     if matches!(mode, SessionMode::Task) {
         return format!("{base}\n\n{}", include_str!("session_model_task.md"));
     }
-    let base = policy.append_session_model(base);
-    if policy == crate::scope::SessionPolicy::Thread && !dispatcher {
-        crate::task_threads::append_task_thread_guidance(base, task_threads)
-    } else {
-        base
-    }
+    policy.append_session_model(base)
+}
+
+/// Whether sessions get the self-opened task thread rules: conversation
+/// sessions of thread-policy agents that are not route-only dispatchers.
+fn task_thread_rules_apply(
+    policy: crate::scope::SessionPolicy,
+    dispatcher: bool,
+    mode: &SessionMode,
+) -> bool {
+    matches!(mode, SessionMode::Conversation)
+        && policy == crate::scope::SessionPolicy::Thread
+        && !dispatcher
 }
 
 #[cfg(test)]
@@ -105,16 +110,22 @@ mod assemble_base_prompt_tests {
     const GUIDANCE: &str = "### Opening Task Threads Yourself";
     const TRIGGERS: &[TaskThreadTrigger] = &[TaskThreadTrigger::LongRunning];
 
+    /// The base a session of this kind starts with, through the same
+    /// per-turn resolution `run_prompt_task` uses.
+    fn session_base(policy: SessionPolicy, dispatcher: bool, mode: SessionMode) -> String {
+        let mut ctx = crate::pool::tests::make_prompt_context_no_owner();
+        ctx.base_prompt = Some(assemble_base_prompt(policy, &mode, "base"));
+        ctx.task_threads = TRIGGERS.to_vec();
+        ctx.task_thread_rules_apply = task_thread_rules_apply(policy, dispatcher, &mode);
+        ctx.live_now().base_prompt.unwrap()
+    }
+
     #[test]
     fn thread_policy_conversation_gets_the_guidance() {
-        let prompt = assemble_base_prompt(
-            SessionPolicy::Thread,
-            false,
-            TRIGGERS,
-            &SessionMode::Conversation,
-            "base",
+        assert!(
+            session_base(SessionPolicy::Thread, false, SessionMode::Conversation)
+                .contains(GUIDANCE)
         );
-        assert!(prompt.contains(GUIDANCE));
     }
 
     #[test]
@@ -124,9 +135,8 @@ mod assemble_base_prompt_tests {
             (SessionPolicy::Thread, true, SessionMode::Conversation),
             (SessionPolicy::Thread, false, SessionMode::Task),
         ] {
-            let prompt = assemble_base_prompt(policy, dispatcher, TRIGGERS, &mode, "base");
             assert!(
-                !prompt.contains(GUIDANCE),
+                !session_base(policy, dispatcher, mode).contains(GUIDANCE),
                 "{policy} dispatcher={dispatcher}"
             );
         }
@@ -151,6 +161,13 @@ fn make_prompt_context(
         system_prompt: config.system_prompt.clone(),
         session_title: config.session_title.clone(),
         team_instructions: config.team_instructions.clone(),
+        task_threads: config.task_threads.clone(),
+        task_thread_rules_apply: task_thread_rules_apply(
+            config.session_policy,
+            config.dispatcher,
+            &mode,
+        ),
+        live_settings: config.live_settings.clone(),
         layer0_goals: config.layer0_goals.clone(),
         goals_enabled: config.goals_enabled,
         base_prompt: if config.no_base_prompt {
@@ -164,13 +181,7 @@ fn make_prompt_context(
                 .unwrap_or(include_str!("base_prompt.md"));
             // Goal rules are not part of the base: they ride in each turn's
             // `<goal-context>`, only where a goal tree exists.
-            Some(assemble_base_prompt(
-                config.session_policy,
-                config.dispatcher,
-                &config.task_threads,
-                &mode,
-                base,
-            ))
+            Some(assemble_base_prompt(config.session_policy, &mode, base))
         },
         heartbeat_prompt: config.heartbeat_prompt.clone(),
         cwd,

@@ -1,11 +1,13 @@
 //! Owner-chosen situations in which an agent may open a task thread on its own.
 //!
-//! The desktop passes the enabled situations as a comma-separated list in
-//! `BUZZ_ACP_TASK_THREADS` (e.g. `long_running,multi_step`). An empty list
-//! keeps the default rule from the base prompt: open a task thread only when a
-//! human asks for one. The guidance is appended to the standing base prompt
-//! under the thread session policy only, because that is where task threads
-//! get their own session and their results flow back to the main session.
+//! The enabled situations come as a comma-separated list (e.g.
+//! `long_running,multi_step`) in `BUZZ_ACP_TASK_THREADS` or, from Buzz
+//! Desktop, in the live settings file (see `live_settings`), so a change
+//! reaches running agents without a restart. An empty list keeps the default
+//! rule from the base prompt: open a task thread only when a human asks for
+//! one. The guidance is appended to the standing base prompt under the thread
+//! session policy only, because that is where task threads get their own
+//! session and their results flow back to the main session.
 
 use std::str::FromStr;
 
@@ -84,28 +86,37 @@ pub fn parse_task_thread_triggers(raw: Option<&str>) -> Vec<TaskThreadTrigger> {
     triggers
 }
 
-/// Append the self-opened task thread guidance to `base`, or return it
-/// unchanged when no situation is enabled.
-pub fn append_task_thread_guidance(base: String, triggers: &[TaskThreadTrigger]) -> String {
+/// The self-opened task thread rules for `triggers`, or `None` when no
+/// situation is enabled. Appended to the standing base prompt, and restated
+/// in a live session's `<settings-update>` when they change.
+pub fn task_thread_guidance(triggers: &[TaskThreadTrigger]) -> Option<String> {
     if triggers.is_empty() {
-        return base;
+        return None;
     }
     let cases: String = TaskThreadTrigger::ALL
         .iter()
         .filter(|trigger| triggers.contains(trigger))
         .map(|trigger| format!("- {}\n", trigger.guidance()))
         .collect();
-    format!(
-        "{}\n\n### Opening Task Threads Yourself\n\n\
+    Some(format!(
+        "### Opening Task Threads Yourself\n\n\
 This is an exception to the rule above that you open a thread only when a human asks for one. \
 The owner allows you to open a task thread on your own when a top-level request on the channel main timeline that you are about to work on is one of these cases:\n\n\
 {cases}\n\
 Anything else stays on the main timeline: answer short questions and quick one-step tasks there directly. \
 To open one, run `buzz threads start --channel <UUID> --from <the request's event id> --title \"…\" --brief -` with a brief of three lines in the requester's language: \
 the goal, the deliverable, and what counts as done. \
-Do the work and post progress in that thread, and finish with `buzz threads close` as described in Task Threads.",
-        base.trim_end()
-    )
+Do the work and post progress in that thread, and finish with `buzz threads close` as described in Task Threads."
+    ))
+}
+
+/// Append the self-opened task thread rules to `base`, or return it
+/// unchanged when none apply.
+pub fn append_task_thread_guidance(base: String, guidance: Option<&str>) -> String {
+    match guidance {
+        Some(guidance) => format!("{}\n\n{guidance}", base.trim_end()),
+        None => base,
+    }
 }
 
 #[cfg(test)]
@@ -117,7 +128,8 @@ mod tests {
         assert!(parse_task_thread_triggers(None).is_empty());
         assert!(parse_task_thread_triggers(Some("")).is_empty());
         assert!(parse_task_thread_triggers(Some(" , ")).is_empty());
-        assert_eq!(append_task_thread_guidance("base".into(), &[]), "base");
+        assert_eq!(task_thread_guidance(&[]), None);
+        assert_eq!(append_task_thread_guidance("base".into(), None), "base");
     }
 
     #[test]
@@ -130,10 +142,11 @@ mod tests {
 
     #[test]
     fn guidance_lists_only_enabled_cases() {
-        let prompt = append_task_thread_guidance(
-            "base\n".into(),
-            &[TaskThreadTrigger::SideDiscussion, TaskThreadTrigger::LongRunning],
-        );
+        let guidance = task_thread_guidance(&[
+            TaskThreadTrigger::SideDiscussion,
+            TaskThreadTrigger::LongRunning,
+        ]);
+        let prompt = append_task_thread_guidance("base\n".into(), guidance.as_deref());
         assert!(prompt.starts_with("base\n\n### Opening Task Threads Yourself"));
         assert!(prompt.contains("**Long-running work:**"));
         assert!(prompt.contains("**Side discussion:**"));
