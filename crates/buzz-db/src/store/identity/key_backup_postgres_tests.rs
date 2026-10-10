@@ -26,7 +26,7 @@ async fn account(db: &Db, subject: &str) -> PrincipalId {
 }
 
 async fn session(db: &Db, account: &PrincipalId) -> LoginSession {
-    db.complete_login(account, "test device", "desktop", token(), token())
+    db.complete_login(account, "test device", "desktop", None, token(), token())
         .await
         .unwrap()
 }
@@ -160,7 +160,7 @@ async fn key_backup_refresh_keeps_identity_but_does_not_renew_export_freshness()
     let a = account(&db, &uuid::Uuid::new_v4().to_string()).await;
     let refresh = token();
     let session = db
-        .complete_login(&a, "device", "mobile", refresh, token())
+        .complete_login(&a, "device", "mobile", None, refresh, token())
         .await
         .unwrap();
     let key = envelope(nostr::Keys::generate().public_key().to_bytes());

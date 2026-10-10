@@ -13,13 +13,16 @@ use super::{
 };
 use crate::error::{DbError, Result};
 
-/// A device and session created by a completed login.
-#[derive(Debug, Clone, Copy)]
+/// The device and new session of a completed login.
+#[derive(Debug, Clone)]
 pub struct LoginSession {
-    /// New device id.
+    /// Device id: new, or the reused one for a known install id.
     pub device_id: Uuid,
     /// New session id.
     pub session_id: Uuid,
+    /// Access-token hashes of the reused device's earlier sessions, revoked
+    /// because this login replaces them.
+    pub revoked: Vec<[u8; 32]>,
 }
 
 /// A live device of a principal.
@@ -69,13 +72,17 @@ pub enum RefreshOutcome {
     PrincipalDisabled,
 }
 
-/// Create device + session + first refresh + first access token in one
-/// transaction (one login = one atomic persist).
+/// Create (or, for an install id the principal already used, reuse) the
+/// device, then session + first refresh + first access token, in one
+/// transaction (one login = one atomic persist). A reused device keeps its id
+/// and name, is un-revoked, and its earlier sessions are revoked: the install
+/// that logs in again has lost or dropped their tokens.
 pub(super) async fn complete_login(
     pool: &PgPool,
     principal: &PrincipalId,
     device_name: &str,
     platform: &str,
+    install_id: Option<&str>,
     refresh: IssuedToken,
     access: IssuedToken,
 ) -> Result<LoginSession> {
@@ -84,23 +91,60 @@ pub(super) async fn complete_login(
         .ok_or_else(|| DbError::InvalidData("refresh token requires an expiry".into()))?;
     let mut tx = begin(pool).await?;
     super::lock_subject(&mut tx, principal).await?;
+    let known: Option<Uuid> = match install_id {
+        Some(install_id) => {
+            sqlx::query_scalar(
+                "SELECT id FROM devices WHERE principal_id = $1 AND install_id = $2 FOR UPDATE",
+            )
+            .bind(principal.as_bytes().as_slice())
+            .bind(install_id)
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        None => None,
+    };
     let live_devices: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM devices WHERE principal_id = $1 AND revoked_at IS NULL",
+        "SELECT count(*) FROM devices WHERE principal_id = $1 AND revoked_at IS NULL          AND id IS DISTINCT FROM $2",
     )
     .bind(principal.as_bytes().as_slice())
+    .bind(known)
     .fetch_one(&mut *tx)
     .await?;
     if live_devices >= MAX_DEVICES_PER_PRINCIPAL {
         return Err(DbError::AccessDenied("device limit reached".into()));
     }
-    let device_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO devices (principal_id, name, platform) VALUES ($1, $2, $3) RETURNING id",
-    )
-    .bind(principal.as_bytes().as_slice())
-    .bind(device_name)
-    .bind(platform)
-    .fetch_one(&mut *tx)
-    .await?;
+    let mut revoked = Vec::new();
+    let device_id = match known {
+        Some(device_id) => {
+            sqlx::query(
+                "UPDATE devices SET revoked_at = NULL, last_seen_at = now(), platform = $2                  WHERE id = $1",
+            )
+            .bind(device_id)
+            .bind(platform)
+            .execute(&mut *tx)
+            .await?;
+            let sessions: Vec<Uuid> = sqlx::query_scalar(
+                "UPDATE sessions SET revoked_at = now(), revoked_reason = $2                  WHERE device_id = $1 AND revoked_at IS NULL RETURNING id",
+            )
+            .bind(device_id)
+            .bind(RevokeReason::Relogin.as_str())
+            .fetch_all(&mut *tx)
+            .await?;
+            revoked = revoke_session_tokens(&mut tx, &sessions, RevokeReason::Relogin).await?;
+            device_id
+        }
+        None => {
+            sqlx::query_scalar(
+                "INSERT INTO devices (principal_id, name, platform, install_id)                  VALUES ($1, $2, $3, $4) RETURNING id",
+            )
+            .bind(principal.as_bytes().as_slice())
+            .bind(device_name)
+            .bind(platform)
+            .bind(install_id)
+            .fetch_one(&mut *tx)
+            .await?
+        }
+    };
     let session_id: Uuid =
         sqlx::query_scalar("INSERT INTO sessions (device_id) VALUES ($1) RETURNING id")
             .bind(device_id)
@@ -129,6 +173,7 @@ pub(super) async fn complete_login(
     Ok(LoginSession {
         device_id,
         session_id,
+        revoked,
     })
 }
 
@@ -401,13 +446,15 @@ pub(super) async fn rename_device(
 }
 
 impl crate::Db {
-    /// Persist a completed login: device, session, refresh and access token.
+    /// Persist a completed login: device (reused for a known `install_id`),
+    /// session, refresh and access token.
     #[datastore_span(name = "complete_login", system = "postgresql")]
     pub async fn complete_login(
         &self,
         principal: &PrincipalId,
         device_name: &str,
         platform: &str,
+        install_id: Option<&str>,
         refresh: IssuedToken,
         access: IssuedToken,
     ) -> Result<LoginSession> {
@@ -416,6 +463,7 @@ impl crate::Db {
             principal,
             device_name,
             platform,
+            install_id,
             refresh,
             access,
         )

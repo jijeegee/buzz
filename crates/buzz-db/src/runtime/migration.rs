@@ -981,7 +981,10 @@ mod postgres_tests {
         // Agent host devices / device robot FTS exclusion (0062): same shape
         // as 0033 for the author-only kinds 30180 and 30181.
         assert_eq!(migrations[61].version, 62);
-        assert!(migrations[61].sql.as_str().contains("kind IN (30180, 30181)"));
+        assert!(migrations[61]
+            .sql
+            .as_str()
+            .contains("kind IN (30180, 30181)"));
         assert!(migrations[61].sql.as_str().contains("search_tsv"));
 
         // Public push-gateway authority is intentionally deployment-global and

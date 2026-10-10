@@ -37,7 +37,7 @@ async fn bot_issuance_revalidates_device_and_owner() {
     let db = Db::from_pool(pool().await);
     let owner = new_user(&db).await;
     let session = db
-        .complete_login(&owner, "host", "desktop", token(24), token(1))
+        .complete_login(&owner, "host", "desktop", None, token(24), token(1))
         .await
         .unwrap();
     let bot = db
@@ -79,7 +79,7 @@ async fn bot_token_creation_cannot_escape_concurrent_revocation() {
         ] {
             let owner = new_user(&db).await;
             let login = db
-                .complete_login(&owner, "host", "desktop", token(24), token(1))
+                .complete_login(&owner, "host", "desktop", None, token(24), token(1))
                 .await
                 .unwrap();
             let bot = db
@@ -171,11 +171,11 @@ async fn revoke_others_preserves_hosted_bot_exchange() {
     let db = Db::from_pool(pool().await);
     let owner = new_user(&db).await;
     let host = db
-        .complete_login(&owner, "host", "desktop", token(24), token(1))
+        .complete_login(&owner, "host", "desktop", None, token(24), token(1))
         .await
         .unwrap();
     let keep = db
-        .complete_login(&owner, "keep", "mobile", token(24), token(1))
+        .complete_login(&owner, "keep", "mobile", None, token(24), token(1))
         .await
         .unwrap();
     let bot = db
@@ -213,7 +213,7 @@ async fn revoked_exchange_replay_is_invalid() {
     let db = Db::from_pool(pool().await);
     let owner = new_user(&db).await;
     let login = db
-        .complete_login(&owner, "host", "desktop", token(24), token(1))
+        .complete_login(&owner, "host", "desktop", None, token(24), token(1))
         .await
         .unwrap();
     let bot = db
@@ -360,7 +360,7 @@ async fn refresh_reuse_revokes_session_unknown_does_not() {
     let r1 = token(24);
     let a1 = token(1);
     let login = db
-        .complete_login(&user, "laptop", "desktop", r1, a1)
+        .complete_login(&user, "laptop", "desktop", None, r1, a1)
         .await
         .expect("login");
 
@@ -428,7 +428,7 @@ async fn exchange_supersedes_and_bounds_live_tokens() {
     let db = Db::from_pool(pool().await);
     let owner = new_user(&db).await;
     let login = db
-        .complete_login(&owner, "laptop", "desktop", token(24), token(1))
+        .complete_login(&owner, "laptop", "desktop", None, token(24), token(1))
         .await
         .expect("login");
     let bot = db
@@ -595,4 +595,98 @@ async fn stamped_and_null_sig_events_read_back() {
     assert!(buzz_core::draft::is_sentinel_sig(
         fetched.event.sig.as_ref()
     ));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn relogin_with_install_id_reuses_device() {
+    let db = Db::from_pool(pool().await);
+    let owner = new_user(&db).await;
+    let install = Some("5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c");
+    let first_access = token(1);
+    let first = db
+        .complete_login(
+            &owner,
+            "Buzz Desktop",
+            "desktop",
+            install,
+            token(24),
+            first_access,
+        )
+        .await
+        .unwrap();
+    db.rename_device(&owner, first.device_id, "Home PC")
+        .await
+        .unwrap();
+
+    // Same install, still signed in (tokens lost): same device, old session revoked.
+    let second = db
+        .complete_login(
+            &owner,
+            "Buzz Desktop",
+            "desktop",
+            install,
+            token(24),
+            token(1),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.device_id, first.device_id);
+    assert_ne!(second.session_id, first.session_id);
+    assert_eq!(second.revoked, vec![first_access.hash]);
+
+    // Logged out, then back in: the device comes back with its name.
+    db.revoke_device(&owner, second.device_id, RevokeReason::Logout)
+        .await
+        .unwrap();
+    let third = db
+        .complete_login(
+            &owner,
+            "Buzz Desktop",
+            "desktop",
+            install,
+            token(24),
+            token(1),
+        )
+        .await
+        .unwrap();
+    assert_eq!(third.device_id, first.device_id);
+    let devices = db.list_devices(&owner).await.unwrap();
+    assert_eq!(devices.len(), 1);
+    assert_eq!(devices[0].id, first.device_id);
+    assert_eq!(devices[0].name, "Home PC");
+
+    // No install id, or another one: a new device.
+    let legacy = db
+        .complete_login(&owner, "Buzz Desktop", "desktop", None, token(24), token(1))
+        .await
+        .unwrap();
+    assert_ne!(legacy.device_id, first.device_id);
+    let other = db
+        .complete_login(
+            &owner,
+            "Buzz Desktop",
+            "desktop",
+            Some("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"),
+            token(24),
+            token(1),
+        )
+        .await
+        .unwrap();
+    assert_ne!(other.device_id, first.device_id);
+
+    // Install ids are per principal: another account gets its own device.
+    let stranger = new_user(&db).await;
+    let theirs = db
+        .complete_login(
+            &stranger,
+            "Buzz Desktop",
+            "desktop",
+            install,
+            token(24),
+            token(1),
+        )
+        .await
+        .unwrap();
+    assert_ne!(theirs.device_id, first.device_id);
 }
