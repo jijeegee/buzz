@@ -6,13 +6,14 @@ import '../../shared/theme/message_typography.dart';
 import '../../shared/theme/theme_extensions.dart';
 import 'date_formatters.dart';
 
-/// Widest an own bubble may grow, as a share of the row (desktop's value).
-const chatOwnBubbleWidthFactor = 0.75;
+/// Widest an own bubble may grow, as a share of the row. Leaves room for the
+/// time and the speaker button on the left.
+const chatOwnBubbleWidthFactor = 0.80;
 
 /// Widest another person's (or agent's) bubble may grow, as a share of the
 /// space right of the avatar column. Narrower than desktop's 92% so the time
-/// fits beside the bubble.
-const chatOtherBubbleWidthFactor = 0.80;
+/// fits beside the bubble with a small margin.
+const chatOtherBubbleWidthFactor = 0.89;
 
 /// Vertical padding inside a bubble.
 const chatBubbleVerticalPadding = 10.0;
