@@ -50,6 +50,9 @@ struct PendingLogin {
     client: String,
     redirect_uri: String,
     device_name: String,
+    /// The client's stable per-install id; see [`install_id_from_query`].
+    #[serde(default)]
+    install_id: Option<String>,
     nonce: String,
 }
 
@@ -62,6 +65,8 @@ struct LoginCodeRecord {
     code_challenge: String,
     client: String,
     device_name: String,
+    #[serde(default)]
+    install_id: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -72,10 +77,32 @@ struct StartQuery {
     client: Option<String>,
     redirect_uri: Option<String>,
     device_name: Option<String>,
+    install_id: Option<String>,
 }
 
 fn token_identity_mode() -> String {
     "token".into()
+}
+
+/// A client's stable per-install id (random, kept for the life of the app
+/// install): a login that carries one the principal already used reuses that
+/// device. Absent or empty means "new device" (older clients).
+fn install_id_from_query(value: Option<String>) -> Result<Option<String>, ()> {
+    let Some(value) = value.map(|value| value.trim().to_ascii_lowercase()) else {
+        return Ok(None);
+    };
+    if value.is_empty() {
+        return Ok(None);
+    }
+    let valid = (16..=64).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    if valid {
+        Ok(Some(value))
+    } else {
+        Err(())
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -203,6 +230,9 @@ pub(super) async fn start(
         None => format!("{client} device"),
         Some(_) => return bad_request("device_name must be at most 64 printable characters"),
     };
+    let Ok(install_id) = install_id_from_query(query.install_id) else {
+        return bad_request("install_id must be 16-64 letters, digits or hyphens");
+    };
     let nonce = {
         let bytes: [u8; 24] = rand::random();
         hex::encode(bytes)
@@ -214,6 +244,7 @@ pub(super) async fn start(
         client,
         redirect_uri,
         device_name,
+        install_id,
         nonce: nonce.clone(),
     };
     let Ok(pending_json) = serde_json::to_string(&pending) else {
@@ -366,6 +397,7 @@ pub(super) async fn callback(
         code_challenge: pending.code_challenge.clone(),
         client: pending.client.clone(),
         device_name: pending.device_name.clone(),
+        install_id: pending.install_id.clone(),
     };
     let Ok(record_json) = serde_json::to_string(&record) else {
         return fail("server_error");
@@ -536,6 +568,7 @@ pub(super) async fn complete(
             &principal,
             &record.device_name,
             &record.client,
+            record.install_id.as_deref(),
             refresh_issued,
             access_issued,
         )
@@ -578,4 +611,22 @@ pub(super) async fn complete(
         "expires_in": expires_in,
     }))
     .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::install_id_from_query;
+
+    #[test]
+    fn install_id_is_optional_normalized_and_bounded() {
+        assert_eq!(install_id_from_query(None), Ok(None));
+        assert_eq!(install_id_from_query(Some("  ".into())), Ok(None));
+        assert_eq!(
+            install_id_from_query(Some(" 5F0C6B1E-2A4D-4C8E-9B7A-1D2E3F4A5B6C ".into())),
+            Ok(Some("5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c".into()))
+        );
+        assert!(install_id_from_query(Some("short".into())).is_err());
+        assert!(install_id_from_query(Some("a".repeat(65))).is_err());
+        assert!(install_id_from_query(Some("not/an/install/id!".into())).is_err());
+    }
 }

@@ -21,6 +21,7 @@ pub(crate) mod api;
 pub(crate) mod bots;
 pub(crate) mod commands;
 pub(crate) mod credential;
+pub(crate) mod install_id;
 pub(crate) mod key_recovery;
 pub(crate) mod login_attempt;
 pub(crate) mod loopback;

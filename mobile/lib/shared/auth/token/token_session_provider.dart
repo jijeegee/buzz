@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../../community/community_provider.dart';
 import 'auth_api.dart';
+import 'install_id_store.dart';
 import 'refresh_token_store.dart';
 import 'relay_origin.dart';
 import 'token_session.dart';
@@ -21,6 +22,11 @@ final authHttpClientProvider = Provider<http.Client>((ref) {
 /// Durable refresh-token storage. Override in tests.
 final refreshTokenStoreProvider = Provider<RefreshTokenStore>(
   (ref) => SecureRefreshTokenStore(),
+);
+
+/// This install's stable device id (see [InstallIdStore]).
+final installIdStoreProvider = Provider<InstallIdStore>(
+  (ref) => InstallIdStore(),
 );
 
 /// Custody grants cannot overwrite a pre-existing token messaging session.
@@ -65,6 +71,7 @@ final tokenSessionControllerProvider =
         clock: ref.watch(sessionClockProvider),
         timerFactory: ref.watch(sessionTimerFactoryProvider),
         deviceName: ref.watch(authDeviceNameProvider),
+        installIds: ref.watch(installIdStoreProvider),
       );
       ref.onDispose(controller.dispose);
       return controller;
@@ -80,6 +87,7 @@ final keyBackupSessionControllerProvider =
         clock: ref.watch(sessionClockProvider),
         timerFactory: ref.watch(sessionTimerFactoryProvider),
         deviceName: ref.watch(authDeviceNameProvider),
+        installIds: ref.watch(installIdStoreProvider),
       );
       ref.onDispose(controller.dispose);
       return controller;

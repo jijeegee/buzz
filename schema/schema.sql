@@ -1868,9 +1868,14 @@ CREATE TABLE devices (
     platform      TEXT NOT NULL CHECK (platform IN ('desktop', 'mobile', 'web', 'cli')),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at    TIMESTAMPTZ
+    revoked_at    TIMESTAMPTZ,
+    -- Stable per-install id; re-login with it reuses the row (migration 0063).
+    install_id    TEXT
 );
 CREATE INDEX devices_principal ON devices (principal_id);
+CREATE UNIQUE INDEX devices_principal_install
+    ON devices (principal_id, install_id)
+    WHERE install_id IS NOT NULL;
 
 CREATE TABLE sessions (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -225,6 +225,7 @@ async fn login_inner(
                 &pkce.challenge,
                 &listener.redirect_uri(),
                 &device_name(),
+                super::install_id::load_or_create(&app).as_deref(),
             );
             let backup = requested_login_mode(
                 &state.token_auth,
@@ -577,9 +578,15 @@ pub async fn rename_device(
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let session = fresh_session(&state, &origin).await?;
-    api::rename_device(&state.http_client, &origin, &session.access, &device_id, &name)
-        .await
-        .map_err(api_error)
+    api::rename_device(
+        &state.http_client,
+        &origin,
+        &session.access,
+        &device_id,
+        &name,
+    )
+    .await
+    .map_err(api_error)
 }
 
 /// Remote sign-out of another device.

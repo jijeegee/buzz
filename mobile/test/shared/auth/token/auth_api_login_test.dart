@@ -24,6 +24,7 @@ void main() {
         codeChallenge: 'c' * 43,
         redirectUri: buzzMobileRedirectUri,
         deviceName: 'Pixel 9',
+        installId: '5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c',
       );
       expect(uri.origin, origin);
       expect(uri.path, '/auth/oidc/google/start');
@@ -34,7 +35,19 @@ void main() {
         'identity_mode': 'token',
         'redirect_uri': 'xyz.block.buzz://auth/cb',
         'device_name': 'Pixel 9',
+        'install_id': '5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c',
       });
+    });
+
+    test('InstallIdStore creates one id and keeps it', () async {
+      final storage = FakeSecureStorage();
+      final first = await InstallIdStore(storage: storage).readOrCreate();
+      expect(first, isNotNull);
+      expect(await InstallIdStore(storage: storage).readOrCreate(), first);
+      await storage.write(key: InstallIdStore.key, value: 'garbage');
+      final replaced = await InstallIdStore(storage: storage).readOrCreate();
+      expect(replaced, isNot('garbage'));
+      expect(await InstallIdStore(storage: storage).readOrCreate(), replaced);
     });
 
     test(
