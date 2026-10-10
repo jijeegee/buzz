@@ -5,6 +5,7 @@ import '../../shared/theme/theme.dart';
 import 'goal_tree.dart';
 
 /// One goal in an outline: status toggle, `L<layer>` title, and progress.
+/// Without [onTap] and [onToggleStatus] it is read-only; [muted] fades it.
 class GoalTile extends StatelessWidget {
   const GoalTile({
     super.key,
@@ -14,6 +15,7 @@ class GoalTile extends StatelessWidget {
     required this.progress,
     required this.onTap,
     required this.onToggleStatus,
+    this.muted = false,
   });
 
   final int layer;
@@ -22,14 +24,15 @@ class GoalTile extends StatelessWidget {
   final int indent;
   final GoalNode node;
   final ({int done, int total}) progress;
-  final VoidCallback onTap;
-  final VoidCallback onToggleStatus;
+  final VoidCallback? onTap;
+  final VoidCallback? onToggleStatus;
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
     final finished =
         node.status == GoalStatus.done || node.status == GoalStatus.dropped;
-    return InkWell(
+    final tile = InkWell(
       onTap: onTap,
       child: Padding(
         padding: EdgeInsets.only(
@@ -79,6 +82,7 @@ class GoalTile extends StatelessWidget {
         ),
       ),
     );
+    return muted ? Opacity(opacity: 0.5, child: tile) : tile;
   }
 }
 

@@ -115,8 +115,29 @@ void main() {
     expect(find.byKey(const ValueKey('thread-goal-card')), findsOneWidget);
     expect(find.byKey(const ValueKey('goal-row-cas')), findsOneWidget);
     expect(find.byKey(const ValueKey('goal-row-val')), findsOneWidget);
-    expect(find.byKey(const ValueKey('goal-row-ui')), findsNothing);
     expect(find.text('1 of 2 sub-goals done'), findsOneWidget);
+
+    // The whole tree shows: the path is read-only, the rest is also faded.
+    bool faded(String id) => find
+        .ancestor(
+          of: find.byKey(ValueKey('goal-status-$id')),
+          matching: find.byType(Opacity),
+        )
+        .evaluate()
+        .isNotEmpty;
+    for (final id in ['root', 'ui']) {
+      expect(find.byKey(ValueKey('goal-row-$id')), findsOneWidget);
+      final status = tester.widget<IconButton>(
+        find.byKey(ValueKey('goal-status-$id')),
+      );
+      expect(status.onPressed, isNull, reason: '$id is read-only');
+    }
+    expect(faded('root'), isFalse);
+    expect(faded('ui'), isTrue);
+    expect(faded('val'), isFalse);
+    await tester.tap(find.byKey(const ValueKey('goal-row-ui')));
+    await tester.pumpAndSettle();
+    expect(actions.batches, isEmpty);
 
     await tester.tap(find.byKey(const ValueKey('goal-status-val')));
     await tester.pumpAndSettle();
@@ -137,6 +158,11 @@ void main() {
     expect(add.parent, 'srv');
     expect(add.title, 'Retry on conflict');
 
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('thread-goal-unlink')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.byKey(const ValueKey('thread-goal-unlink')));
     await tester.pumpAndSettle();
     final unlink = actions.batches.last.single as UnlinkThread;
@@ -181,7 +207,7 @@ void main() {
       const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
     );
     // Linking started srv; the card's status button moves it on.
-    await tester.tap(find.byKey(const ValueKey('goal-status-srv')));
+    await tester.tap(find.byKey(const ValueKey('goal-status-srv')).first);
     await tester.pumpAndSettle();
     final toggle = actions.batches.single.single as UpdateGoal;
     expect((toggle.id, toggle.status), ('srv', GoalStatus.done));
