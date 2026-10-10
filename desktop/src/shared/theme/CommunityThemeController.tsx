@@ -4,6 +4,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   DEFAULT_COMMUNITY_THEME,
+  appearanceModeOf,
   cacheAndApplyCommunityTheme,
   clearCommunityThemeOutbox,
   communityThemeApplyExpectation,
@@ -13,9 +14,12 @@ import {
   markCommunityThemeMigrated,
   readCommunityThemeOutbox,
   readCommunityThemePreference,
+  readDeviceAppearanceMode,
   sameCommunityThemePreference,
+  withDeviceAppearanceMode,
   writeCommunityThemeOutbox,
   writeCommunityThemePreference,
+  writeDeviceAppearanceMode,
   type CommunityThemePreference,
 } from "./communityThemePreference";
 import {
@@ -59,7 +63,14 @@ export function CommunityThemeController() {
   };
 
   const applyPreference = useCallback(
-    (preference: CommunityThemePreference) => {
+    (synced: CommunityThemePreference) => {
+      // Before the device mode was stored, the appearance the provider loaded
+      // from this device's own storage is the best record of it.
+      const preference = withDeviceAppearanceMode(
+        synced,
+        readDeviceAppearanceMode() ??
+          appearanceModeOf(initialPreferenceRef.current),
+      );
       expectedAppliedRef.current = communityThemeApplyExpectation(
         preference,
         currentPreferenceRef.current,
@@ -203,6 +214,7 @@ export function CommunityThemeController() {
       expectedAppliedRef.current = null;
       return;
     }
+    writeDeviceAppearanceMode(appearanceModeOf(preference));
     const stored = readCommunityThemePreference(pubkey, relayUrl);
     if (stored && sameCommunityThemePreference(stored, preference)) return;
     scopedPreferenceRef.current = preference;

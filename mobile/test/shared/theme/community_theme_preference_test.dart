@@ -120,4 +120,29 @@ void main() {
     expect(legacyAccentWireValue(6), '#a855f7');
     expect(legacyAccentWireValue(7), '#6366f1');
   });
+
+  test('device mode is overlaid without changing the synced choice', () {
+    const synced = CommunityThemePreference(
+      theme: 'github-light',
+      accent: '#3b82f6',
+      followSystem: false,
+    );
+
+    final dark = synced.withDeviceMode(ThemeMode.dark);
+    expect(dark.theme, 'github-dark');
+    expect(dark.mode, ThemeMode.dark);
+    expect(synced.withDeviceMode(ThemeMode.system).followSystem, isTrue);
+    expect(synced.withDeviceMode(ThemeMode.light), synced);
+    expect(dark.sameSyncedChoice(synced), isTrue);
+    expect(
+      synced.sameSyncedChoice(
+        const CommunityThemePreference(
+          theme: 'dracula',
+          accent: '#3b82f6',
+          followSystem: false,
+        ),
+      ),
+      isFalse,
+    );
+  });
 }

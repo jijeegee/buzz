@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:buzz/shared/crypto/nip44.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
@@ -221,6 +222,39 @@ void main() {
     expect(storage.cacheWrites, [selection]);
     expect(storage.outboxWrites, [selection]);
     expect(container.read(communityThemeProvider), selection);
+  });
+
+  test('light/dark/system change stays on this device', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final keys = nostr.Keys.generate();
+    final session = _ThemeRelaySession(keys.nsec, keys.public);
+    final storage = _RecordingThemeStorage(prefs);
+    final container = ProviderContainer(
+      overrides: [
+        communityThemeStorageProvider.overrideWithValue(storage),
+        relayConfigProvider.overrideWith(() => _RelayConfig(keys.nsec)),
+        relaySessionProvider.overrideWith(() => session),
+      ],
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      communityThemeProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+
+    await _waitUntil(() => storage.cacheWrites.isNotEmpty);
+    storage.cacheWrites.clear();
+    storage.outboxWrites.clear();
+
+    container.read(communityThemeProvider.notifier).setMode(ThemeMode.dark);
+    await _waitUntil(() => storage.cacheWrites.isNotEmpty);
+
+    expect(container.read(communityThemeProvider).mode, ThemeMode.dark);
+    expect(storage.readDeviceMode(), ThemeMode.dark);
+    expect(storage.outboxWrites, isEmpty);
   });
 }
 

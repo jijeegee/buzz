@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'accent_colors.dart';
 import 'theme_catalog.dart';
+import 'theme_pairs.dart';
 import 'theme_provider.dart' show effectiveTheme, schemeForAppearanceMode;
 
 const communityThemeDTag = 'community-theme';
@@ -55,6 +56,31 @@ class CommunityThemePreference {
     return findTheme(theme)?.isDark == true ? ThemeMode.dark : ThemeMode.light;
   }
 
+  /// Re-expresses this synced preference in a device's light/dark/system
+  /// [mode]. Only a paired theme switches halves; an unpaired theme is kept so
+  /// another device's theme choice is never replaced.
+  CommunityThemePreference withDeviceMode(ThemeMode mode) {
+    var next = theme;
+    if (mode != ThemeMode.system) {
+      final wantDark = mode == ThemeMode.dark;
+      final pairName = themePairFor(theme);
+      if (findTheme(theme)?.isDark != wantDark && pairName != null) {
+        next = pairName;
+      }
+    }
+    return CommunityThemePreference(
+      theme: next,
+      accent: accent,
+      followSystem: mode == ThemeMode.system,
+    );
+  }
+
+  /// Whether [other] differs only in light/dark/system, which is per device
+  /// and therefore never synced to the account.
+  bool sameSyncedChoice(CommunityThemePreference other) =>
+      _themeFamily(theme) == _themeFamily(other.theme) &&
+      accent == other.accent;
+
   @override
   bool operator ==(Object other) =>
       other is CommunityThemePreference &&
@@ -70,6 +96,7 @@ class CommunityThemeStorage {
   static const _prefix = 'buzz-community-theme.v1';
   static const _outboxPrefix = 'buzz-community-theme-outbox.v1';
   static const _migrationPrefix = 'buzz-community-theme-migrated.v1';
+  static const _deviceModeKey = 'buzz-device-appearance-mode.v1';
   static const _legacyModeKey = 'buzz_theme_mode';
   static const _legacyAccentKey = 'buzz_accent_color';
   static const _legacySchemeKey = 'buzz_color_scheme';
@@ -133,6 +160,14 @@ class CommunityThemeStorage {
   Future<bool> markMigrated(String pubkey) =>
       prefs.setBool('$_migrationPrefix:$pubkey', true);
 
+  ThemeMode? readDeviceMode() {
+    final name = prefs.getString(_deviceModeKey);
+    return ThemeMode.values.where((value) => value.name == name).firstOrNull;
+  }
+
+  Future<bool> writeDeviceMode(ThemeMode mode) =>
+      prefs.setString(_deviceModeKey, mode.name);
+
   Future<void> writeLegacy(CommunityThemePreference preference) async {
     await prefs.setString(_legacyModeKey, preference.mode.name);
     await prefs.setString(_legacySchemeKey, preference.theme);
@@ -161,6 +196,12 @@ class CommunityThemeStorage {
       followSystem: mode == ThemeMode.system,
     );
   }
+}
+
+/// The light member of a paired theme, so both halves compare as one choice.
+String _themeFamily(String theme) {
+  if (findTheme(theme)?.isDark != true) return theme;
+  return themePairFor(theme) ?? theme;
 }
 
 String normalizeCommunityRelayUrl(String relayUrl) =>

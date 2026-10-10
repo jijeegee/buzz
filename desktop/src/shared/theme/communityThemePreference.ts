@@ -1,10 +1,20 @@
 import { normalizeRelayUrl } from "@/features/profile/lib/selfProfileStorage";
 import { ACCENT_COLORS } from "./ThemeProvider";
-import { SYNTAX_THEMES, type SyntaxThemeName } from "./theme-loader";
+import {
+  SYNTAX_THEMES,
+  getThemePair,
+  isLightTheme,
+  type SyntaxThemeName,
+} from "./theme-loader";
 
 const STORAGE_KEY_PREFIX = "buzz-community-theme.v1";
 const OUTBOX_KEY_PREFIX = "buzz-community-theme-outbox.v1";
 const MIGRATION_KEY_PREFIX = "buzz-community-theme-migrated.v1";
+// Light/dark/system is a property of the device, not the account: it is kept
+// here only and overlaid on every synced preference before it is applied.
+const DEVICE_APPEARANCE_MODE_KEY = "buzz-device-appearance-mode.v1";
+
+export type DeviceAppearanceMode = "system" | "light" | "dark";
 
 export type CommunityThemePreference = {
   version: 1;
@@ -172,14 +182,61 @@ export function communityThemeScopeFallback(
   return migrated ? DEFAULT_COMMUNITY_THEME : inherited;
 }
 
+export function appearanceModeOf(
+  preference: CommunityThemePreference,
+): DeviceAppearanceMode {
+  if (preference.followSystem) return "system";
+  return isLightTheme(preference.theme) ? "light" : "dark";
+}
+
+export function readDeviceAppearanceMode(): DeviceAppearanceMode | null {
+  try {
+    const raw = window.localStorage.getItem(DEVICE_APPEARANCE_MODE_KEY);
+    return raw === "system" || raw === "light" || raw === "dark" ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeDeviceAppearanceMode(mode: DeviceAppearanceMode): void {
+  try {
+    window.localStorage.setItem(DEVICE_APPEARANCE_MODE_KEY, mode);
+  } catch {
+    // The active appearance stays usable; the mode is re-derived next launch.
+  }
+}
+
+/** Re-express a synced preference in this device's light/dark/system mode. */
+export function withDeviceAppearanceMode(
+  preference: CommunityThemePreference,
+  mode: DeviceAppearanceMode,
+): CommunityThemePreference {
+  if (mode === "system") return { ...preference, followSystem: true };
+  const wantLight = mode === "light";
+  const theme =
+    isLightTheme(preference.theme) === wantLight
+      ? preference.theme
+      : (getThemePair(preference.theme) ?? preference.theme);
+  return { ...preference, theme, followSystem: false };
+}
+
+/** The light member of a paired theme, so both halves compare as one choice. */
+function themeFamily(theme: SyntaxThemeName): SyntaxThemeName {
+  return isLightTheme(theme) ? theme : (getThemePair(theme) ?? theme);
+}
+
+/**
+ * Compares only the account-synced part of a preference (theme family and
+ * accent). Light/dark/system is per device, so a mode-only change is neither
+ * published nor treated as a different preference.
+ */
 export function sameCommunityThemePreference(
   left: CommunityThemePreference,
   right: CommunityThemePreference,
 ): boolean {
   return (
-    left.theme === right.theme &&
-    left.accent === right.accent &&
-    left.followSystem === right.followSystem
+    themeFamily(left.theme) === themeFamily(right.theme) &&
+    left.accent === right.accent
   );
 }
 

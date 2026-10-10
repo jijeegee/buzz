@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_COMMUNITY_THEME,
+  appearanceModeOf,
   cacheAndApplyCommunityTheme,
   clearCommunityThemeOutbox,
   communityThemeApplyExpectation,
@@ -12,8 +13,12 @@ import {
   parseCommunityThemePreference,
   readCommunityThemeOutbox,
   readCommunityThemePreference,
+  readDeviceAppearanceMode,
+  sameCommunityThemePreference,
+  withDeviceAppearanceMode,
   writeCommunityThemeOutbox,
   writeCommunityThemePreference,
+  writeDeviceAppearanceMode,
 } from "./communityThemePreference.ts";
 
 function localStorageStub() {
@@ -208,4 +213,55 @@ test("community switch defers stale outgoing appearance persistence", () => {
     "acknowledge",
   );
   assert.equal(communityThemePersistenceAction(null, incoming), "persist");
+});
+
+test("device appearance mode is overlaid on a synced preference", () => {
+  const synced = {
+    ...DEFAULT_COMMUNITY_THEME,
+    theme: "github-light",
+    followSystem: false,
+  };
+
+  assert.deepEqual(withDeviceAppearanceMode(synced, "dark"), {
+    ...synced,
+    theme: "github-dark",
+  });
+  assert.deepEqual(withDeviceAppearanceMode(synced, "light"), synced);
+  assert.deepEqual(withDeviceAppearanceMode(synced, "system"), {
+    ...synced,
+    followSystem: true,
+  });
+  assert.equal(appearanceModeOf(synced), "light");
+  assert.equal(
+    appearanceModeOf(withDeviceAppearanceMode(synced, "dark")),
+    "dark",
+  );
+});
+
+test("mode-only differences are not a different synced preference", () => {
+  const light = {
+    ...DEFAULT_COMMUNITY_THEME,
+    theme: "github-light",
+    followSystem: false,
+  };
+  const dark = { ...light, theme: "github-dark" };
+  const system = { ...light, followSystem: true };
+
+  assert.equal(sameCommunityThemePreference(light, dark), true);
+  assert.equal(sameCommunityThemePreference(light, system), true);
+  assert.equal(
+    sameCommunityThemePreference(light, { ...light, theme: "dracula" }),
+    false,
+  );
+  assert.equal(
+    sameCommunityThemePreference(light, { ...light, accent: "#ef4444" }),
+    false,
+  );
+});
+
+test("device appearance mode is stored once per device", () => {
+  globalThis.window = { localStorage: localStorageStub() };
+  assert.equal(readDeviceAppearanceMode(), null);
+  writeDeviceAppearanceMode("dark");
+  assert.equal(readDeviceAppearanceMode(), "dark");
 });

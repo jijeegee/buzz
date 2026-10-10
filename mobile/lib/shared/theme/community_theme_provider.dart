@@ -54,7 +54,12 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
     final fallback = _storage.hasMigrated(pubkey)
         ? defaultCommunityTheme
         : _storage.legacyPreference();
-    final initial = inMemoryLocal ?? dirty ?? cached ?? fallback;
+    final synced = inMemoryLocal ?? dirty ?? cached ?? fallback;
+    // Light/dark/system belongs to this device. Until it is stored, the
+    // appearance this device last showed is its mode.
+    final deviceMode = _storage.readDeviceMode();
+    if (deviceMode == null) unawaited(_storage.writeDeviceMode(synced.mode));
+    final initial = synced.withDeviceMode(deviceMode ?? synced.mode);
 
     if (session.status == SessionStatus.connected) {
       late final CommunityThemeSyncManager manager;
@@ -154,14 +159,22 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
 
   void _save(CommunityThemePreference preference) {
     if (preference == state) return;
+    final modeOnly = preference.sameSyncedChoice(state);
     state = preference;
-    _localRevision++;
+    unawaited(_storage.writeDeviceMode(preference.mode));
     final pubkey = _pubkey;
     final relayUrl = _relayUrl;
     if (pubkey == null || relayUrl == null) {
+      _localRevision++;
       unawaited(_storage.writeLegacy(preference));
       return;
     }
+    // Light/dark/system is per device: keep it local and publish nothing.
+    if (modeOnly) {
+      unawaited(_storage.write(pubkey, relayUrl, preference));
+      return;
+    }
+    _localRevision++;
     _scopedLocalPreference = preference;
     _scopedLocalPubkey = pubkey;
     _scopedLocalRelayUrl = relayUrl;
@@ -209,7 +222,9 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
       manager.publish(dirty);
       return;
     }
-    state = remote.preference;
+    state = remote.preference.withDeviceMode(
+      _storage.readDeviceMode() ?? state.mode,
+    );
     if (pubkey != null && relayUrl != null) {
       unawaited(_storage.write(pubkey, relayUrl, remote.preference));
     }
