@@ -60,12 +60,13 @@ export function MessageThreadTranscript({
       )}
       data-testid={testId}
     >
-      {renderItems.map(({ isContinuation, message }) => (
+      {renderItems.map(({ isContinuation, message }, index) => (
         <React.Fragment key={message.renderKey ?? message.id}>
           <MessageThreadRow
             channelId={channelId}
             currentPubkey={currentPubkey}
             isContinuation={isContinuation}
+            showTimestamp={!renderItems[index + 1]?.isContinuation}
             message={message}
             onToggleReaction={onToggleReaction}
             profiles={profiles}

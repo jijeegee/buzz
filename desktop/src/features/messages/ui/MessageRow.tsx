@@ -90,6 +90,7 @@ export const MessageRow = React.memo(
     collapseDescendantsLabel,
     isFollowingThread,
     isContinuation = false,
+    showTimestamp = true,
     isUnread,
     layoutVariant = "default",
     message,
@@ -131,6 +132,8 @@ export const MessageRow = React.memo(
     collapseDescendantsLabel?: string;
     isFollowingThread?: boolean;
     isContinuation?: boolean;
+    /** Last message of its group: the time shows under the bubble. */
+    showTimestamp?: boolean;
     isUnread?: boolean;
     layoutVariant?: "default" | "thread-reply";
     message: TimelineMessage;
@@ -634,19 +637,26 @@ export const MessageRow = React.memo(
         </>
       ) : null;
 
-    const bubbleMetaNode = (
+    const bubbleMetaNode = statusMetadataNode ? (
       <div
         className="mt-0.5 flex items-baseline justify-end gap-1.5 text-2xs"
         data-testid="message-bubble-meta"
       >
         {statusMetadataNode}
+      </div>
+    ) : null;
+
+    // The time sits outside the bubble, under its outer corner, on the last
+    // message of a group only (mobile follows the same rule).
+    const bubbleTimeNode = showTimestamp ? (
+      <div className="mt-0.5 px-1 text-2xs" data-testid="message-bubble-time">
         <MessageTimestamp
           className="text-2xs"
           clockOnly
           createdAt={message.createdAt}
         />
       </div>
-    );
+    ) : null;
 
     const personaNode =
       message.personaDisplayName &&
@@ -685,9 +695,7 @@ export const MessageRow = React.memo(
     const bubbleNode = (
       <div
         className={cn(
-          "relative min-w-0",
-          // Own bubbles stay chat-narrow; others get room for agent reports.
-          isOwnMessage ? "max-w-[75%]" : "max-w-[92%]",
+          "relative min-w-0 max-w-full",
           emojiOnly
             ? "px-1"
             : cn(
@@ -949,7 +957,18 @@ export const MessageRow = React.memo(
               isOwnMessage ? "items-end" : "items-start",
             )}
           >
-            {bubbleNode}
+            <div
+              className={cn(
+                "flex min-w-0 flex-col",
+                // Own bubbles stay chat-narrow; others get room for agent reports.
+                isOwnMessage
+                  ? "max-w-[75%] items-start"
+                  : "max-w-[92%] items-end",
+              )}
+            >
+              {bubbleNode}
+              {bubbleTimeNode}
+            </div>
             {belowBubbleNode}
           </div>
           {actionBarNode}
@@ -1006,6 +1025,7 @@ export const MessageRow = React.memo(
     prev.huddleMemberPubkeysPending === next.huddleMemberPubkeysPending &&
     prev.hideAgentAccessBadge === next.hideAgentAccessBadge &&
     prev.isContinuation === next.isContinuation &&
+    prev.showTimestamp === next.showTimestamp &&
     prev.isFollowingThread === next.isFollowingThread &&
     prev.isUnread === next.isUnread &&
     prev.layoutVariant === next.layoutVariant &&

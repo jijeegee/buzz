@@ -722,6 +722,9 @@ export function MessageThreadPanel({
                             huddleMemberPubkeysPending
                           }
                           isContinuation={isContinuation}
+                          showTimestamp={
+                            !threadReplyRenderItems[index + 1]?.isContinuation
+                          }
                           isUnread={isMessageUnreadById?.(entry.message.id)}
                           message={entry.message}
                           onCollapseDepthGuide={handleCollapseDepthGuide}

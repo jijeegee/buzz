@@ -219,6 +219,15 @@ class _ThreadMessageList extends StatelessWidget {
                     previousReply.pubkey.toLowerCase() !=
                         reply.pubkey.toLowerCase() ||
                     (reply.createdAt - previousReply.createdAt) > 300;
+                final nextReply = chronologicalIndex + 1 < replies.length
+                    ? replies[chronologicalIndex + 1]
+                    : null;
+                final showTime =
+                    nextReply == null ||
+                    !isSameDay(reply.createdAt, nextReply.createdAt) ||
+                    nextReply.pubkey.toLowerCase() !=
+                        reply.pubkey.toLowerCase() ||
+                    (nextReply.createdAt - reply.createdAt) > 300;
 
                 // Check if this reply itself has children (nested thread).
                 final nestedChildren = childrenByParent[reply.id];
@@ -258,6 +267,7 @@ class _ThreadMessageList extends StatelessWidget {
                             channelId: channelId,
                             currentPubkey: currentPubkey,
                             showAuthor: showAuthor,
+                            showTime: showTime,
                             isHighlighted: reply.id == highlightedMessageId,
                             allMessages: allMessages,
                             isMember: isMember,

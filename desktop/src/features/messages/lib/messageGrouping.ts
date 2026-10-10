@@ -15,7 +15,7 @@ type MessageGroupingCandidate = {
  * even from the same author. Applied consistently across the channel timeline,
  * the threaded reply panel, and the home inbox detail view.
  */
-export const MESSAGE_GROUPING_WINDOW_SECONDS = 10 * 60;
+export const MESSAGE_GROUPING_WINDOW_SECONDS = 5 * 60;
 
 /**
  * Shared thread messages introduce context from another conversation, so they

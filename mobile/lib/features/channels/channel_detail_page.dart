@@ -61,6 +61,7 @@ import 'compose_bar.dart';
 import 'composer_quote_chip.dart';
 import 'composer_quote_provider.dart';
 import 'composer_dock_size_reporter.dart';
+import 'chat_bubble_row.dart';
 import 'date_formatters.dart';
 import 'day_divider.dart';
 import 'dm_channel_labels.dart';

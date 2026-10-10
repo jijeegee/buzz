@@ -3803,60 +3803,153 @@ void main() {
       expect(messageActionBackdropActive.value, isFalse);
     });
 
+    testWidgets('keeps image galleries body-aligned inside the bubble', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const firstImage = 'https://example.com/media/first.png';
+      const secondImage = 'https://example.com/media/second.png';
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [
+            _textMsg(
+              id: 'gallery',
+              pubkey: 'alice',
+              content:
+                  'Gallery\n'
+                  '![First]($firstImage)\n'
+                  '![Second]($secondImage)',
+              extraTags: const [
+                ['imeta', 'url $firstImage', 'm image/png'],
+                ['imeta', 'url $secondImage', 'm image/png'],
+              ],
+            ),
+          ],
+          users: const {
+            'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final carousel = find.byKey(const ValueKey('message-media-carousel'));
+      final imageCount = find.byKey(
+        const ValueKey('message-media-carousel-count'),
+      );
+      final carouselRect = tester.getRect(carousel);
+      final imageCountRect = tester.getRect(imageCount);
+
+      expect(carouselRect.left, imageCountRect.left);
+      // Inside a bubble the gallery stops at the bubble's inner edge.
+      final bubbleRect = tester.getRect(
+        find.byKey(const ValueKey('message-bubble-gallery')),
+      );
+      expect(carouselRect.right, bubbleRect.right - 12);
+      expect(carouselRect.top - imageCountRect.bottom, Grid.half + 2);
+
+      final messageMaterial = find
+          .ancestor(
+            of: find.byKey(const ValueKey('message-row-gallery')),
+            matching: find.byType(Material),
+          )
+          .first;
+      expect(tester.widget<Material>(messageMaterial).clipBehavior, Clip.none);
+    });
+
     testWidgets(
-      'keeps image galleries body-aligned and flush with the trailing edge',
+      'lays out own messages right and shows the time once per group',
       (tester) async {
         tester.view.physicalSize = const Size(400, 800);
         tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.reset);
 
-        const firstImage = 'https://example.com/media/first.png';
-        const secondImage = 'https://example.com/media/second.png';
         await tester.pumpWidget(
           _buildTestable(
+            huddleCurrentPubkey: 'self',
             messages: [
               _textMsg(
-                id: 'gallery',
+                id: 'other-1',
                 pubkey: 'alice',
-                content:
-                    'Gallery\n'
-                    '![First]($firstImage)\n'
-                    '![Second]($secondImage)',
-                extraTags: const [
-                  ['imeta', 'url $firstImage', 'm image/png'],
-                  ['imeta', 'url $secondImage', 'm image/png'],
-                ],
+                content: 'First from Alice',
+                createdAt: 1000,
+              ),
+              _textMsg(
+                id: 'other-2',
+                pubkey: 'alice',
+                content: 'Second from Alice',
+                createdAt: 1010,
+              ),
+              _textMsg(
+                id: 'own-1',
+                pubkey: 'self',
+                content: 'First from me',
+                createdAt: 1020,
+              ),
+              _textMsg(
+                id: 'own-2',
+                pubkey: 'self',
+                content: 'Second from me',
+                createdAt: 1030,
               ),
             ],
             users: const {
               'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
+              'self': UserProfile(pubkey: 'self', displayName: 'Me'),
             },
           ),
         );
         await tester.pumpAndSettle();
 
-        final carousel = find.byKey(const ValueKey('message-media-carousel'));
-        final imageCount = find.byKey(
-          const ValueKey('message-media-carousel-count'),
-        );
-        final carouselRect = tester.getRect(carousel);
-        final imageCountRect = tester.getRect(imageCount);
-
-        expect(carouselRect.left, imageCountRect.left);
-        expect(carouselRect.right, tester.view.physicalSize.width);
-        expect(carouselRect.top - imageCountRect.bottom, Grid.half + 2);
-
-        final messageMaterial = find
-            .ancestor(
-              of: find.byKey(const ValueKey('message-row-gallery')),
-              matching: find.byType(Material),
-            )
-            .first;
+        // Own messages carry no name or avatar.
+        expect(find.text('Me'), findsNothing);
         expect(
-          tester.widget<Material>(messageMaterial).clipBehavior,
-          Clip.none,
+          find.byKey(const ValueKey('message-author-own-1')),
+          findsNothing,
         );
+        expect(find.text('Alice'), findsOneWidget);
+
+        final ownBubble = tester.getRect(
+          find.byKey(const ValueKey('message-bubble-own-1')),
+        );
+        final otherBubble = tester.getRect(
+          find.byKey(const ValueKey('message-bubble-other-1')),
+        );
+        final listRight = 400 - Grid.gutter;
+        expect(ownBubble.right, closeTo(listRight, 0.01));
+        expect(
+          otherBubble.left,
+          closeTo(
+            Grid.gutter + messageAvatarSize + messageAvatarContentGap,
+            0.01,
+          ),
+        );
+        expect(otherBubble.right, lessThan(listRight));
+
+        // The time shows only under the last bubble of each group, outside it:
+        // under the right corner for others, the left corner for own.
+        for (final id in ['other-1', 'own-1']) {
+          expect(find.byKey(ValueKey('message-timestamp-$id')), findsNothing);
+        }
+        final otherTime = tester.getRect(
+          find.byKey(const ValueKey('message-timestamp-other-2')),
+        );
+        final otherLast = tester.getRect(
+          find.byKey(const ValueKey('message-bubble-other-2')),
+        );
+        expect(otherTime.top, greaterThanOrEqualTo(otherLast.bottom));
+        expect(otherTime.right, closeTo(otherLast.right, 0.01));
+        final ownTime = tester.getRect(
+          find.byKey(const ValueKey('message-timestamp-own-2')),
+        );
+        final ownLast = tester.getRect(
+          find.byKey(const ValueKey('message-bubble-own-2')),
+        );
+        expect(ownTime.top, greaterThanOrEqualTo(ownLast.bottom));
+        expect(ownTime.left, closeTo(ownLast.left, 0.01));
       },
     );
 
@@ -8650,9 +8743,10 @@ void main() {
             huddleAuthor.top - huddleAvatar.top,
             closeTo(regularAuthor.top - regularAvatar.top, 0.01),
           );
+          // A regular body sits inside its bubble, one bubble padding lower.
           expect(
             huddleBody.top - huddleAuthor.bottom,
-            closeTo(regularBody.top - regularAuthor.bottom, 0.01),
+            closeTo(regularBody.top - regularAuthor.bottom - 6, 0.01),
           );
         },
       );
@@ -8715,18 +8809,24 @@ void main() {
               .first,
         );
 
-        final avatars = [
-          avatarRect('message-row-message-alice'),
-          avatarRect('message-row-message-bob'),
-          avatarRect('system-message-row-membership-carol'),
-          avatarRect('system-message-row-huddle-dave'),
-          avatarRect('message-row-message-erin'),
+        const rowKeys = [
+          'message-row-message-alice',
+          'message-row-message-bob',
+          'system-message-row-membership-carol',
+          'system-message-row-huddle-dave',
+          'message-row-message-erin',
         ];
-        final authoredMessageGap = avatars[1].top - avatars[0].bottom;
+        // Bubble rows run taller than system rows (bubble padding and the
+        // time under the bubble), so compare the space between rows.
+        final rows = [
+          for (final key in rowKeys) tester.getRect(find.byKey(ValueKey(key))),
+        ];
+        final avatars = [for (final key in rowKeys) avatarRect(key)];
+        final authoredMessageGap = avatars[1].top - rows[0].bottom;
 
         for (var index = 2; index < avatars.length; index++) {
           expect(
-            avatars[index].top - avatars[index - 1].bottom,
+            avatars[index].top - rows[index - 1].bottom,
             closeTo(authoredMessageGap, 1),
             reason: 'row $index should use the authored-message gap',
           );
@@ -12252,7 +12352,7 @@ void main() {
               id: 'reply-$i',
               pubkey: 'bob',
               content: i == 29
-                  ? List.filled(33, 'Tall latest reply').join('\n')
+                  ? List.filled(31, 'Tall latest reply').join('\n')
                   : 'Reply $i',
               createdAt: 1100 + i,
               extraTags: const [
@@ -12618,7 +12718,7 @@ void main() {
               id: 'reply-$i',
               pubkey: 'bob',
               content: i == 29
-                  ? List.filled(15, 'Tall latest reply').join('\n')
+                  ? List.filled(13, 'Tall latest reply').join('\n')
                   : 'Reply $i',
               createdAt: 1100 + i,
               extraTags: const [

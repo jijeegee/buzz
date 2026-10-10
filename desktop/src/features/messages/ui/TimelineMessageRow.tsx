@@ -156,6 +156,7 @@ export function MessageRowItem({
           }
           isUnread={isUnread}
           isContinuation={isContinuation}
+          showTimestamp={!isFollowedByContinuation}
           playEntrance={playEntrance}
           onEntranceComplete={onEntranceComplete}
           message={message}
@@ -211,6 +212,7 @@ export function MessageRowItem({
         huddleMemberPubkeysPending={huddleMemberPubkeysPending}
         hideAgentAccessBadge={hideAgentAccessBadges}
         isContinuation={isContinuation}
+        showTimestamp={!isFollowedByContinuation}
         isFollowingThread={
           !message.pending && isFollowingThreadById
             ? isFollowingThreadById(effectiveThreadRootId)
