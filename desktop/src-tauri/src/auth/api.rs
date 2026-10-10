@@ -244,14 +244,19 @@ pub(crate) fn start_url(
     challenge: &str,
     redirect_uri: &str,
     device_name: &str,
+    install_id: Option<&str>,
 ) -> String {
-    let query = url::form_urlencoded::Serializer::new(String::new())
+    let mut query = url::form_urlencoded::Serializer::new(String::new());
+    query
         .append_pair("state", state)
         .append_pair("code_challenge", challenge)
         .append_pair("client", "desktop")
         .append_pair("redirect_uri", redirect_uri)
-        .append_pair("device_name", device_name)
-        .finish();
+        .append_pair("device_name", device_name);
+    if let Some(install_id) = install_id {
+        query.append_pair("install_id", install_id);
+    }
+    let query = query.finish();
     format!("{origin}/auth/oidc/{provider}/start?{query}")
 }
 
@@ -560,6 +565,7 @@ mod tests {
             "ch",
             "http://127.0.0.1:5555/cb",
             "My Mac",
+            Some("5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c"),
         );
         assert!(url.starts_with("http://127.0.0.1:3000/auth/oidc/google/start?"));
         assert!(url.contains("state=st"));
@@ -567,6 +573,7 @@ mod tests {
         assert!(url.contains("client=desktop"));
         assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A5555%2Fcb"));
         assert!(url.contains("device_name=My+Mac"));
+        assert!(url.contains("install_id=5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c"));
     }
 
     #[test]

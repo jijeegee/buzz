@@ -125,7 +125,12 @@ pub(crate) async fn publish_agent_host_devices(app: &tauri::AppHandle) -> Result
     Ok(())
 }
 
-/// Fire-and-forget [`publish_agent_host_devices`].
+/// Waits before each retry of a failed publish (e.g. right after sign-in,
+/// before the relay connection is up). Each attempt re-reads the current list.
+const PUBLISH_RETRY_DELAYS_SECS: [u64; 5] = [2, 5, 15, 30, 60];
+
+/// Fire-and-forget [`publish_agent_host_devices`], retried on failure so a
+/// device's agents are never left listed under an older sign-in.
 pub(crate) fn spawn_publish_agent_host_devices<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let Some(app) = app
         .try_state::<AppState>()
@@ -134,8 +139,16 @@ pub(crate) fn spawn_publish_agent_host_devices<R: tauri::Runtime>(app: &tauri::A
         return;
     };
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = publish_agent_host_devices(&app).await {
+        let mut delays = PUBLISH_RETRY_DELAYS_SECS.iter();
+        loop {
+            let Err(error) = publish_agent_host_devices(&app).await else {
+                return;
+            };
             eprintln!("buzz-desktop: could not publish agent host devices: {error}");
+            let Some(&delay) = delays.next() else {
+                return;
+            };
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
         }
     });
 }

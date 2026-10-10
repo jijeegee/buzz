@@ -96,6 +96,17 @@ test("hovering the owner's robot names the device it runs on", async () => {
   assert.match(tooltip.textContent, /Running on Studio PC/);
 });
 
+test("the owner's robot says when the agent runs on this device", () => {
+  const { container } = renderOwner({
+    viewer: OWNER,
+    deviceNames: [{ id: DEVICE_ID, name: "Studio PC", current: true }],
+  });
+  assert.equal(
+    container.querySelector("[data-device-id]")?.getAttribute("aria-label"),
+    "Running on this device (Studio PC)",
+  );
+});
+
 test("an unnamed host device still gets a tooltip", () => {
   const { container } = renderOwner({ viewer: OWNER, deviceNames: [] });
   assert.equal(
