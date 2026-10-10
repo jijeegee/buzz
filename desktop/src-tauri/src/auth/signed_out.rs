@@ -154,6 +154,12 @@ impl SignedOutMarkers {
     /// Durably clear `origin`'s marker after a matching Google sign-in. An
     /// unreadable file is replaced by the remaining known markers: the same
     /// Google account just proved this device's owner.
+    /// Clear `origin`'s marker after a matching Google sign-in.
+    ///
+    /// Known limitation: when the file was unreadable (fail-closed), the
+    /// rewrite keeps no other origins, so signing in to one community also
+    /// lifts the unknown markers of others on this computer. Rare (a corrupt
+    /// file plus several communities); revisit with multi-account work.
     pub(crate) fn clear(&self, origin: &str) -> Result<(), String> {
         let mut markers = self.lock();
         if !markers.unreadable && !markers.origins.contains_key(origin) {

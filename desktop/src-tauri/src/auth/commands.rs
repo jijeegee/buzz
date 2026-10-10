@@ -309,7 +309,17 @@ async fn login_inner(
         return Err("A key-backup binding appeared during sign-in. Your existing session was preserved; sign in again.".into());
     }
     if backup {
-        super::key_recovery::complete(app, &origin, &tokens, allow_restore).await?;
+        if let Err(error) =
+            super::key_recovery::complete(app, &origin, &tokens, allow_restore).await
+        {
+            // The session is never stored on failure (e.g. a different
+            // account than the one signed out here): revoke it server-side
+            // instead of leaving it alive, as the token path does above.
+            if let Err(revoke) = api::logout(&state.http_client, &origin, &tokens.access).await {
+                eprintln!("buzz-desktop: auth: revoking a failed key-backup sign-in: {revoke}");
+            }
+            return Err(error);
+        }
     }
     let agent_store_guard = if !backup && existing_token_account {
         let guard = state
