@@ -480,12 +480,12 @@ test("buildTimelineItems: same-author messages past the window start a new group
   const author = "author-a";
   const entries = [
     entry({ id: "a", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 0) }),
-    // 8 min later — within the 10-min window, groups as a continuation.
-    entry({ id: "b", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 8) }),
-    // 12 min after "b" — past the window, breaks into a new thought.
-    entry({ id: "c", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 20) }),
-    // 5 min after "c" — within the window again, groups onto "c".
-    entry({ id: "d", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 25) }),
+    // 4 min later — within the 5-min window, groups as a continuation.
+    entry({ id: "b", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 4) }),
+    // 7 min after "b" — past the window, breaks into a new thought.
+    entry({ id: "c", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 11) }),
+    // 3 min after "c" — within the window again, groups onto "c".
+    entry({ id: "d", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 14) }),
   ];
 
   const messageItems = buildTimelineItems(entries, null).items.filter(
@@ -504,13 +504,13 @@ test("buildTimelineItems: same-author messages past the window start a new group
 
 test("buildTimelineItems: window is measured against the previous message, not the group start", () => {
   const author = "author-a";
-  // Each message is 8 min after the one above it — a steady stream that never
-  // gaps out, so grouping continues even though the span (16 min) exceeds the
-  // 10-min window.
+  // Each message is 4 min after the one above it — a steady stream that never
+  // gaps out, so grouping continues even though the span (8 min) exceeds the
+  // 5-min window.
   const entries = [
     entry({ id: "a", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 0) }),
-    entry({ id: "b", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 8) }),
-    entry({ id: "c", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 16) }),
+    entry({ id: "b", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 4) }),
+    entry({ id: "c", pubkey: author, createdAt: dayAt(2026, 6, 14, 12, 8) }),
   ];
 
   const messageItems = buildTimelineItems(entries, null).items.filter(
