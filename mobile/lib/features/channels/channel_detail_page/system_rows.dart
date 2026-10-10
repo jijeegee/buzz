@@ -512,8 +512,19 @@ class _ThreadSummaryRow extends ConsumerWidget {
         ),
       ),
     );
-    return isOwn
-        ? Align(alignment: Alignment.centerRight, child: summaryRow)
-        : summaryRow;
+    if (!isOwn) return summaryRow;
+    // Keep an own message's summary within its bubble's width so a long
+    // thread name doesn't stretch it back across to the left edge.
+    return LayoutBuilder(
+      builder: (context, constraints) => Align(
+        alignment: Alignment.centerRight,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: constraints.maxWidth * chatOwnBubbleWidthFactor,
+          ),
+          child: summaryRow,
+        ),
+      ),
+    );
   }
 }

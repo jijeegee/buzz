@@ -554,6 +554,22 @@ class MessageContent extends HookConsumerWidget {
   }
 }
 
+/// Whether [content] renders as a large emoji-only message, using the same
+/// emoji palette [MessageContent] resolves `:shortcode:`s against. Chat
+/// bubbles use it to drop the bubble behind emoji-only messages.
+bool watchMessageIsEmojiOnly(
+  WidgetRef ref, {
+  required String content,
+  required List<List<String>> tags,
+}) => isEmojiOnlyMessage(
+  content,
+  nativeEmoji: ref.watch(nativeEmojiGlyphsProvider),
+  customEmoji: _mergeCustomEmoji(
+    customEmojiFromTags(tags),
+    ref.watch(customEmojiListProvider),
+  ),
+);
+
 List<CustomEmoji> _mergeCustomEmoji(
   List<CustomEmoji> eventEmoji,
   List<CustomEmoji> paletteEmoji,

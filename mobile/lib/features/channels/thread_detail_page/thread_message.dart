@@ -170,6 +170,11 @@ class _ThreadMessage extends HookConsumerWidget {
               child: RepaintBoundary(
                 key: messageSnapshotKey,
                 child: ChatBubbleRow(
+                  bare: watchMessageIsEmojiOnly(
+                    ref,
+                    content: message.content,
+                    tags: message.tags,
+                  ),
                   bubbleKey: ValueKey('thread-message-bubble-${message.id}'),
                   isOwn: isOwnMessage,
                   showAuthor: showAuthor,

@@ -6,14 +6,15 @@ import '../../shared/theme/message_typography.dart';
 import '../../shared/theme/theme_extensions.dart';
 import 'date_formatters.dart';
 
-/// Widest an own bubble may grow, as a share of the row. Desktop uses 75%;
-/// a phone-width row needs a little more so short sentences don't wrap.
-const chatOwnBubbleWidthFactor = 0.80;
+/// Widest an own bubble may grow, as a share of the row (desktop's value).
+const chatOwnBubbleWidthFactor = 0.75;
 
 /// Widest another person's (or agent's) bubble may grow, as a share of the
-/// space right of the avatar column. Wider than own bubbles so long agent
-/// reports stay readable; short messages still shrink to their content.
-const chatOtherBubbleWidthFactor = 0.92;
+/// space right of the avatar column. Narrower than desktop's 92%: on a phone
+/// a long incoming bubble must stop well short of the right edge, or long own
+/// and incoming messages span the same width and stop reading as right and
+/// left aligned.
+const chatOtherBubbleWidthFactor = 0.80;
 
 const _bubbleRadius = Radius.circular(16);
 const _bubbleTailRadius = Radius.circular(6);
@@ -39,6 +40,10 @@ class ChatBubbleRow extends StatelessWidget {
   final Key? bubbleKey;
   final Key? timestampKey;
 
+  /// Draws [content] without the bubble behind it, as for emoji-only
+  /// messages that render large.
+  final bool bare;
+
   const ChatBubbleRow({
     super.key,
     required this.isOwn,
@@ -51,6 +56,7 @@ class ChatBubbleRow extends StatelessWidget {
     this.below,
     this.bubbleKey,
     this.timestampKey,
+    this.bare = false,
   });
 
   @override
@@ -79,23 +85,30 @@ class ChatBubbleRow extends StatelessWidget {
             maxWidth: maxBubbleWidth,
           ),
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: isOwn ? palette.ownBubble : palette.otherBubble,
-              borderRadius: BorderRadius.only(
-                topLeft: _bubbleRadius,
-                topRight: _bubbleRadius,
-                bottomLeft: isOwn ? _bubbleRadius : _bubbleTailRadius,
-                bottomRight: isOwn ? _bubbleTailRadius : _bubbleRadius,
-              ),
-              border: !isOwn && palette.otherBubbleOutline != null
-                  ? Border.all(color: palette.otherBubbleOutline!, width: 0.5)
-                  : null,
-            ),
+            decoration: bare
+                ? const BoxDecoration()
+                : BoxDecoration(
+                    color: isOwn ? palette.ownBubble : palette.otherBubble,
+                    borderRadius: BorderRadius.only(
+                      topLeft: _bubbleRadius,
+                      topRight: _bubbleRadius,
+                      bottomLeft: isOwn ? _bubbleRadius : _bubbleTailRadius,
+                      bottomRight: isOwn ? _bubbleTailRadius : _bubbleRadius,
+                    ),
+                    border: !isOwn && palette.otherBubbleOutline != null
+                        ? Border.all(
+                            color: palette.otherBubbleOutline!,
+                            width: 0.5,
+                          )
+                        : null,
+                  ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: Grid.twelve,
-                vertical: Grid.half + Grid.quarter,
-              ),
+              padding: bare
+                  ? const EdgeInsets.symmetric(horizontal: Grid.half)
+                  : const EdgeInsets.symmetric(
+                      horizontal: Grid.twelve,
+                      vertical: Grid.half + Grid.quarter,
+                    ),
               // The time is pinned to the bubble's corner; the content keeps a
               // line of room for it so the two never overlap.
               child: Stack(
@@ -148,33 +161,38 @@ class ChatBubbleRow extends StatelessWidget {
           ),
         );
 
-        return Column(
-          crossAxisAlignment: isOwn
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: isOwn
-                  ? MainAxisAlignment.end
-                  : MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (!isOwn) ...[
-                  if (showAuthor)
-                    avatar
-                  else
-                    const SizedBox(width: messageAvatarSize),
-                  const SizedBox(width: messageAvatarContentGap),
+        // Span the full row so own bubbles reach the right edge even when a
+        // parent hands down loose width constraints.
+        return SizedBox(
+          width: constraints.hasBoundedWidth ? constraints.maxWidth : null,
+          child: Column(
+            crossAxisAlignment: isOwn
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: isOwn
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!isOwn) ...[
+                    if (showAuthor)
+                      avatar
+                    else
+                      const SizedBox(width: messageAvatarSize),
+                    const SizedBox(width: messageAvatarContentGap),
+                  ],
+                  bubble,
                 ],
-                bubble,
-              ],
-            ),
-            if (below != null)
-              Padding(
-                padding: EdgeInsets.only(left: avatarColumn),
-                child: below,
               ),
-          ],
+              if (below != null)
+                Padding(
+                  padding: EdgeInsets.only(left: avatarColumn),
+                  child: below,
+                ),
+            ],
+          ),
         );
       },
     );
