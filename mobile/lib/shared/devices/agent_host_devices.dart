@@ -286,8 +286,26 @@ final agentHostDeviceNamesProvider = Provider.autoDispose<Map<String, String>>((
   };
 });
 
-/// Long-press text naming the computer an agent runs on.
-String agentHostDeviceLabel(String? deviceName) =>
-    deviceName == null || deviceName.trim().isEmpty
-    ? 'Running on another device'
-    : 'Running on ${deviceName.trim()}';
+/// The relay device id (lowercase) this app is signed in on, from the token
+/// relay's device list; `null` without a token relay or on failure.
+final currentAccountDeviceIdProvider = Provider.autoDispose<String?>((ref) {
+  final origin = ref.watch(activeTokenOriginProvider);
+  if (origin == null) return null;
+  final devices = ref.watch(accountDevicesProvider(origin)).value;
+  for (final device in devices ?? const <AccountDevice>[]) {
+    if (device.current) return device.id.trim().toLowerCase();
+  }
+  return null;
+});
+
+/// Long-press text naming the device an agent runs on, and whether it is
+/// the one in the viewer's hand.
+String agentHostDeviceLabel(String? deviceName, {bool current = false}) {
+  final name = deviceName?.trim() ?? '';
+  if (current) {
+    return name.isEmpty
+        ? 'Running on this device'
+        : 'Running on this device ($name)';
+  }
+  return name.isEmpty ? 'Running on another device' : 'Running on $name';
+}
