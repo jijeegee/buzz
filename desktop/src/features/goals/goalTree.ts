@@ -105,3 +105,25 @@ export function goalTitleError(title: string): string | null {
     return `Keep the goal under ${GOAL_TITLE_MAX_CHARS} characters.`;
   return null;
 }
+
+/**
+ * How a goal shows in a thread linked to `goalId`: the linked goal and its
+ * sub-goals are editable, the path above it is shown but read-only, and every
+ * other goal is read-only and faded. Nested threads link their chain root
+ * (see `threadGoalRootId`), so they share the outer thread's scope.
+ */
+export type GoalAccess = "focus" | "edit" | "path" | "muted";
+
+export function threadGoalAccess(
+  tree: GoalTree,
+  goalId: string,
+): (id: string) => GoalAccess {
+  const editable = goalSubtreeIds(tree, goalId);
+  const path = new Set(goalPath(tree, goalId).map((node) => node.id));
+  return (id) => {
+    if (id === goalId) return "focus";
+    if (editable.has(id)) return "edit";
+    if (path.has(id)) return "path";
+    return "muted";
+  };
+}

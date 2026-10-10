@@ -12,15 +12,14 @@ import type { GoalNode, GoalTree } from "@/shared/api/tauriGoals";
 import { newGoalId } from "@/shared/api/tauriGoals";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import {
-  goalChildren,
   goalForThread,
   goalOutline,
   goalPath,
   goalProgress,
   goalRoot,
+  threadGoalAccess,
 } from "../goalTree";
 import {
-  AddGoalInline,
   type Apply,
   GoalEditor,
   GoalRow,
@@ -39,8 +38,9 @@ type ThreadGoalPanelViewProps = {
 
 /**
  * Thread head goal panel. Linked: a one-line summary (status, path below
- * layer 1, sub-goal progress) that expands into the goal's sub-goal tree,
- * where sub-goals can be added and checked off. Unlinked: a picker that links
+ * layer 1, sub-goal progress) that expands into the channel's whole goal
+ * tree. The linked goal and its sub-goals can be edited there; the path above
+ * is read-only and the rest is read-only and faded. Unlinked: a picker that links
  * the thread to a goal, or adds a new goal and links it in one revision.
  * Renders nothing when the conversation has no goals.
  */
@@ -102,7 +102,6 @@ export function ThreadGoalPanelView({
   }
 
   const path = goalPath(tree, goal.id);
-  const layer = path.length;
   // The layer 1 goal is already in the channel header; show the rest.
   const shown = path.length > 1 ? path.slice(1) : path;
   const { done, total } = goalProgress(tree, goal.id);
@@ -157,29 +156,19 @@ export function ThreadGoalPanelView({
       </div>
       {expanded ? (
         <div
-          className="max-h-64 overflow-y-auto border-t border-border/50 px-2 py-1"
+          className="max-h-80 overflow-y-auto border-t border-border/50 px-2 py-1"
           data-testid="thread-goal-subtree"
           id={subtreeId}
         >
-          {goal.note ? (
-            <p className="whitespace-pre-wrap break-words px-1 pb-1 text-muted-foreground">
-              {goal.note}
-            </p>
-          ) : null}
-          {goalChildren(tree, goal.id).map((child) => (
-            <GoalRow
-              apply={apply}
-              key={child.id}
-              layer={layer + 1}
-              nameOf={nameOf}
-              node={child}
-              tree={tree}
-            />
-          ))}
-          <AddGoalInline
+          <GoalRow
+            access={threadGoalAccess(tree, goal.id)}
+            // Relinking remounts the rows so their scope-based state resets.
+            key={goal.id}
             apply={apply}
-            label={`Add a layer ${layer + 1} goal`}
-            parentId={goal.id}
+            layer={1}
+            nameOf={nameOf}
+            node={goalRoot(tree) as GoalNode}
+            tree={tree}
           />
         </div>
       ) : null}

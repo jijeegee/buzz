@@ -3,8 +3,10 @@
 //!
 //! - Main channel, DM, or a thread not linked to a goal: the whole tree.
 //! - A thread linked to a goal: the path from layer 1 down to that goal, the
-//!   goal with all its sub-goals, and every other goal on the same layer (so
-//!   the thread avoids overlapping sibling work and can spot gaps).
+//!   goal with all its sub-goals, and the other goals that branch off that
+//!   path at each layer (so the thread knows the direction, avoids
+//!   overlapping sibling work, and can spot gaps). Goals inside other
+//!   branches stay out.
 //!
 //! The section exists only where the conversation has a goal tree, and it
 //! carries the goal usage rules itself, so conversations without goals get
@@ -192,16 +194,26 @@ pub(crate) fn render_goal_context(
                 }),
                 channel_id,
             );
-            let others: Vec<String> = tree
-                .layer_nodes(layer)
-                .into_iter()
-                .filter(|n| n.id != goal.id)
-                .map(|n| goal_line(tree, layer, n, MAX_NOTE_CHARS))
+            // The goals that branch off this goal's path, nearest layer
+            // first so a size cut drops the farthest ones. Their sub-goals
+            // and other branches stay out at any depth.
+            let others: Vec<String> = path
+                .windows(2)
+                .enumerate()
+                .rev()
+                .flat_map(|(i, pair)| {
+                    tree.children(&pair[0].id)
+                        .into_iter()
+                        .filter(|n| n.id != pair[1].id)
+                        .map(move |n| goal_line(tree, i + 2, n, MAX_NOTE_CHARS))
+                        .collect::<Vec<_>>()
+                })
                 .collect();
             if !others.is_empty() {
-                body.push_str(&format!(
-                    "\nOther layer {layer} goals (stay out of their scope; say so if you see a gap):\n"
-                ));
+                body.push_str(
+                    "\nOther goals off this path (read-only; stay out of their scope; \
+                     say so if you see a gap):\n",
+                );
                 push_bounded(&mut body, others, channel_id);
             }
         }
@@ -581,7 +593,7 @@ mod tests {
     }
 
     #[test]
-    fn linked_thread_gets_path_subtree_and_same_layer() {
+    fn linked_thread_gets_path_subtree_and_branching_goals() {
         let mut tree = sample();
         tree.apply(
             &GoalOp::Link {
@@ -619,12 +631,24 @@ mod tests {
             "linking started the goal"
         );
         assert!(body.contains("L4 [done] Retry on conflict"));
-        let others = body.split("Other layer 3 goals").nth(1).unwrap();
-        assert!(others.contains("Validation") && others.contains("Goals panel"));
+        let others = body.split("Other goals off this path").nth(1).unwrap();
+        assert!(
+            others.contains("L3 [open] Validation"),
+            "sibling:\n{others}"
+        );
+        assert!(others.contains("L2 [open] Desktop UI"), "parent's sibling");
+        assert!(
+            others.find("Validation") < others.find("Desktop UI"),
+            "nearest layer first"
+        );
         assert!(!others.contains("CAS writes"));
         assert!(
             !others.contains("Retry on conflict"),
             "siblings' sub-goals stay out"
+        );
+        assert!(
+            !others.contains("Goals panel"),
+            "goals inside other branches stay out"
         );
     }
 

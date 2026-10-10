@@ -89,7 +89,18 @@ test("expanding shows the sub-goals; status and add use goal operations", async 
   const subtree = q("thread-goal-subtree");
   assert.ok(subtree.textContent.includes("Keep writes atomic"));
   assert.ok(q("goal-row-cas") && q("goal-row-val"));
-  assert.equal(q("goal-row-ui"), null, "sibling goals stay out");
+  // The whole tree shows; only the linked goal's branch is editable.
+  const access = (id) => q(`goal-row-${id}`).dataset.goalAccess;
+  assert.equal(access("srv"), "focus");
+  assert.equal(access("val"), "edit");
+  assert.equal(access("root"), "path");
+  assert.equal(access("ui"), "muted", "other goals show faded");
+  for (const id of ["root", "ui"]) {
+    assert.equal(q(`goal-status-${id}`).tagName, "SPAN", `${id} read-only`);
+    assert.equal(q(`goal-add-${id}`), null);
+    assert.equal(q(`goal-remove-${id}`), null);
+  }
+  assert.ok(q("goal-remove-val"));
 
   await act(async () => fireEvent.click(q("goal-status-val")));
   assert.deepEqual(calls.at(-1), {
@@ -98,7 +109,11 @@ test("expanding shows the sub-goals; status and add use goal operations", async 
     status: "in_progress",
   });
   // The linked goal's own status toggles from the summary line.
-  await act(async () => fireEvent.click(q("goal-status-srv")));
+  await act(async () =>
+    fireEvent.click(
+      q("thread-goal-panel").querySelector("[data-testid='goal-status-srv']"),
+    ),
+  );
   assert.deepEqual(calls.at(-1), {
     op: "update",
     id: "srv",

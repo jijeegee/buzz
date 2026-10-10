@@ -1,7 +1,10 @@
 part of '../thread_goals_page.dart';
 
-/// The linked goal: its path, a card with status and progress, its sub-goal
-/// tree with an add button, and relink / unlink actions.
+/// The linked goal: its path, a card with status and progress, the channel's
+/// whole goal tree, an add button, and relink / unlink actions. In the tree
+/// the linked goal and its sub-goals are editable, the path above is
+/// read-only, and the rest is read-only and faded. Nested threads link their
+/// chain root, so they share the outer thread's scope.
 class _LinkedGoalBody extends ConsumerWidget {
   const _LinkedGoalBody({
     required this.channelId,
@@ -20,15 +23,8 @@ class _LinkedGoalBody extends ConsumerWidget {
     final path = tree.path(goal.id);
     final layer = path.length;
     final progress = tree.progress(goal.id);
-    final rows = <GoalRow>[];
-    void walk(GoalNode node, int depth) {
-      for (final child in tree.children(node.id)) {
-        rows.add((layer: depth, node: child));
-        if (depth < maxGoalDepth) walk(child, depth + 1);
-      }
-    }
-
-    walk(goal, layer + 1);
+    final editable = tree.subtreeIds(goal.id);
+    final above = {for (final node in path) node.id};
     final actions = ref.read(goalActionsProvider);
     void toggle(GoalNode node) => runGoalAction(
       context,
@@ -102,23 +98,56 @@ class _LinkedGoalBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: Grid.xxs),
-        for (final row in rows)
-          GoalTile(
-            key: ValueKey('goal-row-${row.node.id}'),
-            layer: row.layer,
-            indent: row.layer - layer - 1,
-            node: row.node,
-            progress: tree.progress(row.node.id),
-            onTap: () => showGoalActions(
-              context,
-              ref,
-              channelId: channelId,
-              tree: tree,
-              node: row.node,
-              layer: row.layer,
+        for (final row in tree.outline())
+          if (row.node.id != goal.id)
+            if (editable.contains(row.node.id))
+              GoalTile(
+                key: ValueKey('goal-row-${row.node.id}'),
+                layer: row.layer,
+                indent: row.layer - 1,
+                node: row.node,
+                progress: tree.progress(row.node.id),
+                onTap: () => showGoalActions(
+                  context,
+                  ref,
+                  channelId: channelId,
+                  tree: tree,
+                  node: row.node,
+                  layer: row.layer,
+                ),
+                onToggleStatus: () => toggle(row.node),
+              )
+            else
+              GoalTile(
+                key: ValueKey('goal-row-${row.node.id}'),
+                layer: row.layer,
+                indent: row.layer - 1,
+                node: row.node,
+                progress: tree.progress(row.node.id),
+                onTap: null,
+                onToggleStatus: null,
+                muted: !above.contains(row.node.id),
+              )
+          else
+            Container(
+              key: ValueKey('goal-row-${row.node.id}'),
+              color: context.colors.primary.withValues(alpha: 0.08),
+              child: GoalTile(
+                layer: row.layer,
+                indent: row.layer - 1,
+                node: row.node,
+                progress: progress,
+                onTap: () => showGoalActions(
+                  context,
+                  ref,
+                  channelId: channelId,
+                  tree: tree,
+                  node: goal,
+                  layer: layer,
+                ),
+                onToggleStatus: () => toggle(goal),
+              ),
             ),
-            onToggleStatus: () => toggle(row.node),
-          ),
         TextButton.icon(
           key: const ValueKey('thread-goal-add'),
           icon: const Icon(LucideIcons.plus, size: 18),

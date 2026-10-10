@@ -20,6 +20,9 @@ This thread's goal and its sub-goals:
 L3 [in_progress] 목표 레이어 기능 안정화 (id: g_2c57fc1085e0857e) — threads: 1
     note: 에이전트 수정 테스트 (클로드-Opus)
 
-Other layer 3 goals (stay out of their scope; say so if you see a gap):
+Other goals off this path (read-only; stay out of their scope; say so if you see a gap):
 L3 [open] 서버(relay)를 main과 맞춰 유지 — 새 기능마다 서버 배포 확인 (id: g_93a8a7f8ab5785f0)
 L3 [open] 데스크톱·모바일 앱 빌드와 전달 (id: g_6deaea27989247d1)
+L2 [open] other 0 (id: g_l2_a)
+L2 [open] other 1 (id: g_l2_b)
+L2 [open] other 2 (id: g_l2_c)

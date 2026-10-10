@@ -20,6 +20,7 @@ import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
 import {
   GOAL_STATUS_LABEL,
+  type GoalAccess,
   goalChildren,
   goalProgress,
   goalSubtreeIds,
@@ -59,12 +60,25 @@ export function GoalStatusButton({
   apply,
   className = "mt-1",
   node,
+  readOnly = false,
 }: {
   apply: Apply;
   className?: string;
   node: GoalNode;
+  readOnly?: boolean;
 }) {
   const status = node.status;
+  if (readOnly) {
+    return (
+      <span
+        aria-label={`Status: ${GOAL_STATUS_LABEL[status]}`}
+        className={`${className} h-3 w-3 shrink-0 rounded-full border-2 ${STATUS_DOT[status]}`}
+        data-testid={`goal-status-${node.id}`}
+        role="img"
+        title={GOAL_STATUS_LABEL[status]}
+      />
+    );
+  }
   const nextStatus =
     STATUS_ORDER[(STATUS_ORDER.indexOf(status) + 1) % STATUS_ORDER.length];
   return (
@@ -221,6 +235,7 @@ export function AddGoalInline({
 }
 
 export function GoalRow({
+  access,
   apply,
   layer,
   nameOf,
@@ -228,6 +243,8 @@ export function GoalRow({
   onOpenThread,
   tree,
 }: {
+  /** Thread scope; without it every goal is editable (channel panel). */
+  access?: (id: string) => GoalAccess;
   apply: Apply;
   layer: number;
   nameOf: (pubkey: string) => string;
@@ -236,7 +253,11 @@ export function GoalRow({
   tree: GoalTree;
 }) {
   const children = goalChildren(tree, node.id);
-  const [expanded, setExpanded] = React.useState(layer < 3);
+  const scope = access?.(node.id) ?? "edit";
+  const editable = scope === "focus" || scope === "edit";
+  const [expanded, setExpanded] = React.useState(
+    scope === "focus" || scope === "path" || layer < 3,
+  );
   const [editing, setEditing] = React.useState(false);
   const [confirmingRemove, setConfirmingRemove] = React.useState(false);
   const { done, total } = goalProgress(tree, node.id);
@@ -244,8 +265,10 @@ export function GoalRow({
   const subtreeSize = goalSubtreeIds(tree, node.id).size - 1;
 
   return (
-    <div data-testid={`goal-row-${node.id}`}>
-      <div className="group flex items-start gap-1.5 rounded-lg px-1 py-1 hover:bg-muted/40">
+    <div data-goal-access={scope} data-testid={`goal-row-${node.id}`}>
+      <div
+        className={`group flex items-start gap-1.5 rounded-lg px-1 py-1 hover:bg-muted/40 ${scope === "focus" ? "bg-primary/10" : ""} ${scope === "muted" ? "opacity-50" : ""}`}
+      >
         <button
           aria-label={expanded ? "Collapse" : "Expand"}
           className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground disabled:opacity-0"
@@ -259,7 +282,7 @@ export function GoalRow({
             <ChevronRight className="h-3.5 w-3.5" />
           )}
         </button>
-        <GoalStatusButton apply={apply} node={node} />
+        <GoalStatusButton apply={apply} node={node} readOnly={!editable} />
         <div className="min-w-0 flex-1">
           <p
             className={`break-words text-sm ${status === "done" || status === "dropped" ? "text-muted-foreground line-through" : "text-foreground"}`}
@@ -296,30 +319,32 @@ export function GoalRow({
             </p>
           ) : null}
         </div>
-        <div className="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-          <Button
-            aria-label="Edit goal"
-            onClick={() => setEditing(true)}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            aria-label="Remove goal"
-            data-testid={`goal-remove-${node.id}`}
-            onClick={() => setConfirmingRemove(true)}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+        {editable ? (
+          <div className="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+            <Button
+              aria-label="Edit goal"
+              onClick={() => setEditing(true)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              aria-label="Remove goal"
+              data-testid={`goal-remove-${node.id}`}
+              onClick={() => setConfirmingRemove(true)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : null}
       </div>
 
-      {confirmingRemove ? (
+      {editable && confirmingRemove ? (
         <div className="ml-6 flex items-center gap-2 rounded-lg bg-destructive/10 px-2 py-1.5 text-xs">
           <span className="flex-1 text-destructive">
             {subtreeSize > 0
@@ -354,7 +379,7 @@ export function GoalRow({
         </div>
       ) : null}
 
-      {editing ? (
+      {editable && editing ? (
         <div className="ml-6 rounded-xl border border-border/60 p-3">
           <GoalEditor
             initialNote={node.note ?? ""}
@@ -378,6 +403,7 @@ export function GoalRow({
         <div className="ml-4 border-l border-border/50 pl-2">
           {children.map((child) => (
             <GoalRow
+              access={access}
               apply={apply}
               key={child.id}
               layer={layer + 1}
@@ -387,11 +413,13 @@ export function GoalRow({
               tree={tree}
             />
           ))}
-          <AddGoalInline
-            apply={apply}
-            label={`Add a layer ${layer + 1} goal`}
-            parentId={node.id}
-          />
+          {editable ? (
+            <AddGoalInline
+              apply={apply}
+              label={`Add a layer ${layer + 1} goal`}
+              parentId={node.id}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>
