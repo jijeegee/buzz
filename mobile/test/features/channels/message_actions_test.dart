@@ -23,6 +23,7 @@ TimelineMessage _message({
   String pubkey = 'alice',
   int createdAt = 1000,
   bool isSystem = false,
+  String? parentId,
   String? rootId,
 }) => TimelineMessage(
   id: id,
@@ -30,6 +31,7 @@ TimelineMessage _message({
   createdAt: createdAt,
   content: 'hello world',
   isSystem: isSystem,
+  parentId: parentId,
   rootId: rootId,
 );
 
@@ -646,6 +648,25 @@ void main() {
       expect(harness.sourceHidden.value, isFalse);
     });
 
+    testWidgets('popover hides Reply in thread on thread replies', (
+      tester,
+    ) async {
+      final prefs = await _mockPrefs();
+      final head = _message(id: 'head');
+      final reply = _message(id: 'reply', parentId: 'head', rootId: 'head');
+      await _pumpMessageActionsPopover(
+        tester,
+        message: reply,
+        prefs: prefs,
+        allMessages: [head, reply],
+        onQuote: () {},
+      );
+
+      expect(find.text('Reply in thread'), findsNothing);
+      expect(find.text('Quote'), findsOneWidget);
+      await _dismissMessageActionsPopover(tester);
+    });
+
     for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
       testWidgets(
         '${platform.name} composition keeps the action menu near the safe bottom',
@@ -1191,6 +1212,24 @@ void main() {
       // The old short label is gone; promoted actions keep one label each.
       expect(find.text('Reply'), findsNothing);
       expect(find.text('Remind me later'), findsNothing);
+    });
+
+    testWidgets('hides Reply in thread on thread replies but keeps Quote', (
+      tester,
+    ) async {
+      final prefs = await _mockPrefs();
+      final head = _message(id: 'head');
+      final reply = _message(id: 'reply', parentId: 'head', rootId: 'head');
+      await _pumpSheet(
+        tester,
+        message: reply,
+        prefs: prefs,
+        allMessages: [head, reply],
+        onQuote: () {},
+      );
+
+      expect(find.text('Reply in thread'), findsNothing);
+      expect(find.text('Quote'), findsOneWidget);
     });
 
     testWidgets('offers Quote next to Reply in thread when a composer can '

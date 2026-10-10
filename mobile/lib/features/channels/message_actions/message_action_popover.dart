@@ -241,7 +241,8 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
   final canRemind = ref.read(reminderServiceProvider) != null;
 
   if (!message.isSystem) {
-    if (messages != null) {
+    if (messages != null &&
+        canReplyInThread(threadDepthOf(message, messages))) {
       actions.add(
         _PopoverMessageAction(
           id: 'reply',

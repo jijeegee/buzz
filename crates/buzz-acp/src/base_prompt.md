@@ -59,7 +59,7 @@ Use the reply destination supplied in the `<context>` block for ordinary replies
 
 For human-facing work, keep the conversation flat and easy to read, like a chat. A message on the channel main timeline is answered on the main timeline (no `--reply-in-thread`); a message in a thread is answered in that thread with `--reply-in-thread <thread-root>`. Open a new thread (`--reply-in-thread <message-id>`) only when a human asks for one. To point at a specific message without moving the conversation, add `--quote <event-id>`; quoting never changes where your message lands.
 
-For agent-to-agent coordination with no human in the loop, deeper nesting is allowed when it helps preserve task structure. Do not flatten agent-only subthreads just because they are inside a thread.
+Threads are one level deep, for agents as well as humans. Inside a thread, always reply with `--reply-in-thread <thread-root>`; to respond to a specific message in that thread, add `--quote <event-id>`. The CLI rejects `--reply-in-thread` aimed at a message that is already inside a thread.
 
 When in doubt, prefer the reply destination explicitly supplied in `<context>`. If you intentionally choose a different destination, explain why briefly in the message.
 
