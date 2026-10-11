@@ -52,14 +52,39 @@ export function useAccountMenu({ open }: { open: boolean }) {
   loginRef.current = login;
   const [busy, setBusy] = React.useState(false);
   const progressToast = React.useRef<string | number | null>(null);
+  const signingIn = React.useRef(false);
 
-  // The new-account screen replaces the "finish in your browser" notice.
-  React.useEffect(() => {
-    if (login.signup && progressToast.current !== null) {
+  const showProgress = React.useCallback(() => {
+    progressToast.current = toast.loading(
+      "Finish signing in in your browser…",
+      {
+        duration: Number.POSITIVE_INFINITY,
+        action: {
+          label: "Cancel",
+          onClick: () => void loginRef.current.cancel(),
+        },
+      },
+    );
+  }, []);
+
+  const hideProgress = React.useCallback(() => {
+    if (progressToast.current !== null) {
       toast.dismiss(progressToast.current);
       progressToast.current = null;
     }
-  }, [login.signup]);
+  }, []);
+
+  // The new-account screen replaces the "finish in your browser" notice;
+  // "Use a different account" sends the user back to the browser, so it returns.
+  React.useEffect(() => {
+    if (login.signup) hideProgress();
+    else if (
+      login.phase === "waiting" &&
+      signingIn.current &&
+      progressToast.current === null
+    )
+      showProgress();
+  }, [login.signup, login.phase, hideProgress, showProgress]);
 
   React.useEffect(() => {
     if (login.error) toast.error(login.error);
@@ -89,17 +114,12 @@ export function useAccountMenu({ open }: { open: boolean }) {
     async (activePubkey: string | null) => {
       setBusy(true);
       const action = beginAccountAction();
-      const progress = toast.loading("Finish signing in in your browser…", {
-        duration: Number.POSITIVE_INFINITY,
-        action: {
-          label: "Cancel",
-          onClick: () => void loginRef.current.cancel(),
-        },
-      });
-      progressToast.current = progress;
+      signingIn.current = true;
+      showProgress();
       try {
         const next = await loginRef.current.run(false);
-        toast.dismiss(progress);
+        signingIn.current = false;
+        hideProgress();
         const opened = next?.keyBackup ? next.signingPubkey : next?.principal;
         if (next && (next.accountChanged || opened !== activePubkey)) {
           action.reload("Switching accounts…");
@@ -112,13 +132,14 @@ export function useAccountMenu({ open }: { open: boolean }) {
           void refetch();
         }
       } catch (error) {
-        toast.dismiss(progress);
+        signingIn.current = false;
+        hideProgress();
         action.cancel();
         setBusy(false);
         toast.error(errorText(error, "Google sign-in failed. Try again."));
       }
     },
-    [refetch],
+    [refetch, showProgress, hideProgress],
   );
 
   return {
