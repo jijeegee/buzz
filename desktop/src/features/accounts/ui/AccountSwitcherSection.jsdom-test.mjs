@@ -72,6 +72,7 @@ function account(pubkey, overrides = {}) {
     state: "signed_in",
     active: false,
     displayName: null,
+    buzzName: null,
     avatarUrl: null,
     email: null,
     lastUsedAt: null,
@@ -201,7 +202,8 @@ test("a switch the backend could not finish everywhere leaves one notice", async
 test("a failed switch stays on the current account", async (t) => {
   const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
   accounts = standardAccounts();
-  switchBehavior = () => Promise.reject("This account is not on this computer.");
+  switchBehavior = () =>
+    Promise.reject("This account is not on this computer.");
   const { row, unmount } = await mount();
   await act(async () => fireEvent.click(row(work)));
   await settle(() => !row(work).disabled);

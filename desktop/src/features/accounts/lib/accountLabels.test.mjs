@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  accountAfterSignOut,
+  accountEmailDetail,
   accountLabel,
   agentsOfAccount,
   canSwitchTo,
@@ -15,6 +17,7 @@ function account(pubkey, overrides = {}) {
     state: "signed_in",
     active: false,
     displayName: null,
+    buzzName: null,
     avatarUrl: null,
     email: null,
     lastUsedAt: null,
@@ -33,6 +36,42 @@ test("an account goes by its name, else its email, else a short id", () => {
     "j@x.io",
   );
   assert.equal(accountLabel(account(pubkey)), "Account ab12cd34");
+});
+
+test("label priority: Buzz name, Google name, email, short id", () => {
+  const pubkey = "ab12cd34".repeat(8);
+  const rows = [
+    [
+      { buzzName: "akak", displayName: "akauuzk ka", email: "a@x.io" },
+      "akak",
+      "a@x.io",
+    ],
+    [
+      { buzzName: " ", displayName: "akauuzk ka", email: "a@x.io" },
+      "akauuzk ka",
+      "a@x.io",
+    ],
+    [{ email: "a@x.io" }, "a@x.io", null],
+    [{}, "Account ab12cd34", null],
+  ];
+  for (const [fields, label, detail] of rows) {
+    const row = account(pubkey, fields);
+    assert.equal(accountLabel(row), label);
+    assert.equal(accountEmailDetail(row), detail, "email only when it differs");
+  }
+});
+
+test("sign-out switches to the first other signed-in account on the same server", () => {
+  const list = [
+    account("a".repeat(64), { active: true }),
+    account("b".repeat(64), { state: "needs_login" }),
+    account("c".repeat(64), { origin: "https://other.example" }),
+    account("d".repeat(64)),
+    account("e".repeat(64)),
+  ];
+  assert.equal(accountAfterSignOut(list)?.pubkey[0], "d");
+  assert.equal(accountAfterSignOut(list.slice(0, 3)), null);
+  assert.equal(accountAfterSignOut(list.slice(1)), null, "no active account");
 });
 
 test("the menu keeps the backend's most-recent order and leaves out signed-out accounts", () => {

@@ -2,7 +2,11 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { accountLabel } from "@/features/accounts/lib/accountLabels";
+import {
+  accountAfterSignOut,
+  accountEmailDetail,
+  accountLabel,
+} from "@/features/accounts/lib/accountLabels";
 import { beginAccountAction } from "@/features/accounts/lib/accountSwitch";
 import {
   type AuthDevice,
@@ -61,6 +65,13 @@ function reloadIntoNewIdentity() {
 
 export const SIGN_OUT_DESCRIPTION =
   "You'll be signed out on this computer. Sign in with Google to get back to your conversations. Nothing is deleted.";
+
+/** The sign-out text when another account here takes over. */
+export function signOutDescription(nextAccount: string | null): string {
+  return nextAccount
+    ? `You'll be signed out on this computer and switched to ${nextAccount}. Nothing is deleted.`
+    : SIGN_OUT_DESCRIPTION;
+}
 
 /** "1 agent of this account will stop." / "N agents …". */
 export function agentsWillStopLabel(count: number): string {
@@ -309,7 +320,8 @@ function ActiveAccount({
   });
   const active = accountsQuery.data?.find((account) => account.active);
   const name = active ? accountLabel(active) : null;
-  const email = active?.displayName && active.email ? active.email : null;
+  const email = active ? accountEmailDetail(active) : null;
+  const next = accountAfterSignOut(accountsQuery.data ?? []);
   const closeConfirm = (open: boolean) => {
     if (!open) setConfirming(null);
   };
@@ -356,7 +368,7 @@ function ActiveAccount({
       </SettingsOptionRow>
       <SettingsConfirmDialog
         confirmLabel="Sign out"
-        description={SIGN_OUT_DESCRIPTION}
+        description={signOutDescription(next ? accountLabel(next) : null)}
         onConfirm={() =>
           void run("Sign out", () => signOutActiveAccount(onStatus))
         }

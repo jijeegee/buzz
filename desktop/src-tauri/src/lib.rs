@@ -659,6 +659,7 @@ pub fn run() {
             auth::commands::login_with_google,
             auth::commands::own_agent_pubkeys,
             auth::accounts::list_accounts,
+            auth::accounts::remember_account_buzz_name,
             auth::accounts::switch_account,
             auth::accounts::create_auth_event_as,
             auth::accounts::nip44_decrypt_as,

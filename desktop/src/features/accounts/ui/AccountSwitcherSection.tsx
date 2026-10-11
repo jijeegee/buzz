@@ -3,7 +3,11 @@ import { Check, Plus } from "lucide-react";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import type { AccountSummary } from "@/shared/api/tokenAuth";
 import { cn } from "@/shared/lib/cn";
-import { accountLabel, canSwitchTo } from "../lib/accountLabels";
+import {
+  accountEmailDetail,
+  accountLabel,
+  canSwitchTo,
+} from "../lib/accountLabels";
 
 const ROW_CLASS =
   "flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm text-popover-foreground outline-hidden transition-colors hover:bg-muted/50 focus:outline-none focus-visible:bg-muted/50 focus-visible:outline-none disabled:cursor-default disabled:opacity-60";
@@ -35,9 +39,7 @@ export function AccountSwitcherSection({
         const needsSignIn = account.state === "needs_login";
         const detail = needsSignIn
           ? "Sign in again"
-          : account.displayName && account.email
-            ? account.email
-            : null;
+          : accountEmailDetail(account);
         return (
           <button
             aria-current={account.active ? "true" : undefined}

@@ -793,7 +793,7 @@ pub(crate) fn mark_needs_login(
 }
 
 /// Another account signed in on `origin` to switch to after `leaving` signed
-/// out, if any.
+/// out, if any: the most recently used one, the account the menu lists first.
 pub(crate) fn next_signed_in(
     data_dir: &Path,
     origin: &str,
@@ -803,21 +803,29 @@ pub(crate) fn next_signed_in(
         let _lock = registry_lock();
         load_registry(data_dir).ok().flatten()?
     };
-    next_signed_in_of(&registry, origin, leaving)
+    let profiles = super::account_profiles::load(data_dir);
+    next_signed_in_of(&registry, &profiles, origin, leaving)
 }
 
 /// [`next_signed_in`] on a loaded list. Pure.
 fn next_signed_in_of(
     registry: &Registry,
+    profiles: &std::collections::BTreeMap<String, super::account_profiles::AccountProfile>,
     origin: &str,
     leaving: Option<PublicKey>,
 ) -> Option<PublicKey> {
     let leaving = leaving.map(|key| key.to_hex());
-    registry
+    let mut candidates: Vec<&Account> = registry
         .accounts
         .iter()
         .filter(|a| a.origin == origin && a.state == AccountState::SignedIn)
         .filter(|a| Some(&a.pubkey) != leaving.as_ref())
+        .collect();
+    super::account_profiles::most_recent_first(&mut candidates, |a| {
+        profiles.get(&a.pubkey).and_then(|p| p.last_used_at)
+    });
+    candidates
+        .into_iter()
         .find_map(|a| PublicKey::from_hex(&a.pubkey).ok())
 }
 
@@ -1427,7 +1435,10 @@ pub struct AccountSummary {
     pub state: AccountState,
     pub active: bool,
     /// From [`super::account_profiles`]; absent until first learned.
+    /// The Google name.
     pub display_name: Option<String>,
+    /// The Buzz profile name; menus prefer it.
+    pub buzz_name: Option<String>,
     pub avatar_url: Option<String>,
     pub email: Option<String>,
     /// Unix seconds of the last sign-in or switch to it.
@@ -1468,6 +1479,7 @@ fn account_summaries(
                 state: a.state,
                 active: registry.active.as_ref() == Some(&a.pubkey),
                 display_name: profile.display_name,
+                buzz_name: profile.buzz_name,
                 avatar_url: profile.avatar_url,
                 email: profile.email,
                 last_used_at: profile.last_used_at,
@@ -1476,6 +1488,34 @@ fn account_summaries(
         .collect();
     super::account_profiles::most_recent_first(&mut summaries, |a| a.last_used_at);
     summaries
+}
+
+/// Record the active account's Buzz profile name for the account menu. A
+/// name for any other account is ignored: the UI that read it may belong to
+/// an account just switched away from.
+#[tauri::command]
+pub fn remember_account_buzz_name(
+    app: tauri::AppHandle,
+    pubkey: String,
+    name: String,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let state = app.state::<crate::app_state::AppState>();
+    let account = PublicKey::from_hex(&pubkey).map_err(|_| "invalid account")?;
+    let active = state
+        .keys
+        .lock()
+        .map_err(|_| "identity storage is busy")?
+        .public_key();
+    if active != account {
+        return Ok(());
+    }
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "account storage is unavailable")?;
+    super::account_profiles::learn_buzz_name(&data_dir, &account, &name);
+    Ok(())
 }
 
 /// Make `pubkey` the active account. The previous account stays signed in

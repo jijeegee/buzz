@@ -98,7 +98,10 @@ export type AccountSummary = {
   origin: string;
   state: "signed_in" | "needs_login" | "signed_out" | "key_only";
   active: boolean;
+  /** The Google name. */
   displayName: string | null;
+  /** The Buzz profile name; menus prefer it. */
+  buzzName: string | null;
   avatarUrl: string | null;
   email: string | null;
   /** Unix seconds of the last sign-in or switch to it. */
@@ -108,6 +111,17 @@ export type AccountSummary = {
 /** Accounts on this computer for the current community, most recent first. */
 export function listAccounts(): Promise<AccountSummary[]> {
   return invokeTauri<AccountSummary[]>("list_accounts");
+}
+
+/**
+ * Record the active account's Buzz profile name for the account menu (ignored
+ * unless `pubkey` is the active account).
+ */
+export function rememberAccountBuzzName(
+  pubkey: string,
+  name: string,
+): Promise<void> {
+  return invokeTauri<void>("remember_account_buzz_name", { pubkey, name });
 }
 
 /**

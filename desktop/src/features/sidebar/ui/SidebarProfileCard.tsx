@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { useAccountMenu } from "@/features/accounts/useAccountMenu";
+import { useRememberAccountBuzzName } from "@/features/accounts/useRememberAccountBuzzName";
 import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
 import { getPresenceLabel } from "@/features/presence/lib/presence";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
@@ -72,6 +73,7 @@ export function SidebarProfileCard({
   const profileCardRef = React.useRef<HTMLDivElement | null>(null);
   const accountMenu = useAccountMenu({ open: profilePopoverOpen });
   const activePubkey = useIdentityQuery().data?.pubkey ?? null;
+  useRememberAccountBuzzName(activePubkey, profile?.displayName);
   const toggleProfilePopover = React.useCallback(
     () => setProfilePopoverOpen((prev) => !prev),
     [],
@@ -173,20 +175,18 @@ export function SidebarProfileCard({
             userStatusText={selfUserStatus?.text}
             userStatusUpdatedAt={selfUserStatus?.updatedAt}
             accountsSlot={
-              accountMenu.accounts.length > 0 ? (
-                <AccountSwitcherSection
-                  accounts={accountMenu.accounts}
-                  busy={accountMenu.busy}
-                  onSignIn={() => {
-                    setProfilePopoverOpen(false);
-                    void accountMenu.signIn(activePubkey);
-                  }}
-                  onSwitch={(account) => {
-                    setProfilePopoverOpen(false);
-                    void accountMenu.switchTo(account);
-                  }}
-                />
-              ) : null
+              <AccountSwitcherSection
+                accounts={accountMenu.accounts}
+                busy={accountMenu.busy}
+                onSignIn={() => {
+                  setProfilePopoverOpen(false);
+                  void accountMenu.signIn(activePubkey);
+                }}
+                onSwitch={(account) => {
+                  setProfilePopoverOpen(false);
+                  void accountMenu.switchTo(account);
+                }}
+              />
             }
             communitySwitcherSlot={
               <CommunitySwitcher

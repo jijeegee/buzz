@@ -107,9 +107,7 @@ const { QueryClient, QueryClientProvider } = await import(
 );
 const { AccountSettingsCard } = await import("./AccountSettingsCard.tsx");
 const tokenAuthApi = await import("../../../shared/api/tokenAuth.ts");
-const accountSwitch = await import(
-  "../../accounts/lib/accountSwitch.ts"
-);
+const accountSwitch = await import("../../accounts/lib/accountSwitch.ts");
 const { deviceRobotTag } = await import("../../../shared/lib/deviceRobot.ts");
 const { GoogleSignInButton } = await import(
   "../../onboarding/ui/GoogleSignInButton.tsx"
@@ -650,6 +648,7 @@ function account(pubkey, overrides = {}) {
     state: "signed_in",
     active: false,
     displayName: null,
+    buzzName: null,
     avatarUrl: null,
     email: null,
     lastUsedAt: null,
@@ -665,7 +664,8 @@ test("the account card names the active account and its sign-out", async () => {
   accounts = [
     account("cd".repeat(32), {
       active: true,
-      displayName: "Jiho",
+      buzzName: "Jiho",
+      displayName: "Jiho Google",
       email: "jiho@example.com",
     }),
     account("ef".repeat(32), { displayName: "Work" }),
@@ -677,6 +677,12 @@ test("the account card names the active account and its sign-out", async () => {
   );
   assert.match(container.textContent, /jiho@example\.com/);
   assert.match(dialogText(), /Sign out of Jiho\?/);
+  // Another account here takes over: the dialog names it instead of
+  // sending the user back to Google.
+  assert.match(
+    dialogText(),
+    /signed out on this computer and switched to Work\. Nothing is deleted\./,
+  );
   await act(async () => fireEvent.click(dialogButton("Cancel")));
   accounts = [];
   await unmount();

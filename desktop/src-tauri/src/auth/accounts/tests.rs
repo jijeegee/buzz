@@ -993,10 +993,10 @@ fn signing_out_the_active_account_switches_to_another_signed_in_one() {
     registry.upsert(ORIGIN, &b, AccountState::SignedOut);
     registry.upsert("https://other.test", &c, AccountState::SignedIn);
     // B is signed out and C is on another server: nothing to switch to.
-    assert_eq!(next_signed_in_of(&registry, ORIGIN, Some(a)), None);
+    assert_eq!(next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(a)), None);
     registry.upsert(ORIGIN, &c, AccountState::SignedIn);
-    assert_eq!(next_signed_in_of(&registry, ORIGIN, Some(a)), Some(c));
-    assert_eq!(next_signed_in_of(&registry, ORIGIN, Some(c)), Some(a));
+    assert_eq!(next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(a)), Some(c));
+    assert_eq!(next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(c)), Some(a));
 }
 
 #[test]
@@ -1037,4 +1037,44 @@ fn the_account_list_carries_profiles_most_recent_first() {
     assert_eq!(list[0].display_name.as_deref(), Some("B"));
     assert_eq!(list[0].state, AccountState::NeedsLogin);
     assert!(list[1].active && list[1].display_name.is_none());
+}
+
+#[test]
+fn sign_out_switches_to_the_most_recently_used_signed_in_account() {
+    use super::super::account_profiles::AccountProfile;
+    let (leaving, old, recent, ended, other) = (
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+    );
+    let mut registry = Registry::default();
+    registry.upsert(ORIGIN, &leaving, AccountState::SignedIn);
+    registry.upsert(ORIGIN, &old, AccountState::SignedIn);
+    registry.upsert(ORIGIN, &recent, AccountState::SignedIn);
+    registry.upsert(ORIGIN, &ended, AccountState::NeedsLogin);
+    registry.upsert("https://other.test", &other, AccountState::SignedIn);
+    let used = |at| AccountProfile {
+        last_used_at: Some(at),
+        ..Default::default()
+    };
+    let mut profiles = std::collections::BTreeMap::new();
+    profiles.insert(leaving.to_hex(), used(50));
+    profiles.insert(old.to_hex(), used(10));
+    profiles.insert(recent.to_hex(), used(20));
+    profiles.insert(ended.to_hex(), used(40));
+    profiles.insert(other.to_hex(), used(30));
+    assert_eq!(
+        next_signed_in_of(&registry, &profiles, ORIGIN, Some(leaving)),
+        Some(recent)
+    );
+    // Never-used accounts still count, after used ones; none left: none.
+    assert_eq!(
+        next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(leaving)),
+        Some(old)
+    );
+    let mut alone = Registry::default();
+    alone.upsert(ORIGIN, &leaving, AccountState::SignedIn);
+    assert_eq!(next_signed_in_of(&alone, &profiles, ORIGIN, Some(leaving)), None);
 }
