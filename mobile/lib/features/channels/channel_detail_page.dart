@@ -266,6 +266,21 @@ enum InitialThreadRouteBehavior {
   replaceCurrentRoute,
 }
 
+/// Channel pages on screen or under other routes, oldest first.
+final _openChannelPages = <BuildContext>{};
+
+/// The route of the newest open page of [channelId], if any (for returning
+/// to a channel instead of stacking another copy of it).
+ModalRoute<Object?>? openChannelRoute(String channelId) {
+  for (final page in _openChannelPages.toList().reversed) {
+    if (!page.mounted) continue;
+    if ((page.widget as ChannelDetailPage).channel.id != channelId) continue;
+    final route = ModalRoute.of(page);
+    if (route != null && route.isActive) return route;
+  }
+  return null;
+}
+
 class ChannelDetailPage extends HookConsumerWidget {
   final Channel channel;
   final String? initialMessageId;
@@ -289,6 +304,10 @@ class ChannelDetailPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    useEffect(() {
+      _openChannelPages.add(context);
+      return () => _openChannelPages.remove(context);
+    }, const []);
     final composerDockHeight = useState(0.0);
     final composerFocusNode = useFocusNode();
     final restoreComposerFocus = useRef<VoidCallback?>(null);

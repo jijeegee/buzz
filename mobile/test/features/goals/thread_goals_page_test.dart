@@ -170,8 +170,7 @@ void main() {
             builder: (context, ref, _) => TextButton(
               key: const ValueKey('open'),
               onPressed: () => showMessageGoalLink(
-                context: context,
-                ref: ref,
+                context: Navigator.of(context).context,
                 channelId: _channel,
                 messageId: _message,
                 threadRootId: threadRootId,

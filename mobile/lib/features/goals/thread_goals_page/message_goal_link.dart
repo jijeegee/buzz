@@ -4,17 +4,20 @@ part of '../thread_goals_page.dart';
 /// by [messageGoalLinkScope] ([threadRootId] is the thread the message is
 /// in, or null on the main timeline). The message id joins the goal's thread
 /// links, so it becomes a thread link once someone replies.
+///
+/// Pass a [context] that outlives the message row, such as its navigator's:
+/// a scrolled-away row must not drop the pick.
 Future<void> showMessageGoalLink({
   required BuildContext context,
-  required WidgetRef ref,
   required String channelId,
   required String messageId,
   required String? threadRootId,
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final container = ProviderScope.containerOf(context, listen: false);
   final GoalTree tree;
   try {
-    tree = (await ref.read(goalTreeProvider(channelId).future)).tree;
+    tree = (await container.read(goalTreeProvider(channelId).future)).tree;
   } catch (error) {
     messenger?.showSnackBar(
       SnackBar(content: Text('Could not load goals: $error')),
@@ -70,13 +73,38 @@ Future<void> showMessageGoalLink({
         ),
       );
   if (choice == null || !context.mounted) return;
-  final links = _ThreadLinks(channelId: channelId, threadRootId: messageId);
+  final actions = container.read(goalActionsProvider);
   switch (choice) {
     case (goalId: final String goalId, createUnder: _):
-      await links.link(context, ref, goalId);
+      await runGoalAction(
+        context,
+        () =>
+            actions.apply(channelId, LinkThread(id: goalId, thread: messageId)),
+      );
     case (goalId: _, createUnder: final GoalRow parent):
-      await links.createAndLink(context, ref, parent.node, parent.layer);
+      final result = await editGoal(
+        context,
+        title: 'New layer ${parent.layer + 1} goal',
+        saveLabel: 'Add and link',
+      );
+      if (result == null || !context.mounted) return;
+      final id = newGoalId();
+      await runGoalAction(
+        context,
+        () => actions.applyAll(channelId, [
+          AddGoal(
+            id: id,
+            parent: parent.node.id,
+            title: result.title,
+            note: result.note,
+          ),
+          LinkThread(id: id, thread: messageId),
+        ]),
+      );
     default:
-      await links.unlink(context, ref);
+      await runGoalAction(
+        context,
+        () => actions.apply(channelId, UnlinkThread(thread: messageId)),
+      );
   }
 }

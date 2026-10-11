@@ -109,3 +109,30 @@ test("search-hit placeholder waits for the relay copy before routing", async () 
   assert.equal(harness.mainTimelineTargetId(), ROOT_ID);
   await harness.unmount();
 });
+
+test("a goal's main-timeline message link only jumps; its reply panel stays shut", async () => {
+  const { buildMessageJumpPatch } = await import("./channelSearchKeys.ts");
+  const patch = buildMessageJumpPatch(ROOT_ID, null);
+  assert.deepEqual(patch, {
+    channelManagement: null,
+    jump: "1",
+    messageId: ROOT_ID,
+    threadRootId: null,
+  });
+  // A reply opens its thread as message links do.
+  assert.equal(buildMessageJumpPatch(REPLY_ID, ROOT_ID).jump, null);
+
+  const harness = await mount({
+    targetJumpOnly: patch.jump === "1",
+    targetMessageId: patch.messageId,
+    timelineMessages: [root, reply],
+  });
+  assert.deepEqual(harness.calls.openThreadHeadId, []);
+  assert.equal(harness.calls.closeAgentSession, 0);
+  assert.equal(
+    harness.mainTimelineTargetId(),
+    ROOT_ID,
+    "scrolls and highlights",
+  );
+  await harness.unmount();
+});

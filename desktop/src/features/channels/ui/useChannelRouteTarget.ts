@@ -70,6 +70,7 @@ export function useChannelRouteTarget({
   setProfilePanelPubkey,
   setThreadReplyTargetId,
   setThreadScrollTargetId,
+  targetJumpOnly = false,
   targetMessageId,
   timelineMessages,
 }: {
@@ -83,6 +84,8 @@ export function useChannelRouteTarget({
   setProfilePanelPubkey: PanelValueSetter;
   setThreadReplyTargetId: React.Dispatch<React.SetStateAction<string | null>>;
   setThreadScrollTargetId: React.Dispatch<React.SetStateAction<string | null>>;
+  /** Only scroll to and highlight a root target; keep its reply panel shut. */
+  targetJumpOnly?: boolean;
   targetMessageId: string | null;
   timelineMessages: TimelineMessage[];
 }) {
@@ -126,6 +129,11 @@ export function useChannelRouteTarget({
     }
 
     if (!targetMessage.parentId) {
+      // The main timeline scrolls to and highlights the root on its own.
+      if (targetJumpOnly) {
+        handledThreadRouteTargetRef.current = targetKey;
+        return;
+      }
       if (!requireThreadEditResolution()) {
         return;
       }
@@ -178,6 +186,7 @@ export function useChannelRouteTarget({
     setProfilePanelPubkey,
     setThreadReplyTargetId,
     setThreadScrollTargetId,
+    targetJumpOnly,
     targetMessageId,
     timelineMessageById,
   ]);

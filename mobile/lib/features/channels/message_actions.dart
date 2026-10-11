@@ -30,6 +30,7 @@ import '../../shared/reminders/reminder_service.dart';
 import '../goals/goals_preferences.dart';
 import '../goals/thread_goals_page.dart';
 import 'channel_management_provider.dart';
+import 'pending_local_messages_provider.dart';
 import 'emoji_picker.dart';
 import 'message_action_backdrop_state.dart';
 import 'message_actions/native_message_action_selection.dart';
@@ -176,7 +177,7 @@ void showMessageActions({
                     // Triage: come back to this message later.
                     _MarkReadUnreadTile(message: message, channelId: channelId),
                     _FollowThreadTile(message: message),
-                    if (ref.read(goalsEnabledProvider))
+                    if (_canLinkToGoal(ref, message, channelId))
                       ListTile(
                         key: const ValueKey('message-action-link-goal'),
                         contentPadding: EdgeInsets.zero,
@@ -185,8 +186,7 @@ void showMessageActions({
                         onTap: () {
                           Navigator.of(sheetContext).pop();
                           showMessageGoalLink(
-                            context: context,
-                            ref: ref,
+                            context: Navigator.of(context).context,
                             channelId: channelId,
                             messageId: message.id,
                             threadRootId: message.rootId,
@@ -253,6 +253,13 @@ void showMessageActions({
     ),
   );
 }
+
+/// "Link to goal" needs goals on and a delivered chat message (desktop's
+/// copy-link rule): not a system row, not a send still awaiting the relay.
+bool _canLinkToGoal(WidgetRef ref, TimelineMessage message, String channelId) =>
+    ref.read(goalsEnabledProvider) &&
+    !message.isSystem &&
+    !ref.read(pendingLocalMessagesProvider(channelId)).containsKey(message.id);
 
 /// Image-focused actions shown from the full-screen viewer.
 void showImageActions({

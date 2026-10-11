@@ -9,7 +9,8 @@ import 'goal_links.dart';
 /// a reply highlighted in its thread, or a main-timeline message jumped to
 /// and highlighted. From a thread ([replaceCurrent]) the destination takes
 /// the thread's place, so Back still returns to the channel instead of
-/// stacking threads.
+/// stacking threads. A main-timeline message replaces the channel's open
+/// page instead, so Back leaves the channel.
 void openGoalLink(
   BuildContext context,
   WidgetRef ref, {
@@ -36,7 +37,6 @@ void openGoalLink(
     return;
   }
   final navigator = Navigator.of(context);
-  navigator.pop();
   final route = MaterialPageRoute<void>(
     builder: (_) => ChannelDetailPage(
       channel: channel,
@@ -47,6 +47,33 @@ void openGoalLink(
       highlightInitialMessage: target.threadRootId == null,
     ),
   );
+  showGoalLinkRoute(
+    navigator,
+    route,
+    channelRoute: target.threadRootId == null
+        ? openChannelRoute(channelId)
+        : null,
+    replaceCurrent: replaceCurrent,
+  );
+}
+
+/// Leaves the goals page on top of [navigator] for [route]. With a
+/// [channelRoute] (the channel's open page) everything above it is closed and
+/// [route] takes its place; otherwise [route] replaces the page under the
+/// goals page ([replaceCurrent]) or goes above it.
+@visibleForTesting
+void showGoalLinkRoute(
+  NavigatorState navigator,
+  Route<void> route, {
+  required ModalRoute<Object?>? channelRoute,
+  required bool replaceCurrent,
+}) {
+  if (channelRoute != null && channelRoute.navigator == navigator) {
+    navigator.popUntil((open) => open == channelRoute);
+    navigator.pushReplacement(route);
+    return;
+  }
+  navigator.pop();
   if (replaceCurrent) {
     navigator.pushReplacement(route);
   } else {

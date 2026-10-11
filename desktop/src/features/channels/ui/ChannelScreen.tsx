@@ -131,6 +131,7 @@ export function ChannelScreen({
     openAgentSessionChannelId,
     openAgentSessionPubkey,
     openGoalsPanel,
+    messageRouteJumpOnly,
     openMessageRouteTarget,
     openProfilePanel,
     openThreadHeadId,
@@ -659,6 +660,7 @@ export function ChannelScreen({
     setProfilePanelPubkey,
     setThreadReplyTargetId,
     setThreadScrollTargetId,
+    targetJumpOnly: messageRouteJumpOnly,
     targetMessageId,
     timelineMessages,
   });

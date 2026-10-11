@@ -580,8 +580,7 @@ mod tests {
         assert!(goal_rules().contains("add one under the closest goal"));
         assert!(goal_rules().contains("Do it yourself, without asking."));
         assert!(goal_rules().contains(
-            "- A one-step goal may link just the message it is about (link --message <id>).
-"
+            "- A one-step goal may link just the message it is about (link --message <id>)."
         ));
         assert!(goal_rules().contains("edit only its goal and sub-goals"));
         assert!(!goal_rules().contains("only under your own goal"));

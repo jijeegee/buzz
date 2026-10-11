@@ -91,11 +91,12 @@ Future<Map<String, GoalLinkInfo>> classifyGoalLinks(
     }
   }
   if (tops.isNotEmpty) {
-    // One reply per top-level message is enough to call it a thread.
+    // One chat reply per top-level message is enough to call it a thread;
+    // job and stream events must not take the single slot.
     final replies = await query([
       for (final id in tops)
         NostrFilter(
-          kinds: EventKind.channelTimelineContentKinds,
+          kinds: const [EventKind.streamMessage, EventKind.streamMessageV2],
           tags: {
             '#e': [id],
             '#h': [channelId],

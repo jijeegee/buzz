@@ -13,6 +13,7 @@ import {
 } from "@/shared/hooks/useHistorySearchState";
 import {
   buildAutoSendClearPatch,
+  buildMessageJumpPatch,
   CHANNEL_SEARCH_KEYS,
 } from "./channelSearchKeys";
 export type { ChannelSearchKey } from "./channelSearchKeys";
@@ -116,17 +117,15 @@ export function useChannelPanelHistoryState() {
     [applyPatch],
   );
 
-  // Jump to a message as message links do (see useChannelRouteTarget),
-  // closing channel management in the same history entry.
   const openMessageRouteTarget = React.useCallback(
     (messageId: string, threadRootId: string | null) =>
-      applyPatch({ channelManagement: null, messageId, threadRootId }),
+      applyPatch(buildMessageJumpPatch(messageId, threadRootId)),
     [applyPatch],
   );
 
   const clearMessageRouteTarget = React.useCallback(
     (options?: PanelSetterOptions) =>
-      applyPatch({ messageId: null, threadRootId: null }, options),
+      applyPatch({ jump: null, messageId: null, threadRootId: null }, options),
     [applyPatch],
   );
 
@@ -148,6 +147,8 @@ export function useChannelPanelHistoryState() {
         : null,
     openGoalsPanel,
     openMessageRouteTarget,
+    /** The route target is only jumped to (see `buildMessageJumpPatch`). */
+    messageRouteJumpOnly: values.jump === "1",
     clearAutoSend,
     clearMessageRouteTarget,
     openAgentSessionChannelId: values.agentSessionChannel,

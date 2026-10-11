@@ -297,7 +297,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
         },
       ),
     );
-    if (ref.read(goalsEnabledProvider)) {
+    if (_canLinkToGoal(ref, message, channelId)) {
       actions.add(
         _PopoverMessageAction(
           id: 'linkGoal',
@@ -307,8 +307,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
           onSelected: () {
             if (!context.mounted) return;
             showMessageGoalLink(
-              context: context,
-              ref: ref,
+              context: Navigator.of(context).context,
               channelId: channelId,
               messageId: message.id,
               threadRootId: message.rootId,
