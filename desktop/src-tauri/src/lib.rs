@@ -292,6 +292,11 @@ pub fn run() {
             // that will be lost on restart, as that silently breaks channel
             // memberships, DMs, and relay identity.
             let state = app_handle.state::<AppState>();
+            // Accounts on this computer: rebuild or migrate the list and refill
+            // the active-account copy before the identity is read from it.
+            if let Ok(data_dir) = app_handle.path().app_data_dir() {
+                crate::auth::accounts::reconcile_on_launch(&data_dir);
+            }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
                 eprintln!("buzz-desktop: fatal: identity resolution failed: {e}");
                 std::process::exit(1);
@@ -302,6 +307,8 @@ pub fn run() {
                 Ok(data_dir) => state.token_auth.signed_out.load(&data_dir),
                 Err(e) => eprintln!("buzz-desktop: sign-out markers unavailable: {e}"),
             }
+            // Signed-in accounts that are not active stay signed in.
+            crate::auth::accounts::start_background_sessions(&app_handle);
 
             // When the identity is in recovery mode (lost = keyring empty after
             // migration, or keyring-locked = keyring unreachable but marker
@@ -321,6 +328,11 @@ pub fn run() {
             // restore_managed_agents_on_launch so no agent spawns from an empty
             // snapshot. Synchronous and best-effort — a failure here must not
             // block launch, but a missing persona is logged loudly inside.
+            // Older agents without an attestation get their owner recorded
+            // once, so no agent ever borrows the active account as its owner.
+            if !recovery_mode {
+                crate::managed_agents::migrate_owners(&app_handle);
+            }
             if let Err(e) = backfill_persona_snapshots(&app_handle) {
                 eprintln!("buzz-desktop: persona-snapshot backfill failed: {e}");
             }
@@ -642,6 +654,10 @@ pub fn run() {
             create_auth_event,
             auth::commands::get_token_auth_status,
             auth::commands::login_with_google,
+            auth::accounts::list_accounts,
+            auth::accounts::switch_account,
+            auth::accounts::create_auth_event_as,
+            auth::accounts::nip44_decrypt_as,
             auth::commands::cancel_google_login,
             auth::commands::logout,
             auth::commands::get_ws_auth_frame,

@@ -19,6 +19,7 @@
 //! - [`signed_out`]: durable "signed out on this computer" markers that fence
 //!   user-identity work until the same Google account signs in again.
 
+pub(crate) mod accounts;
 pub(crate) mod api;
 pub(crate) mod bots;
 pub(crate) mod commands;
@@ -149,13 +150,22 @@ impl RefreshStore for KeyringRefreshStore {
         crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
             .load(&refresh_key(origin))
     }
+    /// The active account's own slot first, then the active copy (see
+    /// [`accounts`]). A legacy token account has no own slot.
     fn store(&self, origin: &str, token: &str) -> Result<(), String> {
-        crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
-            .store(&refresh_key(origin), token)
+        accounts::store_active_refresh(
+            accounts::shared_secrets(),
+            origin,
+            self.signing_pubkey(origin)?,
+            token,
+        )
     }
     fn delete(&self, origin: &str) -> Result<(), String> {
-        crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
-            .delete(&refresh_key(origin))
+        let secrets = accounts::shared_secrets();
+        if let Ok(Some(pubkey)) = self.signing_pubkey(origin) {
+            secrets.delete(&accounts::refresh_slot(&pubkey, origin))?;
+        }
+        secrets.delete(&refresh_key(origin))
     }
 }
 
@@ -184,6 +194,8 @@ pub struct TokenAuthState {
     pub(crate) bots: bots::BotRuntime,
     /// Origins signed out on this device (durable, outside the keyring).
     pub(crate) signed_out: signed_out::SignedOutMarkers,
+    /// Background sessions of signed-in accounts that are not active.
+    pub(crate) inactive: accounts::InactiveSessions,
 }
 
 impl TokenAuthState {
@@ -322,6 +334,33 @@ impl TokenAuthState {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(origin.to_owned(), (Instant::now(), support));
+    }
+
+    /// Whether this device is signed out of `origin`'s active account.
+    pub(crate) fn device_signed_out(&self, origin: &str) -> bool {
+        self.device_signed_out_with(origin, &KeyringRefreshStore)
+    }
+
+    /// [`Self::device_signed_out`] with the binding read from `store` when it
+    /// is not in memory yet (before the first restore of a launch).
+    pub(crate) fn device_signed_out_with(&self, origin: &str, store: &dyn RefreshStore) -> bool {
+        let account = self
+            .signing_pubkey(origin)
+            .or_else(|| store.signing_pubkey(origin).ok().flatten());
+        if account.is_none() && store.legacy_token_account(origin).unwrap_or(false) {
+            // A token account has no local key to tell markers apart.
+            return self.signed_out.is_signed_out_any(origin);
+        }
+        self.signed_out.is_signed_out(origin, account)
+    }
+
+    /// Forget `origin`'s in-memory key-backup binding (the active account
+    /// there changed to one without a binding).
+    pub(crate) fn clear_key_backup(&self, origin: &str) {
+        self.key_backups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(origin);
     }
 
     /// The identity mode for `origin`.

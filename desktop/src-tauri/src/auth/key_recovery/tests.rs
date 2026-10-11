@@ -8,44 +8,6 @@ use axum::{
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
-#[test]
-fn lost_key_recovery_rejects_different_owner_and_unprovable_existing_agents() {
-    let owner = Keys::generate();
-    let other = Keys::generate();
-    let agent = Keys::generate().public_key();
-    let tag = buzz_sdk_pkg::nip_oa::compute_auth_tag(&owner, &agent, "kind=9").unwrap();
-    let agent_hex = agent.to_hex();
-    assert!(verify_recovered_owner(other.public_key(), Some(owner.public_key()), []).is_err());
-    assert!(verify_recovered_owner(
-        other.public_key(),
-        None,
-        [(agent_hex.as_str(), Some(tag.as_str()))]
-    )
-    .is_err());
-    assert!(verify_recovered_owner(
-        owner.public_key(),
-        None,
-        [(agent_hex.as_str(), Some(tag.as_str()))]
-    )
-    .is_ok());
-    assert!(verify_recovered_owner(
-        owner.public_key(),
-        None,
-        [(agent_hex.as_str(), Some("bad tag"))]
-    )
-    .is_err());
-    let error =
-        verify_recovered_owner(owner.public_key(), None, [(agent_hex.as_str(), None)]).unwrap_err();
-    assert!(error.contains("original key"));
-    assert!(verify_recovered_owner(
-        owner.public_key(),
-        Some(owner.public_key()),
-        [(agent_hex.as_str(), None)]
-    )
-    .is_ok());
-    assert!(verify_recovered_owner(owner.public_key(), None, []).is_ok());
-}
-
 #[derive(Clone, Default)]
 struct Relay {
     key: Arc<Mutex<Option<Keys>>>,
@@ -138,31 +100,17 @@ async fn signup_then_new_device_restores_identical_signer_and_existing_link_keep
     let (origin, task) = server(relay.clone()).await;
     let client = crate::app_state::build_media_fetch_client().unwrap();
     let original = Keys::generate();
-    let pending = std::cell::Cell::new(false);
-    let created = resolve_backup(
-        &client,
-        &origin,
-        "test-session",
-        "account-a",
-        &original,
-        true,
-        |_| {
-            pending.set(true);
-            Ok(())
-        },
-    )
+    let asked = std::cell::Cell::new(false);
+    let created = resolve_backup(&client, &origin, "test-session", "account-a", || {
+        asked.set(true);
+        Ok(original.clone())
+    })
     .await
     .unwrap();
-    assert!(pending.get());
-    let restored = resolve_backup(
-        &client,
-        &origin,
-        "test-session",
-        "account-a",
-        &Keys::generate(),
-        true,
-        |_| panic!("restore must not persist a replacement key"),
-    )
+    assert!(asked.get());
+    let restored = resolve_backup(&client, &origin, "test-session", "account-a", || {
+        panic!("a backed-up account never asks for a new key")
+    })
     .await
     .unwrap();
     assert_eq!(created.public_key(), restored.public_key());
@@ -171,18 +119,6 @@ async fn signup_then_new_device_restores_identical_signer_and_existing_link_keep
         .unwrap();
     signed.verify().unwrap();
     assert_eq!(signed.pubkey, original.public_key());
-    let linked = resolve_backup(
-        &client,
-        &origin,
-        "test-session",
-        "account-a",
-        &original,
-        false,
-        |_| panic!("existing backup must not be replaced"),
-    )
-    .await
-    .unwrap();
-    assert_eq!(linked.public_key(), original.public_key());
     assert_eq!(relay.uploads.load(std::sync::atomic::Ordering::SeqCst), 1);
     task.abort();
     let _ = task.await;
@@ -205,23 +141,10 @@ async fn mobile_first_and_desktop_first_share_the_exact_backup_wire_identity() {
         }
         let (origin, task) = server(relay.clone()).await;
         let client = crate::app_state::build_media_fetch_client().unwrap();
-        let local = if mobile_first {
-            Keys::generate()
-        } else {
-            expected.clone()
-        };
-        let restored = resolve_backup(
-            &client,
-            &origin,
-            "test-session",
-            "account-a",
-            &local,
-            true,
-            |_| {
-                assert!(!mobile_first);
-                Ok(())
-            },
-        )
+        let restored = resolve_backup(&client, &origin, "test-session", "account-a", || {
+            assert!(!mobile_first);
+            Ok(expected.clone())
+        })
         .await
         .unwrap();
         assert_eq!(restored.public_key().to_hex(), fixture["pubkey"]);
@@ -238,8 +161,8 @@ async fn mobile_first_and_desktop_first_share_the_exact_backup_wire_identity() {
 }
 
 #[tokio::test]
-async fn restore_or_status_failure_and_established_key_conflict_never_upload() {
-    for (fail_restore, fail_status) in [(true, false), (false, true), (false, false)] {
+async fn restore_or_status_failure_never_uploads_or_creates_a_key() {
+    for (fail_restore, fail_status) in [(true, false), (false, true)] {
         let relay = Relay {
             fail_restore,
             fail_status,
@@ -248,16 +171,9 @@ async fn restore_or_status_failure_and_established_key_conflict_never_upload() {
         *relay.key.lock().unwrap() = Some(Keys::generate());
         let (origin, task) = server(relay.clone()).await;
         let client = crate::app_state::build_media_fetch_client().unwrap();
-        let local = Keys::generate();
-        let result = resolve_backup(
-            &client,
-            &origin,
-            "test-session",
-            "account-a",
-            &local,
-            fail_restore || fail_status,
-            |_| panic!("failure must not initialize"),
-        )
+        let result = resolve_backup(&client, &origin, "test-session", "account-a", || {
+            panic!("failure must not create a key")
+        })
         .await;
         assert!(result.is_err());
         assert_eq!(relay.uploads.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -301,64 +217,37 @@ fn backup_session_refresh_and_expiry_leave_signed_identity_and_mentions_unchange
     }
 }
 
+/// Whatever was on this computer, the chosen Google account decides the
+/// account: its backup is restored, and a Google account with no backup gets
+/// the new key it is handed, never the key that was active here.
 #[tokio::test]
-async fn signed_out_resume_restores_only_this_devices_account() {
-    let original = Keys::generate();
+async fn any_google_account_signs_in_to_its_own_account() {
+    let backed_up = Keys::generate();
     let relay = Relay::default();
-    *relay.key.lock().unwrap() = Some(original.clone());
+    *relay.key.lock().unwrap() = Some(backed_up.clone());
     let (origin, task) = server(relay.clone()).await;
     let client = crate::app_state::build_media_fetch_client().unwrap();
-
-    // A Google account backing up a different identity is refused before any
-    // key is downloaded or uploaded, even when replacement would be allowed.
-    let other = Keys::generate();
-    let error = resolve_backup_resuming(
-        &client,
-        &origin,
-        "test-session",
-        "account-a",
-        &other,
-        true,
-        Some(other.public_key()),
-        |_| panic!("a signed-out device never uploads its key"),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(error, super::super::signed_out::ACCOUNT_MISMATCH_MESSAGE);
-
-    // The same account resumes with the identical signer.
-    let resumed = resolve_backup_resuming(
-        &client,
-        &origin,
-        "test-session",
-        "account-a",
-        &original,
-        false,
-        Some(original.public_key()),
-        |_| panic!("resume must not replace the backup"),
-    )
+    let restored = resolve_backup(&client, &origin, "test-session", "account-a", || {
+        panic!("a backed-up account is restored, not replaced")
+    })
     .await
     .unwrap();
-    assert_eq!(resumed.public_key(), original.public_key());
+    assert_eq!(restored.public_key(), backed_up.public_key());
+    assert_eq!(relay.uploads.load(std::sync::atomic::Ordering::SeqCst), 0);
     task.abort();
 
-    // A Google account with no backup is a different account: no link.
     let empty = Relay::default();
     let (origin, task) = server(empty.clone()).await;
-    let error = resolve_backup_resuming(
-        &client,
-        &origin,
-        "test-session",
-        "account-a",
-        &original,
-        false,
-        Some(original.public_key()),
-        |_| panic!("a signed-out device never links its key to another account"),
-    )
+    let fresh = Keys::generate();
+    let created = resolve_backup(&client, &origin, "test-session", "account-a", || {
+        Ok(fresh.clone())
+    })
     .await
-    .unwrap_err();
-    assert_eq!(error, super::super::signed_out::ACCOUNT_MISMATCH_MESSAGE);
-    assert_eq!(empty.uploads.load(std::sync::atomic::Ordering::SeqCst), 0);
-    assert!(empty.key.lock().unwrap().is_none());
+    .unwrap();
+    assert_eq!(created.public_key(), fresh.public_key());
+    assert_eq!(
+        empty.key.lock().unwrap().as_ref().map(Keys::public_key),
+        Some(fresh.public_key())
+    );
     task.abort();
 }

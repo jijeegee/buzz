@@ -142,8 +142,6 @@ async fn restore(
     client: &reqwest::Client,
     origin: &str,
     access: &str,
-    local: &Keys,
-    allow_restore: bool,
     status: BackupStatus,
 ) -> Result<Keys, String> {
     let expected = status
@@ -151,9 +149,6 @@ async fn restore(
         .as_deref()
         .and_then(|v| PublicKey::from_hex(v).ok())
         .ok_or("The stored backup has an invalid public key.")?;
-    if !allow_restore && expected != local.public_key() {
-        return Err("This Google account backs up a different Buzz identity. Your current key and agents were preserved; accounts cannot be merged.".into());
-    }
     let restored: RestoredKey = api::send_json(
         client
             .post(format!("{origin}/auth/key-backup/restore"))
@@ -174,45 +169,17 @@ async fn restore(
     Ok(keys)
 }
 
-/// Production network state machine. Only authenticated `absent` can upload;
-/// every restore/status failure propagates without generating another key.
-/// Production calls [`resolve_backup_resuming`]; tests use this form.
-#[cfg(test)]
+/// The account behind the login method the user chose. A backed-up account is
+/// restored, whatever was on this computer before. Only when the login method
+/// has no account yet is `new_key` asked for the key to back up (it must be
+/// durably stored before it returns); an authenticated `absent` is the only
+/// state that uploads. Every restore/status failure propagates.
 pub(crate) async fn resolve_backup(
     client: &reqwest::Client,
     origin: &str,
     access: &str,
     account: &str,
-    local: &Keys,
-    allow_restore: bool,
-    persist_pending: impl FnOnce(&Keys) -> Result<(), String>,
-) -> Result<Keys, String> {
-    resolve_backup_resuming(
-        client,
-        origin,
-        access,
-        account,
-        local,
-        allow_restore,
-        None,
-        persist_pending,
-    )
-    .await
-}
-
-/// [`resolve_backup`] for a device that is signed out of `resume`'s account:
-/// only that account's own backup may resume it. Any other backup, or none,
-/// is refused before a key is downloaded or this device's key is uploaded.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn resolve_backup_resuming(
-    client: &reqwest::Client,
-    origin: &str,
-    access: &str,
-    account: &str,
-    local: &Keys,
-    allow_restore: bool,
-    resume: Option<PublicKey>,
-    persist_pending: impl FnOnce(&Keys) -> Result<(), String>,
+    new_key: impl FnOnce() -> Result<Keys, String>,
 ) -> Result<Keys, String> {
     let parsed = url::Url::parse(origin).map_err(|_| "invalid recovery origin")?;
     let local_dev = parsed
@@ -222,22 +189,10 @@ pub(crate) async fn resolve_backup_resuming(
         return Err("Google key recovery requires HTTPS outside local development.".into());
     }
     let current = status(client, origin, access, account).await?;
-    if let Some(expected) = resume {
-        let backed_up = current
-            .pubkey
-            .as_deref()
-            .and_then(|value| PublicKey::from_hex(value).ok());
-        if current.state != "ready" || backed_up != Some(expected) {
-            return Err(super::signed_out::ACCOUNT_MISMATCH_MESSAGE.into());
-        }
-        // Verified to be this device's own account; `restore` re-checks the
-        // downloaded key against it.
-        return restore(client, origin, access, local, true, current).await;
-    }
     if current.state == "ready" {
-        return restore(client, origin, access, local, allow_restore, current).await;
+        return restore(client, origin, access, current).await;
     }
-    persist_pending(local)?;
+    let local = new_key()?;
     let challenge: Challenge = api::send_json(
         client
             .post(format!("{origin}/auth/key-backup/challenge"))
@@ -246,7 +201,7 @@ pub(crate) async fn resolve_backup_resuming(
     )
     .await
     .map_err(error)?;
-    let proof = proof(local, account, origin, challenge)?;
+    let proof = proof(&local, account, origin, challenge)?;
     let secret = Zeroizing::new(local.secret_key().to_secret_hex());
     let body = Zeroizing::new(
         serde_json::to_string(&serde_json::json!({"secret_key": secret.as_str(), "proof": proof}))
@@ -263,15 +218,14 @@ pub(crate) async fn resolve_backup_resuming(
     match result {
         Ok(created) => {
             check_identity(&local.public_key(), &created.pubkey, created.version)?;
-            Ok(local.clone())
+            Ok(local)
         }
+        // Another device created this account's backup first: use it.
         Err(failure)
-            if failure.status == Some(409)
-                && failure.code.as_deref() == Some("backup_exists")
-                && allow_restore =>
+            if failure.status == Some(409) && failure.code.as_deref() == Some("backup_exists") =>
         {
             let winner = status(client, origin, access, account).await?;
-            restore(client, origin, access, local, true, winner).await
+            restore(client, origin, access, winner).await
         }
         Err(failure) => Err(error(failure)),
     }
@@ -320,12 +274,17 @@ fn persist_pending(state: &AppState, keys: &Keys) -> Result<(), String> {
     Ok(())
 }
 
-/// Resolve onboarding/link and atomically commit key + binding + refresh token.
+/// Complete a Google sign-in: enter the account behind the chosen Google
+/// account and make it the active account on this computer. Accounts already
+/// here stay signed in. The current key is linked to the Google account only
+/// for an explicit `connect` (a signed-in key-only account protecting itself)
+/// or when it is the unused first-install key; otherwise a Google account with
+/// no backup gets a new key and a new Buzz account.
 pub(crate) async fn complete<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     origin: &str,
     tokens: &LoginTokens,
-    allow_restore: bool,
+    connect: bool,
 ) -> Result<PublicKey, String> {
     use super::RefreshStore;
     if tokens.identity_mode.as_deref() != Some("key_backup") {
@@ -340,12 +299,6 @@ pub(crate) async fn complete<R: tauri::Runtime>(
     {
         return Err("Sign out of the separate token account before linking a Nostr key. Existing token agents will be preserved.".into());
     }
-    let recovering = state
-        .identity_lost
-        .load(std::sync::atomic::Ordering::Acquire);
-    // Signed out on this device: only the identity that signed out resumes.
-    // The fence blocks `signing_keys`, so read the retained key directly.
-    let signed_out = state.token_auth.signed_out.get(origin);
     if state
         .keyring_locked
         .load(std::sync::atomic::Ordering::Acquire)
@@ -354,63 +307,61 @@ pub(crate) async fn complete<R: tauri::Runtime>(
             "Unlock your OS keyring and relaunch Buzz before recovering with Google.".into(),
         );
     }
-    let local = if (recovering && allow_restore) || signed_out.is_some() {
-        state
-            .keys
-            .lock()
-            .map_err(|_| "identity storage is busy")?
-            .clone()
-    } else {
-        state.signing_keys()?
-    };
-    let local_pubkey = local.public_key();
-    let resume = match signed_out {
-        Some(known) => Some(match known {
-            Some(identity) => identity,
-            None => super::KeyringRefreshStore
-                .signing_pubkey(origin)?
-                .unwrap_or(local_pubkey),
-        }),
-        None => None,
-    };
-    // Only an explicitly marked, unused bootstrap key can be replaced. Old
-    // installs without the marker are established; no relay membership query
-    // is needed, so recovery also works on closed communities.
-    let can_restore = if recovering && allow_restore {
-        true
-    } else if allow_restore {
-        if !crate::managed_agents::load_managed_agents(app)?.is_empty() {
-            false
-        } else {
-            let store =
-                crate::secret_store::SecretStore::shared(crate::app_state::keyring_service());
-            store.load("identity.bootstrap")?.as_deref() == Some(local_pubkey.to_hex().as_str())
-        }
-    } else {
-        false
-    };
-    let keys = resolve_backup_resuming(
+    let recovering = state
+        .identity_lost
+        .load(std::sync::atomic::Ordering::Acquire);
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "identity storage is unavailable")?;
+    let secrets = super::accounts::shared_secrets();
+    let active = state
+        .keys
+        .lock()
+        .map_err(|_| "identity storage is busy")?
+        .clone();
+    let active_pubkey = active.public_key();
+    let registry = super::accounts::load_registry(&data_dir)?.unwrap_or_default();
+    // "Connect" links a key-only account's own key; an account already held
+    // by a Google account is never attached to another one.
+    let connect = connect
+        && registry
+            .accounts
+            .iter()
+            .filter(|a| a.pubkey == active_pubkey.to_hex())
+            .all(|a| a.state == super::accounts::AccountState::KeyOnly)
+        && state.token_auth.signing_pubkey(origin).is_none()
+        && super::KeyringRefreshStore.signing_pubkey(origin)?.is_none();
+    let reuse_active = !recovering
+        && (connect || {
+            let marker = secrets.load("identity.bootstrap")?;
+            super::accounts::is_unused_bootstrap_key(
+                marker.as_deref(),
+                &active_pubkey,
+                registry.accounts.len(),
+                crate::managed_agents::load_managed_agents(app)?.len(),
+            )
+        });
+    let keys = resolve_backup(
         &state.media_fetch_client,
         origin,
         &tokens.access,
         &tokens.principal_id,
-        &local,
-        can_restore,
-        resume,
-        |keys| {
+        || {
             if recovering {
                 return Err(
                     "This Google account has no backup. Your lost identity was not replaced."
                         .into(),
                 );
             }
-            persist_pending(&state, keys)
+            if reuse_active {
+                persist_pending(&state, &active)?;
+                return Ok(active.clone());
+            }
+            super::accounts::pending_new_key(secrets, &data_dir, origin, &tokens.principal_id)
         },
     )
     .await?;
-    if let Some(expected) = resume {
-        super::signed_out::verify_resumed_identity(Some(expected), keys.public_key())?;
-    }
     if tokens
         .signing_pubkey
         .as_deref()
@@ -421,6 +372,13 @@ pub(crate) async fn complete<R: tauri::Runtime>(
                 .into(),
         );
     }
+    // An account already signed in here in the background: settle its loop
+    // first so it cannot write an older token after this sign-in's.
+    state
+        .token_auth
+        .inactive
+        .stop(origin, &keys.public_key())
+        .await;
     let _guard = state
         .identity_mutation
         .lock()
@@ -431,60 +389,15 @@ pub(crate) async fn complete<R: tauri::Runtime>(
             .lock()
             .map_err(|_| "identity storage is busy")?
             .public_key()
-            != local_pubkey
+            != active_pubkey
     {
         return Err(
             "Your community or local identity changed during Google sign-in. Try again.".into(),
         );
     }
-    let store = crate::secret_store::SecretStore::shared(crate::app_state::keyring_service());
-    if keys.public_key() != local_pubkey && !recovering {
-        if store.load("identity.bootstrap")?.as_deref() != Some(local_pubkey.to_hex().as_str())
-            || !crate::managed_agents::load_managed_agents(app)?.is_empty()
-        {
-            return Err(
-                "Your local identity was used during sign-in. It and its agents were preserved."
-                    .into(),
-            );
-        }
-    }
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| "identity storage is unavailable")?;
-    if recovering {
-        let known = super::KeyringRefreshStore
-            .signing_pubkey(origin)?
-            .or_else(|| state.token_auth.signing_pubkey(origin));
-        let agents = crate::managed_agents::load_managed_agents(app)?;
-        verify_recovered_owner(
-            keys.public_key(),
-            known,
-            agents
-                .iter()
-                .map(|agent| (agent.pubkey.as_str(), agent.auth_tag.as_deref())),
-        )?;
-    }
+    super::accounts::preserve_legacy_key_file(secrets, &data_dir, &keys)?;
     crate::app_state::prepare_recovered_identity(&data_dir, &keys)?;
-    let nsec = Zeroizing::new(
-        keys.secret_key()
-            .to_bech32()
-            .map_err(|_| "could not encode signing key")?,
-    );
-    let mut entries = std::collections::HashMap::from([
-        ("identity".to_owned(), nsec.to_string()),
-        (binding_key(origin), keys.public_key().to_hex()),
-        (super::refresh_key(origin), tokens.refresh.to_string()),
-        ("identity.bootstrap".to_owned(), String::new()),
-    ]);
-    let result = store.store_all(&entries);
-    for value in entries.values_mut() {
-        zeroize::Zeroize::zeroize(value);
-    }
-    result?;
-    if !store.verify_stored_raw("identity", &nsec)? {
-        return Err("OS secure storage verification failed; retry recovery.".into());
-    }
+    super::accounts::commit_sign_in(secrets, &data_dir, origin, &keys, &tokens.refresh, &active)?;
     let pubkey = keys.public_key();
     *state.keys.lock().map_err(|_| "identity storage is busy")? = keys;
     state.set_identity_storage(IdentityStorage::SystemKeyring);
@@ -496,35 +409,6 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         .store(false, std::sync::atomic::Ordering::Release);
     state.token_auth.set_key_backup(origin, pubkey);
     Ok(pubkey)
-}
-
-fn verify_recovered_owner<'a>(
-    recovered: PublicKey,
-    known: Option<PublicKey>,
-    agents: impl IntoIterator<Item = (&'a str, Option<&'a str>)>,
-) -> Result<(), String> {
-    const MISMATCH: &str = "This Google account backs up a different signing identity. Your existing agents were preserved. Sign in with the original Google account or import your original key.";
-    if known.is_some_and(|key| key != recovered) {
-        return Err(MISMATCH.into());
-    }
-    let mut has_agents = false;
-    let mut verified_owner = known.is_some();
-    for (agent, tag) in agents {
-        has_agents = true;
-        let Some(tag) = tag else { continue };
-        let agent = PublicKey::from_hex(agent)
-            .map_err(|_| "An existing agent identity is invalid. Import your original key to recover without changing its record.")?;
-        let owner = buzz_sdk_pkg::nip_oa::verify_auth_tag(tag, &agent)
-            .map_err(|_| "An existing agent owner attestation cannot be verified. Import your original key to recover; your agents were preserved.")?;
-        if owner != recovered {
-            return Err(MISMATCH.into());
-        }
-        verified_owner = true;
-    }
-    if has_agents && !verified_owner {
-        return Err("The original owner cannot be verified: the backup binding and signed agent owner attestations are unavailable. Import your original key using the existing key recovery option; Google recovery has preserved your agents.".into());
-    }
-    Ok(())
 }
 
 #[cfg(test)]

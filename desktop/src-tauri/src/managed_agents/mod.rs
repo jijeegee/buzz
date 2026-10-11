@@ -29,6 +29,7 @@ pub(crate) mod hermes_profile;
 pub(crate) mod live_settings;
 mod managed_node_paths;
 mod nest;
+mod owners;
 mod pair_admission;
 pub(crate) mod parallelism;
 mod persona_avatars;
@@ -40,6 +41,9 @@ pub(crate) mod readiness;
 pub(crate) mod reconcile;
 mod relay_mesh;
 mod repos;
+pub(crate) use owners::{
+    agent_owner_hex, migrate_owners, record_missing_owners, FILE_NAME as AGENT_OWNERS_FILE,
+};
 mod restore;
 pub mod retention;
 mod routing_env;

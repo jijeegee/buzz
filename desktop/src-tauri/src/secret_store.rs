@@ -58,7 +58,22 @@ const BLOB_KEY: &str = "secrets";
 /// Whether `key` is kept in its own credential rather than the blob.
 #[cfg(feature = "system-keyring")]
 fn is_standalone(key: &str) -> bool {
-    cfg!(windows) && key.starts_with("auth.refresh.")
+    cfg!(windows) && (key.starts_with("auth.refresh.") || is_account_slot(key))
+}
+
+/// Per-account slots (`account.*`, see `auth::accounts`). On Windows they are
+/// standalone credentials **without** a blob marker: one marker per account
+/// would refill the 2,560-byte blob as accounts are added. The `account.index`
+/// entry lists them instead, and reset deletes what it lists.
+#[cfg(feature = "system-keyring")]
+fn is_account_slot(key: &str) -> bool {
+    key.starts_with("account.")
+}
+
+/// Whether a standalone `key` leaves an empty marker in the blob.
+#[cfg(feature = "system-keyring")]
+fn has_blob_marker(key: &str) -> bool {
+    !is_account_slot(key)
 }
 
 /// Blob size (UTF-16 units) past which agent keys are refused on Windows:
@@ -690,12 +705,13 @@ impl SecretStore {
             // failed blob write leaves no standalone secret behind.
             self.mutate_blob(|map| {
                 for (k, v) in entries {
-                    let value = if is_standalone(k) {
-                        String::new()
+                    if is_standalone(k) {
+                        if has_blob_marker(k) {
+                            map.insert(k.clone(), String::new());
+                        }
                     } else {
-                        v.clone()
-                    };
-                    map.insert(k.clone(), value);
+                        map.insert(k.clone(), v.clone());
+                    }
                 }
             })?;
             for (k, v) in entries.iter().filter(|(k, _)| is_standalone(k)) {
@@ -827,9 +843,11 @@ impl SecretStore {
         {
             if is_standalone(key) {
                 // Marker first: if the blob cannot take it, nothing is written.
-                self.mutate_blob(|map| {
-                    map.insert(key.to_string(), String::new());
-                })?;
+                if has_blob_marker(key) {
+                    self.mutate_blob(|map| {
+                        map.insert(key.to_string(), String::new());
+                    })?;
+                }
                 return self.write_standalone(key, value);
             }
             self.mutate_blob_capped(
@@ -878,6 +896,12 @@ impl SecretStore {
             // Always include "identity" even if the blob is empty or absent —
             // it may exist only as a legacy per-key entry.
             let mut all_keys = blob_keys;
+            // Per-account slots have no blob marker on Windows: the account
+            // index lists them (it lives in the blob elsewhere). Its own
+            // entries come last in this list.
+            let index_listed = self.account_slots_for_reset();
+            all_keys.retain(|key| !index_listed.contains(key));
+            all_keys.extend(index_listed);
             if !all_keys.contains(&"identity".to_string()) {
                 all_keys.push("identity".to_string());
             }
@@ -942,6 +966,50 @@ impl SecretStore {
         {
             Ok(()) // No-op: no keyring, nothing to delete.
         }
+    }
+
+    /// Every per-account slot named by the `account.index.{n}` entries, then
+    /// the index entries themselves (last, so an interrupted reset can still
+    /// find what is left). Read directly: the blob lock is held by the caller.
+    #[cfg(feature = "system-keyring")]
+    fn account_slots_for_reset(&self) -> Vec<String> {
+        const MAX_CHUNKS: usize = 64;
+        let mut text = String::new();
+        let mut index_keys = Vec::new();
+        for n in 0..MAX_CHUNKS {
+            let key = format!("account.index.{n}");
+            let chunk = if is_standalone(&key) {
+                keyring_entry(&self.service, &key)
+                    .ok()
+                    .and_then(|entry| entry.get_password().ok())
+            } else {
+                self.read_blob_raw()
+                    .ok()
+                    .flatten()
+                    .and_then(|bytes| {
+                        serde_json::from_slice::<HashMap<String, String>>(&bytes).ok()
+                    })
+                    .and_then(|map| map.get(&key).cloned())
+            };
+            let Some(chunk) = chunk else { break };
+            text.push_str(&chunk);
+            text.push('\n');
+            index_keys.push(key);
+        }
+        let mut keys = Vec::new();
+        for line in text.lines() {
+            let mut parts = line.split(' ');
+            let (Some(pubkey), Some(origin)) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            let identity = format!("account.{pubkey}.identity");
+            if !keys.contains(&identity) {
+                keys.push(identity);
+            }
+            keys.push(format!("account.{pubkey}.refresh.{origin}"));
+        }
+        keys.extend(index_keys);
+        keys
     }
 
     /// Verify no identity-bearing keychain entry survives in any shape
@@ -1011,6 +1079,9 @@ impl SecretStore {
                 // Credential first, so a failure keeps the marker that lets
                 // reset find it.
                 self.delete_standalone(key)?;
+                if !has_blob_marker(key) {
+                    return Ok(());
+                }
             }
             self.mutate_blob(|map| {
                 map.remove(key);
@@ -1460,7 +1531,11 @@ mod tests {
         entries.insert(key.to_owned(), token.clone());
         store.store_all(&entries).unwrap();
         let blob = raw_blob(&store);
-        assert_eq!(blob.get(key).map(String::as_str), Some(""), "blob keeps a marker only");
+        assert_eq!(
+            blob.get(key).map(String::as_str),
+            Some(""),
+            "blob keeps a marker only"
+        );
         assert_eq!(blob.get("identity").map(String::as_str), Some("nsec1test"));
         assert_eq!(SecretStore::keyring(svc).load(key).unwrap(), Some(token));
 
@@ -1535,8 +1610,14 @@ mod tests {
         // The account entries still fit after agents filled the blob.
         let entries = HashMap::from([
             ("identity".to_owned(), nsec.clone()),
-            ("auth.key-backup.https://relay.test".to_owned(), "f".repeat(64)),
-            ("auth.refresh.https://relay.test".to_owned(), "bzr_x".repeat(60)),
+            (
+                "auth.key-backup.https://relay.test".to_owned(),
+                "f".repeat(64),
+            ),
+            (
+                "auth.refresh.https://relay.test".to_owned(),
+                "bzr_x".repeat(60),
+            ),
         ]);
         store.store_all(&entries).unwrap();
         store.delete_all_with_legacy_cleanup().unwrap();

@@ -292,7 +292,9 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
                 super::channel_routing::routing_role_for(
                     record,
                     routing_mode,
-                    super::channel_routing::routing_owner_hex(app).as_deref(),
+                    super::agent_owner_hex(app, record)
+                        .or_else(|| super::channel_routing::routing_owner_hex(app))
+                        .as_deref(),
                 ),
                 &super::channel_routing::live_local_roles(runtimes),
             ),
@@ -568,6 +570,11 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     if let Some(error) = spawn_key_refusal(record) {
         return Err(error);
     }
+    // The agent's own owner, never the active account: several accounts can
+    // be signed in here and every account's agents keep running. `owner_hex`
+    // is only the fallback for an agent with no attested or recorded owner.
+    let record_owner = super::agent_owner_hex(app, record);
+    let owner_hex = record_owner.as_deref().or(owner_hex);
     let runtime_key = ManagedAgentRuntimeKey::new(record.pubkey.clone(), relay_url)?;
     // Resolve the effective harness (agent command) from the linked persona, so
     // persona harness edits propagate on the next spawn; an explicit per-agent

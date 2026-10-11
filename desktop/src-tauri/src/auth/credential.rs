@@ -122,8 +122,7 @@ impl AppState {
     pub(crate) fn ensure_signed_in_here(&self) -> Result<(), String> {
         if self
             .token_auth
-            .signed_out
-            .is_signed_out(&self.current_auth_origin())
+            .device_signed_out(&self.current_auth_origin())
         {
             return Err(super::signed_out::SIGNED_OUT_MESSAGE.into());
         }

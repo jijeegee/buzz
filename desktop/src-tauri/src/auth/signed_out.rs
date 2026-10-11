@@ -7,12 +7,14 @@
 //! keyring: it holds no secret, and a signed-out device must stay signed out
 //! even when the keyring is unavailable.
 //!
-//! Entries are keyed by relay origin and remember the identity (signing pubkey
-//! for key-backup accounts, principal for legacy token accounts) that a later
-//! Google sign-in must resume. A different identity is refused and the marker
-//! stays. An entry also lists the local agents the user chose to stop when
-//! signing out; launch restore and auto-start fan-out skip them until the
-//! marker is cleared by signing in again (their configs are untouched).
+//! Entries are keyed by (relay origin, account): the signing pubkey of a
+//! key-backup account, or no account for a legacy token account (which then
+//! fences the whole origin). The current community counts as signed out while
+//! its active account has an entry. Signing in with any account is allowed; it
+//! clears only that account's entry, so another account that signed out here
+//! stays signed out. An entry also lists the local agents the user chose to
+//! stop when signing out; launch restore and auto-start fan-out skip them until
+//! that same account signs in again (their configs are untouched).
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -29,10 +31,6 @@ pub(crate) const FILE_NAME: &str = "signed-out.json";
 pub(crate) const SIGNED_OUT_MESSAGE: &str =
     "You're signed out on this computer. Sign in with Google to continue.";
 
-/// Shown when a Google sign-in would resume a different account.
-pub(crate) const ACCOUNT_MISMATCH_MESSAGE: &str =
-    "This Google account is linked to a different Buzz account. Try a different Google account.";
-
 const VERSION: u8 = 1;
 
 #[derive(Serialize, Deserialize)]
@@ -44,25 +42,27 @@ struct MarkerFile {
 #[derive(Serialize, Deserialize)]
 struct MarkerEntry {
     origin: String,
-    /// Hex pubkey of the identity to resume; `None` when it was unknown at
-    /// sign-out (a legacy token session that had already ended).
+    /// Hex pubkey of the account that signed out; `None` for a legacy token
+    /// account (the marker then covers the whole origin).
     identity: Option<String>,
     /// Agent pubkeys stopped by this sign-out; kept from auto-starting.
     #[serde(default)]
     stopped_agents: Vec<String>,
 }
 
-/// One signed-out origin.
+/// One signed-out (origin, account).
 #[derive(Clone, Default)]
 struct Marker {
-    identity: Option<PublicKey>,
     stopped_agents: Vec<String>,
 }
+
+/// (origin, account) — `None` account covers the whole origin.
+type MarkerKey = (String, Option<PublicKey>);
 
 #[derive(Default)]
 struct Markers {
     path: Option<PathBuf>,
-    origins: HashMap<String, Marker>,
+    origins: HashMap<MarkerKey, Marker>,
     /// The file exists but could not be read. Fail closed: every origin counts
     /// as signed out (identity unknown) until a Google sign-in rewrites it.
     unreadable: bool,
@@ -94,14 +94,24 @@ impl SignedOutMarkers {
         };
     }
 
-    /// `Some(identity)` while `origin` is signed out on this device (`identity`
-    /// is `None` when unknown), `None` when it is not.
-    pub(crate) fn get(&self, origin: &str) -> Option<Option<PublicKey>> {
+    /// Whether `account` (the active account of `origin`, if known) is
+    /// signed out there. An unreadable file fails closed.
+    pub(crate) fn is_signed_out(&self, origin: &str, account: Option<PublicKey>) -> bool {
         let markers = self.lock();
-        match markers.origins.get(origin) {
-            Some(marker) => Some(marker.identity),
-            None => markers.unreadable.then_some(None),
-        }
+        markers.unreadable
+            || markers.origins.contains_key(&(origin.to_owned(), None))
+            || account.is_some_and(|account| {
+                markers
+                    .origins
+                    .contains_key(&(origin.to_owned(), Some(account)))
+            })
+    }
+
+    /// Whether any marker covers `origin`: a legacy token account, whose
+    /// version-1 marker may name its principal rather than no account.
+    pub(crate) fn is_signed_out_any(&self, origin: &str) -> bool {
+        let markers = self.lock();
+        markers.unreadable || markers.origins.keys().any(|(o, _)| o == origin)
     }
 
     /// Whether a sign-out stopped `agent_pubkey`, so it must not auto-start.
@@ -114,23 +124,19 @@ impl SignedOutMarkers {
         })
     }
 
-    /// Whether `origin` is signed out on this device.
-    pub(crate) fn is_signed_out(&self, origin: &str) -> bool {
-        self.get(origin).is_some()
-    }
-
-    /// Durably mark `origin` signed out, remembering the identity to resume
-    /// and (added to any already recorded) the agents this sign-out stops.
+    /// Durably mark `account` signed out of `origin` and (added to any already
+    /// recorded) the agents this sign-out stops.
     pub(crate) fn mark(
         &self,
         origin: &str,
-        identity: Option<PublicKey>,
+        account: Option<PublicKey>,
         stopped_agents: &[String],
     ) -> Result<(), String> {
         let mut markers = self.lock();
         let mut next = markers.origins.clone();
+        let key = (origin.to_owned(), account);
         let mut stopped = next
-            .remove(origin)
+            .remove(&key)
             .map(|marker| marker.stopped_agents)
             .unwrap_or_default();
         for agent in stopped_agents {
@@ -140,9 +146,8 @@ impl SignedOutMarkers {
             }
         }
         next.insert(
-            origin.to_owned(),
+            key,
             Marker {
-                identity,
                 stopped_agents: stopped,
             },
         );
@@ -151,22 +156,24 @@ impl SignedOutMarkers {
         Ok(())
     }
 
-    /// Durably clear `origin`'s marker after a matching Google sign-in. An
-    /// unreadable file is replaced by the remaining known markers: the same
-    /// Google account just proved this device's owner.
-    /// Clear `origin`'s marker after a matching Google sign-in.
+    /// Durably clear `account`'s marker on `origin` (and an origin-wide token
+    /// marker) after it signs in. Other accounts' markers stay.
     ///
     /// Known limitation: when the file was unreadable (fail-closed), the
-    /// rewrite keeps no other origins, so signing in to one community also
-    /// lifts the unknown markers of others on this computer. Rare (a corrupt
-    /// file plus several communities); revisit with multi-account work.
-    pub(crate) fn clear(&self, origin: &str) -> Result<(), String> {
+    /// rewrite keeps no other entries, so their stopped agents are released.
+    pub(crate) fn clear(&self, origin: &str, account: Option<PublicKey>) -> Result<(), String> {
         let mut markers = self.lock();
-        if !markers.unreadable && !markers.origins.contains_key(origin) {
+        let own = (origin.to_owned(), account);
+        let wide = (origin.to_owned(), None);
+        if !markers.unreadable
+            && !markers.origins.contains_key(&own)
+            && !markers.origins.contains_key(&wide)
+        {
             return Ok(());
         }
         let mut next = markers.origins.clone();
-        next.remove(origin);
+        next.remove(&own);
+        next.remove(&wide);
         write(markers.path.as_deref(), &next)?;
         markers.origins = next;
         markers.unreadable = false;
@@ -178,18 +185,7 @@ impl SignedOutMarkers {
     }
 }
 
-/// Require a resumed identity to be the one that signed out.
-pub(crate) fn verify_resumed_identity(
-    expected: Option<PublicKey>,
-    actual: PublicKey,
-) -> Result<(), String> {
-    if expected.is_some_and(|expected| expected != actual) {
-        return Err(ACCOUNT_MISMATCH_MESSAGE.into());
-    }
-    Ok(())
-}
-
-fn read(path: &Path) -> Result<HashMap<String, Marker>, String> {
+fn read(path: &Path) -> Result<HashMap<MarkerKey, Marker>, String> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
@@ -214,9 +210,8 @@ fn read(path: &Path) -> Result<HashMap<String, Marker>, String> {
                 return Err("invalid stopped agent".to_owned());
             }
             Ok((
-                entry.origin,
+                (entry.origin, identity),
                 Marker {
-                    identity,
                     stopped_agents: entry.stopped_agents,
                 },
             ))
@@ -224,20 +219,20 @@ fn read(path: &Path) -> Result<HashMap<String, Marker>, String> {
         .collect()
 }
 
-fn write(path: Option<&Path>, origins: &HashMap<String, Marker>) -> Result<(), String> {
+fn write(path: Option<&Path>, origins: &HashMap<MarkerKey, Marker>) -> Result<(), String> {
     use atomic_write_file::AtomicWriteFile;
 
     const FAILED: &str = "Sign-out could not be saved on this computer. Try again.";
     let path = path.ok_or(FAILED)?;
     let mut entries: Vec<MarkerEntry> = origins
         .iter()
-        .map(|(origin, marker)| MarkerEntry {
+        .map(|((origin, account), marker)| MarkerEntry {
             origin: origin.clone(),
-            identity: marker.identity.map(|key| key.to_hex()),
+            identity: account.map(|key| key.to_hex()),
             stopped_agents: marker.stopped_agents.clone(),
         })
         .collect();
-    entries.sort_by(|a, b| a.origin.cmp(&b.origin));
+    entries.sort_by(|a, b| (&a.origin, &a.identity).cmp(&(&b.origin, &b.identity)));
     let json = serde_json::to_vec_pretty(&MarkerFile {
         version: VERSION,
         origins: entries,
@@ -262,77 +257,95 @@ mod tests {
     use super::*;
 
     #[test]
-    fn markers_survive_reload_and_clear_only_their_origin() {
+    fn markers_are_per_account_and_survive_reload() {
         let dir = tempfile::tempdir().unwrap();
-        let identity = nostr::Keys::generate().public_key();
+        let a = nostr::Keys::generate().public_key();
+        let b = nostr::Keys::generate().public_key();
         let markers = SignedOutMarkers::default();
         markers.load(dir.path());
-        assert!(!markers.is_signed_out("https://a.test"));
-        markers.mark("https://a.test", Some(identity), &[]).unwrap();
+        assert!(!markers.is_signed_out("https://a.test", Some(a)));
+        markers.mark("https://a.test", Some(a), &[]).unwrap();
         markers.mark("https://b.test", None, &[]).unwrap();
 
         let restarted = SignedOutMarkers::default();
         restarted.load(dir.path());
-        assert_eq!(restarted.get("https://a.test"), Some(Some(identity)));
-        assert_eq!(restarted.get("https://b.test"), Some(None));
-        assert_eq!(restarted.get("https://c.test"), None);
+        assert!(restarted.is_signed_out("https://a.test", Some(a)));
+        // Another account active on the same origin is not signed out.
+        assert!(!restarted.is_signed_out("https://a.test", Some(b)));
+        // A token-account marker covers the whole origin.
+        assert!(restarted.is_signed_out("https://b.test", Some(b)));
+        assert!(!restarted.is_signed_out("https://c.test", Some(a)));
 
-        restarted.clear("https://a.test").unwrap();
+        // B signing in on a.test leaves A signed out.
+        restarted.clear("https://a.test", Some(b)).unwrap();
+        assert!(restarted.is_signed_out("https://a.test", Some(a)));
+        restarted.clear("https://a.test", Some(a)).unwrap();
         let again = SignedOutMarkers::default();
         again.load(dir.path());
-        assert!(!again.is_signed_out("https://a.test"));
-        assert!(again.is_signed_out("https://b.test"));
+        assert!(!again.is_signed_out("https://a.test", Some(a)));
+        assert!(again.is_signed_out("https://b.test", None));
+    }
+
+    #[test]
+    fn version_one_files_with_an_identity_still_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = nostr::Keys::generate().public_key();
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            format!(
+                r#"{{"version":1,"origins":[{{"origin":"https://a.test","identity":"{}","stopped_agents":[]}}]}}"#,
+                a.to_hex()
+            ),
+        )
+        .unwrap();
+        let markers = SignedOutMarkers::default();
+        markers.load(dir.path());
+        assert!(markers.is_signed_out("https://a.test", Some(a)));
     }
 
     #[test]
     fn an_unreadable_marker_fails_closed_until_a_sign_in_rewrites_it() {
         let dir = tempfile::tempdir().unwrap();
+        let a = nostr::Keys::generate().public_key();
         std::fs::write(dir.path().join(FILE_NAME), b"{not json").unwrap();
         let markers = SignedOutMarkers::default();
         markers.load(dir.path());
-        assert_eq!(markers.get("https://any.test"), Some(None));
-        markers.clear("https://any.test").unwrap();
-        assert!(!markers.is_signed_out("https://any.test"));
+        assert!(markers.is_signed_out("https://any.test", Some(a)));
+        markers.clear("https://any.test", Some(a)).unwrap();
+        assert!(!markers.is_signed_out("https://any.test", Some(a)));
         let restarted = SignedOutMarkers::default();
         restarted.load(dir.path());
-        assert!(!restarted.is_signed_out("https://other.test"));
+        assert!(!restarted.is_signed_out("https://other.test", Some(a)));
     }
 
     #[test]
     fn marking_without_a_data_dir_fails_instead_of_pretending() {
         let markers = SignedOutMarkers::default();
         assert!(markers.mark("https://a.test", None, &[]).is_err());
-        assert!(!markers.is_signed_out("https://a.test"));
+        assert!(!markers.is_signed_out("https://a.test", None));
     }
 
     #[test]
-    fn stopped_agents_stay_suppressed_until_their_origin_signs_in() {
+    fn stopped_agents_stay_suppressed_until_their_own_account_signs_in() {
         let dir = tempfile::tempdir().unwrap();
         let agent = "AB".repeat(32);
+        let a = nostr::Keys::generate().public_key();
+        let b = nostr::Keys::generate().public_key();
         let markers = SignedOutMarkers::default();
         markers.load(dir.path());
         assert!(!markers.suppresses_agent(&agent));
         markers
-            .mark("https://a.test", None, std::slice::from_ref(&agent))
+            .mark("https://a.test", Some(a), std::slice::from_ref(&agent))
             .unwrap();
         // A repeated sign-out without stopping keeps the earlier choice.
-        markers.mark("https://a.test", None, &[]).unwrap();
+        markers.mark("https://a.test", Some(a), &[]).unwrap();
         let restarted = SignedOutMarkers::default();
         restarted.load(dir.path());
         assert!(restarted.suppresses_agent(&agent.to_ascii_lowercase()));
-        restarted.clear("https://a.test").unwrap();
+        // Another account signing in does not release A's stopped agents.
+        restarted.clear("https://a.test", Some(b)).unwrap();
+        assert!(restarted.suppresses_agent(&agent));
+        restarted.clear("https://a.test", Some(a)).unwrap();
         assert!(!restarted.suppresses_agent(&agent));
-    }
-
-    #[test]
-    fn resumed_identity_must_match_when_known() {
-        let a = nostr::Keys::generate().public_key();
-        let b = nostr::Keys::generate().public_key();
-        assert!(verify_resumed_identity(Some(a), a).is_ok());
-        assert_eq!(
-            verify_resumed_identity(Some(a), b).unwrap_err(),
-            ACCOUNT_MISMATCH_MESSAGE
-        );
-        assert!(verify_resumed_identity(None, b).is_ok());
     }
 }
