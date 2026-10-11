@@ -62,6 +62,9 @@ impl std::fmt::Display for ApiError {
 #[derive(Deserialize)]
 pub(crate) struct LoginTokens {
     pub principal_id: String,
+    /// The Google account's email, from relays that send it.
+    #[serde(default)]
+    pub email: Option<String>,
     #[serde(default)]
     pub identity_mode: Option<String>,
     #[serde(default)]
@@ -104,6 +107,11 @@ pub(crate) struct MeInfo {
     pub signing_pubkey: Option<String>,
     #[serde(default)]
     pub device_id: Option<String>,
+    /// The login's profile (the Google name and picture).
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 /// A bot access token (`POST /auth/bots/{id}/token`).

@@ -384,6 +384,9 @@ async fn login_inner(
     }
     drop(_refresh_guard);
     spawn_refresh_loop(app, &origin, generation);
+    if let Some(account) = signed_in_account {
+        remember_signed_in_profile(app, &origin, account, &tokens);
+    }
     emit_changed(app, &origin);
     // Signed in here again: like an app launch for this account, its agents
     // start (outside every sign-in lock; each start takes its own).
@@ -391,6 +394,37 @@ async fn login_inner(
     let mut status = current_status(&state, &origin, Some(providers));
     status.account_changed = account_changed;
     Ok(status)
+}
+
+/// Record a sign-in of `account` for the account menu: used now, its email
+/// (from relays that send it), and in the background its `/auth/me` name and
+/// avatar. Best effort.
+fn remember_signed_in_profile(
+    app: &AppHandle,
+    origin: &str,
+    account: PublicKey,
+    tokens: &api::LoginTokens,
+) {
+    let Ok(data_dir) = app.path().app_data_dir() else {
+        return;
+    };
+    super::account_profiles::touch(&data_dir, &account);
+    super::account_profiles::learn(&data_dir, &account, None, None, tokens.email.clone());
+    let client = app.state::<AppState>().http_client.clone();
+    let origin = origin.to_owned();
+    let access = Zeroizing::new(tokens.access.0.to_string());
+    tauri::async_runtime::spawn(async move {
+        match api::me(&client, &origin, &access).await {
+            Ok(me) => super::account_profiles::learn(
+                &data_dir,
+                &account,
+                me.display_name,
+                me.avatar_url,
+                None,
+            ),
+            Err(error) => eprintln!("buzz-desktop: accounts: profile not fetched: {error}"),
+        }
+    });
 }
 
 /// Start `owner`'s local agents that start with the app, plus `resume` (the

@@ -19,6 +19,7 @@
 //! - [`signed_out`]: durable "signed out on this computer" markers that fence
 //!   user-identity work until the same Google account signs in again.
 
+pub(crate) mod account_profiles;
 pub(crate) mod accounts;
 pub(crate) mod api;
 pub(crate) mod bots;
@@ -196,9 +197,32 @@ pub struct TokenAuthState {
     pub(crate) signed_out: signed_out::SignedOutMarkers,
     /// Background sessions of signed-in accounts that are not active.
     pub(crate) inactive: accounts::InactiveSessions,
+    /// The `/auth/me` name and avatar of each origin's last restored session.
+    me_profiles: Mutex<HashMap<String, (Option<String>, Option<String>)>>,
 }
 
 impl TokenAuthState {
+    pub(crate) fn record_me_profile(
+        &self,
+        origin: &str,
+        display_name: Option<String>,
+        avatar_url: Option<String>,
+    ) {
+        self.me_profiles
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(origin.to_owned(), (display_name, avatar_url));
+    }
+
+    /// The name and avatar `/auth/me` returned for `origin`'s session.
+    pub(crate) fn me_profile(&self, origin: &str) -> Option<(Option<String>, Option<String>)> {
+        self.me_profiles
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(origin)
+            .cloned()
+    }
+
     pub(crate) fn record_backup_support(&self, origin: &str, enabled: bool) {
         self.backup_support
             .lock()

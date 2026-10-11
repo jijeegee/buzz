@@ -1160,6 +1160,13 @@ impl InactiveSessions {
             if let Some((generation, attempt)) =
                 super::refresh::restore_session(&auth, &client, &origin, store.as_ref()).await
             {
+                if let (true, Some(dir), Some((name, avatar))) = (
+                    attempt.is_ok(),
+                    data_dir.as_deref(),
+                    auth.me_profile(&origin),
+                ) {
+                    super::account_profiles::learn(dir, &pubkey, name, avatar, None);
+                }
                 if !matches!(attempt, Err(super::refresh::RefreshFailure::Terminal(_))) {
                     super::refresh::run_refresh_loop(
                         Arc::clone(&auth),
@@ -1416,12 +1423,19 @@ pub(crate) async fn after_active_changed<R: tauri::Runtime>(
 pub struct AccountSummary {
     pub pubkey: String,
     pub origin: String,
-    /// `signed_in | signed_out | key_only`
+    /// `signed_in | needs_login | signed_out | key_only`
     pub state: AccountState,
     pub active: bool,
+    /// From [`super::account_profiles`]; absent until first learned.
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub email: Option<String>,
+    /// Unix seconds of the last sign-in or switch to it.
+    pub last_used_at: Option<i64>,
 }
 
-/// Accounts on this computer for the current community (and key-only ones).
+/// Accounts on this computer for the current community (and key-only ones),
+/// most recently used first.
 #[tauri::command]
 pub fn list_accounts(app: tauri::AppHandle) -> Result<Vec<AccountSummary>, String> {
     use tauri::Manager;
@@ -1432,17 +1446,36 @@ pub fn list_accounts(app: tauri::AppHandle) -> Result<Vec<AccountSummary>, Strin
         .app_data_dir()
         .map_err(|_| "account storage is unavailable")?;
     let registry = load_registry(&data_dir)?.unwrap_or_default();
-    Ok(registry
+    let profiles = super::account_profiles::load(&data_dir);
+    Ok(account_summaries(&registry, &profiles, &origin))
+}
+
+/// [`list_accounts`] without the app. Pure.
+fn account_summaries(
+    registry: &Registry,
+    profiles: &std::collections::BTreeMap<String, super::account_profiles::AccountProfile>,
+    origin: &str,
+) -> Vec<AccountSummary> {
+    let mut summaries: Vec<AccountSummary> = registry
         .accounts
         .iter()
         .filter(|a| a.origin == origin || a.origin == ANY_ORIGIN)
-        .map(|a| AccountSummary {
-            pubkey: a.pubkey.clone(),
-            origin: a.origin.clone(),
-            state: a.state,
-            active: registry.active.as_ref() == Some(&a.pubkey),
+        .map(|a| {
+            let profile = profiles.get(&a.pubkey).cloned().unwrap_or_default();
+            AccountSummary {
+                pubkey: a.pubkey.clone(),
+                origin: a.origin.clone(),
+                state: a.state,
+                active: registry.active.as_ref() == Some(&a.pubkey),
+                display_name: profile.display_name,
+                avatar_url: profile.avatar_url,
+                email: profile.email,
+                last_used_at: profile.last_used_at,
+            }
         })
-        .collect())
+        .collect();
+    super::account_profiles::most_recent_first(&mut summaries, |a| a.last_used_at);
+    summaries
 }
 
 /// Make `pubkey` the active account. The previous account stays signed in
@@ -1497,6 +1530,7 @@ pub async fn switch_account(
     // is handed over.
     let handed = hand_over_origins(&app, previous, target, None, Some(&origin)).await;
     drop(refresh_guard);
+    super::account_profiles::touch(&data_dir, &target);
     // The backend already signs as `target`: the UI must follow even when a
     // server's session could not be handed over.
     super::restore::restore_if_stored(&app, &origin).await;

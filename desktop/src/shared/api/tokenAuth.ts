@@ -86,11 +86,16 @@ export const ACTIVE_ACCOUNT_CHANGED_EVENT = "active-account-changed";
 export type AccountSummary = {
   pubkey: string;
   origin: string;
-  state: "signed_in" | "signed_out" | "key_only";
+  state: "signed_in" | "needs_login" | "signed_out" | "key_only";
   active: boolean;
+  displayName: string | null;
+  avatarUrl: string | null;
+  email: string | null;
+  /** Unix seconds of the last sign-in or switch to it. */
+  lastUsedAt: number | null;
 };
 
-/** Accounts on this computer for the current community. */
+/** Accounts on this computer for the current community, most recent first. */
 export function listAccounts(): Promise<AccountSummary[]> {
   return invokeTauri<AccountSummary[]>("list_accounts");
 }

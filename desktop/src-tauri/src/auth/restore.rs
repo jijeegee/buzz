@@ -85,6 +85,26 @@ fn hand_ended_session<R: tauri::Runtime>(
     true
 }
 
+/// Keep the name and avatar `/auth/me` returned for `origin`'s restored
+/// session as its account's profile (`account`, else the active account
+/// there). Token accounts are not on the account list and are skipped.
+pub(crate) fn remember_profile<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    auth: &super::TokenAuthState,
+    origin: &str,
+    account: Option<nostr::PublicKey>,
+) {
+    let Some(account) = account.or_else(|| auth.signing_pubkey(origin)) else {
+        return;
+    };
+    let (Some((display_name, avatar_url)), Ok(data_dir)) =
+        (auth.me_profile(origin), app.path().app_data_dir())
+    else {
+        return;
+    };
+    super::account_profiles::learn(&data_dir, &account, display_name, avatar_url, None);
+}
+
 fn finish<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     origin: &str,
@@ -95,6 +115,9 @@ fn finish<R: tauri::Runtime>(
     // fresh or keeps retrying. A terminal failure already moved the origin to
     // "sign in again".
     if !matches!(attempt, Err(RefreshFailure::Terminal(_))) {
+        if attempt.is_ok() {
+            remember_profile(app, &app.state::<AppState>().token_auth, origin, None);
+        }
         spawn_refresh_loop(app, origin, generation);
     } else if hand_ended_session(app, origin, generation) {
         return;

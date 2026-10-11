@@ -998,3 +998,43 @@ fn signing_out_the_active_account_switches_to_another_signed_in_one() {
     assert_eq!(next_signed_in_of(&registry, ORIGIN, Some(a)), Some(c));
     assert_eq!(next_signed_in_of(&registry, ORIGIN, Some(c)), Some(a));
 }
+
+#[test]
+fn the_account_list_carries_profiles_most_recent_first() {
+    use super::super::account_profiles::AccountProfile;
+    let (a, b, c) = (
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+    );
+    let mut registry = Registry::default();
+    registry.upsert(ORIGIN, &a, AccountState::SignedIn);
+    registry.upsert(ORIGIN, &b, AccountState::NeedsLogin);
+    registry.upsert("https://other.test", &c, AccountState::SignedIn);
+    registry.active = Some(a.to_hex());
+    let mut profiles = std::collections::BTreeMap::new();
+    profiles.insert(
+        b.to_hex(),
+        AccountProfile {
+            display_name: Some("B".into()),
+            last_used_at: Some(20),
+            ..Default::default()
+        },
+    );
+    profiles.insert(
+        a.to_hex(),
+        AccountProfile {
+            last_used_at: Some(10),
+            ..Default::default()
+        },
+    );
+    let list = account_summaries(&registry, &profiles, ORIGIN);
+    // Another server's account is not listed.
+    assert_eq!(
+        list.iter().map(|x| x.pubkey.clone()).collect::<Vec<_>>(),
+        [b.to_hex(), a.to_hex()]
+    );
+    assert_eq!(list[0].display_name.as_deref(), Some("B"));
+    assert_eq!(list[0].state, AccountState::NeedsLogin);
+    assert!(list[1].active && list[1].display_name.is_none());
+}
