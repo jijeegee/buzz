@@ -207,6 +207,16 @@ impl SignedOutMarkers {
     }
 }
 
+/// Whether the marker file in `data_dir` names `account` on `origin` (or
+/// covers the whole origin), read straight from disk for the account-list
+/// migration. An unreadable file names nobody, like [`SignedOutMarkers::is_marked`].
+pub(crate) fn names_on_disk(data_dir: &Path, origin: &str, account: &PublicKey) -> bool {
+    read(&data_dir.join(FILE_NAME)).is_ok_and(|origins| {
+        origins.contains_key(&(origin.to_owned(), None))
+            || origins.contains_key(&(origin.to_owned(), Some(*account)))
+    })
+}
+
 fn read(path: &Path) -> Result<HashMap<MarkerKey, Marker>, String> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,

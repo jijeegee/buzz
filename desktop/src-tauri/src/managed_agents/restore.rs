@@ -490,6 +490,26 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
                     continue;
                 };
                 let now = util::now_iso();
+                // The gate ran in Phase B, outside this lock: an owner signed
+                // out since then (a sign-out, or a launch restore the relay
+                // ended) lists its pairs before this child is tracked, so
+                // refuse it here instead.
+                if super::agent_owner_hex(app, record)
+                    .and_then(|hex| nostr::PublicKey::from_hex(&hex).ok())
+                    .is_some_and(|owner| {
+                        crate::auth::accounts::owner_here_for(app, &key.relay_url, &owner)
+                            == crate::auth::accounts::OwnerHere::SignedOut
+                    })
+                {
+                    let _ = super::terminate_process(process.child.id());
+                    let _ = process.child.wait();
+                    record.updated_at = now;
+                    record.last_error = Some(format!(
+                        "agent {}'s account is signed out on this computer; it was not started.",
+                        record.pubkey
+                    ));
+                    continue;
+                }
                 let receipt = super::ManagedAgentRuntimeReceipt {
                     key: key.clone(),
                     pid: process.child.id(),

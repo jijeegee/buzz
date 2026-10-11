@@ -180,6 +180,51 @@ fn an_older_single_account_install_is_migrated_and_kept_readable() {
 }
 
 #[test]
+fn a_bound_account_without_a_token_is_signed_out_only_by_its_marker() {
+    // An older build dropped the token when the session needed a fresh
+    // sign-in: still an account here, so its agents start (§10.8). `marker`
+    // gives the marker's identity JSON for the migrated key, if any.
+    let migrated = |marker: &dyn Fn(&PublicKey) -> Option<String>| {
+        let dir = tempfile::tempdir().unwrap();
+        let mem = Mem::default();
+        let keys = Keys::generate();
+        legacy_signed_in(&mem, &keys, "unused");
+        mem.delete(&super::super::refresh_key(ORIGIN)).unwrap();
+        if let Some(identity) = marker(&keys.public_key()) {
+            std::fs::write(
+                dir.path().join(super::super::signed_out::FILE_NAME),
+                format!(
+                    r#"{{"version":1,"origins":[{{"origin":"{ORIGIN}","identity":{identity}}}]}}"#
+                ),
+            )
+            .unwrap();
+        }
+        assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Migrated);
+        load_registry(dir.path())
+            .unwrap()
+            .unwrap()
+            .get(ORIGIN, &keys.public_key())
+            .map(|a| a.state)
+    };
+    assert_eq!(migrated(&|_| None), Some(AccountState::NeedsLogin));
+    assert_eq!(
+        migrated(&|key| Some(format!("\"{}\"", key.to_hex()))),
+        Some(AccountState::SignedOut)
+    );
+    // A whole-origin (token account) marker covers it too.
+    assert_eq!(
+        migrated(&|_| Some("null".into())),
+        Some(AccountState::SignedOut)
+    );
+    // Another account's marker does not.
+    let other = Keys::generate().public_key().to_hex();
+    assert_eq!(
+        migrated(&|_| Some(format!("\"{other}\""))),
+        Some(AccountState::NeedsLogin)
+    );
+}
+
+#[test]
 fn an_unused_first_install_key_is_not_an_account() {
     let dir = tempfile::tempdir().unwrap();
     let mem = Mem::default();

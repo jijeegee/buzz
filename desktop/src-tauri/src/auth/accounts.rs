@@ -483,7 +483,7 @@ fn preserve_outgoing(
         save_registry(secrets, data_dir, registry)?;
         store_verified(secrets, &identity_slot(&pubkey), &nsec_of(outgoing)?)?;
         for origin in &bindings {
-            let state = copy_refresh_into_slot(secrets, &pubkey, origin)?;
+            let state = copy_refresh_into_slot(secrets, data_dir, &pubkey, origin)?;
             registry.upsert(origin, &pubkey, state);
         }
     } else if secrets.load(&identity_slot(&pubkey))?.is_none() {
@@ -889,7 +889,7 @@ pub(crate) fn reconcile(secrets: &dyn Secrets, data_dir: &Path) -> Result<Reconc
             save_registry(secrets, data_dir, &registry)?;
             store_verified(secrets, &identity_slot(&pubkey), &nsec_of(&keys)?)?;
             for origin in &bindings {
-                let state = copy_refresh_into_slot(secrets, &pubkey, origin)?;
+                let state = copy_refresh_into_slot(secrets, data_dir, &pubkey, origin)?;
                 registry.upsert(origin, &pubkey, state);
             }
             registry.active = Some(pubkey.to_hex());
@@ -997,9 +997,13 @@ fn bound_origins(secrets: &dyn Secrets, pubkey: &PublicKey) -> Result<Vec<String
 }
 
 /// Copy the active refresh token for `origin` into `pubkey`'s slot. Returns
-/// the resulting account state.
+/// the resulting account state. Without a token the account is signed out
+/// only when this device's sign-out marker names it: an older build also
+/// drops the token when the session merely needs a fresh sign-in (§10.8:
+/// only an explicit sign-out keeps its agents from starting).
 fn copy_refresh_into_slot(
     secrets: &dyn Secrets,
+    data_dir: &Path,
     pubkey: &PublicKey,
     origin: &str,
 ) -> Result<AccountState, String> {
@@ -1009,7 +1013,10 @@ fn copy_refresh_into_slot(
             store_verified(secrets, &refresh_slot(pubkey, origin), &token)?;
             Ok(AccountState::SignedIn)
         }
-        None => Ok(AccountState::SignedOut),
+        None if super::signed_out::names_on_disk(data_dir, origin, pubkey) => {
+            Ok(AccountState::SignedOut)
+        }
+        None => Ok(AccountState::NeedsLogin),
     }
 }
 
@@ -1049,7 +1056,7 @@ fn migrate_single_account(
     save_registry(secrets, data_dir, &registry)?;
     store_verified(secrets, &identity_slot(&pubkey), &nsec)?;
     for origin in &bindings {
-        let state = copy_refresh_into_slot(secrets, &pubkey, origin)?;
+        let state = copy_refresh_into_slot(secrets, data_dir, &pubkey, origin)?;
         registry.upsert(origin, &pubkey, state);
     }
     save_registry(secrets, data_dir, &registry)?;
@@ -1550,7 +1557,7 @@ pub(crate) fn owner_here_for<R: tauri::Runtime>(
         Ok(None) => None,
         Err(error) => {
             eprintln!(
-                "buzz-desktop: agents: account list unreadable ({error});                  starting agents by sign-out marker only"
+                "buzz-desktop: agents: account list unreadable ({error}); starting agents by sign-out marker only"
             );
             None
         }
