@@ -8,6 +8,7 @@ pub mod token_broker;
 pub mod token_refresh;
 
 mod acp;
+mod base_prompt_trim;
 mod config;
 mod context_history;
 mod dispatcher;
@@ -6559,15 +6560,16 @@ fn dispatch_heartbeat(
 mod agent_draft_prompt_tests {
     #[test]
     fn shared_base_prompt_teaches_portable_agent_drafts() {
-        let prompt = include_str!("base_prompt.md");
+        // What agents receive: the agent-creation section is a short pointer.
+        let prompt = crate::base_prompt_trim::for_agent(include_str!("base_prompt.md"), true);
         assert!(prompt.starts_with(
             "You are an agent operating inside Buzz — a Nostr-based messaging platform for human-agent collaboration.\nBuzz is a desktop and mobile collaboration app organized around channels, conversations, and shared work."
         ));
         assert!(prompt.contains("buzz agents draft-create"));
-        assert!(prompt.contains("ask for at most two things"));
-        assert!(prompt.contains("what it should do day-to-day"));
+        assert!(prompt.contains("ask at most for its name and day-to-day job"));
+        assert!(prompt.contains("write `--system-prompt` yourself"));
         assert!(prompt.contains("owner saves it"));
-        assert!(prompt.contains("Do not ask about runtime, provider, model, credentials"));
+        assert!(prompt.contains("don't ask about runtime, model, or credentials"));
     }
 
     #[test]
@@ -10929,6 +10931,7 @@ mod build_mcp_servers_tests {
             agent_owner: None,
             no_base_prompt: false,
             base_prompt_content: None,
+            code_work: true,
             dispatcher: false,
             channel_roster: false,
             task_threads: Vec::new(),
@@ -11799,6 +11802,7 @@ mod error_outcome_emission_tests {
             agent_owner: None,
             no_base_prompt: false,
             base_prompt_content: None,
+            code_work: true,
             dispatcher: false,
             channel_roster: false,
             task_threads: Vec::new(),
