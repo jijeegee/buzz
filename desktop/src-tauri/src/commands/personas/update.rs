@@ -192,10 +192,23 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
                 .map_err(|error| error.to_string())?;
             let mut personas = load_personas(&app)?;
             pending::project_active_persona_sharing(&app, &state, &mut personas);
-            let persona = personas
-                .iter_mut()
-                .find(|record| record.id == input.id)
+            let mut index = personas
+                .iter()
+                .position(|record| record.id == input.id)
                 .ok_or_else(|| format!("agent {} not found", input.id))?;
+            // A built-in is shared by every account on this computer, so an
+            // edit goes to this account's own copy instead (see below).
+            let me = crate::managed_agents::active_owner_hex(&app);
+            let edited_builtin = match me.as_deref() {
+                Some(me) if personas[index].is_builtin => {
+                    let copy = crate::managed_agents::builtin_copy(&personas[index], &now_iso());
+                    personas.push(copy);
+                    index = personas.len() - 1;
+                    Some((input.id.clone(), me.to_string()))
+                }
+                _ => None,
+            };
+            let persona = &mut personas[index];
 
             // Track what changed so we can propagate to linked agent records.
             let avatar_changed = persona.avatar_url != avatar_url;
@@ -233,6 +246,25 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
 
             let result = persona.clone();
             save_personas(&app, &personas)?;
+            if let Some((builtin_id, me)) = &edited_builtin {
+                // The copy replaces the built-in for this account only: the
+                // built-in leaves its agents and its agents move to the copy.
+                crate::managed_agents::set_builtin_inactive(&app, builtin_id, me, true)?;
+                let mut records = load_managed_agents(&app)?;
+                let moved = crate::managed_agents::move_account_agents(
+                    &mut records,
+                    builtin_id,
+                    &result.id,
+                    me,
+                    |record| crate::managed_agents::visible_owner_hex(&app, record),
+                );
+                if !moved.is_empty() {
+                    save_managed_agents(&app, &records)?;
+                    for record in records.iter().filter(|r| moved.contains(&r.pubkey)) {
+                        crate::commands::agents::retain_managed_agent_pending(&app, &state, record);
+                    }
+                }
+            }
 
             let retained = retain(&app, &state, &result)?;
             try_regenerate_nest(&app);

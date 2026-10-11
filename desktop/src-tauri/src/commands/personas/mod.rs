@@ -91,6 +91,7 @@ pub async fn list_personas(app: AppHandle) -> Result<Vec<AgentDefinition>, Strin
         personas.retain(|persona| {
             crate::managed_agents::definition_visible(persona, &owners, me.as_deref())
         });
+        crate::managed_agents::apply_account_activation(&app, &mut personas);
         pending::project_active_persona_sharing(&app, &state, &mut personas);
         Ok(personas)
     })
@@ -314,15 +315,21 @@ pub async fn set_persona_active(
             .lock()
             .map_err(|error| error.to_string())?;
         let mut personas = load_personas(&app)?;
+        let stored_active = personas.iter().any(|p| p.id == id && p.is_active);
+        crate::managed_agents::apply_account_activation(&app, &mut personas);
+        let me = crate::managed_agents::active_owner_hex(&app);
         let persona = personas
             .iter_mut()
             .find(|record| record.id == id)
             .ok_or_else(|| format!("agent {id} not found"))?;
 
         let referenced_by_managed_agent = !active
-            && load_managed_agents(&app)?
-                .iter()
-                .any(|agent| agent.persona_id.as_deref() == Some(id.as_str()));
+            && crate::managed_agents::account_uses_persona(
+                &load_managed_agents(&app)?,
+                &id,
+                me.as_deref(),
+                |agent| crate::managed_agents::visible_owner_hex(&app, agent),
+            );
         let referenced_by_team = !active
             && load_teams(&app)?.iter().any(|team| {
                 team.persona_ids
@@ -341,11 +348,30 @@ pub async fn set_persona_active(
             return Ok(persona.clone());
         }
 
-        persona.is_active = active;
-        persona.updated_at = now_iso();
+        // A built-in is one record for every account: this account's choice
+        // is kept for it alone. Reactivating one that was removed before
+        // accounts kept their own choice also brings back the shared record.
+        if let Some(me) = me.as_deref() {
+            crate::managed_agents::set_builtin_inactive(&app, &id, me, !active)?;
+            if !active || stored_active {
+                persona.is_active = active;
+                let updated = persona.clone();
+                try_regenerate_nest(&app);
+                return Ok(updated);
+            }
+        }
 
-        let updated = persona.clone();
-        save_personas(&app, &personas)?;
+        // Save the stored records, not this account's view of them.
+        let mut stored = load_personas(&app)?;
+        let record = stored
+            .iter_mut()
+            .find(|record| record.id == id)
+            .ok_or_else(|| format!("agent {id} not found"))?;
+        record.is_active = active;
+        record.updated_at = now_iso();
+
+        let updated = record.clone();
+        save_personas(&app, &stored)?;
         try_regenerate_nest(&app);
         Ok(updated)
     })

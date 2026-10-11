@@ -51,6 +51,7 @@ pub(super) fn summarize_from_disk(
         &load_personas(app).unwrap_or_default(),
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
+        crate::managed_agents::visible_owner_hex(app, record),
     )
 }
 
@@ -357,6 +358,7 @@ where
         &personas,
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
+        crate::managed_agents::visible_owner_hex(app, record),
     )
 }
 
@@ -425,14 +427,17 @@ async fn managed_agent_summaries(
         let me = crate::managed_agents::active_owner_hex(&app);
         records
             .iter()
-            .filter(|record| {
-                scope == AgentScope::AllAccounts
-                    || crate::managed_agents::owned_by_viewer(
-                        crate::managed_agents::visible_owner_hex(&app, record).as_deref(),
-                        me.as_deref(),
-                    )
-            })
             .map(|record| {
+                (
+                    record,
+                    crate::managed_agents::visible_owner_hex(&app, record),
+                )
+            })
+            .filter(|(_, owner)| {
+                scope == AgentScope::AllAccounts
+                    || crate::managed_agents::owned_by_viewer(owner.as_deref(), me.as_deref())
+            })
+            .map(|(record, owner)| {
                 build_managed_agent_summary(
                     &app,
                     record,
@@ -440,6 +445,7 @@ async fn managed_agent_summaries(
                     &personas,
                     &global_config,
                     routing_mode,
+                    owner,
                 )
             })
             .collect()

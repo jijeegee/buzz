@@ -434,6 +434,126 @@ pub(crate) fn definition_visible(
     }
 }
 
+/// Owners-file key marking the built-in persona `id` as removed from the
+/// account `account`'s agents. Built-ins are one record shared by every
+/// account, so each account's "in My Agents" choice is kept here instead of
+/// in the shared `is_active`.
+fn inactive_key(id: &str, account: &str) -> String {
+    format!("inactive:{id}:{}", account.to_ascii_lowercase())
+}
+
+/// Mark the built-in persona `id` as removed from (`inactive`) or back in the
+/// account `account`'s agents.
+pub(crate) fn set_builtin_inactive<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    account: &str,
+    inactive: bool,
+) -> Result<(), String> {
+    let path = owners_path(app).ok_or("agent storage is unavailable")?;
+    set_builtin_inactive_at(&path, id, account, inactive)
+}
+
+fn set_builtin_inactive_at(
+    path: &Path,
+    id: &str,
+    account: &str,
+    inactive: bool,
+) -> Result<(), String> {
+    let _lock = OWNERS_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut recorded = read_owners(path);
+    let key = inactive_key(id, account);
+    let changed = if inactive {
+        recorded.insert(key, "true".into()).is_none()
+    } else {
+        recorded.remove(&key).is_some()
+    };
+    if !changed {
+        return Ok(());
+    }
+    let json = serde_json::to_vec_pretty(&recorded).map_err(|e| e.to_string())?;
+    super::storage::atomic_write_json(path, &json)
+}
+
+/// Show each built-in persona as the active account sees it: one it removed
+/// from its agents is inactive for it, whatever the other accounts chose.
+pub(crate) fn apply_account_activation<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    definitions: &mut [super::AgentDefinition],
+) {
+    let recorded = owners_path(app)
+        .map(|path| read_owners(&path))
+        .unwrap_or_default();
+    account_activation(&recorded, definitions, active_owner_hex(app).as_deref());
+}
+
+/// [`apply_account_activation`] without the app. Pure.
+fn account_activation(
+    recorded: &BTreeMap<String, String>,
+    definitions: &mut [super::AgentDefinition],
+    me: Option<&str>,
+) {
+    let Some(me) = me else { return };
+    for definition in definitions.iter_mut().filter(|d| d.is_builtin) {
+        if recorded.contains_key(&inactive_key(&definition.id, me)) {
+            definition.is_active = false;
+        }
+    }
+}
+
+/// The account's own copy of the built-in persona `builtin`, made when the
+/// account edits it, so the edit never reaches the other accounts: a new id,
+/// not built-in, active, and not shared (the edit decides the rest).
+pub(crate) fn builtin_copy(builtin: &super::AgentDefinition, now: &str) -> super::AgentDefinition {
+    let mut copy = builtin.clone();
+    copy.id = uuid::Uuid::new_v4().to_string();
+    copy.is_builtin = false;
+    copy.is_active = true;
+    copy.shared = false;
+    copy.created_at = now.to_string();
+    copy.updated_at = now.to_string();
+    copy
+}
+
+/// Whether an agent of the account `me` is made from the persona `id`. Only
+/// these keep the account from removing a built-in from its agents; another
+/// account's agents made from it keep using it.
+pub(crate) fn account_uses_persona(
+    records: &[ManagedAgentRecord],
+    id: &str,
+    me: Option<&str>,
+    owner_of: impl Fn(&ManagedAgentRecord) -> Option<String>,
+) -> bool {
+    records.iter().any(|record| {
+        record.persona_id.as_deref() == Some(id) && owned_by_viewer(owner_of(record).as_deref(), me)
+    })
+}
+
+/// Move the account `me`'s agents made from the built-in persona `from` to
+/// its copy `to`; other accounts' agents keep the built-in. Returns the moved
+/// agents' pubkeys.
+pub(crate) fn move_account_agents(
+    records: &mut [ManagedAgentRecord],
+    from: &str,
+    to: &str,
+    me: &str,
+    owner_of: impl Fn(&ManagedAgentRecord) -> Option<String>,
+) -> Vec<String> {
+    let mut moved = Vec::new();
+    for record in records
+        .iter_mut()
+        .filter(|record| record.persona_id.as_deref() == Some(from))
+    {
+        if owned_by_viewer(owner_of(record).as_deref(), Some(me)) {
+            record.persona_id = Some(to.to_string());
+            moved.push(record.pubkey.clone());
+        }
+    }
+    moved
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -719,6 +839,125 @@ mod tests {
             vec![principal]
         );
         assert!(bot_owners(None, &[], origin, owner_of).is_empty());
+    }
+
+    /// An agent made from the persona `persona_id`.
+    fn agent_of(persona_id: &str) -> ManagedAgentRecord {
+        let mut agent = record(&nostr::Keys::generate().public_key().to_hex(), None);
+        agent.persona_id = Some(persona_id.into());
+        agent
+    }
+
+    #[test]
+    fn an_edited_built_in_becomes_the_editing_accounts_own_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let a = nostr::Keys::generate().public_key().to_hex();
+        let b = nostr::Keys::generate().public_key().to_hex();
+        let fizz = persona("builtin:fizz", true);
+        let a_agent = agent_of("builtin:fizz");
+        let b_agent = agent_of("builtin:fizz");
+        let owner_of = |record: &ManagedAgentRecord| {
+            Some(if record.pubkey == a_agent.pubkey {
+                a.clone()
+            } else {
+                b.clone()
+            })
+        };
+        record_definition_owners(&path, std::slice::from_ref(&fizz), Some(&a)).unwrap();
+
+        // A edits Fizz: the edit lands on A's copy, the built-in stays as is.
+        let mut copy = builtin_copy(&fizz, "2026-10-12T00:00:00Z");
+        copy.system_prompt = "A's Fizz".into();
+        let definitions = vec![fizz.clone(), copy.clone()];
+        let owners = record_definition_owners(&path, &definitions, Some(&a)).unwrap();
+        set_builtin_inactive_at(&path, "builtin:fizz", &a, true).unwrap();
+        let mut records = vec![a_agent.clone(), b_agent.clone()];
+        let moved = move_account_agents(&mut records, "builtin:fizz", &copy.id, &a, owner_of);
+
+        assert_ne!(copy.id, fizz.id);
+        assert!(!copy.is_builtin && copy.is_active && !copy.shared);
+        assert_eq!(owners.get(&copy.id), Some(&a));
+        let view = |me: &str| -> Vec<(String, bool, String)> {
+            let mut seen: Vec<_> = definitions
+                .iter()
+                .filter(|d| definition_visible(d, &owners, Some(me)))
+                .cloned()
+                .collect();
+            account_activation(&read_owners(&path), &mut seen, Some(me));
+            seen.into_iter()
+                .map(|d| (d.id, d.is_active, d.system_prompt))
+                .collect()
+        };
+        // A: its copy is active, the built-in is out of its agents.
+        assert_eq!(
+            view(&a),
+            vec![
+                (fizz.id.clone(), false, fizz.system_prompt.clone()),
+                (copy.id.clone(), true, "A's Fizz".into()),
+            ]
+        );
+        // B: the untouched built-in, still active; A's copy is not B's.
+        assert_eq!(
+            view(&b),
+            vec![(fizz.id.clone(), true, fizz.system_prompt.clone())]
+        );
+        // Only A's agent moved to the copy.
+        assert_eq!(moved, vec![a_agent.pubkey.clone()]);
+        assert_eq!(records[0].persona_id.as_deref(), Some(copy.id.as_str()));
+        assert_eq!(records[1].persona_id.as_deref(), Some("builtin:fizz"));
+    }
+
+    #[test]
+    fn removing_a_built_in_is_one_accounts_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let a = nostr::Keys::generate().public_key().to_hex();
+        let b = nostr::Keys::generate().public_key().to_hex();
+        let view = |me: &str| {
+            let mut seen = vec![persona("builtin:fizz", true), persona("mine", false)];
+            seen[1].is_active = true;
+            account_activation(&read_owners(&path), &mut seen, Some(me));
+            seen.iter().map(|d| d.is_active).collect::<Vec<_>>()
+        };
+        set_builtin_inactive_at(&path, "builtin:fizz", &a, true).unwrap();
+        assert_eq!(view(&a), vec![false, true]);
+        assert_eq!(view(&b), vec![true, true]);
+        // Marking it twice changes nothing; bringing it back clears it.
+        set_builtin_inactive_at(&path, "builtin:fizz", &a, true).unwrap();
+        set_builtin_inactive_at(&path, "builtin:fizz", &a.to_ascii_uppercase(), false).unwrap();
+        assert_eq!(view(&a), vec![true, true]);
+        assert!(!read_owners(&path)
+            .keys()
+            .any(|key| key.starts_with("inactive:")));
+    }
+
+    #[test]
+    fn only_the_accounts_own_agents_keep_it_from_removing_a_built_in() {
+        let a = nostr::Keys::generate().public_key().to_hex();
+        let b = nostr::Keys::generate().public_key().to_hex();
+        let b_agent = agent_of("builtin:fizz");
+        let owner_of = |_: &ManagedAgentRecord| Some(b.clone());
+        let records = vec![b_agent];
+        // B's agent uses Fizz: A may still remove it, B may not.
+        assert!(!account_uses_persona(
+            &records,
+            "builtin:fizz",
+            Some(&a),
+            owner_of
+        ));
+        assert!(account_uses_persona(
+            &records,
+            "builtin:fizz",
+            Some(&b),
+            owner_of
+        ));
+        assert!(!account_uses_persona(
+            &records,
+            "builtin:honey",
+            Some(&b),
+            owner_of
+        ));
     }
 
     #[test]

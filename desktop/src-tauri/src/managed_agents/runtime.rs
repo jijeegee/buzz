@@ -177,6 +177,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     personas: &[crate::managed_agents::types::AgentDefinition],
     global_config: &crate::managed_agents::GlobalAgentConfig,
     routing_mode: super::channel_routing::ChannelRoutingMode,
+    owner_pubkey: Option<String>,
 ) -> Result<ManagedAgentSummary, String> {
     use crate::managed_agents::BackendKind;
 
@@ -358,7 +359,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     Ok(ManagedAgentSummary {
         pubkey: record.pubkey.clone(),
         name: record.name.clone(),
-        owner_pubkey: crate::managed_agents::visible_owner_hex(app, record),
+        owner_pubkey,
         persona_id: record.persona_id.clone(),
         runtime: record.runtime.clone(),
         team_id: record.team_id.clone(),
