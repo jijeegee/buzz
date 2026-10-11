@@ -1818,9 +1818,15 @@ pub(crate) struct LiveNow {
 }
 
 impl PromptContext {
-    /// The current text settings: the live file's when Desktop keeps one,
-    /// else the launch values.
+    /// [`Self::live_now_in`] outside any project home channel.
     pub(crate) fn live_now(&self) -> LiveNow {
+        self.live_now_in(false)
+    }
+
+    /// The current text settings: the live file's when Desktop keeps one,
+    /// else the launch values. `<base>` carries the full project guidance
+    /// only when the session's channel is a `project_home`.
+    pub(crate) fn live_now_in(&self, project_home: bool) -> LiveNow {
         let values =
             self.live_settings
                 .current()
@@ -1834,7 +1840,7 @@ impl PromptContext {
         LiveNow {
             base_prompt: self.base_prompt.clone().map(|base| {
                 crate::task_threads::append_task_thread_guidance(
-                    base,
+                    crate::base_prompt_trim::for_channel(base, project_home),
                     text.task_thread_rules.as_deref(),
                 )
             }),
@@ -3393,7 +3399,11 @@ pub async fn run_prompt_task(
     // Live text settings, read once like the layer 0 goals: a new session
     // takes them into its system prompt, a live one that last saw different
     // values gets a one-time `<settings-update>` below.
-    let live_now = ctx.live_now();
+    let live_now = ctx.live_now_in(
+        resolved_channel_info
+            .as_ref()
+            .is_some_and(|info| info.project.is_some()),
+    );
 
     let (session_id, is_new_session) = match &source {
         PromptSource::Channel(scope) => {

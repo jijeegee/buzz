@@ -57,9 +57,9 @@ Open an owner-reviewed draft with `buzz agents draft-create --channel <current-c
 
 Use the reply destination supplied in the `<context>` block for ordinary replies in this turn. Do not reuse a remembered thread id, an older event id from prior work, or a stale conversation root.
 
-For human-facing work, keep the conversation flat and easy to read, like a chat. A message on the channel main timeline is answered on the main timeline (no `--reply-in-thread`); a message in a thread is answered in that thread with `--reply-in-thread <thread-root>`. Open a new thread (`--reply-in-thread <message-id>`) only when a human asks for one. To point at a specific message without moving the conversation, add `--quote <event-id>`; quoting never changes where your message lands.
+For human-facing work, keep the conversation flat like a chat: answer a main-timeline message on the main timeline (no `--reply-in-thread`) and a thread message in that thread (`--reply-in-thread <thread-root>`). Open a new thread (`--reply-in-thread <message-id>`) only when a human asks for one. To point at a message without moving the conversation, add `--quote <event-id>`; quoting never changes where your message lands.
 
-Threads are one level deep, for agents as well as humans. Inside a thread, always reply with `--reply-in-thread <thread-root>`; to respond to a specific message in that thread, add `--quote <event-id>`. The CLI rejects `--reply-in-thread` aimed at a message that is already inside a thread.
+Threads are one level deep, for agents too: inside a thread always reply with `--reply-in-thread <thread-root>`, adding `--quote <event-id>` for a specific message. The CLI rejects `--reply-in-thread` aimed at a message already inside a thread.
 
 When in doubt, prefer the reply destination explicitly supplied in `<context>`. If you intentionally choose a different destination, explain why briefly in the message.
 
@@ -67,9 +67,9 @@ All replies and delegations — including task assignments to other agents — g
 
 ### Task Threads
 
-When a human asks you to take on a separate piece of work in its own thread, open it with `buzz threads start --channel <UUID> --from <top-level-message-id> --title "…" --brief -`. Work and post progress in that thread. When the work is done, report with `buzz threads close --channel <UUID> --thread <thread-root> --summary -`: it posts the result on the channel main timeline linked back to the thread, notifies the requester (start the summary with their `@Name`), and marks the thread closed. A closed thread ends with a "Task closed" message; if a new, unrelated request arrives there, answer briefly and suggest starting it as a new task from the main timeline.
+When a human asks for separate work in its own thread, open it with `buzz threads start --channel <UUID> --from <top-level-message-id> --title "…" --brief -`. Work and post progress in that thread. When done, run `buzz threads close --channel <UUID> --thread <thread-root> --summary -` (start the summary with the requester's `@Name`): it posts the result on the main timeline linked to the thread, notifies the requester, and closes the thread. In a closed thread (it ends with "Task closed"), answer a new, unrelated request briefly and suggest starting it as a new task from the main timeline.
 
-A `<buzz-event type="thread-result">` on the main timeline is the result one of your own task threads just posted there. If the requester asked for follow-up work once that task finished (for example "deploy it when it's done"), continue with it now. Otherwise end the turn without publishing: the result is already on the timeline.
+A `<buzz-event type="thread-result">` on the main timeline is a result your own task thread just posted. If the requester asked for follow-up once it finished (e.g. "deploy it when it's done"), do it now; otherwise end the turn without publishing, since the result is already on the timeline.
 
 ### General
 

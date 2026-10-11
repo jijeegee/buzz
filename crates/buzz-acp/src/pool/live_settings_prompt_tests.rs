@@ -446,3 +446,97 @@ done"#
         );
     }
 }
+
+/// The `## Projects` section a new session's system prompt carries, through
+/// the real `run_prompt_task` project-home decision.
+async fn new_session_system_prompt(project: Option<PromptProjectInfo>) -> String {
+    let channel_id = Uuid::new_v4();
+    let mut ctx = make_prompt_context_no_owner();
+    ctx.goals_enabled = false;
+    ctx.base_prompt = Some(crate::base_prompt_trim::for_agent(
+        include_str!("../base_prompt.md"),
+        true,
+    ));
+    // The relay is unreachable: metadata falls back to the startup cache and
+    // the project comes from a fresh cache entry.
+    ctx.channel_info = ChannelInfoResolver::new(
+        HashMap::from([(
+            channel_id,
+            crate::relay::ChannelInfo {
+                name: "general".into(),
+                channel_type: "stream".into(),
+                description: None,
+            },
+        )]),
+        ctx.rest_client.clone(),
+    );
+    ctx.channel_info.projects.write().unwrap().insert(
+        channel_id,
+        CachedProjectInfo {
+            fetched_at: std::time::Instant::now(),
+            value: project,
+        },
+    );
+
+    let capture =
+        std::env::temp_dir().join(format!("buzz-acp-project-base-{}.ndjson", Uuid::new_v4()));
+    let quoted_capture = tests::shell_quoted_path(&capture);
+    let script = format!(
+        r#"count=0
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> '{quoted_capture}'
+  if [ "$count" -eq 0 ]; then
+    printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"sessionId":"sess-1"}}}}'
+  else
+    printf '%s\n' "{{\"jsonrpc\":\"2.0\",\"id\":$count,\"result\":{{\"stopReason\":\"end_turn\"}}}}"
+  fi
+  count=$((count + 1))
+done"#
+    );
+    let acp = crate::acp::AcpClient::spawn(bash(), &["-c".to_string(), script], &[], false)
+        .await
+        .unwrap();
+    let (result_tx, mut result_rx) = mpsc::unbounded_channel();
+    run_prompt_task(
+        modern_agent(acp),
+        Some(batch(channel_id, "hello")),
+        None,
+        Arc::new(ctx),
+        result_tx,
+        None,
+        "project-turn".into(),
+    )
+    .await;
+    let mut result = result_rx.recv().await.unwrap();
+    assert!(matches!(
+        result.outcome,
+        PromptOutcome::Ok(StopReason::EndTurn)
+    ));
+    result.agent.acp.shutdown().await;
+
+    let requests = captured_requests(&capture);
+    assert!(requests[0].contains("session/new"), "{}", requests[0]);
+    requests[0].clone()
+}
+
+#[tokio::test]
+async fn project_home_sessions_get_the_full_projects_section() {
+    let home = new_session_system_prompt(Some(PromptProjectInfo {
+        name: "App".into(),
+        slug: "app".into(),
+        owner: "a".repeat(64),
+        coordinate: format!("30621:{}:app", "a".repeat(64)),
+        default_repo_owner: None,
+        default_repo_id: None,
+    }))
+    .await;
+    assert!(home.contains("buzz projects add-channel"), "{home}");
+    assert!(!home.contains("Full project guidance appears only"));
+
+    let elsewhere = new_session_system_prompt(None).await;
+    assert!(
+        !elsewhere.contains("buzz projects add-channel"),
+        "{elsewhere}"
+    );
+    assert!(elsewhere.contains("Full project guidance appears only"));
+}

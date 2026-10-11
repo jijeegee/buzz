@@ -481,6 +481,12 @@ pub struct CliArgs {
     )]
     pub base_prompt_file: Option<PathBuf>,
 
+    /// Leave the engineering and repository guidance out of the base prompt,
+    /// for agents that do not work on code. Off by default, so every agent
+    /// gets that guidance unless its owner turns "Code work" off.
+    #[arg(long, env = "BUZZ_ACP_NO_CODE_WORK")]
+    pub no_code_work: bool,
+
     /// Desired LLM model ID. Applied to every new ACP session after creation.
     /// Use `buzz-acp models` to discover available model IDs.
     #[arg(long, env = "BUZZ_ACP_MODEL")]
@@ -843,6 +849,9 @@ pub struct Config {
     /// `--no-base-prompt` is set. In dispatcher mode without an explicit file
     /// this holds the compiled-in dispatcher base prompt.
     pub base_prompt_content: Option<String>,
+    /// Whether the base prompt keeps its engineering and repository guidance
+    /// (true unless `--no-code-work`).
+    pub code_work: bool,
     /// Whether this harness runs as a channel dispatcher (`--dispatcher`).
     pub dispatcher: bool,
     /// Whether to inject the `<channel-roster>` section (`--channel-roster`).
@@ -1585,6 +1594,7 @@ impl Config {
             agent_owner: args.agent_owner.map(|s| s.trim().to_ascii_lowercase()),
             no_base_prompt: args.no_base_prompt,
             base_prompt_content,
+            code_work: !args.no_code_work,
             dispatcher: args.dispatcher,
             channel_roster: args.channel_roster,
             task_threads,
@@ -2032,6 +2042,7 @@ mod tests {
             agent_owner: None,
             no_base_prompt: false,
             base_prompt_content: None,
+            code_work: true,
             dispatcher: false,
             channel_roster: false,
             task_threads: Vec::new(),
@@ -3861,6 +3872,12 @@ channels = "ALL"
             !ignored.dispatcher && ignored.dispatcher_config.is_empty(),
             "without --dispatcher the policy is ignored, not parsed"
         );
+    }
+
+    #[test]
+    fn code_work_defaults_on_and_opts_out_with_no_code_work() {
+        assert!(from_cli(&[]).unwrap().code_work, "missing setting means on");
+        assert!(!from_cli(&["--no-code-work"]).unwrap().code_work);
     }
 
     #[test]
