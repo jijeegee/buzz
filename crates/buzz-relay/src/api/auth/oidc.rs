@@ -1,6 +1,13 @@
 //! OIDC login: `start` → provider → `callback` → client → `complete`
 //! (plan §3.2). The relay is the relying party; the client proves with PKCE
 //! that it started the login it completes.
+//!
+//! Confirmed signup: a key-backup client that sends `signup=confirm` to
+//! `start` never gets an account created by the callback. An unknown Google
+//! account comes back from `complete` as `needs_signup` with a one-time
+//! `signup_token`; the account exists only once the client posts that token
+//! to `signup`. Dropping the token leaves nothing behind. Clients that do not
+//! send the flag keep the original create-on-callback behavior.
 
 use std::sync::Arc;
 
@@ -25,6 +32,9 @@ use crate::state::AppState;
 const PENDING_TTL_SECS: u64 = 600;
 /// One-time login code lifetime (callback → complete).
 const LOGIN_CODE_TTL_SECS: u64 = 60;
+/// Lifetime of a confirmed-signup ticket (`complete` → `signup`): the user
+/// is reading the "Create your Buzz account" screen.
+const SIGNUP_TTL_SECS: u64 = 600;
 /// Bound on the `state` value echoed through the provider.
 const MAX_STATE_LEN: usize = 256;
 /// Minimum client `state` entropy (characters).
@@ -54,6 +64,9 @@ struct PendingLogin {
     #[serde(default)]
     install_id: Option<String>,
     nonce: String,
+    /// The client asks before an unknown identity becomes an account.
+    #[serde(default)]
+    confirm_signup: bool,
 }
 
 /// One-time login code record stored between `callback` and `complete`.
@@ -61,7 +74,38 @@ struct PendingLogin {
 struct LoginCodeRecord {
     #[serde(default = "token_identity_mode")]
     identity_mode: String,
+    /// Empty while `signup` waits for confirmation.
+    #[serde(default)]
     principal: String,
+    code_challenge: String,
+    client: String,
+    device_name: String,
+    #[serde(default)]
+    install_id: Option<String>,
+    /// The provider's email for the signed-in identity, when it sent one.
+    #[serde(default)]
+    email: Option<String>,
+    /// Set when the identity has no account yet and the client confirms
+    /// signups: nothing was created.
+    #[serde(default)]
+    signup: Option<PendingSignup>,
+}
+
+/// An identity waiting for the user to confirm account creation.
+#[derive(Clone, Serialize, Deserialize)]
+struct PendingSignup {
+    provider: String,
+    subject: String,
+    email: Option<String>,
+    display_name: String,
+    avatar_url: Option<String>,
+}
+
+/// One-time ticket stored between `complete` (`needs_signup`) and `signup`.
+#[derive(Serialize, Deserialize)]
+struct SignupTicket {
+    identity_mode: String,
+    signup: PendingSignup,
     code_challenge: String,
     client: String,
     device_name: String,
@@ -78,6 +122,8 @@ struct StartQuery {
     redirect_uri: Option<String>,
     device_name: Option<String>,
     install_id: Option<String>,
+    /// `confirm`: ask before creating an account (key-backup logins only).
+    signup: Option<String>,
 }
 
 fn token_identity_mode() -> String {
@@ -213,6 +259,11 @@ pub(super) async fn start(
         "token" if state.identity.enabled() => {}
         _ => return bad_request("requested identity_mode is not enabled"),
     }
+    let confirm_signup = match query.signup.as_deref() {
+        None => false,
+        Some("confirm") if identity_mode == "key_backup" => true,
+        Some(_) => return bad_request("signup=confirm requires identity_mode=key_backup"),
+    };
     let Some(redirect_uri) = query
         .redirect_uri
         .filter(|uri| redirect_allowed(&state, &client, uri))
@@ -246,6 +297,7 @@ pub(super) async fn start(
         device_name,
         install_id,
         nonce: nonce.clone(),
+        confirm_signup,
     };
     let Ok(pending_json) = serde_json::to_string(&pending) else {
         return unavailable();
@@ -331,7 +383,18 @@ pub(super) async fn callback(
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| "user".to_owned());
     let name = display_name.chars().take(64).collect::<String>();
-    let result = if pending.identity_mode == "key_backup" {
+    let result = if pending.identity_mode == "key_backup" && pending.confirm_signup {
+        state
+            .db
+            .login_existing_key_identity(
+                &provider_name,
+                &identity.subject,
+                identity.email.as_deref(),
+                &name,
+                identity.picture.as_deref(),
+            )
+            .await
+    } else if pending.identity_mode == "key_backup" {
         state
             .db
             .login_key_identity(
@@ -368,7 +431,9 @@ pub(super) async fn callback(
             .await
     };
     let login = match result {
-        Ok(login) => login,
+        Ok(login) => Some(login),
+        // Nothing was created: `complete` hands the client a signup ticket.
+        Err(buzz_db::DbError::AccessDenied(message)) if message == "signup_required" => None,
         Err(buzz_db::DbError::AccessDenied(message)) if message == "account_mode_conflict" => {
             return fail("account_mode_conflict");
         }
@@ -380,24 +445,37 @@ pub(super) async fn callback(
             return fail("server_error");
         }
     };
-    if login.disabled {
-        return fail("principal_disabled");
-    }
-    if login.created {
-        tracing::info!(principal = %login.principal, "auth.account_created");
-    }
-    if pending.identity_mode == "token" {
-        bootstrap_operator(&state, &login.principal, &identity).await;
+    if let Some(login) = &login {
+        if login.disabled {
+            return fail("principal_disabled");
+        }
+        if login.created {
+            tracing::info!(principal = %login.principal, "auth.account_created");
+        }
+        if pending.identity_mode == "token" {
+            bootstrap_operator(&state, &login.principal, &identity).await;
+        }
     }
 
     let (code_token, code_hash) = generate_token(TokenKind::LoginCode);
     let record = LoginCodeRecord {
         identity_mode: pending.identity_mode,
-        principal: login.principal.to_hex(),
+        principal: login
+            .as_ref()
+            .map(|login| login.principal.to_hex())
+            .unwrap_or_default(),
         code_challenge: pending.code_challenge.clone(),
         client: pending.client.clone(),
         device_name: pending.device_name.clone(),
         install_id: pending.install_id.clone(),
+        email: identity.email.clone(),
+        signup: login.is_none().then(|| PendingSignup {
+            provider: provider_name.clone(),
+            subject: identity.subject.clone(),
+            email: identity.email.clone(),
+            display_name: name.clone(),
+            avatar_url: identity.picture.clone(),
+        }),
     };
     let Ok(record_json) = serde_json::to_string(&record) else {
         return fail("server_error");
@@ -539,14 +617,185 @@ pub(super) async fn complete(
             "PKCE verification failed",
         );
     }
+    if record.signup.is_some() {
+        return signup_needed(&state, record).await;
+    }
     let Ok(principal) = PrincipalId::from_hex(&record.principal) else {
         return internal("login code principal", &"invalid principal id");
     };
-    let key_mode = match state.db.account_key_mode(&principal).await {
+    finish_login(
+        &state,
+        &principal,
+        &record.identity_mode,
+        &record.client,
+        &record.device_name,
+        record.install_id.as_deref(),
+        record.email.as_deref(),
+    )
+    .await
+}
+
+/// `complete` for an identity with no account yet: nothing is created; the
+/// client gets a one-time `signup_token` to confirm with.
+async fn signup_needed(state: &AppState, record: LoginCodeRecord) -> Response {
+    let Some(signup) = record.signup else {
+        return unavailable();
+    };
+    let (ticket_token, ticket_hash) = generate_token(TokenKind::LoginCode);
+    let ticket = SignupTicket {
+        identity_mode: record.identity_mode,
+        signup: signup.clone(),
+        code_challenge: record.code_challenge,
+        client: record.client,
+        device_name: record.device_name,
+        install_id: record.install_id,
+    };
+    let Ok(ticket_json) = serde_json::to_string(&ticket) else {
+        return unavailable();
+    };
+    match kv::put_new(
+        &state.redis_pool,
+        "oidc:signup",
+        &hex::encode(ticket_hash),
+        &ticket_json,
+        SIGNUP_TTL_SECS,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return unavailable(),
+        Err(error) => {
+            tracing::warn!(%error, "signup ticket store unavailable");
+            return unavailable();
+        }
+    }
+    axum::Json(json!({
+        "needs_signup": true,
+        "signup_token": ticket_token.expose(),
+        "email": signup.email,
+        "display_name": signup.display_name,
+        "avatar_url": signup.avatar_url,
+    }))
+    .into_response()
+}
+
+/// `POST /auth/oidc/signup` `{signup_token, code_verifier}`: create the
+/// account the user confirmed, then sign in exactly as `complete` does.
+pub(super) async fn signup(
+    State(state): State<Arc<AppState>>,
+    extensions: Extensions,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Err(response) = rate_limit_client(
+        &state,
+        &extensions,
+        &headers,
+        "auth:login:complete",
+        LOGIN_COMPLETE_PER_IP,
+        LOGIN_COMPLETE_GLOBAL,
+    )
+    .await
+    {
+        return response;
+    }
+    let body = match json_object(&body) {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let (Some(signup_token), Some(verifier)) = (
+        body.get("signup_token").and_then(|v| v.as_str()),
+        body.get("code_verifier").and_then(|v| v.as_str()),
+    ) else {
+        return bad_request("signup_token and code_verifier are required");
+    };
+    let ticket_hash = buzz_auth::hash_token(signup_token);
+    let ticket = match kv::take(&state.redis_pool, "oidc:signup", &hex::encode(ticket_hash)).await
+    {
+        Ok(Some(json)) => serde_json::from_str::<SignupTicket>(&json).ok(),
+        Ok(None) => None,
+        Err(error) => {
+            tracing::warn!(%error, "signup ticket store unavailable");
+            return unavailable();
+        }
+    };
+    // Consumed above: one attempt only, as for login codes.
+    let Some(ticket) = ticket else {
+        return auth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "invalid or expired signup",
+        );
+    };
+    if !verify_pkce(verifier, &ticket.code_challenge) {
+        return auth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "PKCE verification failed",
+        );
+    }
+    let signup = &ticket.signup;
+    // Creates the account; one created meanwhile (the same Google account
+    // finishing a signup elsewhere) is signed into instead.
+    let login = match state
+        .db
+        .login_key_identity(
+            &signup.provider,
+            &signup.subject,
+            signup.email.as_deref(),
+            &signup.display_name,
+            signup.avatar_url.as_deref(),
+        )
+        .await
+    {
+        Ok(login) => login,
+        Err(buzz_db::DbError::AccessDenied(message)) if message == "account_mode_conflict" => {
+            return auth_error(
+                StatusCode::CONFLICT,
+                "account_mode_conflict",
+                "account identity mode changed",
+            );
+        }
+        Err(error) => return internal("signup", &error),
+    };
+    if login.disabled {
+        return auth_error(
+            StatusCode::FORBIDDEN,
+            "principal_disabled",
+            "account is disabled",
+        );
+    }
+    if login.created {
+        tracing::info!(principal = %login.principal, "auth.account_created");
+    }
+    finish_login(
+        &state,
+        &login.principal,
+        &ticket.identity_mode,
+        &ticket.client,
+        &ticket.device_name,
+        ticket.install_id.as_deref(),
+        signup.email.as_deref(),
+    )
+    .await
+}
+
+/// Open the session for `principal` and answer with its tokens (the end of
+/// `complete` and `signup`).
+async fn finish_login(
+    state: &AppState,
+    principal: &PrincipalId,
+    identity_mode: &str,
+    client: &str,
+    device_name: &str,
+    install_id: Option<&str>,
+    email: Option<&str>,
+) -> Response {
+    let key_mode = match state.db.account_key_mode(principal).await {
         Ok(mode) => mode,
         Err(_) => return unavailable(),
     };
-    if key_mode != (record.identity_mode == "key_backup") {
+    if key_mode != (identity_mode == "key_backup") {
         return auth_error(
             StatusCode::CONFLICT,
             "account_mode_conflict",
@@ -554,21 +803,21 @@ pub(super) async fn complete(
         );
     }
     let signing_pubkey = if key_mode {
-        match state.db.get_key_backup(&principal).await {
+        match state.db.get_key_backup(principal).await {
             Ok(backup) => backup.map(|backup| hex::encode(backup.pubkey)),
             Err(_) => return unavailable(),
         }
     } else {
         None
     };
-    let (access, refresh, access_issued, refresh_issued) = issue_session_tokens(&state);
+    let (access, refresh, access_issued, refresh_issued) = issue_session_tokens(state);
     let session = match state
         .db
         .complete_login(
-            &principal,
-            &record.device_name,
-            &record.client,
-            record.install_id.as_deref(),
+            principal,
+            device_name,
+            client,
+            install_id,
             refresh_issued,
             access_issued,
         )
@@ -582,7 +831,7 @@ pub(super) async fn complete(
     };
     tracing::info!(principal = %principal, device = %session.device_id, "auth.login");
     let expires_in = state.identity.config().access_ttl.as_secs();
-    if record.client == "web" {
+    if client == "web" {
         let cookie = refresh_cookie(
             refresh.expose(),
             state.identity.config().refresh_ttl.as_secs(),
@@ -592,23 +841,25 @@ pub(super) async fn complete(
             [(header::SET_COOKIE, cookie)],
             axum::Json(json!({
                 "principal_id": principal.to_hex(),
-                "identity_mode": record.identity_mode,
+                "identity_mode": identity_mode,
                 "signing_pubkey": signing_pubkey,
                 "device_id": session.device_id,
                 "access": access.expose(),
                 "expires_in": expires_in,
+                "email": email,
             })),
         )
             .into_response();
     }
     axum::Json(json!({
         "principal_id": principal.to_hex(),
-        "identity_mode": record.identity_mode,
+        "identity_mode": identity_mode,
         "signing_pubkey": signing_pubkey,
         "device_id": session.device_id,
         "access": access.expose(),
         "refresh": refresh.expose(),
         "expires_in": expires_in,
+        "email": email,
     }))
     .into_response()
 }
