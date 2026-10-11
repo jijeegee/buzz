@@ -90,14 +90,35 @@ pub(crate) fn spawn_owner_hex<R: tauri::Runtime>(
     record: &ManagedAgentRecord,
 ) -> Result<String, String> {
     use tauri::Manager;
-    if let Some(owner) = agent_owner_hex(app, record) {
-        return Ok(owner);
-    }
-    if let Some(origin) = record.bot_origin.as_deref() {
+    let bot_principal = record.bot_origin.as_deref().and_then(|origin| {
         let state = app.state::<crate::app_state::AppState>();
-        if let Some((_, crate::auth::OriginAuth::Active(session))) = state.token_auth.get(origin) {
-            record_agent_owner(app, &record.pubkey, &session.principal)?;
-            return Ok(session.principal.to_hex());
+        match state.token_auth.get(origin) {
+            Some((_, crate::auth::OriginAuth::Active(session))) => Some(session.principal),
+            _ => None,
+        }
+    });
+    let (owner, learned) =
+        resolve_spawn_owner(record, agent_owner_hex(app, record), bot_principal)?;
+    if let Some(principal) = learned {
+        record_agent_owner(app, &record.pubkey, &principal)?;
+    }
+    Ok(owner)
+}
+
+/// [`spawn_owner_hex`] without the app: `known` is the agent's own owner and
+/// `bot_principal` the token principal for a server bot's origin. Returns the
+/// owner, plus the principal to record when a bot's owner was just learned.
+fn resolve_spawn_owner(
+    record: &ManagedAgentRecord,
+    known: Option<String>,
+    bot_principal: Option<PublicKey>,
+) -> Result<(String, Option<PublicKey>), String> {
+    if let Some(owner) = known {
+        return Ok((owner, None));
+    }
+    if record.bot_origin.is_some() {
+        if let Some(principal) = bot_principal {
+            return Ok((principal.to_hex(), Some(principal)));
         }
     }
     Err(format!(
@@ -115,6 +136,9 @@ fn unowned<'a>(
     records
         .iter()
         .filter(|record| !record.pubkey.is_empty())
+        // A server bot's owner is its token account's principal, recorded by
+        // `spawn_owner_hex` on first use, never the local key passed here.
+        .filter(|record| record.bot_origin.is_none())
         .filter(|record| attested_owner_hex(record).is_none())
         .map(|record| record.pubkey.to_ascii_lowercase())
         .filter(move |pubkey| !recorded.contains(pubkey))
@@ -211,5 +235,42 @@ mod tests {
         record_owner_at(&path, &agent, &creator).unwrap();
         record_owner_at(&path, &agent, &later).unwrap();
         assert_eq!(read_owners(&path).get(&agent), Some(&creator.to_hex()));
+    }
+
+    #[test]
+    fn server_bots_are_never_recorded_under_the_local_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let bot = nostr::Keys::generate().public_key().to_hex();
+        let mut bot_record = record(&bot, None);
+        bot_record.bot_origin = Some("https://relay.test".into());
+        let local = nostr::Keys::generate().public_key();
+        assert_eq!(
+            record_missing_owners(&path, std::slice::from_ref(&bot_record), &local).unwrap(),
+            0
+        );
+        assert!(!read_owners(&path).contains_key(&bot));
+        // Its first spawn learns the token principal instead.
+        let principal = nostr::Keys::generate().public_key();
+        let (owner, learned) = resolve_spawn_owner(&bot_record, None, Some(principal)).unwrap();
+        assert_eq!(owner, principal.to_hex());
+        assert_eq!(learned, Some(principal));
+    }
+
+    #[test]
+    fn an_agent_without_an_owner_is_refused_not_given_the_active_account() {
+        let agent = record(&nostr::Keys::generate().public_key().to_hex(), None);
+        let principal = nostr::Keys::generate().public_key();
+        // A token principal only counts for a server bot.
+        assert!(resolve_spawn_owner(&agent, None, Some(principal)).is_err());
+        assert!(resolve_spawn_owner(&agent, None, None).is_err());
+        let mut bot = agent.clone();
+        bot.bot_origin = Some("https://relay.test".into());
+        assert!(resolve_spawn_owner(&bot, None, None).is_err());
+        let known = nostr::Keys::generate().public_key().to_hex();
+        assert_eq!(
+            resolve_spawn_owner(&agent, Some(known.clone()), Some(principal)).unwrap(),
+            (known, None)
+        );
     }
 }

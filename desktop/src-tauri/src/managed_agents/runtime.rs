@@ -521,8 +521,7 @@ pub(crate) fn spawn_with_effort_proof(
 /// Returns the child process and log path on success. The caller is responsible
 /// for updating `ManagedAgentRecord` fields and inserting into the runtimes map.
 ///
-/// `owner_hex`: the workspace owner's pubkey, used as a fallback for legacy
-/// records that have no NIP-OA `auth_tag`. See `build_respond_to_env`.
+/// The agent runs for its own owner (`spawn_owner_hex`).
 ///
 /// `live_routing_roles`: running channel-routing roles of the other tracked
 /// local processes (`channel_routing::live_local_roles`), for the hold rule.
@@ -560,7 +559,6 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     relay_url: &str,
     admitted: &super::Admitted<'_>,
     lazy: bool,
-    owner_hex: Option<&str>,
     replay_floor_unix: Option<u64>,
     live_routing_roles: &[(String, super::channel_routing::RoutingRole)],
 ) -> Result<crate::managed_agents::ManagedAgentProcess, String> {
@@ -569,10 +567,8 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         return Err(error);
     }
     // The agent's own owner, never the active account: several accounts can
-    // be signed in here and every account's agents keep running. The
-    // caller's `owner_hex` (the active account) is deliberately ignored; an
-    // agent with no known owner is refused.
-    let _ = owner_hex;
+    // be signed in here and every account's agents keep running. An agent
+    // with no known owner is refused.
     let record_owner = super::spawn_owner_hex(app, record)?;
     let owner_hex = Some(record_owner.as_str());
     let runtime_key = ManagedAgentRuntimeKey::new(record.pubkey.clone(), relay_url)?;
@@ -1090,7 +1086,6 @@ pub fn start_managed_agent_process<R: tauri::Runtime>(
     app: &AppHandle<R>,
     record: &mut ManagedAgentRecord,
     runtimes: &mut HashMap<ManagedAgentRuntimeKey, ManagedAgentPairRuntime>,
-    owner_hex: Option<&str>,
     workspace_relay: &crate::relay::ScopedWorkspaceRelay,
     admitted: &super::Admitted<'_>,
     replay_floor_unix: Option<u64>,
@@ -1119,7 +1114,6 @@ pub fn start_managed_agent_process<R: tauri::Runtime>(
         &key.relay_url,
         admitted,
         false,
-        owner_hex,
         replay_floor_unix,
         &super::channel_routing::live_local_roles(runtimes),
     )?;

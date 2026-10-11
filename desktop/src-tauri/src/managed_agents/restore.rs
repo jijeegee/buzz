@@ -268,14 +268,6 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
         return Ok(());
     }
 
-    // Snapshot the workspace owner pubkey once for the legacy auth_tag fallback.
-    // Read outside the per-agent spawn loop so all parallel spawns see the same
-    // value and we don't lock `state.keys` repeatedly.
-    let owner_hex: Option<String> = state
-        .current_identity_pubkey()
-        .ok()
-        .map(|pubkey| pubkey.to_hex());
-
     #[cfg(feature = "mesh-llm")]
     let mut agents_to_start = {
         // Preflight against the same resolution spawn uses — `resolve_effective_config`
@@ -346,7 +338,6 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
         &admission,
         restore_relay,
         &agents_to_start,
-        owner_hex.as_deref(),
     )?;
 
     // ── Profile reconciliation (fire-and-forget) ────────────────────────────
@@ -379,7 +370,6 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
     admission: &super::AdmissionSnapshot,
     restore_relay: &str,
     agents_to_start: &[super::ManagedAgentRecord],
-    owner_hex: Option<&str>,
 ) -> Result<Vec<(String, crate::commands::ProfileReconcileData)>, String> {
     let state = app.state::<AppState>();
     // Serialize spawning and runtime registration with shutdown cleanup. The
@@ -394,7 +384,6 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
         restore_relay,
         |admitted| {
             std::thread::scope(|scope| {
-                let owner_hex_ref = owner_hex;
                 let handles: Vec<_> = agents_to_start
                     .iter()
                     .filter(|_| !shutdown_started.load(Ordering::SeqCst))
@@ -441,7 +430,6 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
                                                     &key.relay_url,
                                                     admitted,
                                                     true,
-                                                    owner_hex_ref,
                                                     None,
                                                     // Restore spawns every record with
                                                     // its desired role, so only provider

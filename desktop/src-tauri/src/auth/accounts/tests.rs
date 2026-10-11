@@ -675,3 +675,92 @@ fn a_kept_outgoing_key_is_listed_before_its_slot_is_written() {
     let index = read_index(&mem).unwrap().unwrap();
     assert!(index.contains(&outgoing.public_key().to_hex()));
 }
+
+/// Thread-safe in-memory storage for the async hand-over, with one failing key.
+#[cfg(not(target_os = "windows"))]
+#[derive(Default)]
+struct SyncMem {
+    map: std::sync::Mutex<HashMap<String, String>>,
+    fail_key: String,
+}
+
+#[cfg(not(target_os = "windows"))]
+impl Secrets for SyncMem {
+    fn load(&self, key: &str) -> Result<Option<String>, String> {
+        Ok(self.map.lock().unwrap().get(key).cloned())
+    }
+    fn store(&self, key: &str, value: &str) -> Result<(), String> {
+        if key == self.fail_key {
+            return Err("injected write failure".into());
+        }
+        self.map.lock().unwrap().insert(key.into(), value.into());
+        Ok(())
+    }
+    fn delete(&self, key: &str) -> Result<(), String> {
+        self.map.lock().unwrap().remove(key);
+        Ok(())
+    }
+    fn store_all(&self, entries: &HashMap<String, String>) -> Result<(), String> {
+        self.map.lock().unwrap().extend(entries.clone());
+        Ok(())
+    }
+    fn blob_keys(&self) -> Result<Vec<String>, String> {
+        Ok(self.map.lock().unwrap().keys().cloned().collect())
+    }
+}
+
+// `build_app_state()` in a mock app is gated off Windows CI like the
+// admission tests.
+#[cfg(not(target_os = "windows"))]
+#[tokio::test]
+async fn hand_over_goes_on_past_a_failing_server_and_reports_it() {
+    use tauri::Manager;
+    #[cfg(feature = "system-keyring")]
+    keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
+    let data = tempfile::tempdir().unwrap();
+    let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+    context.config_mut().identifier = data.path().to_str().unwrap().to_owned();
+    let app = tauri::test::mock_builder()
+        .manage(crate::app_state::build_app_state())
+        .build(context)
+        .unwrap();
+    let data_dir = app.path().app_data_dir().unwrap();
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    const FAILING: &str = "https://a.relay.test";
+    const LATER: &str = "https://b.relay.test";
+    let current = Keys::generate().public_key();
+    let previous = Keys::generate().public_key();
+    let secrets = SyncMem {
+        fail_key: super::super::key_recovery::binding_key(FAILING),
+        ..SyncMem::default()
+    };
+    let mut registry = Registry::default();
+    for origin in [FAILING, LATER] {
+        registry.accounts.push(Account {
+            pubkey: current.to_hex(),
+            origin: origin.into(),
+            state: AccountState::SignedIn,
+        });
+    }
+    registry.active = Some(current.to_hex());
+    save_registry(&secrets, &data_dir, &registry).unwrap();
+
+    let error = hand_over_origins_with(app.handle(), &secrets, previous, current, None, None)
+        .await
+        .unwrap_err();
+
+    // The failing server (sorted first) is reported, and the one after it
+    // was still handed over to `current`.
+    assert!(error.contains(FAILING), "{error}");
+    assert!(!error.contains(LATER), "{error}");
+    assert_eq!(
+        secrets
+            .load(&super::super::key_recovery::binding_key(LATER))
+            .unwrap(),
+        Some(current.to_hex())
+    );
+    let state = app.state::<crate::app_state::AppState>();
+    assert_eq!(state.token_auth.signing_pubkey(LATER), Some(current));
+    assert_eq!(state.token_auth.signing_pubkey(FAILING), None);
+}

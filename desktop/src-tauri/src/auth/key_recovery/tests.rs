@@ -251,3 +251,47 @@ async fn any_google_account_signs_in_to_its_own_account() {
     );
     task.abort();
 }
+
+#[test]
+fn connect_is_refused_unless_a_listed_key_only_account_links_its_own_key() {
+    use super::super::accounts::{Account, AccountState, Registry};
+    let key = Keys::generate().public_key();
+    let listed = |state| Registry {
+        accounts: vec![Account {
+            pubkey: key.to_hex(),
+            origin: "https://relay.test".into(),
+            state,
+        }],
+        ..Registry::default()
+    };
+    // The one allowed case.
+    assert!(!connect_refused(
+        &listed(AccountState::KeyOnly),
+        &key,
+        false,
+        false
+    ));
+    // Not on the list (an empty list never counts as "all key-only").
+    assert!(connect_refused(&Registry::default(), &key, false, false));
+    // Already held by a Google account.
+    assert!(connect_refused(
+        &listed(AccountState::SignedIn),
+        &key,
+        false,
+        false
+    ));
+    // Recovering a lost key: the in-memory key is a stand-in.
+    assert!(connect_refused(
+        &listed(AccountState::KeyOnly),
+        &key,
+        true,
+        false
+    ));
+    // This login method is already bound to a key.
+    assert!(connect_refused(
+        &listed(AccountState::KeyOnly),
+        &key,
+        false,
+        true
+    ));
+}

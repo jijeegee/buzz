@@ -211,14 +211,5 @@ pub(crate) fn save_channel_routing_at(path: &Path, mode: ChannelRoutingMode) -> 
     atomic_write_json(path, &payload)
 }
 
-/// The workspace owner's hex pubkey, which Lead's rules listen to. `None`
-/// when the identity is unavailable (Lead then resolves to no role).
-pub(crate) fn routing_owner_hex<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<String> {
-    use tauri::Manager;
-    let state = app.state::<crate::app_state::AppState>();
-    let keys = state.keys.lock().ok()?;
-    Some(keys.public_key().to_hex())
-}
-
 #[cfg(test)]
 mod tests;

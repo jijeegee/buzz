@@ -651,14 +651,27 @@ fn own_agents(app: &AppHandle, pubkeys: Vec<String>) -> Vec<String> {
     };
     let records =
         crate::managed_agents::storage::load_managed_agents_without_keys(app).unwrap_or_default();
+    owned_by(pubkeys, &records, &me, |record| {
+        crate::managed_agents::agent_owner_hex(app, record)
+    })
+}
+
+/// The agents among `pubkeys` whose owner is `me`; unknown agents and agents
+/// without a known owner are never included.
+fn owned_by(
+    pubkeys: Vec<String>,
+    records: &[crate::managed_agents::ManagedAgentRecord],
+    me: &str,
+    owner_of: impl Fn(&crate::managed_agents::ManagedAgentRecord) -> Option<String>,
+) -> Vec<String> {
     pubkeys
         .into_iter()
         .filter(|pubkey| {
             records
                 .iter()
                 .find(|record| record.pubkey.eq_ignore_ascii_case(pubkey))
-                .and_then(|record| crate::managed_agents::agent_owner_hex(app, record))
-                .is_some_and(|owner| owner.eq_ignore_ascii_case(&me))
+                .and_then(&owner_of)
+                .is_some_and(|owner| owner.eq_ignore_ascii_case(me))
         })
         .collect()
 }
@@ -1266,5 +1279,33 @@ mod tests {
         let json = serde_json::to_value(&needs).unwrap();
         assert!(json.get("deviceId").is_some(), "camelCase wire shape");
         assert_eq!(json.get("deviceSignedOut"), Some(&serde_json::json!(false)));
+    }
+
+    #[test]
+    fn sign_out_only_stops_the_active_accounts_own_agents() {
+        let record = |pubkey: &str| -> crate::managed_agents::ManagedAgentRecord {
+            serde_json::from_value(serde_json::json!({
+                "pubkey": pubkey, "name": "a", "relay_url": "wss://relay.test",
+                "acp_command": "x", "agent_command": "x", "agent_args": [],
+                "mcp_command": "x", "turn_timeout_seconds": 1,
+                "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+            }))
+            .unwrap()
+        };
+        let (mine, theirs, unowned) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+        let me = "1".repeat(64);
+        let records = [record(&mine), record(&theirs), record(&unowned)];
+        let owner_of = |r: &crate::managed_agents::ManagedAgentRecord| match r.pubkey.as_str() {
+            p if p == mine => Some(me.to_ascii_uppercase()),
+            p if p == theirs => Some("2".repeat(64)),
+            _ => None,
+        };
+        let asked = vec![
+            mine.clone(),
+            theirs.clone(),
+            unowned.clone(),
+            "d".repeat(64),
+        ];
+        assert_eq!(owned_by(asked, &records, &me, owner_of), vec![mine]);
     }
 }

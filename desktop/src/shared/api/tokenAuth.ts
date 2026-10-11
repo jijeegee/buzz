@@ -95,9 +95,13 @@ export function listAccounts(): Promise<AccountSummary[]> {
   return invokeTauri<AccountSummary[]>("list_accounts");
 }
 
-/** Make `pubkey` the active account; the others stay signed in. */
-export function switchAccount(pubkey: string): Promise<void> {
-  return invokeTauri<void>("switch_account", { pubkey });
+/**
+ * Make `pubkey` the active account; the others stay signed in. Resolves to a
+ * warning when a server's session could not be handed over (the switch still
+ * happened).
+ */
+export function switchAccount(pubkey: string): Promise<string | null> {
+  return invokeTauri<string | null>("switch_account", { pubkey });
 }
 
 /** NIP-42 AUTH event signed by a signed-in account that may be inactive. */

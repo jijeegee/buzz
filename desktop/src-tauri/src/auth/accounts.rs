@@ -1019,17 +1019,20 @@ impl InactiveSessions {
 
     /// Stop `pubkey`'s background session on `origin`, waiting out a refresh
     /// in flight so its rotated token is in the slot before the caller reads
-    /// it. The generation fence ends the loop.
-    pub(crate) async fn stop(&self, origin: &str, pubkey: &PublicKey) {
+    /// it. The generation fence ends the loop. Returns whether one was
+    /// running.
+    pub(crate) async fn stop(&self, origin: &str, pubkey: &PublicKey) -> bool {
         let auth = self
             .sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&Self::key(origin, pubkey));
-        if let Some(auth) = auth {
-            let _guard = auth.refresh_lock(origin).lock_owned().await;
-            auth.set(origin, super::OriginAuth::SignedOut);
-        }
+        let Some(auth) = auth else {
+            return false;
+        };
+        let _guard = auth.refresh_lock(origin).lock_owned().await;
+        auth.set(origin, super::OriginAuth::SignedOut);
+        true
     }
 }
 
@@ -1118,13 +1121,23 @@ async fn hand_over_origins<R: tauri::Runtime>(
     skip: Option<&str>,
     held: Option<&str>,
 ) -> Result<(), String> {
+    hand_over_origins_with(app, shared_secrets(), previous, current, skip, held).await
+}
+
+async fn hand_over_origins_with<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    secrets: &(dyn Secrets + Sync),
+    previous: PublicKey,
+    current: PublicKey,
+    skip: Option<&str>,
+    held: Option<&str>,
+) -> Result<(), String> {
     use tauri::Manager;
     let state = app.state::<crate::app_state::AppState>();
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|_| "account storage is unavailable")?;
-    let secrets = shared_secrets();
     let registry = {
         let _lock = registry_lock();
         load_registry(&data_dir)?.unwrap_or_default()
@@ -1249,9 +1262,14 @@ pub fn list_accounts(app: tauri::AppHandle) -> Result<Vec<AccountSummary>, Strin
 
 /// Make `pubkey` the active account. The previous account stays signed in
 /// (its session keeps refreshing in the background) and its agents keep
-/// running; the UI reloads on [`ACTIVE_ACCOUNT_CHANGED_EVENT`].
+/// running; the UI reloads on [`ACTIVE_ACCOUNT_CHANGED_EVENT`]. Once the key
+/// has changed the switch is complete: a server whose session could not be
+/// handed over is returned as a warning (`Ok(Some(..))`), not an error.
 #[tauri::command]
-pub async fn switch_account(app: tauri::AppHandle, pubkey: String) -> Result<(), String> {
+pub async fn switch_account(
+    app: tauri::AppHandle,
+    pubkey: String,
+) -> Result<Option<String>, String> {
     use tauri::{Emitter, Manager};
     let state = app.state::<crate::app_state::AppState>();
     let target = PublicKey::from_hex(&pubkey).map_err(|_| "invalid account")?;
@@ -1280,7 +1298,7 @@ pub async fn switch_account(app: tauri::AppHandle, pubkey: String) -> Result<(),
             .map_err(|_| "identity storage is busy")?
             .clone();
         if outgoing.public_key() == target {
-            return Ok(());
+            return Ok(None);
         }
         let keys = account_keys(secrets, &target)?;
         preserve_outgoing(secrets, &data_dir, &mut registry, &outgoing)?;
@@ -1295,11 +1313,15 @@ pub async fn switch_account(app: tauri::AppHandle, pubkey: String) -> Result<(),
     // is handed over.
     let handed = hand_over_origins(&app, previous, target, None, Some(&origin)).await;
     drop(refresh_guard);
-    handed?;
+    // The backend already signs as `target`: the UI must follow even when a
+    // server's session could not be handed over.
     super::restore::restore_if_stored(&app, &origin).await;
     let _ = app.emit(ACTIVE_ACCOUNT_CHANGED_EVENT, target.to_hex());
     super::restore::emit_changed(&app, &origin);
-    Ok(())
+    Ok(handed.err().map(|error| {
+        eprintln!("buzz-desktop: accounts: switch hand-over incomplete: {error}");
+        error
+    }))
 }
 
 /// The key of an account on this computer for read-only background work as

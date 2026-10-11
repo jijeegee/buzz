@@ -95,7 +95,15 @@ pub(crate) async fn deploy_to_provider(
     // The rebuild above re-read the live workspace relay and owner identity.
     // Assert the caller's captured scope against THIS payload — the exact
     // value invoked below — not the pre-lock snapshot its caller validated.
-    assert_payload_scope(&agent_json, expected_relay_url, expected_signer_pubkey)?;
+    // The payload's owner is the agent's own owner; the caller's captured
+    // signer is checked against the account active now.
+    let active_signer = super::workspace_owner_hex(state).ok();
+    assert_payload_scope(
+        &agent_json,
+        expected_relay_url,
+        expected_signer_pubkey,
+        active_signer.as_deref(),
+    )?;
     // The floor is invocation state, not record state, so the post-lock
     // rebuild cannot restore it — inject it into the payload actually invoked.
     apply_replay_floor(&mut agent_json, replay_floor_unix);
@@ -152,15 +160,17 @@ pub(crate) async fn deploy_to_provider(
 
 /// Assert a caller-captured tenant scope against the payload that will
 /// actually be invoked. The relay lives at the payload's top-level
-/// `relay_url`; the deploying identity lives at `launch.owner_pubkey` — both
-/// were re-resolved from live workspace state by `build_deploy_payload`, so
-/// this is the check tied to the use. When the caller carries an expectation
+/// `relay_url`, re-resolved from live workspace state by `build_deploy_payload`;
+/// the caller's signer is checked against `active_signer`, the account active
+/// after the lock wait (the payload's `launch.owner_pubkey` is the agent's own
+/// owner, which an account switch does not change). When the caller carries an expectation
 /// a missing payload field fails closed: an unverifiable payload must never
 /// deploy on behalf of a scoped callback.
 fn assert_payload_scope(
     agent_json: &serde_json::Value,
     expected_relay_url: Option<&str>,
     expected_signer_pubkey: Option<&str>,
+    active_signer: Option<&str>,
 ) -> Result<(), String> {
     let has_expectation =
         |expected: Option<&str>| expected.map(str::trim).filter(|s| !s.is_empty()).is_some();
@@ -174,14 +184,10 @@ fn assert_payload_scope(
         }
         None => {}
     }
-    match agent_json
-        .get("launch")
-        .and_then(|launch| launch.get("owner_pubkey"))
-        .and_then(|v| v.as_str())
-    {
-        Some(owner) => crate::relay::assert_expected_signer(expected_signer_pubkey, owner)?,
+    match active_signer {
+        Some(active) => crate::relay::assert_expected_signer(expected_signer_pubkey, active)?,
         None if has_expectation(expected_signer_pubkey) => {
-            return Err("deploy payload carries no owner identity; not deployed".to_string());
+            return Err("no active identity to verify; not deployed".to_string());
         }
         None => {}
     }
@@ -308,8 +314,9 @@ mod tests {
     #[test]
     fn matching_scope_and_signer_pass_on_the_rebuilt_payload() {
         assert_payload_scope(
-            &scoped_payload("wss://tenant-a.example", "aa11"),
+            &scoped_payload("wss://tenant-a.example", "dd44"),
             Some("wss://tenant-a.example"),
+            Some("aa11"),
             Some("aa11"),
         )
         .unwrap();
@@ -324,6 +331,7 @@ mod tests {
             &scoped_payload("wss://tenant-b.example", "aa11"),
             Some("wss://tenant-a.example"),
             Some("aa11"),
+            Some("aa11"),
         )
         .unwrap_err();
         assert!(error.contains("active community changed"), "{error}");
@@ -331,13 +339,13 @@ mod tests {
 
     #[test]
     fn same_relay_identity_switch_during_the_lock_wait_fails_closed() {
-        // Same relay, different owner: an identity switch alone must also be
-        // refused — the rebuilt launch.owner_pubkey belongs to a tenant the
-        // caller never validated.
+        // Same relay, account switched during the wait: refused even though
+        // the agent's own owner in the payload did not change.
         let error = assert_payload_scope(
-            &scoped_payload("wss://tenant-a.example", "bb22"),
+            &scoped_payload("wss://tenant-a.example", "aa11"),
             Some("wss://tenant-a.example"),
             Some("aa11"),
+            Some("bb22"),
         )
         .unwrap_err();
         assert!(error.contains("active identity changed"), "{error}");
@@ -347,10 +355,13 @@ mod tests {
     fn scoped_caller_with_an_unverifiable_payload_fails_closed() {
         let payload = serde_json::json!({});
         let relay_error =
-            assert_payload_scope(&payload, Some("wss://tenant-a.example"), None).unwrap_err();
+            assert_payload_scope(&payload, Some("wss://tenant-a.example"), None, None).unwrap_err();
         assert!(relay_error.contains("no relay"), "{relay_error}");
-        let signer_error = assert_payload_scope(&payload, None, Some("aa11")).unwrap_err();
-        assert!(signer_error.contains("no owner identity"), "{signer_error}");
+        let signer_error = assert_payload_scope(&payload, None, Some("aa11"), None).unwrap_err();
+        assert!(
+            signer_error.contains("no active identity"),
+            "{signer_error}"
+        );
     }
 
     #[test]
@@ -359,9 +370,10 @@ mod tests {
             &scoped_payload("wss://anywhere.example", "cc33"),
             None,
             None,
+            Some("ee55"),
         )
         .unwrap();
-        assert_payload_scope(&serde_json::json!({}), None, None).unwrap();
+        assert_payload_scope(&serde_json::json!({}), None, None, None).unwrap();
     }
 
     // ── apply_replay_floor: publish-first floor threading into the payload ──

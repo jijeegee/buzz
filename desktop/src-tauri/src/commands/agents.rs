@@ -19,8 +19,8 @@ use crate::{
     util::now_iso,
 };
 
-/// Read the workspace owner pubkey without holding the lock. Used to populate `BUZZ_ACP_AGENT_OWNER`
-/// as a fallback for legacy agent records that have no NIP-OA `auth_tag`.
+/// The active account's pubkey, for checking a caller's captured signer. Never
+/// an agent's owner: agents run for their own (`spawn_owner_hex`).
 pub(super) fn workspace_owner_hex(state: &AppState) -> Result<String, String> {
     // The Google-session principal in a token-mode community, else the key.
     Ok(state.current_identity_pubkey()?.to_hex())
@@ -289,8 +289,8 @@ where
     // Bind the active owner after the same final await as the relay. A
     // same-relay identity replacement during mesh preflight must not release
     // the stale preflight owner to spawn.
-    let workspace_owner =
-        crate::relay::bind_expected_signer(expected_signer_pubkey, workspace_owner_hex(state)?)?;
+    // The spawn itself runs for the agent's own owner.
+    crate::relay::bind_expected_signer(expected_signer_pubkey, workspace_owner_hex(state)?)?;
 
     // Lock order matches `start_pair`: transition, then store, then runtime
     // map. The transition lock is held until the pair is registered, so a
@@ -338,7 +338,6 @@ where
         app,
         record,
         &mut runtimes,
-        Some(workspace_owner.as_str()),
         &workspace_relay_url,
         &admitted,
         replay_floor_unix,
@@ -975,8 +974,8 @@ pub async fn start_managed_agent(
     // The UI may still hold the pubkey of an agent that just moved onto its
     // server bot.
     let pubkey = crate::auth::bots::current_agent_pubkey(&pubkey);
-    // Snapshot the workspace owner pubkey for the legacy auth_tag fallback.
-    // Read outside the records lock to keep lock ordering simple.
+    // The active account, only to refuse a stale caller below; the agent
+    // itself runs for its own owner.
     let owner_hex = workspace_owner_hex(&state)?;
     // Callers with a captured tenant scope (Projects agent sends) pass
     // `expected_relay_url` / `expected_signer_pubkey`. Starting an agent

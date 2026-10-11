@@ -1164,3 +1164,119 @@ fn a_fresh_resign_uses_the_scope_owner_not_the_active_account() {
     assert_ne!(resigned.pubkey, now_active.public_key());
     resigned.verify().unwrap();
 }
+
+// Gated off Windows like `flush_barrier` (`build_app_state()` in CI).
+#[cfg(not(target_os = "windows"))]
+mod account_switch_flush {
+    use super::*;
+    use crate::app_state::build_app_state;
+    use crate::managed_agents::retention::{open_retention_db, retain_event, RetainedEvent};
+    use nostr::JsonUtil;
+
+    fn retain_signed(
+        conn: &rusqlite::Connection,
+        keys: &nostr::Keys,
+        kind: u32,
+        retention_d_tag: &str,
+        builder: nostr::EventBuilder,
+        created_at: i64,
+    ) {
+        let event = builder.sign_with_keys(keys).expect("sign test event");
+        retain_event(
+            conn,
+            &RetainedEvent {
+                kind,
+                pubkey: keys.public_key().to_hex(),
+                d_tag: retention_d_tag.to_string(),
+                content: event.content.to_string(),
+                created_at,
+                raw_event: event.as_json(),
+                pending_sync: true,
+            },
+        )
+        .expect("retain test event");
+    }
+
+    /// An account switch landing mid-flush: the flush of A's scope started
+    /// with A's keys, the relay's first accept switches the active key to B,
+    /// and every freshness re-signed row of the sweep still publishes as A.
+    #[tokio::test]
+    async fn a_flush_started_for_one_account_signs_as_it_after_a_switch() {
+        use axum::{extract::State, routing::post, Json, Router};
+        use std::sync::{Arc, Mutex};
+
+        let scope_owner = nostr::Keys::generate();
+        let switched_to = nostr::Keys::generate();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("retention.db");
+        {
+            let conn = open_retention_db(&db_path).expect("open db");
+            for (index, d_tag) in ["first", "second"].into_iter().enumerate() {
+                let target = nostr::Keys::generate().public_key().to_hex();
+                retain_signed(
+                    &conn,
+                    &scope_owner,
+                    9035,
+                    d_tag,
+                    crate::events::build_archive_identity_request(
+                        &target,
+                        "agent deleted",
+                        None,
+                        None,
+                        None,
+                    )
+                    .unwrap(),
+                    1000 + index as i64,
+                );
+            }
+        }
+
+        let state = Arc::new(build_app_state());
+        *state.keys.lock().unwrap() = scope_owner.clone();
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        type RelayState = (
+            Arc<crate::app_state::AppState>,
+            nostr::Keys,
+            Arc<Mutex<Vec<String>>>,
+        );
+        let app = Router::new()
+            .route(
+                "/events",
+                post(
+                    |State((state, next, seen)): State<RelayState>, body: String| async move {
+                        let event: serde_json::Value =
+                            serde_json::from_str(&body).unwrap_or_default();
+                        let author = event["pubkey"].as_str().unwrap_or_default().to_owned();
+                        seen.lock().unwrap().push(author);
+                        // The user switches accounts while the sweep is running.
+                        *state.keys.lock().unwrap() = next;
+                        Json(serde_json::json!({
+                            "event_id": event["id"].as_str().unwrap_or(""),
+                            "accepted": true,
+                            "message": ""
+                        }))
+                    },
+                ),
+            )
+            .with_state((Arc::clone(&state), switched_to.clone(), Arc::clone(&seen)));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+        *state.relay_url_override.lock().unwrap() = Some(relay.clone());
+
+        let flushed = flush_pending_events_at(&db_path, &state, &relay, &scope_owner)
+            .await
+            .expect("flush");
+
+        assert_eq!(flushed, 2);
+        assert_eq!(
+            state.keys.lock().unwrap().public_key(),
+            switched_to.public_key(),
+            "the switch happened during the sweep"
+        );
+        let owner_hex = scope_owner.public_key().to_hex();
+        assert_eq!(*seen.lock().unwrap(), vec![owner_hex.clone(), owner_hex]);
+    }
+}

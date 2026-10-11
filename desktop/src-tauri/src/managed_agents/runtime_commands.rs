@@ -327,18 +327,12 @@ fn start_pair<R: tauri::Runtime>(
     runtimes.remove(&key);
     terminate_untracked_pair_runtime(&app, &key)?;
 
-    let owner = state
-        .keys
-        .lock()
-        .ok()
-        .map(|keys| keys.public_key().to_hex());
     let mut process = spawn_agent_child(
         &app,
         record,
         &key.relay_url,
         &admitted,
         lazy,
-        owner.as_deref(),
         None,
         &super::channel_routing::live_local_roles(&runtimes),
     )?;

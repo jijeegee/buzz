@@ -92,9 +92,13 @@ pub fn assert_expected_signer(
 ///
 /// The only constructor is [`bind_expected_signer`], so side effects consume
 /// the exact owner read that was validated rather than a stale pre-await value.
+/// Agent spawns now run for the agent's own owner, so the bound read is only
+/// a staleness check today.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ScopedWorkspaceSigner(String);
 
+#[allow(dead_code)]
 impl ScopedWorkspaceSigner {
     pub fn as_str(&self) -> &str {
         &self.0
