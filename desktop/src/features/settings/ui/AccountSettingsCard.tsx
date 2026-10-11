@@ -8,6 +8,11 @@ import {
   accountLabel,
 } from "@/features/accounts/lib/accountLabels";
 import { beginAccountAction } from "@/features/accounts/lib/accountSwitch";
+import { useWatchedUnread } from "@/features/accounts/inactiveAccountWatch/useWatchedUnread";
+import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
+import { useAccountMenu } from "@/features/accounts/useAccountMenu";
+import { useIdentityQuery } from "@/shared/api/hooks";
+import { CreateAccountDialog } from "@/shared/ui/CreateAccountDialog";
 import {
   type AuthDevice,
   deleteTokenAccount,
@@ -290,6 +295,31 @@ export function AccountSettingsCard({
   );
 }
 
+/**
+ * The accounts signed in on this computer, with the profile menu's switch and
+ * "Add account" (same list, same actions). Signing out stays on the row above.
+ */
+function AccountsOnThisComputer({ disabled }: { disabled: boolean }) {
+  const accountMenu = useAccountMenu({ open: true });
+  const activePubkey = useIdentityQuery().data?.pubkey ?? null;
+  const unread = useWatchedUnread();
+  return (
+    <SettingsOptionRow className="items-start">
+      <div className="min-w-0 flex-1" data-testid="settings-accounts">
+        <p className="px-3 pb-1 font-medium">Accounts on this computer</p>
+        <AccountSwitcherSection
+          accounts={accountMenu.accounts}
+          busy={accountMenu.busy || disabled}
+          onSignIn={() => void accountMenu.signIn(activePubkey)}
+          onSwitch={(account) => void accountMenu.switchTo(account)}
+          unread={unread}
+        />
+      </div>
+      <CreateAccountDialog login={accountMenu.signupPrompt} />
+    </SettingsOptionRow>
+  );
+}
+
 function ActiveAccount({
   status,
   busy,
@@ -353,9 +383,6 @@ function ActiveAccount({
               {email ?? "Signed in with Google"}
             </p>
           ) : null}
-          <p className="text-sm text-muted-foreground/70">
-            Switch or add accounts from your profile menu.
-          </p>
         </div>
         <Button
           data-testid="account-sign-out"
@@ -367,6 +394,7 @@ function ActiveAccount({
           Sign out
         </Button>
       </SettingsOptionRow>
+      <AccountsOnThisComputer disabled={disabled} />
       <SettingsConfirmDialog
         confirmLabel="Sign out"
         description={signOutDescription(next ? accountLabel(next) : null)}

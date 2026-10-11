@@ -68,6 +68,9 @@ const tauriMock = {
         return Promise.resolve(runtimes);
       case "list_accounts":
         return Promise.resolve(accounts);
+      case "switch_account":
+        // Never settles by default: the real flow reloads afterwards.
+        return new Promise(() => {});
       case "own_agent_pubkeys":
         // Agents of another account on this computer are never offered.
         return Promise.resolve(
@@ -333,12 +336,10 @@ test("Google backup sessions do not offer token-agent revocation or identity del
   });
   const { container, unmount } = await mount();
   assert.match(container.textContent, /Signed in with Google/);
-  // Another Google account is added from the profile menu, not checked here.
+  // Another Google account is added from the accounts list, not checked here.
   assert.doesNotMatch(container.textContent, /Check Google sign-in/);
-  assert.match(
-    container.textContent,
-    /Switch or add accounts from your profile menu\./,
-  );
+  assert.match(container.textContent, /Accounts on this computer/);
+  assert.match(container.textContent, /Add account/);
   assert.doesNotMatch(container.textContent, /bkeyb|signing|backup/i);
   assert.doesNotMatch(
     container.textContent,
@@ -816,5 +817,78 @@ test("onStatusChange reports each settled status to the Profile panel", async ()
   assert.ok(seen.length >= 1);
   assert.ok(seen.every((next) => next !== null));
   assert.equal(seen.at(-1).keyBackup, true);
+  await unmount();
+});
+
+test("the card lists this computer's accounts to switch to or add, like the profile menu", async () => {
+  accounts = [
+    account("cd".repeat(32), { active: true, displayName: "Jiho" }),
+    account("ef".repeat(32), { displayName: "Work" }),
+    account("12".repeat(32), { displayName: "Gone", state: "signed_out" }),
+  ];
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+  });
+  const { container, unmount } = await mount();
+  await settle(() =>
+    container.querySelector(
+      "[data-testid='settings-accounts'] [data-testid^='account-row-']",
+    ),
+  );
+  const list = container.querySelector("[data-testid='settings-accounts']");
+  const rows = [...list.querySelectorAll("[data-testid^='account-row-']")];
+  assert.deepEqual(
+    rows.map((row) => row.getAttribute("data-testid")),
+    [`account-row-${"cd".repeat(32)}`, `account-row-${"ef".repeat(32)}`],
+    "signed-out accounts are left out, as in the profile menu",
+  );
+  assert.match(rows[1].textContent, /Work/);
+  assert.equal(rows[0].getAttribute("aria-current"), "true");
+  await act(async () => fireEvent.click(rows[0]));
+  assert.equal(
+    calls.some((c) => c.command === "switch_account"),
+    false,
+    "the active account is not switched to",
+  );
+  await act(async () => fireEvent.click(rows[1]));
+  await settle(() => calls.some((c) => c.command === "switch_account"));
+  assert.deepEqual(
+    calls.filter((c) => c.command === "switch_account").map((c) => c.args),
+    [{ pubkey: "ef".repeat(32) }],
+  );
+  assert.equal(
+    window.sessionStorage.getItem("buzz:switching-to"),
+    null,
+    "nothing reloads before the switch settles",
+  );
+  accountSwitch.resetAccountSwitchForTests();
+  accounts = [];
+  await unmount();
+});
+
+test("Add account in the card starts a Google sign-in for another account", async () => {
+  accounts = [account("cd".repeat(32), { active: true, displayName: "Jiho" })];
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+  });
+  const { container, unmount } = await mount();
+  const add = container.querySelector(
+    "[data-testid='settings-accounts'] [data-testid='account-add']",
+  );
+  assert.ok(add);
+  await act(async () => fireEvent.click(add));
+  await settle(() => calls.some((c) => c.command === "login_with_google"));
+  assert.equal(
+    calls.filter((c) => c.command === "login_with_google").length,
+    1,
+  );
+  accountSwitch.resetAccountSwitchForTests();
+  accounts = [];
   await unmount();
 });
