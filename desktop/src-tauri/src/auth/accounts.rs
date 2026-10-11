@@ -1490,9 +1490,11 @@ fn account_summaries(
     summaries
 }
 
-/// Record the active account's Buzz profile name for the account menu. A
-/// name for any other account is ignored: the UI that read it may belong to
-/// an account just switched away from.
+/// Record the active account's Buzz profile name for the account menu.
+/// `pubkey` is the UI's identity: the account key, or in token mode the
+/// session principal. A name for any other account is ignored: the UI that
+/// read it may belong to an account just switched away from. Stored under
+/// the account key, which is what the account list is keyed by.
 #[tauri::command]
 pub fn remember_account_buzz_name(
     app: tauri::AppHandle,
@@ -1501,13 +1503,13 @@ pub fn remember_account_buzz_name(
 ) -> Result<(), String> {
     use tauri::Manager;
     let state = app.state::<crate::app_state::AppState>();
-    let account = PublicKey::from_hex(&pubkey).map_err(|_| "invalid account")?;
-    let active = state
+    let claimed = PublicKey::from_hex(&pubkey).map_err(|_| "invalid account")?;
+    let account = state
         .keys
         .lock()
         .map_err(|_| "identity storage is busy")?
         .public_key();
-    if active != account {
+    if claimed != account && claimed != state.current_identity_pubkey()? {
         return Ok(());
     }
     let data_dir = app
