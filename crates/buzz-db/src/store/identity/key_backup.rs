@@ -77,6 +77,28 @@ impl Db {
         .await
     }
 
+    /// Sign in to an existing key-backup account without ever creating one:
+    /// an unknown identity fails with `AccessDenied("signup_required")`.
+    pub async fn login_existing_key_identity(
+        &self,
+        provider: &str,
+        subject: &str,
+        email: Option<&str>,
+        display_name: &str,
+        avatar_url: Option<&str>,
+    ) -> Result<LoginPrincipal> {
+        super::principal::login_identity_mode(
+            &self.pool,
+            provider,
+            subject,
+            email,
+            display_name,
+            avatar_url,
+            super::principal::IdentityLoginMode::ExistingKeyBackup,
+        )
+        .await
+    }
+
     /// Preserve existing token-account logins without creating a new unrelated
     /// messaging principal on a custody-enabled deployment.
     pub async fn login_existing_token_identity(

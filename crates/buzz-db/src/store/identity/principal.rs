@@ -160,6 +160,9 @@ pub(super) enum IdentityLoginMode {
     Token,
     ExistingToken,
     KeyBackup,
+    /// Key-backup login that never creates: an unknown identity fails with
+    /// `signup_required` so the client can ask before the account exists.
+    ExistingKeyBackup,
 }
 
 pub(super) async fn login_identity_mode(
@@ -173,7 +176,7 @@ pub(super) async fn login_identity_mode(
 ) -> Result<LoginPrincipal> {
     let mode = match requested_mode {
         IdentityLoginMode::Token | IdentityLoginMode::ExistingToken => "token",
-        IdentityLoginMode::KeyBackup => "key_backup",
+        IdentityLoginMode::KeyBackup | IdentityLoginMode::ExistingKeyBackup => "key_backup",
     };
     // Two attempts: a concurrent first login for the same subject makes our
     // identity insert a no-op; the retry then finds the winner's principal.
@@ -227,6 +230,9 @@ pub(super) async fn login_identity_mode(
 
         if matches!(requested_mode, IdentityLoginMode::ExistingToken) {
             return Err(DbError::AccessDenied("unsupported_client".into()));
+        }
+        if matches!(requested_mode, IdentityLoginMode::ExistingKeyBackup) {
+            return Err(DbError::AccessDenied("signup_required".into()));
         }
         let principal = PrincipalId::generate();
         sqlx::query(
