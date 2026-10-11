@@ -3,10 +3,11 @@ import { Target } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
-import { goalRoot } from "../goalTree";
+import { type GoalLinkTarget, goalRoot } from "../goalTree";
 import {
   useApplyGoalOpMutation,
   useGoalAssigneeNames,
+  useGoalLinkKinds,
   useGoalTreeQuery,
 } from "../hooks";
 import type { Apply } from "./GoalRows";
@@ -59,18 +60,19 @@ export function GoalHeaderChip({
 export function ThreadGoalPanel({
   channelId,
   defaultExpanded,
-  onOpenThread,
+  onOpenLink,
   threadRootId,
 }: {
   channelId: string;
   defaultExpanded?: boolean;
-  onOpenThread?: (threadRootId: string) => void;
+  onOpenLink?: (target: GoalLinkTarget) => void;
   threadRootId: string;
 }) {
   const goalQuery = useGoalTreeQuery(channelId);
   const applyMutation = useApplyGoalOpMutation(channelId);
   const tree = goalQuery.data?.tree;
   const nameOf = useGoalAssigneeNames(tree);
+  const linkKinds = useGoalLinkKinds(channelId, tree);
   const applyGoalOp = applyMutation.mutateAsync;
   const apply = React.useCallback<Apply>(
     (op) => applyGoalOp(op),
@@ -86,8 +88,9 @@ export function ThreadGoalPanel({
           ? applyMutation.error.message
           : null
       }
+      linkKinds={linkKinds}
       nameOf={nameOf}
-      onOpenThread={onOpenThread}
+      onOpenLink={onOpenLink}
       threadRootId={threadRootId}
       tree={tree}
     />
@@ -101,26 +104,26 @@ export function ThreadGoalPanel({
  */
 export function ThreadGoalHeaderChip({
   channelId,
-  onOpenThread,
+  onOpenLink,
   threadRootId,
 }: {
   channelId: string;
-  /** Go to another goal's thread (closes the popover). */
-  onOpenThread?: (threadRootId: string) => void;
+  /** Go to another goal's thread or message (closes the popover). */
+  onOpenLink?: (target: GoalLinkTarget) => void;
   threadRootId: string;
 }) {
   const goalQuery = useGoalTreeQuery(channelId);
   const root = goalQuery.data ? goalRoot(goalQuery.data.tree) : null;
   const [open, setOpen] = React.useState(false);
-  const openThread = React.useMemo(
+  const openLink = React.useMemo(
     () =>
-      onOpenThread
-        ? (thread: string) => {
+      onOpenLink
+        ? (target: GoalLinkTarget) => {
             setOpen(false);
-            onOpenThread(thread);
+            onOpenLink(target);
           }
         : undefined,
-    [onOpenThread],
+    [onOpenLink],
   );
   if (!root) return null;
   return (
@@ -141,7 +144,7 @@ export function ThreadGoalHeaderChip({
         <ThreadGoalPanel
           channelId={channelId}
           defaultExpanded
-          onOpenThread={openThread}
+          onOpenLink={openLink}
           threadRootId={threadRootId}
         />
       </PopoverContent>

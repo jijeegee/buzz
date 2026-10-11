@@ -127,3 +127,76 @@ export function threadGoalAccess(
     return "muted";
   };
 }
+
+/**
+ * Where a goal may be linked from a message's menu. In a thread the message
+ * may link only the thread's goal and its sub-goals, or any goal while the
+ * thread has none (the thread's own picker rule); on the main timeline it
+ * may link layer 2 and below. New goals may be added under any goal whose
+ * child would be linkable.
+ */
+export type GoalLinkScope = {
+  canAddUnder: (id: string) => boolean;
+  canLink: (id: string, layer: number) => boolean;
+};
+
+export function messageGoalLinkScope(
+  tree: GoalTree,
+  threadRootId: string | null,
+): GoalLinkScope {
+  const threadGoal = threadRootId ? goalForThread(tree, threadRootId) : null;
+  if (threadGoal) {
+    const editable = goalSubtreeIds(tree, threadGoal.id);
+    return {
+      canAddUnder: (id) => editable.has(id),
+      canLink: (id) => editable.has(id),
+    };
+  }
+  return {
+    canAddUnder: () => true,
+    canLink: (_id, layer) => threadRootId !== null || layer >= 2,
+  };
+}
+
+/**
+ * What a goal's linked id is. Links share one list: a main-timeline message
+ * with replies is a thread, one without is a message, and a reply is a
+ * message inside its thread. `missing` covers deleted or unknown events.
+ */
+export type GoalLinkInfo =
+  | { kind: "thread" | "message" | "missing" }
+  | { kind: "reply"; threadRootId: string };
+
+export type GoalLinkTarget =
+  | { kind: "thread"; threadRootId: string }
+  | { kind: "message"; messageId: string; threadRootId: string | null };
+
+/**
+ * Label and destination of a linked id. Unknown links (still loading) act
+ * as threads, as they did before message links; missing ones go nowhere.
+ */
+export function goalLinkView(
+  id: string,
+  info: GoalLinkInfo | undefined,
+): { label: "Thread" | "Message"; target: GoalLinkTarget | null } {
+  switch (info?.kind) {
+    case "message":
+      return {
+        label: "Message",
+        target: { kind: "message", messageId: id, threadRootId: null },
+      };
+    case "reply":
+      return {
+        label: "Message",
+        target: {
+          kind: "message",
+          messageId: id,
+          threadRootId: info.threadRootId,
+        },
+      };
+    case "missing":
+      return { label: "Message", target: null };
+    default:
+      return { label: "Thread", target: { kind: "thread", threadRootId: id } };
+  }
+}

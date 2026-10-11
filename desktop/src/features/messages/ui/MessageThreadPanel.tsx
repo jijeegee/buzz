@@ -51,7 +51,10 @@ import { UnreadDivider } from "./UnreadDivider";
 import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
-import { threadGoalRootId } from "@/features/goals/goalTree";
+import {
+  type GoalLinkTarget,
+  threadGoalRootId,
+} from "@/features/goals/goalTree";
 import { ThreadGoalHeaderChip } from "@/features/goals/ui/GoalChips";
 import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
@@ -133,8 +136,8 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   isFollowingThread?: boolean;
   isMessageUnreadById?: (messageId: string) => boolean;
   onFollowThread?: () => void;
-  /** Open another thread from the goal tree. */
-  onOpenGoalThread?: (threadRootId: string) => void;
+  /** Open another thread or a message from the goal tree. */
+  onOpenGoalLink?: (target: GoalLinkTarget) => void;
   onUnfollowThread?: () => void;
   /**
    * When set to `thread:<threadHead.id>`, the thread composer auto-submits
@@ -190,7 +193,7 @@ export function MessageThreadPanel({
   onEditLastOwnMessage,
   onEditSave,
   onFollowThread,
-  onOpenGoalThread,
+  onOpenGoalLink,
   onMarkUnread,
   onMarkRead,
   onExpandReplies,
@@ -528,7 +531,7 @@ export function MessageThreadPanel({
     goalsEnabled && channelId ? (
       <ThreadGoalHeaderChip
         channelId={channelId}
-        onOpenThread={onOpenGoalThread}
+        onOpenLink={onOpenGoalLink}
         threadRootId={threadGoalRootId(threadHead)}
       />
     ) : null;

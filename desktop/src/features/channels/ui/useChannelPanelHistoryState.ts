@@ -13,6 +13,7 @@ import {
 } from "@/shared/hooks/useHistorySearchState";
 import {
   buildAutoSendClearPatch,
+  buildMessageJumpPatch,
   CHANNEL_SEARCH_KEYS,
 } from "./channelSearchKeys";
 export type { ChannelSearchKey } from "./channelSearchKeys";
@@ -116,9 +117,15 @@ export function useChannelPanelHistoryState() {
     [applyPatch],
   );
 
+  const openMessageRouteTarget = React.useCallback(
+    (messageId: string, threadRootId: string | null) =>
+      applyPatch(buildMessageJumpPatch(messageId, threadRootId)),
+    [applyPatch],
+  );
+
   const clearMessageRouteTarget = React.useCallback(
     (options?: PanelSetterOptions) =>
-      applyPatch({ messageId: null, threadRootId: null }, options),
+      applyPatch({ jump: null, messageId: null, threadRootId: null }, options),
     [applyPatch],
   );
 
@@ -139,6 +146,9 @@ export function useChannelPanelHistoryState() {
         ? ("goals" as const)
         : null,
     openGoalsPanel,
+    openMessageRouteTarget,
+    /** The route target is only jumped to (see `buildMessageJumpPatch`). */
+    messageRouteJumpOnly: values.jump === "1",
     clearAutoSend,
     clearMessageRouteTarget,
     openAgentSessionChannelId: values.agentSessionChannel,

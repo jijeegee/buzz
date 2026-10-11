@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/theme/theme.dart';
 import 'goal_actions_sheet.dart';
 import 'goal_editing.dart';
+import 'goal_links.dart';
 import 'goal_provider.dart';
 import 'goal_thread_navigation.dart';
 import 'goal_tile.dart';
@@ -97,6 +98,9 @@ class _GoalsBody extends ConsumerWidget {
     }
 
     final rows = tree.outline().skip(1).toList();
+    final linkKinds = ref
+        .watch(goalLinkKindsProvider(goalLinkKindsKey(channelId, tree)))
+        .value;
     final progress = tree.progress(root.id);
     return ListView(
       padding: const EdgeInsets.all(Grid.gutter),
@@ -173,13 +177,14 @@ class _GoalsBody extends ConsumerWidget {
                 UpdateGoal(id: row.node.id, status: row.node.status.next),
               ),
             ),
-            onOpenThread: (thread) => openGoalThread(
+            onOpenLink: (target) => openGoalLink(
               context,
               ref,
               channelId: channelId,
-              threadRootId: thread,
+              target: target,
               replaceCurrent: false,
             ),
+            linkKinds: linkKinds,
           ),
         TextButton.icon(
           key: const ValueKey('goals-add-layer2'),
