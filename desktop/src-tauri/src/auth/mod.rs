@@ -46,6 +46,9 @@ use zeroize::Zeroizing;
 /// Tauri event emitted whenever a community's token-auth state changes. The
 /// payload is the relay origin.
 pub(crate) const TOKEN_AUTH_CHANGED_EVENT: &str = "token-auth-changed";
+/// Tauri event emitted when the accounts signed in on this computer may have
+/// changed. Payload: the origin.
+pub(crate) const ACCOUNTS_CHANGED_EVENT: &str = "accounts-changed";
 
 /// How long a NIP-11 support probe is trusted.
 const SUPPORT_TTL: Duration = Duration::from_secs(60);

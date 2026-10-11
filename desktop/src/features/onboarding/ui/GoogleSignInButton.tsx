@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import {
   getTokenAuthStatus,
+  identityReload,
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
@@ -68,7 +69,7 @@ export function GoogleSignInButton({
       .then(async (next) => {
         if (!next) return;
         if (onComplete) await onComplete();
-        else window.location.reload();
+        else identityReload.reload();
       })
       .catch((error: unknown) => {
         setPending(false);

@@ -1490,6 +1490,53 @@ fn account_summaries(
     summaries
 }
 
+/// A signed-in account the UI watches in the background for new messages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchableAccount {
+    pub origin: String,
+    pub pubkey: String,
+}
+
+/// Signed-in accounts on every server except the open one (the active account
+/// on the current server), for background notifications and unread badges.
+#[tauri::command]
+pub fn list_watchable_accounts(app: tauri::AppHandle) -> Result<Vec<WatchableAccount>, String> {
+    use tauri::Manager;
+    let state = app.state::<crate::app_state::AppState>();
+    let origin = state.current_auth_origin();
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "account storage is unavailable")?;
+    let registry = load_registry(&data_dir)?.unwrap_or_default();
+    let signed_out = &state.token_auth.signed_out;
+    Ok(watchable_accounts(&registry, &origin, |origin, key| {
+        signed_out.is_signed_out(origin, Some(key))
+    }))
+}
+
+/// [`list_watchable_accounts`] without the app. Pure.
+fn watchable_accounts(
+    registry: &Registry,
+    current_origin: &str,
+    is_signed_out: impl Fn(&str, PublicKey) -> bool,
+) -> Vec<WatchableAccount> {
+    registry
+        .accounts
+        .iter()
+        .filter(|a| a.state == AccountState::SignedIn && a.origin != ANY_ORIGIN)
+        .filter(|a| !(a.origin == current_origin && registry.active.as_ref() == Some(&a.pubkey)))
+        .filter_map(|a| {
+            let key = PublicKey::from_hex(&a.pubkey).ok()?;
+            (!is_signed_out(&a.origin, key)).then(|| WatchableAccount {
+                origin: a.origin.clone(),
+                pubkey: a.pubkey.clone(),
+            })
+        })
+        .collect()
+}
+
 /// Record the active account's Buzz profile name for the account menu.
 /// `pubkey` is the UI's identity: the account key, or in token mode the
 /// session principal. A name for any other account is ignored: the UI that

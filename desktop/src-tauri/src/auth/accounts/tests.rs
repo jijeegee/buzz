@@ -993,10 +993,19 @@ fn signing_out_the_active_account_switches_to_another_signed_in_one() {
     registry.upsert(ORIGIN, &b, AccountState::SignedOut);
     registry.upsert("https://other.test", &c, AccountState::SignedIn);
     // B is signed out and C is on another server: nothing to switch to.
-    assert_eq!(next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(a)), None);
+    assert_eq!(
+        next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(a)),
+        None
+    );
     registry.upsert(ORIGIN, &c, AccountState::SignedIn);
-    assert_eq!(next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(a)), Some(c));
-    assert_eq!(next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(c)), Some(a));
+    assert_eq!(
+        next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(a)),
+        Some(c)
+    );
+    assert_eq!(
+        next_signed_in_of(&registry, &Default::default(), ORIGIN, Some(c)),
+        Some(a)
+    );
 }
 
 #[test]
@@ -1076,5 +1085,38 @@ fn sign_out_switches_to_the_most_recently_used_signed_in_account() {
     );
     let mut alone = Registry::default();
     alone.upsert(ORIGIN, &leaving, AccountState::SignedIn);
-    assert_eq!(next_signed_in_of(&alone, &profiles, ORIGIN, Some(leaving)), None);
+    assert_eq!(
+        next_signed_in_of(&alone, &profiles, ORIGIN, Some(leaving)),
+        None
+    );
+}
+
+#[test]
+fn watchable_accounts_skip_the_open_account_and_signed_out_ones() {
+    let (active, other, needs, gone) = (
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+    );
+    const ELSEWHERE: &str = "https://other.test";
+    let mut registry = Registry::default();
+    registry.upsert(ORIGIN, &active, AccountState::SignedIn);
+    registry.upsert(ORIGIN, &other, AccountState::SignedIn);
+    registry.upsert(ORIGIN, &needs, AccountState::NeedsLogin);
+    registry.upsert(ORIGIN, &gone, AccountState::SignedIn);
+    // The active account on another server is not the open one.
+    registry.upsert(ELSEWHERE, &active, AccountState::SignedIn);
+    registry.active = Some(active.to_hex());
+    let list = watchable_accounts(&registry, ORIGIN, |origin, key| {
+        origin == ORIGIN && key == gone
+    });
+    let pairs: HashSet<(String, String)> = list.into_iter().map(|a| (a.origin, a.pubkey)).collect();
+    assert_eq!(
+        pairs,
+        HashSet::from([
+            (ORIGIN.to_string(), other.to_hex()),
+            (ELSEWHERE.to_string(), active.to_hex()),
+        ])
+    );
 }

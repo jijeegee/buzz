@@ -1,9 +1,7 @@
 import * as React from "react";
 
-import { closeAllWebSockets } from "@/shared/api/relayWebSocketClose";
+import { closeSocketsThenReload } from "@/shared/api/relayWebSocketClose";
 import { hasPrimaryShortcutModifier } from "@/shared/lib/platform";
-
-const RELOAD_TEARDOWN_TIMEOUT_MS = 500;
 
 type ShortcutKeyEvent = Pick<
   KeyboardEvent,
@@ -66,13 +64,7 @@ export function useReloadShortcut() {
         return;
       }
 
-      await Promise.race([
-        closeAllWebSockets(),
-        new Promise<void>((resolve) =>
-          window.setTimeout(resolve, RELOAD_TEARDOWN_TIMEOUT_MS),
-        ),
-      ]);
-      window.location.reload();
+      await closeSocketsThenReload();
     }
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });

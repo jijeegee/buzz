@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import { closeSocketsThenReload } from "@/shared/api/relayWebSocketClose";
 import { invokeTauri } from "@/shared/api/tauri";
 
 /**
@@ -119,6 +120,20 @@ export type AccountSummary = {
   /** Unix seconds of the last sign-in or switch to it. */
   lastUsedAt: number | null;
 };
+
+/** A signed-in account watched in the background (not the open one). */
+export type WatchableAccount = { origin: string; pubkey: string };
+
+/**
+ * Signed-in accounts on every server except the open one, for background
+ * notifications and unread badges. Re-read on `ACCOUNTS_CHANGED_EVENT`.
+ */
+export function listWatchableAccounts(): Promise<WatchableAccount[]> {
+  return invokeTauri<WatchableAccount[]>("list_watchable_accounts");
+}
+
+/** Emitted when the accounts signed in on this computer may have changed. */
+export const ACCOUNTS_CHANGED_EVENT = "accounts-changed";
 
 /** Accounts on this computer for the current community, most recent first. */
 export function listAccounts(): Promise<AccountSummary[]> {
@@ -261,6 +276,7 @@ export function tokenIdentityChanged(
  */
 export const identityReload = {
   reload(): void {
-    window.location.reload();
+    // Sockets first: a reload alone leaves them open in the native layer.
+    void closeSocketsThenReload();
   },
 };

@@ -28,3 +28,37 @@ export function closeAllWebSockets(
     },
   );
 }
+
+/** How long a reload waits for native sockets to close before going ahead. */
+export const RELOAD_TEARDOWN_TIMEOUT_MS = 500;
+
+/**
+ * Close every native socket, then reload. A webview reload does not close
+ * them: the native read loop outlives the page and keeps the connection (and
+ * its relay subscriptions) open. A close that hangs never blocks the reload.
+ */
+export async function closeSocketsThenReload(
+  deps: {
+    closeAll?: () => Promise<void>;
+    reload?: () => void;
+    timeoutMs?: number;
+  } = {},
+): Promise<void> {
+  const {
+    closeAll = () => closeAllWebSockets(),
+    reload = () => window.location.reload(),
+    timeoutMs = RELOAD_TEARDOWN_TIMEOUT_MS,
+  } = deps;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      closeAll().catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    reload();
+  }
+}

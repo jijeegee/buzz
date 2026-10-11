@@ -12,6 +12,7 @@ import {
   type AuthDevice,
   deleteTokenAccount,
   getTokenAuthStatus,
+  identityReload,
   listAccounts,
   listAuthDevices,
   logoutTokenSession,
@@ -60,7 +61,7 @@ function errorText(error: unknown, fallback: string): string {
  * on the signed-out screen.
  */
 function reloadIntoNewIdentity() {
-  window.location.reload();
+  identityReload.reload();
 }
 
 export const SIGN_OUT_DESCRIPTION =
@@ -516,7 +517,7 @@ function ActiveAccount({
                   onClick={() =>
                     void run("Delete account", async () => {
                       await deleteTokenAccount();
-                      window.location.reload();
+                      identityReload.reload();
                     })
                   }
                   type="button"
