@@ -26,16 +26,7 @@ import {
   extractToolResult,
   parsePromptBlocks,
   parseSystemPromptSections,
-  rawPayloadTitle,
-  stringifyPayload,
 } from "./agentSessionTranscriptHelpers";
-import {
-  closeTurnTools,
-  describeObserverGap,
-  extractToolArgsPreview,
-  isSummaryDetail,
-  OBSERVER_GAP_KIND,
-} from "./agentSessionObserverSummary";
 import { friendlyTurnErrorCopy } from "../lib/friendlyAgentLastError";
 
 export { describeRawEvent } from "./agentSessionTranscriptHelpers";
@@ -172,6 +163,14 @@ function maybeNostrEventId(id: string | null | undefined) {
   return id && /^[0-9a-fA-F]{64}$/.test(id) ? id : null;
 }
 
+function stringifyPayload(value: unknown) {
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function describePermissionRequest(payload: Record<string, unknown>) {
   const params = asRecord(payload.params);
   const title =
@@ -271,6 +270,11 @@ function describeFreeformStatus(payload: Record<string, unknown>) {
   const text = asString(payload.text) ?? asString(payload.message);
   if (!title || !text) return null;
   return { statusType: statusType ?? title.toLowerCase(), title, text };
+}
+
+function rawPayloadTitle(payload: unknown) {
+  const record = asRecord(payload);
+  return asString(record.method) ?? asString(record.type) ?? "raw_json_rpc";
 }
 
 type TranscriptItemContext = {
@@ -613,7 +617,6 @@ function upsertTool(
   timestamp: string,
   ctx: TranscriptItemContext,
   acpSource?: string,
-  argsPreview: string | null = null,
 ) {
   const existing = d.itemsById.get(id);
   const canonicalBuzzToolName =
@@ -649,11 +652,6 @@ function upsertTool(
       buzzToolName: updatedBuzzToolName,
       status: mergedStatus,
       args: updatedArgs,
-      ...(argsPreview ? { argsPreview } : {}),
-      // A tool's own terminal update supersedes a close by the turn ending.
-      ...(existing.closedByTurnEnd && isTerminalToolStatus(status)
-        ? { closedByTurnEnd: false }
-        : {}),
       result: updatedResult,
       isError: updatedIsError,
       completedAt:
@@ -687,7 +685,6 @@ function upsertTool(
     buzzToolName: canonicalBuzzToolName,
     status,
     args,
-    ...(argsPreview ? { argsPreview } : {}),
     result,
     isError,
     timestamp,
@@ -708,10 +705,6 @@ export function processTranscriptEvent(
 
   if (event.sessionId && event.sessionId !== d.latestSessionId) {
     d.latestSessionId = event.sessionId;
-  }
-
-  for (const tool of closeTurnTools(d.items, event)) {
-    replaceItem(d, tool.id, tool);
   }
 
   const channelId = event.channelId ?? null;
@@ -776,17 +769,6 @@ export function processTranscriptEvent(
       ctx,
       event.kind,
     );
-  } else if (event.kind === OBSERVER_GAP_KIND) {
-    upsertLifecycleItem(
-      d,
-      `gap:${ch}:${event.seq}`,
-      "status",
-      describeObserverGap(event.payload),
-      "",
-      event.timestamp,
-      ctx,
-      event.kind,
-    );
   } else if (event.kind === "turn_error" || event.kind === "agent_panic") {
     const payload = asRecord(event.payload);
     const outcome = asString(payload.outcome) ?? "error";
@@ -807,7 +789,6 @@ export function processTranscriptEvent(
   } else if (event.kind === "acp_read" || event.kind === "acp_write") {
     const payload = asRecord(event.payload);
     const method = asString(payload.method);
-    const summarised = isSummaryDetail(event.detail);
 
     if (method === "session/request_permission") {
       const request = describePermissionRequest(payload);
@@ -1009,13 +990,12 @@ export function processTranscriptEvent(
           identity.toolName,
           identity.buzzToolName,
           normalizeToolStatus(asString(update.status) ?? "executing"),
-          summarised ? {} : extractToolArgs(update),
+          extractToolArgs(update),
           extractToolResult(update),
           false,
           event.timestamp,
           ctx,
           updateType,
-          summarised ? extractToolArgsPreview(update) : null,
         );
       } else if (updateType === "tool_call_update") {
         const toolId = asString(update.toolCallId) ?? `tool:${event.seq}`;
@@ -1030,13 +1010,12 @@ export function processTranscriptEvent(
           identity.toolName,
           identity.buzzToolName,
           status,
-          summarised ? {} : extractToolArgs(update),
+          extractToolArgs(update),
           extractToolResult(update),
           status === "failed",
           event.timestamp,
           ctx,
           updateType,
-          summarised ? extractToolArgsPreview(update) : null,
         );
       } else if (updateType === "plan") {
         upsertPlan(

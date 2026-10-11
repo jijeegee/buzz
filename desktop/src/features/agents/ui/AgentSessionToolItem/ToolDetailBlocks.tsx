@@ -9,7 +9,6 @@ import { ViewImageToolPreview } from "./ViewImageToolPreview";
 
 export function ToolDetailBlocks({
   args,
-  argsPreview,
   description,
   fileEditDiff,
   fileReadContent,
@@ -21,8 +20,6 @@ export function ToolDetailBlocks({
   shellCommand,
 }: {
   args: Record<string, unknown>;
-  /** Summarised tool calls carry only truncated argument text. */
-  argsPreview: string | null;
   description?: string;
   fileEditDiff: FileEditDiff | null;
   fileReadContent: FileReadContent | null;
@@ -59,7 +56,7 @@ export function ToolDetailBlocks({
         <ToolCodeBlock
           label="Parameters"
           tone="muted"
-          value={argsPreview ?? JSON.stringify(args, null, 2)}
+          value={JSON.stringify(args, null, 2)}
         />
       ) : null}
       {!showShellCommand && hasResult ? (
