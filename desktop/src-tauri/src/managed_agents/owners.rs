@@ -91,11 +91,10 @@ pub(crate) fn spawn_owner_hex<R: tauri::Runtime>(
 ) -> Result<String, String> {
     use tauri::Manager;
     let bot_principal = record.bot_origin.as_deref().and_then(|origin| {
-        let state = app.state::<crate::app_state::AppState>();
-        match state.token_auth.get(origin) {
-            Some((_, crate::auth::OriginAuth::Active(session))) => Some(session.principal),
-            _ => None,
-        }
+        token_account_principal(
+            &app.state::<crate::app_state::AppState>().token_auth,
+            origin,
+        )
     });
     let (owner, learned) =
         resolve_spawn_owner(record, agent_owner_hex(app, record), bot_principal)?;
@@ -103,6 +102,17 @@ pub(crate) fn spawn_owner_hex<R: tauri::Runtime>(
         record_agent_owner(app, &record.pubkey, &principal)?;
     }
     Ok(owner)
+}
+
+/// The principal of `origin`'s token account, which server bots there belong
+/// to. `None` unless the origin is in token mode: a Google key-backup sign-in
+/// also holds an active session, but its principal is the Google login, not
+/// the account that owns anything.
+fn token_account_principal(auth: &crate::auth::TokenAuthState, origin: &str) -> Option<PublicKey> {
+    match auth.mode(origin) {
+        crate::auth::CredentialMode::Token(session) => Some(session.principal),
+        _ => None,
+    }
 }
 
 /// [`spawn_owner_hex`] without the app: `known` is the agent's own owner and
@@ -272,5 +282,30 @@ mod tests {
             resolve_spawn_owner(&agent, Some(known.clone()), Some(principal)).unwrap(),
             (known, None)
         );
+    }
+
+    #[test]
+    fn a_bot_never_learns_its_owner_from_a_google_key_backup_session() {
+        let origin = "https://relay.test";
+        let auth = crate::auth::TokenAuthState::default();
+        let principal = nostr::Keys::generate().public_key();
+        auth.set(
+            origin,
+            crate::auth::OriginAuth::Active(crate::auth::UserSession {
+                principal,
+                device_id: None,
+                access: zeroize::Zeroizing::new("access".into()),
+                refresh: zeroize::Zeroizing::new("refresh".into()),
+                access_issued_at: 0,
+                access_expires_at: i64::MAX,
+            }),
+        );
+        // A token account: its principal owns the server bots.
+        assert_eq!(token_account_principal(&auth, origin), Some(principal));
+        // The same session under a Google key backup: its principal is the
+        // Google login, never an owner.
+        auth.set_key_backup(origin, nostr::Keys::generate().public_key());
+        assert_eq!(token_account_principal(&auth, origin), None);
+        assert_eq!(token_account_principal(&auth, "https://other.test"), None);
     }
 }

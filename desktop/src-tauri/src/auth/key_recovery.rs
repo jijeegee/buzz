@@ -383,12 +383,8 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         .inactive
         .stop(origin, &keys.public_key())
         .await;
-    let replaced = secrets
-        .load(&super::accounts::refresh_slot(&keys.public_key(), origin))
-        .ok()
-        .flatten()
-        .filter(|old| old.as_str() != &*tokens.refresh)
-        .map(Zeroizing::new);
+    let before = super::accounts::sign_in_before(secrets, &data_dir, origin, &keys.public_key())?;
+    let replaced = before_token_replaced(&before, &tokens.refresh);
     let account = keys.public_key();
     let committed = (|| -> Result<PublicKey, String> {
         let _guard = state
@@ -427,37 +423,37 @@ pub(crate) async fn complete<R: tauri::Runtime>(
     let pubkey = match committed {
         Ok(pubkey) => pubkey,
         Err(error) => {
-            // The commit may have written the new token into the account's
-            // slot before failing, and the caller revokes the new session:
-            // put the old token back so its session stays the live one.
-            let restored = match &replaced {
-                Some(old) => secrets
-                    .store(
-                        &super::accounts::refresh_slot(&account, origin),
-                        old.as_str(),
-                    )
-                    .is_ok(),
-                None => true,
+            // The commit may have got part-way (the new token in the
+            // account's slot, the list making it active) and the caller
+            // revokes the new session: put the account back as it was.
+            let restored = match super::accounts::roll_back_sign_in(
+                secrets,
+                &data_dir,
+                origin,
+                &account,
+                &tokens.refresh,
+                &before,
+            ) {
+                Ok(restored) => restored,
+                Err(rollback) => {
+                    eprintln!("buzz-desktop: auth: failed sign-in not rolled back: {rollback}");
+                    false
+                }
             };
-            // Keep it alive again in the background, unless it became the
-            // active account meanwhile (its foreground session refreshes it).
+            // Keep its old session alive again in the background, unless it
+            // became the active account meanwhile (its foreground session
+            // refreshes it). A lock failure here never hides `error`.
             if was_running && restored {
-                let _guard = state
-                    .identity_mutation
-                    .lock()
-                    .map_err(|_| "identity storage is busy")?;
-                let active_now = state
-                    .keys
-                    .lock()
-                    .map_err(|_| "identity storage is busy")?
-                    .public_key();
-                if active_now != account {
-                    state.token_auth.inactive.start(
-                        &state.http_client,
-                        Some(data_dir.clone()),
-                        origin,
-                        account,
-                    );
+                if let Ok(_guard) = state.identity_mutation.lock() {
+                    let active_now = state.keys.lock().ok().map(|keys| keys.public_key());
+                    if active_now.is_some_and(|active| active != account) {
+                        state.token_auth.inactive.start(
+                            &state.http_client,
+                            Some(data_dir.clone()),
+                            origin,
+                            account,
+                        );
+                    }
                 }
             }
             return Err(error);
@@ -491,6 +487,18 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         .store(false, std::sync::atomic::Ordering::Release);
     state.token_auth.set_key_backup(origin, pubkey);
     Ok(pubkey)
+}
+
+/// The old session a sign-in replaces: the account's token before it, when
+/// it differs from the new one.
+fn before_token_replaced(
+    before: &super::accounts::SignInBefore,
+    new_token: &str,
+) -> Option<Zeroizing<String>> {
+    before
+        .old_token()
+        .filter(|old| *old != new_token)
+        .map(|old| Zeroizing::new(old.to_owned()))
 }
 
 /// Whether "Connect" must be refused: only a listed key-only account's own

@@ -764,3 +764,67 @@ async fn hand_over_goes_on_past_a_failing_server_and_reports_it() {
     assert_eq!(state.token_auth.signing_pubkey(LATER), Some(current));
     assert_eq!(state.token_auth.signing_pubkey(FAILING), None);
 }
+
+#[test]
+fn a_failed_sign_in_commit_is_rolled_back_to_the_previous_account() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    let first = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &first, "token-a", Some(&first)).unwrap();
+
+    // An account already signed in here, in the background, signs in again
+    // and the active copy fails after its own slots were written.
+    let second = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &second, "token-b", Some(&first)).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &first, "token-a2", Some(&second)).unwrap();
+    let before = sign_in_before(&mem, dir.path(), ORIGIN, &second.public_key()).unwrap();
+    assert_eq!(before.old_token(), Some("token-b"));
+    *mem.fail_store_all.borrow_mut() = true;
+    assert!(commit_sign_in(&mem, dir.path(), ORIGIN, &second, "token-b2", Some(&first)).is_err());
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(registry.active_pubkey(), Some(second.public_key()));
+
+    let restored = roll_back_sign_in(
+        &mem,
+        dir.path(),
+        ORIGIN,
+        &second.public_key(),
+        "token-b2",
+        &before,
+    )
+    .unwrap();
+    assert!(restored);
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(registry.active_pubkey(), Some(first.public_key()));
+    assert_eq!(
+        registry.get(ORIGIN, &second.public_key()).map(|a| a.state),
+        Some(AccountState::SignedIn)
+    );
+    assert_eq!(
+        mem.get(&refresh_slot(&second.public_key(), ORIGIN))
+            .as_deref(),
+        Some("token-b")
+    );
+
+    // A new account with no session before: its revoked new token is not
+    // left behind as a signed-in session.
+    let third = Keys::generate();
+    let before = sign_in_before(&mem, dir.path(), ORIGIN, &third.public_key()).unwrap();
+    assert!(commit_sign_in(&mem, dir.path(), ORIGIN, &third, "token-c", Some(&first)).is_err());
+    assert!(!roll_back_sign_in(
+        &mem,
+        dir.path(),
+        ORIGIN,
+        &third.public_key(),
+        "token-c",
+        &before,
+    )
+    .unwrap());
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(registry.active_pubkey(), Some(first.public_key()));
+    assert_eq!(
+        registry.get(ORIGIN, &third.public_key()).map(|a| a.state),
+        Some(AccountState::SignedOut)
+    );
+    assert_eq!(mem.get(&refresh_slot(&third.public_key(), ORIGIN)), None);
+}

@@ -609,6 +609,97 @@ pub(crate) fn commit_sign_in(
     Ok(registry)
 }
 
+/// What a sign-in of an account on an origin may change, read before it
+/// commits so a failed commit can be undone ([`roll_back_sign_in`]).
+pub(crate) struct SignInBefore {
+    active: Option<String>,
+    state: Option<AccountState>,
+    token: Option<Zeroizing<String>>,
+}
+
+impl SignInBefore {
+    /// The account's refresh token on the origin before the sign-in.
+    pub(crate) fn old_token(&self) -> Option<&str> {
+        self.token.as_ref().map(|token| token.as_str())
+    }
+}
+
+pub(crate) fn sign_in_before(
+    secrets: &dyn Secrets,
+    data_dir: &Path,
+    origin: &str,
+    pubkey: &PublicKey,
+) -> Result<SignInBefore, String> {
+    let _lock = registry_lock();
+    let registry = load_registry(data_dir)?.unwrap_or_default();
+    Ok(SignInBefore {
+        active: registry.active.clone(),
+        state: registry.get(origin, pubkey).map(|a| a.state),
+        token: secrets
+            .load(&refresh_slot(pubkey, origin))?
+            .map(Zeroizing::new),
+    })
+}
+
+/// Undo what a failed [`commit_sign_in`] of `pubkey` on `origin` left behind,
+/// as far as it got: its own token slot holds the old token again (or, with
+/// none before, not the new one, whose session the caller revokes), the list
+/// no longer makes it active unless it was, and its state is the old one
+/// (`SignedOut` when no old session is left). Returns whether the old session
+/// is back in its slot.
+pub(crate) fn roll_back_sign_in(
+    secrets: &dyn Secrets,
+    data_dir: &Path,
+    origin: &str,
+    pubkey: &PublicKey,
+    new_token: &str,
+    before: &SignInBefore,
+) -> Result<bool, String> {
+    let _lock = registry_lock();
+    let slot = refresh_slot(pubkey, origin);
+    let current = secrets.load(&slot)?;
+    let restored = match &before.token {
+        Some(old) => {
+            if current.as_deref() != Some(old.as_str()) {
+                store_verified(secrets, &slot, old)?;
+            }
+            true
+        }
+        None => {
+            if current.as_deref() == Some(new_token) {
+                secrets.delete(&slot)?;
+            }
+            false
+        }
+    };
+    let Some(mut registry) = load_registry(data_dir)? else {
+        return Ok(restored);
+    };
+    let hex = pubkey.to_hex();
+    let mut changed = false;
+    if registry.active.as_deref() == Some(hex.as_str())
+        && before.active.as_deref() != Some(hex.as_str())
+    {
+        registry.active = before.active.clone();
+        changed = true;
+    }
+    let state = match before.state {
+        Some(state) if restored || state != AccountState::SignedIn => state,
+        _ => AccountState::SignedOut,
+    };
+    if registry
+        .get(origin, pubkey)
+        .is_some_and(|account| account.state != state)
+    {
+        registry.upsert(origin, pubkey, state);
+        changed = true;
+    }
+    if changed {
+        save_registry(secrets, data_dir, &registry)?;
+    }
+    Ok(restored)
+}
+
 /// Write the active-account copy the rest of the app reads: the key, and for
 /// `signed_in` = (origin, refresh token) that origin's binding and token. Other
 /// origins are handed over under their own refresh locks
