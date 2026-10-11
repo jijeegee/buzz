@@ -254,21 +254,84 @@ const GOALS_CHANGED: &str = "The goals changed. This replaces every earlier goal
 const GOALS_CLEARED: &str =
     "This conversation no longer has goals; earlier goal context no longer applies.";
 
-/// The `<goal-context>` body this turn sends, given what the session already
-/// holds (`seen`: `None` when unknown, `Some(None)` for no goals) and the
-/// goals now (`current`, rendered by [`render_goal_context`]). Goals reach a
-/// session once, in its system prompt or first turn, and again only when they
-/// change, so an unchanged tree adds nothing to the conversation history.
+/// The conversation's goals as of one turn, from one session's point of view.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GoalsNow {
+    /// The whole tree as the main timeline sees it (`None`: no goals). Two
+    /// turns hold the same goals exactly when this matches, whichever thread
+    /// each one is about.
+    tree: Option<String>,
+    /// The thread the turn is about, if any.
+    focus: Option<String>,
+    /// The `<goal-context>` body for that thread (`None`: no goals).
+    rendered: Option<String>,
+}
+
+impl GoalsNow {
+    pub(crate) fn new(tree: &GoalTree, channel_id: Uuid, focus: Option<&str>) -> Self {
+        Self {
+            tree: render_goal_context(tree, channel_id, None),
+            focus: focus.map(str::to_string),
+            rendered: render_goal_context(tree, channel_id, focus),
+        }
+    }
+
+    /// The `<goal-context>` body for this turn's thread.
+    pub(crate) fn rendered(&self) -> Option<&str> {
+        self.rendered.as_deref()
+    }
+}
+
+/// What a session holds of its conversation's goals.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct GoalsSeen {
+    /// The tree it holds (see [`GoalsNow::tree`]).
+    tree: Option<String>,
+    /// The threads whose view of that tree it holds. A session that serves
+    /// several threads gets each thread's view once per tree.
+    foci: std::collections::HashSet<Option<String>>,
+}
+
+impl GoalsSeen {
+    /// What the session holds after receiving `now`, on top of `before`.
+    pub(crate) fn after(before: Option<&GoalsSeen>, now: &GoalsNow) -> GoalsSeen {
+        let mut seen = match before {
+            Some(before) if before.tree == now.tree => before.clone(),
+            _ => GoalsSeen {
+                tree: now.tree.clone(),
+                foci: Default::default(),
+            },
+        };
+        seen.foci.insert(now.focus.clone());
+        seen
+    }
+}
+
+/// The `<goal-context>` body this turn sends, given what the session holds
+/// (`seen`: `None` when unknown) and the goals now. Goals reach a session
+/// once, in its system prompt or first turn, and again only when they change
+/// or the turn is about a thread whose view it has not had, so an unchanged
+/// tree adds nothing to the conversation history. `held_unknown` marks a
+/// session that may hold older goals nobody recorded (one reattached after a
+/// restart): goals it gets are then marked as replacing earlier ones. Removal
+/// is announced only to a session known to hold goals, so a restart does not
+/// tell every goal-less conversation that its goals are gone.
 pub(crate) fn goal_context_for_turn(
-    seen: Option<&Option<String>>,
-    current: Option<&str>,
+    seen: Option<&GoalsSeen>,
+    held_unknown: bool,
+    now: &GoalsNow,
 ) -> Option<String> {
-    match (seen, current) {
-        (Some(Some(seen)), Some(current)) if seen == current => None,
-        (Some(Some(_)), Some(current)) => Some(format!("{GOALS_CHANGED}\n\n{current}")),
-        (_, Some(current)) => Some(current.to_string()),
-        (Some(Some(_)), None) => Some(GOALS_CLEARED.to_string()),
-        (_, None) => None,
+    let held_goals = match seen {
+        Some(seen) => seen.tree.is_some(),
+        None => held_unknown,
+    };
+    let same_tree = seen.is_some_and(|seen| seen.tree == now.tree);
+    match &now.rendered {
+        Some(_) if same_tree && seen.is_some_and(|seen| seen.foci.contains(&now.focus)) => None,
+        Some(rendered) if same_tree || !held_goals => Some(rendered.clone()),
+        Some(rendered) => Some(format!("{GOALS_CHANGED}\n\n{rendered}")),
+        None if seen.is_some_and(|seen| seen.tree.is_some()) => Some(GOALS_CLEARED.to_string()),
+        None => None,
     }
 }
 
@@ -430,29 +493,39 @@ mod tests {
 
     #[test]
     fn goals_reach_a_session_once_and_again_only_when_they_change() {
-        let now = render_goal_context(&sample(), channel(), None).unwrap();
-        // Unknown or no goals yet: the whole context.
-        assert_eq!(goal_context_for_turn(None, Some(&now)), Some(now.clone()));
-        assert_eq!(
-            goal_context_for_turn(Some(&None), Some(&now)),
-            Some(now.clone())
-        );
+        let tree = sample();
+        let main = GoalsNow::new(&tree, channel(), None);
+        let send =
+            |seen: Option<&GoalsSeen>, now: &GoalsNow| goal_context_for_turn(seen, false, now);
+        // Unknown: the whole context, plainly.
+        assert_eq!(send(None, &main).as_deref(), main.rendered());
+        let seen = GoalsSeen::after(None, &main);
         // Unchanged: nothing at all.
-        assert_eq!(
-            goal_context_for_turn(Some(&Some(now.clone())), Some(&now)),
-            None
-        );
-        // Changed: the whole new context, marked as replacing the old one.
-        let changed = goal_context_for_turn(Some(&Some("older".into())), Some(&now)).unwrap();
+        assert_eq!(send(Some(&seen), &main), None);
+        // Same tree, another thread's view: that view once, not as a change.
+        let thread = GoalsNow::new(&tree, channel(), Some(THREAD));
+        assert_eq!(send(Some(&seen), &thread).as_deref(), thread.rendered());
+        let seen = GoalsSeen::after(Some(&seen), &thread);
+        assert_eq!(send(Some(&seen), &thread), None);
+        assert_eq!(send(Some(&seen), &main), None);
+        // Changed tree: the whole new context, marked as replacing the old.
+        let mut edited = tree.clone();
+        add(&mut edited, "new", "cas", "Retry on conflict");
+        let changed_now = GoalsNow::new(&edited, channel(), None);
+        let changed = send(Some(&seen), &changed_now).unwrap();
         assert!(changed.starts_with(GOALS_CHANGED));
-        assert!(changed.ends_with(&now));
+        assert!(changed.ends_with(changed_now.rendered().unwrap()));
         // Goals removed: said once; nothing when there never were any.
-        assert_eq!(
-            goal_context_for_turn(Some(&Some(now)), None).as_deref(),
-            Some(GOALS_CLEARED)
-        );
-        assert_eq!(goal_context_for_turn(Some(&None), None), None);
-        assert_eq!(goal_context_for_turn(None, None), None);
+        let gone = GoalsNow::new(&GoalTree::empty(), channel(), None);
+        assert_eq!(send(Some(&seen), &gone).as_deref(), Some(GOALS_CLEARED));
+        let seen = GoalsSeen::after(Some(&seen), &gone);
+        assert_eq!(send(Some(&seen), &gone), None);
+        assert_eq!(send(None, &gone), None);
+        // A reattached session may hold goals nobody recorded.
+        assert!(goal_context_for_turn(None, true, &main)
+            .unwrap()
+            .starts_with(GOALS_CHANGED));
+        assert_eq!(goal_context_for_turn(None, true, &gone), None);
     }
 
     #[test]

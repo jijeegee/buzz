@@ -134,10 +134,10 @@ pub struct ChannelDeliveryState {
     /// unknown, like `layer0_goals_seen`. A turn whose current settings
     /// differ carries a `<settings-update>`.
     pub live_text_seen: Option<crate::live_settings::LiveTextHashes>,
-    /// The `<goal-context>` this session last received (rendered goals, or
-    /// `Some(None)` for none), or `None` when unknown. A turn sends goals
-    /// only when they differ (see `goal_context::goal_context_for_turn`).
-    pub goal_context_seen: Option<Option<String>>,
+    /// The conversation goals this session holds, or `None` when unknown. A
+    /// turn sends goals only when they differ (see
+    /// `goal_context::goal_context_for_turn`).
+    pub goal_context_seen: Option<crate::goal_context::GoalsSeen>,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -320,10 +320,14 @@ impl SessionState {
     pub(crate) fn mark_goal_context_seen(
         &mut self,
         scope: SessionScope,
-        goals: Option<Option<String>>,
+        goals: Option<&crate::goal_context::GoalsNow>,
     ) {
         if let Some(goals) = goals {
-            self.deliveries.entry(scope).or_default().goal_context_seen = Some(goals);
+            let delivery = self.deliveries.entry(scope).or_default();
+            delivery.goal_context_seen = Some(crate::goal_context::GoalsSeen::after(
+                delivery.goal_context_seen.as_ref(),
+                goals,
+            ));
         }
     }
 
@@ -3410,28 +3414,25 @@ pub async fn run_prompt_task(
                 // The goals a new session starts with go in its system prompt;
                 // agents without one, and reattached sessions, get them on
                 // their first turn instead. `None`: not known (fetch failed).
-                let start_goals: Option<Option<String>> =
-                    if ctx.goals_enabled && agent.has_system_prompt_support() && reattach.is_none()
-                    {
-                        crate::goal_context::fetch_goal_tree(*cid, &ctx.rest_client)
-                            .await
-                            .map(|tree| {
-                                crate::goal_context::render_goal_context(
-                                    &tree,
-                                    *cid,
-                                    scope.root_event_id(),
-                                )
-                            })
-                    } else {
-                        None
-                    };
+                let start_goals = if ctx.goals_enabled
+                    && agent.has_system_prompt_support()
+                    && reattach.is_none()
+                {
+                    crate::goal_context::fetch_goal_tree(*cid, &ctx.rest_client)
+                        .await
+                        .map(|tree| {
+                            crate::goal_context::GoalsNow::new(&tree, *cid, scope.root_event_id())
+                        })
+                } else {
+                    None
+                };
                 match open_session_and_apply_model(
                     &mut agent,
                     &ctx,
                     agent_core.as_deref(),
                     LiveStanding::new(&live_now, layer0_now.as_deref()),
                     NewSessionChannelContext {
-                        goals: start_goals.as_ref().and_then(|goals| goals.as_deref()),
+                        goals: start_goals.as_ref().and_then(|goals| goals.rendered()),
                         huddle_instructions: huddle_instructions.as_deref(),
                         canvas: agent_canvas.as_deref(),
                         roster: channel_roster.as_deref(),
@@ -3481,11 +3482,12 @@ pub async fn run_prompt_task(
                                     .filter(|held| held.layer0_goals == standing_now.layer0_goals)
                                     .map(|_| layer0_now.clone()),
                                 live_text_seen: held.as_ref().map(|held| held.text.clone()),
-                                goal_context_seen: if reattached {
-                                    None
-                                } else {
-                                    start_goals.clone()
-                                },
+                                goal_context_seen: start_goals
+                                    .as_ref()
+                                    .filter(|_| !reattached)
+                                    .map(|goals| {
+                                        crate::goal_context::GoalsSeen::after(None, goals)
+                                    }),
                                 ..Default::default()
                             },
                         );
@@ -3816,7 +3818,7 @@ pub async fn run_prompt_task(
     let mut slash_command: Option<String> = None;
     // The goals as of this turn (`Some(None)`: none), or `None` when not
     // fetched; recorded as what the session holds once the turn succeeds.
-    let mut goal_context_now: Option<Option<String>> = None;
+    let mut goal_context_now: Option<crate::goal_context::GoalsNow> = None;
     // Event IDs represented by this prompt. Commit only after ACP reports a
     // successful turn; failed/cancelled prompts must be retryable without loss.
     let mut pending_delivered_event_ids = HashSet::new();
@@ -3938,7 +3940,7 @@ pub async fn run_prompt_task(
             fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
         // The goals now; sent below only when the session does not hold them.
         let goal_context_current = goal_tree.map(|tree| {
-            crate::goal_context::render_goal_context(
+            crate::goal_context::GoalsNow::new(
                 &tree,
                 b.channel_id,
                 // The thread this turn belongs to: the fetched thread,
@@ -3955,10 +3957,11 @@ pub async fn run_prompt_task(
         // layer 0 goals; otherwise tell a live session once that they changed.
         let standing_in_this_prompt = !agent.has_system_prompt_support() && !standing_context_sent;
         let delivery = agent.state.deliveries.get(&b.scope);
-        let goal_context = goal_context_current.as_ref().and_then(|current| {
+        let goal_context = goal_context_current.as_ref().and_then(|now| {
             crate::goal_context::goal_context_for_turn(
                 delivery.and_then(|delivery| delivery.goal_context_seen.as_ref()),
-                current.as_deref(),
+                delivery.is_some_and(|delivery| delivery.session_reattached),
+                now,
             )
         });
         goal_context_now = goal_context_current;
@@ -4251,7 +4254,7 @@ pub async fn run_prompt_task(
                                 .mark_live_text_seen(scope.clone(), &live_now.text);
                             agent
                                 .state
-                                .mark_goal_context_seen(scope.clone(), goal_context_now.clone());
+                                .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
                         }
                         apply_completed_before_control_signal(
                             &mut agent.state,
@@ -4307,7 +4310,7 @@ pub async fn run_prompt_task(
                     .mark_live_text_seen(scope.clone(), &live_now.text);
                 agent
                     .state
-                    .mark_goal_context_seen(scope.clone(), goal_context_now.clone());
+                    .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
                 // Keep a session in steady use from aging out of the ledger,
                 // and remember what it now holds for a reattach after restart.
                 if let Some(ledger) = &ctx.session_ledger {
@@ -10259,7 +10262,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 session_reattached: false,
                 layer0_goals_seen: Some(None),
                 live_text_seen: Some(Default::default()),
-                goal_context_seen: Some(None),
+                goal_context_seen: Some(Default::default()),
             },
         );
         s.deliveries.insert(
@@ -10271,7 +10274,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 session_reattached: false,
                 layer0_goals_seen: Some(None),
                 live_text_seen: Some(Default::default()),
-                goal_context_seen: Some(None),
+                goal_context_seen: Some(Default::default()),
             },
         );
         s.heartbeat_session = Some("sess-hb".into());
