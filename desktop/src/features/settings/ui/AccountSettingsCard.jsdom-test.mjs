@@ -12,6 +12,8 @@ let loginBehavior;
 let cancelBehavior;
 let logoutBehavior;
 let runtimes = [];
+/** Running agents owned by another account signed in on this computer. */
+let foreignAgents = new Set();
 const callbacks = new Map();
 let progressCallback;
 function progress(attemptId, phase) {
@@ -63,6 +65,11 @@ const tauriMock = {
         return logoutBehavior ? logoutBehavior(args) : new Promise(() => {});
       case "list_managed_agent_runtimes":
         return Promise.resolve(runtimes);
+      case "own_agent_pubkeys":
+        // Agents of another account on this computer are never offered.
+        return Promise.resolve(
+          args.pubkeys.filter((pubkey) => !foreignAgents.has(pubkey)),
+        );
       case "stop_managed_agent_runtime":
         return Promise.resolve({ ...args, lifecycle: "stopped" });
       case "plugin:event|listen":
@@ -654,6 +661,23 @@ test("the stop-agents choice appears only while agents run on this computer", as
     /Also stop the 2 agents running on this computer/,
   );
   await act(async () => fireEvent.click(dialogButton("Cancel")));
+  runtimes = [];
+  await unmount();
+});
+
+test("another account's running agents are never offered for stopping", async () => {
+  runtimes = [
+    { pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" },
+    { pubkey: agentB, relayUrl: "wss://a.test", lifecycle: "ready" },
+  ];
+  foreignAgents = new Set([agentB]);
+  const { unmount } = await openSignOutDialog();
+  assert.match(
+    document.querySelector('[role="alertdialog"]').textContent,
+    /Also stop the 1 agent running on this computer/,
+  );
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  foreignAgents = new Set();
   runtimes = [];
   await unmount();
 });

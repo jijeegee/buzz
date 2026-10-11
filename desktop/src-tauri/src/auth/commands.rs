@@ -47,6 +47,10 @@ pub struct TokenAuthStatus {
     /// The active account is signed out on this computer: chats stay closed
     /// until an account signs in. Keys and data are kept.
     pub device_signed_out: bool,
+    /// This sign-in opened a different account than the one active before
+    /// (another Google account, or a "connect" whose Google account already
+    /// held an account).
+    pub account_changed: bool,
 }
 
 fn status_of(
@@ -78,6 +82,7 @@ fn status_of(
         legacy_token_account: false,
         signing_pubkey: None,
         device_signed_out: false,
+        account_changed: false,
     }
 }
 
@@ -360,13 +365,17 @@ async fn login_inner(
     drop(agent_store_guard);
     drop(_refresh_guard);
     spawn_refresh_loop(app, &origin, generation);
+    let mut account_changed = false;
     if let (Some(previous), Some(current)) = (previous_active, signed_in_account) {
         if previous != current {
+            account_changed = true;
             super::accounts::after_active_changed(app, &origin, previous, current).await;
         }
     }
     emit_changed(app, &origin);
-    Ok(current_status(&state, &origin, Some(providers)))
+    let mut status = current_status(&state, &origin, Some(providers));
+    status.account_changed = account_changed;
+    Ok(status)
 }
 
 fn ensure_existing_token_agents(
@@ -575,6 +584,9 @@ pub async fn logout(
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let stop_agents = normalize_agent_pubkeys(stop_agents.unwrap_or_default())?;
+    // Only this account's own agents: signing out never stops (or keeps from
+    // starting) another account's agents.
+    let stop_agents = own_agents(&app, stop_agents);
     // Let an in-flight restore or refresh settle first (sign-out is offered
     // while restoring, Rule 6), so a session it just activated is revoked
     // server-side rather than only forgotten locally.
@@ -629,6 +641,33 @@ pub(crate) async fn sign_out_device(
         return Err("Sign-out is not available for this account.".into());
     }
     forget_session(auth, origin, store).await
+}
+
+/// The agents among `pubkeys` owned by the account active on this computer.
+fn own_agents(app: &AppHandle, pubkeys: Vec<String>) -> Vec<String> {
+    let state = app.state::<AppState>();
+    let Ok(me) = state.current_identity_pubkey().map(|key| key.to_hex()) else {
+        return Vec::new();
+    };
+    let records =
+        crate::managed_agents::storage::load_managed_agents_without_keys(app).unwrap_or_default();
+    pubkeys
+        .into_iter()
+        .filter(|pubkey| {
+            records
+                .iter()
+                .find(|record| record.pubkey.eq_ignore_ascii_case(pubkey))
+                .and_then(|record| crate::managed_agents::agent_owner_hex(app, record))
+                .is_some_and(|owner| owner.eq_ignore_ascii_case(&me))
+        })
+        .collect()
+}
+
+/// The running agents among `pubkeys` that the active account owns, for the
+/// sign-out dialog (it must never offer to stop another account's agents).
+#[tauri::command]
+pub fn own_agent_pubkeys(app: AppHandle, pubkeys: Vec<String>) -> Result<Vec<String>, String> {
+    Ok(own_agents(&app, normalize_agent_pubkeys(pubkeys)?))
 }
 
 /// Validate agent pubkeys from the UI: bounded, lowercase hex.

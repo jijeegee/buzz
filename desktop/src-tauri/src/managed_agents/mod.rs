@@ -42,7 +42,8 @@ pub(crate) mod reconcile;
 mod relay_mesh;
 mod repos;
 pub(crate) use owners::{
-    agent_owner_hex, migrate_owners, record_missing_owners, FILE_NAME as AGENT_OWNERS_FILE,
+    agent_owner_hex, migrate_owners, record_agent_owner, record_missing_owners, spawn_owner_hex,
+    FILE_NAME as AGENT_OWNERS_FILE,
 };
 mod restore;
 pub mod retention;

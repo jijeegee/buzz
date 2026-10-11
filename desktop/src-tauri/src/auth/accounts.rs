@@ -73,6 +73,9 @@ pub(crate) enum AccountState {
     SignedOut,
     /// A local key with no relay login (pre-Google identity).
     KeyOnly,
+    /// Its background session ended (revoked elsewhere, expired): listed, not
+    /// refreshed, until it signs in again.
+    NeedsLogin,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +199,7 @@ impl Registry {
                 AccountState::SignedIn => "in",
                 AccountState::SignedOut => "out",
                 AccountState::KeyOnly => "key",
+                AccountState::NeedsLogin => "need",
             };
             lines.push(format!("{} {} {}", account.pubkey, account.origin, state));
         }
@@ -235,6 +239,7 @@ impl Registry {
                 "in" => AccountState::SignedIn,
                 "out" => AccountState::SignedOut,
                 "key" => AccountState::KeyOnly,
+                "need" => AccountState::NeedsLogin,
                 _ => return Err("invalid account index".into()),
             };
             if registry.active.is_none() {
@@ -458,18 +463,23 @@ fn preserve_outgoing(
     ) {
         return Ok(());
     }
-    if secrets.load(&identity_slot(&pubkey))?.is_none() {
-        store_verified(secrets, &identity_slot(&pubkey), &nsec_of(outgoing)?)?;
-    }
     if !registry.contains_pubkey(&pubkey) {
+        // Listed first, so reset can always find the slots written next.
         let bindings = bound_origins(secrets, &pubkey)?;
         if bindings.is_empty() {
             registry.upsert(ANY_ORIGIN, &pubkey, AccountState::KeyOnly);
         }
-        for origin in bindings {
-            let state = copy_refresh_into_slot(secrets, &pubkey, &origin)?;
-            registry.upsert(&origin, &pubkey, state);
+        for origin in &bindings {
+            registry.upsert(origin, &pubkey, AccountState::SignedOut);
         }
+        save_registry(secrets, data_dir, registry)?;
+        store_verified(secrets, &identity_slot(&pubkey), &nsec_of(outgoing)?)?;
+        for origin in &bindings {
+            let state = copy_refresh_into_slot(secrets, &pubkey, origin)?;
+            registry.upsert(origin, &pubkey, state);
+        }
+    } else if secrets.load(&identity_slot(&pubkey))?.is_none() {
+        store_verified(secrets, &identity_slot(&pubkey), &nsec_of(outgoing)?)?;
     }
     Ok(())
 }
@@ -548,20 +558,21 @@ pub(crate) fn preserve_legacy_key_file(
     let _lock = registry_lock();
     let mut registry = load_registry(data_dir)?.unwrap_or_default();
     let pubkey = file_keys.public_key();
-    if secrets.load(&identity_slot(&pubkey))?.is_none() {
-        store_verified(secrets, &identity_slot(&pubkey), &nsec_of(&file_keys)?)?;
-    }
     if !registry.contains_pubkey(&pubkey) {
         registry.upsert(ANY_ORIGIN, &pubkey, AccountState::KeyOnly);
         save_registry(secrets, data_dir, &registry)?;
+    }
+    if secrets.load(&identity_slot(&pubkey))?.is_none() {
+        store_verified(secrets, &identity_slot(&pubkey), &nsec_of(&file_keys)?)?;
     }
     let aside = data_dir.join(format!("identity.key.account-{}", &pubkey.to_hex()[..16]));
     std::fs::rename(&path, &aside).map_err(|e| format!("could not set aside identity.key: {e}"))
 }
 
 /// Durably record a completed sign-in of `keys` on `origin` and make it the
-/// active account in place of `outgoing`. Order: `outgoing` is kept (own slot,
-/// listed), the new account is listed, its own key and refresh slots are
+/// active account in place of `outgoing` (`None` while recovering a lost key).
+/// Order: `outgoing` is kept (listed, own slot), the new account is listed,
+/// its own key and refresh slots are
 /// written and verified, then it becomes active in the list, and only then is
 /// the active copy replaced. Every other account stays as it is.
 pub(crate) fn commit_sign_in(
@@ -570,16 +581,19 @@ pub(crate) fn commit_sign_in(
     origin: &str,
     keys: &Keys,
     refresh_token: &str,
-    outgoing: &Keys,
+    outgoing: Option<&Keys>,
 ) -> Result<Registry, String> {
     let _lock = registry_lock();
     let pubkey = keys.public_key();
     let nsec = nsec_of(keys)?;
     let mut registry = load_registry(data_dir)?.unwrap_or_default();
-    if outgoing.public_key() != pubkey {
-        preserve_outgoing(secrets, data_dir, &mut registry, outgoing)?;
-    } else {
-        ensure_owners_recorded(data_dir, &mut registry, &pubkey);
+    match outgoing {
+        Some(outgoing) if outgoing.public_key() != pubkey => {
+            preserve_outgoing(secrets, data_dir, &mut registry, outgoing)?;
+        }
+        // Same account, or recovering a lost key: the in-memory key was a
+        // stand-in nobody owns, so never keep it or record it as an owner.
+        _ => ensure_owners_recorded(data_dir, &mut registry, &pubkey),
     }
     if registry.get(origin, &pubkey).is_none() {
         registry.upsert(origin, &pubkey, AccountState::SignedOut);
@@ -627,18 +641,41 @@ fn write_active_copy(
 }
 
 /// A rotated refresh token of the active account on `origin`: its own slot
-/// first, then the active copy. Nothing is written to the copy when the own
-/// slot fails, so the caller's failure path drops the consumed token.
+/// first (the truth; failure is returned, so the caller drops the consumed
+/// token), then the active copy. A failed copy write is not an error: the copy
+/// is dropped instead and refilled from the own slot at the next launch, so the
+/// caller never deletes the freshly rotated own slot.
 pub(crate) fn store_active_refresh(
     secrets: &dyn Secrets,
     origin: &str,
     active: Option<PublicKey>,
     token: &str,
 ) -> Result<(), String> {
-    if let Some(pubkey) = active {
-        store_verified(secrets, &refresh_slot(&pubkey, origin), token)?;
+    let Some(pubkey) = active else {
+        return secrets.store(&super::refresh_key(origin), token);
+    };
+    store_verified(secrets, &refresh_slot(&pubkey, origin), token)?;
+    if let Err(error) = secrets.store(&super::refresh_key(origin), token) {
+        eprintln!("buzz-desktop: accounts: active token copy not written ({error}); dropped");
+        let _ = secrets.delete(&super::refresh_key(origin));
     }
-    secrets.store(&super::refresh_key(origin), token)
+    Ok(())
+}
+
+/// Mark `pubkey`'s background session on `origin` as ended.
+pub(crate) fn mark_needs_login(
+    secrets: &dyn Secrets,
+    data_dir: &Path,
+    origin: &str,
+    pubkey: &PublicKey,
+) -> Result<(), String> {
+    let _lock = registry_lock();
+    let mut registry = load_registry(data_dir)?.unwrap_or_default();
+    if registry.get(origin, pubkey).map(|a| a.state) != Some(AccountState::SignedIn) {
+        return Ok(());
+    }
+    registry.upsert(origin, pubkey, AccountState::NeedsLogin);
+    save_registry(secrets, data_dir, &registry)
 }
 
 /// Mark `origin`'s account `pubkey` signed out in the list (its refresh slot
@@ -713,11 +750,16 @@ pub(crate) fn reconcile(secrets: &dyn Secrets, data_dir: &Path) -> Result<Reconc
             if let Some(previous) = active {
                 ensure_owners_recorded(data_dir, &mut registry, &previous);
             }
-            store_verified(secrets, &identity_slot(&pubkey), &nsec_of(&keys)?)?;
             let bindings = bound_origins(secrets, &pubkey)?;
             if bindings.is_empty() {
                 registry.upsert(ANY_ORIGIN, &pubkey, AccountState::KeyOnly);
             }
+            for origin in &bindings {
+                registry.upsert(origin, &pubkey, AccountState::SignedOut);
+            }
+            // Listed first, so reset can always find the slots written next.
+            save_registry(secrets, data_dir, &registry)?;
+            store_verified(secrets, &identity_slot(&pubkey), &nsec_of(&keys)?)?;
             for origin in &bindings {
                 let state = copy_refresh_into_slot(secrets, &pubkey, origin)?;
                 registry.upsert(origin, &pubkey, state);
@@ -866,17 +908,22 @@ fn migrate_single_account(
     {
         return Ok(None);
     }
-    store_verified(secrets, &identity_slot(&pubkey), &nsec)?;
     let mut registry = Registry::default();
     ensure_owners_recorded(data_dir, &mut registry, &pubkey);
     if bindings.is_empty() {
         registry.upsert(ANY_ORIGIN, &pubkey, AccountState::KeyOnly);
     }
-    for origin in bindings {
-        let state = copy_refresh_into_slot(secrets, &pubkey, &origin)?;
-        registry.upsert(&origin, &pubkey, state);
+    for origin in &bindings {
+        registry.upsert(origin, &pubkey, AccountState::SignedOut);
     }
     registry.active = Some(pubkey.to_hex());
+    // Listed first, so reset can always find the slots written next.
+    save_registry(secrets, data_dir, &registry)?;
+    store_verified(secrets, &identity_slot(&pubkey), &nsec)?;
+    for origin in &bindings {
+        let state = copy_refresh_into_slot(secrets, &pubkey, origin)?;
+        registry.upsert(origin, &pubkey, state);
+    }
     save_registry(secrets, data_dir, &registry)?;
     Ok(Some(registry))
 }
@@ -915,8 +962,16 @@ impl InactiveSessions {
         (origin.to_owned(), pubkey.to_hex())
     }
 
-    /// Start keeping `pubkey`'s session on `origin` alive (idempotent).
-    pub(crate) fn start(&self, client: &reqwest::Client, origin: &str, pubkey: PublicKey) {
+    /// Start keeping `pubkey`'s session on `origin` alive (idempotent). When
+    /// the session ends for good (revoked elsewhere, expired), the account is
+    /// marked `needs_login` in the list under `data_dir`.
+    pub(crate) fn start(
+        &self,
+        client: &reqwest::Client,
+        data_dir: Option<PathBuf>,
+        origin: &str,
+        pubkey: PublicKey,
+    ) {
         let auth = {
             let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
             let key = Self::key(origin, &pubkey);
@@ -936,14 +991,27 @@ impl InactiveSessions {
             {
                 if !matches!(attempt, Err(super::refresh::RefreshFailure::Terminal(_))) {
                     super::refresh::run_refresh_loop(
-                        auth,
+                        Arc::clone(&auth),
                         client,
-                        origin,
+                        origin.clone(),
                         generation,
                         store,
                         |_| {},
                     )
                     .await;
+                }
+            }
+            // Stopped by a hand-over leaves `SignedOut`; only a real end of
+            // the session is recorded.
+            if let Some((_, super::OriginAuth::NeedsLogin(code))) = auth.get(&origin) {
+                eprintln!(
+                    "buzz-desktop: accounts: background session of {} on {origin} ended ({code})",
+                    &pubkey.to_hex()[..8]
+                );
+                if let Some(dir) = data_dir {
+                    if let Err(error) = mark_needs_login(shared_secrets(), &dir, &origin, &pubkey) {
+                        eprintln!("buzz-desktop: accounts: could not record it: {error}");
+                    }
                 }
             }
         });
@@ -996,10 +1064,12 @@ pub(crate) fn start_background_sessions<R: tauri::Runtime>(app: &tauri::AppHandl
         if Some(pubkey) == in_use {
             continue;
         }
-        state
-            .token_auth
-            .inactive
-            .start(&state.http_client, &origin, pubkey);
+        state.token_auth.inactive.start(
+            &state.http_client,
+            Some(data_dir.clone()),
+            &origin,
+            pubkey,
+        );
     }
 }
 
@@ -1059,6 +1129,9 @@ async fn hand_over_origins<R: tauri::Runtime>(
         let _lock = registry_lock();
         load_registry(&data_dir)?.unwrap_or_default()
     };
+    // Every origin is handed over even when one fails, so no origin keeps a
+    // session of the wrong account; the failures are reported together.
+    let mut failures = Vec::new();
     for origin in known_origins(&registry, &state.token_auth) {
         state.token_auth.inactive.stop(&origin, &current).await;
         if Some(origin.as_str()) != skip {
@@ -1069,37 +1142,59 @@ async fn hand_over_origins<R: tauri::Runtime>(
             };
             state.token_auth.clear_pending_refresh(&origin);
             state.token_auth.set(&origin, super::OriginAuth::SignedOut);
-            let binding = super::key_recovery::binding_key(&origin);
-            match registry.get(&origin, &current).map(|a| a.state) {
-                Some(state_here @ (AccountState::SignedIn | AccountState::SignedOut)) => {
-                    let token = match state_here {
-                        AccountState::SignedIn => secrets
-                            .load(&refresh_slot(&current, &origin))?
-                            .map(Zeroizing::new),
-                        _ => None,
-                    };
-                    match token {
-                        Some(token) => secrets.store(&super::refresh_key(&origin), &token)?,
-                        None => secrets.delete(&super::refresh_key(&origin))?,
-                    }
-                    secrets.store(&binding, &current.to_hex())?;
-                    state.token_auth.set_key_backup(&origin, current);
-                }
-                _ => {
-                    secrets.delete(&super::refresh_key(&origin))?;
-                    secrets.delete(&binding)?;
+            let here = registry.get(&origin, &current).map(|a| a.state);
+            match hand_over_copy(secrets, &origin, &current, here) {
+                Ok(true) => state.token_auth.set_key_backup(&origin, current),
+                Ok(false) => state.token_auth.clear_key_backup(&origin),
+                Err(error) => {
                     state.token_auth.clear_key_backup(&origin);
+                    failures.push(format!("{origin}: {error}"));
                 }
             }
         }
         if registry.get(&origin, &previous).map(|a| a.state) == Some(AccountState::SignedIn) {
-            state
-                .token_auth
-                .inactive
-                .start(&state.http_client, &origin, previous);
+            state.token_auth.inactive.start(
+                &state.http_client,
+                Some(data_dir.clone()),
+                &origin,
+                previous,
+            );
         }
     }
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+/// Point `origin`'s active copy at `current`. Order matters: the old token
+/// copy goes first, then the binding, and `current`'s own token is copied in
+/// last, so a failure part-way leaves no token that a restore could refresh
+/// under the wrong binding. Returns whether `current` is bound there.
+fn hand_over_copy(
+    secrets: &dyn Secrets,
+    origin: &str,
+    current: &PublicKey,
+    here: Option<AccountState>,
+) -> Result<bool, String> {
+    let binding = super::key_recovery::binding_key(origin);
+    secrets.delete(&super::refresh_key(origin))?;
+    match here {
+        Some(AccountState::SignedIn | AccountState::SignedOut | AccountState::NeedsLogin) => {
+            secrets.store(&binding, &current.to_hex())?;
+            if here == Some(AccountState::SignedIn) {
+                if let Some(token) = secrets.load(&refresh_slot(current, origin))? {
+                    secrets.store(&super::refresh_key(origin), &Zeroizing::new(token))?;
+                }
+            }
+            Ok(true)
+        }
+        _ => {
+            secrets.delete(&binding)?;
+            Ok(false)
+        }
+    }
 }
 
 /// After a sign-in on `origin` made `current` the active account in place of
@@ -1244,11 +1339,16 @@ fn usable_account_keys<R: tauri::Runtime>(
                         == Some(AccountState::SignedIn))
         }
         None => {
+            let state = app.state::<crate::app_state::AppState>();
             key_only
-                || registry
-                    .accounts
-                    .iter()
-                    .any(|a| a.pubkey == hex && a.state == AccountState::SignedIn)
+                || registry.accounts.iter().any(|a| {
+                    a.pubkey == hex
+                        && a.state == AccountState::SignedIn
+                        && !state
+                            .token_auth
+                            .signed_out
+                            .is_signed_out(&a.origin, Some(pubkey))
+                })
         }
     };
     if !usable {

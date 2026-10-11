@@ -797,6 +797,14 @@ pub async fn create_managed_agent(
             effort_level,
             bot_origin: bot_origin.clone(),
         };
+        // Every agent's owner is recorded with it (a Google-session community
+        // mints no NIP-OA tag), so no later start borrows whichever account
+        // happens to be active then.
+        crate::managed_agents::record_agent_owner(
+            &app,
+            &record.pubkey,
+            &state.current_identity_pubkey()?,
+        )?;
 
         records.push(record);
 

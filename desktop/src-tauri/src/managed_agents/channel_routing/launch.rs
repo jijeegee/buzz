@@ -21,8 +21,8 @@ use std::collections::{BTreeMap, HashMap};
 use tauri::AppHandle;
 
 use super::{
-    generated_routing_dir, load_channel_routing, routing_owner_hex, routing_role_for,
-    transition::is_held, AgentRoutingState, ChannelRoutingMode, ObservedProcess, RoutingRole,
+    generated_routing_dir, load_channel_routing, routing_role_for, transition::is_held,
+    AgentRoutingState, ChannelRoutingMode, ObservedProcess, RoutingRole,
 };
 use crate::managed_agents::{
     storage::{atomic_write_json, load_managed_agents_without_keys},
@@ -153,7 +153,7 @@ pub(crate) fn launch_role<R: tauri::Runtime>(
         live_local,
         &records,
         load_channel_routing(app).unwrap_or_default(),
-        routing_owner_hex(app).as_deref(),
+        crate::managed_agents::agent_owner_hex(app, record).as_deref(),
         &load_deployed_roles(app),
     )
 }

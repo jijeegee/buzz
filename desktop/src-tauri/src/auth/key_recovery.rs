@@ -322,16 +322,27 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         .clone();
     let active_pubkey = active.public_key();
     let registry = super::accounts::load_registry(&data_dir)?.unwrap_or_default();
-    // "Connect" links a key-only account's own key; an account already held
-    // by a Google account is never attached to another one.
-    let connect = connect
-        && registry
+    // "Connect" links a listed key-only account's own key; an account already
+    // held by a Google account is never attached to another one. A refused
+    // connect is an error, never a quiet new account.
+    if connect {
+        let mut entries = registry
             .accounts
             .iter()
             .filter(|a| a.pubkey == active_pubkey.to_hex())
-            .all(|a| a.state == super::accounts::AccountState::KeyOnly)
-        && state.token_auth.signing_pubkey(origin).is_none()
-        && super::KeyringRefreshStore.signing_pubkey(origin)?.is_none();
+            .peekable();
+        let key_only = entries.peek().is_some()
+            && entries.all(|a| a.state == super::accounts::AccountState::KeyOnly);
+        if recovering
+            || !key_only
+            || state.token_auth.signing_pubkey(origin).is_some()
+            || super::KeyringRefreshStore.signing_pubkey(origin)?.is_some()
+        {
+            return Err(
+                "This account is already linked to a Google account. Sign in instead.".into(),
+            );
+        }
+    }
     let reuse_active = !recovering
         && (connect || {
             let marker = secrets.load("identity.bootstrap")?;
@@ -379,6 +390,28 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         .inactive
         .stop(origin, &keys.public_key())
         .await;
+    // Signing in again to an account that still has a session here replaces
+    // that session: end the old one on the server instead of orphaning it.
+    if let Ok(Some(old)) = secrets.load(&super::accounts::refresh_slot(&keys.public_key(), origin))
+    {
+        if old.as_str() != &*tokens.refresh {
+            let client = state.http_client.clone();
+            let origin = origin.to_owned();
+            let old = Zeroizing::new(old);
+            tauri::async_runtime::spawn(async move {
+                match api::refresh(&client, &origin, &old).await {
+                    Ok(replaced) => {
+                        if let Err(error) = api::logout(&client, &origin, &replaced.access).await {
+                            eprintln!("buzz-desktop: auth: replaced session not revoked: {error}");
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("buzz-desktop: auth: replaced session already ended: {error}")
+                    }
+                }
+            });
+        }
+    }
     let _guard = state
         .identity_mutation
         .lock()
@@ -397,7 +430,10 @@ pub(crate) async fn complete<R: tauri::Runtime>(
     }
     super::accounts::preserve_legacy_key_file(secrets, &data_dir, &keys)?;
     crate::app_state::prepare_recovered_identity(&data_dir, &keys)?;
-    super::accounts::commit_sign_in(secrets, &data_dir, origin, &keys, &tokens.refresh, &active)?;
+    // While recovering a lost key, the in-memory key is a stand-in: never keep
+    // it as an account or record it as anyone's owner.
+    let outgoing = (!recovering).then_some(&active);
+    super::accounts::commit_sign_in(secrets, &data_dir, origin, &keys, &tokens.refresh, outgoing)?;
     let pubkey = keys.public_key();
     *state.keys.lock().map_err(|_| "identity storage is busy")? = keys;
     state.set_identity_storage(IdentityStorage::SystemKeyring);

@@ -15,7 +15,7 @@ use crate::{
     managed_agents::{
         channel_routing::{
             lead_rules, load_channel_routing, load_deployed_roles, observe_remote,
-            observed_routing_state, plan_routing_transition, routing_owner_hex, routing_role_for,
+            observed_routing_state, plan_routing_transition, routing_role_for,
             save_channel_routing, AgentTransition, AppliedRouting, ChannelRoutingMode,
             ObservedProcess, RoutingRole,
         },
@@ -65,7 +65,6 @@ fn routing_status<R: tauri::Runtime>(
     runtimes: &HashMap<ManagedAgentRuntimeKey, ManagedAgentPairRuntime>,
     mode: ChannelRoutingMode,
 ) -> ChannelRoutingStatus {
-    let owner = routing_owner_hex(app);
     let deployed_roles = load_deployed_roles(app);
     let keyed = records.iter().filter(|record| !record.pubkey.is_empty());
     let states: Vec<_> = keyed
@@ -73,7 +72,11 @@ fn routing_status<R: tauri::Runtime>(
         .map(|record| {
             observed_routing_state(
                 record,
-                routing_role_for(record, mode, owner.as_deref()),
+                routing_role_for(
+                    record,
+                    mode,
+                    crate::managed_agents::agent_owner_hex(app, record).as_deref(),
+                ),
                 observe_process(app, record, runtimes, &deployed_roles),
             )
         })
@@ -170,7 +173,7 @@ pub async fn set_channel_routing(
                         .iter()
                         .find(|record| record.pubkey == pubkey)
                         .ok_or("That agent no longer exists.")?;
-                    let owner = routing_owner_hex(&app);
+                    let owner = crate::managed_agents::agent_owner_hex(&app, record);
                     if let Some(reason) =
                         lead_rules::lead_unavailable_reason(record, owner.as_deref())
                     {

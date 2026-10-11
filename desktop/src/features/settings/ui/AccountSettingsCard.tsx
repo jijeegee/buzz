@@ -28,7 +28,7 @@ import {
   OLDER_ACCOUNT_SIGN_IN_TITLE,
 } from "@/features/onboarding/ui/GoogleSignInButton";
 import {
-  listRunningLocalAgents,
+  listOwnRunningLocalAgents,
   type RunningLocalAgents,
   stopRunningLocalAgents,
 } from "@/features/agents/lib/runningLocalAgents";
@@ -144,7 +144,11 @@ export function AccountSettingsCard({
       const next = await login.run(false, existingTokenAccount, connect);
       if (!next) return;
       setStatus(next);
-      if (!next.keyBackup || next.signingPubkey !== status.signingPubkey)
+      if (
+        !next.keyBackup ||
+        next.accountChanged ||
+        next.signingPubkey !== status.signingPubkey
+      )
         reloadIntoNewIdentity();
     });
 
@@ -277,7 +281,7 @@ function ActiveAccount({
     setRunningAgents(null);
     setStopAgents(false);
     setConfirming("sign-out");
-    void listRunningLocalAgents().then(setRunningAgents);
+    void listOwnRunningLocalAgents().then(setRunningAgents);
   };
   const runningCount = runningAgents?.pubkeys.length ?? 0;
   const closeConfirm = (open: boolean) => {

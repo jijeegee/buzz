@@ -2,6 +2,7 @@ import {
   listManagedAgentRuntimes,
   stopManagedAgentRuntime,
 } from "@/shared/api/tauriManagedAgents";
+import { invokeTauri } from "@/shared/api/tauri";
 import type { ManagedAgentRuntimeStatus } from "@/shared/api/types";
 
 /** Local agent processes running on this computer, by agent and by pair. */
@@ -29,6 +30,30 @@ export async function listRunningLocalAgents(): Promise<RunningLocalAgents> {
     return runningLocalAgentsFrom(await listManagedAgentRuntimes());
   } catch (error) {
     console.error("[agents] could not list running agents:", error);
+    return { pubkeys: [], pairs: [] };
+  }
+}
+
+/**
+ * Running local agents owned by the active account only. Several accounts can
+ * be signed in on this computer; signing out of one must never offer to stop
+ * another account's agents.
+ */
+export async function listOwnRunningLocalAgents(): Promise<RunningLocalAgents> {
+  const running = await listRunningLocalAgents();
+  if (running.pubkeys.length === 0) return running;
+  try {
+    const own = new Set(
+      await invokeTauri<string[]>("own_agent_pubkeys", {
+        pubkeys: running.pubkeys,
+      }),
+    );
+    return {
+      pubkeys: running.pubkeys.filter((pubkey) => own.has(pubkey)),
+      pairs: running.pairs.filter((pair) => own.has(pair.pubkey)),
+    };
+  } catch (error) {
+    console.error("[agents] could not check agent owners:", error);
     return { pubkeys: [], pairs: [] };
   }
 }

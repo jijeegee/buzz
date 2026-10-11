@@ -90,13 +90,13 @@ fn sign_in_writes_the_accounts_own_slots_before_the_active_copy() {
     let dir = tempfile::tempdir().unwrap();
     let mem = Mem::default();
     let first = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &first, "token-a", &first).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &first, "token-a", Some(&first)).unwrap();
     assert_eq!(mem.get("identity"), Some(nsec(&first)));
 
     // The own refresh slot fails: neither the list nor the active copy moves.
     let second = Keys::generate();
     mem.fail(&refresh_slot(&second.public_key(), ORIGIN));
-    assert!(commit_sign_in(&mem, dir.path(), ORIGIN, &second, "token-b", &first).is_err());
+    assert!(commit_sign_in(&mem, dir.path(), ORIGIN, &second, "token-b", Some(&first)).is_err());
     assert_eq!(mem.get("identity"), Some(nsec(&first)));
     assert_eq!(
         mem.get(&super::super::refresh_key(ORIGIN)).as_deref(),
@@ -109,7 +109,7 @@ fn sign_in_writes_the_accounts_own_slots_before_the_active_copy() {
     // its own slots and the next launch refills the copy from them.
     mem.fail_keys.borrow_mut().clear();
     *mem.fail_store_all.borrow_mut() = true;
-    assert!(commit_sign_in(&mem, dir.path(), ORIGIN, &second, "token-b", &first).is_err());
+    assert!(commit_sign_in(&mem, dir.path(), ORIGIN, &second, "token-b", Some(&first)).is_err());
     assert_eq!(
         mem.get(&refresh_slot(&second.public_key(), ORIGIN))
             .as_deref(),
@@ -206,7 +206,7 @@ fn a_used_key_without_google_is_kept_as_a_key_only_account() {
         Some(AccountState::KeyOnly)
     );
     // Its first Google sign-in replaces the key-only placeholder.
-    commit_sign_in(&mem, dir.path(), ORIGIN, &keys, "token", &keys).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &keys, "token", Some(&keys)).unwrap();
     let registry = load_registry(dir.path()).unwrap().unwrap();
     assert_eq!(registry.accounts.len(), 1);
     assert_eq!(registry.accounts[0].origin, ORIGIN);
@@ -218,8 +218,8 @@ fn a_lost_account_list_is_rebuilt_from_the_secure_index() {
     let mem = Mem::default();
     let a = Keys::generate();
     let b = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "token-a", &a).unwrap();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &b, "token-b", &a).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "token-a", Some(&a)).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &b, "token-b", Some(&a)).unwrap();
     std::fs::remove_file(registry_path(dir.path())).unwrap();
     assert_eq!(
         reconcile(&mem, dir.path()).unwrap(),
@@ -239,7 +239,7 @@ fn an_identity_imported_outside_the_list_is_adopted_without_dropping_accounts() 
     let dir = tempfile::tempdir().unwrap();
     let mem = Mem::default();
     let a = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "token-a", &a).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "token-a", Some(&a)).unwrap();
     let imported = Keys::generate();
     mem.put("identity", &nsec(&imported));
     assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Adopted);
@@ -257,7 +257,7 @@ fn a_list_left_behind_by_a_reset_is_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let mem = Mem::default();
     let k = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &k, "t", &k).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &k, "t", Some(&k)).unwrap();
     mem.map.borrow_mut().clear();
     assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Empty);
     assert!(load_registry(dir.path()).unwrap().is_none());
@@ -276,7 +276,7 @@ fn a_new_accounts_key_is_reused_until_its_upload_is_confirmed() {
     let index = read_index(&mem).unwrap().unwrap();
     assert!(index.contains(&first.public_key().to_hex()));
     // Committing the sign-in clears it.
-    commit_sign_in(&mem, dir.path(), ORIGIN, &first, "token", &first).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &first, "token", Some(&first)).unwrap();
     let registry = load_registry(dir.path()).unwrap().unwrap();
     assert!(registry
         .pending
@@ -290,8 +290,8 @@ fn signing_out_keeps_the_account_listed_without_a_session() {
     let mem = Mem::default();
     let a = Keys::generate();
     let b = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "token-a", &a).unwrap();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &b, "token-b", &a).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "token-a", Some(&a)).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &b, "token-b", Some(&a)).unwrap();
     mark_signed_out(&mem, dir.path(), ORIGIN, &a.public_key()).unwrap();
     let registry = load_registry(dir.path()).unwrap().unwrap();
     assert_eq!(
@@ -394,7 +394,7 @@ fn preview_shaped_windows_keyring_migrates_without_growing_the_blob() {
             origin,
             &next,
             &format!("t{i}"),
-            &outgoing,
+            Some(&outgoing),
         )
         .unwrap();
         outgoing = next;
@@ -435,7 +435,7 @@ fn signing_in_keeps_an_unlisted_outgoing_key_as_its_own_account() {
     mem.put("identity", &nsec(&outgoing));
     mem.put("identity.bootstrap", "");
     let incoming = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &incoming, "t", &outgoing).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &incoming, "t", Some(&outgoing)).unwrap();
     assert_eq!(
         mem.get(&identity_slot(&outgoing.public_key())),
         Some(nsec(&outgoing))
@@ -458,7 +458,7 @@ fn an_unused_first_install_key_is_not_kept_when_signing_in() {
     mem.put("identity", &nsec(&bootstrap));
     mem.put("identity.bootstrap", &bootstrap.public_key().to_hex());
     let incoming = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &incoming, "t", &bootstrap).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &incoming, "t", Some(&bootstrap)).unwrap();
     let registry = load_registry(dir.path()).unwrap().unwrap();
     assert!(!registry.contains_pubkey(&bootstrap.public_key()));
     assert_eq!(mem.get(&identity_slot(&bootstrap.public_key())), None);
@@ -494,10 +494,10 @@ fn launch_hands_every_origin_to_the_active_account() {
     let other_origin = "https://other.test";
     let a = Keys::generate();
     let b = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "a1", &a).unwrap();
-    commit_sign_in(&mem, dir.path(), other_origin, &a, "a2", &a).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "a1", Some(&a)).unwrap();
+    commit_sign_in(&mem, dir.path(), other_origin, &a, "a2", Some(&a)).unwrap();
     // B signs in on ORIGIN only; A's copy on other_origin is left behind.
-    commit_sign_in(&mem, dir.path(), ORIGIN, &b, "b1", &a).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &b, "b1", Some(&a)).unwrap();
     assert_eq!(
         mem.get(&super::super::refresh_key(other_origin)).as_deref(),
         Some("a2")
@@ -526,10 +526,10 @@ fn a_large_account_list_is_split_across_index_chunks() {
     let dir = tempfile::tempdir().unwrap();
     let mem = Mem::default();
     let mut outgoing = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &outgoing, "t", &outgoing).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &outgoing, "t", Some(&outgoing)).unwrap();
     for _ in 0..30 {
         let next = Keys::generate();
-        commit_sign_in(&mem, dir.path(), ORIGIN, &next, "t", &outgoing).unwrap();
+        commit_sign_in(&mem, dir.path(), ORIGIN, &next, "t", Some(&outgoing)).unwrap();
         outgoing = next;
     }
     assert!(mem.get(&index_chunk_key(1)).is_some());
@@ -547,4 +547,131 @@ fn a_large_account_list_is_split_across_index_chunks() {
         load_registry(dir.path()).unwrap().unwrap().accounts.len(),
         31
     );
+}
+
+#[test]
+fn recovering_a_lost_key_neither_keeps_the_stand_in_nor_records_it_as_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    // An older agent without an attestation, and no account list yet.
+    let agent = Keys::generate().public_key().to_hex();
+    std::fs::create_dir_all(dir.path().join("agents")).unwrap();
+    std::fs::write(
+        dir.path().join("agents").join("managed-agents.json"),
+        format!(
+            r#"[{{"pubkey":"{agent}","name":"a","relay_url":"wss://r","acp_command":"x","agent_command":"x","agent_args":[],"mcp_command":"x","turn_timeout_seconds":1,"created_at":"t","updated_at":"t"}}]"#
+        ),
+    )
+    .unwrap();
+    let restored = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &restored, "t", None).unwrap();
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(
+        registry.accounts.len(),
+        1,
+        "only the recovered account is listed"
+    );
+    let owners: std::collections::BTreeMap<String, String> = serde_json::from_slice(
+        &std::fs::read(dir.path().join("agents").join("agent-owners.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(owners.get(&agent), Some(&restored.public_key().to_hex()));
+}
+
+#[test]
+fn a_failed_copy_write_keeps_the_rotated_token_in_its_own_slot() {
+    let mem = Mem::default();
+    let account = Keys::generate().public_key();
+    mem.fail(&super::super::refresh_key(ORIGIN));
+    store_active_refresh(&mem, ORIGIN, Some(account), "rotated").unwrap();
+    assert_eq!(
+        mem.get(&refresh_slot(&account, ORIGIN)).as_deref(),
+        Some("rotated")
+    );
+    assert_eq!(mem.get(&super::super::refresh_key(ORIGIN)), None);
+}
+
+#[test]
+fn a_background_session_that_ends_is_listed_as_needing_sign_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    let a = Keys::generate();
+    let b = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "ta", Some(&a)).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &b, "tb", Some(&a)).unwrap();
+    mark_needs_login(&mem, dir.path(), ORIGIN, &a.public_key()).unwrap();
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(
+        registry.get(ORIGIN, &a.public_key()).map(|x| x.state),
+        Some(AccountState::NeedsLogin)
+    );
+    assert!(
+        registry.inactive_signed_in().is_empty(),
+        "no longer refreshed"
+    );
+    // It survives a lost list.
+    std::fs::remove_file(registry_path(dir.path())).unwrap();
+    reconcile(&mem, dir.path()).unwrap();
+    let rebuilt = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(
+        rebuilt.get(ORIGIN, &a.public_key()).map(|x| x.state),
+        Some(AccountState::NeedsLogin)
+    );
+    // Signing in again restores it.
+    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "ta2", Some(&b)).unwrap();
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(
+        registry.get(ORIGIN, &a.public_key()).map(|x| x.state),
+        Some(AccountState::SignedIn)
+    );
+}
+
+#[test]
+fn handing_an_origin_over_never_leaves_a_token_under_the_wrong_binding() {
+    let mem = Mem::default();
+    let previous = Keys::generate().public_key();
+    let current = Keys::generate().public_key();
+    mem.put(
+        &super::super::key_recovery::binding_key(ORIGIN),
+        &previous.to_hex(),
+    );
+    mem.put(&super::super::refresh_key(ORIGIN), "previous-token");
+    mem.put(&refresh_slot(&current, ORIGIN), "current-token");
+    // The token copy fails: the binding moved, but no token is left that a
+    // restore could refresh under it.
+    mem.fail(&super::super::refresh_key(ORIGIN));
+    assert!(hand_over_copy(&mem, ORIGIN, &current, Some(AccountState::SignedIn)).is_err());
+    assert_eq!(mem.get(&super::super::refresh_key(ORIGIN)), None);
+    // A clean hand-over copies the current account's own token.
+    mem.fail_keys.borrow_mut().clear();
+    assert!(hand_over_copy(&mem, ORIGIN, &current, Some(AccountState::SignedIn)).unwrap());
+    assert_eq!(
+        mem.get(&super::super::refresh_key(ORIGIN)).as_deref(),
+        Some("current-token")
+    );
+    assert_eq!(
+        mem.get(&super::super::key_recovery::binding_key(ORIGIN)),
+        Some(current.to_hex())
+    );
+    // An account bound nowhere here clears the binding.
+    assert!(!hand_over_copy(&mem, ORIGIN, &previous, Some(AccountState::KeyOnly)).unwrap());
+    assert_eq!(
+        mem.get(&super::super::key_recovery::binding_key(ORIGIN)),
+        None
+    );
+}
+
+#[test]
+fn a_kept_outgoing_key_is_listed_before_its_slot_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    let outgoing = Keys::generate();
+    mem.put("identity.bootstrap", "");
+    // Its slot cannot be written: the list already names it, so a reset
+    // still finds anything a retry writes.
+    mem.fail(&identity_slot(&outgoing.public_key()));
+    let incoming = Keys::generate();
+    assert!(commit_sign_in(&mem, dir.path(), ORIGIN, &incoming, "t", Some(&outgoing)).is_err());
+    let index = read_index(&mem).unwrap().unwrap();
+    assert!(index.contains(&outgoing.public_key().to_hex()));
 }

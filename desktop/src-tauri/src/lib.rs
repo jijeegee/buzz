@@ -654,6 +654,7 @@ pub fn run() {
             create_auth_event,
             auth::commands::get_token_auth_status,
             auth::commands::login_with_google,
+            auth::commands::own_agent_pubkeys,
             auth::accounts::list_accounts,
             auth::accounts::switch_account,
             auth::accounts::create_auth_event_as,

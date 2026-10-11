@@ -437,7 +437,7 @@ pub(crate) async fn flush_pending_events_at(
             // timestamp at publish time; kind, tags, and content are preserved,
             // and `mark_synced` below still compares against the retained row's
             // original `created_at`/`content`, which are untouched.
-            resign_with_fresh_timestamp(&event, state)?
+            resign_with_fresh_timestamp(&event, owner_keys)?
         } else {
             event
         };
@@ -489,17 +489,16 @@ pub(crate) async fn flush_pending_events_at(
 /// `events::build_archive_identity_request` — nostr strips `p` tags matching
 /// the signer by default, which would corrupt a self-targeted request.
 ///
-/// Synchronous; the `state.keys` guard is dropped on return, so callers may
-/// `.await` afterwards.
+/// Signs with the scope's owner keys, never the active account: an account
+/// switch during a flush cannot re-sign one account's event with another key.
 fn resign_with_fresh_timestamp(
     event: &nostr::Event,
-    state: &AppState,
+    owner_keys: &nostr::Keys,
 ) -> Result<nostr::Event, String> {
-    let keys = state.signing_keys()?;
     nostr::EventBuilder::new(event.kind, event.content.clone())
         .tags(event.tags.iter().cloned())
         .allow_self_tagging()
-        .sign_with_keys(&keys)
+        .sign_with_keys(owner_keys)
         .map_err(|e| format!("failed to re-sign retained event: {e}"))
 }
 

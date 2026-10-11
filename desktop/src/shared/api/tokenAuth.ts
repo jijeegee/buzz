@@ -32,9 +32,15 @@ export type TokenAuthStatus = {
   signingPubkey?: string | null;
   /**
    * Signed out on this computer: chats stay closed (and native relay auth is
-   * refused) until the same Google account signs in again. Nothing is deleted.
+   * refused) until an account signs in here. Nothing is deleted.
    */
   deviceSignedOut?: boolean;
+  /**
+   * The sign-in opened a different account than the one active before
+   * (another Google account, or a protect whose Google account already held
+   * an account). The app reloads into it.
+   */
+  accountChanged?: boolean;
 };
 
 export type AuthDevice = {

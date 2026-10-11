@@ -1149,3 +1149,18 @@ fn effort_level_round_trips_through_the_persona_event() {
     let restored = persona_from_event(&event).unwrap();
     assert_eq!(restored.effort_level.as_deref(), Some("high"));
 }
+
+/// An account switch during a flush must not re-sign one account's retained
+/// event with the newly active key: the scope's owner keys sign it.
+#[test]
+fn a_fresh_resign_uses_the_scope_owner_not_the_active_account() {
+    let scope_owner = nostr::Keys::generate();
+    let now_active = nostr::Keys::generate();
+    let retained = nostr::EventBuilder::new(nostr::Kind::Custom(9035), "")
+        .sign_with_keys(&scope_owner)
+        .unwrap();
+    let resigned = super::resign_with_fresh_timestamp(&retained, &scope_owner).unwrap();
+    assert_eq!(resigned.pubkey, scope_owner.public_key());
+    assert_ne!(resigned.pubkey, now_active.public_key());
+    resigned.verify().unwrap();
+}

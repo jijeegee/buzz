@@ -237,6 +237,12 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
     else {
         return Ok(None);
     };
+    // The sync subscribes to the owner's own events. One authored by another
+    // account arrived on that account's subscription before an account
+    // switch: it belongs to that account's store, never this one.
+    if event.pubkey != scope.owner_keys.public_key() {
+        return Ok(None);
+    }
     let conn = open_retention_db(&scope.db_path)?;
     let inbound_retained_event = RetainedEvent {
         kind,

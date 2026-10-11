@@ -54,6 +54,58 @@ pub(crate) fn agent_owner_hex<R: tauri::Runtime>(
     })
 }
 
+/// Record `owner` for the agent `agent_pubkey` (at creation, or the first
+/// time a server bot's owner is learned). An existing entry is kept.
+pub(crate) fn record_agent_owner<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    agent_pubkey: &str,
+    owner: &PublicKey,
+) -> Result<(), String> {
+    let path = owners_path(app).ok_or("agent storage is unavailable")?;
+    record_owner_at(&path, agent_pubkey, owner)
+}
+
+fn record_owner_at(path: &Path, agent_pubkey: &str, owner: &PublicKey) -> Result<(), String> {
+    let _lock = OWNERS_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut recorded = read_owners(path);
+    let key = agent_pubkey.to_ascii_lowercase();
+    if recorded.contains_key(&key) {
+        return Ok(());
+    }
+    recorded.insert(key, owner.to_hex());
+    let json = serde_json::to_vec_pretty(&recorded).map_err(|e| e.to_string())?;
+    super::storage::atomic_write_json(path, &json)
+}
+
+/// Serialises writes to the owners file in this process.
+static OWNERS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The owner a spawn runs for: the agent's own owner, or for a server bot the
+/// principal of the token account its bot token belongs to (recorded on first
+/// use). Never the active account: an agent with neither is refused.
+pub(crate) fn spawn_owner_hex<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    record: &ManagedAgentRecord,
+) -> Result<String, String> {
+    use tauri::Manager;
+    if let Some(owner) = agent_owner_hex(app, record) {
+        return Ok(owner);
+    }
+    if let Some(origin) = record.bot_origin.as_deref() {
+        let state = app.state::<crate::app_state::AppState>();
+        if let Some((_, crate::auth::OriginAuth::Active(session))) = state.token_auth.get(origin) {
+            record_agent_owner(app, &record.pubkey, &session.principal)?;
+            return Ok(session.principal.to_hex());
+        }
+    }
+    Err(format!(
+        "agent {} has no known owner on this computer; it was not started.",
+        record.pubkey
+    ))
+}
+
 /// Agents (by pubkey) with no attested owner and no recorded owner.
 fn unowned<'a>(
     records: &'a [ManagedAgentRecord],
@@ -62,7 +114,7 @@ fn unowned<'a>(
     let recorded: Vec<String> = recorded.keys().cloned().collect();
     records
         .iter()
-        .filter(|record| !record.pubkey.is_empty() && record.bot_origin.is_none())
+        .filter(|record| !record.pubkey.is_empty())
         .filter(|record| attested_owner_hex(record).is_none())
         .map(|record| record.pubkey.to_ascii_lowercase())
         .filter(move |pubkey| !recorded.contains(pubkey))
@@ -75,6 +127,9 @@ pub(crate) fn record_missing_owners(
     records: &[ManagedAgentRecord],
     owner: &PublicKey,
 ) -> Result<usize, String> {
+    let _lock = OWNERS_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut recorded = read_owners(path);
     let missing: Vec<String> = unowned(records, &recorded).collect();
     if missing.is_empty() {
@@ -144,5 +199,17 @@ mod tests {
         let later = nostr::Keys::generate().public_key();
         assert_eq!(record_missing_owners(&path, &records, &later).unwrap(), 0);
         assert_eq!(read_owners(&path).get(&legacy), Some(&owner_b.to_hex()));
+    }
+
+    #[test]
+    fn a_recorded_owner_is_never_overwritten_by_a_later_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let agent = nostr::Keys::generate().public_key().to_hex();
+        let creator = nostr::Keys::generate().public_key();
+        let later = nostr::Keys::generate().public_key();
+        record_owner_at(&path, &agent, &creator).unwrap();
+        record_owner_at(&path, &agent, &later).unwrap();
+        assert_eq!(read_owners(&path).get(&agent), Some(&creator.to_hex()));
     }
 }
