@@ -8,12 +8,9 @@ import type {
 export const WELCOME_CHANNEL_NAME = "Welcome";
 export const WELCOME_CHANNEL_DESCRIPTION =
   "A private channel for getting oriented in this community.";
-export const STARTER_GENERAL_CHANNEL_NAME = "general";
-export const STARTER_GENERAL_CHANNEL_DESCRIPTION =
-  "General conversation and community updates.";
+/** The public channel older setups joined every new member to. New accounts
+ *  no longer join it; members who already did keep its welcome experience. */
 export const STARTER_WELCOME_CHANNEL_NAME = "welcome-everyone";
-export const STARTER_WELCOME_CHANNEL_DESCRIPTION =
-  "Say hi, ask a question, or share what brought you here.";
 export const WELCOME_CHANNEL_READY_EVENT =
   "buzz:onboarding-welcome-channel-ready";
 export const WELCOME_SURFACE_READY_EVENT =
@@ -32,17 +29,6 @@ type WelcomeChannelClient = {
   getChannels: () => Promise<Channel[]>;
   getChannelMembers?: (channelId: string) => Promise<ChannelMember[]>;
   updateChannel?: (input: UpdateChannelInput) => Promise<Channel>;
-};
-
-type StarterChannelsClient = {
-  ensureStarterChannels: () => Promise<Channel[]>;
-  getChannels: () => Promise<Channel[]>;
-};
-
-export type StarterChannelsResult = {
-  channels: Channel[];
-  generalChannel: Channel;
-  welcomeChannel: Channel;
 };
 
 type WelcomeChannelOptions = {
@@ -65,42 +51,6 @@ const welcomeChannelInput = {
 
 function normalizeChannelName(name: string) {
   return name.trim().toLowerCase();
-}
-
-function isOpenStreamStarterChannel(channel: Channel, name: string) {
-  return (
-    normalizeChannelName(channel.name) === normalizeChannelName(name) &&
-    channel.channelType === "stream" &&
-    channel.visibility === "open" &&
-    channel.archivedAt === null &&
-    channel.isMember
-  );
-}
-
-function findStarterChannel(channels: Channel[], name: string) {
-  return (
-    channels.find((channel) => isOpenStreamStarterChannel(channel, name)) ??
-    null
-  );
-}
-
-export function findStarterChannels(
-  channels: Channel[],
-): Omit<StarterChannelsResult, "channels"> | null {
-  const generalChannel = findStarterChannel(
-    channels,
-    STARTER_GENERAL_CHANNEL_NAME,
-  );
-  const welcomeChannel = findStarterChannel(
-    channels,
-    STARTER_WELCOME_CHANNEL_NAME,
-  );
-
-  if (!generalChannel || !welcomeChannel) {
-    return null;
-  }
-
-  return { generalChannel, welcomeChannel };
 }
 
 function hasOnlyCurrentOrAllowedMembers(
@@ -255,30 +205,6 @@ export async function ensureWelcomeChannel(
   }
 
   return client.createChannel(welcomeChannelInput);
-}
-
-export async function ensureStarterChannels(
-  client: StarterChannelsClient,
-): Promise<StarterChannelsResult> {
-  const existingChannels = await client.getChannels();
-  const existingStarters = findStarterChannels(existingChannels);
-  if (existingStarters) {
-    return {
-      channels: existingChannels,
-      ...existingStarters,
-    };
-  }
-
-  const ensuredChannels = await client.ensureStarterChannels();
-  const ensuredStarters = findStarterChannels(ensuredChannels);
-  if (!ensuredStarters) {
-    throw new Error("Starter channels were not available after setup");
-  }
-
-  return {
-    channels: ensuredChannels,
-    ...ensuredStarters,
-  };
 }
 
 export function welcomeChannelEnsuredStorageKey(

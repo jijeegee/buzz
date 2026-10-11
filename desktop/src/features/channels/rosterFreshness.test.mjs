@@ -59,9 +59,7 @@ globalThis.window = {
 const { addChannelMembers, joinChannel, getChannelMembers } = await import(
   "@/shared/api/tauri"
 );
-const { ensureStarterChannels, syncAgentsToActiveHuddle } = await import(
-  "@/shared/api/tauriChannels"
-);
+const { syncAgentsToActiveHuddle } = await import("@/shared/api/tauriChannels");
 const { resolveBestieConversation } = await import(
   "@/protectedFeatures/bestie/api"
 );
@@ -212,23 +210,6 @@ async function cacheOldRoster(roster) {
   assert.deepEqual(roster.shown(), [OWNER]);
   return unmount;
 }
-
-test("starter joins that landed are recorded when a later join fails", async () => {
-  const roster = setup("starter-general");
-  const unmount = await cacheOldRoster(roster);
-  nativeResults.ensure_starter_channels = {
-    channels: [],
-    changed_channel_ids: ["starter-general"],
-    error: "starter join rejected",
-  };
-  await assert.rejects(ensureStarterChannels(), {
-    message: "starter join rejected",
-  });
-  await settle();
-  assert.deepEqual(roster.shown(), [OWNER, BOT]);
-  unmount();
-  roster.teardown();
-});
 
 test("huddle sync records the parent channel it changed", async () => {
   const roster = setup("huddle-parent");

@@ -174,19 +174,6 @@ export async function createChannel(
   return channel;
 }
 
-export async function ensureStarterChannels(): Promise<Channel[]> {
-  const record = beginChannelMembershipWrite();
-  // Channels created or joined are reported even when a later step fails.
-  const result = await invokeTauri<{
-    channels: RawChannel[];
-    changed_channel_ids: string[];
-    error: string | null;
-  }>("ensure_starter_channels");
-  for (const id of result.changed_channel_ids) record(id);
-  if (result.error !== null) throw toTauriError(result.error);
-  return result.channels.map(fromRawChannel);
-}
-
 /**
  * Enrolls channel agents into the active Huddle. Native sync can add them to
  * the Huddle's ephemeral and parent channels, whichever `channelId` names, so

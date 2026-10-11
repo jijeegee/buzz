@@ -53,9 +53,10 @@ final inviteTokenAuthDetectorProvider =
 
 const _unset = Object();
 
-/// Ensures starter-channel memberships after an invite membership claim.
+/// Finishes setup after an invite membership claim. Public channels are not
+/// joined automatically; members join them from the channel directory.
 abstract interface class InviteJoinRecovery {
-  /// Ensures the public starters and returns the preferred focus.
+  /// Finishes setup and returns the channel to focus, if any.
   Future<String?> ensureStarterChannels();
 }
 

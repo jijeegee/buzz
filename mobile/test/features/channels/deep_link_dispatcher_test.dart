@@ -334,7 +334,7 @@ void main() {
   });
 
   testWidgets(
-    'shows saved starter recovery progress, then opens welcome-everyone',
+    'shows saved starter recovery progress, then opens the focus channel',
     (tester) async {
       const relayUrl = 'wss://relay.example.com';
       const welcomeId = 'welcome-everyone-id';
@@ -398,8 +398,8 @@ void main() {
       recovery.complete(welcomeId);
       await tester.pumpAndSettle();
 
-      expect(find.text('Continue to #welcome-everyone'), findsOneWidget);
-      await tester.tap(find.text('Continue to #welcome-everyone'));
+      expect(find.text('Continue'), findsOneWidget);
+      await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
       final destination = tester.widget<_CapturedDestination>(
         find.byType(_CapturedDestination),
@@ -626,7 +626,7 @@ void main() {
     },
   );
 
-  testWidgets('continues a successful invite into welcome-everyone', (
+  testWidgets('continues a successful invite into the focus channel', (
     tester,
   ) async {
     const invite = InviteDeepLink(
@@ -662,9 +662,9 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, 'Join'));
     await tester.pumpAndSettle();
-    expect(find.text('Continue to #welcome-everyone'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
 
-    await tester.tap(find.text('Continue to #welcome-everyone'));
+    await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
     final destination = tester.widget<_CapturedDestination>(

@@ -682,7 +682,6 @@ pub fn run() {
             get_channels,
             get_open_channel_directory,
             create_channel,
-            ensure_starter_channels,
             open_dm,
             get_bestie_assignment,
             assign_bestie,
