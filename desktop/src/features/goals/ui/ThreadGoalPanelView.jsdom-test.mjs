@@ -209,3 +209,25 @@ test("a linked thread's picker can unlink", async () => {
   assert.deepEqual(calls, [{ op: "unlink", thread: THREAD }]);
   await unmount();
 });
+
+test("the header popover opens with the whole tree showing", async () => {
+  const linked = await mount(view({ defaultExpanded: true }).element);
+  assert.equal(
+    linked.q("thread-goal-toggle").getAttribute("aria-expanded"),
+    "true",
+  );
+  assert.equal(linked.q("goal-row-srv").dataset.goalAccess, "focus");
+  assert.equal(linked.q("goal-row-ui").dataset.goalAccess, "muted");
+  await linked.unmount();
+
+  // Unlinked: the link picker, and the whole tree faded and read-only.
+  const unlinked = await mount(
+    view({ defaultExpanded: true, threadRootId: "cd".repeat(32) }).element,
+  );
+  assert.ok(unlinked.q("thread-goal-link"));
+  for (const id of ["root", "srv", "ui"]) {
+    assert.equal(unlinked.q(`goal-row-${id}`).dataset.goalAccess, "muted");
+    assert.equal(unlinked.q(`goal-add-${id}`), null);
+  }
+  await unlinked.unmount();
+});

@@ -76,35 +76,16 @@ Future<_FakeGoalActions> _pump(
 }
 
 void main() {
-  testWidgets('chip shows the linked path below layer 1 and progress', (
-    tester,
-  ) async {
+  testWidgets('app bar button opens the thread goals page', (tester) async {
     await _pump(
       tester,
-      const ThreadGoalChip(channelId: _channel, threadRootId: _thread),
+      const ThreadGoalsButton(channelId: _channel, threadRootId: _thread),
     );
-    expect(find.text('Server'), findsOneWidget);
-    expect(find.textContaining('Launch'), findsNothing);
-    expect(find.text('1/2'), findsOneWidget);
-  });
-
-  testWidgets('chip invites linking when the thread has no goal', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      const ThreadGoalChip(channelId: _channel, threadRootId: _otherThread),
-    );
-    expect(find.text('Link this thread to a goal'), findsOneWidget);
-  });
-
-  testWidgets('chip hides in conversations without goals', (tester) async {
-    await _pump(
-      tester,
-      const ThreadGoalChip(channelId: _channel, threadRootId: _thread),
-      tree: GoalTree.empty,
-    );
-    expect(find.byKey(const ValueKey('thread-goal-chip')), findsNothing);
+    expect(find.byKey(const ValueKey('thread-goals-button')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('thread-goals-button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ThreadGoalsPage), findsOneWidget);
+    expect(find.byKey(const ValueKey('thread-goal-card')), findsOneWidget);
   });
 
   testWidgets('linked page shows the sub-goals and edits them', (tester) async {

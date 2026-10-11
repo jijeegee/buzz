@@ -38,6 +38,7 @@ export function ThreadNameEditor({
         headerTitle={name || headerProps.headerTitle}
         headerActions={
           <>
+            {headerProps.headerActions}
             {error ? (
               <Button size="sm" variant="ghost" onClick={retry}>
                 Retry name
