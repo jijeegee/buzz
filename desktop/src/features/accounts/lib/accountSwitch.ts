@@ -11,6 +11,10 @@ import { identityReload } from "@/shared/api/tokenAuth";
  * it can write the overlay caption and any notice first, then reloads once.
  */
 
+/** Left for the next start when a server's session did not move over. */
+export const SWITCH_INCOMPLETE_NOTICE =
+  "Switched accounts. Some communities could not move to this account yet; sign in again there if they ask.";
+
 const SWITCHING_KEY = "buzz:switching-to";
 const NOTICE_KEY = "buzz:account-switch-notice";
 

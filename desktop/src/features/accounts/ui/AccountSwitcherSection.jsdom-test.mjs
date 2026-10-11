@@ -80,11 +80,14 @@ function account(pubkey, overrides = {}) {
   };
 }
 
+let unread;
+
 function Harness() {
   const menu = useAccountMenu({ open: true });
   return React.createElement(AccountSwitcherSection, {
     accounts: menu.accounts,
     busy: menu.busy,
+    unread,
     onSignIn: () => void menu.signIn(me),
     onSwitch: (target) => void menu.switchTo(target),
   });
@@ -156,6 +159,34 @@ test("the list keeps the backend's order, checks the active account and hides si
   assert.match(row(me).textContent, /Jiho.*jiho@example\.com/);
   assert.match(row(ended).textContent, /old@example\.com.*Sign in again/);
   assert.doesNotMatch(container.textContent, /\bkey\b|nsec|npub|relay/i);
+  await unmount();
+});
+
+test("other accounts show their unread dot or mention count; the open one never does", async () => {
+  accounts = [
+    ...standardAccounts(),
+    account("e".repeat(64), { displayName: "Quiet" }),
+  ];
+  const origin = "http://127.0.0.1:3000";
+  unread = new Map([
+    [`${origin}|${me}`, { hasUnread: true, mentionCount: 4 }],
+    [`${origin}|${work}`, { hasUnread: true, mentionCount: 120 }],
+    [`${origin}|${ended}`, { hasUnread: true, mentionCount: 0 }],
+  ]);
+  const { row, unmount } = await mount();
+  unread = undefined;
+  const mentions = (pubkey) =>
+    row(pubkey).querySelector(`[data-testid='account-row-mentions-${pubkey}']`);
+  const dot = (pubkey) =>
+    row(pubkey).querySelector(`[data-testid='account-row-unread-${pubkey}']`);
+  assert.equal(mentions(me), null);
+  assert.equal(dot(me), null);
+  assert.equal(mentions(work).textContent, "99+");
+  assert.equal(mentions(work).getAttribute("aria-label"), "120 mentions");
+  assert.equal(dot(work), null);
+  assert.ok(dot(ended));
+  assert.equal(mentions("e".repeat(64)), null);
+  assert.equal(dot("e".repeat(64)), null);
   await unmount();
 });
 

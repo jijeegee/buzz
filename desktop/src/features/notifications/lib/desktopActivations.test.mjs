@@ -139,3 +139,29 @@ test("visibilitychange re-drains activations stranded by a lost emit", async () 
   assert.equal(received[0].channelId, "channel-3");
   dispose();
 });
+
+test("a drained activation keeps the account it was for", async () => {
+  const received = [];
+  const dispose = await listenForDesktopNotificationActions((target) => {
+    received.push(target);
+  });
+  pendingActivations = [
+    {
+      channelId: "channel-3",
+      eventId: "event-3",
+      kind: 9,
+      account: { origin: "https://b.example", pubkey: "ab" },
+    },
+    // A malformed account is dropped, the target is kept.
+    { channelId: "channel-4", eventId: "event-4", kind: 9, account: "x" },
+  ];
+  window.dispatchEvent(new Event("focus"));
+  await flushPendingWork();
+  dispose();
+  pendingActivations = [];
+  assert.deepEqual(received[0].account, {
+    origin: "https://b.example",
+    pubkey: "ab",
+  });
+  assert.equal("account" in received[1], false);
+});

@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { isMacPlatform } from "@/shared/lib/platform";
 
 import { relayClient } from "@/shared/api/relayClient";
+import { closeSocketsThenReload } from "@/shared/api/relayWebSocketClose";
 import { resetChannelMembershipWrites } from "@/shared/api/channelMembershipWrites";
 import { resetRateLimitGate } from "@/shared/api/relayRateLimitGate";
 import { readmitRelay } from "@/features/agents/managedAgentRelayCleanup";
@@ -264,7 +265,7 @@ export function useCommunityInit(
                   error,
                 );
               });
-              window.location.reload();
+              void closeSocketsThenReload();
               return;
             }
             if (!cancelled) {

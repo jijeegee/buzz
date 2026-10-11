@@ -3,6 +3,10 @@ import * as React from "react";
 import { useAccountMenu } from "@/features/accounts/useAccountMenu";
 import { useRememberAccountBuzzName } from "@/features/accounts/useRememberAccountBuzzName";
 import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
+import {
+  anyWatchedUnread,
+  useWatchedUnread,
+} from "@/features/accounts/inactiveAccountWatch/useWatchedUnread";
 import { getPresenceLabel } from "@/features/presence/lib/presence";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import { useSelfProfileCache } from "@/features/profile/hooks";
@@ -74,6 +78,8 @@ export function SidebarProfileCard({
   const profileCardRef = React.useRef<HTMLDivElement | null>(null);
   const accountMenu = useAccountMenu({ open: profilePopoverOpen });
   const activePubkey = useIdentityQuery().data?.pubkey ?? null;
+  const watchedUnread = useWatchedUnread();
+  const otherAccountUnread = anyWatchedUnread(watchedUnread);
   useRememberAccountBuzzName(activePubkey, profile?.displayName);
   const toggleProfilePopover = React.useCallback(
     () => setProfilePopoverOpen((prev) => !prev),
@@ -154,6 +160,16 @@ export function SidebarProfileCard({
               testId="sidebar-profile-avatar"
             />
           </MaskedAvatarBadgeFrame>
+          {otherAccountUnread ? (
+            <span
+              className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-sidebar"
+              data-testid="sidebar-other-account-unread"
+            >
+              <span className="sr-only">
+                Another account has unread messages
+              </span>
+            </span>
+          ) : null}
         </button>
 
         <div className="min-w-0 flex-1">
@@ -179,6 +195,7 @@ export function SidebarProfileCard({
               <AccountSwitcherSection
                 accounts={accountMenu.accounts}
                 busy={accountMenu.busy}
+                unread={watchedUnread}
                 onSignIn={() => {
                   setProfilePopoverOpen(false);
                   void accountMenu.signIn(activePubkey);

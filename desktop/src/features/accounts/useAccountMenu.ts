@@ -11,6 +11,7 @@ import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import {
   beginAccountAction,
   finishAccountSwitchBoot,
+  SWITCH_INCOMPLETE_NOTICE,
 } from "./lib/accountSwitch";
 import { accountLabel, menuAccounts } from "./lib/accountLabels";
 
@@ -21,9 +22,6 @@ function errorText(error: unknown, fallback: string): string {
       ? error
       : fallback;
 }
-
-export const SWITCH_INCOMPLETE_NOTICE =
-  "Switched accounts. Some communities could not move to this account yet; sign in again there if they ask.";
 
 /**
  * The profile menu's accounts: list, switch, and add (or sign in again).
