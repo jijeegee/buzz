@@ -35,7 +35,7 @@ function fakeClient(log) {
       client.lives.delete(subId);
       log.closes.push(subId);
     },
-    disconnect() {
+    close() {
       client.disconnected = true;
     },
     emit(subId, event) {
@@ -206,6 +206,45 @@ test("a membership event re-lists channels and resubscribes", async () => {
   assert.deepEqual(last[1]["#h"], ["ch", "new-dm"]);
   client().emit("w-ch-0", msg("d1", { tags: [["h", "new-dm"]] }));
   assert.deepEqual(log.notified.at(-1), ["dm", "d1"]);
+});
+
+test("a membership resubscribe before any message starts before the first subscription", async () => {
+  const { watcher, log, timers, setChannels, client } = setup();
+  watcher.start();
+  await flush();
+  setChannels([
+    { id: "ch", channelType: "stream" },
+    { id: "new-dm", channelType: "dm" },
+  ]);
+  client().emit("w-mem", {
+    id: "n",
+    kind: 44100,
+    pubkey: OTHER,
+    tags: [],
+    content: "",
+    created_at: 1_000,
+  });
+  timers.at(-1).fn();
+  await flush();
+  // First subscription was at now (1_000); the first DM message sent during
+  // the debounce must be replayed, so the resubscription starts before it.
+  assert.equal(log.reqs.at(-1)[1].since, 1_000 - 60);
+  client().emit(
+    "w-ch-0",
+    msg("first", { tags: [["h", "new-dm"]], created_at: 1_001 }),
+  );
+  assert.deepEqual(log.notified.at(-1), ["dm", "first"]);
+});
+
+test("a reconnect before any message starts before the first subscription", async () => {
+  const { watcher, log, timers, client } = setup();
+  watcher.start();
+  await flush();
+  client().options.onClose();
+  timers.at(-1).fn();
+  await flush();
+  const resub = log.reqs.filter(([id]) => id === "w-ch-0").at(-1)[1];
+  assert.equal(resub.since, 1_000 - 60);
 });
 
 test("losing every channel closes the old chunks", async () => {

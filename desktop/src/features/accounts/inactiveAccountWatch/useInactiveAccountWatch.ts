@@ -92,7 +92,13 @@ export function useInactiveAccountWatch(enabled: boolean): void {
   const [accounts, setAccounts] = React.useState<WatchableAccount[]>([]);
   const [openPubkey, setOpenPubkey] = React.useState<string | null>(null);
   const watchers = React.useRef(new Map<string, InactiveAccountWatcher>());
+  const openOrigin = activeCommunity
+    ? relayOrigin(activeCommunity.relayUrl)
+    : null;
 
+  // The native list leaves out the open account on the open server, so it is
+  // re-read when the open server changes as well as when accounts change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: openOrigin only triggers the re-read
   React.useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -111,11 +117,8 @@ export function useInactiveAccountWatch(enabled: boolean): void {
       cancelled = true;
       void unlisten.then((stop) => stop());
     };
-  }, [enabled]);
+  }, [enabled, openOrigin]);
 
-  const openOrigin = activeCommunity
-    ? relayOrigin(activeCommunity.relayUrl)
-    : null;
   const targets = React.useMemo(
     () =>
       enabled && openPubkey

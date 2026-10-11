@@ -35,6 +35,20 @@ const reply = (root) => [
 
 const cases = [
   [
+    "huddle start in a channel → nothing (not an unread kind there)",
+    event({ kind: 48100 }),
+    stream,
+    context(),
+    { notify: null, unread: false, mention: false },
+  ],
+  [
+    "huddle start in a DM → dm",
+    event({ kind: 48100 }),
+    dm,
+    context(),
+    { notify: "dm", unread: true, mention: false },
+  ],
+  [
     "DM → dm",
     event(),
     dm,

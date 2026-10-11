@@ -70,6 +70,8 @@ export class ReadOnlyRelayClient {
   private publishes = new Map<string, PendingPublish>();
   private lives = new Map<string, LiveSubscription>();
   private generation = 0;
+  /** Set by `close()`: the client never opens another socket. */
+  private closed = false;
 
   private readonly relayUrl: string;
   private readonly options: ReadOnlyRelayClientOptions;
@@ -80,6 +82,9 @@ export class ReadOnlyRelayClient {
   }
 
   async connect(): Promise<void> {
+    if (this.closed) {
+      throw new Error("Read-only relay observer is closed.");
+    }
     if (this.wsId !== null) return;
     if (this.connectPromise) return this.connectPromise;
 
@@ -125,6 +130,16 @@ export class ReadOnlyRelayClient {
 
     this.onMessageChannel = null;
     this.connectPromise = null;
+  }
+
+  /**
+   * Final `disconnect()`: later `connect` / `fetchEvents` / `subscribeLive`
+   * calls fail instead of opening (and authenticating) a new socket, so work
+   * still in flight on a dropped client cannot leave an orphan behind.
+   */
+  close(): void {
+    this.closed = true;
+    this.disconnect();
   }
 
   async fetchEvents(filter: RelaySubscriptionFilter): Promise<RelayEvent[]> {
@@ -199,11 +214,17 @@ export class ReadOnlyRelayClient {
       }
     });
 
-    this.wsId = await invoke<number>("plugin:websocket|connect", {
+    const wsId = await invoke<number>("plugin:websocket|connect", {
       url: this.relayUrl,
       onMessage: this.onMessageChannel,
       config: {},
     });
+    if (generation !== this.generation) {
+      // Disconnected while the socket was opening: do not keep it.
+      void closeWebSocket(wsId, "observer disconnected");
+      throw new Error("Read-only relay observer disconnected.");
+    }
+    this.wsId = wsId;
 
     await new Promise<void>((resolve, reject) => {
       const timeout = window.setTimeout(() => {

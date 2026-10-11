@@ -1,4 +1,4 @@
-import { DM_NOTIFIABLE_EVENT_KINDS } from "@/features/channels/isDmNotifiableKind";
+import { unreadKindsForChannel } from "@/features/communities/communityUnreadObserver";
 import { isThreadReply } from "@/features/messages/lib/threading";
 import type { NotificationSettings } from "@/features/notifications/hooks";
 import {
@@ -34,8 +34,6 @@ const NONE: WatchedEventEffect = {
   mention: false,
 };
 
-const DM_KINDS: ReadonlySet<number> = new Set(DM_NOTIFIABLE_EVENT_KINDS);
-
 /**
  * The same rules the open account notifies by, applied to a watched one:
  * DMs (`useAppShellDesktopNotifications` dm path), mentions (the home-feed
@@ -54,7 +52,10 @@ export function classifyWatchedEvent(
   const pubkey = context.pubkey.toLowerCase();
   if (event.pubkey.toLowerCase() === pubkey) return NONE;
   const isDm = channel.channelType === "dm";
-  if (isDm && !DM_KINDS.has(event.kind)) return NONE;
+  // Same kinds the unread count uses, so the dot and the count agree.
+  if (!unreadKindsForChannel(channel.channelType).includes(event.kind)) {
+    return NONE;
+  }
   if (context.mutedChannelIds.has(channel.id) && !isDm) {
     // A muted channel still reports mentions, like the open account.
     if (!hasMentionForEvent(event, pubkey)) return NONE;

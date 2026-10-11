@@ -52,7 +52,8 @@ export type WatchClient = CommunityUnreadRelay & {
     onClosed?: (message: string) => void,
   ): Promise<void>;
   unsubscribe(subId: string): void;
-  disconnect(): void;
+  /** Final: the client must not reconnect afterwards. */
+  close(): void;
 };
 
 export type WatcherDeps = {
@@ -108,6 +109,8 @@ export class InactiveAccountWatcher {
   private seen: string[] = [];
   private seenSet = new Set<string>();
   private lastSeen: number | null = null;
+  /** `since` of the first subscription; the floor until a message is seen. */
+  private subscribedSince: number | null = null;
   private attempt = 0;
   private retryTimer: unknown = null;
   private refreshTimer: unknown = null;
@@ -165,10 +168,8 @@ export class InactiveAccountWatcher {
       const channels = await listChannels(client, this.pubkey);
       if (this.client !== client) return;
       this.setChannels(channels);
-      const since =
-        this.lastSeen === null
-          ? this.nowSeconds()
-          : this.lastSeen - RESUBSCRIBE_OVERLAP_SECONDS;
+      const since = this.resubscribeSince();
+      this.subscribedSince ??= since;
       await this.subscribeAccount(client, since);
       await this.subscribeChannels(client, since);
       if (this.client !== client) return;
@@ -202,7 +203,7 @@ export class InactiveAccountWatcher {
     this.client = null;
     this.running = false;
     this.channelSubIds = [];
-    client?.disconnect();
+    client?.close();
   }
 
   private setChannels(channels: ObservedChannel[]): void {
@@ -282,10 +283,7 @@ export class InactiveAccountWatcher {
         const channels = await listChannels(client, this.pubkey);
         if (this.client !== client) return;
         this.setChannels(channels);
-        await this.subscribeChannels(
-          client,
-          this.lastSeen ?? this.nowSeconds(),
-        );
+        await this.subscribeChannels(client, this.resubscribeSince());
       }
       await this.recount(client);
     } catch (error) {
@@ -334,6 +332,19 @@ export class InactiveAccountWatcher {
       const dropped = this.seen.shift();
       if (dropped) this.seenSet.delete(dropped);
     }
+  }
+
+  /**
+   * Where a (re)subscription starts: a little before the newest message seen,
+   * or before the first subscription when none was seen yet, so messages sent
+   * while re-subscribing are replayed (seen ids drop the repeats). Only the
+   * very first subscription starts at now.
+   */
+  private resubscribeSince(): number {
+    const base = this.lastSeen ?? this.subscribedSince;
+    return base === null
+      ? this.nowSeconds()
+      : base - RESUBSCRIBE_OVERLAP_SECONDS;
   }
 
   private nowSeconds(): number {
