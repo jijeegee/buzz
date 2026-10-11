@@ -124,8 +124,10 @@ export function ChannelScreen({
     readStateVersion,
   } = useAppShell();
   const {
+    agentSessionReturnThreadId,
     channelManagementInitialView,
     channelManagementOpen,
+    clearAgentSessionReturnThread,
     clearAutoSend,
     clearMessageRouteTarget,
     openAgentSessionChannelId,
@@ -585,11 +587,13 @@ export function ChannelScreen({
   } = useChannelAgentSessions({
     activeChannel,
     activeChannelId,
+    agentSessionReturnThreadId,
     agentsLoaded:
       !channelMembersQuery.isLoading &&
       !managedAgentsQuery.isLoading &&
       !relayAgentsQuery.isLoading,
     channelMembers,
+    clearAgentSessionReturnThread,
     handleOpenThread,
     managedAgents: agentSessionCandidates,
     openAgentSessionPubkey,

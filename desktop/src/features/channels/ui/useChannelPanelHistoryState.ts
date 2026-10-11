@@ -26,7 +26,9 @@ export type { ChannelSearchKey } from "./channelSearchKeys";
  * Params: `thread` (open thread head id), `profile` (profile panel pubkey),
  * `profileView` (profile panel focused view), `profileTab` (profile summary
  * tab), `agentSession` (agent session panel pubkey), `agentSessionChannel`
- * (optional channel scope for the agent session panel), `channelManagement`
+ * (optional channel scope for the agent session panel),
+ * `agentSessionReturnThread` (one-shot back-arrow thread for a session panel
+ * opened from outside the channel; consumed on arrival), `channelManagement`
  * (presence flag for the channel-management panel — open/closed only, so it
  * carries a sentinel `"1"` rather than an id), `autoSend` (draft auto-submit
  * trigger — cleared surgically after the auto-submit fires so `thread` and
@@ -94,6 +96,11 @@ export function useChannelPanelHistoryState() {
     [applyPatch],
   );
 
+  const clearAgentSessionReturnThread = React.useCallback(
+    () => applyPatch({ agentSessionReturnThread: null }, { replace: true }),
+    [applyPatch],
+  );
+
   const setOpenAgentSessionChannelId = React.useCallback<PanelValueSetter>(
     (value, options) => applyPatch({ agentSessionChannel: value }, options),
     [applyPatch],
@@ -151,6 +158,8 @@ export function useChannelPanelHistoryState() {
     messageRouteJumpOnly: values.jump === "1",
     clearAutoSend,
     clearMessageRouteTarget,
+    agentSessionReturnThreadId: values.agentSessionReturnThread,
+    clearAgentSessionReturnThread,
     openAgentSessionChannelId: values.agentSessionChannel,
     openAgentSessionPubkey: values.agentSession,
     openProfilePanel,

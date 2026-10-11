@@ -54,6 +54,9 @@ const PRUNE_INTERVAL_MS = 5_000;
 type ActiveTurn = {
   turnId: string;
   channelId: string;
+  /** Canonical thread root for a thread-scoped turn; null for the main
+   * timeline or a whole-channel session (the harness omits it for both). */
+  threadRootEventId: string | null;
   startedAt: number;
   lastActivityAt: number;
 };
@@ -64,6 +67,14 @@ export type ActiveTurnSummary = {
   anchorAt: number;
 };
 
+/** One (agent, thread) pair working in a channel, anchored to its earliest
+ * live turn. `threadRootEventId` is null when the turn reported no thread. */
+export type ActiveWorkingTurn = {
+  agentPubkey: string;
+  threadRootEventId: string | null;
+  anchorAt: number;
+};
+
 /** One channel with active agent work, aggregated across agents. */
 export type ActiveChannelTurnSummary = {
   channelId: string;
@@ -71,6 +82,8 @@ export type ActiveChannelTurnSummary = {
   agentCount: number;
   agentPubkeys: string[];
   agentNames?: string[];
+  /** Observer turns split per (agent, thread). Absent for typing-only work. */
+  turns?: ActiveWorkingTurn[];
 };
 
 // Module-level state: agentPubkey → turnId → ActiveTurn
@@ -169,6 +182,17 @@ function sampleClockOffset(agentKey: string, timestamp: string): boolean {
   return true;
 }
 
+const THREAD_ROOT_PATTERN = /^[0-9a-f]{64}$/;
+
+/** The harness's `threadRootEventId` payload field, when it is a valid root. */
+function threadRootFromPayload(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const root = (payload as { threadRootEventId?: unknown }).threadRootEventId;
+  return typeof root === "string" && THREAD_ROOT_PATTERN.test(root)
+    ? root
+    : null;
+}
+
 function parseTimestamp(timestamp: string): number | null {
   const parsed = Date.parse(timestamp);
   return Number.isFinite(parsed) ? parsed : null;
@@ -179,6 +203,7 @@ function startTurn(
   channelId: string,
   turnId: string,
   timestamp: string,
+  threadRootEventId: string | null,
 ) {
   const key = normalizePubkey(agentPubkey);
   let agentTurns = activeTurnsByAgent.get(key);
@@ -206,6 +231,7 @@ function startTurn(
   agentTurns.set(turnId, {
     turnId,
     channelId,
+    threadRootEventId,
     startedAt,
     lastActivityAt: Date.now(),
   });
@@ -254,7 +280,13 @@ function resurrectTurn(agentPubkey: string, event: ObserverEvent): boolean {
     frameAt !== null && startedAtMs !== null && startedAtMs <= frameAt
       ? startedAt
       : event.timestamp;
-  startTurn(agentPubkey, event.channelId, event.turnId, safeStartedAt);
+  startTurn(
+    agentPubkey,
+    event.channelId,
+    event.turnId,
+    safeStartedAt,
+    threadRootFromPayload(event.payload),
+  );
   return true;
 }
 
@@ -408,6 +440,7 @@ function processEvent(agentPubkey: string, event: ObserverEvent) {
           event.channelId,
           event.turnId ?? `seq-${event.seq}`,
           event.timestamp,
+          threadRootFromPayload(event.payload),
         );
         notifyListeners();
         return;
@@ -539,7 +572,11 @@ export function getActiveTurnsByChannel(): ActiveChannelTurnSummary[] {
 
   const summaries = new Map<
     string,
-    { anchorAt: number; agentPubkeys: Set<string> }
+    {
+      anchorAt: number;
+      agentPubkeys: Set<string>;
+      turns: Map<string, ActiveWorkingTurn>;
+    }
   >();
 
   for (const [agentKey, agentTurns] of activeTurnsByAgent) {
@@ -548,18 +585,25 @@ export function getActiveTurnsByChannel(): ActiveChannelTurnSummary[] {
 
     for (const turn of agentTurns.values()) {
       const anchorAt = turn.startedAt + offset;
-      const summary = summaries.get(turn.channelId);
+      let summary = summaries.get(turn.channelId);
       if (!summary) {
-        summaries.set(turn.channelId, {
-          anchorAt,
-          agentPubkeys: new Set([agentKey]),
-        });
-        continue;
+        summary = { anchorAt, agentPubkeys: new Set(), turns: new Map() };
+        summaries.set(turn.channelId, summary);
       }
 
       summary.agentPubkeys.add(agentKey);
       if (anchorAt < summary.anchorAt) {
         summary.anchorAt = anchorAt;
+      }
+      // Concurrent turns of one agent in one thread collapse to the earliest.
+      const turnKey = `${agentKey} ${turn.threadRootEventId ?? ""}`;
+      const priorTurn = summary.turns.get(turnKey);
+      if (!priorTurn || anchorAt < priorTurn.anchorAt) {
+        summary.turns.set(turnKey, {
+          agentPubkey: agentKey,
+          threadRootEventId: turn.threadRootEventId,
+          anchorAt,
+        });
       }
     }
   }
@@ -570,6 +614,10 @@ export function getActiveTurnsByChannel(): ActiveChannelTurnSummary[] {
       anchorAt: summary.anchorAt,
       agentCount: summary.agentPubkeys.size,
       agentPubkeys: [...summary.agentPubkeys].sort(),
+      turns: [...summary.turns.values()].sort(
+        (a, b) =>
+          a.agentPubkey.localeCompare(b.agentPubkey) || a.anchorAt - b.anchorAt,
+      ),
     }))
     .sort((a, b) => a.channelId.localeCompare(b.channelId));
   cachedChannelTurnSummaries = result;

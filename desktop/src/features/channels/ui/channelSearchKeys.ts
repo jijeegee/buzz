@@ -8,6 +8,7 @@
 export const CHANNEL_SEARCH_KEYS = [
   "agentSession",
   "agentSessionChannel",
+  "agentSessionReturnThread",
   "autoSend",
   "channelManagement",
   "jump",

@@ -3,7 +3,10 @@ import { Clock, Loader2, MailOpen } from "lucide-react";
 
 import { useAppShell } from "@/app/AppShellContext";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
-import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurnsStore";
+import type {
+  ActiveChannelTurnSummary,
+  ActiveWorkingTurn,
+} from "@/features/agents/activeAgentTurnsStore";
 import { formatElapsed } from "@/features/agents/ui/agentSessionUtils";
 import { useOpenAgentActivity } from "@/features/agents/useOpenAgentActivity";
 import { buildInboxItems, type InboxItem } from "@/features/home/lib/inbox";
@@ -156,24 +159,29 @@ function ThreadPreviewRow({
 
 function WorkingAgentRow({
   avatarUrl,
+  channelId,
   elapsed,
   initialsLabel,
   name,
   onOpen,
   pubkey,
+  threadRootEventId,
 }: {
   avatarUrl: string | null;
+  channelId: string;
   elapsed: string;
   /** Unprefixed key (or authored name) the avatar derives initials from. */
   initialsLabel: string;
   name: string;
   onOpen: () => void;
   pubkey: string;
+  threadRootEventId: string | null;
 }) {
   return (
     <button
       className="flex w-full min-w-0 items-start gap-2.5 border-t border-border/50 px-3 py-3 text-left transition-colors first:border-t-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-hidden"
       data-testid={`channel-activity-agent-${pubkey}`}
+      data-thread-root={threadRootEventId ?? undefined}
       onClick={onOpen}
       type="button"
     >
@@ -195,8 +203,20 @@ function WorkingAgentRow({
           </span>
         </div>
         <span className="mt-0.5 flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary/70" />
-          Working
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary/70" />
+          <span className="shrink-0">Working</span>
+          {threadRootEventId ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="shrink-0">Thread</span>
+              <span className="min-w-0 truncate">
+                <ThreadNameLabel
+                  channelId={channelId}
+                  threadId={threadRootEventId}
+                />
+              </span>
+            </>
+          ) : null}
         </span>
       </div>
     </button>
@@ -216,33 +236,52 @@ export function WorkingAgentRows({
 }: {
   activeWorking: ActiveChannelTurnSummary;
   channelId: string;
-  onOpen: (pubkey: string, channelId: string) => void;
+  onOpen: (
+    pubkey: string,
+    channelId: string,
+    threadRootEventId: string | null,
+  ) => void;
   profiles?: UserProfileLookup;
 }) {
   const now = useNow(1000);
-  const elapsed = formatElapsed(now - activeWorking.anchorAt);
   const alignedAgentNames =
     activeWorking.agentNames?.length === activeWorking.agentPubkeys.length
       ? activeWorking.agentNames
       : null;
+  const turnsByAgent = new Map<string, ActiveWorkingTurn[]>();
+  for (const turn of activeWorking.turns ?? []) {
+    const key = normalizePubkey(turn.agentPubkey);
+    turnsByAgent.set(key, [...(turnsByAgent.get(key) ?? []), turn]);
+  }
 
-  return activeWorking.agentPubkeys.map((pubkey, index) => {
+  return activeWorking.agentPubkeys.flatMap((pubkey, index) => {
     const profile = profiles?.[normalizePubkey(pubkey)];
     const authoredName =
       profile?.displayName?.trim() || alignedAgentNames?.[index];
     const keyLabel = truncateNpub(pubkey);
     const name = authoredName || `Agent ${keyLabel}`;
-    return (
+    // One row per thread the agent is working in; typing-only agents carry no
+    // observer turns and keep a single channel-anchored row.
+    const rows = turnsByAgent.get(normalizePubkey(pubkey)) ?? [
+      {
+        agentPubkey: pubkey,
+        threadRootEventId: null,
+        anchorAt: activeWorking.anchorAt,
+      },
+    ];
+    return rows.map((turn) => (
       <WorkingAgentRow
         avatarUrl={profile?.avatarUrl ?? null}
-        elapsed={elapsed}
+        channelId={channelId}
+        elapsed={formatElapsed(now - turn.anchorAt)}
         initialsLabel={authoredName || keyLabel}
-        key={pubkey}
+        key={`${pubkey}:${turn.threadRootEventId ?? ""}`}
         name={name}
-        onOpen={() => onOpen(pubkey, channelId)}
+        onOpen={() => onOpen(pubkey, channelId, turn.threadRootEventId)}
         pubkey={pubkey}
+        threadRootEventId={turn.threadRootEventId}
       />
-    );
+    ));
   });
 }
 
@@ -435,9 +474,12 @@ export function ChannelActivityPopover({
               <WorkingAgentRows
                 activeWorking={activeWorking}
                 channelId={channel.id}
-                onOpen={(pubkey, channelId) => {
+                onOpen={(pubkey, channelId, threadRootEventId) => {
                   setOpen(false);
-                  openAgentActivity(pubkey, { channelId });
+                  openAgentActivity(pubkey, {
+                    channelId,
+                    returnThreadId: threadRootEventId,
+                  });
                 }}
                 profiles={profiles}
               />

@@ -310,6 +310,89 @@ describe("activeAgentTurnsStore", () => {
       );
     });
 
+    it("splits a channel summary per (agent, thread) from the turn payload", () => {
+      const rootA = "a".repeat(64);
+      const rootB = "b".repeat(64);
+      syncAgentTurnsFromEvents(AGENT, [
+        makeEvent({
+          seq: 1,
+          turnId: "main",
+          channelId: "shared",
+          timestamp: "2024-01-01T00:00:00Z",
+        }),
+        makeEvent({
+          seq: 2,
+          turnId: "thread-a",
+          channelId: "shared",
+          timestamp: "2024-01-01T00:01:00Z",
+          payload: { threadRootEventId: rootA },
+        }),
+        makeEvent({
+          seq: 3,
+          turnId: "thread-a-2",
+          channelId: "shared",
+          timestamp: "2024-01-01T00:02:00Z",
+          payload: { threadRootEventId: rootA },
+        }),
+      ]);
+      syncAgentTurnsFromEvents(AGENT_2, [
+        makeEvent({
+          seq: 1,
+          turnId: "thread-b",
+          channelId: "shared",
+          timestamp: "2024-01-01T00:03:00Z",
+          payload: { threadRootEventId: rootB },
+        }),
+        makeEvent({
+          seq: 2,
+          turnId: "bad-root",
+          channelId: "shared",
+          timestamp: "2024-01-01T00:04:00Z",
+          payload: { threadRootEventId: "short" },
+        }),
+      ]);
+
+      const [summary] = getActiveTurnsByChannel();
+      const offset = (pubkey) =>
+        getActiveTurnsForAgent(pubkey)[0].anchorAt -
+        Date.parse("2024-01-01T00:00:00Z");
+      assert.deepEqual(
+        summary.turns.map(({ agentPubkey, threadRootEventId }) => ({
+          agentPubkey,
+          threadRootEventId,
+        })),
+        [
+          { agentPubkey: AGENT, threadRootEventId: null },
+          { agentPubkey: AGENT, threadRootEventId: rootA },
+          { agentPubkey: AGENT_2, threadRootEventId: rootB },
+          { agentPubkey: AGENT_2, threadRootEventId: null },
+        ],
+      );
+      // Two turns in one thread collapse to the earlier start.
+      assert.equal(
+        summary.turns[1].anchorAt,
+        Date.parse("2024-01-01T00:01:00Z") + offset(AGENT),
+      );
+      assert.deepEqual(summary.agentPubkeys, [AGENT, AGENT_2]);
+    });
+
+    it("keeps the thread root when liveness resurrects a pruned turn", () => {
+      const root = "c".repeat(64);
+      syncAgentTurnsFromEvents(AGENT, [
+        makeEvent({
+          seq: 1,
+          kind: "turn_liveness",
+          turnId: "revived",
+          channelId: "c1",
+          payload: { threadRootEventId: root },
+        }),
+      ]);
+      assert.deepEqual(
+        getActiveTurnsByChannel()[0].turns.map((t) => t.threadRootEventId),
+        [root],
+      );
+    });
+
     it("removes a channel summary when the last active turn ends", () => {
       syncAgentTurnsFromEvents(AGENT, [
         makeEvent({ seq: 1, turnId: "t1", channelId: "c1" }),
