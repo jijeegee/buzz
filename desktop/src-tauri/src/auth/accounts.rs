@@ -149,6 +149,14 @@ impl Registry {
             .find(|a| a.pubkey == hex && a.origin == origin)
     }
 
+    /// Whether `pubkey` is a key-only account (no login method, every server).
+    pub(crate) fn key_only(&self, pubkey: &PublicKey) -> bool {
+        let hex = pubkey.to_hex();
+        self.accounts
+            .iter()
+            .any(|a| a.pubkey == hex && a.state == AccountState::KeyOnly)
+    }
+
     pub(crate) fn contains_pubkey(&self, pubkey: &PublicKey) -> bool {
         let hex = pubkey.to_hex();
         self.accounts.iter().any(|a| a.pubkey == hex)
@@ -769,6 +777,35 @@ pub(crate) fn mark_needs_login(
     save_registry(secrets, data_dir, &registry)
 }
 
+/// Another account signed in on `origin` to switch to after `leaving` signed
+/// out, if any.
+pub(crate) fn next_signed_in(
+    data_dir: &Path,
+    origin: &str,
+    leaving: Option<PublicKey>,
+) -> Option<PublicKey> {
+    let registry = {
+        let _lock = registry_lock();
+        load_registry(data_dir).ok().flatten()?
+    };
+    next_signed_in_of(&registry, origin, leaving)
+}
+
+/// [`next_signed_in`] on a loaded list. Pure.
+fn next_signed_in_of(
+    registry: &Registry,
+    origin: &str,
+    leaving: Option<PublicKey>,
+) -> Option<PublicKey> {
+    let leaving = leaving.map(|key| key.to_hex());
+    registry
+        .accounts
+        .iter()
+        .filter(|a| a.origin == origin && a.state == AccountState::SignedIn)
+        .filter(|a| Some(&a.pubkey) != leaving.as_ref())
+        .find_map(|a| PublicKey::from_hex(&a.pubkey).ok())
+}
+
 /// Mark `origin`'s account `pubkey` signed out in the list (its refresh slot
 /// is dropped by the caller with the session).
 pub(crate) fn mark_signed_out(
@@ -1046,16 +1083,36 @@ impl super::RefreshStore for AccountRefreshStore {
 #[derive(Default)]
 pub(crate) struct InactiveSessions {
     sessions: Mutex<HashMap<(String, String), Arc<super::TokenAuthState>>>,
+    /// What to do when the relay ends a session for good (any account,
+    /// active or not): sign that account out on this computer. Set once at
+    /// app start; without it the account is only marked `needs_login`.
+    ended: std::sync::OnceLock<SessionEndedHook>,
 }
+
+/// Called with (origin, account, code) when the relay ended an account's
+/// session for good ([`super::refresh::ends_sign_in`]). `account` is `None`
+/// for a legacy token account.
+pub(crate) type SessionEndedHook = Arc<dyn Fn(String, Option<PublicKey>, String) + Send + Sync>;
 
 impl InactiveSessions {
     fn key(origin: &str, pubkey: &PublicKey) -> (String, String) {
         (origin.to_owned(), pubkey.to_hex())
     }
 
+    /// Install the [`SessionEndedHook`] (first call wins).
+    pub(crate) fn set_ended_hook(&self, hook: SessionEndedHook) {
+        let _ = self.ended.set(hook);
+    }
+
+    /// The installed [`SessionEndedHook`], if any.
+    pub(crate) fn ended_hook(&self) -> Option<SessionEndedHook> {
+        self.ended.get().cloned()
+    }
+
     /// Start keeping `pubkey`'s session on `origin` alive (idempotent). When
-    /// the session ends for good (revoked elsewhere, expired), the account is
-    /// marked `needs_login` in the list under `data_dir`.
+    /// the relay ends the session for good, the account is signed out through
+    /// the [`SessionEndedHook`]; any other end (or no hook) marks it
+    /// `needs_login` in the list under `data_dir`.
     pub(crate) fn start(
         &self,
         client: &reqwest::Client,
@@ -1075,6 +1132,7 @@ impl InactiveSessions {
         };
         let client = client.clone();
         let origin = origin.to_owned();
+        let ended = self.ended_hook();
         tauri::async_runtime::spawn(async move {
             let store = Arc::new(AccountRefreshStore { pubkey });
             if let Some((generation, attempt)) =
@@ -1099,7 +1157,9 @@ impl InactiveSessions {
                     "buzz-desktop: accounts: background session of {} on {origin} ended ({code})",
                     &pubkey.to_hex()[..8]
                 );
-                if let Some(dir) = data_dir {
+                if let Some(ended) = ended.filter(|_| super::refresh::ends_sign_in(&code)) {
+                    ended(origin, Some(pubkey), code);
+                } else if let Some(dir) = data_dir {
                     if let Err(error) = mark_needs_login(shared_secrets(), &dir, &origin, &pubkey) {
                         eprintln!("buzz-desktop: accounts: could not record it: {error}");
                     }
@@ -1113,17 +1173,29 @@ impl InactiveSessions {
     /// it. The generation fence ends the loop. Returns whether one was
     /// running.
     pub(crate) async fn stop(&self, origin: &str, pubkey: &PublicKey) -> bool {
+        self.take(origin, pubkey).await.is_some()
+    }
+
+    /// [`Self::stop`], returning the live session it held, if any, for a
+    /// sign-out of that account to revoke server-side. `None` when no
+    /// background session was running.
+    pub(crate) async fn take(
+        &self,
+        origin: &str,
+        pubkey: &PublicKey,
+    ) -> Option<Option<super::UserSession>> {
         let auth = self
             .sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .remove(&Self::key(origin, pubkey));
-        let Some(auth) = auth else {
-            return false;
-        };
+            .remove(&Self::key(origin, pubkey))?;
         let _guard = auth.refresh_lock(origin).lock_owned().await;
+        let session = match auth.get(origin) {
+            Some((_, super::OriginAuth::Active(session))) => Some(session),
+            _ => None,
+        };
         auth.set(origin, super::OriginAuth::SignedOut);
-        true
+        Some(session)
     }
 }
 
@@ -1415,6 +1487,68 @@ pub async fn switch_account(
     }))
 }
 
+/// Whether an agent's owner is signed in on a server, for the agent start
+/// gate: an agent runs while its owner is signed in on this computer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OwnerHere {
+    /// Signed in (also while its session needs a fresh sign-in), key-only, or
+    /// the principal of the server's token account.
+    SignedIn,
+    /// Explicitly signed out here (sign-out, or the relay ended its session).
+    SignedOut,
+    /// Not an account on this computer for that server.
+    Unlisted,
+}
+
+/// [`OwnerHere`] from the account list and this device's sign-out marker:
+/// only an explicit sign-out refuses (§10.8: never the live session state, so
+/// an offline launch still starts every signed-in owner's agents). Pure.
+pub(crate) fn owner_here(
+    registry: &Registry,
+    origin: &str,
+    owner: &PublicKey,
+    marked_signed_out: bool,
+    token_principal: Option<PublicKey>,
+) -> OwnerHere {
+    if marked_signed_out {
+        return OwnerHere::SignedOut;
+    }
+    if token_principal == Some(*owner) || registry.key_only(owner) {
+        return OwnerHere::SignedIn;
+    }
+    match registry.get(origin, owner).map(|a| a.state) {
+        Some(AccountState::SignedOut) => OwnerHere::SignedOut,
+        Some(_) => OwnerHere::SignedIn,
+        None => OwnerHere::Unlisted,
+    }
+}
+
+/// [`owner_here`] for `owner` on the server of `relay_url`, read from this
+/// computer's account list and sign-out markers.
+pub(crate) fn owner_here_for<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    relay_url: &str,
+    owner: &PublicKey,
+) -> Result<OwnerHere, String> {
+    use tauri::Manager;
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "account storage is unavailable")?;
+    let registry = {
+        let _lock = registry_lock();
+        load_registry(&data_dir)?.unwrap_or_default()
+    };
+    let origin = super::origin_for(relay_url);
+    let state = app.state::<crate::app_state::AppState>();
+    let marked = state
+        .token_auth
+        .signed_out
+        .is_signed_out(&origin, Some(*owner));
+    let principal = crate::managed_agents::token_account_principal(&state.token_auth, &origin);
+    Ok(owner_here(&registry, &origin, owner, marked, principal))
+}
+
 /// The key of an account on this computer for read-only background work as
 /// that account (its unread observer). With `relay_url`, the account must be
 /// signed in there (or key-only) and not signed out on this device; without
@@ -1435,10 +1569,7 @@ fn usable_account_keys<R: tauri::Runtime>(
         load_registry(&data_dir)?.unwrap_or_default()
     };
     let hex = pubkey.to_hex();
-    let key_only = registry
-        .accounts
-        .iter()
-        .any(|a| a.pubkey == hex && a.state == AccountState::KeyOnly);
+    let key_only = registry.key_only(&pubkey);
     let usable = match relay_url {
         Some(url) => {
             let origin = super::origin_for(url);

@@ -570,6 +570,8 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // be signed in here and every account's agents keep running. An agent
     // with no known owner is refused.
     let record_owner = super::spawn_owner_hex(app, record)?;
+    // ...and only while that owner is signed in on this computer.
+    super::ensure_owner_signed_in(app, record, relay_url, &record_owner)?;
     let owner_hex = Some(record_owner.as_str());
     let runtime_key = ManagedAgentRuntimeKey::new(record.pubkey.clone(), relay_url)?;
     // Resolve the effective harness (agent command) from the linked persona, so

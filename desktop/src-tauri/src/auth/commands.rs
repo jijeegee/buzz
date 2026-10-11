@@ -51,6 +51,8 @@ pub struct TokenAuthStatus {
     /// (another Google account, or a "connect" whose Google account already
     /// held an account).
     pub account_changed: bool,
+    /// The account a sign-out of the active account switched to (hex).
+    pub switched_to: Option<String>,
 }
 
 fn status_of(
@@ -82,6 +84,7 @@ fn status_of(
         legacy_token_account: false,
         signing_pubkey: None,
         device_signed_out: false,
+        switched_to: None,
         account_changed: false,
     }
 }
@@ -347,6 +350,11 @@ async fn login_inner(
     // This account is signed in here now; other accounts' sign-outs stay. A
     // token account's marker names no account (or, from older builds, its
     // principal).
+    let owner = signed_in_account.unwrap_or(principal);
+    let resume = state
+        .token_auth
+        .signed_out
+        .stopped_agents(&origin, Some(owner));
     state
         .token_auth
         .signed_out
@@ -373,9 +381,63 @@ async fn login_inner(
         }
     }
     emit_changed(app, &origin);
+    // Signed in here again: like an app launch for this account, its agents
+    // start (outside every sign-in lock; each start takes its own).
+    start_owner_agents(app, owner, resume);
     let mut status = current_status(&state, &origin, Some(providers));
     status.account_changed = account_changed;
     Ok(status)
+}
+
+/// Start `owner`'s local agents that start with the app, plus `resume` (the
+/// ones its last sign-out stopped), on the current community. In the
+/// background; failures are logged per agent.
+fn start_owner_agents(app: &AppHandle, owner: PublicKey, resume: Vec<String>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let relay_url = crate::relay::relay_ws_url_with_override(&state);
+        let records = match crate::managed_agents::load_managed_agents(&app) {
+            Ok(records) => records,
+            Err(error) => {
+                eprintln!("buzz-desktop: auth: agents not started after sign-in: {error}");
+                return;
+            }
+        };
+        for pubkey in owner_agents_to_start(&records, &owner.to_hex(), &resume, |record| {
+            crate::managed_agents::agent_owner_hex(&app, record)
+        }) {
+            if let Err(error) = crate::managed_agents::start_managed_agent_runtime(
+                pubkey.clone(),
+                relay_url.clone(),
+                app.clone(),
+            ) {
+                eprintln!("buzz-desktop: auth: agent {pubkey} not started after sign-in: {error}");
+            }
+        }
+    });
+}
+
+/// The local agents of `owner` to start when it signs in: its auto-start
+/// agents and the ones its sign-out stopped. Pure.
+fn owner_agents_to_start(
+    records: &[crate::managed_agents::ManagedAgentRecord],
+    owner: &str,
+    resume: &[String],
+    owner_of: impl Fn(&crate::managed_agents::ManagedAgentRecord) -> Option<String>,
+) -> Vec<String> {
+    records
+        .iter()
+        .filter(|record| record.backend == crate::managed_agents::BackendKind::Local)
+        .filter(|record| {
+            record.start_on_app_launch
+                || resume
+                    .iter()
+                    .any(|stopped| stopped.eq_ignore_ascii_case(&record.pubkey))
+        })
+        .filter(|record| owner_of(record).is_some_and(|o| o.eq_ignore_ascii_case(owner)))
+        .map(|record| record.pubkey.clone())
+        .collect()
 }
 
 fn ensure_existing_token_agents(
@@ -566,64 +628,163 @@ fn api_error(error: ApiError) -> String {
     error.to_string()
 }
 
-/// Sign out of the current community on this computer: revoke the session
-/// server-side, durably mark the device signed out, then forget the session.
-/// Keys, agents, communities and history are never deleted. A network failure
-/// keeps everything so the user can retry (the server-side session would
-/// otherwise stay alive unrevoked).
-///
-/// `stop_agents` lists running local agents the user chose to stop with this
-/// sign-out. They are recorded in the same marker write, so they stay stopped
-/// (no launch restore or auto-start) until the user signs in again; the caller
-/// stops them through the existing runtime stop command afterwards.
+/// Sign `account` (default: the active account) out of the current community
+/// on this computer: revoke its session server-side, durably mark it signed
+/// out, stop its agents, and when it was the active account switch to another
+/// account still signed in here (`switchedTo`), else the signed-out screen.
+/// Keys, communities and history are never deleted. A network failure keeps
+/// everything so the user can retry (the server-side session would otherwise
+/// stay alive unrevoked).
 #[tauri::command]
-pub async fn logout(
-    app: AppHandle,
-    stop_agents: Option<Vec<String>>,
-) -> Result<TokenAuthStatus, String> {
+pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let stop_agents = normalize_agent_pubkeys(stop_agents.unwrap_or_default())?;
-    // Only this account's own agents: signing out never stops (or keeps from
-    // starting) another account's agents.
-    let stop_agents = own_agents(&app, stop_agents);
-    // Let an in-flight restore or refresh settle first (sign-out is offered
-    // while restoring, Rule 6), so a session it just activated is revoked
-    // server-side rather than only forgotten locally.
-    drop(state.token_auth.refresh_lock(&origin).lock_owned().await);
-    if let Some((_, OriginAuth::Active(session))) = state.token_auth.get(&origin) {
-        match api::logout(&state.http_client, &origin, &session.access).await {
-            Ok(())
-            | Err(ApiError {
-                status: Some(401), ..
-            }) => {}
-            Err(error) => return Err(format!("could not sign out: {error}")),
+    let account = account
+        .map(|hex| PublicKey::from_hex(&hex).map_err(|_| "invalid account".to_string()))
+        .transpose()?;
+    let switched_to = sign_out_account(&app, &origin, account, true).await?;
+    let support = state.token_auth.cached_support(&origin).flatten();
+    let mut status = current_status(&state, &origin, support);
+    status.switched_to = switched_to.map(|key| key.to_hex());
+    Ok(status)
+}
+
+/// Sign `account` out of `origin` on this computer: an agent runs while its
+/// owner is signed in here, so this always stops the account's agents.
+/// `revoke` ends the session server-side first (a user sign-out); a session
+/// the relay already ended is not revoked again. `account` defaults to the
+/// active account (`None` also covers a legacy token account). Returns the
+/// account switched to when the active account signed out and another one is
+/// still signed in here. The UI is told only after any switch, so it never
+/// shows the signed-out screen on the way to the next account.
+pub(crate) async fn sign_out_account(
+    app: &AppHandle,
+    origin: &str,
+    account: Option<PublicKey>,
+    revoke: bool,
+) -> Result<Option<PublicKey>, String> {
+    let state = app.state::<AppState>();
+    let active = state.keys.lock().ok().map(|keys| keys.public_key());
+    let data_dir = app.path().app_data_dir().ok();
+    let account = account.or_else(|| state.token_auth.signing_pubkey(origin));
+    let is_active = account.is_none() || account == active;
+    // Its running agents, recorded with the sign-out (informational) and
+    // stopped below.
+    let pairs = match account.or(active) {
+        Some(owner) => {
+            crate::managed_agents::running_owner_pairs(app, &owner.to_hex()).unwrap_or_default()
         }
+        None => Vec::new(),
+    };
+    let stopping: Vec<String> = pairs.iter().map(|key| key.pubkey.clone()).collect();
+    if is_active {
+        // Let an in-flight restore or refresh settle first (sign-out is
+        // offered while restoring, Rule 6), so a session it just activated is
+        // revoked server-side rather than only forgotten locally.
+        drop(state.token_auth.refresh_lock(origin).lock_owned().await);
+        if revoke {
+            if let Some((_, OriginAuth::Active(session))) = state.token_auth.get(origin) {
+                revoke_session(&state.http_client, origin, &session.access).await?;
+            }
+        }
+        sign_out_device(&state.token_auth, origin, &KeyringRefreshStore, &stopping).await?;
+    } else if let Some(account) = account {
+        // A background account: its session lives in its own loop.
+        let held = state.token_auth.inactive.take(origin, &account).await;
+        if revoke {
+            if let Some(session) = held.flatten() {
+                if let Err(error) =
+                    revoke_session(&state.http_client, origin, &session.access).await
+                {
+                    // Nothing changed locally: keep it alive for a retry.
+                    state.token_auth.inactive.start(
+                        &state.http_client,
+                        data_dir.clone(),
+                        origin,
+                        account,
+                    );
+                    return Err(error);
+                }
+            }
+        }
+        state
+            .token_auth
+            .signed_out
+            .mark(origin, Some(account), &stopping)?;
     }
-    // AGENT POLICY SEAM: running local agents keep running unless the user
-    // ticked "Also stop" in the sign-out dialog; that choice is persisted here
-    // with the marker and carried out by the UI's existing per-pair stop.
-    let account = state.token_auth.signing_pubkey(&origin);
-    sign_out_device(
-        &state.token_auth,
-        &origin,
-        &KeyringRefreshStore,
-        &stop_agents,
-    )
-    .await?;
-    if let (Some(account), Ok(data_dir)) = (account, app.path().app_data_dir()) {
+    if let (Some(account), Some(data_dir)) = (account, data_dir.as_deref()) {
         if let Err(error) = super::accounts::mark_signed_out(
             super::accounts::shared_secrets(),
-            &data_dir,
-            &origin,
+            data_dir,
+            origin,
             &account,
         ) {
             eprintln!("buzz-desktop: auth: account list not updated on sign-out: {error}");
         }
     }
-    emit_changed(&app, &origin);
-    let support = state.token_auth.cached_support(&origin).flatten();
-    Ok(current_status(&state, &origin, support))
+    let stop_app = app.clone();
+    let failures = tauri::async_runtime::spawn_blocking(move || {
+        crate::managed_agents::stop_pairs(&stop_app, pairs)
+    })
+    .await
+    .unwrap_or_else(|error| vec![error.to_string()]);
+    for failure in failures {
+        eprintln!("buzz-desktop: auth: agent not stopped on sign-out: {failure}");
+    }
+    let next = match (is_active, data_dir.as_deref()) {
+        (true, Some(data_dir)) => super::accounts::next_signed_in(data_dir, origin, account),
+        _ => None,
+    };
+    if let Some(next) = next {
+        match super::accounts::switch_account(app.clone(), next.to_hex()).await {
+            Ok(Some(warning)) => {
+                eprintln!("buzz-desktop: auth: switched after sign-out with: {warning}")
+            }
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("buzz-desktop: auth: no switch after sign-out: {error}");
+                emit_changed(app, origin);
+                return Ok(None);
+            }
+        }
+        return Ok(Some(next));
+    }
+    emit_changed(app, origin);
+    Ok(None)
+}
+
+/// Install the hook that signs an account out when the relay ended its
+/// session for good (revoked from another device, disabled, reused or expired
+/// refresh token), for the active account's loop and every background one.
+pub(crate) fn install_session_ended_hook(app: &AppHandle) {
+    let hook_app = app.clone();
+    app.state::<AppState>()
+        .token_auth
+        .inactive
+        .set_ended_hook(std::sync::Arc::new(move |origin, account, code| {
+            let app = hook_app.clone();
+            tauri::async_runtime::spawn(async move {
+                eprintln!("buzz-desktop: auth: the relay ended a session on {origin} ({code}); signing it out");
+                if let Err(error) = sign_out_account(&app, &origin, account, false).await {
+                    eprintln!("buzz-desktop: auth: sign-out after {code} failed: {error}");
+                }
+            });
+        }));
+}
+
+/// Revoke a session server-side; already gone (401) counts as revoked.
+async fn revoke_session(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<(), String> {
+    match api::logout(client, origin, access).await {
+        Ok(())
+        | Err(ApiError {
+            status: Some(401), ..
+        }) => Ok(()),
+        Err(error) => Err(format!("could not sign out: {error}")),
+    }
 }
 
 /// Device sign-out of `origin`: write the durable signed-out marker first (it
@@ -1307,5 +1468,45 @@ mod tests {
             "d".repeat(64),
         ];
         assert_eq!(owned_by(asked, &records, &me, owner_of), vec![mine]);
+    }
+
+    #[test]
+    fn signing_in_starts_that_accounts_auto_start_and_stopped_agents_only() {
+        let record = |pubkey: &str, auto: bool| -> crate::managed_agents::ManagedAgentRecord {
+            let mut record: crate::managed_agents::ManagedAgentRecord =
+                serde_json::from_value(serde_json::json!({
+                    "pubkey": pubkey, "name": "a", "relay_url": "wss://relay.test",
+                    "acp_command": "x", "agent_command": "x", "agent_args": [],
+                    "mcp_command": "x", "turn_timeout_seconds": 1,
+                    "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+                }))
+                .unwrap();
+            record.start_on_app_launch = auto;
+            record
+        };
+        let (auto, stopped, idle, theirs) = (
+            "a".repeat(64),
+            "b".repeat(64),
+            "c".repeat(64),
+            "d".repeat(64),
+        );
+        let me = "1".repeat(64);
+        let records = [
+            record(&auto, true),
+            record(&stopped, false),
+            record(&idle, false),
+            record(&theirs, true),
+        ];
+        let owner_of = |r: &crate::managed_agents::ManagedAgentRecord| {
+            Some(if r.pubkey == theirs {
+                "2".repeat(64)
+            } else {
+                me.clone()
+            })
+        };
+        assert_eq!(
+            owner_agents_to_start(&records, &me, &[stopped.to_ascii_uppercase()], owner_of),
+            vec![auto, stopped]
+        );
     }
 }

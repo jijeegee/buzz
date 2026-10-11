@@ -361,6 +361,60 @@ fn start_pair<R: tauri::Runtime>(
     Ok(status)
 }
 
+/// The running (agent, relay) pairs of agents owned by `owner_hex`.
+pub(crate) fn running_owner_pairs<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner_hex: &str,
+) -> Result<Vec<ManagedAgentRuntimeKey>, String> {
+    let records = load_managed_agents(app)?;
+    let state = app.state::<AppState>();
+    let keys: Vec<ManagedAgentRuntimeKey> = state
+        .managed_agent_processes
+        .lock()
+        .map_err(|e| e.to_string())?
+        .keys()
+        .cloned()
+        .collect();
+    Ok(owned_pairs(keys, &records, owner_hex, |record| {
+        super::agent_owner_hex(app, record)
+    }))
+}
+
+/// The pairs among `keys` whose agent `owner_of` says belongs to `owner_hex`;
+/// unknown agents and agents without a known owner are never included. Pure.
+pub(crate) fn owned_pairs(
+    keys: Vec<ManagedAgentRuntimeKey>,
+    records: &[super::ManagedAgentRecord],
+    owner_hex: &str,
+    owner_of: impl Fn(&super::ManagedAgentRecord) -> Option<String>,
+) -> Vec<ManagedAgentRuntimeKey> {
+    keys.into_iter()
+        .filter(|key| {
+            records
+                .iter()
+                .find(|record| record.pubkey == key.pubkey)
+                .and_then(&owner_of)
+                .is_some_and(|owner| owner.eq_ignore_ascii_case(owner_hex))
+        })
+        .collect()
+}
+
+/// Stop the given pairs (an account's agents when it signs out). Blocking;
+/// every pair is attempted and the failures are returned.
+pub(crate) fn stop_pairs<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    pairs: Vec<ManagedAgentRuntimeKey>,
+) -> Vec<String> {
+    pairs
+        .into_iter()
+        .filter_map(|key| {
+            stop_pair(key.pubkey.clone(), key.relay_url.clone(), app.clone())
+                .err()
+                .map(|error| format!("{}: {error}", key.pubkey))
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn stop_managed_agent_runtime(
     pubkey: String,
@@ -813,6 +867,41 @@ mod tests {
             Some("unexpected"),
         );
         assert!(observer_lifecycle_key(&ready_with_error.pubkey, &ready_with_error).is_err());
+    }
+
+    #[test]
+    fn signing_one_account_out_stops_only_its_own_agents() {
+        let record = |pubkey: &str| -> super::super::ManagedAgentRecord {
+            serde_json::from_value(serde_json::json!({
+                "pubkey": pubkey, "name": "a", "relay_url": "wss://relay.test",
+                "acp_command": "x", "agent_command": "x", "agent_args": [],
+                "mcp_command": "x", "turn_timeout_seconds": 1,
+                "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+            }))
+            .unwrap()
+        };
+        let (b_agent, a_agent, unowned) = ("b".repeat(64), "a".repeat(64), "c".repeat(64));
+        let (owner_a, owner_b) = ("1".repeat(64), "2".repeat(64));
+        let records = [record(&b_agent), record(&a_agent), record(&unowned)];
+        let key = |pubkey: &str, relay: &str| ManagedAgentRuntimeKey::new(pubkey, relay).unwrap();
+        let running = vec![
+            key(&b_agent, "wss://relay.test"),
+            key(&b_agent, "wss://other.test"),
+            key(&a_agent, "wss://relay.test"),
+            key(&unowned, "wss://relay.test"),
+        ];
+        let owner_of = |r: &super::super::ManagedAgentRecord| {
+            if r.pubkey == b_agent {
+                Some(owner_b.to_ascii_uppercase())
+            } else if r.pubkey == a_agent {
+                Some(owner_a.clone())
+            } else {
+                None
+            }
+        };
+        let stopping = owned_pairs(running, &records, &owner_b, owner_of);
+        assert_eq!(stopping.len(), 2);
+        assert!(stopping.iter().all(|k| k.pubkey == b_agent));
     }
 }
 

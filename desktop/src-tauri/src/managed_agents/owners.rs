@@ -108,10 +108,58 @@ pub(crate) fn spawn_owner_hex<R: tauri::Runtime>(
 /// to. `None` unless the origin is in token mode: a Google key-backup sign-in
 /// also holds an active session, but its principal is the Google login, not
 /// the account that owns anything.
-fn token_account_principal(auth: &crate::auth::TokenAuthState, origin: &str) -> Option<PublicKey> {
+pub(crate) fn token_account_principal(
+    auth: &crate::auth::TokenAuthState,
+    origin: &str,
+) -> Option<PublicKey> {
     match auth.mode(origin) {
         crate::auth::CredentialMode::Token(session) => Some(session.principal),
         _ => None,
+    }
+}
+
+/// The start gate: an agent runs only while its owner is signed in on this
+/// computer for the agent's server. A server bot not on the account list is
+/// refused only by an explicit sign-out marker (its token decides the rest).
+pub(crate) fn ensure_owner_signed_in<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    record: &ManagedAgentRecord,
+    relay_url: &str,
+    owner_hex: &str,
+) -> Result<(), String> {
+    use crate::auth::accounts::OwnerHere;
+    let owner = PublicKey::from_hex(owner_hex).map_err(|_| "invalid agent owner")?;
+    let here = crate::auth::accounts::owner_here_for(app, relay_url, &owner)?;
+    gate_verdict(record, here).inspect_err(|error| {
+        if here == OwnerHere::Unlisted {
+            eprintln!(
+                "buzz-desktop: agents: owner {} of {} is not an account on this computer",
+                &owner_hex[..owner_hex.len().min(8)],
+                record.pubkey
+            );
+        } else {
+            eprintln!("buzz-desktop: agents: {error}");
+        }
+    })
+}
+
+/// [`ensure_owner_signed_in`]'s decision. Pure.
+fn gate_verdict(
+    record: &ManagedAgentRecord,
+    here: crate::auth::accounts::OwnerHere,
+) -> Result<(), String> {
+    use crate::auth::accounts::OwnerHere;
+    match here {
+        OwnerHere::SignedIn => Ok(()),
+        OwnerHere::Unlisted if record.bot_origin.is_some() => Ok(()),
+        OwnerHere::SignedOut => Err(format!(
+            "agent {}'s account is signed out on this computer; it was not started.",
+            record.pubkey
+        )),
+        OwnerHere::Unlisted => Err(format!(
+            "agent {}'s account is not signed in on this computer; it was not started.",
+            record.pubkey
+        )),
     }
 }
 
@@ -307,5 +355,20 @@ mod tests {
         auth.set_key_backup(origin, nostr::Keys::generate().public_key());
         assert_eq!(token_account_principal(&auth, origin), None);
         assert_eq!(token_account_principal(&auth, "https://other.test"), None);
+    }
+
+    #[test]
+    fn the_gate_refuses_only_an_owner_signed_out_or_unknown_here() {
+        use crate::auth::accounts::OwnerHere;
+        let agent = record(&nostr::Keys::generate().public_key().to_hex(), None);
+        assert!(gate_verdict(&agent, OwnerHere::SignedIn).is_ok());
+        assert!(gate_verdict(&agent, OwnerHere::SignedOut).is_err());
+        assert!(gate_verdict(&agent, OwnerHere::Unlisted).is_err());
+        // A server bot's owner is its token account, not a listed account:
+        // only an explicit sign-out marker refuses it.
+        let mut bot = agent.clone();
+        bot.bot_origin = Some("https://relay.test".into());
+        assert!(gate_verdict(&bot, OwnerHere::Unlisted).is_ok());
+        assert!(gate_verdict(&bot, OwnerHere::SignedOut).is_err());
     }
 }

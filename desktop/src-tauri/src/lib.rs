@@ -307,6 +307,9 @@ pub fn run() {
                 Ok(data_dir) => state.token_auth.signed_out.load(&data_dir),
                 Err(e) => eprintln!("buzz-desktop: sign-out markers unavailable: {e}"),
             }
+            // The relay ending an account's session for good signs that
+            // account out here (and stops its agents), active or not.
+            crate::auth::commands::install_session_ended_hook(&app_handle);
             // Signed-in accounts that are not active stay signed in.
             crate::auth::accounts::start_background_sessions(&app_handle);
 

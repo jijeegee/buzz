@@ -51,6 +51,24 @@ pub(crate) fn classify(error: &ApiError) -> RefreshFailure {
     }
 }
 
+/// Whether a terminal failure `code` means the relay ended this account's
+/// session for good (revoked here or from another device, disabled, reused or
+/// expired refresh token): the account is then signed out on this computer
+/// and its agents stop. Only the relay's own 401 codes count; a code-less
+/// `http_4xx` (a proxy page, a captive portal, a redeploying relay) and local
+/// codes (`superseded`, `no_session`, `backup_*`, ...) only ask to sign in
+/// again. Pure.
+pub(crate) fn ends_sign_in(code: &str) -> bool {
+    matches!(
+        code,
+        "token_revoked"
+            | "principal_disabled"
+            | "refresh_reused"
+            | "token_expired"
+            | "invalid_token"
+    )
+}
+
 /// Delay before attempt `attempt` (0-based) after transient failures. Pure.
 pub(crate) fn backoff(attempt: u32) -> Duration {
     let factor = 1u32.checked_shl(attempt.min(16)).unwrap_or(u32::MAX);
@@ -374,6 +392,45 @@ mod tests {
             code: code.map(str::to_owned),
             message: String::new(),
         }
+    }
+
+    #[test]
+    fn only_relay_revocation_codes_sign_the_account_out() {
+        for code in [
+            "token_revoked",
+            "principal_disabled",
+            "refresh_reused",
+            "token_expired",
+            "invalid_token",
+        ] {
+            assert_eq!(
+                classify(&err(Some(401), Some(code))),
+                RefreshFailure::Terminal(code.into())
+            );
+            assert!(ends_sign_in(code), "{code}");
+        }
+        // A code-less 4xx (proxy, captive portal, redeploy 404) is terminal
+        // for the session but never a sign-out.
+        for status in [400, 403, 404] {
+            let RefreshFailure::Terminal(code) = classify(&err(Some(status), None)) else {
+                panic!("{status} is terminal");
+            };
+            assert!(!ends_sign_in(&code), "{code}");
+        }
+        // Local terminal codes and network failures neither.
+        for code in [
+            "superseded",
+            "no_session",
+            "signed_out",
+            "backup_not_initialized",
+            "backup_binding_conflict",
+            "backup_binding_unavailable",
+            "account_mode_conflict",
+            "invalid_principal",
+        ] {
+            assert!(!ends_sign_in(code), "{code}");
+        }
+        assert_eq!(classify(&err(None, None)), RefreshFailure::Transient);
     }
 
     #[test]

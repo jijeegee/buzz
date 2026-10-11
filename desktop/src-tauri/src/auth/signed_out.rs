@@ -114,6 +114,16 @@ impl SignedOutMarkers {
         markers.unreadable || markers.origins.keys().any(|(o, _)| o == origin)
     }
 
+    /// The agents `account`'s sign-out of `origin` stopped (to start again
+    /// when it signs back in).
+    pub(crate) fn stopped_agents(&self, origin: &str, account: Option<PublicKey>) -> Vec<String> {
+        self.lock()
+            .origins
+            .get(&(origin.to_owned(), account))
+            .map(|marker| marker.stopped_agents.clone())
+            .unwrap_or_default()
+    }
+
     /// Whether a sign-out stopped `agent_pubkey`, so it must not auto-start.
     pub(crate) fn suppresses_agent(&self, agent_pubkey: &str) -> bool {
         self.lock().origins.values().any(|marker| {

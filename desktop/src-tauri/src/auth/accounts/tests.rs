@@ -828,3 +828,79 @@ fn a_failed_sign_in_commit_is_rolled_back_to_the_previous_account() {
     );
     assert_eq!(mem.get(&refresh_slot(&third.public_key(), ORIGIN)), None);
 }
+
+#[test]
+fn an_agent_owner_counts_as_signed_out_only_after_an_explicit_sign_out() {
+    let owner = Keys::generate().public_key();
+    let listed = |state| {
+        let mut registry = Registry::default();
+        registry.upsert(ORIGIN, &owner, state);
+        registry
+    };
+    use OwnerHere::*;
+    for (state, expected) in [
+        (AccountState::SignedIn, SignedIn),
+        // Its session needs a fresh sign-in (offline, expired): still signed
+        // in here, so an offline launch starts its agents.
+        (AccountState::NeedsLogin, SignedIn),
+        (AccountState::SignedOut, SignedOut),
+    ] {
+        assert_eq!(
+            owner_here(&listed(state), ORIGIN, &owner, false, None),
+            expected
+        );
+    }
+    // A key-only account is listed for every server ("*").
+    let mut key_only = Registry::default();
+    key_only.upsert(ANY_ORIGIN, &owner, AccountState::KeyOnly);
+    assert_eq!(owner_here(&key_only, ORIGIN, &owner, false, None), SignedIn);
+    // Another server, or not listed at all.
+    assert_eq!(
+        owner_here(
+            &listed(AccountState::SignedIn),
+            "https://other.test",
+            &owner,
+            false,
+            None
+        ),
+        Unlisted
+    );
+    assert_eq!(
+        owner_here(&Registry::default(), ORIGIN, &owner, false, None),
+        Unlisted
+    );
+    // The token account's principal (server bots).
+    assert_eq!(
+        owner_here(&Registry::default(), ORIGIN, &owner, false, Some(owner)),
+        SignedIn
+    );
+    // The sign-out marker wins over everything.
+    assert_eq!(
+        owner_here(
+            &listed(AccountState::SignedIn),
+            ORIGIN,
+            &owner,
+            true,
+            Some(owner)
+        ),
+        SignedOut
+    );
+}
+
+#[test]
+fn signing_out_the_active_account_switches_to_another_signed_in_one() {
+    let (a, b, c) = (
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+    );
+    let mut registry = Registry::default();
+    registry.upsert(ORIGIN, &a, AccountState::SignedIn);
+    registry.upsert(ORIGIN, &b, AccountState::SignedOut);
+    registry.upsert("https://other.test", &c, AccountState::SignedIn);
+    // B is signed out and C is on another server: nothing to switch to.
+    assert_eq!(next_signed_in_of(&registry, ORIGIN, Some(a)), None);
+    registry.upsert(ORIGIN, &c, AccountState::SignedIn);
+    assert_eq!(next_signed_in_of(&registry, ORIGIN, Some(a)), Some(c));
+    assert_eq!(next_signed_in_of(&registry, ORIGIN, Some(c)), Some(a));
+}
