@@ -6,6 +6,7 @@ class _MessageList extends HookConsumerWidget {
   final String? initialMessageId;
   final String? initialThreadRootId;
   final InitialThreadRouteBehavior initialThreadRouteBehavior;
+  final bool highlightInitialMessage;
   final Set<String> initialOrdinaryUnreadMessageIds;
   final String? initialOldestOrdinaryUnreadMessageId;
   final Set<String> initialForcedUnreadMessageIds;
@@ -28,6 +29,7 @@ class _MessageList extends HookConsumerWidget {
     required this.initialMessageId,
     required this.initialThreadRootId,
     required this.initialThreadRouteBehavior,
+    this.highlightInitialMessage = false,
     required this.initialOrdinaryUnreadMessageIds,
     required this.initialOldestOrdinaryUnreadMessageId,
     required this.initialForcedUnreadMessageIds,
@@ -80,6 +82,15 @@ class _MessageList extends HookConsumerWidget {
     final observedLocalSendIds = useRef(localSendAnimations.keys.toSet());
     final didOpenInitialThread = useRef(false);
     final didJumpToInitialMessage = useRef(false);
+    final landingHighlightId = useState<String?>(null);
+    useEffect(() {
+      if (landingHighlightId.value == null) return null;
+      final timer = Timer(
+        const Duration(seconds: 3),
+        () => landingHighlightId.value = null,
+      );
+      return timer.cancel;
+    }, [landingHighlightId.value]);
     final isUnreadNavigationDismissed = useState(false);
     final detachedWhileUnreadShown = useRef(false);
     final oldestUnreadMessageId = useState<String?>(null);
@@ -645,6 +656,9 @@ class _MessageList extends HookConsumerWidget {
         hasUserScrolled.value = false;
         isAtLatest.value = false;
         itemScrollController.jumpTo(index: targetIndex, alignment: 0.35);
+        if (highlightInitialMessage) {
+          landingHighlightId.value = initialMessageId;
+        }
       });
       return null;
     }, [initialMessageId, initialThreadRootId, entries.length]);
@@ -889,20 +903,27 @@ class _MessageList extends HookConsumerWidget {
                               isArchived: isArchived,
                             )
                           else ...[
-                            _MessageBubble(
-                              message: message,
-                              showAuthor: showAuthor,
-                              showTime: showTime,
-                              hasReplies: entry.summary != null,
-                              channelNames: channelNamesMap,
-                              currentChannelId: channelId,
-                              currentPubkey: currentPubkey,
-                              allMessages: allMessages,
-                              isMember: isMember,
-                              isArchived: isArchived,
-                              composerFocusNode: composerFocusNode,
-                              restoreComposerFocus: restoreComposerFocus,
-                              quoteScope: quoteScope,
+                            _LandingHighlight(
+                              enabled:
+                                  highlightInitialMessage &&
+                                  message.id == initialMessageId,
+                              highlighted:
+                                  message.id == landingHighlightId.value,
+                              child: _MessageBubble(
+                                message: message,
+                                showAuthor: showAuthor,
+                                showTime: showTime,
+                                hasReplies: entry.summary != null,
+                                channelNames: channelNamesMap,
+                                currentChannelId: channelId,
+                                currentPubkey: currentPubkey,
+                                allMessages: allMessages,
+                                isMember: isMember,
+                                isArchived: isArchived,
+                                composerFocusNode: composerFocusNode,
+                                restoreComposerFocus: restoreComposerFocus,
+                                quoteScope: quoteScope,
+                              ),
                             ),
                             if (entry.summary != null)
                               _ThreadSummaryRow(
@@ -976,6 +997,38 @@ class _MessageList extends HookConsumerWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The brief tint a jumped-to message gets, like a thread's landing
+/// highlight. Only the jump target is wrapped ([enabled]).
+class _LandingHighlight extends StatelessWidget {
+  const _LandingHighlight({
+    required this.enabled,
+    required this.highlighted,
+    required this.child,
+  });
+
+  final bool enabled;
+  final bool highlighted;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return AnimatedContainer(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: highlighted
+            ? context.colors.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(Radii.md),
+      ),
+      child: child,
     );
   }
 }

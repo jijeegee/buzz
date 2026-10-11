@@ -27,6 +27,7 @@ import { compareMembersByRole } from "@/features/channels/lib/memberUtils";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useChannelWorkflowsQuery } from "@/features/workflows/hooks";
 import { DEFAULT_EPHEMERAL_TTL_SECONDS } from "@/features/channels/lib/ephemeralChannel";
+import type { GoalLinkTarget } from "@/features/goals/goalTree";
 import type { Channel, ChannelMember, Workflow } from "@/shared/api/types";
 import { useWorkflowEditorOverlay } from "@/shared/context/WorkflowEditorOverlayContext";
 import { useFeatureEnabled } from "@/shared/features";
@@ -95,8 +96,8 @@ type ChannelManagementSheetProps = {
   /** View to show when the sheet opens (e.g. straight into goals). */
   initialView?: "goals" | null;
   layout?: "overlay" | "split";
-  /** Opens a thread linked from the goals view. */
-  onOpenThread?: (threadRootId: string) => void;
+  /** Opens a thread or message linked from the goals view. */
+  onOpenGoalLink?: (target: GoalLinkTarget) => void;
   onDeleted?: () => void;
   onOpenMembers?: () => void;
   onOpenChange: (open: boolean) => void;
@@ -111,7 +112,7 @@ export function ChannelManagementSheet({
   initialView = null,
   layout = "overlay",
   onDeleted,
-  onOpenThread,
+  onOpenGoalLink,
   onOpenMembers,
   onOpenChange,
   open,
@@ -438,7 +439,7 @@ export function ChannelManagementSheet({
             resolvedChannel={resolvedChannel}
             setActiveView={setActiveView}
             goalsEnabled={goalsEnabled}
-            onOpenThread={onOpenThread}
+            onOpenGoalLink={onOpenGoalLink}
             unarchiveChannelMutation={unarchiveChannelMutation}
           />
         </DialogPrimitive.Content>
@@ -492,7 +493,7 @@ export function ChannelManagementSheet({
               resolvedChannel={resolvedChannel}
               setActiveView={setActiveView}
               goalsEnabled={goalsEnabled}
-              onOpenThread={onOpenThread}
+              onOpenGoalLink={onOpenGoalLink}
               unarchiveChannelMutation={unarchiveChannelMutation}
             />
           </DialogPrimitive.Content>
@@ -659,7 +660,7 @@ type ChannelManagementPanelContentProps = {
   channelId: string | null;
   currentPubkey?: string;
   goalsEnabled: boolean;
-  onOpenThread?: (threadRootId: string) => void;
+  onOpenGoalLink?: (target: GoalLinkTarget) => void;
   workflowsEnabled: boolean;
   workflowsQuery: {
     data?: Workflow[];
@@ -704,7 +705,7 @@ function ChannelManagementPanelContent({
   channelId,
   currentPubkey,
   goalsEnabled,
-  onOpenThread,
+  onOpenGoalLink,
   workflowsEnabled,
   workflowsQuery,
   onCreateWorkflow,
@@ -1010,7 +1011,7 @@ function ChannelManagementPanelContent({
             ) : null}
           </div>
         ) : activeView === "goals" && goalsEnabled && channelId ? (
-          <GoalsPanel channelId={channelId} onOpenThread={onOpenThread} />
+          <GoalsPanel channelId={channelId} onOpenLink={onOpenGoalLink} />
         ) : activeView === "canvas" ? (
           <div data-testid="channel-canvas-section">
             <KeyedChannelCanvas

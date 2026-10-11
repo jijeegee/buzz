@@ -130,7 +130,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   onBackFromAgentSession,
   onCloseAgentSession,
   onCloseChannelManagement,
-  onOpenGoalThread,
+  onOpenGoalLink,
   onChannelManagementDeleted,
   onCloseIdleAuxiliaryPanel,
   onCloseProfilePanel,
@@ -862,7 +862,7 @@ export const ChannelPane = React.memo(function ChannelPane({
             onChannelManagementDeleted={onChannelManagementDeleted}
             onCloseChannelManagement={onCloseChannelManagement}
             initialView={channelManagementInitialView}
-            onOpenGoalThread={onOpenGoalThread}
+            onOpenGoalLink={onOpenGoalLink}
             onOpenMembers={onOpenMembers}
             onResetThreadPanelWidth={onResetThreadPanelWidth}
             onThreadPanelResizeStart={onThreadPanelResizeStart}
@@ -878,7 +878,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               <MessageQuoteScope value={composerQuotes.threadScope}>
                 <MessageThreadPanel
                   channel={activeChannel}
-                  onOpenGoalThread={onOpenGoalThread}
+                  onOpenGoalLink={onOpenGoalLink}
                   channelId={activeChannel?.id ?? null}
                   channelName={activeChannel?.name ?? "channel"}
                   currentPubkey={currentPubkey}

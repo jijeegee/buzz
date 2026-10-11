@@ -27,6 +27,10 @@ import { useMessageQuoteAction } from "@/features/messages/ui/messageQuoteScope"
 import { useMessageMentionIdentities } from "@/features/messages/lib/useMessageMentionIdentities";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { ReportMessageDialog } from "@/features/moderation/ui/ReportMessageDialog";
+import {
+  LinkMessageToGoalDialog,
+  LinkToGoalMenuItem,
+} from "@/features/goals/ui/LinkMessageToGoal";
 import { MessageModerationMenuItems } from "@/features/moderation/ui/MessageModerationMenuItems";
 import type {
   TimelineMessage,
@@ -124,6 +128,7 @@ function MoreActionsMenu({
 }) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
+  const [isGoalPickerOpen, setIsGoalPickerOpen] = React.useState(false);
   // Transfer focus ownership only after the menu has finished closing.
   // During its exit animation Radix's pointer-leave handler can still focus
   // the menu, stealing keystrokes from an already-open composer. Merely
@@ -295,6 +300,13 @@ function MoreActionsMenu({
             </DropdownMenuItem>
           ) : null}
 
+          {canCopyMessageLink(message, channelId) ? (
+            <LinkToGoalMenuItem
+              message={message}
+              onSelect={() => setIsGoalPickerOpen(true)}
+            />
+          ) : null}
+
           {canReport || onDelete ? <DropdownMenuSeparator /> : null}
 
           {canReport ? (
@@ -336,6 +348,14 @@ function MoreActionsMenu({
           onConfirm={() => onDelete(message)}
           onOpenChange={setIsDeleteDialogOpen}
           open={isDeleteDialogOpen}
+        />
+      ) : null}
+
+      {isGoalPickerOpen && channelId ? (
+        <LinkMessageToGoalDialog
+          channelId={channelId}
+          message={message}
+          onClose={() => setIsGoalPickerOpen(false)}
         />
       ) : null}
 

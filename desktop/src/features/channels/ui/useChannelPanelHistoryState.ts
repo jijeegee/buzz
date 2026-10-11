@@ -116,6 +116,14 @@ export function useChannelPanelHistoryState() {
     [applyPatch],
   );
 
+  // Jump to a message as message links do (see useChannelRouteTarget),
+  // closing channel management in the same history entry.
+  const openMessageRouteTarget = React.useCallback(
+    (messageId: string, threadRootId: string | null) =>
+      applyPatch({ channelManagement: null, messageId, threadRootId }),
+    [applyPatch],
+  );
+
   const clearMessageRouteTarget = React.useCallback(
     (options?: PanelSetterOptions) =>
       applyPatch({ messageId: null, threadRootId: null }, options),
@@ -139,6 +147,7 @@ export function useChannelPanelHistoryState() {
         ? ("goals" as const)
         : null,
     openGoalsPanel,
+    openMessageRouteTarget,
     clearAutoSend,
     clearMessageRouteTarget,
     openAgentSessionChannelId: values.agentSessionChannel,

@@ -6,6 +6,7 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import 'goal_actions_sheet.dart';
 import 'goal_editing.dart';
+import 'goal_links.dart';
 import 'goal_provider.dart';
 import 'goal_thread_navigation.dart';
 import 'goal_tile.dart';
@@ -13,6 +14,7 @@ import 'goal_tree.dart';
 
 part 'thread_goals_page/goal_link_list.dart';
 part 'thread_goals_page/linked_goal_body.dart';
+part 'thread_goals_page/message_goal_link.dart';
 
 /// Opens the goal a thread works on.
 Future<void> showThreadGoalsPage({

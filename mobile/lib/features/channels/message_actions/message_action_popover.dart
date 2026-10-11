@@ -297,6 +297,26 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
         },
       ),
     );
+    if (ref.read(goalsEnabledProvider)) {
+      actions.add(
+        _PopoverMessageAction(
+          id: 'linkGoal',
+          title: 'Link to goal',
+          icon: LucideIcons.target,
+          group: _PopoverMessageActionGroup.utility,
+          onSelected: () {
+            if (!context.mounted) return;
+            showMessageGoalLink(
+              context: context,
+              ref: ref,
+              channelId: channelId,
+              messageId: message.id,
+              threadRootId: message.rootId,
+            );
+          },
+        ),
+      );
+    }
     if (canRemind) {
       actions.add(
         _PopoverMessageAction(
@@ -432,10 +452,11 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     'edit': 3,
     'copyText': 4,
     'copyLink': 5,
-    'remind': 6,
-    'followThread': 7,
-    'unfollowThread': 7,
-    'delete': 8,
+    'linkGoal': 6,
+    'remind': 7,
+    'followThread': 8,
+    'unfollowThread': 8,
+    'delete': 9,
   };
   actions.sort(
     (left, right) => actionOrder[left.id]!.compareTo(actionOrder[right.id]!),

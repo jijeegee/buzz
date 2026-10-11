@@ -1,5 +1,6 @@
 import type * as React from "react";
 
+import type { GoalLinkTarget } from "@/features/goals/goalTree";
 import type { Channel } from "@/shared/api/types";
 import { ChannelManagementSheet } from "@/features/channels/ui/ChannelManagementSheet";
 import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
@@ -12,7 +13,7 @@ type ChannelManagementAuxiliaryPanelProps = {
   isSinglePanelView: boolean;
   onChannelManagementDeleted?: () => void;
   onCloseChannelManagement?: () => void;
-  onOpenGoalThread?: (threadRootId: string) => void;
+  onOpenGoalLink?: (target: GoalLinkTarget) => void;
   onOpenMembers?: () => void;
   onResetThreadPanelWidth: () => void;
   onThreadPanelResizeStart: (
@@ -31,7 +32,7 @@ export function ChannelManagementAuxiliaryPanel({
   isSinglePanelView,
   onChannelManagementDeleted,
   onCloseChannelManagement,
-  onOpenGoalThread,
+  onOpenGoalLink,
   onOpenMembers,
   onResetThreadPanelWidth,
   onThreadPanelResizeStart,
@@ -45,7 +46,7 @@ export function ChannelManagementAuxiliaryPanel({
       channel={activeChannel}
       currentPubkey={currentPubkey}
       initialView={initialView}
-      onOpenThread={onOpenGoalThread}
+      onOpenGoalLink={onOpenGoalLink}
       layout={useSplitAuxiliaryPane || isSinglePanelView ? "split" : "overlay"}
       onDeleted={onChannelManagementDeleted}
       onOpenMembers={onOpenMembers}

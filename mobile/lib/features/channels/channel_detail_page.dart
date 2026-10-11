@@ -274,12 +274,17 @@ class ChannelDetailPage extends HookConsumerWidget {
   /// How the automatically opened initial thread affects the route stack.
   final InitialThreadRouteBehavior initialThreadRouteBehavior;
 
+  /// Briefly highlight [initialMessageId] on the main timeline after the
+  /// jump (goal message links).
+  final bool highlightInitialMessage;
+
   const ChannelDetailPage({
     super.key,
     required this.channel,
     this.initialMessageId,
     this.initialThreadRootId,
     this.initialThreadRouteBehavior = InitialThreadRouteBehavior.push,
+    this.highlightInitialMessage = false,
   });
 
   @override
@@ -771,6 +776,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                               initialThreadRootId: initialThreadRootId,
                               initialThreadRouteBehavior:
                                   initialThreadRouteBehavior,
+                              highlightInitialMessage: highlightInitialMessage,
                               initialOrdinaryUnreadMessageIds:
                                   initialOrdinaryUnreadMessageIds,
                               initialOldestOrdinaryUnreadMessageId:

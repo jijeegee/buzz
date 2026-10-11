@@ -12,6 +12,7 @@ import type {
   ProfilePanelView,
 } from "@/features/profile/ui/UserProfilePanel";
 import type { ProfilePanelOpenOptions } from "@/shared/context/ProfilePanelContext";
+import type { GoalLinkTarget } from "@/features/goals/goalTree";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 import type { IdleAuxiliaryHeaderControls } from "./IdleAuxiliaryPanel";
 export type ChannelPaneProps = {
@@ -95,8 +96,8 @@ export type ChannelPaneProps = {
   onBackFromAgentSession?: () => void;
   onCloseAgentSession: () => void;
   onCloseChannelManagement?: () => void;
-  /** Opens a thread linked from the goals view. */
-  onOpenGoalThread?: (threadRootId: string) => void;
+  /** Opens a thread or message linked from the goals view. */
+  onOpenGoalLink?: (target: GoalLinkTarget) => void;
   onChannelManagementDeleted?: () => void;
   onCloseIdleAuxiliaryPanel?: () => void;
   onCloseProfilePanel: () => void;

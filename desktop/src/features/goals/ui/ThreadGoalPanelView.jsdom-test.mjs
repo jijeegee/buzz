@@ -243,7 +243,7 @@ test("thread links go to other threads; this thread's link stays put", async () 
   };
   const { element } = view({
     defaultExpanded: true,
-    onOpenThread: (thread) => opened.push(thread),
+    onOpenLink: (target) => opened.push(target.threadRootId),
     tree: linkedTree,
   });
   const { q, unmount } = await mount(element);
@@ -255,4 +255,87 @@ test("thread links go to other threads; this thread's link stays put", async () 
   await act(async () => fireEvent.click(other));
   assert.deepEqual(opened, [OTHER]);
   await unmount();
+});
+
+test("linked messages read Message and jump; missing ones are disabled", async () => {
+  const [MAIN, REPLY, GONE, ROOT, LOADING] = ["11", "22", "33", "44", "55"].map(
+    (c) => c.repeat(32),
+  );
+  const opened = [];
+  const linkedTree = {
+    ...tree,
+    nodes: tree.nodes.map((n) =>
+      n.id === "ui" ? { ...n, threads: [MAIN, REPLY, GONE, ROOT, LOADING] } : n,
+    ),
+  };
+  const { element } = view({
+    defaultExpanded: true,
+    linkKinds: new Map([
+      [MAIN, { kind: "message" }],
+      [REPLY, { kind: "reply", threadRootId: ROOT }],
+      [GONE, { kind: "missing" }],
+      [ROOT, { kind: "thread" }],
+    ]),
+    onOpenLink: (target) => opened.push(target),
+    tree: linkedTree,
+  });
+  const { q, unmount } = await mount(element);
+  const link = (id) => q(`goal-thread-${id}`);
+  assert.deepEqual(
+    [MAIN, REPLY, GONE, ROOT, LOADING].map((id) => link(id).textContent),
+    ["Message", "Message", "Message", "Thread", "Thread"],
+  );
+  assert.equal(link(GONE).disabled, true);
+  for (const id of [MAIN, REPLY, ROOT]) {
+    await act(async () => fireEvent.click(link(id)));
+  }
+  assert.deepEqual(opened, [
+    { kind: "message", messageId: MAIN, threadRootId: null },
+    { kind: "message", messageId: REPLY, threadRootId: ROOT },
+    { kind: "thread", threadRootId: ROOT },
+  ]);
+  await unmount();
+});
+
+test("a message's picker offers only the goals it may link", async () => {
+  const { messageGoalLinkScope } = await import("../goalTree.ts");
+  const MESSAGE = "99".repeat(32);
+  const picker = async (threadRootId) => {
+    const calls = [];
+    const mounted = await mount(
+      React.createElement(GoalLinkPicker, {
+        apply: async (op) => calls.push(op),
+        linkedGoalId: null,
+        onDone: () => {},
+        scope: messageGoalLinkScope(tree, threadRootId),
+        subject: "message",
+        threadRootId: MESSAGE,
+        tree,
+      }),
+    );
+    return { calls, ...mounted };
+  };
+
+  // Main timeline: layer 2 and below; a new layer 2 goal may go under L1.
+  const main = await picker(null);
+  assert.equal(main.q("thread-goal-option-root").disabled, true);
+  assert.ok(main.q("thread-goal-create-under-root"));
+  await act(async () => fireEvent.click(main.q("thread-goal-option-ui")));
+  assert.deepEqual(main.calls, [{ op: "link", id: "ui", thread: MESSAGE }]);
+  await main.unmount();
+
+  // In a linked thread: only its goal and sub-goals.
+  const linked = await picker(THREAD);
+  for (const id of ["srv", "cas", "val"]) {
+    assert.equal(linked.q(`thread-goal-option-${id}`).disabled, false);
+  }
+  for (const id of ["root", "ui"]) {
+    assert.equal(linked.q(`thread-goal-option-${id}`), null);
+  }
+  await linked.unmount();
+
+  // In a thread without a goal: any goal, as the thread's own picker.
+  const unlinked = await picker("cd".repeat(32));
+  assert.equal(unlinked.q("thread-goal-option-root").disabled, false);
+  await unlinked.unmount();
 });

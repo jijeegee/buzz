@@ -426,7 +426,13 @@ pub async fn dispatch(cmd: GoalsCmd, client: &BuzzClient) -> Result<(), CliError
             channel,
             node,
             thread,
+            message,
         } => {
+            // A message link shares the goal's thread list: a message is the
+            // root of its thread once someone replies.
+            let thread = thread
+                .or(message)
+                .ok_or_else(|| CliError::Usage("pass --thread or --message".into()))?;
             validate_hex64(&thread)?;
             let op = GoalOp::Link { id: node, thread };
             print(&write(client, &channel, Edit::Ops(vec![op])).await?);
@@ -613,6 +619,27 @@ mod tests {
         };
         assert!(is_goal_conflict(&goal));
         assert!(!is_goal_conflict(&canvas));
+    }
+
+    #[test]
+    fn link_takes_a_thread_or_a_message_but_not_both() {
+        use clap::Parser;
+        let id = "e".repeat(64);
+        let parse = |extra: &[&str]| {
+            let mut args = vec!["buzz", "goals", "link", "--channel", "c", "--node", "g"];
+            args.extend_from_slice(extra);
+            crate::Cli::try_parse_from(args).map(|cli| cli.command)
+        };
+        let linked = |extra: &[&str]| match parse(extra) {
+            Ok(crate::Cmd::Goals(GoalsCmd::Link {
+                thread, message, ..
+            })) => thread.or(message),
+            _ => None,
+        };
+        assert_eq!(linked(&["--message", &id]), Some(id.clone()));
+        assert_eq!(linked(&["--thread", &id]), Some(id.clone()));
+        assert!(parse(&[]).is_err());
+        assert!(parse(&["--thread", &id, "--message", &id]).is_err());
     }
 
     #[test]

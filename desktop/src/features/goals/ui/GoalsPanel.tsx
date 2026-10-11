@@ -5,11 +5,17 @@ import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { GoalNode, GoalTree } from "@/shared/api/tauriGoals";
 import { newGoalId } from "@/shared/api/tauriGoals";
 import { Button } from "@/shared/ui/button";
-import { goalChildren, goalProgress, goalRoot } from "../goalTree";
+import {
+  type GoalLinkTarget,
+  goalChildren,
+  goalProgress,
+  goalRoot,
+} from "../goalTree";
 import {
   useApplyGoalOpMutation,
   useGoalAssigneeNames,
   useGoalHistoryQuery,
+  useGoalLinkKinds,
   useGoalTreeQuery,
   useRestoreGoalTreeMutation,
 } from "../hooks";
@@ -17,17 +23,18 @@ import { AddGoalInline, type Apply, GoalEditor, GoalRow } from "./GoalRows";
 
 type GoalsPanelProps = {
   channelId: string;
-  onOpenThread?: (threadRootId: string) => void;
+  onOpenLink?: (target: GoalLinkTarget) => void;
 };
 
 /** The goal tree of a channel or DM: layer 1 card, outline, history. */
-export function GoalsPanel({ channelId, onOpenThread }: GoalsPanelProps) {
+export function GoalsPanel({ channelId, onOpenLink }: GoalsPanelProps) {
   const goalQuery = useGoalTreeQuery(channelId);
   const applyMutation = useApplyGoalOpMutation(channelId);
   const [showHistory, setShowHistory] = React.useState(false);
   const tree = goalQuery.data?.tree ?? { v: 1, nodes: [] };
   const root = goalRoot(tree);
   const nameOf = useGoalAssigneeNames(goalQuery.data?.tree);
+  const linkKinds = useGoalLinkKinds(channelId, goalQuery.data?.tree);
 
   const applyGoalOp = applyMutation.mutateAsync;
   const apply = React.useCallback<Apply>(
@@ -61,9 +68,10 @@ export function GoalsPanel({ channelId, onOpenThread }: GoalsPanelProps) {
               apply={apply}
               key={child.id}
               layer={2}
+              linkKinds={linkKinds}
               nameOf={nameOf}
               node={child}
-              onOpenThread={onOpenThread}
+              onOpenLink={onOpenLink}
               tree={tree}
             />
           ))}

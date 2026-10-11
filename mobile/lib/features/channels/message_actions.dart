@@ -27,6 +27,8 @@ import '../../shared/widgets/sheet_divider.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/reminders/remind_me_later_sheet.dart';
 import '../../shared/reminders/reminder_service.dart';
+import '../goals/goals_preferences.dart';
+import '../goals/thread_goals_page.dart';
 import 'channel_management_provider.dart';
 import 'emoji_picker.dart';
 import 'message_action_backdrop_state.dart';
@@ -174,6 +176,23 @@ void showMessageActions({
                     // Triage: come back to this message later.
                     _MarkReadUnreadTile(message: message, channelId: channelId),
                     _FollowThreadTile(message: message),
+                    if (ref.read(goalsEnabledProvider))
+                      ListTile(
+                        key: const ValueKey('message-action-link-goal'),
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(LucideIcons.target),
+                        title: const Text('Link to goal'),
+                        onTap: () {
+                          Navigator.of(sheetContext).pop();
+                          showMessageGoalLink(
+                            context: context,
+                            ref: ref,
+                            channelId: channelId,
+                            messageId: message.id,
+                            threadRootId: message.rootId,
+                          );
+                        },
+                      ),
                     const SheetDivider(),
                     // Export: take the content out of the conversation.
                     ListTile(
