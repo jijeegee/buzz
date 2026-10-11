@@ -7,6 +7,7 @@ import '../../shared/widgets/modal_presentation.dart';
 import 'goal_actions_sheet.dart';
 import 'goal_editing.dart';
 import 'goal_provider.dart';
+import 'goal_thread_navigation.dart';
 import 'goal_tile.dart';
 import 'goal_tree.dart';
 

@@ -878,6 +878,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               <MessageQuoteScope value={composerQuotes.threadScope}>
                 <MessageThreadPanel
                   channel={activeChannel}
+                  onOpenGoalThread={onOpenGoalThread}
                   channelId={activeChannel?.id ?? null}
                   channelName={activeChannel?.name ?? "channel"}
                   currentPubkey={currentPubkey}

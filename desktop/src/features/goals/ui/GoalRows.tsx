@@ -237,6 +237,7 @@ export function AddGoalInline({
 export function GoalRow({
   access,
   apply,
+  currentThreadId,
   layer,
   nameOf,
   node,
@@ -246,6 +247,8 @@ export function GoalRow({
   /** Thread scope; without it every goal is editable (channel panel). */
   access?: (id: string) => GoalAccess;
   apply: Apply;
+  /** The thread being viewed: its link shows as "This thread" and stays put. */
+  currentThreadId?: string;
   layer: number;
   nameOf: (pubkey: string) => string;
   node: GoalNode;
@@ -301,15 +304,15 @@ export function GoalRow({
             ))}
             {(node.threads ?? []).map((thread) => (
               <button
-                className="inline-flex items-center gap-0.5 hover:text-foreground"
+                className="inline-flex items-center gap-0.5 hover:text-foreground disabled:hover:text-inherit"
                 data-testid={`goal-thread-${thread}`}
-                disabled={!onOpenThread}
+                disabled={!onOpenThread || thread === currentThreadId}
                 key={thread}
                 onClick={() => onOpenThread?.(thread)}
                 type="button"
               >
                 <MessagesSquare className="h-3 w-3" />
-                Thread
+                {thread === currentThreadId ? "This thread" : "Thread"}
               </button>
             ))}
           </div>
@@ -405,6 +408,7 @@ export function GoalRow({
             <GoalRow
               access={access}
               apply={apply}
+              currentThreadId={currentThreadId}
               key={child.id}
               layer={layer + 1}
               nameOf={nameOf}

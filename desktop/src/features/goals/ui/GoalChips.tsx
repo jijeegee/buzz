@@ -59,10 +59,12 @@ export function GoalHeaderChip({
 export function ThreadGoalPanel({
   channelId,
   defaultExpanded,
+  onOpenThread,
   threadRootId,
 }: {
   channelId: string;
   defaultExpanded?: boolean;
+  onOpenThread?: (threadRootId: string) => void;
   threadRootId: string;
 }) {
   const goalQuery = useGoalTreeQuery(channelId);
@@ -85,6 +87,7 @@ export function ThreadGoalPanel({
           : null
       }
       nameOf={nameOf}
+      onOpenThread={onOpenThread}
       threadRootId={threadRootId}
       tree={tree}
     />
@@ -98,16 +101,30 @@ export function ThreadGoalPanel({
  */
 export function ThreadGoalHeaderChip({
   channelId,
+  onOpenThread,
   threadRootId,
 }: {
   channelId: string;
+  /** Go to another goal's thread (closes the popover). */
+  onOpenThread?: (threadRootId: string) => void;
   threadRootId: string;
 }) {
   const goalQuery = useGoalTreeQuery(channelId);
   const root = goalQuery.data ? goalRoot(goalQuery.data.tree) : null;
+  const [open, setOpen] = React.useState(false);
+  const openThread = React.useMemo(
+    () =>
+      onOpenThread
+        ? (thread: string) => {
+            setOpen(false);
+            onOpenThread(thread);
+          }
+        : undefined,
+    [onOpenThread],
+  );
   if (!root) return null;
   return (
-    <Popover>
+    <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <button
           aria-label={`Goal: ${root.title}`}
@@ -124,6 +141,7 @@ export function ThreadGoalHeaderChip({
         <ThreadGoalPanel
           channelId={channelId}
           defaultExpanded
+          onOpenThread={openThread}
           threadRootId={threadRootId}
         />
       </PopoverContent>

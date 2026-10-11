@@ -4,8 +4,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/theme/theme.dart';
 import 'goal_tree.dart';
 
-/// One goal in an outline: status toggle, `L<layer>` title, and progress.
-/// Without [onTap] and [onToggleStatus] it is read-only; [muted] fades it.
+/// One goal in an outline: status toggle, `L<layer>` title, progress, and
+/// its linked threads. Without [onTap] and [onToggleStatus] it is read-only;
+/// [muted] fades it. Thread links open through [onOpenThread], even when
+/// read-only; [currentThreadId]'s link reads "This thread" and stays put.
 class GoalTile extends StatelessWidget {
   const GoalTile({
     super.key,
@@ -16,6 +18,8 @@ class GoalTile extends StatelessWidget {
     required this.onTap,
     required this.onToggleStatus,
     this.muted = false,
+    this.onOpenThread,
+    this.currentThreadId,
   });
 
   final int layer;
@@ -27,6 +31,8 @@ class GoalTile extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onToggleStatus;
   final bool muted;
+  final ValueChanged<String>? onOpenThread;
+  final String? currentThreadId;
 
   @override
   Widget build(BuildContext context) {
@@ -64,15 +70,26 @@ class GoalTile extends StatelessWidget {
                             : null,
                       ),
                     ),
-                    if (progress.total > 0 || node.threads.isNotEmpty)
+                    if (progress.total > 0)
                       Text(
-                        [
-                          if (progress.total > 0)
-                            '${progress.done}/${progress.total}',
-                          if (node.threads.isNotEmpty)
-                            '${node.threads.length} thread${node.threads.length == 1 ? '' : 's'}',
-                        ].join(' · '),
+                        '${progress.done}/${progress.total}',
                         style: context.textTheme.bodySmall,
+                      ),
+                    if (node.threads.isNotEmpty)
+                      Wrap(
+                        spacing: Grid.xs,
+                        children: [
+                          for (final thread in node.threads)
+                            _ThreadLink(
+                              key: ValueKey('goal-thread-$thread'),
+                              isCurrent: thread == currentThreadId,
+                              onTap:
+                                  onOpenThread == null ||
+                                      thread == currentThreadId
+                                  ? null
+                                  : () => onOpenThread!(thread),
+                            ),
+                        ],
                       ),
                   ],
                 ),
@@ -83,6 +100,37 @@ class GoalTile extends StatelessWidget {
       ),
     );
     return muted ? Opacity(opacity: 0.5, child: tile) : tile;
+  }
+}
+
+class _ThreadLink extends StatelessWidget {
+  const _ThreadLink({super.key, required this.isCurrent, required this.onTap});
+
+  final bool isCurrent;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = onTap == null
+        ? context.colors.onSurfaceVariant
+        : context.colors.primary;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Grid.half),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.messagesSquare, size: 14, color: color),
+            const SizedBox(width: Grid.half),
+            Text(
+              isCurrent ? 'This thread' : 'Thread',
+              style: context.textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

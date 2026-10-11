@@ -26,6 +26,14 @@ class _LinkedGoalBody extends ConsumerWidget {
     final editable = tree.subtreeIds(goal.id);
     final above = {for (final node in path) node.id};
     final actions = ref.read(goalActionsProvider);
+    // Another goal's thread replaces this thread; Back stays the channel.
+    void onOpenThread(String thread) => openGoalThread(
+      context,
+      ref,
+      channelId: channelId,
+      threadRootId: thread,
+      replaceCurrent: true,
+    );
     void toggle(GoalNode node) => runGoalAction(
       context,
       () => actions.apply(
@@ -116,6 +124,8 @@ class _LinkedGoalBody extends ConsumerWidget {
                   layer: row.layer,
                 ),
                 onToggleStatus: () => toggle(row.node),
+                onOpenThread: onOpenThread,
+                currentThreadId: links.threadRootId,
               )
             else
               GoalTile(
@@ -127,6 +137,8 @@ class _LinkedGoalBody extends ConsumerWidget {
                 onTap: null,
                 onToggleStatus: null,
                 muted: !above.contains(row.node.id),
+                onOpenThread: onOpenThread,
+                currentThreadId: links.threadRootId,
               )
           else
             Container(
@@ -146,6 +158,8 @@ class _LinkedGoalBody extends ConsumerWidget {
                   layer: layer,
                 ),
                 onToggleStatus: () => toggle(goal),
+                onOpenThread: onOpenThread,
+                currentThreadId: links.threadRootId,
               ),
             ),
         TextButton.icon(

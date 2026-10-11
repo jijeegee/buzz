@@ -88,6 +88,31 @@ void main() {
     expect(find.byKey(const ValueKey('thread-goal-card')), findsOneWidget);
   });
 
+  testWidgets('thread links open other threads; this thread stays put', (
+    tester,
+  ) async {
+    final tree = _tree().apply(
+      const LinkThread(id: 'ui', thread: _otherThread),
+      editor: _editor,
+      now: 2,
+    );
+    await _pump(
+      tester,
+      const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
+      tree: tree,
+    );
+    InkWell link(String thread) => tester.widget<InkWell>(
+      find.descendant(
+        of: find.byKey(ValueKey('goal-thread-$thread')),
+        matching: find.byType(InkWell),
+      ),
+    );
+    expect(find.text('This thread'), findsOneWidget);
+    expect(link(_thread).onTap, isNull);
+    // The other branch is read-only and faded, but its thread still opens.
+    expect(link(_otherThread).onTap, isNotNull);
+  });
+
   testWidgets('linked page shows the sub-goals and edits them', (tester) async {
     final actions = await _pump(
       tester,
@@ -183,6 +208,10 @@ void main() {
   testWidgets('the goal card toggles the linked goal and relinks', (
     tester,
   ) async {
+    // Thread links make rows taller; keep the relink button on screen.
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final actions = await _pump(
       tester,
       const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),

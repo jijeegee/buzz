@@ -6,6 +6,7 @@ import '../../shared/theme/theme.dart';
 import 'goal_actions_sheet.dart';
 import 'goal_editing.dart';
 import 'goal_provider.dart';
+import 'goal_thread_navigation.dart';
 import 'goal_tile.dart';
 import 'goal_tree.dart';
 
@@ -171,6 +172,13 @@ class _GoalsBody extends ConsumerWidget {
                 channelId,
                 UpdateGoal(id: row.node.id, status: row.node.status.next),
               ),
+            ),
+            onOpenThread: (thread) => openGoalThread(
+              context,
+              ref,
+              channelId: channelId,
+              threadRootId: thread,
+              replaceCurrent: false,
             ),
           ),
         TextButton.icon(

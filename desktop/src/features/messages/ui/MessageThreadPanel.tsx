@@ -133,6 +133,8 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   isFollowingThread?: boolean;
   isMessageUnreadById?: (messageId: string) => boolean;
   onFollowThread?: () => void;
+  /** Open another thread from the goal tree. */
+  onOpenGoalThread?: (threadRootId: string) => void;
   onUnfollowThread?: () => void;
   /**
    * When set to `thread:<threadHead.id>`, the thread composer auto-submits
@@ -188,6 +190,7 @@ export function MessageThreadPanel({
   onEditLastOwnMessage,
   onEditSave,
   onFollowThread,
+  onOpenGoalThread,
   onMarkUnread,
   onMarkRead,
   onExpandReplies,
@@ -525,6 +528,7 @@ export function MessageThreadPanel({
     goalsEnabled && channelId ? (
       <ThreadGoalHeaderChip
         channelId={channelId}
+        onOpenThread={onOpenGoalThread}
         threadRootId={threadGoalRootId(threadHead)}
       />
     ) : null;
