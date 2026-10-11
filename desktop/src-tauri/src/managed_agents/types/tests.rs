@@ -876,6 +876,7 @@ fn summary_fixture(
         session_policy: Default::default(),
         pubkey: "aa".repeat(32),
         name: "test".into(),
+        owner_pubkey: None,
         persona_id: None,
         runtime: None,
         team_id: None,

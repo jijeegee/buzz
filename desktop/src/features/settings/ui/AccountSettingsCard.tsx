@@ -1,10 +1,14 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { accountLabel } from "@/features/accounts/lib/accountLabels";
+import { beginAccountAction } from "@/features/accounts/lib/accountSwitch";
 import {
   type AuthDevice,
   deleteTokenAccount,
   getTokenAuthStatus,
+  listAccounts,
   listAuthDevices,
   logoutTokenSession,
   onTokenAuthChanged,
@@ -27,13 +31,8 @@ import {
   OLDER_ACCOUNT_SIGN_IN_LABEL,
   OLDER_ACCOUNT_SIGN_IN_TITLE,
 } from "@/features/onboarding/ui/GoogleSignInButton";
-import {
-  listOwnRunningLocalAgents,
-  type RunningLocalAgents,
-  stopRunningLocalAgents,
-} from "@/features/agents/lib/runningLocalAgents";
+import { listOwnRunningLocalAgents } from "@/features/agents/lib/runningLocalAgents";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
-import { Checkbox } from "@/shared/ui/checkbox";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
 import { needsGoogleProtection } from "@/shared/lib/signingKeyUi";
@@ -63,10 +62,40 @@ function reloadIntoNewIdentity() {
 export const SIGN_OUT_DESCRIPTION =
   "You'll be signed out on this computer. Sign in with Google to get back to your conversations. Nothing is deleted.";
 
-export function stopAgentsLabel(count: number): string {
+/** "1 agent of this account will stop." / "N agents …". */
+export function agentsWillStopLabel(count: number): string {
   return count === 1
-    ? "Also stop the 1 agent running on this computer"
-    : `Also stop the ${count} agents running on this computer`;
+    ? "1 agent of this account will stop."
+    : `${count} agents of this account will stop.`;
+}
+
+/**
+ * Sign the active account out here. The backend stops its agents and, when
+ * another account is still signed in, switches to it; either way the app
+ * restarts once, under the next account or on the signed-out screen.
+ */
+async function signOutActiveAccount(
+  onStatus: (status: TokenAuthStatus) => void,
+): Promise<void> {
+  const action = beginAccountAction();
+  let next: TokenAuthStatus;
+  try {
+    next = await logoutTokenSession();
+  } catch (error) {
+    action.cancel();
+    throw error;
+  }
+  onStatus(next);
+  const switchedTo = next.switchedTo;
+  if (!switchedTo) {
+    action.reload(null);
+    return;
+  }
+  const accounts = await listAccounts().catch(() => []);
+  const to = accounts.find((account) => account.pubkey === switchedTo);
+  action.reload(
+    to ? `Switching to ${accountLabel(to)}…` : "Switching accounts…",
+  );
 }
 
 /**
@@ -152,12 +181,7 @@ export function AccountSettingsCard({
         reloadIntoNewIdentity();
     });
 
-  const signOut = () =>
-    run("Sign out", async () => {
-      const next = await logoutTokenSession();
-      setStatus(next);
-      reloadIntoNewIdentity();
-    });
+  const signOut = () => run("Sign out", () => signOutActiveAccount(setStatus));
 
   // Not yet held by Google: invite the user to protect the account with it.
   const protect = needsGoogleProtection(status);
@@ -175,7 +199,6 @@ export function AccountSettingsCard({
         {status.state === "active" ? (
           <ActiveAccount
             busy={busy}
-            login={login}
             onStatus={setStatus}
             run={run}
             status={status}
@@ -260,10 +283,8 @@ function ActiveAccount({
   busy,
   run,
   onStatus,
-  login,
 }: {
   status: TokenAuthStatus;
-  login: ReturnType<typeof useGoogleLogin>;
   busy: string | null;
   run: (label: string, action: () => Promise<unknown>) => Promise<void>;
   onStatus: (status: TokenAuthStatus) => void;
@@ -273,17 +294,22 @@ function ActiveAccount({
   const [confirming, setConfirming] = React.useState<
     "sign-out" | "sign-out-others" | "disconnect-agents" | null
   >(null);
-  // Read fresh each time the sign-out dialog opens; the choice starts off.
-  const [runningAgents, setRunningAgents] =
-    React.useState<RunningLocalAgents | null>(null);
-  const [stopAgents, setStopAgents] = React.useState(false);
+  // Counted fresh each time the sign-out dialog opens.
+  const [runningCount, setRunningCount] = React.useState(0);
   const openSignOut = () => {
-    setRunningAgents(null);
-    setStopAgents(false);
+    setRunningCount(0);
     setConfirming("sign-out");
-    void listOwnRunningLocalAgents().then(setRunningAgents);
+    void listOwnRunningLocalAgents().then((running) =>
+      setRunningCount(running.pubkeys.length),
+    );
   };
-  const runningCount = runningAgents?.pubkeys.length ?? 0;
+  const accountsQuery = useQuery({
+    queryKey: ["accounts"],
+    queryFn: listAccounts,
+  });
+  const active = accountsQuery.data?.find((account) => account.active);
+  const name = active ? accountLabel(active) : null;
+  const email = active?.displayName && active.email ? active.email : null;
   const closeConfirm = (open: boolean) => {
     if (!open) setConfirming(null);
   };
@@ -306,7 +332,17 @@ function ActiveAccount({
     <>
       <SettingsOptionRow>
         <div className="min-w-0">
-          <p className="font-medium">Signed in with Google</p>
+          <p className="truncate font-medium" data-testid="account-name">
+            {name ?? "Signed in with Google"}
+          </p>
+          {name ? (
+            <p className="truncate text-sm text-muted-foreground/70">
+              {email ?? "Signed in with Google"}
+            </p>
+          ) : null}
+          <p className="text-sm text-muted-foreground/70">
+            Switch or add accounts from your profile menu.
+          </p>
         </div>
         <Button
           data-testid="account-sign-out"
@@ -321,67 +357,23 @@ function ActiveAccount({
       <SettingsConfirmDialog
         confirmLabel="Sign out"
         description={SIGN_OUT_DESCRIPTION}
-        onConfirm={() => {
-          const stopping = stopAgents && runningAgents ? runningAgents : null;
-          void run("Sign out", async () => {
-            const next = await logoutTokenSession(stopping?.pubkeys ?? []);
-            onStatus(next);
-            // Signed out first, so a stop failure never keeps the user in.
-            // Anything still running is reported on the signed-out screen.
-            if (stopping) await stopRunningLocalAgents(stopping);
-            reloadIntoNewIdentity();
-          });
-        }}
+        onConfirm={() =>
+          void run("Sign out", () => signOutActiveAccount(onStatus))
+        }
         onOpenChange={closeConfirm}
         open={confirming === "sign-out"}
         testId="account-sign-out-dialog"
-        title="Sign out of Buzz?"
+        title={name ? `Sign out of ${name}?` : "Sign out of Buzz?"}
       >
         {runningCount > 0 ? (
-          <label
-            className="flex items-center gap-2 text-sm"
-            htmlFor="account-sign-out-stop-agents"
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="account-sign-out-agents"
           >
-            <Checkbox
-              checked={stopAgents}
-              data-testid="account-sign-out-stop-agents"
-              id="account-sign-out-stop-agents"
-              onCheckedChange={(checked) => setStopAgents(checked === true)}
-            />
-            {stopAgentsLabel(runningCount)}
-          </label>
+            {agentsWillStopLabel(runningCount)}
+          </p>
         ) : null}
       </SettingsConfirmDialog>
-      {status.keyBackup ? (
-        <SettingsOptionRow>
-          <p className="min-w-0 text-sm text-muted-foreground/70">
-            Check that your Google account can get you back into Buzz on a new
-            computer. Your agents keep running.
-          </p>
-          <Button
-            disabled={disabled}
-            onClick={() =>
-              void run("Verify backup", async () => {
-                const next = await login.run(false);
-                if (!next) return;
-                onStatus(next);
-                // Another Google account opens its own account.
-                if (next.signingPubkey !== status.signingPubkey) {
-                  reloadIntoNewIdentity();
-                  return;
-                }
-                toast.success(
-                  "Google sign-in checked. Your account is unchanged.",
-                );
-              })
-            }
-            type="button"
-            variant="outline"
-          >
-            Check Google sign-in
-          </Button>
-        </SettingsOptionRow>
-      ) : null}
       <SettingsOptionRow className="items-start">
         <div className="min-w-0 flex-1">
           <p className="font-medium" id="account-devices-heading">

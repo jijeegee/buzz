@@ -41,6 +41,8 @@ export type TokenAuthStatus = {
    * an account). The app reloads into it.
    */
   accountChanged?: boolean;
+  /** The account a sign-out of the active account switched to. */
+  switchedTo?: string | null;
 };
 
 export type AuthDevice = {
@@ -81,6 +83,14 @@ export function loginWithGoogle(
 
 /** Tauri event emitted after the active account changed (payload: pubkey). */
 export const ACTIVE_ACCOUNT_CHANGED_EVENT = "active-account-changed";
+
+export function onActiveAccountChanged(
+  handler: (pubkey: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>(ACTIVE_ACCOUNT_CHANGED_EVENT, (event) =>
+    handler(event.payload),
+  );
+}
 
 /** One Buzz account on this computer. */
 export type AccountSummary = {
@@ -136,14 +146,13 @@ export function cancelGoogleLogin(attemptId: string): Promise<boolean> {
 }
 
 /**
- * Sign out of the current community on this computer (revokes this device's
- * session). `stopAgents` are running local agents the user chose to stop with
- * it: they stay stopped until the next sign-in. The caller stops them.
+ * Sign `account` (default: the active account) out of the current community
+ * on this computer: its session is revoked and its agents stop until it signs
+ * in again. When the active account signs out and another one is still
+ * signed in here, the backend switches to it (`switchedTo`).
  */
-export function logoutTokenSession(
-  stopAgents: string[] = [],
-): Promise<TokenAuthStatus> {
-  return invokeTauri<TokenAuthStatus>("logout", { stopAgents });
+export function logoutTokenSession(account?: string): Promise<TokenAuthStatus> {
+  return invokeTauri<TokenAuthStatus>("logout", account ? { account } : {});
 }
 
 /**

@@ -17,10 +17,12 @@ import {
 import { getIdentity } from "@/shared/api/tauriIdentity";
 import {
   getTokenAuthStatus,
-  identityReload,
+  onActiveAccountChanged,
   onTokenAuthChanged,
   tokenIdentityChanged,
 } from "@/shared/api/tokenAuth";
+import { requestIdentityReload } from "@/features/accounts/lib/accountSwitch";
+import { setQuickReactionAccount } from "@/features/messages/ui/useQuickReactionEmojis";
 import { clearTrayAgentActivity } from "@/shared/api/trayMenu";
 import { getOverrides } from "@/shared/features";
 import { resetMediaCaches } from "@/shared/lib/mediaUrl";
@@ -203,6 +205,7 @@ export function useCommunityInit(
   useEffect(() => {
     let cancelled = false;
     let unlistenTokenAuth: (() => void) | undefined;
+    let unlistenActiveAccount: (() => void) | undefined;
 
     async function init() {
       if (!activeCommunity) {
@@ -443,13 +446,26 @@ export function useCommunityInit(
                   (tokenIdentityChanged(appliedPrincipal, next) ||
                     (next.deviceSignedOut === true) !== deviceSignedOut)
                 ) {
-                  identityReload.reload();
+                  requestIdentityReload();
                 }
               })
               .catch(() => {});
           }).then((unlisten) => {
             if (cancelled) unlisten();
             else unlistenTokenAuth = unlisten;
+          });
+          // Another account became active (a switch from another window, or
+          // a session ending here). It is announced even when the new
+          // account's session cannot be restored right now (offline), which
+          // the status check above would not see as a change.
+          const appliedAccount = identityPubkey;
+          void onActiveAccountChanged((pubkey) => {
+            if (!cancelled && pubkey !== appliedAccount) {
+              requestIdentityReload();
+            }
+          }).then((unlisten) => {
+            if (cancelled) unlisten();
+            else unlistenActiveAccount = unlisten;
           });
         }
       } catch (error) {
@@ -468,6 +484,7 @@ export function useCommunityInit(
         if (identityPubkey !== null) {
           initDraftStore(identityPubkey, activeCommunity.relayUrl);
         }
+        setQuickReactionAccount(identityPubkey);
         // Restore any turn state saved for this community (a prior A→B round-
         // trip). This runs after applyCommunity succeeds and before the app
         // renders so components see the restored timers on first render.
@@ -495,6 +512,7 @@ export function useCommunityInit(
     return () => {
       cancelled = true;
       unlistenTokenAuth?.();
+      unlistenActiveAccount?.();
     };
   }, [
     activeCommunity?.id,

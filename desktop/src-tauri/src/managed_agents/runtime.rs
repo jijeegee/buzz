@@ -358,6 +358,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     Ok(ManagedAgentSummary {
         pubkey: record.pubkey.clone(),
         name: record.name.clone(),
+        owner_pubkey: crate::managed_agents::agent_owner_hex(app, record),
         persona_id: record.persona_id.clone(),
         runtime: record.runtime.clone(),
         team_id: record.team_id.clone(),

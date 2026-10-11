@@ -107,35 +107,12 @@ test("a signed-out computer shows the signed-out screen instead of chats", async
     ["Sign in with Google"],
     "Sign in with Google is the only action; no agent controls",
   );
-  assert.equal(
-    screen.querySelector("[data-testid='signed-out-running-agents']")
-      .textContent,
-    "1 agent is still running on this computer.",
-  );
+  // The signed-out account's agents stopped with it: none are reported.
+  assert.doesNotMatch(screen.textContent, /agent/i);
   assert.doesNotMatch(screen.textContent, /\bkey\b|nsec|npub|relay/i);
   await act(async () => buttons[0].click());
   const login = calls.find((c) => c.command === "login_with_google");
   assert.equal(login?.args.allowRestore, true, "restore-mode Google sign-in");
-  await unmount();
-});
-
-test("several running agents are counted; none are not mentioned", async () => {
-  runtimes = [
-    { pubkey: "b".repeat(64), relayUrl, lifecycle: "ready" },
-    { pubkey: "c".repeat(64), relayUrl, lifecycle: "starting" },
-  ];
-  let { container, unmount } = await mount(true);
-  assert.equal(
-    container.querySelector("[data-testid='signed-out-running-agents']")
-      .textContent,
-    "2 agents are still running on this computer.",
-  );
-  await unmount();
-
-  runtimes = [];
-  ({ container, unmount } = await mount(true));
-  assert.ok(container.querySelector("[data-testid='signed-out-screen']"));
-  assert.doesNotMatch(container.textContent, /agent/i);
   await unmount();
 });
 

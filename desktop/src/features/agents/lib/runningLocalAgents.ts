@@ -1,7 +1,4 @@
-import {
-  listManagedAgentRuntimes,
-  stopManagedAgentRuntime,
-} from "@/shared/api/tauriManagedAgents";
+import { listManagedAgentRuntimes } from "@/shared/api/tauriManagedAgents";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { ManagedAgentRuntimeStatus } from "@/shared/api/types";
 
@@ -56,24 +53,4 @@ export async function listOwnRunningLocalAgents(): Promise<RunningLocalAgents> {
     console.error("[agents] could not check agent owners:", error);
     return { pubkeys: [], pairs: [] };
   }
-}
-
-/**
- * Stop every listed runtime through the existing per-pair stop. Configs are
- * kept. Resolves with the number of runtimes that could not be stopped.
- */
-export async function stopRunningLocalAgents(
-  running: RunningLocalAgents,
-): Promise<number> {
-  const results = await Promise.allSettled(
-    running.pairs.map(({ pubkey, relayUrl }) =>
-      stopManagedAgentRuntime(pubkey, relayUrl),
-    ),
-  );
-  return results.filter((result) => result.status === "rejected").length;
-}
-
-/** "1 agent is" / "N agents are". */
-export function agentCountPhrase(count: number): string {
-  return count === 1 ? "1 agent is" : `${count} agents are`;
 }

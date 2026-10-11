@@ -600,6 +600,10 @@ pub struct ManagedAgentProcess {
 pub struct ManagedAgentSummary {
     pub pubkey: String,
     pub name: String,
+    /// The account that owns this agent (attested, or recorded at creation /
+    /// first token-mode use). `None` when unknown. The Agents list shows each
+    /// account its own agents; ownerless ones show for every account.
+    pub owner_pubkey: Option<String>,
     pub persona_id: Option<String>,
     /// The record's harness/runtime id (mirror of `ManagedAgentRecord.runtime`).
     /// Lets the UI count agents referencing a harness definition (e.g. in the

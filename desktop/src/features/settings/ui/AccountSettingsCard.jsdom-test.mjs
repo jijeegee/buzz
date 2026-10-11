@@ -12,6 +12,7 @@ let loginBehavior;
 let cancelBehavior;
 let logoutBehavior;
 let runtimes = [];
+let accounts = [];
 /** Running agents owned by another account signed in on this computer. */
 let foreignAgents = new Set();
 const callbacks = new Map();
@@ -65,6 +66,8 @@ const tauriMock = {
         return logoutBehavior ? logoutBehavior(args) : new Promise(() => {});
       case "list_managed_agent_runtimes":
         return Promise.resolve(runtimes);
+      case "list_accounts":
+        return Promise.resolve(accounts);
       case "own_agent_pubkeys":
         // Agents of another account on this computer are never offered.
         return Promise.resolve(
@@ -103,6 +106,10 @@ const { QueryClient, QueryClientProvider } = await import(
   "@tanstack/react-query"
 );
 const { AccountSettingsCard } = await import("./AccountSettingsCard.tsx");
+const tokenAuthApi = await import("../../../shared/api/tokenAuth.ts");
+const accountSwitch = await import(
+  "../../accounts/lib/accountSwitch.ts"
+);
 const { deviceRobotTag } = await import("../../../shared/lib/deviceRobot.ts");
 const { GoogleSignInButton } = await import(
   "../../onboarding/ui/GoogleSignInButton.tsx"
@@ -328,7 +335,12 @@ test("Google backup sessions do not offer token-agent revocation or identity del
   });
   const { container, unmount } = await mount();
   assert.match(container.textContent, /Signed in with Google/);
-  assert.match(container.textContent, /Check Google sign-in/);
+  // Another Google account is added from the profile menu, not checked here.
+  assert.doesNotMatch(container.textContent, /Check Google sign-in/);
+  assert.match(
+    container.textContent,
+    /Switch or add accounts from your profile menu\./,
+  );
   assert.doesNotMatch(container.textContent, /bkeyb|signing|backup/i);
   assert.doesNotMatch(
     container.textContent,
@@ -631,14 +643,57 @@ async function openSignOutDialog() {
   return mounted;
 }
 
-function stopAgentsCheckbox() {
-  return document.querySelector("[data-testid='account-sign-out-stop-agents']");
+function account(pubkey, overrides = {}) {
+  return {
+    pubkey,
+    origin: "http://127.0.0.1:3000",
+    state: "signed_in",
+    active: false,
+    displayName: null,
+    avatarUrl: null,
+    email: null,
+    lastUsedAt: null,
+    ...overrides,
+  };
 }
 
-test("the stop-agents choice appears only while agents run on this computer", async () => {
+function dialogText() {
+  return document.querySelector('[role="alertdialog"]').textContent;
+}
+
+test("the account card names the active account and its sign-out", async () => {
+  accounts = [
+    account("cd".repeat(32), {
+      active: true,
+      displayName: "Jiho",
+      email: "jiho@example.com",
+    }),
+    account("ef".repeat(32), { displayName: "Work" }),
+  ];
+  const { container, unmount } = await openSignOutDialog();
+  assert.equal(
+    container.querySelector("[data-testid='account-name']").textContent,
+    "Jiho",
+  );
+  assert.match(container.textContent, /jiho@example\.com/);
+  assert.match(dialogText(), /Sign out of Jiho\?/);
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  accounts = [];
+  await unmount();
+});
+
+test("the dialog says how many of this account's agents stop; none, no line", async () => {
   runtimes = [];
   let { unmount } = await openSignOutDialog();
-  assert.equal(stopAgentsCheckbox(), null, "no agents: no checkbox");
+  assert.equal(
+    document.querySelector("[data-testid='account-sign-out-agents']"),
+    null,
+  );
+  assert.equal(
+    document.querySelector("[role='alertdialog'] [role='checkbox']"),
+    null,
+    "no stop-agents choice",
+  );
   await act(async () => fireEvent.click(dialogButton("Cancel")));
   await unmount();
 
@@ -649,32 +704,37 @@ test("the stop-agents choice appears only while agents run on this computer", as
     { pubkey: "c3".repeat(32), relayUrl: "wss://a.test", lifecycle: "stopped" },
   ];
   ({ unmount } = await openSignOutDialog());
-  const checkbox = stopAgentsCheckbox();
-  assert.ok(checkbox, "running agents: checkbox shown");
-  assert.equal(
-    checkbox.getAttribute("aria-checked"),
-    "false",
-    "off by default",
+  await settle(
+    () =>
+      document.querySelector("[data-testid='account-sign-out-agents']") !==
+      null,
   );
-  assert.match(
-    document.querySelector('[role="alertdialog"]').textContent,
-    /Also stop the 2 agents running on this computer/,
+  assert.equal(
+    document.querySelector("[data-testid='account-sign-out-agents']")
+      .textContent,
+    "2 agents of this account will stop.",
   );
   await act(async () => fireEvent.click(dialogButton("Cancel")));
   runtimes = [];
   await unmount();
 });
 
-test("another account's running agents are never offered for stopping", async () => {
+test("another account's running agents are not counted", async () => {
   runtimes = [
     { pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" },
     { pubkey: agentB, relayUrl: "wss://a.test", lifecycle: "ready" },
   ];
   foreignAgents = new Set([agentB]);
   const { unmount } = await openSignOutDialog();
-  assert.match(
-    document.querySelector('[role="alertdialog"]').textContent,
-    /Also stop the 1 agent running on this computer/,
+  await settle(
+    () =>
+      document.querySelector("[data-testid='account-sign-out-agents']") !==
+      null,
+  );
+  assert.equal(
+    document.querySelector("[data-testid='account-sign-out-agents']")
+      .textContent,
+    "1 agent of this account will stop.",
   );
   await act(async () => fireEvent.click(dialogButton("Cancel")));
   foreignAgents = new Set();
@@ -682,60 +742,62 @@ test("another account's running agents are never offered for stopping", async ()
   await unmount();
 });
 
-test("signing out without the choice leaves agents running", async () => {
+test("sign-out leaves stopping agents to the backend and reloads once", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
   runtimes = [{ pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" }];
   logoutBehavior = () => Promise.resolve(baseStatus({ deviceSignedOut: true }));
   const { unmount } = await openSignOutDialog();
   await act(async () => fireEvent.click(dialogButton("Sign out")));
-  await settle(() => calls.some((c) => c.command === "logout"));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-  assert.deepEqual(calls.find((c) => c.command === "logout").args, {
-    stopAgents: [],
-  });
+  await settle(() => reload.mock.callCount() > 0);
+  assert.deepEqual(calls.find((c) => c.command === "logout").args, {});
   assert.equal(
     calls.some((c) => c.command === "stop_managed_agent_runtime"),
     false,
-    "unchecked sign-out stops no agents",
+    "the UI stops nothing itself",
   );
+  assert.equal(reload.mock.callCount(), 1);
+  assert.equal(window.sessionStorage.getItem("buzz:switching-to"), null);
   logoutBehavior = undefined;
   runtimes = [];
   await unmount();
 });
 
-test("signing out with the choice records and stops every running pair", async () => {
-  runtimes = [
-    { pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" },
-    { pubkey: agentA, relayUrl: "wss://b.test", lifecycle: "listening" },
+test("signing out of the active account goes straight to the next one", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  const next = "ef".repeat(32);
+  accounts = [
+    account("cd".repeat(32), { active: true, displayName: "Jiho" }),
+    account(next, { displayName: "Work" }),
   ];
-  const order = [];
-  logoutBehavior = () => {
-    order.push("logout");
-    return Promise.resolve(baseStatus({ deviceSignedOut: true }));
-  };
+  logoutBehavior = () =>
+    Promise.resolve(
+      baseStatus({ state: "active", keyBackup: true, switchedTo: next }),
+    );
   const { unmount } = await openSignOutDialog();
-  await act(async () => fireEvent.click(stopAgentsCheckbox()));
-  assert.equal(stopAgentsCheckbox().getAttribute("aria-checked"), "true");
   await act(async () => fireEvent.click(dialogButton("Sign out")));
-  await settle(
-    () =>
-      calls.filter((c) => c.command === "stop_managed_agent_runtime").length ===
-      2,
+  await settle(() => reload.mock.callCount() > 0);
+  assert.equal(reload.mock.callCount(), 1);
+  assert.equal(
+    window.sessionStorage.getItem("buzz:switching-to"),
+    "Switching to Work…",
   );
-  assert.deepEqual(calls.find((c) => c.command === "logout").args, {
-    stopAgents: [agentA],
-  });
-  const stops = calls.filter((c) => c.command === "stop_managed_agent_runtime");
-  assert.deepEqual(stops.map((c) => c.args.relayUrl).sort(), [
-    "wss://a.test",
-    "wss://b.test",
-  ]);
-  assert.ok(
-    calls.findIndex((c) => c.command === "logout") <
-      calls.findIndex((c) => c.command === "stop_managed_agent_runtime"),
-    "signed out (and the choice persisted) before stopping",
-  );
+  accountSwitch.takeAccountSwitchAtBoot();
+  assert.equal(accountSwitch.accountSwitchCaption(), "Switching to Work…");
+  accountSwitch.resetAccountSwitchForTests();
   logoutBehavior = undefined;
-  runtimes = [];
+  accounts = [];
+  await unmount();
+});
+
+test("a failed sign-out keeps the user here and says why", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  logoutBehavior = () => Promise.reject("Could not reach the server.");
+  const { unmount } = await openSignOutDialog();
+  await act(async () => fireEvent.click(dialogButton("Sign out")));
+  await settle(() => calls.some((c) => c.command === "logout"));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  assert.equal(reload.mock.callCount(), 0);
+  logoutBehavior = undefined;
   await unmount();
 });
 

@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { useAccountMenu } from "@/features/accounts/useAccountMenu";
+import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
 import { getPresenceLabel } from "@/features/presence/lib/presence";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import { useSelfProfileCache } from "@/features/profile/hooks";
@@ -17,6 +19,7 @@ import { CommunitySwitcher } from "@/features/communities/ui/CommunitySwitcher";
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
 import type { PresenceStatus, Profile, UserStatus } from "@/shared/api/types";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import { cn } from "@/shared/lib/cn";
 
 type SidebarProfileCardProps = {
@@ -67,6 +70,8 @@ export function SidebarProfileCard({
   const canInvite = activeRole === "owner" || activeRole === "admin";
   const [profilePopoverOpen, setProfilePopoverOpen] = React.useState(false);
   const profileCardRef = React.useRef<HTMLDivElement | null>(null);
+  const accountMenu = useAccountMenu({ open: profilePopoverOpen });
+  const activePubkey = useIdentityQuery().data?.pubkey ?? null;
   const toggleProfilePopover = React.useCallback(
     () => setProfilePopoverOpen((prev) => !prev),
     [],
@@ -167,6 +172,22 @@ export function SidebarProfileCard({
             userStatusExpiresAt={selfUserStatus?.expiresAt}
             userStatusText={selfUserStatus?.text}
             userStatusUpdatedAt={selfUserStatus?.updatedAt}
+            accountsSlot={
+              accountMenu.accounts.length > 0 ? (
+                <AccountSwitcherSection
+                  accounts={accountMenu.accounts}
+                  busy={accountMenu.busy}
+                  onSignIn={() => {
+                    setProfilePopoverOpen(false);
+                    void accountMenu.signIn(activePubkey);
+                  }}
+                  onSwitch={(account) => {
+                    setProfilePopoverOpen(false);
+                    void accountMenu.switchTo(account);
+                  }}
+                />
+              ) : null
+            }
             communitySwitcherSlot={
               <CommunitySwitcher
                 activeCommunity={activeCommunity}

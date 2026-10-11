@@ -1,9 +1,5 @@
-import * as React from "react";
+import type * as React from "react";
 
-import {
-  agentCountPhrase,
-  listRunningLocalAgents,
-} from "@/features/agents/lib/runningLocalAgents";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
@@ -11,23 +7,11 @@ import { GoogleSignInButton } from "./GoogleSignInButton";
 
 /**
  * Shown instead of the app while this computer is signed out of the active
- * community. Nothing was deleted; the only way back is the same Google
- * account (native code refuses a different one and keeps this screen).
- * Running local agents are only reported, never controlled, from here.
+ * community. Nothing was deleted; signing in with Google gets back in. The
+ * signed-out account's agents stopped with it, so none are reported here.
  */
 export function SignedOutScreen() {
   const systemColorScheme = useSystemColorScheme();
-  const [runningAgents, setRunningAgents] = React.useState(0);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    void listRunningLocalAgents().then((running) => {
-      if (!cancelled) setRunningAgents(running.pubkeys.length);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   return (
     <div
@@ -72,14 +56,6 @@ export function SignedOutScreen() {
             }
           />
         </div>
-        {runningAgents > 0 ? (
-          <p
-            className="mt-6 text-sm text-muted-foreground"
-            data-testid="signed-out-running-agents"
-          >
-            {agentCountPhrase(runningAgents)} still running on this computer.
-          </p>
-        ) : null}
       </main>
     </div>
   );
