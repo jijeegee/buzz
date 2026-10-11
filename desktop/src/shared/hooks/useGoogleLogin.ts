@@ -20,7 +20,11 @@ export function useGoogleLogin() {
     };
   }, []);
 
-  async function run(allowRestore = false, existingTokenAccount = false) {
+  async function run(
+    allowRestore = false,
+    existingTokenAccount = false,
+    connect = false,
+  ) {
     if (current.current) return null;
     const id = crypto.randomUUID();
     current.current = id;
@@ -53,6 +57,7 @@ export function useGoogleLogin() {
         allowRestore,
         existingTokenAccount,
         id,
+        connect,
       );
       return mounted.current && current.current === id ? result : null;
     } catch (cause) {

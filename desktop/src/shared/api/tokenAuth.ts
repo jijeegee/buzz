@@ -53,17 +53,66 @@ export function getTokenAuthStatus(): Promise<TokenAuthStatus> {
   return invokeTauri<TokenAuthStatus>("get_token_auth_status");
 }
 
-/** Open the system browser for Google sign-in; resolves once signed in. */
+/**
+ * Open the system browser for Google sign-in; resolves once signed in. The
+ * chosen Google account decides the Buzz account, which becomes the active
+ * account; accounts already signed in here stay signed in. `connect` links
+ * the current key-only account to Google instead.
+ */
 export function loginWithGoogle(
   allowRestore = false,
   existingTokenAccount = false,
   attemptId?: string,
+  connect = false,
 ): Promise<TokenAuthStatus> {
   return invokeTauri<TokenAuthStatus>("login_with_google", {
     allowRestore,
     ...(existingTokenAccount ? { existingTokenAccount: true } : {}),
     ...(attemptId ? { attemptId } : {}),
+    ...(connect ? { connect: true } : {}),
   });
+}
+
+/** Tauri event emitted after the active account changed (payload: pubkey). */
+export const ACTIVE_ACCOUNT_CHANGED_EVENT = "active-account-changed";
+
+/** One Buzz account on this computer. */
+export type AccountSummary = {
+  pubkey: string;
+  origin: string;
+  state: "signed_in" | "signed_out" | "key_only";
+  active: boolean;
+};
+
+/** Accounts on this computer for the current community. */
+export function listAccounts(): Promise<AccountSummary[]> {
+  return invokeTauri<AccountSummary[]>("list_accounts");
+}
+
+/** Make `pubkey` the active account; the others stay signed in. */
+export function switchAccount(pubkey: string): Promise<void> {
+  return invokeTauri<void>("switch_account", { pubkey });
+}
+
+/** NIP-42 AUTH event signed by a signed-in account that may be inactive. */
+export function createAuthEventAs(
+  account: string,
+  challenge: string,
+  relayUrl: string,
+): Promise<string> {
+  return invokeTauri<string>("create_auth_event_as", {
+    account,
+    challenge,
+    relayUrl,
+  });
+}
+
+/** Decrypt a NIP-44 payload a signed-in (maybe inactive) account sent itself. */
+export function nip44DecryptAs(
+  account: string,
+  ciphertext: string,
+): Promise<string> {
+  return invokeTauri<string>("nip44_decrypt_as", { account, ciphertext });
 }
 
 /** Cancel this attempt while waiting for the browser, without signing out. */

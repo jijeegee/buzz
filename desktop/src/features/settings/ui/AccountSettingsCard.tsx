@@ -138,10 +138,14 @@ export function AccountSettingsCard({
 
   const signIn = (existingTokenAccount = false) =>
     run("Sign in", async () => {
-      const next = await login.run(false, existingTokenAccount);
+      // A local-only account links its own key; otherwise the chosen Google
+      // account decides which account opens.
+      const connect = !existingTokenAccount && needsGoogleProtection(status);
+      const next = await login.run(false, existingTokenAccount, connect);
       if (!next) return;
       setStatus(next);
-      if (!next.keyBackup) reloadIntoNewIdentity();
+      if (!next.keyBackup || next.signingPubkey !== status.signingPubkey)
+        reloadIntoNewIdentity();
     });
 
   const signOut = () =>
@@ -357,6 +361,11 @@ function ActiveAccount({
                 const next = await login.run(false);
                 if (!next) return;
                 onStatus(next);
+                // Another Google account opens its own account.
+                if (next.signingPubkey !== status.signingPubkey) {
+                  reloadIntoNewIdentity();
+                  return;
+                }
                 toast.success(
                   "Google sign-in checked. Your account is unchanged.",
                 );

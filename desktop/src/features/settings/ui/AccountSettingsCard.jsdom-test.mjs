@@ -301,8 +301,10 @@ test("a local-only account is invited to protect itself with Google, in plain wo
     "a local-only account offers no sign-out",
   );
   await act(async () => fireEvent.click(button));
+  // Protecting a local-only account links its own key, never another account.
   assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
     allowRestore: false,
+    connect: true,
     attemptId: calls.find((c) => c.command === "login_with_google").args
       .attemptId,
   });
