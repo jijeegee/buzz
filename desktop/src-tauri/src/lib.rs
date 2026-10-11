@@ -768,6 +768,7 @@ pub fn run() {
             list_relay_agents,
             revalidate_relay_agents,
             list_managed_agents,
+            list_all_managed_agents,
             list_managed_agent_runtimes,
             start_managed_agent_runtime,
             stop_managed_agent_runtime,

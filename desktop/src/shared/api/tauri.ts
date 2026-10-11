@@ -787,6 +787,13 @@ export async function listManagedAgents(): Promise<ManagedAgent[]> {
     fromRawManagedAgent,
   );
 }
+
+/** Every account's local agents (the list above is the active account's). */
+export async function listAllManagedAgents(): Promise<ManagedAgent[]> {
+  return (await invokeTauri<RawManagedAgent[]>("list_all_managed_agents")).map(
+    fromRawManagedAgent,
+  );
+}
 export async function createManagedAgent(input: CreateManagedAgentInput) {
   const response = await invokeTauri<RawCreateManagedAgentResponse>(
     "create_managed_agent",

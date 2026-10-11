@@ -601,8 +601,9 @@ pub struct ManagedAgentSummary {
     pub pubkey: String,
     pub name: String,
     /// The account that owns this agent (attested, or recorded at creation /
-    /// first token-mode use). `None` when unknown. The Agents list shows each
-    /// account its own agents; ownerless ones show for every account.
+    /// first token-mode use; a server bot's token account before that).
+    /// `None` when unknown. Each account is listed only its own agents; an
+    /// agent with no known owner is listed to nobody.
     pub owner_pubkey: Option<String>,
     pub persona_id: Option<String>,
     /// The record's harness/runtime id (mirror of `ManagedAgentRecord.runtime`).

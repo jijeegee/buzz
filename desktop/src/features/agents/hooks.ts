@@ -35,6 +35,7 @@ import {
   getManagedAgentLog,
   getRuntimeFileConfig,
   installAcpRuntime,
+  listAllManagedAgents,
   listManagedAgents,
   listRelayAgents,
   saveCustomHarness,
@@ -137,6 +138,11 @@ export const managedAgentLogFocusRefetchPolicy = {
 
 export const relayAgentsQueryKey = ["relay-agents"] as const;
 export const managedAgentsQueryKey = ["managed-agents"] as const;
+/** Under `managedAgentsQueryKey`, so its invalidations refresh this too. */
+export const allManagedAgentsQueryKey = [
+  "managed-agents",
+  "all-accounts",
+] as const;
 export const personasQueryKey = ["personas"] as const;
 export const acpAuthMethodsQueryKey = ["acp-auth-methods"] as const;
 export const managedAgentPrereqsQueryKey = ["managed-agent-prereqs"] as const;
@@ -414,6 +420,26 @@ export function useManagedAgentsQuery(options?: { enabled?: boolean }) {
       // path for them. When nothing is running there IS an event path —
       // `agents-data-changed` (control-plane changes) — so the idle branch
       // drops its poll entirely rather than falling back to 30s.
+      return agents?.some((agent) => agent.status === "running")
+        ? 5_000
+        : false;
+    },
+    ...agentsFocusRefetchPolicy,
+  });
+}
+
+/**
+ * Every account's local agents, for upkeep that covers agents of accounts not
+ * open right now (they keep running). Screens use `useManagedAgentsQuery`.
+ */
+export function useAllManagedAgentsQuery() {
+  const appFocused = useAppFocused();
+  return useQuery({
+    queryKey: allManagedAgentsQueryKey,
+    queryFn: listAllManagedAgents,
+    refetchInterval: (query) => {
+      if (!appFocused) return false;
+      const agents = query.state.data as ManagedAgent[] | undefined;
       return agents?.some((agent) => agent.status === "running")
         ? 5_000
         : false;

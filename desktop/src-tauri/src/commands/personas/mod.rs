@@ -85,6 +85,12 @@ pub async fn list_personas(app: AppHandle) -> Result<Vec<AgentDefinition>, Strin
             .lock()
             .map_err(|error| error.to_string())?;
         let mut personas = load_personas(&app)?;
+        // Each account sees only its own personas (plus the built-in ones).
+        let owners = crate::managed_agents::ensure_definition_owners(&app, &personas);
+        let me = crate::managed_agents::active_owner_hex(&app);
+        personas.retain(|persona| {
+            crate::managed_agents::definition_visible(persona, &owners, me.as_deref())
+        });
         pending::project_active_persona_sharing(&app, &state, &mut personas);
         Ok(personas)
     })

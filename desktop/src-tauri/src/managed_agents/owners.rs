@@ -276,6 +276,164 @@ pub(crate) fn migrate_owners<R: tauri::Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// The account active on this computer, whose agents and personas the
+/// screens show.
+pub(crate) fn active_owner_hex<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<String> {
+    use tauri::Manager;
+    app.state::<crate::app_state::AppState>()
+        .current_identity_pubkey()
+        .ok()
+        .map(|key| key.to_hex())
+}
+
+/// The owner `record` is shown under: its own owner, else for a server bot
+/// the principal of its server's token account (before its first spawn
+/// records it). `None` when unknown.
+pub(crate) fn visible_owner_hex<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    record: &ManagedAgentRecord,
+) -> Option<String> {
+    use tauri::Manager;
+    agent_owner_hex(app, record).or_else(|| {
+        let origin = record.bot_origin.as_deref()?;
+        token_account_principal(
+            &app.state::<crate::app_state::AppState>().token_auth,
+            origin,
+        )
+        .map(|principal| principal.to_hex())
+    })
+}
+
+/// Whether an agent owned by `owner` is shown to the account `me`: only its
+/// own owner sees it. An agent whose owner is unknown is shown to nobody.
+pub(crate) fn owned_by_viewer(owner: Option<&str>, me: Option<&str>) -> bool {
+    matches!((owner, me), (Some(owner), Some(me)) if owner.eq_ignore_ascii_case(me))
+}
+
+/// Owners-file key under which a persona's owner is recorded. Personas carry
+/// no key of their own, so they are recorded by id.
+fn definition_key(id: &str) -> String {
+    format!("definition:{id}")
+}
+
+/// Owners-file entry marking that personas existing before owners were
+/// recorded for them have been given one.
+const DEFINITIONS_MIGRATED: &str = "definitions-migrated";
+
+/// Record an owner for every persona that has none, and return each
+/// persona's owner (by id). Built-in personas ship with the app and stay
+/// everyone's. The first run gives existing personas to the account that
+/// owns most local agents (the account this computer was used with before
+/// several could sign in; the active account when there are no agents);
+/// after that a new persona belongs to the account active when it is saved.
+pub(crate) fn ensure_definition_owners<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    definitions: &[super::AgentDefinition],
+) -> BTreeMap<String, String> {
+    let Some(path) = owners_path(app) else {
+        return BTreeMap::new();
+    };
+    let active = active_owner_hex(app);
+    let first_run = !read_owners(&path).contains_key(DEFINITIONS_MIGRATED);
+    let previous = if first_run {
+        let agents = super::storage::load_managed_agents_without_keys(app).unwrap_or_default();
+        main_owner(
+            agents
+                .iter()
+                .filter_map(|record| agent_owner_hex(app, record)),
+        )
+    } else {
+        None
+    };
+    match record_definition_owners(&path, definitions, previous.or(active).as_deref()) {
+        Ok(owners) => owners,
+        Err(error) => {
+            eprintln!("buzz-desktop: agents: persona owners not recorded: {error}");
+            definition_owners(&read_owners(&path), definitions)
+        }
+    }
+}
+
+/// The owner of most of `owners` (ties go to the one seen first). Pure.
+fn main_owner(owners: impl Iterator<Item = String>) -> Option<String> {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for owner in owners {
+        let owner = owner.to_ascii_lowercase();
+        match counts.iter_mut().find(|(seen, _)| *seen == owner) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((owner, 1)),
+        }
+    }
+    let mut best: Option<(String, usize)> = None;
+    for (owner, count) in counts {
+        if best.as_ref().is_none_or(|(_, top)| count > *top) {
+            best = Some((owner, count));
+        }
+    }
+    best.map(|(owner, _)| owner)
+}
+
+/// [`ensure_definition_owners`] on the owners file at `path`: records `owner`
+/// for every non-built-in persona without one (none when `owner` is `None`)
+/// and marks the first run done.
+fn record_definition_owners(
+    path: &Path,
+    definitions: &[super::AgentDefinition],
+    owner: Option<&str>,
+) -> Result<BTreeMap<String, String>, String> {
+    let _lock = OWNERS_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut recorded = read_owners(path);
+    let mut changed = false;
+    if let Some(owner) = owner {
+        for definition in definitions.iter().filter(|d| !d.is_builtin) {
+            let key = definition_key(&definition.id);
+            if !recorded.contains_key(&key) {
+                recorded.insert(key, owner.to_ascii_lowercase());
+                changed = true;
+            }
+        }
+        if !recorded.contains_key(DEFINITIONS_MIGRATED) {
+            recorded.insert(DEFINITIONS_MIGRATED.into(), "true".into());
+            changed = true;
+        }
+    }
+    if changed {
+        let json = serde_json::to_vec_pretty(&recorded).map_err(|e| e.to_string())?;
+        super::storage::atomic_write_json(path, &json)?;
+    }
+    Ok(definition_owners(&recorded, definitions))
+}
+
+/// Each persona's recorded owner, by id. Pure.
+fn definition_owners(
+    recorded: &BTreeMap<String, String>,
+    definitions: &[super::AgentDefinition],
+) -> BTreeMap<String, String> {
+    definitions
+        .iter()
+        .filter_map(|definition| {
+            recorded
+                .get(&definition_key(&definition.id))
+                .map(|owner| (definition.id.clone(), owner.clone()))
+        })
+        .collect()
+}
+
+/// Whether the account `me` sees `definition`: a built-in persona nobody has
+/// claimed is everyone's; any other persona only its owner's.
+pub(crate) fn definition_visible(
+    definition: &super::AgentDefinition,
+    owners: &BTreeMap<String, String>,
+    me: Option<&str>,
+) -> bool {
+    match owners.get(&definition.id) {
+        Some(owner) => owned_by_viewer(Some(owner), me),
+        None => definition.is_builtin,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,6 +454,135 @@ mod tests {
         .unwrap();
         record.auth_tag = auth_tag;
         record
+    }
+
+    fn persona(id: &str, builtin: bool) -> crate::managed_agents::AgentDefinition {
+        let mut stored = record("", None);
+        stored.slug = Some(id.into());
+        stored.is_builtin = builtin;
+        stored.to_definition_view().unwrap()
+    }
+
+    #[test]
+    fn personas_belong_to_one_account_and_built_ins_to_everyone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let a = nostr::Keys::generate().public_key().to_hex();
+        let b = nostr::Keys::generate().public_key().to_hex();
+        let existing = vec![persona("mine", false), persona("builtin:fizz", true)];
+        // First run: existing personas go to the given (previous) account.
+        let owners = record_definition_owners(&path, &existing, Some(&a)).unwrap();
+        assert_eq!(owners.get("mine"), Some(&a));
+        assert!(!owners.contains_key("builtin:fizz"));
+        // B makes a persona later: it is B's, and A's stays A's.
+        let mut later = existing.clone();
+        later.push(persona("theirs", false));
+        let owners = record_definition_owners(&path, &later, Some(&b)).unwrap();
+        assert_eq!(owners.get("mine"), Some(&a));
+        assert_eq!(owners.get("theirs"), Some(&b));
+        let seen = |me: &str| -> Vec<String> {
+            later
+                .iter()
+                .filter(|d| definition_visible(d, &owners, Some(me)))
+                .map(|d| d.id.clone())
+                .collect()
+        };
+        assert_eq!(seen(&a), vec!["mine", "builtin:fizz"]);
+        assert_eq!(seen(&b), vec!["builtin:fizz", "theirs"]);
+        // Nobody signed in: built-ins only.
+        assert!(later
+            .iter()
+            .filter(|d| definition_visible(d, &owners, None))
+            .all(|d| d.is_builtin));
+    }
+
+    #[test]
+    fn a_persona_without_an_owner_is_shown_to_nobody() {
+        let owners = BTreeMap::new();
+        let me = nostr::Keys::generate().public_key().to_hex();
+        assert!(!definition_visible(
+            &persona("x", false),
+            &owners,
+            Some(&me)
+        ));
+        // Nothing is recorded (or marked migrated) without an owner to give.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        assert!(
+            record_definition_owners(&path, &[persona("x", false)], None)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!read_owners(&path).contains_key(DEFINITIONS_MIGRATED));
+    }
+
+    #[test]
+    fn an_agent_is_listed_only_to_its_owner() {
+        let a = "a".repeat(64);
+        assert!(owned_by_viewer(Some(&a), Some(&a.to_uppercase())));
+        assert!(!owned_by_viewer(Some(&a), Some(&"b".repeat(64))));
+        assert!(!owned_by_viewer(None, Some(&a)));
+        assert!(!owned_by_viewer(Some(&a), None));
+    }
+
+    #[test]
+    fn the_previous_account_is_the_one_owning_most_agents() {
+        let owners = ["b", "a", "A", "b", "a"].map(String::from);
+        assert_eq!(main_owner(owners.into_iter()), Some("a".into()));
+        assert_eq!(
+            main_owner(["b", "a"].map(String::from).into_iter()),
+            Some("b".into()),
+            "a tie goes to the one seen first"
+        );
+        assert_eq!(main_owner(std::iter::empty()), None);
+    }
+
+    /// Dry run of the persona-owner migration on a copy of an agent store:
+    /// `BUZZ_OWNERS_DRY_RUN_DIR` = a copied `agents/` directory (written to).
+    #[test]
+    #[ignore]
+    fn dry_run_persona_owner_migration_on_a_store_copy() {
+        let dir = std::path::PathBuf::from(std::env::var("BUZZ_OWNERS_DRY_RUN_DIR").unwrap());
+        let store: Vec<ManagedAgentRecord> =
+            serde_json::from_slice(&std::fs::read(dir.join("managed-agents.json")).unwrap())
+                .unwrap();
+        let path = dir.join(FILE_NAME);
+        let recorded = read_owners(&path);
+        let (definitions, agents): (Vec<_>, Vec<_>) =
+            store.iter().partition(|record| record.pubkey.is_empty());
+        let agent_owners: Vec<String> = agents
+            .iter()
+            .filter_map(|record| {
+                attested_owner_hex(record)
+                    .or_else(|| recorded.get(&record.pubkey.to_ascii_lowercase()).cloned())
+            })
+            .collect();
+        for record in &agents {
+            let owner = attested_owner_hex(record)
+                .or_else(|| recorded.get(&record.pubkey.to_ascii_lowercase()).cloned());
+            println!(
+                "agent {} {:?} -> {:?}",
+                &record.pubkey[..8],
+                record.name,
+                owner.as_deref().map(|o| &o[..8])
+            );
+        }
+        let previous = main_owner(agent_owners.into_iter());
+        println!("previous account: {:?}", previous);
+        let definitions: Vec<_> = definitions
+            .iter()
+            .filter_map(|record| record.to_definition_view())
+            .collect();
+        let owners = record_definition_owners(&path, &definitions, previous.as_deref()).unwrap();
+        for definition in &definitions {
+            println!(
+                "persona {} {:?} builtin={} -> {:?}",
+                definition.id,
+                definition.display_name,
+                definition.is_builtin,
+                owners.get(&definition.id).map(|o| &o[..8])
+            );
+        }
     }
 
     #[test]

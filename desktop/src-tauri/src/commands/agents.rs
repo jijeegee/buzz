@@ -370,6 +370,28 @@ pub(crate) use provider_deploy::deploy_to_provider;
 // and `std::sync::MutexGuard` is not `Send`.
 #[tauri::command]
 pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSummary>, String> {
+    managed_agent_summaries(app, AgentScope::ActiveAccount).await
+}
+
+/// Every account's local agents, for runtime upkeep that does not show them
+/// (keeping the computer awake while any agent runs).
+#[tauri::command]
+pub async fn list_all_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSummary>, String> {
+    managed_agent_summaries(app, AgentScope::AllAccounts).await
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AgentScope {
+    /// Agents owned by the active account; an agent whose owner is unknown
+    /// is not listed.
+    ActiveAccount,
+    AllAccounts,
+}
+
+async fn managed_agent_summaries(
+    app: AppHandle,
+    scope: AgentScope,
+) -> Result<Vec<ManagedAgentSummary>, String> {
     use tauri::Manager;
     tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -400,8 +422,16 @@ pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSumma
             crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
         let routing_mode =
             crate::managed_agents::channel_routing::load_channel_routing(&app).unwrap_or_default();
+        let me = crate::managed_agents::active_owner_hex(&app);
         records
             .iter()
+            .filter(|record| {
+                scope == AgentScope::AllAccounts
+                    || crate::managed_agents::owned_by_viewer(
+                        crate::managed_agents::visible_owner_hex(&app, record).as_deref(),
+                        me.as_deref(),
+                    )
+            })
             .map(|record| {
                 build_managed_agent_summary(
                     &app,

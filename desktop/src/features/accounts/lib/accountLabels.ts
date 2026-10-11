@@ -62,9 +62,10 @@ export function canSwitchTo(account: AccountSummary): boolean {
 }
 
 /**
- * The agents an account sees in its Agents list: its own, plus agents whose
- * owner is unknown (never hidden, so they can still be managed). Every agent
- * shows while the active account is not known yet.
+ * The agents an account sees in its Agents list: only its own. An agent whose
+ * owner is unknown is shown to nobody. The backend already lists only the
+ * active account's agents, so while the active account is not known yet its
+ * list is shown as is.
  */
 export function agentsOfAccount<T extends { ownerPubkey: string | null }>(
   agents: readonly T[],
@@ -72,8 +73,5 @@ export function agentsOfAccount<T extends { ownerPubkey: string | null }>(
 ): T[] {
   if (!account) return [...agents];
   const me = account.toLowerCase();
-  return agents.filter(
-    (agent) =>
-      agent.ownerPubkey == null || agent.ownerPubkey.toLowerCase() === me,
-  );
+  return agents.filter((agent) => agent.ownerPubkey?.toLowerCase() === me);
 }

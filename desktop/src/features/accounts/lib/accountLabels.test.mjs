@@ -109,7 +109,7 @@ test("only another signed-in (or key-only) account is a direct switch", () => {
   );
 });
 
-test("each account sees its own agents and every ownerless one", () => {
+test("each account sees only its own agents, never an ownerless one", () => {
   const me = "a".repeat(64);
   const agents = [
     { pubkey: "1", ownerPubkey: me },
@@ -119,11 +119,11 @@ test("each account sees its own agents and every ownerless one", () => {
   ];
   assert.deepEqual(
     agentsOfAccount(agents, me).map((a) => a.pubkey),
-    ["1", "3", "4"],
+    ["1", "4"],
   );
   assert.deepEqual(
     agentsOfAccount(agents, undefined).map((a) => a.pubkey),
     ["1", "2", "3", "4"],
-    "everything while the active account is not known",
+    "the backend's (already scoped) list while the active account is not known",
   );
 });

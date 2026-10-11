@@ -14307,6 +14307,7 @@ export function maybeInstallE2eTauriMocks() {
         };
       }
       case "list_managed_agents":
+      case "list_all_managed_agents":
         return handleListManagedAgents(activeConfig);
       case "get_agent_memory":
         return handleGetAgentMemory(
