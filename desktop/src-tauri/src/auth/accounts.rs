@@ -1163,7 +1163,7 @@ impl InactiveSessions {
                 if let (true, Some(dir), Some((name, avatar))) = (
                     attempt.is_ok(),
                     data_dir.as_deref(),
-                    auth.me_profile(&origin),
+                    auth.me_profile(&origin, &pubkey),
                 ) {
                     super::account_profiles::learn(dir, &pubkey, name, avatar, None);
                 }

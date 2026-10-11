@@ -172,12 +172,17 @@ pub(crate) async fn refresh_once(
                 if auth.signing_pubkey(origin) != Some(pubkey) {
                     return Err(RefreshFailure::Terminal("backup_binding_conflict".into()));
                 }
+                auth.record_me_profile(
+                    origin,
+                    pubkey,
+                    me.display_name.clone(),
+                    me.avatar_url.clone(),
+                );
             } else if auth.signing_pubkey(origin).is_some() {
                 return Err(RefreshFailure::Terminal("account_mode_conflict".into()));
             }
             let principal = PublicKey::from_hex(&me.principal_id)
                 .map_err(|_| RefreshFailure::Terminal("invalid_principal".into()))?;
-            auth.record_me_profile(origin, me.display_name.clone(), me.avatar_url.clone());
             (principal, me.device_id)
         }
     };

@@ -87,7 +87,8 @@ fn hand_ended_session<R: tauri::Runtime>(
 
 /// Keep the name and avatar `/auth/me` returned for `origin`'s restored
 /// session as its account's profile (`account`, else the active account
-/// there). Token accounts are not on the account list and are skipped.
+/// there), only when `/auth/me` reported that same account. Token accounts
+/// are not on the account list and are skipped.
 pub(crate) fn remember_profile<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     auth: &super::TokenAuthState,
@@ -98,7 +99,7 @@ pub(crate) fn remember_profile<R: tauri::Runtime>(
         return;
     };
     let (Some((display_name, avatar_url)), Ok(data_dir)) =
-        (auth.me_profile(origin), app.path().app_data_dir())
+        (auth.me_profile(origin, &account), app.path().app_data_dir())
     else {
         return;
     };

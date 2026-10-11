@@ -197,29 +197,36 @@ pub struct TokenAuthState {
     pub(crate) signed_out: signed_out::SignedOutMarkers,
     /// Background sessions of signed-in accounts that are not active.
     pub(crate) inactive: accounts::InactiveSessions,
-    /// The `/auth/me` name and avatar of each origin's last restored session.
-    me_profiles: Mutex<HashMap<String, (Option<String>, Option<String>)>>,
+    /// The `/auth/me` name and avatar of each origin's last restored session,
+    /// keyed by origin and the account (signing pubkey) it reported.
+    me_profiles: Mutex<HashMap<(String, PublicKey), (Option<String>, Option<String>)>>,
 }
 
 impl TokenAuthState {
     pub(crate) fn record_me_profile(
         &self,
         origin: &str,
+        account: PublicKey,
         display_name: Option<String>,
         avatar_url: Option<String>,
     ) {
         self.me_profiles
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(origin.to_owned(), (display_name, avatar_url));
+            .insert((origin.to_owned(), account), (display_name, avatar_url));
     }
 
-    /// The name and avatar `/auth/me` returned for `origin`'s session.
-    pub(crate) fn me_profile(&self, origin: &str) -> Option<(Option<String>, Option<String>)> {
+    /// The name and avatar `/auth/me` returned for `account`'s session on
+    /// `origin`.
+    pub(crate) fn me_profile(
+        &self,
+        origin: &str,
+        account: &PublicKey,
+    ) -> Option<(Option<String>, Option<String>)> {
         self.me_profiles
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .get(origin)
+            .get(&(origin.to_owned(), *account))
             .cloned()
     }
 
@@ -441,6 +448,20 @@ impl TokenAuthState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_me_profile_belongs_only_to_the_account_it_reported() {
+        let auth = TokenAuthState::default();
+        let (a, b) = (
+            nostr::Keys::generate().public_key(),
+            nostr::Keys::generate().public_key(),
+        );
+        auth.record_me_profile("o", a, Some("A".into()), None);
+        assert_eq!(auth.me_profile("o", &a), Some((Some("A".into()), None)));
+        // After a switch to B on the same origin, A's name is never B's.
+        assert_eq!(auth.me_profile("o", &b), None);
+        assert_eq!(auth.me_profile("other", &a), None);
+    }
 
     #[test]
     fn origin_normalises_ws_and_case() {
