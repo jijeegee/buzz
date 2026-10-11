@@ -231,3 +231,28 @@ test("the header popover opens with the whole tree showing", async () => {
   }
   await unlinked.unmount();
 });
+
+test("thread links go to other threads; this thread's link stays put", async () => {
+  const OTHER = "ef".repeat(32);
+  const opened = [];
+  const linkedTree = {
+    ...tree,
+    nodes: tree.nodes.map((n) =>
+      n.id === "ui" ? { ...n, threads: [OTHER] } : n,
+    ),
+  };
+  const { element } = view({
+    defaultExpanded: true,
+    onOpenThread: (thread) => opened.push(thread),
+    tree: linkedTree,
+  });
+  const { q, unmount } = await mount(element);
+  const here = q(`goal-thread-${THREAD}`);
+  assert.equal(here.textContent, "This thread");
+  assert.equal(here.disabled, true);
+  const other = q(`goal-thread-${OTHER}`);
+  assert.equal(other.disabled, false, "faded goals still navigate");
+  await act(async () => fireEvent.click(other));
+  assert.deepEqual(opened, [OTHER]);
+  await unmount();
+});

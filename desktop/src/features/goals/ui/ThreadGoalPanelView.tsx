@@ -34,6 +34,8 @@ type ThreadGoalPanelViewProps = {
   /** Message of the last failed edit, if any. */
   error?: string | null;
   nameOf: (pubkey: string) => string;
+  /** Go to another goal's thread; this thread's own link stays put. */
+  onOpenThread?: (threadRootId: string) => void;
   threadRootId: string;
   tree: GoalTree;
 };
@@ -51,6 +53,7 @@ export function ThreadGoalPanelView({
   defaultExpanded = false,
   error,
   nameOf,
+  onOpenThread,
   threadRootId,
   tree,
 }: ThreadGoalPanelViewProps) {
@@ -107,8 +110,10 @@ export function ThreadGoalPanelView({
             <GoalRow
               access={() => "muted"}
               apply={apply}
+              currentThreadId={threadRootId}
               layer={1}
               nameOf={nameOf}
+              onOpenThread={onOpenThread}
               node={goalRoot(tree) as GoalNode}
               tree={tree}
             />
@@ -183,8 +188,10 @@ export function ThreadGoalPanelView({
             // Relinking remounts the rows so their scope-based state resets.
             key={goal.id}
             apply={apply}
+            currentThreadId={threadRootId}
             layer={1}
             nameOf={nameOf}
+            onOpenThread={onOpenThread}
             node={goalRoot(tree) as GoalNode}
             tree={tree}
           />
