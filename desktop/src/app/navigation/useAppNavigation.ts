@@ -266,6 +266,8 @@ export function useAppNavigation() {
       options?: {
         /** Open the agent activity pane for this agent pubkey on arrival. */
         agentSession?: string;
+        /** With `agentSession`: thread the activity pane's back arrow opens. */
+        agentSessionReturnThread?: string;
         /**
          * When set, the main composer auto-submits the draft with this key
          * once on mount. Clears itself (via `?autoSend` search param) after
@@ -301,6 +303,9 @@ export function useAppNavigation() {
               : {}),
             ...(options?.agentSession
               ? { agentSession: options.agentSession }
+              : {}),
+            ...(options?.agentSession && options.agentSessionReturnThread
+              ? { agentSessionReturnThread: options.agentSessionReturnThread }
               : {}),
             ...(options?.thread ? { thread: options.thread } : {}),
             ...(options?.autoSend ? { autoSend: options.autoSend } : {}),
