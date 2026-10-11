@@ -366,16 +366,25 @@ fn profile_target_dirs(root: &Path) -> [PathBuf; 2] {
 }
 
 fn command_search_dirs() -> Vec<PathBuf> {
-    let mut dirs = profile_target_dirs(&workspace_root_dir()).to_vec();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+    let mut workspace_dirs = profile_target_dirs(&workspace_root_dir()).to_vec();
     if let Ok(current_dir) = std::env::current_dir() {
-        dirs.extend(profile_target_dirs(&current_dir));
+        workspace_dirs.extend(profile_target_dirs(&current_dir));
     }
 
-    dirs.extend(
-        std::env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().map(Path::to_path_buf)),
-    );
+    let mut dirs = Vec::new();
+    if cfg!(debug_assertions) {
+        dirs.extend(workspace_dirs);
+        dirs.extend(exe_dir);
+    } else {
+        // Installed builds ship their own sidecars. On a machine that also
+        // builds the app, the compile-time workspace still exists, and its
+        // target/debug sidecars must not shadow the bundled release ones.
+        dirs.extend(exe_dir);
+        dirs.extend(workspace_dirs);
+    }
     dirs.into_iter().fold(Vec::new(), |mut unique, dir| {
         if !unique.contains(&dir) {
             unique.push(dir);
