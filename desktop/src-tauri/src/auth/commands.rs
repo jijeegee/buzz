@@ -670,14 +670,25 @@ pub(crate) async fn sign_out_account(
     let is_active = account.is_none() || account == active;
     // Its running agents on this server, recorded with the sign-out
     // (informational) and stopped below. A legacy token account's agents are
-    // owned by its principal, never by the local key.
-    let owner = account
-        .or_else(|| crate::managed_agents::token_account_principal(&state.token_auth, origin));
-    let pairs = match owner {
-        Some(owner) => crate::managed_agents::running_owner_pairs(app, origin, &owner.to_hex())
-            .unwrap_or_default(),
-        None => Vec::new(),
+    // owned by its principal, never by the local key; found whatever the
+    // session state (revoked, expired, restoring).
+    let owners = match account {
+        Some(account) => vec![account],
+        None => crate::managed_agents::token_account_owners(app, origin),
     };
+    let running = |pairs: &mut Vec<crate::managed_agents::ManagedAgentRuntimeKey>| {
+        for owner in &owners {
+            for pair in crate::managed_agents::running_owner_pairs(app, origin, &owner.to_hex())
+                .unwrap_or_default()
+            {
+                if !pairs.contains(&pair) {
+                    pairs.push(pair);
+                }
+            }
+        }
+    };
+    let mut pairs = Vec::new();
+    running(&mut pairs);
     let stopping: Vec<String> = pairs.iter().map(|key| key.pubkey.clone()).collect();
     if is_active {
         // Let an in-flight restore or refresh settle first (sign-out is
@@ -692,7 +703,10 @@ pub(crate) async fn sign_out_account(
                 // Restoring or retrying: revoke with the stored token.
                 _ => {
                     if let Ok(Some(token)) = KeyringRefreshStore.load(origin) {
-                        revoke_stored(&state.http_client, origin, &token).await?;
+                        revoke_stored(&state.http_client, origin, &token, |rotated| {
+                            KeyringRefreshStore.store(origin, rotated)
+                        })
+                        .await?;
                     }
                 }
             }
@@ -706,12 +720,18 @@ pub(crate) async fn sign_out_account(
                 Some(session) => revoke_session(&state.http_client, origin, &session.access).await,
                 // No live session (retrying, or none running): revoke with
                 // the account's stored token.
-                None => match super::accounts::shared_secrets()
-                    .load(&super::accounts::refresh_slot(&account, origin))
-                {
-                    Ok(Some(token)) => revoke_stored(&state.http_client, origin, &token).await,
-                    _ => Ok(()),
-                },
+                None => {
+                    let slot = super::accounts::refresh_slot(&account, origin);
+                    match super::accounts::shared_secrets().load(&slot) {
+                        Ok(Some(token)) => {
+                            revoke_stored(&state.http_client, origin, &token, |rotated| {
+                                super::accounts::shared_secrets().store(&slot, rotated)
+                            })
+                            .await
+                        }
+                        _ => Ok(()),
+                    }
+                }
             };
             {
                 if let Err(error) = revoked {
@@ -741,6 +761,10 @@ pub(crate) async fn sign_out_account(
             eprintln!("buzz-desktop: auth: account list not updated on sign-out: {error}");
         }
     }
+    // Listed again now that the sign-out is recorded: a start that passed the
+    // gate just before it registers its child under the same process-map lock
+    // it checked the gate under, so it is either listed here or refused.
+    running(&mut pairs);
     let stop_app = app.clone();
     let failures = tauri::async_runtime::spawn_blocking(move || {
         crate::managed_agents::stop_pairs(&stop_app, pairs)
@@ -798,14 +822,23 @@ pub(crate) fn install_session_ended_hook(app: &AppHandle) {
 
 /// Revoke the session behind a stored refresh token: exchange it, then revoke
 /// the access token. A token the relay already refuses (4xx) is a session
-/// that is gone; a network failure is an error so the user can retry.
+/// that is gone; a network failure is an error so the user can retry. The
+/// exchange consumes the stored token, so the rotated one is `save`d first:
+/// a retry after a failed revoke then presents a live token, not a consumed
+/// one (which would trip `refresh_reused`).
 async fn revoke_stored(
     client: &reqwest::Client,
     origin: &str,
     refresh: &str,
+    save: impl FnOnce(&str) -> Result<(), String>,
 ) -> Result<(), String> {
     match api::refresh(client, origin, refresh).await {
-        Ok(tokens) => revoke_session(client, origin, &tokens.access.0).await,
+        Ok(tokens) => {
+            if let Err(error) = save(&tokens.refresh.0) {
+                eprintln!("buzz-desktop: auth: rotated token not kept before sign-out: {error}");
+            }
+            revoke_session(client, origin, &tokens.access.0).await
+        }
         Err(ApiError {
             status: Some(status),
             ..
@@ -838,10 +871,10 @@ pub(crate) async fn sign_out_device(
     store: &dyn RefreshStore,
     stop_agents: &[String],
 ) -> Result<(), String> {
+    // Without a marker the session is still forgotten (its agents are
+    // stopped by the caller); they may auto-start again on the next launch.
     if let Some(account) = signed_out_account(auth, origin, store)? {
         auth.signed_out.mark(origin, account, stop_agents)?;
-    } else if !stop_agents.is_empty() {
-        return Err("Sign-out is not available for this account.".into());
     }
     forget_session(auth, origin, store).await
 }
@@ -1414,9 +1447,12 @@ mod tests {
         let auth = loaded_auth(&dir);
         sign_out_device(&auth, origin, &store, &[]).await.unwrap();
         assert!(!auth.device_signed_out_with(origin, &store));
-        assert!(sign_out_device(&auth, origin, &store, &["ab".repeat(32)])
+        // With running agents to stop: still signs out, still no marker.
+        sign_out_device(&auth, origin, &store, &["ab".repeat(32)])
             .await
-            .is_err());
+            .unwrap();
+        assert!(!auth.device_signed_out_with(origin, &store));
+        assert!(!auth.signed_out.suppresses_agent(&"ab".repeat(32)));
     }
 
     #[test]

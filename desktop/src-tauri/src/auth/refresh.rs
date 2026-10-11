@@ -36,7 +36,7 @@ pub(crate) enum RefreshFailure {
     Transient,
 }
 
-/// Classify a `/auth/refresh` (or `/auth/me`) failure. Pure.
+/// Classify a `/auth/refresh` failure. Pure.
 pub(crate) fn classify(error: &ApiError) -> RefreshFailure {
     match error.status {
         None => RefreshFailure::Transient,
@@ -48,6 +48,18 @@ pub(crate) fn classify(error: &ApiError) -> RefreshFailure {
                 .unwrap_or_else(|| format!("http_{status}")),
         ),
         Some(_) => RefreshFailure::Transient,
+    }
+}
+
+/// Classify a `/auth/me` failure right after a refresh. A terminal code is
+/// prefixed `me_`: the refresh itself succeeded, so a 401 here (a token
+/// rotated an instant ago) asks to sign in again but never signs the account
+/// out ([`ends_sign_in`]); a session the relay really ended fails the next
+/// refresh with its own code. Pure.
+pub(crate) fn classify_me(error: &ApiError) -> RefreshFailure {
+    match classify(error) {
+        RefreshFailure::Terminal(code) => RefreshFailure::Terminal(format!("me_{code}")),
+        transient => transient,
     }
 }
 
@@ -150,7 +162,7 @@ pub(crate) async fn refresh_once(
         None => {
             let me = api::me(client, origin, &tokens.access)
                 .await
-                .map_err(|e| classify(&e))?;
+                .map_err(|e| classify_me(&e))?;
             if me.identity_mode.as_deref() == Some("key_backup") {
                 let pubkey = me
                     .signing_pubkey
@@ -431,6 +443,13 @@ mod tests {
             assert!(!ends_sign_in(code), "{code}");
         }
         assert_eq!(classify(&err(None, None)), RefreshFailure::Transient);
+        // `/auth/me` after a successful refresh never signs out.
+        let RefreshFailure::Terminal(code) = classify_me(&err(Some(401), Some("invalid_token")))
+        else {
+            panic!("a /auth/me 401 is terminal");
+        };
+        assert!(!ends_sign_in(&code), "{code}");
+        assert_eq!(classify_me(&err(None, None)), RefreshFailure::Transient);
     }
 
     #[test]

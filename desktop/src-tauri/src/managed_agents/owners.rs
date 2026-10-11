@@ -118,6 +118,47 @@ pub(crate) fn token_account_principal(
     }
 }
 
+/// The owners of `origin`'s token account, for stopping its agents when it
+/// signs out: its live principal, plus the owners recorded for the server's
+/// bots (learned in token mode). The recorded ones do not depend on the
+/// session state, so a revoked, expired or still-restoring session still
+/// finds its agents.
+pub(crate) fn token_account_owners<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    origin: &str,
+) -> Vec<PublicKey> {
+    use tauri::Manager;
+    let live = token_account_principal(
+        &app.state::<crate::app_state::AppState>().token_auth,
+        origin,
+    );
+    let records = super::storage::load_managed_agents_without_keys(app).unwrap_or_default();
+    bot_owners(live, &records, origin, |record| {
+        agent_owner_hex(app, record)
+    })
+}
+
+/// [`token_account_owners`] without the app. Pure.
+fn bot_owners(
+    live: Option<PublicKey>,
+    records: &[ManagedAgentRecord],
+    origin: &str,
+    owner_of: impl Fn(&ManagedAgentRecord) -> Option<String>,
+) -> Vec<PublicKey> {
+    let mut owners: Vec<PublicKey> = live.into_iter().collect();
+    let recorded = records
+        .iter()
+        .filter(|record| record.bot_origin.as_deref() == Some(origin))
+        .filter_map(&owner_of)
+        .filter_map(|hex| PublicKey::from_hex(&hex).ok());
+    for owner in recorded {
+        if !owners.contains(&owner) {
+            owners.push(owner);
+        }
+    }
+    owners
+}
+
 /// The start gate: an agent runs only while its owner is signed in on this
 /// computer for the agent's server. A server bot not on the account list is
 /// refused only by an explicit sign-out marker (its token decides the rest).
@@ -129,7 +170,7 @@ pub(crate) fn ensure_owner_signed_in<R: tauri::Runtime>(
 ) -> Result<(), String> {
     use crate::auth::accounts::OwnerHere;
     let owner = PublicKey::from_hex(owner_hex).map_err(|_| "invalid agent owner")?;
-    let here = crate::auth::accounts::owner_here_for(app, relay_url, &owner)?;
+    let here = crate::auth::accounts::owner_here_for(app, relay_url, &owner);
     gate_verdict(record, here).inspect_err(|error| {
         if here == OwnerHere::Unlisted {
             eprintln!(
@@ -355,6 +396,42 @@ mod tests {
         auth.set_key_backup(origin, nostr::Keys::generate().public_key());
         assert_eq!(token_account_principal(&auth, origin), None);
         assert_eq!(token_account_principal(&auth, "https://other.test"), None);
+    }
+
+    #[test]
+    fn a_token_account_finds_its_bots_owners_without_a_live_session() {
+        let origin = "https://relay.test";
+        let (principal, other) = (
+            nostr::Keys::generate().public_key(),
+            nostr::Keys::generate().public_key(),
+        );
+        let mut bot = record(&nostr::Keys::generate().public_key().to_hex(), None);
+        bot.bot_origin = Some(origin.into());
+        let mut elsewhere = bot.clone();
+        elsewhere.pubkey = nostr::Keys::generate().public_key().to_hex();
+        elsewhere.bot_origin = Some("https://other.test".into());
+        let local = record(&nostr::Keys::generate().public_key().to_hex(), None);
+        let records = vec![bot.clone(), elsewhere.clone(), local];
+        let owner_of = |record: &ManagedAgentRecord| {
+            if record.pubkey == bot.pubkey {
+                Some(principal.to_hex())
+            } else {
+                Some(other.to_hex())
+            }
+        };
+        // Revoked, expired or restoring: no live principal, the recorded
+        // owner of this server's bots still is one (not another server's
+        // bot, not a local agent).
+        assert_eq!(
+            bot_owners(None, &records, origin, owner_of),
+            vec![principal]
+        );
+        // Active: the live principal, without duplicates.
+        assert_eq!(
+            bot_owners(Some(principal), &records, origin, owner_of),
+            vec![principal]
+        );
+        assert!(bot_owners(None, &[], origin, owner_of).is_empty());
     }
 
     #[test]

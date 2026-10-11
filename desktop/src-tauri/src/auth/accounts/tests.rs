@@ -846,18 +846,21 @@ fn an_agent_owner_counts_as_signed_out_only_after_an_explicit_sign_out() {
         (AccountState::SignedOut, SignedOut),
     ] {
         assert_eq!(
-            owner_here(&listed(state), ORIGIN, &owner, false, None),
+            owner_here(Some(&listed(state)), ORIGIN, &owner, false, None),
             expected
         );
     }
     // A key-only account is listed for every server ("*").
     let mut key_only = Registry::default();
     key_only.upsert(ANY_ORIGIN, &owner, AccountState::KeyOnly);
-    assert_eq!(owner_here(&key_only, ORIGIN, &owner, false, None), SignedIn);
+    assert_eq!(
+        owner_here(Some(&key_only), ORIGIN, &owner, false, None),
+        SignedIn
+    );
     // Another server, or not listed at all.
     assert_eq!(
         owner_here(
-            &listed(AccountState::SignedIn),
+            Some(&listed(AccountState::SignedIn)),
             "https://other.test",
             &owner,
             false,
@@ -866,18 +869,24 @@ fn an_agent_owner_counts_as_signed_out_only_after_an_explicit_sign_out() {
         Unlisted
     );
     assert_eq!(
-        owner_here(&Registry::default(), ORIGIN, &owner, false, None),
+        owner_here(Some(&Registry::default()), ORIGIN, &owner, false, None),
         Unlisted
     );
     // The token account's principal (server bots).
     assert_eq!(
-        owner_here(&Registry::default(), ORIGIN, &owner, false, Some(owner)),
+        owner_here(
+            Some(&Registry::default()),
+            ORIGIN,
+            &owner,
+            false,
+            Some(owner)
+        ),
         SignedIn
     );
     // The sign-out marker wins over everything.
     assert_eq!(
         owner_here(
-            &listed(AccountState::SignedIn),
+            Some(&listed(AccountState::SignedIn)),
             ORIGIN,
             &owner,
             true,
@@ -885,6 +894,10 @@ fn an_agent_owner_counts_as_signed_out_only_after_an_explicit_sign_out() {
         ),
         SignedOut
     );
+    // No account list yet (first key-mode launch) or an unreadable one: only
+    // the marker decides.
+    assert_eq!(owner_here(None, ORIGIN, &owner, false, None), SignedIn);
+    assert_eq!(owner_here(None, ORIGIN, &owner, true, None), SignedOut);
 }
 
 #[test]

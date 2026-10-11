@@ -1502,9 +1502,11 @@ pub(crate) enum OwnerHere {
 
 /// [`OwnerHere`] from the account list and this device's sign-out marker:
 /// only an explicit sign-out refuses (§10.8: never the live session state, so
-/// an offline launch still starts every signed-in owner's agents). Pure.
+/// an offline launch still starts every signed-in owner's agents). Without a
+/// readable list (`None`: not created yet, or unreadable) only the marker
+/// decides, like a damaged marker file never refuses every agent. Pure.
 pub(crate) fn owner_here(
-    registry: &Registry,
+    registry: Option<&Registry>,
     origin: &str,
     owner: &PublicKey,
     marked_signed_out: bool,
@@ -1513,6 +1515,9 @@ pub(crate) fn owner_here(
     if marked_signed_out {
         return OwnerHere::SignedOut;
     }
+    let Some(registry) = registry else {
+        return OwnerHere::SignedIn;
+    };
     if token_principal == Some(*owner) || registry.key_only(owner) {
         return OwnerHere::SignedIn;
     }
@@ -1529,21 +1534,32 @@ pub(crate) fn owner_here_for<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     relay_url: &str,
     owner: &PublicKey,
-) -> Result<OwnerHere, String> {
+) -> OwnerHere {
     use tauri::Manager;
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| "account storage is unavailable")?;
-    let registry = {
-        let _lock = registry_lock();
-        load_registry(&data_dir)?.unwrap_or_default()
+    let registry = match app.path().app_data_dir() {
+        Ok(data_dir) => {
+            let _lock = registry_lock();
+            load_registry(&data_dir)
+        }
+        Err(_) => Err("account storage is unavailable".to_string()),
+    };
+    let registry = match registry {
+        Ok(Some(registry)) => Some(registry),
+        // A first key-mode launch with no agents yet creates no list; the
+        // next launch does. Until then the marker alone decides.
+        Ok(None) => None,
+        Err(error) => {
+            eprintln!(
+                "buzz-desktop: agents: account list unreadable ({error});                  starting agents by sign-out marker only"
+            );
+            None
+        }
     };
     let origin = super::origin_for(relay_url);
     let state = app.state::<crate::app_state::AppState>();
     let marked = state.token_auth.signed_out.is_marked(&origin, owner);
     let principal = crate::managed_agents::token_account_principal(&state.token_auth, &origin);
-    Ok(owner_here(&registry, &origin, owner, marked, principal))
+    owner_here(registry.as_ref(), &origin, owner, marked, principal)
 }
 
 /// The key of an account on this computer for read-only background work as
