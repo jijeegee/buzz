@@ -107,6 +107,18 @@ impl SignedOutMarkers {
             })
     }
 
+    /// Whether a readable marker names `account` on `origin` (or covers the
+    /// whole origin). Unlike [`Self::is_signed_out`], an unreadable file does
+    /// not count: the agent start gate then decides from the account list
+    /// instead of refusing every agent.
+    pub(crate) fn is_marked(&self, origin: &str, account: &PublicKey) -> bool {
+        let markers = self.lock();
+        markers.origins.contains_key(&(origin.to_owned(), None))
+            || markers
+                .origins
+                .contains_key(&(origin.to_owned(), Some(*account)))
+    }
+
     /// Whether any marker covers `origin`: a legacy token account, whose
     /// version-1 marker may name its principal rather than no account.
     pub(crate) fn is_signed_out_any(&self, origin: &str) -> bool {

@@ -668,12 +668,14 @@ pub(crate) async fn sign_out_account(
     let data_dir = app.path().app_data_dir().ok();
     let account = account.or_else(|| state.token_auth.signing_pubkey(origin));
     let is_active = account.is_none() || account == active;
-    // Its running agents, recorded with the sign-out (informational) and
-    // stopped below.
-    let pairs = match account.or(active) {
-        Some(owner) => {
-            crate::managed_agents::running_owner_pairs(app, &owner.to_hex()).unwrap_or_default()
-        }
+    // Its running agents on this server, recorded with the sign-out
+    // (informational) and stopped below. A legacy token account's agents are
+    // owned by its principal, never by the local key.
+    let owner = account
+        .or_else(|| crate::managed_agents::token_account_principal(&state.token_auth, origin));
+    let pairs = match owner {
+        Some(owner) => crate::managed_agents::running_owner_pairs(app, origin, &owner.to_hex())
+            .unwrap_or_default(),
         None => Vec::new(),
     };
     let stopping: Vec<String> = pairs.iter().map(|key| key.pubkey.clone()).collect();
@@ -683,8 +685,16 @@ pub(crate) async fn sign_out_account(
         // revoked server-side rather than only forgotten locally.
         drop(state.token_auth.refresh_lock(origin).lock_owned().await);
         if revoke {
-            if let Some((_, OriginAuth::Active(session))) = state.token_auth.get(origin) {
-                revoke_session(&state.http_client, origin, &session.access).await?;
+            match state.token_auth.get(origin) {
+                Some((_, OriginAuth::Active(session))) => {
+                    revoke_session(&state.http_client, origin, &session.access).await?;
+                }
+                // Restoring or retrying: revoke with the stored token.
+                _ => {
+                    if let Ok(Some(token)) = KeyringRefreshStore.load(origin) {
+                        revoke_stored(&state.http_client, origin, &token).await?;
+                    }
+                }
             }
         }
         sign_out_device(&state.token_auth, origin, &KeyringRefreshStore, &stopping).await?;
@@ -692,10 +702,19 @@ pub(crate) async fn sign_out_account(
         // A background account: its session lives in its own loop.
         let held = state.token_auth.inactive.take(origin, &account).await;
         if revoke {
-            if let Some(session) = held.flatten() {
-                if let Err(error) =
-                    revoke_session(&state.http_client, origin, &session.access).await
+            let revoked = match held.flatten() {
+                Some(session) => revoke_session(&state.http_client, origin, &session.access).await,
+                // No live session (retrying, or none running): revoke with
+                // the account's stored token.
+                None => match super::accounts::shared_secrets()
+                    .load(&super::accounts::refresh_slot(&account, origin))
                 {
+                    Ok(Some(token)) => revoke_stored(&state.http_client, origin, &token).await,
+                    _ => Ok(()),
+                },
+            };
+            {
+                if let Err(error) = revoked {
                     // Nothing changed locally: keep it alive for a retry.
                     state.token_auth.inactive.start(
                         &state.http_client,
@@ -732,9 +751,12 @@ pub(crate) async fn sign_out_account(
         eprintln!("buzz-desktop: auth: agent not stopped on sign-out: {failure}");
     }
     let next = match (is_active, data_dir.as_deref()) {
-        (true, Some(data_dir)) => super::accounts::next_signed_in(data_dir, origin, account),
+        (true, Some(data_dir)) => {
+            super::accounts::next_signed_in(data_dir, origin, account.or(active))
+        }
         _ => None,
-    };
+    }
+    .filter(|next| Some(*next) != active);
     if let Some(next) = next {
         match super::accounts::switch_account(app.clone(), next.to_hex()).await {
             Ok(Some(warning)) => {
@@ -767,9 +789,29 @@ pub(crate) fn install_session_ended_hook(app: &AppHandle) {
                 eprintln!("buzz-desktop: auth: the relay ended a session on {origin} ({code}); signing it out");
                 if let Err(error) = sign_out_account(&app, &origin, account, false).await {
                     eprintln!("buzz-desktop: auth: sign-out after {code} failed: {error}");
+                    // The UI still learns the session ended.
+                    emit_changed(&app, &origin);
                 }
             });
         }));
+}
+
+/// Revoke the session behind a stored refresh token: exchange it, then revoke
+/// the access token. A token the relay already refuses (4xx) is a session
+/// that is gone; a network failure is an error so the user can retry.
+async fn revoke_stored(
+    client: &reqwest::Client,
+    origin: &str,
+    refresh: &str,
+) -> Result<(), String> {
+    match api::refresh(client, origin, refresh).await {
+        Ok(tokens) => revoke_session(client, origin, &tokens.access.0).await,
+        Err(ApiError {
+            status: Some(status),
+            ..
+        }) if (400..500).contains(&status) && status != 429 => Ok(()),
+        Err(error) => Err(format!("could not sign out: {error}")),
+    }
 }
 
 /// Revoke a session server-side; already gone (401) counts as revoked.

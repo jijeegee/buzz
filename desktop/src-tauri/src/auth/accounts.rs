@@ -1541,10 +1541,7 @@ pub(crate) fn owner_here_for<R: tauri::Runtime>(
     };
     let origin = super::origin_for(relay_url);
     let state = app.state::<crate::app_state::AppState>();
-    let marked = state
-        .token_auth
-        .signed_out
-        .is_signed_out(&origin, Some(*owner));
+    let marked = state.token_auth.signed_out.is_marked(&origin, owner);
     let principal = crate::managed_agents::token_account_principal(&state.token_auth, &origin);
     Ok(owner_here(&registry, &origin, owner, marked, principal))
 }

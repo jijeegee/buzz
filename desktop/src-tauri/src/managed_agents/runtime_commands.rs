@@ -361,9 +361,11 @@ fn start_pair<R: tauri::Runtime>(
     Ok(status)
 }
 
-/// The running (agent, relay) pairs of agents owned by `owner_hex`.
+/// The running (agent, relay) pairs on `origin`'s server of agents owned by
+/// `owner_hex`.
 pub(crate) fn running_owner_pairs<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    origin: &str,
     owner_hex: &str,
 ) -> Result<Vec<ManagedAgentRuntimeKey>, String> {
     let records = load_managed_agents(app)?;
@@ -375,20 +377,24 @@ pub(crate) fn running_owner_pairs<R: tauri::Runtime>(
         .keys()
         .cloned()
         .collect();
-    Ok(owned_pairs(keys, &records, owner_hex, |record| {
+    Ok(owned_pairs(keys, &records, origin, owner_hex, |record| {
         super::agent_owner_hex(app, record)
     }))
 }
 
-/// The pairs among `keys` whose agent `owner_of` says belongs to `owner_hex`;
-/// unknown agents and agents without a known owner are never included. Pure.
+/// The pairs among `keys` on `origin`'s server whose agent `owner_of` says
+/// belongs to `owner_hex`: an account signed out of one server keeps its
+/// agents on another. Unknown agents and agents without a known owner are
+/// never included. Pure.
 pub(crate) fn owned_pairs(
     keys: Vec<ManagedAgentRuntimeKey>,
     records: &[super::ManagedAgentRecord],
+    origin: &str,
     owner_hex: &str,
     owner_of: impl Fn(&super::ManagedAgentRecord) -> Option<String>,
 ) -> Vec<ManagedAgentRuntimeKey> {
     keys.into_iter()
+        .filter(|key| crate::auth::origin_for(&key.relay_url) == origin)
         .filter(|key| {
             records
                 .iter()
@@ -899,9 +905,10 @@ mod tests {
                 None
             }
         };
-        let stopping = owned_pairs(running, &records, &owner_b, owner_of);
-        assert_eq!(stopping.len(), 2);
-        assert!(stopping.iter().all(|k| k.pubkey == b_agent));
+        let stopping = owned_pairs(running, &records, "https://relay.test", &owner_b, owner_of);
+        // B's agent on this server only: on another server B may still be
+        // signed in, and A's agents are never touched.
+        assert_eq!(stopping, vec![key(&b_agent, "wss://relay.test")]);
     }
 }
 

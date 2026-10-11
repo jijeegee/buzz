@@ -46,7 +46,7 @@ pub(crate) fn spawn_refresh_loop<R: tauri::Runtime>(
         generation,
         Arc::new(KeyringRefreshStore),
         move |origin| {
-            if !hand_ended_session(&notify_app, origin) {
+            if !hand_ended_session(&notify_app, origin, generation) {
                 emit_changed(&notify_app, origin);
             }
         },
@@ -57,11 +57,20 @@ pub(crate) fn spawn_refresh_loop<R: tauri::Runtime>(
 /// [`SessionEndedHook`](super::accounts::SessionEndedHook), which signs the
 /// account out (and tells the UI once any switch is done). Returns whether it
 /// did; any other state is left to the caller.
-fn hand_ended_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, origin: &str) -> bool {
+fn hand_ended_session<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    origin: &str,
+    generation: u64,
+) -> bool {
     let state = app.state::<AppState>();
-    let Some((_, super::OriginAuth::NeedsLogin(code))) = state.token_auth.get(origin) else {
+    // Only this login generation's own end: a loop replaced by a newer
+    // sign-in or switch never signs the new account out.
+    let Some((current, super::OriginAuth::NeedsLogin(code))) = state.token_auth.get(origin) else {
         return false;
     };
+    if current != generation {
+        return false;
+    }
     if !refresh::ends_sign_in(&code) {
         return false;
     }
@@ -87,7 +96,7 @@ fn finish<R: tauri::Runtime>(
     // "sign in again".
     if !matches!(attempt, Err(RefreshFailure::Terminal(_))) {
         spawn_refresh_loop(app, origin, generation);
-    } else if hand_ended_session(app, origin) {
+    } else if hand_ended_session(app, origin, generation) {
         return;
     }
     emit_changed(app, origin);
