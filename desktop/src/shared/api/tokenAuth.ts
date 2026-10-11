@@ -44,6 +44,8 @@ export type TokenAuthStatus = {
   accountChanged?: boolean;
   /** The account a sign-out of the active account switched to. */
   switchedTo?: string | null;
+  /** Agents a sign-out could not confirm stopped; the sign-out went through. */
+  agentsNotStopped?: number;
   /**
    * The chosen Google account has no Buzz account yet and nothing was
    * created: ask, then `confirmSignup` or `cancelSignup`.

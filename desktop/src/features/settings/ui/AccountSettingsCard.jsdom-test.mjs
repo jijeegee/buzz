@@ -796,6 +796,38 @@ test("signing out of the active account goes straight to the next one", async (t
   await unmount();
 });
 
+test("a sign-out whose agents did not all stop says so after the switch", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  const next = "ef".repeat(32);
+  accounts = [
+    account("cd".repeat(32), { active: true, displayName: "Jiho" }),
+    account(next, { displayName: "Work" }),
+  ];
+  logoutBehavior = () =>
+    Promise.resolve(
+      baseStatus({
+        state: "active",
+        keyBackup: true,
+        switchedTo: next,
+        agentsNotStopped: 2,
+      }),
+    );
+  const { unmount } = await openSignOutDialog();
+  await act(async () => fireEvent.click(dialogButton("Sign out")));
+  await settle(() => reload.mock.callCount() > 0);
+  assert.equal(reload.mock.callCount(), 1);
+  accountSwitch.takeAccountSwitchAtBoot();
+  assert.equal(accountSwitch.accountSwitchCaption(), "Switching to Work…");
+  assert.equal(
+    accountSwitch.finishAccountSwitchBoot(),
+    "Signed out. 2 agents from that account did not stop in time; restart Buzz if they keep replying.",
+  );
+  accountSwitch.resetAccountSwitchForTests();
+  logoutBehavior = undefined;
+  accounts = [];
+  await unmount();
+});
+
 test("a failed sign-out keeps the user here and says why", async (t) => {
   const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
   logoutBehavior = () => Promise.reject("Could not reach the server.");

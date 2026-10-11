@@ -53,6 +53,9 @@ pub struct TokenAuthStatus {
     pub account_changed: bool,
     /// The account a sign-out of the active account switched to (hex).
     pub switched_to: Option<String>,
+    /// Agents a sign-out could not confirm stopped (still stopping, or the
+    /// stop failed). The sign-out itself went through.
+    pub agents_not_stopped: usize,
     /// The chosen Google account has no Buzz account yet: nothing was
     /// created; the UI asks, then calls `confirm_signup` or `cancel_signup`.
     pub signup: Option<SignupPrompt>,
@@ -100,6 +103,7 @@ fn status_of(
         signing_pubkey: None,
         device_signed_out: false,
         switched_to: None,
+        agents_not_stopped: 0,
         account_changed: false,
         signup: None,
     }
@@ -794,10 +798,11 @@ pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuth
     let account = account
         .map(|hex| PublicKey::from_hex(&hex).map_err(|_| "invalid account".to_string()))
         .transpose()?;
-    let switched_to = sign_out_account(&app, &origin, account, true).await?;
+    let signed_out = sign_out_account(&app, &origin, account, true).await?;
     let support = state.token_auth.cached_support(&origin).flatten();
     let mut status = current_status(&state, &origin, support);
-    status.switched_to = switched_to.map(|key| key.to_hex());
+    status.switched_to = signed_out.switched_to.map(|key| key.to_hex());
+    status.agents_not_stopped = signed_out.agents_not_stopped;
     Ok(status)
 }
 
@@ -808,13 +813,15 @@ pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuth
 /// active account (`None` also covers a legacy token account). Returns the
 /// account switched to when the active account signed out and another one is
 /// still signed in here. The UI is told only after any switch, so it never
-/// shows the signed-out screen on the way to the next account.
+/// shows the signed-out screen on the way to the next account. Stopping the
+/// agents is waited for at most [`SIGN_OUT_STOP_LIMIT`]: a stop that does not
+/// finish is reported, never a reason to leave the sign-out half done.
 pub(crate) async fn sign_out_account(
     app: &AppHandle,
     origin: &str,
     account: Option<PublicKey>,
     revoke: bool,
-) -> Result<Option<PublicKey>, String> {
+) -> Result<SignedOut, String> {
     let state = app.state::<AppState>();
     let active = state.keys.lock().ok().map(|keys| keys.public_key());
     let data_dir = app.path().app_data_dir().ok();
@@ -918,14 +925,16 @@ pub(crate) async fn sign_out_account(
     // it checked the gate under, so it is either listed here or refused.
     running(&mut pairs);
     let stop_app = app.clone();
-    let failures = tauri::async_runtime::spawn_blocking(move || {
+    let attempted = pairs.len();
+    let stopping = tauri::async_runtime::spawn_blocking(move || {
         crate::managed_agents::stop_pairs(&stop_app, pairs)
-    })
-    .await
-    .unwrap_or_else(|error| vec![error.to_string()]);
-    for failure in failures {
-        eprintln!("buzz-desktop: auth: agent not stopped on sign-out: {failure}");
-    }
+    });
+    let agents_not_stopped = await_agent_stops(
+        async { stopping.await.map_err(|error| error.to_string()) },
+        attempted,
+        SIGN_OUT_STOP_LIMIT,
+    )
+    .await;
     let next = match (is_active, data_dir.as_deref()) {
         (true, Some(data_dir)) => {
             super::accounts::next_signed_in(data_dir, origin, account.or(active))
@@ -942,13 +951,64 @@ pub(crate) async fn sign_out_account(
             Err(error) => {
                 eprintln!("buzz-desktop: auth: no switch after sign-out: {error}");
                 emit_changed(app, origin);
-                return Ok(None);
+                return Ok(SignedOut {
+                    switched_to: None,
+                    agents_not_stopped,
+                });
             }
         }
-        return Ok(Some(next));
+        return Ok(SignedOut {
+            switched_to: Some(next),
+            agents_not_stopped,
+        });
     }
     emit_changed(app, origin);
-    Ok(None)
+    Ok(SignedOut {
+        switched_to: None,
+        agents_not_stopped,
+    })
+}
+
+/// What a sign-out did besides signing the account out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SignedOut {
+    /// The account switched to when the active account signed out.
+    pub switched_to: Option<PublicKey>,
+    /// Agents not confirmed stopped.
+    pub agents_not_stopped: usize,
+}
+
+/// How long a sign-out waits for its agents to stop before going on.
+const SIGN_OUT_STOP_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Wait up to `limit` for a sign-out's agent stops (`attempted` of them) and
+/// return how many are not confirmed stopped: the failures reported, or all
+/// of them when the stop errored or is still running (it keeps running in
+/// the background and finishes on its own).
+async fn await_agent_stops(
+    stopping: impl std::future::Future<Output = Result<Vec<String>, String>>,
+    attempted: usize,
+    limit: std::time::Duration,
+) -> usize {
+    match tokio::time::timeout(limit, stopping).await {
+        Ok(Ok(failures)) => {
+            for failure in &failures {
+                eprintln!("buzz-desktop: auth: agent not stopped on sign-out: {failure}");
+            }
+            failures.len()
+        }
+        Ok(Err(error)) => {
+            eprintln!("buzz-desktop: auth: agents not stopped on sign-out: {error}");
+            attempted
+        }
+        Err(_) => {
+            eprintln!(
+                "buzz-desktop: auth: {attempted} agent(s) still stopping after {}s; signing out anyway",
+                limit.as_secs()
+            );
+            attempted
+        }
+    }
 }
 
 /// Install the hook that signs an account out when the relay ended its
@@ -1294,6 +1354,36 @@ pub(crate) async fn logout_all_best_effort(state: &AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn a_sign_out_does_not_wait_forever_for_its_agents() {
+        // The stop that never finishes (a harness that would not exit): the
+        // sign-out goes on after the limit and reports every agent.
+        let limit = std::time::Duration::from_secs(10);
+        let started = tokio::time::Instant::now();
+        let not_stopped = await_agent_stops(
+            std::future::pending::<Result<Vec<String>, String>>(),
+            2,
+            limit,
+        )
+        .await;
+        assert_eq!(not_stopped, 2);
+        assert_eq!(started.elapsed(), limit);
+    }
+
+    #[tokio::test]
+    async fn a_sign_out_reports_only_the_agents_that_did_not_stop() {
+        let limit = std::time::Duration::from_secs(10);
+        assert_eq!(await_agent_stops(async { Ok(vec![]) }, 3, limit).await, 0);
+        assert_eq!(
+            await_agent_stops(async { Ok(vec!["a: stuck".to_string()]) }, 3, limit).await,
+            1
+        );
+        assert_eq!(
+            await_agent_stops(async { Err("join failed".to_string()) }, 3, limit).await,
+            3
+        );
+    }
 
     #[test]
     fn explicit_token_login_preserves_existing_key_agents_and_allows_token_bots() {

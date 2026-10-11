@@ -1244,10 +1244,59 @@ pub(crate) const ACTIVE_ACCOUNT_CHANGED_EVENT: &str = "active-account-changed";
 /// Launch: reconcile the list with secure storage before the identity is
 /// resolved. Failures are logged; the single-account slots still work.
 pub(crate) fn reconcile_on_launch(data_dir: &Path) {
+    if let Err(error) = start_as_signed_in_account(shared_secrets(), data_dir) {
+        eprintln!("buzz-desktop: accounts: launch account not changed: {error}");
+    }
     match reconcile(shared_secrets(), data_dir) {
         Ok(outcome) => eprintln!("buzz-desktop: accounts: {outcome:?}"),
         Err(error) => eprintln!("buzz-desktop: accounts: reconcile failed: {error}"),
     }
+}
+
+/// Launch: when the active account is signed out here but another account is
+/// still signed in, start as that one (most recently used first) instead of
+/// on the signed-out screen. Runs before [`reconcile`], which then refills the
+/// active-account copy from the new active account's own slots.
+fn start_as_signed_in_account(secrets: &dyn Secrets, data_dir: &Path) -> Result<(), String> {
+    let _lock = registry_lock();
+    let Some(mut registry) = load_registry(data_dir)? else {
+        return Ok(());
+    };
+    let profiles = super::account_profiles::load(data_dir);
+    let Some(next) = launch_account_of(&registry, &profiles) else {
+        return Ok(());
+    };
+    // Only an account whose key is on this computer can become active.
+    account_keys(secrets, &next)?;
+    registry.active = Some(next.to_hex());
+    save_registry(secrets, data_dir, &registry)?;
+    eprintln!(
+        "buzz-desktop: accounts: the active account is signed out here; starting as {}",
+        next.to_hex()
+    );
+    Ok(())
+}
+
+/// The account to start as when the active one is signed out on every server
+/// it is listed on: the most recently used account still signed in on one of
+/// those servers. `None` keeps the active account. Pure.
+fn launch_account_of(
+    registry: &Registry,
+    profiles: &std::collections::BTreeMap<String, super::account_profiles::AccountProfile>,
+) -> Option<PublicKey> {
+    let active = registry.active_pubkey()?;
+    let hex = active.to_hex();
+    let listed: Vec<&Account> = registry
+        .accounts
+        .iter()
+        .filter(|a| a.pubkey == hex)
+        .collect();
+    if listed.is_empty() || listed.iter().any(|a| a.state != AccountState::SignedOut) {
+        return None;
+    }
+    listed
+        .iter()
+        .find_map(|a| next_signed_in_of(registry, profiles, &a.origin, Some(active)))
 }
 
 /// Launch: keep every signed-in account that is not active alive.

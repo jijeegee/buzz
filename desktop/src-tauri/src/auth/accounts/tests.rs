@@ -1134,3 +1134,75 @@ fn watchable_accounts_skip_the_open_account_and_signed_out_ones() {
         ])
     );
 }
+
+#[test]
+fn a_launch_signed_out_here_starts_as_the_most_recent_signed_in_account() {
+    use super::super::account_profiles::AccountProfile;
+    let (out, recent, old, elsewhere) = (
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+        Keys::generate().public_key(),
+    );
+    let used = |at| AccountProfile {
+        last_used_at: Some(at),
+        ..Default::default()
+    };
+    let mut registry = Registry::default();
+    registry.upsert(ORIGIN, &out, AccountState::SignedOut);
+    registry.upsert(ORIGIN, &old, AccountState::SignedIn);
+    registry.upsert(ORIGIN, &recent, AccountState::SignedIn);
+    registry.upsert("https://other.test", &elsewhere, AccountState::SignedIn);
+    registry.active = Some(out.to_hex());
+    let mut profiles = std::collections::BTreeMap::new();
+    profiles.insert(old.to_hex(), used(10));
+    profiles.insert(recent.to_hex(), used(20));
+    profiles.insert(elsewhere.to_hex(), used(30));
+    // The signed-out account's server decides: never another server's account.
+    assert_eq!(launch_account_of(&registry, &profiles), Some(recent));
+
+    // Still signed in (or key-only, or waiting for a fresh sign-in): kept.
+    for state in [
+        AccountState::SignedIn,
+        AccountState::KeyOnly,
+        AccountState::NeedsLogin,
+    ] {
+        let mut kept = registry.clone();
+        kept.upsert(ORIGIN, &out, state);
+        assert_eq!(launch_account_of(&kept, &profiles), None, "{state:?}");
+    }
+    // Nobody else signed in there: the signed-out screen.
+    let mut alone = Registry::default();
+    alone.upsert(ORIGIN, &out, AccountState::SignedOut);
+    alone.upsert(ORIGIN, &old, AccountState::SignedOut);
+    alone.active = Some(out.to_hex());
+    assert_eq!(launch_account_of(&alone, &profiles), None);
+    // No active account: nothing to change.
+    let mut none = registry.clone();
+    none.active = None;
+    assert_eq!(launch_account_of(&none, &profiles), None);
+}
+
+#[test]
+fn a_launch_signed_out_here_moves_the_list_to_the_signed_in_account() {
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Mem::default();
+    let (out, next) = (Keys::generate(), Keys::generate());
+    for keys in [&out, &next] {
+        secrets.put(&identity_slot(&keys.public_key()), &nsec(keys));
+    }
+    let mut registry = Registry::default();
+    registry.upsert(ORIGIN, &out.public_key(), AccountState::SignedOut);
+    registry.upsert(ORIGIN, &next.public_key(), AccountState::SignedIn);
+    registry.active = Some(out.public_key().to_hex());
+    save_registry(&secrets, dir.path(), &registry).unwrap();
+
+    start_as_signed_in_account(&secrets, dir.path()).unwrap();
+    let saved = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(saved.active_pubkey(), Some(next.public_key()));
+    // Nothing else changed: the signed-out account stays listed, signed out.
+    assert_eq!(
+        saved.get(ORIGIN, &out.public_key()).map(|a| a.state),
+        Some(AccountState::SignedOut)
+    );
+}
