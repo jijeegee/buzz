@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::process::{Child, ExitStatus};
+use std::time::{Duration, Instant};
 
 use tauri::AppHandle;
 
@@ -30,6 +32,98 @@ pub(crate) fn managed_agent_runtime_relay_urls<T>(
         .collect()
 }
 
+/// How long a stopped pair gets to exit before it is killed outright.
+const STOP_EXIT_GRACE: Duration = Duration::from_secs(5);
+/// How long a killed pair gets to exit before the stop gives up.
+const STOP_KILL_GRACE: Duration = Duration::from_secs(2);
+
+/// Terminate an owned pair runtime's process tree and reap it, never waiting
+/// without a bound: a stop runs under the runtime locks, so an unbounded wait
+/// on a child that did not die stalls every agent operation (and the whole
+/// app when the stop came in on the main thread). Unix signals the process
+/// group; Windows drops the Job Object (KILL_ON_JOB_CLOSE reaps the tree) or
+/// kills the child when no job was assigned. Already-exited children are
+/// reaped without a signal. Err means the child is still running.
+pub(crate) fn terminate_and_reap(
+    runtime: &mut ManagedAgentPairRuntime,
+) -> Result<ExitStatus, String> {
+    #[cfg(windows)]
+    let job = runtime.job.take();
+    reap_within(
+        &mut runtime.child,
+        |child| {
+            #[cfg(unix)]
+            {
+                let _ = child;
+                terminate_process(child.id())
+            }
+            #[cfg(windows)]
+            match job {
+                Some(job) => {
+                    drop(job);
+                    Ok(())
+                }
+                None => child
+                    .kill()
+                    .map_err(|error| format!("failed to kill agent process: {error}")),
+            }
+            #[cfg(not(any(unix, windows)))]
+            child
+                .kill()
+                .map_err(|error| format!("failed to kill agent process: {error}"))
+        },
+        |child| {
+            let _ = child.kill();
+        },
+        STOP_EXIT_GRACE,
+        STOP_KILL_GRACE,
+    )
+}
+
+/// [`terminate_and_reap`] with the termination steps and bounds supplied.
+fn reap_within(
+    child: &mut Child,
+    terminate: impl FnOnce(&mut Child) -> Result<(), String>,
+    force: impl FnOnce(&mut Child),
+    grace: Duration,
+    force_grace: Duration,
+) -> Result<ExitStatus, String> {
+    if let Some(status) = try_reap(child)? {
+        return Ok(status);
+    }
+    terminate(child)?;
+    if let Some(status) = wait_for_exit(child, grace)? {
+        return Ok(status);
+    }
+    force(child);
+    wait_for_exit(child, force_grace)?.ok_or_else(|| {
+        format!(
+            "agent process {} did not exit within {}s of being stopped",
+            child.id(),
+            (grace + force_grace).as_secs()
+        )
+    })
+}
+
+fn try_reap(child: &mut Child) -> Result<Option<ExitStatus>, String> {
+    child
+        .try_wait()
+        .map_err(|error| format!("failed to wait for agent shutdown: {error}"))
+}
+
+fn wait_for_exit(child: &mut Child, within: Duration) -> Result<Option<ExitStatus>, String> {
+    let deadline = Instant::now() + within;
+    loop {
+        if let Some(status) = try_reap(child)? {
+            return Ok(Some(status));
+        }
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// Stop the single tracked runtime pair at `key`, if present.
 ///
 /// Terminates the child, records the exit code, removes the pair receipt,
@@ -47,25 +141,7 @@ fn stop_managed_agent_pair<R: tauri::Runtime>(
         return Ok(());
     };
     let result = (|| -> Result<(), String> {
-        #[cfg(unix)]
-        terminate_process(runtime.child.id())?;
-        #[cfg(windows)]
-        match runtime.job.take() {
-            Some(job) => drop(job),
-            None => runtime
-                .child
-                .kill()
-                .map_err(|error| format!("failed to kill agent process: {error}"))?,
-        }
-        #[cfg(not(any(unix, windows)))]
-        runtime
-            .child
-            .kill()
-            .map_err(|error| format!("failed to kill agent process: {error}"))?;
-        let status = runtime
-            .child
-            .wait()
-            .map_err(|error| format!("failed to wait for agent shutdown: {error}"))?;
+        let status = terminate_and_reap(&mut runtime)?;
         record.last_exit_code = status.code();
         super::super::remove_agent_runtime_receipt(app, key);
         if let Err(error) = append_log_marker(
@@ -249,5 +325,109 @@ mod tests {
         let mut selected = managed_agent_runtime_keys(&runtimes, &agent);
         selected.sort_by(|left, right| left.relay_url.cmp(&right.relay_url));
         assert_eq!(selected, vec![first, second]);
+    }
+
+    /// A child that runs until it is killed.
+    fn long_running_child() -> Child {
+        #[cfg(windows)]
+        let mut command = {
+            use std::os::windows::process::CommandExt;
+            let mut command = std::process::Command::new("ping");
+            command
+                .args(["-n", "60", "127.0.0.1"])
+                .creation_flags(0x0800_0000);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = std::process::Command::new("sleep");
+            command.arg("60");
+            command
+        };
+        command
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn long-running child")
+    }
+
+    #[test]
+    fn process_is_running_tracks_a_real_child() {
+        let mut child = long_running_child();
+        assert!(process_is_running(child.id()));
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!process_is_running(child.id()));
+    }
+
+    #[test]
+    fn reap_within_terminates_and_reaps_a_live_child() {
+        let mut child = long_running_child();
+        let status = reap_within(
+            &mut child,
+            |child| child.kill().map_err(|error| error.to_string()),
+            |_| panic!("terminate already ended the child"),
+            Duration::from_secs(5),
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        assert!(!status.success());
+        assert!(!process_is_running(child.id()));
+    }
+
+    #[test]
+    fn reap_within_escalates_when_terminate_does_not_end_the_child() {
+        let mut child = long_running_child();
+        let mut forced = false;
+        reap_within(
+            &mut child,
+            |_| Ok(()),
+            |child| {
+                forced = true;
+                let _ = child.kill();
+            },
+            Duration::from_millis(200),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert!(forced);
+    }
+
+    #[test]
+    fn reap_within_gives_up_instead_of_waiting_forever() {
+        // The stop that froze the app: the child never exits. The stop must
+        // return an error within its bounds so the runtime locks are released.
+        let mut child = long_running_child();
+        let started = Instant::now();
+        let result = reap_within(
+            &mut child,
+            |_| Ok(()),
+            |_| {},
+            Duration::from_millis(200),
+            Duration::from_millis(200),
+        );
+        assert!(result.is_err(), "{result:?}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(
+            process_is_running(child.id()),
+            "the child is left for a retry"
+        );
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+
+    #[test]
+    fn reap_within_reaps_an_exited_child_without_signalling_it() {
+        let mut child = long_running_child();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        reap_within(
+            &mut child,
+            |_| panic!("an exited child is not terminated again"),
+            |_| panic!("an exited child is not forced"),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .unwrap();
     }
 }

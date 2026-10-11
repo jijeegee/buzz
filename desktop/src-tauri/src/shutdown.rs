@@ -193,6 +193,20 @@ pub(crate) fn shutdown_managed_agents(app: &tauri::AppHandle) -> Result<(), Stri
             }
         }
 
+        // Windows has no process groups: drop each pair's Job Object
+        // (KILL_ON_JOB_CLOSE reaps the tree), or kill a child that has none.
+        #[cfg(windows)]
+        for agent in &mut to_stop {
+            if let Some(rt) = agent.runtime.as_mut() {
+                match rt.job.take() {
+                    Some(job) => drop(job),
+                    None => {
+                        let _ = rt.child.kill();
+                    }
+                }
+            }
+        }
+
         // Wait up to 2s for all to exit, checking in a polling loop.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {

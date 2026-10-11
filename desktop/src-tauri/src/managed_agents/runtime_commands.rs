@@ -5,11 +5,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::{
     agent_readiness, append_log_marker, current_instance_id, find_managed_agent_mut,
     load_global_agent_config, load_managed_agents, load_personas, managed_agent_runtime_log_path,
-    process_is_running, record_agent_command, resolve_effective_agent_env, save_managed_agents,
-    spawn_agent_child, terminate_process, terminate_untracked_pair_runtime,
-    write_agent_runtime_receipt, AgentReadiness, BackendKind, ManagedAgentPairRuntime,
-    ManagedAgentRuntimeKey, ManagedAgentRuntimeLifecycle, ManagedAgentRuntimeReceipt,
-    ManagedAgentRuntimeStatus,
+    record_agent_command, resolve_effective_agent_env, save_managed_agents, spawn_agent_child,
+    terminate_process, terminate_untracked_pair_runtime, write_agent_runtime_receipt,
+    AgentReadiness, BackendKind, ManagedAgentPairRuntime, ManagedAgentRuntimeKey,
+    ManagedAgentRuntimeLifecycle, ManagedAgentRuntimeReceipt, ManagedAgentRuntimeStatus,
 };
 use crate::app_state::AppState;
 
@@ -99,7 +98,6 @@ fn observer_lifecycle_key(
     ManagedAgentRuntimeKey::new(payload.pubkey.clone(), &payload.relay_url)
 }
 
-#[tauri::command]
 pub fn put_managed_agent_runtime_lifecycle(
     outer_pubkey: String,
     payload: super::ManagedAgentRuntimeLifecycleObserverPayload,
@@ -233,7 +231,6 @@ pub(crate) fn start_managed_agent_runtime_pair_lazy(
     start_pair(pubkey, relay_url, true, None, admission, app)
 }
 
-#[tauri::command]
 pub fn start_managed_agent_runtime(
     pubkey: String,
     relay_url: String,
@@ -421,7 +418,6 @@ pub(crate) fn stop_pairs<R: tauri::Runtime>(
         .collect()
 }
 
-#[tauri::command]
 pub fn stop_managed_agent_runtime(
     pubkey: String,
     relay_url: String,
@@ -452,13 +448,7 @@ fn stop_pair<R: tauri::Runtime>(
         .lock()
         .map_err(|e| e.to_string())?;
     if let Some(mut runtime) = runtimes.remove(&key) {
-        let stop_result = if process_is_running(runtime.child.id()) {
-            terminate_process(runtime.child.id())
-        } else {
-            Ok(())
-        }
-        .and_then(|()| runtime.child.wait().map_err(|e| e.to_string()));
-        match stop_result {
+        match super::terminate_and_reap(&mut runtime) {
             Ok(status) => {
                 record.last_exit_code = status.code();
                 let _ = append_log_marker(&runtime.log_path, "=== stopped pair runtime ===");
@@ -496,7 +486,6 @@ fn stop_pair<R: tauri::Runtime>(
     Ok(status)
 }
 
-#[tauri::command]
 pub fn restart_managed_agent_runtime(
     pubkey: String,
     relay_url: String,
@@ -915,3 +904,58 @@ mod tests {
 #[cfg(all(test, not(target_os = "windows")))]
 #[path = "runtime_commands_admission_tests.rs"]
 mod admission_tests;
+
+/// IPC entry points for the runtime lifecycle commands. They take the runtime
+/// locks and may wait for a process to exit, so they run on the blocking pool
+/// rather than as synchronous commands on the main thread, where one stuck
+/// stop would freeze every other command and the window with it.
+pub mod ipc {
+    use tauri::AppHandle;
+
+    use super::ManagedAgentRuntimeStatus;
+
+    async fn blocking<T: Send + 'static>(
+        work: impl FnOnce() -> Result<T, String> + Send + 'static,
+    ) -> Result<T, String> {
+        tokio::task::spawn_blocking(work)
+            .await
+            .map_err(|error| error.to_string())?
+    }
+
+    #[tauri::command]
+    pub async fn put_managed_agent_runtime_lifecycle(
+        outer_pubkey: String,
+        payload: crate::managed_agents::ManagedAgentRuntimeLifecycleObserverPayload,
+        app: AppHandle,
+    ) -> Result<ManagedAgentRuntimeStatus, String> {
+        blocking(move || super::put_managed_agent_runtime_lifecycle(outer_pubkey, payload, app))
+            .await
+    }
+
+    #[tauri::command]
+    pub async fn start_managed_agent_runtime(
+        pubkey: String,
+        relay_url: String,
+        app: AppHandle,
+    ) -> Result<ManagedAgentRuntimeStatus, String> {
+        blocking(move || super::start_managed_agent_runtime(pubkey, relay_url, app)).await
+    }
+
+    #[tauri::command]
+    pub async fn stop_managed_agent_runtime(
+        pubkey: String,
+        relay_url: String,
+        app: AppHandle,
+    ) -> Result<ManagedAgentRuntimeStatus, String> {
+        blocking(move || super::stop_managed_agent_runtime(pubkey, relay_url, app)).await
+    }
+
+    #[tauri::command]
+    pub async fn restart_managed_agent_runtime(
+        pubkey: String,
+        relay_url: String,
+        app: AppHandle,
+    ) -> Result<ManagedAgentRuntimeStatus, String> {
+        blocking(move || super::restart_managed_agent_runtime(pubkey, relay_url, app)).await
+    }
+}

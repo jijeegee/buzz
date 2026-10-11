@@ -68,7 +68,7 @@ mod setup_payload;
 use setup_payload::apply_setup_payload_env;
 
 mod stop;
-pub(crate) use stop::managed_agent_runtime_keys;
+pub(crate) use stop::{managed_agent_runtime_keys, terminate_and_reap};
 pub use stop::{stop_managed_agent_process, stop_managed_agent_workspace_pair};
 
 mod sweep;

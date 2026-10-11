@@ -84,9 +84,7 @@ use huddle::{
 use initial_window::*;
 use managed_agents::{
     backfill_persona_snapshots, ensure_nest, list_managed_agent_runtimes,
-    put_managed_agent_runtime_lifecycle, reconcile_managed_agent_runtimes,
-    restart_managed_agent_runtime, start_managed_agent_runtime, stop_managed_agent_runtime,
-    try_regenerate_nest,
+    reconcile_managed_agent_runtimes, try_regenerate_nest,
 };
 #[cfg(not(feature = "mesh-llm"))]
 use mesh_llm_stubs::*;
@@ -769,11 +767,11 @@ pub fn run() {
             list_managed_agents,
             list_all_managed_agents,
             list_managed_agent_runtimes,
-            start_managed_agent_runtime,
-            stop_managed_agent_runtime,
-            restart_managed_agent_runtime,
+            managed_agents::ipc::start_managed_agent_runtime,
+            managed_agents::ipc::stop_managed_agent_runtime,
+            managed_agents::ipc::restart_managed_agent_runtime,
             reconcile_managed_agent_runtimes,
-            put_managed_agent_runtime_lifecycle,
+            managed_agents::ipc::put_managed_agent_runtime_lifecycle,
             create_managed_agent,
             start_managed_agent,
             stop_managed_agent,
