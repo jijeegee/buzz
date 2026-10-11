@@ -589,6 +589,16 @@ export async function signRelayEvent(input: {
   return JSON.parse(eventJson) as RelayEvent;
 }
 
+/** NIP-42 AUTH event signed by `account` (an account signed in here). */
+export async function createAuthEventAs(input: {
+  account: string;
+  challenge: string;
+  relayUrl: string;
+}): Promise<RelayEvent> {
+  const eventJson = await invokeTauri<string>("create_auth_event_as", input);
+  return JSON.parse(eventJson) as RelayEvent;
+}
+
 export async function createAuthEvent(input: {
   challenge: string;
   relayUrl: string;
@@ -1053,6 +1063,14 @@ export async function probeBackendProvider(
 
 export async function nip44EncryptToSelf(plaintext: string): Promise<string> {
   return invokeTauri<string>("nip44_encrypt_to_self", { plaintext });
+}
+
+/** Decrypt a NIP-44 payload `account` encrypted to itself. */
+export async function nip44DecryptAs(
+  account: string,
+  ciphertext: string,
+): Promise<string> {
+  return invokeTauri<string>("nip44_decrypt_as", { account, ciphertext });
 }
 
 export async function nip44DecryptFromSelf(

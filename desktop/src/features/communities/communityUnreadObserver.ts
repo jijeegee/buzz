@@ -73,7 +73,9 @@ function readFollowedRootIds(pubkey: string): Set<string> {
   }
 }
 
-function defaultReadThreadRelationships(pubkey: string): ThreadRelationships {
+export function defaultReadThreadRelationships(
+  pubkey: string,
+): ThreadRelationships {
   return {
     participatedRootIds: participationStore.read(pubkey),
     followedRootIds: readFollowedRootIds(pubkey),
@@ -94,12 +96,13 @@ export type CommunityUnreadObserverResult = {
   mentionCount: number;
 };
 
-type CommunityUnreadRelay = {
+export type CommunityUnreadRelay = {
   fetchEvents(filter: RelaySubscriptionFilter): Promise<RelayEvent[]>;
 };
 
-type ObservedChannel = {
+export type ObservedChannel = {
   id: string;
+  name?: string | null;
   channelType: ChannelType;
   archived: boolean;
 };
@@ -161,6 +164,10 @@ export async function fetchCommunityUnread(args: {
   decryptMutes?: (ciphertext: string) => Promise<string>;
   readThreadRelationships?: (pubkey: string) => ThreadRelationships;
   readForcedUnread?: (pubkey: string) => ForcedUnreadMap;
+  /** Already-listed channels (skips listing them again). */
+  channels?: ObservedChannel[];
+  /** Receives the synced channel mutes once they are read. */
+  onMutedChannelIds?: (ids: ReadonlySet<string>) => void;
 }): Promise<CommunityUnreadObserverResult> {
   const { client, pubkey } = args;
   const normalizedPubkey = pubkey.toLowerCase();
@@ -171,7 +178,8 @@ export async function fetchCommunityUnread(args: {
   const readForcedUnread =
     args.readForcedUnread ?? ((pk) => forcedUnreadStore.read(pk));
 
-  const channels = await fetchObservedChannels(client, pubkey);
+  const channels =
+    args.channels ?? (await fetchObservedChannels(client, pubkey));
   if (channels.length === 0) {
     return { hasUnread: false, mentionCount: 0 };
   }
@@ -210,6 +218,8 @@ export async function fetchCommunityUnread(args: {
       // decryption failure → treat as empty mutes set
     }
   }
+
+  args.onMutedChannelIds?.(mutedIds);
 
   const {
     participatedRootIds,
@@ -326,8 +336,10 @@ export function resolveObservedChannels(
   return channelIds.map((id) => {
     const metadata = latestMetadata.get(id);
     const typeTag = metadata ? tagValue(metadata, "t") : null;
+    const name = metadata ? tagValue(metadata, "name") : null;
     return {
       id,
+      ...(name ? { name } : {}),
       channelType: toChannelType(typeTag),
       archived:
         metadata?.tags.some(
@@ -352,7 +364,7 @@ export function extractHiddenDmIds(events: RelayEvent[]): Set<string> {
   );
 }
 
-function unreadKindsForChannel(channelType: ChannelType): number[] {
+export function unreadKindsForChannel(channelType: ChannelType): number[] {
   return channelType === "dm"
     ? [...DM_NOTIFIABLE_EVENT_KINDS]
     : [...CHANNEL_MESSAGE_EVENT_KINDS];

@@ -122,7 +122,13 @@ export type AccountSummary = {
 };
 
 /** A signed-in account watched in the background (not the open one). */
-export type WatchableAccount = { origin: string; pubkey: string };
+export type WatchableAccount = {
+  origin: string;
+  pubkey: string;
+  displayName: string | null;
+  buzzName: string | null;
+  email: string | null;
+};
 
 /**
  * Signed-in accounts on every server except the open one, for background

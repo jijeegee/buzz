@@ -1,6 +1,9 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
-import { buildRelayAuthFrame } from "@/shared/api/relayAuthFrame";
+import {
+  buildRelayAuthFrame,
+  type RelayAuthFrame,
+} from "@/shared/api/relayAuthFrame";
 import type { RelayEvent } from "@/shared/api/types";
 import {
   getTextPayload,
@@ -24,6 +27,21 @@ type PendingHistory = {
   resolve: (events: RelayEvent[]) => void;
   reject: (error: Error) => void;
   timeout: number;
+};
+
+type LiveSubscription = {
+  onEvent: (event: RelayEvent) => void;
+  onClosed?: (message: string) => void;
+};
+
+export type ReadOnlyRelayClientOptions = {
+  /** AUTH answer; defaults to the active account's. */
+  authFrame?: (input: {
+    challenge: string;
+    relayUrl: string;
+  }) => Promise<RelayAuthFrame>;
+  /** The relay closed the socket or it failed (not a `disconnect()` call). */
+  onClose?: () => void;
 };
 
 type PendingPublish = {
@@ -50,12 +68,15 @@ export class ReadOnlyRelayClient {
   } | null = null;
   private histories = new Map<string, PendingHistory>();
   private publishes = new Map<string, PendingPublish>();
+  private lives = new Map<string, LiveSubscription>();
   private generation = 0;
 
   private readonly relayUrl: string;
+  private readonly options: ReadOnlyRelayClientOptions;
 
-  constructor(relayUrl: string) {
+  constructor(relayUrl: string, options: ReadOnlyRelayClientOptions = {}) {
     this.relayUrl = relayUrl;
+    this.options = options;
   }
 
   async connect(): Promise<void> {
@@ -100,6 +121,8 @@ export class ReadOnlyRelayClient {
       this.publishes.delete(eventId);
     }
 
+    this.lives.clear();
+
     this.onMessageChannel = null;
     this.connectPromise = null;
   }
@@ -107,6 +130,36 @@ export class ReadOnlyRelayClient {
   async fetchEvents(filter: RelaySubscriptionFilter): Promise<RelayEvent[]> {
     await this.connect();
     return this.requestHistory(filter);
+  }
+
+  /**
+   * Keep a subscription open past EOSE: `onEvent` gets stored events and then
+   * live ones until `unsubscribe` or the socket closes. Reusing `subId`
+   * replaces the subscription (NIP-01).
+   */
+  async subscribeLive(
+    subId: string,
+    filter: RelaySubscriptionFilter,
+    onEvent: (event: RelayEvent) => void,
+    onClosed?: (message: string) => void,
+  ): Promise<void> {
+    await this.connect();
+    this.lives.set(subId, { onEvent, onClosed });
+    try {
+      await this.sendRaw(["REQ", subId, filter]);
+    } catch (error) {
+      this.lives.delete(subId);
+      throw error;
+    }
+  }
+
+  unsubscribe(subId: string): void {
+    if (!this.lives.delete(subId)) return;
+    void this.sendRaw(["CLOSE", subId]).catch(() => {});
+  }
+
+  isConnected(): boolean {
+    return this.wsId !== null;
   }
 
   async publishEvent(event: RelayEvent): Promise<void> {
@@ -226,6 +279,7 @@ export class ReadOnlyRelayClient {
       (message.type === "Close" || message.type === "Error")
     ) {
       this.disconnect();
+      this.options.onClose?.();
       return;
     }
 
@@ -246,7 +300,17 @@ export class ReadOnlyRelayClient {
       return;
     }
     if (type === "EVENT" && typeof rest[0] === "string" && rest[1]) {
-      this.histories.get(rest[0])?.events.push(rest[1] as RelayEvent);
+      const history = this.histories.get(rest[0]);
+      if (history) history.events.push(rest[1] as RelayEvent);
+      else this.lives.get(rest[0])?.onEvent(rest[1] as RelayEvent);
+      return;
+    }
+    if (type === "CLOSED" && typeof rest[0] === "string") {
+      const live = this.lives.get(rest[0]);
+      if (live) {
+        this.lives.delete(rest[0]);
+        live.onClosed?.(typeof rest[1] === "string" ? rest[1] : "");
+      }
       return;
     }
     if (
@@ -270,7 +334,7 @@ export class ReadOnlyRelayClient {
     challenge: string,
     generation: number,
   ): Promise<void> {
-    const frame = await buildRelayAuthFrame({
+    const frame = await (this.options.authFrame ?? buildRelayAuthFrame)({
       challenge,
       relayUrl: this.relayUrl,
     });

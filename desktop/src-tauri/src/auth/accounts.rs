@@ -1496,6 +1496,10 @@ fn account_summaries(
 pub struct WatchableAccount {
     pub origin: String,
     pub pubkey: String,
+    /// For the notification title: which account it is for.
+    pub display_name: Option<String>,
+    pub buzz_name: Option<String>,
+    pub email: Option<String>,
 }
 
 /// Signed-in accounts on every server except the open one (the active account
@@ -1510,15 +1514,20 @@ pub fn list_watchable_accounts(app: tauri::AppHandle) -> Result<Vec<WatchableAcc
         .app_data_dir()
         .map_err(|_| "account storage is unavailable")?;
     let registry = load_registry(&data_dir)?.unwrap_or_default();
+    let profiles = super::account_profiles::load(&data_dir);
     let signed_out = &state.token_auth.signed_out;
-    Ok(watchable_accounts(&registry, &origin, |origin, key| {
-        signed_out.is_signed_out(origin, Some(key))
-    }))
+    Ok(watchable_accounts(
+        &registry,
+        &profiles,
+        &origin,
+        |origin, key| signed_out.is_signed_out(origin, Some(key)),
+    ))
 }
 
 /// [`list_watchable_accounts`] without the app. Pure.
 fn watchable_accounts(
     registry: &Registry,
+    profiles: &std::collections::BTreeMap<String, super::account_profiles::AccountProfile>,
     current_origin: &str,
     is_signed_out: impl Fn(&str, PublicKey) -> bool,
 ) -> Vec<WatchableAccount> {
@@ -1529,9 +1538,16 @@ fn watchable_accounts(
         .filter(|a| !(a.origin == current_origin && registry.active.as_ref() == Some(&a.pubkey)))
         .filter_map(|a| {
             let key = PublicKey::from_hex(&a.pubkey).ok()?;
-            (!is_signed_out(&a.origin, key)).then(|| WatchableAccount {
+            if is_signed_out(&a.origin, key) {
+                return None;
+            }
+            let profile = profiles.get(&a.pubkey).cloned().unwrap_or_default();
+            Some(WatchableAccount {
                 origin: a.origin.clone(),
                 pubkey: a.pubkey.clone(),
+                display_name: profile.display_name,
+                buzz_name: profile.buzz_name,
+                email: profile.email,
             })
         })
         .collect()

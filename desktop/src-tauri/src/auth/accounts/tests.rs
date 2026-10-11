@@ -1108,9 +1108,23 @@ fn watchable_accounts_skip_the_open_account_and_signed_out_ones() {
     // The active account on another server is not the open one.
     registry.upsert(ELSEWHERE, &active, AccountState::SignedIn);
     registry.active = Some(active.to_hex());
-    let list = watchable_accounts(&registry, ORIGIN, |origin, key| {
+    let mut profiles = std::collections::BTreeMap::new();
+    profiles.insert(
+        other.to_hex(),
+        super::super::account_profiles::AccountProfile {
+            buzz_name: Some("Other".into()),
+            ..Default::default()
+        },
+    );
+    let list = watchable_accounts(&registry, &profiles, ORIGIN, |origin, key| {
         origin == ORIGIN && key == gone
     });
+    assert_eq!(
+        list.iter()
+            .find(|a| a.pubkey == other.to_hex())
+            .and_then(|a| a.buzz_name.as_deref()),
+        Some("Other")
+    );
     let pairs: HashSet<(String, String)> = list.into_iter().map(|a| (a.origin, a.pubkey)).collect();
     assert_eq!(
         pairs,

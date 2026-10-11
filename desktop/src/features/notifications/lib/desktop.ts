@@ -33,6 +33,8 @@ export type DesktopNotificationTarget = {
   kind: number | null;
   pubkey?: string;
   threadRootId?: string | null;
+  /** Set when the notification is for an account other than the open one. */
+  account?: { origin: string; pubkey: string };
 };
 
 type DesktopNotificationPayload = {

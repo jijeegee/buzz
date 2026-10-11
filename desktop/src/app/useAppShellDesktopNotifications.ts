@@ -5,6 +5,7 @@ import {
   createDesktopNotificationActivationQueue,
   shouldBounceForChannelNotification,
 } from "@/app/AppShell.helpers";
+import { useInactiveAccountWatch } from "@/features/accounts/inactiveAccountWatch/useInactiveAccountWatch";
 import { useCommunityJoinAlerts } from "@/features/community-members/useCommunityJoinAlerts";
 import { hasMentionForEvent } from "@/features/notifications/lib/shouldNotify";
 import type { NotificationSettings } from "@/features/notifications/hooks";
@@ -55,6 +56,8 @@ export function useAppShellDesktopNotifications({
   useCommunityJoinAlerts({
     enabled: enabled && notificationSettings.desktopEnabled,
   });
+  // Other accounts signed in here notify by their own settings.
+  useInactiveAccountWatch(enabled);
 
   const resolveSenderName = useNotificationSenderName();
 

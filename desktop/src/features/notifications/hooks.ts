@@ -123,7 +123,9 @@ function sanitizeNotificationSettings(value: unknown): NotificationSettings {
   };
 }
 
-function readStoredNotificationSettings(pubkey: string): NotificationSettings {
+export function readStoredNotificationSettings(
+  pubkey: string,
+): NotificationSettings {
   if (typeof window === "undefined" || pubkey.length === 0) {
     return DEFAULT_NOTIFICATION_SETTINGS;
   }
