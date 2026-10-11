@@ -52,7 +52,7 @@ import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
 import { threadGoalRootId } from "@/features/goals/goalTree";
-import { ThreadGoalPanel } from "@/features/goals/ui/GoalChips";
+import { ThreadGoalHeaderChip } from "@/features/goals/ui/GoalChips";
 import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
@@ -521,6 +521,14 @@ export function MessageThreadPanel({
   if (!threadHead) {
     return null;
   }
+  const goalHeaderChip =
+    goalsEnabled && channelId ? (
+      <ThreadGoalHeaderChip
+        channelId={channelId}
+        threadRootId={threadGoalRootId(threadHead)}
+      />
+    ) : null;
+
   const threadScrollRegion = (
     <AuxiliaryPanelBody
       className="overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--buzz-thread-canvas)] pb-24"
@@ -552,12 +560,6 @@ export function MessageThreadPanel({
             className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-1 pt-0")}
             data-testid="message-thread-head"
           >
-            {goalsEnabled && channelId ? (
-              <ThreadGoalPanel
-                channelId={channelId}
-                threadRootId={threadGoalRootId(threadHead)}
-              />
-            ) : null}
             <div className="rounded-2xl">
               <MessageThreadRow
                 actionBarPlacement="inside"
@@ -948,6 +950,7 @@ export function MessageThreadPanel({
               threadId={threadHead.id}
               disabled={disabled}
               headerProps={{
+                headerActions: goalHeaderChip,
                 headerLeading,
                 headerTitle,
                 headerTitleAriaLabel,
@@ -960,6 +963,7 @@ export function MessageThreadPanel({
             />
           ) : (
             <MessageThreadPanelHeader
+              headerActions={goalHeaderChip}
               headerLeading={headerLeading}
               headerTitle={headerTitle}
               headerTitleAriaLabel={headerTitleAriaLabel}

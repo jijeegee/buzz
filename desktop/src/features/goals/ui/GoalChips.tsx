@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Target } from "lucide-react";
 
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { goalRoot } from "../goalTree";
 import {
@@ -57,9 +58,11 @@ export function GoalHeaderChip({
  */
 export function ThreadGoalPanel({
   channelId,
+  defaultExpanded,
   threadRootId,
 }: {
   channelId: string;
+  defaultExpanded?: boolean;
   threadRootId: string;
 }) {
   const goalQuery = useGoalTreeQuery(channelId);
@@ -75,6 +78,7 @@ export function ThreadGoalPanel({
   return (
     <ThreadGoalPanelView
       apply={apply}
+      defaultExpanded={defaultExpanded}
       error={
         applyMutation.error instanceof Error
           ? applyMutation.error.message
@@ -84,5 +88,45 @@ export function ThreadGoalPanel({
       threadRootId={threadRootId}
       tree={tree}
     />
+  );
+}
+
+/**
+ * Thread header chip: the channel header's goal chip, in the thread title
+ * bar. It opens the whole goal tree in place, with this thread's goal branch
+ * editable (see `ThreadGoalPanelView`), and leaves the thread open.
+ */
+export function ThreadGoalHeaderChip({
+  channelId,
+  threadRootId,
+}: {
+  channelId: string;
+  threadRootId: string;
+}) {
+  const goalQuery = useGoalTreeQuery(channelId);
+  const root = goalQuery.data ? goalRoot(goalQuery.data.tree) : null;
+  if (!root) return null;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          aria-label={`Goal: ${root.title}`}
+          className="inline-flex h-7 max-w-[10rem] items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 text-xs text-foreground transition-colors hover:bg-muted"
+          data-testid="thread-goal-header-chip"
+          title={root.title}
+          type="button"
+        >
+          <Target className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="truncate">{root.title}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[28rem] max-w-[90vw] p-0 pt-2">
+        <ThreadGoalPanel
+          channelId={channelId}
+          defaultExpanded
+          threadRootId={threadRootId}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

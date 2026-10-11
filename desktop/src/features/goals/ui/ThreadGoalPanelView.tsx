@@ -29,6 +29,8 @@ import {
 
 type ThreadGoalPanelViewProps = {
   apply: Apply;
+  /** Open with the whole tree showing (the thread header popover). */
+  defaultExpanded?: boolean;
   /** Message of the last failed edit, if any. */
   error?: string | null;
   nameOf: (pubkey: string) => string;
@@ -46,12 +48,13 @@ type ThreadGoalPanelViewProps = {
  */
 export function ThreadGoalPanelView({
   apply,
+  defaultExpanded = false,
   error,
   nameOf,
   threadRootId,
   tree,
 }: ThreadGoalPanelViewProps) {
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(defaultExpanded);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const subtreeId = React.useId();
   if (!goalRoot(tree)) return null;
@@ -96,6 +99,21 @@ export function ThreadGoalPanelView({
             </button>,
           )}
         </div>
+        {expanded ? (
+          <div
+            className="mt-1 max-h-80 overflow-y-auto"
+            data-testid="thread-goal-subtree"
+          >
+            <GoalRow
+              access={() => "muted"}
+              apply={apply}
+              layer={1}
+              nameOf={nameOf}
+              node={goalRoot(tree) as GoalNode}
+              tree={tree}
+            />
+          </div>
+        ) : null}
         {errorLine}
       </div>
     );

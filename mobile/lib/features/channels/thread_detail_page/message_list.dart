@@ -30,9 +30,6 @@ class _ThreadMessageList extends StatelessWidget {
   /// The thread composer that "Quote" fills; null when it can't send.
   final ComposerQuoteScope? quoteScope;
 
-  /// Shown above the thread head (the thread's goal chip), if any.
-  final Widget? headAccessory;
-
   const _ThreadMessageList({
     required this.viewport,
     required this.onUserScrollStart,
@@ -60,7 +57,6 @@ class _ThreadMessageList extends StatelessWidget {
     required this.restoreComposerFocus,
     required this.childrenByParent,
     required this.quoteScope,
-    this.headAccessory,
   });
 
   String get _replySummary {
@@ -135,7 +131,6 @@ class _ThreadMessageList extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          ?headAccessory,
                           DayDivider(
                             label: formatDayHeading(head.createdAt),
                             dayTimestamp: head.createdAt,
