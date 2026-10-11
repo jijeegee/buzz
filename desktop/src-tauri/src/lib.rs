@@ -660,6 +660,8 @@ pub fn run() {
             auth::commands::own_agent_pubkeys,
             auth::accounts::list_accounts,
             auth::accounts::remember_account_buzz_name,
+            auth::commands::confirm_signup,
+            auth::commands::cancel_signup,
             auth::accounts::switch_account,
             auth::accounts::create_auth_event_as,
             auth::accounts::nip44_decrypt_as,

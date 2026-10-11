@@ -1,5 +1,6 @@
 import type { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { Button } from "./button";
+import { CreateAccountDialog } from "./CreateAccountDialog";
 
 /** Recovery actions shared by onboarding and account settings. */
 export function GoogleLoginProgress({
@@ -9,7 +10,8 @@ export function GoogleLoginProgress({
 }) {
   return (
     <div className="space-y-2">
-      {login.phase ? (
+      <CreateAccountDialog login={login} />
+      {login.phase && login.phase !== "signup" ? (
         <p className="text-sm text-muted-foreground" role="status">
           {login.phase === "completing"
             ? "Finishing sign-in in Buzz…"

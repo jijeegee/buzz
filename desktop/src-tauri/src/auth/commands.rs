@@ -53,7 +53,22 @@ pub struct TokenAuthStatus {
     pub account_changed: bool,
     /// The account a sign-out of the active account switched to (hex).
     pub switched_to: Option<String>,
+    /// The chosen Google account has no Buzz account yet: nothing was
+    /// created; the UI asks, then calls `confirm_signup` or `cancel_signup`.
+    pub signup: Option<SignupPrompt>,
 }
+
+/// What the "Create your Buzz account" screen shows.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignupPrompt {
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// How long a confirmation may wait; the relay keeps its ticket 10 minutes.
+const SIGNUP_CONFIRM_WINDOW: std::time::Duration = std::time::Duration::from_secs(9 * 60);
 
 fn status_of(
     origin: &str,
@@ -86,6 +101,7 @@ fn status_of(
         device_signed_out: false,
         switched_to: None,
         account_changed: false,
+        signup: None,
     }
 }
 
@@ -201,6 +217,8 @@ pub async fn login_with_google(
         return Err("invalid sign-in attempt".into());
     }
     let mut attempt = state.token_auth.login.begin(id.clone())?;
+    // A new sign-in replaces one still waiting for confirmation.
+    drop(state.token_auth.take_signup());
     let _ = app.emit(
         "google-login-progress",
         serde_json::json!({"attemptId": id, "phase": "waiting"}),
@@ -213,6 +231,49 @@ pub async fn login_with_google(
         &mut attempt,
     )
     .await
+}
+
+/// Create the Buzz account the user confirmed on the "Create your Buzz
+/// account" screen, then finish signing in to it.
+#[tauri::command]
+pub async fn confirm_signup(app: AppHandle) -> Result<TokenAuthStatus, String> {
+    let state = app.state::<AppState>();
+    let expired = "This sign-in has expired. Sign in with Google again.";
+    let pending = state.token_auth.take_signup().ok_or(expired)?;
+    let origin = state.current_auth_origin();
+    if pending.origin != origin || pending.parked_at.elapsed() > SIGNUP_CONFIRM_WINDOW {
+        return Err(expired.into());
+    }
+    // One sign-in at a time, like a browser attempt.
+    let _attempt = state
+        .token_auth
+        .login
+        .begin(uuid::Uuid::new_v4().to_string())?;
+    let tokens = api::signup(
+        &state.http_client,
+        &origin,
+        &pending.ticket,
+        &pending.verifier,
+    )
+    .await
+    .map_err(|e| format!("your account could not be created: {e}"))?;
+    finish_sign_in(
+        &app,
+        &origin,
+        pending.providers,
+        true,
+        false,
+        pending.existing_token_account,
+        tokens,
+    )
+    .await
+}
+
+/// Drop a sign-in waiting for confirmation ("Use a different account", or
+/// the screen closed). The relay created nothing; its ticket expires.
+#[tauri::command]
+pub fn cancel_signup(app: AppHandle) {
+    drop(app.state::<AppState>().token_auth.take_signup());
 }
 
 /// Cancel only this browser attempt; completed or unrelated attempts are untouched.
@@ -267,6 +328,11 @@ async fn login_inner(
             }
             if backup {
                 url.push_str("&identity_mode=key_backup");
+                // Ask before an unknown Google account becomes an account.
+                // Connecting a key-only account is that account: no prompt.
+                if !connect {
+                    url.push_str("&signup=confirm");
+                }
             } else {
                 url.push_str("&identity_mode=token");
             }
@@ -293,9 +359,57 @@ async fn login_inner(
             eprintln!("buzz-desktop: could not activate sign-in window: {error}");
         }
     }
-    let tokens = api::complete_login(&state.http_client, &origin, &code, &pkce.verifier)
+    let tokens = match api::complete_login(&state.http_client, &origin, &code, &pkce.verifier)
         .await
-        .map_err(|e| format!("sign-in could not be completed: {e}"))?;
+        .map_err(|e| format!("sign-in could not be completed: {e}"))?
+    {
+        api::CompleteResponse::Tokens(tokens) => tokens,
+        api::CompleteResponse::NeedsSignup(signup) => {
+            if !backup || connect {
+                return Err("sign-in could not be completed: unexpected new-account step".into());
+            }
+            state.token_auth.park_signup(super::PendingSignup {
+                origin: origin.clone(),
+                providers: providers.clone(),
+                existing_token_account,
+                verifier: Zeroizing::new(pkce.verifier.to_string()),
+                ticket: signup.signup_token.0.clone(),
+                parked_at: std::time::Instant::now(),
+            });
+            let mut status = current_status(&state, &origin, Some(providers));
+            status.signup = Some(SignupPrompt {
+                email: signup.email,
+                display_name: signup.display_name,
+                avatar_url: signup.avatar_url,
+            });
+            return Ok(status);
+        }
+    };
+    finish_sign_in(
+        app,
+        &origin,
+        providers,
+        backup,
+        connect,
+        existing_token_account,
+        tokens,
+    )
+    .await
+}
+
+/// The end of a sign-in once the relay issued its session: key recovery,
+/// session storage, account switch, agents.
+async fn finish_sign_in(
+    app: &AppHandle,
+    origin: &str,
+    providers: Vec<String>,
+    backup: bool,
+    connect: bool,
+    existing_token_account: bool,
+    tokens: api::LoginTokens,
+) -> Result<TokenAuthStatus, String> {
+    let state = app.state::<AppState>();
+    let origin = origin.to_owned();
     verify_login_mode(backup, tokens.identity_mode.as_deref())?;
     let principal = PublicKey::from_hex(&tokens.principal_id)
         .map_err(|_| "the relay returned an invalid account id".to_string())?;

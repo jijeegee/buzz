@@ -43,6 +43,18 @@ export type TokenAuthStatus = {
   accountChanged?: boolean;
   /** The account a sign-out of the active account switched to. */
   switchedTo?: string | null;
+  /**
+   * The chosen Google account has no Buzz account yet and nothing was
+   * created: ask, then `confirmSignup` or `cancelSignup`.
+   */
+  signup?: SignupPrompt | null;
+};
+
+/** What the "Create your Buzz account" screen shows. */
+export type SignupPrompt = {
+  email: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
 };
 
 export type AuthDevice = {
@@ -157,6 +169,16 @@ export function nip44DecryptAs(
 /** Cancel this attempt while waiting for the browser, without signing out. */
 export function cancelGoogleLogin(attemptId: string): Promise<boolean> {
   return invokeTauri<boolean>("cancel_google_login", { attemptId });
+}
+
+/** Create the Buzz account the user confirmed and finish signing in. */
+export function confirmSignup(): Promise<TokenAuthStatus> {
+  return invokeTauri<TokenAuthStatus>("confirm_signup");
+}
+
+/** Drop a sign-in waiting for confirmation; nothing was created. */
+export function cancelSignup(): Promise<void> {
+  return invokeTauri<void>("cancel_signup");
 }
 
 /**

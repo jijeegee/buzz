@@ -51,6 +51,15 @@ export function useAccountMenu({ open }: { open: boolean }) {
   const loginRef = React.useRef(login);
   loginRef.current = login;
   const [busy, setBusy] = React.useState(false);
+  const progressToast = React.useRef<string | number | null>(null);
+
+  // The new-account screen replaces the "finish in your browser" notice.
+  React.useEffect(() => {
+    if (login.signup && progressToast.current !== null) {
+      toast.dismiss(progressToast.current);
+      progressToast.current = null;
+    }
+  }, [login.signup]);
 
   React.useEffect(() => {
     if (login.error) toast.error(login.error);
@@ -87,6 +96,7 @@ export function useAccountMenu({ open }: { open: boolean }) {
           onClick: () => void loginRef.current.cancel(),
         },
       });
+      progressToast.current = progress;
       try {
         const next = await loginRef.current.run(false);
         toast.dismiss(progress);
@@ -116,5 +126,7 @@ export function useAccountMenu({ open }: { open: boolean }) {
     busy: busy || login.pending,
     switchTo,
     signIn,
+    /** For the "Create your Buzz account" screen. */
+    signupPrompt: { signup: login.signup, answerSignup: login.answerSignup },
   };
 }

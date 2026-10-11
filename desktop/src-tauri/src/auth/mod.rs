@@ -200,6 +200,19 @@ pub struct TokenAuthState {
     /// The `/auth/me` name and avatar of each origin's last restored session,
     /// keyed by origin and the account (signing pubkey) it reported.
     me_profiles: Mutex<HashMap<(String, PublicKey), (Option<String>, Option<String>)>>,
+    /// A sign-in waiting for the user to confirm a new account.
+    pending_signup: Mutex<Option<PendingSignup>>,
+}
+
+/// A Google sign-in whose account does not exist yet: the relay created
+/// nothing and holds a ticket for [`commands::confirm_signup`].
+pub(crate) struct PendingSignup {
+    pub origin: String,
+    pub providers: Vec<String>,
+    pub existing_token_account: bool,
+    pub verifier: Zeroizing<String>,
+    pub ticket: Zeroizing<String>,
+    pub parked_at: std::time::Instant,
 }
 
 impl TokenAuthState {
@@ -318,6 +331,23 @@ impl TokenAuthState {
             .get(origin)
             .filter(|(g, _)| *g == generation)
             .map(|(_, token)| token.clone())
+    }
+
+    /// Hold a sign-in that waits for the user to confirm a new account; a
+    /// newer one replaces it.
+    pub(crate) fn park_signup(&self, pending: PendingSignup) {
+        *self
+            .pending_signup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(pending);
+    }
+
+    /// Take the sign-in waiting for confirmation, if any.
+    pub(crate) fn take_signup(&self) -> Option<PendingSignup> {
+        self.pending_signup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
     }
 
     /// Drop any remembered rotated refresh token for `origin`.

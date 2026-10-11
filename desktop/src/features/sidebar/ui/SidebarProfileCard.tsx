@@ -13,6 +13,7 @@ import {
 } from "@/features/profile/ui/MaskedAvatarBadgeFrame";
 import { ProfilePopover } from "@/features/profile/ui/ProfilePopover";
 import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
+import { CreateAccountDialog } from "@/shared/ui/CreateAccountDialog";
 import type { UserStatusInput } from "@/features/user-status/types";
 import type { LeaveCommunityResult } from "@/features/communities/leaveCommunity";
 import type { Community } from "@/features/communities/types";
@@ -266,6 +267,7 @@ export function SidebarProfileCard({
           )}
         </div>
       </div>
+      <CreateAccountDialog login={accountMenu.signupPrompt} />
     </div>
   );
 }
