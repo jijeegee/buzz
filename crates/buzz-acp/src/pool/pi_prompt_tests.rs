@@ -71,6 +71,7 @@ async fn pi_composed_prompt_uses_meta_without_capability_negotiation() {
             &ctx,
             Some(core),
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: Some("BUZZ_HUDDLE"),
                 canvas: Some(canvas),
                 name: Some("channel"),
@@ -276,6 +277,7 @@ async fn real_pi_preserves_buzz_prompt_and_launch_skills_on_restore() {
         &ctx,
         Some("<core-memory>BUZZ_CORE</core-memory>"),
         NewSessionChannelContext {
+            goals: None,
             huddle_instructions: Some("BUZZ_HUDDLE"),
             canvas: Some("<channel-canvas>BUZZ_CANVAS</channel-canvas>"),
             name: None,

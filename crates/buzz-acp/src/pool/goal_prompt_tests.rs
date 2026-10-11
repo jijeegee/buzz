@@ -1,6 +1,7 @@
 //! Goal layers through the real `run_prompt_task` seam: `<goal-context>`
-//! appears only where the channel has a goal tree, and a layer 0 goal edit
-//! reaches a live session exactly once as `<goal-update>`.
+//! appears only where the channel has a goal tree and only until the session
+//! holds it, and a layer 0 goal edit reaches a live session exactly once as
+//! `<goal-update>`.
 
 use super::tests::make_prompt_context_no_owner;
 use super::*;
@@ -194,11 +195,13 @@ done"#
     std::fs::remove_file(&capture).unwrap();
     assert_eq!(prompts.len(), 4);
 
-    // A channel with a tree gets the tree and the rules every turn.
-    for prompt in &prompts[..3] {
-        assert!(prompt.contains("<goal-context>"), "{prompt}");
-        assert!(prompt.contains("L1 [open] Launch the beta"));
-        assert!(prompt.contains("Rules:"));
+    // A channel with a tree sends the tree and the rules once; unchanged
+    // goals add nothing to later turns.
+    assert!(prompts[0].contains("<goal-context>"), "{}", prompts[0]);
+    assert!(prompts[0].contains("L1 [open] Launch the beta"));
+    assert!(prompts[0].contains("Rules:"));
+    for prompt in &prompts[1..3] {
+        assert!(!prompt.contains("<goal-context>"), "{prompt}");
     }
     // The edit reaches the live session once, with the new value.
     assert!(
@@ -225,7 +228,9 @@ async fn new_session_takes_current_layer0_goals_into_its_system_prompt() {
     let goals_dir = tempfile::tempdir().unwrap();
     let goals_file = goals_dir.path().join("agent.json");
     write_goals(&goals_file, "Grow the team");
+    let channel_id = Uuid::new_v4();
     let mut ctx = make_prompt_context_no_owner();
+    ctx.rest_client.base_url = spawn_relay(channel_id).await;
     ctx.layer0_goals = crate::layer0_goals::Layer0Goals::file(goals_file.clone(), true);
     // Edited after the harness started: a new session still gets the edit.
     write_goals(&goals_file, "Hire two engineers");
@@ -263,7 +268,6 @@ done"#
         goose_system_prompt_supported: None,
         protocol_version: 2,
     };
-    let channel_id = Uuid::new_v4();
     let (result_tx, mut result_rx) = mpsc::unbounded_channel();
     run_prompt_task(
         agent,
@@ -299,6 +303,13 @@ done"#
         !requests[1].contains("goal-update"),
         "a new session already holds the current goals"
     );
+    // The conversation's goals ride in the system prompt, not in the turn.
+    assert!(requests[0].contains("<goal-context>"), "{}", requests[0]);
+    assert!(requests[0].contains("L1 [open] Launch the beta"));
+    assert!(!requests[1].contains("<goal-context>"), "{}", requests[1]);
     let delivery = &result.agent.state.deliveries[&SessionScope::Conversation { channel_id }];
     assert_eq!(delivery.layer0_goals_seen, Some(ctx.layer0_goals.current()));
+    assert!(
+        matches!(&delivery.goal_context_seen, Some(Some(goals)) if goals.contains("Launch the beta"))
+    );
 }

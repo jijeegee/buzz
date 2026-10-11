@@ -247,6 +247,31 @@ pub(crate) fn render_goal_context(
     Some(body.trim_end().to_string())
 }
 
+/// First line of a `<goal-context>` that restates goals a session already
+/// holds in an older version.
+const GOALS_CHANGED: &str = "The goals changed. This replaces every earlier goal context.";
+/// The whole `<goal-context>` once a session's conversation lost its goals.
+const GOALS_CLEARED: &str =
+    "This conversation no longer has goals; earlier goal context no longer applies.";
+
+/// The `<goal-context>` body this turn sends, given what the session already
+/// holds (`seen`: `None` when unknown, `Some(None)` for no goals) and the
+/// goals now (`current`, rendered by [`render_goal_context`]). Goals reach a
+/// session once, in its system prompt or first turn, and again only when they
+/// change, so an unchanged tree adds nothing to the conversation history.
+pub(crate) fn goal_context_for_turn(
+    seen: Option<&Option<String>>,
+    current: Option<&str>,
+) -> Option<String> {
+    match (seen, current) {
+        (Some(Some(seen)), Some(current)) if seen == current => None,
+        (Some(Some(_)), Some(current)) => Some(format!("{GOALS_CHANGED}\n\n{current}")),
+        (_, Some(current)) => Some(current.to_string()),
+        (Some(Some(_)), None) => Some(GOALS_CLEARED.to_string()),
+        (_, None) => None,
+    }
+}
+
 /// How often a failing channel may log a warning; the rest go to debug.
 const FETCH_WARN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 /// Channels remembered by the limiter before it starts over.
@@ -291,9 +316,11 @@ fn fetch_failed(channel_id: Uuid, what: std::fmt::Arguments<'_>) {
     }
 }
 
-/// Fetch the live goal tree head: one relay query per turn. No tree and any
-/// failure both yield `None` — the turn goes ahead without goals rather than
-/// failing. Failures warn at most once per channel per 10 minutes.
+/// Fetch the live goal tree head: one relay query per turn. A conversation
+/// without a tree yields an empty tree; any failure yields `None`, so the turn
+/// goes ahead without goals rather than failing, and a session's known goals
+/// are left as they were. Failures warn at most once per channel per 10
+/// minutes.
 pub(crate) async fn fetch_goal_tree(channel_id: Uuid, rest: &RestClient) -> Option<GoalTree> {
     use nostr::{Alphabet, SingleLetterTag};
 
@@ -322,7 +349,10 @@ pub(crate) async fn fetch_goal_tree(channel_id: Uuid, rest: &RestClient) -> Opti
             return None;
         }
     };
-    let content = json.as_array()?.first()?.get("content")?.as_str()?;
+    let Some(head) = json.as_array()?.first() else {
+        return Some(GoalTree::empty());
+    };
+    let content = head.get("content")?.as_str()?;
     match GoalTree::parse(content) {
         Ok(tree) => Some(tree),
         Err(e) => {
@@ -396,6 +426,33 @@ mod tests {
             limiter.should_warn(Uuid::from_u128(100 + i), t0);
         }
         assert!(limiter.last.len() <= FETCH_WARN_MAX_CHANNELS, "bounded");
+    }
+
+    #[test]
+    fn goals_reach_a_session_once_and_again_only_when_they_change() {
+        let now = render_goal_context(&sample(), channel(), None).unwrap();
+        // Unknown or no goals yet: the whole context.
+        assert_eq!(goal_context_for_turn(None, Some(&now)), Some(now.clone()));
+        assert_eq!(
+            goal_context_for_turn(Some(&None), Some(&now)),
+            Some(now.clone())
+        );
+        // Unchanged: nothing at all.
+        assert_eq!(
+            goal_context_for_turn(Some(&Some(now.clone())), Some(&now)),
+            None
+        );
+        // Changed: the whole new context, marked as replacing the old one.
+        let changed = goal_context_for_turn(Some(&Some("older".into())), Some(&now)).unwrap();
+        assert!(changed.starts_with(GOALS_CHANGED));
+        assert!(changed.ends_with(&now));
+        // Goals removed: said once; nothing when there never were any.
+        assert_eq!(
+            goal_context_for_turn(Some(&Some(now)), None).as_deref(),
+            Some(GOALS_CLEARED)
+        );
+        assert_eq!(goal_context_for_turn(Some(&None), None), None);
+        assert_eq!(goal_context_for_turn(None, None), None);
     }
 
     #[test]
