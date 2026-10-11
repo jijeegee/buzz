@@ -250,6 +250,9 @@ pub(crate) fn render_goal_context(
 /// First line of a `<goal-context>` that restates goals a session already
 /// holds in an older version.
 const GOALS_CHANGED: &str = "The goals changed. This replaces every earlier goal context.";
+/// First line of a `<goal-context>` for a session that may hold goals nobody
+/// recorded (reattached after a restart).
+const GOALS_RESTATED: &str = "These goals replace any earlier goal context.";
 /// The whole `<goal-context>` once a session's conversation lost its goals.
 const GOALS_CLEARED: &str =
     "This conversation no longer has goals; earlier goal context no longer applies.";
@@ -257,9 +260,9 @@ const GOALS_CLEARED: &str =
 /// The conversation's goals as of one turn, from one session's point of view.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GoalsNow {
-    /// The whole tree as the main timeline sees it (`None`: no goals). Two
-    /// turns hold the same goals exactly when this matches, whichever thread
-    /// each one is about.
+    /// The whole tree, losslessly (`None`: no goals). Two turns hold the same
+    /// goals exactly when this matches, whichever thread each one is about;
+    /// a rendered view would miss edits it cuts (long notes, big trees).
     tree: Option<String>,
     /// The thread the turn is about, if any.
     focus: Option<String>,
@@ -270,7 +273,11 @@ pub(crate) struct GoalsNow {
 impl GoalsNow {
     pub(crate) fn new(tree: &GoalTree, channel_id: Uuid, focus: Option<&str>) -> Self {
         Self {
-            tree: render_goal_context(tree, channel_id, None),
+            tree: tree.root().map(|_| {
+                tree.to_content().unwrap_or_else(|_| {
+                    render_goal_context(tree, channel_id, None).unwrap_or_default()
+                })
+            }),
             focus: focus.map(str::to_string),
             rendered: render_goal_context(tree, channel_id, focus),
         }
@@ -313,7 +320,7 @@ impl GoalsSeen {
 /// or the turn is about a thread whose view it has not had, so an unchanged
 /// tree adds nothing to the conversation history. `held_unknown` marks a
 /// session that may hold older goals nobody recorded (one reattached after a
-/// restart): goals it gets are then marked as replacing earlier ones. Removal
+/// restart): goals it gets are then marked as replacing any earlier ones. Removal
 /// is announced only to a session known to hold goals, so a restart does not
 /// tell every goal-less conversation that its goals are gone.
 pub(crate) fn goal_context_for_turn(
@@ -329,6 +336,7 @@ pub(crate) fn goal_context_for_turn(
     match &now.rendered {
         Some(_) if same_tree && seen.is_some_and(|seen| seen.foci.contains(&now.focus)) => None,
         Some(rendered) if same_tree || !held_goals => Some(rendered.clone()),
+        Some(rendered) if seen.is_none() => Some(format!("{GOALS_RESTATED}\n\n{rendered}")),
         Some(rendered) => Some(format!("{GOALS_CHANGED}\n\n{rendered}")),
         None if seen.is_some_and(|seen| seen.tree.is_some()) => Some(GOALS_CLEARED.to_string()),
         None => None,
@@ -523,6 +531,31 @@ mod tests {
         assert_eq!(send(None, &gone), None);
         // A reattached session may hold goals nobody recorded.
         assert!(goal_context_for_turn(None, true, &main)
+            .unwrap()
+            .starts_with(GOALS_RESTATED));
+        // An edit a view cuts (a note past its limit) still counts.
+        let mut long = tree.clone();
+        let note = |text: String| GoalOp::Update {
+            id: "cas".into(),
+            title: None,
+            note: Some(text),
+            status: None,
+            add_assignees: vec![],
+            remove_assignees: vec![],
+        };
+        long.apply(&note(format!("{}a", "x".repeat(400))), ED, 4)
+            .unwrap();
+        let before = GoalsNow::new(&long, channel(), None);
+        let seen = GoalsSeen::after(None, &before);
+        long.apply(&note(format!("{}b", "x".repeat(400))), ED, 5)
+            .unwrap();
+        let after = GoalsNow::new(&long, channel(), None);
+        assert_eq!(
+            before.rendered(),
+            after.rendered(),
+            "the view cuts the note"
+        );
+        assert!(send(Some(&seen), &after)
             .unwrap()
             .starts_with(GOALS_CHANGED));
         assert_eq!(goal_context_for_turn(None, true, &gone), None);
