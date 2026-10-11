@@ -290,7 +290,7 @@ where
     // same-relay identity replacement during mesh preflight must not release
     // the stale preflight owner to spawn.
     // The spawn itself runs for the agent's own owner.
-    crate::relay::bind_expected_signer(expected_signer_pubkey, workspace_owner_hex(state)?)?;
+    crate::relay::assert_expected_signer(expected_signer_pubkey, &workspace_owner_hex(state)?)?;
 
     // Lock order matches `start_pair`: transition, then store, then runtime
     // map. The transition lock is held until the pair is registered, so a

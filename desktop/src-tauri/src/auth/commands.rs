@@ -371,8 +371,10 @@ async fn login_inner(
     };
     let generation = state.token_auth.set(&origin, OriginAuth::Active(session));
     drop(agent_store_guard);
-    drop(_refresh_guard);
-    spawn_refresh_loop(app, &origin, generation);
+    // Other servers are handed over while this origin's refresh lock is still
+    // held: an account switch waits on it, so it can never land between this
+    // sign-in and its hand-over (which would hand the servers to the wrong
+    // account).
     let mut account_changed = false;
     if let (Some(previous), Some(current)) = (previous_active, signed_in_account) {
         if previous != current {
@@ -380,6 +382,8 @@ async fn login_inner(
             super::accounts::after_active_changed(app, &origin, previous, current).await;
         }
     }
+    drop(_refresh_guard);
+    spawn_refresh_loop(app, &origin, generation);
     emit_changed(app, &origin);
     // Signed in here again: like an app launch for this account, its agents
     // start (outside every sign-in lock; each start takes its own).

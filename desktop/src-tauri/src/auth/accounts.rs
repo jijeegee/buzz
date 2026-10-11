@@ -623,6 +623,8 @@ pub(crate) struct SignInBefore {
     active: Option<String>,
     state: Option<AccountState>,
     token: Option<Zeroizing<String>>,
+    /// Its pending (unconfirmed new) key entries, which the commit clears.
+    pending: Vec<PendingKey>,
 }
 
 impl SignInBefore {
@@ -646,6 +648,12 @@ pub(crate) fn sign_in_before(
         token: secrets
             .load(&refresh_slot(pubkey, origin))?
             .map(Zeroizing::new),
+        pending: registry
+            .pending
+            .iter()
+            .filter(|p| p.origin == origin && p.pubkey == pubkey.to_hex())
+            .cloned()
+            .collect(),
     })
 }
 
@@ -653,8 +661,9 @@ pub(crate) fn sign_in_before(
 /// as far as it got: its own token slot holds the old token again (or, with
 /// none before, not the new one, whose session the caller revokes), the list
 /// no longer makes it active unless it was, and its state is the old one
-/// (`SignedOut` when no old session is left). Returns whether the old session
-/// is back in its slot.
+/// (`SignedOut` when no old session is left), and its pending key entries are
+/// back so a retry uploads the same key. Returns whether the old session is
+/// back in its slot.
 pub(crate) fn roll_back_sign_in(
     secrets: &dyn Secrets,
     data_dir: &Path,
@@ -701,6 +710,12 @@ pub(crate) fn roll_back_sign_in(
     {
         registry.upsert(origin, pubkey, state);
         changed = true;
+    }
+    for pending in &before.pending {
+        if !registry.pending.contains(pending) {
+            registry.pending.push(pending.clone());
+            changed = true;
+        }
     }
     if changed {
         save_registry(secrets, data_dir, &registry)?;
@@ -1452,7 +1467,7 @@ pub async fn switch_account(
     // A sign-in completing on this origin holds its refresh lock: wait for it,
     // then read the list fresh.
     let refresh_guard = state.token_auth.refresh_lock(&origin).lock_owned().await;
-    let (previous, keys) = {
+    let previous = {
         let _identity = state
             .identity_mutation
             .lock()
@@ -1475,10 +1490,9 @@ pub async fn switch_account(
         registry.active = Some(target.to_hex());
         save_registry(secrets, &data_dir, &registry)?;
         write_active_copy(secrets, &keys, None)?;
-        *state.keys.lock().map_err(|_| "identity storage is busy")? = keys.clone();
-        (outgoing.public_key(), keys)
+        *state.keys.lock().map_err(|_| "identity storage is busy")? = keys;
+        outgoing.public_key()
     };
-    let _ = keys;
     // This origin's lock is still held: no session here can rotate until it
     // is handed over.
     let handed = hand_over_origins(&app, previous, target, None, Some(&origin)).await;

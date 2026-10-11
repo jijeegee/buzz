@@ -102,7 +102,7 @@ pub fn relay_http_base_url(relay_url: &str) -> String {
 mod scope;
 pub use scope::{
     assert_expected_relay_scope, assert_expected_signer, bind_expected_relay_scope,
-    bind_expected_signer, ScopedWorkspaceRelay,
+    ScopedWorkspaceRelay,
 };
 
 pub fn relay_api_base_url() -> String {

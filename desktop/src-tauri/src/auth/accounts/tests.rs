@@ -811,6 +811,31 @@ async fn hand_over_goes_on_past_a_failing_server_and_reports_it() {
 }
 
 #[test]
+fn a_failed_sign_in_commit_keeps_its_pending_new_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    let first = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &first, "token-a", Some(&first)).unwrap();
+    let new = pending_new_key(&mem, dir.path(), ORIGIN, "google:new").unwrap();
+    let before = sign_in_before(&mem, dir.path(), ORIGIN, &new.public_key()).unwrap();
+    *mem.fail_store_all.borrow_mut() = true;
+    assert!(commit_sign_in(&mem, dir.path(), ORIGIN, &new, "token-n", Some(&first)).is_err());
+    *mem.fail_store_all.borrow_mut() = false;
+    roll_back_sign_in(
+        &mem,
+        dir.path(),
+        ORIGIN,
+        &new.public_key(),
+        "token-n",
+        &before,
+    )
+    .unwrap();
+    // A retry gets the same key back, not a new one.
+    let again = pending_new_key(&mem, dir.path(), ORIGIN, "google:new").unwrap();
+    assert_eq!(again.public_key(), new.public_key());
+}
+
+#[test]
 fn a_failed_sign_in_commit_is_rolled_back_to_the_previous_account() {
     let dir = tempfile::tempdir().unwrap();
     let mem = Mem::default();
@@ -872,6 +897,17 @@ fn a_failed_sign_in_commit_is_rolled_back_to_the_previous_account() {
         Some(AccountState::SignedOut)
     );
     assert_eq!(mem.get(&refresh_slot(&third.public_key(), ORIGIN)), None);
+
+    // The copy was written but its check failed (here: written by hand after
+    // the rollback): the next launch puts the list's active account back.
+    *mem.fail_store_all.borrow_mut() = false;
+    mem.put("identity", &nsec(&third));
+    assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Refilled);
+    assert_eq!(mem.get("identity"), Some(nsec(&first)));
+    assert_eq!(
+        mem.get(&super::super::refresh_key(ORIGIN)).as_deref(),
+        Some("token-a2")
+    );
 }
 
 #[test]
