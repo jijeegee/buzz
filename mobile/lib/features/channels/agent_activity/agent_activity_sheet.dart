@@ -10,7 +10,6 @@ import '../../../shared/profile/user_cache_provider.dart';
 import '../channel_identity_names_provider.dart';
 import 'observer_models.dart';
 import 'observer_subscription.dart';
-import 'observer_watching.dart';
 import 'transcript_item_widget.dart';
 
 /// Full-screen modal bottom sheet showing the live agent activity transcript.
@@ -34,9 +33,6 @@ class AgentActivitySheet extends HookConsumerWidget {
     );
     final transcript = observerState.transcript;
     final connection = observerState.connection;
-
-    // While open in the foreground, ask the agent for tier-level detail.
-    useObserverWatching(ref, channelId: channelId, agentPubkey: agentPubkey);
 
     // Resolve bot name.
     final botName = watchChannelIdentityLabel(ref, channelId, agentPubkey);
@@ -103,10 +99,6 @@ class AgentActivitySheet extends HookConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (observerState.summaryView) ...[
-                        const _SummaryViewBadge(),
-                        const SizedBox(width: Grid.half),
-                      ],
                       _ConnectionBadge(connection: connection),
                     ],
                   ),
@@ -209,34 +201,6 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Marks a feed sent at a summary observer tier (names and short previews).
-class _SummaryViewBadge extends StatelessWidget {
-  const _SummaryViewBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final color = context.colors.onSurfaceVariant;
-    return Container(
-      key: const Key('observer-summary-badge'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: Grid.xxs,
-        vertical: Grid.quarter,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        'Summary view',
-        style: context.textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
