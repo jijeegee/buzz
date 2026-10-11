@@ -674,3 +674,165 @@ async fn custody_preserves_existing_token_login_but_refuses_new_token_identity()
         "unsupported signup must not create a token principal"
     );
 }
+
+/// Start a desktop key-backup login (optionally `signup=confirm`), pass the
+/// fake provider's callback and post `complete`. Returns the verifier and the
+/// `complete` response.
+async fn key_login_flow(
+    inst: &Instance,
+    provider_code: &str,
+    confirm: bool,
+) -> (String, reqwest::Response) {
+    reset_login_limits(inst).await;
+    let verifier = verifier();
+    let state = verifier[..24].to_owned();
+    let challenge = buzz_auth::token::pkce_s256_challenge(&verifier);
+    let mut params = vec![
+        ("state", state.as_str()),
+        ("code_challenge", challenge.as_str()),
+        ("client", "desktop"),
+        ("redirect_uri", REDIRECT_URI),
+        ("identity_mode", "key_backup"),
+    ];
+    if confirm {
+        params.push(("signup", "confirm"));
+    }
+    let response = inst
+        .get_with("/auth/oidc/google/start", &params)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 302);
+    let response = inst
+        .get_with(
+            "/auth/oidc/google/callback",
+            &[("state", state.as_str()), ("code", provider_code)],
+        )
+        .send()
+        .await
+        .unwrap();
+    let location = response.headers()["location"].to_str().unwrap().to_owned();
+    let code =
+        query_param(&location, "code").unwrap_or_else(|| panic!("callback failed: {location}"));
+    let response = inst
+        .post("/auth/oidc/complete")
+        .json(&json!({ "login_code": code, "code_verifier": verifier }))
+        .send()
+        .await
+        .unwrap();
+    (verifier, response)
+}
+
+async fn account_exists(inst: &Instance, subject: &str) -> bool {
+    match inst
+        .state
+        .db
+        .login_existing_key_identity("google", subject, None, "probe", None)
+        .await
+    {
+        Ok(_) => true,
+        Err(buzz_db::DbError::AccessDenied(message)) if message == "signup_required" => false,
+        Err(error) => panic!("probe failed: {error}"),
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires isolated Postgres + Redis with current migrations"]
+async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
+    let inst = custody_instance().await;
+    let subject = uuid::Uuid::new_v4().to_string();
+    let provider_code = format!("{subject}|new@example.test|true");
+
+    // Without the flag an unknown account is created on callback, as before,
+    // and `complete` now also reports the email.
+    let (_, response) = key_login_flow(&inst, &provider_code, false).await;
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.unwrap();
+    assert!(body["access"].is_string());
+    assert_eq!(body["email"], "new@example.test");
+    assert!(account_exists(&inst, &subject).await);
+
+    // With the flag: nothing exists until `signup`.
+    let subject = uuid::Uuid::new_v4().to_string();
+    let provider_code = format!("{subject}|other@example.test|true");
+    let (verifier, response) = key_login_flow(&inst, &provider_code, true).await;
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["needs_signup"], true);
+    assert_eq!(body["email"], "other@example.test");
+    assert_eq!(body["display_name"], "Test User");
+    assert!(body.get("access").is_none() && body.get("refresh").is_none());
+    let token = body["signup_token"].as_str().unwrap().to_owned();
+    assert!(!account_exists(&inst, &subject).await, "nothing created yet");
+
+    // A wrong verifier consumes the ticket and creates nothing.
+    let response = inst
+        .post("/auth/oidc/signup")
+        .json(&json!({ "signup_token": token, "code_verifier": super::verifier() }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400);
+    assert!(!account_exists(&inst, &subject).await);
+    let response = inst
+        .post("/auth/oidc/signup")
+        .json(&json!({ "signup_token": token, "code_verifier": verifier }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400, "one attempt only");
+
+    // "Use a different account" = the ticket is dropped: still nothing.
+    // Starting again and confirming creates the account and signs in.
+    let (verifier, response) = key_login_flow(&inst, &provider_code, true).await;
+    let body: Value = response.json().await.unwrap();
+    let token = body["signup_token"].as_str().unwrap().to_owned();
+    let response = inst
+        .post("/auth/oidc/signup")
+        .json(&json!({ "signup_token": token, "code_verifier": verifier }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["identity_mode"], "key_backup");
+    assert_eq!(body["email"], "other@example.test");
+    assert!(body["signing_pubkey"].is_null(), "no key backup yet");
+    let access = body["access"].as_str().unwrap().to_owned();
+    assert!(body["refresh"].is_string());
+    assert!(account_exists(&inst, &subject).await);
+    let me = inst.get("/auth/me").bearer_auth(&access).send().await.unwrap();
+    assert_eq!(me.status(), 200);
+
+    // An existing account signs straight in, flag or not.
+    let (_, response) = key_login_flow(&inst, &provider_code, true).await;
+    let body: Value = response.json().await.unwrap();
+    assert!(body.get("needs_signup").is_none());
+    assert!(body["access"].is_string());
+}
+
+#[tokio::test]
+#[ignore = "requires isolated Postgres + Redis with current migrations"]
+async fn confirmed_signup_is_only_for_key_backup_logins() {
+    let inst = custody_instance().await;
+    reset_login_limits(&inst).await;
+    let verifier = verifier();
+    let challenge = buzz_auth::token::pkce_s256_challenge(&verifier);
+    let response = inst
+        .get_with(
+            "/auth/oidc/google/start",
+            &[
+                ("state", &verifier[..24]),
+                ("code_challenge", &challenge),
+                ("client", "desktop"),
+                ("redirect_uri", REDIRECT_URI),
+                ("identity_mode", "token"),
+                ("signup", "confirm"),
+            ],
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400);
+}
