@@ -38,9 +38,9 @@ test("targets follow row order: rooms, DMs and threads", () => {
     row(`dm:${DM}`, DM, "dm"),
   ]);
   assert.deepEqual(targets, [
-    { channelId: ROOM, rootId: ROOT },
-    { channelId: ROOM, rootId: null },
-    { channelId: DM, rootId: null },
+    { channelId: ROOM, thread: { replyId: `${ROOT}-latest`, rootId: ROOT } },
+    { channelId: ROOM, thread: null },
+    { channelId: DM, thread: null },
   ]);
   assert.deepEqual(targets.map(inboxPreloadTargetKey), [
     `${ROOM}:${ROOT}`,
@@ -56,4 +56,11 @@ test("only the first rows are preloaded and non-chat rows are skipped", () => {
   const approval = { ...row("x", ROOM, "stream"), isActionRequired: true };
   assert.equal(inboxPreloadTargets(rows).length, 12);
   assert.deepEqual(inboxPreloadTargets([approval]), []);
+});
+
+test("a single top-level message row is not treated as a thread", () => {
+  const single = row("e".repeat(64), ROOM, "stream");
+  assert.deepEqual(inboxPreloadTargets([single]), [
+    { channelId: ROOM, thread: null },
+  ]);
 });

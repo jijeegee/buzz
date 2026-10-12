@@ -40,27 +40,38 @@ export async function preloadChannelMessages(
         await getChannelWindowEvents(channelId, null, limitRows),
         [],
         signal,
+        false,
       ),
     retry: PRELOAD_RETRY,
     staleTime: MESSAGES_STALE_MS,
     gcTime: MESSAGES_GC_MS,
   });
   if (queryClient.getQueryState(queryKey)?.status !== "success") return false;
+  // An empty page holds the skeleton on open, as an empty persisted head does.
+  if ((queryClient.getQueryData<unknown[]>(queryKey)?.length ?? 0) === 0) {
+    return false;
+  }
   markPaintableChannelSnapshot(queryClient, channelId);
   return true;
 }
 
-/** Load a thread's replies in the background unless they are already cached. */
+/**
+ * Load a thread's replies in the background unless they are already cached.
+ * `expectedEventId` is the reply the row opens on: a thread opened while this
+ * load is in flight joins it, so it must enforce the same missing-reply retry.
+ */
 export async function preloadThreadReplies(
   queryClient: QueryClient,
   channelId: string,
   rootId: string,
+  expectedEventId: string,
 ): Promise<boolean> {
   const queryKey = threadRepliesKey(channelId, rootId);
   if (queryClient.getQueryData(queryKey) !== undefined) return false;
   await queryClient.prefetchQuery({
     queryKey,
-    queryFn: () => loadThreadReplies(queryClient, channelId, rootId),
+    queryFn: () =>
+      loadThreadReplies(queryClient, channelId, rootId, expectedEventId),
     retry: PRELOAD_RETRY,
     gcTime: MESSAGES_GC_MS,
   });

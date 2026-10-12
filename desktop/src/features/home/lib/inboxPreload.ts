@@ -8,11 +8,9 @@ export const INBOX_PRELOAD_MESSAGES = 20;
 
 export type InboxPreloadTarget = {
   channelId: string;
-  /** Thread root for thread rows; null for a room's main timeline or a DM. */
-  rootId: string | null;
+  /** Thread rows only: the thread root and the reply the row opens on. */
+  thread: { rootId: string; replyId: string } | null;
 };
-
-const ROOM_ROW_PREFIXES = ["channel:", "dm:"];
 
 /** The rooms (and threads) behind the top chat-list rows, in display order. */
 export function inboxPreloadTargets(
@@ -23,19 +21,19 @@ export function inboxPreloadTargets(
   for (const item of items.slice(0, limit)) {
     const entry = getInboxRoomEntry(item, "conversations");
     if (!entry) continue;
-    const isRoomRow = ROOM_ROW_PREFIXES.some((prefix) =>
-      item.conversationId.startsWith(prefix),
-    );
+    // In the chat list only thread rows open on a specific message.
     targets.push({
       channelId: entry.channelId,
-      rootId: isRoomRow ? null : item.conversationId,
+      thread: entry.messageId
+        ? { rootId: item.conversationId, replyId: entry.messageId }
+        : null,
     });
   }
   return targets;
 }
 
 export function inboxPreloadTargetKey(target: InboxPreloadTarget): string {
-  return target.rootId
-    ? `${target.channelId}:${target.rootId}`
+  return target.thread
+    ? `${target.channelId}:${target.thread.rootId}`
     : target.channelId;
 }

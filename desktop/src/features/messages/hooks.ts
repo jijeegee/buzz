@@ -266,6 +266,8 @@ export function reconcileFetchedChannelWindow(
   events: Awaited<ReturnType<typeof getChannelWindowEvents>>,
   previousMessages: RelayEvent[],
   signal: AbortSignal,
+  // Background loads must not rank as visits in the persisted-head LRU.
+  persistHead = true,
 ): RelayEvent[] {
   // Tauri invokes cannot be canceled after dispatch. A replacement refetch can
   // therefore win while this older request is still in flight. Never let that
@@ -278,7 +280,7 @@ export function reconcileFetchedChannelWindow(
     emptyChannelWindowStore();
   const next = replaceNewestChannelWindow(current, page);
   queryClient.setQueryData(windowKey, next);
-  const scope = channelHeadCacheScope(queryClient);
+  const scope = persistHead ? channelHeadCacheScope(queryClient) : null;
   if (scope) {
     void storeChannelHeadCache(scope, channelId, events).catch((error) => {
       console.warn("Failed to persist channel head", channelId, error);

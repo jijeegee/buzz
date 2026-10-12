@@ -59,9 +59,14 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
     const isBusy = () =>
       !isDocumentVisible() ||
       Date.now() - lastInputAtRef.current < RECENT_INPUT_MS ||
-      queryClient.isFetching({ queryKey: ["channel-messages"] }) > 0;
+      queryClient.isFetching({ queryKey: ["channel-messages"] }) > 0 ||
+      queryClient.isFetching({ queryKey: ["thread-replies"] }) > 0;
 
     void (async () => {
+      const now = Date.now();
+      for (const [key, at] of attemptedAtRef.current) {
+        if (now - at >= RETRY_AFTER_MS) attemptedAtRef.current.delete(key);
+      }
       for (const target of targets) {
         const key = inboxPreloadTargetKey(target);
         const attemptedAt = attemptedAtRef.current.get(key);
@@ -80,13 +85,15 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
           INBOX_PRELOAD_MESSAGES,
         );
         if (cancelled) return;
-        if (target.rootId) {
-          await preloadThreadReplies(
-            queryClient,
-            target.channelId,
-            target.rootId,
-          );
-        }
+        if (!target.thread) continue;
+        while (!cancelled && isBusy()) await sleep(IDLE_POLL_MS);
+        if (cancelled) return;
+        await preloadThreadReplies(
+          queryClient,
+          target.channelId,
+          target.thread.rootId,
+          target.thread.replyId,
+        );
       }
     })();
     return () => {
