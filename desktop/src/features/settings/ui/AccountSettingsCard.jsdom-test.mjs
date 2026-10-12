@@ -383,7 +383,7 @@ test("previously signed-out token users have an explicit existing-account route"
       button,
       "existing account recovery remains reachable before mode is known",
     );
-    assert.equal(button.textContent, "Sign in to an older Buzz account");
+    assert.equal(button.textContent, "Sign in to an older Kuzz account");
     await act(async () => fireEvent.click(button));
     assert.deepEqual(
       calls.find((c) => c.command === "login_with_google").args,
@@ -437,7 +437,7 @@ test("cancel ends the native wait and onboarding can immediately retry", async (
     assert.match(container.textContent, /Cancel sign-in/);
     await act(async () => progress(second, "completing"));
     assert.doesNotMatch(container.textContent, /Cancel sign-in/);
-    assert.match(container.textContent, /Finishing sign-in in Buzz/);
+    assert.match(container.textContent, /Finishing sign-in in Kuzz/);
   } finally {
     await unmount();
     loginBehavior = cancelBehavior = undefined;
@@ -486,7 +486,7 @@ test("completion winning cancellation finishes without restarting Google", async
       (b) => b.textContent === "Cancel sign-in",
     );
     await act(async () => fireEvent.click(cancel));
-    assert.match(container.textContent, /Finishing sign-in in Buzz/);
+    assert.match(container.textContent, /Finishing sign-in in Kuzz/);
     assert.doesNotMatch(container.textContent, /Cancel sign-in/);
     await act(async () => resolveLogin(baseStatus({ state: "active" })));
     assert.equal(completed, 1);
@@ -564,7 +564,7 @@ test("signing out, signing out other devices and disconnecting agents each confi
       "Disconnect agents",
       "revoke_all_bot_tokens",
     ],
-    ["account-sign-out", "Sign out of Buzz?", "Sign out", "logout"],
+    ["account-sign-out", "Sign out of Kuzz?", "Sign out", "logout"],
   ];
   for (const [testId, title, confirmLabel, command] of cases) {
     const open = container.querySelector(`[data-testid='${testId}']`);
@@ -820,7 +820,7 @@ test("a sign-out whose agents did not all stop says so after the switch", async 
   assert.equal(accountSwitch.accountSwitchCaption(), "Switching to Work…");
   assert.equal(
     accountSwitch.finishAccountSwitchBoot(),
-    "Signed out. 2 agents from that account did not stop in time; restart Buzz if they keep replying.",
+    "Signed out. 2 agents from that account did not stop in time; restart Kuzz if they keep replying.",
   );
   accountSwitch.resetAccountSwitchForTests();
   logoutBehavior = undefined;
