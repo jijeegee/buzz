@@ -21,6 +21,7 @@ import { useOwnedAgentPubkeys } from "@/features/home/useOwnedAgentPubkeys";
 import {
   filterInboxItems,
   collapseChannelMainRows,
+  roomRootsWithoutMainRows,
   matchesInboxFilter,
 } from "@/features/home/lib/inboxViewHelpers";
 import { resolveInboxFilterSelection } from "@/features/home/lib/inboxSelection";
@@ -481,7 +482,37 @@ export function HomeView({
   // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion invalidates the stable read-marker callbacks
   const viewItems = React.useMemo(() => {
     if (filter !== "conversations") return inboxItems;
-    const rows = collapseChannelMainRows(inboxItems);
+    // A room whose latest message is a thread root keeps a row of its own.
+    const roomRoots = roomRootsWithoutMainRows(inboxItems);
+    const roomRootItems =
+      roomRoots.length === 0
+        ? []
+        : filterInboxItems(
+            buildInboxItems({
+              channels,
+              currentPubkey,
+              feed: {
+                feed: {
+                  activity: roomRoots,
+                  agentActivity: [],
+                  mentions: [],
+                  needsAction: [],
+                },
+                meta: { generatedAt: 0, since: 0, total: roomRoots.length },
+              },
+              getChannelReadAt,
+              getMessageReadAt,
+              getThreadReadAt,
+              profiles: feedProfiles,
+            }),
+          );
+    const rows = collapseChannelMainRows(
+      roomRootItems.length === 0
+        ? inboxItems
+        : [...inboxItems, ...roomRootItems].sort(
+            (left, right) => right.latestActivityAt - left.latestActivityAt,
+          ),
+    );
     return serverUnread
       ? withServerUnreadCounts(
           rows,
@@ -494,7 +525,11 @@ export function HomeView({
   }, [
     effectiveDoneSet,
     filter,
+    channels,
+    currentPubkey,
+    feedProfiles,
     getChannelReadAt,
+    getMessageReadAt,
     getThreadReadAt,
     inboxItems,
     isThreadMuted,

@@ -45,6 +45,38 @@ function isChannelMainItem(item: FeedItem | undefined) {
   );
 }
 
+/**
+ * Room roots that only reached the list inside a thread row. The inbox summary
+ * carries one latest message per room; when that message is a thread root, it
+ * groups with its replies and the room loses its own row. These are the
+ * latest such roots of rooms that have no main-timeline row of their own.
+ */
+export function roomRootsWithoutMainRows(
+  items: readonly InboxItem[],
+): FeedItem[] {
+  const roomsWithRows = new Set<string>();
+  const roots = new Map<string, FeedItem>();
+  for (const item of items) {
+    const channelId = item.item.channelId;
+    if (!channelId || item.item.channelType === "dm") continue;
+    const all = [item.item, ...item.groupItems];
+    if (all.every(isChannelMainItem)) {
+      roomsWithRows.add(channelId);
+      continue;
+    }
+    for (const event of item.groupItems) {
+      if (event.channelId !== channelId || !isChannelMainItem(event)) continue;
+      const previous = roots.get(channelId);
+      if (!previous || event.createdAt > previous.createdAt) {
+        roots.set(channelId, event);
+      }
+    }
+  }
+  return [...roots.entries()]
+    .filter(([channelId]) => !roomsWithRows.has(channelId))
+    .map(([, event]) => event);
+}
+
 export function filterInboxItems(items: InboxItem[]) {
   return items.filter((item) => item.item.kind !== KIND_REMINDER);
 }
