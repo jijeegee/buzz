@@ -710,8 +710,7 @@ pub(super) async fn signup(
         return bad_request("signup_token and code_verifier are required");
     };
     let ticket_hash = buzz_auth::hash_token(signup_token);
-    let ticket = match kv::take(&state.redis_pool, "oidc:signup", &hex::encode(ticket_hash)).await
-    {
+    let ticket = match kv::take(&state.redis_pool, "oidc:signup", &hex::encode(ticket_hash)).await {
         Ok(Some(json)) => serde_json::from_str::<SignupTicket>(&json).ok(),
         Ok(None) => None,
         Err(error) => {

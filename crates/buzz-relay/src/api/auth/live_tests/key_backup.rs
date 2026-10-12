@@ -775,7 +775,10 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
     assert_eq!(body["display_name"], "Test User");
     assert!(body.get("access").is_none() && body.get("refresh").is_none());
     let token = body["signup_token"].as_str().unwrap().to_owned();
-    assert!(!account_exists(&inst, &subject).await, "nothing created yet");
+    assert!(
+        !account_exists(&inst, &subject).await,
+        "nothing created yet"
+    );
 
     // A wrong verifier consumes the ticket and creates nothing.
     let response = inst
@@ -797,8 +800,7 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
     // "Use a different account" = the ticket is dropped: still nothing.
     // Starting again and confirming creates the account and signs in.
     let install_id = uuid::Uuid::new_v4().to_string();
-    let (verifier, response) =
-        key_login_flow(&inst, &provider_code, true, Some(&install_id)).await;
+    let (verifier, response) = key_login_flow(&inst, &provider_code, true, Some(&install_id)).await;
     let body: Value = response.json().await.unwrap();
     let token = body["signup_token"].as_str().unwrap().to_owned();
     let response = inst
@@ -816,9 +818,18 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
     let access = body["access"].as_str().unwrap().to_owned();
     assert!(body["refresh"].is_string());
     assert!(account_exists(&inst, &subject).await);
-    let me = inst.get("/auth/me").bearer_auth(&access).send().await.unwrap();
+    let me = inst
+        .get("/auth/me")
+        .bearer_auth(&access)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(me.status(), 200);
-    assert_eq!(install_devices(&inst, &install_id).await, 1, "signup keeps the install id");
+    assert_eq!(
+        install_devices(&inst, &install_id).await,
+        1,
+        "signup keeps the install id"
+    );
 
     // An existing account signs straight in, flag or not, and the same
     // install reuses the device the confirmed signup registered.

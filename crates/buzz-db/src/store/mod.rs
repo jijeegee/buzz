@@ -26,6 +26,8 @@ pub mod feed;
 pub mod git_repo;
 /// Centralized identity: principals, devices, sessions, bots, access tokens.
 pub mod identity;
+/// One-statement inbox summary of member rooms and active threads.
+pub mod inbox_summary;
 /// Community moderation: reports, bans/timeouts, audit actions.
 pub mod moderation;
 /// Deployment-global operator-listener mention registrations and delivery queues.
@@ -75,3 +77,6 @@ mod artifact_postgres_tests;
 
 #[cfg(test)]
 mod channel_history_postgres_tests;
+
+#[cfg(test)]
+mod inbox_summary_postgres_tests;

@@ -547,6 +547,9 @@ CREATE INDEX idx_thread_metadata_window
 CREATE INDEX idx_thread_metadata_channel_depth
     ON thread_metadata (community_id, channel_id, depth, event_created_at);
 CREATE INDEX idx_thread_metadata_event_id ON thread_metadata (community_id, event_id);
+CREATE INDEX idx_thread_metadata_inbox
+    ON thread_metadata (community_id, channel_id, last_reply_at DESC, event_id DESC)
+    WHERE depth = 0 AND reply_count > 0;
 
 -- ── Reactions ─────────────────────────────────────────────────────────────────
 -- Conformance: reactions filter by community before event/pubkey matching.
