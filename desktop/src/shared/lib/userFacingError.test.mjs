@@ -3,52 +3,106 @@ import test from "node:test";
 
 import {
   CONNECTIVITY_ERROR_MESSAGE,
-  GENERIC_ERROR_MESSAGE,
-  toUserFacingMessage,
+  RATE_LIMITED_ERROR_MESSAGE,
+  mapBackendErrorInText,
+  SERVER_REJECTED_ERROR_MESSAGE,
+  toUserFacingErrorDetail,
 } from "./userFacingError.ts";
 
-test("toUserFacingMessage leaves plain text unchanged", () => {
+test("maps the backend's relay-unreachable classifications", () => {
+  for (const detail of [
+    "relay unreachable: request timed out",
+    "relay unreachable: could not connect to relay",
+    "relay unreachable: relay host not found",
+    "relay unreachable: network error",
+    "relay unreachable: relay returned an unexpected HTML page (VPN or proxy sign-in?)",
+    "failed to publish: relay unreachable: network error",
+  ]) {
+    assert.equal(toUserFacingErrorDetail(detail), CONNECTIVITY_ERROR_MESSAGE);
+  }
+});
+
+test("maps rate-limit, status and rejection errors", () => {
   assert.equal(
-    toUserFacingMessage("Couldn't save the recording."),
+    toUserFacingErrorDetail("relay rate-limited: retry in 4s"),
+    RATE_LIMITED_ERROR_MESSAGE,
+  );
+  assert.equal(
+    toUserFacingErrorDetail("relay rate-limited: quota exceeded"),
+    RATE_LIMITED_ERROR_MESSAGE,
+  );
+  for (const detail of [
+    "relay returned 500 Internal Server Error",
+    "relay returned 403 Forbidden: pubkey not a member",
+    "relay rejected event: blocked: pubkey not allowed",
+    "relay rejected engram: invalid: bad signature",
+  ]) {
+    assert.equal(
+      toUserFacingErrorDetail(detail),
+      SERVER_REJECTED_ERROR_MESSAGE,
+      detail,
+    );
+  }
+});
+
+test("leaves unrecognised text unchanged", () => {
+  for (const detail of [
+    "",
     "Couldn't save the recording.",
+    "Network request timed out",
+    "Invalid pubkey",
+    "runtime binary not found",
+  ]) {
+    assert.equal(toUserFacingErrorDetail(detail), detail);
+  }
+});
+
+test("never rewrites user content that mentions relay", () => {
+  for (const text of [
+    "Relay",
+    "Could not start Relay — your message was sent, but the agent may not respond.",
+    "#relay-ops",
+    "Relay was created, but it did not start: missing runtime",
+  ]) {
+    assert.equal(toUserFacingErrorDetail(text), text);
+  }
+});
+
+test("partial-success sentences keep their full text; only the detail is mapped", () => {
+  const name = "Relay Bot";
+  const spawnError = "relay unreachable: request timed out";
+  const toast = `${name} was created, but it did not start: ${toUserFacingErrorDetail(spawnError)}`;
+  assert.equal(
+    toast,
+    `Relay Bot was created, but it did not start: ${CONNECTIVITY_ERROR_MESSAGE}`,
+  );
+
+  const detached = `Could not start ${name} — your message was sent, but the agent may not respond. ${toUserFacingErrorDetail("agent process exited")}`;
+  assert.equal(
+    detached,
+    "Could not start Relay Bot — your message was sent, but the agent may not respond. agent process exited",
+  );
+});
+
+test("mapBackendErrorInText keeps the caller's prefix and maps the backend part", () => {
+  assert.equal(
+    mapBackendErrorInText(
+      "Failed to load channels: relay unreachable: timed out",
+    ),
+    `Failed to load channels: ${CONNECTIVITY_ERROR_MESSAGE}`,
   );
   assert.equal(
-    toUserFacingMessage("Network request timed out"),
-    "Network request timed out",
+    mapBackendErrorInText("relay returned 500: pubkey mismatch"),
+    SERVER_REJECTED_ERROR_MESSAGE,
   );
-  assert.equal(toUserFacingMessage(""), "");
 });
 
-test("toUserFacingMessage maps connectivity errors with developer terms", () => {
-  for (const message of [
-    "relay unreachable: error sending request",
-    "Archive failed: relay unreachable: connection refused",
-    "Nostr websocket closed",
-    "Failed to reach wss://relay.example.com",
-    "Request to the Relay timed out",
-    "relays offline",
+test("mapBackendErrorInText leaves user content and unknown text alone", () => {
+  for (const text of [
+    'Agent "Relay" was created, but the profile did not sync.',
+    "Couldn't open #relay-ops",
+    "Your message was sent, but the agent may not respond.",
   ]) {
-    assert.equal(toUserFacingMessage(message), CONNECTIVITY_ERROR_MESSAGE);
+    assert.equal(mapBackendErrorInText(text), text);
   }
-});
-
-test("toUserFacingMessage maps other developer-term errors to a generic message", () => {
-  for (const message of [
-    "relay rejected event: blocked",
-    "invalid npub",
-    "npub1qqqsyqcyq5rqwzqf is not a member",
-    "nsec1abc could not be decoded",
-    "NIP-05 lookup failed",
-    "nip-98 auth missing",
-    "Invalid pubkey",
-    "Public key does not match",
-    "private key is malformed",
-  ]) {
-    assert.equal(toUserFacingMessage(message), GENERIC_ERROR_MESSAGE, message);
-  }
-});
-
-test("toUserFacingMessage matches whole words only", () => {
-  assert.equal(toUserFacingMessage("Relaying is fine"), "Relaying is fine");
-  assert.equal(toUserFacingMessage("NIP-mapping"), "NIP-mapping");
 });

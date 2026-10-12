@@ -10,7 +10,7 @@ import {
 } from "@/features/channels/hooks";
 import type { Channel, ChannelRole, ManagedAgent } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
-import { toUserFacingMessage } from "@/shared/lib/userFacingError";
+import { toUserFacingErrorDetail } from "@/shared/lib/userFacingError";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -182,13 +182,13 @@ export function AddAgentToChannelDialog({
 
             {channelsQuery.error instanceof Error ? (
               <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                {toUserFacingMessage(channelsQuery.error.message)}
+                {toUserFacingErrorDetail(channelsQuery.error.message)}
               </p>
             ) : null}
 
             {attachAgentMutation.error instanceof Error ? (
               <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                {toUserFacingMessage(attachAgentMutation.error.message)}
+                {toUserFacingErrorDetail(attachAgentMutation.error.message)}
               </p>
             ) : null}
           </div>

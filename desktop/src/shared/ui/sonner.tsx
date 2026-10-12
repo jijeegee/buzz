@@ -1,32 +1,33 @@
 import { Toaster as Sonner, toast } from "sonner";
 
-import { toUserFacingMessage } from "@/shared/lib/userFacingError";
+import { mapBackendErrorInText } from "@/shared/lib/userFacingError";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 
-// Error and warning toasts often show raw backend text, which can name
-// protocol internals (relay, npub, NIP-xx…). Sonner's `toast` is a shared
-// mutable object, so wrapping these two methods once here maps every call
-// site's string title and description to plain wording. Guarded so a second
-// evaluation (HMR) doesn't wrap twice.
-const USER_FACING_WRAPPED = Symbol.for("kuzz.toast.userFacingWrapped");
+// Many error and warning toasts show raw backend text. Sonner's `toast` is a
+// shared mutable object, so wrapping these two methods once here maps only the
+// known raw backend error shapes (see `mapBackendErrorInText`) in every call
+// site's string title and description; the caller's own wording and user
+// content pass through. Guarded so a second evaluation (HMR) doesn't wrap
+// twice.
+const BACKEND_ERROR_WRAPPED = Symbol.for("kuzz.toast.backendErrorWrapped");
 
 type ToastMethod = typeof toast.error;
 
-function wrapUserFacing(method: ToastMethod): ToastMethod {
+function wrapBackendErrors(method: ToastMethod): ToastMethod {
   return (message, data) =>
     method(
-      typeof message === "string" ? toUserFacingMessage(message) : message,
+      typeof message === "string" ? mapBackendErrorInText(message) : message,
       data && typeof data.description === "string"
-        ? { ...data, description: toUserFacingMessage(data.description) }
+        ? { ...data, description: mapBackendErrorInText(data.description) }
         : data,
     );
 }
 
 const toastFlags = toast as unknown as Record<symbol, boolean>;
-if (!toastFlags[USER_FACING_WRAPPED]) {
-  toast.error = wrapUserFacing(toast.error);
-  toast.warning = wrapUserFacing(toast.warning);
-  toastFlags[USER_FACING_WRAPPED] = true;
+if (!toastFlags[BACKEND_ERROR_WRAPPED]) {
+  toast.error = wrapBackendErrors(toast.error);
+  toast.warning = wrapBackendErrors(toast.warning);
+  toastFlags[BACKEND_ERROR_WRAPPED] = true;
 }
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
