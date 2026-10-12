@@ -2,6 +2,7 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
+import { preloadChannelRouteScreen } from "@/app/routes/lazyChannelRouteScreen";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { HomeScreen } from "@/features/home/ui/HomeScreen";
 import {
@@ -90,15 +91,23 @@ function HomeRouteComponent() {
     openPendingWelcomeChannel(availableChannelIds);
   }, [availableChannelIds, openPendingWelcomeChannel]);
 
+  // The inbox is where rooms are opened from: have the chat screen ready.
+  React.useEffect(() => {
+    preloadChannelRouteScreen();
+  }, []);
+
   return (
     <HomeScreen
       availableChannelIds={availableChannelIds}
       currentPubkey={identityQuery.data?.pubkey}
       onOpenContext={(channelId, messageId, threadRootId) => {
-        void goChannel(channelId, {
-          messageId: messageId ?? undefined,
-          threadRootId,
-        });
+        void goChannel(
+          channelId,
+          // No message to land on: open the thread itself beside the room.
+          !messageId && threadRootId
+            ? { thread: threadRootId }
+            : { messageId: messageId ?? undefined, threadRootId },
+        );
       }}
     />
   );

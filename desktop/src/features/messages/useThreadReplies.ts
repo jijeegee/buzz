@@ -1,3 +1,4 @@
+import { CONVERSATION_CACHE_GC_MS } from "@/shared/api/queryClient";
 import {
   type QueryClient,
   useQueries,
@@ -10,6 +11,12 @@ import {
   threadRepliesKey,
   sortMessages,
 } from "@/features/messages/lib/messageQueryKeys";
+import {
+  loadNewestThreadReplies,
+  loadOlderThreadReplies,
+  type ThreadWindowState,
+  threadWindowStateKey,
+} from "@/features/messages/lib/threadWindowCache";
 import { getThreadReplies } from "@/shared/api/tauri";
 import { isQueryDeadlineError } from "@/shared/lib/relayError";
 import type {
@@ -90,12 +97,20 @@ export async function loadThreadReplies(
   throw new Error(`Thread ${rootId} exceeded the page safety limit.`);
 }
 
-/** Fetch a thread subtree into a cache independent from channel window pages. */
+/**
+ * Fetch a thread subtree into a cache independent from channel window pages.
+ *
+ * `newestFirst` loads only the newest page of replies (folding it into what is
+ * already cached) and leaves older replies to `useOlderThreadReplies`, so a
+ * long thread opens at its latest replies without reading its whole history.
+ */
 export function useThreadReplies(
   activeChannel: Channel | null,
   openThreadRootId: string | null,
   expectedEventId?: string | null,
+  options: { newestFirst?: boolean } = {},
 ) {
+  const newestFirst = options.newestFirst ?? false;
   const channelId = activeChannel?.id ?? "none";
   const rootId = openThreadRootId ?? "none";
   const queryClient = useQueryClient();
@@ -149,6 +164,26 @@ export function useThreadReplies(
           exhaustedTargetsRef.current.add(expectedEventId);
         }
       }
+      if (newestFirst) {
+        const target =
+          expectedEventId && !exhaustedTargetsRef.current.has(expectedEventId)
+            ? expectedEventId
+            : null;
+        const events = await loadNewestThreadReplies(
+          queryClient,
+          activeChannel.id,
+          openThreadRootId,
+          { mustInclude: target },
+        );
+        if (events) {
+          // Same contract as the full read: a link's reply that is not there
+          // yet retries instead of settling as authoritative.
+          if (target && !events.some((event) => event.id === target)) {
+            throw new ThreadExpectedEventMissingError(target);
+          }
+          return events;
+        }
+      }
       return loadThreadReplies(
         queryClient,
         activeChannel.id,
@@ -158,7 +193,7 @@ export function useThreadReplies(
       );
     },
     staleTime: 0,
-    gcTime: 60 * 60 * 1_000,
+    gcTime: CONVERSATION_CACHE_GC_MS,
     // Override global defaults: a missing reply should retry rather than
     // being permanently hidden. The ThreadExpectedEventMissingError path
     // throws on attempts 1 and 2; attempt 3 records exhaustion first so
@@ -215,6 +250,47 @@ export function useThreadReplies(
 }
 
 /**
+ * Paging state for a newest-first thread: whether older replies remain and a
+ * loader that prepends the next older page to the thread cache.
+ */
+export function useOlderThreadReplies(
+  channelId: string | null,
+  rootId: string | null,
+) {
+  const queryClient = useQueryClient();
+  const stateQuery = useQuery<ThreadWindowState | null>({
+    queryKey: threadWindowStateKey(channelId ?? "none", rootId ?? "none"),
+    // Written only by the thread loaders; never fetched on its own.
+    queryFn: () => null,
+    enabled: false,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: CONVERSATION_CACHE_GC_MS,
+  });
+  const threadKey = `${channelId}:${rootId}`;
+  // The thread whose older page is loading, so another thread is not blocked.
+  const [fetchingKey, setFetchingKey] = React.useState<string | null>(null);
+  const inFlightRef = React.useRef(new Set<string>());
+  const fetchOlder = React.useCallback(async () => {
+    if (!channelId || !rootId || inFlightRef.current.has(threadKey)) return;
+    inFlightRef.current.add(threadKey);
+    setFetchingKey(threadKey);
+    try {
+      await loadOlderThreadReplies(queryClient, channelId, rootId);
+    } catch (error) {
+      console.warn("Failed to load older thread replies", rootId, error);
+    } finally {
+      inFlightRef.current.delete(threadKey);
+      setFetchingKey((current) => (current === threadKey ? null : current));
+    }
+  }, [channelId, queryClient, rootId, threadKey]);
+  return {
+    hasOlderReplies: stateQuery.data?.hasOlder ?? false,
+    isFetchingOlderReplies: fetchingKey === threadKey,
+    fetchOlderReplies: fetchOlder,
+  };
+}
+
+/**
  * Aggregate a set of per-root thread-reply query results into one view for a
  * multi-root consumer. Pure over the results array so the load-bearing
  * error-surfacing contract is unit-testable without a live QueryClient.
@@ -265,7 +341,7 @@ export function useThreadRepliesForRoots(
       enabled: activeChannel !== null && activeChannel.channelType !== "forum",
       queryFn: () => loadThreadReplies(queryClient, channelId, rootId),
       staleTime: 0,
-      gcTime: 60 * 60 * 1_000,
+      gcTime: CONVERSATION_CACHE_GC_MS,
     })),
     combine: combineThreadRepliesResults,
   });

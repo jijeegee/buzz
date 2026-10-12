@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 
 import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlightNavigation";
 import { getCachedSearchHitEvent } from "@/app/navigation/searchHitEventCache";
@@ -9,6 +9,7 @@ import { useOpenChannelDirectoryQuery } from "@/features/channels/openChannelDir
 import { ChannelScreen } from "@/features/channels/ui/ChannelScreen";
 import { HuddleStartingView } from "@/features/huddle/components/HuddleStartingView";
 import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
+import { getRememberedRouteEvent } from "@/features/messages/lib/routeEventCache";
 import {
   getThreadReference,
   isBroadcastReply,
@@ -42,7 +43,14 @@ type ChannelRouteScreenProps = {
 
 const MAX_ROUTE_ANCESTOR_HOPS = 50;
 
-async function fetchRouteEvent(eventId: string): Promise<RelayEvent | null> {
+async function fetchRouteEvent(
+  queryClient: QueryClient,
+  eventId: string,
+): Promise<RelayEvent | null> {
+  // Preloaded thread replies and roots open without a relay round trip; the
+  // room and thread queries still revalidate them.
+  const remembered = getRememberedRouteEvent(queryClient, eventId);
+  if (remembered) return remembered;
   try {
     return await getEventById(eventId);
   } catch (error) {
@@ -60,6 +68,7 @@ function getReplyParentId(event: RelayEvent): string | null {
 }
 
 async function fetchRouteTargetEvents(
+  queryClient: QueryClient,
   eventIds: string[],
   targetMessageId: string | null,
   targetThreadRootId: string | null,
@@ -72,7 +81,9 @@ async function fetchRouteTargetEvents(
   };
 
   const uniqueEventIds = [...new Set(eventIds)];
-  const initialEvents = await Promise.all(uniqueEventIds.map(fetchRouteEvent));
+  const initialEvents = await Promise.all(
+    uniqueEventIds.map((eventId) => fetchRouteEvent(queryClient, eventId)),
+  );
   for (const event of initialEvents) {
     addEvent(event);
   }
@@ -87,7 +98,7 @@ async function fetchRouteTargetEvents(
   const targetThreadRef = getThreadReference(targetEvent.tags);
   const threadRootId = targetThreadRootId ?? targetThreadRef.rootId ?? null;
   if (threadRootId && !eventsById.has(threadRootId)) {
-    addEvent(await fetchRouteEvent(threadRootId));
+    addEvent(await fetchRouteEvent(queryClient, threadRootId));
   }
 
   let parentId = getReplyParentId(targetEvent);
@@ -98,7 +109,8 @@ async function fetchRouteTargetEvents(
     guard < MAX_ROUTE_ANCESTOR_HOPS
   ) {
     const parentEvent =
-      eventsById.get(parentId) ?? (await fetchRouteEvent(parentId));
+      eventsById.get(parentId) ??
+      (await fetchRouteEvent(queryClient, parentId));
     if (!parentEvent) {
       break;
     }
@@ -165,6 +177,31 @@ export function ChannelRouteScreen({
     const cachedTarget = getCachedSearchHitEvent(targetMessageId);
     return cachedTarget ? [cachedTarget] : [];
   });
+  // The route target the last fetch settled for. Until it settles, a thread
+  // opened by this route waits for its root instead of closing as missing.
+  const routeTargetKey =
+    !selectedPostId && (targetMessageId || targetThreadRootId)
+      ? `${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`
+      : null;
+  const [resolvedRouteTargetKey, setResolvedRouteTargetKey] = React.useState<
+    string | null
+  >(null);
+  const isRouteTargetResolving =
+    routeTargetKey !== null && resolvedRouteTargetKey !== routeTargetKey;
+  // Preloaded roots and replies are at hand on the first render, so a thread
+  // opened from the inbox shows its root without waiting a render for them.
+  const displayedTargetMessageEvents = React.useMemo(() => {
+    const remembered = [targetThreadRootId, targetMessageId].flatMap((id) => {
+      const event = id ? getRememberedRouteEvent(queryClient, id) : null;
+      return event ? [event] : [];
+    });
+    if (remembered.length === 0) return targetMessageEvents;
+    const eventsById = new Map<string, RelayEvent>();
+    for (const event of [...remembered, ...targetMessageEvents]) {
+      eventsById.set(event.id, event);
+    }
+    return Array.from(eventsById.values());
+  }, [queryClient, targetMessageEvents, targetMessageId, targetThreadRootId]);
   const [activeSearchHighlight, setActiveSearchHighlight] =
     React.useState<SearchHighlightNavigation | null>(searchHighlight ?? null);
   const appliedSearchActivationIdRef = React.useRef<string | null>(
@@ -259,11 +296,15 @@ export function ChannelRouteScreen({
     ].filter((eventId): eventId is string => eventId !== null);
 
     void fetchRouteTargetEvents(
+      queryClient,
       eventIds,
       targetMessageId,
       targetThreadRootId,
     ).then((events) => {
       if (!isCancelled) {
+        setResolvedRouteTargetKey(
+          `${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`,
+        );
         setTargetMessageEvents((currentEvents) => {
           const eventsById = new Map<string, RelayEvent>();
           for (const event of [...currentEvents, ...events]) {
@@ -277,7 +318,7 @@ export function ChannelRouteScreen({
     return () => {
       isCancelled = true;
     };
-  }, [selectedPostId, targetMessageId, targetThreadRootId]);
+  }, [queryClient, selectedPostId, targetMessageId, targetThreadRootId]);
 
   if (
     !activeChannel &&
@@ -302,7 +343,7 @@ export function ChannelRouteScreen({
         autoSendDraftKey={autoSendDraftKey}
         project={projectHome}
         projects={projectsQuery.data ?? [projectHome]}
-        targetMessageEvents={targetMessageEvents}
+        targetMessageEvents={displayedTargetMessageEvents}
         targetMessageId={targetMessageId}
       />
     );
@@ -322,7 +363,8 @@ export function ChannelRouteScreen({
       }}
       selectedForumPostId={selectedPostId}
       targetForumReplyId={targetReplyId}
-      targetMessageEvents={targetMessageEvents}
+      isRouteTargetResolving={isRouteTargetResolving}
+      targetMessageEvents={displayedTargetMessageEvents}
       targetMessageId={targetMessageId}
       targetSearchMessageId={activeSearchHighlight?.messageId}
       targetSearchQuery={activeSearchHighlight?.query}

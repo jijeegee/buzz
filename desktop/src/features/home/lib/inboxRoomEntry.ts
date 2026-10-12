@@ -32,6 +32,12 @@ export type InboxRoomEntry = {
    * thread). Null opens the room and lands on its newest message.
    */
   messageId: string | null;
+  /**
+   * Thread rows: the thread to open beside the room. The room itself stays
+   * where it is (or opens at its newest messages); the thread opens at its
+   * newest replies.
+   */
+  threadRootId?: string | null;
 };
 
 function isThreadReplyEvent(event: FeedItem) {
@@ -76,7 +82,14 @@ export function getInboxRoomEntry(
   const events = item.groupItems.length > 0 ? item.groupItems : [item.item];
   const threadReplies = events.filter(isThreadReplyEvent);
   if (threadReplies.length > 0) {
-    return { channelId, messageId: latestEvent(threadReplies).id };
+    const reply = latestEvent(threadReplies);
+    return {
+      channelId,
+      messageId: reply.id,
+      threadRootId:
+        getThreadReference(reply.tags).rootId ??
+        getThreadReference(reply.tags).parentId,
+    };
   }
 
   // A room row lands on the room's newest message, which may be newer than

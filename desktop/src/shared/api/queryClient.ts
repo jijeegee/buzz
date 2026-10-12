@@ -21,9 +21,23 @@ function configureQueryFocusManager() {
   });
 }
 
+/**
+ * Conversation caches (room pages, thread replies) stay in memory this long
+ * after they are last on screen, so rooms and threads opened earlier in the
+ * day reopen at once instead of reloading.
+ */
+export const CONVERSATION_CACHE_GC_MS = 12 * 60 * 60 * 1_000;
+
+const CONVERSATION_CACHE_KEYS = [
+  ["channel-messages"],
+  ["channel-window"],
+  ["thread-replies"],
+  ["thread-window-state"],
+] as const;
+
 export function createBuzzQueryClient() {
   configureQueryFocusManager();
-  return new QueryClient({
+  const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
         // One retry, except after the relay's `query timed out` answer: that
@@ -39,4 +53,12 @@ export function createBuzzQueryClient() {
       },
     },
   });
+  // Defaults by key also cover caches written with setQueryData (background
+  // preload, live events) before any screen observes them.
+  for (const queryKey of CONVERSATION_CACHE_KEYS) {
+    queryClient.setQueryDefaults(queryKey, {
+      gcTime: CONVERSATION_CACHE_GC_MS,
+    });
+  }
+  return queryClient;
 }

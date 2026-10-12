@@ -25,10 +25,13 @@ export function InboxPanel() {
       availableChannelIds={availableChannelIds}
       currentPubkey={identityQuery.data?.pubkey}
       onOpenContext={(channelId, messageId, threadRootId) => {
-        void goChannel(channelId, {
-          messageId: messageId ?? undefined,
-          threadRootId,
-        });
+        void goChannel(
+          channelId,
+          // No message to land on: open the thread itself beside the room.
+          !messageId && threadRootId
+            ? { thread: threadRootId }
+            : { messageId: messageId ?? undefined, threadRootId },
+        );
       }}
       variant="panel"
     />

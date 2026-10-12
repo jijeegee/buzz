@@ -51,6 +51,11 @@ registerHooks({
 export async function getThreadReplies(rootId, channelId, options) {
   return globalThis.__tauriGetThreadReplies(rootId, channelId, options);
 }
+// Newest-first thread windows load through the generic bridge; these tests
+// exercise the full-subtree read only.
+export async function invokeTauri(command) {
+  throw new Error("unmocked Tauri command: " + command);
+}
 export default {};
 `,
       };
