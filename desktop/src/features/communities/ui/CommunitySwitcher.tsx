@@ -539,6 +539,7 @@ export function CommunitySwitcher({
         open={editingCommunity !== null}
         community={editingCommunity}
         showIconEditor={editingCommunity?.id === activeCommunity?.id}
+        showUrlField={degraded && editingCommunity?.id === activeCommunity?.id}
       />
 
       <AlertDialog

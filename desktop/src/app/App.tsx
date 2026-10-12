@@ -743,6 +743,7 @@ function CommunityApp({
           {isCommunityChangeOpen ? (
             <CommunityChangeOverlay
               onClose={() => setIsCommunityChangeOpen(false)}
+              showUrlField
             />
           ) : null}
         </>

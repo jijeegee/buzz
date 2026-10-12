@@ -36,6 +36,8 @@ import {
 } from "@/shared/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/cn";
+import { isRelayConnectionDegraded } from "@/shared/api/relayClientShared";
+import { useRelayConnection } from "@/shared/api/useRelayConnection";
 import { getInitials } from "@/shared/lib/initials";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
@@ -325,6 +327,7 @@ export function CommunityRail({
     (activeRole === "owner" || activeRole === "admin");
   const [editingCommunity, setEditingCommunity] =
     React.useState<Community | null>(null);
+  const connectionDegraded = isRelayConnectionDegraded(useRelayConnection());
   const [draggingId, setDraggingId] = React.useState<string | null>(null);
 
   const sensors = useSensors(
@@ -436,6 +439,9 @@ export function CommunityRail({
         open={editingCommunity !== null}
         community={editingCommunity}
         showIconEditor={editingCommunity?.id === activeCommunityId}
+        showUrlField={
+          connectionDegraded && editingCommunity?.id === activeCommunityId
+        }
       />
     </nav>
   );

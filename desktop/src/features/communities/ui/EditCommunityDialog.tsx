@@ -29,6 +29,8 @@ type EditCommunityDialogProps = {
     >,
   ) => void;
   showIconEditor?: boolean;
+  /** The community can't be reached, so its address may need fixing. */
+  showUrlField?: boolean;
 };
 
 export function EditCommunityDialog({
@@ -37,6 +39,7 @@ export function EditCommunityDialog({
   onOpenChange,
   onSave,
   showIconEditor = false,
+  showUrlField = false,
 }: EditCommunityDialogProps) {
   const [name, setName] = React.useState("");
   const [relayUrl, setRelayUrl] = React.useState("");
@@ -127,7 +130,11 @@ export function EditCommunityDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Community</DialogTitle>
-          <DialogDescription>Update this community's name.</DialogDescription>
+          <DialogDescription>
+            {showUrlField
+              ? "Update this community's name or address."
+              : "Update this community's name."}
+          </DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -160,6 +167,23 @@ export function EditCommunityDialog({
               value={name}
             />
           </div>
+          {showUrlField ? (
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-sm font-medium text-foreground"
+                htmlFor="edit-ws-relay-url"
+              >
+                Community URL
+              </label>
+              <Input
+                id="edit-ws-relay-url"
+                onChange={(e) => setRelayUrl(e.target.value)}
+                placeholder="Paste the community link"
+                type="text"
+                value={relayUrl}
+              />
+            </div>
+          ) : null}
           <div className="flex flex-col gap-1.5">
             <label
               className="text-sm font-medium text-foreground"

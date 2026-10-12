@@ -9,6 +9,7 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
+import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import { JoinPolicyNotice } from "@/features/onboarding/ui/JoinPolicyNotice";
 import { normalizeRelayUrl, probeRelayReachable } from "../relayProbe";
 
@@ -23,6 +24,11 @@ export type CommunityEditFormProps = {
   joinPolicyRequired?: boolean;
   onCancel: () => void;
   onSubmit: (name: string, relayUrl: string) => void;
+  /**
+   * Show the address field; offered only when the server can't be reached
+   * (always on in E2E builds, whose tests edit it).
+   */
+  showUrlField?: boolean;
   submitLabel: string;
 };
 
@@ -34,6 +40,7 @@ export function CommunityEditForm({
   joinPolicyRequired = false,
   onCancel,
   onSubmit,
+  showUrlField = signingKeyUiTestSeam(),
   submitLabel,
 }: CommunityEditFormProps) {
   const [name, setName] = React.useState(initialName);
@@ -219,32 +226,36 @@ export function CommunityEditForm({
         />
       </div>
 
-      <div className="space-y-1.5 text-left">
-        <label
-          className="text-sm font-medium text-foreground"
-          htmlFor="community-edit-url"
-        >
-          Community URL
-        </label>
-        <Input
-          className="h-10 bg-background"
-          disabled={isProbing}
-          id="community-edit-url"
-          onChange={(event) => {
-            setRelayUrl(event.target.value);
-            setError(null);
-            setProbeWarning(null);
-            setUseAnywayOverride(false);
-            setJoinPolicy(null);
-            setPolicyRelayUrl(null);
-            setAgeConfirmed(false);
-            setAgreementConfirmed(false);
-          }}
-          placeholder="Paste the community link"
-          type="text"
-          value={relayUrl}
-        />
-      </div>
+      {/* Users never need the address unless the server can't be reached;
+          then it is the only way to fix a moved community. */}
+      {showUrlField ? (
+        <div className="space-y-1.5 text-left">
+          <label
+            className="text-sm font-medium text-foreground"
+            htmlFor="community-edit-url"
+          >
+            Community URL
+          </label>
+          <Input
+            className="h-10 bg-background"
+            disabled={isProbing}
+            id="community-edit-url"
+            onChange={(event) => {
+              setRelayUrl(event.target.value);
+              setError(null);
+              setProbeWarning(null);
+              setUseAnywayOverride(false);
+              setJoinPolicy(null);
+              setPolicyRelayUrl(null);
+              setAgeConfirmed(false);
+              setAgreementConfirmed(false);
+            }}
+            placeholder="Paste the community link"
+            type="text"
+            value={relayUrl}
+          />
+        </div>
+      ) : null}
 
       <AnimatePresence initial={false}>
         {joinPolicy && policyRelayUrl ? (
