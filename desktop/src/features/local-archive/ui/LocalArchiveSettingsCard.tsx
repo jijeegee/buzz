@@ -531,8 +531,13 @@ export function LocalArchiveSettingsCard() {
       />
 
       <div className="space-y-6">
-        {/* Observer-frame and turn-metric archives are developer tooling
-            (raw event kinds, keys); Kuzz shows them only in E2E builds. */}
+        {/* Kuzz: the observer-frame and turn-metric archives are ALWAYS ON,
+            with no UI. The app seeds both for every user at startup
+            (useObserverArchiveSeed / useAgentMetricArchiveSeed), and the
+            observer archive is the source of older agent activity history
+            (useLoadArchivedObserverEvents). These sections render only in
+            E2E builds for tests; do not bring the toggles back as a user
+            choice. */}
         {showDeveloperSections ? (
           <>
             {/* Observer-feed archive — dedicated first-class section */}
