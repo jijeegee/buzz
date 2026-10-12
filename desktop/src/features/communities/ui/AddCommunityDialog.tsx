@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowLeft, ChevronRight, Link2, Plus } from "lucide-react";
+import { ArrowLeft, ChevronRight, Link2 } from "lucide-react";
 
 import type { AddCommunityPrefillRequest } from "@/features/communities/addCommunityPrefill";
 import { HostedCommunityCreateFlow } from "@/features/communities/ui/HostedCommunityCreateFlow";
@@ -90,7 +90,7 @@ export function AddCommunityDialog({
       ? "Opens Builderlab in your browser."
       : mode === "join"
         ? "Use the community URL or invite link you received."
-        : "Create a new community or join one you already have.";
+        : "Join a community you already have.";
 
   return (
     <Dialog
@@ -132,26 +132,8 @@ export function AddCommunityDialog({
         <div className="px-6 pb-6 pt-3">
           {mode === "choose" ? (
             <div className="space-y-3">
-              <button
-                className={OPTION_CLASS}
-                data-testid="add-community-create"
-                onClick={() => setMode("create")}
-                type="button"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Plus className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-foreground">
-                    Create a new community
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Claim a Kuzz address for your team.
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
-              </button>
-
+              {/* Creating a community goes through Block's Builderlab, which
+                  Kuzz does not offer. */}
               <button
                 className={OPTION_CLASS}
                 data-testid="add-community-join"

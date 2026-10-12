@@ -383,7 +383,7 @@ test("pairing completion updates the final step and resets after leaving", async
   await waitForAnimations(page);
   await card.screenshot({ path: `${SCREENSHOT_DIR}/pairing-complete.png` });
 
-  await page.getByTestId("settings-nav-updates").click();
+  await page.getByTestId("settings-nav-profile").click();
   await page.getByTestId("settings-nav-mobile").click();
 
   const restartedCard = page.getByTestId("mobile-pairing-card");

@@ -50,7 +50,8 @@ test.beforeEach(async ({ page }) => {
   await openHostedCommunitiesSettings(page);
 });
 
-test("identity: mismatch rows follow pubkey_hex, never the hosted npub or raw hex", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: mismatch rows follow pubkey_hex, never the hosted npub or raw hex", async ({
   page,
 }) => {
   await openHostedCommunitiesSettings(page, {
@@ -78,7 +79,8 @@ test("identity: mismatch rows follow pubkey_hex, never the hosted npub or raw he
   await expect(settingsView.getByText("f".repeat(64))).toHaveCount(0);
 });
 
-test("identity: connected row follows pubkey_hex when the hosted npub encodes another key", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: connected row follows pubkey_hex when the hosted npub encodes another key", async ({
   page,
 }) => {
   await openHostedCommunitiesSettings(page, {
@@ -95,7 +97,8 @@ test("identity: connected row follows pubkey_hex when the hosted npub encodes an
   ).toHaveCount(0);
 });
 
-test("identity: unusable bound hex renders the neutral label, not the hosted npub or raw hex", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: unusable bound hex renders the neutral label, not the hosted npub or raw hex", async ({
   page,
 }) => {
   await openHostedCommunitiesSettings(page, {
@@ -117,7 +120,8 @@ test("identity: unusable bound hex renders the neutral label, not the hosted npu
   await expect(settingsView.getByText("f".repeat(63))).toHaveCount(0);
 });
 
-test("identity: consistent hosted identity renders its canonical npub", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: consistent hosted identity renders its canonical npub", async ({
   page,
 }) => {
   await openHostedCommunitiesSettings(page, {
@@ -131,7 +135,8 @@ test("identity: consistent hosted identity renders its canonical npub", async ({
   await expect(connectedNpub).toHaveText(npubEncode(DEFAULT_MOCK_PUBKEY));
 });
 
-test("identity: unlinked account offers linking, never a connected claim", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: unlinked account offers linking, never a connected claim", async ({
   page,
 }) => {
   await installMockBridge(page, {
@@ -172,7 +177,8 @@ test("identity: unlinked account offers linking, never a connected claim", async
   ).toBeDisabled();
 });
 
-test("identity: padded or mixed-case bound hex is the same key, not a mismatch", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: padded or mixed-case bound hex is the same key, not a mismatch", async ({
   page,
 }) => {
   await openHostedCommunitiesSettings(page, {
@@ -248,7 +254,8 @@ for (const [label, payload] of UNUSABLE_BOUND_KEY_PAYLOADS) {
   });
 }
 
-test("capture: community icon picker sits beside its hosted community", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("capture: community icon picker sits beside its hosted community", async ({
   page,
 }) => {
   const activeRow = page

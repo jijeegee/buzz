@@ -20,7 +20,7 @@ const HARNESS_DESCRIPTIONS: Record<string, string> = {
   codex: "OpenAI's coding agent, connected through the codex-acp adapter.",
   // Source: https://block.github.io/goose/ — "an open source, extensible AI
   // agent".
-  goose: "Block's open-source, extensible AI agent.",
+  goose: "Open-source, extensible AI agent.",
 
   // Bundled presets — sources per RESEARCH/BYOH_CATALOG_IA.md.
   // Source: https://cursor.com/docs/cli/acp
