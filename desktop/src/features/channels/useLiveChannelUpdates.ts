@@ -5,7 +5,9 @@ import { channelsQueryKey } from "@/features/channels/hooks";
 import { INBOX_DELETIONS_QUERY_KEY } from "@/features/home/lib/inboxDeletions";
 import {
   applyLiveEventToInboxSummary,
+  deletedEventIds,
   INBOX_SUMMARY_QUERY_KEY,
+  inboxSummaryShowsAny,
   type InboxSummaryState,
 } from "@/features/home/lib/inboxSummary";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
@@ -264,10 +266,16 @@ export function useLiveChannelUpdates(
       void queryClient.invalidateQueries({
         queryKey: INBOX_DELETIONS_QUERY_KEY,
       });
-      // A deleted latest message changes a row's preview: reload the summary.
-      void queryClient.invalidateQueries({
-        queryKey: INBOX_SUMMARY_QUERY_KEY,
-      });
+      // Reload the summary only when the deletion removes a message the chat
+      // list shows; other deletions (e.g. removed reactions) change no row.
+      const summary = queryClient.getQueryData<InboxSummaryState>(
+        INBOX_SUMMARY_QUERY_KEY,
+      );
+      if (summary && inboxSummaryShowsAny(summary, deletedEventIds(event))) {
+        void queryClient.invalidateQueries({
+          queryKey: INBOX_SUMMARY_QUERY_KEY,
+        });
+      }
     }
 
     if (!liveChannelIds.has(channelId)) {

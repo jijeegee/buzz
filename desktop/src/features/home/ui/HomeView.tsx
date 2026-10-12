@@ -25,6 +25,7 @@ import {
 } from "@/features/home/lib/inboxViewHelpers";
 import { resolveInboxFilterSelection } from "@/features/home/lib/inboxSelection";
 import {
+  type InboxServerUnread,
   inboxRowReadAt,
   withServerUnreadCounts,
 } from "@/features/home/lib/inboxSummary";
@@ -117,7 +118,7 @@ type HomeViewProps = {
   ) => void;
   onRefresh: () => void;
   /** Relay unread counts per conversation id, for the chat-list view. */
-  serverUnread?: ReadonlyMap<string, { count: number; at: number }>;
+  serverUnread?: ReadonlyMap<string, InboxServerUnread>;
   /**
    * `page` is the Inbox route: list plus detail for work without a chat room.
    * `panel` is the same list pulled out beside the chat screen of a channel.
@@ -291,6 +292,7 @@ export function HomeView({
     markThreadRead,
     recordThreadInteraction,
     readStateVersion,
+    isThreadMuted,
   } = useAppShell();
   const { doneSet, markDone, markUnread, undoDone, undoUnread, unreadSet } =
     feedItemState;
@@ -480,15 +482,21 @@ export function HomeView({
     if (filter !== "conversations") return inboxItems;
     const rows = collapseChannelMainRows(inboxItems);
     return serverUnread
-      ? withServerUnreadCounts(rows, serverUnread, (row) =>
-          inboxRowReadAt(row, getChannelReadAt, getThreadReadAt),
+      ? withServerUnreadCounts(
+          rows,
+          serverUnread,
+          (row) => inboxRowReadAt(row, getChannelReadAt, getThreadReadAt),
+          (row) =>
+            effectiveDoneSet.has(row.id) || isThreadMuted(row.conversationId),
         )
       : rows;
   }, [
+    effectiveDoneSet,
     filter,
     getChannelReadAt,
     getThreadReadAt,
     inboxItems,
+    isThreadMuted,
     readStateVersion,
     serverUnread,
   ]);

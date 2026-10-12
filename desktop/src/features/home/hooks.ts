@@ -193,6 +193,7 @@ export function useInboxSummary(
         ...(await getInboxSummaryPage(null, read, INBOX_SUMMARY_PAGE_SIZE)),
         generation: ++inboxSummaryGeneration,
         sentReadMarkers: Object.keys(read).length > 0,
+        sentRead: read,
       };
     },
     refetchOnWindowFocus: false,
@@ -218,11 +219,13 @@ export function useInboxSummary(
     next !== null &&
     (data?.rows.length ?? 0) < INBOX_SUMMARY_BACKGROUND_ROWS;
   const generation = data?.generation;
+  const sentRead = data?.sentRead;
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the cursor; live row patches must not restart a page in flight
   React.useEffect(() => {
     if (!wantsMore || next === null) return;
     let cancelled = false;
-    getInboxSummaryPage(next, getReadContexts(), INBOX_SUMMARY_PAGE_SIZE)
+    // Later pages count against the same markers as the first page.
+    getInboxSummaryPage(next, sentRead ?? {}, INBOX_SUMMARY_PAGE_SIZE)
       .then((page) => {
         if (cancelled) return;
         queryClient.setQueryData<InboxSummaryState>(
@@ -255,6 +258,9 @@ export function useInboxSummary(
     () => (rows ? inboxSummaryFeedItems(rows, channelById) : []),
     [channelById, rows],
   );
-  const unread = React.useMemo(() => inboxSummaryUnread(rows ?? []), [rows]);
+  const unread = React.useMemo(
+    () => inboxSummaryUnread(rows ?? [], sentRead ?? {}),
+    [rows, sentRead],
+  );
   return { failed: query.isError && !data, feedItems, unread };
 }

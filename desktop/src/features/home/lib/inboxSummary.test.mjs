@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   applyLiveEventToInboxSummary,
+  deletedEventIds,
   inboxSummaryConversationId,
   inboxSummaryFeedItems,
   inboxRowReadAt,
+  inboxSummaryShowsAny,
   inboxSummaryUnread,
   mergeInboxSummaryPage,
   withServerUnreadCounts,
@@ -154,8 +156,14 @@ test("rows map to Inbox conversation ids and feed items", () => {
       ["reply-1", "kuzz", "activity"],
     ],
   );
-  const unread = inboxSummaryUnread([dm, { ...dm, key: "t", type: "thread" }]);
-  assert.deepEqual(unread.get(`dm:${QUIET}`), { at: 100, count: 4 });
+  const unread = inboxSummaryUnread([dm, { ...dm, key: "t", type: "thread" }], {
+    [QUIET]: 50,
+  });
+  assert.deepEqual(unread.get(`dm:${QUIET}`), {
+    count: 4,
+    latestAt: 100,
+    sentReadAt: 50,
+  });
 });
 
 test("later pages append without duplicating rows", () => {
@@ -169,31 +177,95 @@ test("later pages append without duplicating rows", () => {
   );
 });
 
-test("server unread shows on rows until the marker reaches the row", () => {
+test("server unread applies only while the sent marker is still current", () => {
+  const row = (conversationId, unreadCount, id = conversationId) => ({
+    conversationId,
+    id,
+    item: { channelId: ROOM },
+    unreadCount,
+  });
   const rows = [
-    {
-      conversationId: `channel:${ROOM}`,
-      item: { channelId: ROOM },
-      unreadCount: 0,
-    },
-    { conversationId: ROOT, item: { channelId: ROOM }, unreadCount: 1 },
-    { conversationId: "other", item: { channelId: ROOM }, unreadCount: 2 },
+    row(`channel:${ROOM}`, 0),
+    row(ROOT, 1),
+    row("moved", 0),
+    row("settled", 0),
+    row("other", 2),
   ];
+  const server = (sentReadAt) => ({ count: 12, latestAt: 300, sentReadAt });
   const unread = new Map([
-    [`channel:${ROOM}`, { at: 300, count: 12 }],
-    [ROOT, { at: 300, count: 5 }],
+    [`channel:${ROOM}`, server(100)],
+    [ROOT, server(300)],
+    ["moved", server(100)],
+    ["settled", server(100)],
   ]);
-  const markers = { [ROOM]: 100, [`thread:${ROOT}`]: 300 };
-  const next = withServerUnreadCounts(rows, unread, (row) =>
-    inboxRowReadAt(
-      row,
-      (id) => markers[id] ?? null,
-      (root) => markers[`thread:${root}`] ?? null,
-    ),
+  const markers = {
+    [ROOM]: 100,
+    [`thread:${ROOT}`]: 300,
+    "thread:moved": 200,
+    "thread:settled": 100,
+  };
+  const next = withServerUnreadCounts(
+    rows,
+    unread,
+    (candidate) =>
+      inboxRowReadAt(
+        candidate,
+        (id) => markers[id] ?? null,
+        (root) => markers[`thread:${root}`] ?? null,
+      ),
+    (candidate) => candidate.conversationId === "settled",
   );
   assert.deepEqual(
-    next.map((row) => row.unreadCount),
-    [12, 0, 2],
+    next.map((candidate) => candidate.unreadCount),
+    // counted, read up to the latest, marker moved, read/muted, no server row
+    [12, 1, 0, 0, 2],
   );
-  assert.equal(next[2], rows[2]);
+  assert.equal(next[4], rows[4]);
+});
+
+test("only deletions of shown messages touch the summary", () => {
+  const current = state([thread(150), room(QUIET, 100)]);
+  assert.deepEqual(
+    deletedEventIds({
+      tags: [
+        ["e", "x"],
+        ["k", "7"],
+      ],
+    }),
+    ["x"],
+  );
+  assert.equal(inboxSummaryShowsAny(current, ["reaction-id"]), false);
+  assert.equal(inboxSummaryShowsAny(current, [ROOT]), true);
+  assert.equal(inboxSummaryShowsAny(current, ["reply-1"]), true);
+  assert.equal(inboxSummaryShowsAny(current, []), false);
+});
+
+test("forum events stay out of the chat list", () => {
+  const forum = {
+    ...room(ROOM, 100),
+    latest: { ...event("post", 100), kind: 45001 },
+  };
+  assert.deepEqual(inboxSummaryFeedItems([forum], new Map()), []);
+  const current = state([room(ROOM, 100)]);
+  assert.equal(
+    applyLiveEventToInboxSummary(
+      current,
+      { ...event("comment", 200), kind: 45003 },
+      channel,
+      ME,
+    ),
+    current,
+  );
+});
+
+test("a reply sent earlier than the relay receive time still updates the row", () => {
+  // Relay `at` (receive time) is ahead of the reply's own created_at.
+  const current = state([{ ...thread(150), at: 500, at_us: 500_000_000 }]);
+  const next = applyLiveEventToInboxSummary(
+    current,
+    event("late-clock", 160, [["e", ROOT, "", "reply"]]),
+    channel,
+    ME,
+  );
+  assert.equal(next.rows[0].latest.id, "late-clock");
 });

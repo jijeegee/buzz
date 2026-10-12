@@ -5,8 +5,6 @@ import {
 import type { InboxItem } from "@/features/home/lib/inbox";
 import type { Channel, FeedItem, RelayEvent } from "@/shared/api/types";
 import {
-  KIND_FORUM_COMMENT,
-  KIND_FORUM_POST,
   KIND_STREAM_MESSAGE,
   KIND_STREAM_MESSAGE_V2,
 } from "@/shared/constants/kinds";
@@ -16,11 +14,10 @@ export const INBOX_SUMMARY_QUERY_KEY = ["inbox-summary"] as const;
 export const INBOX_SUMMARY_BACKGROUND_ROWS = 300;
 export const INBOX_SUMMARY_PAGE_SIZE = 30;
 
+/** The chat list shows chat messages only, as the per-room loading did. */
 const SUMMARY_KINDS: ReadonlySet<number> = new Set([
   KIND_STREAM_MESSAGE,
   KIND_STREAM_MESSAGE_V2,
-  KIND_FORUM_POST,
-  KIND_FORUM_COMMENT,
 ]);
 
 export type InboxSummaryEvent = Pick<
@@ -57,6 +54,17 @@ export type InboxSummaryState = InboxSummaryPage & {
   generation: number;
   /** False when read state had not loaded yet, so counts are unknown. */
   sentReadMarkers: boolean;
+  /** The read markers the counts were computed against. */
+  sentRead: Readonly<Record<string, number>>;
+};
+
+/** A row's server count and the marker and message time it was taken at. */
+export type InboxServerUnread = {
+  count: number;
+  /** created_at of the row's latest message (not the relay receive time). */
+  latestAt: number;
+  /** Effective read marker sent for this row, or null. */
+  sentReadAt: number | null;
 };
 
 /** The Inbox conversation id a summary row stands for in the chat-list view. */
@@ -111,23 +119,42 @@ export function inboxSummaryFeedItems(
   const items: FeedItem[] = [];
   for (const row of rows) {
     const channel = channelById.get(row.channel_id);
-    if (row.root) items.push(toFeedItem(row.root, row, channel));
-    if (row.latest) items.push(toFeedItem(row.latest, row, channel));
+    for (const event of [row.root, row.latest]) {
+      if (event && SUMMARY_KINDS.has(event.kind)) {
+        items.push(toFeedItem(event, row, channel));
+      }
+    }
   }
   return items;
 }
 
 /** Server unread counts keyed by Inbox conversation id, with the row's activity time. */
-export function inboxSummaryUnread(rows: readonly InboxSummaryRow[]) {
-  const unread = new Map<string, { count: number; at: number }>();
+export function inboxSummaryUnread(
+  rows: readonly InboxSummaryRow[],
+  sentRead: Readonly<Record<string, number>>,
+) {
+  const unread = new Map<string, InboxServerUnread>();
   for (const row of rows) {
     if (row.unread === null) continue;
     const id = inboxSummaryConversationId(row);
     const previous = unread.get(id);
+    const channelRead = sentRead[row.channel_id] ?? null;
+    const threadRead =
+      row.type === "thread" && row.channel_type !== "dm" && row.root_id
+        ? (sentRead[`thread:${row.root_id}`] ?? null)
+        : null;
+    const sentReadAt =
+      threadRead === null
+        ? channelRead
+        : Math.max(threadRead, channelRead ?? 0);
     // DM threads fold into the DM row, so their counts add up.
     unread.set(id, {
       count: (previous?.count ?? 0) + row.unread,
-      at: Math.max(previous?.at ?? 0, row.at),
+      latestAt: Math.max(
+        previous?.latestAt ?? 0,
+        row.latest?.created_at ?? row.at,
+      ),
+      sentReadAt: previous?.sentReadAt ?? sentReadAt,
     });
   }
   return unread;
@@ -167,7 +194,10 @@ export function applyLiveEventToInboxSummary(
     );
     const existing = index === -1 ? null : rows[index];
     if (existing?.latest?.id === event.id) continue;
-    if (existing && existing.at > event.created_at) continue;
+    // Relay `at` is a receive time; compare message times only.
+    if (existing?.latest && existing.latest.created_at > event.created_at) {
+      continue;
+    }
     const base: InboxSummaryRow = existing ?? {
       type: target.type,
       channel_id: channel.id,
@@ -223,17 +253,40 @@ export function inboxRowReadAt(
  */
 export function withServerUnreadCounts<T extends InboxItem>(
   rows: readonly T[],
-  unread: ReadonlyMap<string, { count: number; at: number }>,
+  unread: ReadonlyMap<string, InboxServerUnread>,
   readAt: (row: T) => number | null,
+  isSettled: (row: T) => boolean,
 ): T[] {
   return rows.map((row) => {
     const server = unread.get(row.conversationId);
-    if (!server) return row;
+    // Read (including per-message reads), muted, or a marker that moved since
+    // the summary was counted: the local count is the current truth.
+    if (!server || isSettled(row)) return row;
     const marker = readAt(row);
-    const count =
-      marker !== null && marker >= server.at
-        ? 0
-        : Math.max(row.unreadCount, server.count);
+    if (marker !== server.sentReadAt) return row;
+    if (marker !== null && marker >= server.latestAt) return row;
+    const count = Math.max(row.unreadCount, server.count);
     return count === row.unreadCount ? row : { ...row, unreadCount: count };
   });
+}
+
+/** Event ids a deletion event targets (`e` tags). */
+export function deletedEventIds(event: Pick<RelayEvent, "tags">): string[] {
+  return event.tags
+    .filter((tag) => tag[0] === "e" && typeof tag[1] === "string")
+    .map((tag) => tag[1]);
+}
+
+/** True when any id is a row's shown latest message or thread root. */
+export function inboxSummaryShowsAny(
+  state: InboxSummaryState,
+  ids: readonly string[],
+): boolean {
+  if (ids.length === 0) return false;
+  const wanted = new Set(ids);
+  return state.rows.some(
+    (row) =>
+      (row.latest !== null && wanted.has(row.latest.id)) ||
+      (row.root_id !== null && wanted.has(row.root_id)),
+  );
 }

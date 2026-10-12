@@ -42,12 +42,36 @@ pub async fn get_inbox_summary(
         before.as_ref(),
         &read.unwrap_or_default(),
     );
-    query_relay_value(&state, &[filter]).await
+    validated_summary(query_relay_value(&state, &[filter]).await?)
+}
+
+/// A relay without the envelope ignores the unknown keys and answers a plain
+/// event array; reject anything that is not a version-1 summary so the
+/// caller falls back to per-room loading.
+fn validated_summary(response: serde_json::Value) -> Result<serde_json::Value, String> {
+    let is_summary = response.get("inbox_summary") == Some(&serde_json::json!(1))
+        && response
+            .get("rows")
+            .is_some_and(serde_json::Value::is_array);
+    if is_summary {
+        Ok(response)
+    } else {
+        Err("relay does not support inbox_summary".to_string())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_version_one_summaries_are_accepted() {
+        let summary = serde_json::json!({"inbox_summary": 1, "rows": [], "next": null});
+        assert!(validated_summary(summary).is_ok());
+        assert!(validated_summary(serde_json::json!([])).is_err());
+        assert!(validated_summary(serde_json::json!({"inbox_summary": 2, "rows": []})).is_err());
+        assert!(validated_summary(serde_json::json!({"inbox_summary": 1})).is_err());
+    }
 
     #[test]
     fn filter_carries_cursor_markers_and_bounded_limit() {
