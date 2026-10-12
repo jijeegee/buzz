@@ -1241,6 +1241,8 @@ void main() {
       subscription.close();
       await _pumpEventQueue();
       container.listen(threadRepliesProvider(args), (_, _) {});
+      // A retained thread with sends awaiting proof rescans right after reopen.
+      await _pumpEventQueue();
       await container.read(threadRepliesProvider(args).future);
       final targets = session.queryFilters
           .where((f) => f.kinds.contains(EventKind.deletion))

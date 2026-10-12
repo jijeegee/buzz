@@ -32,15 +32,88 @@ class _ThreadCursor {
   const _ThreadCursor({required this.createdAt, required this.eventId});
 }
 
+/// How long a closed thread keeps its replies in memory. Reopening within this
+/// window shows them at once; a reply or reconnect seen while it was closed
+/// marks it stale, and it refreshes in the background when reopened.
+const threadRepliesRetention = Duration(hours: 12);
+
+/// Bumped when a thread's replies may be out of date (a live reply arrived, or
+/// the session reconnected). The thread query watches it, so an open thread
+/// refreshes at once and a closed, retained one when it is next listened to.
+///
+/// Unlike `ref.invalidate`, a dependency change does not dispose a retained
+/// query that nobody is listening to, so its replies stay readable.
+class ThreadRepliesStaleNotifier extends Notifier<int> {
+  final ThreadRepliesArgs args;
+
+  ThreadRepliesStaleNotifier(this.args);
+
+  @override
+  int build() => 0;
+
+  void markStale() => state++;
+}
+
+final threadRepliesStaleProvider = NotifierProvider.autoDispose
+    .family<ThreadRepliesStaleNotifier, int, ThreadRepliesArgs>(
+      ThreadRepliesStaleNotifier.new,
+    );
+
 final threadRepliesProvider = FutureProvider.autoDispose
     .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) async {
+      // Closing the thread page releases the last listener. Keep the replies
+      // for [threadRepliesRetention] instead of dropping them at once.
+      //
+      // Rebuilding a query nobody listens to disposes it (and its replies), so
+      // a stale mark while closed (a live reply, a reconnect) is held until the
+      // thread is reopened, then refreshed while the kept replies still show.
+      final retention = ref.keepAlive();
+      var listened = true;
+      var stale = false;
+      void refresh() {
+        if (listened) {
+          ref.invalidateSelf();
+        } else {
+          stale = true;
+        }
+      }
+
+      Timer? releaseTimer;
+      ref.onCancel(() {
+        listened = false;
+        releaseTimer?.cancel();
+        releaseTimer = Timer(threadRepliesRetention, retention.close);
+      });
+      ref.onResume(() {
+        listened = true;
+        releaseTimer?.cancel();
+        releaseTimer = null;
+        // Lifecycle callbacks may not touch providers; decide right after.
+        scheduleMicrotask(() {
+          if (!ref.mounted || !listened) return;
+          // Sends still awaiting proof (ACK or deletion) are settled only by
+          // a scan, so a thread holding them rescans on reopen as before.
+          final channel = channelMessagesProvider(args.channelId);
+          final awaitingProof =
+              ref.exists(channel) &&
+              ref
+                  .read(channel.notifier)
+                  .unconfirmedThreadReplyIds(args.rootId)
+                  .isNotEmpty;
+          if (stale || awaitingProof) {
+            stale = false;
+            ref.invalidateSelf();
+          }
+        });
+      });
+      ref.onDispose(() => releaseTimer?.cancel());
+      ref.listen(threadRepliesStaleProvider(args), (_, _) => refresh());
       // A reply missed while the socket is stale cannot invalidate this
-      // one-shot query. Refresh mounted threads when the session recovers;
-      // auto-dispose also makes reopening a thread start from relay truth.
+      // one-shot query. Refresh threads when the session recovers.
       ref.listen(relaySessionProvider, (previous, next) {
         if (previous?.status != SessionStatus.connected &&
             next.status == SessionStatus.connected) {
-          ref.invalidateSelf();
+          refresh();
         }
       });
       final session = ref.read(relaySessionProvider.notifier);
