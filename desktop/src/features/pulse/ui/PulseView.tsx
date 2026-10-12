@@ -30,7 +30,6 @@ import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
-import { truncateNpub } from "@/shared/lib/pubkey";
 
 export type PulseTab =
   | "search"
@@ -223,9 +222,7 @@ export function PulseView({ currentPubkey }: PulseViewProps) {
   const currentProfile = currentPubkey
     ? (mentionProfiles[currentPubkey.toLowerCase()] ?? null)
     : null;
-  const currentDisplayName =
-    currentProfile?.displayName ??
-    (currentPubkey ? truncateNpub(currentPubkey) : "You");
+  const currentDisplayName = currentProfile?.displayName ?? "You";
 
   const pulseMentionMembers = React.useMemo<ChannelMember[]>(() => {
     const members: ChannelMember[] = [];

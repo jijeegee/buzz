@@ -74,12 +74,13 @@ test("capture: consolidated invites settings", async ({ page }) => {
   const aliceRow = page
     .locator('[data-testid^="relay-member-row-"]')
     .filter({ has: aliceName });
-  const aliceNpub = aliceRow.locator('[data-testid^="relay-member-npub-"]');
-  await expect(aliceName).toHaveCSS("opacity", "1");
-  await expect(aliceNpub).toHaveCSS("opacity", "0");
+  // Member rows show names only; hovering never swaps in key text.
+  await expect(
+    aliceRow.locator('[data-testid^="relay-member-npub-"]'),
+  ).toHaveCount(0);
   await aliceRow.hover();
-  await expect(aliceName).toHaveCSS("opacity", "0");
-  await expect(aliceNpub).toHaveCSS("opacity", "1");
+  await expect(aliceName).toBeVisible();
+  await expect(aliceRow).not.toContainText("npub1");
   await page.mouse.move(0, 0);
 
   await waitForAnimations(page);

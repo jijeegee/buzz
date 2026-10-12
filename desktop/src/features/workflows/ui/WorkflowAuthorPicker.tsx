@@ -10,7 +10,7 @@ import {
 } from "@/features/profile/hooks";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { cn } from "@/shared/lib/cn";
-import { truncateNpub } from "@/shared/lib/pubkey";
+
 import { Input } from "@/shared/ui/input";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import {
@@ -331,6 +331,7 @@ function AuthorOption({
           : "border-border hover:bg-accent",
         active && "ring-1 ring-ring",
       )}
+      data-testid={`workflow-author-option-${candidate.pubkey}`}
       disabled={disabled}
       id={id}
       onClick={onSelect}
@@ -347,9 +348,6 @@ function AuthorOption({
       />
       <span className="min-w-0 max-w-full">
         <span className="block truncate text-sm font-medium">{label}</span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {truncateNpub(candidate.pubkey)}
-        </span>
       </span>
       <Check
         className={cn(

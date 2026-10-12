@@ -17,7 +17,7 @@ import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { useRemindLater } from "@/features/reminders/ui/RemindMeLaterProvider";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { Channel, FeedItem, HomeFeedResponse } from "@/shared/api/types";
-import { normalizePubkey, truncateNpub } from "@/shared/lib/pubkey";
+import { normalizePubkey } from "@/shared/lib/pubkey";
 import { useNow } from "@/shared/lib/useNow";
 import { Markdown } from "@/shared/ui/markdown";
 import {
@@ -170,7 +170,7 @@ function WorkingAgentRow({
   avatarUrl: string | null;
   channelId: string;
   elapsed: string;
-  /** Unprefixed key (or authored name) the avatar derives initials from. */
+  /** Label the avatar derives initials from (the visible name). */
   initialsLabel: string;
   name: string;
   onOpen: () => void;
@@ -225,8 +225,7 @@ function WorkingAgentRow({
 
 /**
  * Working-agent rows for the channel activity popover. Exported for consumer
- * tests: it owns the generated `Agent npub1…` fallback label that flows into
- * `UserAvatar` initials.
+ * tests: it owns the generic `Agent` fallback label for unnamed agents.
  */
 export function WorkingAgentRows({
   activeWorking,
@@ -258,8 +257,7 @@ export function WorkingAgentRows({
     const profile = profiles?.[normalizePubkey(pubkey)];
     const authoredName =
       profile?.displayName?.trim() || alignedAgentNames?.[index];
-    const keyLabel = truncateNpub(pubkey);
-    const name = authoredName || `Agent ${keyLabel}`;
+    const name = authoredName || "Agent";
     // One row per thread the agent is working in; typing-only agents carry no
     // observer turns and keep a single channel-anchored row.
     const rows = turnsByAgent.get(normalizePubkey(pubkey)) ?? [
@@ -274,7 +272,7 @@ export function WorkingAgentRows({
         avatarUrl={profile?.avatarUrl ?? null}
         channelId={channelId}
         elapsed={formatElapsed(now - turn.anchorAt)}
-        initialsLabel={authoredName || keyLabel}
+        initialsLabel={name}
         key={`${pubkey}:${turn.threadRootEventId ?? ""}`}
         name={name}
         onOpen={() => onOpen(pubkey, channelId, turn.threadRootEventId)}

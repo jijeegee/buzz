@@ -5,7 +5,7 @@ import { getVisibleAgentAddressPubkeys } from "../lib/getVisibleAgentAddressPubk
 
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { InlineChip } from "@/shared/ui/InlineChip";
 
 /** Resolve all literal competitors before hiding tag-backed address chips. */
@@ -54,7 +54,7 @@ export function MessageAgentAddressPrefix({
         const label =
           profile?.displayName?.trim() ||
           profile?.name?.trim() ||
-          truncateNpub(pubkey);
+          UNKNOWN_USER_LABEL;
         return (
           <React.Fragment key={pubkey}>
             {/* biome-ignore lint/a11y/useValidAriaRole: UserProfilePopover uses role for agent classification, not as an ARIA attribute. */}

@@ -20,7 +20,6 @@ import { Button } from "@/shared/ui/button";
 import { AgentConfigPanel } from "./AgentConfigPanel";
 import { friendlyAgentLastError } from "@/features/agents/lib/friendlyAgentLastError";
 import { ManagedAgentLogPanel } from "./ManagedAgentLogPanel";
-import { PubKey } from "@/shared/ui/PubKey";
 import { SubsectionLabel } from "@/shared/ui/PageHeader";
 import { resolveModelLabel } from "@/features/agents/lib/formatAgentModelLabel";
 import { RestartDiffBadge } from "./RestartDiffBadge";
@@ -258,7 +257,6 @@ function AgentSummary({
             ) : null}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <PubKey pubkey={agent.pubkey} />
             {agent.backend.type === "local" ? (
               <span>
                 {agent.startOnAppLaunch ? "Auto-start" : "Manual start"}

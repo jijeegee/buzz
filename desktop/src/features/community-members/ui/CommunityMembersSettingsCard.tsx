@@ -20,11 +20,7 @@ import type {
   RelayMemberRole,
   UserProfileSummary,
 } from "@/shared/api/types";
-import {
-  normalizePubkey,
-  truncateNpub,
-  UNAVAILABLE_KEY_LABEL,
-} from "@/shared/lib/pubkey";
+import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -44,7 +40,7 @@ function formatDisplayName(member: RelayMember, displayName?: string | null) {
   ) {
     return trimmedDisplayName;
   }
-  return member.role === "owner" ? "Community owner" : "Unnamed member";
+  return member.role === "owner" ? "Community owner" : UNKNOWN_USER_LABEL;
 }
 
 function npubFromPubkey(pubkey: string): string | null {
@@ -63,28 +59,19 @@ function formatDate(dateString: string): string {
   });
 }
 
-function HoverMemberIdentity({
+function MemberIdentity({
   displayName,
   pubkey,
 }: {
   displayName: string;
   pubkey: string;
 }) {
-  const npub = npubFromPubkey(pubkey) ?? UNAVAILABLE_KEY_LABEL;
   return (
-    <span className="inline-grid min-w-0 max-w-full grid-cols-1" title={npub}>
-      <span
-        className="col-start-1 row-start-1 max-w-40 truncate opacity-100 blur-0 transition-[max-width,opacity,filter] duration-[250ms] ease-in-out group-hover/member:max-w-0 group-hover/member:opacity-0 group-hover/member:blur-[2px] group-focus-within/member:max-w-0 group-focus-within/member:opacity-0 group-focus-within/member:blur-[2px] motion-reduce:transition-none"
-        data-testid={`relay-member-name-${pubkey}`}
-      >
-        {displayName}
-      </span>
-      <span
-        className="col-start-1 row-start-1 max-w-0 truncate font-mono text-2xs opacity-0 blur-0 transition-[max-width,opacity,filter] duration-[250ms] ease-in-out group-hover/member:max-w-40 group-hover/member:opacity-100 group-hover/member:blur-0 group-focus-within/member:max-w-40 group-focus-within/member:opacity-100 group-focus-within/member:blur-0 motion-reduce:transition-none"
-        data-testid={`relay-member-npub-${pubkey}`}
-      >
-        {truncateNpub(npub)}
-      </span>
+    <span
+      className="min-w-0 max-w-40 truncate"
+      data-testid={`relay-member-name-${pubkey}`}
+    >
+      {displayName}
     </span>
   );
 }
@@ -151,10 +138,7 @@ function RelayMemberRow({
       </UserProfilePopover>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
-          <HoverMemberIdentity
-            displayName={displayName}
-            pubkey={member.pubkey}
-          />
+          <MemberIdentity displayName={displayName} pubkey={member.pubkey} />
           {member.role === "owner" ? (
             <Crown className="h-4 w-4 text-amber-500" />
           ) : null}

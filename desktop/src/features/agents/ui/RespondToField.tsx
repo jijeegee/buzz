@@ -1,10 +1,14 @@
 import * as React from "react";
 import { AlertTriangle, Search, X } from "lucide-react";
 import { mergeAllowlist } from "@/features/agents/lib/respondToAllowlist";
-import { truncateNpub } from "@/shared/lib/pubkey";
-import { PubKey } from "@/shared/ui/PubKey";
+import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
-import { useUserSearchQuery } from "@/features/profile/hooks";
+import {
+  useUserSearchQuery,
+  useUsersBatchQuery,
+} from "@/features/profile/hooks";
+import { resolveUserLabel } from "@/features/profile/lib/identity";
 import type { RespondToMode, UserSearchResult } from "@/shared/api/types";
 import { Input } from "@/shared/ui/input";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -52,9 +56,7 @@ import type { PersonaDropdownOption } from "./agentConfigOptions";
 
 function formatSearchUserName(user: UserSearchResult) {
   return (
-    user.displayName?.trim() ||
-    user.nip05Handle?.trim() ||
-    truncateNpub(user.pubkey)
+    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
   );
 }
 
@@ -64,7 +66,7 @@ function formatSearchUserSecondary(user: UserSearchResult) {
   if (displayName && nip05Handle) {
     return nip05Handle;
   }
-  return truncateNpub(user.pubkey);
+  return null;
 }
 
 const RESPOND_TO_OPTIONS: PersonaDropdownOption[] = [
@@ -275,6 +277,10 @@ function AllowlistPicker({
   variant?: "default" | "persona";
 }) {
   const isPersona = variant === "persona";
+  const allowlistProfilesQuery = useUsersBatchQuery(allowlist);
+  const allowlistProfiles = allowlistProfilesQuery.data?.profiles;
+  const isAllowlistLoading =
+    !allowlistProfiles && allowlistProfilesQuery.isLoading;
 
   return (
     <div
@@ -295,9 +301,7 @@ function AllowlistPicker({
       ) : null}
       {!isPersona && ownerPubkey ? (
         <p className="text-xs text-muted-foreground">
-          You (
-          <PubKey pubkey={ownerPubkey} />) can always use this agent. You
-          don&apos;t need to add yourself.
+          You can always use this agent. You don&apos;t need to add yourself.
         </p>
       ) : !isPersona ? (
         <p className="text-xs text-muted-foreground">
@@ -318,29 +322,45 @@ function AllowlistPicker({
         </div>
         {allowlist.length > 0 ? (
           <div className="flex flex-wrap gap-1.5 border-t border-border/70 px-2.5 py-2">
-            {allowlist.map((pubkey) => (
-              <div
-                className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/60 px-2.5 py-1 text-2xs leading-none"
-                data-testid={`agent-respond-to-chip-${pubkey}`}
-                key={pubkey}
-              >
-                <UserAvatar
-                  avatarUrl={null}
-                  displayName={truncateNpub(pubkey)}
-                  size="xs"
-                />
-                <PubKey pubkey={pubkey} />
-                <button
-                  aria-label={`Remove ${truncateNpub(pubkey)}`}
-                  className="text-muted-foreground transition-colors hover:text-foreground"
-                  disabled={disabled}
-                  onClick={() => onRemove(pubkey)}
-                  type="button"
+            {allowlist.map((pubkey) => {
+              const chipLabel = resolveUserLabel({
+                profiles: allowlistProfiles,
+                pubkey,
+              });
+              return (
+                <div
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/60 px-2.5 py-1 text-2xs leading-none"
+                  data-testid={`agent-respond-to-chip-${pubkey}`}
+                  key={pubkey}
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+                  <UserAvatar
+                    avatarUrl={
+                      allowlistProfiles?.[normalizePubkey(pubkey)]?.avatarUrl ??
+                      null
+                    }
+                    displayName={chipLabel}
+                    size="xs"
+                  />
+                  {isAllowlistLoading ? (
+                    <Skeleton
+                      className="h-3 w-16"
+                      data-testid={`agent-respond-to-chip-loading-${pubkey}`}
+                    />
+                  ) : (
+                    <span>{chipLabel}</span>
+                  )}
+                  <button
+                    aria-label={`Remove ${chipLabel}`}
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                    disabled={disabled}
+                    onClick={() => onRemove(pubkey)}
+                    type="button"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         ) : null}
         {deferredQuery.length > 0 ? (
@@ -370,9 +390,11 @@ function AllowlistPicker({
                         <p className="truncate text-sm font-medium leading-5">
                           {formatSearchUserName(result)}
                         </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {formatSearchUserSecondary(result)}
-                        </p>
+                        {formatSearchUserSecondary(result) ? (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {formatSearchUserSecondary(result)}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                     <span className="text-xs text-muted-foreground">Add</span>
