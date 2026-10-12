@@ -235,7 +235,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "openclaw",
         args: &["acp"],
         install_instructions_url: "https://docs.openclaw.ai/start/getting-started",
-        install_hint: "Buzz talks to OpenClaw through its ACP mode (openclaw acp), which relies on the OpenClaw Gateway daemon. Follow the setup guide to install both.\n\n\
+        install_hint: "Kuzz talks to OpenClaw through its ACP mode (openclaw acp), which relies on the OpenClaw Gateway daemon. Follow the setup guide to install both.\n\n\
             ⚠️  Execution-locus note: `openclaw acp` runs tools inside the \
             OpenClaw Gateway daemon, not in the Desktop process. \
             Desktop-injected BUZZ_* env vars are visible to the `openclaw` \
