@@ -383,11 +383,11 @@ function composerLinkPresentation(
   const entity = parseEntityLink(href);
   if (!entity.ok) {
     return {
-      ariaLabel: "kuzz link",
+      ariaLabel: "Kuzz link",
       channelName: "",
       dataAttributes: {},
       icon: "message",
-      label: "kuzz link",
+      label: "Kuzz link",
     };
   }
 

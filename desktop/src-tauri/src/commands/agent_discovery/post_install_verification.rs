@@ -34,11 +34,11 @@ fn failure(
         success: false,
         stdout: String::new(),
         stderr: format!(
-            "The installer finished, but kuzz still could not use {runtime_id} (observed: {observed})."
+            "The installer finished, but Kuzz still could not use {runtime_id} (observed: {observed})."
         ),
         exit_code: None,
         hint: Some(
-            "kuzz requires the vendor CLI executable, not only its desktop app. If the CLI was installed while kuzz was open, restart kuzz and check again."
+            "Kuzz requires the vendor CLI executable, not only its desktop app. If the CLI was installed while Kuzz was open, restart Kuzz and check again."
                 .to_string(),
         ),
     })

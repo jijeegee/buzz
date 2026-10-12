@@ -29,9 +29,9 @@ export function CreateAccountDialog({
     >
       <AlertDialogContent data-testid="create-account-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Create your kuzz account</AlertDialogTitle>
+          <AlertDialogTitle>Create your Kuzz account</AlertDialogTitle>
           <AlertDialogDescription>
-            There's no kuzz account for this Google account yet.
+            There's no Kuzz account for this Google account yet.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {prompt?.email ? (

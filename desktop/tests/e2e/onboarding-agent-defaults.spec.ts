@@ -136,7 +136,7 @@ test("setup filters the bundled harnesses by connection method", async ({
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Choose your provider and enter an API key to connect to the kuzz harness.",
+      "Choose your provider and enter an API key to connect to the Kuzz harness.",
     ),
   ).toBeVisible();
   await expect(page.getByTestId("global-agent-default-harness")).toHaveCount(0);
@@ -587,7 +587,7 @@ test("sign in stays pending until catalog detection confirms Ready", async ({
     page.getByText("Claude subscription", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("kuzz will open a sign-in window for Claude Code."),
+    page.getByText("Kuzz will open a sign-in window for Claude Code."),
   ).toBeVisible();
   const signIn = page.getByRole("button", { name: "Sign in to Claude Code" });
   await expect(signIn).toHaveText("Sign in");

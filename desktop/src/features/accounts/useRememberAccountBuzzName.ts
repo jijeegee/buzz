@@ -14,7 +14,7 @@ export function useRememberAccountBuzzName(
   React.useEffect(() => {
     if (!pubkey || !trimmed) return;
     rememberAccountBuzzName(pubkey, trimmed).catch((error) => {
-      console.error("[accounts] could not record the kuzz name:", error);
+      console.error("[accounts] could not record the Buzz name:", error);
     });
   }, [pubkey, trimmed]);
 }

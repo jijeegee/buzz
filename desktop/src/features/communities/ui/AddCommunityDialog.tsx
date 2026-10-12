@@ -146,7 +146,7 @@ export function AddCommunityDialog({
                     Create a new community
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Claim a kuzz address for your team.
+                    Claim a Kuzz address for your team.
                   </span>
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />

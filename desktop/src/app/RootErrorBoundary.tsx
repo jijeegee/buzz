@@ -38,9 +38,9 @@ export class RootErrorBoundary extends Component<
     if (error) {
       return (
         <div className="flex h-screen w-screen flex-col items-center justify-center gap-3 bg-background px-6 text-foreground">
-          <p className="text-base font-semibold">kuzz failed to start</p>
+          <p className="text-base font-semibold">Kuzz failed to start</p>
           <p className="max-w-md text-center text-sm text-muted-foreground">
-            Reload kuzz to try again. If this keeps happening, check that kuzz
+            Reload Kuzz to try again. If this keeps happening, check that Kuzz
             can access website data, then contact support.
           </p>
           <button

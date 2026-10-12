@@ -52,7 +52,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("waiting for the current member roster")) {
       return {
         message:
-          "kuzz is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
+          "Kuzz is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
         tone: "warning",
       };
     }
@@ -68,7 +68,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("shared compute is not available in this build")) {
       return {
         message:
-          "This version of kuzz cannot use shared compute. Update kuzz or choose another provider.",
+          "This version of Kuzz cannot use shared compute. Update Kuzz or choose another provider.",
         tone: "warning",
       };
     }
@@ -76,14 +76,14 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("shared compute status is malformed")) {
       return {
         message:
-          "kuzz received an invalid shared compute status. Check the member machine, then try again.",
+          "Kuzz received an invalid shared compute status. Check the member machine, then try again.",
         tone: "warning",
       };
     }
 
     return {
       message:
-        "kuzz couldn't check shared compute through the relay. Check your relay connection and try again.",
+        "Kuzz couldn't check shared compute through the relay. Check your relay connection and try again.",
       tone: "warning",
     };
   }

@@ -20,14 +20,14 @@ const READ_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_REQUEST_BYTES: usize = 8 * 1024;
 
 const SUCCESS_PAGE: &str =
-    "<!doctype html><html><head><meta charset=\"utf-8\"><title>kuzz</title></head>\
+    "<!doctype html><html><head><meta charset=\"utf-8\"><title>Kuzz</title></head>\
 <body style=\"font-family:system-ui,sans-serif;text-align:center;padding-top:4rem\">\
-<h1>Return to kuzz</h1><p>Your sign-in response was sent to kuzz. Continue in the app.</p><p>If kuzz did not open, select its icon. You can close this tab.</p></body></html>";
+<h1>Return to Kuzz</h1><p>Your sign-in response was sent to Kuzz. Continue in the app.</p><p>If Kuzz did not open, select its icon. You can close this tab.</p></body></html>";
 
 const FAILURE_PAGE: &str =
-    "<!doctype html><html><head><meta charset=\"utf-8\"><title>kuzz</title></head>\
+    "<!doctype html><html><head><meta charset=\"utf-8\"><title>Kuzz</title></head>\
 <body style=\"font-family:system-ui,sans-serif;text-align:center;padding-top:4rem\">\
-<h1>Sign-in failed</h1><p>Return to kuzz and try again.</p></body></html>";
+<h1>Sign-in failed</h1><p>Return to Kuzz and try again.</p></body></html>";
 
 /// Why the loopback wait ended without a login code.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -148,8 +148,8 @@ export function getBuzzToolInfo(title: string): BuzzToolInfo | null {
     return {
       icon: Workflow,
       label: isRead
-        ? "Reads workflow state from kuzz."
-        : "Updates workflow state in kuzz.",
+        ? "Reads workflow state from Kuzz."
+        : "Updates workflow state in Kuzz.",
       tone: isWrite ? "write" : "read",
     };
   }
@@ -161,8 +161,8 @@ export function getBuzzToolInfo(title: string): BuzzToolInfo | null {
     return {
       icon: Hash,
       label: isRead
-        ? "Reads channel context from the kuzz relay."
-        : "Changes channel state in the kuzz relay.",
+        ? "Reads channel context from the Kuzz relay."
+        : "Changes channel state in the Kuzz relay.",
       tone: isWrite ? "write" : "read",
     };
   }
@@ -174,15 +174,15 @@ export function getBuzzToolInfo(title: string): BuzzToolInfo | null {
     return {
       icon: Users,
       label: isRead
-        ? "Reads kuzz identity or presence data."
-        : "Updates kuzz identity or membership data.",
+        ? "Reads Kuzz identity or presence data."
+        : "Updates Kuzz identity or membership data.",
       tone: isWrite ? "write" : "admin",
     };
   }
   if (name.includes("search") || name === "get_feed") {
     return {
       icon: Search,
-      label: "Searches relay-visible kuzz history.",
+      label: "Searches relay-visible Kuzz history.",
       tone: "read",
     };
   }
@@ -193,14 +193,14 @@ export function getBuzzToolInfo(title: string): BuzzToolInfo | null {
   ) {
     return {
       icon: Send,
-      label: "Publishes relay-visible kuzz activity.",
+      label: "Publishes relay-visible Kuzz activity.",
       tone: "write",
     };
   }
 
   return {
     icon: MessageSquare,
-    label: isRead ? "Reads from kuzz." : "Writes to kuzz.",
+    label: isRead ? "Reads from Kuzz." : "Writes to Kuzz.",
     tone: isWrite ? "write" : "read",
   };
 }

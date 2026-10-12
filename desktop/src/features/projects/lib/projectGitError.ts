@@ -41,8 +41,8 @@ export function projectCloneErrorPresentation(
     return {
       title: "Repository access required",
       description: github
-        ? "This repository requires GitHub authentication. kuzz currently clones public GitHub repositories without credentials."
-        : "kuzz could not authenticate with this repository. Check your access and try again.",
+        ? "This repository requires GitHub authentication. Kuzz currently clones public GitHub repositories without credentials."
+        : "Kuzz could not authenticate with this repository. Check your access and try again.",
     };
   }
   if (/\b404\b|repository not found|repository does not exist/.test(message)) {

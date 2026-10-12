@@ -504,7 +504,7 @@ export function ProfileSettingsCard({
       <div>
         <SettingsSectionHeader
           title="Profile"
-          description="Update how your name, avatar, and bio appear across kuzz."
+          description="Update how your name, avatar, and bio appear across Kuzz."
         />
 
         <div className="space-y-3">

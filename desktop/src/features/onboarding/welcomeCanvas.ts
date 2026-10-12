@@ -1,6 +1,6 @@
 import { getCanvas, setCanvas } from "@/shared/api/tauri";
 
-export const WELCOME_CANVAS_CONTENT = `# Welcome to kuzz
+export const WELCOME_CANVAS_CONTENT = `# Welcome to Kuzz
 
 This private channel is your home base for getting oriented. Fizz, Honey, and Pollen can help you learn the app, troubleshoot setup, and work through something you are building.
 
@@ -16,7 +16,7 @@ Bring the team something you are building, or give them a quick challenge to see
 
 ## Get help
 
-Ask the team a question here, or read the [kuzz user guide](https://github.com/block/buzz#readme).
+Ask the team a question here, or read the [Kuzz user guide](https://github.com/block/buzz#readme).
 `;
 
 type WelcomeCanvasClient = {

@@ -14,7 +14,7 @@ export function GoogleLoginProgress({
       {login.phase && login.phase !== "signup" ? (
         <p className="text-sm text-muted-foreground" role="status">
           {login.phase === "completing"
-            ? "Finishing sign-in in kuzz…"
+            ? "Finishing sign-in in Kuzz…"
             : login.phase === "opening"
               ? "Opening your browser…"
               : "Finish signing in in your browser. If you closed it, cancel and try again."}

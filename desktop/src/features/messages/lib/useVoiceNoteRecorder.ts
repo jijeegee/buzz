@@ -156,7 +156,7 @@ export function useVoiceNoteRecorder() {
                 mountedRef.current &&
                 sessionRef.current === session
               ) {
-                setError("kuzz could not prepare this voice note for upload.");
+                setError("Kuzz could not prepare this voice note for upload.");
               }
             }
           }
@@ -218,8 +218,8 @@ export function useVoiceNoteRecorder() {
         (cause.name === "NotAllowedError" || cause.name === "SecurityError");
       setError(
         denied
-          ? "Allow kuzz to access your microphone to record a voice note."
-          : "kuzz could not start the voice recorder.",
+          ? "Allow Kuzz to access your microphone to record a voice note."
+          : "Kuzz could not start the voice recorder.",
       );
     }
   }, [status]);

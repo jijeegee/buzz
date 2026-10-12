@@ -234,7 +234,7 @@ export function ConversationDisplaySettings() {
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            Spacing in conversations and Markdown content across kuzz
+            Spacing in conversations and Markdown content across Kuzz
           </p>
         </div>
         <SegmentedControl
@@ -668,7 +668,7 @@ export function AccentPickerContent({
           className="text-sm font-normal text-muted-foreground/70"
           data-settings-subcopy
         >
-          Choose the highlight color used throughout kuzz.
+          Choose the highlight color used throughout Kuzz.
         </p>
       </div>
       <div

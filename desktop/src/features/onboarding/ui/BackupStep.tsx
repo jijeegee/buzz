@@ -154,10 +154,10 @@ export function BackupStep({
 
   const storageDescription =
     identityStorage === "system-keyring"
-      ? "kuzz keeps your identity key in your system keychain. Your computer may ask for your password when kuzz needs to read the key."
+      ? "Kuzz keeps your identity key in your system keychain. Your computer may ask for your password when Kuzz needs to read the key."
       : identityStorage === "local-file"
-        ? "Your system keychain wasn’t available, so kuzz keeps your identity key in a private file on this device."
-        : "kuzz keeps your identity key protected on this device. Make a separate backup in case you lose access.";
+        ? "Your system keychain wasn’t available, so Kuzz keeps your identity key in a private file on this device."
+        : "Kuzz keeps your identity key protected on this device. Make a separate backup in case you lose access.";
   const storageTitle =
     identityStorage === "system-keyring"
       ? "Protected by your system keychain"
@@ -190,7 +190,7 @@ export function BackupStep({
               cardLayout ? "mt-2 text-base" : "mt-5 text-sm",
             )}
           >
-            Your identity key works like a password for your kuzz account. Keep
+            Your identity key works like a password for your Kuzz account. Keep
             a copy somewhere safe. You can create a backup file and lock it with
             a password you can remember.
           </p>

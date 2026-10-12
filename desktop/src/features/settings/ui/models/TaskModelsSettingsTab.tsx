@@ -25,7 +25,7 @@ export function TaskModelsSettingsTab({
     <div data-testid="settings-models-tasks">
       <SettingsOptionGroupList>
         <SettingsOptionGroup
-          description="Each task kuzz runs on its own behalf picks its provider and model here, independently of your agents. Changing one never restarts an agent."
+          description="Each task Kuzz runs on its own behalf picks its provider and model here, independently of your agents. Changing one never restarts an agent."
           title="App tasks"
         >
           {query.isError ? (

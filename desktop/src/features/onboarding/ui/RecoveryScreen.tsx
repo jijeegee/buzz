@@ -33,7 +33,7 @@ export function RecoveryScreen({
           }}
           type="button"
         >
-          Relaunch kuzz
+          Relaunch Kuzz
         </Button>
       </div>
     </div>

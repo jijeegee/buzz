@@ -133,7 +133,7 @@ function notifyStorageFull(): void {
     .then(({ toast }) => {
       toast.error("Local storage is full", {
         description:
-          "kuzz could not save some local data — read positions may not persist across restarts.",
+          "Kuzz could not save some local data — read positions may not persist across restarts.",
       });
     })
     .catch(() => {});

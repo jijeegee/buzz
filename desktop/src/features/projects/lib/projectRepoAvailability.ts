@@ -19,12 +19,12 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
 > = {
   authentication: {
     description:
-      "kuzz could not authenticate with this repository. Check your access and try again.",
+      "Kuzz could not authenticate with this repository. Check your access and try again.",
     title: "Repository access failed",
   },
   missing: {
     description:
-      "The project announcement exists, but its git repository was not found on the kuzz relay.",
+      "The project announcement exists, but its git repository was not found on the Kuzz relay.",
     title: "Repository not initialized",
   },
   access: {
@@ -39,7 +39,7 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
   },
   network: {
     description:
-      "The kuzz git service could not be reached. Check your connection and try again.",
+      "The Kuzz git service could not be reached. Check your connection and try again.",
     title: "Couldn’t reach repository",
   },
   ref: {
@@ -49,7 +49,7 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
   },
   unknown: {
     description:
-      "kuzz could not load this repository. Try again or contact the project owner.",
+      "Kuzz could not load this repository. Try again or contact the project owner.",
     title: "Repository unavailable",
   },
 };

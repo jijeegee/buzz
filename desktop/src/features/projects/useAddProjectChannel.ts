@@ -99,7 +99,7 @@ export async function addProjectChannel(
     } catch (cleanupError) {
       throw new AggregateError(
         [error, cleanupError],
-        "kuzz could not verify the project after creating the channel, and could not remove the unlinked channel. Delete it manually, then refresh and try again.",
+        "Kuzz could not verify the project after creating the channel, and could not remove the unlinked channel. Delete it manually, then refresh and try again.",
       );
     }
     throw error;

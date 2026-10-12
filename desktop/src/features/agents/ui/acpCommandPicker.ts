@@ -11,7 +11,7 @@ export function acpCommandPickerState(
   selectValue: string;
 } {
   const options: PersonaDropdownOption[] = [
-    { label: "kuzz ACP (default)", value: DEFAULT_ACP_COMMAND_VALUE },
+    { label: "Kuzz ACP (default)", value: DEFAULT_ACP_COMMAND_VALUE },
     ...candidates.map((candidate) => ({
       label: candidate.command,
       value: candidate.command,

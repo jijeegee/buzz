@@ -188,7 +188,7 @@ export function VoiceSettingsCard() {
     <section className="min-w-0" data-testid="settings-voice">
       <SettingsSectionHeader
         title="Voice"
-        description="Choose whether kuzz reads new agent responses aloud during an active huddle."
+        description="Choose whether Kuzz reads new agent responses aloud during an active huddle."
       />
 
       <SettingsOptionGroupList>

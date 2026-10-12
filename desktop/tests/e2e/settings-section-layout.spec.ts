@@ -110,7 +110,7 @@ test("Profile sections keep visible cards and aligned actions", async ({
     signOut.getByText("Delete local data", { exact: true }),
   ).toHaveCount(1);
   await expect(
-    signOut.getByText("Sign out of kuzz", { exact: true }),
+    signOut.getByText("Sign out of Kuzz", { exact: true }),
   ).toHaveCount(0);
 
   const profileInfo = page.getByTestId("profile-metadata-card");

@@ -249,7 +249,7 @@ fn persist_pending(state: &AppState, keys: &Keys) -> Result<(), String> {
     let store = crate::secret_store::SecretStore::shared(crate::app_state::keyring_service());
     if state.identity_storage() == IdentityStorage::Environment {
         return Err(
-            "Import your environment key into kuzz secure storage before linking Google.".into(),
+            "Import your environment key into Kuzz secure storage before linking Google.".into(),
         );
     }
     if let Some(stored) = store.load("identity")? {
@@ -304,7 +304,7 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         .load(std::sync::atomic::Ordering::Acquire)
     {
         return Err(
-            "Unlock your OS keyring and relaunch kuzz before recovering with Google.".into(),
+            "Unlock your OS keyring and relaunch Kuzz before recovering with Google.".into(),
         );
     }
     let recovering = state

@@ -92,11 +92,11 @@ export function ChannelScreenHeader({
   const terminalButton = activeChannel ? (
     <Button
       aria-label={
-        terminalPanel.mode === "closed" ? "Open kuzz Term" : "Hide kuzz Term"
+        terminalPanel.mode === "closed" ? "Open Kuzz Term" : "Hide Kuzz Term"
       }
       onClick={toggleTerminalPanel}
       size="icon"
-      title="kuzz Term (⌘J)"
+      title="Kuzz Term (⌘J)"
       type="button"
       variant={terminalPanel.mode === "closed" ? "outline" : "secondary"}
     >
