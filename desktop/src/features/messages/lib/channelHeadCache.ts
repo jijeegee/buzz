@@ -50,6 +50,21 @@ export function hasPersistedHydratedChannel(
 ): boolean {
   return persistedHydratedChannels.get(queryClient)?.has(channelId) ?? false;
 }
+/**
+ * Lets a room whose page was loaded in the background paint that page while
+ * it revalidates on open, exactly like a persisted head.
+ */
+export function markPaintableChannelSnapshot(
+  queryClient: QueryClient,
+  channelId: string,
+): void {
+  const channels = persistedHydratedChannels.get(queryClient);
+  if (channels) {
+    channels.add(channelId);
+  } else {
+    persistedHydratedChannels.set(queryClient, new Set([channelId]));
+  }
+}
 export function hydrateChannelHeads(
   queryClient: QueryClient,
   scope: ChannelHeadScope,

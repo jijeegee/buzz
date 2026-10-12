@@ -30,6 +30,7 @@ import {
   withServerUnreadCounts,
 } from "@/features/home/lib/inboxSummary";
 import { useHomeInboxReadState } from "@/features/home/useHomeInboxReadState";
+import { useInboxPreload } from "@/features/home/useInboxPreload";
 import { useHomeInboxAutoSelection } from "@/features/home/useHomeInboxAutoSelection";
 import { useHomeInboxContextMessages } from "@/features/home/useHomeInboxContextMessages";
 import { useHomePersonalInbox } from "@/features/home/useHomePersonalInbox";
@@ -500,6 +501,8 @@ export function HomeView({
     readStateVersion,
     serverUnread,
   ]);
+  // Rooms behind the top chat-list rows load in the background.
+  useInboxPreload(viewItems, filter === "conversations");
   // Resolve selection before filtering so unread-only can retain its active row.
   const selectedItemFromAll = React.useMemo(
     () =>
