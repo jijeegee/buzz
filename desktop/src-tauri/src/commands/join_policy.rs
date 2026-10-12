@@ -8,18 +8,37 @@ use url::Url;
 const MAX_JOIN_POLICY_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const JOIN_POLICY_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Log the original join-policy failure and return the user-facing text.
+/// Callers never pass the relay URL itself: it may embed credentials.
+fn join_policy_error(cause: impl std::fmt::Display, user_text: &str) -> String {
+    eprintln!("buzz-desktop: join policy: {cause}");
+    user_text.to_string()
+}
+
+const INVALID_LINK: &str = "This link isn't valid.";
+const GENERIC_ERROR: &str = "Something went wrong. Try again.";
+
 fn join_policy_url(relay_url: &str) -> Result<Url, String> {
-    let mut url = Url::parse(relay_url.trim()).map_err(|_| "This link isn't valid.".to_string())?;
+    let mut url = Url::parse(relay_url.trim())
+        .map_err(|error| join_policy_error(format!("invalid relay URL: {error}"), INVALID_LINK))?;
     let http_scheme = match url.scheme() {
         "wss" => "https",
         "ws" => "http",
-        _ => return Err("This link isn't valid.".to_string()),
+        other => {
+            return Err(join_policy_error(
+                format!("relay URL must use ws:// or wss:// (got {other}://)"),
+                INVALID_LINK,
+            ))
+        }
     };
     url.set_scheme(http_scheme)
-        .map_err(|_| "This link isn't valid.".to_string())?;
+        .map_err(|_| join_policy_error("invalid relay URL scheme", INVALID_LINK))?;
 
     if !url.username().is_empty() || url.password().is_some() {
-        return Err("This link isn't valid.".to_string());
+        return Err(join_policy_error(
+            "relay URL must not contain credentials",
+            INVALID_LINK,
+        ));
     }
 
     let base_path = url.path().trim_end_matches('/');
@@ -63,7 +82,10 @@ async fn read_join_policy_json(response: reqwest::Response) -> Result<Value, Str
         .content_length()
         .is_some_and(|length| length > MAX_JOIN_POLICY_RESPONSE_BYTES as u64)
     {
-        return Err("Something went wrong. Try again.".to_string());
+        return Err(join_policy_error(
+            "relay returned oversized join policy (content-length)",
+            GENERIC_ERROR,
+        ));
     }
 
     let mut stream = response.bytes_stream();
@@ -71,12 +93,20 @@ async fn read_join_policy_json(response: reqwest::Response) -> Result<Value, Str
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| format!("reading join policy failed: {error}"))?;
         if bytes.len().saturating_add(chunk.len()) > MAX_JOIN_POLICY_RESPONSE_BYTES {
-            return Err("Something went wrong. Try again.".to_string());
+            return Err(join_policy_error(
+                "relay returned oversized join policy",
+                GENERIC_ERROR,
+            ));
         }
         bytes.extend_from_slice(&chunk);
     }
 
-    serde_json::from_slice(&bytes).map_err(|_| "Something went wrong. Try again.".to_string())
+    serde_json::from_slice(&bytes).map_err(|error| {
+        join_policy_error(
+            format!("relay returned malformed join policy: {error}"),
+            GENERIC_ERROR,
+        )
+    })
 }
 
 #[cfg(test)]

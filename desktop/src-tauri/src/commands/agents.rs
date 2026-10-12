@@ -521,10 +521,10 @@ pub async fn create_managed_agent(
         if records.iter().any(|record| record.pubkey == pubkey) {
             return Err(format!("agent {pubkey} already exists"));
         }
-        let private_key_nsec = keys
-            .secret_key()
-            .to_bech32()
-            .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
+        let private_key_nsec = keys.secret_key().to_bech32().map_err(|e| {
+            eprintln!("buzz-desktop: failed to encode private key: {e}");
+            "Something went wrong with this agent. Try again.".to_string()
+        })?;
 
         // Store the relay override exactly as supplied (trimmed). An explicit
         // value pins the agent; empty stays empty and resolves to the active
@@ -562,10 +562,16 @@ pub async fn create_managed_agent(
         // Bridge nostr 0.37 → 0.36 (buzz-sdk) via hex round-trip.
         let compat_owner = nostr::Keys::parse(&owner_keys.secret_key().to_secret_hex())
             .map_err(|e| format!("failed to bridge owner keys: {e}"))?;
-        let compat_agent = nostr::PublicKey::from_hex(&agent_keys.public_key().to_hex())
-            .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
+        let compat_agent =
+            nostr::PublicKey::from_hex(&agent_keys.public_key().to_hex()).map_err(|e| {
+                eprintln!("buzz-desktop: failed to bridge agent pubkey: {e}");
+                "Something went wrong with this agent. Try again.".to_string()
+            })?;
         let tag = buzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
-            .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
+            .map_err(|e| {
+                eprintln!("buzz-desktop: failed to compute NIP-OA auth tag: {e}");
+                "Something went wrong with this agent. Try again.".to_string()
+            })?;
         Some(tag)
     };
 

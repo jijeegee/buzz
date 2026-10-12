@@ -139,7 +139,10 @@ async fn list_relay_agents_for_selection(
     let viewer_pubkey = current_user_pubkey(state)?;
     let relay_pubkey = identity_archive::fetch_relay_self(state)
         .await?
-        .ok_or_else(|| AGENT_DIRECTORY_ERROR.to_string())?;
+        .ok_or_else(|| {
+            eprintln!("buzz-desktop: relay agent membership authority is unavailable");
+            AGENT_DIRECTORY_ERROR.to_string()
+        })?;
 
     // Owned identities are relay state, even when this Desktop has never run
     // them or they have not joined a channel yet. Owner-authored coordinates

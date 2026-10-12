@@ -416,8 +416,10 @@ async fn finish_sign_in(
     let state = app.state::<AppState>();
     let origin = origin.to_owned();
     verify_login_mode(backup, tokens.identity_mode.as_deref())?;
-    let principal = PublicKey::from_hex(&tokens.principal_id)
-        .map_err(|_| "Couldn't sign in. Try again.".to_string())?;
+    let principal = PublicKey::from_hex(&tokens.principal_id).map_err(|e| {
+        eprintln!("buzz-desktop: the relay returned an invalid account id: {e}");
+        "Couldn't sign in. Try again.".to_string()
+    })?;
     // Under the refresh lock: an in-flight refresh of an older generation can
     // neither write its token over this one nor revive the old session.
     let _refresh_guard = state.token_auth.refresh_lock(&origin).lock_owned().await;

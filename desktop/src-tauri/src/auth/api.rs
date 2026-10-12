@@ -172,6 +172,9 @@ struct ErrorBody {
 async fn error_from(response: reqwest::Response) -> ApiError {
     let status = response.status().as_u16();
     let body: Option<ErrorBody> = response.json().await.ok();
+    if body.as_ref().and_then(|b| b.error.as_ref()).is_none() {
+        eprintln!("buzz-desktop: auth API returned {status} without an error message");
+    }
     ApiError {
         status: Some(status),
         code: body.as_ref().and_then(|b| b.code.clone()),
@@ -197,15 +200,18 @@ async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, Api
 pub(super) async fn send_json<T: for<'de> Deserialize<'de>>(
     request: reqwest::RequestBuilder,
 ) -> Result<T, ApiError> {
-    send(request)
-        .await?
-        .json::<T>()
-        .await
-        .map_err(|_| ApiError {
+    send(request).await?.json::<T>().await.map_err(|e| {
+        // Drop the URL; the decode error never includes the body text.
+        eprintln!(
+            "buzz-desktop: auth API returned a malformed response: {}",
+            e.without_url()
+        );
+        ApiError {
             status: None,
             code: None,
             message: "Something went wrong. Try again.".into(),
-        })
+        }
+    })
 }
 
 fn bearer(access: &str) -> String {

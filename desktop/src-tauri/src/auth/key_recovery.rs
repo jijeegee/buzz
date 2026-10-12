@@ -95,6 +95,7 @@ fn proof(keys: &Keys, account: &str, origin: &str, challenge: Challenge) -> Resu
         || challenge.challenge.len() != 64
         || !challenge.challenge.bytes().all(|v| v.is_ascii_hexdigit())
     {
+        eprintln!("buzz-desktop: key backup: the relay returned an invalid backup challenge");
         return Err("Couldn't restore your account. Try again.".into());
     }
     let tags = [
@@ -133,6 +134,7 @@ async fn status(
         || (status.state == "absent" && status.pubkey.is_some())
         || (status.state == "ready" && status.pubkey.is_none())
     {
+        eprintln!("buzz-desktop: key backup: the relay returned an invalid backup status");
         return Err("Couldn't restore your account. Try again.".into());
     }
     Ok(status)
@@ -148,7 +150,10 @@ async fn restore(
         .pubkey
         .as_deref()
         .and_then(|v| PublicKey::from_hex(v).ok())
-        .ok_or("Couldn't restore your account.")?;
+        .ok_or_else(|| {
+            eprintln!("buzz-desktop: key backup: the stored backup has an invalid public key");
+            "Couldn't restore your account."
+        })?;
     let restored: RestoredKey = api::send_json(
         client
             .post(format!("{origin}/auth/key-backup/restore"))

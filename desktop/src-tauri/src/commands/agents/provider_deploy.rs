@@ -180,6 +180,7 @@ fn assert_payload_scope(
             &crate::relay::relay_http_base_url(embedded_relay),
         )?,
         None if has_expectation(expected_relay_url) => {
+            eprintln!("buzz-desktop: deploy payload carries no relay; not deployed");
             return Err("Couldn't deploy the agent.".to_string());
         }
         None => {}

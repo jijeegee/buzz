@@ -1021,8 +1021,12 @@ pub(crate) fn managed_agent_message_keys(
             record_label(record)
         ));
     }
-    let keys = nostr::Keys::parse(record.private_key_nsec.trim())
-        .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
+    let keys = nostr::Keys::parse(record.private_key_nsec.trim()).map_err(|_| {
+        eprintln!(
+            "buzz-desktop: failed to parse managed agent key (details withheld: secret input)"
+        );
+        "Something went wrong with this agent. Try again.".to_string()
+    })?;
     if !keys
         .public_key()
         .to_hex()

@@ -279,7 +279,10 @@ pub(crate) async fn parse_json_response<T: DeserializeOwned>(
     // helper the non-2xx error-body path uses — to preserve the stable
     // "relay unreachable: request timed out" label.
     response.json::<T>().await.map_err(|e| {
-        classify_body_timeout(&e).unwrap_or_else(|| MALFORMED_RESPONSE_MESSAGE.to_string())
+        classify_body_timeout(&e).unwrap_or_else(|| {
+            eprintln!("buzz-desktop: relay returned malformed response: {e}");
+            MALFORMED_RESPONSE_MESSAGE.to_string()
+        })
     })
 }
 
@@ -653,6 +656,10 @@ pub async fn sync_managed_agent_profile(
 
     let result: SubmitEventResponse = parse_json_response(response).await?;
     if !result.accepted {
+        eprintln!(
+            "buzz-desktop: relay rejected agent profile: {}",
+            result.message
+        );
         return Err("Couldn't save. Try again.".to_string());
     }
     Ok(())

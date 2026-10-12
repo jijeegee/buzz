@@ -315,8 +315,10 @@ pub(crate) fn sign_blossom_get_auth_header(
     base_url: &str,
     expiry_secs: u64,
 ) -> Result<String, String> {
-    let server =
-        extract_server_authority(base_url).ok_or_else(|| "Couldn't load media.".to_string())?;
+    let server = extract_server_authority(base_url).ok_or_else(|| {
+        eprintln!("buzz-desktop: cannot derive server authority from relay URL");
+        "Couldn't load media.".to_string()
+    })?;
     let now = Timestamp::now().as_secs();
     let tags = vec![
         Tag::parse(vec!["t", "get"]).map_err(|e| e.to_string())?,
@@ -403,8 +405,10 @@ pub(crate) fn sign_blossom_upload_auth(
     expiry_secs: u64,
     base_url: &str,
 ) -> Result<nostr::Event, String> {
-    let server =
-        extract_server_authority(base_url).ok_or_else(|| "Couldn't load media.".to_string())?;
+    let server = extract_server_authority(base_url).ok_or_else(|| {
+        eprintln!("buzz-desktop: cannot derive server authority from relay URL");
+        "Couldn't load media.".to_string()
+    })?;
     let now = Timestamp::now().as_secs();
     let tags = vec![
         Tag::parse(vec!["t", "upload"]).map_err(|e| e.to_string())?,

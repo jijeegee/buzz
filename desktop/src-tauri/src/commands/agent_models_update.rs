@@ -411,6 +411,7 @@ pub async fn update_managed_agent(
             &summary.pubkey,
         )?
     {
+        eprintln!("buzz-desktop: managed policy sync failed: relay did not accept the updated policy; retry queued");
         profile_sync_error = Some("Couldn't sync agent changes. Kuzz will retry.".to_string());
     }
 
@@ -443,8 +444,12 @@ pub async fn update_managed_agent(
         };
         if let Err(sync_error) = synced {
             eprintln!("buzz-desktop: agent profile sync failed: {sync_error}");
-            let rollback =
-                rollback.ok_or_else(|| "Couldn't sync agent changes. Try again.".to_string())?;
+            let rollback = rollback.ok_or_else(|| {
+                eprintln!(
+                    "buzz-desktop: missing local rollback state after relay profile sync failure"
+                );
+                "Couldn't sync agent changes. Try again.".to_string()
+            })?;
             rollback_failed_agent_update(&app, &state, &summary.pubkey, rollback)?;
             let restart_suffix = if access_restart_relays.is_empty() {
                 String::new()

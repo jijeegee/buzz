@@ -363,11 +363,20 @@ impl RelaySession {
         let _ = self.wake.try_send(());
 
         let outcome = tokio::select! {
-            _ = self.cancel.cancelled() => Err("Connection lost. Try again.".to_string()),
+            _ = self.cancel.cancelled() => {
+                eprintln!("buzz-desktop: relay request {id}: relay session cancelled");
+                Err("Connection lost. Try again.".to_string())
+            }
             value = tokio::time::timeout_at(deadline, &mut receiver.result) => match value {
                 Ok(Ok(value)) => value,
-                Ok(Err(_)) => Err("Connection lost. Try again.".to_string()),
-                Err(_) => Err("Connection timed out. Try again.".to_string()),
+                Ok(Err(_)) => {
+                    eprintln!("buzz-desktop: relay request {id}: ended before EOSE");
+                    Err("Connection lost. Try again.".to_string())
+                }
+                Err(_) => {
+                    eprintln!("buzz-desktop: relay request {id}: timed out");
+                    Err("Connection timed out. Try again.".to_string())
+                }
             }
         };
         self.finish_request(&id).await;
@@ -792,7 +801,10 @@ async fn run_connection(
                         if requests.contains_key(&subscription_id) && !was_open { continue; }
                         if let Some(request) = requests.remove(&subscription_id) {
                             let result = if request.is_active() { Ok(request.events) }
-                                else { Err("Connection lost. Try again.".to_string()) };
+                                else {
+                                    eprintln!("buzz-desktop: relay request {subscription_id}: timed out or cancelled before EOSE");
+                                    Err("Connection lost. Try again.".to_string())
+                                };
                             let _ = request.complete.send(result);
                             let mut state = session.state.lock().await;
                             state.transient.retain(|subscription| subscription.id != subscription_id);

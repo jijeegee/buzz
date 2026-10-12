@@ -225,8 +225,10 @@ pub fn build_observer_control_event(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let keys = state.signing_keys()?;
-    let agent_pubkey = PublicKey::from_hex(agent_pubkey.trim())
-        .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
+    let agent_pubkey = PublicKey::from_hex(agent_pubkey.trim()).map_err(|e| {
+        eprintln!("buzz-desktop: invalid agent pubkey: {e}");
+        "Something went wrong with this agent. Try again.".to_string()
+    })?;
     let agent_pubkey_hex = agent_pubkey.to_hex();
     let encrypted =
         buzz_core_pkg::observer::encrypt_observer_payload(&keys, &agent_pubkey, &payload)
@@ -247,9 +249,10 @@ pub fn build_observer_control_event(
 #[tauri::command]
 pub fn get_nsec(state: State<'_, AppState>) -> Result<String, String> {
     let keys = state.signing_keys()?;
-    keys.secret_key()
-        .to_bech32()
-        .map_err(|_| "Couldn't save your account on this device.".to_string())
+    keys.secret_key().to_bech32().map_err(|e| {
+        eprintln!("buzz-desktop: encode nsec: {e}");
+        "Couldn't save your account on this device.".to_string()
+    })
 }
 
 /// Generate a passphrase for a new encrypted backup (EFF short wordlist, OS
@@ -708,8 +711,10 @@ pub async fn create_auth_event(
 
     tauri::async_runtime::spawn_blocking(move || {
         let tags = vec![
-            Tag::parse(vec!["relay", &relay_url])
-                .map_err(|_| "Something went wrong. Try again.".to_string())?,
+            Tag::parse(vec!["relay", &relay_url]).map_err(|e| {
+                eprintln!("buzz-desktop: relay tag failed: {e}");
+                "Something went wrong. Try again.".to_string()
+            })?,
             Tag::parse(vec!["challenge", &challenge])
                 .map_err(|error| format!("challenge tag failed: {error}"))?,
         ];

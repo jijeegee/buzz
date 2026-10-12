@@ -221,10 +221,10 @@ pub async fn apply_workspace(
 
         // ── Validate before mutating ──────────────────────────────────────────
         let parsed_keys = match nsec.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-            Some(nsec_trimmed) => Some(
-                Keys::parse(nsec_trimmed)
-                    .map_err(|_| "Couldn't restore your account.".to_string())?,
-            ),
+            Some(nsec_trimmed) => Some(Keys::parse(nsec_trimmed).map_err(|_| {
+                eprintln!("buzz-desktop: invalid nsec (details withheld: secret input)");
+                "Couldn't restore your account.".to_string()
+            })?),
             None => None,
         };
 
