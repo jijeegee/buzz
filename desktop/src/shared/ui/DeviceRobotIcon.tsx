@@ -1,13 +1,17 @@
 import { Bot } from "lucide-react";
+import { useId } from "react";
 
-import type { DeviceRobotVariant } from "@/shared/lib/deviceRobot";
+import type {
+  DeviceRobotPaint,
+  DeviceRobotVariant,
+} from "@/shared/lib/deviceRobot";
 import {
   DEVICE_ROBOT_GEOMETRY,
   type DeviceRobotPrimitive,
 } from "@/shared/lib/deviceRobotGeometry";
 import { cn } from "@/shared/lib/cn";
 
-function primitive(shape: DeviceRobotPrimitive, index: number) {
+function primitive(shape: DeviceRobotPrimitive, index: number, ink: string) {
   switch (shape.k) {
     case "rect":
       return (
@@ -37,7 +41,7 @@ function primitive(shape: DeviceRobotPrimitive, index: number) {
         <circle
           cx={shape.cx}
           cy={shape.cy}
-          fill="currentColor"
+          fill={ink}
           key={index}
           r={shape.r}
           stroke="none"
@@ -52,6 +56,36 @@ function primitive(shape: DeviceRobotPrimitive, index: number) {
  * A device's robot, or the default `Bot` when `variant` is `null`. Sized by
  * `className` like any lucide icon. Decorative unless `label` is given.
  */
+function ink(paint: DeviceRobotPaint, gradientId: string) {
+  return paint.kind === "gradient" ? `url(#${gradientId})` : "currentColor";
+}
+
+/** A gradient paint as an SVG `linearGradient` in grid coordinates. */
+function PaintGradient({
+  id,
+  paint,
+}: {
+  id: string;
+  paint: Extract<DeviceRobotPaint, { kind: "gradient" }>;
+}) {
+  return (
+    <defs>
+      <linearGradient
+        gradientUnits="userSpaceOnUse"
+        id={id}
+        x1={paint.from[0]}
+        x2={paint.to[0]}
+        y1={paint.from[1]}
+        y2={paint.to[1]}
+      >
+        {paint.stops.map(([offset, color]) => (
+          <stop key={`${offset}-${color}`} offset={offset} stopColor={color} />
+        ))}
+      </linearGradient>
+    </defs>
+  );
+}
+
 export function DeviceRobotIcon({
   variant,
   className,
@@ -62,6 +96,7 @@ export function DeviceRobotIcon({
   /** Accessible name; omit when adjacent text already names the device. */
   label?: string;
 }) {
+  const gradientId = `device-robot-paint-${useId().replace(/:/g, "")}`;
   if (!variant) {
     return label ? (
       <Bot aria-label={label} className={className} role="img" />
@@ -79,7 +114,8 @@ export function DeviceRobotIcon({
       data-testid="device-robot-icon"
       fill="none"
       role={label ? "img" : "presentation"}
-      stroke="currentColor"
+      data-robot-paint={variant.paint.name}
+      stroke={ink(variant.paint, gradientId)}
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth={2}
@@ -88,7 +124,12 @@ export function DeviceRobotIcon({
       xmlns="http://www.w3.org/2000/svg"
     >
       {label ? <title>{label}</title> : null}
-      {DEVICE_ROBOT_GEOMETRY[variant.shape].map(primitive)}
+      {variant.paint.kind === "gradient" ? (
+        <PaintGradient id={gradientId} paint={variant.paint} />
+      ) : null}
+      {DEVICE_ROBOT_GEOMETRY[variant.shape].map((shape, index) =>
+        primitive(shape, index, ink(variant.paint, gradientId)),
+      )}
     </svg>
   );
 }

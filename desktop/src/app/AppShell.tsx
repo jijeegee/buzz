@@ -93,6 +93,7 @@ import { useAddCommunityDialogState } from "@/features/communities/addCommunityP
 import { useApplyTemplate } from "@/features/channel-templates/useApplyTemplate";
 import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
 import { joinAgentsAfterCreate } from "@/features/agents/lib/joinAgentsAfterCreate";
+import { useAutoAssignDeviceRobots } from "@/shared/api/useAutoAssignDeviceRobots";
 import { useOwnerDevicesLiveUpdates } from "@/shared/api/useOwnerDevices";
 import { relayClient } from "@/shared/api/relayClient";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -246,6 +247,7 @@ export function AppShell() {
   useUserStatusSubscription();
   useCommunityEmojiLiveUpdates();
   useOwnerDevicesLiveUpdates(deferredPubkey);
+  useAutoAssignDeviceRobots(deferredPubkey);
   useMembershipNotifications(identityQuery.data?.pubkey);
   const presenceSession = usePresenceSession(deferredPubkey);
   const selfStatusQuery = useUserStatusQuery(

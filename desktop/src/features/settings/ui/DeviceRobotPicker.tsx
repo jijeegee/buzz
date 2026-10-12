@@ -1,6 +1,6 @@
 import { cn } from "@/shared/lib/cn";
 import {
-  DEVICE_ROBOT_COLORS,
+  DEVICE_ROBOT_PAINTS,
   DEVICE_ROBOT_SHAPES,
   type DeviceRobotOverride,
   type DeviceRobotVariant,
@@ -9,20 +9,8 @@ import {
 import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 
-/** Names for `DEVICE_ROBOT_COLORS`, in palette order. */
-const COLOR_NAMES = [
-  "Red",
-  "Orange",
-  "Green",
-  "Teal",
-  "Blue",
-  "Indigo",
-  "Violet",
-  "Pink",
-] as const;
-
-function shapeName(shape: string) {
-  return shape.charAt(0).toUpperCase() + shape.slice(1);
+function titleCase(name: string) {
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 function Choice({
@@ -58,8 +46,8 @@ function Choice({
 
 /**
  * The device's robot as a button that opens a small picker: the six
- * silhouettes (in the current colour) and the eight colours (in the current
- * silhouette), each drawn as the actual robot. Picking one calls `onPick`
+ * silhouettes (in the current paint) and the palette's colours and gradients
+ * (in the current silhouette), each drawn as the actual robot. Picking one calls `onPick`
  * with the full choice.
  */
 export function DeviceRobotPicker({
@@ -111,7 +99,7 @@ export function DeviceRobotPicker({
             <Choice
               disabled={disabled}
               key={shape}
-              label={`${shapeName(shape)} robot`}
+              label={`${titleCase(shape)} robot`}
               onClick={() => pick({ shape, colorIndex: variant.colorIndex })}
               selected={shape === variant.shape}
               variant={resolveDeviceRobotVariant(deviceId, {
@@ -123,11 +111,11 @@ export function DeviceRobotPicker({
         </div>
         <p className="text-xs font-medium text-muted-foreground">Colour</p>
         <div className="flex gap-1">
-          {DEVICE_ROBOT_COLORS.map((_, colorIndex) => (
+          {DEVICE_ROBOT_PAINTS.map((paint, colorIndex) => (
             <Choice
               disabled={disabled}
-              key={COLOR_NAMES[colorIndex]}
-              label={`${COLOR_NAMES[colorIndex]} robot`}
+              key={paint.name}
+              label={`${titleCase(paint.name)} robot`}
               onClick={() => pick({ shape: variant.shape, colorIndex })}
               selected={colorIndex === variant.colorIndex}
               variant={resolveDeviceRobotVariant(deviceId, {

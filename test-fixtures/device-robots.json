@@ -1,15 +1,162 @@
 {
-  "_comment": "Cross-platform device robot vectors. Consumed by desktop (deviceRobot.test.mjs), the Tauri publisher (device_robot.rs) and mobile (device_robot_test.dart). tag = FNV-1a 32-bit of trimmed lowercase device id; colorIndex = tag % colors; shapeIndex = floor(tag / colors) % shapes.",
-  "colors": [
-    "#D93D42",
-    "#C2620A",
-    "#2E8540",
-    "#0F8478",
-    "#1F78C8",
-    "#5A5FD8",
-    "#9150C8",
-    "#C93A8A"
+  "_comment": "Cross-platform device robot vectors. Consumed by desktop (deviceRobot.test.mjs), the Tauri publisher (device_robot.rs) and mobile (device_robot_test.dart). tag = FNV-1a 32-bit of trimmed lowercase device id. paints = the robot palette in assignment order (solid colours, then diagonal gradients on the 24x24 grid from `from` to `to`); colors = each paint's representative colour. Hashed default (a device with no stored robot yet): colorIndex = tag % defaultColorCount; shapeIndex = floor(tag / defaultColorCount) % shapes. Slot k (the k-th device of an account, 0-based) = paints[k % paints], shapes[k % shapes].",
+  "paints": [
+    {
+      "name": "red",
+      "kind": "solid",
+      "color": "#F03A3A"
+    },
+    {
+      "name": "green",
+      "kind": "solid",
+      "color": "#1FBF4F"
+    },
+    {
+      "name": "violet",
+      "kind": "solid",
+      "color": "#8B5CF6"
+    },
+    {
+      "name": "orange",
+      "kind": "solid",
+      "color": "#FF7A00"
+    },
+    {
+      "name": "blue",
+      "kind": "solid",
+      "color": "#2F7FF2"
+    },
+    {
+      "name": "yellow",
+      "kind": "solid",
+      "color": "#F5C400"
+    },
+    {
+      "name": "rainbow",
+      "kind": "gradient",
+      "color": "#1E90FF",
+      "from": [
+        2,
+        2
+      ],
+      "to": [
+        22,
+        22
+      ],
+      "stops": [
+        [
+          0.18,
+          "#FF2D2D"
+        ],
+        [
+          0.2867,
+          "#FF8A00"
+        ],
+        [
+          0.3933,
+          "#FFD000"
+        ],
+        [
+          0.5,
+          "#22C55E"
+        ],
+        [
+          0.6067,
+          "#1E90FF"
+        ],
+        [
+          0.7133,
+          "#4B4BE0"
+        ],
+        [
+          0.82,
+          "#A040E0"
+        ]
+      ]
+    },
+    {
+      "name": "gold",
+      "kind": "gradient",
+      "color": "#B8860B",
+      "from": [
+        0,
+        0
+      ],
+      "to": [
+        24,
+        24
+      ],
+      "stops": [
+        [
+          0.0,
+          "#8A6200"
+        ],
+        [
+          0.25,
+          "#F7D774"
+        ],
+        [
+          0.5,
+          "#B8860B"
+        ],
+        [
+          0.75,
+          "#FFE9A0"
+        ],
+        [
+          1.0,
+          "#9C7A1E"
+        ]
+      ]
+    },
+    {
+      "name": "silver",
+      "kind": "gradient",
+      "color": "#9CA3AF",
+      "from": [
+        0,
+        0
+      ],
+      "to": [
+        24,
+        24
+      ],
+      "stops": [
+        [
+          0.0,
+          "#6B7280"
+        ],
+        [
+          0.25,
+          "#F3F4F6"
+        ],
+        [
+          0.5,
+          "#9CA3AF"
+        ],
+        [
+          0.75,
+          "#FFFFFF"
+        ],
+        [
+          1.0,
+          "#6B7280"
+        ]
+      ]
+    }
   ],
+  "colors": [
+    "#F03A3A",
+    "#1FBF4F",
+    "#8B5CF6",
+    "#FF7A00",
+    "#2F7FF2",
+    "#F5C400",
+    "#1E90FF",
+    "#B8860B",
+    "#9CA3AF"
+  ],
+  "defaultColorCount": 6,
   "shapes": [
     "classic",
     "dome",
@@ -17,6 +164,68 @@
     "visor",
     "tall",
     "hex"
+  ],
+  "slots": [
+    {
+      "slot": 0,
+      "colorIndex": 0,
+      "shape": "classic"
+    },
+    {
+      "slot": 1,
+      "colorIndex": 1,
+      "shape": "dome"
+    },
+    {
+      "slot": 2,
+      "colorIndex": 2,
+      "shape": "boxy"
+    },
+    {
+      "slot": 3,
+      "colorIndex": 3,
+      "shape": "visor"
+    },
+    {
+      "slot": 4,
+      "colorIndex": 4,
+      "shape": "tall"
+    },
+    {
+      "slot": 5,
+      "colorIndex": 5,
+      "shape": "hex"
+    },
+    {
+      "slot": 6,
+      "colorIndex": 6,
+      "shape": "classic"
+    },
+    {
+      "slot": 7,
+      "colorIndex": 7,
+      "shape": "dome"
+    },
+    {
+      "slot": 8,
+      "colorIndex": 8,
+      "shape": "boxy"
+    },
+    {
+      "slot": 9,
+      "colorIndex": 0,
+      "shape": "visor"
+    },
+    {
+      "slot": 10,
+      "colorIndex": 1,
+      "shape": "tall"
+    },
+    {
+      "slot": 11,
+      "colorIndex": 2,
+      "shape": "hex"
+    }
   ],
   "devices": [
     {
@@ -34,61 +243,61 @@
     {
       "deviceId": "  6ba7b810-9dad-11d1-80b4-00c04fd430c8  ",
       "tag": "f108e530",
-      "colorIndex": 0,
-      "shapeIndex": 2
+      "colorIndex": 4,
+      "shapeIndex": 4
     },
     {
       "deviceId": "00000000-0000-0000-0000-000000000000",
       "tag": "be478ed1",
-      "colorIndex": 1,
-      "shapeIndex": 4
+      "colorIndex": 3,
+      "shapeIndex": 5
     },
     {
       "deviceId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
       "tag": "2708ab91",
-      "colorIndex": 1,
-      "shapeIndex": 4
+      "colorIndex": 3,
+      "shapeIndex": 5
     },
     {
       "deviceId": "a",
       "tag": "e40c292c",
       "colorIndex": 4,
-      "shapeIndex": 3
+      "shapeIndex": 2
     },
     {
       "deviceId": "9b2f7c1e-5d4a-4e8b-b3c6-1f0e2d3c4b5a",
       "tag": "db0055db",
-      "colorIndex": 3,
+      "colorIndex": 1,
       "shapeIndex": 5
     },
     {
       "deviceId": "c0ffee00-1234-4abc-8def-0123456789ab",
       "tag": "0f067c7d",
-      "colorIndex": 5,
-      "shapeIndex": 5
+      "colorIndex": 3,
+      "shapeIndex": 3
     },
     {
       "deviceId": "d1",
       "tag": "881d13e6",
-      "colorIndex": 6,
-      "shapeIndex": 0
+      "colorIndex": 0,
+      "shapeIndex": 1
     },
     {
       "deviceId": "e7c1d2f3-0a1b-4c2d-9e3f-4a5b6c7d8e9f",
       "tag": "c73088c6",
-      "colorIndex": 6,
+      "colorIndex": 2,
       "shapeIndex": 4
     },
     {
       "deviceId": "12345678-90ab-4cde-8f01-23456789abcd",
       "tag": "db2af9b2",
-      "colorIndex": 2,
-      "shapeIndex": 4
+      "colorIndex": 4,
+      "shapeIndex": 3
     },
     {
       "deviceId": "f00dbabe-cafe-4bad-beef-deadbeef0001",
       "tag": "3260dd9e",
-      "colorIndex": 6,
+      "colorIndex": 0,
       "shapeIndex": 3
     }
   ],
@@ -112,13 +321,13 @@
     },
     {
       "tag": "ffffffff",
-      "colorIndex": 7,
-      "shapeIndex": 1
+      "colorIndex": 3,
+      "shapeIndex": 0
     },
     {
       "tag": "0000002f",
-      "colorIndex": 7,
-      "shapeIndex": 5
+      "colorIndex": 5,
+      "shapeIndex": 1
     }
   ],
   "geometry": {

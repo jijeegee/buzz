@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -53,8 +55,18 @@ class DeviceRobotPainter extends CustomPainter {
     final scale = size.shortestSide / 24;
     canvas.save();
     canvas.scale(scale);
+    final paint = variant.paint;
+    final shader = paint.isGradient
+        ? ui.Gradient.linear(
+            paint.from!,
+            paint.to!,
+            [for (final (_, color) in paint.stops) color],
+            [for (final (offset, _) in paint.stops) offset],
+          )
+        : null;
     final stroke = Paint()
       ..color = variant.color
+      ..shader = shader
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round
@@ -62,6 +74,7 @@ class DeviceRobotPainter extends CustomPainter {
       ..isAntiAlias = true;
     final fill = Paint()
       ..color = variant.color
+      ..shader = shader
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
     for (final shape in deviceRobotGeometry[variant.shape]!) {

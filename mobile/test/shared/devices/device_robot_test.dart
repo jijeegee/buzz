@@ -35,6 +35,10 @@ void main() {
     expect(deviceRobotColors.map(_hex).toList(), _golden['colors']);
     expect(deviceRobotShapes, _golden['shapes']);
     expect(
+      _normalize([for (final paint in deviceRobotPaints) paint.toJson()]),
+      _normalize(_golden['paints']),
+    );
+    expect(
       _normalize({
         for (final entry in deviceRobotGeometry.entries)
           entry.key: [for (final shape in entry.value) shape.toJson()],
@@ -88,7 +92,7 @@ void main() {
         expect(robot.shapeIndex, shape);
       }
     }
-    expect(deviceRobotVariantFromIndices(colorIndex: 8, shapeIndex: 0), isNull);
+    expect(deviceRobotVariantFromIndices(colorIndex: 9, shapeIndex: 0), isNull);
     expect(deviceRobotVariantFromIndices(colorIndex: 0, shapeIndex: 6), isNull);
     expect(
       deviceRobotVariantFromIndices(colorIndex: -1, shapeIndex: 0),
@@ -198,7 +202,7 @@ void main() {
   testWidgets('every variant renders on light and dark surfaces', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(2 * (8 * 40 + 16), 6 * 40 + 16);
+    tester.view.physicalSize = const Size(2 * (9 * 40 + 16), 6 * 40 + 16);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     Widget grid(Color background) => Container(
@@ -215,8 +219,9 @@ void main() {
                   Padding(
                     padding: const EdgeInsets.all(4),
                     child: DeviceRobotIcon(
-                      variant: deviceRobotVariantFromTag(
-                        _tagFor(shape * deviceRobotColors.length + color),
+                      variant: deviceRobotVariantFromIndices(
+                        colorIndex: color,
+                        shapeIndex: shape,
                       ),
                       size: 32,
                     ),
@@ -244,15 +249,15 @@ void main() {
         ),
       ),
     );
-    // Every colour/shape pair is distinct and painted.
+    // Hashed defaults cover every solid colour/shape pair.
     final tags = {
-      for (var i = 0; i < 48; i++) deviceRobotVariantFromTag(_tagFor(i))!,
+      for (var i = 0; i < 36; i++) deviceRobotVariantFromTag(_tagFor(i))!,
     };
     expect(
       tags.map((v) => '${v.colorIndex}/${v.shapeIndex}').toSet(),
-      hasLength(48),
+      hasLength(36),
     );
-    expect(find.byType(DeviceRobotIcon), findsNWidgets(96));
+    expect(find.byType(DeviceRobotIcon), findsNWidgets(108));
     // Opt-in screenshot for reviews: DEVICE_ROBOT_SCREENSHOT=<png path>.
     // Not a golden: anti-aliasing differs across CI hosts.
     final screenshot = Platform.environment['DEVICE_ROBOT_SCREENSHOT'];
@@ -266,5 +271,38 @@ void main() {
         File(screenshot).writeAsBytesSync(png!.buffer.asUint8List());
       });
     }
+  });
+
+  test('slots pair palette paints with shapes in order', () {
+    for (final vector
+        in (_golden['slots'] as List<dynamic>).cast<Map<String, dynamic>>()) {
+      final robot = deviceRobotSlot(vector['slot'] as int);
+      expect(robot.colorIndex, vector['colorIndex']);
+      expect(robot.shape, vector['shape']);
+    }
+  });
+
+  test('new devices take the first free slots, in device order', () {
+    final stored = {'dev-b': deviceRobotSlot(1), 'gone': deviceRobotSlot(0)};
+    expect(
+      nextDeviceRobotAssignments([
+        ' DEV-A ',
+        'dev-b',
+        'dev-c',
+        'dev-a',
+      ], stored),
+      [('dev-a', deviceRobotSlot(2)), ('dev-c', deviceRobotSlot(3))],
+    );
+    expect(nextDeviceRobotAssignments(['a', 'b'], const {}), [
+      ('a', deviceRobotSlot(0)),
+      ('b', deviceRobotSlot(1)),
+    ]);
+    final full = {
+      for (var i = 0; i < deviceRobotPaints.length; i++)
+        'd$i': deviceRobotSlot(i),
+    };
+    expect(nextDeviceRobotAssignments(['new'], full), [
+      ('new', deviceRobotSlot(deviceRobotPaints.length)),
+    ]);
   });
 }

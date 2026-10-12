@@ -165,7 +165,7 @@ function robotEvent({ createdAt, deviceId, shape, color, content, pubkey }) {
     deviceId,
     kind: 30181,
     pubkey,
-    content: content ?? JSON.stringify({ v: 1, shape, color }),
+    content: content ?? JSON.stringify({ v: 2, shape, color }),
   });
 }
 
@@ -210,7 +210,7 @@ test("robot overrides: unknown shapes, bad colours and strangers are ignored", (
         shape: "blob",
         color: 2,
       }),
-      robotEvent({ createdAt: 12, deviceId: DEVICE_A, shape: "hex", color: 8 }),
+      robotEvent({ createdAt: 12, deviceId: DEVICE_A, shape: "hex", color: 9 }),
       robotEvent({
         createdAt: 13,
         deviceId: DEVICE_A,
@@ -233,7 +233,7 @@ test("robot overrides: unknown shapes, bad colours and strangers are ignored", (
       robotEvent({
         createdAt: 17,
         deviceId: DEVICE_A,
-        content: JSON.stringify({ v: 2, shape: "hex", color: 1 }),
+        content: JSON.stringify({ v: 3, shape: "hex", color: 1 }),
       }),
       robotEvent({
         createdAt: 18,
