@@ -362,7 +362,7 @@ async function expectAppliedBuzzTheme(
       storedTheme,
       isDark,
       buzzTheme: themeName,
-      gradientTop: isDark ? "#4a4616" : "#e6e6b6",
+      gradientTop: isDark ? "#16244a" : "#dbe7f6",
       gradientBottom: isDark ? "#0a1423" : "#c4d0da",
     });
 }

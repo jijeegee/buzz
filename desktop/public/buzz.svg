@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Buzz">
-  <rect width="512" height="512" rx="96" fill="#0b0b0b"/>
-  <path d="M256 75 334 120v90l-78 45-78-45v-90z" fill="#ffd84d"/>
-  <path d="M178 210 256 255v90l-78 45-78-45v-90z" fill="#ffbd24"/>
-  <path d="M334 210 412 255v90l-78 45-78-45v-90z" fill="#ffb000"/>
-  <path d="M256 300 334 345v90l-78 45-78-45v-90z" fill="#ff8a00"/>
-  <path d="M256 105 306 134l-50 29-50-29z" fill="#ffe680" opacity=".75"/>
-  <path d="M178 240 228 269l-50 29-50-29z" fill="#ffe680" opacity=".55"/>
-  <path d="M334 240 384 269l-50 29-50-29z" fill="#ffe680" opacity=".55"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="230" fill="#0047A0"/><path fill="#FFFFFF" transform="matrix(0.38486 0 0 0.38486 209.31 798.72)" d="M387 -213V-718Q437 -783 487.5 -848.0Q538 -913 588.0 -977.5Q638 -1042 688 -1107L984 -1490H1465L842 -723H804ZM80 0V-1490H496V-1170V-741V-544V0ZM1017 0 658 -599 906 -911 1493 0Z"/></svg>

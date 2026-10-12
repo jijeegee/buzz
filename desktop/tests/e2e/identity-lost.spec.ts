@@ -17,7 +17,7 @@ test("normal first launch uses the already-persisted identity", async ({
 
   const gate = page.getByTestId("machine-onboarding-gate");
   await expect(gate).toBeVisible();
-  await expect(gate).toHaveCSS("background-color", "rgb(215, 215, 46)");
+  await expect(gate).toHaveCSS("background-color", "rgb(0, 71, 160)");
   // Landing carries a subtle dot-grid pattern over the chartreuse fill.
   await expect(gate).toHaveCSS("background-image", /radial-gradient/);
   await expect(gate).toHaveCSS("color", "rgb(23, 23, 23)");
