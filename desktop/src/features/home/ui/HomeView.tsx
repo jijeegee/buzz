@@ -24,6 +24,11 @@ import {
   matchesInboxFilter,
 } from "@/features/home/lib/inboxViewHelpers";
 import { resolveInboxFilterSelection } from "@/features/home/lib/inboxSelection";
+import {
+  type InboxServerUnread,
+  inboxRowReadAt,
+  withServerUnreadCounts,
+} from "@/features/home/lib/inboxSummary";
 import { useHomeInboxReadState } from "@/features/home/useHomeInboxReadState";
 import { useHomeInboxAutoSelection } from "@/features/home/useHomeInboxAutoSelection";
 import { useHomeInboxContextMessages } from "@/features/home/useHomeInboxContextMessages";
@@ -112,6 +117,8 @@ type HomeViewProps = {
     threadRootId?: string | null,
   ) => void;
   onRefresh: () => void;
+  /** Relay unread counts per conversation id, for the chat-list view. */
+  serverUnread?: ReadonlyMap<string, InboxServerUnread>;
   /**
    * `page` is the Inbox route: list plus detail for work without a chat room.
    * `panel` is the same list pulled out beside the chat screen of a channel.
@@ -127,6 +134,7 @@ export function HomeView({
   availableChannelIds,
   onOpenContext,
   onRefresh,
+  serverUnread,
   variant = "page",
 }: HomeViewProps) {
   const isPanel = variant === "panel";
@@ -284,6 +292,7 @@ export function HomeView({
     markThreadRead,
     recordThreadInteraction,
     readStateVersion,
+    isThreadMuted,
   } = useAppShell();
   const { doneSet, markDone, markUnread, undoDone, undoUnread, unreadSet } =
     feedItemState;
@@ -468,13 +477,29 @@ export function HomeView({
     });
   // The conversations view regroups channel main timelines into one row per
   // channel, so selection and filtering must resolve against those rows.
-  const viewItems = React.useMemo(
-    () =>
-      filter === "conversations"
-        ? collapseChannelMainRows(inboxItems)
-        : inboxItems,
-    [filter, inboxItems],
-  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion invalidates the stable read-marker callbacks
+  const viewItems = React.useMemo(() => {
+    if (filter !== "conversations") return inboxItems;
+    const rows = collapseChannelMainRows(inboxItems);
+    return serverUnread
+      ? withServerUnreadCounts(
+          rows,
+          serverUnread,
+          (row) => inboxRowReadAt(row, getChannelReadAt, getThreadReadAt),
+          (row) =>
+            effectiveDoneSet.has(row.id) || isThreadMuted(row.conversationId),
+        )
+      : rows;
+  }, [
+    effectiveDoneSet,
+    filter,
+    getChannelReadAt,
+    getThreadReadAt,
+    inboxItems,
+    isThreadMuted,
+    readStateVersion,
+    serverUnread,
+  ]);
   // Resolve selection before filtering so unread-only can retain its active row.
   const selectedItemFromAll = React.useMemo(
     () =>

@@ -1,10 +1,20 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
 import {
   getDeletedEventIds,
   INBOX_DELETIONS_QUERY_KEY,
 } from "@/features/home/lib/inboxDeletions";
+import {
+  INBOX_SUMMARY_BACKGROUND_ROWS,
+  INBOX_SUMMARY_PAGE_SIZE,
+  INBOX_SUMMARY_QUERY_KEY,
+  inboxSummaryFeedItems,
+  inboxSummaryUnread,
+  mergeInboxSummaryPage,
+  type InboxSummaryState,
+} from "@/features/home/lib/inboxSummary";
+import { getInboxSummaryPage } from "@/shared/api/inboxSummary";
 import { relayClient } from "@/shared/api/relayClient";
 import { buildChannelAuxDeletionFilter } from "@/shared/api/relayChannelFilters";
 import { getHomeFeed } from "@/shared/api/tauri";
@@ -152,4 +162,105 @@ export function useConversationChannelActivity(
     })),
     combine: combineRoomActivity,
   });
+}
+
+let inboxSummaryGeneration = 0;
+
+/**
+ * The Channels + Threads view from one relay summary: member rooms and their
+ * replied-to threads, newest first, with server unread counts. The first page
+ * renders immediately; later pages load one after another in the background
+ * up to INBOX_SUMMARY_BACKGROUND_ROWS. Live events patch rows in place
+ * (useLiveChannelUpdates), so a new message never refetches anything.
+ * `failed` lets callers fall back to per-room loading on relays without the
+ * summary envelope.
+ */
+export function useInboxSummary(
+  channels: readonly Channel[] | undefined,
+  enabled: boolean,
+  getReadContexts: () => Record<string, number>,
+  readStateVersion: number,
+) {
+  const connectionState = useRelayConnection();
+  const active = enabled && connectionState === "connected";
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    enabled: active,
+    queryKey: INBOX_SUMMARY_QUERY_KEY,
+    queryFn: async (): Promise<InboxSummaryState> => {
+      const read = getReadContexts();
+      return {
+        ...(await getInboxSummaryPage(null, read, INBOX_SUMMARY_PAGE_SIZE)),
+        generation: ++inboxSummaryGeneration,
+        sentReadMarkers: Object.keys(read).length > 0,
+        sentRead: read,
+      };
+    },
+    refetchOnWindowFocus: false,
+    retry: 1,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const data = query.data;
+  // Read state loads after startup; count unread once it is available.
+  const needsReadMarkers = data !== undefined && !data.sentReadMarkers;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion signals that read markers changed
+  React.useEffect(() => {
+    if (
+      needsReadMarkers &&
+      Object.keys(getReadContexts()).length > 0 &&
+      !query.isFetching
+    ) {
+      void queryClient.invalidateQueries({ queryKey: INBOX_SUMMARY_QUERY_KEY });
+    }
+  }, [needsReadMarkers, readStateVersion, query.isFetching]);
+  const next = data?.next ?? null;
+  const wantsMore =
+    active &&
+    next !== null &&
+    (data?.rows.length ?? 0) < INBOX_SUMMARY_BACKGROUND_ROWS;
+  const generation = data?.generation;
+  const sentRead = data?.sentRead;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the cursor; live row patches must not restart a page in flight
+  React.useEffect(() => {
+    if (!wantsMore || next === null) return;
+    let cancelled = false;
+    // Later pages count against the same markers as the first page.
+    getInboxSummaryPage(next, sentRead ?? {}, INBOX_SUMMARY_PAGE_SIZE)
+      .then((page) => {
+        if (cancelled) return;
+        queryClient.setQueryData<InboxSummaryState>(
+          INBOX_SUMMARY_QUERY_KEY,
+          (current) =>
+            // A newer first page or another page landed meanwhile.
+            current !== undefined &&
+            current.generation === generation &&
+            current.next?.key === next.key &&
+            current.next.at_us === next.at_us
+              ? mergeInboxSummaryPage(current, page)
+              : current,
+        );
+      })
+      .catch((error: unknown) => {
+        // The next summary refetch (reconnect, deletion) restarts paging.
+        console.warn("inbox summary page failed", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [generation, next?.at_us, next?.key, wantsMore]);
+
+  const channelById = React.useMemo(
+    () => new Map((channels ?? []).map((channel) => [channel.id, channel])),
+    [channels],
+  );
+  const rows = data?.rows;
+  const feedItems = React.useMemo(
+    () => (rows ? inboxSummaryFeedItems(rows, channelById) : []),
+    [channelById, rows],
+  );
+  const unread = React.useMemo(
+    () => inboxSummaryUnread(rows ?? [], sentRead ?? {}),
+    [rows, sentRead],
+  );
+  return { failed: query.isError && !data, feedItems, unread };
 }

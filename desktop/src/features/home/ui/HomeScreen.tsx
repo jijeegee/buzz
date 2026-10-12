@@ -8,6 +8,7 @@ import {
   useConversationChannelActivity,
   useHomeFeedQuery,
   useInboxDeletedEventIds,
+  useInboxSummary,
 } from "@/features/home/hooks";
 import { useInboxFilter } from "@/features/home/lib/inboxFilterPreference";
 import {
@@ -41,7 +42,8 @@ export function HomeScreen({
   variant = "page",
 }: HomeScreenProps) {
   const homeFeedQuery = useHomeFeedQuery();
-  const { threadActivityFeedItems } = useAppShell();
+  const { getReadContexts, readStateVersion, threadActivityFeedItems } =
+    useAppShell();
   const hiddenDmIds = useHiddenDmIds(currentPubkey);
 
   // Channels + Threads is a chat list: it also loads the rooms' recent
@@ -49,10 +51,21 @@ export function HomeScreen({
   // sorts by its real latest activity.
   const isConversationView = useInboxFilter() === "conversations";
   const channels = useChannelsQuery().data;
-  const conversationActivity = useConversationChannelActivity(
+  // One relay summary request feeds the chat list; per-room loading is the
+  // fallback for relays that do not serve the summary envelope.
+  const inboxSummary = useInboxSummary(
     channels,
     isConversationView,
+    getReadContexts,
+    readStateVersion,
   );
+  const legacyRoomActivity = useConversationChannelActivity(
+    inboxSummary.failed ? channels : undefined,
+    isConversationView && inboxSummary.failed,
+  );
+  const conversationActivity = inboxSummary.failed
+    ? legacyRoomActivity
+    : inboxSummary.feedItems;
   const augmentedFeed = React.useMemo((): HomeFeedResponse | undefined => {
     if (!homeFeedQuery.data) return undefined;
     const extraActivity = [
@@ -132,6 +145,11 @@ export function HomeScreen({
             : undefined
         }
         feed={visibleFeed}
+        serverUnread={
+          isConversationView && !inboxSummary.failed
+            ? inboxSummary.unread
+            : undefined
+        }
         isLoading={homeFeedQuery.isLoading}
         onOpenContext={onOpenContext}
         onRefresh={() => {

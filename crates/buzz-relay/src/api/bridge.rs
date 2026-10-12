@@ -3,6 +3,7 @@
 //! These endpoints provide HTTP access to the relay's Nostr protocol,
 //! authenticated via NIP-98 signed events.
 
+mod inbox_summary;
 mod read_state_snapshot;
 
 use std::sync::Arc;
@@ -1449,6 +1450,9 @@ async fn query_events_authed(
     if let Some(result) = super::artifact::query(state, tenant, &pubkey, &raw_filters, false).await
     {
         return result;
+    }
+    if inbox_summary::requested(&raw_filters) {
+        return inbox_summary::query(state, tenant, &pubkey, &raw_filters).await;
     }
     let thread_windows = thread_window::parse(&raw_filters)?;
     let filters: Vec<nostr::Filter> = raw_filters
