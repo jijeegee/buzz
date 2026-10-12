@@ -524,7 +524,7 @@ pub async fn create_managed_agent(
         let private_key_nsec = keys
             .secret_key()
             .to_bech32()
-            .map_err(|error| format!("failed to encode private key: {error}"))?;
+            .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
 
         // Store the relay override exactly as supplied (trimmed). An explicit
         // value pins the agent; empty stays empty and resolves to the active
@@ -563,9 +563,9 @@ pub async fn create_managed_agent(
         let compat_owner = nostr::Keys::parse(&owner_keys.secret_key().to_secret_hex())
             .map_err(|e| format!("failed to bridge owner keys: {e}"))?;
         let compat_agent = nostr::PublicKey::from_hex(&agent_keys.public_key().to_hex())
-            .map_err(|e| format!("failed to bridge agent pubkey: {e}"))?;
+            .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
         let tag = buzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
-            .map_err(|e| format!("failed to compute NIP-OA auth tag: {e}"))?;
+            .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
         Some(tag)
     };
 

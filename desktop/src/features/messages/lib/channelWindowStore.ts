@@ -91,7 +91,7 @@ function assertValidPage(page: ChannelWindowPage) {
     }
     const previous = page.rows[index - 1]?.event;
     if (previous && compareRelayOrder(previous, event) > 0) {
-      throw new Error("Channel window rows are not in relay order.");
+      throw new Error("Couldn't load messages. Try again.");
     }
   }
 }

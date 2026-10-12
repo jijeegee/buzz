@@ -95,7 +95,7 @@ fn proof(keys: &Keys, account: &str, origin: &str, challenge: Challenge) -> Resu
         || challenge.challenge.len() != 64
         || !challenge.challenge.bytes().all(|v| v.is_ascii_hexdigit())
     {
-        return Err("The relay returned an invalid backup challenge.".into());
+        return Err("Couldn't restore your account. Try again.".into());
     }
     let tags = [
         vec!["u".to_owned(), challenge.url],
@@ -133,7 +133,7 @@ async fn status(
         || (status.state == "absent" && status.pubkey.is_some())
         || (status.state == "ready" && status.pubkey.is_none())
     {
-        return Err("The relay returned an invalid backup status.".into());
+        return Err("Couldn't restore your account. Try again.".into());
     }
     Ok(status)
 }
@@ -148,7 +148,7 @@ async fn restore(
         .pubkey
         .as_deref()
         .and_then(|v| PublicKey::from_hex(v).ok())
-        .ok_or("The stored backup has an invalid public key.")?;
+        .ok_or("Couldn't restore your account.")?;
     let restored: RestoredKey = api::send_json(
         client
             .post(format!("{origin}/auth/key-backup/restore"))
@@ -297,15 +297,13 @@ pub(crate) async fn complete<R: tauri::Runtime>(
             super::CredentialMode::Token(_)
         )
     {
-        return Err("Sign out of the separate token account before linking a Nostr key. Existing token agents will be preserved.".into());
+        return Err("Sign out of the other account first.".into());
     }
     if state
         .keyring_locked
         .load(std::sync::atomic::Ordering::Acquire)
     {
-        return Err(
-            "Unlock your OS keyring and relaunch Kuzz before recovering with Google.".into(),
-        );
+        return Err("Unlock your computer's password storage, then restart Kuzz.".into());
     }
     let recovering = state
         .identity_lost

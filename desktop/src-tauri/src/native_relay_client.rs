@@ -363,11 +363,11 @@ impl RelaySession {
         let _ = self.wake.try_send(());
 
         let outcome = tokio::select! {
-            _ = self.cancel.cancelled() => Err("relay session cancelled".to_string()),
+            _ = self.cancel.cancelled() => Err("Connection lost. Try again.".to_string()),
             value = tokio::time::timeout_at(deadline, &mut receiver.result) => match value {
                 Ok(Ok(value)) => value,
-                Ok(Err(_)) => Err("relay request ended before EOSE".to_string()),
-                Err(_) => Err("relay request timed out".to_string()),
+                Ok(Err(_)) => Err("Connection lost. Try again.".to_string()),
+                Err(_) => Err("Connection timed out. Try again.".to_string()),
             }
         };
         self.finish_request(&id).await;
@@ -792,7 +792,7 @@ async fn run_connection(
                         if requests.contains_key(&subscription_id) && !was_open { continue; }
                         if let Some(request) = requests.remove(&subscription_id) {
                             let result = if request.is_active() { Ok(request.events) }
-                                else { Err("relay request timed out or cancelled".to_string()) };
+                                else { Err("Connection lost. Try again.".to_string()) };
                             let _ = request.complete.send(result);
                             let mut state = session.state.lock().await;
                             state.transient.retain(|subscription| subscription.id != subscription_id);

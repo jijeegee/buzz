@@ -304,8 +304,7 @@ export function SettingsView({
               data-testid="community-access-snapshot-missing"
             >
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
-              Invite settings are unavailable. Relay recovery may still be in
-              progress.
+              Invite settings are unavailable right now. Try again shortly.
             </div>
           ) : null}
           {visibleNavGroups.map((group) => (

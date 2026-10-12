@@ -371,7 +371,10 @@ async fn cancellation_and_stale_eose_during_hold_cannot_complete_or_retry() {
         );
         if shutdown {
             session.shutdown();
-            assert!(pending.await.unwrap().unwrap_err().contains("cancelled"));
+            assert_eq!(
+                pending.await.unwrap().unwrap_err(),
+                "Connection lost. Try again."
+            );
         } else {
             pending.abort();
             assert!(pending.await.unwrap_err().is_cancelled());

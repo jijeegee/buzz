@@ -177,7 +177,7 @@ async fn error_from(response: reqwest::Response) -> ApiError {
         code: body.as_ref().and_then(|b| b.code.clone()),
         message: body
             .and_then(|b| b.error)
-            .unwrap_or_else(|| format!("relay returned {status}")),
+            .unwrap_or_else(|| "Something went wrong. Try again.".to_string()),
     }
 }
 
@@ -204,7 +204,7 @@ pub(super) async fn send_json<T: for<'de> Deserialize<'de>>(
         .map_err(|_| ApiError {
             status: None,
             code: None,
-            message: "relay returned a malformed auth response".into(),
+            message: "Something went wrong. Try again.".into(),
         })
 }
 

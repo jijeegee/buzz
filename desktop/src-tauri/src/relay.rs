@@ -16,7 +16,7 @@ const DEFAULT_RELAY_WS_URL: &str = "ws://localhost:3000";
 // A reached-but-malformed 2xx body is NOT a connectivity failure, so this
 // message must never carry the "relay unreachable:" prefix the frontend
 // classifier keys on. Extracted to a const so a test can pin that contract.
-const MALFORMED_RESPONSE_MESSAGE: &str = "relay returned malformed response: not valid JSON";
+const MALFORMED_RESPONSE_MESSAGE: &str = "Something went wrong. Try again.";
 
 // Per-request deadline for the `POST /query` HTTP bridge, covering both the
 // header exchange and full body consumption. The shared `http_client` sets no
@@ -653,7 +653,7 @@ pub async fn sync_managed_agent_profile(
 
     let result: SubmitEventResponse = parse_json_response(response).await?;
     if !result.accepted {
-        return Err(format!("relay rejected agent profile: {}", result.message));
+        return Err("Couldn't save. Try again.".to_string());
     }
     Ok(())
 }

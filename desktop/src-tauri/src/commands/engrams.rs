@@ -135,7 +135,7 @@ pub async fn get_agent_memory(
     // owner path is cleared (PR #917 author signed off); decryption still
     // does the real guarding.)
     let agent = PublicKey::from_hex(&agent_pubkey)
-        .map_err(|e| format!("agent pubkey must be 64-hex: {e}"))?;
+        .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
 
     let viewer_pubkey = {
         let keys = state.keys.lock().map_err(|e| e.to_string())?;

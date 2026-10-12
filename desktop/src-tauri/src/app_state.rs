@@ -692,7 +692,7 @@ fn migrate_identity_file(
     let nsec = keys
         .secret_key()
         .to_bech32()
-        .map_err(|e| format!("encode nsec: {e}"))?;
+        .map_err(|_| "Couldn't save your account on this device.".to_string())?;
 
     store.store(IDENTITY_KEY_NAME, &nsec)?;
     // Read-back verify before deleting the plaintext file. Uses verify_stored()
@@ -700,10 +700,10 @@ fn migrate_identity_file(
     // backend — proving the OS keyring round-trip, not just the cache.
     let verify_ok = match store.verify_stored(IDENTITY_KEY_NAME, &nsec) {
         Ok(b) => b,
-        Err(e) => return Err(format!("keyring read-back verify failed: {e}")),
+        Err(_) => return Err("Couldn't access secure storage on this device.".to_string()),
     };
     if !verify_ok {
-        return Err("keyring read-back verify failed for identity key".to_string());
+        return Err("Couldn't access secure storage on this device.".to_string());
     }
     // Crash-safe ordering: record that the key now lives in the keyring
     // (marker write + fsync) BEFORE deleting the file. A crash between
@@ -744,7 +744,7 @@ fn persist_identity_to_keyring(
     let nsec = keys
         .secret_key()
         .to_bech32()
-        .map_err(|e| format!("encode nsec: {e}"))?;
+        .map_err(|_| "Couldn't save your account on this device.".to_string())?;
 
     // Will error if the keyring is unavailable — caller falls back to the file.
     store.store(IDENTITY_KEY_NAME, &nsec)?;
@@ -754,8 +754,8 @@ fn persist_identity_to_keyring(
     // backend — proving the OS keyring round-trip, not just the cache.
     match store.verify_stored(IDENTITY_KEY_NAME, &nsec) {
         Ok(true) => {}
-        Ok(false) => return Err("keyring read-back verify failed".to_string()),
-        Err(e) => return Err(format!("keyring read-back verify failed: {e}")),
+        Ok(false) => return Err("Couldn't access secure storage on this device.".to_string()),
+        Err(_) => return Err("Couldn't access secure storage on this device.".to_string()),
     }
 
     // Write marker before deleting the file (crash-safe ordering).
@@ -919,7 +919,7 @@ fn store_key_preferring_keyring(
     let nsec = keys
         .secret_key()
         .to_bech32()
-        .map_err(|e| format!("encode nsec: {e}"))?;
+        .map_err(|_| "Couldn't save your account on this device.".to_string())?;
     match store.store_bootstrap(&nsec, &keys.public_key().to_hex()) {
         Ok(()) => Ok(IdentityStorage::SystemKeyring),
         Err(keyring_err) => {
@@ -1007,7 +1007,7 @@ pub(crate) fn save_key_file(path: &std::path::Path, keys: &Keys) -> Result<(), S
     let nsec = keys
         .secret_key()
         .to_bech32()
-        .map_err(|e| format!("encode nsec: {e}"))?;
+        .map_err(|_| "Couldn't save your account on this device.".to_string())?;
 
     let mut file = AtomicWriteFile::open(path)
         .map_err(|e| format!("open identity.key for atomic write: {e}"))?;

@@ -116,6 +116,6 @@ test("rejects a reopen result for any channel other than the source", async () =
       isCurrent: () => true,
       reopen: async () => ({ id: "alternate-dm" }),
     }),
-    /different DM conversation/,
+    /Couldn't reopen this conversation/,
   );
 });

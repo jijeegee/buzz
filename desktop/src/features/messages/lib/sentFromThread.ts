@@ -38,7 +38,7 @@ export function buildSentFromThreadTag(
 ): string[] {
   const normalizedRootEventId = rootEventId.trim();
   if (!normalizedRootEventId) {
-    throw new Error("A thread root event ID is required.");
+    throw new Error("Couldn't find this thread.");
   }
 
   const normalizedExcerpt = rootExcerpt?.trim();

@@ -27,7 +27,7 @@ test("buildSentFromThreadTag includes a normalized human excerpt", () => {
 test("buildSentFromThreadTag rejects an empty root event ID", () => {
   assert.throws(
     () => buildSentFromThreadTag("  "),
-    /thread root event ID is required/,
+    /Couldn't find this thread/,
   );
 });
 

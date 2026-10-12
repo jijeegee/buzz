@@ -1882,9 +1882,7 @@ test("a queued catalog share is not presented as relay-published", async ({
   await page.getByTestId("persona-share-catalog-access").click();
 
   await expect(
-    page.getByText(
-      "Sharing Queued Catalog Agent is queued. It will appear after the relay accepts the update.",
-    ),
+    page.getByText("Sharing Queued Catalog Agent… It will appear shortly."),
   ).toBeVisible();
   await page
     .getByTestId("persona-share-dialog")

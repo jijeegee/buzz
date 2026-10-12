@@ -9,17 +9,17 @@ const MAX_JOIN_POLICY_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const JOIN_POLICY_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 fn join_policy_url(relay_url: &str) -> Result<Url, String> {
-    let mut url = Url::parse(relay_url.trim()).map_err(|_| "invalid relay URL".to_string())?;
+    let mut url = Url::parse(relay_url.trim()).map_err(|_| "This link isn't valid.".to_string())?;
     let http_scheme = match url.scheme() {
         "wss" => "https",
         "ws" => "http",
-        _ => return Err("relay URL must use ws:// or wss://".to_string()),
+        _ => return Err("This link isn't valid.".to_string()),
     };
     url.set_scheme(http_scheme)
-        .map_err(|_| "invalid relay URL scheme".to_string())?;
+        .map_err(|_| "This link isn't valid.".to_string())?;
 
     if !url.username().is_empty() || url.password().is_some() {
-        return Err("relay URL must not contain credentials".to_string());
+        return Err("This link isn't valid.".to_string());
     }
 
     let base_path = url.path().trim_end_matches('/');
@@ -63,7 +63,7 @@ async fn read_join_policy_json(response: reqwest::Response) -> Result<Value, Str
         .content_length()
         .is_some_and(|length| length > MAX_JOIN_POLICY_RESPONSE_BYTES as u64)
     {
-        return Err("relay returned oversized join policy".to_string());
+        return Err("Something went wrong. Try again.".to_string());
     }
 
     let mut stream = response.bytes_stream();
@@ -71,12 +71,12 @@ async fn read_join_policy_json(response: reqwest::Response) -> Result<Value, Str
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| format!("reading join policy failed: {error}"))?;
         if bytes.len().saturating_add(chunk.len()) > MAX_JOIN_POLICY_RESPONSE_BYTES {
-            return Err("relay returned oversized join policy".to_string());
+            return Err("Something went wrong. Try again.".to_string());
         }
         bytes.extend_from_slice(&chunk);
     }
 
-    serde_json::from_slice(&bytes).map_err(|_| "relay returned malformed join policy".to_string())
+    serde_json::from_slice(&bytes).map_err(|_| "Something went wrong. Try again.".to_string())
 }
 
 #[cfg(test)]
@@ -168,7 +168,7 @@ mod tests {
 
         assert_eq!(
             fetch_join_policy(relay_url).await.unwrap_err(),
-            "relay returned oversized join policy"
+            "Something went wrong. Try again."
         );
     }
 
@@ -187,7 +187,7 @@ mod tests {
 
         assert_eq!(
             fetch_join_policy(relay_url).await.unwrap_err(),
-            "relay returned oversized join policy"
+            "Something went wrong. Try again."
         );
     }
 }

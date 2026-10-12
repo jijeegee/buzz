@@ -14,9 +14,9 @@ export const personaLibraryCopy = {
 
 export const personaCatalogCopy = {
   title: "Agent Catalog",
-  description: "Browse agents shared to this relay.",
+  description: "Browse agents shared in this community.",
   dialogTitle: "Add agent",
-  dialogDescription: "Browse agents shared to this relay.",
+  dialogDescription: "Browse agents shared in this community.",
   emptyTitle: "You're all set",
   emptyDescription: "Everything in Agent Catalog is already in My Agents.",
   emptyCatalogDescription: "Shared agents will appear here.",

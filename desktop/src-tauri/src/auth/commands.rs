@@ -417,7 +417,7 @@ async fn finish_sign_in(
     let origin = origin.to_owned();
     verify_login_mode(backup, tokens.identity_mode.as_deref())?;
     let principal = PublicKey::from_hex(&tokens.principal_id)
-        .map_err(|_| "the relay returned an invalid account id".to_string())?;
+        .map_err(|_| "Couldn't sign in. Try again.".to_string())?;
     // Under the refresh lock: an in-flight refresh of an older generation can
     // neither write its token over this one nor revive the old session.
     let _refresh_guard = state.token_auth.refresh_lock(&origin).lock_owned().await;
@@ -668,7 +668,7 @@ fn verify_login_mode(backup: bool, returned_mode: Option<&str>) -> Result<(), St
         matches!(returned_mode, None | Some("token"))
     };
     if !matches {
-        return Err("The relay returned a different account mode. Your existing identity and session were preserved; accounts cannot be merged automatically.".into());
+        return Err("This account can't be added here. Your current account is unchanged.".into());
     }
     Ok(())
 }
@@ -698,7 +698,7 @@ async fn fresh_session(state: &AppState, origin: &str) -> Result<UserSession, St
     )
     .await
     .map_err(|failure| match failure {
-        RefreshFailure::Transient => "could not reach the relay to renew your sign-in".into(),
+        RefreshFailure::Transient => "Couldn't renew your sign-in. Check your connection.".into(),
         RefreshFailure::Terminal(_) => {
             "your sign-in for this community has ended; sign in with Google again".into()
         }
@@ -744,7 +744,9 @@ pub(crate) fn fresh_session_for_spawn(
         .map_err(|e| format!("auth refresh task: {e}"))?
         .map(Some)
         .map_err(|failure| match failure {
-            RefreshFailure::Transient => "could not reach the relay to renew your sign-in".into(),
+            RefreshFailure::Transient => {
+                "Couldn't renew your sign-in. Check your connection.".into()
+            }
             RefreshFailure::Terminal(_) => {
                 "your sign-in for this community has ended; sign in with Google again".into()
             }

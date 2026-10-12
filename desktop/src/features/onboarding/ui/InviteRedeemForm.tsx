@@ -44,7 +44,7 @@ function hasInviteRelay(
 
 type InviteRedeemFormProps = {
   /**
-   * Pre-fill and expose a relay URL field for bare-code inputs.
+   * Relay URL used for bare-code inputs (Kuzz never shows it as a field).
    * On MembershipDenied this is the active relay; on WelcomeSetup it is the
    * configured default relay.  Omit to silently reject bare-code inputs
    * (the form stays invalid until a full invite URL is entered).
@@ -73,9 +73,7 @@ export function InviteRedeemForm({
 }: InviteRedeemFormProps) {
   const formId = React.useId();
   const [inviteInput, setInviteInput] = React.useState(initialValue);
-  const [bareCodeRelayUrl, setBareCodeRelayUrl] = React.useState(
-    defaultRelayUrl ?? "",
-  );
+  const [bareCodeRelayUrl] = React.useState(defaultRelayUrl ?? "");
   const [joinPolicy, setJoinPolicy] = React.useState<JoinPolicy | null>(null);
   const [policyTarget, setPolicyTarget] = React.useState<{
     relayWsUrl: string;
@@ -101,7 +99,6 @@ export function InviteRedeemForm({
   );
   const parsedInvite: ParsedInvite | null = normalizedRelayUrl ? null : parsed;
   const isBareCode = parsedInvite !== null && !hasInviteRelay(parsedInvite);
-  const needsRelayField = isBareCode && defaultRelayUrl !== undefined;
 
   React.useEffect(() => {
     const relayWsUrl = normalizedRelayUrl
@@ -271,17 +268,6 @@ export function InviteRedeemForm({
     setPolicyError(null);
   };
 
-  const handleRelayInputChange = (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    setBareCodeRelayUrl(event.target.value);
-    setJoinPolicy(null);
-    setPolicyTarget(null);
-    setAgeConfirmed(false);
-    setAgreementConfirmed(false);
-    setPolicyError(null);
-  };
-
   const submitButton = (
     <Button
       className={
@@ -382,7 +368,7 @@ export function InviteRedeemForm({
                   id="invite-input"
                   onChange={handleInviteInputChange}
                   placeholder={
-                    placeholder ?? "https://relay.example.com/invite/abc123"
+                    placeholder ?? "https://community.example.com/invite/abc123"
                   }
                   spellCheck={false}
                   type="text"
@@ -418,7 +404,7 @@ export function InviteRedeemForm({
             placeholder={
               isAddCommunity
                 ? "https://community.example.com or paste an invite link"
-                : "https://relay.example.com/invite/abc123 or paste a code"
+                : "https://community.example.com/invite/abc123 or paste a code"
             }
             spellCheck={false}
             type="text"
@@ -439,31 +425,6 @@ export function InviteRedeemForm({
         >
           Please enter a valid invite link or community URL
         </p>
-      ) : null}
-
-      {needsRelayField ? (
-        <div
-          className={cn(
-            "space-y-1.5 text-left",
-            isOnboardingSpotlight && "w-full max-w-[500px]",
-          )}
-        >
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="invite-relay-url"
-          >
-            Relay URL
-          </label>
-          <Input
-            className="h-10 bg-background"
-            disabled={isRedeeming}
-            id="invite-relay-url"
-            onChange={handleRelayInputChange}
-            placeholder="wss://relay.example.com"
-            type="text"
-            value={bareCodeRelayUrl}
-          />
-        </div>
       ) : null}
 
       {policyError ? (

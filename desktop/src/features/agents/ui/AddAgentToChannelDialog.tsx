@@ -9,11 +9,8 @@ import {
   useChannelsQuery,
 } from "@/features/channels/hooks";
 import type { Channel, ChannelRole, ManagedAgent } from "@/shared/api/types";
-import {
-  canonicalNpub,
-  normalizePubkey,
-  UNAVAILABLE_KEY_LABEL,
-} from "@/shared/lib/pubkey";
+import { normalizePubkey } from "@/shared/lib/pubkey";
+import { toUserFacingMessage } from "@/shared/lib/userFacingError";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -22,7 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
-import { CopyButton } from "./CopyButton";
 
 export function AddAgentToChannelDialog({
   agent,
@@ -90,10 +86,6 @@ export function AddAgentToChannelDialog({
       (member) => normalizePubkey(member.pubkey) === normalized,
     );
   }, [agent?.pubkey, membersQuery.data]);
-
-  // The agent's public key displays as its full canonical npub; an
-  // unencodable key renders the neutral label and is not copyable.
-  const agentNpub = agent?.pubkey ? canonicalNpub(agent.pubkey) : null;
 
   const selectedChannel =
     channels.find((channel) => channel.id === channelId) ?? null;
@@ -188,31 +180,15 @@ export function AddAgentToChannelDialog({
               </select>
             </div>
 
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-              <p className="text-sm font-semibold tracking-tight">
-                Agent pubkey
-              </p>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <code className="min-w-0 flex-1 break-all rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-xs">
-                  {agent
-                    ? (agentNpub ?? UNAVAILABLE_KEY_LABEL)
-                    : "No agent selected"}
-                </code>
-                {agent && agentNpub ? (
-                  <CopyButton label="Copy pubkey" value={agentNpub} />
-                ) : null}
-              </div>
-            </div>
-
             {channelsQuery.error instanceof Error ? (
               <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                {channelsQuery.error.message}
+                {toUserFacingMessage(channelsQuery.error.message)}
               </p>
             ) : null}
 
             {attachAgentMutation.error instanceof Error ? (
               <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                {attachAgentMutation.error.message}
+                {toUserFacingMessage(attachAgentMutation.error.message)}
               </p>
             ) : null}
           </div>

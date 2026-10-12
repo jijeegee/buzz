@@ -56,7 +56,7 @@ fn validated_summary(response: serde_json::Value) -> Result<serde_json::Value, S
     if is_summary {
         Ok(response)
     } else {
-        Err("relay does not support inbox_summary".to_string())
+        Err("Inbox summary isn't available in this community.".to_string())
     }
 }
 

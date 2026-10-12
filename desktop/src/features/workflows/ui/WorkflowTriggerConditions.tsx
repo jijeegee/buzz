@@ -54,8 +54,7 @@ function fieldUsesFullHeightPicker(field: string): boolean {
 }
 
 function fieldPlaceholder(field: string): string {
-  if (field === "trigger_author") return "64-character hex pubkey";
-  if (field === "trigger_message_id") return "64-character hex event ID";
+  if (fieldUsesFullHeightPicker(field)) return "";
   return "e.g. deploy";
 }
 

@@ -11,16 +11,16 @@ import { personaDeleteDescription } from "./PersonaDeleteDialog.tsx";
 
 const persona = { displayName: "Scout" };
 
-test("cascade delete discloses relay archival (plural)", () => {
+test("cascade delete discloses member-list removal (plural)", () => {
   const copy = personaDeleteDescription(persona, 3);
-  assert.match(copy, /deletes 3 agent instances/);
-  assert.match(copy, /archives their identities on the relay/);
+  assert.match(copy, /deletes 3 agent instances, so/);
+  assert.match(copy, /no longer appear in member lists/);
 });
 
-test("cascade delete discloses relay archival (singular)", () => {
+test("cascade delete discloses member-list removal (singular)", () => {
   const copy = personaDeleteDescription(persona, 1);
-  assert.match(copy, /deletes 1 agent instance /);
-  assert.match(copy, /archives its identity on the relay/);
+  assert.match(copy, /deletes 1 agent instance, so/);
+  assert.match(copy, /no longer appears in member lists/);
 });
 
 test("no instances → no archival claim (nothing is archived)", () => {

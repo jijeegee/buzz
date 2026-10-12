@@ -126,8 +126,8 @@ function OnboardingRelayConnectionErrorCard({
         })
         .catch((error) => {
           hadActiveReconnectRef.current = false;
-          const detail = error instanceof Error ? error.message : String(error);
-          toast.error(`Could not reconnect to the relay. ${detail}`);
+          console.error("[onboarding] profile reconnect failed:", error);
+          toast.error("Couldn't reconnect. Try again.");
         })
         .finally(() => {
           reconnectActionPendingRef.current = false;

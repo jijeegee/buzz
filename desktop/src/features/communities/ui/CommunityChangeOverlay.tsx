@@ -51,7 +51,7 @@ export function CommunityChangeOverlay({
           // If requiresReinit, the tree remounts — overlay unmounts naturally.
           break;
         case "duplicate-relay":
-          setError("Another community already uses this relay URL.");
+          setError("You've already added this community.");
           break;
         case "not-found":
           setError("Community not found.");
@@ -79,7 +79,7 @@ export function CommunityChangeOverlay({
           Change community
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Update your community name or relay URL.
+          Update your community name.
         </p>
         <div className="mt-6">
           <CommunityEditForm

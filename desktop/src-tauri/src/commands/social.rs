@@ -60,7 +60,7 @@ pub async fn publish_note(
     state: State<'_, AppState>,
 ) -> Result<SubmitEventResponse, String> {
     let reply_id = reply_to
-        .map(|hex| EventId::from_hex(&hex).map_err(|e| format!("invalid reply_to event id: {e}")))
+        .map(|hex| EventId::from_hex(&hex).map_err(|_| "Couldn't find this message.".to_string()))
         .transpose()?;
     let mentions = mention_pubkeys.unwrap_or_default();
     let mention_refs: Vec<&str> = mentions.iter().map(|s| s.as_str()).collect();

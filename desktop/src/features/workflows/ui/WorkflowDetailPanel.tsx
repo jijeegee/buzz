@@ -50,7 +50,7 @@ export function WorkflowDetailPanel({
   const workflowStatus = workflow ? getWorkflowDisplayStatus(workflow) : null;
   const triggerError = errorMessage(
     triggerMutation.error,
-    "The relay did not create a workflow run.",
+    "Couldn't start the workflow.",
   );
   const runsError = errorMessage(
     runsQuery.error,

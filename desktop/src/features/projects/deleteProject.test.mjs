@@ -95,7 +95,7 @@ test("deleteProject builds a one-coordinate tombstone", async () => {
 test("deleteProject fails closed when the live project head is missing", async () => {
   await assert.rejects(
     deleteProject(project, { fetchEvents: async () => [] }),
-    /Could not find this project on the relay/,
+    /Couldn't find this project/,
   );
 });
 

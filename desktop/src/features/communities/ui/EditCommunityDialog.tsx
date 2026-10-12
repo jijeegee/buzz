@@ -127,9 +127,7 @@ export function EditCommunityDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Community</DialogTitle>
-          <DialogDescription>
-            Update this community's name or relay URL.
-          </DialogDescription>
+          <DialogDescription>Update this community's name.</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -160,39 +158,6 @@ export function EditCommunityDialog({
               placeholder="My Community"
               type="text"
               value={name}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="edit-ws-relay-url"
-            >
-              Relay URL
-            </label>
-            <Input
-              id="edit-ws-relay-url"
-              onChange={(e) => setRelayUrl(e.target.value)}
-              placeholder="wss://relay.example.com"
-              type="text"
-              value={relayUrl}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="edit-ws-token"
-            >
-              API Token
-              <span className="ml-1 text-xs font-normal text-muted-foreground">
-                (optional)
-              </span>
-            </label>
-            <Input
-              id="edit-ws-token"
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="buzz_..."
-              type="password"
-              value={token}
             />
           </div>
           <div className="flex flex-col gap-1.5">

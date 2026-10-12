@@ -9,7 +9,6 @@ import { relayClient } from "@/shared/api/relayClient";
 import { getMyRelayMembershipLookup } from "@/shared/api/relayMembers";
 import { isRelayUnreachableError } from "@/shared/lib/relayError";
 import {
-  getIdentity,
   importIdentity,
   persistCurrentIdentity,
 } from "@/shared/api/tauriIdentity";
@@ -175,7 +174,6 @@ export function OnboardingFlow({
   const [keyImportFormKey, setKeyImportFormKey] = React.useState(0);
   const [profileDraft, setProfileDraft] =
     React.useState<OnboardingProfileValues>(savedProfile);
-  const [deniedPubkey, setDeniedPubkey] = React.useState<string>("");
   const [persistError, setPersistError] = React.useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = React.useState(false);
   const [isProfileAdvancePending, setIsProfileAdvancePending] =
@@ -249,12 +247,6 @@ export function OnboardingFlow({
         setMembershipError(null);
 
         if (membershipStatus === "denied") {
-          try {
-            const identity = await getIdentity();
-            setDeniedPubkey(identity.pubkey);
-          } catch {
-            setDeniedPubkey("");
-          }
           setDeniedFromPage((prev) =>
             currentPage === "membership-denied" ? prev : currentPage,
           );
@@ -271,7 +263,7 @@ export function OnboardingFlow({
         if (membershipStatus === "error") {
           setMembershipError({
             kind: "error",
-            message: "Server error — try again",
+            message: "Something went wrong — try again",
           });
           return;
         }
@@ -286,12 +278,6 @@ export function OnboardingFlow({
             await profileUpdateMutation.mutateAsync(updatePayload);
           } catch (error) {
             if (isRelayMembershipDeniedError(error)) {
-              try {
-                const identity = await getIdentity();
-                setDeniedPubkey(identity.pubkey);
-              } catch {
-                setDeniedPubkey("");
-              }
               setDeniedFromPage((prev) =>
                 currentPage === "membership-denied" ? prev : currentPage,
               );
@@ -404,7 +390,6 @@ export function OnboardingFlow({
       queryClient.setQueryData(["identity"], identity);
       queryClient.removeQueries({ queryKey: profileQueryKey });
       profileUpdateMutation.reset();
-      setDeniedPubkey("");
       setTransitionDirection("backward");
       setCurrentPage("profile");
     },
@@ -489,7 +474,6 @@ export function OnboardingFlow({
           onRetry={() => {
             void saveProfileAndContinue(membershipRetryPage);
           }}
-          pubkey={deniedPubkey}
         />
         {isCommunityChangeOpen ? (
           <CommunityChangeOverlay
@@ -518,7 +502,7 @@ export function OnboardingFlow({
               {membershipError.kind === "unreachable" ? (
                 <>
                   <p className="font-medium text-destructive">
-                    Can't reach this relay
+                    Couldn't connect
                   </p>
                   <p className="mt-1 text-muted-foreground">
                     Check your connection or change your community.
@@ -538,7 +522,7 @@ export function OnboardingFlow({
                     {membershipError.message ?? "Something went wrong"}
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    The relay returned an error. Try again.
+                    Please try again in a moment.
                   </p>
                 </>
               )}

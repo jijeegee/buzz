@@ -448,7 +448,7 @@ test("Escape closes a filter picker, restores disclosure focus, then closes its 
       {
         label: "Author",
         picker: "workflow-author-picker",
-        search: "Search authors or paste a public key",
+        search: "Search authors",
       },
       {
         label: "Message",
@@ -566,7 +566,7 @@ test("does not select stale picker results when Enter outruns deferred filtering
 
   await dialog.getByText("Author", { exact: true }).locator("..").click();
   const authorSearch = dialog.getByRole("combobox", {
-    name: "Search authors or paste a public key",
+    name: "Search authors",
   });
   await expect(dialog.getByRole("option").first()).toBeVisible();
   await authorSearch.evaluate((input: HTMLInputElement) => {
@@ -640,7 +640,7 @@ test("round-trips manual author and reaction message IDs through save and reopen
     results.scrollTop = 0;
   });
   const authorSearch = dialog.getByRole("combobox", {
-    name: "Search authors or paste a public key",
+    name: "Search authors",
   });
   await authorSearch.fill(author);
   await expect(
@@ -663,7 +663,7 @@ test("round-trips manual author and reaction message IDs through save and reopen
   await openTriggerInspector(dialog);
   await dialog.getByText("Author", { exact: true }).locator("..").click();
   const correctedAuthorSearch = dialog.getByRole("combobox", {
-    name: "Search authors or paste a public key",
+    name: "Search authors",
   });
   await correctedAuthorSearch.fill(author);
   await expect(
@@ -751,7 +751,7 @@ test("toggles selected author and message filters while preserving sibling condi
   await authorOption.click();
 
   const authorSearch = dialog.getByRole("combobox", {
-    name: "Search authors or paste a public key",
+    name: "Search authors",
   });
   await authorSearch.fill(replacementAuthor);
   const replacementAuthorOption = dialog.getByRole("option", {

@@ -153,7 +153,7 @@ export function WorkflowAuthorPicker({
               : undefined
           }
           aria-controls={listId}
-          aria-label="Search authors or paste a public key"
+          aria-label="Search authors"
           aria-expanded="true"
           autoCapitalize="none"
           autoComplete="off"
@@ -202,7 +202,7 @@ export function WorkflowAuthorPicker({
               }
             }
           }}
-          placeholder="Search people or paste a public key…"
+          placeholder="Search authors…"
           role="combobox"
           spellCheck={false}
           value={query}

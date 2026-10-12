@@ -411,10 +411,7 @@ pub async fn update_managed_agent(
             &summary.pubkey,
         )?
     {
-        profile_sync_error = Some(
-            "managed policy sync failed: relay did not accept the updated policy; retry queued"
-                .to_string(),
-        );
+        profile_sync_error = Some("Couldn't sync agent changes. Kuzz will retry.".to_string());
     }
 
     // A rename is committed only when profile sync succeeds; otherwise restore
@@ -445,9 +442,9 @@ pub async fn update_managed_agent(
             .map(|_| ()),
         };
         if let Err(sync_error) = synced {
-            let rollback = rollback.ok_or_else(|| {
-                "missing local rollback state after relay profile sync failure".to_string()
-            })?;
+            eprintln!("buzz-desktop: agent profile sync failed: {sync_error}");
+            let rollback =
+                rollback.ok_or_else(|| "Couldn't sync agent changes. Try again.".to_string())?;
             rollback_failed_agent_update(&app, &state, &summary.pubkey, rollback)?;
             let restart_suffix = if access_restart_relays.is_empty() {
                 String::new()
@@ -462,9 +459,10 @@ pub async fn update_managed_agent(
                 .await
                 {
                     Ok(_) => String::new(),
-                    Err(error) => format!(
-                        " The runtime also failed to restart with the kept access policy: {error}"
-                    ),
+                    Err(error) => {
+                        eprintln!("buzz-desktop: agent restart after rollback failed: {error}");
+                        " The agent also couldn't restart.".to_string()
+                    }
                 }
             };
             let rollback_message = if access_policy_changed {
@@ -473,7 +471,7 @@ pub async fn update_managed_agent(
                 "No changes were saved"
             };
             return Err(format!(
-                "Agent rename failed because its relay profile could not be updated. {rollback_message}: {sync_error}.{restart_suffix}"
+                "Couldn't sync agent changes. {rollback_message}.{restart_suffix}"
             ));
         }
     }

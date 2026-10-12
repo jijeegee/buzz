@@ -100,7 +100,7 @@ function normalizeProjectAnnouncementInput({
   }
   const normalizedOwner = ownerPubkey.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(normalizedOwner)) {
-    throw new Error("Project owner public key is invalid.");
+    throw new Error("Couldn't create the project.");
   }
 
   const normalizedDescription = description?.trim() ?? "";

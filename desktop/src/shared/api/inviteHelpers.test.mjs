@@ -19,11 +19,11 @@ test("relayHttpFromWs maps secure and local relay schemes", () => {
 test("relayHttpFromWs rejects unexpected schemes", () => {
   assert.throws(
     () => relayHttpFromWs("https://relay.example"),
-    /Expected ws:\/\/ or wss:\/\//,
+    /This invite link isn't valid\./,
   );
   assert.throws(
     () => relayHttpFromWs("relay.example"),
-    /Expected ws:\/\/ or wss:\/\//,
+    /This invite link isn't valid\./,
   );
 });
 

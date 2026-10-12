@@ -57,7 +57,7 @@ export function useProjectRepositorySnapshots(
     return {
       error:
         enabled && !repository.cloneUrls[0]
-          ? new Error("Repository not found on the relay.")
+          ? new Error("Repository not found.")
           : query?.error,
       isLoading: query?.isLoading ?? false,
       repository,

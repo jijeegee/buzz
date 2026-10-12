@@ -177,7 +177,7 @@ async fn connect_authenticated_audio_socket(
         }
     })
     .await
-    .map_err(|_| "timeout waiting for challenge from relay".to_string())??;
+    .map_err(|_| "Couldn't join the huddle. Try again.".to_string())??;
 
     let auth_msg = build_audio_auth_message(&auth, relay_url, &challenge, parent_channel_id)?;
     ws_tx
@@ -230,7 +230,7 @@ async fn connect_authenticated_audio_socket(
         }
     })
     .await
-    .map_err(|_| "timeout waiting for joined from relay".to_string())??;
+    .map_err(|_| "Couldn't join the huddle. Try again.".to_string())??;
 
     Ok((ws_tx, ws_rx, peer_index, initial_peers))
 }

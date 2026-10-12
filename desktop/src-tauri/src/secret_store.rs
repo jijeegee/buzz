@@ -300,6 +300,9 @@ impl SecretStore {
 /// (`crates/goose/src/config/base.rs`): treat dbus / Secret Service / platform
 /// secure-storage failures as "keyring unavailable, fall back to file".
 #[cfg(feature = "system-keyring")]
+/// User-facing text for every secure-storage failure returned to the frontend.
+const SECURE_STORAGE_ERROR: &str = "Couldn't access secure storage on this device.";
+
 fn is_keyring_availability_error(error_str: &str) -> bool {
     let lower = error_str.to_lowercase();
     lower.contains("keyring")
@@ -403,14 +406,14 @@ impl SecretStore {
     #[cfg(feature = "system-keyring")]
     fn read_blob_raw_keyring(&self) -> Result<Option<Vec<u8>>, String> {
         let entry =
-            keyring_entry(&self.service, BLOB_KEY).map_err(|e| format!("keyring entry: {e}"))?;
+            keyring_entry(&self.service, BLOB_KEY).map_err(|_| SECURE_STORAGE_ERROR.to_string())?;
         match entry.get_password() {
             Ok(s) => Ok(Some(s.into_bytes())),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) if is_keyring_availability_error(&e.to_string()) => {
-                Err(format!("keyring unavailable: {e}"))
+                Err(SECURE_STORAGE_ERROR.to_string())
             }
-            Err(e) => Err(format!("keyring read: {e}")),
+            Err(_) => Err(SECURE_STORAGE_ERROR.to_string()),
         }
     }
 
@@ -494,7 +497,7 @@ impl SecretStore {
         // Write to keyring while still holding the file lock.
         let json = serde_json::to_string(&next).map_err(|e| format!("blob serialize: {e}"))?;
         if cap.is_some_and(|cap| utf16_units(&json) > cap) {
-            return Err("keyring blob is near the platform size limit".to_string());
+            return Err(SECURE_STORAGE_ERROR.to_string());
         }
         match self.write_blob_raw(json.as_bytes()) {
             Ok(()) => {
@@ -528,17 +531,18 @@ impl SecretStore {
     fn write_blob_raw_keyring(&self, bytes: &[u8]) -> Result<(), String> {
         let value = std::str::from_utf8(bytes).map_err(|e| format!("blob utf8 encode: {e}"))?;
         let entry =
-            keyring_entry(&self.service, BLOB_KEY).map_err(|e| format!("keyring entry: {e}"))?;
+            keyring_entry(&self.service, BLOB_KEY).map_err(|_| SECURE_STORAGE_ERROR.to_string())?;
         entry
             .set_password(value)
-            .map_err(|e| format!("keyring write: {e}"))
+            .map_err(|_| SECURE_STORAGE_ERROR.to_string())
     }
 
     /// Read a standalone credential. A token an older build kept in the blob
     /// is still returned until the next store moves it out.
     #[cfg(feature = "system-keyring")]
     fn load_standalone(&self, key: &str) -> Result<Option<String>, String> {
-        let entry = keyring_entry(&self.service, key).map_err(|e| format!("keyring entry: {e}"))?;
+        let entry =
+            keyring_entry(&self.service, key).map_err(|_| SECURE_STORAGE_ERROR.to_string())?;
         match entry.get_password() {
             Ok(value) => Ok(Some(value)),
             Err(keyring::Error::NoEntry) => Ok(self
@@ -546,26 +550,27 @@ impl SecretStore {
                 .and_then(|map| map.get(key).cloned())
                 .filter(|value| !value.is_empty())),
             Err(e) if is_keyring_availability_error(&e.to_string()) => {
-                Err(format!("keyring unavailable: {e}"))
+                Err(SECURE_STORAGE_ERROR.to_string())
             }
-            Err(e) => Err(format!("keyring read: {e}")),
+            Err(_) => Err(SECURE_STORAGE_ERROR.to_string()),
         }
     }
 
     #[cfg(feature = "system-keyring")]
     fn write_standalone(&self, key: &str, value: &str) -> Result<(), String> {
         keyring_entry(&self.service, key)
-            .map_err(|e| format!("keyring entry: {e}"))?
+            .map_err(|_| SECURE_STORAGE_ERROR.to_string())?
             .set_password(value)
-            .map_err(|e| format!("keyring write: {e}"))
+            .map_err(|_| SECURE_STORAGE_ERROR.to_string())
     }
 
     #[cfg(feature = "system-keyring")]
     fn delete_standalone(&self, key: &str) -> Result<(), String> {
-        let entry = keyring_entry(&self.service, key).map_err(|e| format!("keyring entry: {e}"))?;
+        let entry =
+            keyring_entry(&self.service, key).map_err(|_| SECURE_STORAGE_ERROR.to_string())?;
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(format!("keyring delete: {e}")),
+            Err(_) => Err(SECURE_STORAGE_ERROR.to_string()),
         }
     }
 
@@ -671,7 +676,7 @@ impl SecretStore {
         #[cfg(not(feature = "system-keyring"))]
         {
             let _ = key;
-            Err("system-keyring feature disabled".to_string())
+            Err(SECURE_STORAGE_ERROR.to_string())
         }
     }
 
@@ -689,7 +694,7 @@ impl SecretStore {
         }
         #[cfg(not(feature = "system-keyring"))]
         {
-            Err("system-keyring feature disabled".to_string())
+            Err(SECURE_STORAGE_ERROR.to_string())
         }
     }
 
@@ -722,7 +727,7 @@ impl SecretStore {
         #[cfg(not(feature = "system-keyring"))]
         {
             let _ = entries;
-            Err("system-keyring feature disabled".to_string())
+            Err(SECURE_STORAGE_ERROR.to_string())
         }
     }
 
@@ -765,7 +770,8 @@ impl SecretStore {
         // Try the old per-key DPK entry.
         match generic_password(dpk_opts(&self.service, key)) {
             Ok(bytes) => {
-                let value = String::from_utf8(bytes).map_err(|e| format!("keyring utf8: {e}"))?;
+                let value =
+                    String::from_utf8(bytes).map_err(|_| SECURE_STORAGE_ERROR.to_string())?;
                 // Write into blob (creates the blob if it doesn't exist).
                 self.store(key, &value)?;
                 // Best-effort cleanup of the old per-key entry.
@@ -780,7 +786,7 @@ impl SecretStore {
                 // Unsigned dev build — check old keyring-crate entry only.
                 self.migrate_legacy_key_keyring(key)
             }
-            Err(e) => Err(format!("keyring get: {e}")),
+            Err(_) => Err(SECURE_STORAGE_ERROR.to_string()),
         }
     }
 
@@ -794,7 +800,8 @@ impl SecretStore {
     /// migrate it into the blob if found.
     #[cfg(feature = "system-keyring")]
     fn migrate_legacy_key_keyring(&self, key: &str) -> Result<Option<String>, String> {
-        let entry = keyring_entry(&self.service, key).map_err(|e| format!("keyring entry: {e}"))?;
+        let entry =
+            keyring_entry(&self.service, key).map_err(|_| SECURE_STORAGE_ERROR.to_string())?;
         match entry.get_password() {
             Ok(value) => {
                 self.store(key, &value)?;
@@ -802,7 +809,7 @@ impl SecretStore {
                 Ok(Some(value))
             }
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(format!("keyring get: {e}")),
+            Err(_) => Err(SECURE_STORAGE_ERROR.to_string()),
         }
     }
 
@@ -832,7 +839,7 @@ impl SecretStore {
         #[cfg(not(feature = "system-keyring"))]
         {
             let _ = (key, expected);
-            Err("system-keyring feature disabled".to_string())
+            Err(SECURE_STORAGE_ERROR.to_string())
         }
     }
 
@@ -860,7 +867,7 @@ impl SecretStore {
         #[cfg(not(feature = "system-keyring"))]
         {
             let _ = (key, value);
-            Err("system-keyring feature disabled".to_string())
+            Err(SECURE_STORAGE_ERROR.to_string())
         }
     }
 
@@ -919,14 +926,14 @@ impl SecretStore {
                 }
                 {
                     let entry = keyring_entry(&self.service, key)
-                        .map_err(|e| format!("keyring entry constructor {key}: {e}"))?;
+                        .map_err(|_| SECURE_STORAGE_ERROR.to_string())?;
                     match entry.delete_credential() {
                         Ok(()) | Err(keyring::Error::NoEntry) => {}
                         Err(e) if is_keyring_availability_error(&e.to_string()) => {
-                            return Err(format!("keyring unavailable deleting {key}: {e}"));
+                            return Err(SECURE_STORAGE_ERROR.to_string());
                         }
-                        Err(e) => {
-                            return Err(format!("keyring per-key delete {key}: {e}"));
+                        Err(_) => {
+                            return Err(SECURE_STORAGE_ERROR.to_string());
                         }
                     }
                 }
@@ -945,14 +952,14 @@ impl SecretStore {
             // Step 4: delete the main blob entry.
             {
                 let entry = keyring_entry(&self.service, BLOB_KEY)
-                    .map_err(|e| format!("keyring entry constructor blob: {e}"))?;
+                    .map_err(|_| SECURE_STORAGE_ERROR.to_string())?;
                 match entry.delete_credential() {
                     Ok(()) | Err(keyring::Error::NoEntry) => {}
                     Err(e) if is_keyring_availability_error(&e.to_string()) => {
-                        return Err(format!("keyring unavailable: {e}"));
+                        return Err(SECURE_STORAGE_ERROR.to_string());
                     }
-                    Err(e) => {
-                        return Err(format!("keyring blob delete: {e}"));
+                    Err(_) => {
+                        return Err(SECURE_STORAGE_ERROR.to_string());
                     }
                 }
             }
@@ -1098,7 +1105,7 @@ impl SecretStore {
         #[cfg(not(feature = "system-keyring"))]
         {
             let _ = key;
-            Err("system-keyring feature disabled".to_string())
+            Err(SECURE_STORAGE_ERROR.to_string())
         }
     }
 }

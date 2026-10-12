@@ -100,8 +100,7 @@ export async function relayKlipyEndpoints(
     headers: { Accept: "application/nostr+json" },
     signal,
   });
-  if (!response.ok)
-    throw new Error(`Could not read relay capabilities (${response.status})`);
+  if (!response.ok) throw new Error("GIFs aren't available right now.");
   const info = (await response.json()) as RelayGifSearchInfo;
   return relayKlipyCapability(info);
 }

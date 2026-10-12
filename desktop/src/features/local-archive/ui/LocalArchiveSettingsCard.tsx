@@ -17,6 +17,7 @@ import {
 } from "@/shared/constants/kinds";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import { Button } from "@/shared/ui/button";
 import { Checkbox } from "@/shared/ui/checkbox";
 import { Switch } from "@/shared/ui/switch";
@@ -520,28 +521,35 @@ export function LocalArchiveSettingsCard() {
   // observer (24200) and metric (44200) owner_p subs each have their own
   // dedicated section above.
   const channelSubs = subs.filter((s) => s.scopeType !== "owner_p");
+  const showDeveloperSections = signingKeyUiTestSeam();
 
   return (
     <section className="min-w-0" data-testid="settings-local-archive">
       <SettingsSectionHeader
         title="Local archive"
-        description="Save copies of relay messages to a local SQLite database in your Kuzz nest. Events are re-verified against the relay at archive time."
+        description="Save messages on this computer."
       />
 
       <div className="space-y-6">
-        {/* Observer-feed archive — dedicated first-class section */}
-        <ObserverArchiveSection
-          enabled={observerEnabled}
-          onToggle={(checked) => void handleObserverToggle(checked)}
-          toggling={observerToggling}
-        />
+        {/* Observer-frame and turn-metric archives are developer tooling
+            (raw event kinds, keys); Kuzz shows them only in E2E builds. */}
+        {showDeveloperSections ? (
+          <>
+            {/* Observer-feed archive — dedicated first-class section */}
+            <ObserverArchiveSection
+              enabled={observerEnabled}
+              onToggle={(checked) => void handleObserverToggle(checked)}
+              toggling={observerToggling}
+            />
 
-        {/* Agent-turn-metric archive — dedicated first-class section */}
-        <AgentMetricArchiveSection
-          enabled={metricEnabled}
-          onToggle={(checked) => void handleMetricToggle(checked)}
-          toggling={metricToggling}
-        />
+            {/* Agent-turn-metric archive — dedicated first-class section */}
+            <AgentMetricArchiveSection
+              enabled={metricEnabled}
+              onToggle={(checked) => void handleMetricToggle(checked)}
+              toggling={metricToggling}
+            />
+          </>
+        ) : null}
 
         {/* Channel subscriptions */}
         <div data-testid="local-archive-subscriptions">

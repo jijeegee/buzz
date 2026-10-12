@@ -126,7 +126,7 @@ test.describe("agent lifecycle feedback screenshots", () => {
     // Core assertion: the cascade copy shows the correct instance count
     // (plural) and discloses the relay-side archival (PR #2135).
     await expect(dialog).toContainText(
-      "Also deletes 2 agent instances and archives their identities on the relay",
+      "Also deletes 2 agent instances, so they no longer appear in member lists",
     );
 
     await waitForAnimations(page);
@@ -253,7 +253,7 @@ test.describe("agent lifecycle feedback screenshots", () => {
 
     // Singular copy ("instance", "its identity") plus the archival disclosure.
     await expect(dialog).toContainText(
-      "Also deletes 1 agent instance and archives its identity on the relay",
+      "Also deletes 1 agent instance, so it no longer appears in member lists",
     );
 
     await waitForAnimations(page);

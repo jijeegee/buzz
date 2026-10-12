@@ -510,7 +510,7 @@ test("unsupported relays cannot create a channel-first project", async ({
 
   await expect(page.getByTestId("create-project-dialog")).toBeVisible();
   await expect(
-    page.getByText("This relay does not support projects yet"),
+    page.getByText("Projects aren't available in this community yet"),
   ).toBeVisible();
 
   const acceptedKinds = await page.evaluate(

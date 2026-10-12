@@ -180,7 +180,7 @@ fn assert_payload_scope(
             &crate::relay::relay_http_base_url(embedded_relay),
         )?,
         None if has_expectation(expected_relay_url) => {
-            return Err("deploy payload carries no relay; not deployed".to_string());
+            return Err("Couldn't deploy the agent.".to_string());
         }
         None => {}
     }
@@ -356,7 +356,7 @@ mod tests {
         let payload = serde_json::json!({});
         let relay_error =
             assert_payload_scope(&payload, Some("wss://tenant-a.example"), None, None).unwrap_err();
-        assert!(relay_error.contains("no relay"), "{relay_error}");
+        assert_eq!(relay_error, "Couldn't deploy the agent.");
         let signer_error = assert_payload_scope(&payload, None, Some("aa11"), None).unwrap_err();
         assert!(
             signer_error.contains("no active identity"),

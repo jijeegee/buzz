@@ -1,18 +1,12 @@
 import * as React from "react";
-import { AlertTriangle, ChevronDown, Search, X } from "lucide-react";
-import {
-  mergeAllowlist,
-  parsePubkeyInput,
-} from "@/features/agents/lib/respondToAllowlist";
-import { parsePubkeyInput as parseCanonicalPubkey } from "@/shared/lib/nostrUtils";
+import { AlertTriangle, Search, X } from "lucide-react";
+import { mergeAllowlist } from "@/features/agents/lib/respondToAllowlist";
 import { truncateNpub } from "@/shared/lib/pubkey";
 import { PubKey } from "@/shared/ui/PubKey";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useUserSearchQuery } from "@/features/profile/hooks";
 import type { RespondToMode, UserSearchResult } from "@/shared/api/types";
-import { cn } from "@/shared/lib/cn";
 import { Input } from "@/shared/ui/input";
-import { Textarea } from "@/shared/ui/textarea";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import {
   type AgentRunLocation,
@@ -116,8 +110,6 @@ export function CreateAgentRespondToField({
   runLocation?: AgentRunLocation | null;
 }) {
   const [query, setQuery] = React.useState("");
-  const [isDirectEntryOpen, setIsDirectEntryOpen] = React.useState(false);
-  const [pasteText, setPasteText] = React.useState("");
 
   const deferredQuery = React.useDeferredValue(query.trim());
   const allowlistSet = React.useMemo(
@@ -139,18 +131,8 @@ export function CreateAgentRespondToField({
     [allowlistSet, isArchivedDiscovery, userSearchQuery.data],
   );
 
-  const pasteParsed = React.useMemo(
-    () => parsePubkeyInput(pasteText),
-    [pasteText],
-  );
-
   function handleAddSearchResult(user: UserSearchResult) {
     onAllowlistChange(mergeAllowlist(allowlist, [user.pubkey]));
-    setQuery("");
-  }
-
-  function handleAddRawPubkey(pubkey: string) {
-    onAllowlistChange(mergeAllowlist(allowlist, [pubkey]));
     setQuery("");
   }
 
@@ -158,12 +140,6 @@ export function CreateAgentRespondToField({
     onAllowlistChange(
       allowlist.filter((p) => p.toLowerCase() !== pubkey.toLowerCase()),
     );
-  }
-
-  function handleAddFromPaste() {
-    if (pasteParsed.valid.length === 0) return;
-    onAllowlistChange(mergeAllowlist(allowlist, pasteParsed.valid));
-    setPasteText("");
   }
 
   const isPersonaVariant = variant === "persona";
@@ -251,18 +227,10 @@ export function CreateAgentRespondToField({
           allowlist={allowlist}
           deferredQuery={deferredQuery}
           disabled={disabled}
-          isDirectEntryOpen={isDirectEntryOpen}
-          onAddFromPaste={handleAddFromPaste}
-          onAddRawPubkey={handleAddRawPubkey}
           onAddSearchResult={handleAddSearchResult}
-          onPasteTextChange={setPasteText}
           onQueryChange={setQuery}
           onRemove={handleRemove}
-          onToggleDirectEntry={() => setIsDirectEntryOpen((v) => !v)}
           ownerPubkey={ownerPubkey ?? null}
-          pasteInvalid={pasteParsed.invalid}
-          pasteText={pasteText}
-          pasteValidCount={pasteParsed.valid.length}
           query={query}
           searchError={
             userSearchQuery.error instanceof Error
@@ -283,18 +251,10 @@ function AllowlistPicker({
   allowlist,
   deferredQuery,
   disabled,
-  isDirectEntryOpen,
-  onAddFromPaste,
-  onAddRawPubkey,
   onAddSearchResult,
-  onPasteTextChange,
   onQueryChange,
   onRemove,
-  onToggleDirectEntry,
   ownerPubkey,
-  pasteInvalid,
-  pasteText,
-  pasteValidCount,
   query,
   searchError,
   searchIsLoading,
@@ -304,18 +264,10 @@ function AllowlistPicker({
   allowlist: string[];
   deferredQuery: string;
   disabled?: boolean;
-  isDirectEntryOpen: boolean;
-  onAddFromPaste: () => void;
-  onAddRawPubkey: (pubkey: string) => void;
   onAddSearchResult: (user: UserSearchResult) => void;
-  onPasteTextChange: (value: string) => void;
   onQueryChange: (value: string) => void;
   onRemove: (pubkey: string) => void;
-  onToggleDirectEntry: () => void;
   ownerPubkey: string | null;
-  pasteInvalid: string[];
-  pasteText: string;
-  pasteValidCount: number;
   query: string;
   searchError: string | null;
   searchIsLoading: boolean;
@@ -323,13 +275,6 @@ function AllowlistPicker({
   variant?: "default" | "persona";
 }) {
   const isPersona = variant === "persona";
-
-  // Detect if the query is a pubkey (npub or hex) not already in the list;
-  // direct entry offers the canonical hex for storage.
-  const queryPubkey = parseCanonicalPubkey(deferredQuery);
-  const queryIsDirectPubkey =
-    queryPubkey !== null &&
-    !allowlist.some((p) => p.toLowerCase() === queryPubkey);
 
   return (
     <div
@@ -367,9 +312,7 @@ function AllowlistPicker({
             data-testid="agent-respond-to-search"
             disabled={disabled}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder={
-              isPersona ? "Search people" : "Search by name or NIP-05."
-            }
+            placeholder={isPersona ? "Search people" : "Search by name"}
             value={query}
           />
         </div>
@@ -436,30 +379,6 @@ function AllowlistPicker({
                   </button>
                 ))}
               </div>
-            ) : queryIsDirectPubkey ? (
-              <button
-                className="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
-                data-testid="agent-respond-to-add-raw-pubkey"
-                onClick={() => onAddRawPubkey(queryPubkey)}
-                type="button"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <UserAvatar
-                    avatarUrl={null}
-                    displayName={truncateNpub(queryPubkey)}
-                    size="xs"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium leading-5">
-                      {truncateNpub(queryPubkey)}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      Add pubkey directly
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs text-muted-foreground">Add</span>
-              </button>
             ) : (
               <p className="px-2 py-1 text-sm text-muted-foreground">
                 No matching users.
@@ -470,68 +389,6 @@ function AllowlistPicker({
       </div>
       {searchError ? (
         <p className="text-sm text-destructive">{searchError}</p>
-      ) : null}
-      {!isPersona ? (
-        <div className="space-y-2">
-          <button
-            aria-controls="agent-respond-to-direct-panel"
-            aria-expanded={isDirectEntryOpen}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            data-testid="agent-respond-to-toggle-direct"
-            onClick={onToggleDirectEntry}
-            type="button"
-          >
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 transition-transform",
-                isDirectEntryOpen && "rotate-180",
-              )}
-            />
-            <span>Paste pubkeys</span>
-          </button>
-          {isDirectEntryOpen ? (
-            <div
-              className="space-y-2 rounded-lg border border-dashed border-border/80 bg-background/70 p-2.5"
-              id="agent-respond-to-direct-panel"
-            >
-              <p className="text-xs text-muted-foreground">
-                One per line, or comma/space-separated. Each entry is an npub
-                (npub1…) or a 64-char hex public key.
-              </p>
-              <Textarea
-                className="min-h-20 font-mono text-xs"
-                data-testid="agent-respond-to-paste"
-                disabled={disabled}
-                onChange={(event) => onPasteTextChange(event.target.value)}
-                placeholder="npub1… or abcdef0123…"
-                value={pasteText}
-              />
-              {pasteInvalid.length > 0 ? (
-                <p className="text-xs text-destructive">
-                  {pasteInvalid.length} entr
-                  {pasteInvalid.length === 1 ? "y is" : "ies are"} not a valid
-                  npub or 64-char hex public key and will be ignored.
-                </p>
-              ) : null}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {pasteValidCount > 0
-                    ? `${pasteValidCount} valid pubkey${pasteValidCount === 1 ? "" : "s"} ready.`
-                    : "No valid pubkeys yet."}
-                </span>
-                <button
-                  className="rounded-md border border-border/80 bg-background px-2.5 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  data-testid="agent-respond-to-paste-add"
-                  disabled={disabled || pasteValidCount === 0}
-                  onClick={onAddFromPaste}
-                  type="button"
-                >
-                  Add people
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
       ) : null}
     </div>
   );

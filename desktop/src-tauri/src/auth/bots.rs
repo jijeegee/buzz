@@ -1022,7 +1022,7 @@ pub(crate) fn managed_agent_message_keys(
         ));
     }
     let keys = nostr::Keys::parse(record.private_key_nsec.trim())
-        .map_err(|error| format!("failed to parse managed agent key: {error}"))?;
+        .map_err(|_| "Something went wrong with this agent. Try again.".to_string())?;
     if !keys
         .public_key()
         .to_hex()

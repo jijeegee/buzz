@@ -39,8 +39,14 @@ test("buildQuoteTags emits the NIP-18 q tag with an empty relay hint", () => {
 });
 
 test("buildQuoteTags rejects malformed ids and pubkeys", () => {
-  assert.throws(() => buildQuoteTags("not-hex", AUTHOR), /valid event ID/);
-  assert.throws(() => buildQuoteTags(EVENT_ID, "short"), /valid author/);
+  assert.throws(
+    () => buildQuoteTags("not-hex", AUTHOR),
+    /Couldn't quote this message/,
+  );
+  assert.throws(
+    () => buildQuoteTags(EVENT_ID, "short"),
+    /Couldn't quote this message/,
+  );
 });
 
 test("a quote tag never contributes thread placement", () => {

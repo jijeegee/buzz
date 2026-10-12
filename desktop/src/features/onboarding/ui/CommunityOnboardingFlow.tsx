@@ -191,7 +191,6 @@ export function CommunityOnboardingFlow({
   const checkedProfileTransactionRef = React.useRef<string | null>(null);
   const [starterChannelFailureCount, setStarterChannelFailureCount] =
     React.useState(0);
-  const [deniedPubkey, setDeniedPubkey] = React.useState("");
   const [isMembershipDenied, setIsMembershipDenied] = React.useState(false);
   const [isCommunityChangeOpen, setIsCommunityChangeOpen] =
     React.useState(false);
@@ -413,7 +412,6 @@ export function CommunityOnboardingFlow({
             setIsMembershipDenied(false);
             update({ stage: "connecting", error: undefined });
           }}
-          pubkey={deniedPubkey}
         />
         {isCommunityChangeOpen ? (
           <CommunityChangeOverlay
@@ -469,12 +467,6 @@ export function CommunityOnboardingFlow({
       update({ stage: "team-intro", error: undefined });
     } catch (error) {
       if (isRelayMembershipDeniedError(error)) {
-        try {
-          const identity = await getIdentity();
-          setDeniedPubkey(identity.pubkey);
-        } catch {
-          setDeniedPubkey("");
-        }
         setIsMembershipDenied(true);
         return;
       }

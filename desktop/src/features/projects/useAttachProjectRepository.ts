@@ -35,9 +35,7 @@ async function attachProjectRepository({
   });
   const liveHead = liveHeads[0];
   if (!liveHead) {
-    throw new Error(
-      "Could not find this project on the relay. Refresh and try again.",
-    );
+    throw new Error("Couldn't find this project. Refresh and try again.");
   }
 
   // Dominated-write guard.

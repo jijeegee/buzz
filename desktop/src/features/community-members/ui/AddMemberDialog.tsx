@@ -271,9 +271,7 @@ export function DirectAddMemberForm({
                         }
                       }}
                       placeholder={
-                        selectedUsers.length === 0
-                          ? "Search people or paste an npub"
-                          : ""
+                        selectedUsers.length === 0 ? "Search people" : ""
                       }
                       ref={searchInputRef}
                       role="combobox"
@@ -368,8 +366,7 @@ export function DirectAddMemberForm({
                   </>
                 ) : (
                   <p className="px-3 py-3 text-sm text-muted-foreground">
-                    No people found. Paste a full npub or hex public key to add
-                    someone directly.
+                    No people found.
                   </p>
                 )}
               </div>

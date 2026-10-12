@@ -167,7 +167,7 @@ function PairingSteps({ step }: { step: PairingStep }) {
             data-settings-subcopy
           >
             {isPaired
-              ? "Your mobile app is now connected to this relay."
+              ? "Your mobile app is now connected."
               : "Your mobile app will connect after you confirm the code."}
           </p>
         </div>
@@ -397,9 +397,8 @@ export function MobilePairingCard({
         title="Mobile"
         description={
           <>
-            Connect the Kuzz mobile app to this relay by scanning a QR code. The
-            connection is secured with end-to-end encryption and a verification
-            code.
+            Connect the Kuzz mobile app by scanning a QR code. The connection is
+            secured with end-to-end encryption and a verification code.
           </>
         }
       />
