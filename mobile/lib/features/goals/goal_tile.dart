@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/theme/theme.dart';
+import 'goal_links.dart';
 import 'goal_tree.dart';
 
-/// One goal in an outline: status toggle, `L<layer>` title, and progress.
-/// Without [onTap] and [onToggleStatus] it is read-only; [muted] fades it.
+/// One goal in an outline: status toggle, `L<layer>` title, progress, and
+/// its linked threads and messages. Without [onTap] and [onToggleStatus] it
+/// is read-only; [muted] fades it. Links open through [onOpenLink], even when
+/// read-only; [currentThreadId]'s link reads "This thread" and stays put.
+/// [linkKinds] tells threads from messages; unknown links show as threads.
 class GoalTile extends StatelessWidget {
   const GoalTile({
     super.key,
@@ -16,6 +20,9 @@ class GoalTile extends StatelessWidget {
     required this.onTap,
     required this.onToggleStatus,
     this.muted = false,
+    this.onOpenLink,
+    this.currentThreadId,
+    this.linkKinds,
   });
 
   final int layer;
@@ -27,6 +34,9 @@ class GoalTile extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onToggleStatus;
   final bool muted;
+  final ValueChanged<GoalLinkTarget>? onOpenLink;
+  final String? currentThreadId;
+  final Map<String, GoalLinkInfo>? linkKinds;
 
   @override
   Widget build(BuildContext context) {
@@ -64,15 +74,17 @@ class GoalTile extends StatelessWidget {
                             : null,
                       ),
                     ),
-                    if (progress.total > 0 || node.threads.isNotEmpty)
+                    if (progress.total > 0)
                       Text(
-                        [
-                          if (progress.total > 0)
-                            '${progress.done}/${progress.total}',
-                          if (node.threads.isNotEmpty)
-                            '${node.threads.length} thread${node.threads.length == 1 ? '' : 's'}',
-                        ].join(' · '),
+                        '${progress.done}/${progress.total}',
                         style: context.textTheme.bodySmall,
+                      ),
+                    if (node.threads.isNotEmpty)
+                      Wrap(
+                        spacing: Grid.xs,
+                        children: [
+                          for (final thread in node.threads) _link(thread),
+                        ],
                       ),
                   ],
                 ),
@@ -83,6 +95,56 @@ class GoalTile extends StatelessWidget {
       ),
     );
     return muted ? Opacity(opacity: 0.5, child: tile) : tile;
+  }
+
+  Widget _link(String id) {
+    final isCurrent = id == currentThreadId;
+    final (:label, :target) = goalLinkView(id, linkKinds?[id]);
+    final open = onOpenLink;
+    return _ThreadLink(
+      key: ValueKey('goal-thread-$id'),
+      label: isCurrent ? 'This thread' : label,
+      onTap: isCurrent || target == null || open == null
+          ? null
+          : () => open(target),
+    );
+  }
+}
+
+class _ThreadLink extends StatelessWidget {
+  const _ThreadLink({super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = onTap == null
+        ? context.colors.onSurfaceVariant
+        : context.colors.primary;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Grid.half),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              label == 'Message'
+                  ? LucideIcons.messageSquare
+                  : LucideIcons.messagesSquare,
+              size: 14,
+              color: color,
+            ),
+            const SizedBox(width: Grid.half),
+            Text(
+              label,
+              style: context.textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

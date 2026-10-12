@@ -1,3 +1,4 @@
+import 'package:buzz/features/goals/goal_links.dart';
 import 'package:buzz/features/goals/goal_provider.dart';
 import 'package:buzz/features/goals/goal_tree.dart';
 import 'package:buzz/features/goals/thread_goal_chip.dart';
@@ -15,6 +16,10 @@ const _thread =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const _otherThread =
     'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+const _message =
+    'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+const _gone =
+    'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
 GoalTree _tree() {
   var tree = GoalTree.empty;
@@ -47,6 +52,7 @@ Future<_FakeGoalActions> _pump(
   WidgetTester tester,
   Widget child, {
   GoalTree? tree,
+  Map<String, GoalLinkInfo> linkKinds = const {},
 }) async {
   late _FakeGoalActions actions;
   await tester.pumpWidget(
@@ -62,6 +68,7 @@ Future<_FakeGoalActions> _pump(
         goalActionsProvider.overrideWith(
           (ref) => actions = _FakeGoalActions(ref),
         ),
+        goalLinkKindsProvider.overrideWith((ref, args) async => linkKinds),
       ],
       child: child,
     ),
@@ -76,35 +83,132 @@ Future<_FakeGoalActions> _pump(
 }
 
 void main() {
-  testWidgets('chip shows the linked path below layer 1 and progress', (
-    tester,
-  ) async {
+  testWidgets('app bar button opens the thread goals page', (tester) async {
     await _pump(
       tester,
-      const ThreadGoalChip(channelId: _channel, threadRootId: _thread),
+      const ThreadGoalsButton(channelId: _channel, threadRootId: _thread),
     );
-    expect(find.text('Server'), findsOneWidget);
-    expect(find.textContaining('Launch'), findsNothing);
-    expect(find.text('1/2'), findsOneWidget);
+    expect(find.byKey(const ValueKey('thread-goals-button')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('thread-goals-button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ThreadGoalsPage), findsOneWidget);
+    expect(find.byKey(const ValueKey('thread-goal-card')), findsOneWidget);
   });
 
-  testWidgets('chip invites linking when the thread has no goal', (
+  testWidgets('thread links open other threads; this thread stays put', (
     tester,
   ) async {
+    final tree = _tree().apply(
+      const LinkThread(id: 'ui', thread: _otherThread),
+      editor: _editor,
+      now: 2,
+    );
     await _pump(
       tester,
-      const ThreadGoalChip(channelId: _channel, threadRootId: _otherThread),
+      const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
+      tree: tree,
     );
-    expect(find.text('Link this thread to a goal'), findsOneWidget);
+    InkWell link(String thread) => tester.widget<InkWell>(
+      find.descendant(
+        of: find.byKey(ValueKey('goal-thread-$thread')),
+        matching: find.byType(InkWell),
+      ),
+    );
+    expect(find.text('This thread'), findsOneWidget);
+    expect(link(_thread).onTap, isNull);
+    // The other branch is read-only and faded, but its thread still opens.
+    expect(link(_otherThread).onTap, isNotNull);
   });
 
-  testWidgets('chip hides in conversations without goals', (tester) async {
+  testWidgets('message links read Message; missing ones are disabled', (
+    tester,
+  ) async {
+    var tree = _tree();
+    for (final id in [_otherThread, _message, _gone]) {
+      tree = tree.apply(
+        LinkThread(id: 'ui', thread: id),
+        editor: _editor,
+        now: 2,
+      );
+    }
     await _pump(
       tester,
-      const ThreadGoalChip(channelId: _channel, threadRootId: _thread),
-      tree: GoalTree.empty,
+      const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
+      tree: tree,
+      linkKinds: {
+        _otherThread: (kind: GoalLinkKind.thread, threadRootId: null),
+        _message: (kind: GoalLinkKind.message, threadRootId: null),
+        _gone: (kind: GoalLinkKind.missing, threadRootId: null),
+      },
     );
-    expect(find.byKey(const ValueKey('thread-goal-chip')), findsNothing);
+    Finder link(String id) => find.byKey(ValueKey('goal-thread-$id'));
+    InkWell ink(String id) => tester.widget<InkWell>(
+      find.descendant(of: link(id), matching: find.byType(InkWell)),
+    );
+    String? label(String id) => tester
+        .widget<Text>(
+          find.descendant(of: link(id), matching: find.byType(Text)),
+        )
+        .data;
+    expect(label(_otherThread), 'Thread');
+    expect(label(_message), 'Message');
+    expect(label(_gone), 'Message');
+    expect(ink(_message).onTap, isNotNull);
+    expect(ink(_gone).onTap, isNull);
+  });
+
+  testWidgets('a message links only to the goals its place allows', (
+    tester,
+  ) async {
+    Future<_FakeGoalActions> open(String? threadRootId) async {
+      // A fresh provider scope per opening.
+      await tester.pumpWidget(const SizedBox());
+      final actions = await _pump(
+        tester,
+        Scaffold(
+          body: Consumer(
+            builder: (context, ref, _) => TextButton(
+              key: const ValueKey('open'),
+              onPressed: () => showMessageGoalLink(
+                context: Navigator.of(context).context,
+                channelId: _channel,
+                messageId: _message,
+                threadRootId: threadRootId,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('open')));
+      await tester.pumpAndSettle();
+      return actions;
+    }
+
+    InkWell? option(String id) {
+      final found = find.byKey(ValueKey('thread-goal-link-$id'));
+      return found.evaluate().isEmpty ? null : tester.widget<InkWell>(found);
+    }
+
+    // Main timeline: layer 2 and below; a layer 2 goal may go under layer 1.
+    final main = await open(null);
+    expect(option('root')!.onTap, isNull);
+    expect(
+      find.byKey(const ValueKey('thread-goal-create-under-root')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('thread-goal-link-ui')));
+    await tester.pumpAndSettle();
+    final link = main.batches.single.single as LinkThread;
+    expect((link.id, link.thread), ('ui', _message));
+
+    // In a linked thread: only the thread's goal and its sub-goals.
+    await open(_thread);
+    for (final id in ['srv', 'cas', 'val']) {
+      expect(option(id)!.onTap, isNotNull, reason: id);
+    }
+    expect(option('root'), isNull);
+    expect(option('ui'), isNull);
   });
 
   testWidgets('linked page shows the sub-goals and edits them', (tester) async {
@@ -202,6 +306,10 @@ void main() {
   testWidgets('the goal card toggles the linked goal and relinks', (
     tester,
   ) async {
+    // Thread links make rows taller; keep the relink button on screen.
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final actions = await _pump(
       tester,
       const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),

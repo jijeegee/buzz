@@ -2083,8 +2083,9 @@ pub struct FormatPromptArgs<'a> {
     /// Owner-signed instructions for an active huddle channel.
     pub huddle_instructions: Option<&'a str>,
     pub channel_info: Option<&'a PromptChannelInfo>,
-    /// Rendered `<goal-context>` body — the conversation's goal tree, fetched
-    /// fresh each turn (see `goal_context`).
+    /// Rendered `<goal-context>` body — the conversation's goals, sent only
+    /// when the session does not already hold them (see
+    /// `goal_context::goal_context_for_turn`).
     pub goal_context: Option<&'a str>,
     /// Rendered `<goal-update>` body — layer 0 goals that changed since this
     /// live session last saw them (see `layer0_goals::render_goal_update`).

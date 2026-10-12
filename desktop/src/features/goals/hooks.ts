@@ -12,6 +12,7 @@ import {
   getGoalTreeHistory,
   restoreGoalTree,
 } from "@/shared/api/tauriGoals";
+import { classifyGoalLinks } from "./goalLinks";
 
 /** Kind 40110 — see `buzz_core::kind::KIND_GOAL_TREE`. */
 export const KIND_GOAL_TREE = 40110;
@@ -109,6 +110,30 @@ export function useGoalAssigneeNames(tree: GoalTree | undefined) {
       usersQuery.data?.profiles[pubkey]?.displayName ?? "Unknown member",
     [usersQuery.data],
   );
+}
+
+/**
+ * Whether each id linked in `tree` is a thread, a message, a reply, or
+ * missing (see `classifyGoalLinks`). Undefined until loaded.
+ */
+export function useGoalLinkKinds(
+  channelId: string | null,
+  tree: GoalTree | undefined,
+) {
+  const ids = React.useMemo(
+    () =>
+      [...new Set((tree?.nodes ?? []).flatMap((n) => n.threads ?? []))].sort(),
+    [tree],
+  );
+  return useQuery({
+    queryKey: ["goal-link-kinds", channelId, ids.join(",")],
+    queryFn: () => {
+      if (!channelId) return Promise.reject(new Error("No channel selected"));
+      return classifyGoalLinks(channelId, ids);
+    },
+    enabled: channelId !== null && ids.length > 0,
+    staleTime: 30_000,
+  }).data;
 }
 
 export function useGoalHistoryQuery(

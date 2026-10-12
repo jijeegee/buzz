@@ -134,6 +134,10 @@ pub struct ChannelDeliveryState {
     /// unknown, like `layer0_goals_seen`. A turn whose current settings
     /// differ carries a `<settings-update>`.
     pub live_text_seen: Option<crate::live_settings::LiveTextHashes>,
+    /// The conversation goals this session holds, or `None` when unknown. A
+    /// turn sends goals only when they differ (see
+    /// `goal_context::goal_context_for_turn`).
+    pub goal_context_seen: Option<crate::goal_context::GoalsSeen>,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -309,6 +313,22 @@ impl SessionState {
     /// Record the layer 0 goals a successful turn left `scope`'s session with.
     pub(crate) fn mark_layer0_goals_seen(&mut self, scope: SessionScope, goals: Option<String>) {
         self.deliveries.entry(scope).or_default().layer0_goals_seen = Some(goals);
+    }
+
+    /// Record the goals a session now holds; `None` (fetch failed or goals
+    /// off this turn) leaves what it knew untouched.
+    pub(crate) fn mark_goal_context_seen(
+        &mut self,
+        scope: SessionScope,
+        goals: Option<&crate::goal_context::GoalsNow>,
+    ) {
+        if let Some(goals) = goals {
+            let delivery = self.deliveries.entry(scope).or_default();
+            delivery.goal_context_seen = Some(crate::goal_context::GoalsSeen::after(
+                delivery.goal_context_seen.as_ref(),
+                goals,
+            ));
+        }
     }
 
     /// Record the live text settings a successful turn left `scope`'s
@@ -1781,6 +1801,9 @@ struct NewSessionChannelContext<'a> {
     canvas: Option<&'a str>,
     /// Rendered `<channel-roster>` body (dispatcher mode, non-DM channels).
     roster: Option<&'a str>,
+    /// Rendered `<goal-context>` body: the conversation's goals as the session
+    /// starts. Later changes reach it as a turn's `<goal-context>`.
+    goals: Option<&'a str>,
     name: Option<&'a str>,
     scope: Option<&'a SessionScope>,
     channel_type: Option<&'a str>,
@@ -1795,9 +1818,15 @@ pub(crate) struct LiveNow {
 }
 
 impl PromptContext {
-    /// The current text settings: the live file's when Desktop keeps one,
-    /// else the launch values.
+    /// [`Self::live_now_in`] outside any project home channel.
     pub(crate) fn live_now(&self) -> LiveNow {
+        self.live_now_in(false)
+    }
+
+    /// The current text settings: the live file's when Desktop keeps one,
+    /// else the launch values. `<base>` carries the full project guidance
+    /// only when the session's channel is a `project_home`.
+    pub(crate) fn live_now_in(&self, project_home: bool) -> LiveNow {
         let values =
             self.live_settings
                 .current()
@@ -1811,7 +1840,7 @@ impl PromptContext {
         LiveNow {
             base_prompt: self.base_prompt.clone().map(|base| {
                 crate::task_threads::append_task_thread_guidance(
-                    base,
+                    crate::base_prompt_trim::for_channel(base, project_home),
                     text.task_thread_rules.as_deref(),
                 )
             }),
@@ -1893,28 +1922,31 @@ async fn open_session_and_apply_model(
     // its own `<core-memory>` boundary, and canvas carries its own
     // `<channel-canvas>` boundary; both are appended with a blank-line separator.
     let is_goose = agent.agent_name == "goose";
-    let combined_system_prompt = with_roster(
-        with_canvas(
-            with_huddle_instructions(
-                with_core(
-                    with_layer0_goals(
-                        with_team(
-                            framed_system_prompt(
-                                &ctx.cwd,
-                                standing.base_prompt,
-                                standing.system_prompt,
+    let combined_system_prompt = with_goals(
+        with_roster(
+            with_canvas(
+                with_huddle_instructions(
+                    with_core(
+                        with_layer0_goals(
+                            with_team(
+                                framed_system_prompt(
+                                    &ctx.cwd,
+                                    standing.base_prompt,
+                                    standing.system_prompt,
+                                ),
+                                standing.team_instructions,
                             ),
-                            standing.team_instructions,
+                            standing.layer0_goals,
                         ),
-                        standing.layer0_goals,
+                        agent_core,
                     ),
-                    agent_core,
+                    channel.huddle_instructions,
                 ),
-                channel.huddle_instructions,
+                channel.canvas,
             ),
-            channel.canvas,
+            channel.roster,
         ),
-        channel.roster,
+        channel.goals,
     );
 
     let session_title = ctx.session_title.as_deref().map(|agent_name| {
@@ -2214,6 +2246,7 @@ pub(crate) async fn run_isolated_prompt(
         ctx,
         core.as_deref(),
         NewSessionChannelContext {
+            goals: None,
             huddle_instructions: None,
             canvas: None,
             roster: None,
@@ -2664,6 +2697,18 @@ fn with_team(prompt: Option<String>, instructions: Option<&str>) -> Option<Strin
         (Some(prompt), None) => Some(prompt),
         (None, None) => None,
     }
+}
+
+/// Append the conversation's `<goal-context>` at the end of the system prompt,
+/// after everything that never changes, so the session holds its goals from
+/// the start without a copy in every turn.
+fn with_goals(prompt: Option<String>, goals: Option<&str>) -> Option<String> {
+    let Some(goals) = goals else { return prompt };
+    let section = crate::prompt_framing::semantic_section("goal-context", goals);
+    Some(match prompt {
+        Some(prompt) => format!("{prompt}\n\n{section}"),
+        None => section,
+    })
 }
 
 /// Append rendered layer 0 goal sections after the framed prompt.
@@ -3354,7 +3399,11 @@ pub async fn run_prompt_task(
     // Live text settings, read once like the layer 0 goals: a new session
     // takes them into its system prompt, a live one that last saw different
     // values gets a one-time `<settings-update>` below.
-    let live_now = ctx.live_now();
+    let live_now = ctx.live_now_in(
+        resolved_channel_info
+            .as_ref()
+            .is_some_and(|info| info.project.is_some()),
+    );
 
     let (session_id, is_new_session) = match &source {
         PromptSource::Channel(scope) => {
@@ -3372,12 +3421,28 @@ pub async fn run_prompt_task(
                     .session_ledger
                     .as_ref()
                     .and_then(|ledger| ledger.take_resumable(scope, &ctx.harness_name, &ctx.cwd));
+                // The goals a new session starts with go in its system prompt;
+                // agents without one, and reattached sessions, get them on
+                // their first turn instead. `None`: not known (fetch failed).
+                let start_goals = if ctx.goals_enabled
+                    && agent.has_system_prompt_support()
+                    && reattach.is_none()
+                {
+                    crate::goal_context::fetch_goal_tree(*cid, &ctx.rest_client)
+                        .await
+                        .map(|tree| {
+                            crate::goal_context::GoalsNow::new(&tree, *cid, scope.root_event_id())
+                        })
+                } else {
+                    None
+                };
                 match open_session_and_apply_model(
                     &mut agent,
                     &ctx,
                     agent_core.as_deref(),
                     LiveStanding::new(&live_now, layer0_now.as_deref()),
                     NewSessionChannelContext {
+                        goals: start_goals.as_ref().and_then(|goals| goals.rendered()),
                         huddle_instructions: huddle_instructions.as_deref(),
                         canvas: agent_canvas.as_deref(),
                         roster: channel_roster.as_deref(),
@@ -3427,6 +3492,12 @@ pub async fn run_prompt_task(
                                     .filter(|held| held.layer0_goals == standing_now.layer0_goals)
                                     .map(|_| layer0_now.clone()),
                                 live_text_seen: held.as_ref().map(|held| held.text.clone()),
+                                goal_context_seen: start_goals
+                                    .as_ref()
+                                    .filter(|_| !reattached)
+                                    .map(|goals| {
+                                        crate::goal_context::GoalsSeen::after(None, goals)
+                                    }),
                                 ..Default::default()
                             },
                         );
@@ -3491,6 +3562,7 @@ pub async fn run_prompt_task(
                     &ctx,
                     None,
                     NewSessionChannelContext {
+                        goals: None,
                         huddle_instructions: None,
                         canvas: None,
                         roster: None,
@@ -3754,6 +3826,9 @@ pub async fn run_prompt_task(
     // (`prompt[0].text.startsWith("/")`) fires; the wrapped Buzz context
     // follows as a second block.
     let mut slash_command: Option<String> = None;
+    // The goals as of this turn (`Some(None)`: none), or `None` when not
+    // fetched; recorded as what the session holds once the turn succeeds.
+    let mut goal_context_now: Option<crate::goal_context::GoalsNow> = None;
     // Event IDs represented by this prompt. Commit only after ACP reports a
     // successful turn; failed/cancelled prompts must be retryable without loss.
     let mut pending_delivered_event_ids = HashSet::new();
@@ -3873,9 +3948,9 @@ pub async fn run_prompt_task(
 
         let profile_lookup =
             fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
-        // Present only where the conversation has a goal tree.
-        let goal_context = goal_tree.and_then(|tree| {
-            crate::goal_context::render_goal_context(
+        // The goals now; sent below only when the session does not hold them.
+        let goal_context_current = goal_tree.map(|tree| {
+            crate::goal_context::GoalsNow::new(
                 &tree,
                 b.channel_id,
                 // The thread this turn belongs to: the fetched thread,
@@ -3892,6 +3967,14 @@ pub async fn run_prompt_task(
         // layer 0 goals; otherwise tell a live session once that they changed.
         let standing_in_this_prompt = !agent.has_system_prompt_support() && !standing_context_sent;
         let delivery = agent.state.deliveries.get(&b.scope);
+        let goal_context = goal_context_current.as_ref().and_then(|now| {
+            crate::goal_context::goal_context_for_turn(
+                delivery.and_then(|delivery| delivery.goal_context_seen.as_ref()),
+                delivery.is_some_and(|delivery| delivery.session_reattached),
+                now,
+            )
+        });
+        goal_context_now = goal_context_current;
         let goal_update = if standing_in_this_prompt {
             None
         } else {
@@ -4179,6 +4262,9 @@ pub async fn run_prompt_task(
                             agent
                                 .state
                                 .mark_live_text_seen(scope.clone(), &live_now.text);
+                            agent
+                                .state
+                                .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
                         }
                         apply_completed_before_control_signal(
                             &mut agent.state,
@@ -4232,6 +4318,9 @@ pub async fn run_prompt_task(
                 agent
                     .state
                     .mark_live_text_seen(scope.clone(), &live_now.text);
+                agent
+                    .state
+                    .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
                 // Keep a session in steady use from aging out of the ledger,
                 // and remember what it now holds for a reattach after restart.
                 if let Some(ledger) = &ctx.session_ledger {
@@ -10183,6 +10272,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 session_reattached: false,
                 layer0_goals_seen: Some(None),
                 live_text_seen: Some(Default::default()),
+                goal_context_seen: Some(Default::default()),
             },
         );
         s.deliveries.insert(
@@ -10194,6 +10284,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 session_reattached: false,
                 layer0_goals_seen: Some(None),
                 live_text_seen: Some(Default::default()),
+                goal_context_seen: Some(Default::default()),
             },
         );
         s.heartbeat_session = Some("sess-hb".into());
@@ -13471,6 +13562,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -13509,6 +13601,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -13544,6 +13637,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -13578,6 +13672,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -13619,6 +13714,7 @@ exit 0"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -13784,6 +13880,7 @@ done"#
                     &ctx,
                     None,
                     NewSessionChannelContext {
+                        goals: None,
                         huddle_instructions: None,
                         canvas: None,
                         roster: None,
@@ -13902,6 +13999,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -13974,6 +14072,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -14030,6 +14129,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -14073,6 +14173,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -14115,6 +14216,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -14182,6 +14284,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -14220,6 +14323,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -14294,6 +14398,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,
@@ -14336,6 +14441,7 @@ done"#
             &ctx,
             None,
             NewSessionChannelContext {
+                goals: None,
                 huddle_instructions: None,
                 canvas: None,
                 roster: None,

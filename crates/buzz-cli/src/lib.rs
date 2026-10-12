@@ -977,8 +977,9 @@ pub enum GoalsCmd {
         #[arg(long)]
         recursive: bool,
     },
-    /// Link a thread to the goal it works on (moves it off any other goal);
-    /// an open goal becomes in_progress
+    /// Link a thread, or a single message, to the goal it works on (moves it
+    /// off any other goal); an open goal becomes in_progress. A linked message
+    /// becomes a thread link once someone replies to it.
     Link {
         /// Channel or DM UUID
         #[arg(long)]
@@ -987,8 +988,11 @@ pub enum GoalsCmd {
         #[arg(long)]
         node: String,
         /// Thread root event id (64-char hex)
+        #[arg(long, required_unless_present = "message", conflicts_with = "message")]
+        thread: Option<String>,
+        /// Message event id (64-char hex), for a one-step goal about one message
         #[arg(long)]
-        thread: String,
+        message: Option<String>,
     },
     /// Detach a thread from its goal
     Unlink {

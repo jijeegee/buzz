@@ -30,8 +30,11 @@ export type ChannelAgentSessionAgent = Pick<ManagedAgent, "pubkey" | "name"> & {
 type UseChannelAgentSessionsOptions = {
   activeChannel: Channel | null;
   activeChannelId: string | null;
+  /** One-shot back-arrow thread from the URL (see useChannelPanelHistoryState). */
+  agentSessionReturnThreadId?: string | null;
   agentsLoaded: boolean;
   channelMembers?: ChannelMember[];
+  clearAgentSessionReturnThread?: () => void;
   handleOpenThread: (message: TimelineMessage) => void;
   managedAgents: ChannelAgentSessionAgent[];
   openAgentSessionPubkey: string | null;
@@ -166,8 +169,10 @@ export function getChannelAgentSessionAgents({
 export function useChannelAgentSessions({
   activeChannel,
   activeChannelId,
+  agentSessionReturnThreadId = null,
   agentsLoaded,
   channelMembers,
+  clearAgentSessionReturnThread,
   handleOpenThread,
   managedAgents,
   openAgentSessionPubkey,
@@ -202,6 +207,25 @@ export function useChannelAgentSessions({
   const { hasTarget: hasAgentSessionReturnTarget, store: returnTarget } =
     usePanelReturnTarget<AgentSessionReturnTarget>(activeChannelId);
   const isAgentSessionOpen = openAgentSessionPubkey != null;
+
+  // A pane opened from outside the channel (sidebar "Working" row) names the
+  // thread the agent works in; record it as the back target, then drop the
+  // param so later closes and reloads behave like any other open pane.
+  React.useEffect(() => {
+    if (!agentSessionReturnThreadId) return;
+    if (openAgentSessionPubkey) {
+      returnTarget.capture({
+        kind: "thread",
+        threadHeadId: agentSessionReturnThreadId,
+      });
+    }
+    clearAgentSessionReturnThread?.();
+  }, [
+    agentSessionReturnThreadId,
+    clearAgentSessionReturnThread,
+    openAgentSessionPubkey,
+    returnTarget,
+  ]);
 
   const closeAgentSession = React.useCallback(() => {
     returnTarget.clear();

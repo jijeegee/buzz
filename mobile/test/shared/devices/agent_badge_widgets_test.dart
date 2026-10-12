@@ -20,7 +20,11 @@ class _FakeUserCache extends UserCacheNotifier {
   UserProfile? get(String pubkey) => state[pubkey];
 }
 
-Future<void> _pump(WidgetTester tester, AgentBadge? badge) {
+Future<void> _pump(
+  WidgetTester tester,
+  AgentBadge? badge, {
+  String? currentDeviceId,
+}) {
   return tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -28,6 +32,7 @@ Future<void> _pump(WidgetTester tester, AgentBadge? badge) {
         agentHostDeviceNamesProvider.overrideWithValue(const {
           'device-1': 'Work laptop',
         }),
+        currentAccountDeviceIdProvider.overrideWithValue(currentDeviceId),
       ],
       child: MaterialApp(
         home: Center(
@@ -79,6 +84,19 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Running on Work laptop'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('the device in hand reads as this device', (tester) async {
+    await _pump(
+      tester,
+      AgentDeviceBadge('device-1', deviceRobotVariantFromTag('e8c41c31')!),
+      currentDeviceId: 'device-1',
+    );
+
+    expect(
+      tester.widget<Tooltip>(find.byType(Tooltip)).message,
+      'Running on this device (Work laptop)',
+    );
   });
 
   testWidgets('an unknown device reads as another device', (tester) async {

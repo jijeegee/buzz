@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'auth_api.dart';
+import 'install_id_store.dart';
 import 'oidc_login.dart';
 import 'refresh_token_store.dart';
 import 'web_auth_launcher.dart';
@@ -131,7 +132,9 @@ class TokenSessionController {
     SessionClock? clock,
     SessionTimerFactory? timerFactory,
     this.deviceName,
-  }) : _api = api,
+    InstallIdStore? installIds,
+  }) : _installIds = installIds,
+       _api = api,
        _store = store,
        _launcher = launcher,
        _clock = clock ?? DateTime.now,
@@ -159,6 +162,9 @@ class TokenSessionController {
 
   /// Shown in the relay's device list (`device_name`, ≤ 64 chars).
   final String? deviceName;
+
+  /// This install's stable device id, sent with each sign-in.
+  final InstallIdStore? _installIds;
 
   final AuthApi _api;
   final RefreshTokenStore _store;
@@ -463,12 +469,14 @@ class TokenSessionController {
     final LoginGrant grant;
     try {
       final callbackScheme = await _launcher.callbackScheme();
+      final installId = await _installIds?.readOrCreate();
       if (!_isCurrent(startGeneration)) return false;
       grant = await runOidcLogin(
         api: _api,
         launcher: _launcher,
         provider: provider,
         deviceName: deviceName,
+        installId: installId,
         identityMode: identityMode,
         callbackScheme: callbackScheme,
       );

@@ -26,7 +26,6 @@ import type {
 import type { AgentSessionTranscriptVariant } from "./agentSessionTranscriptContext";
 import {
   deriveLatestSessionId,
-  isLiveSessionView,
   mergeObserverEventWindows,
   resolveDisplayEvents,
   resolveRawRailLayout,
@@ -38,8 +37,6 @@ import {
   useArchivedChannelEvents,
 } from "./useObserverEvents";
 import { buildTranscriptState } from "./agentSessionTranscript";
-import { isObserverSummaryView } from "./agentSessionObserverSummary";
-import { useObserverWatching } from "../useObserverWatching";
 
 type ManagedAgentSessionPanelProps = {
   agent: Pick<ManagedAgent, "pubkey" | "name"> & {
@@ -88,15 +85,6 @@ export function ManagedAgentSessionPanel({
     hasObserver,
     agent.pubkey,
   );
-  // A visible live view asks the executor for tier-level detail.
-  useObserverWatching(
-    agent.pubkey,
-    channelId,
-    isLiveSessionView(
-      hasObserver,
-      transcriptOverride != null || rawEventsOverride != null,
-    ),
-  );
 
   // Channel-scoped live events (capped at MAX_OBSERVER_EVENTS) and uncapped
   // archived events from SQLite paging. Both are raw ObserverEvent[] — we merge
@@ -139,10 +127,6 @@ export function ManagedAgentSessionPanel({
     () => deriveLatestSessionId(displayEvents),
     [displayEvents],
   );
-  const summaryView = React.useMemo(
-    () => isObserverSummaryView(displayEvents),
-    [displayEvents],
-  );
 
   return (
     <section
@@ -159,12 +143,7 @@ export function ManagedAgentSessionPanel({
           eventCount={displayEvents.length}
           hasObserver={hasObserver}
           latestSessionId={latestSessionId}
-          summaryView={summaryView}
         />
-      ) : summaryView ? (
-        <div className="mb-2 flex">
-          <SummaryViewBadge />
-        </div>
       ) : null}
 
       <SessionBody
@@ -196,13 +175,11 @@ function SessionHeader({
   eventCount,
   hasObserver,
   latestSessionId,
-  summaryView,
 }: {
   connectionState: ConnectionState;
   eventCount: number;
   hasObserver: boolean;
   latestSessionId: string | null | undefined;
-  summaryView: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -212,7 +189,6 @@ function SessionHeader({
             Live ACP session
           </h3>
           <ObserverStatusBadge state={connectionState} />
-          {summaryView ? <SummaryViewBadge /> : null}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           {hasObserver
@@ -385,19 +361,6 @@ function ObserverStatusBadge({ state }: { state: ConnectionState }) {
         <Spinner aria-hidden className="h-4 w-4 border-2" />
       )}
       {display.label}
-    </Badge>
-  );
-}
-
-/** Marks a feed sent at a summary observer tier (names and short previews). */
-function SummaryViewBadge() {
-  return (
-    <Badge
-      data-testid="observer-summary-badge"
-      title="This activity shows tool names and short previews."
-      variant="secondary"
-    >
-      Summary view
     </Badge>
   );
 }

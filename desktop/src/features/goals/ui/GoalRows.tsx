@@ -2,6 +2,7 @@ import * as React from "react";
 import {
   ChevronDown,
   ChevronRight,
+  MessageSquare,
   MessagesSquare,
   Pencil,
   Plus,
@@ -21,7 +22,10 @@ import { Textarea } from "@/shared/ui/textarea";
 import {
   GOAL_STATUS_LABEL,
   type GoalAccess,
+  type GoalLinkInfo,
+  type GoalLinkTarget,
   goalChildren,
+  goalLinkView,
   goalProgress,
   goalSubtreeIds,
   goalTitleError,
@@ -237,19 +241,26 @@ export function AddGoalInline({
 export function GoalRow({
   access,
   apply,
+  currentThreadId,
   layer,
+  linkKinds,
   nameOf,
   node,
-  onOpenThread,
+  onOpenLink,
   tree,
 }: {
   /** Thread scope; without it every goal is editable (channel panel). */
   access?: (id: string) => GoalAccess;
   apply: Apply;
+  /** The thread being viewed: its link shows as "This thread" and stays put. */
+  currentThreadId?: string;
   layer: number;
+  /** What each linked id is; unknown ids show as threads. */
+  linkKinds?: ReadonlyMap<string, GoalLinkInfo>;
   nameOf: (pubkey: string) => string;
   node: GoalNode;
-  onOpenThread?: (threadRootId: string) => void;
+  /** Open a linked thread, or jump to a linked message. */
+  onOpenLink?: (target: GoalLinkTarget) => void;
   tree: GoalTree;
 }) {
   const children = goalChildren(tree, node.id);
@@ -299,19 +310,34 @@ export function GoalRow({
             {(node.assignees ?? []).map((pubkey) => (
               <span key={pubkey}>@{nameOf(pubkey)}</span>
             ))}
-            {(node.threads ?? []).map((thread) => (
-              <button
-                className="inline-flex items-center gap-0.5 hover:text-foreground"
-                data-testid={`goal-thread-${thread}`}
-                disabled={!onOpenThread}
-                key={thread}
-                onClick={() => onOpenThread?.(thread)}
-                type="button"
-              >
-                <MessagesSquare className="h-3 w-3" />
-                Thread
-              </button>
-            ))}
+            {(node.threads ?? []).map((thread) => {
+              const isCurrent = thread === currentThreadId;
+              const { label, target } = goalLinkView(
+                thread,
+                linkKinds?.get(thread),
+              );
+              const open =
+                isCurrent || !target || !onOpenLink
+                  ? undefined
+                  : () => onOpenLink(target);
+              const Icon =
+                isCurrent || label === "Thread"
+                  ? MessagesSquare
+                  : MessageSquare;
+              return (
+                <button
+                  className="inline-flex items-center gap-0.5 hover:text-foreground disabled:hover:text-inherit"
+                  data-testid={`goal-thread-${thread}`}
+                  disabled={!open}
+                  key={thread}
+                  onClick={open}
+                  type="button"
+                >
+                  <Icon className="h-3 w-3" />
+                  {isCurrent ? "This thread" : label}
+                </button>
+              );
+            })}
           </div>
           {node.note && expanded ? (
             <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-muted-foreground">
@@ -405,11 +431,13 @@ export function GoalRow({
             <GoalRow
               access={access}
               apply={apply}
+              currentThreadId={currentThreadId}
               key={child.id}
               layer={layer + 1}
+              linkKinds={linkKinds}
               nameOf={nameOf}
               node={child}
-              onOpenThread={onOpenThread}
+              onOpenLink={onOpenLink}
               tree={tree}
             />
           ))}

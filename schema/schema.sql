@@ -1868,9 +1868,14 @@ CREATE TABLE devices (
     platform      TEXT NOT NULL CHECK (platform IN ('desktop', 'mobile', 'web', 'cli')),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at    TIMESTAMPTZ
+    revoked_at    TIMESTAMPTZ,
+    -- Stable per-install id; re-login with it reuses the row (migration 0063).
+    install_id    TEXT
 );
 CREATE INDEX devices_principal ON devices (principal_id);
+CREATE UNIQUE INDEX devices_principal_install
+    ON devices (principal_id, install_id)
+    WHERE install_id IS NOT NULL;
 
 CREATE TABLE sessions (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2191,18 +2196,6 @@ SELECT attach_community_write_fence('artifact_revisions');
 -- The relay does not expire events. Any future row retention or partition
 -- retirement must skip payloads referenced by `artifact_heads.event_id`
 -- (NIP-AR: expiring earlier revisions MUST NOT remove the current revision).
-
--- Per-owner observer telemetry tier overrides (migration 0061). Owners
--- without a row use the relay's configured default tier.
-CREATE TABLE observer_tiers (
-    community_id UUID NOT NULL REFERENCES communities(id),
-    owner_pubkey BYTEA NOT NULL CHECK (length(owner_pubkey) = 32),
-    tier TEXT NOT NULL CHECK (tier IN ('free', 'standard', 'premium')),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (community_id, owner_pubkey)
-);
-
-SELECT attach_community_write_fence('observer_tiers');
 
 -- Channel history acceptance ordering (migration 0060).
 CREATE FUNCTION stamp_channel_event_sequence() RETURNS TRIGGER

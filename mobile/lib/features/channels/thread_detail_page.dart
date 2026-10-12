@@ -935,6 +935,11 @@ class ThreadDetailPage extends HookConsumerWidget {
           ),
         ),
         actions: [
+          if (goalsEnabled)
+            ThreadGoalsButton(
+              channelId: channelId,
+              threadRootId: effectiveRootId,
+            ),
           if (isMember && !isArchived && !liveDeletionHidesHead)
             IconButton(
               tooltip: 'Edit thread name',
@@ -1013,12 +1018,6 @@ class ThreadDetailPage extends HookConsumerWidget {
                         restoreComposerFocus.value?.call(),
                     childrenByParent: childrenByParent,
                     quoteScope: isMember && !isArchived ? quoteScope : null,
-                    headAccessory: goalsEnabled
-                        ? ThreadGoalChip(
-                            channelId: channelId,
-                            threadRootId: effectiveRootId,
-                          )
-                        : null,
                   ),
                 ),
               ),

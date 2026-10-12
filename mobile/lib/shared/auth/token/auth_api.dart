@@ -89,6 +89,7 @@ class AuthApi {
     required String codeChallenge,
     required String redirectUri,
     String? deviceName,
+    String? installId,
     String identityMode = 'token',
   }) {
     final name = deviceName?.trim();
@@ -102,6 +103,7 @@ class AuthApi {
         'identity_mode': identityMode,
         'redirect_uri': redirectUri,
         if (name != null && name.isNotEmpty) 'device_name': name,
+        if (installId != null && installId.isNotEmpty) 'install_id': installId,
       },
     );
   }

@@ -1,11 +1,13 @@
 import * as React from "react";
 import { Target } from "lucide-react";
 
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
-import { goalRoot } from "../goalTree";
+import { type GoalLinkTarget, goalRoot } from "../goalTree";
 import {
   useApplyGoalOpMutation,
   useGoalAssigneeNames,
+  useGoalLinkKinds,
   useGoalTreeQuery,
 } from "../hooks";
 import type { Apply } from "./GoalRows";
@@ -57,15 +59,20 @@ export function GoalHeaderChip({
  */
 export function ThreadGoalPanel({
   channelId,
+  defaultExpanded,
+  onOpenLink,
   threadRootId,
 }: {
   channelId: string;
+  defaultExpanded?: boolean;
+  onOpenLink?: (target: GoalLinkTarget) => void;
   threadRootId: string;
 }) {
   const goalQuery = useGoalTreeQuery(channelId);
   const applyMutation = useApplyGoalOpMutation(channelId);
   const tree = goalQuery.data?.tree;
   const nameOf = useGoalAssigneeNames(tree);
+  const linkKinds = useGoalLinkKinds(channelId, tree);
   const applyGoalOp = applyMutation.mutateAsync;
   const apply = React.useCallback<Apply>(
     (op) => applyGoalOp(op),
@@ -75,14 +82,72 @@ export function ThreadGoalPanel({
   return (
     <ThreadGoalPanelView
       apply={apply}
+      defaultExpanded={defaultExpanded}
       error={
         applyMutation.error instanceof Error
           ? applyMutation.error.message
           : null
       }
+      linkKinds={linkKinds}
       nameOf={nameOf}
+      onOpenLink={onOpenLink}
       threadRootId={threadRootId}
       tree={tree}
     />
+  );
+}
+
+/**
+ * Thread header chip: the channel header's goal chip, in the thread title
+ * bar. It opens the whole goal tree in place, with this thread's goal branch
+ * editable (see `ThreadGoalPanelView`), and leaves the thread open.
+ */
+export function ThreadGoalHeaderChip({
+  channelId,
+  onOpenLink,
+  threadRootId,
+}: {
+  channelId: string;
+  /** Go to another goal's thread or message (closes the popover). */
+  onOpenLink?: (target: GoalLinkTarget) => void;
+  threadRootId: string;
+}) {
+  const goalQuery = useGoalTreeQuery(channelId);
+  const root = goalQuery.data ? goalRoot(goalQuery.data.tree) : null;
+  const [open, setOpen] = React.useState(false);
+  const openLink = React.useMemo(
+    () =>
+      onOpenLink
+        ? (target: GoalLinkTarget) => {
+            setOpen(false);
+            onOpenLink(target);
+          }
+        : undefined,
+    [onOpenLink],
+  );
+  if (!root) return null;
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <button
+          aria-label={`Goal: ${root.title}`}
+          className="inline-flex h-7 max-w-[10rem] items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 text-xs text-foreground transition-colors hover:bg-muted"
+          data-testid="thread-goal-header-chip"
+          title={root.title}
+          type="button"
+        >
+          <Target className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="truncate">{root.title}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[28rem] max-w-[90vw] p-0 pt-2">
+        <ThreadGoalPanel
+          channelId={channelId}
+          defaultExpanded
+          onOpenLink={openLink}
+          threadRootId={threadRootId}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

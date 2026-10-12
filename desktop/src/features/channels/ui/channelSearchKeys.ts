@@ -8,8 +8,10 @@
 export const CHANNEL_SEARCH_KEYS = [
   "agentSession",
   "agentSessionChannel",
+  "agentSessionReturnThread",
   "autoSend",
   "channelManagement",
+  "jump",
   "messageId",
   "profile",
   "profileTab",
@@ -30,6 +32,24 @@ export type ChannelSearchKey = (typeof CHANNEL_SEARCH_KEYS)[number];
  * `thread`; this patch removes only `autoSend` via `applyPatch`, preserving
  * the thread panel across the deferred `setTimeout(0)` submit.
  */
+/**
+ * Jump to a message the way message links do (see useChannelRouteTarget),
+ * closing channel management in the same history entry. A main-timeline
+ * message (no thread) is only scrolled to and highlighted (`jump`): its
+ * reply panel stays closed.
+ */
+export function buildMessageJumpPatch(
+  messageId: string,
+  threadRootId: string | null,
+): Partial<Record<ChannelSearchKey, string | null>> {
+  return {
+    channelManagement: null,
+    jump: threadRootId ? null : "1",
+    messageId,
+    threadRootId,
+  };
+}
+
 export function buildAutoSendClearPatch(): Partial<
   Record<ChannelSearchKey, string | null>
 > {

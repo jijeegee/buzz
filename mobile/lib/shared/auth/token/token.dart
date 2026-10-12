@@ -2,6 +2,7 @@
 library;
 
 export 'auth_api.dart';
+export 'install_id_store.dart';
 export 'oidc_login.dart';
 export 'pkce.dart';
 export 'refresh_token_store.dart';

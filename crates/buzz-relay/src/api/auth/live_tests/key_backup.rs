@@ -675,13 +675,14 @@ async fn custody_preserves_existing_token_login_but_refuses_new_token_identity()
     );
 }
 
-/// Start a desktop key-backup login (optionally `signup=confirm`), pass the
-/// fake provider's callback and post `complete`. Returns the verifier and the
+/// Start a desktop key-backup login (optionally `signup=confirm` and an
+/// `install_id`), pass the fake provider's callback and post `complete`. Returns the verifier and the
 /// `complete` response.
 async fn key_login_flow(
     inst: &Instance,
     provider_code: &str,
     confirm: bool,
+    install_id: Option<&str>,
 ) -> (String, reqwest::Response) {
     reset_login_limits(inst).await;
     let verifier = verifier();
@@ -696,6 +697,9 @@ async fn key_login_flow(
     ];
     if confirm {
         params.push(("signup", "confirm"));
+    }
+    if let Some(install_id) = install_id {
+        params.push(("install_id", install_id));
     }
     let response = inst
         .get_with("/auth/oidc/google/start", &params)
@@ -723,6 +727,14 @@ async fn key_login_flow(
     (verifier, response)
 }
 
+async fn install_devices(inst: &Instance, install_id: &str) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM devices WHERE install_id = $1")
+        .bind(install_id)
+        .fetch_one(inst.state.db.pool())
+        .await
+        .unwrap()
+}
+
 async fn account_exists(inst: &Instance, subject: &str) -> bool {
     match inst
         .state
@@ -745,7 +757,7 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
 
     // Without the flag an unknown account is created on callback, as before,
     // and `complete` now also reports the email.
-    let (_, response) = key_login_flow(&inst, &provider_code, false).await;
+    let (_, response) = key_login_flow(&inst, &provider_code, false, None).await;
     assert_eq!(response.status(), 200);
     let body: Value = response.json().await.unwrap();
     assert!(body["access"].is_string());
@@ -755,7 +767,7 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
     // With the flag: nothing exists until `signup`.
     let subject = uuid::Uuid::new_v4().to_string();
     let provider_code = format!("{subject}|other@example.test|true");
-    let (verifier, response) = key_login_flow(&inst, &provider_code, true).await;
+    let (verifier, response) = key_login_flow(&inst, &provider_code, true, None).await;
     assert_eq!(response.status(), 200);
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["needs_signup"], true);
@@ -784,7 +796,9 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
 
     // "Use a different account" = the ticket is dropped: still nothing.
     // Starting again and confirming creates the account and signs in.
-    let (verifier, response) = key_login_flow(&inst, &provider_code, true).await;
+    let install_id = uuid::Uuid::new_v4().to_string();
+    let (verifier, response) =
+        key_login_flow(&inst, &provider_code, true, Some(&install_id)).await;
     let body: Value = response.json().await.unwrap();
     let token = body["signup_token"].as_str().unwrap().to_owned();
     let response = inst
@@ -804,12 +818,15 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
     assert!(account_exists(&inst, &subject).await);
     let me = inst.get("/auth/me").bearer_auth(&access).send().await.unwrap();
     assert_eq!(me.status(), 200);
+    assert_eq!(install_devices(&inst, &install_id).await, 1, "signup keeps the install id");
 
-    // An existing account signs straight in, flag or not.
-    let (_, response) = key_login_flow(&inst, &provider_code, true).await;
+    // An existing account signs straight in, flag or not, and the same
+    // install reuses the device the confirmed signup registered.
+    let (_, response) = key_login_flow(&inst, &provider_code, true, Some(&install_id)).await;
     let body: Value = response.json().await.unwrap();
     assert!(body.get("needs_signup").is_none());
     assert!(body["access"].is_string());
+    assert_eq!(install_devices(&inst, &install_id).await, 1, "same device");
 }
 
 #[tokio::test]

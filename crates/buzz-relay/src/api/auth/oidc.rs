@@ -60,6 +60,9 @@ struct PendingLogin {
     client: String,
     redirect_uri: String,
     device_name: String,
+    /// The client's stable per-install id; see [`install_id_from_query`].
+    #[serde(default)]
+    install_id: Option<String>,
     nonce: String,
     /// The client asks before an unknown identity becomes an account.
     #[serde(default)]
@@ -77,6 +80,8 @@ struct LoginCodeRecord {
     code_challenge: String,
     client: String,
     device_name: String,
+    #[serde(default)]
+    install_id: Option<String>,
     /// The provider's email for the signed-in identity, when it sent one.
     #[serde(default)]
     email: Option<String>,
@@ -104,6 +109,8 @@ struct SignupTicket {
     code_challenge: String,
     client: String,
     device_name: String,
+    #[serde(default)]
+    install_id: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -114,12 +121,34 @@ struct StartQuery {
     client: Option<String>,
     redirect_uri: Option<String>,
     device_name: Option<String>,
+    install_id: Option<String>,
     /// `confirm`: ask before creating an account (key-backup logins only).
     signup: Option<String>,
 }
 
 fn token_identity_mode() -> String {
     "token".into()
+}
+
+/// A client's stable per-install id (random, kept for the life of the app
+/// install): a login that carries one the principal already used reuses that
+/// device. Absent or empty means "new device" (older clients).
+fn install_id_from_query(value: Option<String>) -> Result<Option<String>, ()> {
+    let Some(value) = value.map(|value| value.trim().to_ascii_lowercase()) else {
+        return Ok(None);
+    };
+    if value.is_empty() {
+        return Ok(None);
+    }
+    let valid = (16..=64).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    if valid {
+        Ok(Some(value))
+    } else {
+        Err(())
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -252,6 +281,9 @@ pub(super) async fn start(
         None => format!("{client} device"),
         Some(_) => return bad_request("device_name must be at most 64 printable characters"),
     };
+    let Ok(install_id) = install_id_from_query(query.install_id) else {
+        return bad_request("install_id must be 16-64 letters, digits or hyphens");
+    };
     let nonce = {
         let bytes: [u8; 24] = rand::random();
         hex::encode(bytes)
@@ -263,6 +295,7 @@ pub(super) async fn start(
         client,
         redirect_uri,
         device_name,
+        install_id,
         nonce: nonce.clone(),
         confirm_signup,
     };
@@ -434,6 +467,7 @@ pub(super) async fn callback(
         code_challenge: pending.code_challenge.clone(),
         client: pending.client.clone(),
         device_name: pending.device_name.clone(),
+        install_id: pending.install_id.clone(),
         email: identity.email.clone(),
         signup: login.is_none().then(|| PendingSignup {
             provider: provider_name.clone(),
@@ -595,6 +629,7 @@ pub(super) async fn complete(
         &record.identity_mode,
         &record.client,
         &record.device_name,
+        record.install_id.as_deref(),
         record.email.as_deref(),
     )
     .await
@@ -613,6 +648,7 @@ async fn signup_needed(state: &AppState, record: LoginCodeRecord) -> Response {
         code_challenge: record.code_challenge,
         client: record.client,
         device_name: record.device_name,
+        install_id: record.install_id,
     };
     let Ok(ticket_json) = serde_json::to_string(&ticket) else {
         return unavailable();
@@ -738,6 +774,7 @@ pub(super) async fn signup(
         &ticket.identity_mode,
         &ticket.client,
         &ticket.device_name,
+        ticket.install_id.as_deref(),
         signup.email.as_deref(),
     )
     .await
@@ -751,6 +788,7 @@ async fn finish_login(
     identity_mode: &str,
     client: &str,
     device_name: &str,
+    install_id: Option<&str>,
     email: Option<&str>,
 ) -> Response {
     let key_mode = match state.db.account_key_mode(principal).await {
@@ -775,7 +813,14 @@ async fn finish_login(
     let (access, refresh, access_issued, refresh_issued) = issue_session_tokens(state);
     let session = match state
         .db
-        .complete_login(principal, device_name, client, refresh_issued, access_issued)
+        .complete_login(
+            principal,
+            device_name,
+            client,
+            install_id,
+            refresh_issued,
+            access_issued,
+        )
         .await
     {
         Ok(session) => session,
@@ -817,4 +862,22 @@ async fn finish_login(
         "email": email,
     }))
     .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::install_id_from_query;
+
+    #[test]
+    fn install_id_is_optional_normalized_and_bounded() {
+        assert_eq!(install_id_from_query(None), Ok(None));
+        assert_eq!(install_id_from_query(Some("  ".into())), Ok(None));
+        assert_eq!(
+            install_id_from_query(Some(" 5F0C6B1E-2A4D-4C8E-9B7A-1D2E3F4A5B6C ".into())),
+            Ok(Some("5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c".into()))
+        );
+        assert!(install_id_from_query(Some("short".into())).is_err());
+        assert!(install_id_from_query(Some("a".repeat(65))).is_err());
+        assert!(install_id_from_query(Some("not/an/install/id!".into())).is_err());
+    }
 }

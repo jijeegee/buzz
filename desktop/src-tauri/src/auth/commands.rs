@@ -313,6 +313,7 @@ async fn login_inner(
                 &pkce.challenge,
                 &listener.redirect_uri(),
                 &device_name(),
+                super::install_id::load_or_create(&app).as_deref(),
             );
             let backup = requested_login_mode(
                 &state.token_auth,

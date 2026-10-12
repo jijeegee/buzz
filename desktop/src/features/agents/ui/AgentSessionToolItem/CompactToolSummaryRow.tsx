@@ -21,7 +21,6 @@ export function compactSummaryTone() {
 
 export function CompactToolSummaryRow({
   action,
-  argsPreview = null,
   duration,
   fileEditSummary,
   kind,
@@ -30,8 +29,6 @@ export function CompactToolSummaryRow({
   thumbnailSrc,
 }: {
   action: AgentActivityAction | null;
-  /** Argument preview of a summarised tool call, shown after its label. */
-  argsPreview?: string | null;
   duration: string | null;
   fileEditSummary: CompactFileEditSummary | null;
   kind: CompactToolKind;
@@ -50,12 +47,6 @@ export function CompactToolSummaryRow({
   const actionLabel = fileEditSummary
     ? null
     : getCompactToolActionLabel(action, kind, label, preview);
-  const trailingPreview =
-    argsPreview && actionLabel?.object !== argsPreview
-      ? argsPreview
-      : !actionLabel
-        ? preview
-        : null;
 
   return (
     <>
@@ -89,16 +80,16 @@ export function CompactToolSummaryRow({
           src={resolvedThumbnail}
           title={preview ?? undefined}
         />
-      ) : !fileEditSummary && trailingPreview ? (
+      ) : !fileEditSummary && !actionLabel && preview ? (
         <span
           className={cn(
             "min-w-0 max-w-48 truncate",
             isCompactPreview ? "text-xs" : "text-sm",
             mutedTone,
           )}
-          title={trailingPreview}
+          title={preview}
         >
-          {trailingPreview}
+          {preview}
         </span>
       ) : null}
       {duration ? (

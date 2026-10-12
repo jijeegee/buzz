@@ -20,7 +20,7 @@ export function notifyAuthDevicesChanged() {
 /**
  * After a successful rename: write the new name into the cached device list
  * so every "Running on …" tooltip shows it at once, then refetch. Works even
- * when no `useAuthDeviceNames` is mounted to hear `notifyAuthDevicesChanged`.
+ * when no `useAuthDeviceLabels` is mounted to hear `notifyAuthDevicesChanged`.
  */
 export function applyAuthDeviceRename(
   queryClient: QueryClient,
@@ -36,12 +36,22 @@ export function applyAuthDeviceRename(
   notifyAuthDevicesChanged();
 }
 
+/** What an agent's robot tooltip says about one of the account's devices. */
+export type AuthDeviceLabel = {
+  name: string;
+  /** The device this app is signed in on. */
+  current: boolean;
+};
+
 /**
- * Device names of the signed-in account keyed by robot tag, so an agent's
- * owner can see which named computer the agent runs on. Empty when not signed
- * in with Google (the list call fails and is not retried).
+ * Devices of the signed-in account keyed by robot tag, so an agent's owner
+ * can see which named computer the agent runs on, and whether it is this one.
+ * Empty when not signed in with Google (the list call fails and is not
+ * retried).
  */
-export function useAuthDeviceNames(enabled = true): Map<string, string> {
+export function useAuthDeviceLabels(
+  enabled = true,
+): Map<string, AuthDeviceLabel> {
   const queryClient = useQueryClient();
   const query = useQuery({
     enabled,
@@ -63,11 +73,16 @@ export function useAuthDeviceNames(enabled = true): Map<string, string> {
       window.removeEventListener(AUTH_DEVICES_CHANGED_EVENT, refresh);
   }, [queryClient]);
   return React.useMemo(() => {
-    const names = new Map<string, string>();
+    const labels = new Map<string, AuthDeviceLabel>();
     for (const device of query.data ?? []) {
       const tag = deviceRobotTag(device.id);
-      if (tag) names.set(tag, device.name);
+      if (tag) {
+        labels.set(tag, {
+          name: device.name,
+          current: device.current === true,
+        });
+      }
     }
-    return names;
+    return labels;
   }, [query.data]);
 }

@@ -1,6 +1,5 @@
 import { AlertCircle, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
 
-import { OBSERVER_GAP_KIND } from "../agentSessionObserverSummary";
 import { formatTranscriptTimestampTitle } from "../agentSessionUtils";
 import { ActivityRow, ActivityRowLabel } from "./ActivityRow";
 import { ToolActivity } from "./ToolActivity";
@@ -46,11 +45,9 @@ export function LifecycleActivity(props: ActivityRenderClassItemProps) {
     return null;
   }
 
-  // Gap lines list tool names, which must not trip the title heuristic.
   const isError =
     props.item.renderClass === "error" ||
-    (props.item.acpSource !== OBSERVER_GAP_KIND &&
-      props.item.title.toLowerCase().includes("error"));
+    props.item.title.toLowerCase().includes("error");
   const isPermission = props.item.renderClass === "permission";
   const timestampTitle = formatTranscriptTimestampTitle(props.item.timestamp);
 

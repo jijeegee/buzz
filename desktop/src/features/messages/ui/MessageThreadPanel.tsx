@@ -51,8 +51,11 @@ import { UnreadDivider } from "./UnreadDivider";
 import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
-import { threadGoalRootId } from "@/features/goals/goalTree";
-import { ThreadGoalPanel } from "@/features/goals/ui/GoalChips";
+import {
+  type GoalLinkTarget,
+  threadGoalRootId,
+} from "@/features/goals/goalTree";
+import { ThreadGoalHeaderChip } from "@/features/goals/ui/GoalChips";
 import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
@@ -133,6 +136,8 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   isFollowingThread?: boolean;
   isMessageUnreadById?: (messageId: string) => boolean;
   onFollowThread?: () => void;
+  /** Open another thread or a message from the goal tree. */
+  onOpenGoalLink?: (target: GoalLinkTarget) => void;
   onUnfollowThread?: () => void;
   /**
    * When set to `thread:<threadHead.id>`, the thread composer auto-submits
@@ -188,6 +193,7 @@ export function MessageThreadPanel({
   onEditLastOwnMessage,
   onEditSave,
   onFollowThread,
+  onOpenGoalLink,
   onMarkUnread,
   onMarkRead,
   onExpandReplies,
@@ -521,6 +527,15 @@ export function MessageThreadPanel({
   if (!threadHead) {
     return null;
   }
+  const goalHeaderChip =
+    goalsEnabled && channelId ? (
+      <ThreadGoalHeaderChip
+        channelId={channelId}
+        onOpenLink={onOpenGoalLink}
+        threadRootId={threadGoalRootId(threadHead)}
+      />
+    ) : null;
+
   const threadScrollRegion = (
     <AuxiliaryPanelBody
       className="overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--buzz-thread-canvas)] pb-24"
@@ -552,12 +567,6 @@ export function MessageThreadPanel({
             className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-1 pt-0")}
             data-testid="message-thread-head"
           >
-            {goalsEnabled && channelId ? (
-              <ThreadGoalPanel
-                channelId={channelId}
-                threadRootId={threadGoalRootId(threadHead)}
-              />
-            ) : null}
             <div className="rounded-2xl">
               <MessageThreadRow
                 actionBarPlacement="inside"
@@ -948,6 +957,7 @@ export function MessageThreadPanel({
               threadId={threadHead.id}
               disabled={disabled}
               headerProps={{
+                headerActions: goalHeaderChip,
                 headerLeading,
                 headerTitle,
                 headerTitleAriaLabel,
@@ -960,6 +970,7 @@ export function MessageThreadPanel({
             />
           ) : (
             <MessageThreadPanelHeader
+              headerActions={goalHeaderChip}
               headerLeading={headerLeading}
               headerTitle={headerTitle}
               headerTitleAriaLabel={headerTitleAriaLabel}

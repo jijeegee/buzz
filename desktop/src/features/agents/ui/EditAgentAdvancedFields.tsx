@@ -30,6 +30,8 @@ import {
 } from "../lib/agentConfigCore";
 
 import { PersonaDropdownField } from "./PersonaDropdownField";
+import { CodeWorkField } from "./CodeWorkField";
+import { CODE_WORK_OFF_ENV_KEY } from "./codeWorkSetting";
 import { acpCommandPickerState } from "./acpCommandPicker";
 
 export function EditAgentAdvancedFields({
@@ -133,6 +135,7 @@ export function EditAgentAdvancedFields({
   const effectiveHiddenKeys = React.useMemo(
     () => [
       ...hiddenEnvKeys,
+      CODE_WORK_OFF_ENV_KEY,
       ...(isBuzzAgentRuntime(modelTuningRuntimeId)
         ? [BUZZ_AGENT_THINKING_EFFORT]
         : []),
@@ -206,6 +209,14 @@ export function EditAgentAdvancedFields({
             : "Configuration changes only show the restart badge; restart manually to apply them."}
         </p>
       </div>
+
+      <CodeWorkField
+        disabled={disabled}
+        envVars={envVars}
+        id="edit-agent-code-work"
+        inheritedEnvVars={inheritedEnvVars}
+        onEnvVarsChange={onEnvVarsChange}
+      />
 
       {/* Agent runtime args */}
       <div className="space-y-1.5">

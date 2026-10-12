@@ -12,6 +12,9 @@ import type { GoalNode, GoalTree } from "@/shared/api/tauriGoals";
 import { newGoalId } from "@/shared/api/tauriGoals";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import {
+  type GoalLinkInfo,
+  type GoalLinkScope,
+  type GoalLinkTarget,
   goalForThread,
   goalOutline,
   goalPath,
@@ -29,9 +32,15 @@ import {
 
 type ThreadGoalPanelViewProps = {
   apply: Apply;
+  /** Open with the whole tree showing (the thread header popover). */
+  defaultExpanded?: boolean;
   /** Message of the last failed edit, if any. */
   error?: string | null;
+  /** What each linked id is; unknown ids show as threads. */
+  linkKinds?: ReadonlyMap<string, GoalLinkInfo>;
   nameOf: (pubkey: string) => string;
+  /** Go to another goal's thread or message; this thread's link stays put. */
+  onOpenLink?: (target: GoalLinkTarget) => void;
   threadRootId: string;
   tree: GoalTree;
 };
@@ -46,12 +55,15 @@ type ThreadGoalPanelViewProps = {
  */
 export function ThreadGoalPanelView({
   apply,
+  defaultExpanded = false,
   error,
+  linkKinds,
   nameOf,
+  onOpenLink,
   threadRootId,
   tree,
 }: ThreadGoalPanelViewProps) {
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(defaultExpanded);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const subtreeId = React.useId();
   if (!goalRoot(tree)) return null;
@@ -96,6 +108,24 @@ export function ThreadGoalPanelView({
             </button>,
           )}
         </div>
+        {expanded ? (
+          <div
+            className="mt-1 max-h-80 overflow-y-auto"
+            data-testid="thread-goal-subtree"
+          >
+            <GoalRow
+              access={() => "muted"}
+              apply={apply}
+              currentThreadId={threadRootId}
+              layer={1}
+              linkKinds={linkKinds}
+              nameOf={nameOf}
+              onOpenLink={onOpenLink}
+              node={goalRoot(tree) as GoalNode}
+              tree={tree}
+            />
+          </div>
+        ) : null}
         {errorLine}
       </div>
     );
@@ -165,8 +195,11 @@ export function ThreadGoalPanelView({
             // Relinking remounts the rows so their scope-based state resets.
             key={goal.id}
             apply={apply}
+            currentThreadId={threadRootId}
             layer={1}
+            linkKinds={linkKinds}
             nameOf={nameOf}
+            onOpenLink={onOpenLink}
             node={goalRoot(tree) as GoalNode}
             tree={tree}
           />
@@ -178,19 +211,26 @@ export function ThreadGoalPanelView({
 }
 
 /**
- * Pick the goal a thread works on: link to any goal, add a new goal under
- * any goal and link to it (one revision), or unlink.
+ * Pick the goal a thread (or one message) works on: link to a goal, add a
+ * new goal under one and link to it (one revision), or unlink. Without a
+ * `scope` every goal is offered.
  */
 export function GoalLinkPicker({
   apply,
   linkedGoalId,
   onDone,
+  scope,
+  subject = "thread",
   threadRootId,
   tree,
 }: {
   apply: Apply;
   linkedGoalId: string | null;
   onDone: () => void;
+  scope?: GoalLinkScope;
+  /** What is being linked, for labels. */
+  subject?: "thread" | "message";
+  /** The id that is linked: a thread root or a message. */
   threadRootId: string;
   tree: GoalTree;
 }) {
@@ -201,8 +241,8 @@ export function GoalLinkPicker({
     return (
       <div className="p-2" data-testid="thread-goal-create">
         <p className="mb-1 break-words text-xs text-muted-foreground">
-          New layer {layer} goal under “{createUnder.title}”, linked to this
-          thread
+          New layer {layer} goal under “{createUnder.title}”, linked to this{" "}
+          {subject}
         </p>
         <GoalEditor
           initialNote=""
@@ -225,34 +265,42 @@ export function GoalLinkPicker({
 
   return (
     <div data-testid="thread-goal-picker">
-      {goalOutline(tree).map(({ layer, node }) => (
-        <div className="group flex items-start" key={node.id}>
-          <button
-            className={`flex min-w-0 flex-1 items-start gap-1 rounded-md px-2 py-1 text-left text-xs hover:bg-muted ${node.id === linkedGoalId ? "bg-muted" : ""}`}
-            data-testid={`thread-goal-option-${node.id}`}
-            onClick={() => {
-              onDone();
-              runGoalEdit(
-                apply({ op: "link", id: node.id, thread: threadRootId }),
-              );
-            }}
-            style={{ paddingLeft: `${0.5 + (layer - 1) * 0.75}rem` }}
-            type="button"
-          >
-            <span className="text-muted-foreground">L{layer}</span>
-            <span className="min-w-0 break-words">{node.title}</span>
-          </button>
-          <button
-            aria-label={`Add a goal under “${node.title}” and link this thread to it`}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-            data-testid={`thread-goal-create-under-${node.id}`}
-            onClick={() => setCreateUnder(node)}
-            type="button"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ))}
+      {goalOutline(tree).map(({ layer, node }) => {
+        const canLink = scope?.canLink(node.id, layer) ?? true;
+        const canAddUnder = scope?.canAddUnder(node.id) ?? true;
+        if (!canLink && !canAddUnder) return null;
+        return (
+          <div className="group flex items-start" key={node.id}>
+            <button
+              className={`flex min-w-0 flex-1 items-start gap-1 rounded-md px-2 py-1 text-left text-xs hover:bg-muted disabled:text-muted-foreground disabled:hover:bg-transparent ${node.id === linkedGoalId ? "bg-muted" : ""}`}
+              data-testid={`thread-goal-option-${node.id}`}
+              disabled={!canLink}
+              onClick={() => {
+                onDone();
+                runGoalEdit(
+                  apply({ op: "link", id: node.id, thread: threadRootId }),
+                );
+              }}
+              style={{ paddingLeft: `${0.5 + (layer - 1) * 0.75}rem` }}
+              type="button"
+            >
+              <span className="text-muted-foreground">L{layer}</span>
+              <span className="min-w-0 break-words">{node.title}</span>
+            </button>
+            {canAddUnder ? (
+              <button
+                aria-label={`Add a goal under “${node.title}” and link this ${subject} to it`}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                data-testid={`thread-goal-create-under-${node.id}`}
+                onClick={() => setCreateUnder(node)}
+                type="button"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
       {linkedGoalId ? (
         <button
           className="mt-1 flex w-full items-center gap-1 rounded-md border-t border-border/60 px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted"

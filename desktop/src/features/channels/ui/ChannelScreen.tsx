@@ -56,6 +56,7 @@ import { useIndependentThreadPanel } from "@/features/messages/useIndependentThr
 import { useThreadReplies } from "@/features/messages/useThreadReplies";
 import { useChannelTyping } from "@/features/messages/useChannelTyping";
 import type { TimelineMessage } from "@/features/messages/types";
+import type { GoalLinkTarget } from "@/features/goals/goalTree";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import type { RelayEvent, RespondToMode } from "@/shared/api/types";
@@ -123,13 +124,17 @@ export function ChannelScreen({
     readStateVersion,
   } = useAppShell();
   const {
+    agentSessionReturnThreadId,
     channelManagementInitialView,
     channelManagementOpen,
+    clearAgentSessionReturnThread,
     clearAutoSend,
     clearMessageRouteTarget,
     openAgentSessionChannelId,
     openAgentSessionPubkey,
     openGoalsPanel,
+    messageRouteJumpOnly,
+    openMessageRouteTarget,
     openProfilePanel,
     openThreadHeadId,
     profilePanelPubkey,
@@ -582,11 +587,13 @@ export function ChannelScreen({
   } = useChannelAgentSessions({
     activeChannel,
     activeChannelId,
+    agentSessionReturnThreadId,
     agentsLoaded:
       !channelMembersQuery.isLoading &&
       !managedAgentsQuery.isLoading &&
       !relayAgentsQuery.isLoading,
     channelMembers,
+    clearAgentSessionReturnThread,
     handleOpenThread,
     managedAgents: agentSessionCandidates,
     openAgentSessionPubkey,
@@ -657,6 +664,7 @@ export function ChannelScreen({
     setProfilePanelPubkey,
     setThreadReplyTargetId,
     setThreadScrollTargetId,
+    targetJumpOnly: messageRouteJumpOnly,
     targetMessageId,
     timelineMessages,
   });
@@ -760,12 +768,16 @@ export function ChannelScreen({
     setOpenThreadHeadId,
     setProfilePanelPubkey,
   ]);
-  const handleOpenGoalThread = React.useCallback(
-    (threadRootId: string) => {
+  const handleOpenGoalLink = React.useCallback(
+    (target: GoalLinkTarget) => {
+      if (target.kind === "message") {
+        openMessageRouteTarget(target.messageId, target.threadRootId);
+        return;
+      }
       setChannelManagementOpen(false, { replace: true });
-      setOpenThreadHeadId(threadRootId);
+      setOpenThreadHeadId(target.threadRootId);
     },
-    [setChannelManagementOpen, setOpenThreadHeadId],
+    [openMessageRouteTarget, setChannelManagementOpen, setOpenThreadHeadId],
   );
   const handleToggleMembers = React.useCallback(
     () => setIsMembersSidebarOpen((prev) => !prev),
@@ -946,7 +958,7 @@ export function ChannelScreen({
                   }
                   {...{ onCloseIdleAuxiliaryPanel }}
                   onCloseChannelManagement={handleCloseChannelManagement}
-                  onOpenGoalThread={handleOpenGoalThread}
+                  onOpenGoalLink={handleOpenGoalLink}
                   onCloseThread={handleCloseThread}
                   onDelete={
                     activeChannel?.archivedAt ? undefined : handleDelete

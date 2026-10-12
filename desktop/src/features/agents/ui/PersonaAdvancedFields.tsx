@@ -32,6 +32,8 @@ import type {
   AcpSessionPolicy,
 } from "@/shared/api/types";
 import { PersonaDropdownField } from "./PersonaDropdownField";
+import { CodeWorkField } from "./CodeWorkField";
+import { CODE_WORK_OFF_ENV_KEY } from "./codeWorkSetting";
 import {
   deriveNumericDescriptors,
   structuredEnvKeys,
@@ -112,6 +114,7 @@ export function PersonaAdvancedFields({
   const effectiveHiddenKeys = React.useMemo(
     () => [
       ...hiddenEnvKeys,
+      CODE_WORK_OFF_ENV_KEY,
       ...(isBuzzAgentRuntime(modelTuningRuntimeId)
         ? [BUZZ_AGENT_THINKING_EFFORT]
         : []),
@@ -242,6 +245,14 @@ export function PersonaAdvancedFields({
           ) : null}
         </div>
       </div>
+
+      <CodeWorkField
+        disabled={disabled}
+        envVars={envVars}
+        id="persona-code-work"
+        inheritedEnvVars={inheritedEnvVars}
+        onEnvVarsChange={onEnvVarsChange}
+      />
 
       <div className="space-y-1.5">
         <label

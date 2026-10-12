@@ -8,7 +8,10 @@ import {
 } from "@/features/profile/hooks";
 import { useAgentBadge } from "@/features/profile/lib/useAgentBadge";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
-import { useAuthDeviceNames } from "@/shared/api/useAuthDeviceNames";
+import {
+  type AuthDeviceLabel,
+  useAuthDeviceLabels,
+} from "@/shared/api/useAuthDeviceNames";
 import { cn } from "@/shared/lib/cn";
 import { truncateNpub } from "@/shared/lib/pubkey";
 import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
@@ -62,8 +65,11 @@ function OwnerMark({
 }
 
 /** Tooltip copy for the device an agent runs on. */
-export function agentHostDeviceLabel(deviceName: string | null | undefined) {
-  const name = deviceName?.trim();
+export function agentHostDeviceLabel(device: AuthDeviceLabel | undefined) {
+  const name = device?.name.trim();
+  if (device?.current) {
+    return name ? `Running on this device (${name})` : "Running on this device";
+  }
   return name ? `Running on ${name}` : "Running on another device";
 }
 
@@ -94,7 +100,7 @@ export function AgentBadgeIcon({
   testId?: string;
 }) {
   const badge = useAgentBadge(agentPubkey, ownerPubkey);
-  const deviceNames = useAuthDeviceNames(badge.kind === "device");
+  const deviceLabels = useAuthDeviceLabels(badge.kind === "device");
   if (badge.kind === "owner" && othersSee === "owner") {
     return (
       <OwnerMark
@@ -105,7 +111,7 @@ export function AgentBadgeIcon({
     );
   }
   if (badge.kind === "device") {
-    const label = agentHostDeviceLabel(deviceNames.get(badge.variant.tag));
+    const label = agentHostDeviceLabel(deviceLabels.get(badge.variant.tag));
     return (
       <Tooltip>
         <TooltipTrigger asChild>

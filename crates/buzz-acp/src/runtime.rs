@@ -143,6 +143,49 @@ mod assemble_base_prompt_tests {
     }
 }
 
+#[cfg(test)]
+mod base_prompt_trim_tests {
+    use super::*;
+
+    /// The base a new channel session starts with, from launch config through
+    /// the same per-turn resolution `run_prompt_task` uses.
+    fn session_base(code_work: bool, project_home: bool) -> String {
+        let mut config = crate::build_mcp_servers_tests::test_config();
+        config.code_work = code_work;
+        let rest = relay::RestClient {
+            http: reqwest::Client::new(),
+            base_url: "http://127.0.0.1:0".into(),
+            keys: nostr::Keys::generate().into(),
+            auth_tag_json: None,
+        };
+        let ctx = make_prompt_context(&config, rest, HashMap::new(), SessionMode::Conversation)
+            .expect("prompt context");
+        ctx.live_now_in(project_home).base_prompt.expect("base")
+    }
+
+    #[test]
+    fn code_work_setting_controls_engineering_guidance() {
+        assert!(session_base(true, false).contains("## Engineering Discipline"));
+        assert!(session_base(true, false).contains("## Working in the Repo"));
+        assert!(!session_base(false, false).contains("## Engineering Discipline"));
+        assert!(!session_base(false, false).contains("## Working in the Repo"));
+    }
+
+    #[test]
+    fn project_guidance_in_full_only_in_project_home() {
+        assert!(session_base(true, true).contains("buzz projects add-channel"));
+        assert!(!session_base(true, false).contains("buzz projects add-channel"));
+        assert!(session_base(true, false).contains("see `buzz projects --help`"));
+    }
+
+    #[test]
+    fn sessions_still_get_the_session_model() {
+        for (code_work, project_home) in [(true, true), (false, false)] {
+            assert!(session_base(code_work, project_home).contains("## Session Model"));
+        }
+    }
+}
+
 fn make_prompt_context(
     config: &Config,
     rest_client: relay::RestClient,
@@ -179,9 +222,10 @@ fn make_prompt_context(
             let base = base_prompt_content
                 .map(String::as_str)
                 .unwrap_or(include_str!("base_prompt.md"));
+            let base = crate::base_prompt_trim::for_agent(base, config.code_work);
             // Goal rules are not part of the base: they ride in each turn's
             // `<goal-context>`, only where a goal tree exists.
-            Some(assemble_base_prompt(config.session_policy, &mode, base))
+            Some(assemble_base_prompt(config.session_policy, &mode, &base))
         },
         heartbeat_prompt: config.heartbeat_prompt.clone(),
         cwd,

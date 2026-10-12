@@ -713,7 +713,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 62);
+        assert_eq!(migrations.len(), 64);
         assert_eq!(migrations[48].version, 49);
         assert_eq!(migrations[49].version, 50);
         assert_eq!(migrations[50].version, 51);
@@ -981,7 +981,10 @@ mod postgres_tests {
         // Agent host devices / device robot FTS exclusion (0062): same shape
         // as 0033 for the author-only kinds 30180 and 30181.
         assert_eq!(migrations[61].version, 62);
-        assert!(migrations[61].sql.as_str().contains("kind IN (30180, 30181)"));
+        assert!(migrations[61]
+            .sql
+            .as_str()
+            .contains("kind IN (30180, 30181)"));
         assert!(migrations[61].sql.as_str().contains("search_tsv"));
 
         // Public push-gateway authority is intentionally deployment-global and
@@ -1426,6 +1429,11 @@ mod postgres_tests {
             .sql
             .as_str()
             .contains("CREATE TABLE observer_tiers"));
+        assert_eq!(migrations[63].version, 64);
+        assert!(migrations[63]
+            .sql
+            .as_str()
+            .contains("DROP TABLE observer_tiers"));
     }
 
     #[test]
@@ -2088,8 +2096,7 @@ mod postgres_tests {
         let mut expected_fences = migration.fence_attachments.clone();
         expected_fences.remove("product_feedback");
         expected_fences.remove("rate_limit_violations");
-        expected_fences
-            .extend(["artifact_heads", "artifact_revisions", "observer_tiers"].map(str::to_owned));
+        expected_fences.extend(["artifact_heads", "artifact_revisions"].map(str::to_owned));
         assert_eq!(
             expected_fences, schema.fence_attachments,
             "write-fence attachment targets differ after recovery policy"

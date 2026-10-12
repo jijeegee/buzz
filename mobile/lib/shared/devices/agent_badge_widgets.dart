@@ -42,8 +42,8 @@ AgentBadge? watchAgentBadge(
   );
 }
 
-/// Shows "Running on [device name]" when [child] (an owner's device robot)
-/// is long-pressed. Taps still reach the widgets around [child].
+/// Shows "Running on [device name]" (or "Running on this device") when
+/// [child] (an owner's device robot) is long-pressed. Taps still reach the widgets around [child].
 class AgentHostDeviceTooltip extends ConsumerWidget {
   const AgentHostDeviceTooltip({
     super.key,
@@ -56,13 +56,13 @@ class AgentHostDeviceTooltip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final id = deviceId.toLowerCase();
     final name = ref.watch(
-      agentHostDeviceNamesProvider.select(
-        (names) => names[deviceId.toLowerCase()],
-      ),
+      agentHostDeviceNamesProvider.select((names) => names[id]),
     );
+    final current = ref.watch(currentAccountDeviceIdProvider) == id;
     return Tooltip(
-      message: agentHostDeviceLabel(name),
+      message: agentHostDeviceLabel(name, current: current),
       triggerMode: TooltipTriggerMode.longPress,
       child: child,
     );

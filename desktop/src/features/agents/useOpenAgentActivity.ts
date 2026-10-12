@@ -150,7 +150,15 @@ export function useOpenAgentActivity() {
   );
 
   const openAgentActivity = React.useCallback(
-    (pubkey: string, options?: { channelId?: string | null }): boolean => {
+    (
+      pubkey: string,
+      options?: {
+        channelId?: string | null;
+        /** Thread the agent is working in: the pane's back arrow returns to
+         * it. Only honored when this navigates to `channelId`. */
+        returnThreadId?: string | null;
+      },
+    ): boolean => {
       // An explicit channel target (e.g. clicking a "Working in #channel"
       // badge) navigates so the pane opens scoped to that channel — but only
       // when the viewer can actually open that channel. Scoping the pane to
@@ -162,7 +170,10 @@ export function useOpenAgentActivity() {
             toast.warning(INACCESSIBLE_ACTIVITY_MESSAGE);
             return false;
           }
-          void goChannel(options.channelId, { agentSession: pubkey });
+          void goChannel(options.channelId, {
+            agentSession: pubkey,
+            agentSessionReturnThread: options.returnThreadId ?? undefined,
+          });
           return true;
         }
         // A channel-scoped AgentSessionProvider belongs to the channel view

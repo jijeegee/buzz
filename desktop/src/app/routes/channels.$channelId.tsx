@@ -23,12 +23,15 @@ import { InboxPanel } from "@/features/home/ui/InboxPanel";
 
 type ChannelRouteSearch = {
   agentSession?: string;
+  agentSessionReturnThread?: string;
   /**
    * When set, the composer on mount will auto-submit its loaded draft once,
    * then clear this param. Value is the draft key that was loaded so the
    * composer can verify it has the right draft before firing.
    */
   autoSend?: string;
+  /** "1": jump to `messageId` without opening its reply panel. */
+  jump?: string;
   messageId?: string;
   profile?: string;
   profileTab?: ProfilePanelTab;
@@ -46,7 +49,9 @@ function validateChannelSearch(
 ): ChannelRouteSearch {
   return {
     agentSession: nonEmptyString(search.agentSession),
+    agentSessionReturnThread: nonEmptyString(search.agentSessionReturnThread),
     autoSend: nonEmptyString(search.autoSend),
+    jump: nonEmptyString(search.jump),
     messageId: nonEmptyString(search.messageId),
     profile: nonEmptyString(search.profile),
     profileTab: parseProfilePanelTab(search.profileTab) ?? undefined,

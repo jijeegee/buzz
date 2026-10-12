@@ -3,11 +3,13 @@ import test from "node:test";
 
 import {
   goalForThread,
+  goalLinkView,
   goalOutline,
   goalPath,
   goalProgress,
   goalSubtreeIds,
   goalTitleError,
+  messageGoalLinkScope,
   threadGoalRootId,
 } from "./goalTree.ts";
 
@@ -73,4 +75,44 @@ test("threads link to goals by their chain root, like mobile and agents", () => 
   assert.equal(threadGoalRootId({ id: "head", rootId: "root" }), "root");
   assert.equal(threadGoalRootId({ id: "root", rootId: null }), "root");
   assert.equal(threadGoalRootId({ id: "root" }), "root");
+});
+
+test("message link scope: thread branch, any goal unlinked, layer 2+ on main", () => {
+  const thread = "ff".repeat(32);
+  const inLinked = messageGoalLinkScope(tree, thread);
+  assert.deepEqual(
+    goalOutline(tree)
+      .filter(({ layer, node: n }) => inLinked.canLink(n.id, layer))
+      .map(({ node: n }) => n.id),
+    ["a", "a1", "a2"],
+  );
+  assert.equal(inLinked.canAddUnder("b"), false);
+  const inUnlinked = messageGoalLinkScope(tree, "ee".repeat(32));
+  assert.equal(inUnlinked.canLink("root", 1), true);
+  const main = messageGoalLinkScope(tree, null);
+  assert.equal(main.canLink("root", 1), false);
+  assert.equal(main.canLink("b1", 3), true);
+  assert.equal(main.canAddUnder("root"), true);
+});
+
+test("link view: threads open, messages jump, missing go nowhere", () => {
+  const id = "aa".repeat(32);
+  const root = "bb".repeat(32);
+  assert.deepEqual(goalLinkView(id, undefined), {
+    label: "Thread",
+    target: { kind: "thread", threadRootId: id },
+  });
+  assert.deepEqual(goalLinkView(id, { kind: "thread" }).label, "Thread");
+  assert.deepEqual(goalLinkView(id, { kind: "message" }), {
+    label: "Message",
+    target: { kind: "message", messageId: id, threadRootId: null },
+  });
+  assert.deepEqual(goalLinkView(id, { kind: "reply", threadRootId: root }), {
+    label: "Message",
+    target: { kind: "message", messageId: id, threadRootId: root },
+  });
+  assert.deepEqual(goalLinkView(id, { kind: "missing" }), {
+    label: "Message",
+    target: null,
+  });
 });

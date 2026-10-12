@@ -33,19 +33,19 @@ impl TaskThreadTrigger {
     fn guidance(self) -> &'static str {
         match self {
             Self::LongRunning => {
-                "**Long-running work:** builds, deploys, test suites, large migrations, or broad research that will take more than a few minutes."
+                "**Long-running work:** builds, deploys, test suites, large migrations, or broad research taking more than a few minutes."
             }
             Self::MultiStep => {
-                "**Multi-step work:** work that moves through several stages (for example investigate → change → verify) and would need more than one progress update."
+                "**Multi-step work:** several stages (e.g. investigate → change → verify) needing more than one progress update."
             }
             Self::Parallel => {
                 "**Several independent tasks in one request:** open one thread per task so each result reports back on its own."
             }
             Self::SideDiscussion => {
-                "**Side discussion:** a long back-and-forth on a tangent that would crowd out the main topic of the timeline."
+                "**Side discussion:** a long back-and-forth tangent that would crowd out the timeline's main topic."
             }
             Self::Delegation => {
-                "**Delegating to another agent:** hand the work over inside a task thread so the assignment, progress, and result stay together."
+                "**Delegating to another agent:** hand it over in a task thread so assignment, progress, and result stay together."
             }
         }
     }
@@ -100,13 +100,12 @@ pub fn task_thread_guidance(triggers: &[TaskThreadTrigger]) -> Option<String> {
         .collect();
     Some(format!(
         "### Opening Task Threads Yourself\n\n\
-This is an exception to the rule above that you open a thread only when a human asks for one. \
-The owner allows you to open a task thread on your own when a top-level request on the channel main timeline that you are about to work on is one of these cases:\n\n\
+As an exception to opening a thread only when a human asks, the owner lets you open a task thread yourself when a top-level main-timeline request you are about to work on is one of these cases:\n\n\
 {cases}\n\
 Anything else stays on the main timeline: answer short questions and quick one-step tasks there directly. \
-To open one, run `buzz threads start --channel <UUID> --from <the request's event id> --title \"…\" --brief -` with a brief of three lines in the requester's language: \
-the goal, the deliverable, and what counts as done. \
-Do the work and post progress in that thread, and finish with `buzz threads close` as described in Task Threads."
+Open it with `buzz threads start --channel <UUID> --from <the request's event id> --title \"…\" --brief -`, the brief being three lines in the requester's language: \
+goal, deliverable, and what counts as done. \
+Work and post progress in that thread, and finish with `buzz threads close` as in Task Threads."
     ))
 }
 
