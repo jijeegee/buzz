@@ -191,11 +191,17 @@ export function SettingsView({
     void getVersion().then(setAppVersion);
   }, []);
 
+  // A link or reload into the Admin section waits for the access check
+  // instead of bouncing an operator to another section first.
+  const awaitingAdminAccess =
+    section === "relay-admin" && adminAccessQuery.isPending;
+
   React.useEffect(() => {
+    if (awaitingAdminAccess) return;
     if (!visibleSections.some((entry) => entry.value === section)) {
       onSectionChange(visibleSections[0]?.value ?? "appearance");
     }
-  }, [onSectionChange, section, visibleSections]);
+  }, [awaitingAdminAccess, onSectionChange, section, visibleSections]);
 
   React.useEffect(() => {
     if (!isMobile && !sidebarOpen) {
@@ -370,20 +376,32 @@ export function SettingsView({
               className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4"
               data-testid={`settings-panel-${section}`}
             >
-              {renderSettingsSection(section, {
-                currentPubkey,
-                fallbackDisplayName,
-                isUpdatingDesktopNotifications,
-                notificationErrorMessage,
-                notificationPermission,
-                notificationSettings,
-                onSetDesktopNotificationsEnabled,
-                onSetHomeBadgeEnabled,
-                onSetSlotAlertsEnabled,
-                onSetNotifyWhileViewing,
-                onSetAllSlotAlertsEnabled,
-                onSetSoundForSlot,
-              })}
+              {awaitingAdminAccess ? (
+                <div
+                  className="flex flex-1 items-center justify-center"
+                  data-testid="settings-admin-access-pending"
+                >
+                  <LoaderCircle
+                    aria-label="Loading"
+                    className="h-5 w-5 animate-spin text-muted-foreground"
+                  />
+                </div>
+              ) : (
+                renderSettingsSection(section, {
+                  currentPubkey,
+                  fallbackDisplayName,
+                  isUpdatingDesktopNotifications,
+                  notificationErrorMessage,
+                  notificationPermission,
+                  notificationSettings,
+                  onSetDesktopNotificationsEnabled,
+                  onSetHomeBadgeEnabled,
+                  onSetSlotAlertsEnabled,
+                  onSetNotifyWhileViewing,
+                  onSetAllSlotAlertsEnabled,
+                  onSetSoundForSlot,
+                })
+              )}
             </div>
           </section>
         </div>
