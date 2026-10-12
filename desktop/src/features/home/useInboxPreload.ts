@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { QueryObserver, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
 import type { InboxItem } from "@/features/home/lib/inbox";
@@ -14,7 +14,16 @@ import {
   preloadThreads,
 } from "@/features/messages/channelPreload";
 import { useDevTuning } from "@/shared/lib/devTuning";
-import { isDocumentVisible } from "@/shared/lib/useDocumentVisible";
+import {
+  channelMessagesKey,
+  channelWindowKey,
+  threadRepliesKey,
+} from "@/features/messages/lib/messageQueryKeys";
+import { threadWindowStateKey } from "@/features/messages/lib/threadWindowCache";
+import {
+  isDocumentVisible,
+  subscribeAppFocus,
+} from "@/shared/lib/useDocumentVisible";
 
 /** Input this recent means the user is typing or clicking: yield to them. */
 const RECENT_INPUT_MS = 1_500;
@@ -34,6 +43,25 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
   const lastInputAtRef = React.useRef(0);
   const attemptedAtRef = React.useRef(new Map<string, number>());
   const firstPassRef = React.useRef(true);
+  // Coming back to the app re-runs the preload for anything that went missing.
+  const [refillTick, setRefillTick] = React.useState(0);
+  React.useEffect(() => {
+    if (!enabled) return;
+    return subscribeAppFocus((focused) => {
+      if (!focused) return;
+      // Retry rows whose caches are gone, without waiting out the retry delay.
+      for (const key of attemptedAtRef.current.keys()) {
+        const [channelId, rootId] = key.split(":");
+        const missing = rootId
+          ? queryClient.getQueryData(threadRepliesKey(channelId, rootId)) ===
+            undefined
+          : queryClient.getQueryData(channelMessagesKey(channelId)) ===
+            undefined;
+        if (missing) attemptedAtRef.current.delete(key);
+      }
+      setRefillTick((tick) => tick + 1);
+    });
+  }, [enabled, queryClient]);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -168,6 +196,32 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
         resolve();
       }
       sleepers.clear();
+    };
+  }, [enabled, queryClient, refillTick, targetsKey]);
+
+  // Rows on the inbox keep their room and thread caches while they are there,
+  // so memory cleanup never leaves them colder than at launch. A disabled
+  // observer holds a cache without fetching or counting as "active".
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the target lists
+  React.useEffect(() => {
+    if (!enabled) return;
+    const keys = [...firstTargets, ...moreTargets].flatMap((target) => [
+      channelMessagesKey(target.channelId),
+      channelWindowKey(target.channelId),
+      ...(target.thread
+        ? [
+            threadRepliesKey(target.channelId, target.thread.rootId),
+            threadWindowStateKey(target.channelId, target.thread.rootId),
+          ]
+        : []),
+    ]);
+    const unsubscribes = keys.map((queryKey) =>
+      new QueryObserver(queryClient, { queryKey, enabled: false }).subscribe(
+        () => {},
+      ),
+    );
+    return () => {
+      for (const unsubscribe of unsubscribes) unsubscribe();
     };
   }, [enabled, queryClient, targetsKey]);
 }

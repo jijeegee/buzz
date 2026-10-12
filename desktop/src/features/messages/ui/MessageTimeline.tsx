@@ -283,13 +283,18 @@ const MessageTimelineBase = React.forwardRef<
   // painted at a stale offset until the user's next scroll event forces layout.
   const scrollContainerDomKey = channelId ?? "none";
 
+  const appliedScrollContainerDomKeyRef = React.useRef<string | null>(null);
   React.useLayoutEffect(() => {
-    // Re-read after `scrollContainerDomKey` swaps the keyed scroll DOM node.
-    void scrollContainerDomKey;
     if (!useTimelineVirtualizer) {
       setVirtualizerScrollParent(scrollContainerRef.current);
     }
-    setTimelineVirtualizerApi(null);
+    // Only a swapped scroll node invalidates the list's API. Effects also re-run
+    // when a hidden (warm) room is shown again; the list has just re-registered
+    // its API then (child effects run first), so clearing it would strand it.
+    if (appliedScrollContainerDomKeyRef.current !== scrollContainerDomKey) {
+      appliedScrollContainerDomKeyRef.current = scrollContainerDomKey;
+      setTimelineVirtualizerApi(null);
+    }
   }, [scrollContainerRef, scrollContainerDomKey]);
 
   const hasPersistentIntro =

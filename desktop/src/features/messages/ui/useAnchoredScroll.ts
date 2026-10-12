@@ -18,6 +18,9 @@ import { useVirtualizedViewportResize } from "./useVirtualizedViewportResize";
  */
 const AT_BOTTOM_THRESHOLD_PX = 32;
 
+/** Marks a hook that has not reset for any channel yet. */
+const NOT_RESET = Symbol("not-reset");
+
 type AnchorState =
   | { kind: "at-bottom" }
   | { kind: "message"; messageId: string; topOffset: number }
@@ -210,11 +213,17 @@ export function useAnchoredScroll({
   const programmaticScrollRafRef = React.useRef<number | null>(null);
   const targetSettleRafRef = React.useRef<number | null>(null);
 
+  const resetForChannelRef = React.useRef<string | null | undefined | symbol>(
+    NOT_RESET,
+  );
   // Reset everything when the channel changes — the layout effect that runs
   // immediately after this reset is responsible for either jumping to bottom
   // or to the target message for the new channel.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: channelId is intentionally the sole trigger — we want this effect to fire exactly when the channel changes (and on mount).
   React.useLayoutEffect(() => {
+    // Effects re-run when a hidden (warm) room is shown again; that is the
+    // same channel, whose reading position and state must survive.
+    if (resetForChannelRef.current === channelId) return;
+    resetForChannelRef.current = channelId;
     anchorRef.current = { kind: "at-bottom" };
     virtualizerAtBottomRef.current = true;
     setIsAtBottom(true);

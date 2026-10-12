@@ -2,6 +2,7 @@ import * as React from "react";
 import { createFileRoute, useLocation } from "@tanstack/react-router";
 
 import { LazyChannelRouteScreen } from "@/app/routes/lazyChannelRouteScreen";
+import { nextWarmRooms, type WarmRooms } from "@/app/routes/warmRooms";
 import { useDevTuning } from "@/shared/lib/devTuning";
 import { selectSearchHighlightRouteState } from "@/app/routes/searchHighlightRouteState";
 
@@ -70,27 +71,24 @@ export const Route = createFileRoute("/channels/$channelId")({
 
 const ChannelRouteScreen = LazyChannelRouteScreen;
 
-/**
- * The rooms to keep rendered: the open one first, then the most recently left
- * ones, `warmRooms` in all (at least the open room).
- */
-function useRecentChannelIds(channelId: string, warmRooms: number) {
-  const [recent, setRecent] = React.useState<string[]>([channelId]);
-  const limit = Math.max(1, warmRooms);
+function useWarmRooms(channelId: string, warmRooms: number) {
+  const [state, setState] = React.useState<WarmRooms>({
+    recency: [channelId],
+    order: [channelId],
+  });
   const next = React.useMemo(
-    () =>
-      [channelId, ...recent.filter((id) => id !== channelId)].slice(0, limit),
-    [channelId, limit, recent],
+    () => nextWarmRooms(state, channelId, warmRooms),
+    [channelId, state, warmRooms],
   );
   React.useEffect(() => {
-    setRecent((current) =>
-      current.length === next.length &&
-      current.every((id, index) => id === next[index])
+    setState((current) =>
+      current.order.join("|") === next.order.join("|") &&
+      current.recency.join("|") === next.recency.join("|")
         ? current
         : next,
     );
   }, [next]);
-  return next;
+  return next.order;
 }
 
 function ChannelRouteComponent() {
@@ -116,8 +114,8 @@ function ChannelRouteComponent() {
   // Recently opened rooms stay rendered but hidden (React Activity: effects,
   // subscriptions and read marking pause while hidden), so switching back to
   // one shows it at once, scrolled where it was. The count is a dev knob.
-  const { warmRooms } = useDevTuning();
-  const recentChannelIds = useRecentChannelIds(channelId, warmRooms);
+  const { warmRooms, loaded: devTuningLoaded } = useDevTuning();
+  const recentChannelIds = useWarmRooms(channelId, warmRooms);
 
   const openChannelScreen = (
     <ChannelRouteScreen
@@ -142,28 +140,34 @@ function ChannelRouteComponent() {
       }
     >
       <ThreadViewModeOverrideProvider value={threadViewModeOverride}>
-        {warmRooms <= 1
-          ? // One room: the single screen follows the route, as it always has.
-            openChannelScreen
-          : recentChannelIds.map((id) =>
-              id === channelId ? (
-                <React.Activity key={id} mode="visible">
-                  {openChannelScreen}
-                </React.Activity>
-              ) : (
-                <React.Activity key={id} mode="hidden">
-                  <ChannelRouteScreen
-                    autoSendDraftKey={null}
-                    channelId={id}
-                    searchHighlight={undefined}
-                    selectedPostId={null}
-                    targetMessageId={null}
-                    targetReplyId={null}
-                    targetThreadRootId={null}
-                  />
-                </React.Activity>
-              ),
-            )}
+        {!devTuningLoaded ? (
+          // Read at launch in a few milliseconds; choosing the layout before
+          // it arrives would remount the open room once it does.
+          <ViewLoadingFallback includeHeader kind="channel" />
+        ) : warmRooms <= 1 ? (
+          // One room: the single screen follows the route, as it always has.
+          openChannelScreen
+        ) : (
+          recentChannelIds.map((id) =>
+            id === channelId ? (
+              <React.Activity key={id} mode="visible">
+                {openChannelScreen}
+              </React.Activity>
+            ) : (
+              <React.Activity key={id} mode="hidden">
+                <ChannelRouteScreen
+                  autoSendDraftKey={null}
+                  channelId={id}
+                  searchHighlight={undefined}
+                  selectedPostId={null}
+                  targetMessageId={null}
+                  targetReplyId={null}
+                  targetThreadRootId={null}
+                />
+              </React.Activity>
+            ),
+          )
+        )}
       </ThreadViewModeOverrideProvider>
     </React.Suspense>
   );

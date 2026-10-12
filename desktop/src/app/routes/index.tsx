@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { preloadChannelRouteScreen } from "@/app/routes/lazyChannelRouteScreen";
+import { preloadDevTuning } from "@/shared/lib/devTuning";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { HomeScreen } from "@/features/home/ui/HomeScreen";
 import {
@@ -94,6 +95,7 @@ function HomeRouteComponent() {
   // The inbox is where rooms are opened from: have the chat screen ready.
   React.useEffect(() => {
     preloadChannelRouteScreen();
+    preloadDevTuning();
   }, []);
 
   return (

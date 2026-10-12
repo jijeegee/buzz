@@ -120,3 +120,56 @@ test("one warm room keeps only the open room rendered", async ({ page }) => {
   await openChannel(page, "random");
   await expect(page.getByTestId("message-timeline")).toHaveCount(1);
 });
+
+test("a warm room survives round trips and still follows new messages", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (
+      window as Window & { __BUZZ_E2E_DEV_TUNING__?: string }
+    ).__BUZZ_E2E_DEV_TUNING__ = '{"warmRooms":3}';
+  });
+  await installMockBridge(page);
+  await page.goto("/");
+  await seedGeneral(page);
+
+  await openChannel(page, "general");
+  await expect(
+    visibleTimeline(page).getByText(`WR filler ${FILLER_COUNT - 1}`),
+  ).toBeVisible();
+  await visibleTimeline(page).hover();
+  for (let i = 0; i < 6; i += 1) await page.mouse.wheel(0, -500);
+  await page.waitForTimeout(300);
+  const leftAt = await visibleTimeline(page).evaluate(
+    (el) => (el as HTMLElement).scrollTop,
+  );
+
+  // A → B → A → B → A: the hidden room's DOM must never move.
+  for (let round = 0; round < 2; round += 1) {
+    await openChannel(page, "random");
+    await openChannel(page, "general");
+  }
+  const returnedAt = await visibleTimeline(page).evaluate(
+    (el) => (el as HTMLElement).scrollTop,
+  );
+  console.log(`[warm rooms] round trips left=${leftAt} returned=${returnedAt}`);
+  expect(Math.abs(returnedAt - leftAt)).toBeLessThan(40);
+
+  // Back at the bottom, a new message in the re-shown room sticks to it.
+  await visibleTimeline(page).evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await visibleTimeline(page).hover();
+  await page.mouse.wheel(0, 4000);
+  await page.waitForTimeout(300);
+  await page.evaluate((alice) => {
+    (window as MockWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      channelName: "general",
+      content: "WR live after return",
+      pubkey: alice,
+    });
+  }, TEST_IDENTITIES.alice.pubkey);
+  await expect(
+    visibleTimeline(page).getByText("WR live after return"),
+  ).toBeInViewport();
+});

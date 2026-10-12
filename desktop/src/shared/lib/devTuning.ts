@@ -53,17 +53,25 @@ export function parseDevTuning(raw: string | null | undefined): DevTuning {
   };
 }
 
-let current: DevTuning = DEFAULT_DEV_TUNING;
+let current: DevTuning & { loaded: boolean } = {
+  ...DEFAULT_DEV_TUNING,
+  loaded: false,
+};
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
+
+/** Start reading the file before the first room opens. */
+export function preloadDevTuning(): void {
+  void loadDevTuning();
+}
 
 function loadDevTuning() {
   loading ??= invokeTauri<string | null>("get_dev_tuning")
     .then((raw) => {
-      current = parseDevTuning(raw);
+      current = { ...parseDevTuning(raw), loaded: true };
     })
     .catch(() => {
-      current = DEFAULT_DEV_TUNING;
+      current = { ...DEFAULT_DEV_TUNING, loaded: true };
     })
     .finally(() => {
       for (const listener of listeners) listener();
@@ -79,11 +87,13 @@ function subscribe(listener: () => void) {
   };
 }
 
-/** The launch-time dev tuning; defaults until the file has been read. */
-export function useDevTuning(): DevTuning {
+const SERVER_SNAPSHOT = { ...DEFAULT_DEV_TUNING, loaded: false };
+
+/** The launch-time dev tuning; `loaded` turns true once the file was read. */
+export function useDevTuning(): DevTuning & { loaded: boolean } {
   return React.useSyncExternalStore(
     subscribe,
     () => current,
-    () => DEFAULT_DEV_TUNING,
+    () => SERVER_SNAPSHOT,
   );
 }
