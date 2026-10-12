@@ -64,3 +64,10 @@ test("a single top-level message row is not treated as a thread", () => {
     { channelId: ROOM, thread: null },
   ]);
 });
+
+test("a DM thread row preloads the reply's real thread root", () => {
+  const reply = row(`dm:${DM}`, DM, "dm", [["e", ROOT, "", "reply"]]);
+  assert.deepEqual(inboxPreloadTargets([reply]), [
+    { channelId: DM, thread: { replyId: `dm:${DM}-latest`, rootId: ROOT } },
+  ]);
+});

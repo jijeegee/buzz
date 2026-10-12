@@ -12,34 +12,66 @@ let failWindow = false;
 /** @type {any[]} */
 let threadReplies = [];
 
+let failBatch = false;
+/** @type {Set<string>} */
+const inaccessible = new Set();
+
+function windowEvents(channelId) {
+  return [
+    {
+      content: "hello",
+      created_at: 100,
+      id: "a".repeat(64),
+      kind: 9,
+      pubkey: "b".repeat(64),
+      sig: "",
+      tags: [["h", channelId]],
+    },
+    {
+      content: JSON.stringify({ has_more: false, next_cursor: null }),
+      created_at: 101,
+      id: "e".repeat(64),
+      kind: 39006,
+      pubkey: "f".repeat(64),
+      sig: "",
+      tags: [
+        ["h", channelId],
+        ["d", `${channelId}:head`],
+      ],
+    },
+  ];
+}
+
 globalThis.__TAURI_INTERNALS__ = {
   invoke: (command, args) => {
     calls.push({ command, args });
     if (command === "get_channel_window") {
       if (failWindow) return Promise.reject(new Error("relay down"));
-      return Promise.resolve([
-        {
-          content: "hello",
-          created_at: 100,
-          id: "a".repeat(64),
+      return Promise.resolve(windowEvents(args.channelId));
+    }
+    if (command === "get_channel_windows") {
+      if (failBatch) return Promise.reject(new Error("batch down"));
+      return Promise.resolve(
+        args.channelIds
+          .filter((channelId) => !inaccessible.has(channelId))
+          .map((channelId) => ({
+            channel_id: channelId,
+            events: windowEvents(channelId),
+          })),
+      );
+    }
+    if (command === "get_event") {
+      return Promise.resolve(
+        JSON.stringify({
+          content: "root",
+          created_at: 50,
+          id: args.eventId,
           kind: 9,
           pubkey: "b".repeat(64),
           sig: "",
-          tags: [["h", args.channelId]],
-        },
-        {
-          content: JSON.stringify({ has_more: false, next_cursor: null }),
-          created_at: 101,
-          id: "e".repeat(64),
-          kind: 39006,
-          pubkey: "f".repeat(64),
-          sig: "",
-          tags: [
-            ["h", args.channelId],
-            ["d", `${args.channelId}:head`],
-          ],
-        },
-      ]);
+          tags: [["h", ROOM]],
+        }),
+      );
     }
     if (command === "get_thread_replies") {
       return Promise.resolve({ events: threadReplies, next_cursor: null });
@@ -52,13 +84,16 @@ globalThis.__TAURI_INTERNALS__ = {
 };
 
 const { QueryClient } = await import("@tanstack/react-query");
-const { preloadChannelMessages, preloadThreadReplies } = await import(
-  "./channelPreload.ts"
-);
+const {
+  preloadChannelMessages,
+  preloadChannelsMessages,
+  preloadThreadReplies,
+} = await import("./channelPreload.ts");
+const { getRememberedRouteEvent } = await import("./lib/routeEventCache.ts");
 const { hasPersistedHydratedChannel, hydrateChannelHeads } = await import(
   "./lib/channelHeadCache.ts"
 );
-const { channelMessagesKey, threadRepliesKey } = await import(
+const { channelMessagesKey, channelWindowKey, threadRepliesKey } = await import(
   "./lib/messageQueryKeys.ts"
 );
 
@@ -76,6 +111,8 @@ function newClient() {
 beforeEach(() => {
   calls.length = 0;
   failWindow = false;
+  failBatch = false;
+  inaccessible.clear();
   threadReplies = [];
 });
 
@@ -113,6 +150,76 @@ test("leaves rooms that already have messages cached alone", async () => {
   client.setQueryData(channelMessagesKey(ROOM), []);
   assert.equal(await preloadChannelMessages(client, ROOM, 20), false);
   assert.equal(calls.length, 0);
+  // Nothing to paint: an empty copy keeps the skeleton on open.
+  assert.equal(hasPersistedHydratedChannel(client, ROOM), false);
+});
+
+test("a room the relay already delivered paints that copy on open", async () => {
+  const client = newClient();
+  const [row] = windowEvents(ROOM);
+  client.setQueryData(channelMessagesKey(ROOM), [row]);
+  client.setQueryData(channelWindowKey(ROOM), {
+    pages: [
+      {
+        startCursor: null,
+        rows: [{ event: row, thread: null }],
+        aux: [],
+        nextCursor: null,
+        hasMore: false,
+      },
+    ],
+    liveOverlay: [],
+    liveAux: [],
+    liveSummaries: {},
+  });
+  assert.equal(await preloadChannelMessages(client, ROOM, 20), false);
+  assert.equal(calls.length, 0);
+  assert.equal(hasPersistedHydratedChannel(client, ROOM), true);
+});
+
+test("a room seeded only by live events keeps its skeleton", async () => {
+  const client = newClient();
+  client.setQueryData(channelMessagesKey(ROOM), windowEvents(ROOM).slice(0, 1));
+  assert.equal(await preloadChannelMessages(client, ROOM, 20), false);
+  assert.equal(calls.length, 0);
+  assert.equal(hasPersistedHydratedChannel(client, ROOM), false);
+});
+
+test("several rooms load in one batched request", async () => {
+  const client = newClient();
+  const other = "11111111-2222-4333-8444-555555555555";
+  const denied = "66666666-7777-4888-9999-000000000000";
+  inaccessible.add(denied);
+  const loaded = await preloadChannelsMessages(
+    client,
+    [ROOM, other, denied],
+    20,
+  );
+  assert.deepEqual(loaded, [ROOM, other]);
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    ["get_channel_windows"],
+  );
+  assert.deepEqual(calls[0].args, {
+    channelIds: [ROOM, other, denied],
+    limitRows: 20,
+  });
+  assert.equal(client.getQueryData(channelMessagesKey(other)).length, 1);
+  assert.equal(hasPersistedHydratedChannel(client, other), true);
+  assert.equal(client.getQueryData(channelMessagesKey(denied)), undefined);
+});
+
+test("a failed batch loads nothing and leaves the retry to a later pass", async () => {
+  const client = newClient();
+  const other = "11111111-2222-4333-8444-555555555555";
+  failBatch = true;
+  const loaded = await preloadChannelsMessages(client, [ROOM, other], 20);
+  assert.deepEqual(loaded, []);
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    ["get_channel_windows"],
+  );
+  assert.equal(client.getQueryData(channelMessagesKey(ROOM)), undefined);
 });
 
 test("a failed load caches nothing and does not mark the room paintable", async () => {
@@ -140,6 +247,9 @@ test("thread replies load once and include the reply the row opens on", async ()
   threadReplies = [reply];
   assert.equal(await preloadThreadReplies(client, ROOM, ROOT, reply.id), true);
   assert.equal(client.getQueryData(threadRepliesKey(ROOM, ROOT)).length, 1);
+  // Opening the row's link resolves the reply and root without the relay.
+  assert.equal(getRememberedRouteEvent(client, reply.id)?.id, reply.id);
+  assert.equal(getRememberedRouteEvent(client, ROOT)?.id, ROOT);
   assert.equal(await preloadThreadReplies(client, ROOM, ROOT, reply.id), false);
   assert.equal(
     calls.filter((call) => call.command === "get_thread_replies").length,

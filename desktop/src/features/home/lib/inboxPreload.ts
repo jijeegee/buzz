@@ -1,5 +1,6 @@
 import type { InboxItem } from "@/features/home/lib/inbox";
 import { getInboxRoomEntry } from "@/features/home/lib/inboxRoomEntry";
+import { getThreadReference } from "@/features/messages/lib/threading";
 
 /** Inbox rows whose rooms load in the background: about one screenful. */
 export const INBOX_PRELOAD_ROWS = 12;
@@ -22,11 +23,16 @@ export function inboxPreloadTargets(
     const entry = getInboxRoomEntry(item, "conversations");
     if (!entry) continue;
     // In the chat list only thread rows open on a specific message.
+    const replyId = entry.messageId;
+    // DM rows group under `dm:<channel>`, so take the root from the reply.
+    const reply = replyId
+      ? item.groupItems.find((event) => event.id === replyId)
+      : undefined;
+    const rootId =
+      (reply && getThreadReference(reply.tags).rootId) ?? item.conversationId;
     targets.push({
       channelId: entry.channelId,
-      thread: entry.messageId
-        ? { rootId: item.conversationId, replyId: entry.messageId }
-        : null,
+      thread: replyId ? { rootId, replyId } : null,
     });
   }
   return targets;

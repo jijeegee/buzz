@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 
 import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlightNavigation";
 import { getCachedSearchHitEvent } from "@/app/navigation/searchHitEventCache";
@@ -9,6 +9,7 @@ import { useOpenChannelDirectoryQuery } from "@/features/channels/openChannelDir
 import { ChannelScreen } from "@/features/channels/ui/ChannelScreen";
 import { HuddleStartingView } from "@/features/huddle/components/HuddleStartingView";
 import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
+import { getRememberedRouteEvent } from "@/features/messages/lib/routeEventCache";
 import {
   getThreadReference,
   isBroadcastReply,
@@ -42,7 +43,14 @@ type ChannelRouteScreenProps = {
 
 const MAX_ROUTE_ANCESTOR_HOPS = 50;
 
-async function fetchRouteEvent(eventId: string): Promise<RelayEvent | null> {
+async function fetchRouteEvent(
+  queryClient: QueryClient,
+  eventId: string,
+): Promise<RelayEvent | null> {
+  // Preloaded thread replies and roots open without a relay round trip; the
+  // room and thread queries still revalidate them.
+  const remembered = getRememberedRouteEvent(queryClient, eventId);
+  if (remembered) return remembered;
   try {
     return await getEventById(eventId);
   } catch (error) {
@@ -60,6 +68,7 @@ function getReplyParentId(event: RelayEvent): string | null {
 }
 
 async function fetchRouteTargetEvents(
+  queryClient: QueryClient,
   eventIds: string[],
   targetMessageId: string | null,
   targetThreadRootId: string | null,
@@ -72,7 +81,9 @@ async function fetchRouteTargetEvents(
   };
 
   const uniqueEventIds = [...new Set(eventIds)];
-  const initialEvents = await Promise.all(uniqueEventIds.map(fetchRouteEvent));
+  const initialEvents = await Promise.all(
+    uniqueEventIds.map((eventId) => fetchRouteEvent(queryClient, eventId)),
+  );
   for (const event of initialEvents) {
     addEvent(event);
   }
@@ -87,7 +98,7 @@ async function fetchRouteTargetEvents(
   const targetThreadRef = getThreadReference(targetEvent.tags);
   const threadRootId = targetThreadRootId ?? targetThreadRef.rootId ?? null;
   if (threadRootId && !eventsById.has(threadRootId)) {
-    addEvent(await fetchRouteEvent(threadRootId));
+    addEvent(await fetchRouteEvent(queryClient, threadRootId));
   }
 
   let parentId = getReplyParentId(targetEvent);
@@ -98,7 +109,8 @@ async function fetchRouteTargetEvents(
     guard < MAX_ROUTE_ANCESTOR_HOPS
   ) {
     const parentEvent =
-      eventsById.get(parentId) ?? (await fetchRouteEvent(parentId));
+      eventsById.get(parentId) ??
+      (await fetchRouteEvent(queryClient, parentId));
     if (!parentEvent) {
       break;
     }
@@ -259,6 +271,7 @@ export function ChannelRouteScreen({
     ].filter((eventId): eventId is string => eventId !== null);
 
     void fetchRouteTargetEvents(
+      queryClient,
       eventIds,
       targetMessageId,
       targetThreadRootId,
@@ -277,7 +290,7 @@ export function ChannelRouteScreen({
     return () => {
       isCancelled = true;
     };
-  }, [selectedPostId, targetMessageId, targetThreadRootId]);
+  }, [queryClient, selectedPostId, targetMessageId, targetThreadRootId]);
 
   if (
     !activeChannel &&

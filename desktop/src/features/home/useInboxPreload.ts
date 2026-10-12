@@ -8,20 +8,23 @@ import {
   inboxPreloadTargets,
 } from "@/features/home/lib/inboxPreload";
 import {
-  preloadChannelMessages,
+  preloadChannelsMessages,
   preloadThreadReplies,
 } from "@/features/messages/channelPreload";
+import { threadRepliesKey } from "@/features/messages/lib/messageQueryKeys";
 import { isDocumentVisible } from "@/shared/lib/useDocumentVisible";
 
 /** Input this recent means the user is typing or clicking: yield to them. */
 const RECENT_INPUT_MS = 1_500;
 const IDLE_POLL_MS = 500;
+/** Threads loading at once; rooms all load in one batched request. */
+const THREAD_PRELOAD_CONCURRENCY = 4;
 /** A target that failed (or was skipped) is not retried sooner than this. */
 const RETRY_AFTER_MS = 5 * 60 * 1_000;
 
 /**
- * Background-loads the rooms behind the top chat-list rows, one at a time,
- * so opening them paints at once. Pauses while the user types or clicks,
+ * Background-loads the rooms behind the top chat-list rows (one batched
+ * request), then their threads a few at a time, so opening them paints at once. Pauses while the user types or clicks,
  * while a room is loading in the foreground, and while the app is hidden.
  */
 export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
@@ -49,57 +52,86 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
   React.useEffect(() => {
     if (!enabled || targets.length === 0) return;
     let cancelled = false;
-    let wake: (() => void) | null = null;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const sleepers = new Map<ReturnType<typeof setTimeout>, () => void>();
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
-        wake = resolve;
-        timer = setTimeout(resolve, ms);
+        const timer = setTimeout(() => {
+          sleepers.delete(timer);
+          resolve();
+        }, ms);
+        sleepers.set(timer, resolve);
       });
+    // Our own thread loads also count as fetching; only foreground loads yield.
+    let ownReplies = 0;
     const isBusy = () =>
       !isDocumentVisible() ||
       Date.now() - lastInputAtRef.current < RECENT_INPUT_MS ||
       queryClient.isFetching({ queryKey: ["channel-messages"] }) > 0 ||
-      queryClient.isFetching({ queryKey: ["thread-replies"] }) > 0;
+      queryClient.isFetching({ queryKey: ["thread-replies"] }) > ownReplies;
+    const waitIdle = async () => {
+      while (!cancelled && isBusy()) await sleep(IDLE_POLL_MS);
+      return !cancelled;
+    };
+
+    const now = Date.now();
+    for (const [key, at] of attemptedAtRef.current) {
+      if (now - at >= RETRY_AFTER_MS) attemptedAtRef.current.delete(key);
+    }
+    const pending = targets.filter(
+      (target) => !attemptedAtRef.current.has(inboxPreloadTargetKey(target)),
+    );
+    const threads = pending.filter((target) => target.thread !== null);
+    const threadWorker = async () => {
+      for (let target = threads.shift(); target; target = threads.shift()) {
+        const thread = target.thread;
+        if (!thread || !(await waitIdle())) return;
+        attemptedAtRef.current.set(inboxPreloadTargetKey(target), Date.now());
+        // Count only our own replies fetch, never a cache hit.
+        const own =
+          queryClient.getQueryData(
+            threadRepliesKey(target.channelId, thread.rootId),
+          ) === undefined
+            ? 1
+            : 0;
+        ownReplies += own;
+        try {
+          await preloadThreadReplies(
+            queryClient,
+            target.channelId,
+            thread.rootId,
+            thread.replyId,
+          );
+        } finally {
+          ownReplies -= own;
+        }
+      }
+    };
 
     void (async () => {
-      const now = Date.now();
-      for (const [key, at] of attemptedAtRef.current) {
-        if (now - at >= RETRY_AFTER_MS) attemptedAtRef.current.delete(key);
+      if (pending.length === 0 || !(await waitIdle())) return;
+      // A thread counts as attempted when its own load starts, so one cut off
+      // by a re-sorted list is picked up by the next pass.
+      for (const target of pending) {
+        if (target.thread) continue;
+        attemptedAtRef.current.set(inboxPreloadTargetKey(target), Date.now());
       }
-      for (const target of targets) {
-        const key = inboxPreloadTargetKey(target);
-        const attemptedAt = attemptedAtRef.current.get(key);
-        if (
-          attemptedAt !== undefined &&
-          Date.now() - attemptedAt < RETRY_AFTER_MS
-        ) {
-          continue;
-        }
-        while (!cancelled && isBusy()) await sleep(IDLE_POLL_MS);
-        if (cancelled) return;
-        attemptedAtRef.current.set(key, Date.now());
-        await preloadChannelMessages(
-          queryClient,
-          target.channelId,
-          INBOX_PRELOAD_MESSAGES,
-        );
-        if (cancelled) return;
-        if (!target.thread) continue;
-        while (!cancelled && isBusy()) await sleep(IDLE_POLL_MS);
-        if (cancelled) return;
-        await preloadThreadReplies(
-          queryClient,
-          target.channelId,
-          target.thread.rootId,
-          target.thread.replyId,
-        );
-      }
+      await preloadChannelsMessages(
+        queryClient,
+        [...new Set(pending.map((target) => target.channelId))],
+        INBOX_PRELOAD_MESSAGES,
+      );
+      if (cancelled) return;
+      await Promise.all(
+        Array.from({ length: THREAD_PRELOAD_CONCURRENCY }, threadWorker),
+      );
     })();
     return () => {
       cancelled = true;
-      if (timer !== null) clearTimeout(timer);
-      wake?.();
+      for (const [timer, resolve] of sleepers) {
+        clearTimeout(timer);
+        resolve();
+      }
+      sleepers.clear();
     };
   }, [enabled, queryClient, targetsKey]);
 }
