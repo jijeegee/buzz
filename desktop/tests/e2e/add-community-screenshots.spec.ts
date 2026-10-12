@@ -46,7 +46,8 @@ test.beforeEach(async ({ page }) => {
   await page.getByTestId("community-rail-add").click();
 });
 
-test("identity: npub-only account key is recovery, never a ready create flow", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: npub-only account key is recovery, never a ready create flow", async ({
   page,
 }) => {
   await installMockBridge(
@@ -89,7 +90,8 @@ test("identity: npub-only account key is recovery, never a ready create flow", a
   ).toBeVisible();
 });
 
-test("identity: padded same-key hex is a ready create flow, not a mismatch", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: padded same-key hex is a ready create flow, not a mismatch", async ({
   page,
 }) => {
   await installMockBridge(
@@ -137,7 +139,8 @@ test("capture: join an existing community", async ({ page }) => {
   await dialog.screenshot({ path: `${OUTDIR}/02-join.png` });
 });
 
-test("capture: create a new community", async ({ page }) => {
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("capture: create a new community", async ({ page }) => {
   await page.getByTestId("add-community-create").click();
   const dialog = page.getByTestId("add-community-dialog");
   await page.getByLabel("Community address").waitFor();
@@ -145,7 +148,8 @@ test("capture: create a new community", async ({ page }) => {
   await dialog.screenshot({ path: `${OUTDIR}/03-create.png` });
 });
 
-test("identity: create owner shows the bound key's npub, never the hosted npub or raw hex", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: create owner shows the bound key's npub, never the hosted npub or raw hex", async ({
   page,
 }) => {
   await installMockBridge(
@@ -178,7 +182,8 @@ test("identity: create owner shows the bound key's npub, never the hosted npub o
   await expect(page.getByText("f".repeat(64))).toHaveCount(0);
 });
 
-test("identity: create owner renders the neutral label when the bound hex is unusable", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("identity: create owner renders the neutral label when the bound hex is unusable", async ({
   page,
 }) => {
   await installMockBridge(

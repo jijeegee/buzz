@@ -168,7 +168,10 @@ test("sidebar rows preserve hover and selected states without manual reordering"
   await page.mouse.up();
 });
 
-test("add community starts with create and join choices", async ({ page }) => {
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("add community starts with create and join choices", async ({
+  page,
+}) => {
   await installMockBridge(page, {});
   await page.goto("/");
 
@@ -650,7 +653,8 @@ test("resizes, persists, and snaps to the default sidebar width", async ({
     .toBe(String(DEFAULT_SIDEBAR_WIDTH));
 });
 
-test("shows a sidebar update card when an update is ready", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("shows a sidebar update card when an update is ready", async ({
   page,
 }) => {
   await page.goto("/");
@@ -745,7 +749,8 @@ test("shows a sidebar update card when an update is ready", async ({
 // another surface (follow-up to #1820). The header UpdateIndicator and the
 // sidebar compact card both render in the "ready" state; starting the install
 // from the header must flip the sidebar card's copy too, not just the header's.
-test("reflects an install started from the header update button on the sidebar card", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("reflects an install started from the header update button on the sidebar card", async ({
   page,
 }) => {
   await page.goto("/");
@@ -794,7 +799,8 @@ test("reflects an install started from the header update button on the sidebar c
 // When auto-update is not supported (e.g. Linux .deb install), the update
 // check must surface a "manual-required" card with a GitHub link and
 // AppImage hint, and must NEVER invoke the in-app download or install commands.
-test("shows manual-required update card and never auto-downloads on non-AppImage installs", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("shows manual-required update card and never auto-downloads on non-AppImage installs", async ({
   page,
 }) => {
   await page.goto("/");

@@ -2744,13 +2744,11 @@ test("settings subtitles share the Appearance secondary color", async ({
     "custom-emoji",
     "local-archive",
     "channel-templates",
-    "hosted-communities",
     "models",
     "agents",
     "compute",
     "experimental",
     "mobile",
-    "updates",
   ]) {
     await page.getByTestId(`settings-nav-${section}`).click();
     const subtitles = page

@@ -124,11 +124,4 @@ test("Profile sections keep visible cards and aligned actions", async ({
       .evaluate((element) => element.getBoundingClientRect().bottom),
   ]);
   expect(Math.abs(titleBottom - editBottom)).toBeLessThanOrEqual(1);
-
-  await page.getByTestId("settings-nav-updates").click();
-  await expect(
-    page
-      .getByTestId("settings-updates")
-      .getByText("Update status", { exact: true }),
-  ).toHaveCount(1);
 });

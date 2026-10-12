@@ -1,8 +1,7 @@
 import * as React from "react";
-import { ArrowLeft, ChevronRight, Link2, Plus } from "lucide-react";
+import { ArrowLeft, ChevronRight, Link2 } from "lucide-react";
 
 import type { AddCommunityPrefillRequest } from "@/features/communities/addCommunityPrefill";
-import { HostedCommunityCreateFlow } from "@/features/communities/ui/HostedCommunityCreateFlow";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
 import { InviteRedeemForm } from "@/features/onboarding/ui/InviteRedeemForm";
 import {
@@ -22,7 +21,7 @@ type AddCommunityDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-type AddCommunityMode = "choose" | "create" | "join";
+type AddCommunityMode = "choose" | "join";
 
 const OPTION_CLASS =
   "flex w-full items-center gap-3 rounded-xl border border-border/70 bg-muted/30 px-4 py-4 text-left transition-colors duration-150 ease-out hover:bg-muted/60 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring";
@@ -79,18 +78,12 @@ export function AddCommunityDialog({
   );
 
   const title =
-    mode === "create"
-      ? "Create a new community"
-      : mode === "join"
-        ? "Join an existing community"
-        : "Add community";
+    mode === "join" ? "Join an existing community" : "Add community";
 
   const description =
-    mode === "create"
-      ? "Opens Builderlab in your browser."
-      : mode === "join"
-        ? "Use the community URL or invite link you received."
-        : "Create a new community or join one you already have.";
+    mode === "join"
+      ? "Use the community URL or invite link you received."
+      : "Join a community you already have.";
 
   return (
     <Dialog
@@ -122,36 +115,14 @@ export function AddCommunityDialog({
             ) : null}
             <DialogTitle className="truncate">{title}</DialogTitle>
           </div>
-          <DialogDescription
-            className={mode === "create" ? "sr-only" : undefined}
-          >
-            {description}
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <div className="px-6 pb-6 pt-3">
           {mode === "choose" ? (
             <div className="space-y-3">
-              <button
-                className={OPTION_CLASS}
-                data-testid="add-community-create"
-                onClick={() => setMode("create")}
-                type="button"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Plus className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-foreground">
-                    Create a new community
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Claim a Kuzz address for your team.
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
-              </button>
-
+              {/* Creating a community goes through Block's Builderlab, which
+                  Kuzz does not offer. */}
               <button
                 className={OPTION_CLASS}
                 data-testid="add-community-join"
@@ -172,7 +143,7 @@ export function AddCommunityDialog({
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
               </button>
             </div>
-          ) : mode === "join" ? (
+          ) : (
             <InviteRedeemForm
               error={joinError}
               initialValue={prefill?.relayUrl}
@@ -188,8 +159,6 @@ export function AddCommunityDialog({
               }
               variant="add-community"
             />
-          ) : (
-            <HostedCommunityCreateFlow onComplete={handleClose} />
           )}
         </div>
       </DialogContent>

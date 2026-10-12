@@ -1351,7 +1351,7 @@ test.describe("community rail", () => {
       .getByRole("button", { name: "Leave community", exact: true })
       .click();
 
-    await expect(page.getByText("Join or create a community")).toBeVisible();
+    await expect(page.getByText("Find your community")).toBeVisible();
     await expect(page.getByTestId("welcome-setup-back")).toHaveCount(0);
     await expect(page.getByTestId("community-choice-join")).toBeVisible();
     await expect
@@ -1399,9 +1399,7 @@ test.describe("community rail", () => {
       skipCommunitySeed: true,
     });
     await relaunchPage.goto("/");
-    await expect(
-      relaunchPage.getByText("Join or create a community"),
-    ).toBeVisible();
+    await expect(relaunchPage.getByText("Find your community")).toBeVisible();
     await expect(relaunchPage.getByTestId("welcome-setup-back")).toHaveCount(0);
     await expect
       .poll(() =>
@@ -1446,7 +1444,7 @@ test.describe("community rail", () => {
     await expect(error).toContainText(
       "Could not safely leave community: queue unavailable",
     );
-    await expect(page.getByText("Join or create a community")).toHaveCount(0);
+    await expect(page.getByText("Find your community")).toHaveCount(0);
     await expect(page.getByTestId("community-switch-gate")).toHaveCount(0);
     await expect(page.getByTestId("community-apply-error-retry")).toBeVisible();
     await expect(

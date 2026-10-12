@@ -49,6 +49,13 @@ type SettingsViewProps = SettingsPanelProps & {
   section: SettingsSection;
 };
 
+/**
+ * Sections Kuzz does not offer: hosted communities are Block's Builderlab
+ * service, and updates have no Kuzz release feed yet.
+ */
+export const FORK_HIDDEN_SETTINGS_SECTIONS: ReadonlySet<SettingsSection> =
+  new Set<SettingsSection>(["hosted-communities", "updates"]);
+
 export const settingsNavGroups: Array<{
   label: string;
   sections: SettingsSection[];
@@ -140,6 +147,9 @@ export function SettingsView({
   const featureState = useFeatureSnapshot();
   const visibleSections = React.useMemo(() => {
     return settingsSections.filter((s) => {
+      if (FORK_HIDDEN_SETTINGS_SECTIONS.has(s.value)) {
+        return false;
+      }
       // Feature gate check. Manifest is preview-only — if the gate id is in
       // the manifest, it's preview and needs an opt-in; if it's not, it's
       // stable and renders unconditionally (fail-open).

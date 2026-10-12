@@ -876,7 +876,7 @@ test("imported-key users can skip out of harness setup", async ({ page }) => {
 
   // Reaching community onboarding proves machine onboarding completed rather
   // than staying pinned on the setup step.
-  await expect(page.getByText("Join or create a community")).toBeVisible();
+  await expect(page.getByText("Find your community")).toBeVisible();
   await expect(page.getByTestId("onboarding-page-2")).toHaveCount(0);
 });
 
@@ -1248,7 +1248,7 @@ test("non-local default auto-connects when the release flag is enabled", async (
     });
 });
 
-test("first-community choices route join, create, owner, and member intents", async ({
+test("first-community choices route join and member intents", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1268,26 +1268,15 @@ test("first-community choices route join, create, owner, and member intents", as
   await expect(
     page.getByRole("button", { name: /Join a community/ }),
   ).toBeVisible();
+  // Kuzz does not offer Builderlab-hosted (create / owner) communities.
   await expect(
     page.getByRole("button", { name: /Create a community/ }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   const existing = page.getByRole("button", {
     name: /I already have a community/,
   });
   await expect(existing).toBeVisible();
   await existing.click();
-  // Owner/member split lives on its own page, mirroring the hub layout.
-  await expect(
-    page.getByRole("heading", { name: "Reconnect to your community" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "I own the community" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "I’m a member or admin" }),
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "I’m a member or admin" }).click();
   await expect(
     page.getByRole("heading", { name: "Reconnect to your community" }),
   ).toBeVisible();
@@ -1298,12 +1287,9 @@ test("first-community choices route join, create, owner, and member intents", as
   );
   await accessInput.fill("https://default.example.com");
   await expect(page.getByTestId("invite-redeem-submit")).toBeEnabled();
-  // Back from the member form returns to the role choice, then to the hub.
+  // Back from the member form returns to the hub.
   await page.getByRole("button", { name: "Back" }).click();
-  await expect(
-    page.getByRole("button", { name: "I own the community" }),
-  ).toBeVisible();
-  await page.getByTestId("existing-back").click();
+  await expect(existing).toBeVisible();
 
   await page.getByRole("button", { name: /Join a community/ }).click();
   await expect(
@@ -1318,7 +1304,8 @@ test("first-community choices route join, create, owner, and member intents", as
   await expect(page.getByTestId("invite-redeem-submit")).toBeEnabled();
 });
 
-test("first-community owner can connect an existing hosted community", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community owner can connect an existing hosted community", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1389,7 +1376,8 @@ test("first-community owner can connect an existing hosted community", async ({
     .toBeNull();
 });
 
-test("first-community owner can create and connect a hosted community", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community owner can create and connect a hosted community", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1463,7 +1451,8 @@ test("first-community owner can create and connect a hosted community", async ({
     .toContain("wss://bee-lab.communities.buzz.xyz");
 });
 
-test("hosted community address line stays within the card for a long name", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("hosted community address line stays within the card for a long name", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1524,7 +1513,8 @@ test("hosted community address line stays within the card for a long name", asyn
   ).toBeLessThanOrEqual(2);
 });
 
-test("first-community reports a created community without a relay address", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community reports a created community without a relay address", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1567,7 +1557,8 @@ test("first-community reports a created community without a relay address", asyn
   ).toHaveCount(0);
 });
 
-test("first-community X cancels a pending sign-in", async ({ page }) => {
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community X cancels a pending sign-in", async ({ page }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
   await page.addInitScript((pubkey) => {
     window.localStorage.setItem(
@@ -1601,7 +1592,8 @@ test("first-community X cancels a pending sign-in", async ({ page }) => {
     .toEqual(expect.arrayContaining(["cancel_builderlab_login"]));
 });
 
-test("first-community owner can replace a mismatched account identity", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community owner can replace a mismatched account identity", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1668,7 +1660,8 @@ test("first-community owner can replace a mismatched account identity", async ({
     );
 });
 
-test("first-community owner recovers from an npub-only account identity", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community owner recovers from an npub-only account identity", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1750,7 +1743,8 @@ test("first-community owner recovers from an npub-only account identity", async 
   ).toBeVisible();
 });
 
-test("first-community owner never rebinds over a same-key spelling in the hex field", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community owner never rebinds over a same-key spelling in the hex field", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1809,7 +1803,8 @@ test("first-community owner never rebinds over a same-key spelling in the hex fi
   ).toHaveCount(0);
 });
 
-test("first-community owner with a padded same-key hex is ready, not mismatched", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community owner with a padded same-key hex is ready, not mismatched", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1852,7 +1847,8 @@ test("first-community owner with a padded same-key hex is ready, not mismatched"
   ).toBeVisible();
 });
 
-test("first-community explains when the local identity belongs to another account", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("first-community explains when the local identity belongs to another account", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1894,7 +1890,8 @@ test("first-community explains when the local identity belongs to another accoun
   ).toBeVisible();
 });
 
-test("back clears Builderlab auth before returning to first-community choices", async ({
+// Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+test.skip("back clears Builderlab auth before returning to first-community choices", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
