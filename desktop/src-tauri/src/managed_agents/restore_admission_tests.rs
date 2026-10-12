@@ -52,14 +52,7 @@ fn restore_spawn_phase_refuses_a_stale_snapshot() {
     remove_relay(&state, RELAY).unwrap();
     readd_relay(&state, RELAY).unwrap();
     let agents = load_managed_agents(app).unwrap();
-    spawn_and_register_restored_agents(
-        app,
-        &AtomicBool::new(false),
-        &scheduled,
-        RELAY,
-        &agents,
-        None,
-    )
-    .unwrap();
+    spawn_and_register_restored_agents(app, &AtomicBool::new(false), &scheduled, RELAY, &agents)
+        .unwrap();
     assert_eq!(last_error(&test), None);
 }

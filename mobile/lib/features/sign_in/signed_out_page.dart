@@ -11,6 +11,10 @@ import '../../shared/theme/theme.dart';
 import 'token_sign_in_page.dart';
 
 /// Reauthentication only: stored identities never unlock by selecting a row.
+///
+/// Every community resumes through Google. A key-based community that was
+/// never linked links the key it retained at sign-out to the Google account
+/// used here (see `GoogleKeyBackupService`); no key is ever typed or shown.
 class SignedOutPage extends HookConsumerWidget {
   const SignedOutPage({super.key, required this.community, this.cleanupError});
 
@@ -19,13 +23,11 @@ class SignedOutPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final key = useTextEditingController();
     final busy = useState(false);
     final error = useState<String?>(null);
     final communities = ref.watch(communityListProvider).value ?? [];
     final retained = communities.where((item) => item.signedOut).toList();
     useEffect(() {
-      key.clear();
       error.value = null;
       return null;
     }, [community.id]);
@@ -35,7 +37,9 @@ class SignedOutPage extends HookConsumerWidget {
       try {
         await ref.read(communityListProvider.notifier).switchCommunity(id);
       } catch (_) {
-        if (context.mounted) error.value = '계정을 선택하지 못했어요. 다시 시도해 주세요.';
+        if (context.mounted) {
+          error.value = 'Couldn’t switch communities. Try again.';
+        }
       } finally {
         if (context.mounted) busy.value = false;
       }
@@ -58,8 +62,7 @@ class SignedOutPage extends HookConsumerWidget {
             ),
           )
         : null;
-    if (cleanupError == null &&
-        (community.tokenAuth || community.googleBackupAccountId != null)) {
+    if (cleanupError == null) {
       return Scaffold(
         appBar: chooser,
         body: Column(
@@ -78,22 +81,15 @@ class SignedOutPage extends HookConsumerWidget {
         ),
       );
     }
-    Future<void> submit() async {
+    Future<void> finishSignOut() async {
       if (busy.value) return;
       busy.value = true;
       error.value = null;
       try {
-        final auth = ref.read(authProvider.notifier);
-        if (cleanupError != null) {
-          await auth.signOut();
-        } else {
-          await auth.signInWithPrivateKey(key.text);
-        }
+        await ref.read(authProvider.notifier).signOut();
       } catch (_) {
         if (context.mounted) {
-          error.value = cleanupError != null
-              ? '로그아웃을 마치지 못했어요. 다시 시도해 주세요.'
-              : '이 계정의 개인 키를 확인해 주세요.';
+          error.value = 'Couldn’t finish signing out. Try again.';
         }
       } finally {
         if (context.mounted) busy.value = false;
@@ -101,32 +97,18 @@ class SignedOutPage extends HookConsumerWidget {
     }
 
     return Scaffold(
-      appBar: chooser,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(Grid.sm),
           children: [
-            Text('다시 로그인', style: context.textTheme.headlineSmall),
+            Text('Finishing sign-out', style: context.textTheme.headlineSmall),
             const SizedBox(height: Grid.sm),
-            Text(cleanupError ?? '${community.name}\n계정과 커뮤니티는 그대로 있어요.'),
-            if (cleanupError == null) ...[
-              const SizedBox(height: Grid.sm),
-              TextField(
-                key: const Key('signed-out-private-key'),
-                controller: key,
-                enabled: !busy.value,
-                obscureText: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: const InputDecoration(labelText: '개인 키 (nsec)'),
-                onSubmitted: (_) => unawaited(submit()),
-              ),
-            ],
+            Text(cleanupError!),
             const SizedBox(height: Grid.sm),
             FilledButton(
               key: const Key('signed-out-continue'),
-              onPressed: busy.value ? null : () => unawaited(submit()),
-              child: Text(cleanupError == null ? '로그인' : '로그아웃 마무리'),
+              onPressed: busy.value ? null : () => unawaited(finishSignOut()),
+              child: const Text('Finish signing out'),
             ),
             if (error.value != null)
               Semantics(liveRegion: true, child: Text(error.value!)),

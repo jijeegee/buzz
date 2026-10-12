@@ -1,4 +1,5 @@
 import 'package:buzz/shared/auth/default_community.dart';
+import 'package:buzz/features/sign_in/signed_out_page.dart';
 import 'package:buzz/features/sign_in/token_sign_in_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
 import 'package:buzz/shared/auth/google_key_backup.dart';
@@ -53,7 +54,198 @@ Future<void> frames(WidgetTester tester) async {
   }
 }
 
+/// Renders the real signed-out screen for the active retained community,
+/// backed by real auth over fake Google, custody and storage.
+Future<ProviderContainer> _pumpSignedOut(
+  WidgetTester tester, {
+  required CommunityStorage storage,
+  required backup.BackupServer server,
+}) async {
+  final authServer = FakeAuthServer();
+  authServer.nip11 = (_) => jsonResponse({
+    'buzz_key_backup': {
+      'version': 1,
+      'providers': ['google'],
+    },
+  });
+  authServer.complete = (_) => jsonResponse({
+    'principal_id': backup.account,
+    'identity_mode': 'key_backup',
+    'device_id': 'device',
+    'access': 'bzs_login',
+    'refresh': 'bzr_login',
+    'expires_in': 3600,
+  });
+  final client = MockClient((request) async {
+    final forwarded = http.Request(request.method, request.url)
+      ..headers.addAll(request.headers)
+      ..bodyBytes = request.bodyBytes;
+    return http.Response.fromStream(
+      await (request.url.path.startsWith('/auth/key-backup')
+              ? server.client
+              : authServer.client)
+          .send(forwarded),
+    );
+  });
+  final clock = FakeClock(DateTime.now());
+  final container = ProviderContainer(
+    overrides: [
+      authHttpClientProvider.overrideWithValue(client),
+      webAuthLauncherProvider.overrideWithValue(
+        FakeWebAuthLauncher(FakeWebAuthLauncher.success),
+      ),
+      sessionClockProvider.overrideWithValue(clock.call),
+      sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+      installIdStoreProvider.overrideWithValue(
+        InstallIdStore(storage: FakeSecureStorage()),
+      ),
+      keyBackupRefreshTokenStoreProvider.overrideWithValue(
+        FakeRefreshTokenStore(),
+      ),
+      pendingBackupKeyStoreProvider.overrideWithValue(
+        PendingBackupKeyStore(storage: FakeSecureStorage()),
+      ),
+      communityStorageProvider.overrideWithValue(storage),
+      communitySnapshotWriterProvider.overrideWithValue((_) async {}),
+      signedCommunityAdmissionProvider.overrideWithValue((_) async {}),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(authProvider.future);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: Consumer(
+          builder: (context, ref, _) {
+            final state = ref.watch(authProvider).value;
+            if (state == null) return const SizedBox();
+            if (state.status == AuthStatus.authenticated) {
+              return const Text('Signed in');
+            }
+            return SignedOutPage(
+              community: state.community!,
+              cleanupError: state.logoutError,
+            );
+          },
+        ),
+      ),
+    ),
+  );
+  await frames(tester);
+  return container;
+}
+
+/// A key-based community (never linked to Google) after sign-out.
+Future<Community> _retainedKeyCommunity(
+  CommunityStorage storage,
+  nostr.Keys keys,
+) async {
+  final retained = Community.create(
+    name: 'Key community',
+    relayUrl: backup.origin,
+    pubkey: keys.public,
+    nsec: keys.nsec,
+  ).copyWith(signedOut: true);
+  await storage.save(retained);
+  await storage.saveActiveId(retained.id);
+  return retained;
+}
+
 void main() {
+  testWidgets(
+    'signed-out key community continues with Google by linking its key',
+    (tester) async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final retained = await _retainedKeyCommunity(storage, keys);
+      final server = backup.BackupServer(); // This Google account: no backup.
+      final container = await _pumpSignedOut(
+        tester,
+        storage: storage,
+        server: server,
+      );
+
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('Sign in again'), findsOneWidget);
+      final google = find.byKey(const Key('token-sign-in-google'));
+      expect(
+        find.descendant(
+          of: google,
+          matching: find.text('Continue with Google'),
+        ),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(google);
+      await tester.tap(google);
+      await frames(tester);
+
+      expect(find.text('Signed in'), findsOneWidget);
+      expect(
+        container.read(authProvider).value?.status,
+        AuthStatus.authenticated,
+      );
+      // The retained key itself was linked: no replacement was generated.
+      expect(server.secret, keys.secret);
+      expect(server.proofs, hasLength(1));
+      final saved = (await storage.loadAll()).single;
+      expect(saved.id, retained.id);
+      expect(saved.signedOut, isFalse);
+      expect(saved.nsec, keys.nsec);
+      expect(saved.pubkey, keys.public);
+      expect(saved.googleBackupAccountId, backup.account);
+    },
+  );
+
+  testWidgets(
+    'a Google account linked to another Buzz account offers a different one',
+    (tester) async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      await _retainedKeyCommunity(storage, keys);
+      final server = backup.BackupServer()
+        ..secret = nostr.Keys.generate().secret;
+      final container = await _pumpSignedOut(
+        tester,
+        storage: storage,
+        server: server,
+      );
+      final google = find.byKey(const Key('token-sign-in-google'));
+      await tester.ensureVisible(google);
+      await tester.tap(google);
+      await frames(tester);
+
+      expect(
+        find.text(
+          'This Google account is linked to a different Buzz account. '
+          'Try a different Google account.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: google,
+          matching: find.text('Use a different Google account'),
+        ),
+        findsOneWidget,
+      );
+      // A way out remains (rule 6), but never a switch to the other identity.
+      expect(
+        find.byKey(const Key('community-recovery-remove')),
+        findsOneWidget,
+      );
+      expect(
+        container.read(authProvider).value?.status,
+        AuthStatus.unauthenticated,
+      );
+      final saved = (await storage.loadAll()).single;
+      expect(saved.signedOut, isTrue);
+      expect(saved.nsec, keys.nsec);
+      expect(saved.pubkey, keys.public);
+      expect(saved.googleBackupAccountId, isNull);
+      expect(server.proofs, isEmpty);
+    },
+  );
   testWidgets(
     'retained Google account requires fresh authentication before resuming',
     (tester) async {
@@ -103,6 +295,9 @@ void main() {
           webAuthLauncherProvider.overrideWithValue(launcher),
           sessionClockProvider.overrideWithValue(clock.call),
           sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+          installIdStoreProvider.overrideWithValue(
+            InstallIdStore(storage: FakeSecureStorage()),
+          ),
           keyBackupRefreshTokenStoreProvider.overrideWithValue(
             FakeRefreshTokenStore(),
           ),
@@ -183,6 +378,9 @@ void main() {
             webAuthLauncherProvider.overrideWithValue(launcher),
             sessionClockProvider.overrideWithValue(clock.call),
             sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+            installIdStoreProvider.overrideWithValue(
+              InstallIdStore(storage: FakeSecureStorage()),
+            ),
             refreshTokenStoreProvider.overrideWithValue(
               FakeRefreshTokenStore(),
             ),
@@ -288,6 +486,9 @@ void main() {
           webAuthLauncherProvider.overrideWithValue(launcher),
           sessionClockProvider.overrideWithValue(clock.call),
           sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+          installIdStoreProvider.overrideWithValue(
+            InstallIdStore(storage: FakeSecureStorage()),
+          ),
           refreshTokenStoreProvider.overrideWithValue(tokenStore),
           keyBackupRefreshTokenStoreProvider.overrideWithValue(
             FakeRefreshTokenStore(),

@@ -379,11 +379,11 @@ Future<void> _confirmRemoveCommunity(
   final confirmed = await showBuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog.adaptive(
-      title: const Text('커뮤니티를 이 기기에서 제거할까요?'),
+      title: const Text('Remove community from this device?'),
       content: Text(
-        '“${community.name}”의 로그인 정보와 이 기기의 목록을 제거합니다. '
-        '서버의 계정과 가입 정보는 삭제하지 않습니다.'
-        '${!community.tokenAuth ? '\n\n저장된 개인 키도 제거됩니다. 개인 키 백업이나 Google 계정 복구가 준비되어 있는지 확인해 주세요.' : ''}',
+        'This removes “${community.name}” and its sign-in from this device. '
+        'Your account and memberships on the server aren’t deleted.'
+        '${!community.tokenAuth ? '\n\nIf this community isn’t connected to a Google account, you won’t be able to sign back in to it.' : ''}',
       ),
       actions: [
         TextButton(
@@ -393,7 +393,7 @@ Future<void> _confirmRemoveCommunity(
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
           style: FilledButton.styleFrom(backgroundColor: context.colors.error),
-          child: const Text('제거'),
+          child: const Text('Remove'),
         ),
       ],
     ),
@@ -414,7 +414,9 @@ Future<void> _confirmRemoveCommunity(
       Navigator.of(context).pop();
     }
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('커뮤니티를 제거하지 못했어요: $e')));
+    messenger.showSnackBar(
+      SnackBar(content: Text('Couldn’t remove the community: $e')),
+    );
   }
 }
 

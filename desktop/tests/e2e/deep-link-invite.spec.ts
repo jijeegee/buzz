@@ -262,11 +262,9 @@ test("queued add-community links open and acknowledge one at a time", async ({
     ]);
 });
 
-test("deleted public starter channels do not strand community onboarding", async ({
+test("community onboarding lands on Welcome without joining public channels", async ({
   page,
 }) => {
-  const starterError =
-    "starter channels created but metadata not yet available";
   await seedActiveIdentity(page, TEST_IDENTITIES.tyler);
   await page.addInitScript(
     ({ pubkey, relayUrl, storageKey }) => {
@@ -295,11 +293,10 @@ test("deleted public starter channels do not strand community onboarding", async
       storageKey: TRANSACTION_STORAGE_KEY,
     },
   );
-  await installMockBridge(
-    page,
-    { ensureStarterChannelsErrors: [starterError] },
-    { relayWsUrl: COMMUNITY_RELAY_URL, skipOnboardingSeed: true },
-  );
+  await installMockBridge(page, undefined, {
+    relayWsUrl: COMMUNITY_RELAY_URL,
+    skipOnboardingSeed: true,
+  });
   await page.goto("/");
 
   await page.getByRole("button", { name: "Take me to Buzz" }).click();
@@ -307,7 +304,6 @@ test("deleted public starter channels do not strand community onboarding", async
   await expect(page.getByTestId("community-onboarding-flow")).toHaveCount(0);
   await expect(page).toHaveURL(/#\/channels\/[^/]+$/);
   await expect(page.getByTestId("chat-title")).toContainText("Welcome");
-  await expect(page.getByText(starterError)).toHaveCount(0);
   expect(
     await page.evaluate(
       () =>
@@ -315,7 +311,7 @@ test("deleted public starter channels do not strand community onboarding", async
           (command) => command === "ensure_starter_channels",
         ).length ?? 0,
     ),
-  ).toBe(1);
+  ).toBe(0);
 });
 
 test("required Welcome creation failure keeps community onboarding open", async ({

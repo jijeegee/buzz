@@ -36,7 +36,7 @@ pub(crate) enum RefreshFailure {
     Transient,
 }
 
-/// Classify a `/auth/refresh` (or `/auth/me`) failure. Pure.
+/// Classify a `/auth/refresh` failure. Pure.
 pub(crate) fn classify(error: &ApiError) -> RefreshFailure {
     match error.status {
         None => RefreshFailure::Transient,
@@ -49,6 +49,36 @@ pub(crate) fn classify(error: &ApiError) -> RefreshFailure {
         ),
         Some(_) => RefreshFailure::Transient,
     }
+}
+
+/// Classify a `/auth/me` failure right after a refresh. A terminal code is
+/// prefixed `me_`: the refresh itself succeeded, so a 401 here (a token
+/// rotated an instant ago) asks to sign in again but never signs the account
+/// out ([`ends_sign_in`]); a session the relay really ended fails the next
+/// refresh with its own code. Pure.
+pub(crate) fn classify_me(error: &ApiError) -> RefreshFailure {
+    match classify(error) {
+        RefreshFailure::Terminal(code) => RefreshFailure::Terminal(format!("me_{code}")),
+        transient => transient,
+    }
+}
+
+/// Whether a terminal failure `code` means the relay ended this account's
+/// session for good (revoked here or from another device, disabled, reused or
+/// expired refresh token): the account is then signed out on this computer
+/// and its agents stop. Only the relay's own 401 codes count; a code-less
+/// `http_4xx` (a proxy page, a captive portal, a redeploying relay) and local
+/// codes (`superseded`, `no_session`, `backup_*`, ...) only ask to sign in
+/// again. Pure.
+pub(crate) fn ends_sign_in(code: &str) -> bool {
+    matches!(
+        code,
+        "token_revoked"
+            | "principal_disabled"
+            | "refresh_reused"
+            | "token_expired"
+            | "invalid_token"
+    )
 }
 
 /// Delay before attempt `attempt` (0-based) after transient failures. Pure.
@@ -132,7 +162,7 @@ pub(crate) async fn refresh_once(
         None => {
             let me = api::me(client, origin, &tokens.access)
                 .await
-                .map_err(|e| classify(&e))?;
+                .map_err(|e| classify_me(&e))?;
             if me.identity_mode.as_deref() == Some("key_backup") {
                 let pubkey = me
                     .signing_pubkey
@@ -142,6 +172,12 @@ pub(crate) async fn refresh_once(
                 if auth.signing_pubkey(origin) != Some(pubkey) {
                     return Err(RefreshFailure::Terminal("backup_binding_conflict".into()));
                 }
+                auth.record_me_profile(
+                    origin,
+                    pubkey,
+                    me.display_name.clone(),
+                    me.avatar_url.clone(),
+                );
             } else if auth.signing_pubkey(origin).is_some() {
                 return Err(RefreshFailure::Terminal("account_mode_conflict".into()));
             }
@@ -374,6 +410,52 @@ mod tests {
             code: code.map(str::to_owned),
             message: String::new(),
         }
+    }
+
+    #[test]
+    fn only_relay_revocation_codes_sign_the_account_out() {
+        for code in [
+            "token_revoked",
+            "principal_disabled",
+            "refresh_reused",
+            "token_expired",
+            "invalid_token",
+        ] {
+            assert_eq!(
+                classify(&err(Some(401), Some(code))),
+                RefreshFailure::Terminal(code.into())
+            );
+            assert!(ends_sign_in(code), "{code}");
+        }
+        // A code-less 4xx (proxy, captive portal, redeploy 404) is terminal
+        // for the session but never a sign-out.
+        for status in [400, 403, 404] {
+            let RefreshFailure::Terminal(code) = classify(&err(Some(status), None)) else {
+                panic!("{status} is terminal");
+            };
+            assert!(!ends_sign_in(&code), "{code}");
+        }
+        // Local terminal codes and network failures neither.
+        for code in [
+            "superseded",
+            "no_session",
+            "signed_out",
+            "backup_not_initialized",
+            "backup_binding_conflict",
+            "backup_binding_unavailable",
+            "account_mode_conflict",
+            "invalid_principal",
+        ] {
+            assert!(!ends_sign_in(code), "{code}");
+        }
+        assert_eq!(classify(&err(None, None)), RefreshFailure::Transient);
+        // `/auth/me` after a successful refresh never signs out.
+        let RefreshFailure::Terminal(code) = classify_me(&err(Some(401), Some("invalid_token")))
+        else {
+            panic!("a /auth/me 401 is terminal");
+        };
+        assert!(!ends_sign_in(&code), "{code}");
+        assert_eq!(classify_me(&err(None, None)), RefreshFailure::Transient);
     }
 
     #[test]

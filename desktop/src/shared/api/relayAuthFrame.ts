@@ -1,4 +1,4 @@
-import { createAuthEvent } from "@/shared/api/tauri";
+import { createAuthEvent, createAuthEventAs } from "@/shared/api/tauri";
 import { getWsAuthFrame } from "@/shared/api/tokenAuth";
 
 /**
@@ -39,4 +39,19 @@ export async function buildRelayAuthFrame(
   }
   const event = await deps.signChallenge(input);
   return { pendingId: event.id, payload: event };
+}
+
+/**
+ * AUTH for a background watcher of `account`: a NIP-42 event signed by that
+ * account's key, never the active account's (Google accounts on this computer
+ * all hold their key, so there is no token path here).
+ */
+export function accountAuthFrame(
+  account: string,
+  signAs: typeof createAuthEventAs = createAuthEventAs,
+): (input: { challenge: string; relayUrl: string }) => Promise<RelayAuthFrame> {
+  return async (input) => {
+    const event = await signAs({ account, ...input });
+    return { pendingId: event.id, payload: event };
+  };
 }

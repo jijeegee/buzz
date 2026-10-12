@@ -39,8 +39,17 @@ export const SIGNOUT_CONFIRM_PHRASE = "wipe all my data";
  *    "wipe all my data".
  *
  * Only when both gates pass does "Delete my data" become clickable.
+ *
+ * Users sign in with Google, so by default the recovery gate is replaced by
+ * a plain note that signing in with Google again brings the account back;
+ * only the typed phrase remains. `showKeyBackupGate` keeps the key-backup
+ * gate for the E2E-only signing-key seam.
  */
-export function SignOutSection() {
+export function SignOutSection({
+  showKeyBackupGate = false,
+}: {
+  showKeyBackupGate?: boolean;
+} = {}) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isPending, setIsPending] = React.useState(false);
 
@@ -58,7 +67,10 @@ export function SignOutSection() {
   const isPhraseConfirmed =
     confirmText.trim().toLowerCase() === SIGNOUT_CONFIRM_PHRASE;
 
-  const canDelete = hasConfirmedBackup && isPhraseConfirmed && !isPending;
+  const canDelete =
+    (hasConfirmedBackup || !showKeyBackupGate) &&
+    isPhraseConfirmed &&
+    !isPending;
 
   function resetDialogState() {
     fetchCancelledRef.current = true;
@@ -78,6 +90,7 @@ export function SignOutSection() {
 
   async function openDialog() {
     setIsOpen(true);
+    if (!showKeyBackupGate) return;
     fetchCancelledRef.current = false;
     setIsNsecLoading(true);
     setNsecError(null);
@@ -135,10 +148,9 @@ export function SignOutSection() {
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Removes your identity key and all local app data from this
-                device. This is not regular sign-out or account deletion. Create
-                and test a password-protected key backup above — this cannot be
-                undone.
+                {showKeyBackupGate
+                  ? "Removes your identity key and all local app data from this device. This is not regular sign-out or account deletion. Create and test a password-protected key backup above — this cannot be undone."
+                  : "Removes all Buzz data from this computer. Your account is not deleted — sign in with Google again to get back in."}
               </p>
             </div>
             <Button
@@ -172,56 +184,58 @@ export function SignOutSection() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete all local data?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will delete your identity key, all agent settings, and cached
-              data from this device, then relaunch Buzz into first-run setup.
-              This cannot be undone.
+              {showKeyBackupGate
+                ? "This will delete your identity key, all agent settings, and cached data from this device, then relaunch Buzz into first-run setup. This cannot be undone."
+                : "This deletes all agent settings and saved data from this computer, then restarts Buzz. Your account is not deleted — sign in with Google again to get back in."}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <div className="space-y-3">
-            <p className="text-sm font-medium">
-              1. Confirm you can restore your identity
-            </p>
-            {isNsecLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : nsecError ? (
-              <p
-                className="text-sm text-destructive"
-                data-testid="signout-nsec-error"
-              >
-                {nsecError}
+          {showKeyBackupGate ? (
+            <div className="space-y-3">
+              <p className="text-sm font-medium">
+                1. Confirm you can restore your identity
               </p>
-            ) : nsec ? (
-              <NsecMaskedDisplay nsec={nsec} />
-            ) : null}
-            <label
-              className="flex cursor-pointer items-start gap-2.5 text-sm has-[button:disabled]:cursor-not-allowed has-[button:disabled]:opacity-60"
-              data-testid="signout-backup-confirm-label"
-              htmlFor="signout-backup-confirm"
-            >
-              <Checkbox
-                checked={hasConfirmedBackup}
-                className="mt-0.5"
-                data-testid="signout-backup-confirm"
-                disabled={isPending}
-                id="signout-backup-confirm"
-                onCheckedChange={(checked) =>
-                  setHasConfirmedBackup(checked === true)
-                }
-              />
-              <span>
-                I have tested a key backup or saved this private key somewhere
-                safe.
-              </span>
-            </label>
-          </div>
+              {isNsecLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : nsecError ? (
+                <p
+                  className="text-sm text-destructive"
+                  data-testid="signout-nsec-error"
+                >
+                  {nsecError}
+                </p>
+              ) : nsec ? (
+                <NsecMaskedDisplay nsec={nsec} />
+              ) : null}
+              <label
+                className="flex cursor-pointer items-start gap-2.5 text-sm has-[button:disabled]:cursor-not-allowed has-[button:disabled]:opacity-60"
+                data-testid="signout-backup-confirm-label"
+                htmlFor="signout-backup-confirm"
+              >
+                <Checkbox
+                  checked={hasConfirmedBackup}
+                  className="mt-0.5"
+                  data-testid="signout-backup-confirm"
+                  disabled={isPending}
+                  id="signout-backup-confirm"
+                  onCheckedChange={(checked) =>
+                    setHasConfirmedBackup(checked === true)
+                  }
+                />
+                <span>
+                  I have tested a key backup or saved this private key somewhere
+                  safe.
+                </span>
+              </label>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <label
               className="text-sm font-medium"
               htmlFor="signout-confirm-phrase"
             >
-              2. Type{" "}
+              {showKeyBackupGate ? "2. " : ""}Type{" "}
               <span className="font-semibold">"{SIGNOUT_CONFIRM_PHRASE}"</span>{" "}
               to confirm
             </label>

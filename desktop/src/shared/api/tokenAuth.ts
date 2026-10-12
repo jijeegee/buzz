@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import { closeSocketsThenReload } from "@/shared/api/relayWebSocketClose";
 import { invokeTauri } from "@/shared/api/tauri";
 
 /**
@@ -30,6 +31,33 @@ export type TokenAuthStatus = {
   keyBackup?: boolean;
   legacyTokenAccount?: boolean;
   signingPubkey?: string | null;
+  /**
+   * Signed out on this computer: chats stay closed (and native relay auth is
+   * refused) until an account signs in here. Nothing is deleted.
+   */
+  deviceSignedOut?: boolean;
+  /**
+   * The sign-in opened a different account than the one active before
+   * (another Google account, or a protect whose Google account already held
+   * an account). The app reloads into it.
+   */
+  accountChanged?: boolean;
+  /** The account a sign-out of the active account switched to. */
+  switchedTo?: string | null;
+  /** Agents a sign-out could not confirm stopped; the sign-out went through. */
+  agentsNotStopped?: number;
+  /**
+   * The chosen Google account has no Buzz account yet and nothing was
+   * created: ask, then `confirmSignup` or `cancelSignup`.
+   */
+  signup?: SignupPrompt | null;
+};
+
+/** What the "Create your Buzz account" screen shows. */
+export type SignupPrompt = {
+  email: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
 };
 
 export type AuthDevice = {
@@ -48,17 +76,117 @@ export function getTokenAuthStatus(): Promise<TokenAuthStatus> {
   return invokeTauri<TokenAuthStatus>("get_token_auth_status");
 }
 
-/** Open the system browser for Google sign-in; resolves once signed in. */
+/**
+ * Open the system browser for Google sign-in; resolves once signed in. The
+ * chosen Google account decides the Buzz account, which becomes the active
+ * account; accounts already signed in here stay signed in. `connect` links
+ * the current key-only account to Google instead.
+ */
 export function loginWithGoogle(
   allowRestore = false,
   existingTokenAccount = false,
   attemptId?: string,
+  connect = false,
 ): Promise<TokenAuthStatus> {
   return invokeTauri<TokenAuthStatus>("login_with_google", {
     allowRestore,
     ...(existingTokenAccount ? { existingTokenAccount: true } : {}),
     ...(attemptId ? { attemptId } : {}),
+    ...(connect ? { connect: true } : {}),
   });
+}
+
+/** Tauri event emitted after the active account changed (payload: pubkey). */
+export const ACTIVE_ACCOUNT_CHANGED_EVENT = "active-account-changed";
+
+export function onActiveAccountChanged(
+  handler: (pubkey: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>(ACTIVE_ACCOUNT_CHANGED_EVENT, (event) =>
+    handler(event.payload),
+  );
+}
+
+/** One Buzz account on this computer. */
+export type AccountSummary = {
+  pubkey: string;
+  origin: string;
+  state: "signed_in" | "needs_login" | "signed_out" | "key_only";
+  active: boolean;
+  /** The Google name. */
+  displayName: string | null;
+  /** The Buzz profile name; menus prefer it. */
+  buzzName: string | null;
+  avatarUrl: string | null;
+  email: string | null;
+  /** Unix seconds of the last sign-in or switch to it. */
+  lastUsedAt: number | null;
+};
+
+/** A signed-in account watched in the background (not the open one). */
+export type WatchableAccount = {
+  origin: string;
+  pubkey: string;
+  displayName: string | null;
+  buzzName: string | null;
+  email: string | null;
+};
+
+/**
+ * Signed-in accounts on every server except the open one, for background
+ * notifications and unread badges. Re-read on `ACCOUNTS_CHANGED_EVENT`.
+ */
+export function listWatchableAccounts(): Promise<WatchableAccount[]> {
+  return invokeTauri<WatchableAccount[]>("list_watchable_accounts");
+}
+
+/** Emitted when the accounts signed in on this computer may have changed. */
+export const ACCOUNTS_CHANGED_EVENT = "accounts-changed";
+
+/** Accounts on this computer for the current community, most recent first. */
+export function listAccounts(): Promise<AccountSummary[]> {
+  return invokeTauri<AccountSummary[]>("list_accounts");
+}
+
+/**
+ * Record the active account's Buzz profile name for the account menu (ignored
+ * unless `pubkey` is the active account).
+ */
+export function rememberAccountBuzzName(
+  pubkey: string,
+  name: string,
+): Promise<void> {
+  return invokeTauri<void>("remember_account_buzz_name", { pubkey, name });
+}
+
+/**
+ * Make `pubkey` the active account; the others stay signed in. Resolves to a
+ * warning when a server's session could not be handed over (the switch still
+ * happened).
+ */
+export function switchAccount(pubkey: string): Promise<string | null> {
+  return invokeTauri<string | null>("switch_account", { pubkey });
+}
+
+/** NIP-42 AUTH event signed by a signed-in account that may be inactive. */
+export function createAuthEventAs(
+  account: string,
+  challenge: string,
+  relayUrl: string,
+): Promise<string> {
+  return invokeTauri<string>("create_auth_event_as", {
+    account,
+    challenge,
+    relayUrl,
+  });
+}
+
+/** Decrypt a NIP-44 payload a signed-in (maybe inactive) account sent itself. */
+export function nip44DecryptAs(
+  account: string,
+  ciphertext: string,
+): Promise<string> {
+  return invokeTauri<string>("nip44_decrypt_as", { account, ciphertext });
 }
 
 /** Cancel this attempt while waiting for the browser, without signing out. */
@@ -66,9 +194,24 @@ export function cancelGoogleLogin(attemptId: string): Promise<boolean> {
   return invokeTauri<boolean>("cancel_google_login", { attemptId });
 }
 
-/** Sign out of the current community (revokes this device's session). */
-export function logoutTokenSession(): Promise<TokenAuthStatus> {
-  return invokeTauri<TokenAuthStatus>("logout");
+/** Create the Buzz account the user confirmed and finish signing in. */
+export function confirmSignup(): Promise<TokenAuthStatus> {
+  return invokeTauri<TokenAuthStatus>("confirm_signup");
+}
+
+/** Drop a sign-in waiting for confirmation; nothing was created. */
+export function cancelSignup(): Promise<void> {
+  return invokeTauri<void>("cancel_signup");
+}
+
+/**
+ * Sign `account` (default: the active account) out of the current community
+ * on this computer: its session is revoked and its agents stop until it signs
+ * in again. When the active account signs out and another one is still
+ * signed in here, the backend switches to it (`switchedTo`).
+ */
+export function logoutTokenSession(account?: string): Promise<TokenAuthStatus> {
+  return invokeTauri<TokenAuthStatus>("logout", account ? { account } : {});
 }
 
 /**
@@ -141,6 +284,7 @@ export function tokenIdentityChanged(
  */
 export const identityReload = {
   reload(): void {
-    window.location.reload();
+    // Sockets first: a reload alone leaves them open in the native layer.
+    void closeSocketsThenReload();
   },
 };

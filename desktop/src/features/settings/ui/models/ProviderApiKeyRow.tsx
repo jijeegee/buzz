@@ -3,14 +3,16 @@ import * as React from "react";
 import { PersonaProviderApiKeyField } from "@/features/agents/ui/PersonaProviderApiKeyField";
 import { Button } from "@/shared/ui/button";
 
+import { SettingsConfirmDialog } from "../SettingsConfirmDialog";
 import type { ProviderRow } from "./providersSettingsModel";
 import { SaveNoticeLine, type SaveNotice } from "./SaveNoticeLine";
 
 /**
  * The API-key path of one provider: the shared `PersonaProviderApiKeyField`
  * as a pure draft over `GlobalAgentConfig.env_vars[apiKeyEnvVar]`, with
- * Save (one write) and Remove key (one write with an empty value). The saved
- * secret is never echoed back; a set key shows as a placeholder.
+ * Save (one write) and Remove key (one write with an empty value, after an
+ * in-app confirmation). The saved secret is never echoed back; a set key
+ * shows as a placeholder.
  */
 export function ProviderApiKeyRow({
   companions,
@@ -30,6 +32,7 @@ export function ProviderApiKeyRow({
   row: ProviderRow;
 }) {
   const [draft, setDraft] = React.useState("");
+  const [confirmRemove, setConfirmRemove] = React.useState(false);
   if (row.apiKeyEnvVar === null || row.apiKeyLabel === null) return null;
   const envVar = row.apiKeyEnvVar;
   const canSave = draft.trim().length > 0 && !disabled;
@@ -68,7 +71,7 @@ export function ProviderApiKeyRow({
             <Button
               data-testid={`settings-models-${row.providerId}-remove-key`}
               disabled={disabled}
-              onClick={() => void onRemove()}
+              onClick={() => setConfirmRemove(true)}
               size="sm"
               type="button"
               variant="outline"
@@ -87,6 +90,16 @@ export function ProviderApiKeyRow({
           </Button>
         </div>
       </div>
+      <SettingsConfirmDialog
+        confirmLabel="Remove key"
+        description={`Agents that use ${row.label} through this key stop working until you add a key again.`}
+        destructive
+        onConfirm={() => void onRemove()}
+        onOpenChange={setConfirmRemove}
+        open={confirmRemove}
+        testId={`settings-models-${row.providerId}-remove-key-dialog`}
+        title={`Remove your ${row.apiKeyLabel}?`}
+      />
     </div>
   );
 }

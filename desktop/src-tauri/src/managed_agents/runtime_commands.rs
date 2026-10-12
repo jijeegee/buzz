@@ -5,11 +5,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::{
     agent_readiness, append_log_marker, current_instance_id, find_managed_agent_mut,
     load_global_agent_config, load_managed_agents, load_personas, managed_agent_runtime_log_path,
-    process_is_running, record_agent_command, resolve_effective_agent_env, save_managed_agents,
-    spawn_agent_child, terminate_process, terminate_untracked_pair_runtime,
-    write_agent_runtime_receipt, AgentReadiness, BackendKind, ManagedAgentPairRuntime,
-    ManagedAgentRuntimeKey, ManagedAgentRuntimeLifecycle, ManagedAgentRuntimeReceipt,
-    ManagedAgentRuntimeStatus,
+    record_agent_command, resolve_effective_agent_env, save_managed_agents, spawn_agent_child,
+    terminate_process, terminate_untracked_pair_runtime, write_agent_runtime_receipt,
+    AgentReadiness, BackendKind, ManagedAgentPairRuntime, ManagedAgentRuntimeKey,
+    ManagedAgentRuntimeLifecycle, ManagedAgentRuntimeReceipt, ManagedAgentRuntimeStatus,
 };
 use crate::app_state::AppState;
 
@@ -99,7 +98,6 @@ fn observer_lifecycle_key(
     ManagedAgentRuntimeKey::new(payload.pubkey.clone(), &payload.relay_url)
 }
 
-#[tauri::command]
 pub fn put_managed_agent_runtime_lifecycle(
     outer_pubkey: String,
     payload: super::ManagedAgentRuntimeLifecycleObserverPayload,
@@ -233,7 +231,6 @@ pub(crate) fn start_managed_agent_runtime_pair_lazy(
     start_pair(pubkey, relay_url, true, None, admission, app)
 }
 
-#[tauri::command]
 pub fn start_managed_agent_runtime(
     pubkey: String,
     relay_url: String,
@@ -327,18 +324,12 @@ fn start_pair<R: tauri::Runtime>(
     runtimes.remove(&key);
     terminate_untracked_pair_runtime(&app, &key)?;
 
-    let owner = state
-        .keys
-        .lock()
-        .ok()
-        .map(|keys| keys.public_key().to_hex());
     let mut process = spawn_agent_child(
         &app,
         record,
         &key.relay_url,
         &admitted,
         lazy,
-        owner.as_deref(),
         None,
         &super::channel_routing::live_local_roles(&runtimes),
     )?;
@@ -367,7 +358,66 @@ fn start_pair<R: tauri::Runtime>(
     Ok(status)
 }
 
-#[tauri::command]
+/// The running (agent, relay) pairs on `origin`'s server of agents owned by
+/// `owner_hex`.
+pub(crate) fn running_owner_pairs<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    origin: &str,
+    owner_hex: &str,
+) -> Result<Vec<ManagedAgentRuntimeKey>, String> {
+    let records = load_managed_agents(app)?;
+    let state = app.state::<AppState>();
+    let keys: Vec<ManagedAgentRuntimeKey> = state
+        .managed_agent_processes
+        .lock()
+        .map_err(|e| e.to_string())?
+        .keys()
+        .cloned()
+        .collect();
+    Ok(owned_pairs(keys, &records, origin, owner_hex, |record| {
+        super::agent_owner_hex(app, record)
+    }))
+}
+
+/// The pairs among `keys` on `origin`'s server whose agent `owner_of` says
+/// belongs to `owner_hex`: an account signed out of one server keeps its
+/// agents on another. Unknown agents and agents without a known owner are
+/// never included. Pure.
+pub(crate) fn owned_pairs(
+    keys: Vec<ManagedAgentRuntimeKey>,
+    records: &[super::ManagedAgentRecord],
+    origin: &str,
+    owner_hex: &str,
+    owner_of: impl Fn(&super::ManagedAgentRecord) -> Option<String>,
+) -> Vec<ManagedAgentRuntimeKey> {
+    keys.into_iter()
+        .filter(|key| crate::auth::origin_for(&key.relay_url) == origin)
+        .filter(|key| {
+            records
+                .iter()
+                .find(|record| record.pubkey == key.pubkey)
+                .and_then(&owner_of)
+                .is_some_and(|owner| owner.eq_ignore_ascii_case(owner_hex))
+        })
+        .collect()
+}
+
+/// Stop the given pairs (an account's agents when it signs out). Blocking;
+/// every pair is attempted and the failures are returned.
+pub(crate) fn stop_pairs<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    pairs: Vec<ManagedAgentRuntimeKey>,
+) -> Vec<String> {
+    pairs
+        .into_iter()
+        .filter_map(|key| {
+            stop_pair(key.pubkey.clone(), key.relay_url.clone(), app.clone())
+                .err()
+                .map(|error| format!("{}: {error}", key.pubkey))
+        })
+        .collect()
+}
+
 pub fn stop_managed_agent_runtime(
     pubkey: String,
     relay_url: String,
@@ -398,13 +448,7 @@ fn stop_pair<R: tauri::Runtime>(
         .lock()
         .map_err(|e| e.to_string())?;
     if let Some(mut runtime) = runtimes.remove(&key) {
-        let stop_result = if process_is_running(runtime.child.id()) {
-            terminate_process(runtime.child.id())
-        } else {
-            Ok(())
-        }
-        .and_then(|()| runtime.child.wait().map_err(|e| e.to_string()));
-        match stop_result {
+        match super::terminate_and_reap(&mut runtime) {
             Ok(status) => {
                 record.last_exit_code = status.code();
                 let _ = append_log_marker(&runtime.log_path, "=== stopped pair runtime ===");
@@ -442,7 +486,6 @@ fn stop_pair<R: tauri::Runtime>(
     Ok(status)
 }
 
-#[tauri::command]
 pub fn restart_managed_agent_runtime(
     pubkey: String,
     relay_url: String,
@@ -552,11 +595,15 @@ pub async fn reconcile_managed_agent_runtimes(
     // Captured before the probes: a community removed while they run is refused.
     let admission = super::AdmissionSnapshot::capture(&app.state::<AppState>());
     let records = load_managed_agents(&app)?;
+    let auth_state = app.state::<AppState>();
+    let signed_out = &auth_state.token_auth.signed_out;
     let mut jobs = Vec::new();
     for community in communities {
         for record in records
             .iter()
             .filter(|record| record.start_on_app_launch && record.backend == BackendKind::Local)
+            // Stopped by the user when signing out: stays stopped until sign-in.
+            .filter(|record| !signed_out.suppresses_agent(&record.pubkey))
         // The legacy per-record relay pin is deliberately ignored here — see
         // `effective_agent_relay_url`. Every local auto-start agent fans out
         // to every configured community.
@@ -816,8 +863,99 @@ mod tests {
         );
         assert!(observer_lifecycle_key(&ready_with_error.pubkey, &ready_with_error).is_err());
     }
+
+    #[test]
+    fn signing_one_account_out_stops_only_its_own_agents() {
+        let record = |pubkey: &str| -> super::super::ManagedAgentRecord {
+            serde_json::from_value(serde_json::json!({
+                "pubkey": pubkey, "name": "a", "relay_url": "wss://relay.test",
+                "acp_command": "x", "agent_command": "x", "agent_args": [],
+                "mcp_command": "x", "turn_timeout_seconds": 1,
+                "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+            }))
+            .unwrap()
+        };
+        let (b_agent, a_agent, unowned) = ("b".repeat(64), "a".repeat(64), "c".repeat(64));
+        let (owner_a, owner_b) = ("1".repeat(64), "2".repeat(64));
+        let records = [record(&b_agent), record(&a_agent), record(&unowned)];
+        let key = |pubkey: &str, relay: &str| ManagedAgentRuntimeKey::new(pubkey, relay).unwrap();
+        let running = vec![
+            key(&b_agent, "wss://relay.test"),
+            key(&b_agent, "wss://other.test"),
+            key(&a_agent, "wss://relay.test"),
+            key(&unowned, "wss://relay.test"),
+        ];
+        let owner_of = |r: &super::super::ManagedAgentRecord| {
+            if r.pubkey == b_agent {
+                Some(owner_b.to_ascii_uppercase())
+            } else if r.pubkey == a_agent {
+                Some(owner_a.clone())
+            } else {
+                None
+            }
+        };
+        let stopping = owned_pairs(running, &records, "https://relay.test", &owner_b, owner_of);
+        // B's agent on this server only: on another server B may still be
+        // signed in, and A's agents are never touched.
+        assert_eq!(stopping, vec![key(&b_agent, "wss://relay.test")]);
+    }
 }
 
 #[cfg(all(test, not(target_os = "windows")))]
 #[path = "runtime_commands_admission_tests.rs"]
 mod admission_tests;
+
+/// IPC entry points for the runtime lifecycle commands. They take the runtime
+/// locks and may wait for a process to exit, so they run on the blocking pool
+/// rather than as synchronous commands on the main thread, where one stuck
+/// stop would freeze every other command and the window with it.
+pub mod ipc {
+    use tauri::AppHandle;
+
+    use super::ManagedAgentRuntimeStatus;
+
+    async fn blocking<T: Send + 'static>(
+        work: impl FnOnce() -> Result<T, String> + Send + 'static,
+    ) -> Result<T, String> {
+        tokio::task::spawn_blocking(work)
+            .await
+            .map_err(|error| error.to_string())?
+    }
+
+    #[tauri::command]
+    pub async fn put_managed_agent_runtime_lifecycle(
+        outer_pubkey: String,
+        payload: crate::managed_agents::ManagedAgentRuntimeLifecycleObserverPayload,
+        app: AppHandle,
+    ) -> Result<ManagedAgentRuntimeStatus, String> {
+        blocking(move || super::put_managed_agent_runtime_lifecycle(outer_pubkey, payload, app))
+            .await
+    }
+
+    #[tauri::command]
+    pub async fn start_managed_agent_runtime(
+        pubkey: String,
+        relay_url: String,
+        app: AppHandle,
+    ) -> Result<ManagedAgentRuntimeStatus, String> {
+        blocking(move || super::start_managed_agent_runtime(pubkey, relay_url, app)).await
+    }
+
+    #[tauri::command]
+    pub async fn stop_managed_agent_runtime(
+        pubkey: String,
+        relay_url: String,
+        app: AppHandle,
+    ) -> Result<ManagedAgentRuntimeStatus, String> {
+        blocking(move || super::stop_managed_agent_runtime(pubkey, relay_url, app)).await
+    }
+
+    #[tauri::command]
+    pub async fn restart_managed_agent_runtime(
+        pubkey: String,
+        relay_url: String,
+        app: AppHandle,
+    ) -> Result<ManagedAgentRuntimeStatus, String> {
+        blocking(move || super::restart_managed_agent_runtime(pubkey, relay_url, app)).await
+    }
+}

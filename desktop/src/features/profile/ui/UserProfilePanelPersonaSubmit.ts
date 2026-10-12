@@ -19,6 +19,9 @@ type SubmitProfilePersonaDialogOptions = {
   input: CreatePersonaInput | UpdatePersonaInput;
   managedAgent: ManagedAgent | undefined;
   onDone: () => void;
+  /** Called when the save landed on a new persona (this account's own copy
+   *  of a built-in), so the panel can follow it. */
+  onPersonaReplaced?: (persona: AgentPersona) => void;
   previousPersona?: AgentPersona;
   runtimes?: readonly AcpRuntimeCatalogEntry[];
   updateManagedAgent: (
@@ -69,6 +72,7 @@ export async function submitProfilePersonaDialog({
   input,
   managedAgent,
   onDone,
+  onPersonaReplaced,
   previousPersona,
   runtimes,
   updateManagedAgent,
@@ -88,8 +92,15 @@ export async function submitProfilePersonaDialog({
       }
 
       const persona = await updatePersona(input);
-      const agentUpdate = managedAgent
-        ? personaManagedAgentUpdate(managedAgent, persona, {
+      // Editing a built-in saves this account's own copy under a new id and
+      // moves this account's agents to it.
+      const replaced = persona.id !== input.id;
+      const linkedAgent =
+        replaced && managedAgent?.personaId === input.id
+          ? { ...managedAgent, personaId: persona.id }
+          : managedAgent;
+      const agentUpdate = linkedAgent
+        ? personaManagedAgentUpdate(linkedAgent, persona, {
             previousPersona,
             runtimes,
           })
@@ -101,6 +112,7 @@ export async function submitProfilePersonaDialog({
         );
       }
       toast.success(`Updated ${input.displayName}.`);
+      if (replaced) onPersonaReplaced?.(persona);
     } else {
       const persona = await createPersona(input);
       try {

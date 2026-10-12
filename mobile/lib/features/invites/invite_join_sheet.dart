@@ -259,7 +259,7 @@ class _InviteJoinSuccess extends StatelessWidget {
             FilledButton(
               onPressed: () => Navigator.of(context).pop(hasFocusChannel),
               child: Text(
-                hasFocusChannel ? 'Continue to #welcome-everyone' : 'Done',
+                hasFocusChannel ? 'Continue' : 'Done',
               ),
             ),
           ],

@@ -1,10 +1,23 @@
 import * as React from "react";
+import { toast } from "sonner";
 
 import {
   activateDesktopNotificationTarget,
   createDesktopNotificationActivationQueue,
   shouldBounceForChannelNotification,
 } from "@/app/AppShell.helpers";
+import {
+  type OpenForAccountDeps,
+  openNotificationForAccount,
+  resumeNotificationForAccount,
+} from "@/features/accounts/inactiveAccountWatch/openForAccount";
+import { relayOrigin } from "@/features/accounts/inactiveAccountWatch/targets";
+import { useInactiveAccountWatch } from "@/features/accounts/inactiveAccountWatch/useInactiveAccountWatch";
+import {
+  beginAccountAction,
+  SWITCH_INCOMPLETE_NOTICE,
+} from "@/features/accounts/lib/accountSwitch";
+import { useCommunities } from "@/features/communities/useCommunities";
 import { useCommunityJoinAlerts } from "@/features/community-members/useCommunityJoinAlerts";
 import { hasMentionForEvent } from "@/features/notifications/lib/shouldNotify";
 import type { NotificationSettings } from "@/features/notifications/hooks";
@@ -22,7 +35,15 @@ import {
   shouldPlayNotificationSound,
 } from "@/features/notifications/lib/sound";
 import { useNotificationSenderName } from "@/features/notifications/useNotificationSenderName";
+import { listWatchableAccounts, switchAccount } from "@/shared/api/tokenAuth";
 import type { Channel, RelayEvent } from "@/shared/api/types";
+
+const UNAVAILABLE_TEXT = {
+  signed_out:
+    "That account is signed out on this computer. Sign in to it from the profile menu.",
+  no_community: "That account's community is no longer on this computer.",
+  failed: "Could not switch to that account.",
+} as const;
 
 export function useAppShellDesktopNotifications({
   channels,
@@ -55,6 +76,8 @@ export function useAppShellDesktopNotifications({
   useCommunityJoinAlerts({
     enabled: enabled && notificationSettings.desktopEnabled,
   });
+  // Other accounts signed in here notify by their own settings.
+  useInactiveAccountWatch(enabled);
 
   const resolveSenderName = useNotificationSenderName();
 
@@ -147,12 +170,38 @@ export function useAppShellDesktopNotifications({
     },
   );
 
-  const handleDesktopNotificationAction = React.useEffectEvent(
-    async (
-      target: import("@/features/notifications/lib/desktop").DesktopNotificationTarget,
-      signal: AbortSignal,
-    ) => {
-      await activateDesktopNotificationTarget(
+  const { communities, activeCommunity, switchCommunity } = useCommunities();
+  const openOrigin = activeCommunity
+    ? relayOrigin(activeCommunity.relayUrl)
+    : null;
+  const openPubkey = pubkey?.trim().toLowerCase() || null;
+
+  /** How a click reaches an account that is not the open one. */
+  const accountRouting = (signal: AbortSignal): OpenForAccountDeps => ({
+    open: { origin: openOrigin, pubkey: openPubkey },
+    communities,
+    isSignedIn: async (account) =>
+      (await listWatchableAccounts()).some(
+        (candidate) =>
+          candidate.origin === account.origin &&
+          candidate.pubkey.toLowerCase() === account.pubkey.toLowerCase(),
+      ),
+    switchCommunity,
+    switchAccount: async (target) => {
+      const action = beginAccountAction();
+      try {
+        const incomplete = await switchAccount(target);
+        action.reload(
+          "Switching accounts…",
+          incomplete ? SWITCH_INCOMPLETE_NOTICE : null,
+        );
+      } catch (error) {
+        action.cancel();
+        throw error;
+      }
+    },
+    openHere: (target) =>
+      activateDesktopNotificationTarget(
         target,
         {
           goChannel,
@@ -161,9 +210,39 @@ export function useAppShellDesktopNotifications({
           revealWindow: revealDesktopAppWindow,
         },
         signal,
-      );
+      ),
+    unavailable: (reason) => {
+      void revealDesktopAppWindow().catch(() => undefined);
+      toast.error(UNAVAILABLE_TEXT[reason]);
+    },
+  });
+
+  const handleDesktopNotificationAction = React.useEffectEvent(
+    async (
+      target: import("@/features/notifications/lib/desktop").DesktopNotificationTarget,
+      signal: AbortSignal,
+    ) => {
+      await openNotificationForAccount(target, accountRouting(signal));
     },
   );
+
+  // A click that switched accounts restarted the app: take its next step
+  // once this start knows the open account.
+  const resumeAccountRouting = React.useEffectEvent((signal: AbortSignal) =>
+    resumeNotificationForAccount(accountRouting(signal)),
+  );
+  const resumeReady = enabled && openPubkey !== null;
+  // Once per start: a second run (StrictMode) would switch twice.
+  const resumed = React.useRef(false);
+  React.useEffect(() => {
+    if (!resumeReady || resumed.current) return;
+    resumed.current = true;
+    // Not aborted on cleanup: it runs once, and a StrictMode re-run must not
+    // cancel it.
+    void resumeAccountRouting(new AbortController().signal).catch((error) => {
+      console.error("Failed to continue a notification click", error);
+    });
+  }, [resumeReady]);
 
   React.useEffect(() => {
     if (!enabled) return;

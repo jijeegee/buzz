@@ -8,7 +8,6 @@ import {
 } from "@/features/agents/hooks";
 import { channelsQueryKey } from "@/features/channels/hooks";
 import {
-  ensureStarterChannels,
   ensureWelcomeChannel,
   hasEnsuredWelcomeChannel,
   markWelcomeChannelEnsured,
@@ -25,7 +24,6 @@ import type { Channel } from "@/shared/api/types";
 import {
   createChannel,
   deleteChannel,
-  ensureStarterChannels as ensureStarterChannelsCommand,
   getChannelMembers,
   getChannels,
   updateChannel,
@@ -84,21 +82,9 @@ export async function initializeStarterChannels(
   },
 ): Promise<ChannelInitResult> {
   try {
-    let starterChannels: Awaited<
-      ReturnType<typeof ensureStarterChannels>
-    > | null = null;
-    try {
-      starterChannels = await ensureStarterChannels({
-        ensureStarterChannels: ensureStarterChannelsCommand,
-        getChannels: getChannelsList,
-      });
-    } catch (error) {
-      // Public starter channels are optional. Owners may have deliberately
-      // deleted their deterministic starter channels; that must not strand a
-      // new member after the required private Welcome channel succeeds.
-      console.warn("Failed to initialize public starter channels.", error);
-    }
-
+    // A new account gets only its private Welcome channel. Public channels
+    // (#general, #welcome-everyone) are joined from the channel directory,
+    // never automatically: on a shared server they hold strangers.
     const welcomeChannel = await ensureWelcomeChannel(
       {
         createChannel,
@@ -112,22 +98,10 @@ export async function initializeStarterChannels(
       },
     );
 
-    const starterChannelList = starterChannels?.channels ?? [];
-    queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
-      const ensuredIds = new Set(
-        starterChannelList.map((channel) => channel.id),
-      );
-      ensuredIds.add(welcomeChannel.id);
-      return [
-        ...starterChannelList,
-        ...(starterChannelList.some(
-          (channel) => channel.id === welcomeChannel.id,
-        )
-          ? []
-          : [welcomeChannel]),
-        ...channels.filter((channel) => !ensuredIds.has(channel.id)),
-      ];
-    });
+    queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => [
+      welcomeChannel,
+      ...channels.filter((channel) => channel.id !== welcomeChannel.id),
+    ]);
     void seedWelcomeExperience(
       queryClient,
       welcomeChannel.id,
@@ -141,9 +115,7 @@ export async function initializeStarterChannels(
       // the route can consume the pending private Welcome channel immediately.
       queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
         const byId = new Map(
-          [...channels, ...starterChannelList, welcomeChannel].map(
-            (channel) => [channel.id, channel],
-          ),
+          [...channels, welcomeChannel].map((channel) => [channel.id, channel]),
         );
         return [...byId.values()];
       });

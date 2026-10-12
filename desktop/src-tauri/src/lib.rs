@@ -84,9 +84,7 @@ use huddle::{
 use initial_window::*;
 use managed_agents::{
     backfill_persona_snapshots, ensure_nest, list_managed_agent_runtimes,
-    put_managed_agent_runtime_lifecycle, reconcile_managed_agent_runtimes,
-    restart_managed_agent_runtime, start_managed_agent_runtime, stop_managed_agent_runtime,
-    try_regenerate_nest,
+    reconcile_managed_agent_runtimes, try_regenerate_nest,
 };
 #[cfg(not(feature = "mesh-llm"))]
 use mesh_llm_stubs::*;
@@ -292,10 +290,26 @@ pub fn run() {
             // that will be lost on restart, as that silently breaks channel
             // memberships, DMs, and relay identity.
             let state = app_handle.state::<AppState>();
+            // Accounts on this computer: rebuild or migrate the list and refill
+            // the active-account copy before the identity is read from it.
+            if let Ok(data_dir) = app_handle.path().app_data_dir() {
+                crate::auth::accounts::reconcile_on_launch(&data_dir);
+            }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
                 eprintln!("buzz-desktop: fatal: identity resolution failed: {e}");
                 std::process::exit(1);
             }
+            // "Signed out on this computer" markers, before anything can sign.
+            // Without a data dir, sign-out cannot be saved and reports so.
+            match app_handle.path().app_data_dir() {
+                Ok(data_dir) => state.token_auth.signed_out.load(&data_dir),
+                Err(e) => eprintln!("buzz-desktop: sign-out markers unavailable: {e}"),
+            }
+            // The relay ending an account's session for good signs that
+            // account out here (and stops its agents), active or not.
+            crate::auth::commands::install_session_ended_hook(&app_handle);
+            // Signed-in accounts that are not active stay signed in.
+            crate::auth::accounts::start_background_sessions(&app_handle);
 
             // When the identity is in recovery mode (lost = keyring empty after
             // migration, or keyring-locked = keyring unreachable but marker
@@ -315,6 +329,11 @@ pub fn run() {
             // restore_managed_agents_on_launch so no agent spawns from an empty
             // snapshot. Synchronous and best-effort — a failure here must not
             // block launch, but a missing persona is logged loudly inside.
+            // Older agents without an attestation get their owner recorded
+            // once, so no agent ever borrows the active account as its owner.
+            if !recovery_mode {
+                crate::managed_agents::migrate_owners(&app_handle);
+            }
             if let Err(e) = backfill_persona_snapshots(&app_handle) {
                 eprintln!("buzz-desktop: persona-snapshot backfill failed: {e}");
             }
@@ -636,6 +655,15 @@ pub fn run() {
             create_auth_event,
             auth::commands::get_token_auth_status,
             auth::commands::login_with_google,
+            auth::commands::own_agent_pubkeys,
+            auth::accounts::list_accounts,
+            auth::accounts::remember_account_buzz_name,
+            auth::accounts::list_watchable_accounts,
+            auth::commands::confirm_signup,
+            auth::commands::cancel_signup,
+            auth::accounts::switch_account,
+            auth::accounts::create_auth_event_as,
+            auth::accounts::nip44_decrypt_as,
             auth::commands::cancel_google_login,
             auth::commands::logout,
             auth::commands::get_ws_auth_frame,
@@ -652,7 +680,6 @@ pub fn run() {
             get_channels,
             get_open_channel_directory,
             create_channel,
-            ensure_starter_channels,
             open_dm,
             get_bestie_assignment,
             assign_bestie,
@@ -738,12 +765,13 @@ pub fn run() {
             list_relay_agents,
             revalidate_relay_agents,
             list_managed_agents,
+            list_all_managed_agents,
             list_managed_agent_runtimes,
-            start_managed_agent_runtime,
-            stop_managed_agent_runtime,
-            restart_managed_agent_runtime,
+            managed_agents::ipc::start_managed_agent_runtime,
+            managed_agents::ipc::stop_managed_agent_runtime,
+            managed_agents::ipc::restart_managed_agent_runtime,
             reconcile_managed_agent_runtimes,
-            put_managed_agent_runtime_lifecycle,
+            managed_agents::ipc::put_managed_agent_runtime_lifecycle,
             create_managed_agent,
             start_managed_agent,
             stop_managed_agent,

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateLinkedAgentRuntimeEdit } from "./UserProfilePanelPersonaSubmit.ts";
+import {
+  submitProfilePersonaDialog,
+  validateLinkedAgentRuntimeEdit,
+} from "./UserProfilePanelPersonaSubmit.ts";
 
 function agent(overrides = {}) {
   return {
@@ -134,4 +137,54 @@ test("validateLinkedAgentRuntimeEdit allows unchanged or unlinked runtime prefer
     }),
     null,
   );
+});
+
+test("submitProfilePersonaDialog follows the copy an edited built-in saves to", async () => {
+  const copy = persona({ id: "copy-1", displayName: "My Fizz" });
+  const agentUpdates = [];
+  const replaced = [];
+  let done = 0;
+  await submitProfilePersonaDialog({
+    createManagedAgentForPersona: async () => assert.fail("no create"),
+    createPersona: async () => assert.fail("no create"),
+    input: updateInput({
+      id: "builtin:fizz",
+      displayName: "My Fizz",
+      runtime: "goose",
+    }),
+    managedAgent: agent({ personaId: "builtin:fizz" }),
+    onDone: () => {
+      done += 1;
+    },
+    onPersonaReplaced: (next) => replaced.push(next.id),
+    previousPersona: persona({ id: "builtin:fizz", isBuiltIn: true }),
+    runtimes: [runtime({ id: "goose" })],
+    updateManagedAgent: async (input) => {
+      agentUpdates.push(input);
+      return { agent: agent(), profileSyncError: null };
+    },
+    updatePersona: async () => copy,
+  });
+
+  // The agent now made from the copy still gets the edit, and the panel is
+  // told to follow the copy.
+  assert.equal(agentUpdates.length, 1);
+  assert.equal(agentUpdates[0].name, "My Fizz");
+  assert.deepEqual(replaced, ["copy-1"]);
+  assert.equal(done, 1);
+});
+
+test("submitProfilePersonaDialog reports no replacement for an ordinary edit", async () => {
+  const replaced = [];
+  await submitProfilePersonaDialog({
+    createManagedAgentForPersona: async () => assert.fail("no create"),
+    createPersona: async () => assert.fail("no create"),
+    input: updateInput({ runtime: "goose" }),
+    managedAgent: undefined,
+    onDone: () => {},
+    onPersonaReplaced: (next) => replaced.push(next.id),
+    updateManagedAgent: async () => assert.fail("no linked agent"),
+    updatePersona: async () => persona(),
+  });
+  assert.deepEqual(replaced, []);
 });

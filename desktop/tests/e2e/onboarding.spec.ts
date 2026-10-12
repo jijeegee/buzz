@@ -378,8 +378,6 @@ async function expectPrivateWelcomeLanding(page: Page) {
 
 async function expectWelcomeView(page: Page) {
   await expectPrivateWelcomeLanding(page);
-  await expect(page.getByTestId("channel-general")).toBeVisible();
-  await expect(page.getByTestId("channel-welcome-everyone")).toBeVisible();
   await expect(page.getByTestId("channel-ephemeral-Welcome")).toHaveCount(0);
   await expect(page.getByTestId("chat-ephemeral-badge")).toHaveCount(0);
   await expect(page.getByTestId("message-unread-pill")).toHaveCount(0);
@@ -594,43 +592,24 @@ async function getWelcomeChannelId(page: Page) {
   );
 }
 
-async function expectStarterChannels(page: Page) {
+/** The public starter channels stay unjoined: a new member joins them from
+ *  the channel directory, and setup never asks the backend to create them. */
+async function expectNoStarterMembership(page: Page) {
   await expect
     .poll(async () => {
       const channels = await getMockChannels(page);
-      return ["general", "welcome-everyone"].map((name) => {
-        const channel = channels.find(
-          (candidate) =>
-            candidate.name === name && candidate.visibility === "open",
-        );
-        if (!channel) {
-          return null;
-        }
-        return {
-          channelType: channel.channel_type,
-          isMember: channel.is_member,
-          memberCountAtLeastOne: channel.member_count >= 1,
-          ttlSeconds: channel.ttl_seconds,
-          visibility: channel.visibility,
-        };
-      });
+      return ["general", "welcome-everyone"].map(
+        (name) =>
+          channels.find(
+            (candidate) =>
+              candidate.name === name && candidate.visibility === "open",
+          )?.is_member ?? false,
+      );
     })
-    .toEqual([
-      {
-        channelType: "stream",
-        isMember: true,
-        memberCountAtLeastOne: true,
-        ttlSeconds: null,
-        visibility: "open",
-      },
-      {
-        channelType: "stream",
-        isMember: true,
-        memberCountAtLeastOne: true,
-        ttlSeconds: null,
-        visibility: "open",
-      },
-    ]);
+    .toEqual([false, false]);
+  await expect(page.getByTestId("channel-general")).toHaveCount(0);
+  await expect(page.getByTestId("channel-welcome-everyone")).toHaveCount(0);
+  expect(await commandCount(page, "ensure_starter_channels")).toBe(0);
 }
 
 async function expectWelcomeGuideIntro(
@@ -3535,7 +3514,7 @@ test("first-run onboarding keeps the shell hidden and lands on private Welcome a
   await completeProfileOnboarding(page);
   await expect(page.getByTestId("onboarding-gate")).toHaveCount(0);
   await expectWelcomeView(page);
-  await expectStarterChannels(page);
+  expect(await commandCount(page, "ensure_starter_channels")).toBe(0);
   await expectWelcomeGuideIntro(page);
 });
 
@@ -3547,30 +3526,6 @@ async function commandCount(page: Page, command: string) {
     command,
   );
 }
-
-test("failed public starter channel setup does not show a retry toast", async ({
-  page,
-}) => {
-  const starterError = "Mock starter channel setup failed.";
-  await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
-  await installMockBridge(
-    page,
-    { ensureStarterChannelsErrors: [starterError, starterError] },
-    { skipOnboardingSeed: true },
-  );
-  await page.goto("/");
-
-  await page.getByTestId("onboarding-display-name").fill("Morty QA");
-  await completeProfileOnboarding(page);
-
-  await expectPrivateWelcomeLanding(page);
-  await expect(
-    page
-      .locator("[data-sonner-toast][data-removed='false']")
-      .filter({ hasText: "Couldn't set up starter channels" }),
-  ).toHaveCount(0);
-  expect(await commandCount(page, "ensure_starter_channels")).toBe(2);
-});
 
 test("first-run onboarding posts the live Fizz kickoff", async ({ page }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -3682,7 +3637,7 @@ test("onboarding uses the existing identity when the community is already set up
   await expect(page.getByText("Create an identity key")).toHaveCount(0);
 });
 
-test("completed onboarding backfills missing starter channels", async ({
+test("completed onboarding does not join public starter channels", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -3692,13 +3647,11 @@ test("completed onboarding backfills missing starter channels", async ({
 
   await expect(page.getByTestId("onboarding-gate")).toHaveCount(0);
   await expectHomeView(page);
-  await expect(page.getByTestId("channel-general")).toBeVisible();
-  await expect(page.getByTestId("channel-welcome-everyone")).toBeVisible();
-  await expectStarterChannels(page);
+  await expectNoStarterMembership(page);
   await expectWelcomeGuideIntro(page, { expectVisible: false });
 });
 
-test("finishing onboarding creates starter channels and focuses welcome-everyone for a new member", async ({
+test("finishing onboarding focuses the private Welcome channel without joining public channels", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -3709,8 +3662,7 @@ test("finishing onboarding creates starter channels and focuses welcome-everyone
   await completeProfileOnboarding(page);
 
   await expectWelcomeView(page);
-  await expect(page.getByTestId("channel-general")).toBeVisible();
-  await expectStarterChannels(page);
+  await expectNoStarterMembership(page);
   await expectWelcomeGuideIntro(page);
   await expectWelcomeComposerBannerCompletesAfterPersonaMention(page);
 });
@@ -3760,15 +3712,15 @@ test("welcome-everywhere banner: dismiss persists after channel re-entry", async
   await expect(banner).toHaveCount(0, { timeout: 2_000 });
 
   // Leave the Welcome channel.
-  await page.getByTestId("channel-general").click();
-  await expect(page.getByTestId("chat-title")).toContainText("general");
+  await page.evaluate(() => {
+    window.location.hash = "#/agents";
+  });
+  await expect(page.getByTestId("chat-title")).toHaveCount(0);
   await expect(banner).toHaveCount(0);
 
   // Return — banner must stay hidden.
-  await page.getByTestId("channel-welcome-everyone").click();
-  await expect(page.getByTestId("chat-title")).toContainText(
-    "welcome-everyone",
-  );
+  await page.getByTestId("channel-Welcome").click();
+  await expect(page.getByTestId("chat-title")).toContainText("Welcome");
   await expect(banner).toHaveCount(0);
 });
 

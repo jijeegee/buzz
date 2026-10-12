@@ -89,6 +89,7 @@ import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { AuxiliaryPanelBody } from "@/shared/layout/AuxiliaryPanel";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import type {
   AgentPersona,
   Channel,
@@ -188,6 +189,7 @@ export function UserProfilePanel({
       normalizePubkey(pubkey) === normalizePubkey(requestedInstancePubkey),
   );
   const personasQuery = usePersonasQuery();
+  const { openPersonaProfilePanel } = useProfilePanel();
   const managedAgentsQuery = useManagedAgentsQuery({ enabled: true });
   const { instanceBuckets, linkedPersonaId, managedAgent } =
     useCanonicalManagedAgentProfile({
@@ -506,6 +508,13 @@ export function UserProfilePanel({
           setPersonaDialogState(null);
           void personasQuery.refetch();
         },
+        onPersonaReplaced: (replacement) => {
+          // A panel opened on the persona itself follows the copy; one opened
+          // on an agent already follows the agent's new persona.
+          if (pubkey) return;
+          if (openPersonaProfilePanel) openPersonaProfilePanel(replacement);
+          else onClose();
+        },
         previousPersona: resolvedPersona,
         runtimes: acpRuntimesQuery.data ?? [],
         updateManagedAgent: updateManagedAgentMutation.mutateAsync,
@@ -516,7 +525,10 @@ export function UserProfilePanel({
       createPersonaMutation.mutateAsync,
       createManagedAgentForPersona,
       managedAgent,
+      onClose,
+      openPersonaProfilePanel,
       personasQuery.refetch,
+      pubkey,
       resolvedPersona,
       acpRuntimesQuery.data,
       updateManagedAgentMutation.mutateAsync,

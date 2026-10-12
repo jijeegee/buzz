@@ -18,10 +18,16 @@ import {
   ProfileAvatarEditor,
   parseEmojiAvatarDataUrl,
 } from "@/features/profile/ui/ProfileAvatarEditor";
+import type { TokenAuthStatus } from "@/shared/api/tokenAuth";
 import { cn } from "@/shared/lib/cn";
+import {
+  needsGoogleProtection,
+  showSigningKeySettings,
+} from "@/shared/lib/signingKeyUi";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
 import { Textarea } from "@/shared/ui/textarea";
+import { AccountSettingsCard } from "./AccountSettingsCard";
 import { PrivateKeyBackupRow } from "./PrivateKeyBackupRow";
 import {
   SettingsOptionGroup,
@@ -137,6 +143,13 @@ export function ProfileSettingsCard({
   fallbackDisplayName,
 }: ProfileSettingsCardProps) {
   const shouldReduceMotion = useReducedMotion();
+  // Google holds the account; key identity and backup UI is an E2E-only seam.
+  const [accountStatus, setAccountStatus] =
+    React.useState<TokenAuthStatus | null>(null);
+  const showKeySettings = showSigningKeySettings(accountStatus);
+  // Not yet held by Google: lead the panel with "Protect your account".
+  const accountCardFirst = needsGoogleProtection(accountStatus);
+  const accountCard = <AccountSettingsCard onStatusChange={setAccountStatus} />;
   const profileQuery = useProfileQuery();
   const updateProfileMutation = useUpdateProfileMutation();
   const profile = profileQuery.data;
@@ -487,6 +500,7 @@ export function ProfileSettingsCard({
       data-testid="settings-profile"
       ref={sectionRef}
     >
+      {accountCardFirst ? accountCard : null}
       <div>
         <SettingsSectionHeader
           title="Profile"
@@ -762,49 +776,51 @@ export function ProfileSettingsCard({
                           </div>
                         </SettingsOptionGroup>
 
-                        <SettingsOptionGroup title="Identity">
-                          <details
-                            className="group divide-y divide-border/55"
-                            data-testid="profile-identity-card"
-                          >
-                            <summary
-                              className="group/identity flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 transition-colors duration-150 ease-out hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
-                              data-testid="profile-identity-toggle"
+                        {showKeySettings ? (
+                          <SettingsOptionGroup title="Identity">
+                            <details
+                              className="group divide-y divide-border/55"
+                              data-testid="profile-identity-card"
                             >
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium">
-                                  Identity details
-                                </p>
-                                <p
-                                  className="text-sm font-normal text-muted-foreground/70"
-                                  data-settings-subcopy
-                                >
-                                  Your keypair and NIP-05 handle are fixed for
-                                  this device.
-                                </p>
+                              <summary
+                                className="group/identity flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 transition-colors duration-150 ease-out hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
+                                data-testid="profile-identity-toggle"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium">
+                                    Identity details
+                                  </p>
+                                  <p
+                                    className="text-sm font-normal text-muted-foreground/70"
+                                    data-settings-subcopy
+                                  >
+                                    Your keypair and NIP-05 handle are fixed for
+                                    this device.
+                                  </p>
+                                </div>
+                                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-[color,transform] duration-150 ease-out group-open:rotate-180 group-hover/identity:text-foreground group-focus-visible/identity:text-foreground" />
+                              </summary>
+                              <div
+                                className="divide-y divide-border/55"
+                                data-testid="profile-identity-details"
+                              >
+                                <IdentityRow
+                                  copyValue={identityNpub ?? undefined}
+                                  label="Public key"
+                                  testId="profile-pubkey"
+                                  value={resolvedPubkey}
+                                />
+                                <IdentityRow
+                                  copyValue={profile?.nip05Handle ?? undefined}
+                                  label="NIP-05 handle"
+                                  testId="profile-nip05"
+                                  value={nip05Handle}
+                                />
+                                <PrivateKeyBackupRow />
                               </div>
-                              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-[color,transform] duration-150 ease-out group-open:rotate-180 group-hover/identity:text-foreground group-focus-visible/identity:text-foreground" />
-                            </summary>
-                            <div
-                              className="divide-y divide-border/55"
-                              data-testid="profile-identity-details"
-                            >
-                              <IdentityRow
-                                copyValue={identityNpub ?? undefined}
-                                label="Public key"
-                                testId="profile-pubkey"
-                                value={resolvedPubkey}
-                              />
-                              <IdentityRow
-                                copyValue={profile?.nip05Handle ?? undefined}
-                                label="NIP-05 handle"
-                                testId="profile-nip05"
-                                value={nip05Handle}
-                              />
-                              <PrivateKeyBackupRow />
-                            </div>
-                          </details>
-                        </SettingsOptionGroup>
+                            </details>
+                          </SettingsOptionGroup>
+                        ) : null}
                       </SettingsOptionGroupList>
                     </div>
 
@@ -862,7 +878,8 @@ export function ProfileSettingsCard({
         </div>
       </div>
 
-      <SignOutSection />
+      {accountCardFirst ? null : accountCard}
+      <SignOutSection showKeyBackupGate={showKeySettings} />
     </section>
   );
 }

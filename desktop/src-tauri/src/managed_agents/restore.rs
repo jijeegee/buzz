@@ -204,6 +204,8 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
         let candidates: Vec<String> = records
             .iter()
             .filter(|record| record.start_on_app_launch && record.backend == BackendKind::Local)
+            // Stopped by the user when signing out: stays stopped until sign-in.
+            .filter(|record| !state.token_auth.signed_out.suppresses_agent(&record.pubkey))
             .map(|record| record.pubkey.clone())
             .collect();
 
@@ -265,14 +267,6 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
     if agents_to_start.is_empty() {
         return Ok(());
     }
-
-    // Snapshot the workspace owner pubkey once for the legacy auth_tag fallback.
-    // Read outside the per-agent spawn loop so all parallel spawns see the same
-    // value and we don't lock `state.keys` repeatedly.
-    let owner_hex: Option<String> = state
-        .current_identity_pubkey()
-        .ok()
-        .map(|pubkey| pubkey.to_hex());
 
     #[cfg(feature = "mesh-llm")]
     let mut agents_to_start = {
@@ -344,7 +338,6 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
         &admission,
         restore_relay,
         &agents_to_start,
-        owner_hex.as_deref(),
     )?;
 
     // ── Profile reconciliation (fire-and-forget) ────────────────────────────
@@ -377,7 +370,6 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
     admission: &super::AdmissionSnapshot,
     restore_relay: &str,
     agents_to_start: &[super::ManagedAgentRecord],
-    owner_hex: Option<&str>,
 ) -> Result<Vec<(String, crate::commands::ProfileReconcileData)>, String> {
     let state = app.state::<AppState>();
     // Serialize spawning and runtime registration with shutdown cleanup. The
@@ -392,7 +384,6 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
         restore_relay,
         |admitted| {
             std::thread::scope(|scope| {
-                let owner_hex_ref = owner_hex;
                 let handles: Vec<_> = agents_to_start
                     .iter()
                     .filter(|_| !shutdown_started.load(Ordering::SeqCst))
@@ -439,7 +430,6 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
                                                     &key.relay_url,
                                                     admitted,
                                                     true,
-                                                    owner_hex_ref,
                                                     None,
                                                     // Restore spawns every record with
                                                     // its desired role, so only provider
@@ -500,6 +490,26 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
                     continue;
                 };
                 let now = util::now_iso();
+                // The gate ran in Phase B, outside this lock: an owner signed
+                // out since then (a sign-out, or a launch restore the relay
+                // ended) lists its pairs before this child is tracked, so
+                // refuse it here instead.
+                if super::agent_owner_hex(app, record)
+                    .and_then(|hex| nostr::PublicKey::from_hex(&hex).ok())
+                    .is_some_and(|owner| {
+                        crate::auth::accounts::owner_here_for(app, &key.relay_url, &owner)
+                            == crate::auth::accounts::OwnerHere::SignedOut
+                    })
+                {
+                    let _ = super::terminate_process(process.child.id());
+                    let _ = process.child.wait();
+                    record.updated_at = now;
+                    record.last_error = Some(format!(
+                        "agent {}'s account is signed out on this computer; it was not started.",
+                        record.pubkey
+                    ));
+                    continue;
+                }
                 let receipt = super::ManagedAgentRuntimeReceipt {
                     key: key.clone(),
                     pid: process.child.id(),

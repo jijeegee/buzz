@@ -272,7 +272,8 @@ pub(super) fn build_deploy_payload_with_live_roles<R: tauri::Runtime>(
     let descriptor =
         crate::managed_agents::resolve_effective_harness_descriptor(record, &personas, &global)
             .map_err(|error| crate::managed_agents::user_facing_harness_error(&error))?;
-    let owner_pubkey = super::workspace_owner_hex(state)?;
+    // The agent's own owner, never the active account.
+    let owner_pubkey = crate::managed_agents::spawn_owner_hex(app, record)?;
     let launch = build_launch_block_for_policy(
         record,
         &descriptor,

@@ -58,10 +58,38 @@ impl std::fmt::Display for ApiError {
     }
 }
 
-/// Tokens returned by `POST /auth/oidc/complete`.
+/// `POST /auth/oidc/complete`: the session, or, when the sign-in asked to
+/// confirm new accounts and this Google account has none yet, a one-time
+/// ticket to create it with ([`signup`]). Nothing exists on the relay until
+/// then.
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum CompleteResponse {
+    NeedsSignup(SignupNeeded),
+    Tokens(LoginTokens),
+}
+
+/// A Google account with no Buzz account yet.
+#[derive(Deserialize)]
+pub(crate) struct SignupNeeded {
+    #[allow(dead_code)]
+    pub needs_signup: bool,
+    pub signup_token: SecretField,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+}
+
+/// Tokens returned by `POST /auth/oidc/complete` and `/auth/oidc/signup`.
 #[derive(Deserialize)]
 pub(crate) struct LoginTokens {
     pub principal_id: String,
+    /// The Google account's email, from relays that send it.
+    #[serde(default)]
+    pub email: Option<String>,
     #[serde(default)]
     pub identity_mode: Option<String>,
     #[serde(default)]
@@ -104,6 +132,11 @@ pub(crate) struct MeInfo {
     pub signing_pubkey: Option<String>,
     #[serde(default)]
     pub device_id: Option<String>,
+    /// The login's profile (the Google name and picture).
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 /// A bot access token (`POST /auth/bots/{id}/token`).
@@ -266,11 +299,27 @@ pub(crate) async fn complete_login(
     origin: &str,
     login_code: &str,
     verifier: &str,
-) -> Result<LoginTokens, ApiError> {
+) -> Result<CompleteResponse, ApiError> {
     send_json(
         client
             .post(format!("{origin}/auth/oidc/complete"))
             .json(&serde_json::json!({ "login_code": login_code, "code_verifier": verifier })),
+    )
+    .await
+}
+
+/// `POST /auth/oidc/signup`: create the account the user confirmed and sign
+/// in to it.
+pub(crate) async fn signup(
+    client: &reqwest::Client,
+    origin: &str,
+    signup_token: &str,
+    verifier: &str,
+) -> Result<LoginTokens, ApiError> {
+    send_json(
+        client
+            .post(format!("{origin}/auth/oidc/signup"))
+            .json(&serde_json::json!({ "signup_token": signup_token, "code_verifier": verifier })),
     )
     .await
 }
@@ -554,6 +603,29 @@ mod tests {
         let off = serde_json::json!({"buzz_token_auth": {"bearer": false}});
         assert_eq!(parse_token_auth_descriptor(&off), None);
         assert_eq!(parse_token_auth_descriptor(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn complete_is_either_a_session_or_a_new_account_ticket() {
+        let session: CompleteResponse = serde_json::from_value(serde_json::json!({
+            "principal_id": "ab", "identity_mode": "key_backup", "signing_pubkey": null,
+            "device_id": "d", "access": "a", "refresh": "r", "expires_in": 3600,
+            "email": "j@test",
+        }))
+        .unwrap();
+        assert!(
+            matches!(session, CompleteResponse::Tokens(t) if t.email.as_deref() == Some("j@test"))
+        );
+        let ticket: CompleteResponse = serde_json::from_value(serde_json::json!({
+            "needs_signup": true, "signup_token": "t", "email": "new@test",
+            "display_name": "New", "avatar_url": null,
+        }))
+        .unwrap();
+        let CompleteResponse::NeedsSignup(ticket) = ticket else {
+            panic!("expected a signup ticket");
+        };
+        assert_eq!(&*ticket.signup_token, "t");
+        assert_eq!(ticket.email.as_deref(), Some("new@test"));
     }
 
     #[test]

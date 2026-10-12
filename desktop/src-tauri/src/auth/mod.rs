@@ -16,7 +16,11 @@
 //! - [`refresh`]: background refresh, terminal "sign in again".
 //! - [`commands`]: Tauri commands for login, devices, account actions.
 //! - [`bots`]: managed-agent bot registration, bot tokens, exit-78 restarts.
+//! - [`signed_out`]: durable "signed out on this computer" markers that fence
+//!   user-identity work until the same Google account signs in again.
 
+pub(crate) mod account_profiles;
+pub(crate) mod accounts;
 pub(crate) mod api;
 pub(crate) mod bots;
 pub(crate) mod commands;
@@ -29,6 +33,7 @@ pub(crate) mod pkce;
 pub(crate) mod redact;
 pub(crate) mod refresh;
 pub(crate) mod restore;
+pub(crate) mod signed_out;
 pub(crate) mod watchdog;
 
 use std::collections::HashMap;
@@ -42,6 +47,9 @@ use zeroize::Zeroizing;
 /// Tauri event emitted whenever a community's token-auth state changes. The
 /// payload is the relay origin.
 pub(crate) const TOKEN_AUTH_CHANGED_EVENT: &str = "token-auth-changed";
+/// Tauri event emitted when the accounts signed in on this computer may have
+/// changed. Payload: the origin.
+pub(crate) const ACCOUNTS_CHANGED_EVENT: &str = "accounts-changed";
 
 /// How long a NIP-11 support probe is trusted.
 const SUPPORT_TTL: Duration = Duration::from_secs(60);
@@ -147,13 +155,22 @@ impl RefreshStore for KeyringRefreshStore {
         crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
             .load(&refresh_key(origin))
     }
+    /// The active account's own slot first, then the active copy (see
+    /// [`accounts`]). A legacy token account has no own slot.
     fn store(&self, origin: &str, token: &str) -> Result<(), String> {
-        crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
-            .store(&refresh_key(origin), token)
+        accounts::store_active_refresh(
+            accounts::shared_secrets(),
+            origin,
+            self.signing_pubkey(origin)?,
+            token,
+        )
     }
     fn delete(&self, origin: &str) -> Result<(), String> {
-        crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
-            .delete(&refresh_key(origin))
+        let secrets = accounts::shared_secrets();
+        if let Ok(Some(pubkey)) = self.signing_pubkey(origin) {
+            secrets.delete(&accounts::refresh_slot(&pubkey, origin))?;
+        }
+        secrets.delete(&refresh_key(origin))
     }
 }
 
@@ -180,9 +197,56 @@ pub struct TokenAuthState {
     pending_refresh: Mutex<HashMap<String, (u64, Zeroizing<String>)>>,
     /// Managed-agent bot tokens and exit-78 restart accounting.
     pub(crate) bots: bots::BotRuntime,
+    /// Origins signed out on this device (durable, outside the keyring).
+    pub(crate) signed_out: signed_out::SignedOutMarkers,
+    /// Background sessions of signed-in accounts that are not active.
+    pub(crate) inactive: accounts::InactiveSessions,
+    /// The `/auth/me` name and avatar of each origin's last restored session,
+    /// keyed by origin and the account (signing pubkey) it reported.
+    me_profiles: Mutex<HashMap<(String, PublicKey), (Option<String>, Option<String>)>>,
+    /// A sign-in waiting for the user to confirm a new account.
+    pending_signup: Mutex<Option<PendingSignup>>,
+}
+
+/// A Google sign-in whose account does not exist yet: the relay created
+/// nothing and holds a ticket for [`commands::confirm_signup`].
+pub(crate) struct PendingSignup {
+    pub origin: String,
+    pub providers: Vec<String>,
+    pub existing_token_account: bool,
+    pub verifier: Zeroizing<String>,
+    pub ticket: Zeroizing<String>,
+    pub parked_at: std::time::Instant,
 }
 
 impl TokenAuthState {
+    pub(crate) fn record_me_profile(
+        &self,
+        origin: &str,
+        account: PublicKey,
+        display_name: Option<String>,
+        avatar_url: Option<String>,
+    ) {
+        self.me_profiles
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert((origin.to_owned(), account), (display_name, avatar_url));
+    }
+
+    /// The name and avatar `/auth/me` returned for `account`'s session on
+    /// `origin`.
+    pub(crate) fn me_profile(
+        &self,
+        origin: &str,
+        account: &PublicKey,
+    ) -> Option<(Option<String>, Option<String>)> {
+        self.me_profiles
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&(origin.to_owned(), *account))
+            .cloned()
+    }
+
     pub(crate) fn record_backup_support(&self, origin: &str, enabled: bool) {
         self.backup_support
             .lock()
@@ -273,6 +337,23 @@ impl TokenAuthState {
             .map(|(_, token)| token.clone())
     }
 
+    /// Hold a sign-in that waits for the user to confirm a new account; a
+    /// newer one replaces it.
+    pub(crate) fn park_signup(&self, pending: PendingSignup) {
+        *self
+            .pending_signup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(pending);
+    }
+
+    /// Take the sign-in waiting for confirmation, if any.
+    pub(crate) fn take_signup(&self) -> Option<PendingSignup> {
+        self.pending_signup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
+
     /// Drop any remembered rotated refresh token for `origin`.
     pub(crate) fn clear_pending_refresh(&self, origin: &str) {
         self.pending_refresh
@@ -318,6 +399,33 @@ impl TokenAuthState {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(origin.to_owned(), (Instant::now(), support));
+    }
+
+    /// Whether this device is signed out of `origin`'s active account.
+    pub(crate) fn device_signed_out(&self, origin: &str) -> bool {
+        self.device_signed_out_with(origin, &KeyringRefreshStore)
+    }
+
+    /// [`Self::device_signed_out`] with the binding read from `store` when it
+    /// is not in memory yet (before the first restore of a launch).
+    pub(crate) fn device_signed_out_with(&self, origin: &str, store: &dyn RefreshStore) -> bool {
+        let account = self
+            .signing_pubkey(origin)
+            .or_else(|| store.signing_pubkey(origin).ok().flatten());
+        if account.is_none() && store.legacy_token_account(origin).unwrap_or(false) {
+            // A token account has no local key to tell markers apart.
+            return self.signed_out.is_signed_out_any(origin);
+        }
+        self.signed_out.is_signed_out(origin, account)
+    }
+
+    /// Forget `origin`'s in-memory key-backup binding (the active account
+    /// there changed to one without a binding).
+    pub(crate) fn clear_key_backup(&self, origin: &str) {
+        self.key_backups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(origin);
     }
 
     /// The identity mode for `origin`.
@@ -374,6 +482,20 @@ impl TokenAuthState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_me_profile_belongs_only_to_the_account_it_reported() {
+        let auth = TokenAuthState::default();
+        let (a, b) = (
+            nostr::Keys::generate().public_key(),
+            nostr::Keys::generate().public_key(),
+        );
+        auth.record_me_profile("o", a, Some("A".into()), None);
+        assert_eq!(auth.me_profile("o", &a), Some((Some("A".into()), None)));
+        // After a switch to B on the same origin, A's name is never B's.
+        assert_eq!(auth.me_profile("o", &b), None);
+        assert_eq!(auth.me_profile("other", &a), None);
+    }
 
     #[test]
     fn origin_normalises_ws_and_case() {

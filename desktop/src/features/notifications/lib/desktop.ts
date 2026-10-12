@@ -33,6 +33,8 @@ export type DesktopNotificationTarget = {
   kind: number | null;
   pubkey?: string;
   threadRootId?: string | null;
+  /** Set when the notification is for an account other than the open one. */
+  account?: { origin: string; pubkey: string };
 };
 
 type DesktopNotificationPayload = {
@@ -91,6 +93,11 @@ function parseNotificationTarget(
     typeof candidate.pubkey === "string" ? candidate.pubkey : undefined;
   const threadRootId =
     typeof candidate.threadRootId === "string" ? candidate.threadRootId : null;
+  const account =
+    typeof candidate.account?.origin === "string" &&
+    typeof candidate.account.pubkey === "string"
+      ? { origin: candidate.account.origin, pubkey: candidate.account.pubkey }
+      : undefined;
 
   if (!channelId && !eventId) {
     return null;
@@ -105,6 +112,7 @@ function parseNotificationTarget(
     kind,
     pubkey,
     threadRootId,
+    ...(account ? { account } : {}),
   };
 }
 

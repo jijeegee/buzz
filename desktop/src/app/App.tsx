@@ -24,6 +24,7 @@ import { useReloadShortcut } from "@/app/useReloadShortcut";
 import { useCloseWindowShortcut } from "@/app/useCloseWindowShortcut";
 import { KnownAgentPubkeysProvider } from "@/features/agents/useKnownAgentPubkeys";
 import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
+import { accountSwitchCaption } from "@/features/accounts/lib/accountSwitch";
 import { useAppOnboardingState } from "@/features/onboarding/hooks";
 import { useMachineOnboardingState } from "@/features/onboarding/machineOnboarding";
 import {
@@ -44,6 +45,7 @@ import { PendingInviteGate } from "@/features/onboarding/ui/PendingInviteGate";
 import { KeyringLockedScreen } from "@/features/onboarding/ui/KeyringLockedScreen";
 import { RelaunchRequiredScreen } from "@/features/onboarding/ui/RelaunchRequiredScreen";
 import { ResetFailedScreen } from "@/features/onboarding/ui/ResetFailedScreen";
+import { SignedOutGate } from "@/features/onboarding/ui/SignedOutScreen";
 import { loadCommunityDiscoveryAfterLeave } from "@/features/communities/communityStorage";
 import { useCommunityInit } from "@/features/communities/useCommunityInit";
 import { useNestNotifications } from "@/features/communities/useNestNotifications";
@@ -175,6 +177,8 @@ function BeeLoader({
 // its wings flapping (ported from the Buzz website's wing-flap). Replaces the
 // old "Setting up your community" text, which stays as an sr-only caption.
 function AppLoadingGate() {
+  // After an account switch the restart says where it is going.
+  const caption = accountSwitchCaption();
   return (
     <div
       className="buzz-setup-loading-shell flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-10"
@@ -183,8 +187,16 @@ function AppLoadingGate() {
     >
       <StartupWindowDragRegion />
       <ThemeGrainientBackground />
-      <span className="sr-only">{LOADING_TEXT}</span>
+      {caption ? null : <span className="sr-only">{LOADING_TEXT}</span>}
       <FlappingBee className="relative z-10 h-auto w-28" />
+      {caption ? (
+        <p
+          className="relative z-10 mt-6 text-sm text-muted-foreground"
+          data-testid="app-loading-account-switch"
+        >
+          {caption}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -749,36 +761,40 @@ function CommunityApp({
     }
   }, [communityApplied]);
   if (appContent === null && (!transaction || isEnteringCurtain)) {
+    // Signed out on this computer: nothing that shows or connects to chats
+    // mounts (native relay auth is refused as well) until Google sign-in.
     appContent = communityApplied ? (
-      <CommunityQueryProvider
-        key={communityKey}
-        pubkey={community.identityPubkey}
-        relayUrl={activeCommunity?.relayUrl ?? null}
-      >
-        <CommunityIdentityReplacementSentinel
-          onIdentityReplaced={bumpSignerEpoch}
-        />
-        <CommunityThemeController />
-        <AppReady
-          continueOnboarding={isContinuingOnboarding}
-          isCommunitySwitch={isCommunitySwitch}
+      <SignedOutGate signedOut={community.isReady && community.deviceSignedOut}>
+        <CommunityQueryProvider
           key={communityKey}
-          isSharedIdentity={sharedIdentity}
-        />
-        {showBootSplashOverlay ? (
-          <div
-            aria-hidden="true"
-            className={cn(
-              "fixed inset-0 z-50 transition-opacity",
-              bootSplashPhase === "fading" ? "opacity-0" : "opacity-100",
-            )}
-            data-testid="boot-splash-overlay"
-            style={{ transitionDuration: `${BOOT_SPLASH_FADE_MS}ms` }}
-          >
-            <AppLoadingGate />
-          </div>
-        ) : null}
-      </CommunityQueryProvider>
+          pubkey={community.identityPubkey}
+          relayUrl={activeCommunity?.relayUrl ?? null}
+        >
+          <CommunityIdentityReplacementSentinel
+            onIdentityReplaced={bumpSignerEpoch}
+          />
+          <CommunityThemeController />
+          <AppReady
+            continueOnboarding={isContinuingOnboarding}
+            isCommunitySwitch={isCommunitySwitch}
+            key={communityKey}
+            isSharedIdentity={sharedIdentity}
+          />
+          {showBootSplashOverlay ? (
+            <div
+              aria-hidden="true"
+              className={cn(
+                "fixed inset-0 z-50 transition-opacity",
+                bootSplashPhase === "fading" ? "opacity-0" : "opacity-100",
+              )}
+              data-testid="boot-splash-overlay"
+              style={{ transitionDuration: `${BOOT_SPLASH_FADE_MS}ms` }}
+            >
+              <AppLoadingGate />
+            </div>
+          ) : null}
+        </CommunityQueryProvider>
+      </SignedOutGate>
     ) : isCommunitySwitch || isContinuingOnboarding ? (
       <CommunitySwitchGate />
     ) : (

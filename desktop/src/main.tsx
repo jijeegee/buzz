@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "@/app/App";
+import { takeAccountSwitchAtBoot } from "@/features/accounts/lib/accountSwitch";
 import { RootErrorBoundary } from "@/app/RootErrorBoundary";
 import { NostrBindConsentDialog } from "@/features/profile/ui/NostrBindConsentDialog";
 import "@fontsource-variable/inter/opsz.css";
@@ -125,6 +126,7 @@ async function installE2eBridgeIfConfigured() {
 }
 
 async function bootstrap() {
+  takeAccountSwitchAtBoot();
   resetDevWebviewStateFromUrl();
   configureDevE2eBridgeFromUrl();
   recoverLocalStorageQuotaOnStartup();

@@ -3,12 +3,22 @@ import { toast } from "sonner";
 
 import {
   getTokenAuthStatus,
+  identityReload,
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
+
+/**
+ * Secondary Google sign-in for accounts created by an earlier Buzz version
+ * (legacy token accounts). Plain Google sign-in cannot reach those accounts
+ * on a new device, so the route stays, in plain words.
+ */
+export const OLDER_ACCOUNT_SIGN_IN_LABEL = "Sign in to an older Buzz account";
+export const OLDER_ACCOUNT_SIGN_IN_TITLE =
+  "Use this only if your Buzz account was created with an earlier version of Buzz.";
 
 /**
  * "Sign in with Google" for onboarding. Rendered only when the community's
@@ -18,11 +28,19 @@ import { Spinner } from "@/shared/ui/spinner";
 export function GoogleSignInButton({
   disabled,
   allowRestore = false,
+  note = "Sign in with your Google account to get started.",
   onComplete,
+  showWhenSignedIn = false,
+  unavailable = null,
 }: {
   disabled?: boolean;
   allowRestore?: boolean;
+  note?: string;
   onComplete?: () => Promise<void>;
+  /** Restoring a lost identity signs in again over a surviving session. */
+  showWhenSignedIn?: boolean;
+  /** Shown instead of nothing once the relay turns out not to offer Google. */
+  unavailable?: React.ReactNode;
 }) {
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
   const [pending, setPending] = React.useState(false);
@@ -40,7 +58,9 @@ export function GoogleSignInButton({
     };
   }, []);
 
-  if (!status?.supported || status.state === "active") return null;
+  if (!status) return null;
+  if (!status.supported) return <>{unavailable}</>;
+  if (status.state === "active" && !showWhenSignedIn) return null;
 
   function signIn(existingTokenAccount = false) {
     setPending(true);
@@ -49,7 +69,7 @@ export function GoogleSignInButton({
       .then(async (next) => {
         if (!next) return;
         if (onComplete) await onComplete();
-        else window.location.reload();
+        else identityReload.reload();
       })
       .catch((error: unknown) => {
         setPending(false);
@@ -66,12 +86,7 @@ export function GoogleSignInButton({
 
   return (
     <div className="space-y-2">
-      {status.keyBackupSupported && !status.legacyTokenAccount ? (
-        <p className="text-sm text-muted-foreground">
-          Google links or restores your Buzz signing key. The server operator or
-          someone with access to your Google account can recover this key.
-        </p>
-      ) : null}
+      <p className="text-sm text-muted-foreground">{note}</p>
       <Button
         className="h-10 w-full"
         data-testid="onboarding-google-sign-in"
@@ -95,9 +110,9 @@ export function GoogleSignInButton({
           onClick={() => signIn(true)}
           type="button"
           variant="outline"
-          title="Return to an existing account created before Google key backup. This does not link or replace your Buzz signing key."
+          title={OLDER_ACCOUNT_SIGN_IN_TITLE}
         >
-          Use an existing token account
+          {OLDER_ACCOUNT_SIGN_IN_LABEL}
         </Button>
       ) : null}
     </div>

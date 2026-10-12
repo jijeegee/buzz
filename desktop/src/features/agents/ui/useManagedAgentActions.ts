@@ -4,6 +4,9 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { agentsOfAccount } from "@/features/accounts/lib/accountLabels";
+import { useIdentityQuery } from "@/shared/api/hooks";
+
 import {
   type AttachManagedAgentToChannelResult,
   useAvailableAcpRuntimes,
@@ -46,6 +49,7 @@ export function useManagedAgentActions() {
   const { globalConfig } = useGlobalAgentConfig();
   const relayAgentsQuery = useRelayAgentsQuery();
   const managedAgentsQuery = useManagedAgentsQuery();
+  const activeAccount = useIdentityQuery().data?.pubkey;
   const [shouldLoadChannels, setShouldLoadChannels] = React.useState(false);
   const channelsQuery = useChannelsQuery({ enabled: shouldLoadChannels });
   const startMutation = useStartManagedAgentMutation();
@@ -85,14 +89,17 @@ export function useManagedAgentActions() {
 
   const managedAgents = React.useMemo(
     () =>
-      [...(managedAgentsQuery.data ?? [])].sort((left, right) => {
-        const activeScore = (s: string) =>
-          s === "running" || s === "deployed" ? 1 : 0;
-        const diff = activeScore(right.status) - activeScore(left.status);
-        if (diff !== 0) return diff;
-        return left.name.localeCompare(right.name);
-      }),
-    [managedAgentsQuery.data],
+      // Each account manages its own agents (others keep running).
+      agentsOfAccount(managedAgentsQuery.data ?? [], activeAccount).sort(
+        (left, right) => {
+          const activeScore = (s: string) =>
+            s === "running" || s === "deployed" ? 1 : 0;
+          const diff = activeScore(right.status) - activeScore(left.status);
+          if (diff !== 0) return diff;
+          return left.name.localeCompare(right.name);
+        },
+      ),
+    [managedAgentsQuery.data, activeAccount],
   );
   // Observer ingestion is owner-global (useAgentObserverIngestion in
   // AppShell); this hook only reads derived state.

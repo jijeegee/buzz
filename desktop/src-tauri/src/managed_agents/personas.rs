@@ -429,6 +429,8 @@ pub fn save_personas<R: tauri::Runtime>(
 ) -> Result<(), String> {
     let mut sorted = records.to_vec();
     sort_personas(&mut sorted);
+    // A new persona belongs to the account that made it.
+    super::ensure_definition_owners(app, &sorted);
 
     // Post-fold: persona saves write key-less definition records into the
     // unified agent store (instances preserved by `save_agent_definitions`).

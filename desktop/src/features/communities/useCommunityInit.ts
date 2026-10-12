@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { isMacPlatform } from "@/shared/lib/platform";
 
 import { relayClient } from "@/shared/api/relayClient";
+import { closeSocketsThenReload } from "@/shared/api/relayWebSocketClose";
 import { resetChannelMembershipWrites } from "@/shared/api/channelMembershipWrites";
 import { resetRateLimitGate } from "@/shared/api/relayRateLimitGate";
 import { readmitRelay } from "@/features/agents/managedAgentRelayCleanup";
@@ -17,10 +18,12 @@ import {
 import { getIdentity } from "@/shared/api/tauriIdentity";
 import {
   getTokenAuthStatus,
-  identityReload,
+  onActiveAccountChanged,
   onTokenAuthChanged,
   tokenIdentityChanged,
 } from "@/shared/api/tokenAuth";
+import { requestIdentityReload } from "@/features/accounts/lib/accountSwitch";
+import { setQuickReactionAccount } from "@/features/messages/ui/useQuickReactionEmojis";
 import { clearTrayAgentActivity } from "@/shared/api/trayMenu";
 import { getOverrides } from "@/shared/features";
 import { resetMediaCaches } from "@/shared/lib/mediaUrl";
@@ -123,6 +126,8 @@ type CommunityInitResult =
       needsSetup: false;
       appliedKey: string;
       identityPubkey: string | null;
+      /** This computer is signed out of the community: show no chats. */
+      deviceSignedOut: boolean;
     }
   | {
       isReady: false;
@@ -201,6 +206,7 @@ export function useCommunityInit(
   useEffect(() => {
     let cancelled = false;
     let unlistenTokenAuth: (() => void) | undefined;
+    let unlistenActiveAccount: (() => void) | undefined;
 
     async function init() {
       if (!activeCommunity) {
@@ -259,7 +265,7 @@ export function useCommunityInit(
                   error,
                 );
               });
-              window.location.reload();
+              void closeSocketsThenReload();
               return;
             }
             if (!cancelled) {
@@ -414,8 +420,10 @@ export function useCommunityInit(
       // the relay socket and "me" use the account principal, not the key.
       // The status call awaits any restore already in flight (single-flight
       // on the Rust side), so it reads a settled state.
+      let deviceSignedOut = false;
       try {
         const tokenAuth = await getTokenAuthStatus();
+        deviceSignedOut = tokenAuth.deviceSignedOut === true;
         if (tokenAuth.state === "active") {
           identityPubkey = (await getIdentity()).pubkey;
           appliedPubkeyRef.current = identityPubkey;
@@ -436,15 +444,29 @@ export function useCommunityInit(
               .then((next) => {
                 if (
                   !cancelled &&
-                  tokenIdentityChanged(appliedPrincipal, next)
+                  (tokenIdentityChanged(appliedPrincipal, next) ||
+                    (next.deviceSignedOut === true) !== deviceSignedOut)
                 ) {
-                  identityReload.reload();
+                  requestIdentityReload();
                 }
               })
               .catch(() => {});
           }).then((unlisten) => {
             if (cancelled) unlisten();
             else unlistenTokenAuth = unlisten;
+          });
+          // Another account became active (a switch from another window, or
+          // a session ending here). It is announced even when the new
+          // account's session cannot be restored right now (offline), which
+          // the status check above would not see as a change.
+          const appliedAccount = identityPubkey;
+          void onActiveAccountChanged((pubkey) => {
+            if (!cancelled && pubkey !== appliedAccount) {
+              requestIdentityReload();
+            }
+          }).then((unlisten) => {
+            if (cancelled) unlisten();
+            else unlistenActiveAccount = unlisten;
           });
         }
       } catch (error) {
@@ -463,6 +485,7 @@ export function useCommunityInit(
         if (identityPubkey !== null) {
           initDraftStore(identityPubkey, activeCommunity.relayUrl);
         }
+        setQuickReactionAccount(identityPubkey);
         // Restore any turn state saved for this community (a prior A→B round-
         // trip). This runs after applyCommunity succeeds and before the app
         // renders so components see the restored timers on first render.
@@ -480,6 +503,7 @@ export function useCommunityInit(
           needsSetup: false,
           appliedKey: communityKey,
           identityPubkey,
+          deviceSignedOut,
         });
       }
     }
@@ -489,6 +513,7 @@ export function useCommunityInit(
     return () => {
       cancelled = true;
       unlistenTokenAuth?.();
+      unlistenActiveAccount?.();
     };
   }, [
     activeCommunity?.id,

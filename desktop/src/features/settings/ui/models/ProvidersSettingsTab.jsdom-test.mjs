@@ -321,7 +321,7 @@ test("saving an API key is one set_global_agent_config that leaves model untouch
   );
 });
 
-test("removing a key is one persist with an empty value", async () => {
+test("removing a key confirms first, then is one persist with an empty value", async () => {
   resetConfig();
   mounted = await mount(ProvidersSettingsTab);
   const { container } = mounted;
@@ -329,7 +329,23 @@ test("removing a key is one persist with an empty value", async () => {
     container,
     '[data-testid="settings-models-openai-remove-key"]',
   );
+  const confirmButton = () =>
+    document.querySelector(
+      '[data-testid="settings-models-openai-remove-key-dialog-confirm"]',
+    );
   await act(async () => remove.click());
+  await settle(30);
+  assert.equal(setCalls().length, 0, "nothing is removed before confirming");
+  const cancel = [
+    ...document.querySelectorAll('[role="alertdialog"] button'),
+  ].find((button) => button.textContent.trim() === "Cancel");
+  assert.ok(confirmButton(), "Remove key asks for confirmation");
+  await act(async () => cancel.click());
+  await settle(30);
+  assert.equal(setCalls().length, 0, "cancel keeps the key");
+  await act(async () => remove.click());
+  await settle(30);
+  await act(async () => confirmButton().click());
   await settle(30);
   const saves = setCalls();
   assert.equal(saves.length, 1);

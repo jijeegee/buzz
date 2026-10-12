@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   consumePendingWelcomeChannel,
-  ensureStarterChannels,
   ensureWelcomeChannel,
   findPrivateWelcomeChannel,
   hasEnsuredWelcomeChannel,
@@ -276,60 +275,6 @@ test("Welcome ensured marker is scoped to the current identity and community", (
   } finally {
     restore();
   }
-});
-
-test("ensureStarterChannels reuses existing open starter channels", async () => {
-  const general = makeChannel({
-    id: "general-channel",
-    name: "general",
-    visibility: "open",
-  });
-  const welcomeEveryone = makeChannel({
-    id: "welcome-everyone-channel",
-    name: "welcome-everyone",
-    visibility: "open",
-  });
-  let ensureCalls = 0;
-
-  const result = await ensureStarterChannels({
-    getChannels: async () => [general, welcomeEveryone],
-    ensureStarterChannels: async () => {
-      ensureCalls += 1;
-      return [];
-    },
-  });
-
-  assert.equal(result.generalChannel, general);
-  assert.equal(result.welcomeChannel, welcomeEveryone);
-  assert.deepEqual(result.channels, [general, welcomeEveryone]);
-  assert.equal(ensureCalls, 0);
-});
-
-test("ensureStarterChannels resumes when one starter channel is missing", async () => {
-  const general = makeChannel({
-    id: "general-channel",
-    name: "general",
-    visibility: "open",
-  });
-  const welcomeEveryone = makeChannel({
-    id: "welcome-everyone-channel",
-    name: "welcome-everyone",
-    visibility: "open",
-  });
-  let ensureCalls = 0;
-
-  const result = await ensureStarterChannels({
-    getChannels: async () => [general],
-    ensureStarterChannels: async () => {
-      ensureCalls += 1;
-      return [general, welcomeEveryone];
-    },
-  });
-
-  assert.equal(result.generalChannel, general);
-  assert.equal(result.welcomeChannel, welcomeEveryone);
-  assert.deepEqual(result.channels, [general, welcomeEveryone]);
-  assert.equal(ensureCalls, 1);
 });
 
 test("isWelcomeExperienceChannel matches legacy Welcome and starter welcome-everyone", () => {

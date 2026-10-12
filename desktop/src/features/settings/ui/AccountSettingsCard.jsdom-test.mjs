@@ -10,6 +10,11 @@ const calls = [];
 let status;
 let loginBehavior;
 let cancelBehavior;
+let logoutBehavior;
+let runtimes = [];
+let accounts = [];
+/** Running agents owned by another account signed in on this computer. */
+let foreignAgents = new Set();
 const callbacks = new Map();
 let progressCallback;
 function progress(attemptId, phase) {
@@ -43,6 +48,8 @@ const tauriMock = {
       case "list_devices":
         return Promise.resolve(devices);
       case "revoke_device":
+      case "revoke_other_sessions":
+      case "revoke_all_bot_tokens":
         return Promise.resolve(null);
       case "rename_device": {
         const device = devices.find((d) => d.id === args.deviceId);
@@ -55,8 +62,22 @@ const tauriMock = {
         progress(args.attemptId, "waiting");
         return loginBehavior ? loginBehavior(args) : new Promise(() => {});
       case "logout":
-        // Never settles: the real flow waits on the browser, then reloads.
+        // Never settles by default: the real flow reloads afterwards.
+        return logoutBehavior ? logoutBehavior(args) : new Promise(() => {});
+      case "list_managed_agent_runtimes":
+        return Promise.resolve(runtimes);
+      case "list_accounts":
+        return Promise.resolve(accounts);
+      case "switch_account":
+        // Never settles by default: the real flow reloads afterwards.
         return new Promise(() => {});
+      case "own_agent_pubkeys":
+        // Agents of another account on this computer are never offered.
+        return Promise.resolve(
+          args.pubkeys.filter((pubkey) => !foreignAgents.has(pubkey)),
+        );
+      case "stop_managed_agent_runtime":
+        return Promise.resolve({ ...args, lifecycle: "stopped" });
       case "plugin:event|listen":
         if (args.event === "google-login-progress")
           progressCallback = args.handler;
@@ -88,6 +109,8 @@ const { QueryClient, QueryClientProvider } = await import(
   "@tanstack/react-query"
 );
 const { AccountSettingsCard } = await import("./AccountSettingsCard.tsx");
+const tokenAuthApi = await import("../../../shared/api/tokenAuth.ts");
+const accountSwitch = await import("../../accounts/lib/accountSwitch.ts");
 const { deviceRobotTag } = await import("../../../shared/lib/deviceRobot.ts");
 const { GoogleSignInButton } = await import(
   "../../onboarding/ui/GoogleSignInButton.tsx"
@@ -279,16 +302,24 @@ test("sign-out stays reachable while a sign-in restore is stuck (Rule 6)", async
   await unmount();
 });
 
-test("Google key backup links the existing identity explicitly and discloses custody", async () => {
+test("a local-only account is invited to protect itself with Google, in plain words", async () => {
   status = baseStatus({ keyBackupSupported: true });
   const { container, unmount } = await mount();
   const button = container.querySelector("[data-testid='account-sign-in']");
-  assert.equal(button.textContent.trim(), "Link key with Google");
-  assert.match(container.textContent, /server operator/);
-  assert.match(container.textContent, /cannot overwrite/);
+  assert.equal(button.textContent.trim(), "Continue with Google");
+  assert.match(container.textContent, /Protect your account/);
+  assert.match(container.textContent, /protected copy/);
+  assert.doesNotMatch(container.textContent, /bkeyb|signing|nostr|npub/i);
+  assert.equal(
+    container.querySelector("[data-testid='account-sign-out']"),
+    null,
+    "a local-only account offers no sign-out",
+  );
   await act(async () => fireEvent.click(button));
+  // Protecting a local-only account links its own key, never another account.
   assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
     allowRestore: false,
+    connect: true,
     attemptId: calls.find((c) => c.command === "login_with_google").args
       .attemptId,
   });
@@ -304,12 +335,15 @@ test("Google backup sessions do not offer token-agent revocation or identity del
     signingPubkey: "cd".repeat(32),
   });
   const { container, unmount } = await mount();
-  assert.match(container.textContent, /Backed-up signing key/);
-  assert.match(container.textContent, /cannot revoke a copied/);
-  assert.match(container.textContent, /Verify Google backup/);
+  assert.match(container.textContent, /Signed in with Google/);
+  // Another Google account is added from the accounts list, not checked here.
+  assert.doesNotMatch(container.textContent, /Check Google sign-in/);
+  assert.match(container.textContent, /Accounts on this computer/);
+  assert.match(container.textContent, /Add account/);
+  assert.doesNotMatch(container.textContent, /bkeyb|signing|backup/i);
   assert.doesNotMatch(
     container.textContent,
-    /Revoke agent tokens|Delete account/,
+    /Disconnect all agents|Delete account/,
   );
   await unmount();
 });
@@ -323,7 +357,11 @@ test("new-device Google onboarding explicitly requests same-key recovery", async
     "[data-testid='onboarding-google-sign-in']",
   );
   assert.ok(button);
-  assert.match(container.textContent, /server operator/);
+  assert.match(
+    container.textContent,
+    /Sign in with your Google account to get started\./,
+  );
+  assert.doesNotMatch(container.textContent, /bkeyb|signing/i);
   await act(async () => fireEvent.click(button));
   assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
     allowRestore: true,
@@ -345,7 +383,7 @@ test("previously signed-out token users have an explicit existing-account route"
       button,
       "existing account recovery remains reachable before mode is known",
     );
-    assert.match(button.textContent, /existing token account/);
+    assert.equal(button.textContent, "Sign in to an older Buzz account");
     await act(async () => fireEvent.click(button));
     assert.deepEqual(
       calls.find((c) => c.command === "login_with_google").args,
@@ -498,4 +536,391 @@ test("navigation away cancels its attempt and cannot invoke stale completion", a
   await act(async () => resolveLogin(baseStatus({ state: "active" })));
   assert.equal(completed, 0);
   loginBehavior = undefined;
+});
+
+function dialogButton(label) {
+  const dialog = document.querySelector('[role="alertdialog"]');
+  assert.ok(dialog, "confirmation dialog is open");
+  return [...dialog.querySelectorAll("button")].find(
+    (b) => b.textContent.trim() === label,
+  );
+}
+
+test("signing out, signing out other devices and disconnecting agents each confirm first", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount();
+  await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
+  // Sign out last: the mocked logout never settles (the real one reloads).
+  const cases = [
+    [
+      "account-sign-out-others",
+      "Sign out other devices?",
+      "Sign out other devices",
+      "revoke_other_sessions",
+    ],
+    [
+      "account-disconnect-agents",
+      "Disconnect all agents?",
+      "Disconnect agents",
+      "revoke_all_bot_tokens",
+    ],
+    ["account-sign-out", "Sign out of Buzz?", "Sign out", "logout"],
+  ];
+  for (const [testId, title, confirmLabel, command] of cases) {
+    const open = container.querySelector(`[data-testid='${testId}']`);
+    await act(async () => fireEvent.click(open));
+    const dialog = document.querySelector('[role="alertdialog"]');
+    assert.ok(dialog, `${testId} opens a confirmation`);
+    assert.ok(dialog.textContent.includes(title));
+    assert.equal(
+      calls.some((c) => c.command === command),
+      false,
+      `${testId} does nothing before confirmation`,
+    );
+    await act(async () => fireEvent.click(dialogButton("Cancel")));
+    assert.equal(document.querySelector('[role="alertdialog"]'), null);
+    assert.equal(
+      calls.some((c) => c.command === command),
+      false,
+    );
+
+    await act(async () => fireEvent.click(open));
+    await act(async () => fireEvent.click(dialogButton(confirmLabel)));
+    await settle(() => calls.some((c) => c.command === command));
+    assert.equal(
+      calls.filter((c) => c.command === command).length,
+      1,
+      `${testId} runs once after confirmation`,
+    );
+  }
+  await unmount();
+});
+
+test("the sign-out confirmation tells the user how to get back in", async () => {
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+  });
+  const { container, unmount } = await mount();
+  await act(async () =>
+    fireEvent.click(
+      container.querySelector("[data-testid='account-sign-out']"),
+    ),
+  );
+  const dialog = document.querySelector('[role="alertdialog"]');
+  assert.match(
+    dialog.textContent,
+    /You'll be signed out on this computer\. Sign in with Google to get back to your conversations\. Nothing is deleted\./,
+  );
+  assert.doesNotMatch(dialog.textContent, /agent/i, "no agent claims");
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  await unmount();
+});
+
+const agentA = "a1".repeat(32);
+const agentB = "b2".repeat(32);
+
+async function openSignOutDialog() {
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+  });
+  const mounted = await mount();
+  await act(async () =>
+    fireEvent.click(
+      mounted.container.querySelector("[data-testid='account-sign-out']"),
+    ),
+  );
+  await settle(() =>
+    calls.some((c) => c.command === "list_managed_agent_runtimes"),
+  );
+  await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+  return mounted;
+}
+
+function account(pubkey, overrides = {}) {
+  return {
+    pubkey,
+    origin: "http://127.0.0.1:3000",
+    state: "signed_in",
+    active: false,
+    displayName: null,
+    buzzName: null,
+    avatarUrl: null,
+    email: null,
+    lastUsedAt: null,
+    ...overrides,
+  };
+}
+
+function dialogText() {
+  return document.querySelector('[role="alertdialog"]').textContent;
+}
+
+test("the account card names the active account and its sign-out", async () => {
+  accounts = [
+    account("cd".repeat(32), {
+      active: true,
+      buzzName: "Jiho",
+      displayName: "Jiho Google",
+      email: "jiho@example.com",
+    }),
+    account("ef".repeat(32), { displayName: "Work" }),
+  ];
+  const { container, unmount } = await openSignOutDialog();
+  assert.equal(
+    container.querySelector("[data-testid='account-name']").textContent,
+    "Jiho",
+  );
+  assert.match(container.textContent, /jiho@example\.com/);
+  assert.match(dialogText(), /Sign out of Jiho\?/);
+  // Another account here takes over: the dialog names it instead of
+  // sending the user back to Google.
+  assert.match(
+    dialogText(),
+    /signed out on this computer and switched to Work\. Nothing is deleted\./,
+  );
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  accounts = [];
+  await unmount();
+});
+
+test("the dialog says how many of this account's agents stop; none, no line", async () => {
+  runtimes = [];
+  let { unmount } = await openSignOutDialog();
+  assert.equal(
+    document.querySelector("[data-testid='account-sign-out-agents']"),
+    null,
+  );
+  assert.equal(
+    document.querySelector("[role='alertdialog'] [role='checkbox']"),
+    null,
+    "no stop-agents choice",
+  );
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  await unmount();
+
+  runtimes = [
+    { pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" },
+    { pubkey: agentA, relayUrl: "wss://b.test", lifecycle: "listening" },
+    { pubkey: agentB, relayUrl: "wss://a.test", lifecycle: "starting" },
+    { pubkey: "c3".repeat(32), relayUrl: "wss://a.test", lifecycle: "stopped" },
+  ];
+  ({ unmount } = await openSignOutDialog());
+  await settle(
+    () =>
+      document.querySelector("[data-testid='account-sign-out-agents']") !==
+      null,
+  );
+  assert.equal(
+    document.querySelector("[data-testid='account-sign-out-agents']")
+      .textContent,
+    "2 agents of this account will stop.",
+  );
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  runtimes = [];
+  await unmount();
+});
+
+test("another account's running agents are not counted", async () => {
+  runtimes = [
+    { pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" },
+    { pubkey: agentB, relayUrl: "wss://a.test", lifecycle: "ready" },
+  ];
+  foreignAgents = new Set([agentB]);
+  const { unmount } = await openSignOutDialog();
+  await settle(
+    () =>
+      document.querySelector("[data-testid='account-sign-out-agents']") !==
+      null,
+  );
+  assert.equal(
+    document.querySelector("[data-testid='account-sign-out-agents']")
+      .textContent,
+    "1 agent of this account will stop.",
+  );
+  await act(async () => fireEvent.click(dialogButton("Cancel")));
+  foreignAgents = new Set();
+  runtimes = [];
+  await unmount();
+});
+
+test("sign-out leaves stopping agents to the backend and reloads once", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  runtimes = [{ pubkey: agentA, relayUrl: "wss://a.test", lifecycle: "ready" }];
+  logoutBehavior = () => Promise.resolve(baseStatus({ deviceSignedOut: true }));
+  const { unmount } = await openSignOutDialog();
+  await act(async () => fireEvent.click(dialogButton("Sign out")));
+  await settle(() => reload.mock.callCount() > 0);
+  assert.deepEqual(calls.find((c) => c.command === "logout").args, {});
+  assert.equal(
+    calls.some((c) => c.command === "stop_managed_agent_runtime"),
+    false,
+    "the UI stops nothing itself",
+  );
+  assert.equal(reload.mock.callCount(), 1);
+  assert.equal(window.sessionStorage.getItem("buzz:switching-to"), null);
+  logoutBehavior = undefined;
+  runtimes = [];
+  await unmount();
+});
+
+test("signing out of the active account goes straight to the next one", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  const next = "ef".repeat(32);
+  accounts = [
+    account("cd".repeat(32), { active: true, displayName: "Jiho" }),
+    account(next, { displayName: "Work" }),
+  ];
+  logoutBehavior = () =>
+    Promise.resolve(
+      baseStatus({ state: "active", keyBackup: true, switchedTo: next }),
+    );
+  const { unmount } = await openSignOutDialog();
+  await act(async () => fireEvent.click(dialogButton("Sign out")));
+  await settle(() => reload.mock.callCount() > 0);
+  assert.equal(reload.mock.callCount(), 1);
+  assert.equal(
+    window.sessionStorage.getItem("buzz:switching-to"),
+    "Switching to Work…",
+  );
+  accountSwitch.takeAccountSwitchAtBoot();
+  assert.equal(accountSwitch.accountSwitchCaption(), "Switching to Work…");
+  accountSwitch.resetAccountSwitchForTests();
+  logoutBehavior = undefined;
+  accounts = [];
+  await unmount();
+});
+
+test("a sign-out whose agents did not all stop says so after the switch", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  const next = "ef".repeat(32);
+  accounts = [
+    account("cd".repeat(32), { active: true, displayName: "Jiho" }),
+    account(next, { displayName: "Work" }),
+  ];
+  logoutBehavior = () =>
+    Promise.resolve(
+      baseStatus({
+        state: "active",
+        keyBackup: true,
+        switchedTo: next,
+        agentsNotStopped: 2,
+      }),
+    );
+  const { unmount } = await openSignOutDialog();
+  await act(async () => fireEvent.click(dialogButton("Sign out")));
+  await settle(() => reload.mock.callCount() > 0);
+  assert.equal(reload.mock.callCount(), 1);
+  accountSwitch.takeAccountSwitchAtBoot();
+  assert.equal(accountSwitch.accountSwitchCaption(), "Switching to Work…");
+  assert.equal(
+    accountSwitch.finishAccountSwitchBoot(),
+    "Signed out. 2 agents from that account did not stop in time; restart Buzz if they keep replying.",
+  );
+  accountSwitch.resetAccountSwitchForTests();
+  logoutBehavior = undefined;
+  accounts = [];
+  await unmount();
+});
+
+test("a failed sign-out keeps the user here and says why", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  logoutBehavior = () => Promise.reject("Could not reach the server.");
+  const { unmount } = await openSignOutDialog();
+  await act(async () => fireEvent.click(dialogButton("Sign out")));
+  await settle(() => calls.some((c) => c.command === "logout"));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  assert.equal(reload.mock.callCount(), 0);
+  logoutBehavior = undefined;
+  await unmount();
+});
+
+test("onStatusChange reports each settled status to the Profile panel", async () => {
+  status = baseStatus({ state: "active", keyBackup: true });
+  const seen = [];
+  const { unmount } = await mount(AccountSettingsCard, {
+    onStatusChange: (next) => seen.push(next),
+  });
+  assert.ok(seen.length >= 1);
+  assert.ok(seen.every((next) => next !== null));
+  assert.equal(seen.at(-1).keyBackup, true);
+  await unmount();
+});
+
+test("the card lists this computer's accounts to switch to or add, like the profile menu", async () => {
+  accounts = [
+    account("cd".repeat(32), { active: true, displayName: "Jiho" }),
+    account("ef".repeat(32), { displayName: "Work" }),
+    account("12".repeat(32), { displayName: "Gone", state: "signed_out" }),
+  ];
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+  });
+  const { container, unmount } = await mount();
+  await settle(() =>
+    container.querySelector(
+      "[data-testid='settings-accounts'] [data-testid^='account-row-']",
+    ),
+  );
+  const list = container.querySelector("[data-testid='settings-accounts']");
+  const rows = [...list.querySelectorAll("[data-testid^='account-row-']")];
+  assert.deepEqual(
+    rows.map((row) => row.getAttribute("data-testid")),
+    [`account-row-${"cd".repeat(32)}`, `account-row-${"ef".repeat(32)}`],
+    "signed-out accounts are left out, as in the profile menu",
+  );
+  assert.match(rows[1].textContent, /Work/);
+  assert.equal(rows[0].getAttribute("aria-current"), "true");
+  await act(async () => fireEvent.click(rows[0]));
+  assert.equal(
+    calls.some((c) => c.command === "switch_account"),
+    false,
+    "the active account is not switched to",
+  );
+  await act(async () => fireEvent.click(rows[1]));
+  await settle(() => calls.some((c) => c.command === "switch_account"));
+  assert.deepEqual(
+    calls.filter((c) => c.command === "switch_account").map((c) => c.args),
+    [{ pubkey: "ef".repeat(32) }],
+  );
+  assert.equal(
+    window.sessionStorage.getItem("buzz:switching-to"),
+    null,
+    "nothing reloads before the switch settles",
+  );
+  accountSwitch.resetAccountSwitchForTests();
+  accounts = [];
+  await unmount();
+});
+
+test("Add account in the card starts a Google sign-in for another account", async () => {
+  accounts = [account("cd".repeat(32), { active: true, displayName: "Jiho" })];
+  status = baseStatus({
+    state: "active",
+    principal: "ab".repeat(32),
+    keyBackup: true,
+    keyBackupSupported: true,
+  });
+  const { container, unmount } = await mount();
+  const add = container.querySelector(
+    "[data-testid='settings-accounts'] [data-testid='account-add']",
+  );
+  assert.ok(add);
+  await act(async () => fireEvent.click(add));
+  await settle(() => calls.some((c) => c.command === "login_with_google"));
+  assert.equal(
+    calls.filter((c) => c.command === "login_with_google").length,
+    1,
+  );
+  accountSwitch.resetAccountSwitchForTests();
+  accounts = [];
+  await unmount();
 });

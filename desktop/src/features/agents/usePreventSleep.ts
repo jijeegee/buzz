@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useManagedAgentsQuery } from "@/features/agents/hooks";
+import { useAllManagedAgentsQuery } from "@/features/agents/hooks";
 import {
   getAgentObserverSnapshot,
   subscribeAgentObserverStore,
@@ -53,7 +53,8 @@ export function usePreventSleepContext(): PreventSleepValue {
 
 function usePreventSleepInternal() {
   const [enabled, setEnabledState] = React.useState(readPreference);
-  const { data: agents } = useManagedAgentsQuery();
+  // Every account's agents: those of accounts not open here keep running.
+  const { data: agents } = useAllManagedAgentsQuery();
 
   // Only local "running" agents need sleep prevention. Remote "deployed"
   // agents run on provider infrastructure and are unaffected by local sleep.

@@ -33,16 +33,16 @@ final signedCommunityAdmissionProvider =
           await socket.connect().timeout(const Duration(seconds: 15));
           if (socket.state != SocketState.connected) {
             throw const KeyBackupException(
-              'Could not authenticate to this community. Your key backup is '
-              'safe. Check your connection or membership, then retry.',
+              'Couldn’t sign in to this community. Check your connection '
+              'or that you’re still a member, then try again.',
             );
           }
         } on KeyBackupException {
           rethrow;
         } catch (_) {
           throw const KeyBackupException(
-            'Could not connect to this community. Your key backup is safe. '
-            'Check your connection, then retry.',
+            'Couldn’t connect to this community. Check your connection, '
+            'then try again.',
           );
         } finally {
           socket.dispose();

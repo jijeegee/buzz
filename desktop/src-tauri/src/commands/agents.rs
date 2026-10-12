@@ -19,8 +19,8 @@ use crate::{
     util::now_iso,
 };
 
-/// Read the workspace owner pubkey without holding the lock. Used to populate `BUZZ_ACP_AGENT_OWNER`
-/// as a fallback for legacy agent records that have no NIP-OA `auth_tag`.
+/// The active account's pubkey, for checking a caller's captured signer. Never
+/// an agent's owner: agents run for their own (`spawn_owner_hex`).
 pub(super) fn workspace_owner_hex(state: &AppState) -> Result<String, String> {
     // The Google-session principal in a token-mode community, else the key.
     Ok(state.current_identity_pubkey()?.to_hex())
@@ -51,6 +51,7 @@ pub(super) fn summarize_from_disk(
         &load_personas(app).unwrap_or_default(),
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
+        crate::managed_agents::visible_owner_hex(app, record),
     )
 }
 
@@ -289,8 +290,8 @@ where
     // Bind the active owner after the same final await as the relay. A
     // same-relay identity replacement during mesh preflight must not release
     // the stale preflight owner to spawn.
-    let workspace_owner =
-        crate::relay::bind_expected_signer(expected_signer_pubkey, workspace_owner_hex(state)?)?;
+    // The spawn itself runs for the agent's own owner.
+    crate::relay::assert_expected_signer(expected_signer_pubkey, &workspace_owner_hex(state)?)?;
 
     // Lock order matches `start_pair`: transition, then store, then runtime
     // map. The transition lock is held until the pair is registered, so a
@@ -338,7 +339,6 @@ where
         app,
         record,
         &mut runtimes,
-        Some(workspace_owner.as_str()),
         &workspace_relay_url,
         &admitted,
         replay_floor_unix,
@@ -358,6 +358,7 @@ where
         &personas,
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
+        crate::managed_agents::visible_owner_hex(app, record),
     )
 }
 
@@ -371,6 +372,28 @@ pub(crate) use provider_deploy::deploy_to_provider;
 // and `std::sync::MutexGuard` is not `Send`.
 #[tauri::command]
 pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSummary>, String> {
+    managed_agent_summaries(app, AgentScope::ActiveAccount).await
+}
+
+/// Every account's local agents, for runtime upkeep that does not show them
+/// (keeping the computer awake while any agent runs).
+#[tauri::command]
+pub async fn list_all_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSummary>, String> {
+    managed_agent_summaries(app, AgentScope::AllAccounts).await
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AgentScope {
+    /// Agents owned by the active account; an agent whose owner is unknown
+    /// is not listed.
+    ActiveAccount,
+    AllAccounts,
+}
+
+async fn managed_agent_summaries(
+    app: AppHandle,
+    scope: AgentScope,
+) -> Result<Vec<ManagedAgentSummary>, String> {
     use tauri::Manager;
     tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -401,9 +424,20 @@ pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSumma
             crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
         let routing_mode =
             crate::managed_agents::channel_routing::load_channel_routing(&app).unwrap_or_default();
+        let me = crate::managed_agents::active_owner_hex(&app);
         records
             .iter()
             .map(|record| {
+                (
+                    record,
+                    crate::managed_agents::visible_owner_hex(&app, record),
+                )
+            })
+            .filter(|(_, owner)| {
+                scope == AgentScope::AllAccounts
+                    || crate::managed_agents::owned_by_viewer(owner.as_deref(), me.as_deref())
+            })
+            .map(|(record, owner)| {
                 build_managed_agent_summary(
                     &app,
                     record,
@@ -411,6 +445,7 @@ pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSumma
                     &personas,
                     &global_config,
                     routing_mode,
+                    owner,
                 )
             })
             .collect()
@@ -797,6 +832,14 @@ pub async fn create_managed_agent(
             effort_level,
             bot_origin: bot_origin.clone(),
         };
+        // Every agent's owner is recorded with it (a Google-session community
+        // mints no NIP-OA tag), so no later start borrows whichever account
+        // happens to be active then.
+        crate::managed_agents::record_agent_owner(
+            &app,
+            &record.pubkey,
+            &state.current_identity_pubkey()?,
+        )?;
 
         records.push(record);
 
@@ -967,8 +1010,8 @@ pub async fn start_managed_agent(
     // The UI may still hold the pubkey of an agent that just moved onto its
     // server bot.
     let pubkey = crate::auth::bots::current_agent_pubkey(&pubkey);
-    // Snapshot the workspace owner pubkey for the legacy auth_tag fallback.
-    // Read outside the records lock to keep lock ordering simple.
+    // The active account, only to refuse a stale caller below; the agent
+    // itself runs for its own owner.
     let owner_hex = workspace_owner_hex(&state)?;
     // Callers with a captured tenant scope (Projects agent sends) pass
     // `expected_relay_url` / `expected_signer_pubkey`. Starting an agent

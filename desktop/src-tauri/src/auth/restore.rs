@@ -24,6 +24,9 @@ pub(crate) const RESTORE_TIMEOUT: Duration =
 /// Emit the token-auth-changed event for `origin`.
 pub(crate) fn emit_changed<R: tauri::Runtime>(app: &tauri::AppHandle<R>, origin: &str) {
     let _ = app.emit(TOKEN_AUTH_CHANGED_EVENT, origin.to_owned());
+    // Sign-in, sign-out and ended sessions all pass here: the background
+    // watchers re-read which accounts to watch.
+    let _ = app.emit(super::ACCOUNTS_CHANGED_EVENT, origin.to_owned());
     // A session that just became active (restore or sign-in) knows this
     // device: tell the owner which agents it hosts. Unchanged lists are skipped.
     crate::device_robot::spawn_publish_agent_host_devices(app);
@@ -45,8 +48,65 @@ pub(crate) fn spawn_refresh_loop<R: tauri::Runtime>(
         origin.to_owned(),
         generation,
         Arc::new(KeyringRefreshStore),
-        move |origin| emit_changed(&notify_app, origin),
+        move |origin| {
+            if !hand_ended_session(&notify_app, origin, generation) {
+                emit_changed(&notify_app, origin);
+            }
+        },
     ));
+}
+
+/// When the relay ended `origin`'s active session for good, hand it to the
+/// [`SessionEndedHook`](super::accounts::SessionEndedHook), which signs the
+/// account out (and tells the UI once any switch is done). Returns whether it
+/// did; any other state is left to the caller.
+fn hand_ended_session<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    origin: &str,
+    generation: u64,
+) -> bool {
+    let state = app.state::<AppState>();
+    // Only this login generation's own end: a loop replaced by a newer
+    // sign-in or switch never signs the new account out.
+    let Some((current, super::OriginAuth::NeedsLogin(code))) = state.token_auth.get(origin) else {
+        return false;
+    };
+    if current != generation {
+        return false;
+    }
+    if !refresh::ends_sign_in(&code) {
+        return false;
+    }
+    let Some(ended) = state.token_auth.inactive.ended_hook() else {
+        return false;
+    };
+    ended(
+        origin.to_owned(),
+        state.token_auth.signing_pubkey(origin),
+        code,
+    );
+    true
+}
+
+/// Keep the name and avatar `/auth/me` returned for `origin`'s restored
+/// session as its account's profile (`account`, else the active account
+/// there), only when `/auth/me` reported that same account. Token accounts
+/// are not on the account list and are skipped.
+pub(crate) fn remember_profile<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    auth: &super::TokenAuthState,
+    origin: &str,
+    account: Option<nostr::PublicKey>,
+) {
+    let Some(account) = account.or_else(|| auth.signing_pubkey(origin)) else {
+        return;
+    };
+    let (Some((display_name, avatar_url)), Ok(data_dir)) =
+        (auth.me_profile(origin, &account), app.path().app_data_dir())
+    else {
+        return;
+    };
+    super::account_profiles::learn(&data_dir, &account, display_name, avatar_url, None);
 }
 
 fn finish<R: tauri::Runtime>(
@@ -59,7 +119,12 @@ fn finish<R: tauri::Runtime>(
     // fresh or keeps retrying. A terminal failure already moved the origin to
     // "sign in again".
     if !matches!(attempt, Err(RefreshFailure::Terminal(_))) {
+        if attempt.is_ok() {
+            remember_profile(app, &app.state::<AppState>().token_auth, origin, None);
+        }
         spawn_refresh_loop(app, origin, generation);
+    } else if hand_ended_session(app, origin, generation) {
+        return;
     }
     emit_changed(app, origin);
 }

@@ -10,6 +10,16 @@ const QUICK_REACTION_STORAGE_KEY = "buzz.quick-reaction-emojis.v1";
 const DEFAULT_QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"] as const;
 const MAX_STORED_REACTIONS = 24;
 const sessionQuickReactionEmojis = new Map<string, string[]>();
+// Each account keeps its own recents. Set once the app knows who is signed in
+// (an account switch reloads the app).
+let quickReactionAccount: string | null = null;
+
+/** Scope quick reactions to the signed-in account (`null`: not known yet). */
+export function setQuickReactionAccount(pubkey: string | null) {
+  if (pubkey === quickReactionAccount) return;
+  quickReactionAccount = pubkey;
+  sessionQuickReactionEmojis.clear();
+}
 
 type QuickReactionEntry = {
   count: number;
@@ -30,11 +40,33 @@ function canUseLocalStorage() {
 function getActiveCommunityScope() {
   if (!canUseLocalStorage()) return null;
 
+  let community: string | null;
   try {
-    return loadActiveCommunityId() ?? loadCommunities()[0]?.id ?? null;
+    community = loadActiveCommunityId() ?? loadCommunities()[0]?.id ?? null;
   } catch {
     return null;
   }
+  return community && quickReactionAccount
+    ? `${community}:${quickReactionAccount}`
+    : community;
+}
+
+/** The pre-account key of an account scope, read until the account has its own. */
+function legacyCommunityScope(communityScope: string | null) {
+  if (!communityScope || !quickReactionAccount) return null;
+  const suffix = `:${quickReactionAccount}`;
+  return communityScope.endsWith(suffix)
+    ? communityScope.slice(0, -suffix.length)
+    : null;
+}
+
+function readScopedEntries(communityScope: string | null) {
+  const own = readQuickReactionEntries(quickReactionStorageKey(communityScope));
+  if (own.length > 0) return own;
+  const legacy = legacyCommunityScope(communityScope);
+  return legacy
+    ? readQuickReactionEntries(quickReactionStorageKey(legacy))
+    : own;
 }
 
 function quickReactionStorageKey(communityScope: string | null) {
@@ -179,7 +211,7 @@ function getQuickReactionEmojis(
   customEmojiSignature: string,
 ) {
   return resolveQuickReactionEmojisWithShortcodes(
-    readQuickReactionEntries(quickReactionStorageKey(communityScope)),
+    readScopedEntries(communityScope),
     limit,
     customEmojiShortcodesFromSignature(customEmojiSignature),
   );
@@ -213,7 +245,7 @@ export function recordQuickReactionEmoji(emoji: string) {
 
   const communityScope = getActiveCommunityScope();
   const storageKey = quickReactionStorageKey(communityScope);
-  const entries = readQuickReactionEntries(storageKey);
+  const entries = readScopedEntries(communityScope);
   const existing = entries.find((entry) => entry.emoji === trimmed);
   if (existing) {
     existing.count += 1;

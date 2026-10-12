@@ -368,8 +368,6 @@ type E2eConfig = {
     channelsReadErrors?: (string | null)[];
     /** Reject successive mock `create_channel` calls, then resume. */
     createChannelErrors?: string[];
-    /** Reject successive mock `ensure_starter_channels` calls, then resume. */
-    ensureStarterChannelsErrors?: string[];
     /** Reject successive mock `join_channel` calls, then resume. */
     joinChannelErrors?: string[];
     channelsReadDelayMs?: number;
@@ -7245,61 +7243,6 @@ async function handleGetPresence(
     }
   }
   return result;
-}
-
-async function handleEnsureStarterChannels(
-  config: E2eConfig | undefined,
-): Promise<{
-  channels: RawChannelWithMembership[];
-  changed_channel_ids: string[];
-  error: null;
-}> {
-  const starterChannelError =
-    config?.mock?.ensureStarterChannelsErrors?.shift();
-  if (starterChannelError) {
-    throw new Error(starterChannelError);
-  }
-
-  const currentPubkey = getMockMemberPubkey(config);
-  const changedChannelIds: string[] = [];
-  const ensureMember = (channel: MockChannel) => {
-    if (
-      channel.members.some(
-        (member) =>
-          normalizePubkey(member.pubkey) === normalizePubkey(currentPubkey),
-      )
-    ) {
-      return;
-    }
-
-    channel.members.push(createCurrentMember(config, "member"));
-    syncMockChannel(channel);
-    touchMockChannel(channel);
-    changedChannelIds.push(channel.id);
-  };
-
-  for (const channelName of [
-    STARTER_GENERAL_CHANNEL_NAME,
-    STARTER_WELCOME_CHANNEL_NAME,
-  ]) {
-    const channel = mockChannels.find(
-      (candidate) =>
-        candidate.name === channelName &&
-        candidate.channel_type === "stream" &&
-        candidate.visibility === "open" &&
-        candidate.archived_at === null,
-    );
-    if (!channel) {
-      throw new Error(`Starter channel ${channelName} not found.`);
-    }
-    ensureMember(channel);
-  }
-
-  return {
-    channels: listMockChannels(config),
-    changed_channel_ids: changedChannelIds,
-    error: null,
-  };
 }
 
 async function handleCreateChannel(
@@ -14307,6 +14250,7 @@ export function maybeInstallE2eTauriMocks() {
         };
       }
       case "list_managed_agents":
+      case "list_all_managed_agents":
         return handleListManagedAgents(activeConfig);
       case "get_agent_memory":
         return handleGetAgentMemory(
@@ -14634,8 +14578,6 @@ export function maybeInstallE2eTauriMocks() {
           payload as Parameters<typeof handleCreateChannel>[0],
           activeConfig,
         );
-      case "ensure_starter_channels":
-        return handleEnsureStarterChannels(activeConfig);
       case "open_dm":
         return handleOpenDm(
           payload as Parameters<typeof handleOpenDm>[0],

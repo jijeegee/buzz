@@ -68,7 +68,7 @@ mod setup_payload;
 use setup_payload::apply_setup_payload_env;
 
 mod stop;
-pub(crate) use stop::managed_agent_runtime_keys;
+pub(crate) use stop::{managed_agent_runtime_keys, terminate_and_reap};
 pub use stop::{stop_managed_agent_process, stop_managed_agent_workspace_pair};
 
 mod sweep;
@@ -177,6 +177,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     personas: &[crate::managed_agents::types::AgentDefinition],
     global_config: &crate::managed_agents::GlobalAgentConfig,
     routing_mode: super::channel_routing::ChannelRoutingMode,
+    owner_pubkey: Option<String>,
 ) -> Result<ManagedAgentSummary, String> {
     use crate::managed_agents::BackendKind;
 
@@ -292,7 +293,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
                 super::channel_routing::routing_role_for(
                     record,
                     routing_mode,
-                    super::channel_routing::routing_owner_hex(app).as_deref(),
+                    super::agent_owner_hex(app, record).as_deref(),
                 ),
                 &super::channel_routing::live_local_roles(runtimes),
             ),
@@ -358,6 +359,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     Ok(ManagedAgentSummary {
         pubkey: record.pubkey.clone(),
         name: record.name.clone(),
+        owner_pubkey,
         persona_id: record.persona_id.clone(),
         runtime: record.runtime.clone(),
         team_id: record.team_id.clone(),
@@ -521,8 +523,7 @@ pub(crate) fn spawn_with_effort_proof(
 /// Returns the child process and log path on success. The caller is responsible
 /// for updating `ManagedAgentRecord` fields and inserting into the runtimes map.
 ///
-/// `owner_hex`: the workspace owner's pubkey, used as a fallback for legacy
-/// records that have no NIP-OA `auth_tag`. See `build_respond_to_env`.
+/// The agent runs for its own owner (`spawn_owner_hex`).
 ///
 /// `live_routing_roles`: running channel-routing roles of the other tracked
 /// local processes (`channel_routing::live_local_roles`), for the hold rule.
@@ -560,7 +561,6 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     relay_url: &str,
     admitted: &super::Admitted<'_>,
     lazy: bool,
-    owner_hex: Option<&str>,
     replay_floor_unix: Option<u64>,
     live_routing_roles: &[(String, super::channel_routing::RoutingRole)],
 ) -> Result<crate::managed_agents::ManagedAgentProcess, String> {
@@ -568,6 +568,13 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     if let Some(error) = spawn_key_refusal(record) {
         return Err(error);
     }
+    // The agent's own owner, never the active account: several accounts can
+    // be signed in here and every account's agents keep running. An agent
+    // with no known owner is refused.
+    let record_owner = super::spawn_owner_hex(app, record)?;
+    // ...and only while that owner is signed in on this computer.
+    super::ensure_owner_signed_in(app, record, relay_url, &record_owner)?;
+    let owner_hex = Some(record_owner.as_str());
     let runtime_key = ManagedAgentRuntimeKey::new(record.pubkey.clone(), relay_url)?;
     // Resolve the effective harness (agent command) from the linked persona, so
     // persona harness edits propagate on the next spawn; an explicit per-agent
@@ -1083,7 +1090,6 @@ pub fn start_managed_agent_process<R: tauri::Runtime>(
     app: &AppHandle<R>,
     record: &mut ManagedAgentRecord,
     runtimes: &mut HashMap<ManagedAgentRuntimeKey, ManagedAgentPairRuntime>,
-    owner_hex: Option<&str>,
     workspace_relay: &crate::relay::ScopedWorkspaceRelay,
     admitted: &super::Admitted<'_>,
     replay_floor_unix: Option<u64>,
@@ -1112,7 +1118,6 @@ pub fn start_managed_agent_process<R: tauri::Runtime>(
         &key.relay_url,
         admitted,
         false,
-        owner_hex,
         replay_floor_unix,
         &super::channel_routing::live_local_roles(runtimes),
     )?;

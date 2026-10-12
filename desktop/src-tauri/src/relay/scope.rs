@@ -88,36 +88,9 @@ pub fn assert_expected_signer(
     Ok(())
 }
 
-/// A workspace-signer read that has passed the caller-captured identity check.
-///
-/// The only constructor is [`bind_expected_signer`], so side effects consume
-/// the exact owner read that was validated rather than a stale pre-await value.
-#[derive(Debug)]
-pub struct ScopedWorkspaceSigner(String);
-
-impl ScopedWorkspaceSigner {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// Validate a caller-captured signer against one active-owner read and bind
-/// that exact read for the side effect to consume. `None` preserves unscoped
-/// callers while still making the owner input single-read.
-pub fn bind_expected_signer(
-    expected_signer_pubkey: Option<&str>,
-    actual_signer_hex: String,
-) -> Result<ScopedWorkspaceSigner, String> {
-    assert_expected_signer(expected_signer_pubkey, &actual_signer_hex)?;
-    Ok(ScopedWorkspaceSigner(actual_signer_hex))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        assert_expected_relay_scope, assert_expected_signer, bind_expected_relay_scope,
-        bind_expected_signer,
-    };
+    use super::{assert_expected_relay_scope, assert_expected_signer, bind_expected_relay_scope};
 
     #[test]
     fn matching_scope_passes_across_ws_http_normalization() {
@@ -208,25 +181,6 @@ mod tests {
         let switched = nostr::Keys::generate().public_key().to_hex();
         let error = assert_expected_signer(Some(&captured), &switched).unwrap_err();
         assert!(error.contains("active identity changed"), "{error}");
-    }
-
-    #[test]
-    fn signer_bind_fails_closed_after_same_relay_identity_switch() {
-        let captured = nostr::Keys::generate().public_key().to_hex();
-        let switched = nostr::Keys::generate().public_key().to_hex();
-        let error = bind_expected_signer(Some(&captured), switched).unwrap_err();
-        assert!(error.contains("active identity changed"), "{error}");
-    }
-
-    #[test]
-    fn signer_bind_returns_exact_read_for_scoped_and_unscoped_callers() {
-        let actual = nostr::Keys::generate().public_key().to_hex();
-        let scoped = bind_expected_signer(Some(&actual), actual.clone()).unwrap();
-        assert_eq!(scoped.as_str(), actual);
-
-        let unscoped_actual = nostr::Keys::generate().public_key().to_hex();
-        let unscoped = bind_expected_signer(None, unscoped_actual.clone()).unwrap();
-        assert_eq!(unscoped.as_str(), unscoped_actual);
     }
 
     #[test]

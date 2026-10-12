@@ -101,11 +101,11 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         final expected = existing!.pubkey ?? _pubkey(existing.nsec);
         final supplied = community.pubkey ?? _pubkey(community.nsec);
         if (!resumeSignedOut || expected == null || supplied != expected) {
-          throw StateError('기존 계정으로 다시 로그인해 주세요.');
+          throw StateError('Sign in again with the account you used before.');
         }
         community = community.resumeSession();
       } else if (community.signedOut) {
-        throw StateError('이 계정으로 다시 로그인해 주세요.');
+        throw StateError('Sign in again to use this community.');
       }
       await ref.read(communityTransitionProvider).run();
       guard();
@@ -260,7 +260,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
             nsec: null,
             pushNotificationsEnabled: false,
           ),
-          logoutError: '로그아웃을 마무리하고 있어요.',
+          logoutError: 'Finishing sign-out…',
         ),
       );
       state = AsyncData(await _signedOutState(active));
@@ -281,7 +281,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     try {
       await settleSignedOutCommunitySnapshot(ref);
     } catch (_) {
-      error = '알림 정리를 마치지 못했어요. 다시 시도해 주세요.';
+      error = 'Couldn’t finish turning off notifications. Try again.';
     }
     return AuthState(
       status: AuthStatus.unauthenticated,
@@ -290,7 +290,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     );
   }
 
-  /// Explicit proof for accounts which use a private key instead of Google.
+  /// Explicit key proof for resuming a signed-out key account. No screen calls
+  /// this: users only come back through Google. Kept as the tested seam for the
+  /// resume fence and push-lease renewal (non_destructive_sign_out_test.dart).
+  @visibleForTesting
   Future<void> signInWithPrivateKey(String nsec) async {
     final generation = _logoutGeneration;
     final storage = ref.read(communityStorageProvider);
@@ -304,7 +307,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         !existing.signedOut ||
         supplied == null ||
         supplied != expected) {
-      throw StateError('이 계정의 개인 키가 아니에요. 다시 확인해 주세요.');
+      throw StateError(
+        'That doesn’t match this account. Check it and try again.',
+      );
     }
     await authenticateWithCommunity(
       existing.copyWith(nsec: nsec.trim()),

@@ -302,6 +302,8 @@ export type { JsonValue, RestartChange, RestartDiffEntry } from "./restartDiff";
 export type ManagedAgent = {
   pubkey: string;
   name: string;
+  /** The account that owns this agent; `null` when unknown. */
+  ownerPubkey: string | null;
   personaId: string | null;
   /**
    * The record's harness/runtime id (e.g. "goose", "my-custom-harness").

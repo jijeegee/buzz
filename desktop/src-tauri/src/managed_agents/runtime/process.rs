@@ -60,7 +60,31 @@ pub(crate) fn process_is_running(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+pub(crate) fn process_is_running(pid: u32) -> bool {
+    // A process we can open for a limited query and whose exit code is still
+    // STILL_ACTIVE. Like the Unix check, a PID we may not open (another user's
+    // process) reads as not running — callers must not interact with those.
+    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    if pid == 0 {
+        return false;
+    }
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return false;
+        }
+        let mut code = 0u32;
+        let queried = GetExitCodeProcess(process, &mut code);
+        CloseHandle(process);
+        queried != 0 && code == STILL_ACTIVE as u32
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 pub(crate) fn process_is_running(_pid: u32) -> bool {
     false
 }

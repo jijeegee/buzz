@@ -113,6 +113,8 @@ import type { RestartDiffEntry as RawRestartDiffEntry } from "./restartDiff";
 export type RawManagedAgent = {
   pubkey: string;
   name: string;
+  // Optional: pre-feature fixtures may omit it.
+  owner_pubkey?: string | null;
   persona_id: string | null;
   // Optional: pre-feature fixtures may omit it. The record's harness/runtime id.
   runtime?: string | null;
@@ -587,6 +589,16 @@ export async function signRelayEvent(input: {
   return JSON.parse(eventJson) as RelayEvent;
 }
 
+/** NIP-42 AUTH event signed by `account` (an account signed in here). */
+export async function createAuthEventAs(input: {
+  account: string;
+  challenge: string;
+  relayUrl: string;
+}): Promise<RelayEvent> {
+  const eventJson = await invokeTauri<string>("create_auth_event_as", input);
+  return JSON.parse(eventJson) as RelayEvent;
+}
+
 export async function createAuthEvent(input: {
   challenge: string;
   relayUrl: string;
@@ -613,6 +625,7 @@ export function fromRawManagedAgent(agent: RawManagedAgent): ManagedAgent {
   return {
     pubkey: agent.pubkey,
     name: agent.name,
+    ownerPubkey: agent.owner_pubkey ?? null,
     personaId: agent.persona_id,
     runtime: agent.runtime ?? null,
     teamId: agent.team_id ?? null,
@@ -771,6 +784,13 @@ export async function listRelayAgents(): Promise<RelayAgent[]> {
 
 export async function listManagedAgents(): Promise<ManagedAgent[]> {
   return (await invokeTauri<RawManagedAgent[]>("list_managed_agents")).map(
+    fromRawManagedAgent,
+  );
+}
+
+/** Every account's local agents (the list above is the active account's). */
+export async function listAllManagedAgents(): Promise<ManagedAgent[]> {
+  return (await invokeTauri<RawManagedAgent[]>("list_all_managed_agents")).map(
     fromRawManagedAgent,
   );
 }
@@ -1050,6 +1070,14 @@ export async function probeBackendProvider(
 
 export async function nip44EncryptToSelf(plaintext: string): Promise<string> {
   return invokeTauri<string>("nip44_encrypt_to_self", { plaintext });
+}
+
+/** Decrypt a NIP-44 payload `account` encrypted to itself. */
+export async function nip44DecryptAs(
+  account: string,
+  ciphertext: string,
+): Promise<string> {
+  return invokeTauri<string>("nip44_decrypt_as", { account, ciphertext });
 }
 
 export async function nip44DecryptFromSelf(

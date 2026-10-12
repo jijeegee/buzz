@@ -247,3 +247,72 @@ test("an unchanged signed-in identity does not reload", async (t) => {
   await act(async () => {});
   assert.equal(reload.mock.callCount(), 0);
 });
+
+test("a signed-out computer reports it, and signing out later reloads into it", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  tokenStatus = { ...tokenStatusOf("signed_out"), deviceSignedOut: true };
+  let { result, unmount } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  assert.equal(result.current.deviceSignedOut, true);
+  unmount();
+
+  tokenStatus = { ...tokenStatusOf("active", "c".repeat(64)), keyBackup: true };
+  ({ result } = mount([a, b]));
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  assert.equal(result.current.deviceSignedOut, false);
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+  tokenStatus = {
+    ...tokenStatusOf("signed_out"),
+    keyBackup: true,
+    deviceSignedOut: true,
+  };
+  await act(async () => emitTokenAuthChanged());
+  await waitFor(() => assert.equal(reload.mock.callCount(), 1));
+});
+
+function emitActiveAccountChanged(pubkey) {
+  for (const { event, handler } of listeners) {
+    if (event === "active-account-changed") {
+      callbacks[handler]({ event, id: handler, payload: pubkey });
+    }
+  }
+}
+
+// An account switch announced by the backend reloads even when the new
+// account's session cannot be restored yet (offline), which the token status
+// would not report as a change.
+test("another account becoming active reloads into it", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  tokenStatus = { ...tokenStatusOf("active", "c".repeat(64)), keyBackup: true };
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "active-account-changed")),
+  );
+  await act(async () => emitActiveAccountChanged("a".repeat(64)));
+  assert.equal(reload.mock.callCount(), 0, "the account already applied");
+  await act(async () => emitActiveAccountChanged("d".repeat(64)));
+  assert.equal(reload.mock.callCount(), 1);
+});
+
+// A switch started in this window holds reloads so it can leave its overlay
+// caption first; it then reloads exactly once.
+test("a held account action defers the reload until it settles", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  const { beginAccountAction } = await import(
+    "@/features/accounts/lib/accountSwitch"
+  );
+  tokenStatus = { ...tokenStatusOf("active", "c".repeat(64)), keyBackup: true };
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "active-account-changed")),
+  );
+  const action = beginAccountAction();
+  await act(async () => emitActiveAccountChanged("d".repeat(64)));
+  assert.equal(reload.mock.callCount(), 0, "held");
+  action.cancel();
+  assert.equal(reload.mock.callCount(), 1, "released into the asked reload");
+});
