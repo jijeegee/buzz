@@ -1,8 +1,10 @@
 import * as React from "react";
 import { Check, Copy } from "lucide-react";
 
-import { HostedCommunityOnboarding } from "@/features/communities/ui/HostedCommunityOnboarding";
-import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
+import {
+  type FirstCommunityPage,
+  useCommunityOnboarding,
+} from "@/features/onboarding/communityOnboarding";
 import { InviteRedeemForm } from "@/features/onboarding/ui/InviteRedeemForm";
 import { OnboardingChrome } from "@/features/onboarding/ui/OnboardingChrome";
 import { OnboardingFooterProvider } from "@/features/onboarding/ui/OnboardingFooter";
@@ -18,11 +20,11 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
-type WelcomeSetupPage = "welcome" | "existing" | "join" | "member" | "owned";
+type WelcomeSetupPage = "welcome" | "join" | "member";
 type WelcomeTransitionMode = "initial" | OnboardingTransitionDirection;
 
 type WelcomeSetupProps = {
-  initialPage?: WelcomeSetupPage;
+  initialPage?: WelcomeSetupPage | FirstCommunityPage;
   initialTransitionMode?: WelcomeTransitionMode;
   onBack?: () => void;
 };
@@ -35,13 +37,13 @@ export function WelcomeSetup({
   initialTransitionMode = "initial",
   onBack,
 }: WelcomeSetupProps) {
-  const [page, setPage] = React.useState<WelcomeSetupPage>(initialPage);
+  // "owned" (Builderlab-hosted) is not offered in Kuzz; a resumed owned
+  // transaction falls back to the choices page.
+  const [page, setPage] = React.useState<WelcomeSetupPage>(
+    initialPage === "owned" ? "welcome" : initialPage,
+  );
   const [transitionMode, setTransitionMode] =
     React.useState<WelcomeTransitionMode>(initialTransitionMode);
-  // While true, the Builderlab sign-in modal floats over the current page —
-  // we only navigate to the hosted stage once sign-in completes, so the page
-  // behind the modal never changes out from under the user.
-  const [isHostedSignInOpen, setIsHostedSignInOpen] = React.useState(false);
   const [copiedNpub, setCopiedNpub] = React.useState(false);
   const communityOnboarding = useCommunityOnboarding();
   const identityQuery = useIdentityQuery();
@@ -89,32 +91,22 @@ export function WelcomeSetup({
     [communityOnboarding, page],
   );
 
-  const beginHostedCommunity = React.useCallback(
-    () => setIsHostedSignInOpen(true),
-    [],
-  );
-
   const transitionDirection =
     transitionMode === "backward" ? "backward" : "forward";
   const backAction =
     page === "welcome" && onBack
       ? { onClick: onBack, testId: "welcome-setup-back" }
-      : page === "existing"
+      : page === "join"
         ? {
             onClick: () => showPage("welcome"),
-            testId: "existing-back",
+            testId: "welcome-join-back",
           }
-        : page === "join"
+        : page === "member"
           ? {
               onClick: () => showPage("welcome"),
-              testId: "welcome-join-back",
+              testId: "welcome-member-back",
             }
-          : page === "member"
-            ? {
-                onClick: () => showPage("welcome"),
-                testId: "welcome-member-back",
-              }
-            : undefined;
+          : undefined;
 
   return (
     <div
@@ -154,8 +146,6 @@ export function WelcomeSetup({
                     Join a community
                   </button>
                 </Card>
-                {/* Creating or reclaiming an owned community goes through Block's
-                    Builderlab, which Kuzz does not offer. */}
                 <Card
                   asChild
                   className={COMMUNITY_OPTION_CARD_CLASS}
@@ -170,58 +160,6 @@ export function WelcomeSetup({
                   </button>
                 </Card>
               </div>
-            </OnboardingSlideTransition>
-          ) : page === "existing" ? (
-            <OnboardingSlideTransition
-              className="flex h-full min-h-0 w-full flex-col items-center text-center"
-              containerClassName="h-full min-h-0 [&>.buzz-onboarding-transition-line]:h-full"
-              direction={transitionDirection}
-              transitionKey={`existing-${transitionDirection}`}
-            >
-              <div className="w-full max-w-[760px]">
-                <h1 className="text-title font-normal">
-                  Reconnect to your community
-                </h1>
-                <p className="mt-3 text-sm leading-6 text-foreground/80">
-                  Tell us your role so we can find the fastest way back in.
-                </p>
-              </div>
-              <div className="flex w-full flex-1 translate-y-16 flex-col items-center justify-center gap-20 py-8">
-                <Card
-                  asChild
-                  className={COMMUNITY_OPTION_CARD_CLASS}
-                  variant="textured"
-                >
-                  <button
-                    data-testid="existing-choice-owner"
-                    onClick={beginHostedCommunity}
-                    type="button"
-                  >
-                    I own the community
-                  </button>
-                </Card>
-                <Card
-                  asChild
-                  className={COMMUNITY_OPTION_CARD_CLASS}
-                  variant="textured"
-                >
-                  <button
-                    data-testid="existing-choice-member"
-                    onClick={() => showPage("member")}
-                    type="button"
-                  >
-                    I’m a member or admin
-                  </button>
-                </Card>
-              </div>
-            </OnboardingSlideTransition>
-          ) : page === "owned" ? (
-            <OnboardingSlideTransition
-              className="flex w-full flex-col items-center text-center"
-              direction={transitionDirection}
-              transitionKey={`owned-${transitionDirection}`}
-            >
-              <HostedCommunityOnboarding onBack={() => showPage("welcome")} />
             </OnboardingSlideTransition>
           ) : (
             <OnboardingSlideTransition
@@ -300,16 +238,6 @@ export function WelcomeSetup({
               </div>
             </OnboardingSlideTransition>
           )}
-          {isHostedSignInOpen && page !== "owned" ? (
-            <HostedCommunityOnboarding
-              onBack={() => setIsHostedSignInOpen(false)}
-              onReady={() => {
-                setIsHostedSignInOpen(false);
-                showPage("owned");
-              }}
-              stageHidden
-            />
-          ) : null}
         </div>
       </OnboardingFooterProvider>
     </div>

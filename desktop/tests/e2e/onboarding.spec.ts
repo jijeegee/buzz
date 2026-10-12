@@ -1248,7 +1248,7 @@ test("non-local default auto-connects when the release flag is enabled", async (
     });
 });
 
-test("first-community choices route join, create, owner, and member intents", async ({
+test("first-community choices route join and member intents", async ({
   page,
 }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
@@ -1268,26 +1268,15 @@ test("first-community choices route join, create, owner, and member intents", as
   await expect(
     page.getByRole("button", { name: /Join a community/ }),
   ).toBeVisible();
+  // Kuzz does not offer Builderlab-hosted (create / owner) communities.
   await expect(
     page.getByRole("button", { name: /Create a community/ }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   const existing = page.getByRole("button", {
     name: /I already have a community/,
   });
   await expect(existing).toBeVisible();
   await existing.click();
-  // Owner/member split lives on its own page, mirroring the hub layout.
-  await expect(
-    page.getByRole("heading", { name: "Reconnect to your community" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "I own the community" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "I’m a member or admin" }),
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "I’m a member or admin" }).click();
   await expect(
     page.getByRole("heading", { name: "Reconnect to your community" }),
   ).toBeVisible();
@@ -1298,12 +1287,9 @@ test("first-community choices route join, create, owner, and member intents", as
   );
   await accessInput.fill("https://default.example.com");
   await expect(page.getByTestId("invite-redeem-submit")).toBeEnabled();
-  // Back from the member form returns to the role choice, then to the hub.
+  // Back from the member form returns to the hub.
   await page.getByRole("button", { name: "Back" }).click();
-  await expect(
-    page.getByRole("button", { name: "I own the community" }),
-  ).toBeVisible();
-  await page.getByTestId("existing-back").click();
+  await expect(existing).toBeVisible();
 
   await page.getByRole("button", { name: /Join a community/ }).click();
   await expect(
