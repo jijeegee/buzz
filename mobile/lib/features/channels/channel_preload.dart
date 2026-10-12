@@ -156,9 +156,9 @@ class ChannelPreloader {
           _ref.exists(channelMessagesProvider(channelId))) {
         continue;
       }
-      final touchedAt = await cache.touchedAt(scope, channelId);
-      if (touchedAt != null &&
-          touchedAt.millisecondsSinceEpoch ~/ 1000 >= target.latestAt) {
+      final storedAt = await cache.storedAt(scope, channelId);
+      if (storedAt != null &&
+          storedAt.millisecondsSinceEpoch ~/ 1000 >= target.latestAt) {
         continue;
       }
       cold.add(channelId);

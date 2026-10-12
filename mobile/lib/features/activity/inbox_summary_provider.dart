@@ -26,6 +26,15 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
   /// that page so a message racing the request is not lost.
   List<NostrEvent>? _eventsDuringLoad;
 
+  /// When the current first page was requested; resume and deletion reloads
+  /// wait until [inboxSummaryMinReloadIntervalProvider] has passed since.
+  DateTime _loadedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _reloadTimer;
+
+  /// Set when the app left the foreground (paused or hidden), so a brief
+  /// inactive → resumed (notification shade, system dialog) reloads nothing.
+  bool _backgrounded = false;
+
   @override
   Future<InboxSummaryState> build() async {
     ref.watch(relayConfigProvider);
@@ -34,7 +43,11 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
       relaySessionProvider.select((s) => s.status == SessionStatus.connected),
     );
     final generation = ++_generation;
-    ref.onDispose(() => _generation++);
+    ref.onDispose(() {
+      _generation++;
+      _reloadTimer?.cancel();
+      _reloadTimer = null;
+    });
     // Keep the last rows on screen until the session reconnects, which
     // rebuilds this provider and reloads the summary.
     if (!connected) return Completer<InboxSummaryState>().future;
@@ -45,10 +58,13 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
           .listen((event) => _handleLiveEvent(event, generation)),
     );
     // Messages missed while backgrounded never reached the row patcher.
-    ref.listen(appLifecycleProvider, (previous, next) {
-      if (previous != AppLifecycleState.resumed &&
-          next == AppLifecycleState.resumed) {
-        _reloadIfCurrent(generation);
+    ref.listen(appLifecycleProvider, (_, next) {
+      if (next == AppLifecycleState.paused ||
+          next == AppLifecycleState.hidden) {
+        _backgrounded = true;
+      } else if (next == AppLifecycleState.resumed && _backgrounded) {
+        _backgrounded = false;
+        _reloadSoon(generation);
       }
     });
     // Read state loads after startup; count unread once it is available.
@@ -59,6 +75,8 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
     });
 
     final read = _readContexts();
+    _loadedAt = DateTime.now();
+    _backgrounded = false;
     final buffered = _eventsDuringLoad = [];
     final InboxSummaryPage page;
     try {
@@ -71,16 +89,17 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
       next: page.next,
       sentRead: read,
     );
-    var reload = false;
+    var deleted = false;
     for (final event in buffered) {
       final result = _foldLiveEvent(summary, event);
       summary = result.state;
-      reload = reload || result.reload;
+      deleted = deleted || result.reload;
     }
     // Read state became ready while this page was in flight.
-    if (read.isEmpty && _readContexts().isNotEmpty) reload = true;
-    if (reload) {
+    if (read.isEmpty && _readContexts().isNotEmpty) {
       Timer.run(() => _reloadIfCurrent(generation));
+    } else if (deleted) {
+      Timer.run(() => _reloadSoon(generation));
     } else if (summary.next != null) {
       // After this build has published its first page.
       Timer.run(() => unawaited(_loadMorePages(generation)));
@@ -148,7 +167,7 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
     if (current == null) return;
     final result = _foldLiveEvent(current, event);
     if (result.reload) {
-      _reloadIfCurrent(generation);
+      _reloadSoon(generation);
     } else if (!identical(result.state, current)) {
       state = AsyncData(result.state);
     }
@@ -189,6 +208,23 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
     );
   }
 
+  /// Reloads now, or once the minimum interval since the last load has
+  /// passed. Requests while one is scheduled coalesce into it.
+  void _reloadSoon(int generation) {
+    if (generation != _generation || _reloadTimer != null) return;
+    final wait =
+        ref.read(inboxSummaryMinReloadIntervalProvider) -
+        DateTime.now().difference(_loadedAt);
+    if (wait <= Duration.zero) {
+      _reloadIfCurrent(generation);
+      return;
+    }
+    _reloadTimer = Timer(wait, () {
+      _reloadTimer = null;
+      _reloadIfCurrent(generation);
+    });
+  }
+
   void _reloadIfCurrent(int generation) {
     if (generation != _generation || !ref.mounted) return;
     if (ref.read(relaySessionProvider).status != SessionStatus.connected) {
@@ -208,6 +244,12 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
     }
   }
 }
+
+/// Shortest time between summary loads triggered by app resume or by the
+/// deletion of a shown message. Reconnects and pull to refresh always reload.
+final inboxSummaryMinReloadIntervalProvider = Provider<Duration>(
+  (ref) => const Duration(seconds: 30),
+);
 
 /// One retry for a transient failure, as desktop does; none when the relay
 /// does not serve the summary or a statement deadline would repeat.

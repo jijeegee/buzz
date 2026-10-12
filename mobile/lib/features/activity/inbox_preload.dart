@@ -19,6 +19,9 @@ const inboxPreloadBackgroundRows = 48;
 const _recentInput = Duration(milliseconds: 1500);
 const _idlePoll = Duration(milliseconds: 500);
 
+/// Poll interval while the relay is unavailable or rate limiting.
+const _unavailablePoll = Duration(seconds: 5);
+
 /// The room (and, for thread rows, the thread) behind one chat-list row.
 @immutable
 class InboxPreloadTarget {
@@ -62,12 +65,15 @@ List<InboxPreloadTarget> inboxPreloadTargets(
   return targets;
 }
 
+/// One target per room. A room's newest message time comes from its own room
+/// row only: a busy thread says nothing about the room's main timeline, so a
+/// room seen only through thread rows counts as up to date once it has a head.
 List<ChannelPreloadTarget> _rooms(Iterable<InboxPreloadTarget> targets) {
   final latestAt = <String, int>{};
   for (final target in targets) {
     latestAt[target.channelId] = math.max(
       latestAt[target.channelId] ?? 0,
-      target.latestAt,
+      target.thread == null ? target.latestAt : 0,
     );
   }
   return [
@@ -123,7 +129,8 @@ Future<void> runInboxPreload(
 /// Background-loads the rooms and threads behind the top chat-list [rows] so
 /// opening them paints at once. The background wave pauses while the user
 /// scrolls or taps, while the keyboard is up, while the app is not in the
-/// foreground, and while the relay is unavailable or rate limiting. Returns a
+/// foreground (the pass stops and restarts on return), and while the relay is
+/// unavailable or rate limiting (checked every few seconds). Returns a
 /// callback that reports user input (for example, a pointer down).
 void Function() useInboxPreload(
   WidgetRef ref,
@@ -141,7 +148,14 @@ void Function() useInboxPreload(
     return () => scrollController.removeListener(markInput);
   }, [scrollController]);
 
-  final targets = enabled
+  // Leaving the foreground cancels the pass; coming back starts a new one,
+  // which skips whatever was already loaded or tried.
+  final lifecycle = useAppLifecycleState();
+  final foreground =
+      lifecycle != AppLifecycleState.paused &&
+      lifecycle != AppLifecycleState.hidden &&
+      lifecycle != AppLifecycleState.detached;
+  final targets = enabled && foreground
       ? inboxPreloadTargets(rows)
       : const <InboxPreloadTarget>[];
   final targetsKey = targets.map((target) => target.key).join('|');
@@ -150,10 +164,10 @@ void Function() useInboxPreload(
     var cancelled = false;
     // Pending sleeps end at once on cancel, so no timer outlives the page.
     final sleepers = <Timer, Completer<void>>{};
-    Future<void> sleep() {
+    Future<void> sleep(Duration duration) {
       final done = Completer<void>();
       late final Timer timer;
-      timer = Timer(_idlePoll, () {
+      timer = Timer(duration, () {
         sleepers.remove(timer);
         done.complete();
       });
@@ -162,17 +176,14 @@ void Function() useInboxPreload(
     }
 
     final preloader = ref.read(channelPreloaderProvider);
-    bool isReady() =>
-        preloader.canRequest &&
-        (WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed) ==
-            AppLifecycleState.resumed;
+    bool isReady() => preloader.canRequest;
     bool isIdle() =>
         isReady() &&
         !keyboardVisible.value &&
         DateTime.now().difference(lastInputAt.value) >= _recentInput;
     Future<bool> waitUntil(bool Function() condition) async {
       while (!cancelled && !condition()) {
-        await sleep();
+        await sleep(preloader.canRequest ? _idlePoll : _unavailablePoll);
       }
       return !cancelled;
     }

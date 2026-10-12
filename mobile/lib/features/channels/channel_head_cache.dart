@@ -65,16 +65,13 @@ class ChannelHeadCache {
         return _readInIsolate(path, channelId);
       });
 
-  /// When [channelId]'s head was last written or read, or null when there is
-  /// none. A head touched before a message arrived cannot contain it.
-  Future<DateTime?> touchedAt(ChannelHeadScope scope, String channelId) =>
+  /// When [channelId]'s head was last written, or null when there is none or
+  /// it predates this field. Reads do not change it (unlike the file's
+  /// modification time, which marks recent use for eviction).
+  Future<DateTime?> storedAt(ChannelHeadScope scope, String channelId) =>
       _serial(() async {
-        final file = File(_entryPath(await _scopeDir(scope), channelId));
-        try {
-          return await file.lastModified();
-        } on FileSystemException {
-          return null;
-        }
+        final path = _entryPath(await _scopeDir(scope), channelId);
+        return _readStoredAt(path);
       });
 
   /// Writes are dropped when a clear was requested after this call.
@@ -156,6 +153,28 @@ List<NostrEvent>? _readEntry(String path, String channelId) {
   }
 }
 
+final _storedAtPattern = RegExp(r'"stored_at":(\d+)');
+
+Future<DateTime?> _readStoredAt(String path) async {
+  final RandomAccessFile file;
+  try {
+    file = await File(path).open();
+  } on FileSystemException {
+    return null;
+  }
+  try {
+    final head = utf8.decode(await file.read(64), allowMalformed: true);
+    final seconds = _storedAtPattern.firstMatch(head)?.group(1);
+    return seconds == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(int.parse(seconds) * 1000);
+  } on FileSystemException {
+    return null;
+  } finally {
+    await file.close();
+  }
+}
+
 void _writeEntry(
   String dir,
   String channelId,
@@ -164,8 +183,10 @@ void _writeEntry(
 ) {
   final directory = Directory(dir)..createSync(recursive: true);
   final path = _entryPath(dir, channelId);
+  // `stored_at` stays near the start so [_readStoredAt] reads a few bytes.
   final encoded = jsonEncode({
     'v': ChannelHeadCache.schemaVersion,
+    'stored_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
     'channel': channelId,
     'events': [for (final event in events) event.toJson()],
   });

@@ -792,9 +792,12 @@ final conversationInboxItemsProvider = Provider.autoDispose<List<InboxItem>>((
   final summary = ref.watch(inboxSummaryProvider);
   final channels =
       ref.watch(channelsProvider).asData?.value ?? const <Channel>[];
-  final conversationActivity = inboxSummaryFailed(summary)
+  final summaryRows = inboxSummaryFailed(summary)
+      ? null
+      : summary.value?.rows ?? const <InboxSummaryRow>[];
+  final conversationActivity = summaryRows == null
       ? _perRoomConversationActivity(ref, channels)
-      : inboxSummaryFeedItems(summary.value?.rows ?? const []);
+      : inboxSummaryFeedItems(summaryRows);
   // Feed items win on duplicate ids: their category (mention, needs action)
   // is more specific than plain channel activity.
   final byId = <String, FeedItem>{
@@ -805,9 +808,12 @@ final conversationInboxItemsProvider = Provider.autoDispose<List<InboxItem>>((
     for (final channel in channels)
       if (channel.isDm) channel.id,
   };
-  return collapseChannelMainRows(
+  final rows = collapseChannelMainRows(
     buildInboxItems(byId.values, isDmChannel: dmChannelIds.contains),
   );
+  return summaryRows == null
+      ? rows
+      : withInboxSummaryRoomRows(rows, summaryRows);
 });
 
 /// Per-room fallback: recent traffic of every joined room, plus a refetch of

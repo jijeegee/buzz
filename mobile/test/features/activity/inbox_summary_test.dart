@@ -301,6 +301,35 @@ void main() {
     );
   });
 
+  test('a room whose latest message roots a replied-to thread keeps both '
+      'rows, each with its own unread count', () {
+    final state = _state(
+      [
+        _threadRow(_root, 300, unread: 2),
+        // The room's newest top-level message is the thread's root.
+        {..._roomRow(_room, 250, unread: 5, latestId: _root)},
+      ],
+      sentRead: {_room: 40},
+    );
+    final rows = withInboxSummaryRoomRows(
+      collapseChannelMainRows(
+        buildInboxItems(inboxSummaryFeedItems(state.rows)),
+      ),
+      state.rows,
+    );
+    expect(rows.map((row) => row.conversationId), [_root, 'channel:$_room']);
+    final unread = inboxSummaryUnread(state);
+    int? countOf(String conversationId) => inboxRowServerUnread(
+      rows.firstWhere((row) => row.conversationId == conversationId),
+      unread,
+      isDone: false,
+      markerOf: (id) => id == _room ? 40 : null,
+    )?.count;
+    expect(countOf(_root), 2);
+    expect(countOf('channel:$_room'), 5);
+    expect(rows.last.threadRootId, isNull);
+  });
+
   group('server unread', () {
     InboxItem rowFor(InboxSummaryState state, String conversationId) =>
         collapseChannelMainRows(

@@ -433,4 +433,47 @@ void main() {
     expect(reopened.map((event) => event.id), ['r1', 'r2']);
     expect(fakeSession.queryCount, queriesAfterFirstLoad + 1);
   });
+
+  test(
+    'closed threads past the cap release the longest-closed first',
+    () async {
+      final session = _FakeRelaySession()..replies = [_reply('r1', 1000)];
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(() => session),
+          closedThreadRetentionProvider.overrideWithValue(
+            ClosedThreadRetention(maxThreads: 2),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final threads = [
+        for (var i = 0; i < 3; i++)
+          ThreadRepliesArgs(channelId: 'channel', rootId: 'root-$i'),
+      ];
+      for (final thread in threads) {
+        final subscription = container.listen(
+          threadRepliesProvider(thread),
+          (_, _) {},
+        );
+        await container.read(threadRepliesProvider(thread).future);
+        subscription.close();
+        await container.pump();
+      }
+      await container.pump();
+
+      expect(container.exists(threadRepliesProvider(threads[0])), isFalse);
+      expect(container.exists(threadRepliesProvider(threads[1])), isTrue);
+      expect(container.exists(threadRepliesProvider(threads[2])), isTrue);
+      expect(container.read(closedThreadRetentionProvider).length, 2);
+
+      // Reopening a kept thread takes it off the release list.
+      final reopened = container.listen(
+        threadRepliesProvider(threads[1]),
+        (_, _) {},
+      );
+      addTearDown(reopened.close);
+      expect(container.read(closedThreadRetentionProvider).length, 1);
+    },
+  );
 }

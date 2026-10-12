@@ -37,6 +37,38 @@ class _ThreadCursor {
 /// marks it stale, and it refreshes in the background when reopened.
 const threadRepliesRetention = Duration(hours: 12);
 
+/// Most closed threads kept at once; the longest-closed is released first.
+const maxRetainedClosedThreads = 32;
+
+/// Bounds how many closed threads keep their replies: each closed thread
+/// registers its release, and registering past [maxRetainedClosedThreads]
+/// releases the longest-closed one.
+class ClosedThreadRetention {
+  ClosedThreadRetention({this.maxThreads = maxRetainedClosedThreads});
+
+  final int maxThreads;
+  final Map<Object, void Function()> _releases = {};
+
+  int get length => _releases.length;
+
+  void add(Object thread, void Function() release) {
+    _releases.remove(thread);
+    _releases[thread] = release;
+    while (_releases.length > maxThreads) {
+      final oldest = _releases.keys.first;
+      final evict = _releases.remove(oldest)!;
+      // Lifecycle callbacks may not touch providers; release right after.
+      scheduleMicrotask(evict);
+    }
+  }
+
+  void remove(Object thread) => _releases.remove(thread);
+}
+
+final closedThreadRetentionProvider = Provider<ClosedThreadRetention>(
+  (ref) => ClosedThreadRetention(),
+);
+
 /// Bumped when a thread's replies may be out of date (a live reply arrived, or
 /// the session reconnected). The thread query watches it, so an open thread
 /// refreshes at once and a closed, retained one when it is next listened to.
@@ -79,13 +111,27 @@ final threadRepliesProvider = FutureProvider.autoDispose
       }
 
       Timer? releaseTimer;
+      final closedThreads = ref.read(closedThreadRetentionProvider);
+      final retentionKey = Object();
+      void release() {
+        releaseTimer?.cancel();
+        releaseTimer = null;
+        closedThreads.remove(retentionKey);
+        retention.close();
+      }
+
       ref.onCancel(() {
         listened = false;
         releaseTimer?.cancel();
-        releaseTimer = Timer(threadRepliesRetention, retention.close);
+        releaseTimer = Timer(threadRepliesRetention, release);
+        closedThreads.add(retentionKey, () {
+          // Reopened since this release was scheduled: keep it.
+          if (!listened) release();
+        });
       });
       ref.onResume(() {
         listened = true;
+        closedThreads.remove(retentionKey);
         releaseTimer?.cancel();
         releaseTimer = null;
         // Lifecycle callbacks may not touch providers; decide right after.
@@ -106,7 +152,10 @@ final threadRepliesProvider = FutureProvider.autoDispose
           }
         });
       });
-      ref.onDispose(() => releaseTimer?.cancel());
+      ref.onDispose(() {
+        releaseTimer?.cancel();
+        closedThreads.remove(retentionKey);
+      });
       ref.listen(threadRepliesStaleProvider(args), (_, _) => refresh());
       // A reply missed while the socket is stale cannot invalidate this
       // one-shot query. Refresh threads when the session recovers.

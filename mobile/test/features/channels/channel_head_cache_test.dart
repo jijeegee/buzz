@@ -36,6 +36,18 @@ void main() {
       expect(await cache.load(_scope, 'other-channel'), isNull);
     });
 
+    test('the store time ignores reads that mark a head as used', () async {
+      expect(await cache.storedAt(_scope, _channelId), isNull);
+      final before = DateTime.now().subtract(const Duration(seconds: 1));
+      await cache.store(_scope, _channelId, [_event(id: 'a', createdAt: 1)]);
+      final storedAt = await cache.storedAt(_scope, _channelId);
+      expect(storedAt!.isAfter(before), isTrue);
+
+      _entryFiles(root).single.setLastModifiedSync(DateTime(2100));
+      expect(await cache.load(_scope, _channelId), isNotNull);
+      expect(await cache.storedAt(_scope, _channelId), storedAt);
+    });
+
     test('keeps only the most recently used channels', () async {
       final small = ChannelHeadCache(() async => root, maxChannels: 3);
       for (var i = 0; i < 3; i++) {

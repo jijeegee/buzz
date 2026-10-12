@@ -342,24 +342,62 @@ List<FeedItem> inboxSummaryFeedItems(Iterable<InboxSummaryRow> rows) {
     // A DM root would join the DM's own row instead of its thread.
     final root = row.isThread && !row.isDm ? row.root : null;
     for (final event in [?root, latest]) {
-      if (!_summaryKinds.contains(event.kind)) continue;
-      items.add(
-        FeedItem(
-          id: event.id,
-          kind: event.kind,
-          pubkey: event.pubkey,
-          content: event.content,
-          createdAt: event.createdAt,
-          channelId: row.channelId,
-          channelName: '',
-          tags: event.tags,
-          category: 'activity',
-        ),
-      );
+      if (_summaryKinds.contains(event.kind)) {
+        items.add(_summaryFeedItem(event, row));
+      }
     }
   }
   return items;
 }
+
+/// Adds the room rows of [summaryRows] that [rows] lost. A room's latest
+/// message can also be the root of a replied-to thread; the inbox groups that
+/// event under its thread, so the room's `channel:<id>` row would never be
+/// built. Each missing room row is built from its latest message directly.
+List<InboxItem> withInboxSummaryRoomRows(
+  List<InboxItem> rows,
+  Iterable<InboxSummaryRow> summaryRows,
+) {
+  final present = {for (final row in rows) row.conversationId};
+  final added = <InboxItem>[];
+  for (final row in summaryRows) {
+    final latest = row.latest;
+    if (row.isThread ||
+        latest == null ||
+        !_summaryKinds.contains(latest.kind)) {
+      continue;
+    }
+    final conversationId = inboxSummaryConversationId(row);
+    if (!present.add(conversationId)) continue;
+    final item = _summaryFeedItem(latest, row);
+    added.add(
+      InboxItem(
+        conversationId: conversationId,
+        id: item.id,
+        item: item,
+        groupItems: List.unmodifiable([item]),
+        categories: const ['activity'],
+        isActionRequired: false,
+        latestActivityAt: item.createdAt,
+      ),
+    );
+  }
+  if (added.isEmpty) return rows;
+  return [...rows, ...added]
+    ..sort((a, b) => b.latestActivityAt.compareTo(a.latestActivityAt));
+}
+
+FeedItem _summaryFeedItem(NostrEvent event, InboxSummaryRow row) => FeedItem(
+  id: event.id,
+  kind: event.kind,
+  pubkey: event.pubkey,
+  content: event.content,
+  createdAt: event.createdAt,
+  channelId: row.channelId,
+  channelName: '',
+  tags: event.tags,
+  category: 'activity',
+);
 
 /// The Channels + Threads row id a summary row stands for on mobile: threads
 /// group by root (DM threads included), rooms collapse to `channel:<id>` or

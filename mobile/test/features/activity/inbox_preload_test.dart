@@ -11,11 +11,15 @@ class _RecordingPreloader extends ChannelPreloader {
   _RecordingPreloader(super.ref);
 
   final List<List<String>> roomBatches = [];
+  final Map<String, int> roomLatestAt = {};
   final List<List<String>> threadBatches = [];
 
   @override
   Future<List<String>> preloadRooms(List<ChannelPreloadTarget> targets) async {
     roomBatches.add([for (final target in targets) target.channelId]);
+    for (final target in targets) {
+      roomLatestAt[target.channelId] = target.latestAt;
+    }
     return const [];
   }
 
@@ -113,5 +117,32 @@ void main() {
       waitIdle: () async => false,
     );
     expect(preloader.roomBatches, hasLength(1));
+  });
+
+  test('a busy thread does not make its room look newer', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final preloader = _RecordingPreloader(
+      container.read(Provider((ref) => ref)),
+    );
+    await runInboxPreload(
+      preloader,
+      const [
+        InboxPreloadTarget(
+          channelId: 'room',
+          thread: ThreadRepliesArgs(channelId: 'room', rootId: 'root'),
+          latestAt: 900,
+        ),
+        InboxPreloadTarget(channelId: 'room', thread: null, latestAt: 100),
+        InboxPreloadTarget(
+          channelId: 'thread-only',
+          thread: ThreadRepliesArgs(channelId: 'thread-only', rootId: 'r2'),
+          latestAt: 800,
+        ),
+      ],
+      waitReady: () async => true,
+      waitIdle: () async => true,
+    );
+    expect(preloader.roomLatestAt, {'room': 100, 'thread-only': 0});
   });
 }

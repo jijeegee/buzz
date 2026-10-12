@@ -140,6 +140,7 @@ void main() {
   ({ProviderContainer container, _LifecycleNotifier lifecycle}) setUp(
     _SummarySession session, {
     List<Override> overrides = const [],
+    Duration minReloadInterval = Duration.zero,
   }) {
     final lifecycle = _LifecycleNotifier();
     final container = ProviderContainer(
@@ -151,6 +152,9 @@ void main() {
         activityProvider.overrideWith(_EmptyActivityNotifier.new),
         readStateProvider.overrideWith(_ReadStateNotifier.new),
         appLifecycleProvider.overrideWith(() => lifecycle),
+        inboxSummaryMinReloadIntervalProvider.overrideWithValue(
+          minReloadInterval,
+        ),
         ...overrides,
       ],
     );
@@ -270,11 +274,48 @@ void main() {
             'a-older',
       );
 
-      lifecycle.set(AppLifecycleState.paused);
+      // A notification shade or dialog (inactive → resumed) reloads nothing.
+      lifecycle.set(AppLifecycleState.inactive);
       lifecycle.set(AppLifecycleState.resumed);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(session.summaryRequests, hasLength(2));
+
+      for (final next in const [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        lifecycle.set(next);
+      }
       await _waitFor(() => session.summaryRequests.length == 3);
     },
   );
+
+  test('resume reloads wait for the minimum interval and coalesce', () async {
+    final session = _SummarySession([
+      _page([_row(_roomA, 100, 'a-latest')]),
+      _page([_row(_roomA, 100, 'a-latest')]),
+    ]);
+    final (:container, :lifecycle) = setUp(
+      session,
+      minReloadInterval: const Duration(milliseconds: 300),
+    );
+    await container.read(channelsProvider.future);
+    await container.read(inboxSummaryProvider.future);
+
+    for (var i = 0; i < 3; i++) {
+      lifecycle.set(AppLifecycleState.paused);
+      lifecycle.set(AppLifecycleState.resumed);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(session.summaryRequests, hasLength(1));
+    await _waitFor(() => session.summaryRequests.length == 2);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    expect(session.summaryRequests, hasLength(2));
+  });
 
   test(
     'falls back to per-room loading when the relay has no summary',
