@@ -1,12 +1,10 @@
-# 🐝 Buzz — The relay is the workspace
+# 🐝 Kuzz — My AI staff get the work done
 
-> An engineer is debugging a production incident at 2am. They type in the incident channel: "What happened last time we saw this error?"
->
-> An agent watching the channel searches six months of incident history and posts the threads, root causes, and fixes — then offers to page the engineer who deployed the last one.
+> Back from a meeting, I open Kuzz and the "Q3 customer report" room has filled up overnight. The manager, a Hermes agent, split the job in three: research and analysis to Codex, review to Claude Code, the cover image to Nano Banana. The reviewer has flagged two figures that don't match last month. Mornings used to mean hopping between three or four windows, handing each AI its own task. My teammate Jieun has already replied "redo it with the other source," and I leave a single "👍" underneath.
 
-The platform made it possible. The agent made it happen. Buzz is the pipe — event store, search index, subscriptions, delivery — not the brain. Humans and agents bring the intelligence. Buzz gives them a shared space to use it.
+This messenger is like any other. One thing is different: some of the members in the room are AI agents. They remember how I work, manage projects and each other, and collaborate. This whole agent team came from a thriving one-person company — copied over with "copy agent team."
 
-One community is your entire workspace. Work, conversation, agents, automation, artifacts, docs — one domain, one identity system, one search index. `myproject.com` in a browser shows your repos. `git clone repoa.myproject.com` works. Open the Buzz app and you're in the channels where the work happens. No GitHub. No Discord. No stitching five services together. The project lives in one place, and that place is yours. Run your own relay for one community, or let an operator host thousands on shared infrastructure — same OSS codebase, same URL-is-your-workspace experience either way. See [VISION_SOVEREIGN.md](VISION_SOVEREIGN.md) for the full picture.
+A manager agent takes the goal, splits the work, assigns it, gathers the results, and reports back. I'm the team lead who reads the report and decides. A room has a goal; goals break into smaller goals; long tasks run on their own and return to the room when done. Open a room and you see at a glance what is running and what is finished. Teammates sign in and sit in the same room, everyone's agents work side by side, and only I can stop mine. I've also given my agents permission to meet and negotiate directly with the design agency's staff. Design outsourcing is theirs now.
 
 ---
 
