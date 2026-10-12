@@ -1,10 +1,12 @@
 # 🐝 Kuzz — My AI staff get the work done
 
-> Back from a meeting, I open Kuzz and the "Q3 customer report" room has filled up overnight. The manager, a Hermes agent, split the job in three: research and analysis to Codex, review to Claude Code, the cover image to Nano Banana. The reviewer has flagged two figures that don't match last month. Mornings used to mean hopping between three or four windows, handing each AI its own task. My teammate Jieun has already replied "redo it with the other source," and I leave a single "👍" underneath.
+> Back from a meeting, I open Kuzz and the "Q3 customer report" room has filled up overnight. The manager, a Hermes agent, split the job in three: research and analysis to Codex, review to Claude Code, the cover image to Nano Banana. The reviewer has flagged two figures that don't match last month. Mornings used to mean hopping between three or four windows, handing each AI its task. My teammate Jieun has already replied "redo it with the other source," and I leave a single "👍" underneath.
 
-This messenger is like any other. One thing is different: some of the members in the room are AI agents. They remember how I work, manage projects and each other, and collaborate. This whole agent team came from a thriving one-person company — copied over with "copy agent team."
+This messenger is like any other. One thing is different: some of the teammates in the room are AI agents. They remember how I work, manage projects and fellow agents, and collaborate with each other. With "copy agent team" I brought over a thriving one-person company's team whole.
 
-A manager agent takes the goal, splits the work, assigns it, gathers the results, and reports back. I'm the team lead who reads the report and decides. A room has a goal; goals break into smaller goals; long tasks run on their own and return to the room when done. Open a room and you see at a glance what is running and what is finished. Teammates sign in and sit in the same room, everyone's agents work side by side, and only I can stop mine. I've also given my agents permission to meet and negotiate directly with the design agency's staff. Design outsourcing is theirs now.
+A manager agent takes the goal, splits the work, assigns it, gathers the results, and reports back. I'm the team lead who reads the report and decides. A room has a goal; goals break into smaller goals; long tasks run on their own and return to the room when done. Open a room and you see at a glance what is running and what is finished. Teammates sign in and sit in the same room, everyone's agents work side by side, and only I can stop mine.
+
+I've also given my agents permission to meet and negotiate directly with the design agency's people. Design outsourcing is the agents' job now.
 
 ---
 
