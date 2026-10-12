@@ -1,13 +1,17 @@
 import 'dart:convert';
 
-import 'dart:ui' show Color;
+import 'dart:ui' show Color, Offset;
 
 import 'package:flutter/foundation.dart';
 
 /// Per-device robot variants.
 ///
-/// Every relay device (one Google sign-in on one computer or phone) gets a
-/// deterministic robot: a colour and a silhouette derived from its device id.
+/// Every relay device (one app install signed in on one computer or phone)
+/// gets a robot: a paint and a silhouette. The owner's apps give each device
+/// the next free slot in palette order the first time they see it (see
+/// [nextDeviceRobotAssignments]) and store it as the device's kind:30181
+/// robot, so it never changes afterwards. Until then a device shows a hashed
+/// default derived from its id.
 /// A desktop that runs agents lists them in its owner-only kind:30180 event
 /// (`agent_host_devices.dart`), so the owner sees on which computer each agent
 /// runs, and the device list shows the same robot per device.
@@ -15,17 +19,129 @@ import 'package:flutter/foundation.dart';
 /// Mirrors desktop `shared/lib/deviceRobot.ts` + `deviceRobotGeometry.ts`;
 /// `test-fixtures/device-robots.json` pins identical results on both.
 
-/// Robot stroke colours, each ≥3:1 against both light and dark surfaces.
-const deviceRobotColors = <Color>[
-  Color(0xFFD93D42), // red
-  Color(0xFFC2620A), // orange
-  Color(0xFF2E8540), // green
-  Color(0xFF0F8478), // teal
-  Color(0xFF1F78C8), // blue
-  Color(0xFF5A5FD8), // indigo
-  Color(0xFF9150C8), // violet
-  Color(0xFFC93A8A), // pink
+/// A robot's stroke: one colour, or a diagonal gradient on the 24×24 grid.
+@immutable
+class DeviceRobotPaint {
+  const DeviceRobotPaint.solid(this.name, this.color)
+    : from = null,
+      to = null,
+      stops = const [];
+
+  const DeviceRobotPaint.gradient(
+    this.name,
+    this.color, {
+    required Offset this.from,
+    required Offset this.to,
+    required this.stops,
+  });
+
+  final String name;
+
+  /// The solid colour, or a gradient's representative colour.
+  final Color color;
+
+  /// Gradient line on the 24×24 grid; `null` for a solid paint.
+  final Offset? from, to;
+
+  /// `(offset 0..1, colour)` in order; the ends extend past them.
+  final List<(double, Color)> stops;
+
+  bool get isGradient => from != null;
+
+  /// Fixture form, compared against `test-fixtures/device-robots.json`.
+  Map<String, Object> toJson() => isGradient
+      ? {
+          'name': name,
+          'kind': 'gradient',
+          'color': _hex(color),
+          'from': [from!.dx, from!.dy],
+          'to': [to!.dx, to!.dy],
+          'stops': [
+            for (final (offset, color) in stops) [offset, _hex(color)],
+          ],
+        }
+      : {'name': name, 'kind': 'solid', 'color': _hex(color)};
+}
+
+String _hex(Color color) =>
+    '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
+List<(double, Color)> _evenStops(
+  List<Color> colors, {
+  double first = 0,
+  double span = 1,
+}) => [
+  for (var i = 0; i < colors.length; i++)
+    (
+      ((first + i * span / (colors.length - 1)) * 10000).round() / 10000,
+      colors[i],
+    ),
 ];
+
+/// The robot palette in assignment order: six solid colours far apart in hue,
+/// then rainbow, gold and silver. A new device takes the first free paint, so
+/// the first devices of an account are the easiest to tell apart.
+final deviceRobotPaints = <DeviceRobotPaint>[
+  const DeviceRobotPaint.solid('red', Color(0xFFF03A3A)),
+  const DeviceRobotPaint.solid('green', Color(0xFF1FBF4F)),
+  const DeviceRobotPaint.solid('violet', Color(0xFF8B5CF6)),
+  const DeviceRobotPaint.solid('orange', Color(0xFFFF7A00)),
+  const DeviceRobotPaint.solid('blue', Color(0xFF2F7FF2)),
+  const DeviceRobotPaint.solid('yellow', Color(0xFFF5C400)),
+  DeviceRobotPaint.gradient(
+    'rainbow',
+    const Color(0xFF1E90FF),
+    from: const Offset(2, 2),
+    to: const Offset(22, 22),
+    // The first and last colours hold the outer 18% so ears and antennae at
+    // either end still show them.
+    stops: _evenStops(
+      const [
+        Color(0xFFFF2D2D),
+        Color(0xFFFF8A00),
+        Color(0xFFFFD000),
+        Color(0xFF22C55E),
+        Color(0xFF1E90FF),
+        Color(0xFF4B4BE0),
+        Color(0xFFA040E0),
+      ],
+      first: 0.18,
+      span: 0.64,
+    ),
+  ),
+  DeviceRobotPaint.gradient(
+    'gold',
+    const Color(0xFFB8860B),
+    from: Offset.zero,
+    to: const Offset(24, 24),
+    stops: _evenStops(const [
+      Color(0xFF8A6200),
+      Color(0xFFF7D774),
+      Color(0xFFB8860B),
+      Color(0xFFFFE9A0),
+      Color(0xFF9C7A1E),
+    ]),
+  ),
+  DeviceRobotPaint.gradient(
+    'silver',
+    const Color(0xFF9CA3AF),
+    from: Offset.zero,
+    to: const Offset(24, 24),
+    stops: _evenStops(const [
+      Color(0xFF6B7280),
+      Color(0xFFF3F4F6),
+      Color(0xFF9CA3AF),
+      Color(0xFFFFFFFF),
+      Color(0xFF6B7280),
+    ]),
+  ),
+];
+
+/// Each paint's representative colour, in palette order.
+final deviceRobotColors = [for (final paint in deviceRobotPaints) paint.color];
+
+/// Paints a hashed default may use: the solid colours only.
+const _defaultColorCount = 6;
 
 /// Robot silhouettes, in fixture order.
 const deviceRobotShapes = <String>[
@@ -49,15 +165,19 @@ class DeviceRobotVariant {
   final int colorIndex;
   final int shapeIndex;
 
-  Color get color => deviceRobotColors[colorIndex];
+  DeviceRobotPaint get paint => deviceRobotPaints[colorIndex];
+  Color get color => paint.color;
   String get shape => deviceRobotShapes[shapeIndex];
 
   @override
   bool operator ==(Object other) =>
-      other is DeviceRobotVariant && other.tag == tag;
+      other is DeviceRobotVariant &&
+      other.tag == tag &&
+      other.colorIndex == colorIndex &&
+      other.shapeIndex == shapeIndex;
 
   @override
-  int get hashCode => tag.hashCode;
+  int get hashCode => Object.hash(tag, colorIndex, shapeIndex);
 }
 
 /// FNV-1a (32-bit) of the trimmed, lowercased device id as 8 hex digits;
@@ -77,9 +197,8 @@ String? deviceRobotTag(String? deviceId) {
 DeviceRobotVariant? deviceRobotVariantFromTag(String? tag) {
   if (tag == null || !_tagPattern.hasMatch(tag)) return null;
   final value = int.parse(tag, radix: 16);
-  final colorIndex = value % deviceRobotColors.length;
-  final shapeIndex =
-      (value ~/ deviceRobotColors.length) % deviceRobotShapes.length;
+  final colorIndex = value % _defaultColorCount;
+  final shapeIndex = (value ~/ _defaultColorCount) % deviceRobotShapes.length;
   return DeviceRobotVariant._(tag, colorIndex, shapeIndex);
 }
 
@@ -87,17 +206,61 @@ DeviceRobotVariant? deviceRobotVariantFromTag(String? tag) {
 DeviceRobotVariant? deviceRobotVariantForDevice(String? deviceId) =>
     deviceRobotVariantFromTag(deviceRobotTag(deviceId));
 
-/// The robot with [colorIndex] in [deviceRobotColors] and [shapeIndex] in
-/// [deviceRobotShapes]; `null` when either is out of range. Its tag is the
-/// smallest one with that look.
+/// The robot with [colorIndex] in [deviceRobotPaints] and [shapeIndex] in
+/// [deviceRobotShapes]; `null` when either is out of range. Its tag only
+/// labels the look (a chosen robot is matched to its device by id).
 DeviceRobotVariant? deviceRobotVariantFromIndices({
   required int colorIndex,
   required int shapeIndex,
 }) {
-  if (colorIndex < 0 || colorIndex >= deviceRobotColors.length) return null;
+  if (colorIndex < 0 || colorIndex >= deviceRobotPaints.length) return null;
   if (shapeIndex < 0 || shapeIndex >= deviceRobotShapes.length) return null;
-  final value = shapeIndex * deviceRobotColors.length + colorIndex;
-  return deviceRobotVariantFromTag(value.toRadixString(16).padLeft(8, '0'));
+  final value = shapeIndex * deviceRobotPaints.length + colorIndex;
+  return DeviceRobotVariant._(
+    value.toRadixString(16).padLeft(8, '0'),
+    colorIndex,
+    shapeIndex,
+  );
+}
+
+/// The robot of the k-th device (0-based) of an account.
+DeviceRobotVariant deviceRobotSlot(int slot) => deviceRobotVariantFromIndices(
+  colorIndex: slot % deviceRobotPaints.length,
+  shapeIndex: slot % deviceRobotShapes.length,
+)!;
+
+/// Robots to store for the owner's devices that have none yet, in device
+/// order (oldest first): each takes the first slot whose paint no stored robot
+/// uses, so the first devices of an account get the paints that differ most.
+/// Robots of devices no longer listed (logged out) keep their paint reserved.
+/// Once every paint is taken, slots continue past the palette. Deterministic,
+/// so two of the owner's apps assigning at once write the same robots.
+/// Mirrors desktop `nextDeviceRobotAssignments`.
+List<(String, DeviceRobotVariant)> nextDeviceRobotAssignments(
+  Iterable<String> deviceIds,
+  Map<String, DeviceRobotVariant> stored,
+) {
+  final used = {for (final robot in stored.values) robot.colorIndex};
+  var assigned = stored.length;
+  final result = <(String, DeviceRobotVariant)>[];
+  final seen = <String>{};
+  for (final raw in deviceIds) {
+    final deviceId = raw.trim().toLowerCase();
+    if (deviceId.isEmpty || stored.containsKey(deviceId)) continue;
+    if (!seen.add(deviceId)) continue;
+    var slot = -1;
+    for (var index = 0; index < deviceRobotPaints.length; index++) {
+      if (!used.contains(index)) {
+        slot = index;
+        break;
+      }
+    }
+    if (slot < 0) slot = assigned;
+    used.add(slot % deviceRobotPaints.length);
+    assigned++;
+    result.add((deviceId, deviceRobotSlot(slot)));
+  }
+  return result;
 }
 
 /// The owner's chosen robot for a device ([override], see kind:30181) or

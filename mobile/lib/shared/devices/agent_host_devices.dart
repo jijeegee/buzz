@@ -20,9 +20,10 @@ const kindAgentHostDevices = EventKind.agentHostDevices;
 /// Owner-authored robot choice for one relay device.
 ///
 /// Parameterized replaceable, author-only like [kindAgentHostDevices]:
-/// `["d", <device id>]`, content `{"v":1,"shape":<shape>,"color":<index>}`
+/// `["d", <device id>]`, content `{"v":2,"shape":<shape>,"color":<index>}`
 /// with a shape from [deviceRobotShapes] and an index into
-/// [deviceRobotColors].
+/// [deviceRobotPaints]. Version 1 indexed an older palette and is ignored,
+/// so those devices get a fresh assignment.
 const kindDeviceRobot = EventKind.deviceRobot;
 
 final _agentPubkeyPattern = RegExp(r'^[0-9a-f]{64}$');
@@ -72,7 +73,7 @@ bool _isNewer(_HostDevicesEvent a, _HostDevicesEvent b) =>
 
 /// The kind:30181 content choosing [robot].
 String deviceRobotChoiceContent(DeviceRobotVariant robot) =>
-    jsonEncode({'v': 1, 'shape': robot.shape, 'color': robot.colorIndex});
+    jsonEncode({'v': 2, 'shape': robot.shape, 'color': robot.colorIndex});
 
 /// The robot a kind:30181 [content] chooses; `null` when malformed, an
 /// unknown shape or an out-of-range colour.
@@ -83,7 +84,7 @@ DeviceRobotVariant? parseDeviceRobotChoice(String content) {
   } on FormatException {
     return null;
   }
-  if (decoded is! Map<String, dynamic> || decoded['v'] != 1) return null;
+  if (decoded is! Map<String, dynamic> || decoded['v'] != 2) return null;
   final shape = decoded['shape'];
   final color = decoded['color'];
   if (shape is! String || color is! int) return null;
@@ -158,6 +159,9 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
   final Map<String, NostrEvent> _events = {};
   String? _owner;
 
+  /// Devices whose automatic robot is being published right now.
+  final Set<String> _assigning = {};
+
   @override
   Map<String, NostrEvent> build() {
     final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
@@ -167,6 +171,7 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
     if (owner != _owner) {
       _owner = owner;
       _events.clear();
+      _assigning.clear();
     }
     if (owner == null || owner.isEmpty) return const {};
 
@@ -179,6 +184,7 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
     if (connected) {
       unawaited(() async {
         try {
+          // Completes after the relay's stored events (EOSE).
           final unsub = await ref.read(relaySessionProvider.notifier).subscribe(
             NostrFilter(
               kinds: const [kindAgentHostDevices, kindDeviceRobot],
@@ -194,6 +200,7 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
             unsub();
           } else {
             unsubscribe = unsub;
+            ref.read(ownDeviceEventsLoadedProvider.notifier).set(owner);
           }
         } catch (error) {
           debugPrint('[OwnDeviceEvents] subscription failed: $error');
@@ -206,6 +213,23 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
   void _add(NostrEvent event) {
     _events[event.id] = event;
     state = Map.unmodifiable(_events);
+  }
+
+  /// Store an automatically assigned robot for [deviceId], once per device
+  /// at a time; a failure is logged and retried on the next change.
+  Future<void> assignDeviceRobot(
+    String deviceId,
+    DeviceRobotVariant robot,
+  ) async {
+    final d = deviceId.trim().toLowerCase();
+    if (!_assigning.add(d)) return;
+    try {
+      await publishDeviceRobot(d, robot);
+    } catch (error) {
+      debugPrint('[OwnDeviceEvents] could not store a device robot: $error');
+    } finally {
+      _assigning.remove(d);
+    }
   }
 
   /// Publish the current user's robot for [deviceId] (kind:30181) and show
@@ -246,6 +270,44 @@ final ownDeviceEventsProvider =
     NotifierProvider<OwnDeviceEventsNotifier, Map<String, NostrEvent>>(
       OwnDeviceEventsNotifier.new,
     );
+
+/// The owner whose stored device events have fully arrived (the first
+/// subscription reached EOSE); `null` while they are still loading, so
+/// "no stored robot yet" is never mistaken for "not loaded yet".
+class OwnDeviceEventsLoadedNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? owner) => state = owner;
+}
+
+final ownDeviceEventsLoadedProvider =
+    NotifierProvider<OwnDeviceEventsLoadedNotifier, String?>(
+      OwnDeviceEventsLoadedNotifier.new,
+    );
+
+/// Gives each of the current user's devices that has no stored robot the
+/// next free slot of the palette ([nextDeviceRobotAssignments]) and stores it
+/// as the device's kind:30181 robot, so its look never changes afterwards.
+/// Waits until both the device list and the stored robots have loaded.
+/// Watch once from the authenticated app root.
+final deviceRobotAutoAssignProvider = Provider<void>((ref) {
+  final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
+  if (owner == null || owner.isEmpty) return;
+  if (ref.watch(ownDeviceEventsLoadedProvider) != owner) return;
+  final origin = ref.watch(activeTokenOriginProvider);
+  if (origin == null) return;
+  final devices = ref.watch(accountDevicesProvider(origin)).value;
+  if (devices == null || devices.isEmpty) return;
+  final assignments = nextDeviceRobotAssignments([
+    for (final device in devices) device.id,
+  ], ref.watch(deviceRobotOverridesProvider));
+  if (assignments.isEmpty) return;
+  final notifier = ref.read(ownDeviceEventsProvider.notifier);
+  for (final (deviceId, robot) in assignments) {
+    unawaited(notifier.assignDeviceRobot(deviceId, robot));
+  }
+});
 
 /// The current user's agents → the relay device each runs on (lowercase
 /// keys and values), from their own kind:30180 events.

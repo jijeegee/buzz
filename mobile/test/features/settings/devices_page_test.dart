@@ -116,7 +116,7 @@ void main() {
     expect(event.tags, [
       ['d', 'device-2'],
     ]);
-    expect(jsonDecode(event.content), {'v': 1, 'shape': 'visor', 'color': 5});
+    expect(jsonDecode(event.content), {'v': 2, 'shape': 'visor', 'color': 5});
     final chosen = deviceRobotVariantFromIndices(
       colorIndex: 5,
       shapeIndex: deviceRobotShapes.indexOf('visor'),

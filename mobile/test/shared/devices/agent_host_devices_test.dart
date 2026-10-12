@@ -110,19 +110,21 @@ void main() {
   group('deviceRobotOverridesFromEvents', () {
     test('newest choice per device wins; bad choices fall back', () {
       final map = deviceRobotOverridesFromEvents([
-        _robotEvent('device-1', {'v': 1, 'shape': 'hex', 'color': 0}),
+        _robotEvent('device-1', {'v': 2, 'shape': 'hex', 'color': 0}),
         _robotEvent('DEVICE-1', {
-          'v': 1,
+          'v': 2,
           'shape': 'dome',
           'color': 7,
         }, createdAt: 200),
-        _robotEvent('device-2', {'v': 1, 'shape': 'blob', 'color': 1}),
-        _robotEvent('device-3', {'v': 1, 'shape': 'tall', 'color': 8}),
-        _robotEvent('device-4', {'v': 1, 'shape': 'boxy', 'color': 2}),
+        _robotEvent('device-2', {'v': 2, 'shape': 'blob', 'color': 1}),
+        _robotEvent('device-3', {'v': 2, 'shape': 'tall', 'color': 9}),
+        _robotEvent('device-4', {'v': 2, 'shape': 'boxy', 'color': 2}),
         // A newer bad choice resets device-4 to its default.
         _robotEvent('device-4', 'nope', createdAt: 200),
+        // Version 1 indexed the previous palette and is ignored.
+        _robotEvent('device-6', {'v': 1, 'shape': 'hex', 'color': 1}),
         _robotEvent('device-5', {
-          'v': 1,
+          'v': 2,
           'shape': 'visor',
           'color': 3,
         }, pubkey: 'b' * 64),
@@ -139,7 +141,7 @@ void main() {
         shapeIndex: 2,
       )!;
       expect(jsonDecode(deviceRobotChoiceContent(robot)), {
-        'v': 1,
+        'v': 2,
         'shape': 'boxy',
         'color': 4,
       });
@@ -175,7 +177,7 @@ void main() {
 
       session.emit(_hostEvent('device-1', [_agentA]));
       session.emit(
-        _robotEvent('device-1', {'v': 1, 'shape': 'tall', 'color': 5}),
+        _robotEvent('device-1', {'v': 2, 'shape': 'tall', 'color': 5}),
       );
       expect(container.read(agentHostDevicesProvider), {_agentA: 'device-1'});
       expect(
@@ -204,7 +206,7 @@ void main() {
         expect(event.tags, [
           ['d', 'device-1'],
         ]);
-        expect(jsonDecode(event.content), {'v': 1, 'shape': 'hex', 'color': 1});
+        expect(jsonDecode(event.content), {'v': 2, 'shape': 'hex', 'color': 1});
         expect(container.read(deviceRobotOverridesProvider), {
           'device-1': robot,
         });
