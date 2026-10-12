@@ -192,9 +192,9 @@ fn device_name() -> String {
         .unwrap_or_default();
     let host: String = host.chars().filter(|c| !c.is_control()).take(48).collect();
     if host.trim().is_empty() {
-        "Buzz Desktop".to_owned()
+        "Kuzz Desktop".to_owned()
     } else {
-        format!("Buzz Desktop ({})", host.trim())
+        format!("Kuzz Desktop ({})", host.trim())
     }
 }
 

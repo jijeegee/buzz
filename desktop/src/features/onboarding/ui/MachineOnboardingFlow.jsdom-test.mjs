@@ -131,7 +131,7 @@ test("unreachable Google sign-in shows a plain error with Retry, never key optio
       container.querySelector("[data-testid='onboarding-google-retry']") !==
       null,
   );
-  assert.match(container.textContent, /couldn’t reach Buzz sign-in/);
+  assert.match(container.textContent, /couldn’t reach Kuzz sign-in/);
   assert.doesNotMatch(container.textContent, KEY_WORDING);
 
   statusBehavior = () => Promise.resolve(status());

@@ -272,7 +272,7 @@ export function useNotificationSettings(pubkey?: string) {
         }));
         setErrorMessage(
           nextPermission === "denied"
-            ? "Desktop notifications are blocked for Buzz. Enable them in system settings to turn alerts on."
+            ? "Desktop notifications are blocked for Kuzz. Enable them in system settings to turn alerts on."
             : "Desktop notifications are unavailable in this environment.",
         );
         return false;

@@ -859,7 +859,7 @@ function RuntimeSetupGuide({
   const subscriptionDetail =
     method === "subscription"
       ? {
-          description: `Buzz will open a sign-in window for ${label}.`,
+          description: `Kuzz will open a sign-in window for ${label}.`,
           title: SUBSCRIPTION_NAMES[runtime.id] ?? label,
         }
       : undefined;

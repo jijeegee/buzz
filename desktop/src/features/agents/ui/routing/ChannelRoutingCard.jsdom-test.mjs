@@ -654,6 +654,6 @@ test("the applied Smart routing state reads as on", async () => {
     routerActive: true,
   });
   const container = await mount();
-  assert.equal(statusText(container), "On — Buzz picks the agent as you send.");
+  assert.equal(statusText(container), "On — Kuzz picks the agent as you send.");
   assert.equal(picker(container), null);
 });

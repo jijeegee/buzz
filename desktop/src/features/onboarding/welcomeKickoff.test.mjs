@@ -501,7 +501,7 @@ test("token mode: a degraded opener does not repeat the closer marker", () => {
   );
   assert.equal(
     input.userFallback.content,
-    "@Fizz Hi! I just joined Buzz. Could you help me get oriented?",
+    "@Fizz Hi! I just joined Kuzz. Could you help me get oriented?",
   );
   assert.deepEqual(input.additionalMarkers, ["buzz-welcome-kickoff.closer.v1"]);
   assert.deepEqual(input.userFallback.additionalMarkers, []);

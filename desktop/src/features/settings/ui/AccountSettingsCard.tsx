@@ -121,7 +121,7 @@ async function signOutActiveAccount(
 function agentsNotStoppedNotice(count: number): string | null {
   if (count <= 0) return null;
   const agents = count === 1 ? "1 agent" : `${count} agents`;
-  return `Signed out. ${agents} from that account did not stop in time; restart Buzz if they keep replying.`;
+  return `Signed out. ${agents} from that account did not stop in time; restart Kuzz if they keep replying.`;
 }
 
 /**
@@ -217,8 +217,8 @@ export function AccountSettingsCard({
       <SettingsOptionGroup
         description={
           protect
-            ? "Continue with Google so you can sign in to Buzz on other computers and get back into your account if this one is lost. Your Buzz server keeps a protected copy for this."
-            : "You sign in to Buzz with your Google account."
+            ? "Continue with Google so you can sign in to Kuzz on other computers and get back into your account if this one is lost. Your Kuzz server keeps a protected copy for this."
+            : "You sign in to Kuzz with your Google account."
         }
         title={protect ? "Protect your account" : "Account"}
       >
@@ -244,7 +244,7 @@ export function AccountSettingsCard({
               <p className="text-sm text-muted-foreground/70">
                 {status.state === "needs_login"
                   ? status.keyBackup
-                    ? "Sign in with Google again to manage your account. Buzz and your agents keep working."
+                    ? "Sign in with Google again to manage your account. Kuzz and your agents keep working."
                     : "Sign in with Google again to keep using this community and its agents."
                   : protect
                     ? "Your browser opens to finish. Your profile, communities and agents stay the same."
@@ -413,7 +413,7 @@ function ActiveAccount({
         onOpenChange={closeConfirm}
         open={confirming === "sign-out"}
         testId="account-sign-out-dialog"
-        title={name ? `Sign out of ${name}?` : "Sign out of Buzz?"}
+        title={name ? `Sign out of ${name}?` : "Sign out of Kuzz?"}
       >
         {runningCount > 0 ? (
           <p

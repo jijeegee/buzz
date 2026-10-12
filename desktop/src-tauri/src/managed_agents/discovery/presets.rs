@@ -121,7 +121,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "buzz-pi-acp",
         args: &[],
         install_instructions_url: "https://github.com/salman1993/buzz-pi-acp",
-        install_hint: "Requires Node.js 22 or newer. Install the Pi ACP adapter with `npm install -g --install-links=true 'git+https://github.com/salman1993/buzz-pi-acp.git#86b201e'`. Make sure `buzz-pi-acp` is on PATH, then restart Buzz.",
+        install_hint: "Requires Node.js 22 or newer. Install the Pi ACP adapter with `npm install -g --install-links=true 'git+https://github.com/salman1993/buzz-pi-acp.git#86b201e'`. Make sure `buzz-pi-acp` is on PATH, then restart Kuzz.",
         underlying_cli: Some("pi"),
         effort_thought_level: None,
         underlying_cli_install_hint: Some(
@@ -137,7 +137,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "devin",
         args: &["acp"],
         install_instructions_url: "https://docs.devin.ai/cli",
-        install_hint: "Buzz talks to Devin through the official Devin CLI's ACP mode (devin acp).",
+        install_hint: "Kuzz talks to Devin through the official Devin CLI's ACP mode (devin acp).",
         underlying_cli: None,
         effort_thought_level: None,
         underlying_cli_install_hint: None,
@@ -149,7 +149,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "cursor-agent",
         args: &["acp"],
         install_instructions_url: "https://cursor.com/downloads",
-        install_hint: "Buzz talks to Cursor through the cursor-agent CLI's ACP mode.",
+        install_hint: "Kuzz talks to Cursor through the cursor-agent CLI's ACP mode.",
         underlying_cli: None,
         effort_thought_level: None,
         underlying_cli_install_hint: None,
@@ -161,7 +161,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "omp",
         args: &["acp"],
         install_instructions_url: "https://omp.sh/",
-        install_hint: "Buzz talks to Oh My Pi through its CLI's ACP mode (omp acp).",
+        install_hint: "Kuzz talks to Oh My Pi through its CLI's ACP mode (omp acp).",
         underlying_cli: None,
         effort_thought_level: None,
         underlying_cli_install_hint: None,
@@ -173,7 +173,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "grok",
         args: &["agent", "--always-approve", "stdio"],
         install_instructions_url: "https://docs.x.ai/build/overview",
-        install_hint: "Buzz talks to Grok Build through its CLI's agent stdio mode.",
+        install_hint: "Kuzz talks to Grok Build through its CLI's agent stdio mode.",
         underlying_cli: None,
         effort_thought_level: None,
         underlying_cli_install_hint: None,
@@ -185,7 +185,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "opencode",
         args: &["acp"],
         install_instructions_url: "https://opencode.ai/docs",
-        install_hint: "Buzz talks to OpenCode through its CLI's ACP mode (opencode acp).",
+        install_hint: "Kuzz talks to OpenCode through its CLI's ACP mode (opencode acp).",
         underlying_cli: None,
         effort_thought_level: None,
         underlying_cli_install_hint: None,
@@ -197,7 +197,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "kimi",
         args: &["acp"],
         install_instructions_url: "https://kimi.ai/download",
-        install_hint: "Buzz talks to Kimi Code through its CLI's ACP mode (kimi acp).",
+        install_hint: "Kuzz talks to Kimi Code through its CLI's ACP mode (kimi acp).",
         underlying_cli: None,
         effort_thought_level: None,
         underlying_cli_install_hint: None,
@@ -209,7 +209,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "amp-acp",
         args: &[],
         install_instructions_url: "https://github.com/tao12345666333/amp-acp",
-        install_hint: "Buzz talks to the Amp CLI through the amp-acp adapter. Follow the setup guide to install the adapter so the amp-acp command is on your PATH.",
+        install_hint: "Kuzz talks to the Amp CLI through the amp-acp adapter. Follow the setup guide to install the adapter so the amp-acp command is on your PATH.",
         underlying_cli: Some("amp"),
         effort_thought_level: None,
         underlying_cli_install_hint: None,
@@ -221,7 +221,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "hermes-acp",
         args: &[],
         install_instructions_url: "https://hermes-agent.nousresearch.com",
-        install_hint: "Buzz talks to Hermes Agent through its hermes-acp command.",
+        install_hint: "Kuzz talks to Hermes Agent through its hermes-acp command.",
         underlying_cli: None,
         // hermes-acp `reasoning_effort` thought_level option (minimal…ultra);
         // the picker offers the safe common subset until a session discovers it.
@@ -235,7 +235,7 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         command: "openclaw",
         args: &["acp"],
         install_instructions_url: "https://docs.openclaw.ai/start/getting-started",
-        install_hint: "Buzz talks to OpenClaw through its ACP mode (openclaw acp), which relies on the OpenClaw Gateway daemon. Follow the setup guide to install both.\n\n\
+        install_hint: "Kuzz talks to OpenClaw through its ACP mode (openclaw acp), which relies on the OpenClaw Gateway daemon. Follow the setup guide to install both.\n\n\
             ⚠️  Execution-locus note: `openclaw acp` runs tools inside the \
             OpenClaw Gateway daemon, not in the Desktop process. \
             Desktop-injected BUZZ_* env vars are visible to the `openclaw` \
@@ -458,7 +458,7 @@ mod tests {
         assert!(adapter_missing.default_args.is_empty());
         assert_eq!(
             adapter_missing.install_hint,
-            "Requires Node.js 22 or newer. Install the Pi ACP adapter with `npm install -g --install-links=true 'git+https://github.com/salman1993/buzz-pi-acp.git#86b201e'`. Make sure `buzz-pi-acp` is on PATH, then restart Buzz."
+            "Requires Node.js 22 or newer. Install the Pi ACP adapter with `npm install -g --install-links=true 'git+https://github.com/salman1993/buzz-pi-acp.git#86b201e'`. Make sure `buzz-pi-acp` is on PATH, then restart Kuzz."
         );
         assert_eq!(
             adapter_missing.install_instructions_url,
@@ -486,7 +486,7 @@ mod tests {
         );
         assert_eq!(
             not_installed.install_hint,
-            "Install Pi with `npm install -g @earendil-works/pi-coding-agent`, then run `pi` to configure its model provider. Requires Node.js 22 or newer. Install the Pi ACP adapter with `npm install -g --install-links=true 'git+https://github.com/salman1993/buzz-pi-acp.git#86b201e'`. Make sure `buzz-pi-acp` is on PATH, then restart Buzz."
+            "Install Pi with `npm install -g @earendil-works/pi-coding-agent`, then run `pi` to configure its model provider. Requires Node.js 22 or newer. Install the Pi ACP adapter with `npm install -g --install-links=true 'git+https://github.com/salman1993/buzz-pi-acp.git#86b201e'`. Make sure `buzz-pi-acp` is on PATH, then restart Kuzz."
         );
     }
 

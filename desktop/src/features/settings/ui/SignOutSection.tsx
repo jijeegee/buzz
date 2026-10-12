@@ -150,7 +150,7 @@ export function SignOutSection({
               >
                 {showKeyBackupGate
                   ? "Removes your identity key and all local app data from this device. This is not regular sign-out or account deletion. Create and test a password-protected key backup above — this cannot be undone."
-                  : "Removes all Buzz data from this computer. Your account is not deleted — sign in with Google again to get back in."}
+                  : "Removes all Kuzz data from this computer. Your account is not deleted — sign in with Google again to get back in."}
               </p>
             </div>
             <Button
@@ -185,8 +185,8 @@ export function SignOutSection({
             <AlertDialogTitle>Delete all local data?</AlertDialogTitle>
             <AlertDialogDescription>
               {showKeyBackupGate
-                ? "This will delete your identity key, all agent settings, and cached data from this device, then relaunch Buzz into first-run setup. This cannot be undone."
-                : "This deletes all agent settings and saved data from this computer, then restarts Buzz. Your account is not deleted — sign in with Google again to get back in."}
+                ? "This will delete your identity key, all agent settings, and cached data from this device, then relaunch Kuzz into first-run setup. This cannot be undone."
+                : "This deletes all agent settings and saved data from this computer, then restarts Kuzz. Your account is not deleted — sign in with Google again to get back in."}
             </AlertDialogDescription>
           </AlertDialogHeader>
 

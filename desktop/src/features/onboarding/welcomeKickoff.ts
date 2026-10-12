@@ -180,10 +180,10 @@ export function buildWelcomeKickoffOpener(
   if (introTeammates.length === 0) {
     const teammateNames = formatAgentNames(allTeammates);
     const teammatePhrase = teammateNames ? ` with ${teammateNames}` : "";
-    return `${greeting} Welcome to Buzz. This is your private home base, and I'm here${teammatePhrase} to help you get oriented or work through something you're building.\n\n${WELCOME_KICKOFF_CTA}`;
+    return `${greeting} Welcome to Kuzz. This is your private home base, and I'm here${teammatePhrase} to help you get oriented or work through something you're building.\n\n${WELCOME_KICKOFF_CTA}`;
   }
 
-  return `${greeting} Welcome to Buzz. This is your private home base, and we're here to help you get oriented or work through something you're building.\n\n${introNames}, introduce ${introTeammates.length === 1 ? "yourself" : "yourselves"} in a sentence or two — share what you're good at and when to bring you in. Don't start any work yet.`;
+  return `${greeting} Welcome to Kuzz. This is your private home base, and we're here to help you get oriented or work through something you're building.\n\n${introNames}, introduce ${introTeammates.length === 1 ? "yourself" : "yourselves"} in a sentence or two — share what you're good at and when to bring you in. Don't start any work yet.`;
 }
 
 export function onlineWelcomeTeammates(
@@ -426,7 +426,7 @@ export function buildWelcomeKickoffUserOpener(
   lead: ManagedAgent,
   introTeammates: readonly ManagedAgent[],
 ) {
-  const ask = `@${lead.name} Hi! I just joined Buzz. Could you help me get oriented?`;
+  const ask = `@${lead.name} Hi! I just joined Kuzz. Could you help me get oriented?`;
   if (introTeammates.length === 0) return ask;
   return `${ask}\n\n${formatMentionNames(introTeammates)}, please introduce ${introTeammates.length === 1 ? "yourself" : "yourselves"} in a sentence or two — share what you're good at and when to bring you in. Don't start any work yet.`;
 }

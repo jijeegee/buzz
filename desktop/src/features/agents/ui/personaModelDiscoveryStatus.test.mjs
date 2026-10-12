@@ -37,6 +37,19 @@ test("Buzz shared compute names the empty state and next action", () => {
   assert.match(status?.message ?? "", /Settings > Compute/);
 });
 
+test("shared compute empty state does not depend on the product name", () => {
+  for (const message of [
+    "no Kuzz shared compute serving members are available",
+    "No live Kuzz shared compute models are available",
+  ]) {
+    const status = formatModelDiscoveryErrorStatus(
+      new Error(message),
+      "relay-mesh",
+    );
+    assert.match(status?.message ?? "", /No members are sharing compute/);
+  }
+});
+
 test("Buzz shared compute distinguishes relay lookup failures", () => {
   const status = formatModelDiscoveryErrorStatus(
     new Error("Buzz shared compute model discovery failed: relay offline"),

@@ -251,7 +251,9 @@ export const settingsSections: SettingsSectionDescriptor[] = [
 function formatThemeLabel(name: string): string {
   return name
     .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) =>
+      w === "buzz" ? "Kuzz" : w.charAt(0).toUpperCase() + w.slice(1),
+    )
     .join(" ");
 }
 
@@ -650,7 +652,7 @@ function ThemeSettingsCard() {
     >
       <SettingsSectionHeader
         title="Appearance"
-        description="Choose how Buzz looks and feels."
+        description="Choose how Kuzz looks and feels."
       />
 
       <SettingsOptionGroupList>
@@ -710,7 +712,7 @@ function ThemeSettingsCard() {
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Choose the colors used throughout Buzz.
+                Choose the colors used throughout Kuzz.
               </p>
             </div>
             <button

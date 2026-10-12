@@ -30,7 +30,7 @@ export function ModelsSettingsPanel() {
     <section className="min-w-0" data-testid="settings-models">
       <SettingsSectionHeader
         title="Models"
-        description="AI that Buzz itself uses — which provider you pay for, and which model handles each app task."
+        description="AI that Kuzz itself uses — which provider you pay for, and which model handles each app task."
       />
       <Tabs
         onValueChange={(value) => setTab(value as ModelsSettingsTab)}

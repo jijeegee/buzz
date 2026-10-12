@@ -34,8 +34,8 @@ function isEmptySharedComputeError(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
     normalized.includes("shared compute status is not published") ||
-    normalized.includes("no buzz shared compute serving members") ||
-    normalized.includes("no live buzz shared compute models") ||
+    normalized.includes("shared compute serving members are available") ||
+    normalized.includes("shared compute models are available") ||
     normalized.includes("no live member is serving") ||
     normalized.includes("requires a live serving member")
   );
@@ -52,7 +52,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("waiting for the current member roster")) {
       return {
         message:
-          "Buzz is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
+          "Kuzz is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
         tone: "warning",
       };
     }
@@ -68,7 +68,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("shared compute is not available in this build")) {
       return {
         message:
-          "This version of Buzz cannot use shared compute. Update Buzz or choose another provider.",
+          "This version of Kuzz cannot use shared compute. Update Kuzz or choose another provider.",
         tone: "warning",
       };
     }
@@ -76,14 +76,14 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("shared compute status is malformed")) {
       return {
         message:
-          "Buzz received an invalid shared compute status. Check the member machine, then try again.",
+          "Kuzz received an invalid shared compute status. Check the member machine, then try again.",
         tone: "warning",
       };
     }
 
     return {
       message:
-        "Buzz couldn't check shared compute through the relay. Check your relay connection and try again.",
+        "Kuzz couldn't check shared compute through the relay. Check your relay connection and try again.",
       tone: "warning",
     };
   }

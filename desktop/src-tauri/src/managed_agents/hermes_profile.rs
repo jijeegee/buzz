@@ -410,7 +410,7 @@ pub(crate) fn prepare_for_start<R: tauri::Runtime>(
     ensure_profile(
         &profile,
         || find_hermes_cli(&hermes_command),
-        &format!("Buzz agent: {label}"),
+        &format!("Kuzz agent: {label}"),
     )
     .map_err(|reason| refusal(label, &profile.name, &reason))
 }
@@ -617,7 +617,7 @@ pub(crate) fn move_profile_dir(from: &HermesProfile, to: &HermesProfile) -> Resu
         return Ok(false);
     }
     if !is_buzz_profile_dir(&from.root, &from.dir) || !is_buzz_profile_dir(&to.root, &to.dir) {
-        return Err("not a Buzz-owned Hermes profile directory".into());
+        return Err("not a Kuzz-owned Hermes profile directory".into());
     }
     std::fs::rename(&from.dir, &to.dir)
         .map(|()| true)

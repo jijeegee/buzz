@@ -16,9 +16,9 @@ import { Spinner } from "@/shared/ui/spinner";
  * (legacy token accounts). Plain Google sign-in cannot reach those accounts
  * on a new device, so the route stays, in plain words.
  */
-export const OLDER_ACCOUNT_SIGN_IN_LABEL = "Sign in to an older Buzz account";
+export const OLDER_ACCOUNT_SIGN_IN_LABEL = "Sign in to an older Kuzz account";
 export const OLDER_ACCOUNT_SIGN_IN_TITLE =
-  "Use this only if your Buzz account was created with an earlier version of Buzz.";
+  "Use this only if your Kuzz account was created with an earlier version of Kuzz.";
 
 /**
  * "Sign in with Google" for onboarding. Rendered only when the community's
