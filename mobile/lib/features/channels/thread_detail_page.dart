@@ -23,6 +23,7 @@ import 'android_ime_lift.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_link_navigation.dart';
 import 'channel_messages_provider.dart';
+import 'channel_preload.dart';
 import 'channel_typing_provider.dart';
 import 'channel_typing_indicator.dart';
 import 'thread_depth.dart';
@@ -169,11 +170,21 @@ class ThreadDetailPage extends HookConsumerWidget {
       liveChannelEvents,
       threadHead.id,
     );
+    // Replies preloaded from the inbox paint with the route snapshot until
+    // the full scan lands; they never replace it.
+    final preloadedReplies = relayRepliesAvailable
+        ? const <NostrEvent>[]
+        : ref.watch(preloadedThreadRepliesProvider(repliesArgs));
     final allMsgs = fetchedReplies == null || !relayRepliesAvailable
         ? _provisionalThreadMessages(
             allMessages,
             fetchedReplies ??
-                formatTimeline(liveChannelEvents, currentPubkey: currentPubkey),
+                formatTimeline(
+                  preloadedReplies.isEmpty
+                      ? liveChannelEvents
+                      : mergeThreadEvents(preloadedReplies, liveChannelEvents),
+                  currentPubkey: currentPubkey,
+                ),
             liveChannelEvents,
           )
         : [

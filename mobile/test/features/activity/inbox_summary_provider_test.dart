@@ -1,4 +1,3 @@
-
 import 'package:buzz/features/activity/activity_provider.dart';
 import 'package:buzz/features/activity/feed_item.dart';
 import 'package:buzz/features/activity/inbox_summary_provider.dart';

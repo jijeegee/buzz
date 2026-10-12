@@ -39,6 +39,7 @@ import 'conversation_room.dart';
 import 'dm_resurface.dart';
 import 'inbox_item.dart';
 import 'inbox_local_state_provider.dart';
+import 'inbox_preload.dart';
 import 'inbox_summary.dart';
 import 'inbox_summary_provider.dart';
 import 'inbox_view_preferences_provider.dart';
@@ -167,6 +168,14 @@ class ActivityPage extends HookConsumerWidget {
     }, [preloadPubkeysKey]);
 
     final unreadVisibleCount = visibleItems.where((i) => !isDone(i)).length;
+
+    // Rooms and threads behind the top chat-list rows load in the background.
+    final markPreloadInput = useInboxPreload(
+      ref,
+      visibleItems,
+      enabled: filter == InboxFilter.conversations,
+      scrollController: scrollController,
+    );
 
     void markItemRead(InboxItem item) {
       final notifier = ref.read(readStateProvider.notifier);
@@ -470,12 +479,15 @@ class ActivityPage extends HookConsumerWidget {
         key: const ValueKey('activity-content-safe-area'),
         top: false,
         bottom: false,
-        child: bodyRidesOverTopSection
-            ? body
-            : Padding(
-                padding: EdgeInsets.only(top: topSectionHeight),
-                child: body,
-              ),
+        child: Listener(
+          onPointerDown: (_) => markPreloadInput(),
+          child: bodyRidesOverTopSection
+              ? body
+              : Padding(
+                  padding: EdgeInsets.only(top: topSectionHeight),
+                  child: body,
+                ),
+        ),
       ),
     );
   }

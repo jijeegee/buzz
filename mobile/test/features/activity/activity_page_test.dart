@@ -12,7 +12,9 @@ import 'package:buzz/features/activity/reminders_provider.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_detail_page.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
+import 'package:buzz/features/channels/channel_preload.dart';
 import 'package:buzz/features/channels/message_content.dart';
+import 'package:buzz/features/channels/thread_replies_provider.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:buzz/shared/identity_names/identity_names.dart';
 import 'package:buzz/shared/mentions/agent_identity_provider.dart';
@@ -153,6 +155,7 @@ void main() {
           () => _FakeComposeDraftsNotifier(drafts),
         ),
         remindersProvider.overrideWith(() => _FakeRemindersNotifier(reminders)),
+        channelPreloaderProvider.overrideWith(_RecordingPreloader.new),
         ...overrides,
       ],
       child: MaterialApp(
@@ -840,6 +843,8 @@ void main() {
 
     expect(find.textContaining('Latest from the summary'), findsOneWidget);
     expect(find.text('3 unread'), findsOneWidget);
+    // The room behind the top row loads in the background.
+    expect(_RecordingPreloader.preloadedRooms, contains('ch1'));
 
     await tester.longPress(
       find.byKey(const ValueKey('inbox-row-summary-latest')),
@@ -1172,6 +1177,28 @@ class _PendingActivityNotifier extends ActivityNotifier {
 class _ErrorActivityNotifier extends ActivityNotifier {
   @override
   Future<HomeFeedResponse> build() => Future.error('Connection refused');
+}
+
+/// Records preload requests without touching the relay.
+class _RecordingPreloader extends ChannelPreloader {
+  _RecordingPreloader(super.ref);
+
+  static final List<String> preloadedRooms = [];
+
+  @override
+  bool get canRequest => true;
+
+  @override
+  Future<List<String>> preloadRooms(List<ChannelPreloadTarget> targets) async {
+    preloadedRooms.addAll(targets.map((target) => target.channelId));
+    return const [];
+  }
+
+  @override
+  Future<int> preloadThreads(
+    List<ThreadRepliesArgs> threads, {
+    Future<bool> Function()? beforeRequest,
+  }) async => 0;
 }
 
 class _UnsupportedSummaryNotifier extends InboxSummaryNotifier {

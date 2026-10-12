@@ -40,7 +40,9 @@ class ChannelHeadCache {
   ChannelHeadCache(this._root, {this.maxChannels = maxChannelsPerScope});
 
   static const schemaVersion = 1;
-  static const maxChannelsPerScope = 32;
+
+  /// Room for the inbox preload's rooms (up to 48 rows) next to visited ones.
+  static const maxChannelsPerScope = 64;
   static const maxEntryBytes = 1024 * 1024;
 
   final Future<Directory> Function() _root;
@@ -61,6 +63,18 @@ class ChannelHeadCache {
       _serial(() async {
         final path = _entryPath(await _scopeDir(scope), channelId);
         return _readInIsolate(path, channelId);
+      });
+
+  /// When [channelId]'s head was last written or read, or null when there is
+  /// none. A head touched before a message arrived cannot contain it.
+  Future<DateTime?> touchedAt(ChannelHeadScope scope, String channelId) =>
+      _serial(() async {
+        final file = File(_entryPath(await _scopeDir(scope), channelId));
+        try {
+          return await file.lastModified();
+        } on FileSystemException {
+          return null;
+        }
       });
 
   /// Writes are dropped when a clear was requested after this call.
