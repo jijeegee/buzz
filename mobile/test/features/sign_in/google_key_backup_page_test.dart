@@ -96,6 +96,9 @@ Future<ProviderContainer> _pumpSignedOut(
       ),
       sessionClockProvider.overrideWithValue(clock.call),
       sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+      installIdStoreProvider.overrideWithValue(
+        InstallIdStore(storage: FakeSecureStorage()),
+      ),
       keyBackupRefreshTokenStoreProvider.overrideWithValue(
         FakeRefreshTokenStore(),
       ),
@@ -292,6 +295,9 @@ void main() {
           webAuthLauncherProvider.overrideWithValue(launcher),
           sessionClockProvider.overrideWithValue(clock.call),
           sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+          installIdStoreProvider.overrideWithValue(
+            InstallIdStore(storage: FakeSecureStorage()),
+          ),
           keyBackupRefreshTokenStoreProvider.overrideWithValue(
             FakeRefreshTokenStore(),
           ),
@@ -372,6 +378,9 @@ void main() {
             webAuthLauncherProvider.overrideWithValue(launcher),
             sessionClockProvider.overrideWithValue(clock.call),
             sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+            installIdStoreProvider.overrideWithValue(
+              InstallIdStore(storage: FakeSecureStorage()),
+            ),
             refreshTokenStoreProvider.overrideWithValue(
               FakeRefreshTokenStore(),
             ),
@@ -477,6 +486,9 @@ void main() {
           webAuthLauncherProvider.overrideWithValue(launcher),
           sessionClockProvider.overrideWithValue(clock.call),
           sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+          installIdStoreProvider.overrideWithValue(
+            InstallIdStore(storage: FakeSecureStorage()),
+          ),
           refreshTokenStoreProvider.overrideWithValue(tokenStore),
           keyBackupRefreshTokenStoreProvider.overrideWithValue(
             FakeRefreshTokenStore(),
