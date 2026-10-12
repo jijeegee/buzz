@@ -9,7 +9,6 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
-import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import { JoinPolicyNotice } from "@/features/onboarding/ui/JoinPolicyNotice";
 import { normalizeRelayUrl, probeRelayReachable } from "../relayProbe";
 
@@ -50,7 +49,6 @@ export function CommunityEditForm({
   const [ageConfirmed, setAgeConfirmed] = React.useState(false);
   const [agreementConfirmed, setAgreementConfirmed] = React.useState(false);
   const shouldReduceMotion = useReducedMotion();
-  const showUrlField = signingKeyUiTestSeam();
 
   const cancelRef = React.useRef<(() => void) | null>(null);
 
@@ -221,35 +219,32 @@ export function CommunityEditForm({
         />
       </div>
 
-      {/* Kuzz edits the name only; the address field stays for E2E builds. */}
-      {showUrlField ? (
-        <div className="space-y-1.5 text-left">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="community-edit-url"
-          >
-            Community URL
-          </label>
-          <Input
-            className="h-10 bg-background"
-            disabled={isProbing}
-            id="community-edit-url"
-            onChange={(event) => {
-              setRelayUrl(event.target.value);
-              setError(null);
-              setProbeWarning(null);
-              setUseAnywayOverride(false);
-              setJoinPolicy(null);
-              setPolicyRelayUrl(null);
-              setAgeConfirmed(false);
-              setAgreementConfirmed(false);
-            }}
-            placeholder="wss://relay.example.com"
-            type="text"
-            value={relayUrl}
-          />
-        </div>
-      ) : null}
+      <div className="space-y-1.5 text-left">
+        <label
+          className="text-sm font-medium text-foreground"
+          htmlFor="community-edit-url"
+        >
+          Community URL
+        </label>
+        <Input
+          className="h-10 bg-background"
+          disabled={isProbing}
+          id="community-edit-url"
+          onChange={(event) => {
+            setRelayUrl(event.target.value);
+            setError(null);
+            setProbeWarning(null);
+            setUseAnywayOverride(false);
+            setJoinPolicy(null);
+            setPolicyRelayUrl(null);
+            setAgeConfirmed(false);
+            setAgreementConfirmed(false);
+          }}
+          placeholder="Paste the community link"
+          type="text"
+          value={relayUrl}
+        />
+      </div>
 
       <AnimatePresence initial={false}>
         {joinPolicy && policyRelayUrl ? (
