@@ -138,7 +138,7 @@ test("a new Google account is created only after Create account", async () => {
     fireEvent.click(container.querySelector("[data-testid='start']")),
   );
   await settle(() => dialog() !== null);
-  assert.match(dialog().textContent, /Create your Buzz account/);
+  assert.match(dialog().textContent, /Create your Kuzz account/);
   assert.equal(
     document.querySelector("[data-testid='create-account-email']").textContent,
     "new@example.test",
