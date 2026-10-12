@@ -113,6 +113,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
               return;
             }
             _handleLiveEvent(event);
+            _lifecycleRef.read(channelLiveEventsProvider).emit(event);
           },
           onClosed: (message) =>
               _handleLiveChunkClosed(chunkKey, generation, message),

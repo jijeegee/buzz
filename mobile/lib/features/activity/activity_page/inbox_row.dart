@@ -50,6 +50,9 @@ class _InboxRow extends HookConsumerWidget {
   final Channel? channel;
   final String? currentPubkey;
   final bool isDone;
+
+  /// The relay's unread count for this row, shown when above one.
+  final InboxServerUnread? serverUnread;
   final VoidCallback onTap;
   final VoidCallback onMarkRead;
   final VoidCallback onMarkUnread;
@@ -64,6 +67,7 @@ class _InboxRow extends HookConsumerWidget {
     required this.channel,
     required this.currentPubkey,
     required this.isDone,
+    this.serverUnread,
     required this.onTap,
     required this.onMarkRead,
     required this.onMarkUnread,
@@ -179,6 +183,15 @@ class _InboxRow extends HookConsumerWidget {
     );
 
     final mutedColor = context.colors.onSurfaceVariant;
+    // Like desktop: one unread message is just the dot.
+    final unread = serverUnread;
+    final unreadCountLabel = unread == null
+        ? null
+        : unread.overflow
+        ? '$inboxSummaryUnreadCap+ unread'
+        : unread.count > 1
+        ? '${unread.count} unread'
+        : null;
     final labelColor = item.isActionRequired && !isDone
         ? context.colors.tertiary
         : mutedColor;
@@ -320,6 +333,17 @@ class _InboxRow extends HookConsumerWidget {
                                           ),
                                         ),
                                         const SizedBox(width: Grid.xxs),
+                                        if (unreadCountLabel != null) ...[
+                                          Text(
+                                            unreadCountLabel,
+                                            key: ValueKey(
+                                              'inbox-unread-count-${item.id}',
+                                            ),
+                                            style: activityTimestampTextStyle
+                                                .copyWith(color: mutedColor),
+                                          ),
+                                          const SizedBox(width: Grid.xxs),
+                                        ],
                                         Text(
                                           _inboxTimestamp(
                                             item.latestActivityAt,

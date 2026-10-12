@@ -12,6 +12,8 @@ import '../channels/channels_provider.dart';
 import 'dm_resurface.dart';
 import 'feed_item.dart';
 import 'inbox_item.dart';
+import 'inbox_summary.dart';
+import 'inbox_summary_provider.dart';
 
 typedef DmResurfaceAction = Future<String> Function(List<String> pubkeys);
 
@@ -779,41 +781,24 @@ String? _joinedChannelKey(AsyncValue<List<Channel>> channels) {
   return ids.join(',');
 }
 
-/// Inbox rows for the Channels + Threads view: the regular feed plus recent
-/// channel traffic, with each channel's main timeline collapsed to one row.
+/// Inbox rows for the Channels + Threads view: the regular feed plus each
+/// room's and thread's latest message, with each channel's main timeline
+/// collapsed to one row. One relay summary request feeds the rows; per-room
+/// loading is the fallback for relays that do not serve the summary envelope.
 final conversationInboxItemsProvider = Provider.autoDispose<List<InboxItem>>((
   ref,
 ) {
   final feed = ref.watch(activityProvider).value;
-  final channelActivity =
-      ref.watch(channelActivityProvider).value ?? const <FeedItem>[];
+  final summary = ref.watch(inboxSummaryProvider);
   final channels =
       ref.watch(channelsProvider).asData?.value ?? const <Channel>[];
-  // Rooms that moved past the initial load (a new message, often the user's
-  // own) refetch on their own so they re-sort by their real latest activity.
-  final loadedLatestAt = <String, int>{};
-  for (final item in channelActivity) {
-    final channelId = item.channelId;
-    if (channelId == null) continue;
-    loadedLatestAt[channelId] = math.max(
-      loadedLatestAt[channelId] ?? 0,
-      item.createdAt,
-    );
-  }
-  final refreshed = [
-    if (ref.watch(channelActivityProvider).hasValue)
-      for (final channel in channels)
-        if (channel.isMember &&
-            !channel.isArchived &&
-            (dateTimeToUnixSeconds(channel.lastMessageAt) ?? 0) >
-                (loadedLatestAt[channel.id] ?? 0))
-          ...?ref.watch(roomActivityRefreshProvider(channel.id)).value,
-  ];
+  final conversationActivity = inboxSummaryFailed(summary)
+      ? _perRoomConversationActivity(ref, channels)
+      : inboxSummaryFeedItems(summary.value?.rows ?? const []);
   // Feed items win on duplicate ids: their category (mention, needs action)
   // is more specific than plain channel activity.
   final byId = <String, FeedItem>{
-    for (final item in channelActivity) item.id: item,
-    for (final item in refreshed) item.id: item,
+    for (final item in conversationActivity) item.id: item,
     for (final item in feed?.all ?? const <FeedItem>[]) item.id: item,
   };
   final dmChannelIds = {
@@ -824,3 +809,30 @@ final conversationInboxItemsProvider = Provider.autoDispose<List<InboxItem>>((
     buildInboxItems(byId.values, isDmChannel: dmChannelIds.contains),
   );
 });
+
+/// Per-room fallback: recent traffic of every joined room, plus a refetch of
+/// each room that moved past the initial load (a new message, often the
+/// user's own) so it re-sorts by its real latest activity.
+List<FeedItem> _perRoomConversationActivity(Ref ref, List<Channel> channels) {
+  final channelActivity =
+      ref.watch(channelActivityProvider).value ?? const <FeedItem>[];
+  final loadedLatestAt = <String, int>{};
+  for (final item in channelActivity) {
+    final channelId = item.channelId;
+    if (channelId == null) continue;
+    loadedLatestAt[channelId] = math.max(
+      loadedLatestAt[channelId] ?? 0,
+      item.createdAt,
+    );
+  }
+  return [
+    ...channelActivity,
+    if (ref.watch(channelActivityProvider).hasValue)
+      for (final channel in channels)
+        if (channel.isMember &&
+            !channel.isArchived &&
+            (dateTimeToUnixSeconds(channel.lastMessageAt) ?? 0) >
+                (loadedLatestAt[channel.id] ?? 0))
+          ...?ref.watch(roomActivityRefreshProvider(channel.id)).value,
+  ];
+}
