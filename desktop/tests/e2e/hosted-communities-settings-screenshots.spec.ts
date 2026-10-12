@@ -222,7 +222,8 @@ const UNUSABLE_BOUND_KEY_PAYLOADS: Array<
 ];
 
 for (const [label, payload] of UNUSABLE_BOUND_KEY_PAYLOADS) {
-  test(`identity: ${label} is recovery, never a connected account or actions`, async ({
+  // Kuzz hides this flow (Builderlab hosting / app updates are not offered).
+  test.skip(`identity: ${label} is recovery, never a connected account or actions`, async ({
     page,
   }) => {
     await openHostedCommunitiesSettings(page, payload);
