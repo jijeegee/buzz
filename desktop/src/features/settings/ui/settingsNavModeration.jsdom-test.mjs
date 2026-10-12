@@ -1,17 +1,12 @@
 /**
- * Behavior tests for Settings → Relay admin nav reachability.
- *
- * Wes P2 round-6 finding #1: Relay admin must be independently reachable
- * without NIP-11 discovery — absent, invalid, or error discovery must not
- * hide the nav entry or redirect a direct ?section=relay-admin link away.
+ * Behavior tests for Settings → Admin nav visibility.
  *
  * Tests render the real SettingsView and assert on the sidebar DOM.
  *
- * Contract: the relay-admin nav entry is always visible. Authorization
- * gates the panel itself, not the nav entry — so NIP-11 discovery state
- * ("none", invalid, error, or pending) never hides or redirects the entry.
- * Reintroducing any discovery-based gate on the nav entry turns these
- * tests RED.
+ * Kuzz contract: the relay-admin ("Admin") nav entry appears only after the
+ * server confirms the active identity as an operator or moderator. No
+ * origin, a lookup error, a pending lookup or a denied probe all hide it, so
+ * ordinary users never see the admin console or its access-denied key dump.
  */
 
 import assert from "node:assert/strict";
@@ -165,25 +160,25 @@ function stubNoOrigin() {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-test("relay-admin-nav-visible-no-origin: nav renders when no origin saved and discovery returns null", async () => {
-  // With the old predicate: hook resolves to {originSource:"none"} → hidden → RED.
-  // With the current fix: nav is always present regardless of discovery state.
+function navEntry(container) {
+  return container.querySelector("[data-testid='settings-nav-relay-admin']");
+}
+
+test("relay-admin-nav-hidden-no-origin: nav is hidden when no origin is saved or discovered", async () => {
   stubNoOrigin();
-  const { container, doRender, unmount } = mountSettingsView();
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
   try {
     await doRender();
     await settle();
-    assert.ok(
-      container.querySelector("[data-testid='settings-nav-relay-admin']"),
-      "Relay admin nav must render when no origin and discovery returns null",
-    );
+    assert.equal(navEntry(container), null);
   } finally {
     await unmount();
   }
 });
 
-test("relay-admin-nav-visible-discovery-error: nav renders when discovery IPCs throw", async () => {
-  // Both origin lookup and discovery fail. Old code: "none" → hidden → RED.
+test("relay-admin-nav-hidden-discovery-error: nav is hidden when origin lookups throw", async () => {
   setIpcHandler("get_admin_origin", () =>
     Promise.reject(new Error("storage error")),
   );
@@ -192,62 +187,68 @@ test("relay-admin-nav-visible-discovery-error: nav renders when discovery IPCs t
   );
   setIpcHandler("get_relay_origin", () => Promise.resolve(null));
   setIpcHandler("get_relay_members_info", () => Promise.resolve(null));
-  const { container, doRender, unmount } = mountSettingsView();
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
   try {
     await doRender();
     await settle();
-    assert.ok(
-      container.querySelector("[data-testid='settings-nav-relay-admin']"),
-      "Relay admin nav must render even when discovery errors",
-    );
+    assert.equal(navEntry(container), null);
   } finally {
     await unmount();
   }
 });
 
-test("relay-admin-nav-visible-pending: nav renders while discovery IPC never resolves", async () => {
-  // Hook stays undefined (disabled or pending). Old code: `moderationNav === undefined`
-  // → false → nav hidden → RED. New code: nav is unconditional.
+test("relay-admin-nav-hidden-pending: nav stays hidden while the access check is pending", async () => {
   setIpcHandler("get_admin_origin", () => new Promise(() => {}));
   setIpcHandler("admin_discover_origin", () => new Promise(() => {}));
   setIpcHandler("get_relay_origin", () => Promise.resolve(null));
   setIpcHandler("get_relay_members_info", () => Promise.resolve(null));
-  const { container, doRender, unmount } = mountSettingsView();
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
   try {
     await doRender();
     await settle();
-    assert.ok(
-      container.querySelector("[data-testid='settings-nav-relay-admin']"),
-      "Relay admin nav must render while discovery is pending",
-    );
+    assert.equal(navEntry(container), null);
   } finally {
     await unmount();
   }
 });
 
-test("relay-admin-section-not-redirected: section=relay-admin is not normalized away after discovery", async () => {
-  // Old code deferred section normalization until moderationNav resolved, then
-  // redirected to appearance when origin was none.
+test("relay-admin-nav-hidden-denied: nav is hidden when the probe denies this identity", async () => {
   stubNoOrigin();
-  const redirectedTo = [];
+  setIpcHandler("get_admin_origin", () =>
+    Promise.resolve("https://admin.example"),
+  );
+  setIpcHandler("admin_probe", () => Promise.resolve({ state: "nip98Denied" }));
   const { container, doRender, unmount } = mountSettingsView({
-    section: "relay-admin",
-    onSectionChange: (s) => {
-      if (s !== "relay-admin") redirectedTo.push(s);
-    },
+    section: "shortcuts",
   });
   try {
     await doRender();
     await settle(80);
-    assert.deepEqual(
-      redirectedTo,
-      [],
-      `section=relay-admin must not be redirected; got redirects to: ${JSON.stringify(redirectedTo)}`,
-    );
-    assert.ok(
-      container.querySelector("[data-testid='settings-nav-relay-admin']"),
-      "Relay admin nav must still be present after settling",
-    );
+    assert.equal(navEntry(container), null);
+  } finally {
+    await unmount();
+  }
+});
+
+test("relay-admin-nav-visible-authorized: nav appears once the probe authorizes an operator", async () => {
+  stubNoOrigin();
+  setIpcHandler("get_admin_origin", () =>
+    Promise.resolve("https://admin.example"),
+  );
+  setIpcHandler("admin_probe", () =>
+    Promise.resolve({ state: "nip98Authorized", role: "operator" }),
+  );
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
+  try {
+    await doRender();
+    await settle(80);
+    assert.ok(navEntry(container), "Admin nav must render for an operator");
   } finally {
     await unmount();
   }

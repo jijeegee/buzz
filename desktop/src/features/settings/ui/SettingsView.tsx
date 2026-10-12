@@ -2,6 +2,7 @@ import * as React from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { AlertCircle, ArrowLeft, LoaderCircle, RefreshCw } from "lucide-react";
 
+import { useAdminConsoleAccessQuery } from "@/features/admin-console/adminConsoleAccess";
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
 import {
   canManageCommunityMembers,
@@ -144,6 +145,7 @@ export function SettingsView({
 }: SettingsViewProps) {
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const myMembershipQuery = useMyRelayMembershipLookupQuery();
+  const adminAccessQuery = useAdminConsoleAccessQuery();
   const featureState = useFeatureSnapshot();
   const visibleSections = React.useMemo(() => {
     return settingsSections.filter((s) => {
@@ -167,16 +169,15 @@ export function SettingsView({
       if (s.value === "community-members") {
         return canManageCommunityMembers(myMembershipQuery.data);
       }
-      // Relay admin surfaces the relay admin console. Always reachable so an
-      // operator can enter a manual origin even when NIP-11 discovery is
-      // absent, invalid, or pending — hiding the entry would lock them out of
-      // the only place to configure one. Auth still gates the panel itself.
+      // Kuzz runs a single relay that advertises its admin API, so the Admin
+      // section is shown only once the server confirms an operator or
+      // moderator; pending, failed and denied checks all hide it.
       if (s.value === "relay-admin") {
-        return true;
+        return adminAccessQuery.data === true;
       }
       return true;
     });
-  }, [myMembershipQuery.data, featureState]);
+  }, [myMembershipQuery.data, featureState, adminAccessQuery.data]);
 
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [appVersion, setAppVersion] = React.useState<string | null>(null);
