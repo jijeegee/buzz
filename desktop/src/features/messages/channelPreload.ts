@@ -1,3 +1,4 @@
+import { CONVERSATION_CACHE_GC_MS } from "@/shared/api/queryClient";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { reconcileFetchedChannelWindow } from "@/features/messages/hooks";
@@ -12,16 +13,20 @@ import {
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
 import { rememberRouteEvents } from "@/features/messages/lib/routeEventCache";
-import { loadThreadReplies } from "@/features/messages/useThreadReplies";
+import { seedThreadPages } from "@/features/messages/lib/threadWindowCache";
 import {
   getChannelWindowEvents,
   getChannelWindowsEvents,
 } from "@/shared/api/channelWindow";
-import { getEventById } from "@/shared/api/tauri";
+import { getEventsByIds } from "@/shared/api/tauri";
+import {
+  getThreadWindows,
+  MAX_THREAD_WINDOWS_PER_REQUEST,
+} from "@/shared/api/threadWindow";
 import type { RelayEvent } from "@/shared/api/types";
 
 const MESSAGES_STALE_MS = 5 * 60 * 1_000;
-const MESSAGES_GC_MS = 60 * 60 * 1_000;
+const MESSAGES_GC_MS = CONVERSATION_CACHE_GC_MS;
 /** Background work retries once; the scheduler retries later passes. */
 const PRELOAD_RETRY = 1;
 
@@ -132,50 +137,80 @@ async function storeChannelPage(
   return true;
 }
 
+/** Newest replies loaded per preloaded thread, about one panel. */
+export const THREAD_PRELOAD_REPLIES = 20;
+
+export type PreloadThread = { channelId: string; rootId: string };
+
 /**
- * Load a thread's replies in the background unless they are already cached.
- * Resolves to false when they were cached or the load failed.
- * `expectedEventId` is the reply the row opens on: a thread opened while this
- * load is in flight joins it, so it must enforce the same missing-reply retry.
+ * Load the newest replies of several threads in the background, four per relay
+ * round trip, and keep each reply and thread root at hand so opening a thread
+ * link needs no relay round trip. Threads already cached are not reloaded.
+ * `beforeRequest` runs before each request with the threads it carries and
+ * stops the preload when it resolves to false (the user is busy or the pass
+ * was cancelled).
  */
-export async function preloadThreadReplies(
+export async function preloadThreads(
   queryClient: QueryClient,
-  channelId: string,
-  rootId: string,
-  expectedEventId: string,
-): Promise<boolean> {
-  const queryKey = threadRepliesKey(channelId, rootId);
-  // Opening a thread link resolves the reply and its root before the thread
-  // shows; keep both at hand so that needs no relay round trip.
-  const rememberRoot = rememberThreadRoot(queryClient, channelId, rootId);
-  const cached = queryClient.getQueryData(queryKey) !== undefined;
-  if (!cached) {
-    await queryClient.prefetchQuery({
-      queryKey,
-      queryFn: () =>
-        loadThreadReplies(queryClient, channelId, rootId, expectedEventId),
-      retry: PRELOAD_RETRY,
-      gcTime: MESSAGES_GC_MS,
-    });
+  threads: readonly PreloadThread[],
+  beforeRequest: (
+    threads: readonly PreloadThread[],
+  ) => Promise<boolean> = async () => true,
+): Promise<number> {
+  let loaded = 0;
+  const cold = threads.filter(
+    (thread) =>
+      queryClient.getQueryData(
+        threadRepliesKey(thread.channelId, thread.rootId),
+      ) === undefined,
+  );
+  for (
+    let start = 0;
+    start < cold.length;
+    start += MAX_THREAD_WINDOWS_PER_REQUEST
+  ) {
+    const chunk = cold.slice(start, start + MAX_THREAD_WINDOWS_PER_REQUEST);
+    if (!(await beforeRequest(chunk))) return loaded;
+    try {
+      const pages = await getThreadWindows(
+        chunk.map((thread) => ({ ...thread, cursor: null })),
+        THREAD_PRELOAD_REPLIES,
+      );
+      seedThreadPages(queryClient, pages);
+      loaded += pages.length;
+    } catch (error) {
+      console.warn("Failed to preload threads", error);
+    }
   }
-  const replies = queryClient.getQueryData<RelayEvent[]>(queryKey);
-  if (replies) rememberRouteEvents(queryClient, replies);
-  await rememberRoot;
-  return !cached && queryClient.getQueryState(queryKey)?.status === "success";
+  for (const thread of threads) {
+    const replies = queryClient.getQueryData<RelayEvent[]>(
+      threadRepliesKey(thread.channelId, thread.rootId),
+    );
+    if (replies) rememberRouteEvents(queryClient, replies);
+  }
+  if (await beforeRequest([])) await rememberThreadRoots(queryClient, threads);
+  return loaded;
 }
 
-async function rememberThreadRoot(
+async function rememberThreadRoots(
   queryClient: QueryClient,
-  channelId: string,
-  rootId: string,
+  threads: readonly PreloadThread[],
 ): Promise<void> {
-  const cachedRoot = queryClient
-    .getQueryData<RelayEvent[]>(channelMessagesKey(channelId))
-    ?.find((event) => event.id === rootId);
+  const missing: string[] = [];
+  for (const { channelId, rootId } of threads) {
+    const cachedRoot = queryClient
+      .getQueryData<RelayEvent[]>(channelMessagesKey(channelId))
+      ?.find((event) => event.id === rootId);
+    if (cachedRoot) {
+      rememberRouteEvents(queryClient, [cachedRoot]);
+    } else if (!missing.includes(rootId)) {
+      missing.push(rootId);
+    }
+  }
+  if (missing.length === 0) return;
   try {
-    const root = cachedRoot ?? (await getEventById(rootId));
-    if (root) rememberRouteEvents(queryClient, [root]);
+    rememberRouteEvents(queryClient, await getEventsByIds(missing));
   } catch (error) {
-    console.warn("Failed to preload thread root", rootId, error);
+    console.warn("Failed to preload thread roots", error);
   }
 }

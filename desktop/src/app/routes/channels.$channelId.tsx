@@ -1,6 +1,7 @@
 import * as React from "react";
 import { createFileRoute, useLocation } from "@tanstack/react-router";
 
+import { LazyChannelRouteScreen } from "@/app/routes/lazyChannelRouteScreen";
 import { selectSearchHighlightRouteState } from "@/app/routes/searchHighlightRouteState";
 
 import {
@@ -66,10 +67,7 @@ export const Route = createFileRoute("/channels/$channelId")({
   component: ChannelRouteComponent,
 });
 
-const ChannelRouteScreen = React.lazy(async () => {
-  const module = await import("./ChannelRouteScreen");
-  return { default: module.ChannelRouteScreen };
-});
+const ChannelRouteScreen = LazyChannelRouteScreen;
 
 function ChannelRouteComponent() {
   const { channelId } = Route.useParams();

@@ -321,7 +321,7 @@ pub struct ForumThreadResponse {
 /// second after one page and silently drops every tied reply beyond the page
 /// limit — the "missed messages" bug this read-path work fixes. The relay
 /// keysets on `(event_created_at, event_id)` to match.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ThreadCursor {
     /// `created_at` of the last reply already loaded (Unix seconds).
     pub created_at: i64,

@@ -107,6 +107,7 @@ export default defineConfig({
         "**/top-chrome-zoom-clearance.spec.ts",
         "**/thread-unread.spec.ts",
         "**/thread-load-failure.spec.ts",
+        "**/thread-newest-first.spec.ts",
         "**/project-conversation-load-failure.spec.ts",
         "**/huddle-thread-load-failure.spec.ts",
         "**/workspace-rail.spec.ts",

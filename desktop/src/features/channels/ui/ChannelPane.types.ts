@@ -194,6 +194,12 @@ export type ChannelPaneProps = {
   threadMessagesPending?: boolean;
   threadMessagesError?: boolean;
   onRetryThreadReplies?: () => void;
+  /** Newest-first threads: older replies remain to be loaded. */
+  threadHasOlderReplies?: boolean;
+  threadIsFetchingOlderReplies?: boolean;
+  onFetchOlderThreadReplies?: () => Promise<void>;
+  /** Scrolls the room to the open thread's root message. */
+  onShowThreadInChannel?: () => void;
   threadPanelWidthPx: number;
   threadTypingPubkeys: string[];
   threadReplyTargetMessage: TimelineMessage | null;

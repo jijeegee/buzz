@@ -807,7 +807,7 @@ export function HomeView({
           markItemRead(itemId);
           setEnteredConversationId(row.conversationId);
           setInboxPanelOpen(true);
-          if (roomEntry.messageId === null) {
+          if (roomEntry.messageId === null && !roomEntry.threadRootId) {
             requestLandAtLatest(roomEntry.channelId);
           }
           handleEnterRoom(row, roomEntry);

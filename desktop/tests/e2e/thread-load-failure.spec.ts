@@ -38,7 +38,11 @@ async function installThreadFailureSwitch(page: Page) {
     w.__FAIL_THREAD_REPLIES__ = false;
     const original = w.__TAURI_INTERNALS__.invoke.bind(w.__TAURI_INTERNALS__);
     w.__TAURI_INTERNALS__.invoke = async (command, payload, options) => {
-      if (command === "get_thread_replies" && w.__FAIL_THREAD_REPLIES__) {
+      if (
+        (command === "get_thread_replies" ||
+          command === "get_thread_windows") &&
+        w.__FAIL_THREAD_REPLIES__
+      ) {
         throw new Error("relay unreachable: request timed out");
       }
       return original(command, payload, options);

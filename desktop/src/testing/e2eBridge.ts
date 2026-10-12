@@ -5608,6 +5608,168 @@ async function handleGetThreadReplies(
   return { events: page, next_cursor: nextCursor };
 }
 
+/** Conversation kinds a thread window pages (mirrors THREAD_ROW_KINDS). */
+const MOCK_THREAD_WINDOW_KINDS = new Set([9, 40002]);
+const MOCK_MAX_THREAD_WINDOWS = 4;
+
+type RawThreadWindowPage = {
+  channel_id: string;
+  root_id: string;
+  events: RelayEvent[];
+  has_more: boolean;
+  next_cursor: RawThreadCursor | null;
+};
+
+/** Every reply under `rootId` in the channel's mock store, transitively. */
+function collectMockThreadSubtree(
+  events: readonly RelayEvent[],
+  rootId: string,
+): RelayEvent[] | null {
+  if (!events.some((event) => event.id === rootId)) return null;
+  const collected: RelayEvent[] = [];
+  const included = new Set<string>();
+  const frontier = new Set<string>([rootId]);
+  for (;;) {
+    let added = false;
+    for (const event of events) {
+      if (included.has(event.id)) continue;
+      const ref = getThreadReferenceFromTags(event.tags);
+      if (!ref.parentEventId || !frontier.has(ref.parentEventId)) continue;
+      included.add(event.id);
+      collected.push(event);
+      frontier.add(event.id);
+      added = true;
+    }
+    if (!added) break;
+  }
+  return collected;
+}
+
+/**
+ * Mirror of the desktop `get_thread_windows` command over the mock store:
+ * newest-first reply pages for up to four threads. Order is created_at DESC
+ * then id ASC (relay keyset); a cursor keeps only replies strictly older than
+ * it. `next_cursor` is the oldest returned reply when more remain. Threads
+ * whose root is not in the channel are omitted, as the relay skips them.
+ */
+async function handleGetThreadWindows(
+  args: {
+    threads: Array<{
+      channelId: string;
+      rootId: string;
+      cursor?: RawThreadCursor | null;
+    }>;
+    limitRows?: number | null;
+  },
+  config: E2eConfig | undefined,
+): Promise<RawThreadWindowPage[]> {
+  if (args.threads.length > MOCK_MAX_THREAD_WINDOWS) {
+    throw new Error(
+      `at most ${MOCK_MAX_THREAD_WINDOWS} thread windows per request`,
+    );
+  }
+  const cap = Math.min(Math.max(args.limitRows ?? 50, 1), 200);
+  const pages: RawThreadWindowPage[] = [];
+  if (getIdentity(config) && args.threads.length > 0) {
+    // Config mode: the real relay thread-window query, split at each 39007
+    // bounds overlay exactly like the desktop command.
+    const filters = args.threads.map((thread) => {
+      const filter: Record<string, unknown> = {
+        thread_window: true,
+        "#h": [thread.channelId],
+        "#e": [thread.rootId],
+        kinds: [...MOCK_THREAD_WINDOW_KINDS],
+        limit: cap,
+        include_aux: true,
+      };
+      if (thread.cursor) {
+        filter.until = thread.cursor.created_at;
+        filter.before_id = thread.cursor.event_id;
+      }
+      return filter;
+    });
+    const events = await relayQuery(config, filters);
+    let segment: RelayEvent[] = [];
+    for (const event of events) {
+      if (event.kind !== 39007) {
+        segment.push(event);
+        continue;
+      }
+      const channelId = event.tags.find((tag) => tag[0] === "h")?.[1];
+      const rootId = event.tags.find((tag) => tag[0] === "e")?.[1];
+      const rows = segment;
+      segment = [];
+      if (!channelId || !rootId) continue;
+      let bounds: {
+        has_more?: boolean;
+        next_cursor?: { created_at: number; id: string } | null;
+      } = {};
+      try {
+        bounds = JSON.parse(event.content);
+      } catch {
+        // Malformed bounds: treat as exhausted.
+      }
+      const next = bounds.has_more ? (bounds.next_cursor ?? null) : null;
+      pages.push({
+        channel_id: channelId,
+        root_id: rootId,
+        events: rows,
+        has_more: next !== null,
+        next_cursor: next
+          ? { created_at: next.created_at, event_id: next.id }
+          : null,
+      });
+    }
+    return pages;
+  }
+  for (const thread of args.threads) {
+    const subtree = collectMockThreadSubtree(
+      getMockMessageStore(thread.channelId),
+      thread.rootId,
+    );
+    if (!subtree) continue;
+    const ordered = subtree
+      .filter((event) => MOCK_THREAD_WINDOW_KINDS.has(event.kind))
+      .sort(
+        (left, right) =>
+          right.created_at - left.created_at ||
+          left.id.localeCompare(right.id),
+      );
+    const cursor = thread.cursor ?? null;
+    const afterCursor = cursor
+      ? ordered.filter(
+          (event) =>
+            event.created_at < cursor.created_at ||
+            (event.created_at === cursor.created_at &&
+              event.id > cursor.event_id),
+        )
+      : ordered;
+    const rows = afterCursor.slice(0, cap);
+    const hasMore = afterCursor.length > cap;
+    const oldest = rows[rows.length - 1];
+    pages.push({
+      channel_id: thread.channelId,
+      root_id: thread.rootId,
+      events: rows,
+      has_more: hasMore && oldest !== undefined,
+      next_cursor:
+        hasMore && oldest
+          ? { created_at: oldest.created_at, event_id: oldest.id }
+          : null,
+    });
+  }
+  const delayMs = config?.mock?.threadRepliesDelayMs ?? 0;
+  if (delayMs > 0) {
+    await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+  }
+  if (config?.mock?.deferThreadReplies) {
+    await new Promise<void>((resolve) => {
+      deferredThreadRepliesQueue.push(resolve);
+    });
+  }
+  return pages;
+}
+
 const TIMELINE_KINDS = new Set([
   9,
   40002,
@@ -14682,6 +14844,30 @@ export function maybeInstallE2eTauriMocks() {
           payload as Parameters<typeof handleGetChannelWindow>[0],
           activeConfig,
         );
+      case "get_thread_windows":
+        return handleGetThreadWindows(
+          payload as Parameters<typeof handleGetThreadWindows>[0],
+          activeConfig,
+        );
+      case "get_channel_windows": {
+        // Batched newest windows: each channel's events are exactly what
+        // `get_channel_window` returns for it, bounds event included.
+        const args = payload as {
+          channelIds: string[];
+          limitRows?: number | null;
+        };
+        const windows = [];
+        for (const channelId of args.channelIds) {
+          windows.push({
+            channel_id: channelId,
+            events: await handleGetChannelWindow(
+              { channelId, limitRows: args.limitRows, cursor: null },
+              activeConfig,
+            ),
+          });
+        }
+        return windows;
+      }
       case "send_channel_message":
         return handleSendChannelMessage(
           payload as Parameters<typeof handleSendChannelMessage>[0],

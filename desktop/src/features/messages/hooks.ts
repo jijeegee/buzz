@@ -1,3 +1,4 @@
+import { CONVERSATION_CACHE_GC_MS } from "@/shared/api/queryClient";
 import { useEffect, useEffectEvent } from "react";
 import {
   type QueryClient,
@@ -257,6 +258,7 @@ export function useChannelWindowQuery(channel: Channel | null) {
       queryClient.getQueryData<ChannelWindowStore>(queryKey) ??
       emptyChannelWindowStore(),
     staleTime: Number.POSITIVE_INFINITY,
+    gcTime: CONVERSATION_CACHE_GC_MS,
   });
 }
 
@@ -316,7 +318,7 @@ export function useChannelMessagesQuery(channel: Channel | null) {
       );
     },
     staleTime: 5 * 60 * 1_000,
-    gcTime: 60 * 60 * 1_000,
+    gcTime: CONVERSATION_CACHE_GC_MS,
   });
 }
 

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowDown, CircleCheck } from "lucide-react";
+import { ArrowDown, CircleCheck, LocateFixed } from "lucide-react";
 import { ThreadNameEditor } from "./ThreadNameEditor";
 
 import { HuddleTranscriptIntro } from "@/features/huddle/components/HuddleTranscriptIntro";
@@ -34,6 +34,7 @@ import {
   THREAD_PANEL_MESSAGE_GUTTER_CLASS,
 } from "@/features/messages/lib/messageThreadPanelLayout";
 import { Button } from "@/shared/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { Separator } from "@/shared/ui/separator";
 import { ComposerActivityAccessory } from "./ComposerActivityAccessory";
 import { ComposerDockBackdrop } from "./ComposerDockBackdrop";
@@ -51,6 +52,7 @@ import { UnreadDivider } from "./UnreadDivider";
 import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
+import { useLoadOlderOnScroll } from "./useLoadOlderOnScroll";
 import {
   type GoalLinkTarget,
   threadGoalRootId,
@@ -126,6 +128,12 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   threadRepliesError?: boolean;
   /** Retries the failed thread-reply load; wired to the query's `refetch`. */
   onRetryThreadReplies?: () => void;
+  /** Older replies remain above the loaded ones (newest-first threads). */
+  hasOlderReplies?: boolean;
+  isFetchingOlderReplies?: boolean;
+  onFetchOlderReplies?: () => Promise<void>;
+  /** Scrolls the room beside the panel to this thread's root message. */
+  onShowInChannel?: () => void;
   threadUnreadCount?: number;
   threadReplyUnreadCounts?: ReadonlyMap<string, number>;
   threadTypingPubkeys: string[];
@@ -217,6 +225,10 @@ export function MessageThreadPanel({
   threadRepliesPending = false,
   threadRepliesError = false,
   onRetryThreadReplies,
+  hasOlderReplies = false,
+  isFetchingOlderReplies = false,
+  onFetchOlderReplies,
+  onShowInChannel,
   threadUnreadCount,
   threadReplyUnreadCounts,
   threadTypingPubkeys,
@@ -233,6 +245,7 @@ export function MessageThreadPanel({
 }: MessageThreadPanelProps) {
   const threadBodyRef = React.useRef<HTMLDivElement>(null);
   const threadContentRef = React.useRef<HTMLDivElement>(null);
+  const olderRepliesSentinelRef = React.useRef<HTMLDivElement>(null);
   const threadComposerWrapperRef = React.useRef<HTMLDivElement>(null);
   const [hoveredCollapseBranchId, setHoveredCollapseBranchId] = React.useState<
     string | null
@@ -512,6 +525,13 @@ export function MessageThreadPanel({
     scrollContainerRef: threadBodyRef,
     targetMessageId: scrollTargetId,
   });
+  useLoadOlderOnScroll({
+    fetchOlder: onFetchOlderReplies,
+    hasOlderMessages: hasOlderReplies,
+    isLoading: threadRepliesPending || repliesRenderState === "pending",
+    scrollContainerRef: threadBodyRef,
+    sentinelRef: olderRepliesSentinelRef,
+  });
   useComposerHeightPadding(
     threadBodyRef,
     threadComposerWrapperRef,
@@ -527,13 +547,38 @@ export function MessageThreadPanel({
   if (!threadHead) {
     return null;
   }
-  const goalHeaderChip =
+  const goalChip =
     goalsEnabled && channelId ? (
       <ThreadGoalHeaderChip
         channelId={channelId}
         onOpenLink={onOpenGoalLink}
         threadRootId={threadGoalRootId(threadHead)}
       />
+    ) : null;
+  const showInChannelButton = onShowInChannel ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          aria-label="Show in channel"
+          className="text-muted-foreground hover:text-foreground"
+          data-testid="message-thread-show-in-channel"
+          onClick={onShowInChannel}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          <LocateFixed />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Show in channel</TooltipContent>
+    </Tooltip>
+  ) : null;
+  const goalHeaderChip =
+    goalChip || showInChannelButton ? (
+      <>
+        {showInChannelButton}
+        {goalChip}
+      </>
     ) : null;
 
   const threadScrollRegion = (
@@ -635,6 +680,24 @@ export function MessageThreadPanel({
           className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-3 pt-0")}
           data-testid="message-thread-replies"
         >
+          {hasOlderReplies ? (
+            <div
+              className="flex justify-center pb-2"
+              data-testid="message-thread-older-replies"
+              ref={olderRepliesSentinelRef}
+            >
+              <button
+                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                disabled={isFetchingOlderReplies}
+                onClick={() => void onFetchOlderReplies?.()}
+                type="button"
+              >
+                {isFetchingOlderReplies
+                  ? "Loading earlier replies…"
+                  : "Show earlier replies"}
+              </button>
+            </div>
+          ) : null}
           <ThreadReplyRegion
             isPending={threadRepliesPending}
             isError={threadRepliesError}

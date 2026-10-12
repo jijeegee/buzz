@@ -53,7 +53,10 @@ import { hasPersistedHydratedChannel } from "@/features/messages/lib/channelHead
 import { resolveTimelineQueryLoadingState } from "@/features/messages/lib/timelineLoadingState";
 import { useFetchOlderMessages } from "@/features/messages/useFetchOlderMessages";
 import { useIndependentThreadPanel } from "@/features/messages/useIndependentThreadPanel";
-import { useThreadReplies } from "@/features/messages/useThreadReplies";
+import {
+  useOlderThreadReplies,
+  useThreadReplies,
+} from "@/features/messages/useThreadReplies";
 import { useChannelTyping } from "@/features/messages/useChannelTyping";
 import type { TimelineMessage } from "@/features/messages/types";
 import type { GoalLinkTarget } from "@/features/goals/goalTree";
@@ -99,7 +102,7 @@ export function ChannelScreen({
   onAddFiles, onCloseIdleAuxiliaryPanel,
   onCloseForumPost, onSelectForumPost,
   selectedForumPostId, targetForumReplyId,
-  targetMessageEvents, targetMessageId,
+  targetMessageEvents, targetMessageId, isRouteTargetResolving = false,
   ...searchTarget
 }: ChannelScreenProps) {
   const queryClient = useQueryClient();
@@ -212,6 +215,12 @@ export function ChannelScreen({
     activeChannel,
     effectiveOpenThreadHeadId,
     threadScrollTargetId,
+    // Huddle transcripts flatten whole threads from this cache.
+    { newestFirst: !isHuddleTranscript },
+  );
+  const olderThreadReplies = useOlderThreadReplies(
+    activeChannel?.id ?? null,
+    effectiveOpenThreadHeadId,
   );
   useChannelSubscription(activeChannel);
   const { fetchOlder, hasOlderMessages, historyExhausted, isFetchingOlder } =
@@ -672,7 +681,8 @@ export function ChannelScreen({
     clearOptimisticThreadOverride,
     editTargetId,
     editTargetMessage,
-    isTimelineLoading,
+    // A thread opened by the route keeps waiting while its root is fetched.
+    isTimelineLoading: isTimelineLoading || isRouteTargetResolving,
     openThreadHeadId,
     openThreadHeadMessage,
     setEditTargetId,
@@ -1012,6 +1022,19 @@ export function ChannelScreen({
                   onRetryThreadReplies={() => {
                     void threadRepliesQuery.refetch();
                   }}
+                  threadHasOlderReplies={olderThreadReplies.hasOlderReplies}
+                  threadIsFetchingOlderReplies={
+                    olderThreadReplies.isFetchingOlderReplies
+                  }
+                  onFetchOlderThreadReplies={
+                    olderThreadReplies.fetchOlderReplies
+                  }
+                  onShowThreadInChannel={
+                    effectiveOpenThreadHeadId
+                      ? () =>
+                          openMessageRouteTarget(effectiveOpenThreadHeadId, null)
+                      : undefined
+                  }
                   threadPanelWidthPx={threadPanelWidthPx}
                   threadTypingPubkeys={threadTypingPubkeys}
                   threadReplyTargetMessage={displayedThreadReplyTargetMessage}

@@ -721,6 +721,7 @@ pub fn run() {
             get_channel_reconnect_repair,
             get_channel_window,
             get_channel_windows,
+            get_thread_windows,
             get_inbox_summary,
             get_channel_messages_before,
             edit_message,

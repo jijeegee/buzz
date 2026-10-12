@@ -177,6 +177,31 @@ export function ChannelRouteScreen({
     const cachedTarget = getCachedSearchHitEvent(targetMessageId);
     return cachedTarget ? [cachedTarget] : [];
   });
+  // The route target the last fetch settled for. Until it settles, a thread
+  // opened by this route waits for its root instead of closing as missing.
+  const routeTargetKey =
+    !selectedPostId && (targetMessageId || targetThreadRootId)
+      ? `${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`
+      : null;
+  const [resolvedRouteTargetKey, setResolvedRouteTargetKey] = React.useState<
+    string | null
+  >(null);
+  const isRouteTargetResolving =
+    routeTargetKey !== null && resolvedRouteTargetKey !== routeTargetKey;
+  // Preloaded roots and replies are at hand on the first render, so a thread
+  // opened from the inbox shows its root without waiting a render for them.
+  const displayedTargetMessageEvents = React.useMemo(() => {
+    const remembered = [targetThreadRootId, targetMessageId].flatMap((id) => {
+      const event = id ? getRememberedRouteEvent(queryClient, id) : null;
+      return event ? [event] : [];
+    });
+    if (remembered.length === 0) return targetMessageEvents;
+    const eventsById = new Map<string, RelayEvent>();
+    for (const event of [...remembered, ...targetMessageEvents]) {
+      eventsById.set(event.id, event);
+    }
+    return Array.from(eventsById.values());
+  }, [queryClient, targetMessageEvents, targetMessageId, targetThreadRootId]);
   const [activeSearchHighlight, setActiveSearchHighlight] =
     React.useState<SearchHighlightNavigation | null>(searchHighlight ?? null);
   const appliedSearchActivationIdRef = React.useRef<string | null>(
@@ -277,6 +302,9 @@ export function ChannelRouteScreen({
       targetThreadRootId,
     ).then((events) => {
       if (!isCancelled) {
+        setResolvedRouteTargetKey(
+          `${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`,
+        );
         setTargetMessageEvents((currentEvents) => {
           const eventsById = new Map<string, RelayEvent>();
           for (const event of [...currentEvents, ...events]) {
@@ -315,7 +343,7 @@ export function ChannelRouteScreen({
         autoSendDraftKey={autoSendDraftKey}
         project={projectHome}
         projects={projectsQuery.data ?? [projectHome]}
-        targetMessageEvents={targetMessageEvents}
+        targetMessageEvents={displayedTargetMessageEvents}
         targetMessageId={targetMessageId}
       />
     );
@@ -335,7 +363,8 @@ export function ChannelRouteScreen({
       }}
       selectedForumPostId={selectedPostId}
       targetForumReplyId={targetReplyId}
-      targetMessageEvents={targetMessageEvents}
+      isRouteTargetResolving={isRouteTargetResolving}
+      targetMessageEvents={displayedTargetMessageEvents}
       targetMessageId={targetMessageId}
       targetSearchMessageId={activeSearchHighlight?.messageId}
       targetSearchQuery={activeSearchHighlight?.query}

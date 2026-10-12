@@ -9,28 +9,28 @@ import {
 } from "@/features/home/lib/inboxPreload";
 import {
   preloadChannelsMessages,
-  preloadThreadReplies,
+  preloadThreads,
 } from "@/features/messages/channelPreload";
-import { threadRepliesKey } from "@/features/messages/lib/messageQueryKeys";
 import { isDocumentVisible } from "@/shared/lib/useDocumentVisible";
 
 /** Input this recent means the user is typing or clicking: yield to them. */
 const RECENT_INPUT_MS = 1_500;
 const IDLE_POLL_MS = 500;
-/** Threads loading at once; rooms all load in one batched request. */
-const THREAD_PRELOAD_CONCURRENCY = 4;
 /** A target that failed (or was skipped) is not retried sooner than this. */
 const RETRY_AFTER_MS = 5 * 60 * 1_000;
 
 /**
  * Background-loads the rooms behind the top chat-list rows (one batched
- * request), then their threads a few at a time, so opening them paints at once. Pauses while the user types or clicks,
- * while a room is loading in the foreground, and while the app is hidden.
+ * request), then the newest replies of their threads (four per request), so
+ * opening them paints at once. After the first pass it pauses while the user
+ * types or clicks, while a room is loading in the foreground, and while the
+ * app is hidden.
  */
 export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
   const queryClient = useQueryClient();
   const lastInputAtRef = React.useRef(0);
   const attemptedAtRef = React.useRef(new Map<string, number>());
+  const firstPassRef = React.useRef(true);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -61,13 +61,11 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
         }, ms);
         sleepers.set(timer, resolve);
       });
-    // Our own thread loads also count as fetching; only foreground loads yield.
-    let ownReplies = 0;
     const isBusy = () =>
       !isDocumentVisible() ||
       Date.now() - lastInputAtRef.current < RECENT_INPUT_MS ||
       queryClient.isFetching({ queryKey: ["channel-messages"] }) > 0 ||
-      queryClient.isFetching({ queryKey: ["thread-replies"] }) > ownReplies;
+      queryClient.isFetching({ queryKey: ["thread-replies"] }) > 0;
     const waitIdle = async () => {
       while (!cancelled && isBusy()) await sleep(IDLE_POLL_MS);
       return !cancelled;
@@ -80,37 +78,16 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
     const pending = targets.filter(
       (target) => !attemptedAtRef.current.has(inboxPreloadTargetKey(target)),
     );
-    const threads = pending.filter((target) => target.thread !== null);
-    const threadWorker = async () => {
-      for (let target = threads.shift(); target; target = threads.shift()) {
-        const thread = target.thread;
-        if (!thread || !(await waitIdle())) return;
-        attemptedAtRef.current.set(inboxPreloadTargetKey(target), Date.now());
-        // Count only our own replies fetch, never a cache hit.
-        const own =
-          queryClient.getQueryData(
-            threadRepliesKey(target.channelId, thread.rootId),
-          ) === undefined
-            ? 1
-            : 0;
-        ownReplies += own;
-        try {
-          await preloadThreadReplies(
-            queryClient,
-            target.channelId,
-            thread.rootId,
-            thread.replyId,
-          );
-        } finally {
-          ownReplies -= own;
-        }
-      }
-    };
 
     void (async () => {
-      if (pending.length === 0 || !(await waitIdle())) return;
-      // A thread counts as attempted when its own load starts, so one cut off
-      // by a re-sorted list is picked up by the next pass.
+      if (pending.length === 0) return;
+      // The first pass after launch starts at once: that is when the rooms
+      // are about to be opened. Later passes yield to the user.
+      const firstPass = firstPassRef.current;
+      firstPassRef.current = false;
+      if (!firstPass && !(await waitIdle())) return;
+      // A thread counts as attempted when its own request starts, so one cut
+      // off by a re-sorted list is picked up by the next pass.
       for (const target of pending) {
         if (target.thread) continue;
         attemptedAtRef.current.set(inboxPreloadTargetKey(target), Date.now());
@@ -121,8 +98,27 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
         INBOX_PRELOAD_MESSAGES,
       );
       if (cancelled) return;
-      await Promise.all(
-        Array.from({ length: THREAD_PRELOAD_CONCURRENCY }, threadWorker),
+      await preloadThreads(
+        queryClient,
+        pending.flatMap((target) =>
+          target.thread
+            ? [{ channelId: target.channelId, rootId: target.thread.rootId }]
+            : [],
+        ),
+        async (threads) => {
+          if (!firstPass && !(await waitIdle())) return false;
+          if (cancelled) return false;
+          for (const thread of threads) {
+            attemptedAtRef.current.set(
+              inboxPreloadTargetKey({
+                channelId: thread.channelId,
+                thread: { rootId: thread.rootId, replyId: "" },
+              }),
+              Date.now(),
+            );
+          }
+          return true;
+        },
       );
     })();
     return () => {

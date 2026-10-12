@@ -73,8 +73,29 @@ globalThis.__TAURI_INTERNALS__ = {
         }),
       );
     }
-    if (command === "get_thread_replies") {
-      return Promise.resolve({ events: threadReplies, next_cursor: null });
+    if (command === "get_thread_windows") {
+      return Promise.resolve(
+        args.threads.map((thread) => ({
+          channel_id: thread.channelId,
+          root_id: thread.rootId,
+          events: threadReplies,
+          has_more: true,
+          next_cursor: { created_at: 200, event_id: "f".repeat(64) },
+        })),
+      );
+    }
+    if (command === "get_events") {
+      return Promise.resolve(
+        args.eventIds.map((id) => ({
+          content: "root",
+          created_at: 50,
+          id,
+          kind: 9,
+          pubkey: "b".repeat(64),
+          sig: "",
+          tags: [["h", ROOM]],
+        })),
+      );
     }
     if (command === "channel_head_cache_load") return Promise.resolve([]);
     if (command === "channel_head_cache_store") return Promise.resolve(null);
@@ -84,12 +105,10 @@ globalThis.__TAURI_INTERNALS__ = {
 };
 
 const { QueryClient } = await import("@tanstack/react-query");
-const {
-  preloadChannelMessages,
-  preloadChannelsMessages,
-  preloadThreadReplies,
-} = await import("./channelPreload.ts");
+const { preloadChannelMessages, preloadChannelsMessages, preloadThreads } =
+  await import("./channelPreload.ts");
 const { getRememberedRouteEvent } = await import("./lib/routeEventCache.ts");
+const { threadWindowStateKey } = await import("./lib/threadWindowCache.ts");
 const { hasPersistedHydratedChannel, hydrateChannelHeads } = await import(
   "./lib/channelHeadCache.ts"
 );
@@ -230,38 +249,73 @@ test("a failed load caches nothing and does not mark the room paintable", async 
   assert.equal(hasPersistedHydratedChannel(client, ROOM), false);
 });
 
-test("thread replies load once and include the reply the row opens on", async () => {
+const reply = {
+  content: "reply",
+  created_at: 200,
+  id: "f".repeat(64),
+  kind: 9,
+  pubkey: "b".repeat(64),
+  sig: "",
+  tags: [
+    ["h", ROOM],
+    ["e", ROOT, "", "root"],
+  ],
+};
+
+test("threads load newest replies four per request, roots in one request", async () => {
   const client = newClient();
-  const reply = {
-    content: "reply",
-    created_at: 200,
-    id: "f".repeat(64),
-    kind: 9,
-    pubkey: "b".repeat(64),
-    sig: "",
-    tags: [
-      ["h", ROOM],
-      ["e", ROOT, "", "root"],
-    ],
-  };
+  const roots = ["1", "2", "3", "4", "5"].map((digit) => digit.repeat(64));
   threadReplies = [reply];
-  assert.equal(await preloadThreadReplies(client, ROOM, ROOT, reply.id), true);
-  assert.equal(client.getQueryData(threadRepliesKey(ROOM, ROOT)).length, 1);
-  // Opening the row's link resolves the reply and root without the relay.
-  assert.equal(getRememberedRouteEvent(client, reply.id)?.id, reply.id);
-  assert.equal(getRememberedRouteEvent(client, ROOT)?.id, ROOT);
-  assert.equal(await preloadThreadReplies(client, ROOM, ROOT, reply.id), false);
-  assert.equal(
-    calls.filter((call) => call.command === "get_thread_replies").length,
+  const loaded = await preloadThreads(
+    client,
+    roots.map((rootId) => ({ channelId: ROOM, rootId })),
+  );
+  assert.equal(loaded, 5);
+  const windowCalls = calls.filter(
+    (call) => call.command === "get_thread_windows",
+  );
+  assert.deepEqual(
+    windowCalls.map((call) => [call.args.threads.length, call.args.limitRows]),
+    [
+      [4, 20],
+      [1, 20],
+    ],
+  );
+  assert.equal(windowCalls[0].args.threads[0].cursor, null);
+  assert.deepEqual(
+    calls.filter((call) => call.command === "get_events").length,
     1,
   );
+  assert.equal(client.getQueryData(threadRepliesKey(ROOM, roots[0])).length, 1);
+  assert.deepEqual(client.getQueryData(threadWindowStateKey(ROOM, roots[0])), {
+    hasOlder: true,
+    olderCursor: { createdAt: 200, eventId: reply.id },
+    newestCovered: { createdAt: 200, eventId: reply.id },
+  });
+  // Opening the row's link resolves the reply and root without the relay.
+  assert.equal(getRememberedRouteEvent(client, reply.id)?.id, reply.id);
+  assert.equal(getRememberedRouteEvent(client, roots[0])?.id, roots[0]);
 });
 
-test("a thread load that misses the opened reply is not cached as complete", async () => {
+test("cached threads are not reloaded, and a busy user stops the preload", async () => {
   const client = newClient();
+  client.setQueryData(threadRepliesKey(ROOM, ROOT), [reply]);
   assert.equal(
-    await preloadThreadReplies(client, ROOM, ROOT, "9".repeat(64)),
-    false,
+    await preloadThreads(client, [{ channelId: ROOM, rootId: ROOT }]),
+    0,
   );
-  assert.equal(client.getQueryData(threadRepliesKey(ROOM, ROOT)), undefined);
+  assert.equal(
+    calls.filter((call) => call.command === "get_thread_windows").length,
+    0,
+  );
+  calls.length = 0;
+  assert.equal(
+    await preloadThreads(
+      client,
+      [{ channelId: ROOM, rootId: "7".repeat(64) }],
+      async () => false,
+    ),
+    0,
+  );
+  assert.equal(calls.length, 0);
 });

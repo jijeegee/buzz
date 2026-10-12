@@ -33,6 +33,9 @@ registerHooks({
         source: `export async function getThreadReplies(...args) {
   return globalThis.__tauriGetThreadReplies(...args);
 }
+export async function invokeTauri(command) {
+  throw new Error("unmocked Tauri command: " + command);
+}
 export default {};`,
       };
     }

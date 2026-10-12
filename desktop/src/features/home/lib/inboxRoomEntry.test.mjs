@@ -34,7 +34,7 @@ function row(
 const reply = (id, createdAt) =>
   event({ createdAt, id, tags: [["e", ROOT, "", "reply"]] });
 
-test("a thread row opens its thread at the latest reply", () => {
+test("a thread row opens its thread, keyed by the latest reply", () => {
   const entry = getInboxRoomEntry(
     row([reply("older", 10), reply("newest", 30), reply("middle", 20)]),
     "conversations",
@@ -42,6 +42,7 @@ test("a thread row opens its thread at the latest reply", () => {
   assert.deepEqual(entry, {
     channelId: "chan-1",
     messageId: "newest",
+    threadRootId: ROOT,
   });
 });
 
