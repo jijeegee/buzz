@@ -151,6 +151,7 @@ export function useUnreadChannels(
     setContextParentResolver,
     readStateVersion,
     getOwnTimestamp,
+    getChannelAndThreadContexts,
   } = useReadState(pubkey, relayClient);
 
   // Per-channel latest observed external trigger timestamp (unix seconds) and
@@ -978,6 +979,7 @@ export function useUnreadChannels(
     // should include in memo deps.
     getEffectiveTimestamp,
     getOwnTimestamp,
+    getChannelAndThreadContexts,
     readStateVersion,
     setContextParentResolver,
     participatedRootIds,

@@ -9,6 +9,7 @@ const noopGetTimestamp = () => null;
 const noopMarkRead = () => {};
 const noopDrainAdvances = (): ReadonlySet<string> => new Set<string>();
 const noopSetResolver = () => {};
+const noopGetContexts = (): Record<string, number> => ({});
 
 /**
  * React hook that creates and manages a ReadStateManager instance.
@@ -93,6 +94,12 @@ export function useReadState(
     [],
   );
 
+  const getChannelAndThreadContexts = React.useCallback(
+    (): Record<string, number> =>
+      managerRef.current?.getChannelAndThreadContexts() ?? {},
+    [],
+  );
+
   const isReady = Boolean(
     pubkey && relayClient && initializedPubkey === pubkey,
   );
@@ -107,6 +114,7 @@ export function useReadState(
       setContextParentResolver: noopSetResolver,
       readStateVersion: 0,
       getOwnTimestamp: noopGetTimestamp,
+      getChannelAndThreadContexts: noopGetContexts,
     };
   }
 
@@ -119,5 +127,6 @@ export function useReadState(
     setContextParentResolver,
     readStateVersion,
     getOwnTimestamp,
+    getChannelAndThreadContexts,
   };
 }

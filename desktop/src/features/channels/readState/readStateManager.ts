@@ -393,6 +393,20 @@ export class ReadStateManager {
   }
 
   /**
+   * Own channel and `thread:<root>` markers, for the inbox summary request's
+   * unread counts. `msg:` and other context schemes are left out.
+   */
+  getChannelAndThreadContexts(): Record<string, number> {
+    const contexts: Record<string, number> = {};
+    for (const [contextId, timestamp] of this.effectiveState) {
+      if (!contextId.startsWith("msg:")) {
+        contexts[contextId] = timestamp;
+      }
+    }
+    return contexts;
+  }
+
+  /**
    * Inject the thread→channel parent resolver derived from the React event
    * graph (NIP-RS.md:136-139). The hierarchical max in getEffectiveTimestamp
    * is a no-op until this is set.

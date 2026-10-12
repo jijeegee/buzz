@@ -46,6 +46,9 @@ type AppShellContextValue = {
   ) => number | null;
   // Advance a single message's read marker to the given unix-seconds timestamp.
   markMessageRead: (messageId: string, timestamp: number) => void;
+  // Own channel and `thread:<root>` read markers (unix seconds), sent with the
+  // inbox summary request so the relay can count unread rows.
+  getReadContexts: () => Record<string, number>;
   // Bump-counter that invalidates whenever the read marker changes. Include
   // in memo deps that consume getChannelReadAt.
   readStateVersion: number;
@@ -96,6 +99,7 @@ const AppShellContext = React.createContext<AppShellContextValue>({
   getMessageReadAt: () => null,
   getChannelActivityItemReadAt: () => null,
   markMessageRead: () => {},
+  getReadContexts: () => ({}),
   readStateVersion: 0,
   setContextParentResolver: () => {},
   followThread: () => {},

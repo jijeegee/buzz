@@ -374,6 +374,30 @@ pub async fn query_relay(
     query_relay_at(state, &relay_api_base_url_with_override(state), filters).await
 }
 
+/// Execute a `/query` extension envelope and return its raw JSON response.
+///
+/// Same admission, identity pinning and NIP-98 signing as [`query_relay`].
+pub async fn query_relay_value(
+    state: &AppState,
+    filters: &[serde_json::Value],
+) -> Result<serde_json::Value, String> {
+    let credential = state.user_credential()?;
+    crate::relay_admission::wait_for_rate_limit().await;
+    let url = format!("{}/query", relay_api_base_url_with_override(state));
+    let body_bytes =
+        serde_json::to_vec(filters).map_err(|e| format!("filter serialization failed: {e}"))?;
+    let auth = credential.relay_http_auth(&Method::POST, &url, &body_bytes)?;
+    send_query_request_as(
+        &state.http_client,
+        &url,
+        &auth,
+        None,
+        body_bytes,
+        QUERY_REQUEST_TIMEOUT,
+    )
+    .await
+}
+
 /// Like [`query_relay`] but targets an explicit HTTP API base URL instead of
 /// the workspace override. Used when a query must hit a specific relay (e.g.
 /// reconciling an agent's profile on the relay where it was published).
@@ -459,6 +483,19 @@ async fn send_query_request(
     body_bytes: Vec<u8>,
     timeout: std::time::Duration,
 ) -> Result<Vec<nostr::Event>, String> {
+    send_query_request_as(http_client, url, auth, auth_tag, body_bytes, timeout).await
+}
+
+/// [`send_query_request`] for `/query` extension envelopes whose response is
+/// not an event array.
+async fn send_query_request_as<T: DeserializeOwned>(
+    http_client: &reqwest::Client,
+    url: &str,
+    auth: &str,
+    auth_tag: Option<&str>,
+    body_bytes: Vec<u8>,
+    timeout: std::time::Duration,
+) -> Result<T, String> {
     let response = build_authenticated_relay_request(
         http_client,
         Method::POST,

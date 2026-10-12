@@ -720,6 +720,7 @@ pub fn run() {
             get_thread_replies,
             get_channel_reconnect_repair,
             get_channel_window,
+            get_inbox_summary,
             get_channel_messages_before,
             edit_message,
             delete_message,

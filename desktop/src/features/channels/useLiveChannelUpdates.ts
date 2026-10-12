@@ -3,6 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { channelsQueryKey } from "@/features/channels/hooks";
 import { INBOX_DELETIONS_QUERY_KEY } from "@/features/home/lib/inboxDeletions";
+import {
+  applyLiveEventToInboxSummary,
+  INBOX_SUMMARY_QUERY_KEY,
+  type InboxSummaryState,
+} from "@/features/home/lib/inboxSummary";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
 import { mergeTimelineCacheMessages } from "@/features/messages/hooks";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
@@ -259,6 +264,10 @@ export function useLiveChannelUpdates(
       void queryClient.invalidateQueries({
         queryKey: INBOX_DELETIONS_QUERY_KEY,
       });
+      // A deleted latest message changes a row's preview: reload the summary.
+      void queryClient.invalidateQueries({
+        queryKey: INBOX_SUMMARY_QUERY_KEY,
+      });
     }
 
     if (!liveChannelIds.has(channelId)) {
@@ -291,6 +300,18 @@ export function useLiveChannelUpdates(
     if (isUnreadTriggerKind) {
       updateChannelLastMessageAt(queryClient, channelId, event.created_at);
     }
+    // The chat list changes only the row this message belongs to.
+    queryClient.setQueryData<InboxSummaryState>(
+      INBOX_SUMMARY_QUERY_KEY,
+      (current) =>
+        current &&
+        applyLiveEventToInboxSummary(
+          current,
+          event,
+          { id: channelId, channelType: isDmChannel ? "dm" : "stream" },
+          normalizedCurrentPubkey,
+        ),
+    );
 
     // Let the caller observe self-authored trigger events (e.g. to track
     // thread participation) before the author-exclusion guard filters them.
@@ -378,6 +399,8 @@ export function useLiveChannelUpdates(
   React.useEffect(() => {
     return relayClient.subscribeToReconnects(() => {
       void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
+      // Messages missed while disconnected never reached the row patcher.
+      void queryClient.invalidateQueries({ queryKey: INBOX_SUMMARY_QUERY_KEY });
 
       // Update the subscription timestamp so replayed backlog events
       // (which have created_at in the past) are naturally suppressed.
