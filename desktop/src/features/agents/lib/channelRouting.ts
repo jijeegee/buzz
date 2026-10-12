@@ -47,7 +47,7 @@ export const ROUTING_MODE_OPTIONS: readonly RoutingModeOption[] = [
     mode: "desktop-router",
     label: "Smart routing",
     description:
-      "Buzz picks the agent as you send. No extra messages in the channel.",
+      "kuzz picks the agent as you send. No extra messages in the channel.",
     available: true,
   },
 ];
@@ -168,7 +168,7 @@ export function routingStatusLine(
     case "leading":
       return { tone: "on", text: `On — ${nameOf(applied.pubkey)} is leading.` };
     case "smart-routing":
-      return { tone: "on", text: "On — Buzz picks the agent as you send." };
+      return { tone: "on", text: "On — kuzz picks the agent as you send." };
     case "switching": {
       // Stale agents, plus a held gainer that is not running yet (a launch
       // during the hold would come up plain, so it is part of the switch).

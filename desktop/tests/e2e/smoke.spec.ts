@@ -103,7 +103,7 @@ async function chooseSharedComputeProvider(
   await page
     .getByRole("menuitemradio", {
       exact: true,
-      name: "Buzz shared compute",
+      name: "kuzz shared compute",
     })
     .click();
 }

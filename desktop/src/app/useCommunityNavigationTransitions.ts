@@ -122,7 +122,7 @@ export function useCommunityNavigationTransitions({
       if (!fallback) {
         if (!markCommunityDiscoveryAfterLeave()) {
           throw new Error(
-            "Couldn't finish removing the community from this device because community discovery state could not be saved. Restart Buzz and try again.",
+            "Couldn't finish removing the community from this device because community discovery state could not be saved. Restart kuzz and try again.",
           );
         }
         markRemoved();

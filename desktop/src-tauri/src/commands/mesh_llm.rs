@@ -73,7 +73,7 @@ fn load_mesh_sharing_config<R: tauri::Runtime>(
 }
 
 const RELAY_MESH_RUNTIME_NO_TARGET: &str =
-    "Buzz shared compute requires a live serving member; start serving the selected model on a member, then try again";
+    "kuzz shared compute requires a live serving member; start serving the selected model on a member, then try again";
 
 /// Whether the Share-compute "stop sharing" path (`mesh_stop_node`) should tear
 /// down the runtime currently occupying the single slot.
@@ -131,7 +131,7 @@ fn restarting_share_status(config: &MeshSharingConfig) -> mesh_llm::MeshNodeStat
         mode: Some(mesh_llm::MeshNodeMode::Serve),
         health: mesh_llm::MeshHealth {
             status: mesh_llm::MeshHealthStatus::Degraded,
-            reason: Some("Buzz is restarting to switch this machine to sharing".to_string()),
+            reason: Some("kuzz is restarting to switch this machine to sharing".to_string()),
         },
         api_base_url: None,
         console_url: None,
@@ -508,7 +508,7 @@ pub async fn mesh_start_node(
             drop(runtime);
             app.request_restart();
             return Err(format!(
-                "mesh node started but status probe failed: {error:#}; Buzz is restarting to guarantee cleanup"
+                "mesh node started but status probe failed: {error:#}; kuzz is restarting to guarantee cleanup"
             ));
         }
     };
@@ -717,13 +717,13 @@ pub(crate) async fn ensure_relay_mesh_for_record<R: tauri::Runtime>(
             mesh_llm::MeshRuntimeRecovery::Evicted | mesh_llm::MeshRuntimeRecovery::Absent => {}
             mesh_llm::MeshRuntimeRecovery::Debouncing => {
                 return Err(
-                    "Buzz shared compute ingress is temporarily unresponsive; recovery is already scheduled. Try again shortly."
+                    "kuzz shared compute ingress is temporarily unresponsive; recovery is already scheduled. Try again shortly."
                         .to_string(),
                 );
             }
             mesh_llm::MeshRuntimeRecovery::ReleasePending => {
                 return Err(
-                    "Buzz shared compute is still shutting down its previous local ingress. Try again shortly."
+                    "kuzz shared compute is still shutting down its previous local ingress. Try again shortly."
                         .to_string(),
                 );
             }
@@ -733,7 +733,7 @@ pub(crate) async fn ensure_relay_mesh_for_record<R: tauri::Runtime>(
             mesh_llm::MeshRuntimeRecovery::RestartRequired => {
                 app.request_restart();
                 return Err(
-                    "Buzz shared compute startup lost its local ingress before shutdown control became available. Buzz is restarting to recover it."
+                    "kuzz shared compute startup lost its local ingress before shutdown control became available. kuzz is restarting to recover it."
                         .to_string(),
                 );
             }
@@ -755,13 +755,13 @@ pub(crate) async fn ensure_relay_mesh_for_record<R: tauri::Runtime>(
         Ok(Some(target)) => target,
         Ok(None) => {
             return Err(
-                "Buzz shared compute cannot start because no live member is serving this model. Start serving it on a member, then try again."
+                "kuzz shared compute cannot start because no live member is serving this model. Start serving it on a member, then try again."
                     .to_string(),
             );
         }
         Err(error) => {
             return Err(format!(
-                "could not refresh Buzz shared compute serving members: {error}"
+                "could not refresh kuzz shared compute serving members: {error}"
             ));
         }
     };

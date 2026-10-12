@@ -53,7 +53,7 @@ export function AgentContextPayloadPreview({
         >
           <p className="mb-2 text-xs text-muted-foreground">
             This exact text is appended to your message before it is signed and
-            sent. Quoted values are untrusted workspace metadata — Buzz does not
+            sent. Quoted values are untrusted workspace metadata — kuzz does not
             verify or rewrite them.
           </p>
           <pre

@@ -392,7 +392,7 @@ export function MachineOnboardingFlow({
               transitionKey={`machine-identity-${transitionDirection}`}
             >
               <img
-                alt="Buzz"
+                alt="kuzz"
                 className="w-full max-w-[600px]"
                 src="/landing/buzz-wordmark.png"
               />
@@ -488,7 +488,7 @@ export function MachineOnboardingFlow({
                         className="max-w-[420px] text-sm text-muted-foreground"
                         role="alert"
                       >
-                        We couldn’t reach Buzz sign-in. Check your internet
+                        We couldn’t reach kuzz sign-in. Check your internet
                         connection and try again.
                       </p>
                       <Button
@@ -555,7 +555,7 @@ export function MachineOnboardingFlow({
                 Restore from a backup file
               </h1>
               <p className="mt-2 w-full text-base leading-6 text-foreground/80">
-                Choose the encrypted backup file you saved from Buzz.
+                Choose the encrypted backup file you saved from kuzz.
               </p>
               <NostrKeyImportForm
                 key={keyImportFormKey}
@@ -579,7 +579,7 @@ export function MachineOnboardingFlow({
               </h1>
               <p className="mt-2 w-full text-base leading-6 text-foreground/80">
                 {phoneRecoveryStep === "loading" || phoneRecoveryStep === "qr"
-                  ? "Scan this code with a device where you’re currently signed in to Buzz."
+                  ? "Scan this code with a device where you’re currently signed in to kuzz."
                   : "Confirm the code before sharing your identity."}
               </p>
               <div
@@ -614,7 +614,7 @@ export function MachineOnboardingFlow({
                     "Enter your backup password to restore your identity."
                   ) : (
                     <p>
-                      Paste your private key to sign in to Buzz. You can also
+                      Paste your private key to sign in to kuzz. You can also
                       use a{" "}
                       <button
                         className="rounded-sm font-medium underline decoration-foreground/40 underline-offset-4 transition-colors hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
