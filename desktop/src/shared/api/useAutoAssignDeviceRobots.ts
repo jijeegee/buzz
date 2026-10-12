@@ -11,12 +11,14 @@ import { nextDeviceRobotAssignments } from "@/shared/lib/deviceRobot";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 /**
- * Give each of the signed-in user's devices that has no stored robot the next
- * free slot of the palette (see `nextDeviceRobotAssignments`) and store it as
- * the device's kind:30181 robot, so its look never changes afterwards. Runs
- * only once both the device list and the stored robots have loaded, so a
- * still-loading record set can never look like "no robots yet". Mount once
- * near the app root.
+ * Give this device, when it has no stored robot yet, the next free slot of
+ * the palette (see `nextDeviceRobotAssignments`) and store it as the device's
+ * kind:30181 robot, so its look never changes afterwards. Each app assigns
+ * only its own device: old sign-ins still listed on the account must not take
+ * the first, most distinct paints, so devices get them in the order they
+ * start using the app. Runs only once both the device list and the stored
+ * robots have loaded, so a still-loading record set can never look like "no
+ * robots yet". Mount once near the app root.
  */
 export function useAutoAssignDeviceRobots(
   pubkey: string | null | undefined,
@@ -35,7 +37,9 @@ export function useAutoAssignDeviceRobots(
   React.useEffect(() => {
     if (!owner || !devices.isSuccess || !records.isSuccess) return;
     const assignments = nextDeviceRobotAssignments(
-      devices.data.map((device) => device.id),
+      devices.data
+        .filter((device) => device.current)
+        .map((device) => device.id),
       records.data.robotOverrides,
     );
     for (const [deviceId, override] of assignments) {

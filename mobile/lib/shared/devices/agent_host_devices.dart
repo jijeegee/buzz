@@ -286,9 +286,11 @@ final ownDeviceEventsLoadedProvider =
       OwnDeviceEventsLoadedNotifier.new,
     );
 
-/// Gives each of the current user's devices that has no stored robot the
-/// next free slot of the palette ([nextDeviceRobotAssignments]) and stores it
-/// as the device's kind:30181 robot, so its look never changes afterwards.
+/// Gives this phone, when it has no stored robot yet, the next free slot of
+/// the palette ([nextDeviceRobotAssignments]) and stores it as the device's
+/// kind:30181 robot, so its look never changes afterwards. Each app assigns
+/// only its own device, so old sign-ins still listed on the account do not
+/// take the first, most distinct paints.
 /// Waits until both the device list and the stored robots have loaded.
 /// Watch once from the authenticated app root.
 final deviceRobotAutoAssignProvider = Provider<void>((ref) {
@@ -300,7 +302,8 @@ final deviceRobotAutoAssignProvider = Provider<void>((ref) {
   final devices = ref.watch(accountDevicesProvider(origin)).value;
   if (devices == null || devices.isEmpty) return;
   final assignments = nextDeviceRobotAssignments([
-    for (final device in devices) device.id,
+    for (final device in devices)
+      if (device.current) device.id,
   ], ref.watch(deviceRobotOverridesProvider));
   if (assignments.isEmpty) return;
   final notifier = ref.read(ownDeviceEventsProvider.notifier);
