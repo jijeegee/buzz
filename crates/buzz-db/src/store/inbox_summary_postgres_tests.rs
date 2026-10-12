@@ -90,7 +90,7 @@ impl Fixture {
 
     async fn reply(&self, room: Uuid, root: &Event, keys: &Keys, content: &str, ts: u64) {
         let reply = self.post(room, keys, content, ts).await;
-        let root_at = at(root.created_at.as_u64());
+        let root_at = at(root.created_at.as_secs());
         thread::insert_thread_metadata(
             &self.pool,
             self.scope,
