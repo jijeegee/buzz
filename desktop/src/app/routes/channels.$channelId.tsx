@@ -2,6 +2,7 @@ import * as React from "react";
 import { createFileRoute, useLocation } from "@tanstack/react-router";
 
 import { LazyChannelRouteScreen } from "@/app/routes/lazyChannelRouteScreen";
+import { useDevTuning } from "@/shared/lib/devTuning";
 import { selectSearchHighlightRouteState } from "@/app/routes/searchHighlightRouteState";
 
 import {
@@ -69,6 +70,29 @@ export const Route = createFileRoute("/channels/$channelId")({
 
 const ChannelRouteScreen = LazyChannelRouteScreen;
 
+/**
+ * The rooms to keep rendered: the open one first, then the most recently left
+ * ones, `warmRooms` in all (at least the open room).
+ */
+function useRecentChannelIds(channelId: string, warmRooms: number) {
+  const [recent, setRecent] = React.useState<string[]>([channelId]);
+  const limit = Math.max(1, warmRooms);
+  const next = React.useMemo(
+    () =>
+      [channelId, ...recent.filter((id) => id !== channelId)].slice(0, limit),
+    [channelId, limit, recent],
+  );
+  React.useEffect(() => {
+    setRecent((current) =>
+      current.length === next.length &&
+      current.every((id, index) => id === next[index])
+        ? current
+        : next,
+    );
+  }, [next]);
+  return next;
+}
+
 function ChannelRouteComponent() {
   const { channelId } = Route.useParams();
   const search = Route.useSearch();
@@ -89,6 +113,24 @@ function ChannelRouteComponent() {
     [inboxPanelOpen, inboxThreadViewMode],
   );
 
+  // Recently opened rooms stay rendered but hidden (React Activity: effects,
+  // subscriptions and read marking pause while hidden), so switching back to
+  // one shows it at once, scrolled where it was. The count is a dev knob.
+  const { warmRooms } = useDevTuning();
+  const recentChannelIds = useRecentChannelIds(channelId, warmRooms);
+
+  const openChannelScreen = (
+    <ChannelRouteScreen
+      autoSendDraftKey={search.autoSend ?? null}
+      channelId={channelId}
+      searchHighlight={searchHighlight}
+      selectedPostId={null}
+      targetMessageId={search.messageId ?? null}
+      targetReplyId={null}
+      targetThreadRootId={search.threadRootId ?? search.thread ?? null}
+    />
+  );
+
   const channelScreen = (
     <React.Suspense
       fallback={
@@ -100,15 +142,28 @@ function ChannelRouteComponent() {
       }
     >
       <ThreadViewModeOverrideProvider value={threadViewModeOverride}>
-        <ChannelRouteScreen
-          autoSendDraftKey={search.autoSend ?? null}
-          channelId={channelId}
-          searchHighlight={searchHighlight}
-          selectedPostId={null}
-          targetMessageId={search.messageId ?? null}
-          targetReplyId={null}
-          targetThreadRootId={search.threadRootId ?? search.thread ?? null}
-        />
+        {warmRooms <= 1
+          ? // One room: the single screen follows the route, as it always has.
+            openChannelScreen
+          : recentChannelIds.map((id) =>
+              id === channelId ? (
+                <React.Activity key={id} mode="visible">
+                  {openChannelScreen}
+                </React.Activity>
+              ) : (
+                <React.Activity key={id} mode="hidden">
+                  <ChannelRouteScreen
+                    autoSendDraftKey={null}
+                    channelId={id}
+                    searchHighlight={undefined}
+                    selectedPostId={null}
+                    targetMessageId={null}
+                    targetReplyId={null}
+                    targetThreadRootId={null}
+                  />
+                </React.Activity>
+              ),
+            )}
       </ThreadViewModeOverrideProvider>
     </React.Suspense>
   );

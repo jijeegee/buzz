@@ -14844,6 +14844,13 @@ export function maybeInstallE2eTauriMocks() {
           payload as Parameters<typeof handleGetChannelWindow>[0],
           activeConfig,
         );
+      case "get_dev_tuning":
+        // Specs opt into warm rooms; by default only the open room renders,
+        // as before, so test ids stay unique.
+        return (
+          (window as Window & { __BUZZ_E2E_DEV_TUNING__?: string })
+            .__BUZZ_E2E_DEV_TUNING__ ?? '{"warmRooms":1}'
+        );
       case "get_thread_windows":
         return handleGetThreadWindows(
           payload as Parameters<typeof handleGetThreadWindows>[0],

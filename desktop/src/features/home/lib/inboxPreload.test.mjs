@@ -71,3 +71,13 @@ test("a DM thread row preloads the reply's real thread root", () => {
     { channelId: DM, thread: { replyId: `dm:${DM}-latest`, rootId: ROOT } },
   ]);
 });
+
+test("the second wave takes the rows below the first", () => {
+  const rows = Array.from({ length: 60 }, (_, index) =>
+    row(`channel:${index}`, `room-${index}`, "stream"),
+  );
+  const more = inboxPreloadTargets(rows, 36, 12);
+  assert.equal(more.length, 36);
+  assert.equal(more[0].channelId, "room-12");
+  assert.equal(more.at(-1).channelId, "room-47");
+});

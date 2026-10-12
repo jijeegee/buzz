@@ -2,8 +2,12 @@ import type { InboxItem } from "@/features/home/lib/inbox";
 import { getInboxRoomEntry } from "@/features/home/lib/inboxRoomEntry";
 import { getThreadReference } from "@/features/messages/lib/threading";
 
-/** Inbox rows whose rooms load in the background: about one screenful. */
+/** Inbox rows whose rooms load first, right at launch: about one screenful. */
 export const INBOX_PRELOAD_ROWS = 12;
+/** Rows below those that load next, in the background. */
+export const INBOX_PRELOAD_MORE_ROWS = 36;
+/** Rooms per batched room request. */
+export const INBOX_PRELOAD_ROOMS_PER_REQUEST = 12;
 /** Newest messages loaded per preloaded room, about one chat screen. */
 export const INBOX_PRELOAD_MESSAGES = 20;
 
@@ -17,9 +21,10 @@ export type InboxPreloadTarget = {
 export function inboxPreloadTargets(
   items: readonly InboxItem[],
   limit = INBOX_PRELOAD_ROWS,
+  offset = 0,
 ): InboxPreloadTarget[] {
   const targets: InboxPreloadTarget[] = [];
-  for (const item of items.slice(0, limit)) {
+  for (const item of items.slice(offset, offset + limit)) {
     const entry = getInboxRoomEntry(item, "conversations");
     if (!entry) continue;
     // In the chat list only thread rows open on a specific message.

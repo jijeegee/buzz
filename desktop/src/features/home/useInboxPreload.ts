@@ -4,6 +4,8 @@ import * as React from "react";
 import type { InboxItem } from "@/features/home/lib/inbox";
 import {
   INBOX_PRELOAD_MESSAGES,
+  INBOX_PRELOAD_ROOMS_PER_REQUEST,
+  type InboxPreloadTarget,
   inboxPreloadTargetKey,
   inboxPreloadTargets,
 } from "@/features/home/lib/inboxPreload";
@@ -11,6 +13,7 @@ import {
   preloadChannelsMessages,
   preloadThreads,
 } from "@/features/messages/channelPreload";
+import { useDevTuning } from "@/shared/lib/devTuning";
 import { isDocumentVisible } from "@/shared/lib/useDocumentVisible";
 
 /** Input this recent means the user is typing or clicking: yield to them. */
@@ -20,11 +23,11 @@ const IDLE_POLL_MS = 500;
 const RETRY_AFTER_MS = 5 * 60 * 1_000;
 
 /**
- * Background-loads the rooms behind the top chat-list rows (one batched
- * request), then the newest replies of their threads (four per request), so
- * opening them paints at once. After the first pass it pauses while the user
- * types or clicks, while a room is loading in the foreground, and while the
- * app is hidden.
+ * Background-loads the rooms behind the top chat-list rows (batched room
+ * requests), then the newest replies of their threads (four per request), so
+ * opening them paints at once: the rows on screen first, then the rows below.
+ * Except for the launch wave it pauses while the user types or clicks, while
+ * a room is loading in the foreground, and while the app is hidden.
  */
 export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
   const queryClient = useQueryClient();
@@ -45,12 +48,24 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
     };
   }, [enabled]);
 
-  const targets = React.useMemo(() => inboxPreloadTargets(items), [items]);
-  const targetsKey = targets.map(inboxPreloadTargetKey).join("|");
+  // Two waves: the rows on screen load at once, the rows below them next.
+  const { preloadFirstRows, preloadMoreRows } = useDevTuning();
+  const firstTargets = React.useMemo(
+    () => inboxPreloadTargets(items, preloadFirstRows),
+    [items, preloadFirstRows],
+  );
+  const moreTargets = React.useMemo(
+    () => inboxPreloadTargets(items, preloadMoreRows, preloadFirstRows),
+    [items, preloadFirstRows, preloadMoreRows],
+  );
+  const targetsKey = [
+    firstTargets.map(inboxPreloadTargetKey).join("|"),
+    moreTargets.map(inboxPreloadTargetKey).join("|"),
+  ].join("/");
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the target list, not each re-sorted row array
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the target lists, not each re-sorted row array
   React.useEffect(() => {
-    if (!enabled || targets.length === 0) return;
+    if (!enabled || firstTargets.length + moreTargets.length === 0) return;
     let cancelled = false;
     const sleepers = new Map<ReturnType<typeof setTimeout>, () => void>();
     const sleep = (ms: number) =>
@@ -75,28 +90,43 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
     for (const [key, at] of attemptedAtRef.current) {
       if (now - at >= RETRY_AFTER_MS) attemptedAtRef.current.delete(key);
     }
-    const pending = targets.filter(
-      (target) => !attemptedAtRef.current.has(inboxPreloadTargetKey(target)),
-    );
+    const isPending = (target: InboxPreloadTarget) =>
+      !attemptedAtRef.current.has(inboxPreloadTargetKey(target));
 
-    void (async () => {
-      if (pending.length === 0) return;
-      // The first pass after launch starts at once: that is when the rooms
-      // are about to be opened. Later passes yield to the user.
-      const firstPass = firstPassRef.current;
-      firstPassRef.current = false;
-      if (!firstPass && !(await waitIdle())) return;
-      // A thread counts as attempted when its own request starts, so one cut
-      // off by a re-sorted list is picked up by the next pass.
-      for (const target of pending) {
-        if (target.thread) continue;
-        attemptedAtRef.current.set(inboxPreloadTargetKey(target), Date.now());
+    // `urgent` skips waiting for the user to be idle (the launch wave).
+    const runWave = async (
+      wave: readonly InboxPreloadTarget[],
+      urgent: boolean,
+    ) => {
+      const pending = wave.filter(isPending);
+      const ready = async () => (urgent || (await waitIdle())) && !cancelled;
+      const roomIds = [...new Set(pending.map((target) => target.channelId))];
+      for (
+        let start = 0;
+        start < roomIds.length;
+        start += INBOX_PRELOAD_ROOMS_PER_REQUEST
+      ) {
+        if (!(await ready())) return;
+        const chunk = roomIds.slice(
+          start,
+          start + INBOX_PRELOAD_ROOMS_PER_REQUEST,
+        );
+        // A thread counts as attempted when its own request starts, so one cut
+        // off by a re-sorted list is picked up by the next pass.
+        for (const target of pending) {
+          if (!target.thread && chunk.includes(target.channelId)) {
+            attemptedAtRef.current.set(
+              inboxPreloadTargetKey(target),
+              Date.now(),
+            );
+          }
+        }
+        await preloadChannelsMessages(
+          queryClient,
+          chunk,
+          INBOX_PRELOAD_MESSAGES,
+        );
       }
-      await preloadChannelsMessages(
-        queryClient,
-        [...new Set(pending.map((target) => target.channelId))],
-        INBOX_PRELOAD_MESSAGES,
-      );
       if (cancelled) return;
       await preloadThreads(
         queryClient,
@@ -106,8 +136,7 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
             : [],
         ),
         async (threads) => {
-          if (!firstPass && !(await waitIdle())) return false;
-          if (cancelled) return false;
+          if (!(await ready())) return false;
           for (const thread of threads) {
             attemptedAtRef.current.set(
               inboxPreloadTargetKey({
@@ -120,6 +149,17 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
           return true;
         },
       );
+    };
+
+    void (async () => {
+      // The first pass after launch starts at once: that is when the rooms
+      // are about to be opened. Later passes, and the second wave, yield to
+      // the user.
+      const firstPass = firstPassRef.current;
+      firstPassRef.current = false;
+      await runWave(firstTargets, firstPass);
+      if (cancelled) return;
+      await runWave(moreTargets, false);
     })();
     return () => {
       cancelled = true;

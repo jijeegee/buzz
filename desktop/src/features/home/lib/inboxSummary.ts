@@ -12,7 +12,7 @@ import {
 export const INBOX_SUMMARY_QUERY_KEY = ["inbox-summary"] as const;
 /** Rows loaded in the background after the first page. */
 export const INBOX_SUMMARY_BACKGROUND_ROWS = 300;
-export const INBOX_SUMMARY_PAGE_SIZE = 30;
+export const INBOX_SUMMARY_PAGE_SIZE = 50;
 
 /** The chat list shows chat messages only, as the per-room loading did. */
 const SUMMARY_KINDS: ReadonlySet<number> = new Set([
