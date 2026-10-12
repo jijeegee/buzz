@@ -90,8 +90,8 @@ export function MembershipDenied({
             </h1>
           </div>
           <p className="text-sm leading-6 text-muted-foreground">
-            This community is invite-only. Ask an admin for an invite link,
-            then use it below.
+            This community is invite-only. Ask an admin for an invite link, then
+            use it below.
           </p>
         </div>
 
