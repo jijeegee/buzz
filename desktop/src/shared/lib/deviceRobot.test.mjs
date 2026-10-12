@@ -5,7 +5,11 @@ import test from "node:test";
 import {
   agentBadge,
   DEVICE_ROBOT_COLORS,
+  DEVICE_ROBOT_PAINTS,
   DEVICE_ROBOT_SHAPES,
+  deviceRobotPaintCss,
+  deviceRobotSlot,
+  nextDeviceRobotAssignments,
   deviceRobotTag,
   deviceRobotVariantForDevice,
   deviceRobotVariantFromTag,
@@ -25,6 +29,10 @@ const GOLDEN = JSON.parse(
 
 test("palette and silhouettes match the cross-platform fixture", () => {
   assert.deepEqual([...DEVICE_ROBOT_COLORS], GOLDEN.colors);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(DEVICE_ROBOT_PAINTS)),
+    GOLDEN.paints,
+  );
   assert.deepEqual([...DEVICE_ROBOT_SHAPES], GOLDEN.shapes);
   assert.deepEqual(
     JSON.parse(JSON.stringify(DEVICE_ROBOT_GEOMETRY)),
@@ -137,7 +145,7 @@ test("invalid robot overrides are ignored", () => {
   const hashed = deviceRobotVariantForDevice(device.deviceId);
   for (const bad of [
     { shape: "blob", colorIndex: 1 },
-    { shape: "dome", colorIndex: 8 },
+    { shape: "dome", colorIndex: 9 },
     { shape: "dome", colorIndex: -1 },
   ]) {
     assert.deepEqual(
@@ -149,11 +157,12 @@ test("invalid robot overrides are ignored", () => {
   for (const content of [
     "",
     "{}",
-    '{"v":1,"shape":"blob","color":1}',
-    '{"v":1,"shape":"dome","color":8}',
-    '{"v":1,"shape":"dome","color":2.5}',
-    '{"v":1,"shape":"dome"}',
-    '{"v":2,"shape":"dome","color":1}',
+    '{"v":2,"shape":"blob","color":1}',
+    '{"v":2,"shape":"dome","color":9}',
+    '{"v":2,"shape":"dome","color":2.5}',
+    '{"v":2,"shape":"dome"}',
+    // Version 1 indexed the previous palette; those devices get reassigned.
+    '{"v":1,"shape":"dome","color":1}',
   ]) {
     assert.equal(parseDeviceRobotContent(content), null, content);
   }
@@ -165,6 +174,52 @@ test("invalid robot overrides are ignored", () => {
   );
   assert.equal(
     deviceRobotContent({ shape: "hex", colorIndex: 7 }),
-    '{"v":1,"shape":"hex","color":7}',
+    '{"v":2,"shape":"hex","color":7}',
   );
+});
+
+test("slots pair palette paints with shapes in order", () => {
+  for (const vector of GOLDEN.slots) {
+    assert.deepEqual(deviceRobotSlot(vector.slot), {
+      colorIndex: vector.colorIndex,
+      shape: vector.shape,
+    });
+  }
+});
+
+test("new devices take the first free slots, in device order", () => {
+  const stored = new Map([
+    ["dev-b", { shape: "dome", colorIndex: 1 }],
+    ["gone", { shape: "classic", colorIndex: 0 }],
+  ]);
+  assert.deepEqual(
+    nextDeviceRobotAssignments([" DEV-A ", "dev-b", "dev-c", "dev-a"], stored),
+    [
+      ["dev-a", deviceRobotSlot(2)],
+      ["dev-c", deviceRobotSlot(3)],
+    ],
+  );
+  assert.deepEqual(nextDeviceRobotAssignments(["a", "b"], new Map()), [
+    ["a", deviceRobotSlot(0)],
+    ["b", deviceRobotSlot(1)],
+  ]);
+  const full = new Map(
+    DEVICE_ROBOT_PAINTS.map((_, index) => [
+      `d${index}`,
+      deviceRobotSlot(index),
+    ]),
+  );
+  assert.deepEqual(nextDeviceRobotAssignments(["new"], full), [
+    ["new", deviceRobotSlot(DEVICE_ROBOT_PAINTS.length)],
+  ]);
+});
+
+test("gradient paints become corner-to-corner CSS gradients", () => {
+  assert.equal(deviceRobotPaintCss(DEVICE_ROBOT_PAINTS[0]), "#F03A3A");
+  const rainbow = DEVICE_ROBOT_PAINTS.find((paint) => paint.name === "rainbow");
+  const css = deviceRobotPaintCss(rainbow);
+  assert.match(css, /^linear-gradient\(135deg, #FF2D2D 23\.33%, /);
+  assert.match(css, /#A040E0 76\.67%\)$/);
+  const gold = DEVICE_ROBOT_PAINTS.find((paint) => paint.name === "gold");
+  assert.match(deviceRobotPaintCss(gold), /#8A6200 0%, .* #9C7A1E 100%\)$/);
 });
