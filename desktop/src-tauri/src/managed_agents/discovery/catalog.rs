@@ -149,7 +149,10 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         model_env_var: Some("BUZZ_AGENT_MODEL"),
         provider_env_var: Some("BUZZ_AGENT_PROVIDER"),
         provider_locked: false,
-        default_env: &[],
+        // Text-only completions remain in Activity. Managed Buzz agents must
+        // be reminded to publish via the existing bounded reply guard.
+        // Explicit layered user settings still override this default.
+        default_env: &[("BUZZ_AGENT_REQUIRE_REPLY", "1")],
         config_file_path: None,
         config_file_format: None,
         supports_acp_native_config: false,

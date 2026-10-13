@@ -68,6 +68,16 @@ fn replace_unsupported_images(history: &mut [HistoryItem]) -> usize {
 /// [`Config::require_reply`](crate::config::Config::require_reply).
 const MAX_REPLY_NAGS: u32 = 2;
 
+/// Delivery is separate from the persona's answer format. Only enabled by
+/// the Buzz reply guard; standalone ACP clients keep ordinary text output.
+pub(crate) const REPLY_DELIVERY_INSTRUCTION: &str = "## Buzz reply delivery\n\
+Your final assistant text is only an internal activity log; it is not delivered to the user. \
+When the user expects an answer, use the shell tool to run `buzz messages send` to the channel \
+and thread from the current context. Put the prepared answer in --content. Instructions such \
+as 'translate only' or 'output only' describe the CONTENT of that message, not whether to use \
+the delivery tool. Do not output the answer again instead of sending it. After a successful \
+send, finish without sending a duplicate. If silence is genuinely correct, no message is needed.";
+
 /// Output-token upper bound (inclusive) for the silent-death signature: the
 /// observed failure emits 2–12 tokens.  Turns with `output_tokens <= 12`
 /// and no prior tool call are flagged.  Legitimate one-sentence replies land

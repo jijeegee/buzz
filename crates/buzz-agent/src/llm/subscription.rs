@@ -141,10 +141,10 @@ impl Events {
                                     .collect(),
                             );
                         }
-                        let parsed = parse_responses(response.clone())?;
-                        if parsed.text.trim().is_empty() && parsed.tool_calls.is_empty() {
-                            return Err(AgentError::Llm("ChatGPT subscription returned no text or tool call; retry the request".into()));
-                        }
+                        // A successful tool publish may be followed by an empty
+                        // end_turn. It is valid silence, not a transport failure
+                        // to replay (which could send the user's reply twice).
+                        // The common agent loop owns reply reminders.
                         return Ok(Some(response));
                     }
                     Some("response.incomplete")
@@ -298,12 +298,16 @@ mod tests {
     }
 
     #[test]
-    fn empty_completion_is_visible_error_and_truncated_tools_are_discarded() {
+    fn empty_completed_turn_is_valid_and_truncated_tools_are_discarded() {
         let empty = format!(
             "data: {}\n\n",
             json!({"type":"response.completed","response":{"status":"completed","output":[]}})
         );
-        assert!(Events::new().push(empty.as_bytes()).is_err());
+        let value = Events::new().push(empty.as_bytes()).unwrap().unwrap();
+        let parsed = parse_responses(value).unwrap();
+        assert!(parsed.text.is_empty());
+        assert!(parsed.tool_calls.is_empty());
+        assert_eq!(parsed.stop, ProviderStop::EndTurn);
         let wire = format!(
             "data: {}\n\n",
             json!({"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"function_call","arguments":"{"}]}})
