@@ -72,6 +72,32 @@ const goose = runtime({
 });
 const catalog = [goose, claude, codex, buzzAgent];
 
+test("ChatGPT subscription default preserves a selected capable Kuzz harness", () => {
+  const capable = { ...buzzAgent, supportsChatgptSubscription: true };
+  const before = config({
+    preferred_runtime: "buzz-agent",
+    provider: "openai",
+    model: "old",
+  });
+  const rows = buildProviderRows([goose, claude, codex, capable], before);
+  const row = rows.find((row) => row.providerId === "openai");
+  const option = defaultOptions(rows).find(
+    (option) => option.id === "openai:subscription",
+  );
+  assert.equal(option.available, true);
+  assert.equal(option.runtime.id, "buzz-agent");
+  assert.equal(option.label, "OpenAI · ChatGPT subscription");
+  const next = nextGlobalConfigForDefault(before, row, "subscription");
+  assert.equal(next.preferred_runtime, "buzz-agent");
+  assert.equal(next.provider, "openai-subscription");
+  assert.equal(next.model, null);
+  const after = buildProviderRows([goose, claude, codex, capable], next);
+  assert.equal(
+    after.find((row) => row.providerId === "openai").defaultPath,
+    "subscription",
+  );
+});
+
 function config(overrides) {
   return {
     env_vars: {},

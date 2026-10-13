@@ -212,7 +212,9 @@ export function defaultOptions(rows: readonly ProviderRow[]): DefaultOption[] {
         path: "subscription",
         label: `${row.label} · ${row.providerId === "openai" ? "ChatGPT subscription" : "Subscription"}`,
         detail: available
-          ? `${runtime.label} with ${row.providerId === "openai" ? "ChatGPT subscription" : "subscription"}`
+          ? row.providerId === "openai" && runtime.supportsChatgptSubscription
+            ? `${runtime.label} with ChatGPT subscription`
+            : `${runtime.label} sign-in`
           : `${runtime.label} sign-in — not installed`,
         runtime,
         available,
