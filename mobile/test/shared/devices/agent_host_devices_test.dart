@@ -212,6 +212,19 @@ void main() {
         });
       },
     );
+
+    test('a rejected automatic robot is not retried in the same run', () async {
+      container.listen(deviceRobotOverridesProvider, (_, _) {});
+      await Future<void>.delayed(Duration.zero);
+      session.publishError = Exception('invalid: unsupported content version');
+      final notifier = container.read(ownDeviceEventsProvider.notifier);
+      for (var i = 0; i < 5; i++) {
+        await notifier.assignDeviceRobot('device-1', deviceRobotSlot(0));
+        session.emit(_hostEvent('device-$i', [_agentA]));
+      }
+      expect(session.published, hasLength(1));
+      expect(container.read(deviceRobotOverridesProvider), isEmpty);
+    });
   });
 
   group('agent robot widgets', () {
