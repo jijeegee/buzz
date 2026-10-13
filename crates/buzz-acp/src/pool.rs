@@ -911,6 +911,7 @@ impl ChannelInfoResolver {
                         channel_type: info.channel_type,
                         description: info.description,
                         project: None,
+                        goals_off: false,
                     },
                 ))
             })
@@ -3404,6 +3405,11 @@ pub async fn run_prompt_task(
             .as_ref()
             .is_some_and(|info| info.project.is_some()),
     );
+    // A conversation that turned goals off gets no goal context, read from
+    // the same per-turn metadata refresh, so a change applies next turn.
+    let goals_off = resolved_channel_info
+        .as_ref()
+        .is_some_and(|info| info.goals_off);
 
     let (session_id, is_new_session) = match &source {
         PromptSource::Channel(scope) => {
@@ -3424,17 +3430,18 @@ pub async fn run_prompt_task(
                 // The goals a new session starts with go in its system prompt;
                 // agents without one, and reattached sessions, get them on
                 // their first turn instead. `None`: not known (fetch failed).
-                let start_goals = if ctx.goals_enabled
-                    && agent.has_system_prompt_support()
-                    && reattach.is_none()
-                {
+                let starts_with_goals =
+                    ctx.goals_enabled && agent.has_system_prompt_support() && reattach.is_none();
+                let start_goals = if !starts_with_goals {
+                    None
+                } else if goals_off {
+                    Some(crate::goal_context::GoalsNow::off(scope.root_event_id()))
+                } else {
                     crate::goal_context::fetch_goal_tree(*cid, &ctx.rest_client)
                         .await
                         .map(|tree| {
                             crate::goal_context::GoalsNow::new(&tree, *cid, scope.root_event_id())
                         })
-                } else {
-                    None
                 };
                 match open_session_and_apply_model(
                     &mut agent,
@@ -3920,7 +3927,7 @@ pub async fn run_prompt_task(
             }
         };
         let goal_tree_fetch = async {
-            if ctx.goals_enabled {
+            if ctx.goals_enabled && !goals_off {
                 crate::goal_context::fetch_goal_tree(b.channel_id, &ctx.rest_client).await
             } else {
                 None
@@ -3949,19 +3956,19 @@ pub async fn run_prompt_task(
         let profile_lookup =
             fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
         // The goals now; sent below only when the session does not hold them.
-        let goal_context_current = goal_tree.map(|tree| {
-            crate::goal_context::GoalsNow::new(
-                &tree,
-                b.channel_id,
-                // The thread this turn belongs to: the fetched thread,
-                // or a thread session's own root on its first turn.
-                match &context_target {
-                    ContextTarget::Thread(root) => Some(root.as_str()),
-                    _ => None,
-                }
-                .or_else(|| b.scope.root_event_id()),
-            )
-        });
+        // The thread this turn belongs to: the fetched thread, or a thread
+        // session's own root on its first turn.
+        let goal_focus = match &context_target {
+            ContextTarget::Thread(root) => Some(root.as_str()),
+            _ => None,
+        }
+        .or_else(|| b.scope.root_event_id());
+        let goal_context_current = if ctx.goals_enabled && goals_off {
+            Some(crate::goal_context::GoalsNow::off(goal_focus))
+        } else {
+            goal_tree
+                .map(|tree| crate::goal_context::GoalsNow::new(&tree, b.channel_id, goal_focus))
+        };
 
         // Standing context sent with this prompt already carries the current
         // layer 0 goals; otherwise tell a live session once that they changed.
@@ -4588,6 +4595,35 @@ pub(crate) async fn fetch_channel_info(
     fetch_with_retry(|| fetch_channel_info_once(channel_id, rest)).await
 }
 
+/// Prompt channel metadata from kind-39000 tags. Goals are on unless the
+/// event says `["goals","off"]`.
+fn prompt_channel_info_from_tags(tags: &[serde_json::Value]) -> PromptChannelInfo {
+    let mut name = None;
+    let mut description = None;
+    let mut goals_off = false;
+    for tag in tags {
+        if let Some(arr) = tag.as_array() {
+            match arr.first().and_then(|v| v.as_str()) {
+                Some("name") => name = arr.get(1).and_then(|v| v.as_str()),
+                Some("about") => description = arr.get(1).and_then(|v| v.as_str()),
+                Some("goals") => goals_off = arr.get(1).and_then(|v| v.as_str()) == Some("off"),
+                _ => {}
+            }
+        }
+    }
+    let description = description
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    PromptChannelInfo {
+        name: name.unwrap_or(UNKNOWN_CHANNEL_NAME).to_string(),
+        channel_type: crate::relay::channel_type_from_tags(tags),
+        description,
+        project: None,
+        goals_off,
+    }
+}
+
 /// Fetch the current kind-39000 metadata with one bounded request.
 ///
 /// Used by prompt-turn refreshes when cached metadata is already available as
@@ -4612,29 +4648,7 @@ async fn fetch_channel_info_once(channel_id: Uuid, rest: &RestClient) -> Option<
         Ok(Ok(json)) => {
             let events = json.as_array()?;
             let ev = events.first()?;
-            let tags = ev.get("tags")?.as_array()?;
-            let mut name = None;
-            let mut description = None;
-            for tag in tags {
-                if let Some(arr) = tag.as_array() {
-                    match arr.first().and_then(|v| v.as_str()) {
-                        Some("name") => name = arr.get(1).and_then(|v| v.as_str()),
-                        Some("about") => description = arr.get(1).and_then(|v| v.as_str()),
-                        _ => {}
-                    }
-                }
-            }
-            let channel_type = crate::relay::channel_type_from_tags(tags);
-            let description = description
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            Some(PromptChannelInfo {
-                name: name.unwrap_or(UNKNOWN_CHANNEL_NAME).to_string(),
-                channel_type,
-                description,
-                project: None,
-            })
+            Some(prompt_channel_info_from_tags(ev.get("tags")?.as_array()?))
         }
         Ok(Err(e)) => {
             tracing::debug!(channel_id = %channel_id, "channel info fetch failed: {e}");
@@ -6836,6 +6850,20 @@ pub(crate) mod tests {
     use super::*;
     use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
     use serde_json::json;
+
+    #[test]
+    fn channel_goals_are_on_unless_metadata_says_off() {
+        let tags = |extra: &[serde_json::Value]| {
+            let mut tags = vec![json!(["name", "team"]), json!(["t", "stream"])];
+            tags.extend_from_slice(extra);
+            tags
+        };
+        assert!(!prompt_channel_info_from_tags(&tags(&[])).goals_off);
+        assert!(!prompt_channel_info_from_tags(&tags(&[json!(["goals", "on"])])).goals_off);
+        let off = prompt_channel_info_from_tags(&tags(&[json!(["goals", "off"])]));
+        assert!(off.goals_off);
+        assert_eq!(off.name, "team");
+    }
 
     /// A capture path for a `bash` script's single-quoted string. Forward
     /// slashes, because bash keeps Windows `\` literally and the file would

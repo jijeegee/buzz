@@ -192,6 +192,7 @@ pub fn channel_info_from_event(
         is_member: is_member.unwrap_or(true),
         ttl_seconds,
         ttl_deadline,
+        goals_enabled: goals_enabled_from_event(event),
     })
 }
 
@@ -254,7 +255,14 @@ pub fn channel_detail_from_event(event: &Event) -> Result<ChannelDetailInfo, Str
         nip29_group_id: None,
         ttl_seconds: first_tag_value(event, "ttl").and_then(|v| v.parse::<i32>().ok()),
         ttl_deadline: first_tag_value(event, "ttl_deadline").map(str::to_string),
+        goals_enabled: goals_enabled_from_event(event),
     })
+}
+
+/// Per-room goals switch from kind:39000. The relay only emits
+/// `["goals", "off"]` when disabled; absence (and old relays) means enabled.
+fn goals_enabled_from_event(event: &Event) -> bool {
+    first_tag_value(event, "goals") != Some("off")
 }
 
 /// Convert a NIP-29 kind:39002 members event to [`ChannelMembersResponse`].

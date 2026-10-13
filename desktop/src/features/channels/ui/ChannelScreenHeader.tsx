@@ -10,7 +10,6 @@ import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
 import { ChannelHeaderStatusBadge } from "@/features/channels/ui/ChannelHeaderStatusBadge";
 import { ChannelMembersBar } from "@/features/channels/ui/ChannelMembersBar";
 import { GoalHeaderChip } from "@/features/goals/ui/GoalChips";
-import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import {
   DEFAULT_HOVER_PROFILE_STATUS_GEOMETRY,
   ProfileAvatarWithStatus,
@@ -76,7 +75,6 @@ export function ChannelScreenHeader({
   onOpenGoals,
   onToggleMembers,
 }: ChannelScreenHeaderProps) {
-  const goalsEnabled = useFeatureEnabled("goalTree");
   const isGroupDm =
     activeChannel?.channelType === "dm" &&
     activeDmHeaderParticipants.length > 1;
@@ -132,9 +130,9 @@ export function ChannelScreenHeader({
   ) : (
     headerEndActions
   );
+  // Room goal UI follows the per-room switch (kind:39000 `goals` tag).
   const goalChip =
-    goalsEnabled &&
-    activeChannel &&
+    activeChannel?.goalsEnabled &&
     activeChannel.channelType !== "forum" &&
     onOpenGoals ? (
       <GoalHeaderChip

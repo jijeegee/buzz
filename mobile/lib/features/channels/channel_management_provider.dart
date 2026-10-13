@@ -484,6 +484,7 @@ ChannelDetails channelDetailsFromEvent(NostrEvent event) {
     archivedAt: data.isArchived ? eventTime : null,
     ttlSeconds: data.ttlSeconds,
     ttlDeadline: data.ttlDeadline,
+    goalsEnabled: data.goalsEnabled,
   );
 }
 

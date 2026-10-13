@@ -10,7 +10,9 @@
 //!
 //! The section exists only where the conversation has a goal tree, and it
 //! carries the goal usage rules itself, so conversations without goals get
-//! exactly the prompt they would without this feature.
+//! exactly the prompt they would without this feature. A conversation that
+//! turned goals off (kind-39000 `["goals","off"]`) gets no goal context at
+//! all; a session that already held goals is told once to drop them.
 //!
 //! Goal text is untrusted member input and is escaped before it is embedded.
 
@@ -256,6 +258,9 @@ const GOALS_RESTATED: &str = "These goals replace any earlier goal context.";
 /// The whole `<goal-context>` once a session's conversation lost its goals.
 const GOALS_CLEARED: &str =
     "This conversation no longer has goals; earlier goal context no longer applies.";
+/// Sent once to a session that may hold goals when the conversation turns
+/// goals off.
+const GOALS_OFF: &str = "Goals are turned off for this conversation. Earlier goal context and goal rules no longer apply here; do not use `buzz goals` in it.";
 
 /// The conversation's goals as of one turn, from one session's point of view.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -268,6 +273,8 @@ pub(crate) struct GoalsNow {
     focus: Option<String>,
     /// The `<goal-context>` body for that thread (`None`: no goals).
     rendered: Option<String>,
+    /// The conversation turned goals off.
+    off: bool,
 }
 
 impl GoalsNow {
@@ -280,6 +287,17 @@ impl GoalsNow {
             }),
             focus: focus.map(str::to_string),
             rendered: render_goal_context(tree, channel_id, focus),
+            off: false,
+        }
+    }
+
+    /// A conversation with goals turned off: no goals, whatever is stored.
+    pub(crate) fn off(focus: Option<&str>) -> Self {
+        Self {
+            tree: None,
+            focus: focus.map(str::to_string),
+            rendered: None,
+            off: true,
         }
     }
 
@@ -322,7 +340,9 @@ impl GoalsSeen {
 /// session that may hold older goals nobody recorded (one reattached after a
 /// restart): goals it gets are then marked as replacing any earlier ones. Removal
 /// is announced only to a session known to hold goals, so a restart does not
-/// tell every goal-less conversation that its goals are gone.
+/// tell every goal-less conversation that its goals are gone. Goals turned off
+/// are the exception: a reattached session in such a conversation is told once,
+/// because the room owner chose it and the session may still act on old goals.
 pub(crate) fn goal_context_for_turn(
     seen: Option<&GoalsSeen>,
     held_unknown: bool,
@@ -338,6 +358,7 @@ pub(crate) fn goal_context_for_turn(
         Some(rendered) if same_tree || !held_goals => Some(rendered.clone()),
         Some(rendered) if seen.is_none() => Some(format!("{GOALS_RESTATED}\n\n{rendered}")),
         Some(rendered) => Some(format!("{GOALS_CHANGED}\n\n{rendered}")),
+        None if now.off && held_goals => Some(GOALS_OFF.to_string()),
         None if seen.is_some_and(|seen| seen.tree.is_some()) => Some(GOALS_CLEARED.to_string()),
         None => None,
     }
@@ -559,6 +580,29 @@ mod tests {
             .unwrap()
             .starts_with(GOALS_CHANGED));
         assert_eq!(goal_context_for_turn(None, true, &gone), None);
+    }
+
+    #[test]
+    fn goals_off_is_said_once_to_a_session_that_may_hold_goals() {
+        let send = |seen: Option<&GoalsSeen>, held_unknown: bool, now: &GoalsNow| {
+            goal_context_for_turn(seen, held_unknown, now)
+        };
+        let main = GoalsNow::new(&sample(), channel(), None);
+        let off = GoalsNow::off(None);
+        assert_eq!(off.rendered(), None);
+        // A session that got goals is told once, then nothing.
+        let seen = GoalsSeen::after(None, &main);
+        assert_eq!(send(Some(&seen), false, &off).as_deref(), Some(GOALS_OFF));
+        let seen = GoalsSeen::after(Some(&seen), &off);
+        assert_eq!(send(Some(&seen), false, &off), None);
+        // Turned back on: the goals again, as plain context.
+        assert_eq!(send(Some(&seen), false, &main).as_deref(), main.rendered());
+        // A reattached session may hold goals nobody recorded.
+        assert_eq!(send(None, true, &off).as_deref(), Some(GOALS_OFF));
+        // Nothing for a session that never had goals, or a new one.
+        let empty = GoalsSeen::after(None, &GoalsNow::new(&GoalTree::empty(), channel(), None));
+        assert_eq!(send(Some(&empty), false, &off), None);
+        assert_eq!(send(None, false, &off), None);
     }
 
     #[test]

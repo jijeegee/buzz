@@ -440,6 +440,19 @@ class ChannelDetailsPage extends HookConsumerWidget {
             ],
           ),
           AppListCard(
+            key: const ValueKey('channel-details-goals-card'),
+            verticalPadding: _channelDetailsSectionPadding,
+            children: [
+              RoomGoalsSwitch(
+                channel: resolvedChannel,
+                canEdit: canEdit,
+                onSaved: (enabled) => displayedChannel.value = displayedChannel
+                    .value
+                    .copyWith(goalsEnabled: enabled),
+              ),
+            ],
+          ),
+          AppListCard(
             key: const ValueKey('channel-details-channel-card'),
             verticalPadding: _channelDetailsSectionPadding,
             children: [

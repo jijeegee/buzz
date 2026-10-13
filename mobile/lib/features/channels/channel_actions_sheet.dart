@@ -31,6 +31,7 @@ import 'channel_stars/channel_stars_provider.dart';
 import 'channels_provider.dart';
 import 'manage_channel_sheet.dart';
 import 'members_sheet.dart';
+import 'room_goals_switch.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
@@ -125,6 +126,13 @@ class ChannelActionsSheet extends HookConsumerWidget {
         membersAsync.isLoading || agentOwnersAsync.isLoading;
     final lifecycleCapabilitiesUnavailable =
         membersAsync.hasError || agentOwnersAsync.hasError;
+    // Any DM participant may change the DM's goals switch.
+    final isDmParticipant =
+        currentChannel.isMember ||
+        (currentPubkey != null &&
+            currentChannel.participantPubkeys.any(
+              (pubkey) => pubkey.toLowerCase() == currentPubkey,
+            ));
 
     void close() => Navigator.of(context).pop();
 
@@ -220,6 +228,14 @@ class ChannelActionsSheet extends HookConsumerWidget {
                       : notifier.muteChannel(channel.id);
                 },
               ),
+              if (channel.isDm)
+                RoomGoalsSwitch(
+                  channel: currentChannel,
+                  canEdit: isDmParticipant && !currentChannel.isArchived,
+                  contentPadding: EdgeInsets.zero,
+                  onSaved: (enabled) => displayedChannel.value =
+                      displayedChannel.value.copyWith(goalsEnabled: enabled),
+                ),
               if (!channel.isDm)
                 ListTile(
                   contentPadding: EdgeInsets.zero,

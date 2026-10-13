@@ -98,7 +98,16 @@ function parseChannelSnapshot(
     return null;
   }
 
-  return { channels, hash: obj.hash };
+  // Snapshots written before the per-room goals switch lack `goalsEnabled`;
+  // absent means on, matching the kind:39000 parsing default.
+  return {
+    channels: channels.map((channel) =>
+      typeof channel.goalsEnabled === "boolean"
+        ? channel
+        : { ...channel, goalsEnabled: true },
+    ),
+    hash: obj.hash,
+  };
 }
 
 function serializedBytes(value: string): number {

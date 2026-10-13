@@ -200,6 +200,14 @@ impl std::fmt::Display for ChannelVisibility {
     }
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum OnOff {
+    #[value(name = "on")]
+    On,
+    #[value(name = "off")]
+    Off,
+}
+
 #[derive(Clone, clap::ValueEnum)]
 pub enum PresenceStatus {
     #[value(name = "online")]
@@ -703,9 +711,9 @@ pub enum ChannelsCmd {
         #[arg(long, value_name = "PATH")]
         templates_file: Option<String>,
     },
-    /// Update channel name, description, visibility, or ephemeral TTL
+    /// Update channel name, description, visibility, ephemeral TTL, or goals
     #[command(
-        after_help = "Examples:\n  buzz channels update --channel <uuid> --name general\n  buzz channels update --channel <uuid> --visibility open\n  buzz channels update --channel <uuid> --visibility private"
+        after_help = "Examples:\n  buzz channels update --channel <uuid> --name general\n  buzz channels update --channel <uuid> --visibility open\n  buzz channels update --channel <uuid> --visibility private\n  buzz channels update --channel <uuid> --goals off"
     )]
     Update {
         /// Channel UUID
@@ -727,6 +735,10 @@ pub enum ChannelsCmd {
         /// Clear an existing TTL, making the channel permanent.
         #[arg(long)]
         no_ttl: bool,
+        /// Turn the conversation's goals on or off (channel owner/admin; any
+        /// DM participant). Off hides the goal tree and blocks goal edits.
+        #[arg(long, value_enum)]
+        goals: Option<OnOff>,
     },
     /// Set the channel topic
     Topic {

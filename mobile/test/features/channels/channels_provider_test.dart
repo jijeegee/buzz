@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
+import 'package:buzz/features/channels/room_goals_provider.dart';
+import 'package:buzz/features/goals/goal_provider.dart';
 import 'package:buzz/shared/read_state/read_state_provider.dart';
 import 'package:buzz/shared/relay/relay.dart';
 
@@ -2196,6 +2198,87 @@ void main() {
     },
   );
 
+  test('kind:39000 goals tag sets the per-room goals flag', () async {
+    final session = _FakeRelaySession(
+      memberships: [_membership(_channelA, myPk), _membership(_channelB, myPk)],
+      metadata: [
+        _meta(id: _channelA, name: 'default-on'),
+        _meta(id: _channelB, name: 'opted-out', goals: 'off'),
+      ],
+    );
+    final container = _buildContainer(session: session);
+    addTearDown(container.dispose);
+
+    final channels = await container.read(channelsProvider.future);
+    expect(
+      channels.firstWhere((c) => c.name == 'default-on').goalsEnabled,
+      isTrue,
+    );
+    expect(
+      channels.firstWhere((c) => c.name == 'opted-out').goalsEnabled,
+      isFalse,
+    );
+    expect(container.read(roomGoalsEnabledProvider(_channelA)), isTrue);
+    expect(container.read(roomGoalsEnabledProvider(_channelB)), isFalse);
+  });
+
+  test('goals flip drops the cached goal tree', () async {
+    final session = _FakeRelaySession(
+      memberships: [_membership(_channelA, myPk)],
+      metadata: [_meta(id: _channelA, name: 'room')],
+    );
+    final container = _buildContainer(session: session);
+    addTearDown(container.dispose);
+    int treeReads() => session.queryBatches
+        .where((batch) => batch.any((f) => f.kinds.contains(40110)))
+        .length;
+
+    await container.read(channelsProvider.future);
+    await container.read(goalTreeProvider(_channelA).future);
+    expect(treeReads(), 1);
+
+    // Unchanged metadata keeps the cached tree.
+    await container.read(channelsProvider.notifier).refresh();
+    await container.read(goalTreeProvider(_channelA).future);
+    expect(treeReads(), 1);
+
+    // A tree read while goals were off is empty; a flip must re-read it.
+    session.metadata
+      ..clear()
+      ..add(_meta(id: _channelA, name: 'room', goals: 'off'));
+    await container.read(channelsProvider.notifier).refresh();
+    await container.read(goalTreeProvider(_channelA).future);
+    expect(treeReads(), 2);
+  });
+
+  test('goals flip invalidates cached channelDetailsProvider', () async {
+    final session = _FakeRelaySession(
+      memberships: [_membership(_channelA, myPk)],
+      metadata: [_meta(id: _channelA, name: 'room')],
+    );
+    final container = _buildContainer(session: session);
+    addTearDown(container.dispose);
+
+    await container.read(channelsProvider.future);
+    final primed = await container.read(
+      channelDetailsProvider(_channelA).future,
+    );
+    expect(primed.goalsEnabled, isTrue);
+
+    session.metadata
+      ..clear()
+      ..add(_meta(id: _channelA, name: 'room', goals: 'off'));
+    await container.read(channelsProvider.notifier).refresh();
+    expect(container.read(channelsProvider).value!.single.goalsEnabled, false);
+
+    // Without the invalidation the cached pre-flip details would come back
+    // and `mergeDetails` would revert the room to goals on.
+    final refreshed = await container.read(
+      channelDetailsProvider(_channelA).future,
+    );
+    expect(refreshed.goalsEnabled, isFalse);
+  });
+
   test(
     'archive transition invalidates cached channelDetailsProvider',
     () async {
@@ -2431,6 +2514,7 @@ NostrEvent _meta({
   int createdAt = 1,
   int? ttlSeconds,
   bool archived = false,
+  String? goals,
 }) => NostrEvent(
   id: 'meta-$id',
   pubkey: 'creator',
@@ -2443,6 +2527,7 @@ NostrEvent _meta({
     [visibility == 'private' ? 'private' : 'public'],
     if (ttlSeconds != null) ['ttl', '$ttlSeconds'],
     if (archived) ['archived', 'true'],
+    if (goals != null) ['goals', goals],
   ],
   content: '',
   sig: 'sig',

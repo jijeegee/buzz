@@ -321,6 +321,9 @@ class ChannelData {
   final DateTime? ttlDeadline;
   final bool isArchived;
 
+  /// Per-room goals switch; only `["goals","off"]` disables it.
+  final bool goalsEnabled;
+
   const ChannelData({
     required this.id,
     required this.name,
@@ -332,6 +335,7 @@ class ChannelData {
     this.ttlSeconds,
     this.ttlDeadline,
     this.isArchived = false,
+    this.goalsEnabled = true,
   });
 
   factory ChannelData.fromEvent(NostrEvent event) {
@@ -369,6 +373,9 @@ class ChannelData {
     // archived — anything else (missing tag, "false", unexpected value) means
     // active.
     final isArchived = event.getTagValue('archived') == 'true';
+    // Goals default on: the relay emits `["goals", "off"]` only when a room
+    // has opted out, so a missing tag (or any other value) means enabled.
+    final goalsEnabled = event.getTagValue('goals') != 'off';
     return ChannelData(
       id: id,
       name: name,
@@ -380,6 +387,7 @@ class ChannelData {
       ttlSeconds: ttlSeconds,
       ttlDeadline: ttlDeadline,
       isArchived: isArchived,
+      goalsEnabled: goalsEnabled,
     );
   }
 }

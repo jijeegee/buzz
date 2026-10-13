@@ -58,7 +58,6 @@ import {
   threadGoalRootId,
 } from "@/features/goals/goalTree";
 import { ThreadGoalHeaderChip } from "@/features/goals/ui/GoalChips";
-import { useFeatureEnabled } from "@/shared/features/useFeatureEnabled";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
 import { isTaskThreadClosed } from "@/features/messages/lib/taskThread";
@@ -255,7 +254,8 @@ export function MessageThreadPanel({
   >(null);
   const isOverlay = useIsThreadPanelOverlay();
   const threadHeadId = threadHead?.id ?? null;
-  const goalsEnabled = useFeatureEnabled("goalTree");
+  // Thread goal UI follows its channel's per-room goals switch.
+  const goalsEnabled = channel?.goalsEnabled === true;
   useEscapeKey(
     onClose,
     !isHuddleTranscript && (isOverlay || isSinglePanelView || isFocusMode),

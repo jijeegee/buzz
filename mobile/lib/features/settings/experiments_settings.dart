@@ -3,7 +3,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/theme/grid.dart';
 import '../../shared/widgets/app_list_card.dart';
-import '../goals/goals_settings.dart';
 import 'read_aloud_settings.dart';
 
 /// Builds the rows contributed by one experiment.
@@ -12,10 +11,7 @@ typedef ExperimentRowsBuilder =
 
 /// Mobile experiments, in display order. Add a builder here to surface a new
 /// experiment in Settings → Experiments.
-const List<ExperimentRowsBuilder> mobileExperiments = [
-  readAloudExperimentRows,
-  goalsExperimentRows,
-];
+const List<ExperimentRowsBuilder> mobileExperiments = [readAloudExperimentRows];
 
 /// Settings card for device-local experimental features.
 class ExperimentsSettings extends ConsumerWidget {

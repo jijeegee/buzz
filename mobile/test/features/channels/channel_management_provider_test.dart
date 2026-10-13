@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
+import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/mobile_huddle_controller.dart';
 import 'package:buzz/shared/relay/relay.dart';
@@ -219,6 +220,72 @@ void main() {
     expect(details.ttlDeadline!.isUtc, isTrue);
   });
 
+  group('per-room goals flag', () {
+    NostrEvent goalsMeta(List<List<String>> extra) => NostrEvent(
+      id: 'meta-goals',
+      pubkey: 'creator',
+      createdAt: 1700000000,
+      kind: 39000,
+      tags: [
+        ['d', 'c8c629ae-d35c-44fa-bc39-f6c1816756cc'],
+        ['name', 'goals'],
+        ['t', 'stream'],
+        ['public'],
+        ...extra,
+      ],
+      content: '',
+      sig: 'sig',
+    );
+
+    test('absent goals tag means enabled', () {
+      expect(channelDetailsFromEvent(goalsMeta(const [])).goalsEnabled, isTrue);
+      expect(ChannelData.fromEvent(goalsMeta(const [])).goalsEnabled, isTrue);
+    });
+
+    test('goals off disables and any other value keeps it on', () {
+      expect(
+        channelDetailsFromEvent(
+          goalsMeta(const [
+            ['goals', 'off'],
+          ]),
+        ).goalsEnabled,
+        isFalse,
+      );
+      expect(
+        channelDetailsFromEvent(
+          goalsMeta(const [
+            ['goals', 'on'],
+          ]),
+        ).goalsEnabled,
+        isTrue,
+      );
+    });
+
+    test('mergeDetails carries the goals flag onto the channel', () {
+      final base = Channel(
+        id: 'c8c629ae-d35c-44fa-bc39-f6c1816756cc',
+        name: 'goals',
+        channelType: 'stream',
+        visibility: 'open',
+        description: '',
+        createdBy: 'creator',
+        createdAt: DateTime.utc(2025),
+        memberCount: 1,
+      );
+      expect(base.goalsEnabled, isTrue);
+      final merged = base.mergeDetails(
+        channelDetailsFromEvent(
+          goalsMeta(const [
+            ['goals', 'off'],
+          ]),
+        ),
+      );
+      expect(merged.goalsEnabled, isFalse);
+      expect(merged.copyWith(name: 'renamed').goalsEnabled, isFalse);
+      expect(ChannelDetails.fromChannel(merged).goalsEnabled, isFalse);
+    });
+  });
+
   group('buildCreateChannelTags', () {
     test('builds an ongoing channel without a ttl tag', () {
       final tags = buildCreateChannelTags(
@@ -278,6 +345,30 @@ void main() {
           ['name', 'general'],
           ['about', 'Team updates'],
         ],
+      );
+    });
+
+    test('goals switch can be sent alone as a kind 9002 tag', () {
+      expect(
+        buildUpdateChannelTags(channelId: 'channel-id', goalsEnabled: false),
+        [
+          ['h', 'channel-id'],
+          ['goals', 'off'],
+        ],
+      );
+      expect(
+        buildUpdateChannelTags(channelId: 'channel-id', goalsEnabled: true),
+        [
+          ['h', 'channel-id'],
+          ['goals', 'on'],
+        ],
+      );
+    });
+
+    test('channel edits require at least one field', () {
+      expect(
+        () => buildUpdateChannelTags(channelId: 'channel-id'),
+        throwsArgumentError,
       );
     });
 

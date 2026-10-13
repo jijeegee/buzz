@@ -3068,6 +3068,17 @@ async fn ingest_event_inner(
         }
     }
 
+    // A conversation with goals off keeps its tree but takes no new writes.
+    if kind_u32 == KIND_GOAL_TREE {
+        if let Some(channel) = &channel_row {
+            if !channel.goals_enabled {
+                return Err(IngestError::Rejected(
+                    "invalid: goals are turned off for this conversation".into(),
+                ));
+            }
+        }
+    }
+
     // Artifact revisions passed the same home-channel write gates as kind 9
     // above; they are stored and published without conversation side effects.
     if kind_u32 == buzz_core::kind::KIND_ARTIFACT {
