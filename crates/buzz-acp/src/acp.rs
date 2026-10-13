@@ -186,6 +186,9 @@ pub struct AcpClient {
     observer_thread_root: Option<String>,
     /// Whether the adapter has advertised a `compact` slash command.
     compact_supported: bool,
+    /// ACP session ids with a completed `compaction_update` the pool has not
+    /// taken yet (see [`take_compacted_sessions`](Self::take_compacted_sessions)).
+    compacted_sessions: Vec<String>,
     /// Latest context-window reading per ACP session id, from `usage_update`.
     /// Answers owner `query_context_usage` controls and guards
     /// `compact_session`; the pool prunes it to live sessions on return.
@@ -422,6 +425,12 @@ fn build_client_capabilities() -> serde_json::Value {
         // not hardcode vendor login commands from this capability.
         "auth": {
             "terminal": true
+        },
+        // ACP compaction updates: adapters report every compaction, including
+        // ones the agent starts on its own, as `compaction_update`. Buzz
+        // restates goals a compaction may have summarised away.
+        "session": {
+            "compaction": {}
         },
         // Signal to goose that we handle `_goose/unstable/session/update`
         // notifications. Without this the custom notification is suppressed
@@ -664,6 +673,7 @@ impl AcpClient {
             observer_context: ObserverContext::default(),
             observer_thread_root: None,
             compact_supported: false,
+            compacted_sessions: Vec::new(),
             context_usage: std::collections::HashMap::new(),
             active_run_id: None,
             steering_supported: false,
@@ -696,6 +706,12 @@ impl AcpClient {
     /// Whether the adapter advertised a `compact` slash command.
     pub(crate) fn compact_supported(&self) -> bool {
         self.compact_supported
+    }
+
+    /// Sessions compacted since the last call, whether by `/compact` or by
+    /// the agent on its own.
+    pub(crate) fn take_compacted_sessions(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.compacted_sessions)
     }
 
     #[cfg(test)]
@@ -2048,6 +2064,22 @@ impl AcpClient {
                 self.handle_standard_usage_update(msg);
                 false
             }
+            "compaction_update" => {
+                let status = update.get("status").and_then(|v| v.as_str());
+                tracing::info!(
+                    target: "acp::update",
+                    "compaction_update: {}",
+                    status.unwrap_or("?")
+                );
+                if status == Some("completed") {
+                    if let Some(session_id) = msg["params"]["sessionId"].as_str() {
+                        if !self.compacted_sessions.iter().any(|s| s == session_id) {
+                            self.compacted_sessions.push(session_id.to_owned());
+                        }
+                    }
+                }
+                false
+            }
             "keepalive" => false,
             other => {
                 tracing::debug!(target: "acp::update", "session/update: {other}");
@@ -2836,6 +2868,40 @@ mod tests {
             Some(true),
             "goose customNotifications capability must be advertised"
         );
+    }
+
+    #[test]
+    fn client_capabilities_ask_for_compaction_updates() {
+        // claude-agent-acp checks for an object; codex-acp for any value.
+        assert!(build_client_capabilities()["session"]["compaction"].is_object());
+    }
+
+    #[tokio::test]
+    async fn completed_compaction_updates_are_taken_once_per_session() {
+        let mut client = spawn_inert_client().await;
+        let update = |session: &str, status: &str| {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session,
+                    "update": {
+                        "sessionUpdate": "compaction_update",
+                        "compactionId": "c1",
+                        "status": status
+                    }
+                }
+            })
+        };
+        let _ = client.handle_session_update(&update("s1", "in_progress"));
+        let _ = client.handle_session_update(&update("s2", "failed"));
+        assert!(client.take_compacted_sessions().is_empty());
+
+        let _ = client.handle_session_update(&update("s1", "completed"));
+        let _ = client.handle_session_update(&update("s1", "completed"));
+        let _ = client.handle_session_update(&update("s2", "completed"));
+        assert_eq!(client.take_compacted_sessions(), vec!["s1", "s2"]);
+        assert!(client.take_compacted_sessions().is_empty());
     }
 
     #[test]

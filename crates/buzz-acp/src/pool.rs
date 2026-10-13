@@ -2715,6 +2715,25 @@ fn with_team(prompt: Option<String>, instructions: Option<&str>) -> Option<Strin
     }
 }
 
+/// Compaction, ours or the agent's own, may have summarised away goals a
+/// session got in a message; its next turn restates them. Runs before a turn
+/// reads what its session holds, so it also covers a compaction during the
+/// previous turn, after that turn recorded what it sent.
+fn forget_goals_in_compacted_sessions(agent: &mut OwnedAgent) {
+    for session_id in agent.acp.take_compacted_sessions() {
+        let scopes: Vec<SessionScope> = agent
+            .state
+            .sessions
+            .iter()
+            .filter(|(_, id)| **id == session_id)
+            .map(|(scope, _)| scope.clone())
+            .collect();
+        for scope in scopes {
+            agent.state.forget_goal_context_after_compaction(&scope);
+        }
+    }
+}
+
 /// Append the conversation's `<goal-context>` at the end of the system prompt,
 /// after everything that never changes, so the session holds its goals from
 /// the start without a copy in every turn.
@@ -3991,6 +4010,7 @@ pub async fn run_prompt_task(
         // Standing context sent with this prompt already carries the current
         // layer 0 goals; otherwise tell a live session once that they changed.
         let standing_in_this_prompt = !agent.has_system_prompt_support() && !standing_context_sent;
+        forget_goals_in_compacted_sessions(&mut agent);
         let delivery = agent.state.deliveries.get(&b.scope);
         let goal_context = goal_context_current.as_ref().and_then(|now| {
             crate::goal_context::goal_context_for_turn(
@@ -10341,11 +10361,16 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         );
         assert_eq!(next_turn(&state, &off), None);
         state.forget_goal_context_after_compaction(&conv(channel));
-        assert!(next_turn(&state, &off).unwrap().starts_with("Goals are turned off"));
+        assert!(next_turn(&state, &off)
+            .unwrap()
+            .starts_with("Goals are turned off"));
 
         // Goals sent in a message: restated after compaction.
-        state.deliveries.get_mut(&conv(channel)).unwrap().goal_context_seen =
-            Some(GoalsSeen::after(None, &on));
+        state
+            .deliveries
+            .get_mut(&conv(channel))
+            .unwrap()
+            .goal_context_seen = Some(GoalsSeen::after(None, &on));
         assert_eq!(next_turn(&state, &on), None);
         state.forget_goal_context_after_compaction(&conv(channel));
         assert!(next_turn(&state, &on).unwrap().contains("Ship it"));
