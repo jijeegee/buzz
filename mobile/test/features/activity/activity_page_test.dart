@@ -781,6 +781,41 @@ void main() {
     expect(find.textContaining('Deployed the fix'), findsOneWidget);
   });
 
+  for (final (label, isThread) in [
+    ('#general', false),
+    ('#engineering › Thread', true),
+  ]) {
+    testWidgets('Channels + Threads row $label opens by id at the newest '
+        'message', (tester) async {
+      await tester.pumpWidget(
+        await buildTestable(
+          overrides: [
+            inboxSummaryProvider.overrideWith(_UnsupportedSummaryNotifier.new),
+            channelActivityProvider.overrideWith((ref) async => const []),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('activity-filter-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Channels + Threads'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+
+      final page = tester.widget<ChannelDetailPage>(
+        find.byType(ChannelDetailPage),
+      );
+      // No message anchor: the room (or thread) opens at its newest message.
+      expect(page.initialMessageId, isNull);
+      if (isThread) {
+        expect(page.initialThreadRootId, isNotNull);
+      } else {
+        expect(page.initialThreadRootId, isNull);
+      }
+    });
+  }
   testWidgets('Channels + Threads rows show the relay unread count until '
       'the row is read', (tester) async {
     final page = parseInboxSummaryResponse({

@@ -270,21 +270,31 @@ class ActivityPage extends HookConsumerWidget {
       }
       final resolvedChannel = channel;
 
-      // Deep-link to the represented message: oldest unread in the group,
-      // falling back to the latest event.
-      final readAt = resolveInboxItemReadAt(item, markerOf: markerOf);
-      final target = item.deepLinkTarget(readAt);
-      final thread = threadReferenceOf(target.tags);
-      final threadRootId = isBroadcastReply(target.tags)
-          ? null
-          : thread.parentId;
+      // Channels + Threads rows stand for a room, not a message: open the
+      // room (or the row's thread) by id at its newest message. A message id
+      // captured when the row was built would land on an older position.
+      final String? initialMessageId;
+      final String? threadRootId;
+      if (filter == InboxFilter.conversations) {
+        initialMessageId = null;
+        threadRootId = item.threadRootId;
+      } else {
+        // Deep-link to the represented message: oldest unread in the group,
+        // falling back to the latest event.
+        final readAt = resolveInboxItemReadAt(item, markerOf: markerOf);
+        final target = item.deepLinkTarget(readAt);
+        initialMessageId = target.id;
+        threadRootId = isBroadcastReply(target.tags)
+            ? null
+            : threadReferenceOf(target.tags).parentId;
+      }
 
       if (!context.mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => ChannelDetailPage(
             channel: resolvedChannel,
-            initialMessageId: target.id,
+            initialMessageId: initialMessageId,
             initialThreadRootId: threadRootId,
             initialThreadRouteBehavior:
                 InitialThreadRouteBehavior.replaceCurrentRoute,
