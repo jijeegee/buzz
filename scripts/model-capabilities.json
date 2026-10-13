@@ -432,6 +432,25 @@
   ],
   "exact_records": [
     {
+      "provider": "openai",
+      "raw_model_id": "gpt-6-luna",
+      "registry_label": "GPT-6 Luna",
+      "thinking_mode": "none",
+      "supported_efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "medium",
+      "databricks_v2_wire_route": "not-applicable",
+      "normalization_policy": "openai-standard",
+      "_provenance": "2026-10-14: subscription Responses rejected minimal and enumerated none|low|medium|high|xhigh|max. Synthetic inference with none and medium completed. Shared by openai and its openai-subscription alias; other GPT-6 models are not inferred from this record.",
+      "source": "https://chatgpt.com/backend-api/codex/responses"
+    },
+    {
       "provider": "databricks_v2",
       "raw_model_id": "data_workflow_tools.goose.goose-claude-opus-5-5",
       "registry_label": "Claude Opus 5.5",

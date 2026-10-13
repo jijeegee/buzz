@@ -39,21 +39,17 @@ impl Llm {
         body: &Value,
         url: &str,
     ) -> Result<Value, AgentError> {
+        let body_bytes =
+            serde_json::to_vec(body).map_err(|e| AgentError::Llm(format!("serialize: {e}")))?;
         let mut bearer = self.auth.bearer().await?;
         for attempt in 0..2 {
             let account = crate::auth::codex::account_id(&bearer)?;
-            let response = tokio::time::timeout(
-                cfg.llm_timeout,
-                self.http
-                    .post(url)
-                    .bearer_auth(&bearer)
+            let response = send_json(&self.http, url, body_bytes.clone(), cfg.llm_timeout, |r| {
+                r.bearer_auth(&bearer)
                     .header("ChatGPT-Account-Id", account)
                     .header("Accept", "text/event-stream")
-                    .json(body)
-                    .send(),
-            )
+            })
             .await
-            .map_err(|_| AgentError::Llm("ChatGPT subscription request timed out".into()))?
             .map_err(|_| AgentError::Llm("ChatGPT subscription connection failed".into()))?;
             let status = response.status();
             if status == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
@@ -140,10 +136,6 @@ impl Events {
                                     .into_values()
                                     .collect(),
                             );
-                        }
-                        let parsed = parse_responses(response.clone())?;
-                        if parsed.text.trim().is_empty() && parsed.tool_calls.is_empty() {
-                            return Err(AgentError::Llm("ChatGPT subscription returned no text or tool call; retry the request".into()));
                         }
                         return Ok(Some(response));
                     }
@@ -240,9 +232,16 @@ mod tests {
         let end = b"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n";
         let response = events.push(end).unwrap().unwrap();
         assert_eq!(response["output"], json!([text, tool]));
-        let parsed = parse_responses(response).unwrap();
-        assert_eq!(parsed.text, "Hello.");
-        assert_eq!(parsed.tool_calls.len(), 1);
+        // The API JSON and assembled SSE take the same final interpretation
+        // path; neither adapter parses or executes tool arguments itself.
+        for provider in [Provider::OpenAi, Provider::OpenAiSubscription] {
+            let parsed =
+                finish_openai_response(response.clone(), parse_responses, provider, "test")
+                    .unwrap();
+            assert_eq!(parsed.text, "Hello.");
+            assert_eq!(parsed.tool_calls.len(), 1);
+            assert_eq!(parsed.request_model.as_deref(), Some("test"));
+        }
     }
 
     #[test]
@@ -303,13 +302,22 @@ mod tests {
             "data: {}\n\n",
             json!({"type":"response.completed","response":{"status":"completed","output":[]}})
         );
-        assert!(Events::new().push(empty.as_bytes()).is_err());
+        let value = Events::new().push(empty.as_bytes()).unwrap().unwrap();
+        assert!(finish_openai_response(
+            value,
+            parse_responses,
+            Provider::OpenAiSubscription,
+            "test"
+        )
+        .is_err());
         let wire = format!(
             "data: {}\n\n",
             json!({"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"function_call","arguments":"{"}]}})
         );
         let value = Events::new().push(wire.as_bytes()).unwrap().unwrap();
-        let parsed = parse_responses(value).unwrap();
+        let parsed =
+            finish_openai_response(value, parse_responses, Provider::OpenAiSubscription, "test")
+                .unwrap();
         assert!(parsed.tool_calls.is_empty());
         assert_eq!(parsed.stop, ProviderStop::MaxTokens);
     }

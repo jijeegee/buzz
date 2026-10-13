@@ -50,18 +50,13 @@ pub async fn discover_subscription_models(
             response.status().as_u16()
         )));
     }
-    let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
+    let body = read_response_body(&mut response, MAX_CATALOG_RESPONSE_BODY_BYTES)
         .await
-        .map_err(|_| AgentError::Llm("ChatGPT model catalog interrupted".into()))?
-    {
-        if body.len().saturating_add(chunk.len()) > MAX_CATALOG_RESPONSE_BODY_BYTES {
-            return Err(AgentError::Llm("ChatGPT model catalog too large".into()));
-        }
-        body.extend_from_slice(&chunk);
+        .map_err(|_| AgentError::Llm("ChatGPT model catalog interrupted".into()))?;
+    if body.truncated {
+        return Err(AgentError::Llm("ChatGPT model catalog too large".into()));
     }
-    let value: Value = serde_json::from_slice(&body)
+    let value: Value = serde_json::from_slice(&body.bytes)
         .map_err(|_| AgentError::Llm("invalid ChatGPT model catalog".into()))?;
     let entries = value["models"]
         .as_array()

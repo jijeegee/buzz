@@ -409,14 +409,13 @@ impl Llm {
 
         if use_responses {
             let (body, parse) = build(true, request_model);
-            return parse(
+            return finish_openai_response(
                 self.post_openai(cfg, "/responses", &body, request_model)
                     .await?,
+                parse,
+                cfg.provider,
+                request_model,
             )
-            .map(|mut r| {
-                r.request_model = Some(request_model.to_string());
-                r
-            })
             .map_err(PostError::from);
         }
         let (body, parse) = build(false, request_model);
@@ -424,24 +423,19 @@ impl Llm {
             .post_openai(cfg, "/chat/completions", &body, request_model)
             .await
         {
-            Ok(value) => parse(value)
-                .map(|mut r| {
-                    r.request_model = Some(request_model.to_string());
-                    r
-                })
+            Ok(value) => finish_openai_response(value, parse, cfg.provider, request_model)
                 .map_err(PostError::from),
             Err(PostError::Agent(error))
                 if cfg.openai_api == OpenAiApi::Auto && self.try_upgrade(&error) =>
             {
                 let (body, parse) = build(true, request_model);
-                parse(
+                finish_openai_response(
                     self.post_openai(cfg, "/responses", &body, request_model)
                         .await?,
+                    parse,
+                    cfg.provider,
+                    request_model,
                 )
-                .map(|mut r| {
-                    r.request_model = Some(request_model.to_string());
-                    r
-                })
                 .map_err(PostError::from)
             }
             Err(error) => Err(error),
@@ -574,6 +568,28 @@ impl Llm {
         }
         true
     }
+}
+
+// Both JSON and subscription SSE arrive here as one complete JSON response.
+// Parse tool arguments exactly once; transport adapters only assemble the wire.
+fn finish_openai_response(
+    value: Value,
+    parse: OpenAiParse,
+    provider: Provider,
+    request_model: &str,
+) -> Result<LlmResponse, AgentError> {
+    let mut response = parse(value)?;
+    if provider == Provider::OpenAiSubscription
+        && response.stop != ProviderStop::MaxTokens
+        && response.text.trim().is_empty()
+        && response.tool_calls.is_empty()
+    {
+        return Err(AgentError::Llm(
+            "ChatGPT subscription returned no text or tool call; retry the request".into(),
+        ));
+    }
+    response.request_model = Some(request_model.to_string());
+    Ok(response)
 }
 
 fn anthropic_body(
@@ -1872,6 +1888,28 @@ impl From<AgentError> for PostError {
     }
 }
 
+// Send one JSON request. Authentication headers and retry policy stay with the
+// caller; both API-key and subscription routes use this HTTP operation.
+async fn send_json<F>(
+    http: &Client,
+    url: &str,
+    body: Vec<u8>,
+    timeout: std::time::Duration,
+    apply: F,
+) -> Result<reqwest::Response, reqwest::Error>
+where
+    F: FnOnce(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
+{
+    apply(
+        http.post(url)
+            .header("content-type", "application/json")
+            .body(body)
+            .timeout(timeout),
+    )
+    .send()
+    .await
+}
+
 async fn post<F>(
     http: &Client,
     url: &str,
@@ -1891,14 +1929,7 @@ where
     let mut timeout_failures: u32 = 0;
     'attempt: for attempt in 0..MAX_RETRIES {
         let per_request_timeout = escalated_timeout(base_timeout, timeout_failures);
-        let resp = match apply(
-            http.post(url)
-                .header("content-type", "application/json")
-                .body(body_bytes.clone())
-                .timeout(per_request_timeout),
-        )
-        .send()
-        .await
+        let resp = match send_json(http, url, body_bytes.clone(), per_request_timeout, &apply).await
         {
             Ok(r) => r,
             Err(e) => {
@@ -2816,6 +2847,42 @@ mod tests {
             .filter(|request| request.method == "POST")
             .filter_map(|request| request.body.as_ref()?.get("model")?.as_str())
             .collect()
+    }
+
+    #[tokio::test]
+    async fn luna_minimal_effort_is_normalized_on_the_shared_request_path() {
+        let (base_url, captured) = spawn_sequence_stub(vec![StubHttpResponse::ok(json!({
+            "status": "completed",
+            "output": [{"type":"message","content":[{"type":"output_text","text":"Hello"}]}]
+        }))])
+        .await;
+        let mut config = cfg(Provider::OpenAi);
+        config.base_url = base_url;
+        config.openai_api = OpenAiApi::Responses;
+        config.thinking_effort = Some(ThinkingEffort::Minimal);
+        let llm = Llm::new(&config).unwrap();
+        let response = complete_model(&llm, &config, "gpt-6-luna").await.unwrap();
+        assert_eq!(response.text, "Hello");
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].body.as_ref().unwrap()["reasoning"]["effort"],
+            "none"
+        );
+        assert_eq!(
+            normalize_effort_for_provider(
+                "openai-subscription",
+                "gpt-6-luna",
+                ThinkingEffort::Minimal
+            ),
+            ThinkingEffort::None
+        );
+        // Supported choices remain untouched; a persisted user choice is never rewritten.
+        assert_eq!(config.thinking_effort, Some(ThinkingEffort::Minimal));
+        assert_eq!(
+            normalize_effort_for_provider("openai-subscription", "gpt-6-luna", ThinkingEffort::Max),
+            ThinkingEffort::Max
+        );
     }
 
     /// An explicit model is sent verbatim and never rewritten to something
