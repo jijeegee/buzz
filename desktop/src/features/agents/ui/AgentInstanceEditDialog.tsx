@@ -31,6 +31,8 @@ import { Input } from "@/shared/ui/input";
 import { setManagedAgentAutoRestart } from "@/shared/api/tauriManagedAgents";
 import { effortSentinelLabel } from "./effortPicker";
 import { EditAgentAdvancedFields } from "./EditAgentAdvancedFields";
+import { BuzzAgentModelTuningFields } from "./buzzAgentModelTuningFields";
+import { isBuzzAgentRuntime } from "./buzzAgentConfig";
 import {
   ADVANCED_FIELDS_MOTION_TRANSITION,
   AUTO_PROVIDER_DROPDOWN_VALUE,
@@ -1130,6 +1132,28 @@ export function AgentInstanceEditDialog({
               modelStatusMessage={modelStatusMessage}
             />
 
+            {/* Kuzz effort sits with the model choice, like the ACP picker. */}
+            {isBuzzAgentRuntime(prospectiveRuntimeId) ? (
+              <BuzzAgentModelTuningFields
+                disabled={isSaving}
+                envVars={envVars}
+                inheritedEnvVars={inheritedEnvVarsForAdvanced}
+                model={inheritedSubmission.model ?? ""}
+                onEnvVarChange={(key, value) => {
+                  setEnvVars((prev) => {
+                    const next = { ...prev };
+                    if (value === "") {
+                      delete next[key];
+                    } else {
+                      next[key] = value;
+                    }
+                    return next;
+                  });
+                }}
+                provider={effectiveProvider}
+              />
+            ) : null}
+
             <AgentAiDefaultsNotice
               onEditDefaults={() => {
                 if (!isSaving) setAiDefaultsOpen(true);
@@ -1197,10 +1221,8 @@ export function AgentInstanceEditDialog({
                       inheritedEnvVars={inheritedEnvVarsForAdvanced}
                       inheritHarness={inheritHarness}
                       linkedPersona={linkedPersona}
-                      model={inheritedSubmission.model ?? ""}
                       modelTuningRuntimeId={prospectiveRuntimeId}
                       parallelism={parallelism}
-                      provider={effectiveProvider}
                       requiredEnvKeys={advancedRequiredEnvKeys}
                       catalogStatus={runtimeCatalogStatus}
                       selectedRuntime={prospectiveRuntime}

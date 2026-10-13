@@ -351,10 +351,6 @@ export function BuzzAgentModelTuningFields({
 
   return (
     <div className="space-y-4">
-      <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-        buzz-agent model tuning
-      </p>
-
       <div className="grid gap-4 md:grid-cols-2">
         {/* Thinking / Effort */}
         <div className="space-y-1.5">

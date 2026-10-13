@@ -283,7 +283,12 @@ with a TypeScript lookup table or an id comparison in a component.
    retained transport key `BUZZ_ACP_EFFORT_LEVEL`. Goose and buzz-agent keep
    their native env knob (`GOOSE_THINKING_EFFORT` / `BUZZ_AGENT_THINKING_EFFORT`)
    and its `EffortSelectField`; the catalog's `effort_thought_level` is `None`
-   for them, so the column picker hides.
+   for them, so the column picker hides. The buzz-agent knob renders in the basic
+   section directly under the model choice in both `AgentInstanceEditDialog`
+   and `AgentDefinitionDialog` (not under Advanced): effort is part of the
+   model choice for every harness. At request time `buzz-agent` retries a
+   provider effort rejection once with the nearest level the provider lists
+   (else with effort omitted) and never rewrites the saved value.
 
    **Where each write goes.** Create embeds the pick in `create_persona`
    (`CreatePersonaRequest.effort_level`, trimmed, blank = unset) — the

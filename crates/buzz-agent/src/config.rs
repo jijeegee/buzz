@@ -86,7 +86,7 @@ impl ThinkingEffort {
 ///   the nearest supported level.
 ///
 /// Logs a `warn!` on every substitution.
-fn resolve_openai_effort(
+pub(crate) fn resolve_openai_effort(
     model: &str,
     requested: ThinkingEffort,
     supported: &[ThinkingEffort],

@@ -188,6 +188,17 @@ fn classify_failure(detail: &str, model_not_found: bool) -> AgentError {
         AgentError::UnsupportedImageInput(
             "ChatGPT subscription model does not accept this image input".into(),
         )
+    } else if super::is_unsupported_effort_error(detail) {
+        // Keep only the provider's supported-level list (no prompt/account
+        // data) so `Llm::complete` can retry with a level it accepts.
+        let supported = super::parse_supported_efforts(detail, None)
+            .into_iter()
+            .map(ThinkingEffort::openai_effort_str)
+            .collect::<Vec<_>>();
+        AgentError::LlmUnsupportedEffort(format!(
+            "ChatGPT subscription rejected the reasoning effort; supported values: {}",
+            supported.join(", ")
+        ))
     } else if model_not_found {
         AgentError::LlmModelNotFound("ChatGPT subscription model not found".into())
     } else {
@@ -223,6 +234,25 @@ async fn read_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_effort_event_keeps_only_the_supported_levels() {
+        let mut events = Events::new();
+        let err = events
+            .push(
+                br#"data: {"type":"error","error":{"type":"invalid_request_error","code":"unsupported_value","param":"reasoning.effort","message":"Unsupported value: 'minimal' is not supported with this model. Supported values are: 'none', 'low', 'medium', 'high', 'xhigh', and 'max'."}}
+
+"#,
+            )
+            .unwrap_err();
+        let AgentError::LlmUnsupportedEffort(detail) = err else {
+            panic!("expected an effort rejection, got {err:?}");
+        };
+        assert_eq!(
+            detail,
+            "ChatGPT subscription rejected the reasoning effort; supported values: none, low, medium, high, xhigh, max"
+        );
+    }
 
     #[test]
     fn streamed_items_survive_empty_terminal_output_without_duplicate_tools() {

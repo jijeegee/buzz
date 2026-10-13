@@ -450,6 +450,7 @@ fn catalog_error_kind(error: &AgentError) -> &'static str {
         AgentError::LlmModelNotFound(_) => "model-not-found",
         AgentError::LlmContextExceeded(_) => "context-exceeded",
         AgentError::UnsupportedImageInput(_) => "unsupported-image",
+        AgentError::LlmUnsupportedEffort(_) => "unsupported-effort",
         AgentError::Mcp(_) => "mcp",
         AgentError::Cancelled => "cancelled",
     }

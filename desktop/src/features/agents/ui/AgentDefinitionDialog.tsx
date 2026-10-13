@@ -16,6 +16,8 @@ import { ModelEffortFields } from "./ModelEffortFields";
 import { PersonaDropdownField } from "./PersonaDropdownField";
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import { PersonaAdvancedFields } from "./PersonaAdvancedFields";
+import { BuzzAgentModelTuningFields } from "./buzzAgentModelTuningFields";
+import { isBuzzAgentRuntime } from "./buzzAgentConfig";
 import { PersonaModelField } from "./PersonaModelField";
 import { runtimeAvailabilityWarning } from "./runtimeAvailabilityWarning";
 import { PersonaProviderApiKeyField } from "./PersonaProviderApiKeyField";
@@ -1013,6 +1015,28 @@ export function AgentDefinitionDialog({
               />
             ) : null}
           </ModelEffortFields>
+
+          {/* Kuzz effort sits with the model choice, like the ACP picker. */}
+          {isBuzzAgentRuntime(runtime) ? (
+            <BuzzAgentModelTuningFields
+              disabled={isPending}
+              envVars={envVars}
+              inheritedEnvVars={inheritedEnvVarsForAdvanced}
+              model={model}
+              onEnvVarChange={(key, value) => {
+                setEnvVars((prev) => {
+                  const next = { ...prev };
+                  if (value === "") {
+                    delete next[key];
+                  } else {
+                    next[key] = value;
+                  }
+                  return next;
+                });
+              }}
+              provider={effectiveProvider}
+            />
+          ) : null}
         </div>
 
         <AgentDefaultsDialog
@@ -1074,7 +1098,6 @@ export function AgentDefinitionDialog({
                     topLevelSecretEnvVar ? [topLevelSecretEnvVar] : []
                   }
                   inheritedEnvVars={inheritedEnvVarsForAdvanced}
-                  model={model}
                   modelTuningRuntimeId={runtime}
                   namePoolText={namePoolText}
                   catalogStatus={runtimeCatalogStatus}
@@ -1085,7 +1108,6 @@ export function AgentDefinitionDialog({
                   }}
                   onEnvVarsChange={setEnvVars}
                   onNamePoolTextChange={setNamePoolText}
-                  provider={effectiveProvider}
                   requiredEnvKeys={advancedRequiredEnvKeys}
                 />
               </motion.div>

@@ -52,6 +52,13 @@ pub struct Llm {
     /// Databricks otherwise. Anthropic doesn't use this — it always
     /// reads `cfg.api_key` directly because the API expects `x-api-key`.
     auth: Arc<dyn TokenSource>,
+    /// Effort substitutions learned from provider rejections, keyed by
+    /// (model, configured effort). Lets later turns send the accepted value
+    /// directly instead of paying a rejected request first. Process-lifetime
+    /// only; the saved setting is never rewritten.
+    effort_fallbacks: std::sync::Mutex<
+        std::collections::BTreeMap<(String, ThinkingEffort), Option<ThinkingEffort>>,
+    >,
 }
 
 /// Connect-phase timeout applied to every outgoing LLM HTTP request.
@@ -81,9 +88,15 @@ impl Llm {
             http,
             auto_upgraded: AtomicBool::new(false),
             auth,
+            effort_fallbacks: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         })
     }
 
+    /// Run one completion. If the provider rejects the configured reasoning
+    /// effort, retry with the nearest level it lists as supported, then with
+    /// effort omitted, so a stale or newly unsupported value never stops the
+    /// agent from answering. At most two extra requests; rejected requests
+    /// produce no output.
     pub async fn complete(
         &self,
         cfg: &Config,
@@ -92,7 +105,59 @@ impl Llm {
         tools: &[ToolDef],
         effective_model: &str,
     ) -> Result<LlmResponse, AgentError> {
-        let effort = cfg.thinking_effort;
+        let configured = cfg.thinking_effort;
+        let key = configured.map(|e| (effective_model.to_string(), e));
+        let mut effort = match &key {
+            Some(k) => self
+                .effort_fallbacks
+                .lock()
+                .ok()
+                .and_then(|m| m.get(k).copied())
+                .unwrap_or(configured),
+            None => None,
+        };
+        loop {
+            let result = self
+                .complete_with_effort(cfg, system_prompt, history, tools, effective_model, effort)
+                .await;
+            let (Err(AgentError::LlmUnsupportedEffort(detail)), Some(rejected)) = (&result, effort)
+            else {
+                return result;
+            };
+            let supported = parse_supported_efforts(detail, Some(rejected));
+            let next = if supported.is_empty() {
+                None
+            } else {
+                Some(crate::config::resolve_openai_effort(
+                    effective_model,
+                    rejected,
+                    &supported,
+                ))
+            };
+            tracing::warn!(
+                model = effective_model,
+                rejected = rejected.openai_effort_str(),
+                retry_with = next
+                    .map(ThinkingEffort::openai_effort_str)
+                    .unwrap_or("omitted"),
+                "llm: provider rejected the reasoning effort; retrying with a supported level"
+            );
+            if let (Some(k), Ok(mut m)) = (&key, self.effort_fallbacks.lock()) {
+                m.insert(k.clone(), next);
+            }
+            effort = next;
+        }
+    }
+
+    async fn complete_with_effort(
+        &self,
+        cfg: &Config,
+        system_prompt: &str,
+        history: &[HistoryItem],
+        tools: &[ToolDef],
+        effective_model: &str,
+        effort: Option<ThinkingEffort>,
+    ) -> Result<LlmResponse, AgentError> {
         let call_start = std::time::Instant::now();
         let result = match cfg.provider {
             Provider::Anthropic => self
@@ -113,12 +178,7 @@ impl Llm {
             Provider::OpenRouter => {
                 let mut body =
                     openai_body(cfg, system_prompt, history, tools, effective_model, None);
-                apply_openrouter_mutations(
-                    &mut body,
-                    cfg.thinking_effort,
-                    effective_model,
-                    cfg.prompt_caching,
-                );
+                apply_openrouter_mutations(&mut body, effort, effective_model, cfg.prompt_caching);
                 self.post_openrouter(cfg, &body)
                     .await
                     .and_then(parse_openai_with_reasoning_details)
@@ -233,7 +293,7 @@ impl Llm {
             tracing::info!(
                 model = effective_model,
                 provider = ?cfg.provider,
-                thinking_effort = ?cfg.thinking_effort,
+                thinking_effort = ?effort,
                 duration_ms,
                 input_tokens = ?response.input_tokens,
                 cached_input_tokens = ?response.cached_input_tokens,
@@ -985,6 +1045,70 @@ fn is_context_length_error(body: &str) -> bool {
         || b.contains("context window")
         // Anthropic: "prompt is too long: N tokens > M maximum".
         || b.contains("prompt is too long")
+}
+
+/// Matcher for a provider rejecting the request's reasoning-effort value.
+///
+/// OpenAI reports `code: unsupported_value` / `param: reasoning.effort`;
+/// Chat Completions uses `reasoning_effort`; Anthropic-shaped routes name
+/// `output_config.effort`. Requires both an effort parameter name and a
+/// rejection phrase so an unrelated 400 that merely mentions effort is not
+/// replayed.
+pub(crate) fn is_unsupported_effort_error(body: &str) -> bool {
+    let b = body.to_ascii_lowercase();
+    let names_effort = b.contains("reasoning.effort")
+        || b.contains("reasoning_effort")
+        || b.contains("output_config.effort")
+        || b.contains("thinking effort");
+    let rejects = b.contains("unsupported_value")
+        || b.contains("unsupported value")
+        || b.contains("not supported")
+        || b.contains("invalid value")
+        || b.contains("input should be");
+    names_effort && rejects
+}
+
+/// Extract the effort levels a provider says it supports from its rejection
+/// message (e.g. "Supported values are: 'none', 'low', 'medium'."). Only text
+/// after a "supported values"-style marker is scanned, so the rejected value
+/// quoted earlier in the message is not mistaken for a supported one. Returns
+/// an empty list when the message names no levels; the caller then omits
+/// effort entirely.
+pub(crate) fn parse_supported_efforts(
+    detail: &str,
+    rejected: Option<ThinkingEffort>,
+) -> Vec<ThinkingEffort> {
+    let lower = detail.to_ascii_lowercase();
+    let start = [
+        "supported values",
+        "supported:",
+        "one of",
+        "input should be",
+        "expected",
+    ]
+    .iter()
+    .filter_map(|marker| lower.find(marker).map(|i| i + marker.len()))
+    .min();
+    let Some(start) = start else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for word in lower[start..].split(|c: char| !c.is_ascii_alphanumeric()) {
+        let effort = match word {
+            "none" => ThinkingEffort::None,
+            "minimal" => ThinkingEffort::Minimal,
+            "low" => ThinkingEffort::Low,
+            "medium" => ThinkingEffort::Medium,
+            "high" => ThinkingEffort::High,
+            "xhigh" => ThinkingEffort::XHigh,
+            "max" => ThinkingEffort::Max,
+            _ => continue,
+        };
+        if Some(effort) != rejected && !found.contains(&effort) {
+            found.push(effort);
+        }
+    }
+    found
 }
 
 /// Narrow matcher for "you should be on the Responses API" provider errors,
@@ -1988,6 +2112,9 @@ where
             if status == 400 && is_unsupported_image_input_error(&body) {
                 return Err(PostError::Agent(AgentError::UnsupportedImageInput(body)));
             }
+            if status == 400 && is_unsupported_effort_error(&body) {
+                return Err(PostError::Agent(AgentError::LlmUnsupportedEffort(body)));
+            }
             return Err(PostError::Agent(AgentError::Llm(format!(
                 "{status}: {body}"
             ))));
@@ -2434,6 +2561,9 @@ async fn openrouter_post(
             if status == 400 && is_unsupported_image_input_error(&body) {
                 return Err(AgentError::UnsupportedImageInput(body));
             }
+            if status == 400 && is_unsupported_effort_error(&body) {
+                return Err(AgentError::LlmUnsupportedEffort(body));
+            }
             return Err(AgentError::Llm(format!("{status}: {body}")));
         }
         if let Some(len) = resp.content_length() {
@@ -2847,6 +2977,120 @@ mod tests {
             posted_models(&requests)
         );
         assert!(requests.iter().all(|request| request.path != "/v1/models"));
+    }
+
+    fn posted_effort(request: &CapturedHttpRequest) -> Option<String> {
+        let body = request.body.as_ref()?;
+        body.get("reasoning_effort")
+            .or_else(|| body.get("reasoning").and_then(|r| r.get("effort")))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }
+
+    fn effort_rejection(message: &str) -> StubHttpResponse {
+        StubHttpResponse {
+            status: 400,
+            body: json!({
+                "error": {
+                    "message": message,
+                    "type": "invalid_request_error",
+                    "param": "reasoning_effort",
+                    "code": "unsupported_value",
+                }
+            }),
+        }
+    }
+
+    /// A model that rejects the saved effort must still answer: the request
+    /// is retried once with the nearest level the provider lists, and later
+    /// calls send that level directly instead of paying the rejection again.
+    #[tokio::test]
+    async fn rejected_effort_retries_with_a_provider_listed_level() {
+        let (base_url, captured) = spawn_sequence_stub(vec![
+            effort_rejection(
+                "Unsupported value: 'minimal' is not supported with this model.                  Supported values are: 'none', 'low', 'medium', 'high'.",
+            ),
+            StubHttpResponse::ok(chat_response("first")),
+            StubHttpResponse::ok(chat_response("second")),
+        ])
+        .await;
+        let mut config = cfg(Provider::OpenAi);
+        config.base_url = base_url;
+        config.thinking_effort = Some(ThinkingEffort::Minimal);
+        let llm = Llm::new(&config).unwrap();
+
+        complete_model(&llm, &config, "gpt-new-unlisted")
+            .await
+            .unwrap();
+        complete_model(&llm, &config, "gpt-new-unlisted")
+            .await
+            .unwrap();
+
+        let requests = captured.lock().await;
+        let efforts: Vec<_> = requests
+            .iter()
+            .filter(|r| r.method == "POST")
+            .map(posted_effort)
+            .collect();
+        assert_eq!(
+            efforts,
+            vec![
+                Some("minimal".to_string()),
+                Some("none".to_string()),
+                Some("none".to_string()),
+            ]
+        );
+    }
+
+    /// A rejection that names no supported levels falls back to omitting
+    /// effort rather than failing the turn.
+    #[tokio::test]
+    async fn rejected_effort_without_a_list_retries_without_effort() {
+        let (base_url, captured) = spawn_sequence_stub(vec![
+            effort_rejection("reasoning_effort is not supported with this model."),
+            StubHttpResponse::ok(chat_response("ok")),
+        ])
+        .await;
+        let mut config = cfg(Provider::OpenAi);
+        config.base_url = base_url;
+        config.thinking_effort = Some(ThinkingEffort::High);
+        let llm = Llm::new(&config).unwrap();
+
+        complete_model(&llm, &config, "gpt-new-unlisted")
+            .await
+            .unwrap();
+
+        let requests = captured.lock().await;
+        let efforts: Vec<_> = requests
+            .iter()
+            .filter(|r| r.method == "POST")
+            .map(posted_effort)
+            .collect();
+        assert_eq!(efforts, vec![Some("high".to_string()), None]);
+    }
+
+    #[test]
+    fn effort_rejection_matcher_and_parser() {
+        let luna = r#"{"type":"error","error":{"type":"invalid_request_error","code":"unsupported_value","param":"reasoning.effort","message":"Unsupported value: 'minimal' is not supported with this model. Supported values are: 'none', 'low', 'medium', 'high', 'xhigh', and 'max'."}}"#;
+        assert!(is_unsupported_effort_error(luna));
+        assert_eq!(
+            parse_supported_efforts(luna, Some(ThinkingEffort::Minimal)),
+            vec![
+                ThinkingEffort::None,
+                ThinkingEffort::Low,
+                ThinkingEffort::Medium,
+                ThinkingEffort::High,
+                ThinkingEffort::XHigh,
+                ThinkingEffort::Max,
+            ]
+        );
+        // Unrelated 400s must not be replayed as effort rejections.
+        assert!(!is_unsupported_effort_error(
+            "Unsupported value: 'temperature' is not supported with this model."
+        ));
+        assert!(!is_unsupported_effort_error(
+            "maximum context length exceeded"
+        ));
     }
 
     /// Whatever model the config names is what goes on the wire -- including
@@ -5910,6 +6154,7 @@ mod tests {
                 .unwrap(),
             auto_upgraded: std::sync::atomic::AtomicBool::new(false),
             auth,
+            effort_fallbacks: Default::default(),
         }
     }
 
