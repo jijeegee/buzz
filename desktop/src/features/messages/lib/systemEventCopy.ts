@@ -57,6 +57,18 @@ export function describeChannelTextFieldChange(
 }
 
 /**
+ * Caption for a room's goals switch. The relay reports the new value as
+ * `"on"` or `"off"`; anything else is not a caption this row can state.
+ */
+export function describeGoalsChange(
+  value: string | null | undefined,
+): string | null {
+  if (value === "on") return "turned goals on";
+  if (value === "off") return "turned goals off";
+  return null;
+}
+
+/**
  * Adjusts a resolved display name for use inside a sentence rather than in the
  * name slot at the top of a row — "added by you", "removed you from the channel".
  *

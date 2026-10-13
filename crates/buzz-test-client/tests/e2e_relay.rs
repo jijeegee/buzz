@@ -3425,6 +3425,34 @@ async fn goal_trees_ws(client: &mut BuzzTestClient, channel_id: &str) -> Vec<nos
     events
 }
 
+/// The `goals` values of the conversation's `goals_changed` system messages,
+/// oldest first.
+async fn goals_changed_values(client: &mut BuzzTestClient, channel_id: &str) -> Vec<String> {
+    let sid = sub_id("goals-changed");
+    let filter = Filter::new()
+        .kind(Kind::Custom(buzz_core::kind::KIND_SYSTEM_MESSAGE as u16))
+        .custom_tags(SingleLetterTag::lowercase(Alphabet::H), [channel_id]);
+    client
+        .subscribe(&sid, vec![filter])
+        .await
+        .expect("subscribe system messages");
+    let mut events = client
+        .collect_until_eose(&sid, Duration::from_secs(5))
+        .await
+        .expect("system messages EOSE");
+    client
+        .close_subscription(&sid)
+        .await
+        .expect("close system message sub");
+    events.sort_by_key(|event| event.created_at);
+    events
+        .iter()
+        .filter_map(|event| serde_json::from_str::<serde_json::Value>(&event.content).ok())
+        .filter(|body| body["type"] == "goals_changed")
+        .filter_map(|body| body["goals"].as_str().map(str::to_owned))
+        .collect()
+}
+
 /// The conversation's goal tree heads as an agent reads them over HTTP /query.
 async fn goal_trees_http(reader: &Keys, channel_id: &str) -> Vec<serde_json::Value> {
     let filters = serde_json::json!([{
@@ -3501,6 +3529,22 @@ async fn test_channel_goals_switch_hides_and_blocks_goal_tree() {
         .await
         .expect("connect member");
 
+    // A new channel starts with goals off.
+    assert_eq!(
+        goals_tag_39000(&mut member_ws, &channel_id)
+            .await
+            .as_deref(),
+        Some("off")
+    );
+    let (ok, msg) = write_goal_tree_ws(&mut owner_ws, &channel_id, "none", &owner).await;
+    assert!(
+        !ok && msg.contains("goals are turned off"),
+        "unexpected: {msg}"
+    );
+    let (ok, msg) = set_goals_ws(&mut owner_ws, &channel_id, "on", &owner).await;
+    assert!(ok, "owner turns goals on: {msg}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
     let (ok, msg) = write_goal_tree_ws(&mut owner_ws, &channel_id, "none", &owner).await;
     assert!(ok, "first goal tree: {msg}");
     let head = goal_trees_ws(&mut member_ws, &channel_id).await;
@@ -3549,6 +3593,11 @@ async fn test_channel_goals_switch_hides_and_blocks_goal_tree() {
     assert_eq!(back.len(), 1);
     assert_eq!(back[0].id, head[0].id, "the same tree comes back");
     assert_eq!(goal_trees_http(&member, &channel_id).await.len(), 1);
+    // Each switch leaves a notice in the room.
+    assert_eq!(
+        goals_changed_values(&mut member_ws, &channel_id).await,
+        ["on", "off", "on"]
+    );
 
     owner_ws.disconnect().await.expect("disconnect owner");
     member_ws.disconnect().await.expect("disconnect member");
@@ -3583,15 +3632,22 @@ async fn test_dm_participant_switches_goals() {
     let mut bob_ws = BuzzTestClient::connect(&url, &bob)
         .await
         .expect("connect bob");
-    let (ok, msg) = set_goals_ws(&mut bob_ws, &dm_id, "off", &bob).await;
-    assert!(ok, "DM participant turns goals off: {msg}");
+    // A new DM starts with goals off.
+    assert_eq!(
+        goals_tag_39000(&mut alice_ws, &dm_id).await.as_deref(),
+        Some("off")
+    );
+    let (ok, msg) = set_goals_ws(&mut bob_ws, &dm_id, "on", &bob).await;
+    assert!(ok, "DM participant turns goals on: {msg}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(goals_tag_39000(&mut alice_ws, &dm_id).await, None);
+    let (ok, msg) = set_goals_ws(&mut alice_ws, &dm_id, "off", &alice).await;
+    assert!(ok, "other participant turns goals off: {msg}");
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(
         goals_tag_39000(&mut alice_ws, &dm_id).await.as_deref(),
         Some("off")
     );
-    let (ok, msg) = set_goals_ws(&mut alice_ws, &dm_id, "on", &alice).await;
-    assert!(ok, "other participant turns goals on: {msg}");
 
     alice_ws.disconnect().await.expect("disconnect alice");
     bob_ws.disconnect().await.expect("disconnect bob");

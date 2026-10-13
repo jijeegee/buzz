@@ -1765,6 +1765,16 @@ async fn handle_edit_metadata(
                             },
                         )
                         .await?;
+                    emit_system_message(
+                        tenant,
+                        state,
+                        channel_id,
+                        serde_json::json!({
+                            "type": "goals_changed", "actor": actor_hex, "goals": val
+                        }),
+                        chrono::Utc::now(),
+                    )
+                    .await?;
                 }
                 "archived" => {
                     match val {
