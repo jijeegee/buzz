@@ -216,6 +216,7 @@ function fallbackPair(canon: string): FallbackPair {
 
 const PROVIDER_ALIASES = new Map<string, string>([
   ["openai-compat", "openai"],
+  ["openai-subscription", "openai"],
   ["databricks-v2", "databricks_v2"],
 ]);
 

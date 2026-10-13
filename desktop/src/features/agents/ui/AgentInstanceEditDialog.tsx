@@ -564,6 +564,8 @@ export function AgentInstanceEditDialog({
       selectionOnRuntimeChange(selection, {
         previousRuntime: previousRuntimeId,
         nextRuntime: nextRuntime?.id ?? nextRuntimeId,
+        nextRuntimeSupportsChatgptSubscription:
+          nextRuntime?.supportsChatgptSubscription,
         nextRuntimeCanChooseProvider: runtimeSupportsLlmProviderSelection(
           nextRuntime?.id ?? nextRuntimeId,
         ),
@@ -888,6 +890,7 @@ export function AgentInstanceEditDialog({
       ? inheritedProviderDefault.value
       : "",
     hideProviderIds,
+    selectedRuntime?.supportsChatgptSubscription,
   );
   const providerSelectValue = isCustomProviderEditing
     ? CUSTOM_PROVIDER_DROPDOWN_VALUE

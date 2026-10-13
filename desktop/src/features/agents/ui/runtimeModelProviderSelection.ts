@@ -55,6 +55,8 @@ export function selectionOnRuntimeChange(
     nextRuntime: string;
     /** Caller-computed: whether the next runtime supports provider selection. */
     nextRuntimeCanChooseProvider: boolean;
+    /** Rust catalog fact for the newly selected runtime. */
+    nextRuntimeSupportsChatgptSubscription?: boolean;
     /**
      * Persona/Edit clear the managed API key and custom-model editing flag
      * when switching to a provider-locked runtime ("full"); Create clears
@@ -96,7 +98,11 @@ export function selectionOnRuntimeChange(
     next.isCustomModelEditing = false;
   }
 
-  if (!params.nextRuntimeCanChooseProvider) {
+  if (
+    !params.nextRuntimeCanChooseProvider ||
+    (current.provider === "openai-subscription" &&
+      !params.nextRuntimeSupportsChatgptSubscription)
+  ) {
     if (params.lockedRuntimeReset === "full") {
       next.envVars = envVarsClearingManagedApiKey(
         next.envVars,
@@ -107,6 +113,7 @@ export function selectionOnRuntimeChange(
     }
     next.isCustomProviderEditing = false;
     next.provider = "";
+    if (current.provider === "openai-subscription") next.model = "";
   }
 
   return next;

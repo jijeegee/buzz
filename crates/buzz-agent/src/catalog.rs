@@ -24,6 +24,63 @@ use crate::{
     types::AgentError,
 };
 
+/// List the models offered by the existing local ChatGPT subscription login.
+/// The endpoint is fixed; OpenAI-compatible URLs never receive this bearer.
+pub async fn discover_subscription_models(
+    codex_home: Option<std::path::PathBuf>,
+) -> Result<Vec<ModelEntry>, AgentError> {
+    let source = crate::auth::codex::CodexTokenSource::with_home(codex_home)?;
+    let bearer = source.bearer_no_browser().await?;
+    let account = crate::auth::codex::account_id(&bearer)?;
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(CATALOG_REQUEST_TIMEOUT)
+        .build()
+        .map_err(|_| AgentError::Llm("ChatGPT model catalog HTTP setup failed".into()))?;
+    let mut response = client
+        .get("https://chatgpt.com/backend-api/codex/models?client_version=0.159.3")
+        .bearer_auth(bearer)
+        .header("ChatGPT-Account-Id", account)
+        .send()
+        .await
+        .map_err(|_| AgentError::Llm("ChatGPT model catalog request failed".into()))?;
+    if !response.status().is_success() {
+        return Err(AgentError::Llm(format!(
+            "ChatGPT model catalog HTTP {}",
+            response.status().as_u16()
+        )));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| AgentError::Llm("ChatGPT model catalog interrupted".into()))?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_CATALOG_RESPONSE_BODY_BYTES {
+            return Err(AgentError::Llm("ChatGPT model catalog too large".into()));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let value: Value = serde_json::from_slice(&body)
+        .map_err(|_| AgentError::Llm("invalid ChatGPT model catalog".into()))?;
+    let entries = value["models"]
+        .as_array()
+        .ok_or_else(|| AgentError::Llm("missing ChatGPT models".into()))?;
+    let mut seen = HashSet::new();
+    Ok(entries
+        .iter()
+        .filter(|item| item["visibility"].as_str() != Some("hide"))
+        .filter_map(|item| {
+            let id = item["slug"].as_str()?.to_owned();
+            if id.is_empty() || !seen.insert(id.clone()) {
+                return None;
+            }
+            let name = item["display_name"].as_str().unwrap_or(&id).to_owned();
+            Some(ModelEntry { id, name })
+        })
+        .collect())
+}
+
 /// A discovered model entry: `id` is the picker value (the raw endpoint id or
 /// Unity Catalog model-service FQN, and the wire/config value), `name` is the
 /// display label. Databricks catalog APIs do not provide a consistently useful

@@ -489,6 +489,33 @@ async fn discover_openai_compatible_models(
     env: &BTreeMap<String, String>,
     selected_model: Option<String>,
 ) -> Result<Option<AgentModelsResponse>, String> {
+    if provider.as_deref().map(str::trim) == Some("openai-subscription") {
+        let entries = buzz_agent_pkg::catalog::discover_subscription_models(
+            env.get("CODEX_HOME")
+                .filter(|s| !s.is_empty())
+                .map(std::path::PathBuf::from),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+        if entries.is_empty() {
+            return Err("No models available for this ChatGPT subscription".into());
+        }
+        return Ok(Some(AgentModelsResponse {
+            agent_name: "openai-subscription".into(),
+            agent_version: "subscription-models".into(),
+            models: entries
+                .into_iter()
+                .map(|m| AgentModelInfo {
+                    id: m.id,
+                    name: Some(m.name),
+                    description: None,
+                })
+                .collect(),
+            agent_default_model: None,
+            selected_model,
+            supports_switching: true,
+        }));
+    }
     let relay_mesh =
         provider.as_deref().map(str::trim) == Some(crate::managed_agents::RELAY_MESH_PROVIDER_ID);
     if !relay_mesh && !is_openai_compatible_provider(provider.as_deref()) {

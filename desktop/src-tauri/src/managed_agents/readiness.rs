@@ -494,7 +494,9 @@ fn buzz_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
             Some("DATABRICKS_MODEL")
         }
         Some("anthropic") => Some("ANTHROPIC_MODEL"),
-        Some("openai") | Some("openai-compat") => Some("OPENAI_COMPAT_MODEL"),
+        Some("openai") | Some("openai-compat") | Some("openai-subscription") => {
+            Some("OPENAI_COMPAT_MODEL")
+        }
         Some("openrouter") => Some("OPENROUTER_MODEL"),
         _ => None,
     };
@@ -518,6 +520,18 @@ fn buzz_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
     // dialog's (envVars[key] ?? "").length === 0 emptiness check.
     let env_key_missing = |key: &str| effective.env.get(key).is_none_or(|v| v.is_empty());
     match provider {
+        Some("openai-subscription") => {
+            let home = effective.env.get("CODEX_HOME").filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
+            if let Err(error) = buzz_agent_pkg::auth::codex::CodexTokenSource::with_home(home)
+                .and_then(|source| source.check_login())
+            {
+                missing.push(Requirement::CliLogin {
+                    probe_args: vec!["codex".into(), "login".into(), "status".into()],
+                    setup_copy: error.to_string(),
+                    availability: AcpAvailabilityStatus::Available,
+                });
+            }
+        }
         Some("anthropic")
             if env_key_missing("ANTHROPIC_API_KEY") => {
                 missing.push(Requirement::EnvKey {
@@ -1069,6 +1083,7 @@ mod tests {
             max_rounds_env_var: None,
             required_normalized_fields: &[],
             login_hint: None,
+            supports_chatgpt_subscription: false,
             subscription_provider: None,
             auth_probe_args: None,
         }

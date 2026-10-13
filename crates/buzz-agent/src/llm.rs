@@ -7,6 +7,8 @@ use reqwest::Client;
 use serde_json::{json, Map, Value};
 
 use crate::auth::{PkceOAuthConfig, PkceOAuthTokenSource, StaticTokenSource, TokenSource};
+
+mod subscription;
 use crate::config::{
     is_openai_host, normalize_effort_for_anthropic_route, normalize_effort_for_databricks_v2,
     normalize_effort_for_provider, Config, OpenAiApi, Provider, ThinkingEffort,
@@ -63,6 +65,11 @@ impl Llm {
     pub fn new(cfg: &Config) -> Result<Self, AgentError> {
         let http = Client::builder()
             .connect_timeout(LLM_CONNECT_TIMEOUT)
+            .redirect(if cfg.provider == Provider::OpenAiSubscription {
+                reqwest::redirect::Policy::none()
+            } else {
+                reqwest::redirect::Policy::default()
+            })
             // No client-level read_timeout: we apply a per-request total
             // timeout via RequestBuilder::timeout() so that escalated budgets
             // on slow models are not silently floored by a fixed client-level
@@ -116,9 +123,9 @@ impl Llm {
                     .await
                     .and_then(parse_openai_with_reasoning_details)
             }
-            Provider::OpenAi | Provider::Databricks => {
+            Provider::OpenAi | Provider::OpenAiSubscription | Provider::Databricks => {
                 let provider_str = match cfg.provider {
-                    Provider::OpenAi => "openai",
+                    Provider::OpenAi | Provider::OpenAiSubscription => "openai",
                     Provider::Databricks => "databricks",
                     _ => unreachable!(),
                 };
@@ -271,7 +278,7 @@ impl Llm {
                     let v = self.post_openrouter(cfg, &body).await?;
                     Ok(parse_openai(v)?.text)
                 }
-                Provider::OpenAi | Provider::Databricks => {
+                Provider::OpenAi | Provider::OpenAiSubscription | Provider::Databricks => {
                     let r = self
                         .openai_request(cfg, effective_model, |use_responses, request_model| {
                             if use_responses {
@@ -471,6 +478,12 @@ impl Llm {
         body: &Value,
         effective_model: &str,
     ) -> Result<Value, PostError> {
+        if cfg.provider == Provider::OpenAiSubscription {
+            return self
+                .post_subscription(cfg, body)
+                .await
+                .map_err(PostError::from);
+        }
         let (url, body_owned);
         let body_ref: &Value = match cfg.provider {
             Provider::Databricks => {
@@ -2097,6 +2110,9 @@ pub(crate) fn databricks_pkce_config(
 ///   flow; subsequent requests use the cache + refresh transparently.
 pub(crate) fn build_token_source(cfg: &Config) -> Result<Arc<dyn TokenSource>, AgentError> {
     match cfg.provider {
+        Provider::OpenAiSubscription => {
+            Ok(Arc::new(crate::auth::codex::CodexTokenSource::from_env()?))
+        }
         Provider::Anthropic | Provider::OpenAi | Provider::OpenRouter => {
             Ok(Arc::new(StaticTokenSource::new(cfg.api_key.clone())))
         }
@@ -2124,9 +2140,11 @@ pub(crate) fn build_token_source(cfg: &Config) -> Result<Arc<dyn TokenSource>, A
 pub(crate) fn summary_completion_cap(provider: Provider, max_output_tokens: u32) -> u32 {
     match provider {
         Provider::OpenRouter => max_output_tokens.saturating_mul(2),
-        Provider::Anthropic | Provider::OpenAi | Provider::Databricks | Provider::DatabricksV2 => {
-            max_output_tokens
-        }
+        Provider::Anthropic
+        | Provider::OpenAi
+        | Provider::OpenAiSubscription
+        | Provider::Databricks
+        | Provider::DatabricksV2 => max_output_tokens,
     }
 }
 

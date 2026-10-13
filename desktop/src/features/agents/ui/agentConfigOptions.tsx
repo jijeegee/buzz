@@ -48,6 +48,7 @@ const KNOWN_LLM_PROVIDER_IDS = [
   "databricks",
   "databricks_v2",
   "openai",
+  "openai-subscription",
   "openai-compat",
   "openrouter",
 ] as const;
@@ -112,6 +113,9 @@ const PROVIDER_CREDENTIAL_CONFIG: Partial<
     secretEnvVar: "OPENAI_COMPAT_API_KEY",
     apiKeyLabel: "OpenAI Runtime API Key",
   },
+  "openai-subscription": {
+    requiredEnvKeys: [],
+  },
   "openai-compat": {
     requiredEnvKeys: ["OPENAI_COMPAT_API_KEY"],
     secretEnvVar: "OPENAI_COMPAT_API_KEY",
@@ -150,7 +154,8 @@ export const HARNESS_DEFAULT_MODEL_OPTION: PersonaModelOption = {
 
 export const PERSONA_LLM_PROVIDER_OPTIONS: readonly PersonaModelOption[] = [
   { id: "anthropic", label: "Anthropic" },
-  { id: "openai", label: "OpenAI" },
+  { id: "openai", label: "OpenAI · API key" },
+  { id: "openai-subscription", label: "OpenAI · ChatGPT subscription" },
   { id: "openai-compat", label: "OpenAI-compatible" },
   { id: "openrouter", label: "OpenRouter" },
   { id: "relay-mesh", label: "Kuzz shared compute" },
@@ -218,6 +223,7 @@ export function runtimeSupportsLlmProviderSelection(runtimeId: string) {
 export function resetConfigForHarnessChange(
   config: GlobalAgentConfig,
   runtimeId: string,
+  supportsChatgptSubscription = false,
 ): GlobalAgentConfig {
   const nextEnvVars = { ...config.env_vars };
   delete nextEnvVars[BUZZ_AGENT_THINKING_EFFORT];
@@ -234,7 +240,8 @@ export function resetConfigForHarnessChange(
     preferred_runtime: runtimeId || null,
     provider:
       runtimeSupportsLlmProviderSelection(runtimeId) &&
-      config.provider !== "relay-mesh"
+      config.provider !== "relay-mesh" &&
+      (config.provider !== "openai-subscription" || supportsChatgptSubscription)
         ? config.provider
         : null,
   };
@@ -321,6 +328,7 @@ export function providerRequiresExplicitModel(
   return (
     trimmedProvider === "anthropic" ||
     trimmedProvider === "openai" ||
+    trimmedProvider === "openai-subscription" ||
     trimmedProvider === "openai-compat" ||
     trimmedProvider === "openrouter"
   );
@@ -405,6 +413,7 @@ export function getPersonaProviderOptions(
   runtimeId: string,
   globalProvider?: string,
   hideProviderIds?: ReadonlySet<string>,
+  supportsChatgptSubscription = false,
 ): readonly PersonaModelOption[] {
   const trimmedProvider = currentProvider.trim();
   const defaultProviderOptions = [
@@ -413,7 +422,13 @@ export function getPersonaProviderOptions(
   const filteredOptions = hideProviderIds?.size
     ? PERSONA_LLM_PROVIDER_OPTIONS.filter((o) => !hideProviderIds.has(o.id))
     : PERSONA_LLM_PROVIDER_OPTIONS;
-  const options = [...defaultProviderOptions, ...filteredOptions];
+  const options = [
+    ...defaultProviderOptions,
+    ...filteredOptions.filter(
+      (option) =>
+        option.id !== "openai-subscription" || supportsChatgptSubscription,
+    ),
+  ];
   if (
     trimmedProvider.length === 0 ||
     options.some((option) => option.id === trimmedProvider)

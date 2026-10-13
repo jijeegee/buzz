@@ -712,6 +712,21 @@ with a TypeScript lookup table or an id comparison in a component.
     missing piece, e.g. "Sign in to Codex or Claude Code, or add an API key ·
     Models".
 
+## Kuzz Agent ChatGPT subscription
+
+`supports_chatgpt_subscription` in the Rust runtime catalog permits Kuzz Agent's
+`openai-subscription` provider. It reuses the existing file-backed Codex login,
+reads authentication on each request, and never writes or refreshes it. The login
+owner handles renewal. Model discovery and readiness use the effective CODEX_HOME.
+No API key is required and subscription failures never fall back to paid API keys.
+The provider selector offers subscription only for capable harnesses; explicit
+harness changes clear an unsupported subscription and its model. Providers keeps
+one OpenAI card and the existing subscription/API-key choices. Choosing subscription
+keeps a selected capable Kuzz runtime; existing Codex selections remain Codex.
+Task-model CLI authentication remains unchanged. Subscription SSE is collected
+before handing a complete response to the existing agent loop; this adds no new
+token-by-token UI streaming behavior.
+
 ## Channel-only runtime controls
 
 Desktop observer controls identify a channel, not a thread session. The harness

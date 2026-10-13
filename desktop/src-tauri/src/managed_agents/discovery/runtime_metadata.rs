@@ -228,6 +228,8 @@ pub(crate) struct KnownAcpRuntime {
     /// the runtime id. `Some` iff `login_hint` is `Some` (pinned by
     /// `catalog_exposes_subscription_provider_only_for_login_runtimes`).
     pub subscription_provider: Option<&'static str>,
+    /// Whether this runtime can directly use the shared OpenAI subscription.
+    pub supports_chatgpt_subscription: bool,
     /// CLI args for probing authentication status. `args[0]` is the binary name;
     /// the remainder are the subcommand. `None` for runtimes with no login step.
     pub auth_probe_args: Option<&'static [&'static str]>,

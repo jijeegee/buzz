@@ -619,6 +619,7 @@ export function AgentDefinitionDialog({
       ? inheritedProviderDefault.value
       : "",
     hideProviderIds,
+    selectedRuntime?.supportsChatgptSubscription,
   );
   const providerSelectValue = isCustomProviderEditing
     ? CUSTOM_PROVIDER_DROPDOWN_VALUE
@@ -747,6 +748,9 @@ export function AgentDefinitionDialog({
       selectionOnRuntimeChange(selection, {
         previousRuntime: runtime,
         nextRuntime,
+        nextRuntimeSupportsChatgptSubscription: runtimes.find(
+          (entry) => entry.id === nextRuntime,
+        )?.supportsChatgptSubscription,
         nextRuntimeCanChooseProvider:
           nextRuntime.trim().length > 0 &&
           runtimeSupportsLlmProviderSelection(nextRuntime),

@@ -822,6 +822,9 @@ pub struct AcpRuntimeCatalogEntry {
     /// `None` for harnesses with no login step and for presets/customs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_provider: Option<String>,
+    /// Whether this runtime can directly use the shared OpenAI subscription.
+    #[serde(default)]
+    pub supports_chatgpt_subscription: bool,
     /// Whether this entry came from the compiled-in catalog or a user-supplied
     /// JSON file in `custom_harnesses/`. The UI uses this to decide editability.
     pub source: HarnessSource,

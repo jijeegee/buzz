@@ -517,6 +517,18 @@ async fn session_new(app: &Arc<App>, id: Value, params: Value, wire_tx: &WireSen
     let available_models: Vec<Value> = {
         use crate::config::Provider;
         match app.cfg.provider {
+            Provider::OpenAiSubscription => {
+                match catalog::discover_subscription_models(None).await {
+                    Ok(models) => models
+                        .iter()
+                        .map(|m| json!({"modelId":m.id,"name":m.name}))
+                        .collect(),
+                    Err(error) => {
+                        tracing::warn!(error = %error, "ChatGPT catalog unavailable; retaining configured model");
+                        vec![json!({"modelId":app.cfg.model,"name":app.cfg.model})]
+                    }
+                }
+            }
             Provider::Databricks | Provider::DatabricksV2 => {
                 let models = match resolve_models_catalog(
                     &app.models_cache,

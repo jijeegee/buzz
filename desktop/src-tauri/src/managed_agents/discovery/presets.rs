@@ -104,6 +104,7 @@ pub(super) fn preset_catalog_entry(
         node_required: false,
         auth_status: AuthStatus::NotApplicable,
         login_hint: None,
+        supports_chatgpt_subscription: false,
         subscription_provider: None,
         source: HarnessSource::Preset,
         definition_env: Default::default(),

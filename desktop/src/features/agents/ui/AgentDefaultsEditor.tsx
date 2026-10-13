@@ -188,7 +188,14 @@ export function AgentDefaultsEditor({
   }
 
   function handleHarnessChange(runtimeId: string) {
-    handleConfigChange(resetConfigForHarnessChange(config, runtimeId));
+    handleConfigChange(
+      resetConfigForHarnessChange(
+        config,
+        runtimeId,
+        sortedRuntimes.find((entry) => entry.id === runtimeId)
+          ?.supportsChatgptSubscription,
+      ),
+    );
     setConfigIsValid(false);
     setIsCustomModelEditing(false);
     setIsCustomProvider(false);

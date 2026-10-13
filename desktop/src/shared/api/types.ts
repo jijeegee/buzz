@@ -588,6 +588,7 @@ export type AcpRuntimeCatalogEntry = {
    * the runtime id. Null for harnesses without a login step.
    */
   subscriptionProvider: string | null;
+  supportsChatgptSubscription?: boolean;
   /** "builtin" (compiled in), "preset" (PATH-probed, not editable), or "custom" (user JSON). Controls UI editability. */
   source: "builtin" | "preset" | "custom";
   /**

@@ -607,6 +607,7 @@ export function AgentConfigFields({
     credentialRuntimeId,
     undefined,
     hideProviderIds,
+    selectedRuntime?.supportsChatgptSubscription,
   );
   const providerSelectValue = isCustomProvider
     ? CUSTOM_PROVIDER_DROPDOWN_VALUE

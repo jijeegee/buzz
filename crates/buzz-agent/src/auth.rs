@@ -33,6 +33,8 @@ use tokio::sync::{watch, Mutex};
 
 use crate::{auth_http::read_oauth_json, databricks::StrictWorkspace, types::AgentError};
 
+pub mod codex;
+
 /// Buffer before `expires_at` to consider a cached token "still good".
 /// Keeps us off the cliff if the clock or the server's clock drifts.
 const TOKEN_REFRESH_LEEWAY: Duration = Duration::from_secs(60);
