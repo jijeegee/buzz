@@ -315,6 +315,9 @@ pub(crate) struct GoalsSeen {
     /// The threads whose view of that tree it holds. A session that serves
     /// several threads gets each thread's view once per tree.
     foci: std::collections::HashSet<Option<String>>,
+    /// Whether the session ever got goals, so it may still hold them in its
+    /// system prompt after it was told they were removed or turned off.
+    ever_held: bool,
 }
 
 impl GoalsSeen {
@@ -325,10 +328,17 @@ impl GoalsSeen {
             _ => GoalsSeen {
                 tree: now.tree.clone(),
                 foci: Default::default(),
+                ever_held: before.is_some_and(|before| before.ever_held),
             },
         };
         seen.foci.insert(now.focus.clone());
+        seen.ever_held |= now.tree.is_some();
         seen
+    }
+
+    /// Whether the session ever got goals.
+    pub(crate) fn ever_held(&self) -> bool {
+        self.ever_held
     }
 }
 

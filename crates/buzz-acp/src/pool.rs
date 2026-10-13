@@ -138,6 +138,10 @@ pub struct ChannelDeliveryState {
     /// turn sends goals only when they differ (see
     /// `goal_context::goal_context_for_turn`).
     pub goal_context_seen: Option<crate::goal_context::GoalsSeen>,
+    /// Set by compaction, which may summarise away goals sent in messages:
+    /// the session may hold goals nobody can see, like a reattached one, so
+    /// its next turn restates them (or says they are off).
+    pub goals_maybe_held: bool,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -328,6 +332,17 @@ impl SessionState {
                 delivery.goal_context_seen.as_ref(),
                 goals,
             ));
+        }
+    }
+
+    /// Forget the goals `scope`'s session was sent once compaction may have
+    /// summarised them away; the next turn sends them again.
+    pub(crate) fn forget_goal_context_after_compaction(&mut self, scope: &SessionScope) {
+        if let Some(delivery) = self.deliveries.get_mut(scope) {
+            delivery.goals_maybe_held = match delivery.goal_context_seen.take() {
+                Some(seen) => seen.ever_held(),
+                None => delivery.goals_maybe_held || delivery.session_reattached,
+            };
         }
     }
 
@@ -2863,7 +2878,7 @@ pub async fn run_compact_task(
         chrono::Utc::now().to_rfc3339(),
     ));
     agent.acp.set_observer_thread_root(thread_root.clone());
-    let source = PromptSource::Channel(scope);
+    let source = PromptSource::Channel(scope.clone());
 
     let (status, outcome) = match session_id.as_deref() {
         // Ownership is checked before claiming; a missing session here means
@@ -2881,6 +2896,9 @@ pub async fn run_compact_task(
                 .await;
             let (status, outcome, stop) =
                 compact_outcome(&mut agent, session_id, &ctx, result).await;
+            if status == "completed" {
+                agent.state.forget_goal_context_after_compaction(&scope);
+            }
             // Compaction is a real model call; account for it like a turn so
             // its cost is not folded into the session's next turn.
             let usage = agent.acp.take_turn_usage();
@@ -3977,7 +3995,9 @@ pub async fn run_prompt_task(
         let goal_context = goal_context_current.as_ref().and_then(|now| {
             crate::goal_context::goal_context_for_turn(
                 delivery.and_then(|delivery| delivery.goal_context_seen.as_ref()),
-                delivery.is_some_and(|delivery| delivery.session_reattached),
+                delivery.is_some_and(|delivery| {
+                    delivery.session_reattached || delivery.goals_maybe_held
+                }),
                 now,
             )
         });
@@ -10281,6 +10301,68 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         assert_eq!(pct_encode(" "), "%20");
     }
 
+    #[test]
+    fn compaction_makes_the_next_turn_restate_goals_or_say_they_are_off() {
+        use crate::goal_context::{goal_context_for_turn, GoalsNow, GoalsSeen};
+        use buzz_core::goal_tree::{GoalOp, GoalTree};
+        let channel = Uuid::new_v4();
+        let mut tree = GoalTree::empty();
+        tree.apply(
+            &GoalOp::SetRoot {
+                id: "g1".into(),
+                title: "Ship it".into(),
+                note: None,
+            },
+            &"a".repeat(64),
+            1,
+        )
+        .unwrap();
+        let on = GoalsNow::new(&tree, channel, None);
+        let off = GoalsNow::off(None);
+        let next_turn = |state: &SessionState, now: &GoalsNow| {
+            let delivery = state.deliveries.get(&conv(channel)).unwrap();
+            goal_context_for_turn(
+                delivery.goal_context_seen.as_ref(),
+                delivery.session_reattached || delivery.goals_maybe_held,
+                now,
+            )
+        };
+
+        // Goals in the system prompt, then turned off and told so: the
+        // compacted session may still act on them, so it hears "off" again.
+        let mut state = SessionState::default();
+        let seen = GoalsSeen::after(Some(&GoalsSeen::after(None, &on)), &off);
+        state.deliveries.insert(
+            conv(channel),
+            ChannelDeliveryState {
+                goal_context_seen: Some(seen),
+                ..Default::default()
+            },
+        );
+        assert_eq!(next_turn(&state, &off), None);
+        state.forget_goal_context_after_compaction(&conv(channel));
+        assert!(next_turn(&state, &off).unwrap().starts_with("Goals are turned off"));
+
+        // Goals sent in a message: restated after compaction.
+        state.deliveries.get_mut(&conv(channel)).unwrap().goal_context_seen =
+            Some(GoalsSeen::after(None, &on));
+        assert_eq!(next_turn(&state, &on), None);
+        state.forget_goal_context_after_compaction(&conv(channel));
+        assert!(next_turn(&state, &on).unwrap().contains("Ship it"));
+
+        // A conversation that never had goals stays quiet.
+        let mut state = SessionState::default();
+        state.deliveries.insert(
+            conv(channel),
+            ChannelDeliveryState {
+                goal_context_seen: Some(GoalsSeen::after(None, &off)),
+                ..Default::default()
+            },
+        );
+        state.forget_goal_context_after_compaction(&conv(channel));
+        assert_eq!(next_turn(&state, &off), None);
+    }
+
     fn make_state() -> (SessionState, Uuid, Uuid) {
         let ch_a = Uuid::new_v4();
         let ch_b = Uuid::new_v4();
@@ -10301,6 +10383,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 layer0_goals_seen: Some(None),
                 live_text_seen: Some(Default::default()),
                 goal_context_seen: Some(Default::default()),
+                goals_maybe_held: false,
             },
         );
         s.deliveries.insert(
@@ -10313,6 +10396,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 layer0_goals_seen: Some(None),
                 live_text_seen: Some(Default::default()),
                 goal_context_seen: Some(Default::default()),
+                goals_maybe_held: false,
             },
         );
         s.heartbeat_session = Some("sess-hb".into());
