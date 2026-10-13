@@ -31,7 +31,6 @@ use tauri::{
 
 const TRAY_ID: &str = "buzz-tray";
 const OPEN_BUZZ_ID: &str = "tray-open-buzz";
-const NEW_CHANNEL_ID: &str = "tray-new-channel";
 const QUIT_ID: &str = "tray-quit";
 const OPEN_CHANNEL_PREFIX: &str = "tray-open-channel:";
 const OPEN_CHANNEL_ACTIVITY_SEPARATOR: char = '|';
@@ -332,14 +331,6 @@ fn build_menu<R: Runtime>(
     append_separator(app, &menu)?;
     menu.append(&MenuItem::with_id(
         app,
-        NEW_CHANNEL_ID,
-        "New Channel",
-        true,
-        None::<&str>,
-    )?)?;
-    append_separator(app, &menu)?;
-    menu.append(&MenuItem::with_id(
-        app,
         OPEN_BUZZ_ID,
         "Open Kuzz",
         true,
@@ -452,10 +443,6 @@ fn apply_activity_presentation<R: Runtime>(
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         OPEN_BUZZ_ID => show_main_window(app),
-        NEW_CHANNEL_ID => {
-            show_main_window(app);
-            queue_tray_action(app, TrayAction::NewChannel);
-        }
         QUIT_ID => app.exit(0),
         _ => {
             let Some(channel_id) = id.strip_prefix(OPEN_CHANNEL_PREFIX) else {
