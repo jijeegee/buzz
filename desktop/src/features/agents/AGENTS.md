@@ -286,9 +286,12 @@ with a TypeScript lookup table or an id comparison in a component.
    for them, so the column picker hides. The buzz-agent knob renders in the basic
    section directly under the model choice in both `AgentInstanceEditDialog`
    and `AgentDefinitionDialog` (not under Advanced): effort is part of the
-   model choice for every harness. At request time `buzz-agent` retries a
-   provider effort rejection once with the nearest level the provider lists
-   (else with effort omitted) and never rewrites the saved value. Its
+   model choice for every harness. At request time `buzz-agent` answers a
+   provider effort rejection with at most two retries (the nearest level the
+   provider lists, sent verbatim, then effort omitted) and never rewrites the
+   saved value. The picker clears a saved value only after the user changes
+   provider/model in the open dialog, never on open: the static manifest can
+   lack a level (e.g. `max`) that discovery is about to report. Its
    options come from the static manifest unless model discovery reports the
    selected model's levels (`AgentModelInfo.supportedEfforts` /
    `defaultEffort`, filled from the ChatGPT subscription catalog's

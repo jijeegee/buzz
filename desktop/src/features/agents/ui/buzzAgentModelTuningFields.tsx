@@ -353,9 +353,18 @@ export function BuzzAgentModelTuningFields({
     effortConfig;
 
   const currentEffort = envVars[BUZZ_AGENT_THINKING_EFFORT] ?? "";
+  // This field renders as soon as the dialog opens (basic section), before
+  // model discovery reports the model's catalog levels. Clear a saved value
+  // only after the user changes provider/model, so opening the dialog (or a
+  // failed discovery) never deletes a level the static manifest lacks.
+  const openedSelection = React.useRef(`${provider ?? ""}|${model ?? ""}`);
+  const selectionChanged =
+    openedSelection.current !== `${provider ?? ""}|${model ?? ""}`;
   useEffortAutoClear({
     currentEffort,
-    effortValid,
+    effortValid: selectionChanged
+      ? effortValid
+      : BUZZ_AGENT_THINKING_EFFORT_VALUES,
     onClear: () => onEnvVarChange(BUZZ_AGENT_THINKING_EFFORT, ""),
   });
 

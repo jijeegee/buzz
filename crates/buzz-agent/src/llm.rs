@@ -107,25 +107,42 @@ impl Llm {
     ) -> Result<LlmResponse, AgentError> {
         let configured = cfg.thinking_effort;
         let key = configured.map(|e| (effective_model.to_string(), e));
-        let mut effort = match &key {
-            Some(k) => self
-                .effort_fallbacks
-                .lock()
-                .ok()
-                .and_then(|m| m.get(k).copied())
-                .unwrap_or(configured),
-            None => None,
-        };
+        let cached = key
+            .as_ref()
+            .and_then(|k| self.effort_fallbacks.lock().ok()?.get(k).copied());
+        // A value the provider itself listed is sent verbatim; so is the
+        // ChatGPT subscription's configured value, whose per-model levels come
+        // from the provider catalog rather than the static manifest. Manifest
+        // normalization would otherwise rewrite a catalog level (e.g. `max`)
+        // the provider accepts.
+        let mut provider_listed = cached.is_some() || cfg.provider == Provider::OpenAiSubscription;
+        let mut effort = cached.unwrap_or(configured);
+        let mut tried: Vec<ThinkingEffort> = Vec::new();
+        // At most two extra requests: a provider-listed level, then omitted.
+        // Terminates because the second rejection always moves to `None`,
+        // and a request without effort is never retried here.
         loop {
             let result = self
-                .complete_with_effort(cfg, system_prompt, history, tools, effective_model, effort)
+                .complete_with_effort(
+                    cfg,
+                    system_prompt,
+                    history,
+                    tools,
+                    effective_model,
+                    effort,
+                    provider_listed,
+                )
                 .await;
             let (Err(AgentError::LlmUnsupportedEffort(detail)), Some(rejected)) = (&result, effort)
             else {
                 return result;
             };
-            let supported = parse_supported_efforts(detail, Some(rejected));
-            let next = if supported.is_empty() {
+            tried.push(rejected);
+            let supported: Vec<ThinkingEffort> = parse_supported_efforts(detail, Some(rejected))
+                .into_iter()
+                .filter(|e| !tried.contains(e))
+                .collect();
+            let next = if supported.is_empty() || tried.len() >= 2 {
                 None
             } else {
                 Some(crate::config::resolve_openai_effort(
@@ -146,6 +163,7 @@ impl Llm {
                 m.insert(k.clone(), next);
             }
             effort = next;
+            provider_listed = true;
         }
     }
 
@@ -157,6 +175,7 @@ impl Llm {
         tools: &[ToolDef],
         effective_model: &str,
         effort: Option<ThinkingEffort>,
+        provider_listed: bool,
     ) -> Result<LlmResponse, AgentError> {
         let call_start = std::time::Instant::now();
         let result = match cfg.provider {
@@ -195,8 +214,13 @@ impl Llm {
                     // Adopted exact-record corrections (e.g. databricks-gpt-5-4-mini →
                     // [low,medium,high]) are enforced here; the openai fallback's effort set
                     // carries the former "unknown model: max→xhigh, others pass" behavior.
-                    let e = effort
-                        .map(|ef| normalize_effort_for_provider(provider_str, request_model, ef));
+                    let e = if provider_listed {
+                        effort
+                    } else {
+                        effort.map(|ef| {
+                            normalize_effort_for_provider(provider_str, request_model, ef)
+                        })
+                    };
                     if use_responses {
                         (
                             responses_body(cfg, system_prompt, history, tools, request_model, e),
@@ -280,6 +304,9 @@ impl Llm {
             // and be the only unstamped provider error.
             AgentError::LlmContextExceeded(s) => {
                 AgentError::LlmContextExceeded(format!("({effective_model}) {s}"))
+            }
+            AgentError::LlmUnsupportedEffort(s) => {
+                AgentError::LlmUnsupportedEffort(format!("({effective_model}) {s}"))
             }
             other => other,
         });
@@ -1055,20 +1082,49 @@ fn is_context_length_error(body: &str) -> bool {
 /// rejection phrase so an unrelated 400 that merely mentions effort is not
 /// replayed.
 pub(crate) fn is_unsupported_effort_error(body: &str) -> bool {
+    if is_responses_required_error(body) {
+        // "Function tools with reasoning_effort are not supported … use
+        // /v1/responses" is the auto-upgrade signal, not an effort rejection:
+        // retrying without effort would hide it and skip the Responses upgrade.
+        return false;
+    }
     let b = body.to_ascii_lowercase();
-    let names_effort = b.contains("reasoning.effort")
-        || b.contains("reasoning_effort")
-        || b.contains("output_config.effort")
-        || b.contains("thinking effort");
-    let rejects = b.contains("unsupported_value")
-        || b.contains("unsupported value")
-        || b.contains("not supported")
-        || b.contains("invalid value")
-        || b.contains("input should be");
-    // "Function tools with reasoning_effort are not supported … use
-    // /v1/responses" is the auto-upgrade signal, not an effort rejection:
-    // retrying without effort would hide it and skip the Responses upgrade.
-    names_effort && rejects && !is_responses_required_error(body)
+    // A structured `param` names the rejected field exactly; trust it over
+    // prose so "temperature is not supported when reasoning_effort is set"
+    // (param: temperature) is never replayed without effort.
+    if let Some(param) = serde_json::from_str::<Value>(body).ok().and_then(|v| {
+        let error = v.get("error").unwrap_or(&v);
+        error.get("param")?.as_str().map(str::to_ascii_lowercase)
+    }) {
+        return param.contains("effort");
+    }
+    let effort_at = [
+        "reasoning.effort",
+        "reasoning_effort",
+        "output_config.effort",
+        "thinking effort",
+    ]
+    .iter()
+    .filter_map(|name| b.find(name))
+    .min();
+    let rejection_at = [
+        "unsupported_value",
+        "unsupported value",
+        "not supported",
+        "invalid value",
+        "input should be",
+    ]
+    .iter()
+    .filter_map(|phrase| b.find(phrase))
+    .min();
+    // Prose: the effort field must be what the rejection is about, i.e.
+    // named before the rejection phrase ("reasoning_effort is not supported").
+    match (effort_at, rejection_at) {
+        (Some(effort), Some(rejection)) => {
+            effort < rejection || (b.contains("unsupported_value") && b.contains("effort"))
+        }
+        _ => false,
+    }
 }
 
 /// Extract the effort levels a provider says it supports from its rejection
@@ -1087,7 +1143,6 @@ pub(crate) fn parse_supported_efforts(
         "supported:",
         "one of",
         "input should be",
-        "expected",
     ]
     .iter()
     .filter_map(|marker| lower.find(marker).map(|i| i + marker.len()))
@@ -3042,6 +3097,42 @@ mod tests {
                 Some("none".to_string()),
                 Some("none".to_string()),
             ]
+        );
+    }
+
+    /// A provider that keeps rejecting is bounded: the configured level, one
+    /// provider-listed level, then no effort -- never an endless alternation.
+    #[tokio::test]
+    async fn repeated_effort_rejections_stop_after_two_retries() {
+        let reject = || {
+            effort_rejection(
+                "Unsupported value: this level is not supported with this model.                  Supported values are: 'none', 'low'.",
+            )
+        };
+        let (base_url, captured) =
+            spawn_sequence_stub(vec![reject(), reject(), reject(), reject()]).await;
+        let mut config = cfg(Provider::OpenAi);
+        config.base_url = base_url;
+        config.thinking_effort = Some(ThinkingEffort::Minimal);
+        let llm = Llm::new(&config).unwrap();
+
+        let err = complete_model(&llm, &config, "gpt-new-unlisted")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, AgentError::LlmUnsupportedEffort(_)),
+            "{err:?}"
+        );
+
+        let requests = captured.lock().await;
+        let efforts: Vec<_> = requests
+            .iter()
+            .filter(|r| r.method == "POST")
+            .map(posted_effort)
+            .collect();
+        assert_eq!(
+            efforts,
+            vec![Some("minimal".to_string()), Some("none".to_string()), None]
         );
     }
 
