@@ -1065,7 +1065,10 @@ pub(crate) fn is_unsupported_effort_error(body: &str) -> bool {
         || b.contains("not supported")
         || b.contains("invalid value")
         || b.contains("input should be");
-    names_effort && rejects
+    // "Function tools with reasoning_effort are not supported … use
+    // /v1/responses" is the auto-upgrade signal, not an effort rejection:
+    // retrying without effort would hide it and skip the Responses upgrade.
+    names_effort && rejects && !is_responses_required_error(body)
 }
 
 /// Extract the effort levels a provider says it supports from its rejection
