@@ -321,6 +321,7 @@ export function NumericTuningFields({
 }
 
 export function BuzzAgentModelTuningFields({
+  catalogEfforts,
   disabled = false,
   envVars,
   inheritedEnvVars,
@@ -328,6 +329,11 @@ export function BuzzAgentModelTuningFields({
   onEnvVarChange,
   provider,
 }: {
+  /** The selected model's discovered catalog effort levels, when reported. */
+  catalogEfforts?: {
+    supportedEfforts?: readonly string[];
+    defaultEffort?: string;
+  } | null;
   /** When true, all controls are read-only (e.g. while a Save is in flight). */
   disabled?: boolean;
   envVars: EnvVarsValue;
@@ -338,7 +344,11 @@ export function BuzzAgentModelTuningFields({
   /** Active LLM provider id (optional) — used for effort filtering + default labels. */
   provider?: string;
 }) {
-  const effortConfig = getProviderEffortConfig(provider ?? "", model);
+  const effortConfig = getProviderEffortConfig(
+    provider ?? "",
+    model,
+    catalogEfforts,
+  );
   const { validValues: effortValid, defaultValue: effortDefault } =
     effortConfig;
 

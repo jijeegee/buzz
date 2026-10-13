@@ -654,6 +654,10 @@ export type AgentModelInfo = {
   id: string;
   name: string | null;
   description: string | null;
+  /** Effort levels the provider catalog lists for this model, when reported. */
+  supportedEfforts?: string[];
+  /** The provider catalog's default effort for this model, when reported. */
+  defaultEffort?: string;
 };
 
 // ── Config bridge types ──────────────────────────────────────────────────────

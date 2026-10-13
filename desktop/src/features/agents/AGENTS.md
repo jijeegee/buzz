@@ -288,7 +288,12 @@ with a TypeScript lookup table or an id comparison in a component.
    and `AgentDefinitionDialog` (not under Advanced): effort is part of the
    model choice for every harness. At request time `buzz-agent` retries a
    provider effort rejection once with the nearest level the provider lists
-   (else with effort omitted) and never rewrites the saved value.
+   (else with effort omitted) and never rewrites the saved value. Its
+   options come from the static manifest unless model discovery reports the
+   selected model's levels (`AgentModelInfo.supportedEfforts` /
+   `defaultEffort`, filled from the ChatGPT subscription catalog's
+   `supported_reasoning_levels`); then only those levels that buzz-agent
+   parses are offered (`getProviderEffortConfig`'s `catalog` argument).
 
    **Where each write goes.** Create embeds the pick in `create_persona`
    (`CreatePersonaRequest.effort_level`, trimmed, blank = unset) — the

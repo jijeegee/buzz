@@ -58,6 +58,10 @@ type PersonaLlmProviderId = (typeof KNOWN_LLM_PROVIDER_IDS)[number];
 export type PersonaModelOption = {
   id: string;
   label: string;
+  /** Effort levels the provider catalog lists for this model, when reported. */
+  supportedEfforts?: readonly string[];
+  /** The provider catalog's default effort for this model, when reported. */
+  defaultEffort?: string;
 };
 
 export type PersonaDropdownOption = {

@@ -1019,6 +1019,9 @@ export function AgentDefinitionDialog({
           {/* Kuzz effort sits with the model choice, like the ACP picker. */}
           {isBuzzAgentRuntime(runtime) ? (
             <BuzzAgentModelTuningFields
+              catalogEfforts={discoveredModelOptions?.find(
+                (option) => option.id === model,
+              )}
               disabled={isPending}
               envVars={envVars}
               inheritedEnvVars={inheritedEnvVarsForAdvanced}

@@ -1135,6 +1135,9 @@ export function AgentInstanceEditDialog({
             {/* Kuzz effort sits with the model choice, like the ACP picker. */}
             {isBuzzAgentRuntime(prospectiveRuntimeId) ? (
               <BuzzAgentModelTuningFields
+                catalogEfforts={discoveredModelOptions?.find(
+                  (option) => option.id === (inheritedSubmission.model ?? ""),
+                )}
                 disabled={isSaving}
                 envVars={envVars}
                 inheritedEnvVars={inheritedEnvVarsForAdvanced}

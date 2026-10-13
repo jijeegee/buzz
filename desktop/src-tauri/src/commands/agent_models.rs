@@ -266,6 +266,8 @@ pub async fn discover_agent_models(
                 .models
                 .into_iter()
                 .map(|model| AgentModelInfo {
+                    supported_efforts: None,
+                    default_effort: None,
                     id: model.id,
                     name: model.name,
                     description: None,
@@ -476,6 +478,8 @@ fn normalize_openai_compatible_models(
         })
         .filter(|item| seen.insert(item.id.clone()))
         .map(|item| AgentModelInfo {
+            supported_efforts: None,
+            default_effort: None,
             name: Some(openai_model_display_name(&item.id)),
             id: item.id,
             description: None,
@@ -506,6 +510,9 @@ async fn discover_openai_compatible_models(
             models: entries
                 .into_iter()
                 .map(|m| AgentModelInfo {
+                    supported_efforts: (!m.supported_efforts.is_empty())
+                        .then_some(m.supported_efforts),
+                    default_effort: m.default_effort,
                     id: m.id,
                     name: Some(m.name),
                     description: None,
@@ -623,6 +630,8 @@ fn normalize_anthropic_models(response: AnthropicModelListResponse) -> Vec<Agent
         .into_iter()
         .filter(|item| seen.insert(item.id.clone()))
         .map(|item| AgentModelInfo {
+            supported_efforts: None,
+            default_effort: None,
             id: item.id,
             name: item.display_name,
             description: None,
@@ -762,6 +771,8 @@ pub(super) fn normalize_agent_models(
                     if let Some(value) = o.get("value").and_then(|v| v.as_str()) {
                         if seen_ids.insert(value.to_string()) {
                             models.push(AgentModelInfo {
+                                supported_efforts: None,
+                                default_effort: None,
                                 id: value.to_string(),
                                 name: o
                                     .get("displayName")
@@ -785,6 +796,8 @@ pub(super) fn normalize_agent_models(
                 if let Some(id) = m.get("modelId").and_then(|v| v.as_str()) {
                     if seen_ids.insert(id.to_string()) {
                         models.push(AgentModelInfo {
+                            supported_efforts: None,
+                            default_effort: None,
                             id: id.to_string(),
                             name: m.get("name").and_then(|v| v.as_str()).map(str::to_string),
                             description: m
