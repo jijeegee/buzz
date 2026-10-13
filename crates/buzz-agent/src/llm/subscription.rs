@@ -89,6 +89,7 @@ struct Events {
     pending: Vec<u8>,
     data: Vec<u8>,
     bytes: usize,
+    completed_items: std::collections::BTreeMap<u64, Value>,
 }
 
 impl Events {
@@ -97,6 +98,7 @@ impl Events {
             pending: Vec::new(),
             data: Vec::new(),
             bytes: 0,
+            completed_items: std::collections::BTreeMap::new(),
         }
     }
 
@@ -120,12 +122,30 @@ impl Events {
                     .map_err(|_| AgentError::Llm("invalid ChatGPT subscription event".into()))?;
                 self.data.clear();
                 match event["type"].as_str() {
+                    Some("response.output_item.done") => {
+                        if let (Some(index), Some(item)) =
+                            (event["output_index"].as_u64(), event.get("item"))
+                        {
+                            self.completed_items.insert(index, item.clone());
+                        }
+                    }
                     Some("response.completed") if event["response"]["status"] == "completed" => {
-                        let parsed = parse_responses(event["response"].clone())?;
+                        let mut response = event["response"].clone();
+                        // Some subscription streams omit output from the final
+                        // envelope. Retain completed items, but release them only
+                        // after a successful terminal event (never on failure).
+                        if response["output"].as_array().is_none_or(Vec::is_empty) {
+                            response["output"] = Value::Array(
+                                std::mem::take(&mut self.completed_items)
+                                    .into_values()
+                                    .collect(),
+                            );
+                        }
+                        let parsed = parse_responses(response.clone())?;
                         if parsed.text.trim().is_empty() && parsed.tool_calls.is_empty() {
                             return Err(AgentError::Llm("ChatGPT subscription returned no text or tool call; retry the request".into()));
                         }
-                        return Ok(Some(event["response"].clone()));
+                        return Ok(Some(response));
                     }
                     Some("response.incomplete")
                         if event["response"]["status"] == "incomplete"
@@ -194,7 +214,7 @@ async fn read_stream(
             None => {
                 return Err(AgentError::Llm(
                     "ChatGPT subscription stream ended before completion".into(),
-                ))
+                ));
             }
         }
     }
@@ -203,6 +223,52 @@ async fn read_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streamed_items_survive_empty_terminal_output_without_duplicate_tools() {
+        let text = json!({"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello."}]});
+        let tool = json!({"type":"function_call","call_id":"call1","name":"echo","arguments":"{}"});
+        let mut events = Events::new();
+        // Ordering is by output index; repeated item completion is idempotent.
+        for (index, item) in [(1, &tool), (0, &text), (1, &tool)] {
+            let wire = format!(
+                "data: {}\n\n",
+                json!({"type":"response.output_item.done","output_index":index,"item":item})
+            );
+            assert!(events.push(wire.as_bytes()).unwrap().is_none());
+        }
+        let end = b"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n";
+        let response = events.push(end).unwrap().unwrap();
+        assert_eq!(response["output"], json!([text, tool]));
+        let parsed = parse_responses(response).unwrap();
+        assert_eq!(parsed.text, "Hello.");
+        assert_eq!(parsed.tool_calls.len(), 1);
+    }
+
+    #[test]
+    fn streamed_items_are_not_released_on_failure_or_added_to_terminal_output() {
+        let item = b"data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"call_id\":\"call1\",\"name\":\"echo\",\"arguments\":\"{}\"}}\n\n";
+        for terminal in ["response.failed", "response.incomplete", "error"] {
+            let mut events = Events::new();
+            assert!(events.push(item).unwrap().is_none());
+            let end = format!(
+                "data: {}\n\n",
+                json!({"type":terminal,"response":{"status":"failed"}})
+            );
+            assert!(events.push(end.as_bytes()).is_err());
+        }
+        let mut events = Events::new();
+        events.push(item).unwrap();
+        let output = json!([{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Final"}]}]);
+        let end = format!(
+            "data: {}\n\n",
+            json!({"type":"response.completed","response":{"status":"completed","output":output}})
+        );
+        assert_eq!(
+            events.push(end.as_bytes()).unwrap().unwrap()["output"],
+            output
+        );
+    }
 
     #[test]
     fn split_utf8_and_crlf_completion_retains_tool_calls() {
