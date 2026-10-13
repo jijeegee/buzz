@@ -775,6 +775,41 @@ void main() {
     expect(find.textContaining('Deployed the fix'), findsOneWidget);
   });
 
+  for (final (label, isThread) in [
+    ('#general', false),
+    ('#engineering › Thread', true),
+  ]) {
+    testWidgets('Channels + Threads row $label opens by id at the newest '
+        'message', (tester) async {
+      await tester.pumpWidget(
+        await buildTestable(
+          overrides: [
+            channelActivityProvider.overrideWith((ref) async => const []),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('activity-filter-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Channels + Threads'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+
+      final page = tester.widget<ChannelDetailPage>(
+        find.byType(ChannelDetailPage),
+      );
+      // No message anchor: the room (or thread) opens at its newest message.
+      expect(page.initialMessageId, isNull);
+      if (isThread) {
+        expect(page.initialThreadRootId, isNotNull);
+      } else {
+        expect(page.initialThreadRootId, isNull);
+      }
+    });
+  }
+
   testWidgets('filter menu supports accessibility text scaling', (
     tester,
   ) async {
