@@ -22,6 +22,7 @@ import { normalizePubkey } from "@/shared/lib/pubkey";
  */
 export function useAutoAssignDeviceRobots(
   pubkey: string | null | undefined,
+  publish: typeof publishDeviceRobot = publishDeviceRobot,
 ): void {
   const queryClient = useQueryClient();
   const owner = normalizePubkey(pubkey ?? "");
@@ -32,7 +33,10 @@ export function useAutoAssignDeviceRobots(
     queryFn: () => fetchOwnerDevices(owner),
     staleTime: 5 * 60_000,
   });
-  const inFlight = React.useRef(new Set<string>());
+  // Assignment is cosmetic. Try once per owner/device during this mount;
+  // rollback or a stale refetch must not create an automatic publish loop.
+  // A later app launch or an explicit picker action can try again.
+  const attempted = React.useRef(new Set<string>());
 
   React.useEffect(() => {
     if (!owner || !devices.isSuccess || !records.isSuccess) return;
@@ -43,19 +47,16 @@ export function useAutoAssignDeviceRobots(
       records.data.robotOverrides,
     );
     for (const [deviceId, override] of assignments) {
-      if (inFlight.current.has(deviceId)) continue;
-      inFlight.current.add(deviceId);
-      void publishDeviceRobot(queryClient, {
+      const key = `${owner}:${deviceId}`;
+      if (attempted.current.has(key)) continue;
+      attempted.current.add(key);
+      void publish(queryClient, {
         ownerPubkey: owner,
         deviceId,
         override,
-      })
-        .catch((error) => {
-          console.error("Failed to store a device robot", error);
-        })
-        .finally(() => {
-          inFlight.current.delete(deviceId);
-        });
+      }).catch((error) => {
+        console.error("Failed to store a device robot", error);
+      });
     }
   }, [
     owner,
@@ -64,5 +65,6 @@ export function useAutoAssignDeviceRobots(
     records.isSuccess,
     records.data,
     queryClient,
+    publish,
   ]);
 }

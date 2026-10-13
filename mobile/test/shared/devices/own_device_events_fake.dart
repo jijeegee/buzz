@@ -7,6 +7,9 @@ class FakeOwnDeviceSession extends RelaySessionNotifier {
   final List<void Function(NostrEvent)> _listeners = [];
   final List<NostrEvent> published = [];
 
+  /// When set, every publish is recorded and then fails with this error.
+  Object? publishError;
+
   @override
   SessionState build() => const SessionState(status: SessionStatus.connected);
 
@@ -27,6 +30,8 @@ class FakeOwnDeviceSession extends RelaySessionNotifier {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     published.add(event);
+    final error = publishError;
+    if (error != null) throw error;
     return event;
   }
 

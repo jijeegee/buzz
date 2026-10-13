@@ -159,8 +159,11 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
   final Map<String, NostrEvent> _events = {};
   String? _owner;
 
-  /// Devices whose automatic robot is being published right now.
-  final Set<String> _assigning = {};
+  /// `owner:device` pairs whose automatic robot was already tried in this
+  /// app run. Assignment is cosmetic: a rejected or failed write is not
+  /// retried until the next launch (or an explicit pick), so it can never
+  /// turn into a publish loop that eats the account's send quota.
+  final Set<String> _attempted = {};
 
   @override
   Map<String, NostrEvent> build() {
@@ -171,7 +174,6 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
     if (owner != _owner) {
       _owner = owner;
       _events.clear();
-      _assigning.clear();
     }
     if (owner == null || owner.isEmpty) return const {};
 
@@ -215,20 +217,18 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
     state = Map.unmodifiable(_events);
   }
 
-  /// Store an automatically assigned robot for [deviceId], once per device
-  /// at a time; a failure is logged and retried on the next change.
+  /// Store an automatically assigned robot for [deviceId], at most once per
+  /// owner and device in this app run; a failure is logged, not retried.
   Future<void> assignDeviceRobot(
     String deviceId,
     DeviceRobotVariant robot,
   ) async {
     final d = deviceId.trim().toLowerCase();
-    if (!_assigning.add(d)) return;
+    if (!_attempted.add('$_owner:$d')) return;
     try {
       await publishDeviceRobot(d, robot);
     } catch (error) {
       debugPrint('[OwnDeviceEvents] could not store a device robot: $error');
-    } finally {
-      _assigning.remove(d);
     }
   }
 
