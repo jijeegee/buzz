@@ -5,6 +5,7 @@
 
 // Mouse back/forward (X1/X2 buttons and swipe) is also macOS-only native I/O;
 // group it here so both platform-layer init paths share one call site in lib.rs.
+#[cfg(target_os = "macos")]
 #[path = "mouse_nav.rs"]
 pub(crate) mod mouse_nav;
 
@@ -18,8 +19,11 @@ use objc2::MainThreadMarker;
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSProcessInfo, NSString};
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "macos")]
+use tauri::image::Image;
+#[cfg(windows)]
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 use tauri::{
-    image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{TrayIcon, TrayIconBuilder},
     AppHandle, Emitter, Manager, Runtime,
@@ -105,6 +109,7 @@ fn format_elapsed(elapsed: Duration) -> String {
 }
 
 /// Builds the standalone Buzz bee as a transparent, macOS template image.
+#[cfg(target_os = "macos")]
 ///
 /// The app icon includes a rounded square, which is useful for the Dock but
 /// looks out of place beside the monochrome menu-bar icons. Keeping this
@@ -486,15 +491,37 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             pending_actions: Vec::new(),
         }),
     });
-    let tray = TrayIconBuilder::with_id(TRAY_ID)
+    let builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .icon(tray_bee_icon())
-        .icon_as_template(true)
-        .on_menu_event(|app, event| handle_menu_event(app, event.id.as_ref()))
-        .build(app)?;
+        .on_menu_event(|app, event| handle_menu_event(app, event.id.as_ref()));
+    #[cfg(target_os = "macos")]
+    let builder = builder.icon(tray_bee_icon()).icon_as_template(true);
+    // Windows taskbars are often dark, so use the colored app icon. A left
+    // click reopens the window; the menu stays on right click.
+    #[cfg(windows)]
+    let builder = {
+        let builder = builder
+            .show_menu_on_left_click(false)
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    show_main_window(tray.app_handle());
+                }
+            });
+        match app.default_window_icon() {
+            Some(icon) => builder.icon(icon.clone()),
+            None => builder,
+        }
+    };
+    let tray = builder.build(app)?;
     if let Err(error) = apply_activity_presentation(&tray, activities, recent_activities) {
         eprintln!("buzz-desktop: failed to apply tray menu presentation: {error}");
     }
+    #[cfg(target_os = "macos")]
     mouse_nav::init(app);
     Ok(())
 }
