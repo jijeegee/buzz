@@ -784,7 +784,6 @@ void main() {
       await tester.pumpWidget(
         await buildTestable(
           overrides: [
-            inboxSummaryProvider.overrideWith(_UnsupportedSummaryNotifier.new),
             channelActivityProvider.overrideWith((ref) async => const []),
           ],
         ),
