@@ -40,21 +40,26 @@ impl Llm {
         url: &str,
     ) -> Result<Value, AgentError> {
         let mut bearer = self.auth.bearer().await?;
+        // The subscription backend routes on the `session_id` header, not the
+        // body's `prompt_cache_key`: measured 2026-10-14 on gpt-6-sol, a
+        // repeated 4.5k-token prefix hit the cache ~85% of the time with the
+        // header and ~15% without it, body key or not. Codex sends the same.
+        let session = body["prompt_cache_key"].as_str();
         for attempt in 0..2 {
             let account = crate::auth::codex::account_id(&bearer)?;
-            let response = tokio::time::timeout(
-                cfg.llm_timeout,
-                self.http
-                    .post(url)
-                    .bearer_auth(&bearer)
-                    .header("ChatGPT-Account-Id", account)
-                    .header("Accept", "text/event-stream")
-                    .json(body)
-                    .send(),
-            )
-            .await
-            .map_err(|_| AgentError::Llm("ChatGPT subscription request timed out".into()))?
-            .map_err(|_| AgentError::Llm("ChatGPT subscription connection failed".into()))?;
+            let mut request = self
+                .http
+                .post(url)
+                .bearer_auth(&bearer)
+                .header("ChatGPT-Account-Id", account)
+                .header("Accept", "text/event-stream");
+            if let Some(session) = session {
+                request = request.header("session_id", session);
+            }
+            let response = tokio::time::timeout(cfg.llm_timeout, request.json(body).send())
+                .await
+                .map_err(|_| AgentError::Llm("ChatGPT subscription request timed out".into()))?
+                .map_err(|_| AgentError::Llm("ChatGPT subscription connection failed".into()))?;
             let status = response.status();
             if status == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
                 bearer = self.auth.refresh_now(&bearer).await?;
@@ -356,5 +361,12 @@ mod tests {
         assert_eq!(body["store"], false);
         assert_eq!(body["stream"], true);
         assert!(body.get("max_output_tokens").is_none());
+    }
+
+    #[test]
+    fn subscription_body_keeps_cache_key_for_session_header() {
+        let body =
+            subscription_body(&json!({"model":"test","input":[],"prompt_cache_key":"ses_1"}));
+        assert_eq!(body["prompt_cache_key"].as_str(), Some("ses_1"));
     }
 }

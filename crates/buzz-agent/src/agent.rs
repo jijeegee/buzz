@@ -416,7 +416,7 @@ impl RunCtx<'_> {
             let response_result = tokio::select! {
                 biased;
                 _ = self.cancel.changed() => return Ok(StopReason::Cancelled),
-                r = self.llm.complete(self.cfg, self.system_prompt, self.history, &tools, self.effective_model)
+                r = self.llm.complete_keyed(self.cfg, self.system_prompt, self.history, &tools, self.effective_model, Some(self.session_id))
                         .instrument(tracing::info_span!("llm", session_id = %self.session_id)) => r,
                 _ = async {
                     // Keepalive ticker: emit a lightweight session update every 30s

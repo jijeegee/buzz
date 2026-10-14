@@ -105,6 +105,28 @@ impl Llm {
         tools: &[ToolDef],
         effective_model: &str,
     ) -> Result<LlmResponse, AgentError> {
+        self.complete_keyed(cfg, system_prompt, history, tools, effective_model, None)
+            .await
+    }
+
+    /// [`Self::complete`] with a conversation-scoped prompt cache key.
+    ///
+    /// OpenAI's prompt cache only hits when a request lands on a server that
+    /// already holds its prefix; without a key, consecutive calls from one
+    /// conversation can be routed apart and miss even with an identical
+    /// prefix. Codex sends its conversation id as `prompt_cache_key` for the
+    /// same reason. The key is attached only on the ChatGPT subscription and
+    /// official OpenAI hosts — OpenAI-compatible servers may reject unknown
+    /// fields.
+    pub async fn complete_keyed(
+        &self,
+        cfg: &Config,
+        system_prompt: &str,
+        history: &[HistoryItem],
+        tools: &[ToolDef],
+        effective_model: &str,
+        cache_key: Option<&str>,
+    ) -> Result<LlmResponse, AgentError> {
         let configured = cfg.thinking_effort;
         let key = configured.map(|e| (effective_model.to_string(), e));
         let cached = key
@@ -131,6 +153,7 @@ impl Llm {
                     effective_model,
                     effort,
                     provider_listed,
+                    cache_key,
                 )
                 .await;
             let (Err(AgentError::LlmUnsupportedEffort(detail)), Some(rejected)) = (&result, effort)
@@ -176,6 +199,7 @@ impl Llm {
         effective_model: &str,
         effort: Option<ThinkingEffort>,
         provider_listed: bool,
+        cache_key: Option<&str>,
     ) -> Result<LlmResponse, AgentError> {
         let call_start = std::time::Instant::now();
         let result = match cfg.provider {
@@ -221,7 +245,7 @@ impl Llm {
                             normalize_effort_for_provider(provider_str, request_model, ef)
                         })
                     };
-                    if use_responses {
+                    let (mut body, parse) = if use_responses {
                         (
                             responses_body(cfg, system_prompt, history, tools, request_model, e),
                             parse_responses as OpenAiParse,
@@ -231,7 +255,9 @@ impl Llm {
                             openai_body(cfg, system_prompt, history, tools, request_model, e),
                             parse_openai as OpenAiParse,
                         )
-                    }
+                    };
+                    attach_prompt_cache_key(&mut body, cfg, cache_key);
+                    (body, parse)
                 })
                 .await
             }
@@ -822,6 +848,19 @@ fn anthropic_tool_result_content(content: &[ToolResultContent]) -> Vec<Value> {
             }),
         })
         .collect()
+}
+
+/// Attach `prompt_cache_key` where the endpoint is known to accept it: the
+/// ChatGPT subscription and official OpenAI hosts. See [`Llm::complete_keyed`].
+fn attach_prompt_cache_key(body: &mut Value, cfg: &Config, cache_key: Option<&str>) {
+    let allowed = match cfg.provider {
+        Provider::OpenAiSubscription => true,
+        Provider::OpenAi => is_openai_host(&cfg.base_url),
+        _ => false,
+    };
+    if let (true, Some(key)) = (allowed, cache_key) {
+        body["prompt_cache_key"] = json!(key);
+    }
 }
 
 fn openai_body(
@@ -3312,6 +3351,45 @@ mod tests {
                 is_error: false,
             }),
         ]
+    }
+
+    #[test]
+    fn prompt_cache_key_attached_for_subscription_and_openai_host() {
+        let mut sub = cfg(Provider::OpenAiSubscription);
+        sub.base_url = "http://127.0.0.1:1".into();
+        let mut body = json!({});
+        attach_prompt_cache_key(&mut body, &sub, Some("ses_1"));
+        assert_eq!(body["prompt_cache_key"], "ses_1");
+
+        let mut openai = cfg(Provider::OpenAi);
+        openai.base_url = "https://api.openai.com/v1".into();
+        let mut body = json!({});
+        attach_prompt_cache_key(&mut body, &openai, Some("ses_1"));
+        assert_eq!(body["prompt_cache_key"], "ses_1");
+
+        let mut body = json!({});
+        attach_prompt_cache_key(&mut body, &openai, None);
+        assert!(body.get("prompt_cache_key").is_none());
+    }
+
+    #[test]
+    fn prompt_cache_key_omitted_for_compatible_and_other_providers() {
+        let mut compat = cfg(Provider::OpenAi);
+        compat.base_url = "http://localhost:11434/v1".into();
+        for config in [
+            compat,
+            cfg(Provider::Databricks),
+            cfg(Provider::OpenRouter),
+            cfg(Provider::Anthropic),
+        ] {
+            let mut body = json!({});
+            attach_prompt_cache_key(&mut body, &config, Some("ses_1"));
+            assert!(
+                body.get("prompt_cache_key").is_none(),
+                "{:?}",
+                config.provider
+            );
+        }
     }
 
     #[test]
