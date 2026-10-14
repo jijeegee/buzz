@@ -32,6 +32,7 @@ function makeSnapshotChannel(index: number, prefix = "snapshot") {
     isMember: true,
     ttlSeconds: null,
     ttlDeadline: null,
+    goalsEnabled: true,
   };
 }
 

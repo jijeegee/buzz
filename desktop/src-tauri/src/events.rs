@@ -134,18 +134,28 @@ pub fn build_leave(channel_id: Uuid) -> Result<EventBuilder, String> {
     Ok(EventBuilder::new(Kind::Custom(9022), "").tags(tags))
 }
 
-/// Kind 9002 — update channel name/description/visibility/ttl.
+/// Kind 9002 — update channel name/description/visibility/ttl/goals.
 /// `ttl`: outer `None` leaves it unchanged; `Some(Some(secs))` sets the
 /// ephemeral timeout; `Some(None)` clears it (emits `["ttl", ""]`).
+/// `goals_enabled`: `None` leaves the per-room goals switch unchanged;
+/// `Some(on)` emits `["goals", "on" | "off"]`.
 pub fn build_update_channel(
     channel_id: Uuid,
     name: Option<&str>,
     about: Option<&str>,
     visibility: Option<&str>,
     ttl: Option<Option<i32>>,
+    goals_enabled: Option<bool>,
 ) -> Result<EventBuilder, String> {
-    if name.is_none() && about.is_none() && visibility.is_none() && ttl.is_none() {
-        return Err("at least one of name, about, visibility, or ttl must be provided".into());
+    if name.is_none()
+        && about.is_none()
+        && visibility.is_none()
+        && ttl.is_none()
+        && goals_enabled.is_none()
+    {
+        return Err(
+            "at least one of name, about, visibility, ttl, or goals must be provided".into(),
+        );
     }
     if let Some(v) = visibility {
         if v != "open" && v != "private" {
@@ -171,6 +181,9 @@ pub fn build_update_channel(
             Some(secs) => tags.push(tag(vec!["ttl", &secs.to_string()])?),
             None => tags.push(tag(vec!["ttl", ""])?),
         }
+    }
+    if let Some(on) = goals_enabled {
+        tags.push(tag(vec!["goals", if on { "on" } else { "off" }])?);
     }
     Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
 }
@@ -866,7 +879,28 @@ mod tests {
     fn channel_builders_reject_hash_only_names() {
         let channel_id = Uuid::new_v4();
         assert!(build_create_channel(channel_id, "###", "open", "stream", None, None).is_err());
-        assert!(build_update_channel(channel_id, Some("###"), None, None, None).is_err());
+        assert!(build_update_channel(channel_id, Some("###"), None, None, None, None).is_err());
+    }
+
+    fn update_channel_tags(goals_enabled: Option<bool>) -> Result<Vec<Vec<String>>, String> {
+        let builder = build_update_channel(Uuid::nil(), None, None, None, None, goals_enabled)?;
+        let event = builder.sign_with_keys(&Keys::generate()).unwrap();
+        Ok(event.tags.iter().map(|t| t.as_slice().to_vec()).collect())
+    }
+
+    #[test]
+    fn update_channel_accepts_goals_only_edit() {
+        let on = update_channel_tags(Some(true)).expect("goals-only on is valid");
+        assert!(on.contains(&vec!["goals".to_string(), "on".to_string()]));
+        assert!(!on.iter().any(|t| t[0] == "name" || t[0] == "about"));
+
+        let off = update_channel_tags(Some(false)).expect("goals-only off is valid");
+        assert!(off.contains(&vec!["goals".to_string(), "off".to_string()]));
+    }
+
+    #[test]
+    fn update_channel_rejects_empty_edit() {
+        assert!(update_channel_tags(None).is_err());
     }
     /// Builder layout regression for the NIP-IA owner-of-agent archive flow.
     /// Compares against `docs/nips/NIP-IA.md` §Vector 1.

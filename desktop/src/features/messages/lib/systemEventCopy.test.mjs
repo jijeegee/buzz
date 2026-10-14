@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   addedByActionPrefix,
   describeChannelTextFieldChange,
+  describeGoalsChange,
   toInlineName,
 } from "./systemEventCopy.ts";
 
@@ -110,4 +111,14 @@ test("the reader is lowercased whatever their profile name says", () => {
   // Self resolution never consults the profile, but the rule keys on identity,
   // so it does not matter what the label happens to be.
   assert.equal(toInlineName("Alice Chen", true), "you");
+});
+
+test("the goals switch names the new state", () => {
+  assert.equal(describeGoalsChange("on"), "turned goals on");
+  assert.equal(describeGoalsChange("off"), "turned goals off");
+});
+
+test("an unknown goals value has no caption", () => {
+  assert.equal(describeGoalsChange("maybe"), null);
+  assert.equal(describeGoalsChange(undefined), null);
 });

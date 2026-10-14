@@ -19,6 +19,8 @@ Channel _channel({
   String type = 'stream',
   bool isArchived = false,
   bool isMember = true,
+  bool goalsEnabled = true,
+  List<String> participantPubkeys = const [],
 }) => Channel(
   id: 'channel-id',
   name: type == 'dm' ? 'Alice' : 'general',
@@ -30,6 +32,8 @@ Channel _channel({
   memberCount: 2,
   isMember: isMember,
   archivedAt: isArchived ? DateTime(2025, 1, 2) : null,
+  goalsEnabled: goalsEnabled,
+  participantPubkeys: participantPubkeys,
 );
 
 Widget _app({
@@ -516,6 +520,112 @@ void main() {
     expect(muteTop, lessThan(copyNameTop));
     expect(copyNameTop, lessThan(copyIdTop));
   });
+
+  group('DM goals switch', () {
+    final goalsSwitch = find.byKey(const ValueKey('room-goals-switch'));
+
+    testWidgets('DM participant turns goals off immediately', (tester) async {
+      late _FakeChannelActions actions;
+      await tester.pumpWidget(
+        _app(
+          channel: _channel(type: 'dm'),
+          loadMembers: () async => const [],
+          createChannelActions: (ref) => actions = _FakeChannelActions(ref),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<SwitchListTile>(goalsSwitch).value, isTrue);
+      expect(find.bySemanticsLabel(RegExp(r'^Goals')), findsOneWidget);
+      await tester.tap(goalsSwitch);
+      await tester.pumpAndSettle();
+
+      expect(actions.goalsUpdates, [false]);
+      expect(tester.widget<SwitchListTile>(goalsSwitch).value, isFalse);
+    });
+
+    testWidgets('failed goals save reverts and reports', (tester) async {
+      late _FakeChannelActions actions;
+      await tester.pumpWidget(
+        _app(
+          channel: _channel(type: 'dm', goalsEnabled: false),
+          loadMembers: () async => const [],
+          createChannelActions: (ref) =>
+              actions = _FakeChannelActions(ref)
+                ..goalsUpdateError = StateError('rejected'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(goalsSwitch);
+      await tester.pumpAndSettle();
+
+      expect(actions.goalsUpdates, [true]);
+      expect(tester.widget<SwitchListTile>(goalsSwitch).value, isFalse);
+      expect(find.text('Couldn’t update goals. Try again.'), findsOneWidget);
+    });
+
+    testWidgets('participant listed by pubkey may change goals', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          channel: _channel(
+            type: 'dm',
+            isMember: false,
+            participantPubkeys: const ['ME', 'alice'],
+          ),
+          loadMembers: () async => const [],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<SwitchListTile>(goalsSwitch).onChanged, isNotNull);
+    });
+
+    testWidgets('non-participant and archived DMs are read-only', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          channel: _channel(type: 'dm', isMember: false),
+          loadMembers: () async => const [],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(goalsSwitch).onChanged, isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        _app(
+          channel: _channel(type: 'dm', isArchived: true),
+          loadMembers: () async => const [],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(goalsSwitch).onChanged, isNull);
+    });
+
+    testWidgets('regular channels keep goals in channel details', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          channel: _channel(),
+          loadMembers: () async => [
+            ChannelMember(
+              pubkey: _currentPubkey,
+              role: 'owner',
+              joinedAt: DateTime(2025),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(goalsSwitch, findsNothing);
+    });
+  });
 }
 
 class _FakeChannelSectionsNotifier extends ChannelSectionsNotifier {
@@ -552,9 +662,18 @@ class _FakeChannelActions extends ChannelActions {
     required String channelId,
     String? name,
     String? description,
+    bool? goalsEnabled,
   }) async {
+    if (goalsEnabled != null) {
+      goalsUpdates.add(goalsEnabled);
+      final failure = goalsUpdateError;
+      if (failure != null) throw failure;
+    }
     await onUpdateChannel?.call(channelId, name, description);
   }
+
+  final List<bool> goalsUpdates = [];
+  Object? goalsUpdateError;
 
   String? unarchivedChannelId;
 

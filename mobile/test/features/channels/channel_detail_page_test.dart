@@ -10447,6 +10447,20 @@ void main() {
       expect(
         tester
             .widget<AppListCard>(
+              find.byKey(const ValueKey('channel-details-goals-card')),
+            )
+            .verticalPadding,
+        Grid.twelve,
+      );
+      // The goals card sits above the channel card, so bring it into view.
+      await tester.drag(
+        find.byKey(const ValueKey('channel-details-page-list')),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AppListCard>(
               find.byKey(const ValueKey('channel-details-channel-card')),
             )
             .verticalPadding,
@@ -10481,6 +10495,152 @@ void main() {
 
       expect(find.text('secret'), findsOneWidget);
       expect(find.byIcon(LucideIcons.lock), findsOneWidget);
+    });
+  });
+
+  group('Room goals', () {
+    Channel roomWithGoals({required bool enabled, String type = 'stream'}) =>
+        Channel(
+          id: _channelId,
+          name: type == 'dm' ? 'Alice' : 'general',
+          channelType: type,
+          visibility: 'open',
+          description: 'General discussion',
+          createdBy: 'abc123',
+          createdAt: DateTime(2025),
+          memberCount: 2,
+          isMember: true,
+          participantPubkeys: type == 'dm' ? const ['self', 'alice'] : const [],
+          goalsEnabled: enabled,
+        );
+
+    for (final type in ['stream', 'dm']) {
+      for (final enabled in [true, false]) {
+        testWidgets('$type goals button shown=$enabled follows the room flag', (
+          tester,
+        ) async {
+          await tester.pumpWidget(
+            _buildTestable(
+              messages: const [],
+              channel: roomWithGoals(enabled: enabled, type: type),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('channel-goals-button')),
+            enabled ? findsOneWidget : findsNothing,
+          );
+        });
+      }
+    }
+
+    for (final enabled in [true, false]) {
+      testWidgets('thread goals button shown=$enabled follows its room', (
+        tester,
+      ) async {
+        final root = _textMsg(
+          id: 'goals-thread-root',
+          pubkey: 'alice',
+          content: 'Thread root',
+        );
+        final timelineMessages = formatTimeline([root]);
+        await tester.pumpWidget(
+          _buildTestable(
+            messages: [root],
+            channel: roomWithGoals(enabled: enabled),
+            home: ThreadDetailPage(
+              threadHead: timelineMessages.single,
+              allMessages: timelineMessages,
+              channelId: _channelId,
+              currentPubkey: null,
+              isMember: true,
+              isArchived: false,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('thread-goals-button')),
+          enabled ? findsOneWidget : findsNothing,
+        );
+      });
+    }
+
+    testWidgets('owner switches room goals off from channel details', (
+      tester,
+    ) async {
+      final saved = <bool>[];
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: const [],
+          channel: roomWithGoals(enabled: true),
+          members: [
+            ChannelMember(
+              pubkey: 'self',
+              role: 'owner',
+              joinedAt: DateTime(2025),
+            ),
+          ],
+          createChannelActions: (ref) => _FakeChannelActions(
+            ref,
+            onUpdateGoals: (_, enabled) async => saved.add(enabled),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('channel-header-settings-trigger')),
+      );
+      await tester.pumpAndSettle();
+
+      final goalsSwitch = find.byKey(const ValueKey('room-goals-switch'));
+      // Centre it: the page scrolls under a frosted app bar.
+      await Scrollable.ensureVisible(
+        tester.element(goalsSwitch),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(goalsSwitch).value, isTrue);
+      expect(find.bySemanticsLabel(RegExp(r'^Goals')), findsOneWidget);
+
+      await tester.tap(goalsSwitch);
+      await tester.pumpAndSettle();
+
+      expect(saved, [false]);
+      expect(tester.widget<SwitchListTile>(goalsSwitch).value, isFalse);
+    });
+
+    testWidgets('regular member sees room goals read-only', (tester) async {
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: const [],
+          channel: roomWithGoals(enabled: false),
+          members: [
+            ChannelMember(
+              pubkey: 'self',
+              role: 'member',
+              joinedAt: DateTime(2025),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('channel-header-settings-trigger')),
+      );
+      await tester.pumpAndSettle();
+
+      final goalsSwitch = find.byKey(const ValueKey('room-goals-switch'));
+      // Centre it: the page scrolls under a frosted app bar.
+      await Scrollable.ensureVisible(
+        tester.element(goalsSwitch),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
+      final tile = tester.widget<SwitchListTile>(goalsSwitch);
+      expect(tile.value, isFalse);
+      expect(tile.onChanged, isNull);
     });
   });
 
@@ -15745,6 +15905,8 @@ class _FakeChannelActions extends ChannelActions {
     String? description,
   )?
   onUpdateChannel;
+  final Future<void> Function(String channelId, bool goalsEnabled)?
+  onUpdateGoals;
 
   _FakeChannelActions(
     Ref ref, {
@@ -15753,6 +15915,7 @@ class _FakeChannelActions extends ChannelActions {
     this.onArchiveChannel,
     this.onAddMembers,
     this.onUpdateChannel,
+    this.onUpdateGoals,
   }) : super(
          ref: ref,
          session: ref.read(relaySessionProvider.notifier),
@@ -15792,8 +15955,14 @@ class _FakeChannelActions extends ChannelActions {
     required String channelId,
     String? name,
     String? description,
+    bool? goalsEnabled,
   }) async {
-    await onUpdateChannel?.call(channelId, name, description);
+    if (goalsEnabled != null) {
+      await onUpdateGoals?.call(channelId, goalsEnabled);
+    }
+    if (name != null || description != null) {
+      await onUpdateChannel?.call(channelId, name, description);
+    }
   }
 }
 

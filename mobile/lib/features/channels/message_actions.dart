@@ -27,7 +27,6 @@ import '../../shared/widgets/sheet_divider.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/reminders/remind_me_later_sheet.dart';
 import '../../shared/reminders/reminder_service.dart';
-import '../goals/goals_preferences.dart';
 import '../goals/thread_goals_page.dart';
 import 'channel_management_provider.dart';
 import 'pending_local_messages_provider.dart';
@@ -39,6 +38,7 @@ import 'recent_emoji_provider.dart';
 import '../../shared/read_state/message_read_state.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
+import 'room_goals_provider.dart';
 import 'thread_depth.dart';
 import 'thread_detail_page.dart';
 import 'thread_follows/thread_follows_provider.dart';
@@ -254,10 +254,10 @@ void showMessageActions({
   );
 }
 
-/// "Link to goal" needs goals on and a delivered chat message (desktop's
+/// "Link to goal" needs the room's goals on and a delivered chat message (desktop's
 /// copy-link rule): not a system row, not a send still awaiting the relay.
 bool _canLinkToGoal(WidgetRef ref, TimelineMessage message, String channelId) =>
-    ref.read(goalsEnabledProvider) &&
+    ref.read(roomGoalsEnabledProvider(channelId)) &&
     !message.isSystem &&
     !ref.read(pendingLocalMessagesProvider(channelId)).containsKey(message.id);
 

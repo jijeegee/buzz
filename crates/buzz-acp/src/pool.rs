@@ -138,6 +138,10 @@ pub struct ChannelDeliveryState {
     /// turn sends goals only when they differ (see
     /// `goal_context::goal_context_for_turn`).
     pub goal_context_seen: Option<crate::goal_context::GoalsSeen>,
+    /// Set by compaction, which may summarise away goals sent in messages:
+    /// the session may hold goals nobody can see, like a reattached one, so
+    /// its next turn restates them (or says they are off).
+    pub goals_maybe_held: bool,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -328,6 +332,17 @@ impl SessionState {
                 delivery.goal_context_seen.as_ref(),
                 goals,
             ));
+        }
+    }
+
+    /// Forget the goals `scope`'s session was sent once compaction may have
+    /// summarised them away; the next turn sends them again.
+    pub(crate) fn forget_goal_context_after_compaction(&mut self, scope: &SessionScope) {
+        if let Some(delivery) = self.deliveries.get_mut(scope) {
+            delivery.goals_maybe_held = match delivery.goal_context_seen.take() {
+                Some(seen) => seen.ever_held(),
+                None => delivery.goals_maybe_held || delivery.session_reattached,
+            };
         }
     }
 
@@ -911,6 +926,7 @@ impl ChannelInfoResolver {
                         channel_type: info.channel_type,
                         description: info.description,
                         project: None,
+                        goals_off: false,
                     },
                 ))
             })
@@ -2699,6 +2715,25 @@ fn with_team(prompt: Option<String>, instructions: Option<&str>) -> Option<Strin
     }
 }
 
+/// Compaction, ours or the agent's own, may have summarised away goals a
+/// session got in a message; its next turn restates them. Runs before a turn
+/// reads what its session holds, so it also covers a compaction during the
+/// previous turn, after that turn recorded what it sent.
+fn forget_goals_in_compacted_sessions(agent: &mut OwnedAgent) {
+    for session_id in agent.acp.take_compacted_sessions() {
+        let scopes: Vec<SessionScope> = agent
+            .state
+            .sessions
+            .iter()
+            .filter(|(_, id)| **id == session_id)
+            .map(|(scope, _)| scope.clone())
+            .collect();
+        for scope in scopes {
+            agent.state.forget_goal_context_after_compaction(&scope);
+        }
+    }
+}
+
 /// Append the conversation's `<goal-context>` at the end of the system prompt,
 /// after everything that never changes, so the session holds its goals from
 /// the start without a copy in every turn.
@@ -2862,7 +2897,7 @@ pub async fn run_compact_task(
         chrono::Utc::now().to_rfc3339(),
     ));
     agent.acp.set_observer_thread_root(thread_root.clone());
-    let source = PromptSource::Channel(scope);
+    let source = PromptSource::Channel(scope.clone());
 
     let (status, outcome) = match session_id.as_deref() {
         // Ownership is checked before claiming; a missing session here means
@@ -2880,6 +2915,9 @@ pub async fn run_compact_task(
                 .await;
             let (status, outcome, stop) =
                 compact_outcome(&mut agent, session_id, &ctx, result).await;
+            if status == "completed" {
+                agent.state.forget_goal_context_after_compaction(&scope);
+            }
             // Compaction is a real model call; account for it like a turn so
             // its cost is not folded into the session's next turn.
             let usage = agent.acp.take_turn_usage();
@@ -3404,6 +3442,11 @@ pub async fn run_prompt_task(
             .as_ref()
             .is_some_and(|info| info.project.is_some()),
     );
+    // A conversation that turned goals off gets no goal context, read from
+    // the same per-turn metadata refresh, so a change applies next turn.
+    let goals_off = resolved_channel_info
+        .as_ref()
+        .is_some_and(|info| info.goals_off);
 
     let (session_id, is_new_session) = match &source {
         PromptSource::Channel(scope) => {
@@ -3424,17 +3467,18 @@ pub async fn run_prompt_task(
                 // The goals a new session starts with go in its system prompt;
                 // agents without one, and reattached sessions, get them on
                 // their first turn instead. `None`: not known (fetch failed).
-                let start_goals = if ctx.goals_enabled
-                    && agent.has_system_prompt_support()
-                    && reattach.is_none()
-                {
+                let starts_with_goals =
+                    ctx.goals_enabled && agent.has_system_prompt_support() && reattach.is_none();
+                let start_goals = if !starts_with_goals {
+                    None
+                } else if goals_off {
+                    Some(crate::goal_context::GoalsNow::off(scope.root_event_id()))
+                } else {
                     crate::goal_context::fetch_goal_tree(*cid, &ctx.rest_client)
                         .await
                         .map(|tree| {
                             crate::goal_context::GoalsNow::new(&tree, *cid, scope.root_event_id())
                         })
-                } else {
-                    None
                 };
                 match open_session_and_apply_model(
                     &mut agent,
@@ -3920,7 +3964,7 @@ pub async fn run_prompt_task(
             }
         };
         let goal_tree_fetch = async {
-            if ctx.goals_enabled {
+            if ctx.goals_enabled && !goals_off {
                 crate::goal_context::fetch_goal_tree(b.channel_id, &ctx.rest_client).await
             } else {
                 None
@@ -3949,28 +3993,31 @@ pub async fn run_prompt_task(
         let profile_lookup =
             fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
         // The goals now; sent below only when the session does not hold them.
-        let goal_context_current = goal_tree.map(|tree| {
-            crate::goal_context::GoalsNow::new(
-                &tree,
-                b.channel_id,
-                // The thread this turn belongs to: the fetched thread,
-                // or a thread session's own root on its first turn.
-                match &context_target {
-                    ContextTarget::Thread(root) => Some(root.as_str()),
-                    _ => None,
-                }
-                .or_else(|| b.scope.root_event_id()),
-            )
-        });
+        // The thread this turn belongs to: the fetched thread, or a thread
+        // session's own root on its first turn.
+        let goal_focus = match &context_target {
+            ContextTarget::Thread(root) => Some(root.as_str()),
+            _ => None,
+        }
+        .or_else(|| b.scope.root_event_id());
+        let goal_context_current = if ctx.goals_enabled && goals_off {
+            Some(crate::goal_context::GoalsNow::off(goal_focus))
+        } else {
+            goal_tree
+                .map(|tree| crate::goal_context::GoalsNow::new(&tree, b.channel_id, goal_focus))
+        };
 
         // Standing context sent with this prompt already carries the current
         // layer 0 goals; otherwise tell a live session once that they changed.
         let standing_in_this_prompt = !agent.has_system_prompt_support() && !standing_context_sent;
+        forget_goals_in_compacted_sessions(&mut agent);
         let delivery = agent.state.deliveries.get(&b.scope);
         let goal_context = goal_context_current.as_ref().and_then(|now| {
             crate::goal_context::goal_context_for_turn(
                 delivery.and_then(|delivery| delivery.goal_context_seen.as_ref()),
-                delivery.is_some_and(|delivery| delivery.session_reattached),
+                delivery.is_some_and(|delivery| {
+                    delivery.session_reattached || delivery.goals_maybe_held
+                }),
                 now,
             )
         });
@@ -4588,6 +4635,35 @@ pub(crate) async fn fetch_channel_info(
     fetch_with_retry(|| fetch_channel_info_once(channel_id, rest)).await
 }
 
+/// Prompt channel metadata from kind-39000 tags. Goals are on unless the
+/// event says `["goals","off"]`.
+fn prompt_channel_info_from_tags(tags: &[serde_json::Value]) -> PromptChannelInfo {
+    let mut name = None;
+    let mut description = None;
+    let mut goals_off = false;
+    for tag in tags {
+        if let Some(arr) = tag.as_array() {
+            match arr.first().and_then(|v| v.as_str()) {
+                Some("name") => name = arr.get(1).and_then(|v| v.as_str()),
+                Some("about") => description = arr.get(1).and_then(|v| v.as_str()),
+                Some("goals") => goals_off = arr.get(1).and_then(|v| v.as_str()) == Some("off"),
+                _ => {}
+            }
+        }
+    }
+    let description = description
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    PromptChannelInfo {
+        name: name.unwrap_or(UNKNOWN_CHANNEL_NAME).to_string(),
+        channel_type: crate::relay::channel_type_from_tags(tags),
+        description,
+        project: None,
+        goals_off,
+    }
+}
+
 /// Fetch the current kind-39000 metadata with one bounded request.
 ///
 /// Used by prompt-turn refreshes when cached metadata is already available as
@@ -4612,29 +4688,7 @@ async fn fetch_channel_info_once(channel_id: Uuid, rest: &RestClient) -> Option<
         Ok(Ok(json)) => {
             let events = json.as_array()?;
             let ev = events.first()?;
-            let tags = ev.get("tags")?.as_array()?;
-            let mut name = None;
-            let mut description = None;
-            for tag in tags {
-                if let Some(arr) = tag.as_array() {
-                    match arr.first().and_then(|v| v.as_str()) {
-                        Some("name") => name = arr.get(1).and_then(|v| v.as_str()),
-                        Some("about") => description = arr.get(1).and_then(|v| v.as_str()),
-                        _ => {}
-                    }
-                }
-            }
-            let channel_type = crate::relay::channel_type_from_tags(tags);
-            let description = description
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            Some(PromptChannelInfo {
-                name: name.unwrap_or(UNKNOWN_CHANNEL_NAME).to_string(),
-                channel_type,
-                description,
-                project: None,
-            })
+            Some(prompt_channel_info_from_tags(ev.get("tags")?.as_array()?))
         }
         Ok(Err(e)) => {
             tracing::debug!(channel_id = %channel_id, "channel info fetch failed: {e}");
@@ -6836,6 +6890,20 @@ pub(crate) mod tests {
     use super::*;
     use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
     use serde_json::json;
+
+    #[test]
+    fn channel_goals_are_on_unless_metadata_says_off() {
+        let tags = |extra: &[serde_json::Value]| {
+            let mut tags = vec![json!(["name", "team"]), json!(["t", "stream"])];
+            tags.extend_from_slice(extra);
+            tags
+        };
+        assert!(!prompt_channel_info_from_tags(&tags(&[])).goals_off);
+        assert!(!prompt_channel_info_from_tags(&tags(&[json!(["goals", "on"])])).goals_off);
+        let off = prompt_channel_info_from_tags(&tags(&[json!(["goals", "off"])]));
+        assert!(off.goals_off);
+        assert_eq!(off.name, "team");
+    }
 
     /// A capture path for a `bash` script's single-quoted string. Forward
     /// slashes, because bash keeps Windows `\` literally and the file would
@@ -10253,6 +10321,73 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         assert_eq!(pct_encode(" "), "%20");
     }
 
+    #[test]
+    fn compaction_makes_the_next_turn_restate_goals_or_say_they_are_off() {
+        use crate::goal_context::{goal_context_for_turn, GoalsNow, GoalsSeen};
+        use buzz_core::goal_tree::{GoalOp, GoalTree};
+        let channel = Uuid::new_v4();
+        let mut tree = GoalTree::empty();
+        tree.apply(
+            &GoalOp::SetRoot {
+                id: "g1".into(),
+                title: "Ship it".into(),
+                note: None,
+            },
+            &"a".repeat(64),
+            1,
+        )
+        .unwrap();
+        let on = GoalsNow::new(&tree, channel, None);
+        let off = GoalsNow::off(None);
+        let next_turn = |state: &SessionState, now: &GoalsNow| {
+            let delivery = state.deliveries.get(&conv(channel)).unwrap();
+            goal_context_for_turn(
+                delivery.goal_context_seen.as_ref(),
+                delivery.session_reattached || delivery.goals_maybe_held,
+                now,
+            )
+        };
+
+        // Goals in the system prompt, then turned off and told so: the
+        // compacted session may still act on them, so it hears "off" again.
+        let mut state = SessionState::default();
+        let seen = GoalsSeen::after(Some(&GoalsSeen::after(None, &on)), &off);
+        state.deliveries.insert(
+            conv(channel),
+            ChannelDeliveryState {
+                goal_context_seen: Some(seen),
+                ..Default::default()
+            },
+        );
+        assert_eq!(next_turn(&state, &off), None);
+        state.forget_goal_context_after_compaction(&conv(channel));
+        assert!(next_turn(&state, &off)
+            .unwrap()
+            .starts_with("Goals are turned off"));
+
+        // Goals sent in a message: restated after compaction.
+        state
+            .deliveries
+            .get_mut(&conv(channel))
+            .unwrap()
+            .goal_context_seen = Some(GoalsSeen::after(None, &on));
+        assert_eq!(next_turn(&state, &on), None);
+        state.forget_goal_context_after_compaction(&conv(channel));
+        assert!(next_turn(&state, &on).unwrap().contains("Ship it"));
+
+        // A conversation that never had goals stays quiet.
+        let mut state = SessionState::default();
+        state.deliveries.insert(
+            conv(channel),
+            ChannelDeliveryState {
+                goal_context_seen: Some(GoalsSeen::after(None, &off)),
+                ..Default::default()
+            },
+        );
+        state.forget_goal_context_after_compaction(&conv(channel));
+        assert_eq!(next_turn(&state, &off), None);
+    }
+
     fn make_state() -> (SessionState, Uuid, Uuid) {
         let ch_a = Uuid::new_v4();
         let ch_b = Uuid::new_v4();
@@ -10273,6 +10408,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 layer0_goals_seen: Some(None),
                 live_text_seen: Some(Default::default()),
                 goal_context_seen: Some(Default::default()),
+                goals_maybe_held: false,
             },
         );
         s.deliveries.insert(
@@ -10285,6 +10421,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 layer0_goals_seen: Some(None),
                 live_text_seen: Some(Default::default()),
                 goal_context_seen: Some(Default::default()),
+                goals_maybe_held: false,
             },
         );
         s.heartbeat_session = Some("sess-hb".into());

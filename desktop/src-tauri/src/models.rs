@@ -131,6 +131,10 @@ pub struct ChannelInfo {
     pub is_member: bool,
     pub ttl_seconds: Option<i32>,
     pub ttl_deadline: Option<String>,
+    /// Per-room goals switch. The relay emits `["goals", "off"]` on kind:39000
+    /// only when disabled; an absent tag (including old relays) means on.
+    #[serde(default = "default_true")]
+    pub goals_enabled: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -157,6 +161,9 @@ pub struct ChannelDetailInfo {
     pub nip29_group_id: Option<String>,
     pub ttl_seconds: Option<i32>,
     pub ttl_deadline: Option<String>,
+    /// See [`ChannelInfo::goals_enabled`].
+    #[serde(default = "default_true")]
+    pub goals_enabled: bool,
 }
 
 #[derive(Serialize, Deserialize)]

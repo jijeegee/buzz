@@ -576,6 +576,7 @@ pub async fn validate_admin_event(
                 "purpose",
                 "visibility",
                 "ttl",
+                "goals",
             ];
             let has_recognized = event
                 .tags
@@ -583,7 +584,7 @@ pub async fn validate_admin_event(
                 .any(|t| RECOGNIZED_TAGS.contains(&t.kind().to_string().as_str()));
             if !has_recognized {
                 return Err(anyhow::anyhow!(
-                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl)"
+                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, goals)"
                 ));
             }
 
@@ -662,11 +663,35 @@ pub async fn validate_admin_event(
                 }
             }
 
+            // Validate goals values before storage.
+            for t in event.tags.iter() {
+                if t.kind().to_string() == "goals" {
+                    match t.content() {
+                        Some("on") | Some("off") => {}
+                        Some(v) => {
+                            return Err(anyhow::anyhow!(
+                                "invalid goals value: {v} (must be \"on\" or \"off\")"
+                            ));
+                        }
+                        None => {
+                            return Err(anyhow::anyhow!("goals tag must have a value"));
+                        }
+                    }
+                }
+            }
+
             // name/about/archived/visibility/ttl require owner/admin;
-            // topic/purpose allow any member.
+            // topic/purpose allow any member. goals is owner/admin in a
+            // channel, but a DM has no owner, so any participant may switch it.
+            let is_dm = channel.channel_type == "dm";
             let has_privileged_tag = event.tags.iter().any(|t| {
                 let k = t.kind().to_string();
-                k == "name" || k == "about" || k == "archived" || k == "visibility" || k == "ttl"
+                k == "name"
+                    || k == "about"
+                    || k == "archived"
+                    || k == "visibility"
+                    || k == "ttl"
+                    || (k == "goals" && !is_dm)
             });
             if has_privileged_tag {
                 let members = state.db.get_members(tenant.community(), channel_id).await?;
@@ -688,12 +713,12 @@ pub async fn validate_admin_event(
                             return Ok(());
                         }
                         Err(anyhow::anyhow!(
-                            "actor not authorized for name/about/archived/visibility/ttl changes"
+                            "actor not authorized for name/about/archived/visibility/ttl/goals changes"
                         ))
                     }
                 }
             } else {
-                // topic/purpose: any member
+                // topic/purpose (and goals in a DM): any member
                 let is_member = state
                     .is_member_cached(tenant.community(), channel_id, &actor_bytes)
                     .await?;
@@ -1260,6 +1285,11 @@ pub async fn emit_group_discovery_events(
         if let Some(ref deadline) = channel.ttl_deadline {
             tags.push(Tag::parse(["ttl_deadline", &deadline.to_rfc3339()])?);
         }
+        // Goals are on unless this says otherwise, so older relays (no tag)
+        // and conversations that never changed it read as on.
+        if !channel.goals_enabled {
+            tags.push(Tag::parse(["goals", "off"])?);
+        }
         emit_addressable_discovery_event(
             tenant,
             state,
@@ -1717,6 +1747,30 @@ async fn handle_edit_metadata(
                         channel_id,
                         serde_json::json!({
                             "type": "ttl_changed", "actor": actor_hex, "ttl_seconds": ttl_change
+                        }),
+                        chrono::Utc::now(),
+                    )
+                    .await?;
+                }
+                "goals" => {
+                    // "on"/"off", validated during authorization.
+                    state
+                        .db
+                        .update_channel(
+                            tenant.community(),
+                            channel_id,
+                            buzz_db::channel::ChannelUpdate {
+                                goals_enabled: Some(val == "on"),
+                                ..Default::default()
+                            },
+                        )
+                        .await?;
+                    emit_system_message(
+                        tenant,
+                        state,
+                        channel_id,
+                        serde_json::json!({
+                            "type": "goals_changed", "actor": actor_hex, "goals": val
                         }),
                         chrono::Utc::now(),
                     )

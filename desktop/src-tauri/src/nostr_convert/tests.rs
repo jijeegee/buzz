@@ -139,6 +139,47 @@ fn channel_info_merges_summary() {
 }
 
 #[test]
+fn channel_goals_enabled_by_default_when_tag_absent() {
+    let e = ev(39000, "", vec![vec!["d", "u"], vec!["name", "n"]]);
+    assert!(
+        channel_info_from_event(&e, None, None)
+            .unwrap()
+            .goals_enabled
+    );
+    assert!(channel_detail_from_event(&e).unwrap().goals_enabled);
+}
+
+#[test]
+fn channel_goals_disabled_by_goals_off_tag() {
+    let e = ev(
+        39000,
+        "",
+        vec![vec!["d", "u"], vec!["name", "n"], vec!["goals", "off"]],
+    );
+    assert!(
+        !channel_info_from_event(&e, None, None)
+            .unwrap()
+            .goals_enabled
+    );
+    assert!(!channel_detail_from_event(&e).unwrap().goals_enabled);
+}
+
+#[test]
+fn channel_goals_enabled_by_explicit_goals_on_tag() {
+    let e = ev(
+        39000,
+        "",
+        vec![vec!["d", "u"], vec!["name", "n"], vec!["goals", "on"]],
+    );
+    assert!(
+        channel_info_from_event(&e, None, None)
+            .unwrap()
+            .goals_enabled
+    );
+    assert!(channel_detail_from_event(&e).unwrap().goals_enabled);
+}
+
+#[test]
 fn channel_info_missing_d_errors() {
     let e = ev(39000, "", vec![vec!["name", "n"]]);
     assert!(channel_info_from_event(&e, None, None).is_err());

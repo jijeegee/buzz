@@ -12,6 +12,7 @@ import '../../shared/push/push_presentation_export_recovery.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
 import '../../shared/utils/string_utils.dart';
+import '../goals/goal_provider.dart';
 import 'channel.dart';
 import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;
@@ -395,14 +396,14 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       return left.name.toLowerCase().compareTo(right.name.toLowerCase());
     });
 
-    // Invalidate `channelDetailsProvider` entries whose archived state flipped
-    // since the last fetch. Required because `channelDetailsProvider` is a
+    // Invalidate `channelDetailsProvider` entries whose archived or goals
+    // state flipped since the last fetch. Required because `channelDetailsProvider` is a
     // separate Riverpod cache and `Channel.mergeDetails(details)` overwrites
     // archivedAt from the cached details — so an active-then-archived channel
     // (e.g. TTL auto-archive by the relay reaper) could keep showing compose
     // and manage actions in the detail view until the cache expired naturally.
     //
-    // Scoped narrowly to the archived flip — broader metadata staleness
+    // Scoped narrowly to the archived and goals flips — broader metadata staleness
     // (renames, topic changes, etc.) is a separate, pre-existing concern that
     // already affects this provider for other reasons.
     // Re-check before the first write that other providers can observe. Every
@@ -416,8 +417,15 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     };
     for (final channel in channels) {
       final prev = prevById[channel.id];
-      if (prev != null && prev.isArchived != channel.isArchived) {
+      if (prev != null &&
+          (prev.isArchived != channel.isArchived ||
+              prev.goalsEnabled != channel.goalsEnabled)) {
         ref.invalidate(channelDetailsProvider(channel.id));
+      }
+      // A tree read while goals were off is empty (the relay hides it), so
+      // drop it when the room's goals flip.
+      if (prev != null && prev.goalsEnabled != channel.goalsEnabled) {
+        ref.invalidate(goalTreeProvider(channel.id));
       }
     }
 
@@ -556,6 +564,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       isMember: isMember,
       ttlSeconds: data.ttlSeconds,
       ttlDeadline: data.ttlDeadline,
+      goalsEnabled: data.goalsEnabled,
     );
   }
 

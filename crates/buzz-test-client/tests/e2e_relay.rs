@@ -3352,3 +3352,303 @@ async fn test_nip29_relay_rejects_last_owner_self_demotion() {
         "the last owner must keep their role"
     );
 }
+
+// ─── Per-conversation goals switch ───────────────────────────────────────────
+
+/// Send kind:9002 `["goals", value]` and return the relay's (accepted, message).
+async fn set_goals_ws(
+    client: &mut BuzzTestClient,
+    channel_id: &str,
+    value: &str,
+    signer: &Keys,
+) -> (bool, String) {
+    let event = EventBuilder::new(Kind::Custom(9002), "")
+        .tags([
+            Tag::parse(["h", channel_id]).unwrap(),
+            Tag::parse(["goals", value]).unwrap(),
+        ])
+        .sign_with_keys(signer)
+        .unwrap();
+    let ok = client.send_event(event).await.expect("send goals 9002");
+    (ok.accepted, ok.message)
+}
+
+/// Write a one-goal tree (kind:40110) on top of `expected_revision`.
+async fn write_goal_tree_ws(
+    client: &mut BuzzTestClient,
+    channel_id: &str,
+    expected_revision: &str,
+    signer: &Keys,
+) -> (bool, String) {
+    let mut tree = buzz_core::goal_tree::GoalTree::empty();
+    tree.apply(
+        &buzz_core::goal_tree::GoalOp::SetRoot {
+            id: "root".into(),
+            title: "Ship the goals switch".into(),
+            note: None,
+        },
+        &signer.public_key().to_hex(),
+        1,
+    )
+    .expect("set root");
+    let event = buzz_sdk::build_set_goal_tree(
+        Uuid::parse_str(channel_id).unwrap(),
+        &tree,
+        expected_revision,
+        None,
+    )
+    .expect("build goal tree")
+    .sign_with_keys(signer)
+    .unwrap();
+    let ok = client.send_event(event).await.expect("send goal tree");
+    (ok.accepted, ok.message)
+}
+
+/// The conversation's goal tree heads as a member reads them over WS REQ.
+async fn goal_trees_ws(client: &mut BuzzTestClient, channel_id: &str) -> Vec<nostr::Event> {
+    let sid = sub_id("goal-tree");
+    let filter = Filter::new()
+        .kind(Kind::Custom(buzz_core::kind::KIND_GOAL_TREE as u16))
+        .custom_tags(SingleLetterTag::lowercase(Alphabet::H), [channel_id]);
+    client
+        .subscribe(&sid, vec![filter])
+        .await
+        .expect("subscribe goal tree");
+    let events = client
+        .collect_until_eose(&sid, Duration::from_secs(5))
+        .await
+        .expect("goal tree EOSE");
+    client
+        .close_subscription(&sid)
+        .await
+        .expect("close goal tree sub");
+    events
+}
+
+/// The `goals` values of the conversation's `goals_changed` system messages,
+/// oldest first.
+async fn goals_changed_values(client: &mut BuzzTestClient, channel_id: &str) -> Vec<String> {
+    let sid = sub_id("goals-changed");
+    let filter = Filter::new()
+        .kind(Kind::Custom(buzz_core::kind::KIND_SYSTEM_MESSAGE as u16))
+        .custom_tags(SingleLetterTag::lowercase(Alphabet::H), [channel_id]);
+    client
+        .subscribe(&sid, vec![filter])
+        .await
+        .expect("subscribe system messages");
+    let mut events = client
+        .collect_until_eose(&sid, Duration::from_secs(5))
+        .await
+        .expect("system messages EOSE");
+    client
+        .close_subscription(&sid)
+        .await
+        .expect("close system message sub");
+    events.sort_by_key(|event| event.created_at);
+    events
+        .iter()
+        .filter_map(|event| serde_json::from_str::<serde_json::Value>(&event.content).ok())
+        .filter(|body| body["type"] == "goals_changed")
+        .filter_map(|body| body["goals"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// The conversation's goal tree heads as an agent reads them over HTTP /query.
+async fn goal_trees_http(reader: &Keys, channel_id: &str) -> Vec<serde_json::Value> {
+    let filters = serde_json::json!([{
+        "kinds": [buzz_core::kind::KIND_GOAL_TREE],
+        "#h": [channel_id],
+        "limit": 1,
+    }]);
+    let resp = reqwest::Client::new()
+        .post(format!("{}/query", relay_http_url()))
+        .header("X-Pubkey", reader.public_key().to_hex())
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(&filters).unwrap())
+        .send()
+        .await
+        .expect("query goal tree");
+    assert!(
+        resp.status().is_success(),
+        "goal tree query failed: {}",
+        resp.status()
+    );
+    resp.json().await.expect("goal tree json")
+}
+
+/// The `goals` tag of the conversation's latest kind:39000, if any.
+async fn goals_tag_39000(client: &mut BuzzTestClient, channel_id: &str) -> Option<String> {
+    let sid = sub_id("goals-39000");
+    let filter = Filter::new()
+        .kind(Kind::Custom(39000))
+        .custom_tags(SingleLetterTag::lowercase(Alphabet::D), [channel_id]);
+    client
+        .subscribe(&sid, vec![filter])
+        .await
+        .expect("subscribe 39000");
+    let events = client
+        .collect_until_eose(&sid, Duration::from_secs(5))
+        .await
+        .expect("39000 EOSE");
+    client
+        .close_subscription(&sid)
+        .await
+        .expect("close 39000 sub");
+    let latest = events
+        .iter()
+        .max_by_key(|e| e.created_at)
+        .expect("39000 exists");
+    latest.tags.iter().find_map(|t| {
+        let parts = t.as_slice();
+        (parts.first().map(String::as_str) == Some("goals")).then(|| parts[1].clone())
+    })
+}
+
+/// Goals off in a channel: only owner/admin may switch it, the tree is kept
+/// but hidden from WS and HTTP readers, tree writes are rejected, and turning
+/// it back on brings the same tree back.
+#[tokio::test]
+#[ignore]
+async fn test_channel_goals_switch_hides_and_blocks_goal_tree() {
+    let url = relay_url();
+    let owner = Keys::generate();
+    let member = Keys::generate();
+    let channel_id = create_test_channel(&owner).await;
+    let mut owner_ws = BuzzTestClient::connect(&url, &owner)
+        .await
+        .expect("connect owner");
+    let (added, msg) = add_member_ws(
+        &mut owner_ws,
+        &channel_id,
+        &member.public_key().to_hex(),
+        &owner,
+    )
+    .await;
+    assert!(added, "add member: {msg}");
+    let mut member_ws = BuzzTestClient::connect(&url, &member)
+        .await
+        .expect("connect member");
+
+    // A new channel starts with goals off.
+    assert_eq!(
+        goals_tag_39000(&mut member_ws, &channel_id)
+            .await
+            .as_deref(),
+        Some("off")
+    );
+    let (ok, msg) = write_goal_tree_ws(&mut owner_ws, &channel_id, "none", &owner).await;
+    assert!(
+        !ok && msg.contains("goals are turned off"),
+        "unexpected: {msg}"
+    );
+    let (ok, msg) = set_goals_ws(&mut owner_ws, &channel_id, "on", &owner).await;
+    assert!(ok, "owner turns goals on: {msg}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let (ok, msg) = write_goal_tree_ws(&mut owner_ws, &channel_id, "none", &owner).await;
+    assert!(ok, "first goal tree: {msg}");
+    let head = goal_trees_ws(&mut member_ws, &channel_id).await;
+    assert_eq!(head.len(), 1, "tree visible while goals are on");
+    assert_eq!(goals_tag_39000(&mut member_ws, &channel_id).await, None);
+
+    // A plain member of a channel cannot switch goals; bad values are rejected.
+    let (ok, msg) = set_goals_ws(&mut member_ws, &channel_id, "off", &member).await;
+    assert!(!ok, "member must not switch channel goals");
+    assert!(msg.contains("not authorized"), "unexpected: {msg}");
+    let (ok, msg) = set_goals_ws(&mut owner_ws, &channel_id, "maybe", &owner).await;
+    assert!(
+        !ok && msg.contains("invalid goals value"),
+        "unexpected: {msg}"
+    );
+
+    let (ok, msg) = set_goals_ws(&mut owner_ws, &channel_id, "off", &owner).await;
+    assert!(ok, "owner turns goals off: {msg}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        goals_tag_39000(&mut member_ws, &channel_id)
+            .await
+            .as_deref(),
+        Some("off")
+    );
+    assert!(
+        goal_trees_ws(&mut member_ws, &channel_id).await.is_empty(),
+        "WS hides the tree"
+    );
+    assert!(
+        goal_trees_http(&member, &channel_id).await.is_empty(),
+        "/query hides the tree"
+    );
+    let (ok, msg) =
+        write_goal_tree_ws(&mut owner_ws, &channel_id, &head[0].id.to_hex(), &owner).await;
+    assert!(
+        !ok && msg.contains("goals are turned off"),
+        "unexpected: {msg}"
+    );
+
+    let (ok, msg) = set_goals_ws(&mut owner_ws, &channel_id, "on", &owner).await;
+    assert!(ok, "owner turns goals on: {msg}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(goals_tag_39000(&mut member_ws, &channel_id).await, None);
+    let back = goal_trees_ws(&mut member_ws, &channel_id).await;
+    assert_eq!(back.len(), 1);
+    assert_eq!(back[0].id, head[0].id, "the same tree comes back");
+    assert_eq!(goal_trees_http(&member, &channel_id).await.len(), 1);
+    // Each switch leaves a notice in the room.
+    assert_eq!(
+        goals_changed_values(&mut member_ws, &channel_id).await,
+        ["on", "off", "on"]
+    );
+
+    owner_ws.disconnect().await.expect("disconnect owner");
+    member_ws.disconnect().await.expect("disconnect member");
+}
+
+/// A DM has no owner: either participant may switch its goals.
+#[tokio::test]
+#[ignore]
+async fn test_dm_participant_switches_goals() {
+    let url = relay_url();
+    let alice = Keys::generate();
+    let bob = Keys::generate();
+    let mut alice_ws = BuzzTestClient::connect(&url, &alice)
+        .await
+        .expect("connect alice");
+    let open = EventBuilder::new(Kind::Custom(41010), "")
+        .tags([Tag::parse(["p", &bob.public_key().to_hex()]).unwrap()])
+        .sign_with_keys(&alice)
+        .unwrap();
+    let ok = alice_ws.send_event(open).await.expect("open DM");
+    assert!(ok.accepted, "open DM: {}", ok.message);
+    let payload = ok
+        .message
+        .strip_prefix("response:")
+        .expect("response: prefix");
+    let response: serde_json::Value = serde_json::from_str(payload).expect("response JSON");
+    let dm_id = response["channel_id"]
+        .as_str()
+        .expect("channel_id")
+        .to_string();
+
+    let mut bob_ws = BuzzTestClient::connect(&url, &bob)
+        .await
+        .expect("connect bob");
+    // A new DM starts with goals off.
+    assert_eq!(
+        goals_tag_39000(&mut alice_ws, &dm_id).await.as_deref(),
+        Some("off")
+    );
+    let (ok, msg) = set_goals_ws(&mut bob_ws, &dm_id, "on", &bob).await;
+    assert!(ok, "DM participant turns goals on: {msg}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(goals_tag_39000(&mut alice_ws, &dm_id).await, None);
+    let (ok, msg) = set_goals_ws(&mut alice_ws, &dm_id, "off", &alice).await;
+    assert!(ok, "other participant turns goals off: {msg}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        goals_tag_39000(&mut alice_ws, &dm_id).await.as_deref(),
+        Some("off")
+    );
+
+    alice_ws.disconnect().await.expect("disconnect alice");
+    bob_ws.disconnect().await.expect("disconnect bob");
+}

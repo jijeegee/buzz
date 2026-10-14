@@ -27,6 +27,10 @@ class Channel {
   final int? ttlSeconds;
   final DateTime? ttlDeadline;
 
+  /// Whether this room tracks goals. Kind 39000 carries `["goals","off"]`
+  /// only when disabled, so absent means on.
+  final bool goalsEnabled;
+
   const Channel({
     required this.id,
     required this.name,
@@ -45,6 +49,7 @@ class Channel {
     this.isMember = false,
     this.ttlSeconds,
     this.ttlDeadline,
+    this.goalsEnabled = true,
   });
 
   factory Channel.fromJson(Map<String, dynamic> json) => Channel(
@@ -139,6 +144,7 @@ class Channel {
     isMember: isMember,
     ttlSeconds: details.ttlSeconds,
     ttlDeadline: details.ttlDeadline,
+    goalsEnabled: details.goalsEnabled,
   );
 
   Channel copyWith({
@@ -148,6 +154,7 @@ class Channel {
     Object? archivedAt = _sentinel,
     int? memberCount,
     bool? isMember,
+    bool? goalsEnabled,
   }) => Channel(
     id: id,
     name: name ?? this.name,
@@ -170,6 +177,7 @@ class Channel {
     isMember: isMember ?? this.isMember,
     ttlSeconds: ttlSeconds,
     ttlDeadline: ttlDeadline,
+    goalsEnabled: goalsEnabled ?? this.goalsEnabled,
   );
 }
 
@@ -189,6 +197,10 @@ class ChannelDetails {
   final int? ttlSeconds;
   final DateTime? ttlDeadline;
 
+  /// Whether this room tracks goals. Kind 39000 carries `["goals","off"]`
+  /// only when disabled, so absent means on.
+  final bool goalsEnabled;
+
   const ChannelDetails({
     required this.id,
     required this.name,
@@ -203,6 +215,7 @@ class ChannelDetails {
     this.archivedAt,
     this.ttlSeconds,
     this.ttlDeadline,
+    this.goalsEnabled = true,
   });
 
   factory ChannelDetails.fromJson(Map<String, dynamic> json) => ChannelDetails(
@@ -239,5 +252,6 @@ class ChannelDetails {
     archivedAt: channel.archivedAt,
     ttlSeconds: channel.ttlSeconds,
     ttlDeadline: channel.ttlDeadline,
+    goalsEnabled: channel.goalsEnabled,
   );
 }

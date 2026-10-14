@@ -18,6 +18,11 @@ export type Channel = {
   isMember: boolean;
   ttlSeconds: number | null;
   ttlDeadline: string | null;
+  /**
+   * Per-room goals switch. Relays tag kind:39000 with `["goals", "off"]` only
+   * when disabled, so an absent tag (and old relays) means enabled.
+   */
+  goalsEnabled: boolean;
 };
 export type ChannelDetail = Channel & {
   createdBy: string;
@@ -54,6 +59,8 @@ export type UpdateChannelInput = {
   visibility?: ChannelVisibility;
   /** Omit to leave unchanged, `null` to clear (permanent), or a positive number of seconds to set. */
   ttlSeconds?: number | null;
+  /** Omit to leave unchanged; emits `["goals", "on" | "off"]` when set. */
+  goalsEnabled?: boolean;
 };
 
 export type SetChannelTopicInput = {

@@ -57,7 +57,6 @@ import {
   Layer0GoalCard,
   PublicGoalLine,
 } from "@/features/goals/ui/Layer0GoalCard";
-import { FeatureGate } from "@/shared/features/FeatureGate";
 
 export { AgentInstructionsFocusedView } from "@/features/profile/ui/UserProfilePanelAgentDetails";
 
@@ -484,12 +483,12 @@ export function ProfileSummaryView({
       ) : null}
 
       {pubkey ? (
-        <FeatureGate feature="goalTree">
+        <>
           <PublicGoalLine pubkey={pubkey} />
           {isOwner === true && managedAgent ? (
             <Layer0GoalCard agentPubkey={managedAgent.pubkey} />
           ) : null}
-        </FeatureGate>
+        </>
       ) : null}
 
       {showTabSection ? (

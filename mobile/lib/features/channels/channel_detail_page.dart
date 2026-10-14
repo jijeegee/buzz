@@ -24,7 +24,6 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
-import '../goals/goals_preferences.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
 import '../../shared/widgets/bouncing_dots_indicator.dart';
@@ -531,7 +530,7 @@ class ChannelDetailPage extends HookConsumerWidget {
             memberProfilesPreloadState.connectionState !=
                 ConnectionState.done ||
             memberProfilesPreloadState.data != true);
-    final goalsEnabled = ref.watch(goalsEnabledProvider);
+    final goalsEnabled = resolvedChannel.goalsEnabled;
     final showsHuddleAction =
         showsComposer &&
         !isAgentIdentityUnresolved &&

@@ -302,6 +302,7 @@ function MoreActionsMenu({
 
           {canCopyMessageLink(message, channelId) ? (
             <LinkToGoalMenuItem
+              channelId={channelId}
               message={message}
               onSelect={() => setIsGoalPickerOpen(true)}
             />

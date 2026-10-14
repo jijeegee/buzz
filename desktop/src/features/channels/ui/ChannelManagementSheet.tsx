@@ -86,6 +86,8 @@ import {
   useChannelModerationCapabilities,
 } from "./ChannelManagementModerationActions";
 import { ChannelMemberAvatarStack } from "./ChannelMemberAvatarStack";
+import { ChannelGoalsSwitchRow } from "./ChannelGoalsSwitchRow";
+import { useChannelGoalsSwitch } from "./useChannelGoalsSwitch";
 
 type ManagementView = "summary" | "canvas" | "workflows" | "goals";
 
@@ -131,7 +133,6 @@ export function ChannelManagementSheet({
   );
   const channelId = channel?.id ?? null;
   const workflowsEnabled = useFeatureEnabled("workflows");
-  const goalsEnabled = useFeatureEnabled("goalTree");
   const detailsQuery = useChannelDetailsQuery(channelId, open);
   const membersQuery = useChannelMembersQuery(channelId, open);
   const canvasQuery = useCanvasQuery(channelId, channelId !== null && open);
@@ -159,6 +160,9 @@ export function ChannelManagementSheet({
   const { canDeleteChannel, canManageChannel } =
     useChannelModerationCapabilities(membersQuery.data, currentPubkey, open);
   const canEditChannel = canManageChannel && detail?.channelType !== "dm";
+  // Room goal UI (ingress + goals view) follows the per-room switch.
+  const goalsSwitch = useChannelGoalsSwitch(detail, canManageChannel);
+  const goalsEnabled = goalsSwitch.enabled;
   const canEditNarrative =
     canManageChannel && selfMember !== null && detail?.channelType !== "dm";
   const isArchived =
@@ -439,6 +443,10 @@ export function ChannelManagementSheet({
             resolvedChannel={resolvedChannel}
             setActiveView={setActiveView}
             goalsEnabled={goalsEnabled}
+            canToggleGoals={goalsSwitch.canToggle}
+            goalsSwitchError={goalsSwitch.error}
+            isSavingGoals={goalsSwitch.isSaving}
+            onGoalsEnabledChange={goalsSwitch.setEnabled}
             onOpenGoalLink={onOpenGoalLink}
             unarchiveChannelMutation={unarchiveChannelMutation}
           />
@@ -493,6 +501,10 @@ export function ChannelManagementSheet({
               resolvedChannel={resolvedChannel}
               setActiveView={setActiveView}
               goalsEnabled={goalsEnabled}
+              canToggleGoals={goalsSwitch.canToggle}
+              goalsSwitchError={goalsSwitch.error}
+              isSavingGoals={goalsSwitch.isSaving}
+              onGoalsEnabledChange={goalsSwitch.setEnabled}
               onOpenGoalLink={onOpenGoalLink}
               unarchiveChannelMutation={unarchiveChannelMutation}
             />
@@ -660,6 +672,10 @@ type ChannelManagementPanelContentProps = {
   channelId: string | null;
   currentPubkey?: string;
   goalsEnabled: boolean;
+  canToggleGoals: boolean;
+  goalsSwitchError: unknown;
+  isSavingGoals: boolean;
+  onGoalsEnabledChange: (enabled: boolean) => void;
   onOpenGoalLink?: (target: GoalLinkTarget) => void;
   workflowsEnabled: boolean;
   workflowsQuery: {
@@ -705,6 +721,10 @@ function ChannelManagementPanelContent({
   channelId,
   currentPubkey,
   goalsEnabled,
+  canToggleGoals,
+  goalsSwitchError,
+  isSavingGoals,
+  onGoalsEnabledChange,
   onOpenGoalLink,
   workflowsEnabled,
   workflowsQuery,
@@ -845,6 +865,14 @@ function ChannelManagementPanelContent({
                 value={resolvedChannel.id}
               />
             </FieldGroup>
+
+            <ChannelGoalsSwitchRow
+              canToggle={canToggleGoals}
+              checked={goalsEnabled}
+              error={goalsSwitchError}
+              isSaving={isSavingGoals}
+              onCheckedChange={onGoalsEnabledChange}
+            />
 
             {goalsEnabled ? (
               <IngressRow

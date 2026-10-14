@@ -501,6 +501,26 @@ pub async fn handle_req(
                 );
             }
 
+            let goals_off = match channels_with_goals_off(
+                &state,
+                conn.tenant.community(),
+                events
+                    .iter()
+                    .map(|stored| (stored.event.kind.as_u16() as u32, stored.channel_id)),
+            )
+            .await
+            {
+                Ok(goals_off) => goals_off,
+                Err(e) => {
+                    warn!(conn_id = %conn_id, sub_id = %sub_id, "Goals setting lookup failed: {e}");
+                    if e.is_statement_cancelled() {
+                        return true;
+                    }
+                    conn.send(RelayMessage::eose(&sub_id));
+                    return false;
+                }
+            };
+
             for stored in &events {
                 // Per-filter NIP-01 matching — use the current filter only, not the
                 // full filter set. OR semantics across filters are handled by the outer
@@ -522,6 +542,13 @@ pub async fn handle_req(
                 // shared-gate (kind:30175 without ["shared","true"]). Single call
                 // covers all three gated event classes.
                 if !event_visible_to_reader(&stored.event, &pubkey_bytes) {
+                    continue;
+                }
+                if goal_tree_hidden(
+                    &goals_off,
+                    stored.event.kind.as_u16() as u32,
+                    stored.channel_id,
+                ) {
                     continue;
                 }
 
@@ -862,6 +889,21 @@ async fn handle_search_req(
                     );
                 }
 
+                let goals_off = match channels_with_goals_off(
+                    state,
+                    tenant.community(),
+                    events
+                        .iter()
+                        .map(|ev| (ev.event.kind.as_u16() as u32, ev.channel_id)),
+                )
+                .await
+                {
+                    Ok(goals_off) => goals_off,
+                    Err(e) => {
+                        warn!(sub_id = %sub_id, "NIP-50 goals setting lookup failed: {e}");
+                        break;
+                    }
+                };
                 let event_map: std::collections::HashMap<[u8; 32], &buzz_core::StoredEvent> =
                     events
                         .iter()
@@ -888,6 +930,13 @@ async fn handle_search_req(
                     // Result-level gate: covers author-only, persona shared-gate,
                     // and result-gated kinds in one call.
                     if !event_visible_to_reader(&stored.event, reader_pubkey_bytes) {
+                        continue;
+                    }
+                    if goal_tree_hidden(
+                        &goals_off,
+                        stored.event.kind.as_u16() as u32,
+                        stored.channel_id,
+                    ) {
                         continue;
                     }
                     // Dedup AFTER acceptance — an event that fails filter A's constraints
@@ -1708,6 +1757,41 @@ pub(crate) fn event_visible_to_reader(event: &nostr::Event, requester_pubkey_byt
         return false;
     }
     true
+}
+
+/// The channels among `events` (kind, channel) whose goal tree is hidden
+/// because the conversation turned goals off. Only goal tree events cost a
+/// lookup; a channel that no longer exists hides nothing here (channel access
+/// already decides whether its events are readable).
+pub(crate) async fn channels_with_goals_off(
+    state: &AppState,
+    community: buzz_core::tenant::CommunityId,
+    events: impl Iterator<Item = (u32, Option<uuid::Uuid>)>,
+) -> Result<HashSet<uuid::Uuid>, buzz_db::DbError> {
+    let channels: std::collections::BTreeSet<uuid::Uuid> = events
+        .filter(|(kind, _)| *kind == buzz_core::kind::KIND_GOAL_TREE)
+        .filter_map(|(_, channel)| channel)
+        .collect();
+    let mut off = HashSet::new();
+    for channel_id in channels {
+        match state.db.get_channel(community, channel_id).await {
+            Ok(channel) if !channel.goals_enabled => {
+                off.insert(channel_id);
+            }
+            Ok(_) | Err(buzz_db::DbError::ChannelNotFound(_)) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(off)
+}
+
+/// Whether this event is a goal tree of a conversation with goals off.
+pub(crate) fn goal_tree_hidden(
+    goals_off: &HashSet<uuid::Uuid>,
+    kind: u32,
+    channel: Option<uuid::Uuid>,
+) -> bool {
+    kind == buzz_core::kind::KIND_GOAL_TREE && channel.is_some_and(|c| goals_off.contains(&c))
 }
 
 /// Pre-filter authorization for filters that exclusively target author-only kinds.

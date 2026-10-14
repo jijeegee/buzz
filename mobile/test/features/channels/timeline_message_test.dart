@@ -185,6 +185,24 @@ void main() {
       }
     });
 
+    test('parses a goals switch with its value', () {
+      final event = SystemEvent.fromContent(
+        jsonEncode({'type': 'goals_changed', 'actor': 'pk1', 'goals': 'off'}),
+      );
+      expect(event, isNotNull);
+      expect(event!.type, SystemEventType.goalsChanged);
+      expect(event.goals, 'off');
+    });
+
+    test('drops a goals switch with an unknown value', () {
+      for (final goals in [null, 'maybe']) {
+        final event = SystemEvent.fromContent(
+          jsonEncode({'type': 'goals_changed', 'actor': 'pk1', 'goals': goals}),
+        );
+        expect(event, isNull, reason: 'goals: $goals');
+      }
+    });
+
     test('returns null for unknown type', () {
       final event = SystemEvent.fromContent(
         jsonEncode({'type': 'unknown_type'}),
@@ -357,6 +375,17 @@ void main() {
         actorPubkey: 'pk1',
       );
       expect(event.describe(resolve), 'Alice unarchived this channel');
+    });
+
+    test('goals_changed', () {
+      for (final goals in ['on', 'off']) {
+        final event = SystemEvent(
+          type: SystemEventType.goalsChanged,
+          actorPubkey: 'pk1',
+          goals: goals,
+        );
+        expect(event.describe(resolve), 'Alice turned goals $goals');
+      }
     });
 
     test('huddle_started', () {
