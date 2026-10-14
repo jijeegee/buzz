@@ -254,7 +254,7 @@ pub(crate) fn render_goal_context(
 const GOALS_CHANGED: &str = "The goals changed. This replaces every earlier goal context.";
 /// First line of a `<goal-context>` for a session that may hold goals nobody
 /// recorded (reattached after a restart).
-const GOALS_RESTATED: &str = "These goals replace any earlier goal context.";
+pub(crate) const GOALS_RESTATED: &str = "These goals replace any earlier goal context.";
 /// The whole `<goal-context>` once a session's conversation lost its goals.
 const GOALS_CLEARED: &str =
     "This conversation no longer has goals; earlier goal context no longer applies.";
@@ -371,6 +371,24 @@ pub(crate) fn goal_context_for_turn(
         None if now.off && held_goals => Some(GOALS_OFF.to_string()),
         None if seen.is_some_and(|seen| seen.tree.is_some()) => Some(GOALS_CLEARED.to_string()),
         None => None,
+    }
+}
+
+/// The `<goal-context>` a turn sends to a session whose system prompt already
+/// holds the goals `now` (Claude Code). Goals that also reached its messages
+/// (`in_messages`) and are now removed or turned off are announced once, since
+/// the system prompt only shows them gone by leaving them out. Removal is
+/// announced only when goals are known to be there (`known`), so a restart
+/// does not tell a conversation without goals that its goals are gone.
+pub(crate) fn goal_removal_notice(
+    in_messages: bool,
+    known: bool,
+    now: &GoalsNow,
+) -> Option<String> {
+    match &now.rendered {
+        None if in_messages && now.off => Some(GOALS_OFF.to_string()),
+        None if in_messages && known => Some(GOALS_CLEARED.to_string()),
+        _ => None,
     }
 }
 

@@ -72,6 +72,7 @@ async fn pi_composed_prompt_uses_meta_without_capability_negotiation() {
             Some(core),
             NewSessionChannelContext {
                 goals: None,
+                roster: None,
                 huddle_instructions: Some("BUZZ_HUDDLE"),
                 canvas: Some(canvas),
                 name: Some("channel"),
@@ -97,6 +98,8 @@ async fn pi_composed_prompt_uses_meta_without_capability_negotiation() {
             agent_core: Some(core),
             huddle_instructions: Some("BUZZ_HUDDLE"),
             agent_canvas: Some(canvas),
+            channel_roster: None,
+            layer0_goals: None,
         };
         let user = prepend_standing_for_legacy(2, &standing, "EVENT");
         for marker in [
@@ -278,6 +281,7 @@ async fn real_pi_preserves_buzz_prompt_and_launch_skills_on_restore() {
         Some("<core-memory>BUZZ_CORE</core-memory>"),
         NewSessionChannelContext {
             goals: None,
+            roster: None,
             huddle_instructions: Some("BUZZ_HUDDLE"),
             canvas: Some("<channel-canvas>BUZZ_CANVAS</channel-canvas>"),
             name: None,
