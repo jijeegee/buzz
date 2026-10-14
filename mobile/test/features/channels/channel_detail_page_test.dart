@@ -49,6 +49,7 @@ import 'package:buzz/features/channels/mobile_huddle_controller.dart';
 import 'package:buzz/features/channels/reaction_row.dart';
 import 'package:buzz/features/channels/thread_detail_page.dart';
 import 'package:buzz/features/channels/thread_replies_provider.dart';
+import 'package:buzz/features/channels/thread_window.dart';
 import 'package:buzz/features/channels/timeline_message.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:buzz/shared/read_state/read_state_provider.dart';
@@ -252,6 +253,8 @@ Widget _buildTestable({
   Map<String, Future<List<NostrEvent>> Function()> threadReplyLoaders =
       const {},
   Map<String, List<NostrEvent>> localThreadReplies = const {},
+  Map<String, ThreadWindowNotifier Function(ThreadRepliesArgs)> threadWindows =
+      const {},
   TextScaler textScaler = TextScaler.noScaling,
   bool disableAnimations = false,
   bool disableRetries = false,
@@ -352,6 +355,14 @@ Widget _buildTestable({
         threadRepliesProvider(
           ThreadRepliesArgs(channelId: _channelId, rootId: entry.key),
         ).overrideWith((ref) => entry.value()),
+      for (final entry in threadWindows.entries)
+        threadWindowProvider(
+          ThreadRepliesArgs(channelId: _channelId, rootId: entry.key),
+        ).overrideWith(
+          () => entry.value(
+            ThreadRepliesArgs(channelId: _channelId, rootId: entry.key),
+          ),
+        ),
       for (final entry in localThreadReplies.entries)
         threadLocalRepliesProvider(
           ThreadRepliesArgs(channelId: _channelId, rootId: entry.key),
@@ -12523,12 +12534,14 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final list = find.byKey(const ValueKey('thread-message-list'));
-        await tester.drag(list, const Offset(0, -100));
+        // A slow relay reveals the provisional replies at their newest; read
+        // back up.
+        await tester.pump(const Duration(milliseconds: 1300));
         await tester.pumpAndSettle();
-        final anchor = find.byKey(
-          const ValueKey('thread-message-group-reply-10'),
-        );
+        final list = find.byKey(const ValueKey('thread-message-list'));
+        await tester.drag(list, const Offset(0, 300));
+        await tester.pumpAndSettle();
+        final anchor = _firstOnScreenReply(tester, 30);
         final anchorTop = tester.getTopLeft(anchor).dy;
 
         completer.complete(replies);
@@ -12537,8 +12550,11 @@ void main() {
         expect(anchor, findsOneWidget);
         expect(tester.getTopLeft(anchor).dy, closeTo(anchorTop, 0.5));
         expect(
-          find.byKey(const ValueKey('thread-message-group-reply-34')),
-          findsNothing,
+          _isOnScreen(
+            tester,
+            find.byKey(const ValueKey('thread-message-group-reply-34')),
+          ),
+          isFalse,
         );
 
         // Drag past the tail; extra drags clamp at the end of the list.
@@ -12634,6 +12650,344 @@ void main() {
       expect(tester.getTopLeft(anchor).dy, closeTo(anchorTop, 0.5));
     });
 
+    testWidgets(
+      'a long thread opens at its newest reply without the head first',
+      (tester) async {
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final rootEvent = _textMsg(
+          id: 'thread-root',
+          pubkey: 'alice',
+          content: 'Thread root',
+          createdAt: 1000,
+        );
+        final replies = [
+          for (var i = 0; i < 60; i++)
+            _textMsg(
+              id: 'reply-$i',
+              pubkey: 'bob',
+              content: 'Reply $i',
+              createdAt: 1100 + i,
+              extraTags: const [
+                ['e', 'thread-root', '', 'reply'],
+              ],
+            ),
+        ];
+        final completer = Completer<List<NostrEvent>>();
+        await tester.pumpWidget(
+          _buildTestable(
+            messages: [rootEvent],
+            pendingThreadReplies: {'thread-root': completer.future},
+            users: const {
+              'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
+              'bob': UserProfile(pubkey: 'bob', displayName: 'Bob'),
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final provisional = formatTimeline([rootEvent, ...replies.take(40)]);
+        Navigator.of(tester.element(find.byType(ChannelDetailPage))).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ThreadDetailPage(
+              threadHead: provisional.first,
+              allMessages: provisional,
+              channelId: _channelId,
+              currentPubkey: 'self',
+              isMember: true,
+              isArchived: false,
+            ),
+          ),
+        );
+        final head = find.byKey(
+          const ValueKey('thread-message-group-thread-root'),
+        );
+        final gate = find.byKey(const ValueKey('thread-initial-viewport-gate'));
+        // Frame by frame through the open and the relay landing: whenever the
+        // list is painted, the head is not on screen.
+        for (var frame = 0; frame < 40; frame++) {
+          if (frame == 20) completer.complete(replies);
+          await tester.pump(const Duration(milliseconds: 16));
+          if (gate.evaluate().isEmpty) continue;
+          final painted = tester.widget<Opacity>(gate).opacity > 0;
+          if (painted) {
+            expect(_isOnScreen(tester, head), isFalse, reason: 'frame $frame');
+          }
+        }
+        await tester.pumpAndSettle();
+        expect(tester.widget<Opacity>(gate).opacity, 1);
+        expect(
+          _isOnScreen(
+            tester,
+            find.byKey(const ValueKey('thread-message-group-reply-59')),
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    testWidgets('older replies fold in above without moving the read reply', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final rootEvent = _textMsg(
+        id: 'thread-root',
+        pubkey: 'alice',
+        content: 'Thread root',
+        createdAt: 1000,
+      );
+      NostrEvent reply(int i) => _textMsg(
+        id: 'reply-$i',
+        pubkey: i.isEven ? 'bob' : 'alice',
+        content: 'Reply $i',
+        createdAt: 1100 + i,
+        extraTags: const [
+          ['e', 'thread-root', '', 'reply'],
+        ],
+      );
+      final newest = [for (var i = 50; i < 100; i++) reply(i)];
+      final older = [for (var i = 0; i < 50; i++) reply(i)];
+      final release = Completer<void>();
+      late _FakeThreadWindowNotifier window;
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [rootEvent],
+          threadReplies: {'thread-root': newest},
+          threadWindows: {
+            'thread-root': (args) => window = _FakeThreadWindowNotifier(
+              args,
+              initial: newest,
+              older: older,
+              release: release.future,
+            ),
+          },
+          users: const {
+            'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
+            'bob': UserProfile(pubkey: 'bob', displayName: 'Bob'),
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      final head = formatTimeline([rootEvent]).single;
+      Navigator.of(tester.element(find.byType(ChannelDetailPage))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ThreadDetailPage(
+            threadHead: head,
+            allMessages: [head],
+            channelId: _channelId,
+            currentPubkey: 'self',
+            isMember: true,
+            isArchived: false,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        _isOnScreen(
+          tester,
+          find.byKey(const ValueKey('thread-message-group-reply-99')),
+        ),
+        isTrue,
+      );
+      expect(window.olderRequests, 0);
+
+      // Read back up to the top of the loaded replies.
+      final list = find.byKey(const ValueKey('thread-message-list'));
+      for (var i = 0; i < 40 && window.olderRequests == 0; i++) {
+        await tester.drag(list, const Offset(0, 400));
+        await tester.pumpAndSettle();
+      }
+      expect(window.olderRequests, 1);
+      final read = _firstOnScreenReplyFrom(tester, 50, 100);
+      final readTop = tester.getTopLeft(read).dy;
+
+      release.complete();
+      await tester.pumpAndSettle();
+
+      expect(read, findsOneWidget);
+      expect(tester.getTopLeft(read).dy, closeTo(readTop, 1));
+      expect(
+        find.byKey(const ValueKey('thread-message-group-reply-0')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'a link to a reply older than the newest page walks back to it',
+      (tester) async {
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final rootEvent = _textMsg(
+          id: 'thread-root',
+          pubkey: 'alice',
+          content: 'Thread root',
+          createdAt: 1000,
+        );
+        NostrEvent reply(int i) => _textMsg(
+          id: 'reply-$i',
+          pubkey: 'bob',
+          content: 'Reply $i',
+          createdAt: 1100 + i,
+          extraTags: const [
+            ['e', 'thread-root', '', 'reply'],
+          ],
+        );
+        final newest = [for (var i = 50; i < 100; i++) reply(i)];
+        final older = [for (var i = 0; i < 50; i++) reply(i)];
+        late _FakeThreadWindowNotifier window;
+        await tester.pumpWidget(
+          _buildTestable(
+            messages: [rootEvent],
+            threadReplies: {'thread-root': newest},
+            threadWindows: {
+              'thread-root': (args) => window = _FakeThreadWindowNotifier(
+                args,
+                initial: newest,
+                older: older,
+                release: Future<void>.value(),
+              ),
+            },
+            users: const {
+              'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
+              'bob': UserProfile(pubkey: 'bob', displayName: 'Bob'),
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        final head = formatTimeline([rootEvent]).single;
+        Navigator.of(tester.element(find.byType(ChannelDetailPage))).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ThreadDetailPage(
+              threadHead: head,
+              allMessages: [head],
+              channelId: _channelId,
+              currentPubkey: 'self',
+              isMember: true,
+              isArchived: false,
+              initialMessageId: 'reply-10',
+            ),
+          ),
+        );
+        // The walk back happens hidden: the head never paints first.
+        final gate = find.byKey(const ValueKey('thread-initial-viewport-gate'));
+        final headRow = find.byKey(
+          const ValueKey('thread-message-group-thread-root'),
+        );
+        for (var frame = 0; frame < 40; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          if (gate.evaluate().isEmpty) continue;
+          if (tester.widget<Opacity>(gate).opacity > 0) {
+            expect(
+              _isOnScreen(tester, headRow),
+              isFalse,
+              reason: 'frame $frame',
+            );
+          }
+        }
+        await tester.pumpAndSettle();
+
+        expect(window.olderRequests, 1);
+        expect(
+          _isOnScreen(
+            tester,
+            find.byKey(const ValueKey('thread-message-group-reply-10')),
+          ),
+          isTrue,
+        );
+        // Landed on the linked reply, not revealed at the head.
+        expect(
+          _isOnScreen(
+            tester,
+            find.byKey(const ValueKey('thread-message-group-thread-root')),
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    testWidgets(
+      'a reply the newest page dropped does not return from the channel cache',
+      (tester) async {
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final rootEvent = _textMsg(
+          id: 'thread-root',
+          pubkey: 'alice',
+          content: 'Thread root',
+          createdAt: 1000,
+        );
+        NostrEvent reply(int i) => _textMsg(
+          id: 'reply-$i',
+          pubkey: 'bob',
+          content: 'Reply $i',
+          createdAt: 1100 + i,
+          extraTags: const [
+            ['e', 'thread-root', '', 'reply'],
+          ],
+        );
+        // The relay page no longer has reply 97 (deleted while away); the
+        // channel cache still does, and also holds an older cached reply.
+        final newest = [
+          for (var i = 50; i < 100; i++)
+            if (i != 97) reply(i),
+        ];
+        await tester.pumpWidget(
+          _buildTestable(
+            messages: [rootEvent, reply(97), reply(5)],
+            threadReplies: {'thread-root': newest},
+            threadWindows: {
+              'thread-root': (args) => _FakeThreadWindowNotifier(
+                args,
+                initial: newest,
+                older: const [],
+                release: Completer<void>().future,
+              ),
+            },
+            users: const {
+              'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
+              'bob': UserProfile(pubkey: 'bob', displayName: 'Bob'),
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        final head = formatTimeline([rootEvent]).single;
+        Navigator.of(tester.element(find.byType(ChannelDetailPage))).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ThreadDetailPage(
+              threadHead: head,
+              allMessages: [head],
+              channelId: _channelId,
+              currentPubkey: 'self',
+              isMember: true,
+              isArchived: false,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          _isOnScreen(
+            tester,
+            find.byKey(const ValueKey('thread-message-group-reply-99')),
+          ),
+          isTrue,
+        );
+        expect(
+          find.byKey(const ValueKey('thread-message-group-reply-97')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('thread-message-group-reply-5')),
+          findsNothing,
+        );
+      },
+    );
+
     testWidgets('user drag invalidates an already queued hydration settle', (
       tester,
     ) async {
@@ -12684,9 +13038,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final anchor = find.byKey(
-        const ValueKey('thread-message-group-thread-root'),
-      );
+      // The provisional replies open at their newest reply.
+      final anchor = _firstOnScreenReply(tester, 30);
       final anchorTop = tester.getTopLeft(anchor).dy;
       completer.complete(replies);
       await tester.pump();
@@ -12701,8 +13054,11 @@ void main() {
       expect(anchor, findsOneWidget);
       expect(tester.getTopLeft(anchor).dy, closeTo(anchorTop, 0.5));
       expect(
-        find.byKey(const ValueKey('thread-message-group-reply-34')),
-        findsNothing,
+        _isOnScreen(
+          tester,
+          find.byKey(const ValueKey('thread-message-group-reply-34')),
+        ),
+        isFalse,
       );
     });
 
@@ -15173,6 +15529,43 @@ class _FakeThreadLocalRepliesNotifier extends ThreadLocalRepliesNotifier {
   List<NostrEvent> build() => _replies;
 }
 
+/// A thread window that starts with [initial] (older replies remain) and
+/// folds in [older] once [release] completes.
+class _FakeThreadWindowNotifier extends ThreadWindowNotifier {
+  _FakeThreadWindowNotifier(
+    super.args, {
+    required this.initial,
+    required this.older,
+    required this.release,
+  });
+
+  final List<NostrEvent> initial;
+  final List<NostrEvent> older;
+  final Future<void> release;
+  var olderRequests = 0;
+
+  @override
+  ThreadWindow? build() => ThreadWindow(
+    events: initial,
+    state: ThreadWindowState(
+      hasOlder: true,
+      olderCursor: ThreadWindowCursor.of(initial.first),
+      newestCovered: ThreadWindowCursor.of(initial.last),
+    ),
+  );
+
+  @override
+  Future<bool> loadOlder() async {
+    olderRequests++;
+    await release;
+    state = ThreadWindow(
+      events: [...older, ...initial],
+      state: const ThreadWindowState(hasOlder: false),
+    );
+    return true;
+  }
+}
+
 class _FakeMessagesNotifier extends ChannelMessagesNotifier {
   List<NostrEvent> _messages;
   bool _hasLoadedMessages;
@@ -16149,4 +16542,36 @@ String _previewRowAvatarInitial(WidgetTester tester, String pubkey) {
     find.descendant(of: avatar, matching: find.byType(Text)),
   );
   return initial.data!;
+}
+
+/// The first provisional reply whose top edge lies on screen.
+Finder _firstOnScreenReply(WidgetTester tester, int count) {
+  final height = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+  for (var i = 0; i < count; i++) {
+    final finder = find.byKey(ValueKey('thread-message-group-reply-$i'));
+    if (finder.evaluate().isEmpty) continue;
+    final top = tester.getTopLeft(finder).dy;
+    if (top > 120 && top < height - 200) return finder;
+  }
+  throw StateError('no provisional reply on screen');
+}
+
+/// Whether the reply is laid out inside the visible screen.
+bool _isOnScreen(WidgetTester tester, Finder finder) {
+  if (finder.evaluate().isEmpty) return false;
+  final height = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+  final top = tester.getTopLeft(finder).dy;
+  return top >= 0 && top < height;
+}
+
+/// The first reply in [from]..[to) whose top edge lies on screen.
+Finder _firstOnScreenReplyFrom(WidgetTester tester, int from, int to) {
+  final height = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+  for (var i = from; i < to; i++) {
+    final finder = find.byKey(ValueKey('thread-message-group-reply-$i'));
+    if (finder.evaluate().isEmpty) continue;
+    final top = tester.getTopLeft(finder).dy;
+    if (top > 120 && top < height - 200) return finder;
+  }
+  throw StateError('no reply on screen');
 }

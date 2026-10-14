@@ -10,6 +10,10 @@ class _ThreadMessageList extends StatelessWidget {
   final double bottomInset;
   final List<TimelineMessage> replies;
   final AsyncValue<List<NostrEvent>> relayReplyState;
+
+  /// Older replies remain on the relay; they load as the head comes into view.
+  final bool hasOlderReplies;
+  final bool isLoadingOlderReplies;
   final VoidCallback onRetryReplies;
   final Map<String, DateTime> localSendAnimations;
   final Widget Function(Widget child) trackActiveScrollPosition;
@@ -40,6 +44,8 @@ class _ThreadMessageList extends StatelessWidget {
     required this.bottomInset,
     required this.replies,
     required this.relayReplyState,
+    this.hasOlderReplies = false,
+    this.isLoadingOlderReplies = false,
     required this.onRetryReplies,
     required this.localSendAnimations,
     required this.trackActiveScrollPosition,
@@ -60,6 +66,11 @@ class _ThreadMessageList extends StatelessWidget {
   });
 
   String get _replySummary {
+    if (hasOlderReplies) {
+      return isLoadingOlderReplies
+          ? 'Loading earlier replies…'
+          : 'Earlier replies load as you scroll up';
+    }
     if (!relayReplyState.hasValue && replies.isEmpty) {
       return relayReplyState.isLoading
           ? 'Loading replies…'

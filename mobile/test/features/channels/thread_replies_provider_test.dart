@@ -25,6 +25,11 @@ class _FakeRelaySession extends RelaySessionNotifier {
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 8),
   }) async {
+    // A relay without thread windows: the thread query falls back to its
+    // complete scan, which these tests exercise.
+    if (filters.any((filter) => filter.extensions['thread_window'] == true)) {
+      return const [];
+    }
     queryCount++;
     filtersSeen.addAll(filters);
     final gate = nextQueryGate;
