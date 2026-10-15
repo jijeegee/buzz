@@ -197,8 +197,8 @@ function PreviewBody({
         >
           <p className="text-sm font-medium">Respond-to allowlist</p>
           <p className="text-xs text-muted-foreground">
-            This snapshot includes source-environment pubkey allowlists for one
-            or more members. Those identities are not meaningful on your relay.
+            This snapshot lists people from another workspace who may not exist
+            here.
           </p>
           <div className="flex flex-col gap-1.5">
             <label className="flex cursor-pointer items-center gap-2">

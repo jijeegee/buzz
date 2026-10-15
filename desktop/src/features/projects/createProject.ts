@@ -71,9 +71,7 @@ async function publishProjectEvent(event: RelayEvent) {
     );
   } catch (error) {
     if (isUnsupportedProjectKindError(error)) {
-      throw new Error(
-        "This relay does not support projects yet, so a project channel cannot be published here.",
-      );
+      throw new Error("Projects aren't available in this community yet.");
     }
     throw error;
   }
@@ -182,9 +180,7 @@ async function ensureDefaultRepository({
     project.dtag,
   );
   if (!liveHead) {
-    throw new Error(
-      "Could not find this project on the relay. Refresh and try again.",
-    );
+    throw new Error("Couldn't find this project. Refresh and try again.");
   }
   const patched = buildProjectPatchTemplate({
     liveHead,

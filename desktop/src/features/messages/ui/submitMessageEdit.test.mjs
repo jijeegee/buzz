@@ -283,7 +283,10 @@ for (const replacement of ["hello", "hello @Alice"]) {
   });
 }
 
-test("send/reopen/edit preserves distinct same-name refs independently of tag order", async () => {
+// Kuzz numbers a second same-name pick ("Scout (2)") instead of embedding its
+// key, so a reopened message cannot re-derive which tagged Scout owns which
+// label. Both stay as reference recipients and nobody is re-notified.
+test("send/reopen/edit keeps both same-name recipients as references", async () => {
   const {
     buildEditMentionState,
     replaceWithDraftMentionRefs,
@@ -311,13 +314,8 @@ test("send/reopen/edit preserves distinct same-name refs independently of tag or
       { [a]: { displayName: "Scout" }, [b]: { displayName: "Scout" } },
       () => false,
     );
-    assert.deepEqual(
-      new Map(
-        editTarget.mentionRefs.map((ref) => [ref.displayName, ref.pubkey]),
-      ),
-      bindings,
-    );
-    assert.deepEqual(editTarget.unresolvedMentionPubkeys, []);
+    assert.equal(label, "Scout (2)");
+    assert.deepEqual([...editTarget.unresolvedMentionPubkeys].sort(), [a, b]);
     const restored = new Map();
     replaceWithDraftMentionRefs(editTarget.mentionRefs, restored, new Map());
     let saved;
@@ -334,8 +332,10 @@ test("send/reopen/edit preserves distinct same-name refs independently of tag or
           selectedMentions: restored,
           memberCandidates: [],
         }),
-      getMentionRefs: (text) => snapshotDraftMentionRefs(text, restored, []),
+      getMentionRefs: (text, fallback) =>
+        snapshotDraftMentionRefs(text, restored, [], [], [], fallback),
     });
+    assert.ok(saved, "the edit must save");
     assert.deepEqual(saved.tags.map((tag) => tag[1]).sort(), [a, b]);
     assert.deepEqual(saved.mentionPubkeys, []); // references, not fresh notifying p-tags
     const reopened = buildEditMentionState(
@@ -344,10 +344,14 @@ test("send/reopen/edit preserves distinct same-name refs independently of tag or
       { [a]: { displayName: "Scout" }, [b]: { displayName: "Renamed Scout" } },
       () => false,
     );
+    // After b's rename only a is named Scout, so "@Scout" binds a and b stays
+    // a reference recipient.
     assert.deepEqual(
-      new Map(reopened.mentionRefs.map((ref) => [ref.displayName, ref.pubkey])),
-      bindings,
+      reopened.mentionRefs.map((ref) => ref.pubkey),
+      [a],
     );
+    assert.deepEqual(reopened.unresolvedMentionPubkeys, [b]);
+    assert.doesNotMatch(saved.content, /[0-9a-f]{64}|npub1/);
   }
 });
 

@@ -8,6 +8,7 @@ import {
 } from "@/features/onboarding/communityOnboarding";
 import { initializeStarterChannels } from "@/features/onboarding/hooks";
 import { useClaimInvite } from "@/features/onboarding/useClaimInvite";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { CommunityChangeOverlay } from "@/features/communities/ui/CommunityChangeOverlay";
 import {
   takePendingWelcomeChannelForDirectEntry,
@@ -191,8 +192,9 @@ export function CommunityOnboardingFlow({
   const checkedProfileTransactionRef = React.useRef<string | null>(null);
   const [starterChannelFailureCount, setStarterChannelFailureCount] =
     React.useState(0);
-  const [deniedPubkey, setDeniedPubkey] = React.useState("");
   const [isMembershipDenied, setIsMembershipDenied] = React.useState(false);
+  // One built-in server: no server names and no way to change server.
+  const singleServer = useBuiltInServer() !== null;
   const [isCommunityChangeOpen, setIsCommunityChangeOpen] =
     React.useState(false);
   const [isCurtainFading, setIsCurtainFading] = React.useState(false);
@@ -400,7 +402,9 @@ export function CommunityOnboardingFlow({
         <MembershipDenied
           activeRelayUrl={transaction.relayUrl}
           onBack={() => setIsMembershipDenied(false)}
-          onChangeCommunity={() => setIsCommunityChangeOpen(true)}
+          onChangeCommunity={
+            singleServer ? undefined : () => setIsCommunityChangeOpen(true)
+          }
           onImportKey={async (nsec) => {
             const identity = await importIdentity(nsec);
             relayClient.disconnect();
@@ -413,9 +417,8 @@ export function CommunityOnboardingFlow({
             setIsMembershipDenied(false);
             update({ stage: "connecting", error: undefined });
           }}
-          pubkey={deniedPubkey}
         />
-        {isCommunityChangeOpen ? (
+        {isCommunityChangeOpen && !singleServer ? (
           <CommunityChangeOverlay
             onClose={() => setIsCommunityChangeOpen(false)}
             onUpdated={(communityName, updatedRelayUrl) => {
@@ -469,12 +472,6 @@ export function CommunityOnboardingFlow({
       update({ stage: "team-intro", error: undefined });
     } catch (error) {
       if (isRelayMembershipDeniedError(error)) {
-        try {
-          const identity = await getIdentity();
-          setDeniedPubkey(identity.pubkey);
-        } catch {
-          setDeniedPubkey("");
-        }
         setIsMembershipDenied(true);
         return;
       }
@@ -537,7 +534,9 @@ export function CommunityOnboardingFlow({
               <>
                 <Users aria-hidden="true" className="mx-auto h-10 w-10" />
                 <h1 className="mt-5 text-title font-normal">
-                  Joining {transaction.communityName}
+                  {singleServer
+                    ? "Setting things up"
+                    : `Joining ${transaction.communityName}`}
                 </h1>
                 <p
                   className="mt-3 text-sm text-foreground/80"
@@ -554,15 +553,18 @@ export function CommunityOnboardingFlow({
                       Retry
                     </Button>
                   ) : null}
-                  <Button
-                    className="rounded-full bg-foreground/10 px-5 hover:bg-foreground/15"
-                    onClick={onCancel}
-                    variant="ghost"
-                  >
-                    {transaction.source === "default-community"
-                      ? "Advanced setup"
-                      : "Cancel"}
-                  </Button>
+                  {singleServer &&
+                  transaction.source === "default-community" ? null : (
+                    <Button
+                      className="rounded-full bg-foreground/10 px-5 hover:bg-foreground/15"
+                      onClick={onCancel}
+                      variant="ghost"
+                    >
+                      {transaction.source === "default-community"
+                        ? "Advanced setup"
+                        : "Cancel"}
+                    </Button>
+                  )}
                 </div>
               </>
             ) : isProfileStage ? (

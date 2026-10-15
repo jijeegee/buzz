@@ -3,6 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 
 import { accountLabel } from "@/features/accounts/lib/accountLabels";
 import { defaultReadThreadRelationships } from "@/features/communities/communityUnreadObserver";
+import {
+  isAllowedServer,
+  useBuiltInServer,
+} from "@/features/communities/builtInServer";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { readStoredNotificationSettings } from "@/features/notifications/hooks";
 import { sendDesktopNotification } from "@/features/notifications/lib/desktop";
@@ -119,15 +123,18 @@ export function useInactiveAccountWatch(enabled: boolean): void {
     };
   }, [enabled, openOrigin]);
 
+  // With a built-in server, accounts on any other server are never
+  // connected to, not even read-only.
+  const builtInServer = useBuiltInServer();
   const targets = React.useMemo(
     () =>
       enabled && openPubkey
         ? watchTargets(accounts, communities, {
             origin: openOrigin,
             pubkey: openPubkey,
-          })
+          }).filter((target) => isAllowedServer(target.relayUrl, builtInServer))
         : [],
-    [enabled, accounts, communities, openOrigin, openPubkey],
+    [enabled, accounts, builtInServer, communities, openOrigin, openPubkey],
   );
 
   React.useEffect(() => {

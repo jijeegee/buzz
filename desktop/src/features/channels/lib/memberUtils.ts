@@ -2,8 +2,8 @@ import type { ChannelMember } from "@/shared/api/types";
 import {
   canonicalNpub,
   normalizePubkey,
-  truncateNpub,
   UNAVAILABLE_KEY_LABEL,
+  UNKNOWN_USER_LABEL,
 } from "@/shared/lib/pubkey";
 
 export const roleOrder: Record<ChannelMember["role"], number> = {
@@ -22,7 +22,7 @@ export function formatMemberName(
     return "You";
   }
 
-  return member.displayName ?? truncateNpub(member.pubkey);
+  return member.displayName ?? UNKNOWN_USER_LABEL;
 }
 
 /**

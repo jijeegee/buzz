@@ -34,7 +34,7 @@ import type { HuddleAgentVoiceSettings } from "./AgentVoiceMenu";
 import { MicControls, SpeakerControls } from "./MicControls";
 import { HuddleParticipantsControl } from "./ParticipantList";
 import { beginChannelMembershipWrite } from "@/shared/api/channelMembershipWrites";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 
 // Mirrors HuddleState in src-tauri/src/huddle/mod.rs.
 type HuddleState = {
@@ -99,7 +99,7 @@ function clampReactionName(name: string): string {
 }
 
 function fallbackNameForPubkey(pubkey?: string | null): string {
-  return pubkey ? `Participant ${truncateNpub(pubkey)}` : "Someone";
+  return pubkey ? UNKNOWN_USER_LABEL : "Someone";
 }
 
 function parseHuddleReactionEvent(event: RelayEvent) {

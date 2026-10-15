@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { npubEncode } from "nostr-tools/nip19";
 
-import { truncateNpub } from "../../src/shared/lib/pubkey";
 import { waitForAnimations } from "../helpers/animations";
 import {
   installMockBridge,
@@ -14,7 +13,7 @@ const SHOTS = "test-results/pubkey-display";
 const AGENT_PUBKEY = "cafef00d".repeat(8);
 
 // Screenshot evidence for the pubkey-display work: the canonical profile
-// surfaces, plus the new-DM recipient identity-hover states retained by it.
+// surfaces, plus the new-DM recipient rows (names only, never key text).
 
 test("profile panel Public key row reveals its copy action on hover", async ({
   page,
@@ -42,7 +41,7 @@ test("profile panel Public key row reveals its copy action on hover", async ({
   });
 });
 
-test("new-DM agent name swaps to its public key on name hover", async ({
+test("new-DM agent name stays a name on hover, never key text", async ({
   page,
 }) => {
   // Agent rows only surface when the agent is mentionable, so seed a managed
@@ -89,44 +88,15 @@ test("new-DM agent name swaps to its public key on name hover", async ({
     .toBe(true);
 
   const agentName = agentResult.getByTestId(`new-dm-name-${AGENT_PUBKEY}`);
-  const agentNpub = agentResult.getByTestId(`new-dm-npub-${AGENT_PUBKEY}`);
   await expect(agentResult).toContainText("managed by you");
-  await expect(agentName).toContainText("Pinky");
-  await expect(agentNpub).toHaveCSS("opacity", "0");
-
-  const agentNameBox = await agentName.boundingBox();
-  const agentResultBox = await agentResult.boundingBox();
-  expect(agentNameBox).not.toBeNull();
-  expect(agentResultBox).not.toBeNull();
-  if (!agentNameBox || !agentResultBox) return;
-  expect(agentNameBox.width).toBeLessThan(agentResultBox.width / 2);
-  await page.mouse.move(
-    agentResultBox.x + agentResultBox.width - 12,
-    agentNameBox.y + agentNameBox.height / 2,
-  );
-  await expect(agentNpub).toHaveCSS("opacity", "0");
-
-  // Acquire fresh locators after the directory queries settle: the result row
-  // can be replaced while the initial loading skeleton is transitioning out.
-  const settledAgentResult = page.getByTestId(`new-dm-result-${AGENT_PUBKEY}`);
-  const settledAgentName = settledAgentResult.getByTestId(
-    `new-dm-name-${AGENT_PUBKEY}`,
-  );
-  const settledAgentNpub = settledAgentResult.getByTestId(
-    `new-dm-npub-${AGENT_PUBKEY}`,
-  );
-  await settledAgentName.hover();
-  await expect
-    .poll(async () =>
-      settledAgentName.evaluate((element) => element.matches(":hover")),
-    )
-    .toBe(true);
-  await expect(settledAgentNpub).not.toHaveCSS("opacity", "0");
-  await expect(settledAgentNpub).toHaveText(truncateNpub(AGENT_PUBKEY));
+  await expect(agentName).toHaveText("Pinky");
+  // The name never swaps to key text: there is no key element to reveal.
   await expect(
-    settledAgentName.getByText("Pinky", { exact: true }),
-  ).not.toHaveCSS("opacity", "1");
-  await expect(settledAgentResult).toContainText("managed by you");
+    agentResult.getByTestId(`new-dm-npub-${AGENT_PUBKEY}`),
+  ).toHaveCount(0);
+  await agentName.hover();
+  await expect(agentName).toHaveText("Pinky");
+  await expect(agentResult).not.toContainText("npub1");
   await waitForAnimations(page);
   await page.getByTestId("new-message-page").screenshot({
     path: `${SHOTS}/new-dm-agent-name-hover.png`,
@@ -153,17 +123,13 @@ test("selected new-DM recipient can be verified again through search", async ({
     `new-dm-npub-${TEST_IDENTITIES.charlie.pubkey}`,
   );
 
-  // The same name-to-key swap is available in the unfiltered directory,
-  // before the user has typed anything.
+  // Directory rows show the name only — hovering never reveals key text.
   await expect(charlieResult).toBeVisible();
-  await expect(charlieNpub).toHaveCSS("opacity", "0");
+  await expect(charlieNpub).toHaveCount(0);
   await charlieName.hover();
-  await expect(charlieNpub).toHaveCSS("opacity", "1");
-  await expect(charlieNpub).toHaveText(
-    truncateNpub(TEST_IDENTITIES.charlie.pubkey),
-  );
+  await expect(charlieName).toHaveText("charlie");
+  await expect(charlieResult).not.toContainText("npub1");
   await page.mouse.move(1_100, 500);
-  await expect(charlieNpub).toHaveCSS("opacity", "0");
 
   await search.fill("charlie");
   await expect(charlieResult).toBeVisible();
@@ -260,14 +226,8 @@ test("selected new-DM recipient can be verified again through search", async ({
     "Already added charlie",
   );
   await charlieName.hover();
-  await expect(charlieNpub).toHaveCSS("opacity", "1");
-  await expect(charlieNpub).toHaveText(
-    truncateNpub(TEST_IDENTITIES.charlie.pubkey),
-  );
-  await expect(charlieName.getByText("charlie", { exact: true })).toHaveCSS(
-    "opacity",
-    "0",
-  );
+  await expect(charlieName).toHaveText("charlie");
+  await expect(charlieNpub).toHaveCount(0);
   await page.keyboard.press("Enter");
 
   await expect(search).toHaveValue("");

@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
+import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/clipboard_utils.dart';
 import '../../shared/community/community_membership_provider.dart';
@@ -71,6 +72,7 @@ class SettingsPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
     final packageInfoFuture = useMemoized(() => PackageInfo.fromPlatform());
     final packageInfo = useFuture(packageInfoFuture);
     final topSectionHeight = frostedAppBarHeight(
@@ -236,7 +238,8 @@ class SettingsPage extends HookConsumerWidget {
                 else
                   const _ConnectionSection(),
                 const _SignOutSection(),
-                const _RemoveCommunitySection(),
+                // The built-in server cannot be removed from the device.
+                if (!hasBuiltInServer) const _RemoveCommunitySection(),
               ],
             ),
           ),

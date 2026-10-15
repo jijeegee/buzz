@@ -23,8 +23,7 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
     title: "Repository access failed",
   },
   missing: {
-    description:
-      "The project announcement exists, but its git repository was not found on the Kuzz relay.",
+    description: "This project's repository wasn't found.",
     title: "Repository not initialized",
   },
   access: {
@@ -34,7 +33,7 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
   },
   unbound: {
     description:
-      "This repository has no access channel binding, so the relay cannot authorize anyone to read it. The repository owner can bind a channel from the Access menu.",
+      "This repository isn't linked to a channel yet, so no one can open it. The repository owner can link a channel from the Access menu.",
     title: "No access channel bound",
   },
   network: {

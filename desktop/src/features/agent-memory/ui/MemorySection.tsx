@@ -12,8 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 const MEMORY_LIST_PREVIEW_LIMIT = 3;
 type MemorySectionVariant = "cards" | "grouped";
 
-const MEMORY_TRUNCATED_TOOLTIP =
-  "This list may be incomplete — the relay returned the maximum number of memories.";
+const MEMORY_TRUNCATED_TOOLTIP = "This list may be incomplete.";
 
 const MEMORY_DANGLING_REF_TOOLTIP =
   "This memory links to a slug that wasn't found in the loaded memory list.";

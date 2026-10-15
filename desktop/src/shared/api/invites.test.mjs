@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 
-import { getJoinPolicy, mintInvite } from "./invites.ts";
+import { setBuiltInServerForTests } from "@/features/communities/builtInServer.ts";
+import {
+  acceptJoinPolicy,
+  claimInvite,
+  getJoinPolicy,
+  mintInvite,
+} from "./invites.ts";
+
+// The relay these tests talk to is the built-in server.
+beforeEach(() => setBuiltInServerForTests("wss://relay.example"));
 
 function withFetch(response, run) {
   const originalFetch = globalThis.fetch;
@@ -206,6 +215,83 @@ test("mintInvite omits max_uses when not provided (unlimited default)", async ()
       globalThis.fetch = originalFetch;
     }
   } finally {
+    teardownTauriStubs();
+  }
+});
+
+// --- built-in server guard ---
+
+test("invite requests to another server are refused before any fetch or signing", async () => {
+  const calls = setupTauriStubs("https://relay.example");
+  const originalFetch = globalThis.fetch;
+  const fetched = [];
+  globalThis.fetch = async (url) => {
+    fetched.push(url);
+    return new Response(JSON.stringify({}));
+  };
+  const refused = /This invite is for a different service\./;
+  try {
+    for (const relay of [
+      "wss://evil.example",
+      "ws://relay.example",
+      "wss://relay.example:8443",
+    ]) {
+      await assert.rejects(claimInvite(relay, "code"), refused, relay);
+      await assert.rejects(
+        acceptJoinPolicy(relay, "code", "v1", true),
+        refused,
+        relay,
+      );
+      await assert.rejects(getJoinPolicy(relay, "webview"), refused, relay);
+    }
+    // Before the built-in server is known (or after reading it failed),
+    // nothing is sent, not even to it.
+    setBuiltInServerForTests(undefined);
+    await assert.rejects(claimInvite("wss://relay.example", "code"), refused);
+    await assert.rejects(mintInvite(), refused);
+    assert.deepEqual(fetched, []);
+    assert.equal(
+      calls.invokeArgs.some((call) => call.command === "sign_event"),
+      false,
+      "no NIP-98 event signed for a refused server",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    teardownTauriStubs();
+  }
+});
+
+test("invite requests to the built-in server go through", async () => {
+  setupTauriStubs("https://relay.example");
+  const originalFetch = globalThis.fetch;
+  const fetched = [];
+  globalThis.fetch = async (url) => {
+    fetched.push(url);
+    return new Response(
+      JSON.stringify({
+        status: "joined",
+        community_id: "c",
+        host: "relay.example",
+        role: "member",
+        receipt: "r",
+      }),
+    );
+  };
+  try {
+    assert.equal(
+      (await claimInvite("wss://relay.example/", "code")).status,
+      "joined",
+    );
+    assert.equal(
+      await acceptJoinPolicy("wss://relay.example", "code", "v1", true),
+      "r",
+    );
+    assert.deepEqual(fetched, [
+      "https://relay.example/api/invites/claim",
+      "https://relay.example/api/invites/accept-policy",
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
     teardownTauriStubs();
   }
 });

@@ -30,7 +30,7 @@ test("maps binding denials to remediation copy", () => {
     new Error("remote: no_channel_binding: repository has no channel binding"),
     "Failed to create branch.",
   );
-  assert.ok(message.includes("buzz repos bind"));
+  assert.ok(message.includes("isn't linked to a channel yet"));
 });
 
 test("passes through other errors and falls back for non-errors", () => {

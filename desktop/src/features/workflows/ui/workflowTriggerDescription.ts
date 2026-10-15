@@ -1,4 +1,4 @@
-import { truncateNpub, truncatePubkey } from "@/shared/lib/pubkey";
+import { truncatePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { parseConditionExpressions } from "./workflowConditionExpression";
 import { TRIGGER_LABELS } from "./workflowFormTypes";
 import type { ParsedConditionExpression } from "./workflowConditionExpression";
@@ -14,14 +14,13 @@ export const TRIGGER_MESSAGE_LOADING_LABEL = "loading message";
 export const TRIGGER_AUTHOR_LOADING_LABEL = "loading author";
 
 function authorReference(
-  condition: ParsedConditionExpression,
   authorLabel?: string,
   authorLoading?: boolean,
 ): string {
   if (authorLoading) return TRIGGER_AUTHOR_LOADING_LABEL;
-  // The trigger author is a pubkey identity; the unresolved fallback renders
-  // the npub compact, never raw hex.
-  return authorLabel ?? truncateNpub(condition.value);
+  // The trigger author is a pubkey identity; an unresolved author renders the
+  // generic unknown-user label, never key text.
+  return authorLabel ?? UNKNOWN_USER_LABEL;
 }
 
 function quotedValue(value: string): string {
@@ -175,7 +174,6 @@ export function workflowTriggerDescription(
         options.authorLoading)
     ) {
       const author = authorReference(
-        authorCondition,
         options.authorLabel,
         options.authorLoading,
       );
@@ -218,11 +216,7 @@ export function workflowTriggerDescription(
     ) {
       return baseLabel;
     }
-    const author = authorReference(
-      condition,
-      options.authorLabel,
-      options.authorLoading,
-    );
+    const author = authorReference(options.authorLabel, options.authorLoading);
     return condition.operator === "not_equals"
       ? `${eventPhrase} by anyone except ${author}`
       : `${eventPhrase} by ${author}`;

@@ -21,11 +21,11 @@ export function ProjectOriginReference({
         className="inline-flex max-w-full min-w-0 items-center gap-1"
         title={
           isOpenable
-            ? "Origin is claimed by the event author and is not relay-verified."
+            ? "Origin is set by the author and isn't verified."
             : // Resolved via a bounded per-id lookup ({@link useChannelReference}),
               // so an unresolved id is a private, deleted, or otherwise
               // inaccessible channel — a non-member open channel still names it.
-              `Origin channel ${channelId} is not visible to you. Origin is claimed by the event author and is not relay-verified.`
+              `Origin channel ${channelId} is not visible to you. Origin is set by the author and isn't verified.`
         }
       >
         <span

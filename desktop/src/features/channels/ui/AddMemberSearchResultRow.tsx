@@ -3,7 +3,7 @@ import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import type { UserSearchResult } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 const MEMBER_ROW_INSET_DIVIDER_CLASS =
@@ -11,9 +11,7 @@ const MEMBER_ROW_INSET_DIVIDER_CLASS =
 
 export function formatAddCandidateName(user: UserSearchResult) {
   return (
-    user.displayName?.trim() ||
-    user.nip05Handle?.trim() ||
-    truncateNpub(user.pubkey)
+    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
   );
 }
 
@@ -70,9 +68,6 @@ export function AddMemberSearchResultRow({
                 ownerPubkey={user.ownerPubkey}
               />
             </div>
-            <span className="block truncate font-mono text-2xs text-muted-foreground">
-              {truncateNpub(user.pubkey)}
-            </span>
             {ownerLabel ? (
               <span className="block truncate text-xs text-muted-foreground">
                 managed by {ownerLabel}

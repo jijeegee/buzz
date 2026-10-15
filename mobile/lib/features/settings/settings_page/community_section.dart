@@ -11,15 +11,17 @@ class _CommunitySection extends ConsumerWidget {
     final canInvite =
         roleAsync.hasError || canManageCommunityInvites(roleAsync.value);
     final preference = ref.watch(communityThemeProvider);
+    final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
 
     return AppListCard(
-      label: 'Community',
+      label: hasBuiltInServer ? null : 'Community',
       verticalPadding: Grid.twelve,
       children: [
         if (canInvite)
           AppListRow(
+            key: const ValueKey('settings-invite-row'),
             icon: LucideIcons.userPlus,
-            title: 'Invite to community',
+            title: hasBuiltInServer ? 'Invite people' : 'Invite to community',
             trailing: const _RowChevron(),
             onTap: () => Navigator.of(
               context,

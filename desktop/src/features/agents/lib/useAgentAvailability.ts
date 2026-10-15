@@ -26,7 +26,7 @@ export function agentPresenceStartBlockReason(
 ): string | undefined {
   return !isLifecycleActive &&
     (availability === "online" || availability === "away")
-    ? "This agent is present on the relay. Starting another instance is unavailable."
+    ? "This agent is already running somewhere else."
     : undefined;
 }
 

@@ -7,6 +7,7 @@ import 'package:nostr/nostr.dart' as nostr;
 
 import '../../features/channels/channel_head_cache.dart';
 import '../auth/auth_provider.dart';
+import '../auth/default_community.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
 import '../push/push_lease_revocation_outbox.dart';
@@ -132,6 +133,14 @@ Future<void> _deactivateCommunityPushLease(
   final nsec = community.nsec;
   if (acceptedGeneration == null && generation == null) {
     return;
+  }
+  // Stored entries for other servers are kept but never contacted; the
+  // pending tombstone stays queued.
+  if (!isServerAllowed(
+    community.relayUrl,
+    builtInOrigin: appBuiltInServerOrigin(),
+  )) {
+    throw StateError(differentServerMessage);
   }
   if (nsec == null || nsec.isEmpty) {
     throw StateError('Push lease tombstone requires community signing key.');
@@ -282,6 +291,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
   /// its credentials instead. Returns the effective community ID.
   Future<String> addCommunity(Community community) =>
       ref.read(communityTransitionProvider).runExclusive(() async {
+        _requireAllowedServer(ref, community.relayUrl);
         final storage = ref.read(communityStorageProvider);
         final current = await storage.loadAll();
 
@@ -419,6 +429,10 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       final storage = ref.read(communityStorageProvider);
       final activeId = await storage.loadActiveId();
       if (activeId == id) return;
+      final target = (await storage.loadAll())
+          .where((community) => community.id == id)
+          .firstOrNull;
+      if (target != null) _requireAllowedServer(ref, target.relayUrl);
       await ref.read(communityTransitionProvider).run();
       await storage.saveActiveId(id);
       // Reassign list state to trigger activeCommunityProvider (which watches
@@ -701,16 +715,57 @@ final activeCommunityProvider = FutureProvider<Community?>((ref) async {
   final storage = ref.read(communityStorageProvider);
   final activeId = await storage.loadActiveId();
 
-  if (communities.isEmpty) return null;
-
   // This projection can outlive the list it captured above. Never persist a
   // fallback here: a newer authentication may already have selected a community
   // absent from that list. Authentication owns durable active-ID repair.
-  final active = communities.firstWhere(
-    (community) => community.id == activeId,
-    orElse: () => communities.first,
+  final active = selectActiveCommunity(
+    communities,
+    activeId,
+    builtInOrigin: ref.watch(defaultCommunityOriginProvider),
   );
+  if (active == null) return null;
   return active.signedOut
       ? active.copyWith(nsec: null, pushNotificationsEnabled: false)
       : active;
 });
+
+/// Picks the community to use from [communities].
+///
+/// With a built-in server ([builtInOrigin], see `hasBuiltInServerProvider`)
+/// only entries for that server (same host and port) are candidates: the
+/// stored [activeId] wins when it is one of them, otherwise the first one.
+/// Entries for other servers stay stored but are never selected, so they
+/// are never connected. Returns `null` when there is no candidate; the
+/// Google sign-in for the built-in server then creates its entry.
+///
+/// Without a built-in server (test harness only) this is the upstream rule:
+/// [activeId], otherwise the first stored community.
+Community? selectActiveCommunity(
+  List<Community> communities,
+  String? activeId, {
+  required String? builtInOrigin,
+}) {
+  final candidates = builtInOrigin == null
+      ? communities
+      : [
+          for (final community in communities)
+            if (isBuiltInServerUrl(community.relayUrl, builtInOrigin))
+              community,
+        ];
+  if (candidates.isEmpty) return null;
+  return candidates.firstWhere(
+    (community) => community.id == activeId,
+    orElse: () => candidates.first,
+  );
+}
+
+/// Refuses any server other than the built-in one (see
+/// [isServerAllowed]).
+void _requireAllowedServer(Ref ref, String relayUrl) {
+  if (!isServerAllowed(
+    relayUrl,
+    builtInOrigin: ref.read(defaultCommunityOriginProvider),
+  )) {
+    throw StateError(differentServerMessage);
+  }
+}

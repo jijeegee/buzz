@@ -1,17 +1,13 @@
 /**
- * Behavior tests for Settings → Relay admin nav reachability.
- *
- * Wes P2 round-6 finding #1: Relay admin must be independently reachable
- * without NIP-11 discovery — absent, invalid, or error discovery must not
- * hide the nav entry or redirect a direct ?section=relay-admin link away.
+ * Behavior tests for Settings → Admin nav visibility.
  *
  * Tests render the real SettingsView and assert on the sidebar DOM.
  *
- * Contract: the relay-admin nav entry is always visible. Authorization
- * gates the panel itself, not the nav entry — so NIP-11 discovery state
- * ("none", invalid, error, or pending) never hides or redirects the entry.
- * Reintroducing any discovery-based gate on the nav entry turns these
- * tests RED.
+ * Kuzz contract: the relay-admin ("Admin") nav entry appears only after the
+ * connected relay's advertised admin origin confirms the active identity as an
+ * operator or moderator. No origin, a lookup error, a pending lookup or a
+ * denied probe all hide it; a saved origin is ignored. So
+ * ordinary users never see the admin console or its access-denied key dump.
  */
 
 import assert from "node:assert/strict";
@@ -165,25 +161,25 @@ function stubNoOrigin() {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-test("relay-admin-nav-visible-no-origin: nav renders when no origin saved and discovery returns null", async () => {
-  // With the old predicate: hook resolves to {originSource:"none"} → hidden → RED.
-  // With the current fix: nav is always present regardless of discovery state.
+function navEntry(container) {
+  return container.querySelector("[data-testid='settings-nav-relay-admin']");
+}
+
+test("relay-admin-nav-hidden-no-origin: nav is hidden when no origin is saved or discovered", async () => {
   stubNoOrigin();
-  const { container, doRender, unmount } = mountSettingsView();
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
   try {
     await doRender();
     await settle();
-    assert.ok(
-      container.querySelector("[data-testid='settings-nav-relay-admin']"),
-      "Relay admin nav must render when no origin and discovery returns null",
-    );
+    assert.equal(navEntry(container), null);
   } finally {
     await unmount();
   }
 });
 
-test("relay-admin-nav-visible-discovery-error: nav renders when discovery IPCs throw", async () => {
-  // Both origin lookup and discovery fail. Old code: "none" → hidden → RED.
+test("relay-admin-nav-hidden-discovery-error: nav is hidden when origin lookups throw", async () => {
   setIpcHandler("get_admin_origin", () =>
     Promise.reject(new Error("storage error")),
   );
@@ -192,68 +188,163 @@ test("relay-admin-nav-visible-discovery-error: nav renders when discovery IPCs t
   );
   setIpcHandler("get_relay_origin", () => Promise.resolve(null));
   setIpcHandler("get_relay_members_info", () => Promise.resolve(null));
-  const { container, doRender, unmount } = mountSettingsView();
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
   try {
     await doRender();
     await settle();
-    assert.ok(
-      container.querySelector("[data-testid='settings-nav-relay-admin']"),
-      "Relay admin nav must render even when discovery errors",
-    );
+    assert.equal(navEntry(container), null);
   } finally {
     await unmount();
   }
 });
 
-test("relay-admin-nav-visible-pending: nav renders while discovery IPC never resolves", async () => {
-  // Hook stays undefined (disabled or pending). Old code: `moderationNav === undefined`
-  // → false → nav hidden → RED. New code: nav is unconditional.
+test("relay-admin-nav-hidden-pending: nav stays hidden while the access check is pending", async () => {
   setIpcHandler("get_admin_origin", () => new Promise(() => {}));
   setIpcHandler("admin_discover_origin", () => new Promise(() => {}));
   setIpcHandler("get_relay_origin", () => Promise.resolve(null));
   setIpcHandler("get_relay_members_info", () => Promise.resolve(null));
-  const { container, doRender, unmount } = mountSettingsView();
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
   try {
     await doRender();
     await settle();
-    assert.ok(
-      container.querySelector("[data-testid='settings-nav-relay-admin']"),
-      "Relay admin nav must render while discovery is pending",
-    );
+    assert.equal(navEntry(container), null);
   } finally {
     await unmount();
   }
 });
 
-test("relay-admin-section-not-redirected: section=relay-admin is not normalized away after discovery", async () => {
-  // Old code deferred section normalization until moderationNav resolved, then
-  // redirected to appearance when origin was none.
+function stubDiscovered(probeState) {
   stubNoOrigin();
-  const redirectedTo = [];
+  setIpcHandler("admin_discover_origin", () =>
+    Promise.resolve({ origin: "https://relay.example", sameHost: true }),
+  );
+  setIpcHandler("admin_probe", () =>
+    Promise.resolve(
+      probeState === "nip98Authorized"
+        ? { state: probeState, role: "operator" }
+        : { state: probeState },
+    ),
+  );
+}
+
+test("relay-admin-nav-hidden-denied: nav is hidden when the probe denies this identity", async () => {
+  stubDiscovered("nip98Denied");
   const { container, doRender, unmount } = mountSettingsView({
-    section: "relay-admin",
-    onSectionChange: (s) => {
-      if (s !== "relay-admin") redirectedTo.push(s);
-    },
+    section: "shortcuts",
   });
   try {
     await doRender();
     await settle(80);
-    assert.deepEqual(
-      redirectedTo,
-      [],
-      `section=relay-admin must not be redirected; got redirects to: ${JSON.stringify(redirectedTo)}`,
+    assert.equal(navEntry(container), null);
+  } finally {
+    await unmount();
+  }
+});
+
+test("relay-admin-nav-visible-authorized: nav appears once the probe authorizes an operator", async () => {
+  stubDiscovered("nip98Authorized");
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
+  try {
+    await doRender();
+    await settle(80);
+    assert.ok(navEntry(container), "Admin nav must render for an operator");
+  } finally {
+    await unmount();
+  }
+});
+
+test("relay-admin-nav-ignores-saved-origin: a stale saved origin cannot hide the nav", async () => {
+  stubDiscovered("nip98Authorized");
+  setIpcHandler("get_admin_origin", () =>
+    Promise.resolve("https://stale.example"),
+  );
+  const probed = [];
+  setIpcHandler("admin_probe", ({ origin }) => {
+    probed.push(origin);
+    return Promise.resolve(
+      origin === "https://relay.example"
+        ? { state: "nip98Authorized", role: "operator" }
+        : { state: "notAdminApi" },
     );
+  });
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "shortcuts",
+  });
+  try {
+    await doRender();
+    await settle(80);
+    assert.ok(navEntry(container), "Admin nav must render for an operator");
+    assert.deepEqual(probed, ["https://relay.example"]);
+  } finally {
+    await unmount();
+  }
+});
+
+test("relay-admin-direct-link-waits: opening the Admin section waits for the check instead of redirecting", async () => {
+  stubNoOrigin();
+  setIpcHandler("admin_discover_origin", () => new Promise(() => {}));
+  const changes = [];
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "relay-admin",
+    onSectionChange: (next) => changes.push(next),
+  });
+  try {
+    await doRender();
+    await settle(80);
+    assert.deepEqual(changes, []);
     assert.ok(
-      container.querySelector("[data-testid='settings-nav-relay-admin']"),
-      "Relay admin nav must still be present after settling",
+      container.querySelector("[data-testid='settings-admin-access-pending']"),
+      "a pending check must show the loading state",
     );
   } finally {
     await unmount();
   }
 });
 
-test("no-probe-before-save: admin_probe not called while rendering nav with no saved origin", async () => {
+test("relay-admin-direct-link-authorized: an operator stays on the Admin section", async () => {
+  stubDiscovered("nip98Authorized");
+  const changes = [];
+  const { container, doRender, unmount } = mountSettingsView({
+    section: "relay-admin",
+    onSectionChange: (next) => changes.push(next),
+  });
+  try {
+    await doRender();
+    await settle(80);
+    assert.deepEqual(changes, []);
+    assert.equal(
+      container.querySelector("[data-testid='settings-admin-access-pending']"),
+      null,
+    );
+  } finally {
+    await unmount();
+  }
+});
+
+test("relay-admin-direct-link-denied: a non-operator is sent to another section after the check", async () => {
+  stubDiscovered("nip98Denied");
+  const changes = [];
+  const { doRender, unmount } = mountSettingsView({
+    section: "relay-admin",
+    onSectionChange: (next) => changes.push(next),
+  });
+  try {
+    await doRender();
+    await settle(80);
+    assert.equal(changes.length > 0, true);
+    assert.notEqual(changes.at(-1), "relay-admin");
+  } finally {
+    await unmount();
+  }
+});
+
+test("no-probe-without-advertisement: admin_probe not called when the relay advertises no admin origin", async () => {
   // SettingsView no longer calls the nav resolution hook, so no probe hook
   // runs during nav rendering. Any probe before explicit Save is a trust boundary
   // violation.
@@ -278,11 +369,49 @@ test("no-probe-before-save: admin_probe not called while rendering nav with no s
   }
 });
 
-test("settings-nav-groups-contains-relay-admin: relay-admin is wired into Communities nav group", () => {
-  const communities = settingsNavGroups.find((g) => g.label === "Communities");
-  assert.ok(communities, "Communities group must exist");
+test("settings-nav-groups-contains-relay-admin: relay-admin is wired into Members nav group", () => {
+  const communities = settingsNavGroups.find((g) => g.label === "Members");
+  assert.ok(communities, "Members group must exist");
   assert.ok(
     communities.sections.includes("relay-admin"),
-    `relay-admin must be in Communities; got: ${JSON.stringify(communities.sections)}`,
+    `relay-admin must be in Members; got: ${JSON.stringify(communities.sections)}`,
   );
+});
+
+test("relay-admin-direct-link-no-identity: no identity means no endless spinner", async () => {
+  stubNoOrigin();
+  const changes = [];
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  qc.setQueryData(["identity"], null);
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(
+          QueryClientProvider,
+          { client: qc },
+          React.createElement(
+            SidebarProvider,
+            {},
+            React.createElement(SettingsView, {
+              ...STUB_PROPS,
+              section: "relay-admin",
+              onClose: () => {},
+              onSectionChange: (next) => changes.push(next),
+            }),
+          ),
+        ),
+      );
+    });
+    await settle(80);
+    assert.equal(changes.length > 0, true);
+    assert.notEqual(changes.at(-1), "relay-admin");
+  } finally {
+    await act(async () => root.unmount());
+    document.body.removeChild(container);
+  }
 });

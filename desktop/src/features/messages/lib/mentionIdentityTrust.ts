@@ -39,8 +39,15 @@ export function isTrustedMentionLabel(
   const qualified = wanted.match(
     /^(.*) \(([0-9a-f]{64})\)(?: (?:[2-9]|[1-9][0-9]+))?$/,
   );
+  // Kuzz same-name ordinal ("Scout (2)"): carries no key, so only the base
+  // name, checked against this pubkey's own trusted aliases, can vouch.
+  const ordinal = wanted.match(/^(.*) \((?:[2-9]|[1-9][0-9]+)\)$/);
   const baseAlias =
-    qualified?.[2] === pubkey?.toLowerCase() ? qualified?.[1] : undefined;
+    qualified?.[2] === pubkey?.toLowerCase()
+      ? qualified?.[1]
+      : pubkey
+        ? ordinal?.[1]
+        : undefined;
   for (const alias of aliases) {
     const trusted = canonicalMentionLabel(alias);
     if (trusted === wanted || (baseAlias && trusted === baseAlias)) return true;

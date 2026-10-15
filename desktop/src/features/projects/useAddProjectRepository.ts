@@ -79,9 +79,7 @@ export async function addProjectRepository(
   });
   const liveHead = liveHeads[0];
   if (!liveHead) {
-    throw new Error(
-      "Could not find this project on the relay. Refresh and try again.",
-    );
+    throw new Error("Couldn't find this project. Refresh and try again.");
   }
 
   // Partial-publish detection must precede the dominated-write guard below:
@@ -211,7 +209,7 @@ export async function addProjectRepository(
     } catch (error) {
       if (isUnsupportedProjectKindError(error)) {
         throw new Error(
-          `This relay does not support multi-repository projects (event kind ${KIND_PROJECT_ANNOUNCEMENT}).`,
+          "This community doesn't support multiple repositories yet.",
         );
       }
       throw error;

@@ -383,15 +383,14 @@ test.describe("channel activity hover preview", () => {
     await expect(threadPanel).toContainText("direct thread link");
   });
 
-  test("unnamed working agents keep distinct key-tail initials, not AN", async ({
+  test("unnamed working agents show a generic Agent label, never key text", async ({
     page,
   }) => {
-    // npubEncode of the fixture keys: "a"×64 → npub1424…rcaj (tail RC),
-    // "b"×64 → npub1hwa…04hu (tail 04). Neither has a seeded profile, so
-    // the rows show the generated "Agent npub1…" fallback label.
+    // Neither fixture key has a seeded profile, so the rows fall back to the
+    // generic "Agent" label instead of any npub fragment.
     const unnamedAgents = [
-      { initials: "RC", label: "Agent npub1424…rcaj", pubkey: "a".repeat(64) },
-      { initials: "04", label: "Agent npub1hwa…04hu", pubkey: "b".repeat(64) },
+      { pubkey: "a".repeat(64) },
+      { pubkey: "b".repeat(64) },
     ];
 
     await page.goto("/");
@@ -422,14 +421,10 @@ test.describe("channel activity hover preview", () => {
     }
 
     const popover = await openActivityPopover(page);
-    for (const { initials, label, pubkey } of unnamedAgents) {
+    for (const { pubkey } of unnamedAgents) {
       const row = popover.getByTestId(`channel-activity-agent-${pubkey}`);
-      await expect(row).toContainText(label);
-      // The avatar abbreviates its key's visible tail (UserAvatar's fallback
-      // settles after its 200ms delay; expect retries past it), never the
-      // "Agent" word initials of the prefixed label.
-      await expect(row.getByText(initials, { exact: true })).toBeVisible();
-      await expect(row.getByText("AN", { exact: true })).toHaveCount(0);
+      await expect(row.getByText("Agent", { exact: true })).toBeVisible();
+      await expect(row).not.toContainText("npub1");
     }
   });
 

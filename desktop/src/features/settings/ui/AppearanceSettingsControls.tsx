@@ -8,6 +8,7 @@ import {
   type ThreadViewMode,
 } from "@/features/channels/lib/threadViewModePreference";
 import { useCommunities } from "@/features/communities/useCommunities";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { AvatarFramingSlider } from "@/features/profile/ui/AnimatedAvatarControls";
 import { contrastColorForBackground } from "@/features/profile/ui/ProfileAvatarEditor.utils";
 import {
@@ -608,7 +609,8 @@ export function ThreadLayoutSetting() {
     null,
   );
   const { communities } = useCommunities();
-  const showCommunityScope = communities.length > 1;
+  const singleServer = useBuiltInServer() !== null;
+  const showCommunityScope = !singleServer && communities.length > 1;
   const displayedMode = previewMode ?? threadViewMode;
   const activeOption =
     THREAD_VIEW_MODE_OPTIONS.find((option) => option.value === displayedMode) ??

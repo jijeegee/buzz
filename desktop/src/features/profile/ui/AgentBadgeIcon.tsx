@@ -13,7 +13,7 @@ import {
   useAuthDeviceLabels,
 } from "@/shared/api/useAuthDeviceNames";
 import { cn } from "@/shared/lib/cn";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
@@ -40,9 +40,7 @@ function OwnerMark({
   const profile = useUserProfileQuery(cached ? undefined : ownerPubkey);
   const avatarUrl = cached?.avatarUrl ?? profile.data?.avatarUrl ?? null;
   const name =
-    cached?.displayName ??
-    profile.data?.displayName ??
-    truncateNpub(ownerPubkey);
+    cached?.displayName ?? profile.data?.displayName ?? UNKNOWN_USER_LABEL;
   return (
     <span
       className={cn("relative inline-flex shrink-0", className)}

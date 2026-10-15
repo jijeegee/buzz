@@ -40,12 +40,12 @@ test("limits opaque identifiers to equality and validates 64-char hex", () => {
   }
   assert.equal(
     conditionValueError("trigger_author", "abc"),
-    "Enter a 64-character hex pubkey.",
+    "Choose a valid author.",
   );
   assert.equal(conditionValueError("trigger_author", AUTHOR), null);
   assert.equal(
     conditionValueError("trigger_message_id", "z".repeat(64)),
-    "Enter a 64-character hex event ID.",
+    "Choose a valid message.",
   );
   assert.equal(conditionValueError("trigger_message_id", MESSAGE_ID), null);
 });

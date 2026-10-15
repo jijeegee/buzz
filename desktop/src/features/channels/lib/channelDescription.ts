@@ -11,7 +11,7 @@ export function getChannelDetail(channel: Channel): string | null {
 
 export function getChannelDescription(channel: Channel | null): string {
   if (!channel) {
-    return "Connect to the relay to browse channels and read messages.";
+    return "Connect to browse channels and read messages.";
   }
 
   const prefixes = [

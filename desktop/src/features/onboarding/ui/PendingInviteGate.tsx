@@ -1,3 +1,4 @@
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
@@ -12,6 +13,7 @@ import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 export function PendingInviteGate() {
   const { transaction, update, clear } = useCommunityOnboarding();
   const systemColorScheme = useSystemColorScheme();
+  const singleServer = useBuiltInServer() !== null;
 
   if (!transaction) return null;
 
@@ -25,10 +27,12 @@ export function PendingInviteGate() {
       <div className="relative flex w-full max-w-[500px] flex-col items-center text-center">
         <FlappingBee className="h-auto w-24" />
         <h1 className="mt-6 text-3xl font-semibold tracking-tight">
-          Opening community link
+          {singleServer ? "Opening invite" : "Opening community link"}
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          You’ll connect to {transaction.communityName} once setup is finished.
+          {singleServer
+            ? "You’ll join after you sign in."
+            : `You’ll connect to ${transaction.communityName} once setup is finished.`}
         </p>
         <div className="mt-8 flex w-full max-w-[300px] flex-col gap-3">
           <Button

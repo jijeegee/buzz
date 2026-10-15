@@ -197,8 +197,10 @@ pub(crate) fn build_agent_archive_request(
     {
         None
     } else {
-        let agent = nostr::PublicKey::from_hex(agent_pubkey)
-            .map_err(|e| format!("invalid agent pubkey: {e}"))?;
+        let agent = nostr::PublicKey::from_hex(agent_pubkey).map_err(|e| {
+            eprintln!("buzz-desktop: invalid agent pubkey: {e}");
+            "Something went wrong with this agent. Try again.".to_string()
+        })?;
         let tag_json = buzz_sdk_pkg::nip_oa::compute_auth_tag(keys, &agent, "")
             .map_err(|e| format!("failed to build owner auth tag: {e}"))?;
         let parts: Vec<String> = serde_json::from_str(&tag_json)

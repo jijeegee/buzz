@@ -10,6 +10,7 @@ import type {
   UpdateManagedAgentInput,
   UpdatePersonaInput,
 } from "@/shared/api/types";
+import { toUserFacingErrorDetail } from "@/shared/lib/userFacingError";
 
 type SubmitProfilePersonaDialogOptions = {
   createManagedAgentForPersona: (
@@ -108,7 +109,7 @@ export async function submitProfilePersonaDialog({
       const result = agentUpdate ? await updateManagedAgent(agentUpdate) : null;
       if (result?.profileSyncError) {
         toast.warning(
-          `${result.agent.name} was updated, but profile sync failed: ${result.profileSyncError}`,
+          `${result.agent.name} was updated, but profile sync failed: ${toUserFacingErrorDetail(result.profileSyncError)}`,
         );
       }
       toast.success(`Updated ${input.displayName}.`);
@@ -119,20 +120,20 @@ export async function submitProfilePersonaDialog({
         const created = await createManagedAgentForPersona(persona);
         if (created.spawnError) {
           toast.error(
-            `${persona.displayName} was created, but it did not start: ${created.spawnError}`,
+            `${persona.displayName} was created, but it did not start: ${toUserFacingErrorDetail(created.spawnError)}`,
           );
         } else {
           toast.success(`Created and started ${created.agent.name}.`);
         }
         if (created.profileSyncError) {
           toast.warning(
-            `${created.agent.name} was created, but profile sync failed: ${created.profileSyncError}`,
+            `${created.agent.name} was created, but profile sync failed: ${toUserFacingErrorDetail(created.profileSyncError)}`,
           );
         }
       } catch (error) {
         toast.error(
           error instanceof Error
-            ? `${persona.displayName} was created, but the agent instance could not be created: ${error.message}`
+            ? `${persona.displayName} was created, but the agent instance could not be created: ${toUserFacingErrorDetail(error.message)}`
             : `${persona.displayName} was created, but the agent instance could not be created.`,
         );
       }
@@ -141,7 +142,9 @@ export async function submitProfilePersonaDialog({
     onDone();
   } catch (error) {
     toast.error(
-      error instanceof Error ? error.message : "Failed to save agent.",
+      error instanceof Error
+        ? toUserFacingErrorDetail(error.message)
+        : "Failed to save agent.",
     );
   }
 }

@@ -579,13 +579,9 @@ test("duplicate owned agents preserve provenance and exact pubkey selection", as
     (dropdownBox?.x ?? 0) + (dropdownBox?.width ?? 0) + 1,
   );
 
-  const collisionKeys = dropdown.getByTestId("mention-collision-npub");
-  await expect(collisionKeys).toHaveCount(2);
-  const fullNpubs = await collisionKeys.evaluateAll((nodes) =>
-    nodes.map((node) => node.getAttribute("title")),
-  );
-  expect(fullNpubs).toHaveLength(2);
-  expect(new Set(fullNpubs).size).toBe(2);
+  // Same-name rows never surface key fragments to tell them apart.
+  await expect(dropdown.getByTestId("mention-collision-npub")).toHaveCount(0);
+  await expect(dropdown).not.toContainText("npub1");
 
   await managedRow.getByRole("button", { name: "Mention carl" }).click();
   await expect(
@@ -4917,7 +4913,7 @@ test("agent profile popover falls back to the owner's pubkey", async ({
     profilePopover.getByTestId(
       `user-profile-popover-owner-${OWNED_AGENT_PROFILE_PUBKEY}`,
     ),
-  ).toHaveText(`managed by ${truncateNpub(CASEY_PROFILE_PUBKEY)}`);
+  ).toHaveText("managed by Unknown user");
 });
 
 test("human profile popover does not show an owner", async ({ page }) => {

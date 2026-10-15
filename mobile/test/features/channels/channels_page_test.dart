@@ -28,6 +28,7 @@ import 'package:buzz/features/profile/presence_cache_provider.dart';
 import 'package:buzz/shared/profile/user_profile.dart';
 import 'package:buzz/shared/utils/string_utils.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/auth/default_community.dart';
 import 'package:buzz/shared/community/community_icon_provider.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
@@ -1043,6 +1044,57 @@ void main() {
     await tester.pump();
     expect(hapticCalls.last.arguments, 'HapticFeedbackType.selectionClick');
   });
+
+  testWidgets(
+    'with the built-in server the header is the Kuzz brand with no switcher',
+    (tester) async {
+      final communities = [
+        Community(
+          id: 'alpha',
+          name: 'Alpha',
+          relayUrl: 'wss://alpha.example.com',
+          addedAt: DateTime(2025),
+        ),
+        Community(
+          id: 'bravo',
+          name: 'Bravo',
+          relayUrl: 'wss://bravo.example.com',
+          addedAt: DateTime(2025),
+        ),
+      ];
+      await tester.pumpWidget(
+        buildTestable(
+          overrides: [
+            defaultCommunityOriginProvider.overrideWithValue(
+              'https://alpha.example.com',
+            ),
+            channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+            communityListProvider.overrideWith(
+              () => _FakeCommunityListNotifier(communities),
+            ),
+            activeCommunityProvider.overrideWith(
+              (ref) async => communities.first,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('channels-header-brand-logo')),
+        findsOneWidget,
+      );
+      expect(find.text('Kuzz'), findsOneWidget);
+      expect(find.text('Alpha'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('channels-header-brand-logo')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Kuzz'));
+      await tester.pumpAndSettle();
+      expect(find.text('Switch Community'), findsNothing);
+      expect(find.text('Add Community'), findsNothing);
+    },
+  );
 
   testWidgets('community switcher separates selection from edit removal', (
     tester,

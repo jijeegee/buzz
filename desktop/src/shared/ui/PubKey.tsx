@@ -3,6 +3,7 @@ import * as React from "react";
 
 import { copyTextToClipboard } from "@/shared/lib/clipboard";
 import { cn } from "@/shared/lib/cn";
+import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import {
   canonicalNpub,
   truncateNpub,
@@ -124,6 +125,8 @@ export function PubKey({
   // payloads (e.g. an 8-char hex) as a fake npub, so the widget validates
   // through `canonicalNpub` and renders Unavailable for anything else.
   const npub = canonicalNpub(pubkey);
+  // Kuzz users never copy or expand raw keys; E2E builds keep the controls.
+  const showKeyControls = signingKeyUiTestSeam();
 
   if (variant === "full") {
     return (
@@ -134,7 +137,7 @@ export function PubKey({
         <span className="break-all font-mono text-xs">
           {npub ?? UNAVAILABLE_KEY_LABEL}
         </span>
-        {npub ? (
+        {npub && showKeyControls ? (
           <Popover>
             <PopoverTrigger asChild>
               <Button
@@ -165,7 +168,7 @@ export function PubKey({
     );
   }
 
-  if (!interactive) {
+  if (!interactive || !showKeyControls) {
     return (
       <span className={cn("font-mono", className)} data-testid={testId}>
         {truncateNpub(pubkey)}

@@ -19,7 +19,7 @@ export type ActiveTemplateToken = {
 const COMMON_EVENT_VARIABLES: WorkflowTemplateVariable[] = [
   {
     value: "trigger.author",
-    description: "Author pubkey",
+    description: "Author",
     group: "Trigger",
   },
   {
@@ -34,7 +34,7 @@ const COMMON_EVENT_VARIABLES: WorkflowTemplateVariable[] = [
   },
   {
     value: "trigger.message_id",
-    description: "Message event ID",
+    description: "Message",
     group: "Trigger",
   },
 ];

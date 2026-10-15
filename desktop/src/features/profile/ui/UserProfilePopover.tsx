@@ -30,7 +30,8 @@ import { ProfileAvatarWithStatus } from "@/features/profile/ui/ProfileAvatarWith
 import { useOpenAgentActivity } from "@/features/agents/useOpenAgentActivity";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { cn } from "@/shared/lib/cn";
-import { normalizePubkey, truncateNpub } from "@/shared/lib/pubkey";
+import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { useProfileInteractionActions } from "@/features/profile/ui/useProfileInteractionActions";
 
 import {
@@ -91,34 +92,26 @@ function InfoBadge({ children }: { children: React.ReactNode }) {
   );
 }
 
-const TEXT_SWAP_BASE_CLASS =
-  "col-start-1 row-start-1 min-w-0 truncate transition-[opacity,filter] duration-[250ms] ease-in-out motion-reduce:transition-none";
-const TEXT_SWAP_VISIBLE_CLASS = "opacity-100 blur-0";
-const TEXT_SWAP_HIDDEN_CLASS = "opacity-0 blur-0";
-const TEXT_SWAP_HOVER_VISIBLE_CLASS =
-  "group-hover/name:opacity-100 group-hover/name:blur-0";
-const TEXT_SWAP_HOVER_HIDDEN_CLASS =
-  "group-hover/name:opacity-0 group-hover/name:blur-[2px]";
-
-function HoverPubkeyName({
+function ProfileName({
   displayName,
-  pubkey,
+  loading,
 }: {
   displayName: string;
-  pubkey: string;
+  loading: boolean;
 }) {
+  if (loading) {
+    return (
+      <span
+        className="inline-flex h-5 min-w-0 flex-1 items-center"
+        data-testid="user-profile-popover-name-loading"
+      >
+        <Skeleton className="h-3.5 w-24" />
+      </span>
+    );
+  }
   return (
-    <span className="group/name inline-grid h-5 min-w-0 flex-1 overflow-hidden text-sm font-semibold leading-5">
-      <span
-        className={`${TEXT_SWAP_BASE_CLASS} ${TEXT_SWAP_VISIBLE_CLASS} ${TEXT_SWAP_HOVER_HIDDEN_CLASS}`}
-      >
-        {displayName}
-      </span>
-      <span
-        className={`${TEXT_SWAP_BASE_CLASS} ${TEXT_SWAP_HIDDEN_CLASS} ${TEXT_SWAP_HOVER_VISIBLE_CLASS}`}
-      >
-        {truncateNpub(pubkey)}
-      </span>
+    <span className="h-5 min-w-0 flex-1 truncate text-sm font-semibold leading-5">
+      {displayName}
     </span>
   );
 }
@@ -310,7 +303,8 @@ function UserProfilePopoverBody({
       relayAgentsQuery.isPending ||
       managedAgentsQuery.isPending ||
       usersBatchQuery.isPending);
-  const displayName = profile?.displayName ?? truncateNpub(pubkey);
+  const displayName = profile?.displayName ?? UNKNOWN_USER_LABEL;
+  const isNameLoading = !profile && profileQuery.isLoading;
   // Owner signal mirrors UserProfilePanel: a declared NIP-OA owner whose agent
   // runs elsewhere holds no local seckey, so key custody (`isOwner`) alone
   // wrongly hides the affordance from them — and gating on bot-ness alone shows
@@ -409,7 +403,7 @@ function UserProfilePopoverBody({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <HoverPubkeyName displayName={displayName} pubkey={pubkey} />
+          <ProfileName displayName={displayName} loading={isNameLoading} />
           <AgentManagementMarker
             pubkey={pubkey}
             ownerPubkey={ownerPubkey}

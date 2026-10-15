@@ -84,6 +84,7 @@ import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
 import { isJoinedChat } from "@/features/sidebar/lib/chatList";
 import { useCommunities } from "@/features/communities/useCommunities";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import {
   consumePendingCommunityRestore,
   loadCommunityDestination,
@@ -137,7 +138,10 @@ export function AppShell() {
     showHuddleInMainApp,
     viewHuddleChannel,
   } = useHuddlePresentation();
-  const hasCommunityRail = communitiesHook.communities.length > 1;
+  // One built-in server: the rail (switch / add / remove servers) never shows.
+  const singleServer = useBuiltInServer() !== null;
+  const hasCommunityRail =
+    !singleServer && communitiesHook.communities.length > 1;
   const addCommunityDialog = useAddCommunityDialogState();
   const [isChannelManagementOpen, setIsChannelManagementOpen] =
     React.useState(false);

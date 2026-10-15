@@ -518,7 +518,7 @@ export function AnimatedAvatarCapture({
         !animationUpload.type.startsWith("image/") ||
         !posterUpload.type.startsWith("image/")
       ) {
-        setErrorMessage("The relay rejected the recording. Try again.");
+        setErrorMessage("Couldn't save the recording. Try again.");
         return false;
       }
       onApply(

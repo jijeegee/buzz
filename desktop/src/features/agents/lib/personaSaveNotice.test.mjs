@@ -21,7 +21,7 @@ test("test_accepted_publish_notice_claims_the_catalog_has_the_edit", () => {
 // it yet, so the catalog still shows the old definition.
 test("test_queued_publish_notice_does_not_claim_the_edit_is_published", () => {
   const notice = personaSaveNotice("Helper", "queued");
-  assert.match(notice, /queued/);
+  assert.match(notice, /shortly/);
   assert.ok(
     !/\bpublished\b/.test(notice),
     "a queued edit must not be described as published",

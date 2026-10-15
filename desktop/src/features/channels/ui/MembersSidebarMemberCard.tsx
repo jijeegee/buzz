@@ -27,7 +27,6 @@ import {
   MANAGED_AGENT_PAIR_ACTION_LABELS,
   type ManagedAgentPairAction,
 } from "@/features/agents/managedAgentRuntimeStatus";
-import { truncateNpub } from "@/shared/lib/pubkey";
 import type {
   ChannelMember,
   ManagedAgent,
@@ -183,8 +182,8 @@ export function MembersSidebarMemberCard({
       <div className="min-w-0 flex-1">
         {memberIsBot ? (
           <div className="flex min-w-0 items-center gap-2">
-            <div className="relative min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2 transition-opacity duration-150 ease-out group-hover/member:opacity-0 group-focus-within/member:opacity-0">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
                 <span className="truncate text-sm font-medium tracking-tight">
                   {memberLabel}
                 </span>
@@ -197,11 +196,6 @@ export function MembersSidebarMemberCard({
                   {roleLabel}
                 </span>
               </div>
-              <span className="absolute inset-0 flex items-center opacity-0 transition-opacity duration-150 ease-out group-hover/member:opacity-100 group-focus-within/member:opacity-100">
-                <span className="truncate font-mono text-sm text-muted-foreground">
-                  {truncateNpub(member.pubkey)}
-                </span>
-              </span>
             </div>
             <AgentManagementMarker
               pubkey={member.pubkey}

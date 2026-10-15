@@ -6,56 +6,24 @@ import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import type { UserSearchResult } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
-import { truncateNpub } from "@/shared/lib/pubkey";
 
 import { formatRecipientName } from "./useNewMessageRecipients";
 
 const RESULT_ROW_INSET_DIVIDER_CLASS =
   "after:pointer-events-none after:absolute after:bottom-0 after:left-[3.75rem] after:right-0 after:h-px after:bg-border/60 after:content-[''] last:after:hidden";
-const TEXT_SWAP_BASE_CLASS =
-  "min-w-0 truncate transition-[opacity,filter] duration-[250ms] ease-in-out motion-reduce:transition-none";
-const TEXT_SWAP_VISIBLE_CLASS = "opacity-100 blur-0";
-const TEXT_SWAP_HIDDEN_CLASS = "opacity-0 blur-0";
-const TEXT_SWAP_HOVER_VISIBLE_CLASS =
-  "group-hover/name:opacity-100 group-hover/name:blur-0 group-focus-visible/dm-result:opacity-100 group-focus-visible/dm-result:blur-0";
-const TEXT_SWAP_HOVER_HIDDEN_CLASS =
-  "group-hover/name:opacity-0 group-hover/name:blur-[2px] group-focus-visible/dm-result:opacity-0 group-focus-visible/dm-result:blur-[2px]";
-
-function HoverRecipientIdentity({
+function RecipientIdentity({
   displayName,
   pubkey,
 }: {
   displayName: string;
   pubkey: string;
 }) {
-  const identityLabel = truncateNpub(pubkey);
-
   return (
     <span
-      className="group/name relative inline-flex h-5 min-w-0 max-w-full self-start leading-5"
+      className="block h-5 min-w-0 max-w-full self-start truncate text-sm font-medium leading-5 tracking-tight"
       data-testid={`new-dm-name-${pubkey}`}
     >
-      <span
-        className={cn(
-          TEXT_SWAP_BASE_CLASS,
-          TEXT_SWAP_VISIBLE_CLASS,
-          TEXT_SWAP_HOVER_HIDDEN_CLASS,
-          "w-fit max-w-full text-sm font-medium tracking-tight",
-        )}
-      >
-        {displayName}
-      </span>
-      <span
-        className={cn(
-          TEXT_SWAP_BASE_CLASS,
-          TEXT_SWAP_HIDDEN_CLASS,
-          TEXT_SWAP_HOVER_VISIBLE_CLASS,
-          "absolute inset-y-0 left-0 font-mono text-2xs text-muted-foreground",
-        )}
-        data-testid={`new-dm-npub-${pubkey}`}
-      >
-        {identityLabel}
-      </span>
+      {displayName}
     </span>
   );
 }
@@ -63,7 +31,7 @@ function HoverRecipientIdentity({
 /**
  * A single selectable person/agent row in the new-message directory. Extracted
  * from the former NewDirectMessageDialog so the compose page renders identical
- * rows (avatar, agent badge, owner label, and a name-to-pubkey hover swap).
+ * rows (avatar, agent badge, owner label, and name).
  */
 export function NewMessageResultRow({
   currentPubkey,
@@ -121,10 +89,7 @@ export function NewMessageResultRow({
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <div className="flex min-w-0 flex-1">
-                  <HoverRecipientIdentity
-                    displayName={name}
-                    pubkey={user.pubkey}
-                  />
+                  <RecipientIdentity displayName={name} pubkey={user.pubkey} />
                 </div>
                 <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                   <AgentBadgeIcon
@@ -147,7 +112,7 @@ export function NewMessageResultRow({
               ) : null}
             </div>
           ) : (
-            <HoverRecipientIdentity displayName={name} pubkey={user.pubkey} />
+            <RecipientIdentity displayName={name} pubkey={user.pubkey} />
           )}
         </div>
       </button>

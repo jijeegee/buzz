@@ -701,7 +701,8 @@ fn identity_archive_tags(
         }
         check_pubkey(&auth[1])?;
         if auth[3].len() != 128 || !auth[3].chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err("auth tag signature must be 128-character hex".into());
+            eprintln!("buzz-desktop: auth tag signature must be 128-character hex");
+            return Err("Something went wrong with this agent. Try again.".into());
         }
         tags.push(tag(vec!["auth", &auth[1], &auth[2], &auth[3]])?);
     }
@@ -793,7 +794,8 @@ pub fn build_contact_list(
 /// channel id and replies via OK message with `response:{channel_id}`.
 pub fn build_dm_open(pubkeys: &[String]) -> Result<EventBuilder, String> {
     if pubkeys.is_empty() {
-        return Err("dm_open requires at least one pubkey".into());
+        eprintln!("buzz-desktop: dm_open requires at least one pubkey");
+        return Err("Something went wrong. Try again.".into());
     }
     let mut tags: Vec<Tag> = Vec::with_capacity(pubkeys.len());
     for pk in pubkeys {

@@ -330,6 +330,29 @@ class TokenSessionController {
     await _forget();
   }
 
+  /// Best-effort revocation on the relay for a device-only sign-out. The
+  /// session is captured synchronously, so the caller forgets it on this
+  /// device right away without awaiting this. Nothing is persisted (a
+  /// rotated refresh token is only used to obtain the logout token) and it
+  /// never throws: an unreachable relay just leaves the device listed on the
+  /// account.
+  Future<void> revokeOnServerBestEffort({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final cached = currentAccessToken;
+    final refresh = _refreshToken;
+    if (cached == null && refresh == null) return;
+    try {
+      final token =
+          cached ?? (await _api.refresh(refresh!).timeout(timeout)).accessToken;
+      await _api.logout(token).timeout(timeout);
+    } catch (error) {
+      debugPrint(
+        'Sign-out did not reach $origin; signed out here only: $error',
+      );
+    }
+  }
+
   /// Forget the session on this device only, without contacting the relay
   /// (the "remove from this device" recovery path).
   ///

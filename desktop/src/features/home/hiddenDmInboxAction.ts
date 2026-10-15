@@ -62,7 +62,7 @@ export async function openHiddenDmInboxContext({
     });
     if (!isCurrent()) return false;
     if (opened.id !== channelId) {
-      throw new Error("Relay reopened a different DM conversation.");
+      throw new Error("Couldn't reopen this conversation.");
     }
     onOpenContext(channelId, messageId, threadRootId);
     return true;

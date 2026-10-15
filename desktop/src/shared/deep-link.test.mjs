@@ -25,10 +25,14 @@ globalThis.window = {
 globalThis.__TAURI_INTERNALS__ = tauriInternals;
 
 const {
+  listenForDeepLinks,
   listenForEntityDeepLinks,
   listenForNavigationDeepLinks,
   resetNavigationDeepLinkDrain,
 } = await import("@/shared/deep-link.ts");
+const { screenCommunityLink } = await import(
+  "@/features/communities/builtInServer.ts"
+);
 
 function deferred() {
   let resolve;
@@ -508,3 +512,80 @@ for (const delivery of ["cold-start", "running-instance"]) {
     unlisten();
   });
 }
+
+test("a screened-out community link is acknowledged without adding or switching", async () => {
+  const queue = [
+    {
+      id: "foreign",
+      kind: "join",
+      relayUrl: "wss://other.example",
+      code: "abc",
+      name: null,
+      policyReceipt: null,
+    },
+    {
+      id: "ours-add",
+      kind: "add-community",
+      relayUrl: "wss://ours.example",
+      code: null,
+      name: null,
+      policyReceipt: null,
+    },
+    {
+      id: "ours-join",
+      kind: "join",
+      relayUrl: "wss://ours.example",
+      code: "xyz",
+      name: null,
+      policyReceipt: null,
+    },
+  ];
+  const acknowledged = [];
+  const started = [];
+  const opened = [];
+  const screened = [];
+  const rejected = [];
+  ipcHandlers.set("plugin:event|listen", () => nextCallbackId);
+  ipcHandlers.set("plugin:event|unlisten", () => {});
+  ipcHandlers.set("take_pending_community_deep_link", () => queue[0] ?? null);
+  ipcHandlers.set("acknowledge_pending_community_deep_link", ({ id }) => {
+    assert.equal(queue[0]?.id, id);
+    queue.shift();
+    acknowledged.push(id);
+    return true;
+  });
+
+  const unlisten = await listenForDeepLinks({
+    startCommunityOnboarding: (input) => {
+      started.push(input);
+      return true;
+    },
+    openAddCommunity: (payload) => {
+      opened.push(payload);
+      return true;
+    },
+    onAddCommunityAvailable: () => () => {},
+    // The production screen App.tsx installs, with ours as the built-in server.
+    shouldFollowCommunityLink: (link) => {
+      screened.push(link);
+      return screenCommunityLink(link, "wss://ours.example", () =>
+        rejected.push(link.relayUrl),
+      );
+    },
+  });
+  await settle();
+  await settle();
+
+  assert.deepEqual(acknowledged, ["foreign", "ours-add", "ours-join"]);
+  assert.deepEqual(screened, [
+    { kind: "join", relayUrl: "wss://other.example" },
+    { kind: "add-community", relayUrl: "wss://ours.example" },
+    { kind: "join", relayUrl: "wss://ours.example" },
+  ]);
+  assert.deepEqual(rejected, ["wss://other.example"], "only the foreign link");
+  assert.deepEqual(opened, []);
+  assert.equal(started.length, 1);
+  assert.equal(started[0].relayUrl, "wss://ours.example");
+  assert.equal(started[0].inviteCode, "xyz");
+  unlisten();
+});

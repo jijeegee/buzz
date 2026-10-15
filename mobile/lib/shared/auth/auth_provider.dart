@@ -10,6 +10,7 @@ import '../community/community_provider.dart';
 import '../community/community_token_session.dart';
 import '../push/push_bridge.dart';
 import '../push/push_subscription.dart';
+import 'default_community.dart';
 import 'token/relay_origin.dart';
 
 enum AuthStatus { unknown, unauthenticated, authenticated }
@@ -38,12 +39,17 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       return const AuthState(status: AuthStatus.unauthenticated);
     }
 
+    // Startup pinning: with a built-in server only its entries can be
+    // selected; entries for other servers stay stored but unused.
+    final builtInOrigin = ref.read(defaultCommunityOriginProvider);
     var activeId = await storage.loadActiveId();
-    while (communities.isNotEmpty) {
-      final active =
-          activeId != null && communities.any((w) => w.id == activeId)
-          ? communities.firstWhere((w) => w.id == activeId)
-          : communities.first;
+    while (true) {
+      final active = selectActiveCommunity(
+        communities,
+        activeId,
+        builtInOrigin: builtInOrigin,
+      );
+      if (active == null) break;
       await storage.saveActiveId(active.id);
 
       if (active.signedOut) {
@@ -93,6 +99,12 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       }
 
       guard();
+      if (!isServerAllowed(
+        community.relayUrl,
+        builtInOrigin: ref.read(defaultCommunityOriginProvider),
+      )) {
+        throw StateError(differentServerMessage);
+      }
       final storage = ref.read(communityStorageProvider);
       final existing = (await storage.loadAll())
           .where((saved) => saved.id == community.id)
@@ -142,6 +154,12 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   }) async {
     final generation = _logoutGeneration;
     final origin = normalizeRelayOrigin(relayUrl);
+    if (!isServerAllowed(
+      origin,
+      builtInOrigin: ref.read(defaultCommunityOriginProvider),
+    )) {
+      throw StateError(differentServerMessage);
+    }
     final existing = (await ref.read(communityStorageProvider).loadAll())
         .where((community) => _sameOrigin(community.relayUrl, origin))
         .firstOrNull;

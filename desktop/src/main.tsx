@@ -4,6 +4,7 @@ import { App } from "@/app/App";
 import { takeAccountSwitchAtBoot } from "@/features/accounts/lib/accountSwitch";
 import { RootErrorBoundary } from "@/app/RootErrorBoundary";
 import { NostrBindConsentDialog } from "@/features/profile/ui/NostrBindConsentDialog";
+import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import "@fontsource-variable/inter/opsz.css";
 import "@fontsource-variable/inter/opsz-italic.css";
 import "@fontsource/jetbrains-mono/400.css";
@@ -97,7 +98,11 @@ function renderApp() {
                   <PoofBurstProvider>
                     <UpdaterProvider>
                       <App />
-                      <NostrBindConsentDialog />
+                      {/* The bind flow finishes on the upstream Buzz website,
+                          which Kuzz users never use; e2e still covers it. */}
+                      {signingKeyUiTestSeam() ? (
+                        <NostrBindConsentDialog />
+                      ) : null}
                     </UpdaterProvider>
                     <Toaster />
                   </PoofBurstProvider>

@@ -68,7 +68,7 @@ function isValidDtag(dtag: string): boolean {
 
 function checkCoordinate(owner: string, dtag: string): void {
   if (!HEX64_RE.test(owner)) {
-    throw new Error("entityLink: owner must be a 64-char hex pubkey");
+    throw new Error("Couldn't open this link.");
   }
   if (!isValidDtag(dtag)) {
     throw new Error("entityLink: invalid addressable d-tag");
@@ -87,7 +87,7 @@ export function isLinkableCoordinate(owner: string, dtag: string): boolean {
 
 function checkEventId(id: string): void {
   if (!HEX64_RE.test(id)) {
-    throw new Error("entityLink: id must be a 64-char hex event id");
+    throw new Error("Couldn't open this link.");
   }
 }
 
@@ -117,7 +117,7 @@ export function buildCommitLink(input: {
 }): string {
   checkCoordinate(input.owner, input.dtag);
   if (!GIT_OBJECT_ID_RE.test(input.commitHash)) {
-    throw new Error("entityLink: commit must be a 40- or 64-char hex hash");
+    throw new Error("Couldn't open this link.");
   }
   return `buzz://repo?owner=${input.owner.toLowerCase()}&d=${input.dtag}&tab=commits&commit=${input.commitHash.toLowerCase()}`;
 }

@@ -258,7 +258,7 @@ test("clicking outside dismisses the tray without intercepting its trigger", asy
   assert.equal(dismissCount, 3);
 });
 
-test("collision npubs sit inline with agent metadata", async () => {
+test("same-name suggestions never show key fragments", async () => {
   const React = await import("react");
   const { render } = await importTestingLibrary();
   const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
@@ -285,14 +285,12 @@ test("collision npubs sit inline with agent metadata", async () => {
   );
 
   const agentIcons = view.getAllByTestId("mention-agent-icon");
-  const collisionNpubs = view.getAllByTestId("mention-collision-npub");
-  assert.equal(collisionNpubs.length, 2);
-  for (const [index, npub] of collisionNpubs.entries()) {
-    const agentMetadata = agentIcons[index].closest("span")?.parentElement;
-    assert.equal(npub.parentElement, agentMetadata);
-    assert.match(agentMetadata?.textContent ?? "", /agentmanaged by younpub1/);
-    assert.match(npub.className, /(?:^|\s)-translate-y-0\.5(?:\s|$)/);
-    assert.match(npub.className, /(?:^|\s)leading-none(?:\s|$)/);
+  assert.equal(agentIcons.length, 2);
+  assert.equal(view.queryAllByTestId("mention-collision-npub").length, 0);
+  assert.doesNotMatch(view.container.textContent ?? "", /npub1/);
+  for (const icon of agentIcons) {
+    const agentMetadata = icon.closest("span")?.parentElement;
+    assert.match(agentMetadata?.textContent ?? "", /agentmanaged by you$/);
     assert.match(agentMetadata?.className ?? "", /(?:^|\s)min-h-3\.5(?:\s|$)/);
   }
 });

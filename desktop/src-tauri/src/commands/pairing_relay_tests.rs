@@ -1,6 +1,8 @@
 use super::{
-    pairing_relay_from_nip11, probe_pairing_relay, resolve_pairing_relay_url, PairingRelay,
+    allowed_pairing_relay, allowed_pairing_relay_url, pairing_relay_from_nip11,
+    probe_pairing_relay, resolve_pairing_relay_url, PairingRelay,
 };
+use crate::relay::server::{relay_endpoints, KuzzEnv, REFUSED};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test]
@@ -101,4 +103,41 @@ fn main_relay_pairing_uses_main_relay_url() {
     .expect("resolve main pairing relay");
 
     assert_eq!(resolved, "wss://sprout-oss.stage.blox.sqprod.co");
+}
+
+#[tokio::test]
+async fn pairing_refuses_another_main_server_before_probing_it() {
+    // No listener: a probe would fall back to `MainRelay` and succeed, so only
+    // the guard can produce the refusal.
+    assert_eq!(
+        allowed_pairing_relay_url("wss://other.example")
+            .await
+            .unwrap_err(),
+        REFUSED
+    );
+}
+
+#[test]
+fn pairing_refuses_an_advertised_relay_on_another_server() {
+    let ours = relay_endpoints(KuzzEnv::Prod).ws;
+    for advertised in [
+        "wss://pairing.buzz.xyz",
+        "ws://127.0.0.1:5000",
+        "ws://jihobuzz.duckdns.org:8443/pair",
+    ] {
+        assert_eq!(
+            allowed_pairing_relay(ours, PairingRelay::Configured(advertised.to_string()))
+                .unwrap_err(),
+            REFUSED,
+            "{advertised}"
+        );
+    }
+    assert_eq!(
+        allowed_pairing_relay(ours, PairingRelay::LegacyPath).unwrap(),
+        format!("{ours}/pair")
+    );
+    assert_eq!(
+        allowed_pairing_relay(ours, PairingRelay::MainRelay).unwrap(),
+        ours
+    );
 }

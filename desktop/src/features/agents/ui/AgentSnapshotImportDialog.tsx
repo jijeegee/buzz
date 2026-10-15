@@ -241,19 +241,9 @@ export function PreviewBody({
             {preview.sourceAllowlistCount === 1 ? "y" : "ies"})
           </p>
           <p className="text-xs text-muted-foreground">
-            This snapshot includes source-environment pubkeys. Review every key
-            before choosing Keep; Clear is safer when you do not recognize them.
+            This snapshot lists people from another workspace. Choose Clear if
+            you don't recognize them.
           </p>
-          <ul
-            className="max-h-28 space-y-1 overflow-y-auto rounded bg-muted/60 p-2 font-mono text-xs"
-            data-testid="agent-snapshot-import-allowlist-values"
-          >
-            {preview.sourceAllowlist.map((pubkey) => (
-              <li className="break-all" key={pubkey}>
-                {pubkey}
-              </li>
-            ))}
-          </ul>
           <div className="flex flex-col gap-1.5">
             <label className="flex cursor-pointer items-center gap-2">
               <input

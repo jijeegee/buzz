@@ -122,6 +122,9 @@ export async function setup({ lifecycle = false } = {}) {
     "@/features/messages/lib/detachedToastScope": {
       matchesDetachedToastScope: () => true,
     },
+    "@/shared/lib/userFacingError": {
+      toUserFacingErrorDetail: (detail) => detail,
+    },
     "@/features/agents/channelAgents": {
       applyReusableAgentAccessPolicy: async (agent) => {
         calls.push(["local-policy"]);

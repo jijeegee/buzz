@@ -20,6 +20,9 @@ const RELAY_FILTER_BATCH_SIZE: usize = 10;
 /// exceed it together. (Overlapping rebuilds each hold their own budget.)
 const RELAY_DIRECTORY_MAX_CONCURRENCY: usize = 8;
 
+/// User-facing text for every agent-directory failure returned to the frontend.
+const AGENT_DIRECTORY_ERROR: &str = "Couldn't load agents. Try again.";
+
 /// Run one `query_relay` request per `RELAY_FILTER_BATCH_SIZE` chunk of
 /// `filters`, each acquiring a permit from `semaphore` so the total in-flight
 /// request count stays within the shared ceiling even when several batch sets
@@ -34,11 +37,15 @@ async fn query_filter_batches(
     let pages = futures_util::future::try_join_all(filters.chunks(RELAY_FILTER_BATCH_SIZE).map(
         |batch| async move {
             let _permit = semaphore.acquire().await.map_err(|error| {
-                format!("{error_label}: directory concurrency semaphore closed: {error}")
+                eprintln!(
+                    "buzz-desktop: {error_label}: directory concurrency semaphore closed: {error}"
+                );
+                AGENT_DIRECTORY_ERROR.to_string()
             })?;
-            query_relay(state, batch)
-                .await
-                .map_err(|error| format!("{error_label}: {error}"))
+            query_relay(state, batch).await.map_err(|error| {
+                eprintln!("buzz-desktop: {error_label}: {error}");
+                AGENT_DIRECTORY_ERROR.to_string()
+            })
         },
     ))
     .await?;
@@ -132,7 +139,10 @@ async fn list_relay_agents_for_selection(
     let viewer_pubkey = current_user_pubkey(state)?;
     let relay_pubkey = identity_archive::fetch_relay_self(state)
         .await?
-        .ok_or_else(|| "relay agent membership authority is unavailable".to_string())?;
+        .ok_or_else(|| {
+            eprintln!("buzz-desktop: relay agent membership authority is unavailable");
+            AGENT_DIRECTORY_ERROR.to_string()
+        })?;
 
     // Owned identities are relay state, even when this Desktop has never run
     // them or they have not joined a channel yet. Owner-authored coordinates
@@ -148,7 +158,10 @@ async fn list_relay_agents_for_selection(
     let owned_query = async {
         query_all_relay_pages(state, owned_filter)
             .await
-            .map_err(|error| format!("relay owned-agent query failed: {error}"))
+            .map_err(|error| {
+                eprintln!("buzz-desktop: relay owned-agent query failed: {error}");
+                AGENT_DIRECTORY_ERROR.to_string()
+            })
     };
 
     // Membership remains the authoritative and bounded authorization scope,
@@ -166,7 +179,10 @@ async fn list_relay_agents_for_selection(
     let membership_query = async {
         query_all_relay_pages(state, membership_filter)
             .await
-            .map_err(|error| format!("relay agent channel-membership query failed: {error}"))
+            .map_err(|error| {
+                eprintln!("buzz-desktop: relay agent channel-membership query failed: {error}");
+                AGENT_DIRECTORY_ERROR.to_string()
+            })
     };
     // One semaphore per rebuild caps batched `/query` requests across this
     // rebuild's phases, so its runtime-directory and owner-profile phases stay

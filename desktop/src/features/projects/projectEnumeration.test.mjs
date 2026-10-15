@@ -116,7 +116,7 @@ test("enumerateProjectEvents refuses to present a truncated boundary as complete
 
   await assert.rejects(
     enumerateProjectEvents(fetcherFor(events), [30617], 2),
-    /cannot exhaustively enumerate/,
+    /Couldn't load all projects/,
   );
 });
 

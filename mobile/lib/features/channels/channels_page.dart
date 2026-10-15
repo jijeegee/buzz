@@ -12,11 +12,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/auth.dart';
+import '../../shared/auth/default_community.dart';
 import '../../shared/community/add_community_route.dart';
 import '../../shared/community/community_icon_provider.dart';
 import '../../shared/community/community_removal.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/widgets/app_brand_logo.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/bee_refresh_indicator.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
@@ -307,6 +309,7 @@ class ChannelsPage extends HookConsumerWidget {
       );
     }
 
+    final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
     final topSectionGradient = context.appColors.topSectionGradient;
     final usesPinnedGradient = topSectionGradient != null;
 
@@ -328,13 +331,22 @@ class ChannelsPage extends HookConsumerWidget {
             ? _kHeaderFrostMaxBlurSigma * headerFrostProgress.value
             : 20,
         showBottomDivider: false,
-        leading: _CommunityIndicator(onTap: openCommunitySwitcher),
+        // With the built-in server the header is the app's own brand and
+        // has no tap action: there is no server to switch to.
+        leading: hasBuiltInServer
+            ? const AppBrandLogo(
+                key: Key('channels-header-brand-logo'),
+                size: _kTopSectionCommunityAvatarSize,
+              )
+            : _CommunityIndicator(onTap: openCommunitySwitcher),
         centerTitle: false,
         titleStyle: headerTitleStyle,
-        title: _CommunityHeaderTitle(
-          style: headerTitleStyle,
-          onTap: openCommunitySwitcher,
-        ),
+        title: hasBuiltInServer
+            ? _BrandHeaderTitle(style: headerTitleStyle)
+            : _CommunityHeaderTitle(
+                style: headerTitleStyle,
+                onTap: openCommunitySwitcher,
+              ),
         actions: [
           SizedBox(
             width: Grid.xl,

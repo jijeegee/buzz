@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 
 import type { UserSearchResult } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import {
   POOF_ORIGIN_CLASS,
   POOF_POINTER_ORIGIN_CLASS,
@@ -23,11 +24,12 @@ type SelectedRecipientChipTestIds = {
 /**
  * The selected-recipient pill shared by recipient pickers. Its avatar becomes
  * the remove affordance on hover/focus. Surfaces that need identity
- * verification can also make the name open the recipient's full key.
+ * verification can also make the name open the recipient's full key. Kuzz
+ * never shows keys, so that inspector is off by default outside E2E builds.
  */
 export function SelectedRecipientChip({
   disabled,
-  inspectable = true,
+  inspectable = signingKeyUiTestSeam(),
   inspectionOpen = false,
   label,
   onInspectionOpenChange,

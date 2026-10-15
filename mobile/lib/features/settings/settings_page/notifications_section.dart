@@ -31,10 +31,13 @@ class _NotificationsSection extends ConsumerWidget {
         (community.pushNotificationsEnabled &&
             (permissionDenied || permissionUnavailable));
     final canToggle = hasCapability || community.pushNotificationsEnabled;
+    final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
     final subtitle = optOutPending
         ? 'Waiting for relay confirmation; notifications may continue'
         : !community.pushNotificationsEnabled
-        ? 'Off for this community'
+        ? hasBuiltInServer
+              ? 'Off'
+              : 'Off for this community'
         : !hasCapability
         ? 'Push support unavailable; you can still turn notifications off'
         : switch (status) {
@@ -45,7 +48,9 @@ class _NotificationsSection extends ConsumerWidget {
             BuzzPushAuthorizationStatus.authorized ||
             BuzzPushAuthorizationStatus.provisional ||
             BuzzPushAuthorizationStatus.ephemeral =>
-              'Receive message notifications from this community',
+              hasBuiltInServer
+                  ? 'Receive message notifications'
+                  : 'Receive message notifications from this community',
             null when authorization.isLoading =>
               'Checking iOS notification permission',
             null => 'Enabled in Buzz; iOS permission status unavailable',

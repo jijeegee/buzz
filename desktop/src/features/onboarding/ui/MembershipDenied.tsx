@@ -1,25 +1,29 @@
 import * as React from "react";
-import { Check, Copy, KeyRound, ShieldX, Ticket } from "lucide-react";
+import { Check, KeyRound, ShieldX, Ticket, UserRound } from "lucide-react";
 
+import {
+  signOutActiveAccountOnThisDevice,
+  useHasSignedInSession,
+} from "@/features/accounts/lib/signOutActiveAccount";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
 import { nsecToNpub } from "@/shared/lib/nostrUtils";
-import { canonicalNpub, UNAVAILABLE_KEY_LABEL } from "@/shared/lib/pubkey";
+import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 import { InviteRedeemForm } from "./InviteRedeemForm";
-import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
 type MembershipDeniedProps = {
   /** The relay that denied membership — used as the target for bare-code invites. */
   activeRelayUrl: string;
   onBack: () => void;
-  onChangeCommunity: () => void;
+  /** Omitted with a built-in server: there is no other server to pick. */
+  onChangeCommunity?: () => void;
   onImportKey: (nsec: string) => Promise<void>;
   onRetry: () => void;
-  pubkey: string;
 };
 
 export function MembershipDenied({
@@ -28,17 +32,7 @@ export function MembershipDenied({
   onChangeCommunity,
   onImportKey,
   onRetry,
-  pubkey,
 }: MembershipDeniedProps) {
-  // Full canonical npub; an unencodable identity renders the neutral label
-  // (never raw hex) and is never copyable.
-  const identityNpub = React.useMemo(
-    () => (pubkey ? canonicalNpub(pubkey) : null),
-    [pubkey],
-  );
-  const npub =
-    identityNpub ?? (pubkey ? UNAVAILABLE_KEY_LABEL : "Unknown public key");
-  const [copied, setCopied] = React.useState(false);
   const [importError, setImportError] = React.useState<string | null>(null);
   const [isImportFormOpen, setIsImportFormOpen] = React.useState(false);
   const [isImportingKey, setIsImportingKey] = React.useState(false);
@@ -49,17 +43,28 @@ export function MembershipDenied({
 
   const [isInviteFormOpen, setIsInviteFormOpen] = React.useState(false);
   const communityOnboarding = useCommunityOnboarding();
+  const singleServer = useBuiltInServer() !== null;
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
+  const [signOutError, setSignOutError] = React.useState<string | null>(null);
+  const signedIn = useHasSignedInSession();
 
-  const handleCopy = React.useCallback(async () => {
-    if (!identityNpub) return;
+  // Sign out on this computer only (nothing waits on the network, nothing is
+  // deleted); the app restarts on the sign-in screen, where another Google
+  // account can be chosen.
+  const handleUseDifferentAccount = React.useCallback(async () => {
+    setSignOutError(null);
+    setIsSigningOut(true);
     try {
-      await writeTextToClipboard(npub);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback: select the text so the user can copy manually
+      await signOutActiveAccountOnThisDevice();
+    } catch (error) {
+      setSignOutError(
+        error instanceof Error
+          ? error.message
+          : "Couldn't sign out. Try again.",
+      );
+      setIsSigningOut(false);
     }
-  }, [identityNpub, npub]);
+  }, []);
 
   const handleImportKey = React.useCallback(async () => {
     if (!previewNpub) {
@@ -113,42 +118,8 @@ export function MembershipDenied({
             </h1>
           </div>
           <p className="text-sm leading-6 text-muted-foreground">
-            This relay requires an invitation. Ask a relay admin to add you as a
-            member, then come back and try again.
-          </p>
-        </div>
-
-        <div className="mt-6 space-y-3">
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">
-              Your public key (npub)
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 truncate rounded-xl border border-border/70 bg-muted/30 px-3 py-2.5 font-mono text-xs text-foreground">
-                {npub}
-              </code>
-              <Button
-                className="shrink-0"
-                disabled={!identityNpub}
-                onClick={() => {
-                  void handleCopy();
-                }}
-                size="icon"
-                title="Copy npub"
-                type="button"
-                variant="outline"
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-emerald-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
-          <p className="text-xs leading-5 text-muted-foreground">
-            This is your public identity — it&apos;s safe to share. Send it to
-            the relay admin so they can invite you.
+            This community is invite-only. Ask an admin for an invite link, then
+            use it below.
           </p>
         </div>
 
@@ -259,14 +230,16 @@ export function MembershipDenied({
                 >
                   Back
                 </Button>
-                <Button
-                  className="flex-1 text-muted-foreground hover:text-accent-foreground"
-                  onClick={onChangeCommunity}
-                  type="button"
-                  variant="ghost"
-                >
-                  Change community
-                </Button>
+                {onChangeCommunity ? (
+                  <Button
+                    className="flex-1 text-muted-foreground hover:text-accent-foreground"
+                    onClick={onChangeCommunity}
+                    type="button"
+                    variant="ghost"
+                  >
+                    Change community
+                  </Button>
+                ) : null}
               </div>
               <button
                 className="flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -277,18 +250,42 @@ export function MembershipDenied({
                 <Ticket className="h-4 w-4" />
                 Have an invite?
               </button>
-              <button
-                className="flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                data-testid="membership-denied-change-key"
-                onClick={() => {
-                  setImportError(null);
-                  setIsImportFormOpen(true);
-                }}
-                type="button"
-              >
-                <KeyRound className="h-4 w-4" />
-                Use a different key
-              </button>
+              {singleServer && signedIn ? (
+                <button
+                  className="flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  data-testid="membership-denied-switch-account"
+                  disabled={isSigningOut}
+                  onClick={() => void handleUseDifferentAccount()}
+                  type="button"
+                >
+                  <UserRound className="h-4 w-4" />
+                  Use a different Google account
+                </button>
+              ) : null}
+              {signOutError ? (
+                <p
+                  className="text-center text-xs text-destructive"
+                  role="alert"
+                >
+                  {signOutError}
+                </p>
+              ) : null}
+              {/* Kuzz accounts come from Google sign-in; switching keys is an
+                  E2E-only affordance. */}
+              {signingKeyUiTestSeam() ? (
+                <button
+                  className="flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  data-testid="membership-denied-change-key"
+                  onClick={() => {
+                    setImportError(null);
+                    setIsImportFormOpen(true);
+                  }}
+                  type="button"
+                >
+                  <KeyRound className="h-4 w-4" />
+                  Use a different key
+                </button>
+              ) : null}
             </>
           )}
         </div>

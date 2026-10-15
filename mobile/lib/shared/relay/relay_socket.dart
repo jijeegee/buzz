@@ -6,6 +6,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../auth/default_community.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
 
@@ -102,6 +103,12 @@ class RelaySocket {
   /// Connect to the relay and complete NIP-42 authentication.
   Future<void> connect() async {
     if (_state != SocketState.disconnected) return;
+    // Every relay socket opens here: only the built-in server may be
+    // reached, whatever address the caller was given.
+    if (!allowConnection('relay connection', _wsUrl)) {
+      _onDisconnected(StateError(differentServerMessage));
+      return;
+    }
     _state = SocketState.connecting;
 
     try {

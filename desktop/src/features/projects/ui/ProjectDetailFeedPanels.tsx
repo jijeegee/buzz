@@ -16,7 +16,7 @@ import { selectionItemFromCommit } from "@/features/projects/lib/projectSelectio
 import { commitShareLink } from "@/features/projects/lib/projectShareLinks";
 import { relativeTime } from "@/features/projects/lib/projectsViewHelpers";
 import type { ProjectRepoCommit } from "@/shared/api/types";
-import { truncateNpub } from "@/shared/lib/pubkey";
+
 import { BuzzLoadingState } from "@/shared/ui/BuzzLoadingState";
 import {
   resolveUserLabel,
@@ -127,9 +127,7 @@ export function ContributorsPanel({
         commitCount: signedCounts.commits,
         id: `buzz:${pubkey}`,
         isAgent,
-        label: profile
-          ? resolveUserLabel({ profiles, pubkey })
-          : truncateNpub(pubkey),
+        label: resolveUserLabel({ profiles, pubkey }),
         profileLinked: true,
         pubkey,
         reviewCount: signedCounts.reviews,

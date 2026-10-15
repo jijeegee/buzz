@@ -15,8 +15,6 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { Switch } from "@/shared/ui/switch";
 import { Toggle } from "@/shared/ui/toggle";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
-import { safeNpub } from "@/shared/lib/nostrUtils";
-import { truncateNpub } from "@/shared/lib/pubkey";
 import { getPlatformKeysById } from "@/shared/lib/keyboard-shortcuts";
 
 export type MentionSuggestion = {
@@ -164,9 +162,8 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
     return null;
   }
 
-  // Name collisions are the impersonation vector: a vanity-ground key can
-  // wear any display name. When two suggestions share a name, surface each
-  // one's npub (truncated; full key in the hover tooltip) to tell them apart.
+  // Name collisions: when two suggestions share a name, the owner line of a
+  // provenance-marked agent is suppressed. Keys are never shown to users.
   const nameCounts = new Map<string, number>();
   for (const suggestion of suggestions) {
     const name = suggestion.displayName.toLowerCase();
@@ -262,11 +259,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
               hasNameCollision && suggestion.agentProvenance
                 ? null
                 : suggestion.ownerLabel;
-            const collisionNpub =
-              hasNameCollision && suggestion.pubkey
-                ? safeNpub(suggestion.pubkey)
-                : null;
-            const hasMetadataBeforeNpub = Boolean(
+            const hasMetadata = Boolean(
               suggestion.kind === "team" ||
                 suggestion.isAgent ||
                 suggestion.role ||
@@ -332,7 +325,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     >
                       {suggestion.displayName}
                     </span>
-                    {hasMetadataBeforeNpub || collisionNpub ? (
+                    {hasMetadata ? (
                       <span
                         className={cn(
                           "flex min-h-3.5 min-w-0 items-center gap-1.5 text-2xs leading-none",
@@ -391,15 +384,6 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                               : ownerLabel
                                 ? `managed by ${ownerLabel}`
                                 : "not in channel"}
-                          </span>
-                        ) : null}
-                        {collisionNpub ? (
-                          <span
-                            className="-translate-y-0.5 shrink-0 font-mono leading-none"
-                            data-testid="mention-collision-npub"
-                            title={collisionNpub}
-                          >
-                            {truncateNpub(collisionNpub)}
                           </span>
                         ) : null}
                       </span>

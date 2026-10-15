@@ -80,10 +80,10 @@ export function conditionValueError(
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (field === "trigger_author" && !HEX_ID_PATTERN.test(trimmed)) {
-    return "Enter a 64-character hex pubkey.";
+    return "Choose a valid author.";
   }
   if (field.endsWith("_id") && !HEX_ID_PATTERN.test(trimmed)) {
-    return "Enter a 64-character hex event ID.";
+    return "Choose a valid message.";
   }
   return null;
 }

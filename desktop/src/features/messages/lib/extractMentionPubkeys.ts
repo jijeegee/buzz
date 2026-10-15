@@ -32,11 +32,12 @@ export function selectedMentionLabel(
     return existing !== undefined && existing !== pubkey.toLowerCase();
   };
   if (!conflicts(displayName)) return displayName;
-  const qualified = `${displayName} (${pubkey.toLowerCase()})`;
-  let label = qualified;
+  // Kuzz never shows keys: a second identity picked under the same name gets
+  // the next free ordinal ("Scout (2)"), fixed at pick time. A display name
+  // may itself look numbered; never overwrite that binding.
   let suffix = 2;
-  // A display name may itself look qualified. Never overwrite that binding.
-  while (conflicts(label)) label = `${qualified} ${suffix++}`;
+  let label = `${displayName} (${suffix})`;
+  while (conflicts(label)) label = `${displayName} (${++suffix})`;
   return label;
 }
 

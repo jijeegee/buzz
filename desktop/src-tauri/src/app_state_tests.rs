@@ -1093,7 +1093,7 @@ fn persist_identity_to_keyring_readback_corrupt_returns_err() {
         "must return Err when read-back returns a different value"
     );
     assert!(
-        result.unwrap_err().contains("read-back"),
+        result.unwrap_err().contains("secure storage"),
         "error message must mention read-back verify failure"
     );
 }
@@ -1369,7 +1369,7 @@ fn verify_fails_store_does_not_write_marker_or_delete_file() {
     );
     let err_msg = result.unwrap_err();
     assert!(
-        err_msg.contains("read-back"),
+        err_msg.contains("secure storage"),
         "error must mention read-back verify failure: {err_msg}"
     );
 

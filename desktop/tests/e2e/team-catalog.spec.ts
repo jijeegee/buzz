@@ -462,9 +462,7 @@ test("a queued team share is not presented as relay-published", async ({
   await openTeamShareDialog(page, "Queued Crew");
   await setTeamCatalogAccess(page, true);
   await expect(
-    page.getByText(
-      "Sharing Queued Crew is queued. It will appear after the relay accepts the update.",
-    ),
+    page.getByText("Sharing Queued Crew… It will appear shortly."),
   ).toBeVisible();
   await page
     .getByTestId("team-share-dialog")

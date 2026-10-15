@@ -90,9 +90,7 @@ export async function enumerateProjectEvents(
       // either a larger pageSize constant or a relay-side deduplication pass.
       // TODO: add a telemetry event here so pathological relay states are
       // diagnosable before they reach users.
-      throw new Error(
-        "The relay cannot exhaustively enumerate projects because too many events share one timestamp.",
-      );
+      throw new Error("Couldn't load all projects. Try again.");
     }
     if (oldest <= 0) return [...eventsById.values()];
     until = oldest - 1;

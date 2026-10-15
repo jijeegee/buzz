@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/auth/default_community.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/deeplink/pending_deep_link_provider.dart';
 import '../invites/invite_join_provider.dart';
@@ -194,9 +195,19 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
               _pushChannel(channel, ChannelDeepLink(channelId: focusChannelId));
             }
           }
+        } else if (inviteState.differentService) {
+          messenger?.showSnackBar(
+            const SnackBar(content: Text(differentServiceInviteMessage)),
+          );
         } else if (status == InviteJoinStatus.switchedExisting) {
           messenger?.showSnackBar(
-            const SnackBar(content: Text('Switched to this community')),
+            SnackBar(
+              content: Text(
+                ref.read(hasBuiltInServerProvider)
+                    ? 'You’re already a member'
+                    : 'Switched to this community',
+              ),
+            ),
           );
         }
       } catch (error) {
