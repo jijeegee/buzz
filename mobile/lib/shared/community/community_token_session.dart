@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../auth/token/relay_origin.dart';
@@ -61,6 +63,11 @@ final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
 );
 
 /// Ends authentication without removing recovery material or membership.
+///
+/// With `deviceOnly` (the recovery "Sign out", which must work with the
+/// relay unreachable) the session is forgotten here at once and the relay
+/// revocation is only attempted in the background
+/// ([TokenSessionController.revokeOnServerBestEffort]).
 final communityLogoutSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
   (ref) => (community, {required deviceOnly}) async {
     if (!community.tokenAuth && community.googleBackupAccountId == null) return;
@@ -69,7 +76,9 @@ final communityLogoutSessionEnderProvider = Provider<CommunityTokenSessionEnder>
         ? keyBackupSessionControllerProvider(origin)
         : tokenSessionControllerProvider(origin);
     final controller = ref.read(provider);
-    if (!deviceOnly) {
+    if (deviceOnly) {
+      unawaited(controller.revokeOnServerBestEffort());
+    } else {
       if (controller.state.status == TokenSessionStatus.restoring) {
         await controller.restore();
       }

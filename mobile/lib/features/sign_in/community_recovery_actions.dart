@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/auth_provider.dart';
 import '../../shared/auth/default_community.dart';
+import '../../shared/auth/token/token.dart';
 import '../../shared/community/community.dart';
 import '../../shared/community/community_provider.dart';
 import '../../shared/community/community_removal.dart';
@@ -15,11 +16,13 @@ import '../../shared/widgets/modal_presentation.dart';
 /// Ways out of a community whose session cannot be used (AGENTS.md rule 6).
 ///
 /// With the built-in server there is nothing to switch to or remove, so the
-/// way out is "Sign out": the ordinary, non-destructive sign-out (accounts,
-/// keys and messages stay on this device). "Sign in again" with Google is
-/// the host screen's own button (the session recovery view's
-/// "Sign in again", the locked sign-in page's Google button), both on the
-/// built-in server. Without a built-in server (test harness) this offers the
+/// way out is "Sign out" on this device only: no network is needed (the
+/// server is often what is unreachable here), the relay revocation is a
+/// background best effort, and accounts, keys and messages stay on this
+/// device. It is offered only while there is a signed-in session to end.
+/// "Retry" and "Sign in again" with Google are the host screen's own,
+/// always-shown buttons (the session recovery view's "Retry now" and
+/// "Sign in again", the locked sign-in page's Google button). Without a built-in server (test harness) this offers the
 /// upstream switch to another stored community or removal of this one.
 ///
 /// Shown by the session recovery view and the locked sign-in page so a
@@ -138,6 +141,24 @@ class CommunityRecoveryActions extends HookConsumerWidget {
   }
 }
 
+/// Whether the active community has a signed-in session for "Sign out" to
+/// end: not signed out, and for a token community a stored or live token
+/// session (not `signedOut`, `signingIn` or still `restoring`).
+final _hasSignedInSessionProvider = Provider<bool>((ref) {
+  final active = ref.watch(activeCommunityProvider).value;
+  if (active == null || active.signedOut) return false;
+  final origin = ref.watch(activeTokenOriginProvider);
+  if (origin == null) return true;
+  return switch (ref.watch(tokenSessionProvider(origin)).status) {
+    TokenSessionStatus.signedIn ||
+    TokenSessionStatus.retrying ||
+    TokenSessionStatus.stalled => true,
+    TokenSessionStatus.restoring ||
+    TokenSessionStatus.signingIn ||
+    TokenSessionStatus.signedOut => false,
+  };
+});
+
 class _SignOutRecoveryAction extends HookConsumerWidget {
   const _SignOutRecoveryAction();
 
@@ -145,32 +166,37 @@ class _SignOutRecoveryAction extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final busy = useState(false);
     final error = useState<String?>(null);
+    final hasSession = ref.watch(_hasSignedInSessionProvider);
 
     Future<void> signOut() async {
       if (busy.value) return;
       busy.value = true;
       error.value = null;
       try {
-        // Ends sessions only; accounts, keys and messages stay here.
-        await ref.read(authProvider.notifier).signOut();
+        // On this device only: never waits on the server. Ends sessions
+        // only; accounts, keys and messages stay here.
+        await ref.read(authProvider.notifier).signOut(deviceOnly: true);
       } catch (_) {
         if (context.mounted) {
-          error.value =
-              'Couldn’t sign out. Check your connection and try again.';
+          error.value = 'Couldn’t sign out on this device. Try again.';
         }
       } finally {
         if (context.mounted) busy.value = false;
       }
     }
 
+    if (!hasSession && !busy.value && error.value == null) {
+      return const SizedBox.shrink();
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextButton(
-          key: const Key('community-recovery-sign-out'),
-          onPressed: busy.value ? null : () => unawaited(signOut()),
-          child: Text(busy.value ? 'Signing out…' : 'Sign out'),
-        ),
+        if (hasSession || busy.value)
+          TextButton(
+            key: const Key('community-recovery-sign-out'),
+            onPressed: busy.value ? null : () => unawaited(signOut()),
+            child: Text(busy.value ? 'Signing out…' : 'Sign out'),
+          ),
         if (error.value != null)
           Semantics(
             liveRegion: true,

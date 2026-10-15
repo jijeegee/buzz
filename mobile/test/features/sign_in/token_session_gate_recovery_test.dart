@@ -32,7 +32,11 @@ void main() {
   late Community stalled;
   late Community other;
 
-  Future<void> pump(WidgetTester tester, {bool builtIn = false}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    bool builtIn = false,
+    void Function()? arrange,
+  }) async {
     server = FakeAuthServer();
     tokens = FakeRefreshTokenStore();
     storage = CommunityStorage(secure: FakeSecureStorage());
@@ -51,6 +55,7 @@ void main() {
     await storage.save(stalled);
     await storage.save(other);
     await storage.saveActiveId(stalled.id);
+    arrange?.call();
     final clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
     container = ProviderContainer(
       overrides: [
@@ -180,16 +185,63 @@ void main() {
       expect(remaining.every((community) => community.signedOut), isTrue);
     });
 
-    testWidgets('the locked page has Google sign-in and sign out only', (
+    testWidgets('sign out works on this device with the server unreachable', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        builtIn: true,
+        arrange: () {
+          tokens.data[_origin] = StoredTokenSession(
+            refreshToken: 'bzr_saved',
+            principalId: 'q' * 64,
+          );
+          server.refreshResponses.add(
+            (_) => FakeAuthServer.authError(503, 'unavailable'),
+          );
+        },
+      );
+      expect(
+        container.read(tokenSessionProvider(_origin)).status,
+        TokenSessionStatus.retrying,
+      );
+      expect(find.byKey(const Key('token-session-retry')), findsOneWidget);
+      expect(
+        find.byKey(const Key('token-session-sign-in-again')),
+        findsOneWidget,
+      );
+
+      // From here on the server never answers.
+      server.holdRefreshes = true;
+      await tester.tap(find.byKey(const Key('community-recovery-sign-out')));
+      await frames(tester);
+
+      // Signed out here without waiting on the server; nothing is removed.
+      final remaining = await storage.loadAll();
+      expect(remaining.length, 2);
+      expect(remaining.every((community) => community.signedOut), isTrue);
+      expect(tokens.data, isEmpty);
+      expect(find.byKey(const Key('community-recovery-error')), findsNothing);
+
+      // The server-side revocation is a background best effort.
+      expect(server.heldRefreshes, hasLength(1));
+      server.heldRefreshes.removeFirst().complete(
+        FakeAuthServer.authError(503, 'unavailable'),
+      );
+      await frames(tester);
+    });
+
+    testWidgets('the locked page has Google sign-in and no sign out', (
       tester,
     ) async {
       await pump(tester, builtIn: true);
 
       expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
       expect(find.byKey(const Key('token-sign-in-relay-url')), findsNothing);
+      // No saved sign-in: there is no session to sign out of.
       expect(
         find.byKey(const Key('community-recovery-sign-out')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(find.byKey(const Key('community-recovery-remove')), findsNothing);
       expect(
