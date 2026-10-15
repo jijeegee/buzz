@@ -343,9 +343,7 @@ test("same-name teammates are bound sequentially without replacing either recipi
 });
 
 test("releasing a same-name primary promotes the next pick", async () => {
-  const { releaseSelectedMention } = await import(
-    "./extractMentionPubkeys.ts"
-  );
+  const { releaseSelectedMention } = await import("./extractMentionPubkeys.ts");
   const selected = new Map();
   const repeated = [];
   for (const pubkey of ["first", "second", "third"]) {

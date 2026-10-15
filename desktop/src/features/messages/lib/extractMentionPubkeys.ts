@@ -155,7 +155,10 @@ export function selectedMentionLabel(
 /** Labels for a multi-identity selection (e.g. a team); see `selectedMentionLabel`. */
 export function selectedMentionLabels<
   T extends { displayName: string; pubkey?: string },
->(selections: readonly T[], _selectedMentions: ReadonlyMap<string, string>): T[] {
+>(
+  selections: readonly T[],
+  _selectedMentions: ReadonlyMap<string, string>,
+): T[] {
   return [...selections];
 }
 

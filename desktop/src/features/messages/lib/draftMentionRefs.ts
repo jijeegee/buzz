@@ -105,8 +105,8 @@ export function buildEditMentionState(
         .filter((key): key is string => Boolean(key)),
     ),
   ].flatMap((pubkey) =>
+    // An identity with no name renders, and was sent, as `@Unknown user`.
     (
-      // An identity with no name renders, and was sent, as `@Unknown user`.
       resolveMentionProps([["mention", pubkey]], profiles, content)
         .mentionNames ?? [UNKNOWN_USER_LABEL]
     ).map((displayName) => ({
