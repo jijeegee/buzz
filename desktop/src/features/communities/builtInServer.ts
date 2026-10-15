@@ -20,8 +20,9 @@ import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
  * leaving or removing servers, and invites only for that server.
  *
  * Only E2E mock builds (`vite build --mode e2e`) keep the upstream
- * multi-community controls, so their suites stay valid. Without a native
- * bridge (unit tests, a plain browser) the value is `null` as well.
+ * multi-community controls (value `null`), so their suites stay valid. When
+ * the native call fails, the app shows a connection error with Retry; it
+ * never falls back to the multi-community controls.
  */
 
 export const DIFFERENT_SERVICE_INVITE_MESSAGE =
@@ -29,14 +30,16 @@ export const DIFFERENT_SERVICE_INVITE_MESSAGE =
 
 export type BuiltInServerState =
   | { status: "loading" }
+  | { status: "error" }
   | { status: "ready"; relayUrl: string | null };
 
 /**
- * Host + port identifying a server, after the app's usual relay URL
- * normalisation. ws/wss/http/https forms of one host:port compare equal;
- * default ports are omitted, as `URL.host` does.
+ * Scheme kind + host + port identifying a server, after the app's usual relay
+ * URL normalisation: its `http(s)` origin. `wss` and `https` (or `ws` and
+ * `http`) forms of one host:port compare equal, but an unencrypted address
+ * never matches an encrypted one. A bare host means `wss`.
  */
-export function serverHostKey(url: string | null | undefined): string | null {
+export function serverKey(url: string | null | undefined): string | null {
   const trimmed = url?.trim();
   if (!trimmed) return null;
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
@@ -47,19 +50,23 @@ export function serverHostKey(url: string | null | undefined): string | null {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return null;
     }
-    return parsed.host.toLowerCase() || null;
+    return parsed.host ? parsed.origin.toLowerCase() : null;
   } catch {
     return null;
   }
 }
 
-/** Whether `url` points at the same server (host + port) as `builtIn`. */
+/**
+ * Whether `url` points at the same server as `builtIn`: host + port over the
+ * same kind of scheme. The built-in server is `wss`, so `ws`/`http` never
+ * match it; only a dev build's unencrypted override is reached over `ws`.
+ */
 export function isSameServer(
   url: string | null | undefined,
   builtIn: string | null | undefined,
 ): boolean {
-  const a = serverHostKey(url);
-  return a !== null && a === serverHostKey(builtIn);
+  const a = serverKey(url);
+  return a !== null && a === serverKey(builtIn);
 }
 
 /**
@@ -71,6 +78,19 @@ export function isAllowedServer(
   builtIn: string | null,
 ): boolean {
   return builtIn === null || isSameServer(relayUrl, builtIn);
+}
+
+/**
+ * Refuse, with {@link DIFFERENT_SERVICE_INVITE_MESSAGE}, any request the
+ * webview would send to `relayUrl` unless it is the built-in server. Fails
+ * closed: before the built-in server is known, or when reading it failed,
+ * nothing is allowed. Only E2E mock builds (no built-in server) allow every
+ * host.
+ */
+export function ensureAllowedServer(relayUrl: string): void {
+  const allowed =
+    state.status === "ready" && isAllowedServer(relayUrl, state.relayUrl);
+  if (!allowed) throw new Error(DIFFERENT_SERVICE_INVITE_MESSAGE);
 }
 
 /**
@@ -90,9 +110,23 @@ export function communityLinkDecision(
 }
 
 /**
- * The built-in relay URL reported by the native side, or `null` when the
- * single-server mode is off: no usable value, or an E2E mock build (whose
- * suites drive the upstream controls).
+ * The deep-link screen (`shouldFollowCommunityLink`): whether to follow a
+ * community link, calling `onReject` for a link to another server.
+ */
+export function screenCommunityLink(
+  link: { kind: "connect" | "join" | "add-community"; relayUrl: string },
+  builtIn: string | null,
+  onReject: () => void,
+): boolean {
+  const decision = communityLinkDecision(link.kind, link.relayUrl, builtIn);
+  if (decision === "reject") onReject();
+  return decision === "follow";
+}
+
+/**
+ * The built-in relay URL reported by the native side, or `null`: an E2E mock
+ * build (whose suites drive the upstream controls), or no usable value (which
+ * `loadBuiltInServer` treats as a failure, never as the upstream mode).
  */
 export function resolveBuiltInServer(
   configured: string | null | undefined,
@@ -100,7 +134,7 @@ export function resolveBuiltInServer(
 ): string | null {
   if (signingKeyUiTestSeam(mode)) return null;
   const trimmed = configured?.trim();
-  if (!trimmed || serverHostKey(trimmed) === null) return null;
+  if (!trimmed || serverKey(trimmed) === null) return null;
   return trimmed;
 }
 
@@ -156,12 +190,13 @@ export function resolveStartupPin(
   if (match) {
     return { communities: [...communities], activeId: match.id, created: null };
   }
+  // A fresh entry: nothing is copied from the other server's entry (its
+  // account is not this server's), so it starts signed out.
   const relayUrl = normalizeRelayUrl(builtIn);
   const created: Community = {
     id: createId(),
     name: deriveCommunityName(relayUrl),
     relayUrl,
-    pubkey: current.pubkey,
     addedAt: now().toISOString(),
   };
   return {
@@ -218,21 +253,31 @@ function getSnapshot(): BuiltInServerState {
   return state;
 }
 
+const readBuiltInRelayUrl = () => invokeTauri<string>("get_built_in_relay_url");
+
 /**
- * Read the built-in server once per app run. A failed native call resolves
- * to `null` (upstream behaviour) rather than blocking startup.
+ * Read the built-in server once per app run. A failed native call (or an
+ * unusable value) leaves the state `error` and resolves to `null`: the app
+ * root shows a connection error with Retry (`retryBuiltInServer`), never the
+ * upstream multi-community controls.
  */
 export function loadBuiltInServer(
-  readConfigured: () => Promise<string | null> = () =>
-    invokeTauri<string>("get_built_in_relay_url"),
+  readConfigured: () => Promise<string | null> = readBuiltInRelayUrl,
   mode?: string,
 ): Promise<string | null> {
   if (state.status === "ready") return Promise.resolve(state.relayUrl);
   if (!loading) {
-    loading = readConfigured()
-      .catch(() => null)
-      .then((configured) => {
-        const relayUrl = resolveBuiltInServer(configured, mode);
+    const read: Promise<string | null> = signingKeyUiTestSeam(mode)
+      ? Promise.resolve(null)
+      : readConfigured().then((configured) => {
+          const relayUrl = resolveBuiltInServer(configured, mode);
+          if (relayUrl === null) {
+            throw new Error("no usable built-in server address");
+          }
+          return relayUrl;
+        });
+    loading = read.then(
+      (relayUrl) => {
         // Stored before anything reads the active community (the app root
         // waits for this), so startup never applies another server.
         try {
@@ -245,12 +290,34 @@ export function loadBuiltInServer(
         }
         setState({ status: "ready", relayUrl });
         return relayUrl;
-      });
+      },
+      (error) => {
+        console.error(
+          "[communities] reading the built-in server failed:",
+          error,
+        );
+        loading = null;
+        setState({ status: "error" });
+        return null;
+      },
+    );
   }
   return loading;
 }
 
-/** The built-in relay URL, or `null` while loading or when there is none. */
+/** Read the built-in server again after a failure (the error screen's Retry). */
+export function retryBuiltInServer(
+  readConfigured: () => Promise<string | null> = readBuiltInRelayUrl,
+  mode?: string,
+): Promise<string | null> {
+  if (state.status === "error") setState({ status: "loading" });
+  return loadBuiltInServer(readConfigured, mode);
+}
+
+/**
+ * The built-in relay URL, or `null` while loading, after a failed read, or
+ * when there is none (E2E mock builds).
+ */
 export function getBuiltInServer(): string | null {
   return state.status === "ready" ? state.relayUrl : null;
 }
@@ -262,8 +329,9 @@ export function useBuiltInServerState(): BuiltInServerState {
 
 /**
  * The built-in relay URL, or `null` when the upstream multi-community
- * controls apply. The app root waits for it before rendering anything that
- * reads it, so `null` here never stands in for "still loading" in practice.
+ * controls apply. The app root renders nothing that reads it until it is
+ * ready (a failed read shows the connection error instead), so `null` here
+ * never stands in for "still loading" or "failed" in practice.
  */
 export function useBuiltInServer(): string | null {
   const current = useBuiltInServerState();

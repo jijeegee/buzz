@@ -49,11 +49,12 @@ import { ResetFailedScreen } from "@/features/onboarding/ui/ResetFailedScreen";
 import { SignedOutGate } from "@/features/onboarding/ui/SignedOutScreen";
 import { loadCommunityDiscoveryAfterLeave } from "@/features/communities/communityStorage";
 import {
-  communityLinkDecision,
+  screenCommunityLink,
   DIFFERENT_SERVICE_INVITE_MESSAGE,
   getBuiltInServer,
   isAllowedServer,
   loadBuiltInServer,
+  retryBuiltInServer,
   useBuiltInServer,
   useBuiltInServerState,
 } from "@/features/communities/builtInServer";
@@ -904,17 +905,10 @@ function MachineBootstrap({ sharedIdentity }: { sharedIdentity: boolean }) {
       startCommunityOnboarding: communityOnboarding.start,
       openAddCommunity,
       onAddCommunityAvailable: onAddCommunityPrefillAvailable,
-      shouldFollowCommunityLink: ({ kind, relayUrl }) => {
-        const decision = communityLinkDecision(
-          kind,
-          relayUrl,
-          getBuiltInServer(),
-        );
-        if (decision === "reject") {
-          toast.error(DIFFERENT_SERVICE_INVITE_MESSAGE);
-        }
-        return decision === "follow";
-      },
+      shouldFollowCommunityLink: (link) =>
+        screenCommunityLink(link, getBuiltInServer(), () =>
+          toast.error(DIFFERENT_SERVICE_INVITE_MESSAGE),
+        ),
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -982,6 +976,17 @@ export function App() {
         setSharedIdentity(false);
       });
   }, []);
+
+  // Reading the built-in server failed: a connection error with Retry,
+  // never the upstream multi-community controls.
+  if (builtInServer.status === "error") {
+    return (
+      <CommunityApplyErrorScreen
+        error="Couldn't reach Kuzz."
+        onRetry={() => void retryBuiltInServer()}
+      />
+    );
+  }
 
   if (sharedIdentity === null || builtInServer.status === "loading") {
     return <AppLoadingGate />;

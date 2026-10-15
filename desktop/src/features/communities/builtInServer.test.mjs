@@ -32,6 +32,7 @@ globalThis.__TAURI_INTERNALS__ = {
 
 const {
   communityLinkDecision,
+  ensureAllowedServer,
   getBuiltInServer,
   isAllowedServer,
   isSameServer,
@@ -40,7 +41,8 @@ const {
   pinnedActiveCommunityId,
   resolveBuiltInServer,
   resolveStartupPin,
-  serverHostKey,
+  retryBuiltInServer,
+  serverKey,
   setBuiltInServerForTests,
 } = await import("./builtInServer.ts");
 const { loadActiveCommunityId, loadCommunities, saveCommunities } =
@@ -63,18 +65,20 @@ beforeEach(() => {
   setBuiltInServerForTests(undefined);
 });
 
-test("servers compare by host + port across ws/wss/http/https", () => {
-  assert.equal(serverHostKey(BUILT_IN), "jihobuzz.duckdns.org:8443");
+test("servers compare by host + port over the same kind of scheme", () => {
+  assert.equal(serverKey(BUILT_IN), "https://jihobuzz.duckdns.org:8443");
   for (const same of [
     "wss://jihobuzz.duckdns.org:8443/",
-    "ws://JIHOBUZZ.duckdns.org:8443",
+    "wss://JIHOBUZZ.duckdns.org:8443",
     "https://jihobuzz.duckdns.org:8443/invite/abc",
-    "http://jihobuzz.duckdns.org:8443",
     "jihobuzz.duckdns.org:8443",
   ]) {
     assert.ok(isSameServer(same, BUILT_IN), same);
   }
   for (const other of [
+    // Unencrypted forms never match the (encrypted) built-in server.
+    "ws://jihobuzz.duckdns.org:8443",
+    "http://jihobuzz.duckdns.org:8443",
     "wss://jihobuzz.duckdns.org",
     "wss://jihobuzz.duckdns.org:9443",
     "wss://evil.example:8443",
@@ -84,9 +88,15 @@ test("servers compare by host + port across ws/wss/http/https", () => {
   ]) {
     assert.equal(isSameServer(other, BUILT_IN), false, String(other));
   }
+  // A dev build's unencrypted override is reached over ws/http alike.
+  assert.ok(isSameServer("http://localhost:3000", "ws://localhost:3000"));
+  assert.equal(
+    isSameServer("wss://localhost:3000", "ws://localhost:3000"),
+    false,
+  );
 });
 
-test("the gate is off in E2E mock builds and without a value", () => {
+test("no built-in value for E2E mock builds or an unusable address", () => {
   assert.equal(resolveBuiltInServer(BUILT_IN, "e2e"), null);
   assert.equal(resolveBuiltInServer(null, "production"), null);
   assert.equal(resolveBuiltInServer("   ", "production"), null);
@@ -143,7 +153,7 @@ test("the active community stays on the built-in server", () => {
 
 test("startup selects the stored built-in community", () => {
   const other = community("other", "wss://old.example");
-  const ours = community("ours", "ws://jihobuzz.duckdns.org:8443");
+  const ours = community("ours", "https://jihobuzz.duckdns.org:8443/");
   const pin = resolveStartupPin([other, ours], "other", BUILT_IN);
   assert.deepEqual(pin, {
     communities: [other, ours],
@@ -153,10 +163,19 @@ test("startup selects the stored built-in community", () => {
   assert.equal(resolveStartupPin([other, ours], "ours", BUILT_IN), null);
   assert.equal(resolveStartupPin([other, ours], "other", null), null);
   assert.equal(resolveStartupPin([], null, BUILT_IN), null);
+  // An unencrypted entry for our host is not ours: a new entry is added.
+  const insecure = community("insecure", "ws://jihobuzz.duckdns.org:8443");
+  const added = resolveStartupPin([insecure], "insecure", BUILT_IN);
+  assert.ok(added?.created);
+  assert.equal(added.created.relayUrl, BUILT_IN);
 });
 
-test("startup adds the built-in community when only others are stored", () => {
-  const other = community("other", "wss://old.example", { pubkey: "ab" });
+test("startup adds a fresh, signed-out built-in community when only others are stored", () => {
+  const other = community("other", "wss://old.example", {
+    pubkey: "ab",
+    token: "secret",
+    reposDir: "/repos",
+  });
   const pin = resolveStartupPin(
     [other],
     "other",
@@ -171,9 +190,9 @@ test("startup adds the built-in community when only others are stored", () => {
     id: "new-id",
     name: "jihobuzz",
     relayUrl: BUILT_IN,
-    pubkey: "ab",
     addedAt: "2026-10-15T00:00:00.000Z",
   });
+  assert.equal("pubkey" in pin.created, false, "no foreign account copied");
 });
 
 test("pinning persists the choice and never deletes stored communities", () => {
@@ -191,7 +210,7 @@ test("pinning persists the choice and never deletes stored communities", () => {
   );
 });
 
-test("loading resolves once, pins storage, and falls back to null on failure", async () => {
+test("loading resolves once and pins storage", async () => {
   const other = community("other", "wss://old.example");
   saveCommunities([other]);
   globalThis.localStorage.setItem("buzz-active-community-id", "other");
@@ -221,14 +240,62 @@ test("loading resolves once, pins storage, and falls back to null on failure", a
   );
 
   setBuiltInServerForTests(undefined);
-  assert.equal(
-    await loadBuiltInServer(async () => {
-      throw new Error("no bridge");
-    }, "production"),
-    null,
-  );
-  assert.equal(getBuiltInServer(), null);
-
-  setBuiltInServerForTests(undefined);
   assert.equal(await loadBuiltInServer(read, "e2e"), null);
+});
+
+test("a failed read is an error with retry, never the multi-server mode", async () => {
+  for (const failing of [
+    async () => {
+      throw new Error("no bridge");
+    },
+    async () => "   ",
+    async () => null,
+  ]) {
+    setBuiltInServerForTests(undefined);
+    assert.equal(await loadBuiltInServer(failing, "production"), null);
+    assert.equal(getBuiltInServer(), null);
+    // Fails closed: nothing may be sent anywhere while in the error state.
+    assert.throws(
+      () => ensureAllowedServer(BUILT_IN),
+      /This invite is for a different service\./,
+    );
+  }
+
+  // Retry reads again and recovers.
+  let reads = 0;
+  assert.equal(
+    await retryBuiltInServer(async () => {
+      reads += 1;
+      return BUILT_IN;
+    }, "production"),
+    BUILT_IN,
+  );
+  assert.equal(reads, 1);
+  assert.equal(getBuiltInServer(), BUILT_IN);
+  assert.doesNotThrow(() => ensureAllowedServer(`${BUILT_IN}/`));
+});
+
+test("only the built-in server is allowed for webview requests", () => {
+  setBuiltInServerForTests(undefined);
+  assert.throws(() => ensureAllowedServer(BUILT_IN), /different service/);
+  setBuiltInServerForTests(BUILT_IN);
+  assert.doesNotThrow(() => ensureAllowedServer(BUILT_IN));
+  assert.doesNotThrow(() =>
+    ensureAllowedServer("https://jihobuzz.duckdns.org:8443"),
+  );
+  for (const refused of [
+    "wss://evil.example",
+    "https://evil.example:8443",
+    "http://jihobuzz.duckdns.org:8443",
+    "not a url",
+  ]) {
+    assert.throws(
+      () => ensureAllowedServer(refused),
+      /different service/,
+      refused,
+    );
+  }
+  // E2E mock builds (no built-in server) allow every host.
+  setBuiltInServerForTests(null);
+  assert.doesNotThrow(() => ensureAllowedServer("wss://evil.example"));
 });

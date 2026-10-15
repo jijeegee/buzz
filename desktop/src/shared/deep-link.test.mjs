@@ -30,6 +30,9 @@ const {
   listenForNavigationDeepLinks,
   resetNavigationDeepLinkDrain,
 } = await import("@/shared/deep-link.ts");
+const { screenCommunityLink } = await import(
+  "@/features/communities/builtInServer.ts"
+);
 
 function deferred() {
   let resolve;
@@ -541,6 +544,7 @@ test("a screened-out community link is acknowledged without adding or switching"
   const started = [];
   const opened = [];
   const screened = [];
+  const rejected = [];
   ipcHandlers.set("plugin:event|listen", () => nextCallbackId);
   ipcHandlers.set("plugin:event|unlisten", () => {});
   ipcHandlers.set("take_pending_community_deep_link", () => queue[0] ?? null);
@@ -561,10 +565,11 @@ test("a screened-out community link is acknowledged without adding or switching"
       return true;
     },
     onAddCommunityAvailable: () => () => {},
+    // The production screen App.tsx installs, with ours as the built-in server.
     shouldFollowCommunityLink: (link) => {
       screened.push(link);
-      return (
-        link.kind !== "add-community" && link.relayUrl === "wss://ours.example"
+      return screenCommunityLink(link, "wss://ours.example", () =>
+        rejected.push(link.relayUrl),
       );
     },
   });
@@ -577,6 +582,7 @@ test("a screened-out community link is acknowledged without adding or switching"
     { kind: "add-community", relayUrl: "wss://ours.example" },
     { kind: "join", relayUrl: "wss://ours.example" },
   ]);
+  assert.deepEqual(rejected, ["wss://other.example"], "only the foreign link");
   assert.deepEqual(opened, []);
   assert.equal(started.length, 1);
   assert.equal(started[0].relayUrl, "wss://ours.example");
