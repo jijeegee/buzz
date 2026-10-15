@@ -65,6 +65,20 @@ class _FakeUserCache extends UserCacheNotifier {
 }
 
 void main() {
+  group('withoutSignedOutDevices', () {
+    const a = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const b = 'bbbbbbbb-0000-4000-8000-000000000002';
+    final hosts = {'1' * 64: a, '2' * 64: b};
+
+    test('drops agents of devices no longer signed in', () {
+      expect(withoutSignedOutDevices(hosts, [a.toUpperCase()]), {'1' * 64: a});
+    });
+
+    test('an unknown device list drops nothing', () {
+      expect(withoutSignedOutDevices(hosts, const []), hosts);
+    });
+  });
+
   group('agentHostDevicesFromEvents', () {
     test('the newest event listing an agent decides its device', () {
       final map = agentHostDevicesFromEvents([

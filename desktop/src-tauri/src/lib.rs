@@ -311,6 +311,7 @@ pub fn run() {
             // The relay ending an account's session for good signs that
             // account out here (and stops its agents), active or not.
             crate::auth::commands::install_session_ended_hook(&app_handle);
+            crate::auth::commands::install_session_restored_hook(&app_handle);
             // Signed-in accounts that are not active stay signed in.
             crate::auth::accounts::start_background_sessions(&app_handle);
 
