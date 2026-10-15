@@ -1,15 +1,12 @@
 import {
+  resolveKnownUserLabel,
   resolveUserLabel,
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
 import type { Channel } from "@/shared/api/types";
-import { normalizePubkey } from "@/shared/lib/pubkey";
+import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 
 export const DM_PARTICIPANT_PREVIEW_LIMIT = 3;
-
-export type DmParticipantDisplay = {
-  displayName: string;
-};
 
 export type DirectMessageIntroParticipant = {
   avatarUrl: string | null;
@@ -38,15 +35,34 @@ export function getDmParticipantPreview<T>(participants: readonly T[]) {
   };
 }
 
-export function formatDmParticipantDisplayName(
-  participants: readonly DmParticipantDisplay[],
-) {
-  const { hiddenCount, visibleParticipants } =
-    getDmParticipantPreview(participants);
-  const names = visibleParticipants.map(
-    (participant) => participant.displayName,
+/**
+ * Join one label per distinct person (`null` = no known name). Unnamed people
+ * are indistinguishable by label, so they share one entry at the first one's
+ * position, counted ("Unknown user (2)") rather than repeated; `+N more`
+ * counts hidden people, not hidden entries.
+ */
+export function formatDmParticipantLabels(
+  labels: readonly (string | null)[],
+): string {
+  const entries: { label: string; count: number }[] = [];
+  let unnamed: { label: string; count: number } | null = null;
+  for (const label of labels) {
+    if (label) {
+      entries.push({ label, count: 1 });
+    } else if (unnamed) {
+      unnamed.count += 1;
+    } else {
+      unnamed = { label: UNKNOWN_USER_LABEL, count: 1 };
+      entries.push(unnamed);
+    }
+  }
+  const visible = entries.slice(0, DM_PARTICIPANT_PREVIEW_LIMIT);
+  const hiddenCount = entries
+    .slice(DM_PARTICIPANT_PREVIEW_LIMIT)
+    .reduce((total, entry) => total + entry.count, 0);
+  const names = visible.map(({ label, count }) =>
+    count > 1 ? `${label} (${count})` : label,
   );
-
   return hiddenCount > 0
     ? [...names, `+${hiddenCount} more`].join(", ")
     : names.join(", ");
@@ -102,7 +118,16 @@ export function buildDirectMessageIntro({
   });
 
   return {
-    displayName: formatDmParticipantDisplayName(introParticipants),
+    displayName: formatDmParticipantLabels(
+      displayParticipants.map((participant) =>
+        resolveKnownUserLabel({
+          currentPubkey,
+          fallbackName: participant.fallbackName,
+          profiles,
+          pubkey: participant.pubkey,
+        }),
+      ),
+    ),
     participants: introParticipants,
   };
 }

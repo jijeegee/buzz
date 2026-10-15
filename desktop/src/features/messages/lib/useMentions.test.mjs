@@ -7,6 +7,7 @@ import {
   hasMention,
 } from "./hasMention.ts";
 import {
+  bindSelectedMention,
   extractMentionPubkeys,
   selectedMentionLabel,
   selectedMentionLabels,
@@ -275,12 +276,19 @@ for (const selected of [false, true]) {
 
 test("a second same-name selection cannot redirect the first mention", () => {
   const selected = new Map([["Scout", "first"]]);
+  const repeated = [];
   const secondLabel = selectedMentionLabel("Scout", "second", selected);
-  selected.set(secondLabel, "second");
+  assert.equal(secondLabel, "Scout");
+  assert.equal(
+    bindSelectedMention(selected, repeated, secondLabel, "second"),
+    false,
+  );
+  assert.equal(selected.get("Scout"), "first");
   assert.deepEqual(
     extractMentionPubkeys({
       text: `@Scout and @${secondLabel}`,
       selectedMentions: selected,
+      repeatedMentions: repeated,
       memberCandidates: [],
     }),
     ["first", "second"],
@@ -292,36 +300,259 @@ test("qualified-looking names cannot redirect an existing selection", () => {
     ["Scout", "first"],
     ["Scout (second)", "third"],
   ]);
+  const repeated = [];
   const label = selectedMentionLabel("Scout", "second", selected);
-  assert.notEqual(label.toLowerCase(), "scout (second)");
-  selected.set(label, "second");
+  assert.equal(label, "Scout");
+  bindSelectedMention(selected, repeated, label, "second");
+  assert.equal(selected.get("Scout (second)"), "third");
   assert.deepEqual(
     extractMentionPubkeys({
-      text: `@Scout and @Scout (second) and @${label}`,
+      text: "@Scout and @Scout (second) and @Scout",
       selectedMentions: selected,
+      repeatedMentions: repeated,
       memberCandidates: [],
     }),
     ["first", "third", "second"],
   );
-  assert.equal(selectedMentionLabel("Scout", "second", selected), label);
 });
 
 test("same-name teammates are bound sequentially without replacing either recipient", () => {
-  const selected = selectedMentionLabels(
+  const selections = selectedMentionLabels(
     [
       { displayName: "Scout", pubkey: "first" },
       { displayName: "Scout", pubkey: "second" },
     ],
     new Map(),
   );
-  const bindings = new Map(selected.map((s) => [s.displayName, s.pubkey]));
-  assert.equal(bindings.size, 2);
+  const bindings = new Map();
+  const repeated = [];
+  for (const { displayName, pubkey } of selections) {
+    bindSelectedMention(bindings, repeated, displayName, pubkey);
+  }
+  const text = selections.map((s) => `@${s.displayName}`).join(" ");
+  assert.equal(text, "@Scout @Scout");
   assert.deepEqual(
     extractMentionPubkeys({
-      text: selected.map((s) => `@${s.displayName}`).join(" "),
+      text,
       selectedMentions: bindings,
+      repeatedMentions: repeated,
       memberCandidates: [],
     }),
     ["first", "second"],
+  );
+});
+
+test("releasing a same-name primary promotes the next pick", async () => {
+  const { releaseSelectedMention } = await import(
+    "./extractMentionPubkeys.ts"
+  );
+  const selected = new Map();
+  const repeated = [];
+  for (const pubkey of ["first", "second", "third"]) {
+    bindSelectedMention(selected, repeated, "Scout", pubkey);
+  }
+  releaseSelectedMention(selected, repeated, "first");
+  assert.equal(selected.get("Scout"), "second");
+  assert.deepEqual(
+    extractMentionPubkeys({
+      text: "@Scout @Scout",
+      selectedMentions: selected,
+      repeatedMentions: repeated,
+      memberCandidates: [],
+    }),
+    ["second", "third"],
+  );
+});
+
+// ── Unnamed ("Unknown user") recipients ───────────────────────────────
+
+const UNNAMED_A = "1".repeat(64);
+const UNNAMED_B = "2".repeat(64);
+const NAMED = "3".repeat(64);
+const KEY_TEXT = /[0-9a-f]{16}|npub1/i;
+
+/** Mirror the composer: pick each identity, insert `@label `, bind it. */
+function pickMentions(picks) {
+  const selectedMentions = new Map();
+  const repeatedMentions = [];
+  let text = "";
+  for (const { displayName, pubkey } of picks) {
+    const label = selectedMentionLabel(displayName, pubkey, selectedMentions);
+    bindSelectedMention(selectedMentions, repeatedMentions, label, pubkey);
+    text += `@${label} `;
+  }
+  return { selectedMentions, repeatedMentions, text: text.trim() };
+}
+
+test("two different unnamed users keep a keyless label and both recipients", () => {
+  const { selectedMentions, repeatedMentions, text } = pickMentions([
+    { displayName: "Unknown user", pubkey: UNNAMED_A },
+    { displayName: "Unknown user", pubkey: UNNAMED_B },
+  ]);
+  assert.equal(text, "@Unknown user @Unknown user");
+  assert.doesNotMatch(text, KEY_TEXT);
+  assert.deepEqual(
+    extractMentionPubkeys({
+      text: `hey ${text} welcome`,
+      selectedMentions,
+      repeatedMentions,
+      memberCandidates: [],
+    }),
+    [UNNAMED_A, UNNAMED_B],
+  );
+});
+
+test("unnamed and named recipients resolve together in one message", () => {
+  const { selectedMentions, repeatedMentions, text } = pickMentions([
+    { displayName: "Unknown user", pubkey: UNNAMED_A },
+    { displayName: "Alice", pubkey: NAMED },
+    { displayName: "Unknown user", pubkey: UNNAMED_B },
+  ]);
+  assert.equal(text, "@Unknown user @Alice @Unknown user");
+  assert.deepEqual(
+    extractMentionPubkeys({
+      text,
+      selectedMentions,
+      repeatedMentions,
+      memberCandidates: [
+        { pubkey: NAMED, displayName: "Alice", isMember: true },
+        { pubkey: UNNAMED_A, displayName: null, isMember: true },
+      ],
+    }),
+    [UNNAMED_A, NAMED, UNNAMED_B],
+  );
+});
+
+test("unnamed recipients are bound by selection order to remaining occurrences", () => {
+  const { selectedMentions, repeatedMentions } = pickMentions([
+    { displayName: "Unknown user", pubkey: UNNAMED_A },
+    { displayName: "Unknown user", pubkey: UNNAMED_B },
+  ]);
+  const extract = (text) =>
+    extractMentionPubkeys({
+      text,
+      selectedMentions,
+      repeatedMentions,
+      memberCandidates: [],
+    });
+  assert.deepEqual(extract("only @Unknown user now"), [UNNAMED_A]);
+  assert.deepEqual(extract("no mentions left"), []);
+  assert.deepEqual(extract("`@Unknown user` @Unknown user"), [UNNAMED_A]);
+});
+
+test("re-picking the same unnamed user does not queue a duplicate", () => {
+  const { selectedMentions, repeatedMentions, text } = pickMentions([
+    { displayName: "Unknown user", pubkey: UNNAMED_A },
+    { displayName: "Unknown user", pubkey: UNNAMED_B },
+    { displayName: "Unknown user", pubkey: UNNAMED_B },
+    { displayName: "Unknown user", pubkey: UNNAMED_A },
+  ]);
+  assert.equal(selectedMentions.size, 1);
+  assert.deepEqual(
+    repeatedMentions.map((repeated) => repeated.pubkey),
+    [UNNAMED_B],
+  );
+  assert.deepEqual(
+    extractMentionPubkeys({
+      text,
+      selectedMentions,
+      repeatedMentions,
+      memberCandidates: [],
+    }),
+    [UNNAMED_A, UNNAMED_B],
+  );
+});
+
+test("unnamed team members are labelled without key material", () => {
+  const labelled = selectedMentionLabels(
+    [
+      { displayName: "Unknown user", pubkey: UNNAMED_A },
+      { displayName: "Unknown user", pubkey: UNNAMED_B },
+    ],
+    new Map([["Unknown user", NAMED]]),
+  );
+  assert.deepEqual(
+    labelled.map((member) => member.displayName),
+    ["Unknown user", "Unknown user"],
+  );
+});
+
+test("named same-label selections use the same keyless ordered binding", () => {
+  const { selectedMentions, repeatedMentions, text } = pickMentions([
+    { displayName: "Scout", pubkey: "first" },
+    { displayName: "Alice", pubkey: NAMED },
+    { displayName: "Scout", pubkey: "second" },
+  ]);
+  assert.equal(text, "@Scout @Alice @Scout");
+  assert.equal(selectedMentions.size, 2);
+  assert.deepEqual(
+    repeatedMentions.map((repeated) => repeated.pubkey),
+    ["second"],
+  );
+  assert.deepEqual(
+    extractMentionPubkeys({
+      text,
+      selectedMentions,
+      repeatedMentions,
+      memberCandidates: [],
+    }),
+    ["first", NAMED, "second"],
+  );
+});
+
+test("draft refs include repeated picks only while their occurrences remain", async () => {
+  const { snapshotDraftMentionRefs } = await import("./draftMentionRefs.ts");
+  const { selectedMentions, repeatedMentions } = pickMentions([
+    { displayName: "Scout", pubkey: UNNAMED_A },
+    { displayName: "Scout", pubkey: UNNAMED_B },
+  ]);
+  const refsFor = (text) =>
+    snapshotDraftMentionRefs(
+      text,
+      selectedMentions,
+      [],
+      [],
+      [],
+      [],
+      [],
+      repeatedMentions,
+    ).map((ref) => ref.pubkey);
+  assert.deepEqual(refsFor("@Scout @Scout"), [UNNAMED_A, UNNAMED_B]);
+  assert.deepEqual(refsFor("@Scout"), [UNNAMED_A]);
+  assert.deepEqual(refsFor("none"), []);
+});
+
+test("draft refs round-trip repeated unnamed recipients", async () => {
+  const { replaceWithDraftMentionRefs, snapshotDraftMentionRefs } =
+    await import("./draftMentionRefs.ts");
+  const { selectedMentions, repeatedMentions, text } = pickMentions([
+    { displayName: "Unknown user", pubkey: UNNAMED_A },
+    { displayName: "Unknown user", pubkey: UNNAMED_B },
+  ]);
+  const refs = snapshotDraftMentionRefs(
+    text,
+    selectedMentions,
+    [],
+    [],
+    [],
+    [],
+    [],
+    repeatedMentions,
+  );
+  assert.deepEqual(
+    refs.map((ref) => ref.pubkey),
+    [UNNAMED_A, UNNAMED_B],
+  );
+  const restored = new Map();
+  const restoredRepeated = [];
+  replaceWithDraftMentionRefs(refs, restored, new Map(), restoredRepeated);
+  assert.deepEqual(
+    extractMentionPubkeys({
+      text,
+      selectedMentions: restored,
+      repeatedMentions: restoredRepeated,
+      memberCandidates: [],
+    }),
+    [UNNAMED_A, UNNAMED_B],
   );
 });

@@ -283,20 +283,24 @@ for (const replacement of ["hello", "hello @Alice"]) {
   });
 }
 
-test("send/reopen/edit preserves distinct same-name refs independently of tag order", async () => {
+test("legacy qualified same-name refs reopen independently of tag order", async () => {
   const {
     buildEditMentionState,
     replaceWithDraftMentionRefs,
     snapshotDraftMentionRefs,
   } = await import("../lib/draftMentionRefs.ts");
-  const { extractMentionPubkeys, selectedMentionLabel } = await import(
+  const { extractMentionPubkeys } = await import(
     "../lib/extractMentionPubkeys.ts"
   );
   const a = "a".repeat(64),
     b = "b".repeat(64);
-  const bindings = new Map([["Scout", a]]);
-  const label = selectedMentionLabel("Scout", b, bindings);
-  bindings.set(label, b);
+  // Legacy body format: messages sent before same-name picks stopped
+  // carrying key text must still reopen with their distinct bindings.
+  const label = `Scout (${b})`;
+  const bindings = new Map([
+    ["Scout", a],
+    [label, b],
+  ]);
   const originalContent = `@Scout @${label} hello`;
   const sent = extractMentionPubkeys({
     text: originalContent,
@@ -508,3 +512,50 @@ test("still-owned ambiguous history remains reference-only after unrelated text 
     notifying: [],
   });
 });
+
+for (const { name, label, profiles } of [
+  {
+    name: "same-name",
+    label: "Scout",
+    profiles: (a, b) => ({
+      [a]: { displayName: "Scout" },
+      [b]: { displayName: "Scout" },
+    }),
+  },
+  { name: "unnamed", label: "Unknown user", profiles: () => ({}) },
+]) {
+  test(`editing a keyless ${name} message keeps both recipients as references`, async () => {
+    const { buildEditMentionState } = await import(
+      "../lib/draftMentionRefs.ts"
+    );
+    const a = "1".repeat(64),
+      b = "2".repeat(64);
+    const originalContent = `@${label} @${label} hello`;
+    for (const tagOrder of [
+      [a, b],
+      [b, a],
+    ]) {
+      const editTarget = buildEditMentionState(
+        originalContent,
+        tagOrder.map((key) => ["p", key]),
+        profiles(a, b),
+        () => false,
+      );
+      let saved;
+      await submitMessageEdit({
+        ...baseOptions(
+          async (content, tags, mentionPubkeys) => {
+            saved = { content, tags, mentionPubkeys };
+          },
+          { content: originalContent, editTarget },
+        ),
+        content: `${originalContent} edited`,
+        originalContent,
+      });
+      assert.equal(saved.content, `${originalContent} edited`);
+      assert.doesNotMatch(saved.content, /[0-9a-f]{16}/);
+      assert.deepEqual(saved.tags.map((tag) => tag[1]).sort(), [a, b]);
+      assert.deepEqual(saved.mentionPubkeys, []);
+    }
+  });
+}

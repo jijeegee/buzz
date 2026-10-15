@@ -1,4 +1,7 @@
-import type { MentionPubkeyCandidate } from "./extractMentionPubkeys";
+import type {
+  MentionPubkeyCandidate,
+  RepeatedMention,
+} from "./extractMentionPubkeys";
 import * as React from "react";
 
 import type { DraftMentionRef } from "./useDrafts";
@@ -13,6 +16,7 @@ export function useDraftMentionRouting(params: {
   memberCandidates?: readonly MentionPubkeyCandidate[];
   mentionMapRef: React.MutableRefObject<Map<string, string>>;
   personaMentionMapRef: React.MutableRefObject<Map<string, string>>;
+  repeatedMentionsRef?: React.MutableRefObject<RepeatedMention[]>;
   selectedAgentPubkeysRef: React.MutableRefObject<Set<string>>;
   selectedAgentNamesRef: React.MutableRefObject<string[]>;
   cancelAutocomplete: () => void;
@@ -40,9 +44,11 @@ export function useDraftMentionRouting(params: {
         params.personaMentionMapRef.current.keys(),
         fallbackRefs,
         competingDisplayNames,
+        params.repeatedMentionsRef?.current,
       ),
     [
       params.mentionMapRef,
+      params.repeatedMentionsRef,
       params.selectedAgentNamesRef,
       params.memberCandidates,
       params.personaMentionMapRef,
@@ -60,6 +66,7 @@ export function useDraftMentionRouting(params: {
         refs,
         params.mentionMapRef.current,
         params.personaMentionMapRef.current,
+        params.repeatedMentionsRef?.current,
       );
       trimMapToSize(params.mentionMapRef.current, 200);
       params.selectedAgentNamesRef.current = agentNames;
