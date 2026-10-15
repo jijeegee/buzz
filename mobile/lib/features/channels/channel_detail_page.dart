@@ -600,6 +600,21 @@ class ChannelDetailPage extends HookConsumerWidget {
       ],
     );
 
+    // Start the thread's newest replies alongside its head instead of after
+    // the thread page mounts, so opening it costs one relay round trip. The
+    // thread page watches the same query and picks up the in-flight result.
+    useEffect(() {
+      final rootId = initialThreadRootId;
+      if (channel.isForum || rootId == null) return null;
+      final subscription = ref.listenManual(
+        threadRepliesProvider(
+          ThreadRepliesArgs(channelId: channel.id, rootId: rootId),
+        ),
+        (_, _) {},
+      );
+      return subscription.close;
+    }, [channel.id, initialThreadRootId]);
+
     useEffect(() {
       if (!readState.isReady || readTimestamp == null) {
         return null;

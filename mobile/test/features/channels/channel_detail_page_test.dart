@@ -11571,6 +11571,54 @@ void main() {
       expect(dismissedDecoration.color, Colors.transparent);
     });
 
+    testWidgets('starts the initial thread replies before its head arrives', (
+      tester,
+    ) async {
+      final root = _textMsg(
+        id: 'root',
+        pubkey: 'alice',
+        content: 'Thread root',
+      );
+      final reply = _textMsg(
+        id: 'reply',
+        pubkey: 'bob',
+        content: 'Newest reply',
+        createdAt: 1100,
+        extraTags: const [
+          ['e', 'root', '', 'reply'],
+        ],
+      );
+      final messagesNotifier = _FakeMessagesNotifier(const []);
+      var replyQueries = 0;
+
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: const [],
+          messagesNotifier: messagesNotifier,
+          initialThreadRootId: 'root',
+          initialThreadRouteBehavior:
+              InitialThreadRouteBehavior.replaceCurrentRoute,
+          threadReplyLoaders: {
+            'root': () async {
+              replyQueries++;
+              return [reply];
+            },
+          },
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(ThreadDetailPage), findsNothing);
+      expect(replyQueries, 1);
+
+      messagesNotifier.setMessages([root]);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ThreadDetailPage), findsOneWidget);
+      expect(find.text('Newest reply'), findsOneWidget);
+      expect(replyQueries, 1);
+    });
+
     testWidgets('does not replace a newer route after delayed hydration', (
       tester,
     ) async {
