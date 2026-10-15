@@ -436,7 +436,7 @@ export function InviteRedeemForm({
           aria-hidden={!showInvalidInviteTip}
           aria-live="polite"
           className={cn(
-            "absolute top-[calc(100%+2rem)] mt-4 min-h-5 w-full max-w-4xl text-center text-sm text-[#0047a0] transition-opacity duration-150 ease-out",
+            "absolute top-[calc(100%+2rem)] mt-4 min-h-5 w-full max-w-4xl text-center text-sm text-[#717106] transition-opacity duration-150 ease-out",
             showInvalidInviteTip ? "opacity-100" : "opacity-0",
           )}
           data-testid="invalid-invite-tip"
