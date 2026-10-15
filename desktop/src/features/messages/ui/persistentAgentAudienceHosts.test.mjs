@@ -6,7 +6,7 @@ async function source(relativePath) {
   return readFile(new URL(relativePath, import.meta.url), "utf8");
 }
 
-test("only thread conversation hosts opt into persistent audiences", async () => {
+test("thread and channel main hosts opt into persistent audiences", async () => {
   const [channelPane, threadPanel, newMessage, inboxDetail] = await Promise.all(
     [
       source("../../channels/ui/ChannelPane.tsx"),
@@ -16,13 +16,22 @@ test("only thread conversation hosts opt into persistent audiences", async () =>
     ],
   );
 
-  assert.doesNotMatch(channelPane, /audienceContext=/);
+  // Fork: agents converse on the channel main timeline, so it retains
+  // mentioned agents too (never in DMs).
+  assert.match(
+    channelPane,
+    /audienceContext=\{[\s\S]*channelType !== "dm"[\s\S]*type: "channel"/,
+  );
   assert.doesNotMatch(newMessage, /audienceContext=/);
   assert.match(
     threadPanel,
     /audienceContext=\{\{[\s\S]*type: "thread",[\s\S]*rootTags: threadHead\.tags,[\s\S]*\}\}/,
   );
   assert.match(inboxDetail, /type: "thread"/);
+  assert.match(
+    inboxDetail,
+    /isRoomTimeline\s*\?\s*isDirectMessage\s*\?\s*null\s*:\s*\{ type: "channel" \}/,
+  );
   assert.doesNotMatch(threadPanel, /audienceContext=\{[\s\S]*threadRootId/);
   assert.doesNotMatch(inboxDetail, /audienceContext=\{[\s\S]*threadRootId/);
 });

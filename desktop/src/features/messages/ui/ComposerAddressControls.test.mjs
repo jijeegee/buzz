@@ -111,7 +111,7 @@ test("mention control expands with automatically mentioned agents", async () => 
     );
   }
   const remove = view.getByRole("button", {
-    name: "Don't automatically mention Agent Ada in this thread",
+    name: "Don't automatically mention Agent Ada here",
   });
   assert.equal(
     remove.getAttribute("aria-label")?.includes("conversation"),
