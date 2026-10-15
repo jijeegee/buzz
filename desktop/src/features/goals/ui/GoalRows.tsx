@@ -6,6 +6,7 @@ import {
   MessagesSquare,
   Pencil,
   Plus,
+  StickyNote,
   Trash2,
 } from "lucide-react";
 
@@ -270,6 +271,7 @@ export function GoalRow({
     scope === "focus" || scope === "path" || layer < 3,
   );
   const [editing, setEditing] = React.useState(false);
+  const [noteOpen, setNoteOpen] = React.useState(false);
   const [confirmingRemove, setConfirmingRemove] = React.useState(false);
   const { done, total } = goalProgress(tree, node.id);
   const status = node.status;
@@ -324,22 +326,41 @@ export function GoalRow({
                 isCurrent || label === "Thread"
                   ? MessagesSquare
                   : MessageSquare;
+              const name = isCurrent
+                ? "This thread"
+                : label === "Thread"
+                  ? "Open thread"
+                  : "Go to message";
               return (
                 <button
-                  className="inline-flex items-center gap-0.5 hover:text-foreground disabled:hover:text-inherit"
+                  aria-label={name}
+                  className="inline-flex items-center hover:text-foreground disabled:hover:text-inherit"
                   data-testid={`goal-thread-${thread}`}
                   disabled={!open}
                   key={thread}
                   onClick={open}
+                  title={name}
                   type="button"
                 >
-                  <Icon className="h-3 w-3" />
-                  {isCurrent ? "This thread" : label}
+                  <Icon className="h-3.5 w-3.5" />
                 </button>
               );
             })}
+            {node.note ? (
+              <button
+                aria-expanded={noteOpen}
+                aria-label={noteOpen ? "Hide note" : "Show note"}
+                className={`inline-flex items-center hover:text-foreground ${noteOpen ? "text-foreground" : ""}`}
+                data-testid={`goal-note-toggle-${node.id}`}
+                onClick={() => setNoteOpen((value) => !value)}
+                title={noteOpen ? "Hide note" : "Show note"}
+                type="button"
+              >
+                <StickyNote className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
-          {node.note && expanded ? (
+          {node.note && noteOpen ? (
             <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-muted-foreground">
               {node.note}
             </p>
