@@ -1,6 +1,9 @@
 import * as React from "react";
 
-import { signOutActiveAccount } from "@/features/accounts/lib/signOutActiveAccount";
+import {
+  signOutActiveAccountOnThisDevice,
+  useHasSignedInSession,
+} from "@/features/accounts/lib/signOutActiveAccount";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
@@ -9,7 +12,7 @@ type CommunityApplyErrorScreenProps = {
   error: string;
   /**
    * Omitted with a built-in server: changing server cannot help, so the
-   * screen offers the normal account sign-out instead.
+   * screen offers a sign-out on this computer instead (when signed in).
    */
   onChangeCommunity?: () => void;
   onRetry: () => void;
@@ -23,13 +26,15 @@ export function CommunityApplyErrorScreen({
   const systemColorScheme = useSystemColorScheme();
   const [isSigningOut, setIsSigningOut] = React.useState(false);
   const [signOutError, setSignOutError] = React.useState<string | null>(null);
+  const signedIn = useHasSignedInSession();
 
-  // The normal account sign-out (nothing is deleted); never the full reset.
+  // The server may be unreachable here: sign out on this computer only
+  // (nothing waits on the network, nothing is deleted); never the full reset.
   const signOut = React.useCallback(async () => {
     setSignOutError(null);
     setIsSigningOut(true);
     try {
-      await signOutActiveAccount();
+      await signOutActiveAccountOnThisDevice();
     } catch (cause) {
       setSignOutError(
         cause instanceof Error
@@ -75,7 +80,7 @@ export function CommunityApplyErrorScreen({
             >
               Change community
             </Button>
-          ) : (
+          ) : signedIn ? (
             <Button
               className="h-10 w-full"
               data-testid="community-apply-error-sign-out"
@@ -86,7 +91,7 @@ export function CommunityApplyErrorScreen({
             >
               Sign out
             </Button>
-          )}
+          ) : null}
           {signOutError ? (
             <p className="text-sm text-destructive" role="alert">
               {signOutError}

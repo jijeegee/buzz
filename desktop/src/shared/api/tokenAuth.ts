@@ -215,6 +215,15 @@ export function logoutTokenSession(account?: string): Promise<TokenAuthStatus> {
 }
 
 /**
+ * Sign the active account out on this computer only, without waiting on the
+ * network (for screens shown when the server cannot be reached). Ending the
+ * session on the server is attempted in the background, best effort.
+ */
+export function logoutOnThisDevice(): Promise<TokenAuthStatus> {
+  return invokeTauri<TokenAuthStatus>("logout_on_this_device");
+}
+
+/**
  * The WebSocket AUTH payload for the current community: `{token}` in token
  * mode, `null` in key mode (the caller signs a NIP-42 event instead).
  */

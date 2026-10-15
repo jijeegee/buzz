@@ -1,7 +1,10 @@
 import * as React from "react";
 import { Check, KeyRound, ShieldX, Ticket, UserRound } from "lucide-react";
 
-import { signOutActiveAccount } from "@/features/accounts/lib/signOutActiveAccount";
+import {
+  signOutActiveAccountOnThisDevice,
+  useHasSignedInSession,
+} from "@/features/accounts/lib/signOutActiveAccount";
 import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
 import { nsecToNpub } from "@/shared/lib/nostrUtils";
@@ -43,14 +46,16 @@ export function MembershipDenied({
   const singleServer = useBuiltInServer() !== null;
   const [isSigningOut, setIsSigningOut] = React.useState(false);
   const [signOutError, setSignOutError] = React.useState<string | null>(null);
+  const signedIn = useHasSignedInSession();
 
-  // The normal account sign-out (nothing is deleted); the app restarts on
-  // the sign-in screen, where another Google account can be chosen.
+  // Sign out on this computer only (nothing waits on the network, nothing is
+  // deleted); the app restarts on the sign-in screen, where another Google
+  // account can be chosen.
   const handleUseDifferentAccount = React.useCallback(async () => {
     setSignOutError(null);
     setIsSigningOut(true);
     try {
-      await signOutActiveAccount();
+      await signOutActiveAccountOnThisDevice();
     } catch (error) {
       setSignOutError(
         error instanceof Error
@@ -245,7 +250,7 @@ export function MembershipDenied({
                 <Ticket className="h-4 w-4" />
                 Have an invite?
               </button>
-              {singleServer ? (
+              {singleServer && signedIn ? (
                 <button
                   className="flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                   data-testid="membership-denied-switch-account"

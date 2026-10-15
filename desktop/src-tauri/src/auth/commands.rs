@@ -811,6 +811,73 @@ pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuth
     Ok(status)
 }
 
+/// Sign the active account out on this computer only, for the startup error
+/// screens (the server may be unreachable): the same local sign-out as
+/// [`logout`], without waiting on the network. Ending the session on the
+/// server is best effort: it is attempted once in the background, after the
+/// local sign-out, and a failure is only logged.
+#[tauri::command]
+pub async fn logout_on_this_device(app: AppHandle) -> Result<TokenAuthStatus, String> {
+    let state = app.state::<AppState>();
+    let origin = state.current_auth_origin();
+    // Read the session after any in-flight refresh settles, so the token
+    // revoked below is the newest one.
+    drop(state.token_auth.refresh_lock(&origin).lock_owned().await);
+    let pending = pending_revocation(&state, &origin);
+    let signed_out = sign_out_account(&app, &origin, None, false).await?;
+    if let Some(pending) = pending {
+        let client = state.http_client.clone();
+        let revoke_origin = origin.clone();
+        tauri::async_runtime::spawn(async move {
+            let revoke = async {
+                match pending {
+                    PendingRevocation::Session(access) => {
+                        revoke_session(&client, &revoke_origin, &access).await
+                    }
+                    // The stored token is already forgotten here: a rotated
+                    // one is not kept.
+                    PendingRevocation::Stored(refresh) => {
+                        revoke_stored(&client, &revoke_origin, &refresh, |_| Ok(())).await
+                    }
+                }
+            };
+            match tokio::time::timeout(std::time::Duration::from_secs(30), revoke).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    eprintln!("buzz-desktop: auth: device-only sign-out not revoked: {error}")
+                }
+                Err(_) => eprintln!("buzz-desktop: auth: device-only sign-out revoke timed out"),
+            }
+        });
+    }
+    let support = state.token_auth.cached_support(&origin).flatten();
+    let mut status = current_status(&state, &origin, support);
+    status.switched_to = signed_out.switched_to.map(|key| key.to_hex());
+    status.agents_not_stopped = signed_out.agents_not_stopped;
+    Ok(status)
+}
+
+/// What a device-only sign-out still tries to end on the server.
+enum PendingRevocation {
+    /// The live session's access token.
+    Session(String),
+    /// The stored refresh token (restoring or retrying).
+    Stored(String),
+}
+
+fn pending_revocation(state: &AppState, origin: &str) -> Option<PendingRevocation> {
+    match state.token_auth.get(origin) {
+        Some((_, OriginAuth::Active(session))) => Some(PendingRevocation::Session(
+            session.access.as_str().to_owned(),
+        )),
+        _ => KeyringRefreshStore
+            .load(origin)
+            .ok()
+            .flatten()
+            .map(PendingRevocation::Stored),
+    }
+}
+
 /// Sign `account` out of `origin` on this computer: an agent runs while its
 /// owner is signed in here, so this always stops the account's agents.
 /// `revoke` ends the session server-side first (a user sign-out); a session

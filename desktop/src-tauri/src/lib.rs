@@ -670,6 +670,7 @@ pub fn run() {
             auth::accounts::nip44_decrypt_as,
             auth::commands::cancel_google_login,
             auth::commands::logout,
+            auth::commands::logout_on_this_device,
             auth::commands::get_ws_auth_frame,
             auth::commands::list_devices,
             auth::commands::revoke_device,
