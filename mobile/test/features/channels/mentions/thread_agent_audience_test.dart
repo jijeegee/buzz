@@ -88,6 +88,46 @@ void main() {
     expect(pubkeys(scope), [agent, other]);
   });
 
+  test('added and removed agents survive an app restart', () async {
+    const scope = 'scope';
+    audience().initialize(scope, [agent]);
+    audience().promote(scope, [other], reinstateExcluded: true);
+    audience().exclude(scope, agent);
+    await pumpEventQueue();
+
+    final restarted = ProviderContainer(
+      overrides: [
+        savedPrefsProvider.overrideWithValue(
+          container.read(savedPrefsProvider),
+        ),
+      ],
+    );
+    addTearDown(restarted.dispose);
+    final notifier = restarted.read(threadAgentAudienceProvider.notifier);
+    expect(restarted.read(threadAgentAudienceProvider).pubkeysFor(scope), [
+      other,
+    ]);
+    // The thread root's agent stays removed after the restart.
+    notifier.initialize(scope, [agent]);
+    expect(restarted.read(threadAgentAudienceProvider).pubkeysFor(scope), [
+      other,
+    ]);
+  });
+
+  test('turning the preference off also forgets the saved copy', () async {
+    audience().initialize('one', [agent]);
+    await container
+        .read(keepMentionedAgentsPinnedProvider.notifier)
+        .setEnabled(false);
+    await pumpEventQueue();
+    expect(
+      container
+          .read(savedPrefsProvider)
+          .getString(ThreadAgentAudience.storageKey),
+      isNull,
+    );
+  });
+
   test('turning the preference off forgets every thread audience', () async {
     final preference = container.read(
       keepMentionedAgentsPinnedProvider.notifier,

@@ -38,7 +38,7 @@ import { resetRenderScopedReactionHydration } from "@/features/messages/lib/rend
 import { resetAudioMediaLoadScheduler } from "@/features/messages/lib/audioMediaLoadScheduler";
 import { resetBackgroundMediaUploads } from "@/features/messages/lib/backgroundMediaUploadStore";
 import { resetLinkPreviewPreparations } from "@/features/messages/lib/linkPreviewPreparationStore";
-import { resetPersistentAgentAudienceStore } from "@/features/messages/lib/persistentAgentAudience";
+import { reloadPersistentAgentAudienceStore } from "@/features/messages/lib/persistentAgentAudience";
 import { resetAutoRouteBatches } from "@/features/messages/lib/autoRouteBatcher";
 import { resetAutoRouteLedger } from "@/features/messages/lib/autoRouteLedger";
 import { resetAutoRouteStatus } from "@/features/messages/lib/autoRouteStatus";
@@ -101,7 +101,7 @@ async function resetCommunityState({
   resetRenderScopedReactionHydration();
   resetBackgroundMediaUploads();
   resetLinkPreviewPreparations();
-  resetPersistentAgentAudienceStore();
+  reloadPersistentAgentAudienceStore();
   resetAutoRouteBatches();
   resetAutoRouteLedger();
   resetAutoRouteStatus();

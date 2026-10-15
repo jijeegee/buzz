@@ -1,6 +1,11 @@
 import * as React from "react";
 
 export const MAX_IN_MEMORY_AGENT_AUDIENCES = 200;
+/**
+ * Fork: added and removed agents survive restarts and account switches on
+ * this device. Scopes already include the owner, channel and composer.
+ */
+export const AGENT_AUDIENCE_STORAGE_KEY = "buzz.messages.agentAudiences.v1";
 
 const listeners = new Set<() => void>();
 const revisions = new Map<string, number>();
@@ -8,6 +13,7 @@ const excludedPubkeysByScope = new Map<string, Set<string>>();
 let revisionClock = 0;
 let defaultRevision = 0;
 let audiences: Record<string, string[]> = {};
+loadStoredAudiences();
 let snapshot = buildSnapshot();
 
 export type PersistentAgentAudienceSnapshot = Readonly<{
@@ -39,8 +45,53 @@ function buildSnapshot(): PersistentAgentAudienceSnapshot {
   return { audiences };
 }
 
+function loadStoredAudiences(): void {
+  audiences = {};
+  excludedPubkeysByScope.clear();
+  try {
+    const raw = globalThis.localStorage?.getItem(AGENT_AUDIENCE_STORAGE_KEY);
+    const stored = raw ? JSON.parse(raw) : null;
+    if (!stored || typeof stored !== "object") return;
+    const storedAudiences: Record<string, string[]> = {};
+    for (const [scope, pubkeys] of Object.entries(stored.audiences ?? {})) {
+      if (Array.isArray(pubkeys)) {
+        storedAudiences[scope] = normalizePubkeys(pubkeys.map(String));
+      }
+    }
+    audiences = boundAudiences(storedAudiences);
+    for (const [scope, pubkeys] of Object.entries(stored.excluded ?? {})) {
+      if (!Object.hasOwn(audiences, scope) || !Array.isArray(pubkeys)) continue;
+      const excluded = new Set(normalizePubkeys(pubkeys.map(String)));
+      if (excluded.size > 0) excludedPubkeysByScope.set(scope, excluded);
+    }
+  } catch {
+    audiences = {};
+    excludedPubkeysByScope.clear();
+  }
+}
+
+function persistAudiences(): void {
+  try {
+    globalThis.localStorage?.setItem(
+      AGENT_AUDIENCE_STORAGE_KEY,
+      JSON.stringify({
+        audiences,
+        excluded: Object.fromEntries(
+          [...excludedPubkeysByScope].map(([scope, pubkeys]) => [
+            scope,
+            [...pubkeys],
+          ]),
+        ),
+      }),
+    );
+  } catch {
+    // Persistence is best-effort; the live audience still applies.
+  }
+}
+
 function emit(): void {
   snapshot = buildSnapshot();
+  persistAudiences();
   for (const listener of listeners) listener();
 }
 
@@ -58,6 +109,7 @@ export function getPersistentAgentAudienceScope({
   return `${owner}:${channelId}:${composer}`;
 }
 
+/** Forgets every audience, including the saved copy (preference turned off). */
 export function resetPersistentAgentAudienceStore(): void {
   revisionClock += 1;
   defaultRevision = revisionClock;
@@ -65,6 +117,19 @@ export function resetPersistentAgentAudienceStore(): void {
   excludedPubkeysByScope.clear();
   audiences = {};
   emit();
+}
+
+/**
+ * Community/account boundary: drop in-flight revisions but keep this
+ * device's saved audiences (they are already keyed by owner and channel).
+ */
+export function reloadPersistentAgentAudienceStore(): void {
+  revisionClock += 1;
+  defaultRevision = revisionClock;
+  revisions.clear();
+  loadStoredAudiences();
+  snapshot = buildSnapshot();
+  for (const listener of listeners) listener();
 }
 
 export function setPersistentAgentAudience(
@@ -185,6 +250,7 @@ export function addPersistentAgentAudienceMember(
   if (!normalized) return;
   excludedPubkeysByScope.get(scope)?.delete(normalized);
   setPersistentAgentAudience(scope, [...(audiences[scope] ?? []), normalized]);
+  persistAudiences();
 }
 
 export function excludePersistentAgentAudienceMember(
@@ -197,6 +263,7 @@ export function excludePersistentAgentAudienceMember(
   excluded.add(normalized);
   excludedPubkeysByScope.set(scope, excluded);
   removePersistentAgentAudienceMember(scope, normalized);
+  persistAudiences();
 }
 
 export function removePersistentAgentAudienceMember(
