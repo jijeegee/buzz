@@ -134,6 +134,14 @@ Future<void> _deactivateCommunityPushLease(
   if (acceptedGeneration == null && generation == null) {
     return;
   }
+  // Stored entries for other servers are kept but never contacted; the
+  // pending tombstone stays queued.
+  if (!isServerAllowed(
+    community.relayUrl,
+    builtInOrigin: appBuiltInServerOrigin(),
+  )) {
+    throw StateError(differentServerMessage);
+  }
   if (nsec == null || nsec.isEmpty) {
     throw StateError('Push lease tombstone requires community signing key.');
   }

@@ -20,12 +20,35 @@ const kuzzServerOrigins = <KuzzEnvironment, String>{
   KuzzEnvironment.dev: 'https://jihobuzz.duckdns.org:8443',
 };
 
-/// `KUZZ_ENV` value to environment. Unset or unknown values are
-/// [KuzzEnvironment.prod], so a typo can never unpin a build.
-KuzzEnvironment parseKuzzEnvironment(String value) =>
-    value.trim().toLowerCase() == 'dev'
-    ? KuzzEnvironment.dev
-    : KuzzEnvironment.prod;
+/// `KUZZ_ENV` value to environment: unset or `prod` is
+/// [KuzzEnvironment.prod], `dev` is [KuzzEnvironment.dev]. Any other value
+/// throws [ArgumentError]; for this build's own define that is a compile
+/// error instead (see [_KuzzEnvDefine]).
+KuzzEnvironment parseKuzzEnvironment(String value) => switch (value) {
+  '' || 'prod' => KuzzEnvironment.prod,
+  'dev' => KuzzEnvironment.dev,
+  _ => throw ArgumentError.value(
+    value,
+    'KUZZ_ENV',
+    'must be `prod` or `dev` (or unset for prod)',
+  ),
+};
+
+/// This build's `KUZZ_ENV`, checked while compiling: the const assert fails
+/// constant evaluation (debug, profile and release alike), so an unknown
+/// value fails the build like desktop's `build.rs` and a typo can never
+/// fall back to another server.
+class _KuzzEnvDefine {
+  const _KuzzEnvDefine(this.value)
+    : assert(
+        value == '' || value == 'prod' || value == 'dev',
+        'KUZZ_ENV must be `prod` or `dev` (or unset for prod).',
+      );
+
+  final String value;
+}
+
+const _kuzzEnv = _KuzzEnvDefine(String.fromEnvironment('KUZZ_ENV'));
 
 /// Copy shown when an invite targets any other server.
 const differentServiceInviteMessage = 'This invite is for a different service.';
@@ -67,21 +90,24 @@ String? builtInServerOrigin(
   return normalizeRelayOrigin(kuzzServerOrigins[environment]!);
 }
 
-/// `host[:port]` of [url] after [normalizeRelayOrigin], or `null` when it is
-/// not a relay URL. `ws`/`wss`/`http`/`https` of one host:port are the same
-/// server.
-String? relayHostPort(String url) {
+/// [normalizeRelayOrigin] of [url], or `null` when it is not a relay URL.
+String? _relayOrigin(String url) {
   try {
-    return normalizeRelayOrigin(url).split('://').last;
+    return normalizeRelayOrigin(url);
   } on FormatException {
     return null;
   }
 }
 
-/// Whether [url] is the built-in server [builtInOrigin] (host + port).
+/// Whether [url] is the built-in server [builtInOrigin]: same host, port and
+/// security. `wss` and `https` (or `ws` and `http`) of one host:port are the
+/// same server, but a secure origin never matches `ws`/`http`. The prod and
+/// dev table origins are `https`, so only `wss`/`https` reach them; an
+/// insecure origin exists only as an explicit dev override (see
+/// [builtInServerOrigin]).
 bool isBuiltInServerUrl(String url, String builtInOrigin) {
-  final candidate = relayHostPort(url);
-  return candidate != null && candidate == relayHostPort(builtInOrigin);
+  final candidate = _relayOrigin(url);
+  return candidate != null && candidate == _relayOrigin(builtInOrigin);
 }
 
 /// Whether [url] may be added, selected or connected. A `null`
@@ -89,18 +115,34 @@ bool isBuiltInServerUrl(String url, String builtInOrigin) {
 bool isServerAllowed(String url, {required String? builtInOrigin}) =>
     builtInOrigin == null || isBuiltInServerUrl(url, builtInOrigin);
 
+/// This build's built-in server origin (see [builtInServerOrigin]), for code
+/// without a provider ref (push lease background work).
+String? appBuiltInServerOrigin() => builtInServerOrigin(
+  parseKuzzEnvironment(_kuzzEnv.value),
+  keyBackupOriginDefine: const String.fromEnvironment('BUZZ_KEY_BACKUP_ORIGIN'),
+  relayUrlDefine: const String.fromEnvironment('BUZZ_RELAY_URL'),
+  unrestrictedForTests: debugUnrestrictedServerForTests,
+);
+
+/// Connection-layer guard, checked where a socket is created: whether [url]
+/// may be opened under this build's rule ([isServerAllowed] with
+/// [appBuiltInServerOrigin]). A refusal is logged with the [context] and the
+/// target host:port only.
+bool allowConnection(String context, String url) {
+  if (isServerAllowed(url, builtInOrigin: appBuiltInServerOrigin())) {
+    return true;
+  }
+  final target =
+      _relayOrigin(url)?.split('://').last ?? 'an unparseable address';
+  debugPrint('[Kuzz] refused $context for $target: not the built-in server');
+  return false;
+}
+
 /// The built-in server origin (see [builtInServerOrigin]). Tests override it
 /// to switch the fixed-server rule on with a fake origin.
-final defaultCommunityOriginProvider = Provider<String?>((ref) {
-  return builtInServerOrigin(
-    parseKuzzEnvironment(const String.fromEnvironment('KUZZ_ENV')),
-    keyBackupOriginDefine: const String.fromEnvironment(
-      'BUZZ_KEY_BACKUP_ORIGIN',
-    ),
-    relayUrlDefine: const String.fromEnvironment('BUZZ_RELAY_URL'),
-    unrestrictedForTests: debugUnrestrictedServerForTests,
-  );
-});
+final defaultCommunityOriginProvider = Provider<String?>(
+  (ref) => appBuiltInServerOrigin(),
+);
 
 /// The fixed-server gate. When true, every server-level control (switch,
 /// add, edit, remove, manual address entry) is hidden and only the built-in

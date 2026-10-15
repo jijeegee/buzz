@@ -9,6 +9,7 @@ import 'package:buzz/shared/auth/auth.dart';
 import 'package:buzz/shared/auth/default_community.dart';
 import 'package:buzz/shared/deeplink/deep_link.dart';
 import 'package:buzz/shared/deeplink/pending_deep_link_provider.dart';
+import 'package:buzz/shared/push/push_lease_revocation_outbox.dart';
 import 'package:buzz/shared/relay/relay_provider.dart';
 
 import '../community/community_storage_test.dart';
@@ -62,11 +63,18 @@ void main() {
       );
     });
 
-    test('KUZZ_ENV defaults to prod; only "dev" selects dev', () {
+    test('KUZZ_ENV is unset, "prod" or "dev"; anything else fails', () {
       expect(parseKuzzEnvironment(''), KuzzEnvironment.prod);
       expect(parseKuzzEnvironment('prod'), KuzzEnvironment.prod);
-      expect(parseKuzzEnvironment('staging'), KuzzEnvironment.prod);
-      expect(parseKuzzEnvironment(' DEV '), KuzzEnvironment.dev);
+      expect(parseKuzzEnvironment('dev'), KuzzEnvironment.dev);
+      // For this build's own define these are compile errors.
+      for (final typo in ['staging', ' DEV ', 'Prod', 'production']) {
+        expect(
+          () => parseKuzzEnvironment(typo),
+          throwsArgumentError,
+          reason: typo,
+        );
+      }
     });
 
     test('the gate follows the origin provider', () {
@@ -81,16 +89,46 @@ void main() {
     });
   });
 
-  group('isBuiltInServerUrl compares host and port', () {
-    test('ws/wss/http/https of the same host:port are the same server', () {
+  group('isBuiltInServerUrl compares security, host and port', () {
+    test('wss/https of the same host:port are the same server', () {
       for (final url in [
         'wss://jihobuzz.duckdns.org:8443',
-        'ws://jihobuzz.duckdns.org:8443',
-        'http://JIHOBUZZ.duckdns.org:8443/path',
+        'https://JIHOBUZZ.duckdns.org:8443/path',
         'https://jihobuzz.duckdns.org:8443',
       ]) {
         expect(isBuiltInServerUrl(url, _builtIn), isTrue, reason: url);
       }
+    });
+
+    test('prod never allows ws/http, even to the built-in host', () {
+      final prod = builtInServerOrigin(KuzzEnvironment.prod)!;
+      expect(prod, startsWith('https://'));
+      expect(builtInServerOrigin(KuzzEnvironment.dev), startsWith('https://'));
+      for (final url in [
+        'ws://jihobuzz.duckdns.org:8443',
+        'http://jihobuzz.duckdns.org:8443',
+      ]) {
+        expect(isBuiltInServerUrl(url, prod), isFalse, reason: url);
+        expect(isServerAllowed(url, builtInOrigin: prod), isFalse);
+      }
+    });
+
+    test('only an explicit dev override can be insecure', () {
+      final local = builtInServerOrigin(
+        KuzzEnvironment.dev,
+        keyBackupOriginDefine: 'http://localhost:3000',
+      )!;
+      expect(isBuiltInServerUrl('ws://localhost:3000', local), isTrue);
+      expect(isBuiltInServerUrl('http://localhost:3000/x', local), isTrue);
+      expect(isBuiltInServerUrl('wss://localhost:3000', local), isFalse);
+      // The same override is ignored in prod.
+      expect(
+        builtInServerOrigin(
+          KuzzEnvironment.prod,
+          keyBackupOriginDefine: 'http://localhost:3000',
+        ),
+        _builtIn,
+      );
     });
 
     test('another host, another port or a malformed URL is not', () {
@@ -234,6 +272,44 @@ void main() {
       expect(await storage.loadActiveId(), kuzzA.id);
       expect((await storage.loadAll()).length, 2);
     });
+
+    test('an insecure entry for the built-in host is not the built-in entry; '
+        'signing in starts a fresh one without its identity', () async {
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final insecure = _token('Insecure', 'ws://jihobuzz.duckdns.org:8443');
+      await storage.save(insecure);
+      await storage.saveActiveId(insecure.id);
+      final container = ProviderContainer(
+        overrides: [
+          communityStorageProvider.overrideWithValue(storage),
+          defaultCommunityOriginProvider.overrideWithValue(_builtIn),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // Starts signed out: nothing is selected and nothing is deleted.
+      final auth = await container.read(authProvider.future);
+      expect(auth.status, AuthStatus.unauthenticated);
+      expect(auth.community, isNull);
+
+      final principal = nostr.Keys.generate().public;
+      await container
+          .read(authProvider.notifier)
+          .authenticateWithTokenSession(
+            relayUrl: _builtIn,
+            principalId: principal,
+          );
+      final stored = await storage.loadAll();
+      expect(stored, hasLength(2));
+      final pinned = stored.singleWhere((c) => c.id != insecure.id);
+      expect(pinned.relayUrl, _builtIn);
+      expect(pinned.pubkey, principal);
+      expect(pinned.nsec, isNull);
+      expect(pinned.googleBackupAccountId, isNull);
+      final kept = stored.singleWhere((c) => c.id == insecure.id);
+      expect(kept.pubkey, insecure.pubkey);
+      expect(await storage.loadActiveId(), pinned.id);
+    });
   });
 
   group('invite host guard', () {
@@ -332,5 +408,33 @@ void main() {
       expect(preparation, DeepLinkCommunityPreparation.unavailable);
       expect(await storage.loadActiveId(), kuzz.id);
     });
+  });
+
+  test('a queued push revocation for another server is never sent', () async {
+    final previous = debugUnrestrictedServerForTests;
+    debugUnrestrictedServerForTests = false;
+    addTearDown(() => debugUnrestrictedServerForTests = previous);
+    final keys = nostr.Keys.generate();
+    final record = BuzzPushLeaseRevocationRecord(
+      relayUrl: 'https://other.example',
+      relayOrigin: 'wss://other.example',
+      memberPubkey: keys.public,
+      nsec: keys.nsec,
+      installationId: '0' * 32,
+      generation: 1,
+      expiresAt: 1,
+      attemptCount: 0,
+      nextAttemptAt: 0,
+    );
+    await expectLater(
+      publishBuzzPushLeaseRevocation(record),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          differentServerMessage,
+        ),
+      ),
+    );
   });
 }

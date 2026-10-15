@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../auth/default_community.dart';
 import '../community/community.dart';
 import '../community/community_provider.dart';
 import '../relay/relay_provider.dart';
@@ -202,7 +203,11 @@ class BuzzPushBootstrap extends HookConsumerWidget {
               (candidate) =>
                   !candidate.pushNotificationsEnabled &&
                   candidate.pushSubscriptionState.pendingTombstoneGeneration !=
-                      null,
+                      null &&
+                  isServerAllowed(
+                    candidate.relayUrl,
+                    builtInOrigin: ref.read(defaultCommunityOriginProvider),
+                  ),
             )
             .toList();
         if (session.status != SessionStatus.connected ||
