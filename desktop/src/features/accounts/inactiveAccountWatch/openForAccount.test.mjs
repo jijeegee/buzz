@@ -170,3 +170,17 @@ test("nothing pending: start does nothing", async () => {
   await resumeNotificationForAccount(deps);
   assert.deepEqual(log, []);
 });
+
+test("built-in server: an account on another server only focuses the app", async () => {
+  const storage = memoryStorage();
+  const { deps, log } = start({ origin: A, pubkey: ME }, { storage });
+  deps.allowsServer = (origin) => origin === A;
+  deps.focusApp = () => log.push(["focus"]);
+  await openNotificationForAccount(target({ origin: B, pubkey: OTHER }), deps);
+  assert.deepEqual(log, [["focus"]]);
+  assert.equal(storage.size(), 0);
+
+  // The built-in server itself still switches accounts as before.
+  await openNotificationForAccount(target({ origin: A, pubkey: OTHER }), deps);
+  assert.deepEqual(log, [["focus"], ["account", OTHER]]);
+});

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'deep_link.dart';
+import '../auth/default_community.dart';
 import '../community/community_provider.dart';
 import '../push/push_bridge.dart';
 
@@ -69,6 +70,8 @@ class PendingDeepLinkNotifier extends Notifier<BuzzDeepLink?> {
 
   /// Selects the device-local community carried by a structured push target.
   /// Ordinary shared deep links have no community ID and remain unchanged.
+  /// With a built-in server, a target on any other server is unavailable:
+  /// nothing is switched.
   Future<DeepLinkCommunityPreparation> prepareCommunity(
     BuzzDeepLink link,
   ) async {
@@ -78,7 +81,14 @@ class PendingDeepLinkNotifier extends Notifier<BuzzDeepLink?> {
     final communityId = link.communityId!;
     try {
       final communities = await ref.read(communityListProvider.future);
-      if (!communities.any((community) => community.id == communityId)) {
+      final target = communities
+          .where((community) => community.id == communityId)
+          .firstOrNull;
+      if (target == null ||
+          !isServerAllowed(
+            target.relayUrl,
+            builtInOrigin: ref.read(defaultCommunityOriginProvider),
+          )) {
         return DeepLinkCommunityPreparation.unavailable;
       }
       final active = await ref.read(activeCommunityProvider.future);

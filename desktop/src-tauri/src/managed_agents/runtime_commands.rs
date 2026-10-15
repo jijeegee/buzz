@@ -938,6 +938,7 @@ pub mod ipc {
         relay_url: String,
         app: AppHandle,
     ) -> Result<ManagedAgentRuntimeStatus, String> {
+        crate::relay::ensure_relay_allowed("start_managed_agent_runtime", &relay_url)?;
         blocking(move || super::start_managed_agent_runtime(pubkey, relay_url, app)).await
     }
 
@@ -956,6 +957,7 @@ pub mod ipc {
         relay_url: String,
         app: AppHandle,
     ) -> Result<ManagedAgentRuntimeStatus, String> {
+        crate::relay::ensure_relay_allowed("restart_managed_agent_runtime", &relay_url)?;
         blocking(move || super::restart_managed_agent_runtime(pubkey, relay_url, app)).await
     }
 }

@@ -1832,6 +1832,7 @@ pub async fn create_auth_event_as(
     relay_url: String,
 ) -> Result<String, String> {
     use nostr::{EventBuilder, JsonUtil, Kind, Tag};
+    crate::relay::ensure_relay_allowed("create_auth_event_as", &relay_url)?;
     let keys = usable_account_keys(&app, &account, Some(&relay_url))?;
     tauri::async_runtime::spawn_blocking(move || {
         let tags = vec![

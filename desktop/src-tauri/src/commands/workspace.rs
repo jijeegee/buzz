@@ -78,6 +78,7 @@ pub async fn fetch_workspace_icon(
     relay_url: String,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
+    relay::ensure_relay_allowed("fetch_workspace_icon", &relay_url)?;
     let http_url = relay::relay_http_base_url(&relay_url);
     let Ok(response) = state
         .http_client
@@ -199,6 +200,9 @@ pub async fn apply_workspace(
     agent_managed_profiles: Option<bool>,
     app: AppHandle,
 ) -> Result<(), String> {
+    // Kuzz connects to its built-in server only; a stored community on any
+    // other relay is never applied.
+    crate::relay::ensure_relay_allowed("apply_workspace", &relay_url)?;
     let state = app.state::<AppState>();
     // Take the generation only after entering the serialized transaction. An
     // apply that is already running remains authoritative until it releases
@@ -468,5 +472,15 @@ mod tests {
         let queued_ticket = queued.await.unwrap();
         assert!(queued_ticket > running_ticket);
         assert_current_apply_generation(&generation, queued_ticket).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fetch_workspace_icon_refuses_another_server() {
+        use tauri::Manager as _;
+        let app = crate::relay::server::refusal_test_app();
+        let error = super::fetch_workspace_icon("wss://other.example".into(), app.state())
+            .await
+            .unwrap_err();
+        assert_eq!(error, crate::relay::server::REFUSED);
     }
 }

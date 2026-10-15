@@ -11,8 +11,6 @@ use crate::app_state::AppState;
 #[allow(unused_imports)] // trait methods used by relay helpers and `relay::submit`
 use crate::auth::credential::RelaySigner;
 
-const DEFAULT_RELAY_WS_URL: &str = "ws://localhost:3000";
-
 // A reached-but-malformed 2xx body is NOT a connectivity failure, so this
 // message must never carry the "relay unreachable:" prefix the frontend
 // classifier keys on. Extracted to a const so a test can pin that contract.
@@ -38,11 +36,8 @@ fn configured_env_var(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-pub fn relay_ws_url() -> String {
-    configured_env_var("BUZZ_RELAY_URL")
-        .or_else(|| option_env!("BUZZ_DESKTOP_BUILD_RELAY_URL").map(str::to_string))
-        .unwrap_or_else(|| DEFAULT_RELAY_WS_URL.to_string())
-}
+pub mod server;
+pub use server::{ensure_relay_allowed, relay_api_base_url, relay_ws_url};
 
 /// Read the workspace relay URL override, if set. Returns `None` when no
 /// override is active or when the mutex is poisoned (best-effort).
@@ -104,18 +99,6 @@ pub use scope::{
     assert_expected_relay_scope, assert_expected_signer, bind_expected_relay_scope,
     ScopedWorkspaceRelay,
 };
-
-pub fn relay_api_base_url() -> String {
-    if let Some(base) = configured_env_var("BUZZ_RELAY_HTTP") {
-        return base.trim_end_matches('/').to_string();
-    }
-
-    if let Some(base) = option_env!("BUZZ_DESKTOP_BUILD_RELAY_HTTP") {
-        return base.trim().trim_end_matches('/').to_string();
-    }
-
-    relay_http_base_url(&relay_ws_url())
-}
 
 // ── NIP-98 HTTP auth ────────────────────────────────────────────────────────
 

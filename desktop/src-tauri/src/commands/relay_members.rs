@@ -21,6 +21,9 @@ pub async fn relay_requires_membership(
     relay_url: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
+    if let Some(relay_url) = relay_url.as_deref() {
+        crate::relay::ensure_relay_allowed("relay_requires_membership", relay_url)?;
+    }
     let base_url = relay_url
         .as_deref()
         .map(crate::relay::relay_http_base_url)

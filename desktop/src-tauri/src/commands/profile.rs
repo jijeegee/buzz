@@ -121,6 +121,7 @@ pub async fn update_profile_at_relay(
     avatar_url: String,
     state: State<'_, AppState>,
 ) -> Result<ProfileInfo, String> {
+    crate::relay::ensure_relay_allowed("update_profile_at_relay", &relay_url)?;
     let signer = capture_expected_signer(&state, &expected_pubkey)?;
 
     let api_base_url = relay_http_base_url(&relay_url);
@@ -493,6 +494,23 @@ mod tests {
         assert_eq!(filter["search_mode"], serde_json::json!("prefix"));
         assert_eq!(filter["limit"], serde_json::json!(25));
         assert_eq!(filter["page"], serde_json::json!(1));
+    }
+
+    #[tokio::test]
+    async fn update_profile_at_relay_refuses_another_server() {
+        use tauri::Manager as _;
+        let app = crate::relay::server::refusal_test_app();
+        let error = update_profile_at_relay(
+            "wss://other.example".into(),
+            "a".repeat(64),
+            None,
+            String::new(),
+            app.state(),
+        )
+        .await
+        .err()
+        .expect("refused");
+        assert_eq!(error, crate::relay::server::REFUSED);
     }
 }
 

@@ -633,6 +633,7 @@ pub fn run() {
             get_presence,
             get_os_idle_seconds,
             get_default_relay_url,
+            get_built_in_relay_url,
             auto_connect_default_relay_enabled,
             get_legacy_workspace_storage,
             is_shared_identity,

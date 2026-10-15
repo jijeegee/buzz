@@ -28,6 +28,7 @@ import {
   clearCommunityDestinations,
   removeCommunityDestination,
 } from "./communityNavigationStorage";
+import { pinnedActiveCommunityId, useBuiltInServer } from "./builtInServer";
 
 export type UpdateCommunityResult =
   | { kind: "updated"; requiresReinit: boolean }
@@ -184,9 +185,32 @@ function useCommunitiesInternal(): UseCommunitiesReturn {
   const communitiesRef = useRef(communities);
   communitiesRef.current = communities;
 
+  // The built-in server resolves after the first render and pins the stored
+  // communities (see `pinStoredCommunitiesToBuiltInServer`); pick that up
+  // before anything below this provider renders with the old choice.
+  const builtInServer = useBuiltInServer();
+  const [syncedBuiltInServer, setSyncedBuiltInServer] = useState(builtInServer);
+  if (syncedBuiltInServer !== builtInServer) {
+    setSyncedBuiltInServer(builtInServer);
+    if (builtInServer) {
+      setCommunitiesState(loadCommunities());
+      setActiveId(loadActiveCommunityId());
+    }
+  }
+
+  // With a built-in server, its community stays active even if something
+  // asks to switch elsewhere; other stored communities are never applied.
+  const effectiveActiveId = pinnedActiveCommunityId(
+    communities,
+    activeId,
+    builtInServer,
+  );
   const activeCommunity = useMemo(
-    () => communities.find((w) => w.id === activeId) ?? communities[0] ?? null,
-    [communities, activeId],
+    () =>
+      communities.find((w) => w.id === effectiveActiveId) ??
+      communities[0] ??
+      null,
+    [communities, effectiveActiveId],
   );
 
   const addCommunity = useCallback((community: Community): string => {

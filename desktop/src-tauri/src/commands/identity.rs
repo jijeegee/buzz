@@ -82,6 +82,12 @@ pub fn get_default_relay_url() -> String {
     relay::relay_ws_url()
 }
 
+/// The built-in server this build connects to (the only one it accepts).
+#[tauri::command]
+pub fn get_built_in_relay_url() -> String {
+    relay::relay_ws_url()
+}
+
 #[tauri::command]
 pub fn auto_connect_default_relay_enabled() -> bool {
     option_env!("BUZZ_DESKTOP_BUILD_AUTO_CONNECT_DEFAULT_RELAY").is_some()
@@ -707,6 +713,7 @@ pub async fn create_auth_event(
     relay_url: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    relay::ensure_relay_allowed("create_auth_event", &relay_url)?;
     let keys = state.signing_keys()?;
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -920,5 +927,19 @@ mod sign_event_self_tagging_tests {
                 "third-party p-tag must survive with allow_self_tagging={flag}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn create_auth_event_refuses_another_server() {
+        use tauri::Manager as _;
+        let app = crate::relay::server::refusal_test_app();
+        let error = super::create_auth_event(
+            "challenge".into(),
+            "wss://other.example".into(),
+            app.state(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, crate::relay::server::REFUSED);
     }
 }

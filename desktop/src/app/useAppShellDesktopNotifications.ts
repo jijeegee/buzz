@@ -17,6 +17,10 @@ import {
   beginAccountAction,
   SWITCH_INCOMPLETE_NOTICE,
 } from "@/features/accounts/lib/accountSwitch";
+import {
+  isAllowedServer,
+  useBuiltInServer,
+} from "@/features/communities/builtInServer";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useCommunityJoinAlerts } from "@/features/community-members/useCommunityJoinAlerts";
 import { hasMentionForEvent } from "@/features/notifications/lib/shouldNotify";
@@ -171,6 +175,7 @@ export function useAppShellDesktopNotifications({
   );
 
   const { communities, activeCommunity, switchCommunity } = useCommunities();
+  const builtInServer = useBuiltInServer();
   const openOrigin = activeCommunity
     ? relayOrigin(activeCommunity.relayUrl)
     : null;
@@ -214,6 +219,10 @@ export function useAppShellDesktopNotifications({
     unavailable: (reason) => {
       void revealDesktopAppWindow().catch(() => undefined);
       toast.error(UNAVAILABLE_TEXT[reason]);
+    },
+    allowsServer: (origin) => isAllowedServer(origin, builtInServer),
+    focusApp: () => {
+      void revealDesktopAppWindow().catch(() => undefined);
     },
   });
 

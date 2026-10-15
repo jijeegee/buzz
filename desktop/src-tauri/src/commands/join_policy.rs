@@ -48,9 +48,15 @@ fn join_policy_url(relay_url: &str) -> Result<Url, String> {
     Ok(url)
 }
 
-/// Fetch an arbitrary relay's optional join policy through native networking.
+/// Fetch the built-in server's optional join policy through native
+/// networking; any other relay is refused before a request is made.
 #[tauri::command]
 pub async fn fetch_join_policy(relay_url: String) -> Result<Option<Value>, String> {
+    crate::relay::ensure_relay_allowed("fetch_join_policy", &relay_url)?;
+    fetch_join_policy_at(relay_url).await
+}
+
+async fn fetch_join_policy_at(relay_url: String) -> Result<Option<Value>, String> {
     let url = join_policy_url(&relay_url)?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -168,7 +174,7 @@ mod tests {
         ))
         .await;
 
-        let policy = fetch_join_policy(relay_url).await.unwrap().unwrap();
+        let policy = fetch_join_policy_at(relay_url).await.unwrap().unwrap();
         assert_eq!(policy["version"], "v1");
         assert_eq!(policy["age_attestation_required"], true);
     }
@@ -181,7 +187,10 @@ mod tests {
         ))
         .await;
 
-        assert_eq!(fetch_join_policy(relay_url).await.unwrap_err(), "HTTP 307");
+        assert_eq!(
+            fetch_join_policy_at(relay_url).await.unwrap_err(),
+            "HTTP 307"
+        );
     }
 
     #[tokio::test]
@@ -197,7 +206,7 @@ mod tests {
         .await;
 
         assert_eq!(
-            fetch_join_policy(relay_url).await.unwrap_err(),
+            fetch_join_policy_at(relay_url).await.unwrap_err(),
             "Something went wrong. Try again."
         );
     }
@@ -216,8 +225,16 @@ mod tests {
         .await;
 
         assert_eq!(
-            fetch_join_policy(relay_url).await.unwrap_err(),
+            fetch_join_policy_at(relay_url).await.unwrap_err(),
             "Something went wrong. Try again."
         );
+    }
+
+    #[tokio::test]
+    async fn another_server_is_refused_before_any_request() {
+        let error = fetch_join_policy("wss://other.example".to_string())
+            .await
+            .unwrap_err();
+        assert_eq!(error, "Kuzz only connects to its own server.");
     }
 }
