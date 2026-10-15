@@ -108,6 +108,7 @@ export default defineConfig({
         "**/thread-unread.spec.ts",
         "**/thread-load-failure.spec.ts",
         "**/thread-newest-first.spec.ts",
+        "**/inbox-long-thread-scroll.spec.ts",
         "**/project-conversation-load-failure.spec.ts",
         "**/huddle-thread-load-failure.spec.ts",
         "**/workspace-rail.spec.ts",

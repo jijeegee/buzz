@@ -134,6 +134,7 @@ function isAtTrueBottom(
 function computeAnchor(
   container: HTMLDivElement,
   treatNearBottomAsBottom = true,
+  listMessageIds?: ReadonlySet<string>,
 ): AnchorState {
   if (treatNearBottomAsBottom && isAtBottomNow(container)) {
     return { kind: "at-bottom" };
@@ -141,6 +142,7 @@ function computeAnchor(
 
   const containerTop = container.getBoundingClientRect().top;
   const rows = container.querySelectorAll<HTMLElement>("[data-message-id]");
+  let fallback: AnchorState | null = null;
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -148,16 +150,21 @@ function computeAnchor(
     if (rect.bottom > containerTop) {
       const messageId = row.dataset.messageId;
       if (messageId) {
-        return {
+        const anchor: AnchorState = {
           kind: "message",
           messageId,
           topOffset: rect.top - containerTop,
         };
+        // Prefer a row from the anchored list. A fixed header row outside it
+        // (a thread's head above its replies) sits above where older pages
+        // prepend, so anchoring on it would never compensate the prepend.
+        if (!listMessageIds || listMessageIds.has(messageId)) return anchor;
+        fallback ??= anchor;
       }
     }
   }
 
-  return { kind: "at-bottom" };
+  return fallback ?? { kind: "at-bottom" };
 }
 
 export function useAnchoredScroll({
@@ -227,6 +234,10 @@ export function useAnchoredScroll({
   const isWritingScrollRef = React.useRef(false);
   const programmaticScrollRafRef = React.useRef<number | null>(null);
   const targetSettleRafRef = React.useRef<number | null>(null);
+  const messageIdsRef = React.useRef<ReadonlySet<string>>(new Set());
+  React.useLayoutEffect(() => {
+    messageIdsRef.current = new Set(messages.map((message) => message.id));
+  }, [messages]);
 
   // Reset everything when the channel changes — the layout effect that runs
   // immediately after this reset is responsible for either jumping to bottom
@@ -330,7 +341,7 @@ export function useAnchoredScroll({
     // A selected row can sit near the physical floor after its deliberate
     // center. A direct user scroll there must still release the center pin;
     // otherwise a passive representative update is mistaken for bottom glue.
-    anchorRef.current = computeAnchor(container, false);
+    anchorRef.current = computeAnchor(container, false, messageIdsRef.current);
     const atBottom = isAtBottomNow(container);
     setIsAtBottom((previous) => (previous === atBottom ? previous : atBottom));
     if (atBottom) setNewMessageCount(0);
@@ -608,7 +619,11 @@ export function useAnchoredScroll({
     if (userDetachedRef.current && isAtTrueBottom(container)) {
       userDetachedRef.current = false;
     }
-    anchorRef.current = computeAnchor(container, !userDetachedRef.current);
+    anchorRef.current = computeAnchor(
+      container,
+      !userDetachedRef.current,
+      messageIdsRef.current,
+    );
     const atBottom = anchorRef.current.kind === "at-bottom";
     setIsAtBottom((prev) => (prev === atBottom ? prev : atBottom));
     if (atBottom) {
@@ -861,7 +876,11 @@ export function useAnchoredScroll({
       if (virtualizerOwnsPrependAnchoring) return;
       userDetachedRef.current = true;
       if (anchorRef.current.kind === "at-bottom") {
-        anchorRef.current = computeAnchor(container, false);
+        anchorRef.current = computeAnchor(
+          container,
+          false,
+          messageIdsRef.current,
+        );
       }
     };
     const handleWheel = (event: WheelEvent) => {
