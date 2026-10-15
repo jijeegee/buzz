@@ -283,24 +283,23 @@ for (const replacement of ["hello", "hello @Alice"]) {
   });
 }
 
-test("legacy qualified same-name refs reopen independently of tag order", async () => {
+// Kuzz numbers a second same-name pick ("Scout (2)") instead of embedding its
+// key, so a reopened message cannot re-derive which tagged Scout owns which
+// label. Both stay as reference recipients and nobody is re-notified.
+test("send/reopen/edit keeps both same-name recipients as references", async () => {
   const {
     buildEditMentionState,
     replaceWithDraftMentionRefs,
     snapshotDraftMentionRefs,
   } = await import("../lib/draftMentionRefs.ts");
-  const { extractMentionPubkeys } = await import(
+  const { extractMentionPubkeys, selectedMentionLabel } = await import(
     "../lib/extractMentionPubkeys.ts"
   );
   const a = "a".repeat(64),
     b = "b".repeat(64);
-  // Legacy body format: messages sent before same-name picks stopped
-  // carrying key text must still reopen with their distinct bindings.
-  const label = `Scout (${b})`;
-  const bindings = new Map([
-    ["Scout", a],
-    [label, b],
-  ]);
+  const bindings = new Map([["Scout", a]]);
+  const label = selectedMentionLabel("Scout", b, bindings);
+  bindings.set(label, b);
   const originalContent = `@Scout @${label} hello`;
   const sent = extractMentionPubkeys({
     text: originalContent,
@@ -315,13 +314,8 @@ test("legacy qualified same-name refs reopen independently of tag order", async 
       { [a]: { displayName: "Scout" }, [b]: { displayName: "Scout" } },
       () => false,
     );
-    assert.deepEqual(
-      new Map(
-        editTarget.mentionRefs.map((ref) => [ref.displayName, ref.pubkey]),
-      ),
-      bindings,
-    );
-    assert.deepEqual(editTarget.unresolvedMentionPubkeys, []);
+    assert.equal(label, "Scout (2)");
+    assert.deepEqual([...editTarget.unresolvedMentionPubkeys].sort(), [a, b]);
     const restored = new Map();
     replaceWithDraftMentionRefs(editTarget.mentionRefs, restored, new Map());
     let saved;
@@ -338,8 +332,10 @@ test("legacy qualified same-name refs reopen independently of tag order", async 
           selectedMentions: restored,
           memberCandidates: [],
         }),
-      getMentionRefs: (text) => snapshotDraftMentionRefs(text, restored, []),
+      getMentionRefs: (text, fallback) =>
+        snapshotDraftMentionRefs(text, restored, [], [], [], fallback),
     });
+    assert.ok(saved, "the edit must save");
     assert.deepEqual(saved.tags.map((tag) => tag[1]).sort(), [a, b]);
     assert.deepEqual(saved.mentionPubkeys, []); // references, not fresh notifying p-tags
     const reopened = buildEditMentionState(
@@ -348,10 +344,14 @@ test("legacy qualified same-name refs reopen independently of tag order", async 
       { [a]: { displayName: "Scout" }, [b]: { displayName: "Renamed Scout" } },
       () => false,
     );
+    // After b's rename only a is named Scout, so "@Scout" binds a and b stays
+    // a reference recipient.
     assert.deepEqual(
-      new Map(reopened.mentionRefs.map((ref) => [ref.displayName, ref.pubkey])),
-      bindings,
+      reopened.mentionRefs.map((ref) => ref.pubkey),
+      [a],
     );
+    assert.deepEqual(reopened.unresolvedMentionPubkeys, [b]);
+    assert.doesNotMatch(saved.content, /[0-9a-f]{64}|npub1/);
   }
 });
 
@@ -512,50 +512,3 @@ test("still-owned ambiguous history remains reference-only after unrelated text 
     notifying: [],
   });
 });
-
-for (const { name, label, profiles } of [
-  {
-    name: "same-name",
-    label: "Scout",
-    profiles: (a, b) => ({
-      [a]: { displayName: "Scout" },
-      [b]: { displayName: "Scout" },
-    }),
-  },
-  { name: "unnamed", label: "Unknown user", profiles: () => ({}) },
-]) {
-  test(`editing a keyless ${name} message keeps both recipients as references`, async () => {
-    const { buildEditMentionState } = await import(
-      "../lib/draftMentionRefs.ts"
-    );
-    const a = "1".repeat(64),
-      b = "2".repeat(64);
-    const originalContent = `@${label} @${label} hello`;
-    for (const tagOrder of [
-      [a, b],
-      [b, a],
-    ]) {
-      const editTarget = buildEditMentionState(
-        originalContent,
-        tagOrder.map((key) => ["p", key]),
-        profiles(a, b),
-        () => false,
-      );
-      let saved;
-      await submitMessageEdit({
-        ...baseOptions(
-          async (content, tags, mentionPubkeys) => {
-            saved = { content, tags, mentionPubkeys };
-          },
-          { content: originalContent, editTarget },
-        ),
-        content: `${originalContent} edited`,
-        originalContent,
-      });
-      assert.equal(saved.content, `${originalContent} edited`);
-      assert.doesNotMatch(saved.content, /[0-9a-f]{16}/);
-      assert.deepEqual(saved.tags.map((tag) => tag[1]).sort(), [a, b]);
-      assert.deepEqual(saved.mentionPubkeys, []);
-    }
-  });
-}

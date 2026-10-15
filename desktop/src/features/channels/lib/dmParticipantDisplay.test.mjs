@@ -47,3 +47,13 @@ test("DM intro title counts unnamed participants and shows no keys", () => {
     assert.doesNotMatch(participant.displayName, /[0-9a-f]{8}|npub/);
   }
 });
+
+test("DM intro counts a repeated pubkey once", () => {
+  const intro = buildDirectMessageIntro({
+    channel: dm([ME, U1, U1.toUpperCase()]),
+    currentPubkey: ME,
+    profiles: {},
+  });
+  assert.equal(intro.displayName, "Unknown user");
+  assert.equal(intro.participants.length, 1);
+});

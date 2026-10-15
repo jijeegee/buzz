@@ -158,13 +158,10 @@ export function useAgentAddressLockPicker({
         text,
         mentions.getDraftMentionRefs(text),
       )[0];
-      // Tied candidates share one label; same-name identities bind to its
-      // occurrences in selection order, so releasing this identity's binding
-      // makes the remaining occurrences keep their own recipients.
       if (
         !first ||
         first.start !== 0 ||
-        !first.candidates.some(
+        !first.candidates.every(
           (ref) => normalizePubkey(ref.pubkey) === normalized,
         )
       )
@@ -176,9 +173,6 @@ export function useAgentAddressLockPicker({
         implicitPrefix,
       );
       if (strippedText !== text) {
-        if (first.candidates.length > 1) {
-          mentions.releaseMentionPubkey?.(normalized);
-        }
         onImplicitPrefixRemoved?.(normalized);
         applyAutocompleteEdit({
           replaceFromOffset: 0,
@@ -191,7 +185,6 @@ export function useAgentAddressLockPicker({
       applyAutocompleteEdit,
       audienceScope,
       mentions.getDraftMentionRefs,
-      mentions.releaseMentionPubkey,
       onImplicitPrefixRemoved,
       richText.getPlainTextAndCursor,
       unpinAddressedAgent,
@@ -216,12 +209,11 @@ export function useAgentAddressLockPicker({
         );
       } else {
         unpinnedAgentPubkeysRef.current.delete(pubkey);
-        const { text } = richText.getPlainTextAndCursor();
         const label =
           mentions.registerMentionPubkey(suggestion.displayName, pubkey, {
             isAgent: true,
-            currentText: text,
           }) ?? suggestion.displayName;
+        const { text } = richText.getPlainTextAndCursor();
         if (
           !mentions
             .getDraftMentionRefs(text)
@@ -396,14 +388,7 @@ export function useAgentAddressLockPicker({
           mentions.registerMentionPubkey(
             existingRef?.displayName ?? agent.displayName,
             agent.pubkey,
-            // Present refs (and prefixes planned in this pass) keep their
-            // slots; only bindings whose text is gone are forgotten.
-            {
-              isAgent: true,
-              currentText: `${missingAgents
-                .map((missing) => `@${missing.displayName} `)
-                .join("")}${text}`,
-            },
+            { isAgent: true },
           ) ?? agent.displayName;
         if (
           existingRef ||

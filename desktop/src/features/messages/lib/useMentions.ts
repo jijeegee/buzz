@@ -43,12 +43,8 @@ import {
 } from "./mentionPasteBinding";
 import { useVerifyMentionIdentities } from "./useVerifyMentionIdentities";
 import {
-  bindSelectedMention,
   extractMentionPubkeys,
   mentionMatchCandidates,
-  pruneSelectedMentions,
-  type RepeatedMention,
-  releaseSelectedMention,
   selectedMentionLabel,
   selectedMentionLabels,
 } from "./extractMentionPubkeys";
@@ -98,9 +94,6 @@ export function useMentions(
   selectedAgentMentionNamesRef.current = selectedAgentMentionNames;
   const mentionMapRef = React.useRef<Map<string, string>>(new Map());
   const personaMentionMapRef = React.useRef<Map<string, string>>(new Map());
-  // Later picks of a repeatable label (`@Unknown user`) bound to a different
-  // identity than `mentionMapRef` holds for it, in selection order.
-  const repeatedMentionsRef = React.useRef<RepeatedMention[]>([]);
   const previousSuggestionsRef = React.useRef<MentionSuggestion[]>([]);
   const mentionSearchQuery = mentionQuery?.trim() ?? "";
   const canSearchGlobalPeople = mentionSearchQuery.length > 0;
@@ -474,17 +467,8 @@ export function useMentions(
       if (!trimmedName) {
         return;
       }
-      if (
-        bindSelectedMention(
-          mentionMapRef.current,
-          repeatedMentionsRef.current,
-          trimmedName,
-          pubkey,
-          options?.isAgent,
-        )
-      ) {
-        personaMentionMapRef.current.delete(trimmedName);
-      }
+      mentionMapRef.current.set(trimmedName, pubkey);
+      personaMentionMapRef.current.delete(trimmedName);
       trimMapToSize(mentionMapRef.current, 200);
       setSelectedMentionNames((current) =>
         appendUniqueName(current, trimmedName),
@@ -525,32 +509,8 @@ export function useMentions(
       const mentions = mentionMapRef.current;
       const personaMentions = personaMentionMapRef.current;
       const selectedMentions = teamMembers ?? [boundSuggestion];
-      const isAgentMention =
-        suggestion.kind === "persona" ||
-        suggestion.kind === "team" ||
-        suggestion.isAgent === true ||
-        (suggestion.pubkey
-          ? knownAgentPubkeys.has(normalizePubkey(suggestion.pubkey))
-          : false);
       for (const selected of suggestion.teamMembers ?? [suggestion]) {
         pasteBinding.claimMentionIntent(selected.displayName);
-      }
-      const startIndex =
-        flushedMentionStartIndexRef.current ?? mentionStartIndex;
-      // The draft as it stands without the query this pick replaces: same-name
-      // picks whose text is gone must not keep an occurrence slot.
-      const remainingText =
-        latestValueRef.current.slice(0, startIndex) +
-        latestValueRef.current.slice(selectionEnd);
-      for (const label of new Set(
-        selectedMentions.map((selected) => selected.displayName),
-      )) {
-        pruneSelectedMentions(
-          mentions,
-          repeatedMentionsRef.current,
-          label,
-          remainingText,
-        );
       }
       for (const selected of selectedMentions) {
         // A picked name is the user's newest word on that label, so it retires
@@ -560,16 +520,8 @@ export function useMentions(
         if (selected.kind === "persona" && selected.personaId) {
           personaMentions.set(selected.displayName, selected.personaId);
           mentions.delete(selected.displayName);
-        } else if (
-          selected.pubkey &&
-          bindSelectedMention(
-            mentions,
-            repeatedMentionsRef.current,
-            selected.displayName,
-            selected.pubkey,
-            isAgentMention,
-          )
-        ) {
+        } else if (selected.pubkey) {
+          mentions.set(selected.displayName, selected.pubkey);
           personaMentions.delete(selected.displayName);
         }
       }
@@ -582,6 +534,13 @@ export function useMentions(
             .filter((name) => !known.has(name.toLowerCase())),
         ];
       });
+      const isAgentMention =
+        suggestion.kind === "persona" ||
+        suggestion.kind === "team" ||
+        suggestion.isAgent === true ||
+        (suggestion.pubkey
+          ? knownAgentPubkeys.has(normalizePubkey(suggestion.pubkey))
+          : false);
       rememberSelectedAgentPubkeys(
         selectedAgentMentionPubkeysRef.current,
         selectedMentions,
@@ -605,6 +564,8 @@ export function useMentions(
       mentionPickerOriginRef.current = null;
       setMentionQuery(null);
       setSelected(0);
+      const startIndex =
+        flushedMentionStartIndexRef.current ?? mentionStartIndex;
       flushedMentionStartIndexRef.current = null;
       return {
         replaceFromOffset: startIndex,
@@ -623,25 +584,13 @@ export function useMentions(
   // non-bumping write. Reserve the exact label before claiming either name so
   // a pending paste cannot take the original name after a qualified selection.
   const registerMentionPubkey = React.useCallback(
-    (
-      displayName: string,
-      pubkey: string,
-      options?: { isAgent?: boolean; currentText?: string },
-    ) => {
+    (displayName: string, pubkey: string, options?: { isAgent?: boolean }) => {
       const label = selectedMentionLabel(
         displayName.trim(),
         pubkey,
         mentionMapRef.current,
       );
       if (!label) return;
-      if (options?.currentText !== undefined) {
-        pruneSelectedMentions(
-          mentionMapRef.current,
-          repeatedMentionsRef.current,
-          label,
-          options.currentText,
-        );
-      }
       pasteBinding.claimMentionIntent(displayName);
       pasteBinding.claimMentionIntent(label);
       writeMentionPubkey(label, pubkey, options);
@@ -649,15 +598,6 @@ export function useMentions(
     },
     [pasteBinding.claimMentionIntent, writeMentionPubkey],
   );
-  // Drops one identity's binding (e.g. an unpinned agent's prefix) so the
-  // remaining same-name occurrences keep binding their own recipients.
-  const releaseMentionPubkey = React.useCallback((pubkey: string) => {
-    releaseSelectedMention(
-      mentionMapRef.current,
-      repeatedMentionsRef.current,
-      pubkey,
-    );
-  }, []);
   const getMentionIdentities = React.useCallback((): MentionIdentity[] => {
     const agentNames = new Set(
       selectedAgentMentionNamesRef.current.map((name) =>
@@ -719,11 +659,6 @@ export function useMentions(
       for (const [displayName, mentionPubkey] of mentionMapRef.current) {
         if (normalizePubkey(mentionPubkey) === normalizedPubkey) {
           return displayName;
-        }
-      }
-      for (const repeated of repeatedMentionsRef.current) {
-        if (normalizePubkey(repeated.pubkey) === normalizedPubkey) {
-          return repeated.displayName;
         }
       }
       const candidate = mentionCandidates.find(
@@ -818,7 +753,6 @@ export function useMentions(
         selectedMentions: mentionMapRef.current,
         selectedDisplayNames: personaMentionMapRef.current.keys(),
         memberCandidates: mentionCandidates,
-        repeatedMentions: repeatedMentionsRef.current,
       });
       // Selections are intent, not cached authorization. Never discard a
       // selected key because a refresh removed it from the picker.
@@ -871,7 +805,6 @@ export function useMentions(
     cancelMentionAutocomplete();
     mentionMapRef.current.clear();
     personaMentionMapRef.current.clear();
-    repeatedMentionsRef.current = [];
     selectedAgentMentionNamesRef.current = [];
     selectedAgentMentionPubkeysRef.current.clear();
     setSelectedMentionNames([]);
@@ -885,7 +818,6 @@ export function useMentions(
       memberCandidates: mentionCandidates,
       mentionMapRef,
       personaMentionMapRef,
-      repeatedMentionsRef,
       selectedAgentNamesRef: selectedAgentMentionNamesRef,
       selectedAgentPubkeysRef: selectedAgentMentionPubkeysRef,
       cancelAutocomplete: cancelMentionAutocomplete,
@@ -1009,7 +941,6 @@ export function useMentions(
     mentionStartIndex,
     openMentionPicker,
     registerMentionPubkey,
-    releaseMentionPubkey,
     restoreDraftMentionRefs,
     settlePendingMentionBindings: pasteBinding.settlePendingMentionBindings,
     suggestions,

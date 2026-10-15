@@ -1,8 +1,6 @@
 import {
-  bindSelectedMention,
   mentionMatchCandidates,
   type MentionPubkeyCandidate,
-  type RepeatedMention,
 } from "./extractMentionPubkeys";
 import { mentionOccurrences } from "@/shared/lib/mentionOccurrences";
 import { imetaMediaFromTags } from "@/features/messages/lib/imetaMediaMarkdown";
@@ -11,7 +9,7 @@ import type { DraftMentionRef } from "@/features/messages/lib/useDrafts";
 import type { TimelineMessage } from "@/features/messages/types";
 import type { MessageComposerEditTarget } from "@/features/messages/ui/MessageComposer.types";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
   getMentionTagPubkey,
   mentionIdentityTags,
@@ -105,10 +103,9 @@ export function buildEditMentionState(
         .filter((key): key is string => Boolean(key)),
     ),
   ].flatMap((pubkey) =>
-    // An identity with no name renders, and was sent, as `@Unknown user`.
     (
       resolveMentionProps([["mention", pubkey]], profiles, content)
-        .mentionNames ?? [UNKNOWN_USER_LABEL]
+        .mentionNames ?? []
     ).map((displayName) => ({
       displayName,
       pubkey,
@@ -203,7 +200,6 @@ export function snapshotDraftMentionRefs(
   selectedDisplayNames: Iterable<string> = [],
   fallbackRefs: readonly DraftMentionRef[] = [],
   competingDisplayNames: readonly string[] = [],
-  repeatedMentions: readonly RepeatedMention[] = [],
 ): DraftMentionRef[] {
   // Fallback references may contain ambiguous historical ties. Keep them as
   // candidates, not a name-to-key Map: collapsing ties would invent a binding.
@@ -220,36 +216,6 @@ export function snapshotDraftMentionRefs(
   const agentNames = new Set(
     selectedAgentNames.map((name) => name.trim().toLowerCase()),
   );
-  const occurrences = mentionOccurrences(content, [
-    ...fallback,
-    ...mentionMatchCandidates({
-      selectedMentions: mentions,
-      memberCandidates,
-      selectedDisplayNames: [
-        ...personaLabels,
-        ...fallback.map((ref) => ref.displayName),
-      ],
-      competingDisplayNames,
-    }),
-  ]);
-  const presentNames = new Set(
-    occurrences.flatMap((match) =>
-      match.candidates.map((candidate) => candidate.displayName),
-    ),
-  );
-  // A label picked for several identities is present for as many of them, in
-  // selection order, as it has occurrences: the primary binding plus N-1.
-  const remaining = new Map<string, number>();
-  for (const match of occurrences) {
-    const label = match.candidates[0]?.displayName.trim().toLowerCase();
-    if (label) remaining.set(label, (remaining.get(label) ?? 0) + 1);
-  }
-  const repeatedPresent = repeatedMentions.filter(({ displayName }) => {
-    const label = displayName.trim().toLowerCase();
-    const count = remaining.get(label) ?? 0;
-    remaining.set(label, count - 1);
-    return count > 1;
-  });
   const refs = [
     ...fallback,
     ...[...mentions].map(([displayName, pubkey]) => ({
@@ -257,14 +223,23 @@ export function snapshotDraftMentionRefs(
       pubkey,
       isAgent: agentNames.has(displayName.trim().toLowerCase()),
     })),
-    // Later picks of a shared label ride along in selection order; restore
-    // re-queues them behind the primary binding.
-    ...repeatedPresent.map(({ displayName, pubkey, isAgent }) => ({
-      displayName,
-      pubkey,
-      isAgent: isAgent ?? agentNames.has(displayName.trim().toLowerCase()),
-    })),
   ];
+  const presentNames = new Set(
+    mentionOccurrences(content, [
+      ...fallback,
+      ...mentionMatchCandidates({
+        selectedMentions: mentions,
+        memberCandidates,
+        selectedDisplayNames: [
+          ...personaLabels,
+          ...fallback.map((ref) => ref.displayName),
+        ],
+        competingDisplayNames,
+      }),
+    ]).flatMap((match) =>
+      match.candidates.map((candidate) => candidate.displayName),
+    ),
+  );
   return refs
     .filter(({ displayName }) => presentNames.has(displayName))
     .map((ref) => ({ ...ref, pubkey: normalizePubkey(ref.pubkey) }));
@@ -288,25 +263,11 @@ export function replaceWithDraftMentionRefs(
   refs: readonly DraftMentionRef[],
   mentions: Map<string, string>,
   personaMentions: Map<string, string>,
-  repeatedMentions?: RepeatedMention[],
 ): { names: string[]; agentNames: string[] } {
   mentions.clear();
   personaMentions.clear();
-  if (repeatedMentions) repeatedMentions.length = 0;
   const normalized = normalizeDraftMentionRefs(refs);
-  for (const ref of normalized) {
-    if (repeatedMentions) {
-      bindSelectedMention(
-        mentions,
-        repeatedMentions,
-        ref.displayName,
-        ref.pubkey,
-        ref.isAgent,
-      );
-    } else {
-      mentions.set(ref.displayName, ref.pubkey);
-    }
-  }
+  for (const ref of normalized) mentions.set(ref.displayName, ref.pubkey);
   const names = normalized.map((ref) => ref.displayName);
   const agentNames = normalized
     .filter((ref) => ref.isAgent)

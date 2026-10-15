@@ -94,8 +94,16 @@ export function buildDirectMessageIntro({
           normalizePubkey(participant.pubkey) !== normalizedCurrentPubkey,
       )
     : participants;
-  const displayParticipants =
-    otherParticipants.length > 0 ? otherParticipants : participants;
+  // Distinct people are distinct pubkeys; drop repeats.
+  const seenPubkeys = new Set<string>();
+  const displayParticipants = (
+    otherParticipants.length > 0 ? otherParticipants : participants
+  ).filter((participant) => {
+    const pubkey = normalizePubkey(participant.pubkey);
+    if (seenPubkeys.has(pubkey)) return false;
+    seenPubkeys.add(pubkey);
+    return true;
+  });
 
   if (displayParticipants.length === 0) {
     return null;

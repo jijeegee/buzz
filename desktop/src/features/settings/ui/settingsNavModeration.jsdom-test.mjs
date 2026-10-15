@@ -377,3 +377,41 @@ test("settings-nav-groups-contains-relay-admin: relay-admin is wired into Commun
     `relay-admin must be in Communities; got: ${JSON.stringify(communities.sections)}`,
   );
 });
+
+test("relay-admin-direct-link-no-identity: no identity means no endless spinner", async () => {
+  stubNoOrigin();
+  const changes = [];
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  qc.setQueryData(["identity"], null);
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(
+          QueryClientProvider,
+          { client: qc },
+          React.createElement(
+            SidebarProvider,
+            {},
+            React.createElement(SettingsView, {
+              ...STUB_PROPS,
+              section: "relay-admin",
+              onClose: () => {},
+              onSectionChange: (next) => changes.push(next),
+            }),
+          ),
+        ),
+      );
+    });
+    await settle(80);
+    assert.equal(changes.length > 0, true);
+    assert.notEqual(changes.at(-1), "relay-admin");
+  } finally {
+    await act(async () => root.unmount());
+    document.body.removeChild(container);
+  }
+});

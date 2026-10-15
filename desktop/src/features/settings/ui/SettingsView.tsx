@@ -4,6 +4,7 @@ import { AlertCircle, ArrowLeft, LoaderCircle, RefreshCw } from "lucide-react";
 
 import { useAdminConsoleAccessQuery } from "@/features/admin-console/adminConsoleAccess";
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   canManageCommunityMembers,
   shouldWarnMissingMembershipSnapshot,
@@ -146,6 +147,7 @@ export function SettingsView({
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const myMembershipQuery = useMyRelayMembershipLookupQuery();
   const adminAccessQuery = useAdminConsoleAccessQuery();
+  const identityQuery = useIdentityQuery();
   const featureState = useFeatureSnapshot();
   const visibleSections = React.useMemo(() => {
     return settingsSections.filter((s) => {
@@ -193,8 +195,12 @@ export function SettingsView({
 
   // A link or reload into the Admin section waits for the access check
   // instead of bouncing an operator to another section first.
+  // A disabled query (no identity) stays pending forever, so wait only while
+  // the identity is loading or the check is actually running.
   const awaitingAdminAccess =
-    section === "relay-admin" && adminAccessQuery.isPending;
+    section === "relay-admin" &&
+    adminAccessQuery.isPending &&
+    (identityQuery.isPending || adminAccessQuery.fetchStatus === "fetching");
 
   React.useEffect(() => {
     if (awaitingAdminAccess) return;

@@ -409,7 +409,7 @@ test("restoring a multi-word automatic mention into an empty composer focuses af
   act(() => result.current.restoreAddressedAgentMentions());
 
   assert.deepEqual(registeredMentions, [
-    ["claude code", "agent-pubkey", { isAgent: true, currentText: "" }],
+    ["claude code", "agent-pubkey", { isAgent: true }],
   ]);
   assert.deepEqual(appliedEdits, [
     {
@@ -517,11 +517,7 @@ test("restoring an existing automatic mention re-registers its agent chip", asyn
   act(() => result.current.restoreAddressedAgentMentions());
 
   assert.deepEqual(registeredMentions, [
-    [
-      "claude code",
-      "agent-pubkey",
-      { isAgent: true, currentText: "@claude code " },
-    ],
+    ["claude code", "agent-pubkey", { isAgent: true }],
   ]);
   assert.deepEqual(appliedEdits, []);
   assert.equal(focusEndCount, 0);
@@ -841,11 +837,7 @@ test("restoring after an agent rename keeps the existing automatic mention", asy
 
   assert.deepEqual(appliedEdits, []);
   assert.deepEqual(registeredMentions, [
-    [
-      oldName,
-      "agent-pubkey",
-      { isAgent: true, currentText: `@${oldName} authored draft` },
-    ],
+    [oldName, "agent-pubkey", { isAgent: true }],
   ]);
 });
 
@@ -883,68 +875,34 @@ test("an addressed agent keeps its resolved name while mention state clears duri
   assert.equal(result.current.lockedAgents[0].displayName, "Agent Ada");
 });
 
-async function sameNameMentions(initial) {
-  const {
-    bindSelectedMention,
-    extractMentionPubkeys,
-    pruneSelectedMentions,
-    releaseSelectedMention,
-  } = await import("../lib/extractMentionPubkeys.ts");
-  const { snapshotDraftMentionRefs } = await import(
-    "../lib/draftMentionRefs.ts"
-  );
-  const bindings = new Map();
-  const repeated = [];
-  for (const [name, key] of initial) {
-    bindSelectedMention(bindings, repeated, name, key, true);
-  }
-  return {
-    extract: (text) =>
-      extractMentionPubkeys({
-        text,
-        selectedMentions: bindings,
-        repeatedMentions: repeated,
-        memberCandidates: [],
-      }),
-    mentions: {
-      getDraftMentionRefs: (value) =>
-        snapshotDraftMentionRefs(
-          value,
-          bindings,
-          [...bindings.keys()],
-          [],
-          [],
-          [],
-          [],
-          repeated,
-        ),
-      getMentionDisplayName: (key) =>
-        [...bindings].find(([, bound]) => bound === key)?.[0] ??
-        repeated.find((entry) => entry.pubkey === key)?.displayName,
-      registerMentionPubkey: (name, key, options) => {
-        if (options?.currentText !== undefined) {
-          pruneSelectedMentions(bindings, repeated, name, options.currentText);
-        }
-        bindSelectedMention(bindings, repeated, name, key, options?.isAgent);
-        return name;
-      },
-      releaseMentionPubkey: (key) =>
-        releaseSelectedMention(bindings, repeated, key),
-      isMentionOpen: false,
-    },
-  };
-}
-
-test("automatic same-name mention insertion and restoration stay keyless", async () => {
+test("automatic mention insertion and restoration use the registered collision-safe label", async () => {
   const { act, renderHook } = await import("@testing-library/react");
   const { useAgentAddressLockPicker } = await import(
     "./useAgentAddressLockPicker.ts"
   );
+  const { selectedMentionLabel, extractMentionPubkeys } = await import(
+    "../lib/extractMentionPubkeys.ts"
+  );
+  const { snapshotDraftMentionRefs } = await import(
+    "../lib/draftMentionRefs.ts"
+  );
   const local = "a".repeat(64);
   const remote = "e".repeat(64);
-  const { extract, mentions } = await sameNameMentions([["carl", local]]);
+  const bindings = new Map([["carl", local]]);
   let text = "@carl existing";
   const prefixes = [];
+  const mentions = {
+    getDraftMentionRefs: (value) =>
+      snapshotDraftMentionRefs(value, bindings, [...bindings.keys()]),
+    getMentionDisplayName: (pubkey) =>
+      [...bindings].find(([, key]) => key === pubkey)?.[0] ?? "carl",
+    registerMentionPubkey: (name, pubkey) => {
+      const label = selectedMentionLabel(name, pubkey, bindings);
+      bindings.set(label, pubkey);
+      return label;
+    },
+    isMentionOpen: false,
+  };
   const { result, rerender } = renderHook(
     ({ pubkeys }) =>
       useAgentAddressLockPicker({
@@ -974,45 +932,76 @@ test("automatic same-name mention insertion and restoration stay keyless", async
       isAgent: true,
     }),
   );
-  assert.equal(text, "@carl @carl existing");
-  assert.deepEqual(extract(text), [local, remote]);
+  assert.equal(text, `@carl (2) @carl existing`);
+  assert.deepEqual(
+    extractMentionPubkeys({
+      text,
+      selectedMentions: bindings,
+      memberCandidates: [],
+    }),
+    [local, remote],
+  );
   rerender({ pubkeys: [remote] });
   act(() => result.current.restoreAddressedAgentMentions());
   assert.equal(
     text,
-    "@carl @carl existing",
+    `@carl (2) @carl existing`,
     "restore must not append or rebind the local mention",
   );
   act(() => result.current.removeAddressedAgent(remote));
-  assert.equal(text, "@carl existing", "unpin removes one prefix only");
-  assert.deepEqual(extract(text), [local]);
+  assert.equal(
+    text,
+    "@carl existing",
+    "unpin removes the qualified prefix only",
+  );
   text = "";
   act(() => result.current.restoreAddressedAgentMentions([remote], [remote]));
-  assert.equal(text, "@carl ");
-  assert.equal(prefixes.at(-1).prefix, "@carl ");
+  assert.equal(text, `@carl (2) `);
+  assert.equal(prefixes.at(-1).prefix, `@carl (2) `);
   assert.deepEqual(
-    extract(text),
+    extractMentionPubkeys({
+      text,
+      selectedMentions: bindings,
+      memberCandidates: [],
+    }),
     [remote],
-    "a deleted same-name mention does not keep its recipient slot",
   );
 });
 
-test("same-name deletion drops the later pick; unpinning the earlier one keeps the other", async () => {
+test("inverse deletion and toggle preserve B and exclude A from the composed send recipients", async () => {
   const { act, renderHook } = await import("@testing-library/react");
   const { useAgentAddressLockPicker } = await import(
     "./useAgentAddressLockPicker.ts"
+  );
+  const { selectedMentionLabel, extractMentionPubkeys } = await import(
+    "../lib/extractMentionPubkeys.ts"
+  );
+  const { snapshotDraftMentionRefs } = await import(
+    "../lib/draftMentionRefs.ts"
   );
   const { mergeMentionRecipients } = await import(
     "./useMentionSendFlow.helpers.ts"
   );
   const A = "a".repeat(64),
     B = "b".repeat(64);
-  const { extract, mentions } = await sameNameMentions([
-    ["Scout", A],
-    ["Scout", B],
-  ]);
-  let text = "@Scout @Scout hello";
-  const excluded = [];
+  const bindings = new Map([["Scout", A]]);
+  const qualified = selectedMentionLabel("Scout", B, bindings);
+  bindings.set(qualified, B);
+  let text = `@Scout @${qualified} hello`;
+  const excluded = [],
+    edits = [];
+  const mentions = {
+    getDraftMentionRefs: (value) =>
+      snapshotDraftMentionRefs(value, bindings, [...bindings.keys()]),
+    getMentionDisplayName: (key) =>
+      [...bindings].find(([, k]) => k === key)?.[0],
+    registerMentionPubkey: (name, key) => {
+      const label = selectedMentionLabel(name, key, bindings);
+      bindings.set(label, key);
+      return label;
+    },
+    isMentionOpen: false,
+  };
   const { result } = renderHook(() =>
     useAgentAddressLockPicker({
       audience: { pubkeys: [A, B], excludePubkey: (key) => excluded.push(key) },
@@ -1020,6 +1009,7 @@ test("same-name deletion drops the later pick; unpinning the earlier one keeps t
       mentions,
       onPulseAddressLock: () => {},
       applyAutocompleteEdit: (edit) => {
+        edits.push(edit);
         text =
           text.slice(0, edit.replaceFromOffset) +
           edit.insertText +
@@ -1030,20 +1020,28 @@ test("same-name deletion drops the later pick; unpinning the earlier one keeps t
       },
     }),
   );
-  assert.equal(text.match(/[0-9a-f]{16}/), null);
   act(() => {
     result.current.trackMentionAddressedAgent(A);
     result.current.trackMentionAddressedAgent(B);
   });
-  // Identical text carries no identity: deleting either `@Scout` leaves one
-  // occurrence, which binds the earlier pick.
-  text = "@Scout hello";
+  // The user deletes only the first (unqualified A) mention.
+  text = `@${qualified} hello`;
   act(() => result.current.syncAddressedAgentsFromText(text));
-  assert.deepEqual(extract(text), [A]);
-  assert.deepEqual(excluded, [B]);
+  const explicit = extractMentionPubkeys({
+    text,
+    selectedMentions: bindings,
+    memberCandidates: [],
+  });
+  const merged = mergeMentionRecipients(
+    explicit,
+    [A, B].filter((k) => !excluded.includes(k)),
+  );
+  assert.deepEqual(explicit, [B]);
+  assert.deepEqual(excluded, [A]);
+  assert.deepEqual(merged, [B]);
 
-  // Explicitly unpinning A strips one prefix and hands the rest to B.
-  text = "@Scout @Scout hello";
+  // Toggling off A should not touch B's qualified mention.
+  text = `@Scout @${qualified} hello`;
   act(() =>
     result.current.toggleAlwaysAddressAgent({
       displayName: "Scout",
@@ -1051,15 +1049,17 @@ test("same-name deletion drops the later pick; unpinning the earlier one keeps t
       isAgent: true,
     }),
   );
-  assert.equal(text, "@Scout hello");
-  assert.deepEqual(excluded, [B, A]);
-  assert.deepEqual(
-    mergeMentionRecipients(
-      extract(text),
-      [A, B].filter((key) => !excluded.includes(key)),
-    ),
-    [B],
+  assert.equal(text, `@${qualified} hello`);
+
+  const afterToggle = mergeMentionRecipients(
+    extractMentionPubkeys({
+      text,
+      selectedMentions: bindings,
+      memberCandidates: [],
+    }),
+    [A, B].filter((k) => !excluded.includes(k)),
   );
+  assert.deepEqual(afterToggle, [B]);
 });
 
 test("implicit prefix removal uses the present exact label rather than a stale alias", async () => {
