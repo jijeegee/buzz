@@ -12,7 +12,12 @@ import {
   normalizeDeviceId,
   type OwnerDevices,
   type StoredDeviceRobotOverride,
+  withoutSignedOutDevices,
 } from "@/shared/api/ownerDevices";
+import {
+  AUTH_DEVICES_QUERY_KEY,
+  useAuthDevicesQuery,
+} from "@/shared/api/useAuthDeviceNames";
 import { relayClient } from "@/shared/api/relayClient";
 import { signRelayEvent } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
@@ -53,7 +58,8 @@ export async function fetchOwnerDevices(
  * The signed-in user's own device records (see `ownerDevices.ts`): which
  * device runs each of their agents, and the robot they picked per device.
  * Every caller shares one cached query; `enabled = false` (e.g. a viewer who
- * does not own the agent in question) reads the cache without fetching. Live
+ * does not own the agent in question) reads the cache without fetching.
+ * Agents of devices no longer signed in are left out. Live
  * updates come from `useOwnerDevicesLiveUpdates`.
  */
 export function useOwnerDevices(enabled = true): OwnerDevices {
@@ -65,7 +71,47 @@ export function useOwnerDevices(enabled = true): OwnerDevices {
     queryFn: () => fetchOwnerDevices(viewer),
     staleTime: 5 * 60_000,
   });
-  return query.data ?? EMPTY_OWNER_DEVICES;
+  const devices = useAuthDevicesQuery(enabled && viewer.length > 0);
+  const ownerDevices = query.data ?? EMPTY_OWNER_DEVICES;
+  useRefetchDevicesForUnknownHosts(ownerDevices, devices.data);
+  return React.useMemo(
+    () =>
+      withoutSignedOutDevices(
+        ownerDevices,
+        (devices.data ?? []).map((device) => device.id),
+      ),
+    [ownerDevices, devices.data],
+  );
+}
+
+/** Device ids a device-list refetch was already asked for, this app run. */
+const refetchedForDevices = new Set<string>();
+
+/**
+ * A device listing agents that the cached device list does not know yet is
+ * most likely one that just signed in: refetch the list once for it, so its
+ * agents are not hidden as if it were signed out.
+ */
+function useRefetchDevicesForUnknownHosts(
+  ownerDevices: OwnerDevices,
+  devices: readonly { id: string }[] | undefined,
+) {
+  const queryClient = useQueryClient();
+  React.useEffect(() => {
+    if (!devices || devices.length === 0) return;
+    const known = new Set(
+      devices.map((device) => normalizeDeviceId(device.id)),
+    );
+    let unknown = false;
+    for (const deviceId of ownerDevices.hostDevices.values()) {
+      if (known.has(deviceId) || refetchedForDevices.has(deviceId)) continue;
+      refetchedForDevices.add(deviceId);
+      unknown = true;
+    }
+    if (unknown) {
+      void queryClient.invalidateQueries({ queryKey: AUTH_DEVICES_QUERY_KEY });
+    }
+  }, [ownerDevices, devices, queryClient]);
 }
 
 /**

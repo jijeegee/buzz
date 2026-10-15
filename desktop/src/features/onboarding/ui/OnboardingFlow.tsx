@@ -267,7 +267,7 @@ export function OnboardingFlow({
         if (membershipStatus === "error") {
           setMembershipError({
             kind: "error",
-            message: "Something went wrong — try again",
+            message: "Something went wrong. Please try again.",
           });
           return;
         }
@@ -441,15 +441,14 @@ export function OnboardingFlow({
   // before this flow, so it is hidden.
   const chromeBackAction =
     currentPage === "profile"
-      ? singleServer
-        ? undefined
-        : {
-            disabled: profileStepState.isSaving,
-            onClick: () => {
-              setMembershipError(null);
-              setIsCommunityChangeOpen(true);
-            },
-          }
+      ? {
+          label: "Skip setup",
+          disabled: profileStepState.isSaving || !initialProfileDecisionSettled,
+          onClick: () => {
+            setMembershipError(null);
+            skipForNow();
+          },
+        }
       : currentPage === "key-import"
         ? {
             label:
@@ -515,39 +514,22 @@ export function OnboardingFlow({
                   <p className="font-medium text-destructive">
                     Couldn't connect
                   </p>
-                  {singleServer ? (
-                    <>
-                      <p className="mt-1 text-muted-foreground">
-                        Check your internet connection and try again.
-                      </p>
-                      <Button
-                        className="mt-3"
-                        data-testid="onboarding-unreachable-retry"
-                        disabled={isProfileAdvancePending}
-                        onClick={() => {
-                          void saveProfileAndContinue(membershipRetryPage);
-                        }}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Retry
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="mt-1 text-muted-foreground">
-                        Check your connection or change your community.
-                      </p>
-                      <Button
-                        className="mt-3"
-                        onClick={() => setIsCommunityChangeOpen(true)}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Change community
-                      </Button>
-                    </>
-                  )}
+                  <p className="mt-1 text-muted-foreground">
+                    Check your internet connection and try again.
+                  </p>
+                  <Button
+                    className="mt-3"
+                    disabled={isProfileAdvancePending}
+                    onClick={() =>
+                      void saveProfileAndContinue(
+                        currentPage === "avatar" ? "complete" : "avatar",
+                      )
+                    }
+                    size="sm"
+                    variant="outline"
+                  >
+                    Try again
+                  </Button>
                 </>
               ) : (
                 <>
@@ -555,7 +537,7 @@ export function OnboardingFlow({
                     {membershipError.message ?? "Something went wrong"}
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    Please try again in a moment.
+                    Please try again.
                   </p>
                 </>
               )}
@@ -578,6 +560,7 @@ export function OnboardingFlow({
               }}
               direction={transitionDirection}
               state={profileStepState}
+              showAlwaysSkip
               usesExistingIdentity
             />
           ) : currentPage === "key-import" ? (

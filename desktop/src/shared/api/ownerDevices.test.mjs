@@ -6,6 +6,7 @@ import {
   buildDeviceRobotOverrides,
   buildOwnerDevices,
   parseAgentHostDevicesContent,
+  withoutSignedOutDevices,
 } from "./ownerDevices.ts";
 
 const OWNER = "a".repeat(64);
@@ -275,4 +276,26 @@ test("one fetch carries both host devices and robot choices", () => {
   assert.equal(owner.hostDevices.get(AGENT_1), DEVICE_A);
   assert.equal(owner.robotOverrides.get(DEVICE_A)?.shape, "boxy");
   assert.equal(owner.hostDevices.size, 1, "a 30181 lists no agents");
+});
+
+test("agents of devices no longer signed in are dropped", () => {
+  const devices = buildOwnerDevices(
+    [
+      hostEvent({ createdAt: 10, deviceId: DEVICE_A, agents: [AGENT_1] }),
+      hostEvent({ createdAt: 11, deviceId: DEVICE_B, agents: [AGENT_2] }),
+    ],
+    OWNER,
+  );
+  const live = withoutSignedOutDevices(devices, [DEVICE_A.toUpperCase()]);
+  assert.deepEqual([...live.hostDevices], [[AGENT_1, DEVICE_A]]);
+  assert.equal(live.robotOverrides, devices.robotOverrides);
+});
+
+test("an unknown device list drops nothing", () => {
+  const devices = buildOwnerDevices(
+    [hostEvent({ createdAt: 10, deviceId: DEVICE_A, agents: [AGENT_1] })],
+    OWNER,
+  );
+  assert.equal(withoutSignedOutDevices(devices, []), devices);
+  assert.equal(withoutSignedOutDevices(devices, [DEVICE_A]), devices);
 });

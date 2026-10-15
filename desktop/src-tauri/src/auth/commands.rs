@@ -894,6 +894,25 @@ pub(crate) async fn sign_out_account(
     account: Option<PublicKey>,
     revoke: bool,
 ) -> Result<SignedOut, String> {
+    // While the session still works, its device here stops listing agents;
+    // a sign-out that fails leaves the account signed in, so list them again.
+    let state = app.state::<AppState>();
+    let target = account.or_else(|| state.token_auth.signing_pubkey(origin));
+    crate::device_robot::clear_agent_host_devices(&state, origin, target).await;
+    let result = sign_out_account_now(app, origin, account, revoke).await;
+    if result.is_err() {
+        crate::device_robot::spawn_publish_agent_host_devices(app);
+    }
+    result
+}
+
+/// [`sign_out_account`] after its device list was cleared.
+async fn sign_out_account_now(
+    app: &AppHandle,
+    origin: &str,
+    account: Option<PublicKey>,
+    revoke: bool,
+) -> Result<SignedOut, String> {
     let state = app.state::<AppState>();
     let active = state.keys.lock().ok().map(|keys| keys.public_key());
     let data_dir = app.path().app_data_dir().ok();
@@ -1101,6 +1120,18 @@ pub(crate) fn install_session_ended_hook(app: &AppHandle) {
                     emit_changed(&app, &origin);
                 }
             });
+        }));
+}
+
+/// Install the hook that tells each background account's owner which agents
+/// this device hosts for them once its session (and so its device) is known.
+pub(crate) fn install_session_restored_hook(app: &AppHandle) {
+    let hook_app = app.clone();
+    app.state::<AppState>()
+        .token_auth
+        .inactive
+        .set_restored_hook(std::sync::Arc::new(move || {
+            crate::device_robot::spawn_publish_agent_host_devices(&hook_app);
         }));
 }
 
