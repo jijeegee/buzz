@@ -129,7 +129,7 @@ async fn start_pairing_session(
 
     let ws_url = relay_ws_url_with_override(&state);
     let http_url = relay_api_base_url_with_override(&state);
-    let pairing_relay_url = resolve_pairing_relay_url(&ws_url, probe_pairing_relay(&ws_url).await)?;
+    let pairing_relay_url = allowed_pairing_relay_url(&ws_url).await?;
     let (session, qr_payload) = PairingSession::new_source(pairing_relay_url.clone());
     let mut qr_uri = encode_qr(&qr_payload);
     if mode == PairingMode::RecoverIdentity {
@@ -303,6 +303,7 @@ async fn pairing_ws_task_inner(
     outbound_rx: &mut mpsc::Receiver<String>,
     app: &AppHandle,
 ) -> Result<(), String> {
+    crate::relay::ensure_relay_allowed("pairing connect", relay_url)?;
     let (ws, _) = connect_async(relay_url)
         .await
         .map_err(|e| format!("WebSocket connection failed: {e}"))?;
@@ -712,6 +713,23 @@ async fn probe_pairing_relay(relay_url: &str) -> PairingRelay {
     };
 
     pairing_relay_from_nip11(&json)
+}
+
+/// The pairing relay for `main_relay_url`, which must be the built-in server
+/// (checked before its NIP-11 document is fetched). A relay the document
+/// advertises on any other server is refused, never dialed.
+async fn allowed_pairing_relay_url(main_relay_url: &str) -> Result<String, String> {
+    crate::relay::ensure_relay_allowed("pairing relay probe", main_relay_url)?;
+    allowed_pairing_relay(main_relay_url, probe_pairing_relay(main_relay_url).await)
+}
+
+fn allowed_pairing_relay(
+    main_relay_url: &str,
+    pairing_relay: PairingRelay,
+) -> Result<String, String> {
+    let url = resolve_pairing_relay_url(main_relay_url, pairing_relay)?;
+    crate::relay::ensure_relay_allowed("pairing relay", &url)?;
+    Ok(url)
 }
 
 fn resolve_pairing_relay_url(

@@ -1206,3 +1206,17 @@ fn a_launch_signed_out_here_moves_the_list_to_the_signed_in_account() {
         Some(AccountState::SignedOut)
     );
 }
+
+#[tokio::test]
+async fn create_auth_event_as_refuses_another_server() {
+    let app = crate::relay::server::refusal_test_app();
+    let error = create_auth_event_as(
+        app.handle().clone(),
+        "aa".repeat(32),
+        "challenge".into(),
+        "wss://other.example".into(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, crate::relay::server::REFUSED);
+}

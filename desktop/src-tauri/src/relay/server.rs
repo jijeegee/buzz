@@ -94,26 +94,42 @@ pub fn choose_relay_urls(env: KuzzEnv, overrides: &RelayOverrides) -> (String, S
     }
 }
 
-/// Host and port of a relay URL (ws/wss/http/https alike), with the scheme's
-/// default port filled in. `None` for anything unparseable.
-fn relay_host_port(url: &str) -> Option<(String, u16)> {
+/// Where a relay URL points: whether it is encrypted (`wss`/`https`), and its
+/// host and port with the scheme's default port filled in. `ws` and `http`
+/// (or `wss` and `https`) name the same endpoint. `None` for anything
+/// unparseable.
+#[derive(Debug, PartialEq, Eq)]
+struct RelayEndpoint {
+    secure: bool,
+    host: String,
+    port: u16,
+}
+
+fn relay_endpoint(url: &str) -> Option<RelayEndpoint> {
     let parsed = reqwest::Url::parse(&relay_http_base_url(url)).ok()?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return None;
-    }
-    let host = parsed.host_str()?.to_ascii_lowercase();
-    Some((host, parsed.port_or_known_default()?))
+    let secure = match parsed.scheme() {
+        "https" => true,
+        "http" => false,
+        _ => return None,
+    };
+    Some(RelayEndpoint {
+        secure,
+        host: parsed.host_str()?.to_ascii_lowercase(),
+        port: parsed.port_or_known_default()?,
+    })
 }
 
 /// Pure check: may the backend be pointed at `relay_url`? Only the server
-/// [`choose_relay_urls`] picks for `env` is allowed.
+/// [`choose_relay_urls`] picks for `env` is allowed, over the same kind of
+/// scheme: the table servers are `wss`, so prod never allows `ws`/`http`.
+/// Only a dev build's explicit unencrypted override allows `ws`/`http`.
 pub fn check_relay_allowed(
     env: KuzzEnv,
     overrides: &RelayOverrides,
     relay_url: &str,
 ) -> Result<(), String> {
     let (allowed, _) = choose_relay_urls(env, overrides);
-    match (relay_host_port(relay_url), relay_host_port(&allowed)) {
+    match (relay_endpoint(relay_url), relay_endpoint(&allowed)) {
         (Some(actual), Some(wanted)) if actual == wanted => Ok(()),
         _ => Err("Kuzz only connects to its own server.".to_string()),
     }
@@ -124,8 +140,8 @@ pub fn check_relay_allowed(
 /// host:port is logged, never credentials or paths.
 pub fn ensure_relay_allowed(context: &str, relay_url: &str) -> Result<(), String> {
     check_relay_allowed(kuzz_env(), &relay_overrides(), relay_url).inspect_err(|_| {
-        let target = relay_host_port(relay_url)
-            .map(|(host, port)| format!("{host}:{port}"))
+        let target = relay_endpoint(relay_url)
+            .map(|RelayEndpoint { host, port, .. }| format!("{host}:{port}"))
             .unwrap_or_else(|| "an unparseable address".to_string());
         eprintln!("buzz-desktop: refused {context} for {target}: not the built-in server");
     })
@@ -237,7 +253,6 @@ mod tests {
             "wss://jihobuzz.duckdns.org:8443",
             "wss://jihobuzz.duckdns.org:8443/",
             "https://JIHOBUZZ.duckdns.org:8443",
-            "ws://jihobuzz.duckdns.org:8443",
         ] {
             assert!(
                 check_relay_allowed(KuzzEnv::Prod, &none, allowed).is_ok(),
@@ -253,6 +268,9 @@ mod tests {
             "wss://jihobuzz.duckdns.org",
             "wss://jihobuzz.duckdns.org:9443",
             "wss://other.example:8443",
+            // Unencrypted schemes are never allowed in prod, even to our host.
+            "ws://jihobuzz.duckdns.org:8443",
+            "http://jihobuzz.duckdns.org:8443",
             "not a url",
         ] {
             assert!(
@@ -275,6 +293,19 @@ mod tests {
         let local = overrides(Some("ws://localhost:3000"), None);
         assert!(check_relay_allowed(KuzzEnv::Dev, &local, "ws://localhost:3000/").is_ok());
         assert!(check_relay_allowed(KuzzEnv::Dev, &local, dev_table).is_err());
+        // The dev table server is encrypted too: no downgrade without an
+        // explicit unencrypted override.
+        assert!(
+            check_relay_allowed(KuzzEnv::Dev, &none, "ws://jihobuzz.duckdns.org:8443").is_err()
+        );
+        assert!(
+            check_relay_allowed(KuzzEnv::Dev, &none, "http://jihobuzz.duckdns.org:8443").is_err()
+        );
+        // The explicit override's own scheme kind is allowed (ws and http alike).
+        assert!(check_relay_allowed(KuzzEnv::Dev, &local, "http://localhost:3000").is_ok());
+        let secure = overrides(Some("wss://dev.example"), None);
+        assert!(check_relay_allowed(KuzzEnv::Dev, &secure, "wss://dev.example").is_ok());
+        assert!(check_relay_allowed(KuzzEnv::Dev, &secure, "ws://dev.example:443").is_err());
     }
 
     #[test]
@@ -289,5 +320,6 @@ mod tests {
             "Kuzz only connects to its own server."
         );
         assert!(super::ensure_relay_allowed("test", "ws://localhost:3000").is_err());
+        assert!(super::ensure_relay_allowed("test", "ws://jihobuzz.duckdns.org:8443").is_err());
     }
 }

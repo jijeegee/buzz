@@ -259,6 +259,9 @@ fn start_pair<R: tauri::Runtime>(
     admission: &super::AdmissionSnapshot,
     app: AppHandle<R>,
 ) -> Result<ManagedAgentRuntimeStatus, String> {
+    // Every agent start (reconcile, restart, auth-exit restart, preflight)
+    // passes through here: an agent never joins any server but Kuzz's own.
+    crate::relay::ensure_relay_allowed("start_pair", &relay_url)?;
     let state = app.state::<AppState>();
     // The Hermes CLI can take seconds: create the profile before taking any
     // lock (the store lock is held only for this snapshot read). The spawn
@@ -575,6 +578,39 @@ fn unkeyable_failed_status(
     }
 }
 
+/// The (agent, community) pairs reconcile probes and starts. Communities on
+/// any server but the built-in one are skipped before anything is probed:
+/// stored entries for other servers are kept but never contacted.
+fn reconcile_jobs(
+    communities: Vec<super::ManagedAgentCommunityTarget>,
+    records: &[super::ManagedAgentRecord],
+    suppresses_agent: impl Fn(&str) -> bool,
+) -> Vec<(super::ManagedAgentRecord, String)> {
+    let mut jobs = Vec::new();
+    for community in communities {
+        if crate::relay::ensure_relay_allowed(
+            "reconcile_managed_agent_runtimes",
+            &community.relay_url,
+        )
+        .is_err()
+        {
+            continue;
+        }
+        for record in records
+            .iter()
+            .filter(|record| record.start_on_app_launch && record.backend == BackendKind::Local)
+            // Stopped by the user when signing out: stays stopped until sign-in.
+            .filter(|record| !suppresses_agent(&record.pubkey))
+        // The legacy per-record relay pin is deliberately ignored here — see
+        // `effective_agent_relay_url`. Every local auto-start agent fans out
+        // to every configured community.
+        {
+            jobs.push((record.clone(), community.relay_url.clone()));
+        }
+    }
+    jobs
+}
+
 /// Spawn a lazy harness pair for every eligible (agent, community) pair.
 ///
 /// Eligibility is deliberately gated on `start_on_app_launch`: auto-start is
@@ -597,20 +633,9 @@ pub async fn reconcile_managed_agent_runtimes(
     let records = load_managed_agents(&app)?;
     let auth_state = app.state::<AppState>();
     let signed_out = &auth_state.token_auth.signed_out;
-    let mut jobs = Vec::new();
-    for community in communities {
-        for record in records
-            .iter()
-            .filter(|record| record.start_on_app_launch && record.backend == BackendKind::Local)
-            // Stopped by the user when signing out: stays stopped until sign-in.
-            .filter(|record| !signed_out.suppresses_agent(&record.pubkey))
-        // The legacy per-record relay pin is deliberately ignored here — see
-        // `effective_agent_relay_url`. Every local auto-start agent fans out
-        // to every configured community.
-        {
-            jobs.push((record.clone(), community.relay_url.clone()));
-        }
-    }
+    let jobs = reconcile_jobs(communities, &records, |pubkey| {
+        signed_out.suppresses_agent(pubkey)
+    });
     let probes: Vec<_> = stream::iter(jobs)
         .map(|(record, requested)| {
             let state = app.state::<AppState>();
@@ -770,6 +795,42 @@ mod tests {
                 "wss://two.example"
             );
         }
+    }
+
+    #[test]
+    fn start_pair_refuses_another_server() {
+        let app = crate::relay::server::refusal_test_app();
+        let admission = super::super::AdmissionSnapshot::capture(&app.state::<AppState>());
+        let error = start_pair(
+            "aa".repeat(32),
+            "wss://other.example".into(),
+            false,
+            None,
+            &admission,
+            app.handle().clone(),
+        )
+        .unwrap_err();
+        assert_eq!(error, crate::relay::server::REFUSED);
+    }
+
+    #[test]
+    fn reconcile_skips_communities_on_other_servers() {
+        let record = record_with_relay("");
+        assert!(record.start_on_app_launch);
+        let ours = crate::relay::server::relay_endpoints(crate::relay::server::KuzzEnv::Prod).ws;
+        let communities = [
+            "wss://other.example",
+            ours,
+            "ws://jihobuzz.duckdns.org:8443",
+        ]
+        .into_iter()
+        .map(|relay_url| super::super::ManagedAgentCommunityTarget {
+            relay_url: relay_url.into(),
+        })
+        .collect();
+        let jobs = reconcile_jobs(communities, &[record], |_| false);
+        let relays: Vec<_> = jobs.iter().map(|(_, relay)| relay.as_str()).collect();
+        assert_eq!(relays, vec![ours]);
     }
 
     #[test]

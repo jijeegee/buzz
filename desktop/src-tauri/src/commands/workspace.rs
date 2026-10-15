@@ -179,6 +179,13 @@ pub async fn readd_community_relay(relay_url: String, app: AppHandle) -> Result<
     .map_err(|e| format!("readd_community_relay task failed: {e}"))?
 }
 
+/// Kuzz connects to its built-in server only; a stored community on any other
+/// relay is never applied. The first step of [`apply_workspace`], before any
+/// state is touched (the command itself needs a real `AppHandle`).
+fn apply_workspace_relay_guard(relay_url: &str) -> Result<(), String> {
+    crate::relay::ensure_relay_allowed("apply_workspace", relay_url)
+}
+
 /// Apply a workspace's configuration to the backend session.
 ///
 /// Called by the frontend on app init (after reload) to configure the
@@ -200,9 +207,7 @@ pub async fn apply_workspace(
     agent_managed_profiles: Option<bool>,
     app: AppHandle,
 ) -> Result<(), String> {
-    // Kuzz connects to its built-in server only; a stored community on any
-    // other relay is never applied.
-    crate::relay::ensure_relay_allowed("apply_workspace", &relay_url)?;
+    apply_workspace_relay_guard(&relay_url)?;
     let state = app.state::<AppState>();
     // Take the generation only after entering the serialized transaction. An
     // apply that is already running remains authoritative until it releases
@@ -472,6 +477,19 @@ mod tests {
         let queued_ticket = queued.await.unwrap();
         assert!(queued_ticket > running_ticket);
         assert_current_apply_generation(&generation, queued_ticket).unwrap();
+    }
+
+    #[test]
+    fn apply_workspace_refuses_another_server() {
+        let ours = crate::relay::server::relay_endpoints(crate::relay::server::KuzzEnv::Prod).ws;
+        assert!(super::apply_workspace_relay_guard(ours).is_ok());
+        for refused in ["wss://other.example", "ws://jihobuzz.duckdns.org:8443"] {
+            assert_eq!(
+                super::apply_workspace_relay_guard(refused).unwrap_err(),
+                crate::relay::server::REFUSED,
+                "{refused}"
+            );
+        }
     }
 
     #[tokio::test]
