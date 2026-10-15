@@ -35,7 +35,7 @@ const { CommunitiesProvider } = await import(
 const { OnboardingFlow } = await import("./OnboardingFlow.tsx");
 const { useFirstRunOnboardingGate } = await import("../hooks.ts");
 
-function FlowWithRealGate({ settled = true }) {
+function FlowWithRealGate({ settled = true, profile }) {
   const gate = useFirstRunOnboardingGate({
     currentPubkey: "a".repeat(64),
     identityIsFetching: false,
@@ -50,17 +50,18 @@ function FlowWithRealGate({ settled = true }) {
     return React.createElement("main", { "data-testid": "app-ready" }, "App");
   return React.createElement(OnboardingFlow, {
     actions: { complete: gate.complete, skipForNow: gate.skipForNow },
-    initialProfile: {},
+    initialProfile: { profile },
     initialProfileDecisionSettled: settled,
   });
 }
 
-async function mount(settled = true) {
+async function mount(settled = true, profile) {
   calls.length = 0;
   window.localStorage.clear();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  if (profile) client.setQueryData(["profile"], profile);
   await act(async () =>
     render(
       React.createElement(
@@ -69,7 +70,7 @@ async function mount(settled = true) {
         React.createElement(
           CommunitiesProvider,
           null,
-          React.createElement(FlowWithRealGate, { settled }),
+          React.createElement(FlowWithRealGate, { settled, profile }),
         ),
       ),
     ),
@@ -100,6 +101,37 @@ for (const control of ["onboarding-back", "onboarding-skip"]) {
       false,
       "blank optional profile isn't published",
     );
+    cleanup();
+    client.clear();
+  });
+
+  test(`${control} keeps the saved profile when an edited name is not submitted`, async () => {
+    const profile = {
+      pubkey: "a".repeat(64),
+      displayName: "Google Name",
+      avatarUrl: "https://example.test/avatar.png",
+      about: null,
+      nip05Handle: null,
+      ownerPubkey: null,
+      hasProfileEvent: false,
+    };
+    const client = await mount(true, profile);
+    const input = document.querySelector(
+      "[data-testid='onboarding-display-name']",
+    );
+    assert.equal(input.value, profile.displayName);
+    await act(async () =>
+      fireEvent.change(input, { target: { value: "Unsaved name" } }),
+    );
+    assert.equal(input.value, "Unsaved name");
+    await act(async () =>
+      fireEvent.click(document.querySelector(`[data-testid='${control}']`)),
+    );
+    assert.ok(document.querySelector("[data-testid='app-ready']"));
+    assert.deepEqual(client.getQueryData(["profile"]), profile);
+    assert.equal(calls.includes("update_profile"), false);
+    assert.equal(calls.includes("logout"), false);
+    assert.equal(calls.includes("sign_out"), false);
     cleanup();
     client.clear();
   });
