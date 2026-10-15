@@ -811,7 +811,8 @@ impl AcpClient {
     /// - `Some(SystemPromptTransport::PiMeta(text))` — `_meta.systemPrompt`
     ///   as a replacement string for the Buzz pi-acp fork.
     /// - `Some(SystemPromptTransport::ClaudeMeta(text))` — `_meta.systemPrompt`
-    ///   as `{"append": text}`, keeping claude-agent-acp's native preset intact.
+    ///   as `{"append": text, "snapshot": false}`, keeping claude-agent-acp's
+    ///   native preset intact.
     ///
     /// `session_title` rides in `_meta.sessionTitle` when `Some`; `_meta` is
     /// omitted entirely otherwise, since adapters may distinguish an absent
@@ -833,23 +834,7 @@ impl AcpClient {
             "cwd": cwd,
             "mcpServers": mcp_servers,
         });
-        match system_prompt {
-            Some(SystemPromptTransport::Field(sp)) => {
-                params["systemPrompt"] = serde_json::Value::String(sp.to_owned());
-            }
-            Some(SystemPromptTransport::PiMeta(sp)) => {
-                params["_meta"]["systemPrompt"] = serde_json::Value::String(sp.to_owned());
-            }
-            Some(SystemPromptTransport::ClaudeMeta(sp)) => {
-                // Merge into _meta so sessionTitle (set below) is not clobbered.
-                params["_meta"]["systemPrompt"] = serde_json::json!({ "append": sp });
-            }
-            None => {}
-        }
-        if let Some(title) = session_title {
-            // Merge — _meta may already carry a system prompt from an adapter extension.
-            params["_meta"]["sessionTitle"] = serde_json::Value::String(title.to_owned());
-        }
+        set_session_prompt_and_title(&mut params, system_prompt, session_title);
         let result = self.send_request("session/new", params).await?;
         let session_id = result["sessionId"]
             .as_str()
@@ -1058,6 +1043,11 @@ impl AcpClient {
         self.steering_supported
     }
 
+    /// Whether this agent advertises `session/resume`.
+    pub fn can_resume_sessions(&self) -> bool {
+        self.resume_session_supported
+    }
+
     /// Whether this agent can reattach to an existing provider session.
     pub fn can_reattach_sessions(&self) -> bool {
         self.resume_session_supported || self.load_session_supported
@@ -1070,11 +1060,18 @@ impl AcpClient {
     /// notifications are read past like any other pre-response traffic. The
     /// response has the same shape as `session/new` (models, config options,
     /// modes), so callers apply models and modes exactly as for a new session.
+    ///
+    /// `system_prompt` and `session_title` ride in `_meta` as on `session/new`.
+    /// claude-agent-acp rebuilds a live session whose `_meta.systemPrompt`
+    /// changed, which is how a Claude session's goals are replaced between
+    /// turns.
     pub async fn session_reattach(
         &mut self,
         session_id: &str,
         cwd: &str,
         mcp_servers: Vec<McpServer>,
+        system_prompt: Option<SystemPromptTransport<'_>>,
+        session_title: Option<&str>,
     ) -> Result<SessionNewResponse, AcpError> {
         let method = if self.resume_session_supported {
             "session/resume"
@@ -1085,11 +1082,21 @@ impl AcpClient {
                 "agent advertises neither session/resume nor session/load".into(),
             ));
         };
-        let params = serde_json::json!({
+        let mut mcp_servers = mcp_servers;
+        // A resume carrying a system prompt (Claude Code) rebuilds the session
+        // from these params, so its MCP servers must match `session/new`'s.
+        if system_prompt.is_some() {
+            crate::token_broker::apply_mcp_credentials(
+                &mut mcp_servers,
+                self.broker_lease.as_ref(),
+            );
+        }
+        let mut params = serde_json::json!({
             "sessionId": session_id,
             "cwd": cwd,
             "mcpServers": mcp_servers,
         });
+        set_session_prompt_and_title(&mut params, system_prompt, session_title);
         let raw = self.send_request(method, params).await?;
         tracing::info!(target: "acp::session", "session reattached via {method}: {session_id}");
         Ok(SessionNewResponse {
@@ -2433,21 +2440,54 @@ pub struct SessionNewResponse {
     pub raw: serde_json::Value,
 }
 
+/// Put the system prompt and session title into `session/new` or
+/// `session/resume` params. Metadata prompt transports and the title are
+/// merged into a single `_meta` object; `_meta` stays absent when neither is
+/// set, since adapters may distinguish an absent member from a null one.
+fn set_session_prompt_and_title(
+    params: &mut serde_json::Value,
+    system_prompt: Option<SystemPromptTransport<'_>>,
+    session_title: Option<&str>,
+) {
+    match system_prompt {
+        Some(SystemPromptTransport::Field(sp)) => {
+            params["systemPrompt"] = serde_json::Value::String(sp.to_owned());
+        }
+        Some(SystemPromptTransport::PiMeta(sp)) => {
+            params["_meta"]["systemPrompt"] = serde_json::Value::String(sp.to_owned());
+        }
+        Some(SystemPromptTransport::ClaudeMeta(sp)) => {
+            // `snapshot: false` makes Claude Code rebuild its system prompt
+            // from these options on every request instead of keeping the one
+            // recorded when the session started, so a replaced `append`
+            // (new goals) takes effect and a resume carries the current one.
+            params["_meta"]["systemPrompt"] = serde_json::json!({
+                "append": sp,
+                "snapshot": false,
+            });
+        }
+        None => {}
+    }
+    if let Some(title) = session_title {
+        params["_meta"]["sessionTitle"] = serde_json::Value::String(title.to_owned());
+    }
+}
+
 /// How to deliver a system prompt on `session/new`.
 ///
 /// - **`Field`** — bare `systemPrompt` field (ACP protocol v2, buzz-agent).
 /// - **`PiMeta`** — `_meta.systemPrompt: text`, used by the Buzz pi-acp fork
 ///   to replace Pi's native system prompt.
-/// - **`ClaudeMeta`** — `_meta.systemPrompt: {"append": text}`, used by
-///   `claude-agent-acp` to append to the adapter's own native system prompt
-///   while keeping its tool-use preset intact.
+/// - **`ClaudeMeta`** — `_meta.systemPrompt: {"append": text, "snapshot":
+///   false}`, used by `claude-agent-acp` to append to the adapter's own native
+///   system prompt while keeping its tool-use preset intact.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SystemPromptTransport<'a> {
     /// Deliver as a bare top-level `systemPrompt` field.
     Field(&'a str),
     /// Deliver as `_meta.systemPrompt: text`.
     PiMeta(&'a str),
-    /// Deliver as `_meta.systemPrompt: {"append": text}`.
+    /// Deliver as `_meta.systemPrompt: {"append": text, "snapshot": false}`.
     ClaudeMeta(&'a str),
 }
 

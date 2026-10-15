@@ -32,7 +32,7 @@ use uuid::Uuid;
 use crate::acp::{
     extract_model_config_options, extract_model_state, extract_thought_level_config_id,
     model_in_catalog, resolve_model_switch_method, AcpClient, AcpError, EnvVar, McpServer,
-    ModelSwitchMethod, StopReason, SystemPromptTransport, BUZZ_PI_ACP_NAME,
+    ModelSwitchMethod, SessionNewResponse, StopReason, SystemPromptTransport, BUZZ_PI_ACP_NAME,
 };
 use crate::config::{compose_scoped_session_title, DedupMode, PermissionMode};
 use crate::observer;
@@ -142,6 +142,36 @@ pub struct ChannelDeliveryState {
     /// the session may hold goals nobody can see, like a reattached one, so
     /// its next turn restates them (or says they are off).
     pub goals_maybe_held: bool,
+    /// Set for a Claude Code session whose goals live at the end of its system
+    /// prompt and are replaced there before a turn when they change.
+    pub prompt_goals: Option<PromptGoals>,
+}
+
+/// A Claude Code session's goals held in its system prompt `append`, with what
+/// it takes to reopen the session with other goals (see
+/// [`swap_prompt_goals`]).
+#[derive(Clone, Debug)]
+pub struct PromptGoals {
+    /// The `append` the session was opened with, without goals. Only the goals
+    /// change; canvas, roster, and core stay as the session started.
+    base: Option<String>,
+    mcp_servers: Vec<McpServer>,
+    title: Option<String>,
+    /// The `<goal-context>` body the system prompt holds (`None`: no goals),
+    /// rendered for the session's own thread (`SessionScope::root_event_id`).
+    held: Option<String>,
+    /// The exact `append` last sent, to reopen the session unchanged when a
+    /// replacement fails.
+    sent: Option<String>,
+    /// Goals may also sit in the conversation's messages (a session reattached
+    /// after a restart, or a turn whose replacement failed), so goals put in
+    /// the system prompt say they replace earlier ones, and goals removed or
+    /// turned off are announced once in a message.
+    in_messages: bool,
+    /// False for a session reattached after a restart until a turn shows what
+    /// its messages hold: it may hold goals (so turning them off is
+    /// announced), but a room without goals is not told its goals are gone.
+    in_messages_known: bool,
 }
 
 /// Per-channel session IDs, turn counters, and delivery state.
@@ -335,6 +365,25 @@ impl SessionState {
         }
     }
 
+    /// Record whether a successful turn put goals into a Claude session's
+    /// messages (`Some(true)`) or announced that they are gone (`Some(false)`).
+    pub(crate) fn mark_prompt_goals_in_messages(
+        &mut self,
+        scope: &SessionScope,
+        in_messages: Option<bool>,
+    ) {
+        if let Some(in_messages) = in_messages {
+            if let Some(prompt) = self
+                .deliveries
+                .get_mut(scope)
+                .and_then(|delivery| delivery.prompt_goals.as_mut())
+            {
+                prompt.in_messages = in_messages;
+                prompt.in_messages_known = true;
+            }
+        }
+    }
+
     /// Forget the goals `scope`'s session was sent once compaction may have
     /// summarised them away; the next turn sends them again.
     pub(crate) fn forget_goal_context_after_compaction(&mut self, scope: &SessionScope) {
@@ -493,6 +542,13 @@ fn session_new_system_prompt<'a>(
 }
 
 impl OwnedAgent {
+    /// Whether this agent's sessions hold their goals in the system prompt
+    /// and get them replaced there (Claude Code's `append`), instead of in
+    /// messages.
+    pub(crate) fn swaps_goals_in_prompt(&self) -> bool {
+        self.agent_name == CLAUDE_AGENT_ACP_NAME && self.acp.can_resume_sessions()
+    }
+
     pub(crate) fn has_system_prompt_support(&self) -> bool {
         has_system_prompt_support(
             self.protocol_version,
@@ -1913,6 +1969,9 @@ struct OpenedSession {
     /// True when an existing provider session was reattached (resume/load)
     /// instead of created; its prior usage and history are not zero.
     reattached: bool,
+    /// Set when the session's goals live in its system prompt (Claude Code);
+    /// a reattached one was reopened with the current system prompt.
+    prompt_goals: Option<PromptGoals>,
 }
 
 /// [`create_session_and_apply_model`], first trying to reattach to
@@ -1938,32 +1997,46 @@ async fn open_session_and_apply_model(
     // its own `<core-memory>` boundary, and canvas carries its own
     // `<channel-canvas>` boundary; both are appended with a blank-line separator.
     let is_goose = agent.agent_name == "goose";
-    let combined_system_prompt = with_goals(
-        with_roster(
-            with_canvas(
-                with_huddle_instructions(
-                    with_core(
-                        with_layer0_goals(
-                            with_team(
-                                framed_system_prompt(
-                                    &ctx.cwd,
-                                    standing.base_prompt,
-                                    standing.system_prompt,
-                                ),
-                                standing.team_instructions,
+    let swaps_goals = agent.swaps_goals_in_prompt();
+    let prompt_without_goals = with_roster(
+        with_canvas(
+            with_huddle_instructions(
+                with_core(
+                    with_layer0_goals(
+                        with_team(
+                            framed_system_prompt(
+                                &ctx.cwd,
+                                standing.base_prompt,
+                                standing.system_prompt,
                             ),
-                            standing.layer0_goals,
+                            standing.team_instructions,
                         ),
-                        agent_core,
+                        standing.layer0_goals,
                     ),
-                    channel.huddle_instructions,
+                    agent_core,
                 ),
-                channel.canvas,
+                channel.huddle_instructions,
             ),
-            channel.roster,
+            channel.canvas,
         ),
-        channel.goals,
+        channel.roster,
     );
+    // A reattached Claude session may have goals in its messages, so goals in
+    // its reopened system prompt say they replace those.
+    let goals_section = if swaps_goals && reattach_session_id.is_some() {
+        prompt_goal_section(channel.goals, true)
+    } else {
+        channel.goals.map(str::to_string)
+    };
+    let combined_system_prompt = with_goals(prompt_without_goals.clone(), goals_section.as_deref());
+    // A reattach that falls back to `session/new` starts a fresh conversation:
+    // no goals in its messages, so no "replace" line.
+    let prompt_goals_base_for_new = prompt_without_goals.clone();
+    let new_session_prompt = if swaps_goals && reattach_session_id.is_some() {
+        with_goals(prompt_without_goals.clone(), channel.goals)
+    } else {
+        combined_system_prompt.clone()
+    };
 
     let session_title = ctx.session_title.as_deref().map(|agent_name| {
         compose_scoped_session_title(
@@ -1979,11 +2052,32 @@ async fn open_session_and_apply_model(
         ctx.session_title.as_deref(),
     );
 
+    // Claude Code rebuilds its system prompt on every request (`snapshot:
+    // false`), so a reattached session needs it again; other adapters keep
+    // the one the session started with.
+    let reattach_prompt = if swaps_goals {
+        combined_system_prompt
+            .as_deref()
+            .map(SystemPromptTransport::ClaudeMeta)
+    } else {
+        None
+    };
+    let reattach_title = if swaps_goals {
+        session_title.as_deref()
+    } else {
+        None
+    };
     let reattached_resp = match reattach_session_id {
         Some(session_id) if agent.acp.can_reattach_sessions() => {
             match agent
                 .acp
-                .session_reattach(session_id, &ctx.cwd, mcp_servers.clone())
+                .session_reattach(
+                    session_id,
+                    &ctx.cwd,
+                    mcp_servers.clone(),
+                    reattach_prompt,
+                    reattach_title,
+                )
                 .await
             {
                 Ok(resp) => Some(resp),
@@ -2000,6 +2094,19 @@ async fn open_session_and_apply_model(
         _ => None,
     };
     let reattached = reattached_resp.is_some();
+    let prompt_goals = swaps_goals.then(|| PromptGoals {
+        base: prompt_without_goals,
+        mcp_servers: mcp_servers.clone(),
+        title: session_title.clone(),
+        held: channel.goals.map(str::to_string),
+        sent: if reattached {
+            combined_system_prompt.clone()
+        } else {
+            with_goals(prompt_goals_base_for_new.clone(), channel.goals)
+        },
+        in_messages: reattached,
+        in_messages_known: !reattached,
+    });
     let resp = match reattached_resp {
         Some(resp) => resp,
         None => {
@@ -2012,7 +2119,7 @@ async fn open_session_and_apply_model(
                         is_goose,
                         agent.protocol_version,
                         &agent.agent_name,
-                        combined_system_prompt.as_deref(),
+                        new_session_prompt.as_deref(),
                     ),
                     session_title.as_deref(),
                 )
@@ -2041,6 +2148,23 @@ async fn open_session_and_apply_model(
         }
     }
 
+    configure_opened_session(agent, ctx, &resp).await?;
+
+    Ok(OpenedSession {
+        session_id: resp.session_id,
+        reattached,
+        prompt_goals,
+    })
+}
+
+/// Apply the worker's model, effort, and permission mode to a session the
+/// adapter just opened (`session/new`, or a resume that rebuilt it), and
+/// report its config to the desktop.
+async fn configure_opened_session(
+    agent: &mut OwnedAgent,
+    ctx: &PromptContext,
+    resp: &SessionNewResponse,
+) -> Result<(), AcpError> {
     // Populate model capabilities on first session creation.
     if agent.model_capabilities.is_none() {
         agent.model_capabilities = Some(AgentModelCapabilities {
@@ -2225,10 +2349,7 @@ async fn open_session_and_apply_model(
         }
     }
 
-    Ok(OpenedSession {
-        session_id: resp.session_id,
-        reattached,
-    })
+    Ok(())
 }
 
 /// Run a prepared task with the normal session setup and standing instructions.
@@ -2744,6 +2865,129 @@ fn with_goals(prompt: Option<String>, goals: Option<&str>) -> Option<String> {
         Some(prompt) => format!("{prompt}\n\n{section}"),
         None => section,
     })
+}
+
+/// The `<goal-context>` body a Claude session's system prompt holds for
+/// `goals`. When goals may also sit in its messages they are marked as
+/// replacing those.
+fn prompt_goal_section(goals: Option<&str>, in_messages: bool) -> Option<String> {
+    goals.map(|goals| {
+        if in_messages {
+            format!("{}\n\n{goals}", crate::goal_context::GOALS_RESTATED)
+        } else {
+            goals.to_string()
+        }
+    })
+}
+
+/// Replace the goals in a live Claude Code session's system prompt with
+/// `goals`, between turns. claude-agent-acp rebuilds a session resumed with a
+/// different `_meta.systemPrompt` under the same session ID, keeping its
+/// conversation and Claude Code's own system prompt; the rebuilt session gets
+/// the worker's model, effort, and permission mode again.
+async fn swap_prompt_goals(
+    agent: &mut OwnedAgent,
+    ctx: &PromptContext,
+    session_id: &str,
+    prompt: &PromptGoals,
+    text: Option<&str>,
+) -> Result<(), AcpError> {
+    let resp = agent
+        .acp
+        .session_reattach(
+            session_id,
+            &ctx.cwd,
+            prompt.mcp_servers.clone(),
+            // Always sent, even empty: a resume without `_meta.systemPrompt`
+            // would keep the goals being removed.
+            Some(SystemPromptTransport::ClaudeMeta(text.unwrap_or(""))),
+            prompt.title.as_deref(),
+        )
+        .await?;
+    configure_opened_session(agent, ctx, &resp).await
+}
+
+/// What a Claude session's system prompt holds once a turn tried to bring it
+/// to the current goals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptGoalsState {
+    /// The current goals (or none).
+    Current,
+    /// Older goals: the replacement failed and the session was reopened as it
+    /// was, so the turn carries the goals in its message.
+    Stale,
+    /// The session could not be reopened and was dropped; the turn must not
+    /// use it.
+    Dropped,
+}
+
+/// Before a turn, bring a Claude session's system prompt to the goals `now`
+/// (rendered for the session's own thread). On failure the session is
+/// reopened with the prompt it had and the next turn tries again. A session
+/// that cannot be reopened either is dropped. `None`: not a Claude session.
+async fn bring_prompt_goals_up_to_date(
+    agent: &mut OwnedAgent,
+    ctx: &PromptContext,
+    scope: &SessionScope,
+    session_id: &str,
+    now: &crate::goal_context::GoalsNow,
+) -> Option<PromptGoalsState> {
+    let prompt = agent
+        .state
+        .deliveries
+        .get(scope)
+        .and_then(|delivery| delivery.prompt_goals.clone())?;
+    if prompt.held.as_deref() == now.rendered() {
+        return Some(PromptGoalsState::Current);
+    }
+    let text = with_goals(
+        prompt.base.clone(),
+        prompt_goal_section(now.rendered(), prompt.in_messages).as_deref(),
+    );
+    match swap_prompt_goals(agent, ctx, session_id, &prompt, text.as_deref()).await {
+        Ok(()) => {
+            tracing::info!(
+                target: "pool::session",
+                "replaced the goals in session {session_id}'s system prompt"
+            );
+            if let Some(delivery) = agent.state.deliveries.get_mut(scope) {
+                if let Some(held) = delivery.prompt_goals.as_mut() {
+                    held.held = now.rendered().map(str::to_string);
+                    held.sent = text;
+                }
+                delivery.goal_context_seen = Some(crate::goal_context::GoalsSeen::after(
+                    delivery.goal_context_seen.as_ref(),
+                    now,
+                ));
+                delivery.goals_maybe_held = false;
+            }
+            Some(PromptGoalsState::Current)
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "pool::session",
+                "could not replace the goals in session {session_id}'s system prompt; \
+                 sending them in this turn's message: {error}"
+            );
+            if matches!(error, AcpError::AgentExited) {
+                return Some(PromptGoalsState::Stale);
+            }
+            match swap_prompt_goals(agent, ctx, session_id, &prompt, prompt.sent.as_deref()).await {
+                Ok(()) => Some(PromptGoalsState::Stale),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "pool::session",
+                        "could not reopen session {session_id}; requeueing the turn for a new \
+                         session: {error}"
+                    );
+                    agent
+                        .state
+                        .invalidate(&PromptSource::Channel(scope.clone()));
+                    Some(PromptGoalsState::Dropped)
+                }
+            }
+        }
+    }
 }
 
 /// Append rendered layer 0 goal sections after the framed prompt.
@@ -3466,9 +3710,12 @@ pub async fn run_prompt_task(
                     .and_then(|ledger| ledger.take_resumable(scope, &ctx.harness_name, &ctx.cwd));
                 // The goals a new session starts with go in its system prompt;
                 // agents without one, and reattached sessions, get them on
-                // their first turn instead. `None`: not known (fetch failed).
-                let starts_with_goals =
-                    ctx.goals_enabled && agent.has_system_prompt_support() && reattach.is_none();
+                // their first turn instead, except Claude sessions, which get
+                // their system prompt again when reattached. `None`: not known
+                // (fetch failed).
+                let starts_with_goals = ctx.goals_enabled
+                    && agent.has_system_prompt_support()
+                    && (reattach.is_none() || agent.swaps_goals_in_prompt());
                 let start_goals = if !starts_with_goals {
                     None
                 } else if goals_off {
@@ -3501,6 +3748,7 @@ pub async fn run_prompt_task(
                     Ok(OpenedSession {
                         session_id: sid,
                         reattached,
+                        prompt_goals,
                     }) => {
                         tracing::info!(
                             target: "pool::session",
@@ -3514,11 +3762,14 @@ pub async fn run_prompt_task(
                             layer0_now.as_deref(),
                         );
                         // A new system-prompt session holds this turn's layer 0
-                        // goals and live text settings. A reattached one holds
-                        // what the ledger recorded for it, if anything (unknown
-                        // parts are restated once); legacy agents learn them
-                        // with the standing context in their first message.
-                        let held = if reattached {
+                        // goals and live text settings, as does a reattached
+                        // Claude session, which got its system prompt again. A
+                        // reattached one holds what the ledger recorded for it,
+                        // if anything (unknown parts are restated once); legacy
+                        // agents learn them with the standing context in their
+                        // first message.
+                        let prompt_reopened = reattached && prompt_goals.is_some();
+                        let held = if reattached && !prompt_reopened {
                             ctx.session_ledger
                                 .as_ref()
                                 .and_then(|ledger| ledger.standing(scope, &sid))
@@ -3538,16 +3789,18 @@ pub async fn run_prompt_task(
                                 live_text_seen: held.as_ref().map(|held| held.text.clone()),
                                 goal_context_seen: start_goals
                                     .as_ref()
-                                    .filter(|_| !reattached)
+                                    .filter(|_| !reattached || prompt_reopened)
                                     .map(|goals| {
                                         crate::goal_context::GoalsSeen::after(None, goals)
                                     }),
+                                prompt_goals,
                                 ..Default::default()
                             },
                         );
                         if let Some(ledger) = &ctx.session_ledger {
                             ledger.record(scope, &sid, &ctx.harness_name, &ctx.cwd);
-                            if !reattached && agent.has_system_prompt_support() {
+                            if (!reattached || prompt_reopened) && agent.has_system_prompt_support()
+                            {
                                 ledger.set_standing(scope, &sid, &standing_now);
                             }
                         }
@@ -3873,6 +4126,13 @@ pub async fn run_prompt_task(
     // The goals as of this turn (`Some(None)`: none), or `None` when not
     // fetched; recorded as what the session holds once the turn succeeds.
     let mut goal_context_now: Option<crate::goal_context::GoalsNow> = None;
+    // Whether this turn's message puts goals into a Claude session's
+    // conversation (`Some(true)`), or announces that goals in it are gone
+    // (`Some(false)`); recorded once the turn succeeds.
+    let mut prompt_goals_in_messages: Option<bool> = None;
+    // Set when a Claude session could not be reopened after a failed goal
+    // replacement; the turn is requeued for a new session.
+    let mut prompt_session_dropped = false;
     // Event IDs represented by this prompt. Commit only after ACP reports a
     // successful turn; failed/cancelled prompts must be retryable without loss.
     let mut pending_delivered_event_ids = HashSet::new();
@@ -4000,19 +4260,47 @@ pub async fn run_prompt_task(
             _ => None,
         }
         .or_else(|| b.scope.root_event_id());
-        let goal_context_current = if ctx.goals_enabled && goals_off {
-            Some(crate::goal_context::GoalsNow::off(goal_focus))
-        } else {
-            goal_tree
-                .map(|tree| crate::goal_context::GoalsNow::new(&tree, b.channel_id, goal_focus))
+        let goals_now_for = |focus: Option<&str>| {
+            if ctx.goals_enabled && goals_off {
+                Some(crate::goal_context::GoalsNow::off(focus))
+            } else {
+                goal_tree
+                    .as_ref()
+                    .map(|tree| crate::goal_context::GoalsNow::new(tree, b.channel_id, focus))
+            }
         };
+        let goal_context_current = goals_now_for(goal_focus);
+        // A Claude session's system prompt holds the goals as seen from its own
+        // thread, so a session serving several threads is not rebuilt on every
+        // hop; turns about another thread get that view in their message.
+        let session_focus = b.scope.root_event_id();
+        let prompt_goals_now = goals_now_for(session_focus);
 
         // Standing context sent with this prompt already carries the current
         // layer 0 goals; otherwise tell a live session once that they changed.
         let standing_in_this_prompt = !agent.has_system_prompt_support() && !standing_context_sent;
         forget_goals_in_compacted_sessions(&mut agent);
+        // A Claude session gets the current goals in its system prompt, which
+        // compaction keeps; the message carries them only when that failed.
+        let prompt_goals_state = match prompt_goals_now.as_ref() {
+            Some(now) => {
+                bring_prompt_goals_up_to_date(&mut agent, &ctx, &b.scope, &session_id, now).await
+            }
+            None => None,
+        };
+        prompt_session_dropped = prompt_goals_state == Some(PromptGoalsState::Dropped);
+        let goals_in_prompt =
+            prompt_goals_state == Some(PromptGoalsState::Current) && goal_focus == session_focus;
         let delivery = agent.state.deliveries.get(&b.scope);
         let goal_context = goal_context_current.as_ref().and_then(|now| {
+            if goals_in_prompt {
+                let prompt = delivery.and_then(|delivery| delivery.prompt_goals.as_ref());
+                return crate::goal_context::goal_removal_notice(
+                    prompt.is_some_and(|prompt| prompt.in_messages),
+                    prompt.is_some_and(|prompt| prompt.in_messages_known),
+                    now,
+                );
+            }
             crate::goal_context::goal_context_for_turn(
                 delivery.and_then(|delivery| delivery.goal_context_seen.as_ref()),
                 delivery.is_some_and(|delivery| {
@@ -4021,6 +4309,13 @@ pub async fn run_prompt_task(
                 now,
             )
         });
+        // Only goals themselves sit in the messages; a notice that they are
+        // off or gone leaves none there to announce again.
+        prompt_goals_in_messages = match (&goal_context, &goal_context_current) {
+            (Some(_), Some(now)) if !goals_in_prompt => Some(now.rendered().is_some()),
+            (Some(_), _) => Some(false),
+            (None, _) => None,
+        };
         goal_context_now = goal_context_current;
         let goal_update = if standing_in_this_prompt {
             None
@@ -4102,6 +4397,20 @@ pub async fn run_prompt_task(
         tokio::spawn(async move {
             react_working(&rest, &ids).await;
         });
+    }
+
+    if prompt_session_dropped {
+        send_prompt_result(
+            &result_tx,
+            &turn_id,
+            agent,
+            source,
+            PromptOutcome::Error(AcpError::Protocol(
+                "session could not be reopened after a goal update".into(),
+            )),
+            requeue_batch_if_queue(&ctx, batch),
+        );
+        return;
     }
 
     // Slash-command pass-through sends the bare command as the first text
@@ -4312,6 +4621,9 @@ pub async fn run_prompt_task(
                             agent
                                 .state
                                 .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
+                            agent
+                                .state
+                                .mark_prompt_goals_in_messages(scope, prompt_goals_in_messages);
                         }
                         apply_completed_before_control_signal(
                             &mut agent.state,
@@ -4368,6 +4680,9 @@ pub async fn run_prompt_task(
                 agent
                     .state
                     .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
+                agent
+                    .state
+                    .mark_prompt_goals_in_messages(scope, prompt_goals_in_messages);
                 // Keep a session in steady use from aging out of the ledger,
                 // and remember what it now holds for a reattach after restart.
                 if let Some(ledger) = &ctx.session_ledger {
@@ -10409,6 +10724,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 live_text_seen: Some(Default::default()),
                 goal_context_seen: Some(Default::default()),
                 goals_maybe_held: false,
+                prompt_goals: None,
             },
         );
         s.deliveries.insert(
@@ -10422,6 +10738,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 live_text_seen: Some(Default::default()),
                 goal_context_seen: Some(Default::default()),
                 goals_maybe_held: false,
+                prompt_goals: None,
             },
         );
         s.heartbeat_session = Some("sess-hb".into());
