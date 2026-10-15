@@ -161,3 +161,24 @@ export function buildOwnerDevices(
     robotOverrides: buildDeviceRobotOverrides(events, ownerPubkey),
   };
 }
+
+/**
+ * `ownerDevices` without the agents of devices that are no longer signed in
+ * (signed out, or cut from another device): a revoked device's last list must
+ * not keep its agents on it. `liveDeviceIds` is the account's device list;
+ * empty means it is unknown (not loaded, or the list call failed, since a
+ * signed-in account always lists its own device), and nothing is dropped.
+ */
+export function withoutSignedOutDevices(
+  ownerDevices: OwnerDevices,
+  liveDeviceIds: readonly string[],
+): OwnerDevices {
+  if (liveDeviceIds.length === 0) return ownerDevices;
+  const live = new Set(liveDeviceIds.map(normalizeDeviceId));
+  const hostDevices = new Map<string, string>();
+  for (const [agent, deviceId] of ownerDevices.hostDevices) {
+    if (live.has(deviceId)) hostDevices.set(agent, deviceId);
+  }
+  if (hostDevices.size === ownerDevices.hostDevices.size) return ownerDevices;
+  return { ...ownerDevices, hostDevices };
+}

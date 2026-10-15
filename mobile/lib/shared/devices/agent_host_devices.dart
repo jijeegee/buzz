@@ -313,15 +313,63 @@ final deviceRobotAutoAssignProvider = Provider<void>((ref) {
 });
 
 /// The current user's agents → the relay device each runs on (lowercase
-/// keys and values), from their own kind:30180 events.
+/// keys and values), from their own kind:30180 events. Agents of devices no
+/// longer signed in are left out ([withoutSignedOutDevices]).
 final agentHostDevicesProvider = Provider<Map<String, String>>((ref) {
   final owner = ref.watch(myPubkeyProvider);
   if (owner == null || owner.isEmpty) return const {};
-  return agentHostDevicesFromEvents(
+  final origin = ref.watch(activeTokenOriginProvider);
+  final devices = origin == null
+      ? null
+      : ref.watch(accountDevicesProvider(origin)).value;
+  final hosts = agentHostDevicesFromEvents(
     ref.watch(ownDeviceEventsProvider).values,
     owner: owner,
   );
+  final live = [
+    for (final device in devices ?? const <AccountDevice>[]) device.id,
+  ];
+  // A device listing agents that the device list does not know yet most
+  // likely just signed in: refetch the list once for it, so its agents are
+  // not hidden as if it were signed out.
+  if (origin != null && live.isNotEmpty) {
+    final known = {for (final id in live) id.trim().toLowerCase()};
+    final unknown = hosts.values
+        .where((id) => !known.contains(id) && _refetchedForDevices.add(id))
+        .toList();
+    if (unknown.isNotEmpty) {
+      Future.microtask(() {
+        if (ref.mounted) {
+          ref.invalidate(accountDevicesProvider(origin));
+        } else {
+          // Rebuilt meanwhile: let the next build ask again.
+          _refetchedForDevices.removeAll(unknown);
+        }
+      });
+    }
+  }
+  return withoutSignedOutDevices(hosts, live);
 });
+
+/// Device ids a device-list refetch was already asked for, this app run.
+final Set<String> _refetchedForDevices = {};
+
+/// [hostDevices] without the agents of devices that are no longer signed in
+/// (signed out, or cut from another device): a revoked device's last list
+/// must not keep its agents on it. [liveDeviceIds] is the account's device
+/// list; empty means it is unknown (not loaded, or the call failed, since a
+/// signed-in account always lists its own device), and nothing is dropped.
+Map<String, String> withoutSignedOutDevices(
+  Map<String, String> hostDevices,
+  List<String> liveDeviceIds,
+) {
+  if (liveDeviceIds.isEmpty) return hostDevices;
+  final live = {for (final id in liveDeviceIds) id.trim().toLowerCase()};
+  return {
+    for (final entry in hostDevices.entries)
+      if (live.contains(entry.value)) entry.key: entry.value,
+  };
+}
 
 /// The current user's chosen robot per device id (lowercase), from their own
 /// kind:30181 events. Devices without a valid choice are absent: they use
