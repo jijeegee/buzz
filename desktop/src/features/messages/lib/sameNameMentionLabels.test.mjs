@@ -35,7 +35,7 @@ test("the sent body carries no key and tags every recipient", () => {
     pick(bindings, "Unknown user", PERSON),
     pick(bindings, "Unknown user", AGENT),
   ];
-  const content = labels.map((label) => `@${label}`).join(" ") + " hi";
+  const content = `${labels.map((label) => `@${label}`).join(" ")} hi`;
   assert.equal(content, "@Unknown user @Unknown user (2) hi");
   assert.doesNotMatch(content, KEY_IN_TEXT);
   assert.deepEqual(
