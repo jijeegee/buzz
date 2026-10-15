@@ -1,5 +1,6 @@
 import 'package:buzz/features/sign_in/token_session_gate.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/auth/default_community.dart';
 import 'package:buzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,7 +32,7 @@ void main() {
   late Community stalled;
   late Community other;
 
-  Future<void> pump(WidgetTester tester) async {
+  Future<void> pump(WidgetTester tester, {bool builtIn = false}) async {
     server = FakeAuthServer();
     tokens = FakeRefreshTokenStore();
     storage = CommunityStorage(secure: FakeSecureStorage());
@@ -53,6 +54,7 @@ void main() {
     final clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
     container = ProviderContainer(
       overrides: [
+        if (builtIn) defaultCommunityOriginProvider.overrideWithValue(_origin),
         communityStorageProvider.overrideWithValue(storage),
         communitySnapshotWriterProvider.overrideWithValue((_) async {}),
         communityPushLeaseRevocationEnqueuerProvider.overrideWithValue(
@@ -146,5 +148,55 @@ void main() {
     await frames(tester);
 
     expect((await storage.loadAll()).map((c) => c.id), [other.id]);
+  });
+
+  group('with the built-in server', () {
+    testWidgets('a stalled session offers sign in again and sign out only', (
+      tester,
+    ) async {
+      await pump(tester, builtIn: true);
+      tokens.readError = StateError('keychain locked');
+      container.invalidate(tokenSessionControllerProvider(_origin));
+      await frames(tester);
+
+      expect(find.byKey(const Key('token-session-retry')), findsOneWidget);
+      expect(
+        find.byKey(const Key('token-session-sign-in-again')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('community-recovery-remove')), findsNothing);
+      expect(
+        find.byKey(Key('community-recovery-switch-${other.id}')),
+        findsNothing,
+      );
+      expect(find.text('Other relay'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('community-recovery-sign-out')));
+      await frames(tester);
+
+      // Ordinary sign-out: every community stays stored, signed out.
+      final remaining = await storage.loadAll();
+      expect(remaining.length, 2);
+      expect(remaining.every((community) => community.signedOut), isTrue);
+    });
+
+    testWidgets('the locked page has Google sign-in and sign out only', (
+      tester,
+    ) async {
+      await pump(tester, builtIn: true);
+
+      expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
+      expect(find.byKey(const Key('token-sign-in-relay-url')), findsNothing);
+      expect(
+        find.byKey(const Key('community-recovery-sign-out')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('community-recovery-remove')), findsNothing);
+      expect(
+        find.byKey(Key('community-recovery-switch-${other.id}')),
+        findsNothing,
+      );
+      expect(find.textContaining('relay.test'), findsNothing);
+    });
   });
 }

@@ -12,6 +12,11 @@ import {
   isJoinPolicyDiscoveryCandidate,
   type JoinPolicy,
 } from "@/shared/api/invites";
+import {
+  DIFFERENT_SERVICE_INVITE_MESSAGE,
+  isAllowedServer,
+  useBuiltInServer,
+} from "@/features/communities/builtInServer";
 import { normalizeRelayUrl } from "@/features/communities/relayProbe";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
@@ -84,6 +89,8 @@ export function InviteRedeemForm({
   const [policyError, setPolicyError] = React.useState<string | null>(null);
   const [isLoadingPolicy, setIsLoadingPolicy] = React.useState(false);
   const shouldReduceMotion = useReducedMotion();
+  // With a built-in server, only invites for that server are followed.
+  const builtInServer = useBuiltInServer();
 
   const parsed = React.useMemo(
     () => parseInviteInput(inviteInput),
@@ -109,6 +116,7 @@ export function InviteRedeemForm({
           ? bareCodeRelayUrl.trim()
           : "";
     if (!relayWsUrl || !isJoinPolicyDiscoveryCandidate(relayWsUrl)) return;
+    if (!isAllowedServer(relayWsUrl, builtInServer)) return;
 
     const code = parsedInvite?.code;
     let cancelled = false;
@@ -132,7 +140,7 @@ export function InviteRedeemForm({
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [bareCodeRelayUrl, normalizedRelayUrl, parsedInvite]);
+  }, [bareCodeRelayUrl, builtInServer, normalizedRelayUrl, parsedInvite]);
 
   const canSubmit =
     (parsedInvite !== null &&
@@ -147,6 +155,15 @@ export function InviteRedeemForm({
   const handleSubmit = React.useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
+      const target = normalizedRelayUrl
+        ? normalizedRelayUrl
+        : parsedInvite && hasInviteRelay(parsedInvite)
+          ? parsedInvite.relayWsUrl
+          : null;
+      if (target && !isAllowedServer(target, builtInServer)) {
+        setPolicyError(DIFFERENT_SERVICE_INVITE_MESSAGE);
+        return;
+      }
       if (normalizedRelayUrl) {
         setPolicyError(null);
         setIsLoadingPolicy(true);
@@ -248,6 +265,7 @@ export function InviteRedeemForm({
       ageConfirmed,
       agreementConfirmed,
       bareCodeRelayUrl,
+      builtInServer,
       joinPolicy,
       normalizedRelayUrl,
       onConnect,

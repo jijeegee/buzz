@@ -76,7 +76,7 @@ export const settingsNavGroups: Array<{
     ],
   },
   {
-    label: "Communities",
+    label: "Members",
     sections: ["hosted-communities", "community-members", "relay-admin"],
   },
   {

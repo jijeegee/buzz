@@ -137,7 +137,12 @@ class _FigmaHomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = context.colors;
-    final community = ref.watch(activeCommunityProvider).value;
+    // With the built-in server the preview mirrors the channels header: the
+    // app's own logo and name, never the server's.
+    final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
+    final community = hasBuiltInServer
+        ? null
+        : ref.watch(activeCommunityProvider).value;
     final communityName = community?.name.trim();
     final relayUrl = community?.relayUrl;
     final communityIcon = relayUrl == null
@@ -172,26 +177,34 @@ class _FigmaHomeScreen extends ConsumerWidget {
               top: 38,
               child: Row(
                 children: [
-                  AvatarImage(
-                    key: const ValueKey('theme-preview-community-icon'),
-                    imageUrl: communityIcon,
-                    radius: 20,
-                    backgroundColor: scheme.primaryContainer,
-                    fallback: Text(
-                      communityName == null || communityName.isEmpty
-                          ? '?'
-                          : communityName.substring(0, 1).toUpperCase(),
-                      style: context.textTheme.labelMedium?.copyWith(
-                        color: scheme.onPrimaryContainer,
-                        fontWeight: FontWeight.w600,
+                  if (hasBuiltInServer)
+                    const AppBrandLogo(
+                      key: ValueKey('theme-preview-brand-logo'),
+                      size: 40,
+                    )
+                  else
+                    AvatarImage(
+                      key: const ValueKey('theme-preview-community-icon'),
+                      imageUrl: communityIcon,
+                      radius: 20,
+                      backgroundColor: scheme.primaryContainer,
+                      fallback: Text(
+                        communityName == null || communityName.isEmpty
+                            ? '?'
+                            : communityName.substring(0, 1).toUpperCase(),
+                        style: context.textTheme.labelMedium?.copyWith(
+                          color: scheme.onPrimaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
                   const SizedBox(width: Grid.twelve),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 210),
                     child: Text(
-                      communityName == null || communityName.isEmpty
+                      hasBuiltInServer
+                          ? appBrandName
+                          : communityName == null || communityName.isEmpty
                           ? 'Community'
                           : communityName,
                       key: const ValueKey('theme-preview-community-name'),

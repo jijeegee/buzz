@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import {
@@ -47,6 +48,15 @@ import { RelaunchRequiredScreen } from "@/features/onboarding/ui/RelaunchRequire
 import { ResetFailedScreen } from "@/features/onboarding/ui/ResetFailedScreen";
 import { SignedOutGate } from "@/features/onboarding/ui/SignedOutScreen";
 import { loadCommunityDiscoveryAfterLeave } from "@/features/communities/communityStorage";
+import {
+  communityLinkDecision,
+  DIFFERENT_SERVICE_INVITE_MESSAGE,
+  getBuiltInServer,
+  isAllowedServer,
+  loadBuiltInServer,
+  useBuiltInServer,
+  useBuiltInServerState,
+} from "@/features/communities/builtInServer";
 import { useCommunityInit } from "@/features/communities/useCommunityInit";
 import { useNestNotifications } from "@/features/communities/useNestNotifications";
 import { useCommunities } from "@/features/communities/useCommunities";
@@ -411,8 +421,13 @@ function CommunityApp({
   const [resumeFirstCommunityPage, setResumeFirstCommunityPage] =
     useState<FirstCommunityPage | null>(null);
   const [manualCommunitySetup, setManualCommunitySetup] = useState(false);
+  // One built-in server: first run always connects to it, and no screen
+  // offers to change server.
+  const singleServer = useBuiltInServer() !== null;
   const isFindingCommunityAfterLeave =
-    activeCommunity === null && loadCommunityDiscoveryAfterLeave();
+    !singleServer &&
+    activeCommunity === null &&
+    loadCommunityDiscoveryAfterLeave();
 
   // Surface nest-related backend events (repos-dir errors, legacy migration)
   // as toasts. Mounted before useCommunityInit so the listeners are registered
@@ -486,6 +501,15 @@ function CommunityApp({
     if (transaction?.stage !== "connecting" || transaction.error) return;
     if (connectingTransactionRef.current === transaction.id) return;
     connectingTransactionRef.current = transaction.id;
+    // Every way into a community (links, invites, setup screens) lands here:
+    // with a built-in server nothing for another host is added or switched.
+    if (!isAllowedServer(transaction.relayUrl, getBuiltInServer())) {
+      communityOnboarding.update(
+        { error: DIFFERENT_SERVICE_INVITE_MESSAGE },
+        transaction.id,
+      );
+      return;
+    }
     try {
       if (transaction.communityId) {
         await transitionCommunity(transaction.communityId);
@@ -536,7 +560,7 @@ function CommunityApp({
     const transaction = communityOnboarding.transaction;
     if (transaction?.source === "default-community") {
       relayClient.disconnect();
-      setManualCommunitySetup(true);
+      if (!singleServer) setManualCommunitySetup(true);
     }
     communityOnboarding.clear();
 
@@ -563,6 +587,7 @@ function CommunityApp({
     communities.length,
     communityOnboarding,
     removeCommunity,
+    singleServer,
     transitionCommunity,
   ]);
 
@@ -716,9 +741,10 @@ function CommunityApp({
   if (!transaction) {
     if (community.needsSetup) {
       appContent =
-        !manualCommunitySetup &&
-        !isFindingCommunityAfterLeave &&
-        communities.length === 0 ? (
+        singleServer ||
+        (!manualCommunitySetup &&
+          !isFindingCommunityAfterLeave &&
+          communities.length === 0) ? (
           <DefaultCommunitySetup
             onBack={onBackToMachineConfig}
             onManualSetup={() => setManualCommunitySetup(true)}
@@ -732,15 +758,18 @@ function CommunityApp({
           />
         );
     } else if ("error" in community && community.error) {
-      // Surface apply failures so the user can retry or change community.
+      // Surface apply failures so the user can retry or change community
+      // (with a built-in server: retry or sign out).
       appContent = (
         <>
           <CommunityApplyErrorScreen
             error={community.error}
-            onChangeCommunity={() => setIsCommunityChangeOpen(true)}
+            onChangeCommunity={
+              singleServer ? undefined : () => setIsCommunityChangeOpen(true)
+            }
             onRetry={reconnectCommunity}
           />
-          {isCommunityChangeOpen ? (
+          {isCommunityChangeOpen && !singleServer ? (
             <CommunityChangeOverlay
               onClose={() => setIsCommunityChangeOpen(false)}
               showUrlField
@@ -875,6 +904,17 @@ function MachineBootstrap({ sharedIdentity }: { sharedIdentity: boolean }) {
       startCommunityOnboarding: communityOnboarding.start,
       openAddCommunity,
       onAddCommunityAvailable: onAddCommunityPrefillAvailable,
+      shouldFollowCommunityLink: ({ kind, relayUrl }) => {
+        const decision = communityLinkDecision(
+          kind,
+          relayUrl,
+          getBuiltInServer(),
+        );
+        if (decision === "reject") {
+          toast.error(DIFFERENT_SERVICE_INVITE_MESSAGE);
+        }
+        return decision === "follow";
+      },
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -926,6 +966,13 @@ export function App() {
   useInitialRenderReady();
   const [sharedIdentity, setSharedIdentity] = useState<boolean | null>(null);
   const [queryClient] = useState(createBuzzQueryClient);
+  // Everything below reads the built-in server synchronously (and startup
+  // pins the stored communities to it), so wait for it like shared identity.
+  const builtInServer = useBuiltInServerState();
+
+  useEffect(() => {
+    void loadBuiltInServer();
+  }, []);
 
   useEffect(() => {
     isSharedIdentityCmd()
@@ -936,7 +983,9 @@ export function App() {
       });
   }, []);
 
-  if (sharedIdentity === null) return <AppLoadingGate />;
+  if (sharedIdentity === null || builtInServer.status === "loading") {
+    return <AppLoadingGate />;
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

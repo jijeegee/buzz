@@ -1,10 +1,17 @@
+import * as React from "react";
+
+import { signOutActiveAccount } from "@/features/accounts/lib/signOutActiveAccount";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
 type CommunityApplyErrorScreenProps = {
   error: string;
-  onChangeCommunity: () => void;
+  /**
+   * Omitted with a built-in server: changing server cannot help, so the
+   * screen offers the normal account sign-out instead.
+   */
+  onChangeCommunity?: () => void;
   onRetry: () => void;
 };
 
@@ -14,6 +21,24 @@ export function CommunityApplyErrorScreen({
   onRetry,
 }: CommunityApplyErrorScreenProps) {
   const systemColorScheme = useSystemColorScheme();
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
+  const [signOutError, setSignOutError] = React.useState<string | null>(null);
+
+  // The normal account sign-out (nothing is deleted); never the full reset.
+  const signOut = React.useCallback(async () => {
+    setSignOutError(null);
+    setIsSigningOut(true);
+    try {
+      await signOutActiveAccount();
+    } catch (cause) {
+      setSignOutError(
+        cause instanceof Error
+          ? cause.message
+          : "Couldn't sign out. Try again.",
+      );
+      setIsSigningOut(false);
+    }
+  }, []);
 
   return (
     <div
@@ -27,6 +52,11 @@ export function CommunityApplyErrorScreen({
           Community connection failed
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">{error}</p>
+        {onChangeCommunity ? null : (
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Check your internet connection and try again.
+          </p>
+        )}
         <div className="mt-8 flex w-full max-w-[300px] flex-col gap-3">
           <Button
             className="h-10 w-full"
@@ -36,14 +66,32 @@ export function CommunityApplyErrorScreen({
           >
             Retry
           </Button>
-          <Button
-            className="h-10 w-full"
-            onClick={onChangeCommunity}
-            type="button"
-            variant="secondary"
-          >
-            Change community
-          </Button>
+          {onChangeCommunity ? (
+            <Button
+              className="h-10 w-full"
+              onClick={onChangeCommunity}
+              type="button"
+              variant="secondary"
+            >
+              Change community
+            </Button>
+          ) : (
+            <Button
+              className="h-10 w-full"
+              data-testid="community-apply-error-sign-out"
+              disabled={isSigningOut}
+              onClick={() => void signOut()}
+              type="button"
+              variant="secondary"
+            >
+              Sign out
+            </Button>
+          )}
+          {signOutError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {signOutError}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

@@ -29,11 +29,13 @@ import type {
   NotificationSettings,
 } from "@/features/notifications/hooks";
 import type { SoundName, SoundSlot } from "@/features/notifications/lib/sound";
+import { MembersIconSettingsSection } from "@/features/communities/ui/CommunityIconSettingsCard";
 import { CommunityMembersSettingsCard } from "@/features/community-members/ui/CommunityMembersSettingsCard";
 import { CustomEmojiSettingsCard } from "@/features/custom-emoji/ui/CustomEmojiSettingsCard";
 import { LocalArchiveSettingsCard } from "@/features/local-archive/ui/LocalArchiveSettingsCard";
 import { cn } from "@/shared/lib/cn";
 import { useCommunities } from "@/features/communities/useCommunities";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { Badge } from "@/shared/ui/badge";
 import { isBuzzTheme, useTheme } from "@/shared/theme/ThemeProvider";
 import {
@@ -446,8 +448,10 @@ function ThemeSettingsCard() {
   // Per-community scoping labels only earn their place when the user is
   // actually in more than one community; with a single community there is
   // nothing to disambiguate.
+  // With a built-in server there is only ever one community to scope to.
   const { activeCommunity, communities } = useCommunities();
-  const showCommunityScope = communities.length > 1;
+  const singleServer = useBuiltInServer() !== null;
+  const showCommunityScope = !singleServer && communities.length > 1;
   const communityLabel = appearanceCommunityLabel(activeCommunity?.name);
 
   // Buzz themes pin a neutral accent (GitHub black in light, white in dark),
@@ -866,7 +870,10 @@ export function renderSettingsSection(
       return <HostedCommunitiesSettingsCard />;
     case "community-members":
       return (
-        <CommunityMembersSettingsCard currentPubkey={props.currentPubkey} />
+        <>
+          <MembersIconSettingsSection />
+          <CommunityMembersSettingsCard currentPubkey={props.currentPubkey} />
+        </>
       );
     case "relay-admin":
       return <AdminConsoleSettingsCard />;

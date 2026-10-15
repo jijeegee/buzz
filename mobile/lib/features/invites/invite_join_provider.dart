@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../../shared/auth/auth.dart';
+import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/relay_origin.dart';
 import '../../shared/auth/token/token_auth_descriptor.dart';
 import '../../shared/auth/token/token_session.dart';
@@ -113,6 +114,10 @@ class InviteJoinState {
   /// falling back to a legacy keypair.
   final bool tokenAuthChecked;
 
+  /// The invite is for a server other than the built-in one. Nothing was
+  /// added or switched, and it cannot be confirmed.
+  final bool differentService;
+
   const InviteJoinState({
     this.status = InviteJoinStatus.idle,
     this.invite,
@@ -124,6 +129,7 @@ class InviteJoinState {
     this.focusChannelId,
     this.tokenRelayOrigin,
     this.tokenAuthChecked = false,
+    this.differentService = false,
   });
 
   InviteJoinState copyWith({
@@ -155,6 +161,7 @@ class InviteJoinState {
         ? this.tokenRelayOrigin
         : tokenRelayOrigin as String?,
     tokenAuthChecked: tokenAuthChecked ?? this.tokenAuthChecked,
+    differentService: differentService,
   );
 }
 
@@ -165,8 +172,35 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
   @override
   InviteJoinState build() => const InviteJoinState();
 
+  /// With a built-in server, only its invites are accepted (same host and
+  /// port). Any other host adds and switches nothing.
+  bool _isDifferentService(InviteDeepLink invite) => !isServerAllowed(
+    invite.relayUrl,
+    builtInOrigin: ref.read(defaultCommunityOriginProvider),
+  );
+
+  InviteJoinState _differentServiceState(InviteDeepLink invite) =>
+      InviteJoinState(
+        status: InviteJoinStatus.error,
+        invite: invite,
+        errorMessage: differentServiceInviteMessage,
+        requiresFreshInvite: true,
+        differentService: true,
+      );
+
+  /// Invite copy names the server only when there is no built-in one.
+  String _signInToUseInvite(String communityName) =>
+      ref.read(hasBuiltInServerProvider)
+      ? 'Sign in to use this invite.'
+      : 'Sign in to $communityName to use this invite.';
+
   Future<void> prepare(InviteDeepLink invite) async {
     validateInviteRelayUri(Uri.parse(invite.relayUrl));
+    if (_isDifferentService(invite)) {
+      _pendingStarterSetupCommunity = null;
+      state = _differentServiceState(invite);
+      return;
+    }
     final communities = await ref.read(communityListProvider.future);
     final existing = _existingCommunity(communities, invite.relayUrl);
     if (existing?.signedOut == true) {
@@ -247,6 +281,11 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
 
   Future<void> confirmJoin() async {
     final invite = state.invite;
+    if (invite != null && _isDifferentService(invite)) {
+      _pendingStarterSetupCommunity = null;
+      state = _differentServiceState(invite);
+      return;
+    }
     if (invite == null ||
         state.requiresFreshInvite ||
         (state.status != InviteJoinStatus.confirming &&
@@ -425,7 +464,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     }
     final principalId = controller.state.principalId;
     if (token == null || principalId == null) {
-      throw InviteClaimException('Sign in to $displayName to use this invite.');
+      throw InviteClaimException(_signInToUseInvite(displayName));
     }
     final claim = await _claimWithBearer(
       invite,
@@ -485,9 +524,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
         return http.Response.fromStream(await client.send(request));
       });
     } on RelayTokenUnavailableException {
-      throw InviteClaimException(
-        'Sign in to $communityName to use this invite.',
-      );
+      throw InviteClaimException(_signInToUseInvite(communityName));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final decoded = _tryDecode(response.body);

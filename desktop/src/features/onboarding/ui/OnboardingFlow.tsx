@@ -20,6 +20,7 @@ import {
   NostrKeyImportForm,
   type NostrKeyImportStage,
 } from "./NostrKeyImportForm";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { CommunityChangeOverlay } from "@/features/communities/ui/CommunityChangeOverlay";
 import {
@@ -158,6 +159,8 @@ export function OnboardingFlow({
 }: OnboardingFlowProps) {
   const { complete, skipForNow } = actions;
   const { activeCommunity } = useCommunities();
+  // One built-in server: no way to change server from onboarding.
+  const singleServer = useBuiltInServer() !== null;
   const queryClient = useQueryClient();
   const savedProfile = resolveSavedProfile(initialProfile);
   const profileUpdateMutation = useUpdateProfileMutation();
@@ -256,6 +259,7 @@ export function OnboardingFlow({
         }
 
         if (membershipStatus === "unreachable") {
+          setMembershipRetryPage(nextPage);
           setMembershipError({ kind: "unreachable" });
           return;
         }
@@ -432,15 +436,20 @@ export function OnboardingFlow({
     showProfilePage();
   }, [handleLostModeBack, identityLost, keyImportStage, showProfilePage]);
 
+  // With a built-in server the profile step's Back (which opened the
+  // community editor) has no safe target: Google sign-in already happened
+  // before this flow, so it is hidden.
   const chromeBackAction =
     currentPage === "profile"
-      ? {
-          disabled: profileStepState.isSaving,
-          onClick: () => {
-            setMembershipError(null);
-            setIsCommunityChangeOpen(true);
-          },
-        }
+      ? singleServer
+        ? undefined
+        : {
+            disabled: profileStepState.isSaving,
+            onClick: () => {
+              setMembershipError(null);
+              setIsCommunityChangeOpen(true);
+            },
+          }
       : currentPage === "key-import"
         ? {
             label:
@@ -469,13 +478,15 @@ export function OnboardingFlow({
             setTransitionDirection("backward");
             setCurrentPage(deniedFromPage);
           }}
-          onChangeCommunity={() => setIsCommunityChangeOpen(true)}
+          onChangeCommunity={
+            singleServer ? undefined : () => setIsCommunityChangeOpen(true)
+          }
           onImportKey={importExistingKey}
           onRetry={() => {
             void saveProfileAndContinue(membershipRetryPage);
           }}
         />
-        {isCommunityChangeOpen ? (
+        {isCommunityChangeOpen && !singleServer ? (
           <CommunityChangeOverlay
             onClose={() => setIsCommunityChangeOpen(false)}
           />
@@ -504,17 +515,39 @@ export function OnboardingFlow({
                   <p className="font-medium text-destructive">
                     Couldn't connect
                   </p>
-                  <p className="mt-1 text-muted-foreground">
-                    Check your connection or change your community.
-                  </p>
-                  <Button
-                    className="mt-3"
-                    onClick={() => setIsCommunityChangeOpen(true)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    Change community
-                  </Button>
+                  {singleServer ? (
+                    <>
+                      <p className="mt-1 text-muted-foreground">
+                        Check your internet connection and try again.
+                      </p>
+                      <Button
+                        className="mt-3"
+                        data-testid="onboarding-unreachable-retry"
+                        disabled={isProfileAdvancePending}
+                        onClick={() => {
+                          void saveProfileAndContinue(membershipRetryPage);
+                        }}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Retry
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-muted-foreground">
+                        Check your connection or change your community.
+                      </p>
+                      <Button
+                        className="mt-3"
+                        onClick={() => setIsCommunityChangeOpen(true)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Change community
+                      </Button>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -616,7 +649,7 @@ export function OnboardingFlow({
           )}
         </div>
       </OnboardingCard>
-      {isCommunityChangeOpen ? (
+      {isCommunityChangeOpen && !singleServer ? (
         <CommunityChangeOverlay
           onClose={() => setIsCommunityChangeOpen(false)}
         />

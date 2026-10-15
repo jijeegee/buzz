@@ -369,12 +369,12 @@ test("no-probe-without-advertisement: admin_probe not called when the relay adve
   }
 });
 
-test("settings-nav-groups-contains-relay-admin: relay-admin is wired into Communities nav group", () => {
-  const communities = settingsNavGroups.find((g) => g.label === "Communities");
-  assert.ok(communities, "Communities group must exist");
+test("settings-nav-groups-contains-relay-admin: relay-admin is wired into Members nav group", () => {
+  const communities = settingsNavGroups.find((g) => g.label === "Members");
+  assert.ok(communities, "Members group must exist");
   assert.ok(
     communities.sections.includes("relay-admin"),
-    `relay-admin must be in Communities; got: ${JSON.stringify(communities.sections)}`,
+    `relay-admin must be in Members; got: ${JSON.stringify(communities.sections)}`,
   );
 });
 

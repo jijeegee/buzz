@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/buzz_loading_indicator.dart';
@@ -39,6 +40,8 @@ class InviteJoinSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(inviteJoinProvider);
+    // With the built-in server the sheet never shows a host or server name.
+    final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
     final isClaiming = state.status == InviteJoinStatus.claiming;
     final isStarterSetupRecovery = state.isStarterSetupRecovery;
     final host = state.host ?? 'unknown host';
@@ -68,6 +71,7 @@ class InviteJoinSheet extends ConsumerWidget {
         communityName: derivedName,
         hasFocusChannel: state.focusChannelId != null,
         isTokenAuth: tokenOrigin != null,
+        hideServer: hasBuiltInServer,
       );
     }
 
@@ -83,42 +87,47 @@ class InviteJoinSheet extends ConsumerWidget {
             Text(
               isStarterSetupRecovery
                   ? 'Finish setting up'
+                  : hasBuiltInServer
+                  ? 'Join?'
                   : 'Join this Buzz community?',
+              key: const Key('invite-join-title'),
               style: context.textTheme.titleLarge,
             ),
-            const SizedBox(height: Grid.xxs),
-            Text(
-              'Check the relay host before you join:',
-              style: context.textTheme.bodyMedium?.copyWith(
-                color: context.colors.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: Grid.xs),
-            Container(
-              padding: const EdgeInsets.all(Grid.twelve),
-              decoration: BoxDecoration(
-                color: context.colors.surfaceContainerHighest.withValues(
-                  alpha: 0.7,
-                ),
-                borderRadius: BorderRadius.circular(Radii.container),
-                border: Border.all(color: context.colors.outlineVariant),
-              ),
-              child: Text(
-                host,
-                style: context.textTheme.titleMedium?.copyWith(
-                  fontFamily: 'GeistMono',
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            if (derivedName != null && derivedName != host) ...[
+            if (!hasBuiltInServer) ...[
               const SizedBox(height: Grid.xxs),
               Text(
-                'Display name: $derivedName',
-                style: context.textTheme.bodySmall?.copyWith(
+                'Check the relay host before you join:',
+                style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
               ),
+              const SizedBox(height: Grid.xs),
+              Container(
+                padding: const EdgeInsets.all(Grid.twelve),
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceContainerHighest.withValues(
+                    alpha: 0.7,
+                  ),
+                  borderRadius: BorderRadius.circular(Radii.container),
+                  border: Border.all(color: context.colors.outlineVariant),
+                ),
+                child: Text(
+                  host,
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontFamily: 'GeistMono',
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (derivedName != null && derivedName != host) ...[
+                const SizedBox(height: Grid.xxs),
+                Text(
+                  'Display name: $derivedName',
+                  style: context.textTheme.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
             const SizedBox(height: Grid.sm),
             if (isStarterSetupRecovery) ...[
@@ -132,8 +141,11 @@ class InviteJoinSheet extends ConsumerWidget {
             ],
             if (tokenStatus != null) ...[
               Text(
-                'This community uses your Google sign-in. Your membership '
-                'belongs to your account, not this phone.',
+                hasBuiltInServer
+                    ? 'Joining uses your Google sign-in. Your membership '
+                          'belongs to your account, not this phone.'
+                    : 'This community uses your Google sign-in. Your membership '
+                          'belongs to your account, not this phone.',
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -196,6 +208,8 @@ class InviteJoinSheet extends ConsumerWidget {
                               size: 16,
                               semanticLabel: isStarterSetupRecovery
                                   ? 'Finishing setup'
+                                  : hasBuiltInServer
+                                  ? 'Joining'
                                   : 'Joining community',
                             ),
                           )
@@ -219,11 +233,13 @@ class _InviteJoinSuccess extends StatelessWidget {
   final String? communityName;
   final bool hasFocusChannel;
   final bool isTokenAuth;
+  final bool hideServer;
 
   const _InviteJoinSuccess({
     required this.host,
     required this.hasFocusChannel,
     required this.isTokenAuth,
+    required this.hideServer,
     this.communityName,
   });
 
@@ -243,7 +259,7 @@ class _InviteJoinSuccess extends StatelessWidget {
             ),
             const SizedBox(height: Grid.sm),
             Text(
-              'You joined ${communityName ?? host}',
+              hideServer ? 'You’re in' : 'You joined ${communityName ?? host}',
               style: context.textTheme.titleLarge,
             ),
             if (!isTokenAuth) ...[
@@ -258,9 +274,7 @@ class _InviteJoinSuccess extends StatelessWidget {
             const SizedBox(height: Grid.lg),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(hasFocusChannel),
-              child: Text(
-                hasFocusChannel ? 'Continue' : 'Done',
-              ),
+              child: Text(hasFocusChannel ? 'Continue' : 'Done'),
             ),
           ],
         ),

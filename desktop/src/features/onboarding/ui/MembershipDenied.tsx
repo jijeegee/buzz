@@ -1,6 +1,8 @@
 import * as React from "react";
-import { Check, KeyRound, ShieldX, Ticket } from "lucide-react";
+import { Check, KeyRound, ShieldX, Ticket, UserRound } from "lucide-react";
 
+import { signOutActiveAccount } from "@/features/accounts/lib/signOutActiveAccount";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
 import { nsecToNpub } from "@/shared/lib/nostrUtils";
 import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
@@ -15,7 +17,8 @@ type MembershipDeniedProps = {
   /** The relay that denied membership — used as the target for bare-code invites. */
   activeRelayUrl: string;
   onBack: () => void;
-  onChangeCommunity: () => void;
+  /** Omitted with a built-in server: there is no other server to pick. */
+  onChangeCommunity?: () => void;
   onImportKey: (nsec: string) => Promise<void>;
   onRetry: () => void;
 };
@@ -37,6 +40,26 @@ export function MembershipDenied({
 
   const [isInviteFormOpen, setIsInviteFormOpen] = React.useState(false);
   const communityOnboarding = useCommunityOnboarding();
+  const singleServer = useBuiltInServer() !== null;
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
+  const [signOutError, setSignOutError] = React.useState<string | null>(null);
+
+  // The normal account sign-out (nothing is deleted); the app restarts on
+  // the sign-in screen, where another Google account can be chosen.
+  const handleUseDifferentAccount = React.useCallback(async () => {
+    setSignOutError(null);
+    setIsSigningOut(true);
+    try {
+      await signOutActiveAccount();
+    } catch (error) {
+      setSignOutError(
+        error instanceof Error
+          ? error.message
+          : "Couldn't sign out. Try again.",
+      );
+      setIsSigningOut(false);
+    }
+  }, []);
 
   const handleImportKey = React.useCallback(async () => {
     if (!previewNpub) {
@@ -202,14 +225,16 @@ export function MembershipDenied({
                 >
                   Back
                 </Button>
-                <Button
-                  className="flex-1 text-muted-foreground hover:text-accent-foreground"
-                  onClick={onChangeCommunity}
-                  type="button"
-                  variant="ghost"
-                >
-                  Change community
-                </Button>
+                {onChangeCommunity ? (
+                  <Button
+                    className="flex-1 text-muted-foreground hover:text-accent-foreground"
+                    onClick={onChangeCommunity}
+                    type="button"
+                    variant="ghost"
+                  >
+                    Change community
+                  </Button>
+                ) : null}
               </div>
               <button
                 className="flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -220,6 +245,26 @@ export function MembershipDenied({
                 <Ticket className="h-4 w-4" />
                 Have an invite?
               </button>
+              {singleServer ? (
+                <button
+                  className="flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  data-testid="membership-denied-switch-account"
+                  disabled={isSigningOut}
+                  onClick={() => void handleUseDifferentAccount()}
+                  type="button"
+                >
+                  <UserRound className="h-4 w-4" />
+                  Use a different Google account
+                </button>
+              ) : null}
+              {signOutError ? (
+                <p
+                  className="text-center text-xs text-destructive"
+                  role="alert"
+                >
+                  {signOutError}
+                </p>
+              ) : null}
               {/* Kuzz accounts come from Google sign-in; switching keys is an
                   E2E-only affordance. */}
               {signingKeyUiTestSeam() ? (

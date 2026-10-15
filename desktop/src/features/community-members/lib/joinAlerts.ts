@@ -197,12 +197,15 @@ export function reconcileJoinAlertLedger({
   };
 }
 
-/** Notification copy for a single first join. */
+/**
+ * Notification copy for a single first join. Without a name (always, with a
+ * built-in server) the title does not mention the server at all.
+ */
 export function joinAlertTitle(communityName: string | null | undefined) {
   const trimmed = communityName?.trim();
   return trimmed && trimmed.length > 0
     ? `New member in ${trimmed}`
-    : "New community member";
+    : "New member joined";
 }
 
 export function joinAlertBody(displayName: string) {

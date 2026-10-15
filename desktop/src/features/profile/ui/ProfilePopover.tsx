@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Smile } from "lucide-react";
+import { Smile, UserPlus } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
@@ -47,6 +47,9 @@ interface ProfilePopoverProps {
   // Optional slot rendered before the profile actions. Used by the sidebar to
   // surface active-community actions inside the profile menu.
   communitySwitcherSlot?: React.ReactNode;
+  // Optional "Invite people" item (single-server mode, members who can
+  // invite); shown in place of the community actions.
+  onInvitePeople?: () => void;
   // Optional slot listing this computer's accounts (switch / add account).
   accountsSlot?: React.ReactNode;
 }
@@ -76,6 +79,7 @@ export function ProfilePopover({
   children,
   triggerContainerRef,
   communitySwitcherSlot,
+  onInvitePeople,
   accountsSlot,
 }: ProfilePopoverProps) {
   const [statusDialogOpen, setStatusDialogOpen] = React.useState(false);
@@ -263,6 +267,30 @@ export function ProfilePopover({
                 <div className="py-1" data-testid="profile-popover-community">
                   {communitySwitcherSlot}
                 </div>
+                <hr className="my-1 h-px border-0 bg-border/60" />
+              </>
+            ) : null}
+
+            {onInvitePeople ? (
+              <>
+                <button
+                  className={MENU_ITEM_CLASS}
+                  data-testid="profile-popover-invite-people"
+                  onClick={() => {
+                    closePopover();
+                    window.requestAnimationFrame(() => {
+                      onInvitePeople();
+                    });
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <UserPlus
+                    aria-hidden="true"
+                    className="h-4 w-4 shrink-0 text-muted-foreground"
+                  />
+                  <span className="flex-1">Invite people</span>
+                </button>
                 <hr className="my-1 h-px border-0 bg-border/60" />
               </>
             ) : null}

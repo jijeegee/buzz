@@ -14,10 +14,12 @@ import 'community_recovery_actions.dart';
 
 /// "Sign in with Google" for relays with centralized token auth.
 ///
-/// Without [lockedOrigin] the user first enters a relay URL; the relay's
-/// NIP-11 document decides whether token sign-in is offered. With
-/// [lockedOrigin] (an existing token community whose session ended) the page
-/// goes straight to the sign-in button.
+/// With a built-in server (`hasBuiltInServerProvider`, always on in the app)
+/// the page signs in to that server: there is no address field. Only without
+/// it (test harness) does the user first enter a relay URL, whose NIP-11
+/// document decides whether token sign-in is offered. With [lockedOrigin]
+/// (an existing token community whose session ended) the page goes straight
+/// to the sign-in button.
 class TokenSignInPage extends HookConsumerWidget {
   const TokenSignInPage({
     super.key,
@@ -27,7 +29,9 @@ class TokenSignInPage extends HookConsumerWidget {
     this.resumeSignedOut = false,
   });
 
-  /// Ordinary first-device entry uses the configured custody service.
+  /// Ordinary first-device entry. Every page without [lockedOrigin] or
+  /// [backupOrigin] now uses the built-in server when there is one, so this
+  /// only documents the caller's intent.
   final bool defaultCommunity;
   final bool resumeSignedOut;
 
@@ -40,13 +44,16 @@ class TokenSignInPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final urlController = useTextEditingController();
-    final configuredOrigin = defaultCommunity
-        ? ref.watch(defaultCommunityOriginProvider)
-        : null;
+    // The built-in server replaces manual address entry everywhere.
+    final configuredOrigin = ref.watch(defaultCommunityOriginProvider);
+    final hasBuiltInServer = configuredOrigin != null;
     final initialOrigin = lockedOrigin ?? backupOrigin ?? configuredOrigin;
     final origin = useState<String?>(initialOrigin);
+    // A locked token community keeps its token session; the built-in server
+    // only stands in for a missing address.
     final keyBackup = useState(
-      backupOrigin != null || configuredOrigin != null,
+      backupOrigin != null ||
+          (lockedOrigin == null && configuredOrigin != null),
     );
     final dualMode = useState(false);
     final fixedOrigin = initialOrigin != null;
@@ -290,8 +297,11 @@ class TokenSignInPage extends HookConsumerWidget {
             const SizedBox(height: Grid.xxs),
             Text(
               resumeSignedOut
-                  ? 'Your communities and messages are still on this device. '
-                        'Sign in to pick up where you left off.'
+                  ? hasBuiltInServer
+                        ? 'Your messages are still on this device. '
+                              'Sign in to pick up where you left off.'
+                        : 'Your communities and messages are still on this device. '
+                              'Sign in to pick up where you left off.'
                   : keyBackup.value
                   ? 'Sign in on your first device or restore the same Buzz identity here. '
                         'If this account has no backup, your current key is linked, '
@@ -305,6 +315,8 @@ class TokenSignInPage extends HookConsumerWidget {
                               'Its existing identity and history are kept. '
                               'New accounts use Google key recovery.'
                         : 'Relays with Buzz accounts let you sign in with Google.'
+                  : hasBuiltInServer
+                  ? 'Your session ended. Sign in again to continue.'
                   : 'Your session on $lockedOrigin ended. Sign in again '
                         'to continue.',
               style: context.textTheme.bodyMedium?.copyWith(
@@ -382,18 +394,6 @@ class TokenSignInPage extends HookConsumerWidget {
                       : 'Use Google key recovery',
                 ),
               ),
-            if (defaultCommunity && configuredOrigin != null)
-              TextButton(
-                key: const Key('sign-in-custom-community'),
-                onPressed: busy
-                    ? null
-                    : () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const TokenSignInPage(),
-                        ),
-                      ),
-                child: const Text('Advanced: use a custom community'),
-              ),
             if (busy) ...[
               const SizedBox(height: Grid.sm),
               const Center(
@@ -417,9 +417,11 @@ class TokenSignInPage extends HookConsumerWidget {
               ),
             ],
             // A resume that fails (e.g. a different Google account) must
-            // still leave a way out (AGENTS.md rule 6).
+            // still leave a way out (AGENTS.md rule 6). With the built-in
+            // server an already signed-out user's way out is the Google
+            // button above; there is no other server to move to.
             if (lockedOrigin != null && !resumeSignedOut ||
-                resumeSignedOut && errorText != null) ...[
+                resumeSignedOut && errorText != null && !hasBuiltInServer) ...[
               const SizedBox(height: Grid.md),
               const CommunityRecoveryActions(),
             ],
