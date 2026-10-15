@@ -271,7 +271,7 @@ export function OnboardingFlow({
         if (membershipStatus === "error") {
           setMembershipError({
             kind: "error",
-            message: "Server error — try again",
+            message: "Something went wrong. Please try again.",
           });
           return;
         }
@@ -450,10 +450,11 @@ export function OnboardingFlow({
   const chromeBackAction =
     currentPage === "profile"
       ? {
-          disabled: profileStepState.isSaving,
+          label: "Skip setup",
+          disabled: profileStepState.isSaving || !initialProfileDecisionSettled,
           onClick: () => {
             setMembershipError(null);
-            setIsCommunityChangeOpen(true);
+            skipForNow();
           },
         }
       : currentPage === "key-import"
@@ -518,18 +519,23 @@ export function OnboardingFlow({
               {membershipError.kind === "unreachable" ? (
                 <>
                   <p className="font-medium text-destructive">
-                    Can't reach this relay
+                    Couldn't connect
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    Check your connection or change your community.
+                    Check your internet connection and try again.
                   </p>
                   <Button
                     className="mt-3"
-                    onClick={() => setIsCommunityChangeOpen(true)}
+                    disabled={isProfileAdvancePending}
+                    onClick={() =>
+                      void saveProfileAndContinue(
+                        currentPage === "avatar" ? "complete" : "avatar",
+                      )
+                    }
                     size="sm"
                     variant="outline"
                   >
-                    Change community
+                    Try again
                   </Button>
                 </>
               ) : (
@@ -538,7 +544,7 @@ export function OnboardingFlow({
                     {membershipError.message ?? "Something went wrong"}
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    The relay returned an error. Try again.
+                    Please try again.
                   </p>
                 </>
               )}
@@ -561,6 +567,7 @@ export function OnboardingFlow({
               }}
               direction={transitionDirection}
               state={profileStepState}
+              showAlwaysSkip
               usesExistingIdentity
             />
           ) : currentPage === "key-import" ? (

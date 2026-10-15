@@ -22,6 +22,7 @@ import {
 import type { ProfileStepActions, ProfileStepState } from "./types";
 
 type ProfileStepProps = {
+  showAlwaysSkip?: boolean;
   actions: ProfileStepActions;
   direction: OnboardingTransitionDirection;
   transitionEffect?: OnboardingTransitionEffect;
@@ -198,6 +199,7 @@ export function ProfileStep({
   transitionEffect = "line-slide",
   state,
   usesExistingIdentity = false,
+  showAlwaysSkip = false,
 }: ProfileStepProps) {
   const {
     advanceWithoutSaving,
@@ -366,18 +368,21 @@ export function ProfileStep({
           </Button>
         ) : null}
 
-        {saveRecovery.canSkipForNow || saveRecovery.canAdvanceWithoutSaving ? (
+        {showAlwaysSkip ||
+        saveRecovery.canSkipForNow ||
+        saveRecovery.canAdvanceWithoutSaving ? (
           <div className="flex min-h-8 items-center gap-2">
             <div className="flex-1" />
-            {saveRecovery.canSkipForNow ? (
+            {showAlwaysSkip || saveRecovery.canSkipForNow ? (
               <Button
                 className="text-muted-foreground hover:text-accent-foreground"
                 data-testid="onboarding-skip"
+                disabled={isSaving || !isReadyToSubmit}
                 onClick={skipForNow}
                 type="button"
                 variant="ghost"
               >
-                Skip for now
+                {showAlwaysSkip ? "Set up later and start" : "Skip for now"}
               </Button>
             ) : null}
             {saveRecovery.canAdvanceWithoutSaving ? (
