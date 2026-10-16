@@ -318,7 +318,8 @@ test("channel change attaches pinned-center observers after refs mount", async (
     nodes.content,
     nodes.container,
   ]);
-  assert.equal(nodes.container.listeners.get("wheel")?.length, 1);
+  // One for the pinned-center release, one for the bottom-glue detach.
+  assert.equal(nodes.container.listeners.get("wheel")?.length, 2);
 
   await act(async () => {
     nodes.container.dispatchEvent({ type: "wheel" });
@@ -595,5 +596,101 @@ test("mounted virtual target retires bottom intent before direct centering", asy
     "target remains centered after later virtual geometry activity",
   );
   assert.equal(bottomWrites.length, 1, "geometry cannot re-pin to bottom");
+  await act(async () => root.unmount());
+});
+
+test("an upward wheel near the floor is not glued back down by a late resize", async () => {
+  const refs = {
+    container: { current: null },
+    content: { current: null },
+  };
+  const root = createRoot(document.createElement("div"));
+  const nodes = makePinnedCenterNodes();
+  refs.container.current = nodes.container;
+  refs.content.current = nodes.content;
+  let state = null;
+  const render = (messages) =>
+    root.render(
+      React.createElement(BottomStateHarness, {
+        messages,
+        onState: (nextState) => {
+          state = nextState;
+        },
+        refs,
+      }),
+    );
+
+  await act(async () => render([{ id: "first" }]));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  const floor = nodes.container.scrollHeight - nodes.container.clientHeight;
+  // Keep the row inside the viewport near the floor.
+  nodes.moveSelectedRowBy(floor);
+  nodes.container.scrollTop = floor;
+  await act(async () => state.onScroll());
+  assert.equal(state.isAtBottom, true);
+
+  // The first frames of a smooth upward wheel stay inside the 32px band.
+  await act(async () =>
+    nodes.container.dispatchEvent({ type: "wheel", deltaY: -100 }),
+  );
+  nodes.container.scrollTop = floor - 12;
+  await act(async () => state.onScroll());
+  // A link preview lands and grows a row.
+  nodes.container.scrollHeight += 60;
+  await act(async () => nodes.resizeObservers[0].callback());
+
+  assert.equal(nodes.container.scrollTop, floor - 12);
+  assert.equal(state.isAtBottom, false);
+
+  // Returning to the true floor re-arms bottom glue.
+  nodes.container.scrollTop =
+    nodes.container.scrollHeight - nodes.container.clientHeight;
+  await act(async () => state.onScroll());
+  assert.equal(state.isAtBottom, true);
+  nodes.container.scrollHeight += 60;
+  await act(async () => nodes.resizeObservers[0].callback());
+  assert.equal(
+    nodes.container.scrollTop,
+    nodes.container.scrollHeight,
+    "at the floor, a resize still pins to the bottom",
+  );
+  await act(async () => root.unmount());
+});
+
+test("a mount pin short of an unreachable floor does not snap user scrolls back", async () => {
+  const refs = {
+    container: { current: null },
+    content: { current: null },
+  };
+  const root = createRoot(document.createElement("div"));
+  const nodes = makePinnedCenterNodes();
+  // Fractional layout: the reachable floor is 1.5px short of the computed one.
+  nodes.container.scrollTo = function ({ top }) {
+    this.scrollTop = Math.min(top, this.scrollHeight - this.clientHeight - 1.5);
+  };
+  refs.container.current = nodes.container;
+  refs.content.current = nodes.content;
+  let state = null;
+  await act(async () =>
+    root.render(
+      React.createElement(BottomStateHarness, {
+        messages: [{ id: "first" }],
+        onState: (nextState) => {
+          state = nextState;
+        },
+        refs,
+      }),
+    ),
+  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  await act(async () =>
+    nodes.container.dispatchEvent({ type: "wheel", deltaY: -100 }),
+  );
+  nodes.container.scrollTop = 300;
+  await act(async () => state.onScroll());
+
+  assert.equal(nodes.container.scrollTop, 300);
+  assert.equal(state.isAtBottom, false);
   await act(async () => root.unmount());
 });

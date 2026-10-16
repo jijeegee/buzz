@@ -180,6 +180,8 @@ function makeContainer({ clientHeight, scrollHeight, scrollTop = 0 }) {
     clientHeight,
     scrollHeight,
     scrollTop,
+    addEventListener() {},
+    removeEventListener() {},
     getBoundingClientRect() {
       return { top: 0 };
     },

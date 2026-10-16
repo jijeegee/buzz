@@ -148,6 +148,8 @@ function makeContainer({ clientHeight, scrollHeight, scrollTop = 0 }) {
     scrollHeight,
     scrollTop,
     writes,
+    addEventListener() {},
+    removeEventListener() {},
     getBoundingClientRect() {
       return { top: 0 };
     },

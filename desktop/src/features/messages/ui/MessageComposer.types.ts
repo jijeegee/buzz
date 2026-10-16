@@ -37,7 +37,11 @@ export type MessageComposerProps = {
     /** The thread root's text, given to Smart routing as context. */
     rootContent?: string | null;
     rootTags?: readonly string[][];
-    type: "thread";
+    /**
+     * Threads and (in this fork) channel main timelines retain mentioned
+     * agents; agents converse on the main timeline too. DMs never do.
+     */
+    type: "thread" | "channel";
   } | null;
   channelId?: string | null;
   channelName: string;

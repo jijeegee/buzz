@@ -32,13 +32,23 @@ type BottomSettleContainer = Pick<
   "scrollHeight" | "clientHeight" | "scrollTop" | "scrollTo"
 >;
 
+// A pin that cannot move the view any further has reached the floor the
+// browser allows. Fractional layout (display scaling, sub-pixel row heights)
+// can leave that floor slightly more than 1px short of the computed bottom;
+// insisting on the exact floor would keep the guard armed forever and snap
+// every later user scroll back down.
+const NEAR_BOTTOM_THRESHOLD_PX = 32;
+
 export function settleProgrammaticBottomPin(
   container: BottomSettleContainer,
 ): boolean {
+  const scrollTopBefore = container.scrollTop;
   container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+  const gap =
+    container.scrollHeight - container.clientHeight - container.scrollTop;
+  if (gap <= TRUE_BOTTOM_THRESHOLD_PX) return true;
   return (
-    container.scrollHeight - container.clientHeight - container.scrollTop <=
-    TRUE_BOTTOM_THRESHOLD_PX
+    container.scrollTop === scrollTopBefore && gap <= NEAR_BOTTOM_THRESHOLD_PX
   );
 }
 

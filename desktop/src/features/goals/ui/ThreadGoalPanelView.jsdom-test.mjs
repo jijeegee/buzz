@@ -87,7 +87,10 @@ test("expanding shows the sub-goals; status and add use goal operations", async 
   await act(async () => fireEvent.click(q("thread-goal-toggle")));
   assert.equal(q("thread-goal-toggle").getAttribute("aria-expanded"), "true");
   const subtree = q("thread-goal-subtree");
-  assert.ok(subtree.textContent.includes("Keep writes atomic"));
+  assert.ok(
+    subtree.contains(q("goal-note-toggle-srv")),
+    "notes wait behind a button",
+  );
   assert.ok(q("goal-row-cas") && q("goal-row-val"));
   // The whole tree shows; only the linked goal's branch is editable.
   const access = (id) => q(`goal-row-${id}`).dataset.goalAccess;
@@ -248,7 +251,8 @@ test("thread links go to other threads; this thread's link stays put", async () 
   });
   const { q, unmount } = await mount(element);
   const here = q(`goal-thread-${THREAD}`);
-  assert.equal(here.textContent, "This thread");
+  assert.equal(here.getAttribute("aria-label"), "This thread");
+  assert.equal(here.textContent, "", "links are icons only");
   assert.equal(here.disabled, true);
   const other = q(`goal-thread-${OTHER}`);
   assert.equal(other.disabled, false, "faded goals still navigate");
@@ -282,8 +286,16 @@ test("linked messages read Message and jump; missing ones are disabled", async (
   const { q, unmount } = await mount(element);
   const link = (id) => q(`goal-thread-${id}`);
   assert.deepEqual(
-    [MAIN, REPLY, GONE, ROOT, LOADING].map((id) => link(id).textContent),
-    ["Message", "Message", "Message", "Thread", "Thread"],
+    [MAIN, REPLY, GONE, ROOT, LOADING].map((id) =>
+      link(id).getAttribute("aria-label"),
+    ),
+    [
+      "Go to message",
+      "Go to message",
+      "Go to message",
+      "Open thread",
+      "Open thread",
+    ],
   );
   assert.equal(link(GONE).disabled, true);
   for (const id of [MAIN, REPLY, ROOT]) {
@@ -294,6 +306,20 @@ test("linked messages read Message and jump; missing ones are disabled", async (
     { kind: "message", messageId: REPLY, threadRootId: ROOT },
     { kind: "thread", threadRootId: ROOT },
   ]);
+  await unmount();
+});
+
+test("a goal's note stays hidden until its note button is pressed", async () => {
+  const { element } = view({ defaultExpanded: true, tree });
+  const { q, unmount } = await mount(element);
+  const row = q("goal-row-srv");
+  assert.equal(row.textContent.includes("Keep writes atomic"), false);
+  const toggle = q("goal-note-toggle-srv");
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  await act(async () => fireEvent.click(toggle));
+  assert.equal(row.textContent.includes("Keep writes atomic"), true);
+  await act(async () => fireEvent.click(toggle));
+  assert.equal(row.textContent.includes("Keep writes atomic"), false);
   await unmount();
 });
 

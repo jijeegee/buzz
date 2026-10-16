@@ -134,10 +134,8 @@ class _GoalsBody extends ConsumerWidget {
                   ),
                   const SizedBox(height: Grid.xs),
                   Text(root.title, style: context.textTheme.titleMedium),
-                  if (root.note.isNotEmpty) ...[
-                    const SizedBox(height: Grid.xs),
-                    Text(root.note, style: context.textTheme.bodySmall),
-                  ],
+                  if (root.note.isNotEmpty)
+                    GoalNote(goalId: root.id, note: root.note),
                   if (progress.total > 0) ...[
                     const SizedBox(height: Grid.twelve),
                     LinearProgressIndicator(

@@ -879,6 +879,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                       ComposerQuoteChip(scope: quoteScope),
                       ComposeBar(
                         channelId: channel.id,
+                        channelMainAgentAudience: !resolvedChannel.isDm,
                         focusNode: composerFocusNode,
                         onFocusRestorerChanged: (restoreFocus) =>
                             restoreComposerFocus.value = restoreFocus,

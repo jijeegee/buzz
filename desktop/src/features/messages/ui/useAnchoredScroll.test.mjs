@@ -127,6 +127,21 @@ test("settleProgrammaticBottomPin keeps settling when the floor is still out of 
   );
 });
 
+test("settleProgrammaticBottomPin accepts a fractional floor it cannot move past", () => {
+  const container = fakeContainer({
+    clientHeight: 100,
+    scrollHeight: 200,
+    scrollTop: 98.4,
+  });
+  container.scrollTo = ({ top, behavior }) => {
+    container.writes.push({ top, behavior });
+    // Display scaling: the browser's reachable floor sits 1.6px short.
+    container.scrollTop = 98.4;
+  };
+
+  assert.equal(settleProgrammaticBottomPin(container), true);
+});
+
 test("pinned center drift re-pins only after meaningful layout growth", () => {
   assert.equal(
     getPinnedCenterDrift({ contentTop: 400, currentContentTop: 400.5 }),

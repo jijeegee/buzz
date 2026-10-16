@@ -8,7 +8,7 @@ import 'goal_tree.dart';
 /// One goal in an outline: status toggle, `L<layer>` title, progress, and
 /// its linked threads and messages. Without [onTap] and [onToggleStatus] it
 /// is read-only; [muted] fades it. Links open through [onOpenLink], even when
-/// read-only; [currentThreadId]'s link reads "This thread" and stays put.
+/// read-only; links are icons, and [currentThreadId]'s stays put.
 /// [linkKinds] tells threads from messages; unknown links show as threads.
 class GoalTile extends StatelessWidget {
   const GoalTile({
@@ -114,6 +114,7 @@ class GoalTile extends StatelessWidget {
 class _ThreadLink extends StatelessWidget {
   const _ThreadLink({super.key, required this.label, required this.onTap});
 
+  /// What the link is, for its tooltip and screen readers; not shown.
   final String label;
   final VoidCallback? onTap;
 
@@ -122,28 +123,64 @@ class _ThreadLink extends StatelessWidget {
     final color = onTap == null
         ? context.colors.onSurfaceVariant
         : context.colors.primary;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: Grid.half),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              label == 'Message'
-                  ? LucideIcons.messageSquare
-                  : LucideIcons.messagesSquare,
-              size: 14,
-              color: color,
-            ),
-            const SizedBox(width: Grid.half),
-            Text(
-              label,
-              style: context.textTheme.bodySmall?.copyWith(color: color),
-            ),
-          ],
+    return Tooltip(
+      message: switch (label) {
+        'Message' => 'Go to message',
+        'Thread' => 'Open thread',
+        _ => label,
+      },
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(Grid.half),
+          child: Icon(
+            label == 'Message'
+                ? LucideIcons.messageSquare
+                : LucideIcons.messagesSquare,
+            size: 16,
+            color: color,
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// A goal's note, hidden behind a note button until pressed.
+class GoalNote extends StatefulWidget {
+  const GoalNote({super.key, required this.goalId, required this.note});
+
+  final String goalId;
+  final String note;
+
+  @override
+  State<GoalNote> createState() => _GoalNoteState();
+}
+
+class _GoalNoteState extends State<GoalNote> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _open
+        ? context.colors.primary
+        : context.colors.onSurfaceVariant;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Tooltip(
+          message: _open ? 'Hide note' : 'Show note',
+          child: InkWell(
+            key: ValueKey('goal-note-toggle-${widget.goalId}'),
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.all(Grid.half),
+              child: Icon(LucideIcons.stickyNote, size: 16, color: color),
+            ),
+          ),
+        ),
+        if (_open) Text(widget.note, style: context.textTheme.bodySmall),
+      ],
     );
   }
 }

@@ -124,7 +124,7 @@ test("in-memory audiences retain only the 200 most recently touched scopes", asy
   assert.deepEqual(retouched["scope-new"], [agentC]);
 });
 
-test("reset clears every audience for refresh and community boundaries", async () => {
+test("reset clears every audience when automatic mentions turn off", async () => {
   const store = await loadStore(7);
   const scope = `${ownerA}:channel-a:channel`;
   store.setPersistentAgentAudience(scope, [agentA]);
@@ -272,3 +272,56 @@ test("promotion reports only newly added agents for transactional Undo", async (
   );
   assert.deepEqual(currentAudiences(store), { [scope]: [agentA] });
 });
+
+function withMemoryStorage(run) {
+  const previous = globalThis.localStorage;
+  const values = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+  return Promise.resolve(run(values)).finally(() => {
+    if (previous === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previous;
+  });
+}
+
+test("added and removed agents survive an app restart", () =>
+  withMemoryStorage(async () => {
+    const scope = `${ownerA}:channel-a:thread:head`;
+    const first = await loadStore(20);
+    first.initializePersistentAgentAudience(scope, [agentA]);
+    first.addPersistentAgentAudienceMember(scope, agentB);
+    first.excludePersistentAgentAudienceMember(scope, agentA);
+
+    const restarted = await loadStore(21);
+    assert.deepEqual(currentAudiences(restarted), { [scope]: [agentB] });
+    // The thread root's agent stays removed after the restart.
+    restarted.initializePersistentAgentAudience(scope, [agentA]);
+    assert.deepEqual(currentAudiences(restarted), { [scope]: [agentB] });
+  }));
+
+test("an account or community reload keeps saved audiences", () =>
+  withMemoryStorage(async () => {
+    const scope = `${ownerA}:channel-a:channel`;
+    const store = await loadStore(22);
+    store.setPersistentAgentAudience(scope, [agentC]);
+    const revision = store.getPersistentAgentAudienceRevision(scope);
+
+    store.reloadPersistentAgentAudienceStore();
+
+    assert.deepEqual(currentAudiences(store), { [scope]: [agentC] });
+    assert.notEqual(store.getPersistentAgentAudienceRevision(scope), revision);
+  }));
+
+test("reset also forgets the saved copy", () =>
+  withMemoryStorage(async () => {
+    const scope = `${ownerA}:channel-a:channel`;
+    const store = await loadStore(23);
+    store.setPersistentAgentAudience(scope, [agentC]);
+    store.resetPersistentAgentAudienceStore();
+
+    const restarted = await loadStore(24);
+    assert.deepEqual(currentAudiences(restarted), {});
+  }));
