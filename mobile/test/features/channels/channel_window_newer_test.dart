@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:buzz/features/channels/channel_window.dart';
-import 'package:buzz/features/channels/window_anchor.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/channels/channel_window.dart';
+import 'package:kuzz/features/channels/window_anchor.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'window_relay_fixture.dart';

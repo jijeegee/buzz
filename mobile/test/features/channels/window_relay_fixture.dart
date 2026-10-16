@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 
 /// A 64-hex event id that sorts by [n].
 String fixtureId(int n) => n.toRadixString(16).padLeft(64, '0');
