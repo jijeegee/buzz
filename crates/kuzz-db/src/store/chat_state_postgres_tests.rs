@@ -518,6 +518,50 @@ async fn close_marker_on_a_thread_without_replies_creates_state() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn only_applied_markers_report_a_close_change() {
+    let f = Fixture::new(true).await;
+    let owner = Keys::generate();
+    let room = f.room(&owner, &[]).await;
+    let root = f.post(room, &owner, 100, Vec::new()).await;
+    let unstored_root = f.sign(room, &owner, 101, Vec::new());
+    let reply_to = |root: &Event, ts: u64, tag: Option<&str>| {
+        let mut tags = vec![Tag::parse(["e", &root.id.to_hex(), "", "root"]).expect("e tag")];
+        if let Some(tag) = tag {
+            tags.push(Tag::parse([tag, &root.id.to_hex()]).expect("marker tag"));
+        }
+        f.sign(room, &owner, ts, tags)
+    };
+
+    for (event, target, expected) in [
+        (reply_to(&root, 110, Some(THREAD_CLOSED_TAG)), &root, true),
+        (reply_to(&root, 120, None), &root, false),
+        (reply_to(&root, 130, Some(THREAD_CLOSED_TAG)), &root, true),
+        (reply_to(&root, 140, Some(THREAD_REOPENED_TAG)), &root, true),
+        (
+            reply_to(&unstored_root, 150, Some(THREAD_CLOSED_TAG)),
+            &unstored_root,
+            false,
+        ),
+    ] {
+        let (_, outcome) = f.reply_event(room, target, &event, false).await;
+        assert_eq!(
+            outcome.thread_close_changed, expected,
+            "{}",
+            event.created_at
+        );
+    }
+    // The close tag on a top-level message changes no thread.
+    let top = f.sign(
+        room,
+        &owner,
+        160,
+        vec![Tag::parse([THREAD_CLOSED_TAG, &root.id.to_hex()]).expect("tag")],
+    );
+    assert!(!f.write(room, &top, None).await.1.thread_close_changed);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn top_level_and_broadcast_replies_are_main_timeline() {
     let f = Fixture::new(true).await;
     let (owner, member) = (Keys::generate(), Keys::generate());

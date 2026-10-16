@@ -34,6 +34,9 @@ pub struct ChatStateWriteOutcome {
     /// DM members (raw 32-byte pubkeys) whose hidden DM this message brought
     /// back. The caller republishes their DM visibility snapshot.
     pub unhidden_dm_members: Vec<Vec<u8>>,
+    /// The message was a close or reopen marker that changed its thread's
+    /// close state. The caller pings the author's other devices.
+    pub thread_close_changed: bool,
 }
 
 /// A reply's close/reopen marker, when its tag names the reply's own root.
@@ -180,7 +183,7 @@ pub(crate) async fn apply_message_write(
     }
 
     if let Some((root, _)) = reply {
-        apply_reply(
+        let applied = apply_reply(
             tx,
             community,
             channel_id,
@@ -192,11 +195,14 @@ pub(crate) async fn apply_message_write(
             marker,
         )
         .await?;
+        outcome.thread_close_changed = applied && marker.is_some();
     }
 
     Ok(outcome)
 }
 
+/// Apply a reply's thread-state and follow writes. Returns `false` when the
+/// root is not a live event in this channel (nothing was written).
 #[allow(clippy::too_many_arguments)]
 async fn apply_reply(
     tx: &mut Transaction<'_, Postgres>,
@@ -208,7 +214,7 @@ async fn apply_reply(
     seq: i64,
     received_at: DateTime<Utc>,
     marker: Option<ThreadMarker>,
-) -> Result<()> {
+) -> Result<bool> {
     // The root must be a live event in this same channel. Its author and
     // mentions seed follows.
     let root_row = sqlx::query(
@@ -222,7 +228,7 @@ async fn apply_reply(
     .fetch_optional(&mut **tx)
     .await?;
     let Some(root_row) = root_row else {
-        return Ok(());
+        return Ok(false);
     };
 
     match marker {
@@ -240,7 +246,7 @@ async fn apply_reply(
             .bind(author)
             .execute(&mut **tx)
             .await?;
-            return Ok(());
+            return Ok(true);
         }
         Some(ThreadMarker::Reopened) => {
             sqlx::query(
@@ -254,7 +260,7 @@ async fn apply_reply(
             .bind(channel_id)
             .execute(&mut **tx)
             .await?;
-            return Ok(());
+            return Ok(true);
         }
         None => {}
     }
@@ -319,7 +325,7 @@ async fn apply_reply(
     }
     candidates.retain(|pubkey| pubkey.as_slice() != author);
     if candidates.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
     sqlx::query(
         "INSERT INTO thread_follows \
@@ -338,7 +344,7 @@ async fn apply_reply(
     .bind(received_at)
     .execute(&mut **tx)
     .await?;
-    Ok(())
+    Ok(true)
 }
 
 /// A new message in a DM brings it back for every other member who hid it.
