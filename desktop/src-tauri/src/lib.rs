@@ -40,7 +40,6 @@ mod nostr_bind;
 pub mod nostr_convert;
 mod observed_unread;
 mod persona_catalog;
-mod pre_rename;
 mod prevent_sleep;
 mod ptt_shortcut;
 mod relay;
@@ -124,10 +123,6 @@ pub fn run() {
             eprintln!("kuzz-mesh: failed to build big-stack tokio runtime, using default: {error}");
         }
     }
-    let context = tauri::generate_context!();
-    // Before any window or secret store opens: copy data the app kept under
-    // its pre-rename identifier, keyring service and agent config folder.
-    pre_rename::import_pre_rename_data(&context.config().identifier);
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Bring back the existing window when a duplicate instance launches;
@@ -989,7 +984,7 @@ pub fn run() {
             set_admin_origin,
             admin_discover_origin,
         ])
-        .build(context)
+        .build(tauri::generate_context!())
         .expect("error while building tauri application");
     let shutdown_done = Arc::new(AtomicBool::new(false));
 

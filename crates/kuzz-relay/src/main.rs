@@ -148,7 +148,6 @@ impl PartitionAuditSchedule {
 }
 
 fn main() -> anyhow::Result<()> {
-    kuzz_core::legacy_env::adopt_legacy_env();
     let (runtime, boot) = BootTracker::start_before_runtime(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()

@@ -152,7 +152,7 @@ String _normalizeToolName(String title) {
 
   final normalized = _normalizeToolNameText(
     title,
-  ).replaceAll(RegExp(r'^(?:kuzz|buzz)_'), ''); // kuzz-rename: keep
+  ).replaceAll(RegExp(r'^kuzz_'), '');
   return RegExp(r'[a-z][a-z0-9_]+').firstMatch(normalized)?[0] ?? normalized;
 }
 
