@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    kuzz_core_pkg::legacy_env::adopt_legacy_env();
     if kuzz_lib::print_agent_access_owner_only_probe_if_requested() {
         return;
     }

@@ -2692,7 +2692,7 @@ mod audit_log {
     //! `/count`, `/hooks`, the media and git sub-routers, and the audio WS — no
     //! audit endpoint). Audit is written as an ingest side-effect
     //! (`handlers/event.rs`, `dispatch_persistent_event`) and read only via
-    //! `buzz_audit::AuditService::{verify_chain, get_entries}`, which are
+    //! `kuzz_audit::AuditService::{verify_chain, get_entries}`, which are
     //! operator-internal (consumed by `kuzz-admin`). `crates/kuzz-audit/src/
     //! error.rs` states it directly: `AuditError` is "never relayed to a client
     //! on the wire," and "no variant embeds a `community_id`."
@@ -2710,7 +2710,7 @@ mod audit_log {
     //! direct Postgres access is in-convention:
     //!
     //!   1. **One chain per community** —
-    //!      `buzz_audit::service::tests::chains_are_independent_per_community`
+    //!      `kuzz_audit::service::tests::chains_are_independent_per_community`
     //!      (direct `AuditService::log`) proves interleaved A/B writes keep
     //!      independent `(community_id, seq)` chains, each starting at seq 1 with
     //!      its own `prev_hash`, and that `verify_chain`/`get_entries` scoped to
@@ -2722,7 +2722,7 @@ mod audit_log {
     //!      `dispatch_persistent_event` under two tenants against a shared
     //!      Postgres (no WS-AUTH dependency).
     //!   2. **Errors don't leak** —
-    //!      `buzz_audit::error::tests::audit_error_text_carries_no_community_id_or_constraint`
+    //!      `kuzz_audit::error::tests::audit_error_text_carries_no_community_id_or_constraint`
     //!      asserts no `AuditError` variant's rendered text embeds a
     //!      `community_id`, constraint name, or cross-community object id.
     //!

@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use buzz_audit::AuditService;
+use kuzz_audit::AuditService;
 use kuzz_auth::{AuthService, CommandReplayGuard, Nip98ReplayGuard};
 use kuzz_core::tenant::TenantContext;
 use kuzz_core::CommunityId;
@@ -1207,7 +1207,7 @@ pub struct AppState {
     pub channel_visibility_cache: Arc<moka::sync::Cache<(CommunityId, Uuid), String>>,
 
     /// Bounded channel for audit logging, absent when audit logging is disabled.
-    pub audit_tx: Option<mpsc::Sender<buzz_audit::NewAuditEntry>>,
+    pub audit_tx: Option<mpsc::Sender<kuzz_audit::NewAuditEntry>>,
     /// Media storage client (S3/MinIO).
     pub media_storage: Arc<MediaStorage>,
     /// Cached worker snapshot and storage metric emission bookkeeping. See
@@ -1369,7 +1369,7 @@ impl AppState {
         let search_arc = Arc::new(search);
 
         let audit_arc = audit.into().map(Arc::new);
-        let (audit_tx, mut audit_rx) = mpsc::channel::<buzz_audit::NewAuditEntry>(1000);
+        let (audit_tx, mut audit_rx) = mpsc::channel::<kuzz_audit::NewAuditEntry>(1000);
         let audit_for_worker = audit_arc.clone();
         let audit_cancel = CancellationToken::new();
         let audit_cancel_worker = audit_cancel.clone();
@@ -2128,7 +2128,7 @@ fn build_nip_fi_components(config: &crate::config::Config) -> NipFiComponents {
 
 /// Log a single audit entry with metrics. Extracted so the normal loop
 /// and the post-cancel drain share the same logic.
-async fn log_audit_entry(audit: &buzz_audit::AuditService, entry: buzz_audit::NewAuditEntry) {
+async fn log_audit_entry(audit: &kuzz_audit::AuditService, entry: kuzz_audit::NewAuditEntry) {
     let t = std::time::Instant::now();
     let mut retry_delay_ms = 50u64;
     let mut retries = 0u64;
@@ -2138,7 +2138,7 @@ async fn log_audit_entry(audit: &buzz_audit::AuditService, entry: buzz_audit::Ne
                 metrics::histogram!("kuzz_audit_log_seconds").record(t.elapsed().as_secs_f64());
                 return;
             }
-            Err(buzz_audit::AuditError::Database(sqlx::Error::Database(database_error)))
+            Err(kuzz_audit::AuditError::Database(sqlx::Error::Database(database_error)))
                 if database_error.code().as_deref() == Some("55P03") =>
             {
                 retries += 1;
@@ -2634,7 +2634,7 @@ pub(crate) mod tests {
                 .await
                 .expect("pubsub manager"),
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -2691,15 +2691,15 @@ pub(crate) mod tests {
             .await
             .expect("insert test community");
         let object_id = format!("audit-retry-object-{}", Uuid::new_v4());
-        let entry = buzz_audit::NewAuditEntry {
+        let entry = kuzz_audit::NewAuditEntry {
             community_id: CommunityId::from_uuid(community_id),
-            action: buzz_audit::AuditAction::EventCreated,
+            action: kuzz_audit::AuditAction::EventCreated,
             actor_pubkey: Some(vec![0xab; 32]),
             object_id: Some(object_id.clone()),
             detail: serde_json::json!({"test": "lock-timeout-retry"}),
         };
 
-        // Mirrors buzz_audit::service::AUDIT_LOCK_NAMESPACE.
+        // Mirrors kuzz_audit::service::AUDIT_LOCK_NAMESPACE.
         let lock_key = format!("buzz_audit:{community_id}");
         let mut holder = observer.acquire().await.expect("acquire lock holder");
         sqlx::query("SELECT pg_advisory_lock(hashtextextended($1, 0))")

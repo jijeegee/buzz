@@ -136,8 +136,13 @@ enum ProductFeedbackCommand {
     },
 }
 
+fn main() {
+    kuzz_core::legacy_env::adopt_legacy_env();
+    async_main();
+}
+
 #[tokio::main]
-async fn main() {
+async fn async_main() {
     // Install the ring CryptoProvider for rustls. The workspace redis TLS
     // feature compiles both aws-lc-rs and ring in transitively, so rustls can't
     // auto-select a provider and would panic on the first rediss:// (ElastiCache)

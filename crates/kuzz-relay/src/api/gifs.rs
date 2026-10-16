@@ -435,7 +435,7 @@ mod tests {
             config,
             db,
             redis_pool,
-            None::<buzz_audit::AuditService>,
+            None::<kuzz_audit::AuditService>,
             pubsub,
             auth,
             search,

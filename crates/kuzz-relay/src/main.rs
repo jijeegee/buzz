@@ -9,7 +9,7 @@ fn log_env_filter(rust_log: Option<&str>) -> EnvFilter {
 }
 use uuid::Uuid;
 
-use buzz_audit::AuditService;
+use kuzz_audit::AuditService;
 use kuzz_auth::AuthService;
 use kuzz_core::CommunityId;
 use kuzz_db::{Db, DbConfig};
@@ -148,6 +148,7 @@ impl PartitionAuditSchedule {
 }
 
 fn main() -> anyhow::Result<()> {
+    kuzz_core::legacy_env::adopt_legacy_env();
     let (runtime, boot) = BootTracker::start_before_runtime(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()

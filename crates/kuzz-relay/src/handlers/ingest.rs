@@ -6300,7 +6300,7 @@ mod postgres_tests {
         config.redis_url = FAKE_REDIS_URL.to_string();
         config.require_relay_membership = false;
 
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth_svc = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -6583,7 +6583,7 @@ mod postgres_tests {
         config.redis_url = FAKE_REDIS_URL.to_string();
         config.require_relay_membership = false;
 
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth_svc = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(

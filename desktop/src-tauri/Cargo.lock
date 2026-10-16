@@ -1069,244 +1069,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
-name = "kuzz-agent"
-version = "0.1.0"
-dependencies = [
- "arc-swap",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "dirs",
- "fs2",
- "getrandom 0.4.3",
- "hex",
- "nix 0.31.3",
- "reqwest 0.13.4",
- "rmcp 1.8.0",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.11.0",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
- "urlencoding",
- "webbrowser",
-]
-
-[[package]]
-name = "kuzz-core"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "hex",
- "hmac 0.13.0",
- "nostr 0.44.7",
- "percent-encoding",
- "rand 0.10.2",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "thiserror 2.0.18",
- "url",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "kuzz-desktop"
-version = "0.5.26"
-dependencies = [
- "anyhow",
- "arboard",
- "atomic-write-file",
- "audioadapter-buffers",
- "axum",
- "base64 0.22.1",
- "block2",
- "kuzz-agent",
- "kuzz-core",
- "kuzz-media",
- "kuzz-persona",
- "kuzz-sdk",
- "kuzz-terminal",
- "kuzz-voice",
- "kuzz-ws-client",
- "bytes",
- "bzip2 0.6.1",
- "chrono",
- "ctrlc",
- "dirs",
- "earshot",
- "ed25519-dalek",
- "flate2",
- "futures-util",
- "getrandom 0.2.17",
- "hex",
- "image",
- "infer",
- "iroh",
- "keyring 3.6.3",
- "libc",
- "mesh-llm-client",
- "mesh-llm-events",
- "mesh-llm-host-runtime",
- "mesh-llm-node",
- "mesh-llm-sdk",
- "mesh-llm-system",
- "neteq",
- "nostr 0.44.7",
- "notify-rust",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "objc2-user-notifications",
- "opus",
- "percent-encoding",
- "plist",
- "png 0.18.1",
- "portable-pty",
- "regex",
- "reqwest 0.13.4",
- "rodio",
- "rubato",
- "rusqlite",
- "rustls",
- "security-framework 3.7.0",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.11.0",
- "sherpa-onnx",
- "strip-ansi-escapes",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-deep-link",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "tauri-utils",
- "tempfile",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "tokio-util",
- "toml 0.8.2",
- "tracing",
- "url",
- "user-idle",
- "uuid",
- "webkit2gtk",
- "window-vibrancy",
- "windows-sys 0.61.2",
- "zeroize",
- "zip 8.6.0",
-]
-
-[[package]]
-name = "kuzz-media"
-version = "0.1.0"
-dependencies = [
- "axum",
- "blurhash",
- "kuzz-core",
- "bytes",
- "chrono",
- "futures-core",
- "futures-util",
- "hex",
- "image",
- "imagesize",
- "infer",
- "mp4",
- "nostr 0.44.7",
- "quick-xml 0.38.4",
- "rust-s3",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
- "ulid",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-persona"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "kuzz-sdk"
-version = "0.1.0"
-dependencies = [
- "kuzz-core",
- "nostr 0.44.7",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-terminal"
-version = "0.1.0"
-dependencies = [
- "alacritty_terminal",
- "libc",
- "parking_lot",
- "portable-pty",
-]
-
-[[package]]
-name = "kuzz-voice"
-version = "0.1.0"
-dependencies = [
- "atomic-write-file",
- "hex",
- "ort",
- "ort-sys",
- "rand 0.10.2",
- "sentencepiece-model",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sherpa-onnx",
- "symphonia",
- "tokenizers",
-]
-
-[[package]]
-name = "kuzz-ws-client"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "nostr 0.44.7",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "by_address"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4864,6 +4626,244 @@ name = "konst_proc_macros"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e037a2e1d8d5fdbd49b16a4ea09d5d6401c1f29eca5ff29d03d3824dba16256a"
+
+[[package]]
+name = "kuzz-agent"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "dirs",
+ "fs2",
+ "getrandom 0.4.3",
+ "hex",
+ "nix 0.31.3",
+ "reqwest 0.13.4",
+ "rmcp 1.8.0",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+ "webbrowser",
+]
+
+[[package]]
+name = "kuzz-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "hmac 0.13.0",
+ "nostr 0.44.7",
+ "percent-encoding",
+ "rand 0.10.2",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "thiserror 2.0.18",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "kuzz-desktop"
+version = "0.5.26"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "atomic-write-file",
+ "audioadapter-buffers",
+ "axum",
+ "base64 0.22.1",
+ "block2",
+ "bytes",
+ "bzip2 0.6.1",
+ "chrono",
+ "ctrlc",
+ "dirs",
+ "earshot",
+ "ed25519-dalek",
+ "flate2",
+ "futures-util",
+ "getrandom 0.2.17",
+ "hex",
+ "image",
+ "infer",
+ "iroh",
+ "keyring 3.6.3",
+ "kuzz-agent",
+ "kuzz-core",
+ "kuzz-media",
+ "kuzz-persona",
+ "kuzz-sdk",
+ "kuzz-terminal",
+ "kuzz-voice",
+ "kuzz-ws-client",
+ "libc",
+ "mesh-llm-client",
+ "mesh-llm-events",
+ "mesh-llm-host-runtime",
+ "mesh-llm-node",
+ "mesh-llm-sdk",
+ "mesh-llm-system",
+ "neteq",
+ "nostr 0.44.7",
+ "notify-rust",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-user-notifications",
+ "opus",
+ "percent-encoding",
+ "plist",
+ "png 0.18.1",
+ "portable-pty",
+ "regex",
+ "reqwest 0.13.4",
+ "rodio",
+ "rubato",
+ "rusqlite",
+ "rustls",
+ "security-framework 3.7.0",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.11.0",
+ "sherpa-onnx",
+ "strip-ansi-escapes",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-deep-link",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "tauri-utils",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "tokio-util",
+ "toml 0.8.2",
+ "tracing",
+ "url",
+ "user-idle",
+ "uuid",
+ "webkit2gtk",
+ "window-vibrancy",
+ "windows-sys 0.61.2",
+ "zeroize",
+ "zip 8.6.0",
+]
+
+[[package]]
+name = "kuzz-media"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "blurhash",
+ "bytes",
+ "chrono",
+ "futures-core",
+ "futures-util",
+ "hex",
+ "image",
+ "imagesize",
+ "infer",
+ "kuzz-core",
+ "mp4",
+ "nostr 0.44.7",
+ "quick-xml 0.38.4",
+ "rust-s3",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "ulid",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-persona"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kuzz-sdk"
+version = "0.1.0"
+dependencies = [
+ "kuzz-core",
+ "nostr 0.44.7",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-terminal"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "libc",
+ "parking_lot",
+ "portable-pty",
+]
+
+[[package]]
+name = "kuzz-voice"
+version = "0.1.0"
+dependencies = [
+ "atomic-write-file",
+ "hex",
+ "ort",
+ "ort-sys",
+ "rand 0.10.2",
+ "sentencepiece-model",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sherpa-onnx",
+ "symphonia",
+ "tokenizers",
+]
+
+[[package]]
+name = "kuzz-ws-client"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "nostr 0.44.7",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "lab"

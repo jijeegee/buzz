@@ -1116,7 +1116,7 @@ mod tests {
                 .await
                 .expect("pubsub manager"),
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -1163,7 +1163,7 @@ mod tests {
                 .await
                 .expect("pubsub manager"),
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -2147,7 +2147,7 @@ mod tests {
                 .await
                 .expect("pubsub manager"),
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -2536,7 +2536,7 @@ mod tests {
                     .expect("pubsub manager"),
             );
             let auth = kuzz_auth::AuthService::new(config.auth.clone());
-            let audit = buzz_audit::AuditService::new(pool.clone());
+            let audit = kuzz_audit::AuditService::new(pool.clone());
             let search = kuzz_search::SearchService::new(pool.clone());
             let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
                 db.clone(),
@@ -3036,7 +3036,7 @@ mod tests {
                 .await
                 .expect("pubsub manager"),
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -3137,7 +3137,7 @@ mod tests {
                     .await
                     .expect("pubsub manager"),
             );
-            let audit = buzz_audit::AuditService::new(pool.clone());
+            let audit = kuzz_audit::AuditService::new(pool.clone());
             let auth = kuzz_auth::AuthService::new(config.auth.clone());
             let search = kuzz_search::SearchService::new(pool.clone());
             let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -3538,7 +3538,7 @@ mod tests {
                 .await
                 .expect("pubsub manager"),
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(

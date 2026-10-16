@@ -945,707 +945,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
 
 [[package]]
-name = "kuzz-acp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "kuzz-core",
- "kuzz-persona",
- "kuzz-sdk",
- "kuzz-token-broker",
- "chrono",
- "clap",
- "evalexpr",
- "futures-util",
- "git-credential-kuzz",
- "git-credential-nostr",
- "git-sign-nostr",
- "hex",
- "httparse",
- "nix 0.31.3",
- "nostr 0.44.7",
- "reqwest 0.13.4",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "tokio-util",
- "toml",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "kuzz-admin"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "kuzz-audit",
- "kuzz-auth",
- "kuzz-core",
- "kuzz-db",
- "kuzz-deletion",
- "kuzz-media",
- "kuzz-pubsub",
- "kuzz-search",
- "kuzz-workflow",
- "clap",
- "deadpool-redis",
- "hex",
- "nostr 0.44.7",
- "rustls",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-agent"
-version = "0.1.0"
-dependencies = [
- "arc-swap",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "dirs",
- "fs2",
- "getrandom 0.4.3",
- "hex",
- "nix 0.31.3",
- "rcgen",
- "reqwest 0.13.4",
- "rmcp 1.8.0",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-rustls",
- "tracing",
- "tracing-subscriber",
- "url",
- "urlencoding",
- "webbrowser",
-]
-
-[[package]]
-name = "kuzz-audit"
-version = "0.1.0"
-dependencies = [
- "kuzz-core",
- "kuzz-datastore-tracing",
- "chrono",
- "futures-util",
- "hex",
- "metrics",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-auth"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "base64 0.22.1",
- "kuzz-core",
- "chrono",
- "dashmap",
- "futures-util",
- "hex",
- "jsonwebtoken",
- "nostr 0.44.7",
- "rand 0.10.1",
- "reqwest 0.13.4",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "url",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "kuzz-backend-kubernetes"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "hex",
- "http",
- "http-body-util",
- "k8s-openapi",
- "kube",
- "nostr 0.44.7",
- "rand 0.10.1",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tokio",
- "tower 0.5.3",
-]
-
-[[package]]
-name = "kuzz-cli"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "kuzz-core",
- "kuzz-persona",
- "kuzz-sdk",
- "kuzz-token-broker",
- "kuzz-ws-client",
- "bytes",
- "chrono",
- "clap",
- "diffy",
- "dirs",
- "hex",
- "infer",
- "keyring",
- "nostr 0.44.7",
- "rand 0.10.1",
- "reqwest 0.13.4",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "url",
- "uuid",
- "webbrowser",
- "zeroize",
-]
-
-[[package]]
-name = "kuzz-conformance"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-core"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "hex",
- "hmac 0.13.0",
- "nostr 0.44.7",
- "percent-encoding",
- "rand 0.10.1",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "thiserror 2.0.18",
- "url",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "kuzz-datastore-tracing"
-version = "0.1.0"
-dependencies = [
- "metrics",
- "metrics-util",
- "opentelemetry",
- "opentelemetry_sdk",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
- "tokio",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "kuzz-db"
-version = "0.1.0"
-dependencies = [
- "kuzz-core",
- "kuzz-datastore-tracing",
- "chrono",
- "futures-util",
- "hex",
- "metrics",
- "metrics-util",
- "nostr 0.44.7",
- "rand 0.10.1",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-deletion"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "kuzz-core",
- "kuzz-db",
- "kuzz-media",
- "chrono",
- "clap",
- "deadpool-redis",
- "hex",
- "redis",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-dev-mcp"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "kuzz-cli",
- "kuzz-core",
- "ignore",
- "image",
- "nix 0.31.3",
- "nostr 0.44.7",
- "reqwest 0.13.4",
- "rmcp 1.8.0",
- "rustls",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "similar",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "kuzz-feature-flags"
-version = "0.1.0"
-dependencies = [
- "kuzz-core",
- "http",
- "launchdarkly-server-sdk",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "kuzz-media"
-version = "0.1.0"
-dependencies = [
- "axum",
- "blurhash",
- "kuzz-core",
- "bytes",
- "chrono",
- "futures-core",
- "futures-util",
- "hex",
- "image",
- "imagesize",
- "infer",
- "mp4",
- "nostr 0.44.7",
- "quick-xml 0.38.4",
- "rust-s3",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
- "ulid",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-mesh-smoke"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "kuzz-test-client",
- "ed25519-dalek",
- "hex",
- "mesh-llm-host-runtime",
- "mesh-llm-sdk",
- "nostr 0.44.7",
- "reqwest 0.13.4",
- "serde_json",
- "sha2 0.11.0",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-pair-relay"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "http-body-util",
- "hyper",
- "hyper-util",
- "parking_lot",
- "secp256k1 0.31.1",
- "serde_json",
- "sha2 0.11.0",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "tokio-util",
-]
-
-[[package]]
-name = "kuzz-pairing-cli"
-version = "0.1.0"
-dependencies = [
- "kuzz-core",
- "clap",
- "futures-util",
- "hex",
- "nostr 0.44.7",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "url",
- "zeroize",
-]
-
-[[package]]
-name = "kuzz-persona"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "kuzz-pubsub"
-version = "0.1.0"
-dependencies = [
- "kuzz-auth",
- "kuzz-core",
- "chrono",
- "deadpool-redis",
- "futures-util",
- "hex",
- "nostr 0.44.7",
- "redis",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-push-gateway"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "appattest",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "byteorder",
- "chrono",
- "getrandom 0.4.3",
- "hex",
- "metrics",
- "metrics-exporter-prometheus",
- "minicbor",
- "nostr 0.44.7",
- "proptest",
- "rand 0.10.1",
- "reqwest 0.13.4",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tower 0.5.3",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-relay"
-version = "0.2.1"
-dependencies = [
- "anyhow",
- "async-compression",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "kuzz-audit",
- "kuzz-auth",
- "kuzz-conformance",
- "kuzz-core",
- "kuzz-datastore-tracing",
- "kuzz-db",
- "kuzz-deletion",
- "kuzz-media",
- "kuzz-pubsub",
- "kuzz-relay-mesh",
- "kuzz-sdk",
- "kuzz-search",
- "kuzz-workflow",
- "bytes",
- "chrono",
- "dashmap",
- "deadpool-redis",
- "flate2",
- "futures",
- "futures-util",
- "hex",
- "hmac 0.13.0",
- "http-body",
- "http-body-util",
- "infer",
- "jsonwebtoken",
- "metrics",
- "metrics-exporter-prometheus",
- "metrics-util",
- "moka",
- "nostr 0.44.7",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "postcard",
- "pulldown-cmark",
- "rand 0.10.1",
- "redis",
- "reqwest 0.13.4",
- "rust-s3",
- "rustls",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "serde_yaml",
- "sha2 0.11.0",
- "sqlx",
- "subtle",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "tokio-util",
- "tower 0.5.3",
- "tower-http",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "kuzz-relay-mesh"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "deadpool-redis",
- "futures-util",
- "hex",
- "hmac 0.13.0",
- "iroh",
- "nostr 0.44.7",
- "postcard",
- "proptest",
- "redis",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-sdk"
-version = "0.1.0"
-dependencies = [
- "kuzz-core",
- "nostr 0.44.7",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-search"
-version = "0.1.0"
-dependencies = [
- "kuzz-core",
- "kuzz-datastore-tracing",
- "kuzz-db",
- "metrics",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-test-client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "kuzz-core",
- "kuzz-media",
- "kuzz-sdk",
- "kuzz-ws-client",
- "chrono",
- "futures-util",
- "hex",
- "nostr 0.44.7",
- "rand 0.10.1",
- "reqwest 0.13.4",
- "rust-s3",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-token-broker"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "zeroize",
-]
-
-[[package]]
-name = "kuzz-voice"
-version = "0.1.0"
-dependencies = [
- "atomic-write-file",
- "hex",
- "ort",
- "ort-sys",
- "rand 0.10.1",
- "sentencepiece-model",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sherpa-onnx",
- "symphonia",
- "tempfile",
- "tokenizers",
-]
-
-[[package]]
-name = "kuzz-workflow"
-version = "0.1.0"
-dependencies = [
- "kuzz-core",
- "kuzz-db",
- "kuzz-deletion",
- "chrono",
- "cron",
- "dashmap",
- "evalexpr",
- "hex",
- "moka",
- "nostr 0.44.7",
- "reqwest 0.13.4",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kuzz-ws-client"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "nostr 0.44.7",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite 0.29.0",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "by_address"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2154,8 +1453,8 @@ name = "countdown-bot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kuzz-sdk",
  "futures-util",
+ "kuzz-sdk",
  "nostr 0.44.7",
  "serde_json",
  "tokio",
@@ -4962,6 +4261,707 @@ dependencies = [
  "serde-value",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kuzz-acp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "evalexpr",
+ "futures-util",
+ "git-credential-kuzz",
+ "git-credential-nostr",
+ "git-sign-nostr",
+ "hex",
+ "httparse",
+ "kuzz-core",
+ "kuzz-persona",
+ "kuzz-sdk",
+ "kuzz-token-broker",
+ "nix 0.31.3",
+ "nostr 0.44.7",
+ "reqwest 0.13.4",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "kuzz-admin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "deadpool-redis",
+ "hex",
+ "kuzz-audit",
+ "kuzz-auth",
+ "kuzz-core",
+ "kuzz-db",
+ "kuzz-deletion",
+ "kuzz-media",
+ "kuzz-pubsub",
+ "kuzz-search",
+ "kuzz-workflow",
+ "nostr 0.44.7",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-agent"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "dirs",
+ "fs2",
+ "getrandom 0.4.3",
+ "hex",
+ "nix 0.31.3",
+ "rcgen",
+ "reqwest 0.13.4",
+ "rmcp 1.8.0",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+ "webbrowser",
+]
+
+[[package]]
+name = "kuzz-audit"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "hex",
+ "kuzz-core",
+ "kuzz-datastore-tracing",
+ "metrics",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-auth"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "base64 0.22.1",
+ "chrono",
+ "dashmap",
+ "futures-util",
+ "hex",
+ "jsonwebtoken",
+ "kuzz-core",
+ "nostr 0.44.7",
+ "rand 0.10.1",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "kuzz-backend-kubernetes"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hex",
+ "http",
+ "http-body-util",
+ "k8s-openapi",
+ "kube",
+ "nostr 0.44.7",
+ "rand 0.10.1",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tower 0.5.3",
+]
+
+[[package]]
+name = "kuzz-cli"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "clap",
+ "diffy",
+ "dirs",
+ "hex",
+ "infer",
+ "keyring",
+ "kuzz-core",
+ "kuzz-persona",
+ "kuzz-sdk",
+ "kuzz-token-broker",
+ "kuzz-ws-client",
+ "nostr 0.44.7",
+ "rand 0.10.1",
+ "reqwest 0.13.4",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "url",
+ "uuid",
+ "webbrowser",
+ "zeroize",
+]
+
+[[package]]
+name = "kuzz-conformance"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "hmac 0.13.0",
+ "nostr 0.44.7",
+ "percent-encoding",
+ "rand 0.10.1",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "thiserror 2.0.18",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "kuzz-datastore-tracing"
+version = "0.1.0"
+dependencies = [
+ "metrics",
+ "metrics-util",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "kuzz-db"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "hex",
+ "kuzz-core",
+ "kuzz-datastore-tracing",
+ "metrics",
+ "metrics-util",
+ "nostr 0.44.7",
+ "rand 0.10.1",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-deletion"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "deadpool-redis",
+ "hex",
+ "kuzz-core",
+ "kuzz-db",
+ "kuzz-media",
+ "redis",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-dev-mcp"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "ignore",
+ "image",
+ "kuzz-cli",
+ "kuzz-core",
+ "nix 0.31.3",
+ "nostr 0.44.7",
+ "reqwest 0.13.4",
+ "rmcp 1.8.0",
+ "rustls",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "similar",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "kuzz-feature-flags"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "kuzz-core",
+ "launchdarkly-server-sdk",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "kuzz-media"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "blurhash",
+ "bytes",
+ "chrono",
+ "futures-core",
+ "futures-util",
+ "hex",
+ "image",
+ "imagesize",
+ "infer",
+ "kuzz-core",
+ "mp4",
+ "nostr 0.44.7",
+ "quick-xml 0.38.4",
+ "rust-s3",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "ulid",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-mesh-smoke"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ed25519-dalek",
+ "hex",
+ "kuzz-test-client",
+ "mesh-llm-host-runtime",
+ "mesh-llm-sdk",
+ "nostr 0.44.7",
+ "reqwest 0.13.4",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-pair-relay"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "parking_lot",
+ "secp256k1 0.31.1",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "tokio-util",
+]
+
+[[package]]
+name = "kuzz-pairing-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "futures-util",
+ "hex",
+ "kuzz-core",
+ "nostr 0.44.7",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "url",
+ "zeroize",
+]
+
+[[package]]
+name = "kuzz-persona"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kuzz-pubsub"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "deadpool-redis",
+ "futures-util",
+ "hex",
+ "kuzz-auth",
+ "kuzz-core",
+ "nostr 0.44.7",
+ "redis",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-push-gateway"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "appattest",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "byteorder",
+ "chrono",
+ "getrandom 0.4.3",
+ "hex",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "minicbor",
+ "nostr 0.44.7",
+ "proptest",
+ "rand 0.10.1",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower 0.5.3",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-relay"
+version = "0.2.1"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "deadpool-redis",
+ "flate2",
+ "futures",
+ "futures-util",
+ "hex",
+ "hmac 0.13.0",
+ "http-body",
+ "http-body-util",
+ "infer",
+ "jsonwebtoken",
+ "kuzz-audit",
+ "kuzz-auth",
+ "kuzz-conformance",
+ "kuzz-core",
+ "kuzz-datastore-tracing",
+ "kuzz-db",
+ "kuzz-deletion",
+ "kuzz-media",
+ "kuzz-pubsub",
+ "kuzz-relay-mesh",
+ "kuzz-sdk",
+ "kuzz-search",
+ "kuzz-workflow",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "metrics-util",
+ "moka",
+ "nostr 0.44.7",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "postcard",
+ "pulldown-cmark",
+ "rand 0.10.1",
+ "redis",
+ "reqwest 0.13.4",
+ "rust-s3",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "serde_yaml",
+ "sha2 0.11.0",
+ "sqlx",
+ "subtle",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "tokio-util",
+ "tower 0.5.3",
+ "tower-http",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "kuzz-relay-mesh"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "deadpool-redis",
+ "futures-util",
+ "hex",
+ "hmac 0.13.0",
+ "iroh",
+ "nostr 0.44.7",
+ "postcard",
+ "proptest",
+ "redis",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-sdk"
+version = "0.1.0"
+dependencies = [
+ "kuzz-core",
+ "nostr 0.44.7",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-search"
+version = "0.1.0"
+dependencies = [
+ "kuzz-core",
+ "kuzz-datastore-tracing",
+ "kuzz-db",
+ "metrics",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-test-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "futures-util",
+ "hex",
+ "kuzz-core",
+ "kuzz-media",
+ "kuzz-sdk",
+ "kuzz-ws-client",
+ "nostr 0.44.7",
+ "rand 0.10.1",
+ "reqwest 0.13.4",
+ "rust-s3",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-token-broker"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
+name = "kuzz-voice"
+version = "0.1.0"
+dependencies = [
+ "atomic-write-file",
+ "hex",
+ "ort",
+ "ort-sys",
+ "rand 0.10.1",
+ "sentencepiece-model",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sherpa-onnx",
+ "symphonia",
+ "tempfile",
+ "tokenizers",
+]
+
+[[package]]
+name = "kuzz-workflow"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cron",
+ "dashmap",
+ "evalexpr",
+ "hex",
+ "kuzz-core",
+ "kuzz-db",
+ "kuzz-deletion",
+ "moka",
+ "nostr 0.44.7",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "kuzz-ws-client"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "nostr 0.44.7",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "tracing",
+ "url",
 ]
 
 [[package]]

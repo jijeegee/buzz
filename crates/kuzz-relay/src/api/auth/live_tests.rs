@@ -124,7 +124,7 @@ async fn instance_configured(
             .await
             .expect("pubsub"),
     );
-    let audit = buzz_audit::AuditService::new(pool.clone());
+    let audit = kuzz_audit::AuditService::new(pool.clone());
     let auth_service = kuzz_auth::AuthService::new(config.auth.clone());
     let search = kuzz_search::SearchService::new(pool.clone());
     let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(

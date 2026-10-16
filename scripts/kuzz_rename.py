@@ -85,7 +85,8 @@ def build_protector(tokens):
     parts = list(KEEP_EXTERNAL)
     # Longest first so that buzz-channel-x wins over buzz-channel.
     for tok in sorted(set(tokens), key=len, reverse=True):
-        parts.append(r"(?<![\w-])" + re.escape(tok) + r"(?![\w-])")
+        tail = r"(?![\w:-])" if tok.endswith(":") else r"(?![\w-])"
+        parts.append(r"(?<![\w-])" + re.escape(tok) + tail)
     return re.compile("|".join(parts))
 
 

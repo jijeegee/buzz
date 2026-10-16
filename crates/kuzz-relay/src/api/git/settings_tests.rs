@@ -75,7 +75,7 @@ mod postgres_tests {
                 .await
                 .ok()?,
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -251,7 +251,7 @@ mod postgres_tests {
                 .await
                 .ok()?,
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -352,7 +352,7 @@ mod postgres_tests {
                 .await
                 .ok()?,
         );
-        let audit = buzz_audit::AuditService::new(pool.clone());
+        let audit = kuzz_audit::AuditService::new(pool.clone());
         let auth = kuzz_auth::AuthService::new(config.auth.clone());
         let search = kuzz_search::SearchService::new(pool.clone());
         let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -1198,7 +1198,7 @@ mod external_infra {
                     .await
                     .unwrap(),
             );
-            let audit = buzz_audit::AuditService::new(pool.clone());
+            let audit = kuzz_audit::AuditService::new(pool.clone());
             let auth = kuzz_auth::AuthService::new(config.auth.clone());
             let search = kuzz_search::SearchService::new(pool.clone());
             let workflow = Arc::new(kuzz_workflow::WorkflowEngine::new(

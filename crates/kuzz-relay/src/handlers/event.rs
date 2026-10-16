@@ -584,9 +584,9 @@ async fn enqueue_event_created_audit(
     // DB is genuinely overloaded and the relay should slow down rather than
     // accumulate unbounded in-memory state. DB write failures in the worker are
     // logged but not retried (same as the previous per-event tokio::spawn).
-    let audit_entry = buzz_audit::NewAuditEntry {
+    let audit_entry = kuzz_audit::NewAuditEntry {
         community_id: tenant.community(),
-        action: buzz_audit::AuditAction::EventCreated,
+        action: kuzz_audit::AuditAction::EventCreated,
         // Record the *actor* the caller resolved (authenticated principal for
         // ingest, triggering user for workflow posts), not `stored_event.event
         // .pubkey`. For relay-signed events (workflow sink, side-effect emits)
@@ -2506,14 +2506,14 @@ mod tests {
         /// chain and nothing else. This is the conformance `audit_log` row's
         /// "one chain per community" obligation proven through the *relay* path
         /// (`dispatch_persistent_event`), not just the direct `AuditService::log`
-        /// call that `buzz_audit::service::tests::chains_are_independent_per_community`
+        /// call that `kuzz_audit::service::tests::chains_are_independent_per_community`
         /// covers — it pins that the host→`TenantContext`→chain wiring keeps
         /// tenants isolated end-to-end. No WS-AUTH in the loop, so it is not
         /// blocked on the NIP-42 work: it drives the dispatch fn directly with
         /// two explicit tenants.
         #[tokio::test]
         async fn audit_chain_is_isolated_per_tenant_through_relay_ingest() {
-            use buzz_audit::AuditService;
+            use kuzz_audit::AuditService;
             use kuzz_core::event::StoredEvent;
             use kuzz_core::tenant::{CommunityId, TenantContext};
 
@@ -2681,7 +2681,7 @@ mod tests {
                     .await
                     .expect("pubsub manager"),
             );
-            let audit = buzz_audit::AuditService::new(pool.clone());
+            let audit = kuzz_audit::AuditService::new(pool.clone());
             let auth = kuzz_auth::AuthService::new(config.auth.clone());
             let search = kuzz_search::SearchService::new(pool.clone());
             let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
@@ -2734,7 +2734,7 @@ mod tests {
                     .await
                     .ok()?,
             );
-            let audit = buzz_audit::AuditService::new(pool.clone());
+            let audit = kuzz_audit::AuditService::new(pool.clone());
             let auth = kuzz_auth::AuthService::new(config.auth.clone());
             let search = kuzz_search::SearchService::new(pool.clone());
             let workflow_engine = Arc::new(kuzz_workflow::WorkflowEngine::new(
