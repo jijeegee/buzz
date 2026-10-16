@@ -1,40 +1,40 @@
 [workspace]
 members = [
-    "crates/buzz-relay",
-    "crates/buzz-core",
+    "crates/kuzz-relay",
+    "crates/kuzz-core",
     "crates/ifc-core",
-    "crates/buzz-conformance",
-    "crates/buzz-push-gateway",
-    "crates/buzz-db",
-    "crates/buzz-pubsub",
-    "crates/buzz-auth",
-    "crates/buzz-search",
-    "crates/buzz-audit",
-    "crates/buzz-acp",
-    "crates/buzz-agent",
+    "crates/kuzz-conformance",
+    "crates/kuzz-push-gateway",
+    "crates/kuzz-db",
+    "crates/kuzz-pubsub",
+    "crates/kuzz-auth",
+    "crates/kuzz-search",
+    "crates/kuzz-audit",
+    "crates/kuzz-acp",
+    "crates/kuzz-agent",
     "crates/sprig",
-    "crates/buzz-test-client",
-    "crates/buzz-ws-client",
-    "crates/buzz-admin",
-    "crates/buzz-deletion",
-    "crates/buzz-feature-flags",
-    "crates/buzz-workflow",
-    "crates/buzz-media",
-    "crates/buzz-cli",
-    "crates/buzz-pairing-cli",
-    "crates/buzz-sdk",
-    "crates/buzz-token-broker",
-    "crates/git-credential-buzz",
-    "crates/buzz-persona",
+    "crates/kuzz-test-client",
+    "crates/kuzz-ws-client",
+    "crates/kuzz-admin",
+    "crates/kuzz-deletion",
+    "crates/kuzz-feature-flags",
+    "crates/kuzz-workflow",
+    "crates/kuzz-media",
+    "crates/kuzz-cli",
+    "crates/kuzz-pairing-cli",
+    "crates/kuzz-sdk",
+    "crates/kuzz-token-broker",
+    "crates/git-credential-kuzz",
+    "crates/kuzz-persona",
     "crates/git-credential-nostr",
     "crates/git-sign-nostr",
-    "crates/buzz-pair-relay",
-    "crates/buzz-relay-mesh",
-    "crates/buzz-mesh-smoke",
-    "crates/buzz-dev-mcp",
-    "crates/buzz-voice",
-    "crates/buzz-backend-kubernetes",
-    "crates/buzz-datastore-tracing",
+    "crates/kuzz-pair-relay",
+    "crates/kuzz-relay-mesh",
+    "crates/kuzz-mesh-smoke",
+    "crates/kuzz-dev-mcp",
+    "crates/kuzz-voice",
+    "crates/kuzz-backend-kubernetes",
+    "crates/kuzz-datastore-tracing",
     "examples/countdown-bot",
 ]
 exclude = ["desktop/src-tauri"]
@@ -66,9 +66,9 @@ sqlx = { version = "0.9", features = [
 redis        = { version = "1.0", features = ["tokio-comp", "connection-manager", "tokio-rustls-comp"] }
 deadpool-redis = { version = "0.23", features = ["rt_tokio_1"] }
 
-# Kubernetes (buzz-backend-kubernetes provider). No `ring` feature here: the
+# Kubernetes (kuzz-backend-kubernetes provider). No `ring` feature here: the
 # process-level CryptoProvider is installed explicitly at startup, matching
-# buzz-cli/buzz-acp/buzz-admin/buzz-relay/buzz-dev-mcp — see the comment on the
+# kuzz-cli/kuzz-acp/kuzz-admin/kuzz-relay/kuzz-dev-mcp — see the comment on the
 # crate's own rustls dependency.
 kube = { version = "2.0", default-features = false, features = ["client", "rustls-tls"] }
 k8s-openapi = { version = "0.26", features = ["v1_31"] }
@@ -80,7 +80,7 @@ nostr = { version = "0.44", features = ["nip44", "nip98"] }
 serde       = { version = "1", features = ["derive"] }
 postcard    = { version = "1", default-features = false, features = ["use-std"] }
 
-# Inter-relay mesh transport (buzz-relay-mesh)
+# Inter-relay mesh transport (kuzz-relay-mesh)
 iroh = { version = "1.0.0-rc.0", default-features = false, features = ["tls-ring"] }
 serde_json  = { version = "1", features = ["raw_value"] }
 serde_yaml  = "0.9"
@@ -136,27 +136,27 @@ url = "2"
 # Property-based testing (dev-only)
 proptest = "1"
 
-# MCP SDK (used by buzz-dev-mcp and buzz-agent)
+# MCP SDK (used by kuzz-dev-mcp and kuzz-agent)
 rmcp = { version = "1.1.0", features = ["server", "transport-io", "macros"] }
 schemars = { version = "1", default-features = false }
 
 # Internal crates
-buzz-core = { path = "crates/buzz-core" }
-buzz-conformance = { path = "crates/buzz-conformance" }
-buzz-db = { path = "crates/buzz-db" }
-buzz-deletion = { path = "crates/buzz-deletion" }
-buzz-feature-flags = { path = "crates/buzz-feature-flags" }
-buzz-auth = { path = "crates/buzz-auth" }
-buzz-pubsub = { path = "crates/buzz-pubsub" }
-buzz-search = { path = "crates/buzz-search" }
-buzz-audit = { path = "crates/buzz-audit" }
-buzz-workflow = { path = "crates/buzz-workflow" }
-buzz-media = { path = "crates/buzz-media" }
-buzz-sdk = { path = "crates/buzz-sdk" }
-buzz-ws-client = { path = "crates/buzz-ws-client" }
-buzz-token-broker = { path = "crates/buzz-token-broker" }
-buzz-relay-mesh = { path = "crates/buzz-relay-mesh" }
-buzz-datastore-tracing = { path = "crates/buzz-datastore-tracing" }
+kuzz-core = { path = "crates/kuzz-core" }
+kuzz-conformance = { path = "crates/kuzz-conformance" }
+kuzz-db = { path = "crates/kuzz-db" }
+kuzz-deletion = { path = "crates/kuzz-deletion" }
+kuzz-feature-flags = { path = "crates/kuzz-feature-flags" }
+kuzz-auth = { path = "crates/kuzz-auth" }
+kuzz-pubsub = { path = "crates/kuzz-pubsub" }
+kuzz-search = { path = "crates/kuzz-search" }
+kuzz-audit = { path = "crates/kuzz-audit" }
+kuzz-workflow = { path = "crates/kuzz-workflow" }
+kuzz-media = { path = "crates/kuzz-media" }
+kuzz-sdk = { path = "crates/kuzz-sdk" }
+kuzz-ws-client = { path = "crates/kuzz-ws-client" }
+kuzz-token-broker = { path = "crates/kuzz-token-broker" }
+kuzz-relay-mesh = { path = "crates/kuzz-relay-mesh" }
+kuzz-datastore-tracing = { path = "crates/kuzz-datastore-tracing" }
 
 # CI profile — builds the relay for desktop e2e. Dependencies keep full
 # release optimization (warm from main's cache; they carry the runtime hot
@@ -195,6 +195,6 @@ strip = true
 aws-creds = { git = "https://github.com/tlongwell-block/rust-s3", rev = "c9fce3620dd434c1f810101d672cf384268dbb0f" }
 # MeshLLM 0.76 uses rusqlite 0.40 / libsqlite3-sys 0.38. SQLx 0.9.0's
 # optional SQLite driver still caps libsqlite3-sys below 0.38, which Cargo
-# resolves even though Buzz only enables PostgreSQL. Pin the merged upstream
+# resolves even though Kuzz only enables PostgreSQL. Pin the merged upstream
 # compatibility fix until it is released: https://github.com/transact-rs/sqlx/pull/4402
 sqlx-sqlite = { git = "https://github.com/launchbadge/sqlx", rev = "94aafe3a68884d923b0798a767c8d7f6cfda89d2" }

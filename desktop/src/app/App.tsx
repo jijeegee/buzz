@@ -78,7 +78,7 @@ import { refreshRostersOnMembershipChange } from "@/features/channels/rosterFres
 import { seedProjectSnapshot } from "@/features/projects/projectSnapshot";
 import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
 import { OwnerDevicesProvider } from "@/shared/api/OwnerDevicesContext";
-import { createBuzzQueryClient } from "@/shared/api/queryClient";
+import { createKuzzQueryClient } from "@/shared/api/queryClient";
 import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { isSharedIdentity as isSharedIdentityCmd } from "@/shared/api/tauri";
@@ -89,9 +89,9 @@ import {
   listenForDeepLinks,
 } from "@/shared/deep-link";
 import { cn } from "@/shared/lib/cn";
-import { BuzzMark } from "@/shared/ui/buzz-logo/BuzzMark";
-import { FlappingBee } from "@/shared/ui/buzz-logo/FlappingBee";
-import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
+import { KuzzMark } from "@/shared/ui/kuzz-logo/KuzzMark";
+import { FlappingBee } from "@/shared/ui/kuzz-logo/FlappingBee";
+import { FuzzyLogo } from "@/shared/ui/kuzz-logo/FuzzyLogo";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
 const LOADING_TEXT = "Setting up your community...";
@@ -118,13 +118,13 @@ function useInitialRenderReady() {
 }
 
 // E2E runs skip the hold (it would slow every spec's boot and block pointer
-// actionability); a spec can opt back in via __BUZZ_E2E__.bootSplashHoldMs.
+// actionability); a spec can opt back in via __KUZZ_E2E__.bootSplashHoldMs.
 function bootSplashHoldMs(): number {
   const e2e = (
     window as Window & {
-      __BUZZ_E2E__?: { bootSplashHoldMs?: number };
+      __KUZZ_E2E__?: { bootSplashHoldMs?: number };
     }
-  ).__BUZZ_E2E__;
+  ).__KUZZ_E2E__;
   if (e2e) {
     return e2e.bootSplashHoldMs ?? 0;
   }
@@ -155,7 +155,7 @@ function useBootSplashHold(): BootSplashPhase {
   return phase;
 }
 
-// Animated Buzz mark for the loading gates. The static BuzzMark renders in
+// Animated Kuzz mark for the loading gates. The static KuzzMark renders in
 // normal flow and sizes the box — it's plain SVG (no JS/SMIL), so it paints on
 // the very first frame even before scripting starts, avoiding a blank flash on
 // hard reload. The animated FuzzyLogo is layered on top and takes over once it
@@ -171,7 +171,7 @@ function BeeLoader({
 }) {
   return (
     <div className={cn("relative", tintClassName, className)}>
-      <BuzzMark className="block h-auto w-full" />
+      <KuzzMark className="block h-auto w-full" />
       <FuzzyLogo
         ariaLabel={ariaLabel}
         className="absolute inset-0 h-full! w-full! [&>svg]:h-full [&>svg]:w-full [&>svg]:max-w-full"
@@ -184,15 +184,15 @@ function BeeLoader({
 }
 
 // Cold boot gate: the theme-adaptive grainient background with a single
-// centered Buzz bee flying over it — the same static mark as before, now with
-// its wings flapping (ported from the Buzz website's wing-flap). Replaces the
+// centered Kuzz bee flying over it — the same static mark as before, now with
+// its wings flapping (ported from the Kuzz website's wing-flap). Replaces the
 // old "Setting up your community" text, which stays as an sr-only caption.
 function AppLoadingGate() {
   // After an account switch the restart says where it is going.
   const caption = accountSwitchCaption();
   return (
     <div
-      className="buzz-setup-loading-shell flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-10"
+      className="kuzz-setup-loading-shell flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-10"
       data-testid="app-loading-gate"
       role="status"
     >
@@ -259,7 +259,7 @@ function CommunityQueryProvider({
   // redundant read on a discarded client. The provider is keyed on the
   // community, so one client maps to one {pubkey, relayUrl} scope.
   const [queryClient] = useState(() => {
-    const client = createBuzzQueryClient();
+    const client = createKuzzQueryClient();
     if (pubkey && relayUrl) {
       seedProjectSnapshot(client, { pubkey, relayUrl });
       void hydrateChannelHeads(client, { pubkey, relayUrl });
@@ -272,17 +272,17 @@ function CommunityQueryProvider({
 
   useEffect(() => {
     const e2eWindow = window as Window & {
-      __BUZZ_E2E__?: unknown;
-      __BUZZ_E2E_QUERY_CLIENT__?: typeof queryClient;
+      __KUZZ_E2E__?: unknown;
+      __KUZZ_E2E_QUERY_CLIENT__?: typeof queryClient;
     };
-    if (!e2eWindow.__BUZZ_E2E__) {
+    if (!e2eWindow.__KUZZ_E2E__) {
       return;
     }
 
-    e2eWindow.__BUZZ_E2E_QUERY_CLIENT__ = queryClient;
+    e2eWindow.__KUZZ_E2E_QUERY_CLIENT__ = queryClient;
     return () => {
-      if (e2eWindow.__BUZZ_E2E_QUERY_CLIENT__ === queryClient) {
-        delete e2eWindow.__BUZZ_E2E_QUERY_CLIENT__;
+      if (e2eWindow.__KUZZ_E2E_QUERY_CLIENT__ === queryClient) {
+        delete e2eWindow.__KUZZ_E2E_QUERY_CLIENT__;
       }
     };
   }, [queryClient]);
@@ -959,7 +959,7 @@ export function App() {
   useCloseWindowShortcut();
   useInitialRenderReady();
   const [sharedIdentity, setSharedIdentity] = useState<boolean | null>(null);
-  const [queryClient] = useState(createBuzzQueryClient);
+  const [queryClient] = useState(createKuzzQueryClient);
   // Everything below reads the built-in server synchronously (and startup
   // pins the stored communities to it), so wait for it like shared identity.
   const builtInServer = useBuiltInServerState();

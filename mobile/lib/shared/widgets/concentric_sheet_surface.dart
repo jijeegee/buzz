@@ -48,7 +48,7 @@ class ConcentricSheetSurface extends HookWidget {
           ?.providesSurface ??
       false;
 
-  static const _surfaceChannel = MethodChannel('buzz/concentric_sheet_surface');
+  static const _surfaceChannel = MethodChannel('kuzz/concentric_sheet_surface');
   static const _nativeContentClipRadius = Radii.dialog * 2;
 
   BorderRadius _borderRadius(double radius) => switch (corners) {
@@ -185,11 +185,11 @@ class ConcentricSheetSurface extends HookWidget {
               child: ExcludeSemantics(
                 child: IgnorePointer(
                   child: UiKitView(
-                    viewType: 'buzz/concentric_sheet_surface',
+                    viewType: 'kuzz/concentric_sheet_surface',
                     hitTestBehavior: PlatformViewHitTestBehavior.transparent,
                     onPlatformViewCreated: (viewId) {
                       nativeSurfaceChannel.value = MethodChannel(
-                        'buzz/concentric_sheet_surface/$viewId',
+                        'kuzz/concentric_sheet_surface/$viewId',
                       );
                     },
                     creationParams: <String, Object>{

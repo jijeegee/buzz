@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:buzz/shared/auth/token/mobile_callback.dart';
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/auth/token/mobile_callback.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,11 +16,11 @@ void main() {
 
   for (final address in [
     'other.app://auth/cb',
-    'xyz.block.buzz://other/cb',
-    'xyz.block.buzz://auth/other',
-    'xyz.block.buzz://user@auth/cb',
-    'xyz.block.buzz://auth:123/cb',
-    'xyz.block.buzz://auth/cb#fragment',
+    'app.kuzz://other/cb',
+    'app.kuzz://auth/other',
+    'app.kuzz://user@auth/cb',
+    'app.kuzz://auth:123/cb',
+    'app.kuzz://auth/cb#fragment',
   ]) {
     test(
       'rejects callback address $address before exchanging a code',
@@ -83,14 +83,14 @@ void main() {
     'installed Android identity selects the callback in the real login',
     () async {
       PackageInfo.setMockInitialValues(
-        appName: 'Buzz test',
-        packageName: 'xyz.block.buzz.mobile.parity_dev',
+        appName: 'Kuzz test',
+        packageName: 'app.kuzz.mobile.parity_dev',
         version: '1',
         buildNumber: '1',
         buildSignature: '',
       );
       final scheme = await const FlutterWebAuth2Launcher().callbackScheme();
-      expect(scheme, 'xyz.block.buzz.parity-dev');
+      expect(scheme, 'app.kuzz.parity-dev');
       final h = Harness();
       addTearDown(h.controller.dispose);
       h.launcher.installedScheme = scheme;
@@ -109,13 +109,13 @@ void main() {
     'production scheme stays stable and invalid app identities fail closed',
     () {
       expect(
-        callbackSchemeForAndroidPackage('xyz.block.buzz.mobile'),
-        buzzMobileCallbackScheme,
+        callbackSchemeForAndroidPackage('app.kuzz.mobile'),
+        kuzzMobileCallbackScheme,
       );
       for (final name in [
         'another.app',
-        'xyz.block.buzz.mobile.',
-        'xyz.block.buzz.mobile.bad/suffix',
+        'app.kuzz.mobile.',
+        'app.kuzz.mobile.bad/suffix',
       ]) {
         expect(() => callbackSchemeForAndroidPackage(name), throwsStateError);
       }
@@ -123,7 +123,7 @@ void main() {
   );
 
   const channel = MethodChannel('flutter_web_auth_2');
-  const returnChannel = MethodChannel('buzz/auth_browser');
+  const returnChannel = MethodChannel('kuzz/auth_browser');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   tearDown(() {
@@ -147,12 +147,12 @@ void main() {
     });
     final pending = const FlutterWebAuth2Launcher().authenticate(
       url: Uri.parse('https://relay.example/auth/start'),
-      callbackUrlScheme: buzzMobileCallbackScheme,
+      callbackUrlScheme: kuzzMobileCallbackScheme,
     );
     await Future<void>.delayed(Duration.zero);
     expect(returns, 0);
-    callback.complete(buzzMobileRedirectUri);
-    expect(await pending, Uri.parse(buzzMobileRedirectUri));
+    callback.complete(kuzzMobileRedirectUri);
+    expect(await pending, Uri.parse(kuzzMobileRedirectUri));
     expect(returns, 1);
   });
 
@@ -161,7 +161,7 @@ void main() {
     () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       messenger.setMockMethodCallHandler(channel, (call) async {
-        return call.method == 'authenticate' ? buzzMobileRedirectUri : null;
+        return call.method == 'authenticate' ? kuzzMobileRedirectUri : null;
       });
       messenger.setMockMethodCallHandler(returnChannel, (call) async {
         throw PlatformException(code: 'return_failed');
@@ -170,9 +170,9 @@ void main() {
         expect(
           await const FlutterWebAuth2Launcher().authenticate(
             url: Uri.parse('https://relay.example/auth/start'),
-            callbackUrlScheme: buzzMobileCallbackScheme,
+            callbackUrlScheme: kuzzMobileCallbackScheme,
           ),
-          Uri.parse(buzzMobileRedirectUri),
+          Uri.parse(kuzzMobileRedirectUri),
         );
       }
     },
@@ -190,17 +190,17 @@ void main() {
       messenger.setMockMethodCallHandler(channel, (call) async {
         if (call.method != 'authenticate') return null;
         if (cancelled) throw PlatformException(code: 'CANCELED');
-        return buzzMobileRedirectUri;
+        return kuzzMobileRedirectUri;
       });
       Future<Uri> launch() => const FlutterWebAuth2Launcher().authenticate(
         url: Uri.parse('https://relay.example/auth/start'),
-        callbackUrlScheme: buzzMobileCallbackScheme,
+        callbackUrlScheme: kuzzMobileCallbackScheme,
       );
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       await expectLater(launch(), throwsA(isA<WebAuthCancelledException>()));
       cancelled = false;
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      expect(await launch(), Uri.parse(buzzMobileRedirectUri));
+      expect(await launch(), Uri.parse(kuzzMobileRedirectUri));
       expect(returns, 0);
     },
   );
@@ -215,22 +215,22 @@ void main() {
     });
     final first = const FlutterWebAuth2Launcher().authenticate(
       url: Uri.parse('https://a.example/auth/start'),
-      callbackUrlScheme: buzzMobileCallbackScheme,
+      callbackUrlScheme: kuzzMobileCallbackScheme,
     );
     await expectLater(
       const FlutterWebAuth2Launcher().authenticate(
         url: Uri.parse('https://b.example/auth/start'),
-        callbackUrlScheme: buzzMobileCallbackScheme,
+        callbackUrlScheme: kuzzMobileCallbackScheme,
       ),
       throwsA(isA<WebAuthBusyException>()),
     );
     expect(opened, 1);
-    firstCallback.complete('xyz.block.buzz://auth/cb?code=first');
+    firstCallback.complete('app.kuzz://auth/cb?code=first');
     expect((await first).queryParameters['code'], 'first');
     // Completion releases the browser for the next explicitly initiated login.
     await const FlutterWebAuth2Launcher().authenticate(
       url: Uri.parse('https://b.example/auth/start'),
-      callbackUrlScheme: buzzMobileCallbackScheme,
+      callbackUrlScheme: kuzzMobileCallbackScheme,
     );
     expect(opened, 2);
   });
@@ -240,15 +240,15 @@ void main() {
     messenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method != 'authenticate') return null;
       if (cancelled) throw PlatformException(code: 'CANCELED');
-      return buzzMobileRedirectUri;
+      return kuzzMobileRedirectUri;
     });
     Future<Uri> launch() => const FlutterWebAuth2Launcher().authenticate(
       url: Uri.parse('https://relay.example/auth/start'),
-      callbackUrlScheme: buzzMobileCallbackScheme,
+      callbackUrlScheme: kuzzMobileCallbackScheme,
     );
     await expectLater(launch(), throwsA(isA<WebAuthCancelledException>()));
     cancelled = false;
-    expect(await launch(), Uri.parse(buzzMobileRedirectUri));
+    expect(await launch(), Uri.parse(kuzzMobileRedirectUri));
   });
 
   for (final failure in <Object>[

@@ -7,13 +7,13 @@ import 'package:nostr/nostr.dart' as nostr;
 
 import '../relay/nostr_models.dart';
 
-const _pushPresentationChannel = MethodChannel('buzz/push');
+const _pushPresentationChannel = MethodChannel('kuzz/push');
 const _maximumAvatarSourceBytes = 512 * 1024;
 const _maximumAvatarPNGBytes = 64 * 1024;
 Future<void> _avatarEncodeTail = Future.value();
 Future<void> _presentationExportTail = Future.value();
 const _maximumPresentationExports = 8;
-// Match BuzzPushPresentationCacheStore's per-write admission limits.
+// Match KuzzPushPresentationCacheStore's per-write admission limits.
 const _maximumProfilesPerWrite = 256;
 const _maximumChannelsPerWrite = 512;
 int _outstandingPresentationExports = 0;
@@ -51,7 +51,7 @@ bool isVerifiedPushPresentationEvent(NostrEvent event) {
 /// Fails with [StateError] when eight exports are already outstanding.
 /// Native persistence failures retry with bounded backoff, then propagate and
 /// stop any remaining chunks. Other native errors propagate immediately.
-Future<void> cacheBuzzPushProfileEvents(
+Future<void> cacheKuzzPushProfileEvents(
   String communityID,
   Iterable<NostrEvent> events,
 ) async {
@@ -64,7 +64,7 @@ Future<void> cacheBuzzPushProfileEvents(
     final verified = await compute(
       _selectPushProfileEvents,
       batch,
-      debugLabel: 'buzz-push-profile-cache',
+      debugLabel: 'kuzz-push-profile-cache',
     );
     if (verified.isEmpty) return;
     final retryBudget = _NativeWriteRetryBudget();
@@ -82,7 +82,7 @@ Future<void> cacheBuzzPushProfileEvents(
 /// Fails with [StateError] when eight exports are already outstanding.
 /// Native persistence failures retry with bounded backoff, then propagate and
 /// stop any remaining chunks. Other native errors propagate immediately.
-Future<void> cacheBuzzPushChannelEvents(
+Future<void> cacheKuzzPushChannelEvents(
   String? communityID,
   Iterable<NostrEvent> metadataEvents,
   Iterable<NostrEvent> membershipEvents,
@@ -101,7 +101,7 @@ Future<void> cacheBuzzPushChannelEvents(
     final verified = await compute(
       _selectPushChannelBatch,
       batch,
-      debugLabel: 'buzz-push-channel-cache',
+      debugLabel: 'kuzz-push-channel-cache',
     );
     if (verified.metadata.isEmpty && verified.membership.isEmpty) return;
     final metadata = {
@@ -239,7 +239,7 @@ bool _isNewerEvent(NostrEvent candidate, NostrEvent existing) =>
 ///
 /// This never starts network I/O. Oversized, malformed, or unsupported images
 /// are ignored, and notification delivery remains independent of the cache.
-Future<void> cacheBuzzPushAvatarFromLoadedBytes(
+Future<void> cacheKuzzPushAvatarFromLoadedBytes(
   String communityID,
   String sourceURL,
   Uint8List sourceBytes,

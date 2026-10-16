@@ -19,7 +19,7 @@ fn with_no_goose_config<T>(body: impl FnOnce() -> T) -> T {
         .lock()
         .unwrap_or_else(|err| err.into_inner());
     let prior = std::env::var_os("GOOSE_PATH_ROOT");
-    std::env::set_var("GOOSE_PATH_ROOT", "/nonexistent-buzz-test-path");
+    std::env::set_var("GOOSE_PATH_ROOT", "/nonexistent-kuzz-test-path");
     let output = body();
     match prior {
         Some(value) => std::env::set_var("GOOSE_PATH_ROOT", value),
@@ -81,7 +81,7 @@ fn agent_record() -> ManagedAgentRecord {
         auth_tag: None,
         relay_url: "ws://localhost:3000".to_string(),
         avatar_url: None,
-        acp_command: "buzz-acp".to_string(),
+        acp_command: "kuzz-acp".to_string(),
         agent_command: "goose".to_string(),
         agent_args: vec![],
         mcp_command: "".to_string(),
@@ -186,7 +186,7 @@ fn session_cache(current_model: &str, model_overridden: bool) -> SessionConfigCa
 /// model/provider/prompt for linked instances, so a non-`None` value here
 /// can only be leftover snapshot bytes from before a persona edit — the
 /// panel must report the persona's current model, tagged `PersonaDefault`,
-/// not the stale byte as `BuzzExplicit`.
+/// not the stale byte as `KuzzExplicit`.
 #[test]
 fn linked_stale_record_model_never_outranks_persona_model() {
     let mut record = agent_record();
@@ -242,7 +242,7 @@ fn linked_blank_definition_model_falls_through_to_global_default() {
 /// authoritative — the stale-record clearing above is scoped to linked
 /// instances only.
 #[test]
-fn definition_less_explicit_record_model_keeps_buzz_explicit_origin() {
+fn definition_less_explicit_record_model_keeps_kuzz_explicit_origin() {
     let mut record = agent_record();
     record.persona_id = None;
     record.model = Some("explicit-model".to_string());
@@ -259,7 +259,7 @@ fn definition_less_explicit_record_model_keeps_buzz_explicit_origin() {
 
     let model = surface.normalized.model.as_ref().expect("model resolved");
     assert_eq!(model.value.as_deref(), Some("explicit-model"));
-    assert_eq!(model.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(model.origin, ConfigOrigin::KuzzExplicit);
 }
 
 /// Part A — pending-pick: a genuine-explicit pick X with a divergent live
@@ -287,7 +287,7 @@ fn pending_pick_keeps_explicit_x_and_does_not_surface_live_y() {
     let model = surface.normalized.model.expect("model resolved");
 
     assert_eq!(model.value.as_deref(), Some("model-x"));
-    assert_eq!(model.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(model.origin, ConfigOrigin::KuzzExplicit);
     assert_ne!(model.origin, ConfigOrigin::RuntimeOverride);
     assert_ne!(model.overridden_value.as_deref(), Some("model-y"));
 }
@@ -295,10 +295,10 @@ fn pending_pick_keeps_explicit_x_and_does_not_surface_live_y() {
 /// W2 — genuine-explicit live switch: record.model = X, no persona,
 /// `model_overridden == true`, live model = Y. The live Y must render as the
 /// primary with a `RuntimeOverride` origin and X as the secondary tagged
-/// `BuzzExplicit` (its true source — NOT `PersonaDefault`). FAILS against the
+/// `KuzzExplicit` (its true source — NOT `PersonaDefault`). FAILS against the
 /// shipped no-persona early-return, which left X as primary and Y struck.
 #[test]
-fn genuine_explicit_live_switch_renders_y_over_x_buzz_explicit_secondary() {
+fn genuine_explicit_live_switch_renders_y_over_x_kuzz_explicit_secondary() {
     let mut record = agent_record();
     record.persona_id = None;
     record.model = Some("model-x".to_string());
@@ -318,7 +318,7 @@ fn genuine_explicit_live_switch_renders_y_over_x_buzz_explicit_secondary() {
     assert_eq!(model.value.as_deref(), Some("model-y"));
     assert_eq!(model.origin, ConfigOrigin::RuntimeOverride);
     assert_eq!(model.overridden_value.as_deref(), Some("model-x"));
-    assert_eq!(model.overridden_origin, Some(ConfigOrigin::BuzzExplicit));
+    assert_eq!(model.overridden_origin, Some(ConfigOrigin::KuzzExplicit));
 }
 
 /// Y==X collision: a genuine-explicit agent live-switches to the SAME value
@@ -354,7 +354,7 @@ fn genuine_explicit_live_switch_to_same_model_yields_clean_field() {
 
     assert_eq!(model.value.as_deref(), Some("model-x"));
     // Equal-value switch must NOT stamp RuntimeOverride — baseline origin wins.
-    assert_eq!(model.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(model.origin, ConfigOrigin::KuzzExplicit);
     assert_ne!(model.origin, ConfigOrigin::RuntimeOverride);
     assert_eq!(model.overridden_value, None);
     assert_eq!(model.overridden_origin, None);
@@ -428,7 +428,7 @@ fn global_default_live_switch_renders_global_model_as_secondary_global_default()
     assert_eq!(
         model.overridden_origin,
         Some(ConfigOrigin::GlobalDefault),
-        "override baseline origin must be GlobalDefault, not PersonaDefault or BuzzExplicit"
+        "override baseline origin must be GlobalDefault, not PersonaDefault or KuzzExplicit"
     );
 }
 
@@ -467,10 +467,10 @@ fn orphaned_persona_link_yields_empty_persona_tiers() {
 #[test]
 fn reserved_key_in_inherited_persona_env_is_stripped() {
     let mut persona = persona_with_model("model");
-    // BUZZ_PRIVATE_KEY is a reserved key — must be stripped.
+    // KUZZ_PRIVATE_KEY is a reserved key — must be stripped.
     persona
         .env_vars
-        .insert("BUZZ_PRIVATE_KEY".to_string(), "nsec-secret".to_string());
+        .insert("KUZZ_PRIVATE_KEY".to_string(), "nsec-secret".to_string());
     // A safe key — must survive.
     persona
         .env_vars
@@ -481,7 +481,7 @@ fn reserved_key_in_inherited_persona_env_is_stripped() {
     let tiers = build_inherited_tiers(Some("persona-1"), None, &personas, &global);
 
     assert!(
-        !tiers.persona_env.contains_key("BUZZ_PRIVATE_KEY"),
+        !tiers.persona_env.contains_key("KUZZ_PRIVATE_KEY"),
         "reserved key must be stripped from persona env tier"
     );
     assert!(
@@ -498,13 +498,13 @@ fn reserved_key_in_inherited_persona_env_is_stripped() {
 fn reserved_key_in_definition_env_shaped_map_is_stripped_by_sanitize() {
     // Exercise sanitize_inherited_env directly with a definition-env-shaped map.
     let mut raw = std::collections::BTreeMap::new();
-    raw.insert("BUZZ_PRIVATE_KEY".to_string(), "nsec-secret".to_string());
+    raw.insert("KUZZ_PRIVATE_KEY".to_string(), "nsec-secret".to_string());
     raw.insert("GOOSE_MODEL".to_string(), "harness-model".to_string());
 
     let sanitized = sanitize_inherited_env(&raw);
 
     assert!(
-        !sanitized.contains_key("BUZZ_PRIVATE_KEY"),
+        !sanitized.contains_key("KUZZ_PRIVATE_KEY"),
         "reserved key must be stripped by sanitize_inherited_env"
     );
     assert!(
@@ -564,9 +564,9 @@ fn baked_env_from_map(map: &[(&str, &str)]) -> Vec<BakedEnvEntry> {
 
 #[test]
 fn baked_env_non_secret_key_shows_real_value() {
-    let entries = baked_env_from_map(&[("BUZZ_AGENT_PROVIDER", "databricks_v2")]);
+    let entries = baked_env_from_map(&[("KUZZ_AGENT_PROVIDER", "databricks_v2")]);
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].key, "BUZZ_AGENT_PROVIDER");
+    assert_eq!(entries[0].key, "KUZZ_AGENT_PROVIDER");
     assert_eq!(entries[0].value, "databricks_v2");
     assert!(!entries[0].masked);
 }
@@ -602,15 +602,15 @@ fn baked_env_password_key_is_masked() {
 
 #[test]
 fn baked_env_empty_value_filtered_out() {
-    let entries = baked_env_from_map(&[("BUZZ_AGENT_PROVIDER", "")]);
+    let entries = baked_env_from_map(&[("KUZZ_AGENT_PROVIDER", "")]);
     assert!(entries.is_empty());
 }
 
 #[test]
 fn baked_env_mixed_keys_correct_masking() {
     let entries = baked_env_from_map(&[
-        ("BUZZ_AGENT_PROVIDER", "databricks_v2"),
-        ("BUZZ_AGENT_MODEL", "goose-claude-opus-4-8"),
+        ("KUZZ_AGENT_PROVIDER", "databricks_v2"),
+        ("KUZZ_AGENT_MODEL", "goose-claude-opus-4-8"),
         ("DATABRICKS_HOST", "https://example.com"),
         ("DATABRICKS_TOKEN", "dapi-secret"),
     ]);
@@ -618,14 +618,14 @@ fn baked_env_mixed_keys_correct_masking() {
 
     let provider = entries
         .iter()
-        .find(|e| e.key == "BUZZ_AGENT_PROVIDER")
+        .find(|e| e.key == "KUZZ_AGENT_PROVIDER")
         .unwrap();
     assert_eq!(provider.value, "databricks_v2");
     assert!(!provider.masked);
 
     let model = entries
         .iter()
-        .find(|e| e.key == "BUZZ_AGENT_MODEL")
+        .find(|e| e.key == "KUZZ_AGENT_MODEL")
         .unwrap();
     assert_eq!(model.value, "goose-claude-opus-4-8");
     assert!(!model.masked);
@@ -697,12 +697,12 @@ fn picker_write_sweeps_stale_record_native_effort_alias() {
 
 #[test]
 fn baked_env_thinking_effort_is_unmasked() {
-    // BUZZ_AGENT_THINKING_EFFORT is a non-secret enum — must not be masked.
-    let entries = baked_env_from_map(&[("BUZZ_AGENT_THINKING_EFFORT", "medium")]);
+    // KUZZ_AGENT_THINKING_EFFORT is a non-secret enum — must not be masked.
+    let entries = baked_env_from_map(&[("KUZZ_AGENT_THINKING_EFFORT", "medium")]);
     assert_eq!(entries.len(), 1);
     let effort = entries
         .iter()
-        .find(|e| e.key == "BUZZ_AGENT_THINKING_EFFORT")
+        .find(|e| e.key == "KUZZ_AGENT_THINKING_EFFORT")
         .unwrap();
     assert_eq!(effort.value, "medium");
     assert!(!effort.masked);
@@ -710,12 +710,12 @@ fn baked_env_thinking_effort_is_unmasked() {
 
 #[test]
 fn baked_env_thinking_summary_is_unmasked() {
-    // BUZZ_AGENT_THINKING_SUMMARY is a non-secret enum — must not be masked.
-    let entries = baked_env_from_map(&[("BUZZ_AGENT_THINKING_SUMMARY", "detailed")]);
+    // KUZZ_AGENT_THINKING_SUMMARY is a non-secret enum — must not be masked.
+    let entries = baked_env_from_map(&[("KUZZ_AGENT_THINKING_SUMMARY", "detailed")]);
     assert_eq!(entries.len(), 1);
     let summary = entries
         .iter()
-        .find(|e| e.key == "BUZZ_AGENT_THINKING_SUMMARY")
+        .find(|e| e.key == "KUZZ_AGENT_THINKING_SUMMARY")
         .unwrap();
     assert_eq!(summary.value, "detailed");
     assert!(!summary.masked);
@@ -724,14 +724,14 @@ fn baked_env_thinking_summary_is_unmasked() {
 #[test]
 fn baked_env_allowlist_is_case_insensitive() {
     // Known-safe keys — case-insensitive match must allow them.
-    assert!(super::is_safe_to_reveal("buzz_agent_provider"));
-    assert!(super::is_safe_to_reveal("BUZZ_AGENT_PROVIDER"));
-    assert!(super::is_safe_to_reveal("buzz_agent_model"));
-    assert!(super::is_safe_to_reveal("BUZZ_AGENT_MODEL"));
-    assert!(super::is_safe_to_reveal("buzz_agent_thinking_effort"));
-    assert!(super::is_safe_to_reveal("BUZZ_AGENT_THINKING_EFFORT"));
-    assert!(super::is_safe_to_reveal("buzz_agent_thinking_summary"));
-    assert!(super::is_safe_to_reveal("BUZZ_AGENT_THINKING_SUMMARY"));
+    assert!(super::is_safe_to_reveal("kuzz_agent_provider"));
+    assert!(super::is_safe_to_reveal("KUZZ_AGENT_PROVIDER"));
+    assert!(super::is_safe_to_reveal("kuzz_agent_model"));
+    assert!(super::is_safe_to_reveal("KUZZ_AGENT_MODEL"));
+    assert!(super::is_safe_to_reveal("kuzz_agent_thinking_effort"));
+    assert!(super::is_safe_to_reveal("KUZZ_AGENT_THINKING_EFFORT"));
+    assert!(super::is_safe_to_reveal("kuzz_agent_thinking_summary"));
+    assert!(super::is_safe_to_reveal("KUZZ_AGENT_THINKING_SUMMARY"));
     assert!(super::is_safe_to_reveal("databricks_host"));
     assert!(super::is_safe_to_reveal("DATABRICKS_HOST"));
     assert!(super::is_safe_to_reveal("databricks_model"));
@@ -786,7 +786,7 @@ fn apply_picker_effort_level_rejects_unsafe_values_and_leaves_the_record_untouch
     record.effort_level = Some("high".to_string());
     record
         .env_vars
-        .insert("BUZZ_AGENT_THINKING_EFFORT".to_string(), "low".to_string());
+        .insert("KUZZ_AGENT_THINKING_EFFORT".to_string(), "low".to_string());
     for unsafe_level in ["lo\0w", "hi\ngh", &"x".repeat(65)] {
         let error = super::apply_picker_effort_level(&mut record, Some(unsafe_level.to_string()))
             .unwrap_err();
@@ -795,7 +795,7 @@ fn apply_picker_effort_level_rejects_unsafe_values_and_leaves_the_record_untouch
         assert_eq!(
             record
                 .env_vars
-                .get("BUZZ_AGENT_THINKING_EFFORT")
+                .get("KUZZ_AGENT_THINKING_EFFORT")
                 .map(String::as_str),
             Some("low"),
             "a rejected write must not run the alias sweep either"

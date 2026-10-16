@@ -11,7 +11,7 @@ import {
 
 const OWNER = "a".repeat(64);
 const REVIEWER = "b".repeat(64);
-const REPO_ADDRESS = `30617:${OWNER}:buzz`;
+const REPO_ADDRESS = `30617:${OWNER}:kuzz`;
 const PR_ID = "c".repeat(64);
 const ISSUE_ID = "d".repeat(64);
 
@@ -35,16 +35,16 @@ function feedItem(overrides = {}) {
 }
 
 const repository = {
-  id: "buzz",
-  dtag: "buzz",
-  name: "Buzz",
+  id: "kuzz",
+  dtag: "kuzz",
+  name: "Kuzz",
   owner: OWNER,
   repoAddress: REPO_ADDRESS,
 };
 
 const project = {
-  id: "buzz-project",
-  name: "Buzz",
+  id: "kuzz-project",
+  name: "Kuzz",
   owner: OWNER,
   repositories: [repository],
 };

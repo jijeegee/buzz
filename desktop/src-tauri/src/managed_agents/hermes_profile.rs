@@ -1,16 +1,16 @@
 // ── Per-agent Hermes profile ──────────────────────────────────────────────────
 //
 // Every Hermes entry point (`hermes`, `hermes-acp`) reads exactly one config
-// root: `HERMES_HOME`. Left alone, every Buzz-managed Hermes agent would share
+// root: `HERMES_HOME`. Left alone, every Kuzz-managed Hermes agent would share
 // the user's default root — one SOUL.md, one memory store, one `.env`. Hermes
-// loads `<HERMES_HOME>/.env` with override semantics, so a `BUZZ_PRIVATE_KEY`
+// loads `<HERMES_HOME>/.env` with override semantics, so a `KUZZ_PRIVATE_KEY`
 // written there by a separately-run Hermes gateway would replace the per-agent
 // key the Desktop passes and the agent would sign as someone else.
 //
-// So each Buzz-managed Hermes agent gets its own Hermes profile, named
-// `buzz-<first 16 hex chars of its pubkey>`, created lazily at spawn through
+// So each Kuzz-managed Hermes agent gets its own Hermes profile, named
+// `kuzz-<first 16 hex chars of its pubkey>`, created lazily at spawn through
 // Hermes's own CLI and passed to the child as `HERMES_HOME`. The profile lives
-// in Hermes's layout (`<root>/profiles/<name>`) rather than a Buzz-owned
+// in Hermes's layout (`<root>/profiles/<name>`) rather than a Kuzz-owned
 // directory: Hermes only falls back to the root `auth.json` (provider OAuth)
 // when `HERMES_HOME`'s parent directory is named `profiles`, which is what
 // keeps an existing login working without a second sign-in.
@@ -29,10 +29,10 @@ use super::ManagedAgentRecord;
 /// Env var every Hermes entry point reads its config root from.
 pub(crate) const HERMES_HOME_ENV_VAR: &str = "HERMES_HOME";
 
-/// Prefix of every Buzz-owned Hermes profile name. It keeps the names clear of
+/// Prefix of every Kuzz-owned Hermes profile name. It keeps the names clear of
 /// Hermes's reserved profile names (`default`, `hermes`, `root`, …) and makes
-/// the deletion guard able to recognise a Buzz-owned directory by name alone.
-const PROFILE_PREFIX: &str = "buzz-";
+/// the deletion guard able to recognise a Kuzz-owned directory by name alone.
+const PROFILE_PREFIX: &str = "kuzz-";
 
 /// Number of pubkey hex characters carried in the profile name (64 bits).
 const PROFILE_PUBKEY_CHARS: usize = 16;
@@ -53,20 +53,20 @@ const ERROR_EXCERPT_CHARS: usize = 400;
 /// the loser's "already exists" as a failure.
 static PROFILE_LOCK: Mutex<()> = Mutex::new(());
 
-/// A Buzz-managed agent's Hermes profile: where Hermes keeps it and what it is
+/// A Kuzz-managed agent's Hermes profile: where Hermes keeps it and what it is
 /// called. Construction does not touch the filesystem.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HermesProfile {
-    /// Profile name as Hermes knows it (`buzz-<16 hex>`).
+    /// Profile name as Hermes knows it (`kuzz-<16 hex>`).
     pub name: String,
     /// The Hermes root the profile belongs to; passed to the Hermes CLI as
-    /// `HERMES_HOME` so Hermes and Buzz agree on where profiles live.
+    /// `HERMES_HOME` so Hermes and Kuzz agree on where profiles live.
     pub root: PathBuf,
     /// `<root>/profiles/<name>`; the agent's `HERMES_HOME`.
     pub dir: PathBuf,
     /// The home a Hermes agent used before it had a profile (the Desktop's
     /// own `HERMES_HOME`, else the root). A new profile's `.env` is seeded
-    /// from this home's `.env`, minus Buzz-owned keys.
+    /// from this home's `.env`, minus Kuzz-owned keys.
     pub source_home: PathBuf,
 }
 
@@ -102,7 +102,7 @@ impl HermesProfile {
 ///
 /// Matches the normalized basename (path, case, and `.exe`/`.cmd`/`.bat`
 /// ignored) against every Hermes entry point — `hermes-acp`, and also `hermes`
-/// and `hermes-agent`, the same identity set `buzz-acp` keys its Hermes
+/// and `hermes-agent`, the same identity set `kuzz-acp` keys its Hermes
 /// defaults on. All of them read `HERMES_HOME`, so a custom harness that drives
 /// `hermes` directly needs the same isolation as the preset.
 pub(crate) fn is_hermes_command(command: &str) -> bool {
@@ -114,7 +114,7 @@ pub(crate) fn is_hermes_command(command: &str) -> bool {
     matches!(identity, "hermes-acp" | "hermes" | "hermes-agent")
 }
 
-/// `buzz-<first 16 hex chars of pubkey>`, or `None` when `pubkey` is not at
+/// `kuzz-<first 16 hex chars of pubkey>`, or `None` when `pubkey` is not at
 /// least 16 hex characters. Lowercased, so the result always satisfies Hermes's
 /// profile-name rule `^[a-z0-9][a-z0-9_-]{0,63}$`.
 pub(crate) fn profile_name(pubkey: &str) -> Option<String> {
@@ -131,7 +131,7 @@ pub(crate) fn profile_dir(root: &Path, name: &str) -> PathBuf {
 }
 
 /// The Hermes root directory, mirroring Hermes's `get_default_hermes_root` so
-/// Buzz and the Hermes CLI always agree on where `profiles/` lives:
+/// Kuzz and the Hermes CLI always agree on where `profiles/` lives:
 ///
 /// - no (or empty) `HERMES_HOME` -> the native home;
 /// - `HERMES_HOME` anywhere under the native home (the home itself, one of its
@@ -198,17 +198,17 @@ const PROFILE_ENV_FILE: &str = ".env";
 /// Whether the profile is safe to launch: created, and carrying its own `.env`.
 ///
 /// The `.env` is load-bearing. `hermes update` backfills a profile that lacks
-/// one by copying the ROOT `.env` (the very file whose `BUZZ_PRIVATE_KEY` this
+/// one by copying the ROOT `.env` (the very file whose `KUZZ_PRIVATE_KEY` this
 /// module isolates agents from), so a profile without its own `.env` is one
 /// Hermes upgrade away from signing with the wrong key.
 fn profile_is_ready(dir: &Path) -> bool {
     profile_is_created(dir) && dir.join(PROFILE_ENV_FILE).is_file()
 }
 
-/// Header of a `.env` Buzz writes into a profile.
+/// Header of a `.env` Kuzz writes into a profile.
 const PROFILE_ENV_HEADER: &str =
-    "# Hermes secrets for this Buzz agent. Buzz-owned keys (BUZZ_*, HERMES_HOME)\n\
-     # are set by Buzz Desktop at launch and must not be added here.\n";
+    "# Hermes secrets for this Kuzz agent. Kuzz-owned keys (KUZZ_*, HERMES_HOME)\n\
+     # are set by Kuzz Desktop at launch and must not be added here.\n";
 
 /// Owner-only (on Unix) open options for a new profile `.env`.
 fn private_file_options() -> std::fs::OpenOptions {
@@ -236,8 +236,8 @@ fn ensure_profile_env(dir: &Path) -> Result<(), String> {
 }
 
 /// Seed a freshly created profile's `.env` from the agent's previous home,
-/// minus every Buzz-owned key, so provider keys keep working while the shared
-/// `BUZZ_PRIVATE_KEY` (the bug this module fixes) stays behind.
+/// minus every Kuzz-owned key, so provider keys keep working while the shared
+/// `KUZZ_PRIVATE_KEY` (the bug this module fixes) stays behind.
 ///
 /// Replaces whatever placeholder `hermes profile create` wrote; only called
 /// for a profile this start just created. Written to a temp file and renamed,
@@ -245,11 +245,11 @@ fn ensure_profile_env(dir: &Path) -> Result<(), String> {
 fn seed_profile_env(profile: &HermesProfile) -> Result<(), String> {
     let source = profile.source_home.join(PROFILE_ENV_FILE);
     let seeded = match std::fs::read_to_string(&source) {
-        Ok(contents) => strip_buzz_owned_env(&contents),
+        Ok(contents) => strip_kuzz_owned_env(&contents),
         Err(error) => {
             if error.kind() != std::io::ErrorKind::NotFound {
                 eprintln!(
-                    "buzz-desktop: not seeding Hermes profile {} from {}: {error}",
+                    "kuzz-desktop: not seeding Hermes profile {} from {}: {error}",
                     profile.name,
                     source.display()
                 );
@@ -258,7 +258,7 @@ fn seed_profile_env(profile: &HermesProfile) -> Result<(), String> {
         }
     };
     let path = profile.dir.join(PROFILE_ENV_FILE);
-    let temp = profile.dir.join(".env.buzz-seed");
+    let temp = profile.dir.join(".env.kuzz-seed");
     let write = || -> std::io::Result<()> {
         let mut file = private_file_options()
             .create(true)
@@ -275,10 +275,10 @@ fn seed_profile_env(profile: &HermesProfile) -> Result<(), String> {
     })
 }
 
-/// Whether a `.env` key belongs to Buzz rather than to the agent's Hermes:
-/// any `BUZZ_*` key, every reserved launch key, and `HERMES_HOME`.
-fn is_buzz_owned_env_key(key: &str) -> bool {
-    key.to_ascii_uppercase().starts_with("BUZZ_")
+/// Whether a `.env` key belongs to Kuzz rather than to the agent's Hermes:
+/// any `KUZZ_*` key, every reserved launch key, and `HERMES_HOME`.
+fn is_kuzz_owned_env_key(key: &str) -> bool {
+    key.to_ascii_uppercase().starts_with("KUZZ_")
         || key.eq_ignore_ascii_case(HERMES_HOME_ENV_VAR)
         || super::is_reserved_env_key(key)
 }
@@ -316,10 +316,10 @@ fn unclosed_quote(line: &str) -> Option<char> {
     Some(quote)
 }
 
-/// `.env` contents with every Buzz-owned assignment removed. Kept assignments
+/// `.env` contents with every Kuzz-owned assignment removed. Kept assignments
 /// are copied verbatim (an `export` prefix, quoting, and multi-line quoted
 /// values included); comments, blanks, and malformed lines are dropped.
-pub(crate) fn strip_buzz_owned_env(contents: &str) -> String {
+pub(crate) fn strip_kuzz_owned_env(contents: &str) -> String {
     let mut kept = String::new();
     let mut lines = contents.lines();
     while let Some(line) = lines.next() {
@@ -334,7 +334,7 @@ pub(crate) fn strip_buzz_owned_env(contents: &str) -> String {
             }
         }
         match env_line_key(line) {
-            Some(key) if !is_buzz_owned_env_key(key) => {
+            Some(key) if !is_kuzz_owned_env_key(key) => {
                 kept.push_str(&entry);
                 kept.push('\n');
             }
@@ -344,10 +344,10 @@ pub(crate) fn strip_buzz_owned_env(contents: &str) -> String {
     kept
 }
 
-/// Whether `dir` is exactly a Buzz-owned profile directory under `root`. The
+/// Whether `dir` is exactly a Kuzz-owned profile directory under `root`. The
 /// deletion guard: a mis-resolved root or name can never widen a recursive
-/// delete beyond `<root>/profiles/buzz-<16 lowercase hex>`.
-pub(crate) fn is_buzz_profile_dir(root: &Path, dir: &Path) -> bool {
+/// delete beyond `<root>/profiles/kuzz-<16 lowercase hex>`.
+pub(crate) fn is_kuzz_profile_dir(root: &Path, dir: &Path) -> bool {
     let Some(name) = dir.file_name().and_then(OsStr::to_str) else {
         return false;
     };
@@ -552,9 +552,9 @@ pub(crate) fn delete_profile(profile: &HermesProfile, hermes: impl FnOnce() -> O
     if !profile.dir.exists() {
         return;
     }
-    if !is_buzz_profile_dir(&profile.root, &profile.dir) {
+    if !is_kuzz_profile_dir(&profile.root, &profile.dir) {
         eprintln!(
-            "buzz-desktop: refusing to delete {}: not a Buzz-owned Hermes profile directory",
+            "kuzz-desktop: refusing to delete {}: not a Kuzz-owned Hermes profile directory",
             profile.dir.display()
         );
         return;
@@ -564,7 +564,7 @@ pub(crate) fn delete_profile(profile: &HermesProfile, hermes: impl FnOnce() -> O
         command.args(["profile", "delete", &profile.name, "-y"]);
         if let Err(error) = run_hermes_cli(command, "hermes profile delete") {
             eprintln!(
-                "buzz-desktop: {error}; removing Hermes profile {} directly",
+                "kuzz-desktop: {error}; removing Hermes profile {} directly",
                 profile.name
             );
         }
@@ -572,7 +572,7 @@ pub(crate) fn delete_profile(profile: &HermesProfile, hermes: impl FnOnce() -> O
     if profile.dir.exists() {
         if let Err(error) = std::fs::remove_dir_all(&profile.dir) {
             eprintln!(
-                "buzz-desktop: failed to remove Hermes profile directory {}: {error}",
+                "kuzz-desktop: failed to remove Hermes profile directory {}: {error}",
                 profile.dir.display()
             );
         }
@@ -582,7 +582,7 @@ pub(crate) fn delete_profile(profile: &HermesProfile, hermes: impl FnOnce() -> O
 /// Remove the Hermes profile of a deleted agent, if it has one.
 ///
 /// Keyed on the profile directory rather than the agent's current harness: the
-/// name is Buzz-owned and derived from the pubkey, so an agent that ran on
+/// name is Kuzz-owned and derived from the pubkey, so an agent that ran on
 /// Hermes and later switched harness still has its profile cleaned up.
 ///
 /// Both agent-removal paths call this (`delete_managed_agent` and the
@@ -591,21 +591,21 @@ pub(crate) fn delete_profile_for_deleted_agent(pubkey: &str) {
     match HermesProfile::for_pubkey(pubkey) {
         Ok(profile) => delete_profile(&profile, || find_hermes_cli("hermes-acp")),
         Err(error) => {
-            eprintln!("buzz-desktop: skipping Hermes profile cleanup for {pubkey}: {error}")
+            eprintln!("kuzz-desktop: skipping Hermes profile cleanup for {pubkey}: {error}")
         }
     }
 }
 
 /// Keep a Hermes agent's profile (memory, sessions, seeded `.env`) when its
 /// pubkey changes because it moved onto its server bot (`auth::bots::adopt`):
-/// rename `buzz-<old>` to `buzz-<new>`. Best-effort — on failure the next
+/// rename `kuzz-<old>` to `kuzz-<new>`. Best-effort — on failure the next
 /// start creates a fresh profile for the new pubkey and the old one stays.
 pub(crate) fn move_profile_for_new_pubkey(from: &str, to: &str) {
     let moved = HermesProfile::for_pubkey(from)
         .and_then(|old| HermesProfile::for_pubkey(to).map(|new| (old, new)))
         .and_then(|(old, new)| move_profile_dir(&old, &new));
     if let Err(error) = moved {
-        eprintln!("buzz-desktop: keeping a new Hermes profile for moved agent {to}: {error}");
+        eprintln!("kuzz-desktop: keeping a new Hermes profile for moved agent {to}: {error}");
     }
 }
 
@@ -616,7 +616,7 @@ pub(crate) fn move_profile_dir(from: &HermesProfile, to: &HermesProfile) -> Resu
     if !from.dir.is_dir() || to.dir.exists() {
         return Ok(false);
     }
-    if !is_buzz_profile_dir(&from.root, &from.dir) || !is_buzz_profile_dir(&to.root, &to.dir) {
+    if !is_kuzz_profile_dir(&from.root, &from.dir) || !is_kuzz_profile_dir(&to.root, &to.dir) {
         return Err("not a Kuzz-owned Hermes profile directory".into());
     }
     std::fs::rename(&from.dir, &to.dir)

@@ -1,6 +1,6 @@
-import 'package:buzz/features/activity/feed_item.dart';
-import 'package:buzz/features/activity/inbox_item.dart';
-import 'package:buzz/features/activity/inbox_read_state.dart';
+import 'package:kuzz/features/activity/feed_item.dart';
+import 'package:kuzz/features/activity/inbox_item.dart';
+import 'package:kuzz/features/activity/inbox_read_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 FeedItem item({

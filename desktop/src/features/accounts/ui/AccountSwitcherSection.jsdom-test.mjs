@@ -72,7 +72,7 @@ function account(pubkey, overrides = {}) {
     state: "signed_in",
     active: false,
     displayName: null,
-    buzzName: null,
+    kuzzName: null,
     avatarUrl: null,
     email: null,
     lastUsedAt: null,
@@ -239,7 +239,7 @@ test("a failed switch stays on the current account", async (t) => {
   await act(async () => fireEvent.click(row(work)));
   await settle(() => !row(work).disabled);
   assert.equal(reload.mock.callCount(), 0);
-  assert.equal(window.sessionStorage.getItem("buzz:switching-to"), null);
+  assert.equal(window.sessionStorage.getItem("kuzz:switching-to"), null);
   switchBehavior = undefined;
   await unmount();
 });

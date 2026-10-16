@@ -38,13 +38,13 @@ final ageSignalPushSnapshotRetryWaitProvider =
 /// Releases only the current process's confirmed notification restriction.
 final ageAllowedNotificationRestorerProvider =
     Provider<Future<void> Function()>(
-      (ref) => restoreAgeRestrictedBuzzNotifications,
+      (ref) => restoreAgeRestrictedKuzzNotifications,
     );
 
 /// Native notification purge performed once restriction is confirmed.
 final ageRestrictedNotificationPurgerProvider =
     Provider<Future<void> Function()>(
-      (ref) => purgeAgeRestrictedBuzzNotifications,
+      (ref) => purgeAgeRestrictedKuzzNotifications,
     );
 
 /// Delay between successful maintenance purges while restriction remains active.
@@ -113,7 +113,7 @@ class AgeSignalPushBootstrap extends HookConsumerWidget {
 
     return switch (state) {
       AgeSignalState.restricted => _AgeRestrictedPushCleanup(child: child),
-      _ => BuzzPushBootstrap(child: child),
+      _ => KuzzPushBootstrap(child: child),
     };
   }
 }

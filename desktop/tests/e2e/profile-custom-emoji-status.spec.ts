@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge } from "../helpers/bridge";
 
-const SHORTCODE = "buzz";
+const SHORTCODE = "kuzz";
 const STATUS_TEXT = "testing custom status";
 const MOCK_IDENTITY_PUBKEY = "deadbeef".repeat(8);
 
@@ -16,7 +16,7 @@ async function waitForMockLiveSubscription(
     .poll(() =>
       page.evaluate(
         ({ currentChannelName, currentKind }) =>
-          window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+          window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
             channelName: currentChannelName,
             kind: currentKind,
           }) ?? false,
@@ -39,7 +39,7 @@ async function waitForMockGlobalKindSubscription(
     .poll(() =>
       page.evaluate(
         (currentKind) =>
-          window.__BUZZ_E2E_HAS_MOCK_GLOBAL_KIND_SUBSCRIPTION__?.(
+          window.__KUZZ_E2E_HAS_MOCK_GLOBAL_KIND_SUBSCRIPTION__?.(
             currentKind,
           ) ?? false,
         kind,
@@ -59,7 +59,7 @@ async function seedMockStatus(
 ) {
   await waitForMockGlobalKindSubscription(page, 30315);
   await page.evaluate((status) => {
-    window.__BUZZ_E2E_SET_MOCK_USER_STATUS__?.(status);
+    window.__KUZZ_E2E_SET_MOCK_USER_STATUS__?.(status);
   }, input);
   await openProfilePopover(page);
   await expect(page.getByTestId("profile-popover-set-status")).toContainText(
@@ -259,7 +259,7 @@ test("new statuses default to expiring at local midnight", async ({ page }) => {
 
   const publishedExpiration = await page.evaluate(
     () =>
-      window.__BUZZ_E2E_SIGNED_EVENTS__
+      window.__KUZZ_E2E_SIGNED_EVENTS__
         ?.filter((event) => event.kind === 30315)
         .at(-1)
         ?.tags.find((tag) => tag[0] === "expiration")?.[1],
@@ -293,7 +293,7 @@ test("can apply Today to an existing status without an expiration", async ({
 
   const expiration = await page.evaluate(
     () =>
-      window.__BUZZ_E2E_SIGNED_EVENTS__
+      window.__KUZZ_E2E_SIGNED_EVENTS__
         ?.filter((event) => event.kind === 30315)
         .at(-1)
         ?.tags.find((tag) => tag[0] === "expiration")?.[1],
@@ -319,7 +319,7 @@ test("applies Today when editing a legacy status without an expiration", async (
 
   const expiration = await page.evaluate(
     () =>
-      window.__BUZZ_E2E_SIGNED_EVENTS__
+      window.__KUZZ_E2E_SIGNED_EVENTS__
         ?.filter((event) => event.kind === 30315)
         .at(-1)
         ?.tags.find((tag) => tag[0] === "expiration")?.[1],
@@ -356,7 +356,7 @@ test("preserves a minute-precision custom deadline when only text changes", asyn
 
   const publishedExpiration = await page.evaluate(
     () =>
-      window.__BUZZ_E2E_SIGNED_EVENTS__
+      window.__KUZZ_E2E_SIGNED_EVENTS__
         ?.filter((event) => event.kind === 30315)
         .at(-1)
         ?.tags.find((tag) => tag[0] === "expiration")?.[1],
@@ -413,7 +413,7 @@ test("shows status and huddle indicators beside chat names with tooltips", async
   await page.getByTestId("channel-alice-tyler").click();
   await waitForMockLiveSubscription(page, "alice-tyler");
   await page.evaluate((pubkey) => {
-    window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+    window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
       channelName: "alice-tyler",
       content: "Status indicator fixture",
       kind: 40002,
@@ -448,7 +448,7 @@ test("shows status and huddle indicators beside chat names with tooltips", async
 
   await waitForMockLiveSubscription(page, "alice-tyler", 48100);
   await page.evaluate((pubkey) => {
-    window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+    window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
       channelName: "alice-tyler",
       content: JSON.stringify({
         ephemeral_channel_id: "status-huddle",
@@ -464,7 +464,7 @@ test("shows status and huddle indicators beside chat names with tooltips", async
 
   await waitForMockLiveSubscription(page, "alice-tyler", 48101);
   await page.evaluate((relayPubkey) => {
-    const emit = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+    const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
     emit?.({
       channelName: "alice-tyler",
       content: JSON.stringify({

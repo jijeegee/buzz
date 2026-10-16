@@ -5,9 +5,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use super::{AgentDefinition, ManagedAgentRecord};
 use crate::app_state::AppState;
 
-pub(crate) const ACP_SESSION_POLICY_ENV_VAR: &str = "BUZZ_ACP_SESSION_POLICY";
+pub(crate) const ACP_SESSION_POLICY_ENV_VAR: &str = "KUZZ_ACP_SESSION_POLICY";
 /// Harness state directory (session resume ledger); set for the Thread policy.
-pub(crate) const ACP_STATE_DIR_ENV_VAR: &str = "BUZZ_ACP_STATE_DIR";
+pub(crate) const ACP_STATE_DIR_ENV_VAR: &str = "KUZZ_ACP_STATE_DIR";
 
 /// Desktop experiment state that influences managed-agent lifecycle behavior.
 pub struct ManagedAgentExperimentState {

@@ -123,7 +123,7 @@ function paintRecorder(canvas) {
 /** Draws issued to the grid canvas only, newest paint pass included. */
 function gridDraws(view) {
   const grid = view.container.querySelector(
-    ".buzz-terminal-viewport > canvas:not(.buzz-terminal-welcome)",
+    ".kuzz-terminal-viewport > canvas:not(.kuzz-terminal-welcome)",
   );
   return paintLog.filter((entry) => entry.canvas === grid);
 }
@@ -152,7 +152,7 @@ function fixture(overrides = {}) {
       ThemeProvider,
       null,
       createElement("div", {
-        className: "buzz-huddle-app-surface",
+        className: "kuzz-huddle-app-surface",
         tabIndex: -1,
       }),
       createElement(TerminalSubstrate, nextProps),
@@ -170,7 +170,7 @@ function fixture(overrides = {}) {
 
 async function ready(view) {
   await waitFor(() =>
-    assert.ok(view.container.querySelector(".buzz-terminal-substrate")),
+    assert.ok(view.container.querySelector(".kuzz-terminal-substrate")),
   );
 }
 
@@ -190,9 +190,9 @@ function toggleChord(composing = false) {
 test("mounted IME paths neither toggle nor emit preedit text", async () => {
   const { calls, view } = fixture();
   await ready(view);
-  const substrate = view.container.querySelector(".buzz-terminal-substrate");
+  const substrate = view.container.querySelector(".kuzz-terminal-substrate");
   toggleChord(true);
-  assert.equal(substrate.dataset.terminalOwner, "buzz");
+  assert.equal(substrate.dataset.terminalOwner, "kuzz");
 
   toggleChord();
   await waitFor(() =>
@@ -236,7 +236,7 @@ test("tab actions restore terminal input focus", async () => {
 test("drag resize batches visual updates and commits state only on release", async () => {
   const { view } = fixture({ mode: "docked" });
   await ready(view);
-  const substrate = view.container.querySelector(".buzz-terminal-substrate");
+  const substrate = view.container.querySelector(".kuzz-terminal-substrate");
   const handle = view.getByLabelText("Resize Kuzz Term");
 
   fireEvent.pointerDown(handle, { clientY: 500, pointerId: 1 });
@@ -246,12 +246,12 @@ test("drag resize batches visual updates and commits state only on release", asy
   fireEvent.pointerMove(handle, { clientY: 460, pointerId: 1 });
   fireEvent.pointerMove(handle, { clientY: 440, pointerId: 1 });
   assert.equal(substrate.dataset.terminalResizing, "true");
-  assert.equal(window.localStorage.getItem("buzz-terminal-dock-height"), null);
+  assert.equal(window.localStorage.getItem("kuzz-terminal-dock-height"), null);
 
   await waitFor(() => assert.equal(substrate.style.height, "380px"));
   fireEvent.pointerUp(handle, { clientY: 440, pointerId: 1 });
   assert.equal(substrate.dataset.terminalResizing, undefined);
-  assert.equal(window.localStorage.getItem("buzz-terminal-dock-height"), "380");
+  assert.equal(window.localStorage.getItem("kuzz-terminal-dock-height"), "380");
 });
 
 test("drag resize repaints the canvas without reporting PTY geometry until release", async () => {
@@ -276,7 +276,7 @@ test("drag resize repaints the canvas without reporting PTY geometry until relea
   });
   await ready(view);
   const canvas = view.container.querySelector(
-    ".buzz-terminal-viewport > canvas:not(.buzz-terminal-welcome)",
+    ".kuzz-terminal-viewport > canvas:not(.kuzz-terminal-welcome)",
   );
   const handle = view.getByLabelText("Resize Kuzz Term");
   await waitFor(() => assert.equal(canvas.height, 280));
@@ -301,7 +301,7 @@ test("unmount cancels a queued drag update", async () => {
   const { view } = fixture({ mode: "docked" });
   await ready(view);
   const handle = view.getByLabelText("Resize Kuzz Term");
-  const previousHeight = handle.closest(".buzz-terminal-substrate").style
+  const previousHeight = handle.closest(".kuzz-terminal-substrate").style
     .height;
 
   fireEvent.pointerDown(handle, { clientY: 500, pointerId: 1 });
@@ -309,9 +309,9 @@ test("unmount cancels a queued drag update", async () => {
   view.unmount();
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
 
-  assert.equal(window.localStorage.getItem("buzz-terminal-dock-height"), null);
+  assert.equal(window.localStorage.getItem("kuzz-terminal-dock-height"), null);
   assert.equal(
-    handle.closest(".buzz-terminal-substrate").style.height,
+    handle.closest(".kuzz-terminal-substrate").style.height,
     previousHeight,
   );
 });
@@ -345,14 +345,14 @@ async function expectWelcome(view, present) {
   // walk the whole fiber graph — a failure takes ~2min to report instead of ms.
   await waitFor(() =>
     assert.equal(
-      view.container.querySelector(".buzz-terminal-welcome") !== null,
+      view.container.querySelector(".kuzz-terminal-welcome") !== null,
       present,
     ),
   );
 }
 
 async function reveal(view) {
-  const substrate = view.container.querySelector(".buzz-terminal-substrate");
+  const substrate = view.container.querySelector(".kuzz-terminal-substrate");
   toggleChord();
   await waitFor(() =>
     assert.equal(substrate.dataset.terminalOwner, "terminal"),
@@ -441,17 +441,17 @@ test("the first keystroke dismisses the welcome overlay early", async () => {
 test("mounted wheel path accumulates fractional lines per active session", async () => {
   const { calls, view } = fixture();
   await ready(view);
-  const substrate = view.container.querySelector(".buzz-terminal-substrate");
+  const substrate = view.container.querySelector(".kuzz-terminal-substrate");
   fireEvent.wheel(substrate, { deltaMode: 0, deltaY: 8 });
   assert.deepEqual(calls.scroll, []);
   fireEvent.wheel(substrate, { deltaMode: 0, deltaY: 10 });
   assert.deepEqual(calls.scroll, [1]);
 });
 
-test("canvas failure atomically restores Buzz ownership", async () => {
+test("canvas failure atomically restores Kuzz ownership", async () => {
   const { props, view } = fixture();
   await ready(view);
-  const substrate = view.container.querySelector(".buzz-terminal-substrate");
+  const substrate = view.container.querySelector(".kuzz-terminal-substrate");
   toggleChord();
   await waitFor(() =>
     assert.equal(substrate.dataset.terminalOwner, "terminal"),
@@ -462,7 +462,7 @@ test("canvas failure atomically restores Buzz ownership", async () => {
       ThemeProvider,
       null,
       createElement("div", {
-        className: "buzz-huddle-app-surface",
+        className: "kuzz-huddle-app-surface",
         tabIndex: -1,
       }),
       createElement(TerminalSubstrate, {
@@ -476,7 +476,7 @@ test("canvas failure atomically restores Buzz ownership", async () => {
       }),
     ),
   );
-  await waitFor(() => assert.equal(substrate.dataset.terminalOwner, "buzz"));
+  await waitFor(() => assert.equal(substrate.dataset.terminalOwner, "kuzz"));
   toggleChord();
   await waitFor(() =>
     assert.equal(substrate.dataset.terminalOwner, "terminal"),
@@ -497,7 +497,7 @@ test("cursor blink runs only while the terminal owns input and resets on input",
   try {
     const subject = fixture({ frame: VISIBLE_FRAME });
     await ready(subject.view);
-    assert.equal(callbacks.size, 0, "Buzz ownership must pause blinking");
+    assert.equal(callbacks.size, 0, "Kuzz ownership must pause blinking");
 
     toggleChord();
     await waitFor(() => assert.equal(callbacks.size, 1));
@@ -535,7 +535,7 @@ test("reduced motion keeps the terminal cursor solid", async () => {
     toggleChord();
     await waitFor(() =>
       assert.equal(
-        subject.view.container.querySelector(".buzz-terminal-substrate").dataset
+        subject.view.container.querySelector(".kuzz-terminal-substrate").dataset
           .terminalOwner,
         "terminal",
       ),
@@ -792,10 +792,10 @@ test("tab chords drive new, close, and select while the terminal owns input", as
   assert.deepEqual(subject.calls.input, []);
 });
 
-test("tab chords stay inert while Buzz owns input", async () => {
+test("tab chords stay inert while Kuzz owns input", async () => {
   const subject = tabFixture();
   await ready(subject.view);
-  // Deliberately not revealed: owner is "buzz".
+  // Deliberately not revealed: owner is "kuzz".
   const spawn = press({ code: "KeyT", metaKey: true });
   press({ code: "KeyW", metaKey: true });
   press({ code: "ArrowRight", metaKey: true, shiftKey: true });
@@ -806,7 +806,7 @@ test("tab chords stay inert while Buzz owns input", async () => {
   assert.equal(
     spawn.defaultPrevented,
     false,
-    "Buzz-mode ⌘T belongs to the rest of the app",
+    "Kuzz-mode ⌘T belongs to the rest of the app",
   );
 });
 
@@ -844,14 +844,14 @@ test("the handoff chord still toggles with the tab layer installed", async () =>
   const subject = tabFixture();
   await ready(subject.view);
   const substrate = subject.view.container.querySelector(
-    ".buzz-terminal-substrate",
+    ".kuzz-terminal-substrate",
   );
   toggleChord();
   await waitFor(() =>
     assert.equal(substrate.dataset.terminalOwner, "terminal"),
   );
   toggleChord();
-  await waitFor(() => assert.equal(substrate.dataset.terminalOwner, "buzz"));
+  await waitFor(() => assert.equal(substrate.dataset.terminalOwner, "kuzz"));
 });
 
 // ---------------------------------------------------------------------------
@@ -869,7 +869,7 @@ test("mirrors the active canvas grid into a selectable plain-text layer", async 
   });
   await ready(subject.view);
   const selectionLayer = subject.view.container.querySelector(
-    ".buzz-terminal-selection-layer",
+    ".kuzz-terminal-selection-layer",
   );
   await waitFor(() =>
     assert.equal(
@@ -931,7 +931,7 @@ test("lays out screen rows separately but copies soft wraps as one logical line"
   });
   await ready(subject.view);
   const selectionLayer = subject.view.container.querySelector(
-    ".buzz-terminal-selection-layer",
+    ".kuzz-terminal-selection-layer",
   );
   await waitFor(() =>
     assert.equal(
@@ -991,7 +991,7 @@ test("copy normalizes grapheme and empty-row DOM endpoints", async () => {
   const subject = fixture({ sessionFrames: [{ frame, sessionId: "one" }] });
   await ready(subject.view);
   const layer = subject.view.container.querySelector(
-    ".buzz-terminal-selection-layer",
+    ".kuzz-terminal-selection-layer",
   );
   await waitFor(() =>
     assert.equal(

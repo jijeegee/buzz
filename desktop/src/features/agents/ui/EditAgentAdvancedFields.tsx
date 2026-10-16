@@ -11,11 +11,11 @@ import {
 } from "./agentConfigOptions";
 import type { AcpCommandCandidate } from "@/shared/api/acpCommands";
 import type { AcpRuntimeCatalogEntry, AgentPersona } from "@/shared/api/types";
-import { NumericTuningFields } from "./buzzAgentModelTuningFields";
+import { NumericTuningFields } from "./kuzzAgentModelTuningFields";
 import {
-  isBuzzAgentRuntime,
-  BUZZ_AGENT_THINKING_EFFORT,
-} from "./buzzAgentConfig";
+  isKuzzAgentRuntime,
+  KUZZ_AGENT_THINKING_EFFORT,
+} from "./kuzzAgentConfig";
 import {
   EDIT_AGENT_PARALLELISM_HELP,
   parallelismCapHint,
@@ -73,7 +73,7 @@ export function EditAgentAdvancedFields({
   linkedPersona: AgentPersona | null;
   /**
    * The actual/prospective runtime id used to decide whether to show the
-   * buzz-agent effort-tuning field. Uses `prospectiveRuntimeId` from
+   * kuzz-agent effort-tuning field. Uses `prospectiveRuntimeId` from
    * EditAgentDialog — the resolved runtime, not the "inherit"/"custom" sentinel.
    */
   modelTuningRuntimeId: string;
@@ -122,13 +122,13 @@ export function EditAgentAdvancedFields({
   );
 
   // Build the effective hidden-key list: caller's secrets + effort key (when
-  // rendered by BuzzAgentModelTuningFields) + numeric keys via structuredEnvKeys.
+  // rendered by KuzzAgentModelTuningFields) + numeric keys via structuredEnvKeys.
   const effectiveHiddenKeys = React.useMemo(
     () => [
       ...hiddenEnvKeys,
       CODE_WORK_OFF_ENV_KEY,
-      ...(isBuzzAgentRuntime(modelTuningRuntimeId)
-        ? [BUZZ_AGENT_THINKING_EFFORT]
+      ...(isKuzzAgentRuntime(modelTuningRuntimeId)
+        ? [KUZZ_AGENT_THINKING_EFFORT]
         : []),
       ...structuredEnvKeys(numericDescriptors),
     ],

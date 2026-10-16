@@ -32,6 +32,6 @@ void main(List<String> arguments) {
   final requirement = requireHttps
       ? 'an HTTPS origin without an explicit port, credentials, path, query, or fragment'
       : 'an HTTP(S) origin without credentials, path, query, or fragment';
-  stderr.writeln('error: BUZZ_PUSH_GATEWAY_URL must be $requirement.');
+  stderr.writeln('error: KUZZ_PUSH_GATEWAY_URL must be $requirement.');
   exitCode = 1;
 }

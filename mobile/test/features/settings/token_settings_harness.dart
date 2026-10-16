@@ -1,8 +1,8 @@
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/token/token.dart';
-import 'package:buzz/shared/community/community_membership_provider.dart';
-import 'package:buzz/shared/push/push_relay_capability_provider.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/community/community_membership_provider.dart';
+import 'package:kuzz/shared/push/push_relay_capability_provider.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

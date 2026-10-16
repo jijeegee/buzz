@@ -91,8 +91,8 @@ fn remove_record_effort_aliases_strips_all_known_and_legacy_keys() {
     // second half of the atomic clear that a helper-only column clear cannot.
     let mut env: std::collections::BTreeMap<String, String> = [
         ("GOOSE_THINKING_EFFORT", "high"),
-        ("BUZZ_AGENT_THINKING_EFFORT", "high"),
-        ("BUZZ_ACP_EFFORT_LEVEL", "high"),
+        ("KUZZ_AGENT_THINKING_EFFORT", "high"),
+        ("KUZZ_ACP_EFFORT_LEVEL", "high"),
         ("UNRELATED_KEY", "keep"),
     ]
     .into_iter()
@@ -102,8 +102,8 @@ fn remove_record_effort_aliases_strips_all_known_and_legacy_keys() {
     remove_record_effort_aliases(&mut env);
 
     assert!(!env.contains_key("GOOSE_THINKING_EFFORT"));
-    assert!(!env.contains_key("BUZZ_AGENT_THINKING_EFFORT"));
-    assert!(!env.contains_key("BUZZ_ACP_EFFORT_LEVEL"));
+    assert!(!env.contains_key("KUZZ_AGENT_THINKING_EFFORT"));
+    assert!(!env.contains_key("KUZZ_ACP_EFFORT_LEVEL"));
     assert_eq!(
         env.get("UNRELATED_KEY").map(String::as_str),
         Some("keep"),
@@ -133,7 +133,7 @@ fn update_boundary_inherit_sentinel_with_alias_bearing_env_vars_strips_after_app
     // plus an unrelated key.
     let request_env: std::collections::BTreeMap<String, String> = [
         ("GOOSE_THINKING_EFFORT", "max"),
-        ("BUZZ_ACP_EFFORT_LEVEL", "max"),
+        ("KUZZ_ACP_EFFORT_LEVEL", "max"),
         ("UNRELATED_KEY", "keep"),
     ]
     .into_iter()
@@ -148,7 +148,7 @@ fn update_boundary_inherit_sentinel_with_alias_bearing_env_vars_strips_after_app
         "same-request native alias must not survive the transition"
     );
     assert!(
-        !record.env_vars.contains_key("BUZZ_ACP_EFFORT_LEVEL"),
+        !record.env_vars.contains_key("KUZZ_ACP_EFFORT_LEVEL"),
         "same-request ACP sentinel must not survive the transition"
     );
     assert_eq!(

@@ -1,4 +1,4 @@
-//! Buzz accounts on this computer.
+//! Kuzz accounts on this computer.
 //!
 //! Several accounts can be signed in at once; exactly one is active, and its
 //! key is `AppState::keys`. An account is a (relay origin, signing pubkey)
@@ -447,7 +447,7 @@ fn ensure_owners_recorded(data_dir: &Path, registry: &mut Registry, owner: &Publ
     let path = agents_dir.join(crate::managed_agents::AGENT_OWNERS_FILE);
     match crate::managed_agents::record_missing_owners(&path, &records, owner) {
         Ok(_) => registry.owners_migrated = true,
-        Err(error) => eprintln!("buzz-desktop: accounts: agent owners not recorded: {error}"),
+        Err(error) => eprintln!("kuzz-desktop: accounts: agent owners not recorded: {error}"),
     }
 }
 
@@ -770,7 +770,7 @@ pub(crate) fn store_active_refresh(
     };
     store_verified(secrets, &refresh_slot(&pubkey, origin), token)?;
     if let Err(error) = secrets.store(&super::refresh_key(origin), token) {
-        eprintln!("buzz-desktop: accounts: active token copy not written ({error}); dropped");
+        eprintln!("kuzz-desktop: accounts: active token copy not written ({error}); dropped");
         let _ = secrets.delete(&super::refresh_key(origin));
     }
     Ok(())
@@ -1206,14 +1206,14 @@ impl InactiveSessions {
             // the session is recorded.
             if let Some((_, super::OriginAuth::NeedsLogin(code))) = auth.get(&origin) {
                 eprintln!(
-                    "buzz-desktop: accounts: background session of {} on {origin} ended ({code})",
+                    "kuzz-desktop: accounts: background session of {} on {origin} ended ({code})",
                     &pubkey.to_hex()[..8]
                 );
                 if let Some(ended) = ended.filter(|_| super::refresh::ends_sign_in(&code)) {
                     ended(origin, Some(pubkey), code);
                 } else if let Some(dir) = data_dir {
                     if let Err(error) = mark_needs_login(shared_secrets(), &dir, &origin, &pubkey) {
-                        eprintln!("buzz-desktop: accounts: could not record it: {error}");
+                        eprintln!("kuzz-desktop: accounts: could not record it: {error}");
                     }
                 }
             }
@@ -1275,11 +1275,11 @@ pub(crate) const ACTIVE_ACCOUNT_CHANGED_EVENT: &str = "active-account-changed";
 /// resolved. Failures are logged; the single-account slots still work.
 pub(crate) fn reconcile_on_launch(data_dir: &Path) {
     if let Err(error) = start_as_signed_in_account(shared_secrets(), data_dir) {
-        eprintln!("buzz-desktop: accounts: launch account not changed: {error}");
+        eprintln!("kuzz-desktop: accounts: launch account not changed: {error}");
     }
     match reconcile(shared_secrets(), data_dir) {
-        Ok(outcome) => eprintln!("buzz-desktop: accounts: {outcome:?}"),
-        Err(error) => eprintln!("buzz-desktop: accounts: reconcile failed: {error}"),
+        Ok(outcome) => eprintln!("kuzz-desktop: accounts: {outcome:?}"),
+        Err(error) => eprintln!("kuzz-desktop: accounts: reconcile failed: {error}"),
     }
 }
 
@@ -1301,7 +1301,7 @@ fn start_as_signed_in_account(secrets: &dyn Secrets, data_dir: &Path) -> Result<
     registry.active = Some(next.to_hex());
     save_registry(secrets, data_dir, &registry)?;
     eprintln!(
-        "buzz-desktop: accounts: the active account is signed out here; starting as {}",
+        "kuzz-desktop: accounts: the active account is signed out here; starting as {}",
         next.to_hex()
     );
     Ok(())
@@ -1370,7 +1370,7 @@ pub(crate) fn record_owners_on_launch(data_dir: &Path) {
     }
     ensure_owners_recorded(data_dir, &mut registry, &active);
     if let Err(error) = save_registry(shared_secrets(), data_dir, &registry) {
-        eprintln!("buzz-desktop: accounts: owner migration not saved: {error}");
+        eprintln!("kuzz-desktop: accounts: owner migration not saved: {error}");
     }
 }
 
@@ -1499,7 +1499,7 @@ pub(crate) async fn after_active_changed<R: tauri::Runtime>(
 ) {
     use tauri::Emitter;
     if let Err(error) = hand_over_origins(app, previous, current, Some(origin), None).await {
-        eprintln!("buzz-desktop: accounts: hand-over after sign-in incomplete: {error}");
+        eprintln!("kuzz-desktop: accounts: hand-over after sign-in incomplete: {error}");
     }
     let _ = app.emit(ACTIVE_ACCOUNT_CHANGED_EVENT, current.to_hex());
 }
@@ -1516,8 +1516,8 @@ pub struct AccountSummary {
     /// From [`super::account_profiles`]; absent until first learned.
     /// The Google name.
     pub display_name: Option<String>,
-    /// The Buzz profile name; menus prefer it.
-    pub buzz_name: Option<String>,
+    /// The Kuzz profile name; menus prefer it.
+    pub kuzz_name: Option<String>,
     pub avatar_url: Option<String>,
     pub email: Option<String>,
     /// Unix seconds of the last sign-in or switch to it.
@@ -1558,7 +1558,7 @@ fn account_summaries(
                 state: a.state,
                 active: registry.active.as_ref() == Some(&a.pubkey),
                 display_name: profile.display_name,
-                buzz_name: profile.buzz_name,
+                kuzz_name: profile.kuzz_name,
                 avatar_url: profile.avatar_url,
                 email: profile.email,
                 last_used_at: profile.last_used_at,
@@ -1577,7 +1577,7 @@ pub struct WatchableAccount {
     pub pubkey: String,
     /// For the notification title: which account it is for.
     pub display_name: Option<String>,
-    pub buzz_name: Option<String>,
+    pub kuzz_name: Option<String>,
     pub email: Option<String>,
 }
 
@@ -1625,20 +1625,20 @@ fn watchable_accounts(
                 origin: a.origin.clone(),
                 pubkey: a.pubkey.clone(),
                 display_name: profile.display_name,
-                buzz_name: profile.buzz_name,
+                kuzz_name: profile.kuzz_name,
                 email: profile.email,
             })
         })
         .collect()
 }
 
-/// Record the active account's Buzz profile name for the account menu.
+/// Record the active account's Kuzz profile name for the account menu.
 /// `pubkey` is the UI's identity: the account key, or in token mode the
 /// session principal. A name for any other account is ignored: the UI that
 /// read it may belong to an account just switched away from. Stored under
 /// the account key, which is what the account list is keyed by.
 #[tauri::command]
-pub fn remember_account_buzz_name(
+pub fn remember_account_kuzz_name(
     app: tauri::AppHandle,
     pubkey: String,
     name: String,
@@ -1658,7 +1658,7 @@ pub fn remember_account_buzz_name(
         .path()
         .app_data_dir()
         .map_err(|_| "account storage is unavailable")?;
-    super::account_profiles::learn_buzz_name(&data_dir, &account, &name);
+    super::account_profiles::learn_kuzz_name(&data_dir, &account, &name);
     Ok(())
 }
 
@@ -1721,7 +1721,7 @@ pub async fn switch_account(
     let _ = app.emit(ACTIVE_ACCOUNT_CHANGED_EVENT, target.to_hex());
     super::restore::emit_changed(&app, &origin);
     Ok(handed.err().map(|error| {
-        eprintln!("buzz-desktop: accounts: switch hand-over incomplete: {error}");
+        eprintln!("kuzz-desktop: accounts: switch hand-over incomplete: {error}");
         error
     }))
 }
@@ -1789,7 +1789,7 @@ pub(crate) fn owner_here_for<R: tauri::Runtime>(
         Ok(None) => None,
         Err(error) => {
             eprintln!(
-                "buzz-desktop: agents: account list unreadable ({error}); starting agents by sign-out marker only"
+                "kuzz-desktop: agents: account list unreadable ({error}); starting agents by sign-out marker only"
             );
             None
         }

@@ -15,7 +15,7 @@ import * as React from "react";
  */
 export type ThreadViewMode = "focus" | "split";
 
-const STORAGE_KEY = "buzz.channels.threadViewMode";
+const STORAGE_KEY = "kuzz.channels.threadViewMode";
 
 /** Layout used when nothing is stored, or the stored value is unrecognized. */
 const DEFAULT_THREAD_VIEW_MODE: ThreadViewMode = "split";
@@ -77,7 +77,7 @@ export function setThreadViewMode(mode: ThreadViewMode): void {
 // maximized by default, and the layout toggle there is remembered on its own,
 // across closing the inbox panel and restarts, without touching the channel
 // default above.
-const INBOX_STORAGE_KEY = "buzz.channels.inboxThreadViewMode";
+const INBOX_STORAGE_KEY = "kuzz.channels.inboxThreadViewMode";
 const DEFAULT_INBOX_THREAD_VIEW_MODE: ThreadViewMode = "focus";
 
 const inboxListeners = new Set<() => void>();

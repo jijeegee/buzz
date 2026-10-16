@@ -33,7 +33,7 @@ fn managed_agent_record_without_auth_tag_deserializes() {
             "name": "test-agent",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "kuzz-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",
@@ -63,7 +63,7 @@ fn managed_agent_record_with_auth_tag_round_trips() {
         "private_key_nsec": "nsec1fake",
         "auth_tag": "[\"auth\",\"deadbeef\",\"\",\"cafebabe\"]",
         "relay_url": "wss://localhost:3000",
-        "acp_command": "buzz-acp",
+        "acp_command": "kuzz-acp",
         "agent_command": "goose",
         "agent_args": [],
         "mcp_command": "",
@@ -141,7 +141,7 @@ fn managed_agent_record_without_respond_to_fields_defaults_to_owner_only() {
             "name": "legacy-agent",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "kuzz-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",
@@ -343,7 +343,7 @@ fn managed_agent_record_deserializes_old_pack_path_fields_via_alias() {
             "name": "test-agent",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "kuzz-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",
@@ -426,7 +426,7 @@ fn managed_agent_record_without_key_deserializes_empty() {
             "pubkey": "abcd1234",
             "name": "test-agent",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "kuzz-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",
@@ -480,7 +480,7 @@ fn sample_agent_record() -> ManagedAgentRecord {
             "name": "test-agent",
             "private_key_nsec": "nsec1fake",
             "relay_url": "wss://localhost:3000",
-            "acp_command": "buzz-acp",
+            "acp_command": "kuzz-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",
@@ -699,7 +699,7 @@ fn persona_into_agent_record_is_keyless_and_slugged() {
 #[test]
 fn alternate_acp_command_survives_the_agent_store_fold() {
     let mut persona = sample_persona();
-    persona.acp_command = Some("buzz-janet-acp".to_string());
+    persona.acp_command = Some("kuzz-janet-acp".to_string());
 
     let view = persona
         .clone()
@@ -881,7 +881,7 @@ fn summary_fixture(
         runtime: None,
         team_id: None,
         relay_url: String::new(),
-        acp_command: "buzz-acp".into(),
+        acp_command: "kuzz-acp".into(),
         agent_command: "goose".into(),
         agent_command_override: None,
         agent_args: Vec::new(),

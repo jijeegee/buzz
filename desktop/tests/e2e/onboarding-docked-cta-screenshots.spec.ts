@@ -11,7 +11,7 @@ const BLANK_TYLER_IDENTITY = {
 
 const SHOT_DIR = "test-results/onboarding-docked-cta";
 const COMMUNITY_ONBOARDING_TRANSACTION_STORAGE_KEY =
-  "buzz-community-onboarding-transaction.v1";
+  "kuzz-community-onboarding-transaction.v1";
 const NCRYPTSEC =
   "ncryptsec1qgg9947rlpvqu76pj5ecreduf9jxhselq2nae2kghhvd5g7dgjtcxfqtd67p9m0w57lspw8gsq6yphnm8623nsl8xn9j4jdzz84zm3frztj3z7s35vpzmqf6ksu8r89qk5z2zxfmu5gv8th8wclt0h4p";
 
@@ -46,7 +46,7 @@ async function expectSharedCardGeometry(page: Page, expectedWidth = 610) {
 async function expectUsesFullCardWidth(element: Locator) {
   const geometry = await element.evaluate((node) => {
     const available = node.closest<HTMLElement>(
-      ".buzz-onboarding-transition-content",
+      ".kuzz-onboarding-transition-content",
     );
     if (!available) throw new Error("Onboarding content column is missing");
     const availableBox = available.getBoundingClientRect();
@@ -95,7 +95,7 @@ async function expectHorizontalCardTransition(
 ) {
   const transition = page
     .getByTestId(pageTestId)
-    .locator(".buzz-onboarding-transition-line")
+    .locator(".kuzz-onboarding-transition-line")
     .first();
   await expect(transition).toHaveAttribute(
     "data-onboarding-direction",
@@ -104,10 +104,10 @@ async function expectHorizontalCardTransition(
 
   const motion = await transition.evaluate((line) => {
     const content = line.querySelector<HTMLElement>(
-      ":scope > .buzz-onboarding-transition-content",
+      ":scope > .kuzz-onboarding-transition-content",
     );
     if (!content) throw new Error("Onboarding transition content is missing");
-    const frame = line.closest<HTMLElement>(".buzz-onboarding-step-frame");
+    const frame = line.closest<HTMLElement>(".kuzz-onboarding-step-frame");
     if (!frame) throw new Error("Onboarding transition frame is missing");
 
     const animationName = window.getComputedStyle(content).animationName;
@@ -181,7 +181,7 @@ async function expectHorizontalCardTransition(
   });
 
   expect(motion.animationName).toBe(
-    `buzz-onboarding-line-slide-${expectedDirection}`,
+    `kuzz-onboarding-line-slide-${expectedDirection}`,
   );
   expect(motion.keyframes.length).toBeGreaterThanOrEqual(2);
   for (const frame of [...motion.keyframes, ...motion.activeFrames]) {
@@ -392,7 +392,7 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
   const passwordPanel = page.getByTestId("backup-password-panel");
   await expect(passwordPanel).toBeVisible();
   await expectUsesFullCardWidth(passwordPanel);
-  await expect(passwordPanel).not.toHaveClass(/buzz-card-textured/);
+  await expect(passwordPanel).not.toHaveClass(/kuzz-card-textured/);
   await expect(passwordPanel).toHaveCSS("padding-left", "0px");
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOT_DIR}/02d-backup-password.png` });
@@ -400,7 +400,7 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
   await page.getByTestId("backup-passphrase-generate").click();
   const generatorPopover = page.getByRole("dialog");
   await expect(generatorPopover).toBeVisible();
-  await expect(generatorPopover).not.toHaveClass(/buzz-card-textured/);
+  await expect(generatorPopover).not.toHaveClass(/kuzz-card-textured/);
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOT_DIR}/02e-backup-generator.png` });
   await page.keyboard.press("Escape");
@@ -504,7 +504,7 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
     page.getByTestId("onboarding-use-different-harness"),
   ).toBeVisible();
   await waitForAnimations(page);
-  await page.screenshot({ path: `${SHOT_DIR}/03d-api-buzz-model.png` });
+  await page.screenshot({ path: `${SHOT_DIR}/03d-api-kuzz-model.png` });
 
   await page.getByTestId("global-agent-provider").click();
   await page.getByTestId("global-agent-provider-option-anthropic").click();
@@ -557,13 +557,13 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
     page.getByRole("heading", { name: "Choose a harness" }),
   ).toBeVisible();
   await expectHorizontalCardTransition(page, "onboarding-page-2", "forward");
-  await expect(page.getByTestId("onboarding-runtime-buzz-agent")).toContainText(
+  await expect(page.getByTestId("onboarding-runtime-kuzz-agent")).toContainText(
     "Recommended",
   );
   await expect(
-    page.getByTestId("onboarding-runtime-ready-buzz-agent"),
+    page.getByTestId("onboarding-runtime-ready-kuzz-agent"),
   ).toHaveCount(0);
-  await page.getByTestId("onboarding-runtime-buzz-agent").hover();
+  await page.getByTestId("onboarding-runtime-kuzz-agent").hover();
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOT_DIR}/03e-api-harnesses.png` });
 
@@ -692,7 +692,7 @@ test("community onboarding: profile and starter-team cards", async ({
   await page.addInitScript(
     ({ pubkey, transactionStorageKey }) => {
       window.localStorage.setItem(
-        `buzz-machine-onboarding-complete.v2:${pubkey}`,
+        `kuzz-machine-onboarding-complete.v2:${pubkey}`,
         "true",
       );
       const timestamp = new Date().toISOString();

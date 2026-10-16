@@ -23,7 +23,7 @@ test("a saved kubernetes config renders labeled scalar rows", () => {
     type: "provider",
     id: "kubernetes",
     config: {
-      namespace: "buzz-agents-x7k2mp",
+      namespace: "kuzz-agents-x7k2mp",
       image: "ghcr.io/block/buzz-sprig@sha256:17facfc7",
       cpu_request: "1",
       inactivity_seconds: 7200,
@@ -32,7 +32,7 @@ test("a saved kubernetes config renders labeled scalar rows", () => {
   assert.equal(summary.location, "provider");
   const byKey = Object.fromEntries(summary.rows.map((r) => [r.key, r]));
   assert.equal(byKey.namespace.label, "Namespace");
-  assert.equal(byKey.namespace.value, "buzz-agents-x7k2mp");
+  assert.equal(byKey.namespace.value, "kuzz-agents-x7k2mp");
   assert.equal(byKey.cpu_request.label, "CPU request");
   assert.equal(byKey.cpu_request.value, "1");
   assert.equal(byKey.inactivity_seconds.label, "Inactivity seconds");

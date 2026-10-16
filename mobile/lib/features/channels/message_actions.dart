@@ -131,7 +131,7 @@ void showMessageActions({
     return;
   }
 
-  showBuzzModalBottomSheet<void>(
+  showKuzzModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -271,7 +271,7 @@ void showImageActions({
   required bool canManageMessage,
   VoidCallback? onDeleted,
 }) {
-  showBuzzModalBottomSheet<void>(
+  showKuzzModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -417,7 +417,7 @@ String downloadedImageFilename(String imageUrl, String? contentType) {
     'image/webp' => '.webp',
     _ => '.jpg',
   };
-  return 'buzz-${DateTime.now().millisecondsSinceEpoch}$extension';
+  return 'kuzz-${DateTime.now().millisecondsSinceEpoch}$extension';
 }
 
 Future<void> _saveImage(
@@ -482,7 +482,7 @@ Future<void> _shareImage(
   }
 }
 
-/// Canonical `buzz://message` link for a timeline message, including thread
+/// Canonical `kuzz://message` link for a timeline message, including thread
 /// context when the message is a reply.
 String messageLinkFor({
   required TimelineMessage message,
@@ -850,7 +850,7 @@ void _showEditSheet({
   required String channelId,
 }) {
   final controller = TextEditingController(text: message.content);
-  showBuzzModalBottomSheet<void>(
+  showKuzzModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -917,7 +917,7 @@ void _confirmDelete({
   required String messageId,
   VoidCallback? onDeleted,
 }) {
-  showBuzzDialog<void>(
+  showKuzzDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: const Text('Delete message'),

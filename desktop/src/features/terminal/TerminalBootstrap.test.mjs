@@ -33,7 +33,7 @@ before(async () => {
     isTauri: true,
     window: dom.window,
   });
-  dom.window.localStorage.setItem("buzz-follow-system", "false");
+  dom.window.localStorage.setItem("kuzz-follow-system", "false");
   dom.window.isTauri = true;
   dom.window.matchMedia = () => ({
     // This suite exercises bootstrap/IPC behavior, not banner motion. Keeping
@@ -162,7 +162,7 @@ test("mounted bootstrap passes GUI context and ACKs only after consuming a frame
         ThemeProvider,
         null,
         createElement("div", {
-          className: "buzz-huddle-app-surface",
+          className: "kuzz-huddle-app-surface",
           tabIndex: -1,
         }),
         createElement(TerminalBootstrap, {
@@ -258,7 +258,7 @@ test("first-open splash waits for the first terminal frame", async () => {
     assert.ok(calls.some(({ command }) => command === "terminal_attach")),
   );
   assert.equal(
-    view.container.querySelector(".buzz-terminal-welcome"),
+    view.container.querySelector(".kuzz-terminal-welcome"),
     null,
     "the splash must not be consumed while the first PTY frame is pending",
   );
@@ -279,7 +279,7 @@ test("first-open splash waits for the first terminal frame", async () => {
     });
   });
   await waitFor(() =>
-    assert.ok(view.container.querySelector(".buzz-terminal-welcome")),
+    assert.ok(view.container.querySelector(".kuzz-terminal-welcome")),
   );
   view.unmount();
 });
@@ -297,7 +297,7 @@ test("resize during in-flight catch-up keeps the newest viewport ready", async (
       ThemeProvider,
       null,
       createElement("div", {
-        className: "buzz-huddle-app-surface",
+        className: "kuzz-huddle-app-surface",
         tabIndex: -1,
       }),
       createElement(TerminalBootstrap, {
@@ -354,7 +354,7 @@ test("opening a tab keeps terminal ownership while its attachment is pending", a
       ThemeProvider,
       null,
       createElement("div", {
-        className: "buzz-huddle-app-surface",
+        className: "kuzz-huddle-app-surface",
         tabIndex: -1,
       }),
       createElement(TerminalBootstrap, {
@@ -372,7 +372,7 @@ test("opening a tab keeps terminal ownership while its attachment is pending", a
   await act(async () => {
     await Promise.resolve();
   });
-  const substrate = view.container.querySelector(".buzz-terminal-substrate");
+  const substrate = view.container.querySelector(".kuzz-terminal-substrate");
   await waitFor(() =>
     assert.equal(substrate.dataset.terminalOwner, "terminal"),
   );
@@ -383,7 +383,7 @@ test("opening a tab keeps terminal ownership while its attachment is pending", a
   assert.equal(
     substrate.dataset.terminalOwner,
     "terminal",
-    "an attaching session must not force the substrate back to Buzz",
+    "an attaching session must not force the substrate back to Kuzz",
   );
   assert.equal(view.getAllByRole("tab").length, 2);
 
@@ -519,7 +519,7 @@ test("closing removes the tab before native shutdown resolves", async () => {
       ThemeProvider,
       null,
       createElement("div", {
-        className: "buzz-huddle-app-surface",
+        className: "kuzz-huddle-app-surface",
         tabIndex: -1,
       }),
       createElement(TerminalBootstrap, {
@@ -551,7 +551,7 @@ test("closing removes the tab before native shutdown resolves", async () => {
 });
 
 // The wheel-to-IPC path end to end. `TerminalSubstrate` already proves it
-// accumulates pixels into whole cells and `buzz-terminal` already proves which
+// accumulates pixels into whole cells and `kuzz-terminal` already proves which
 // way the engine goes; the seam between them is this file's business, and the
 // thing that can silently rot here is the *sign*. A negation added in the
 // bridge would leave every unit test green and scroll the terminal the wrong
@@ -571,7 +571,7 @@ test("wheel deltas reach terminal_scroll with the DOM sign intact", async () => 
       ThemeProvider,
       null,
       createElement("div", {
-        className: "buzz-huddle-app-surface",
+        className: "kuzz-huddle-app-surface",
         tabIndex: -1,
       }),
       createElement(TerminalBootstrap, {
@@ -589,7 +589,7 @@ test("wheel deltas reach terminal_scroll with the DOM sign intact", async () => 
   await act(async () => {
     await Promise.resolve();
   });
-  const substrate = view.container.querySelector(".buzz-terminal-substrate");
+  const substrate = view.container.querySelector(".kuzz-terminal-substrate");
 
   // Two cells' worth of pixels (cell height is 17), backwards.
   await act(async () => {

@@ -1,0 +1,18 @@
+[package]
+name = "git-credential-kuzz"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Git credential helper that supplies Kuzz bearer tokens for Kuzz's git server"
+
+[lib]
+name = "git_credential_kuzz"
+path = "src/lib.rs"
+
+[[bin]]
+name = "git-credential-kuzz"
+path = "src/main.rs"
+
+[dependencies]
+kuzz-token-broker = { workspace = true }

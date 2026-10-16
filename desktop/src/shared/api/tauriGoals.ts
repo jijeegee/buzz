@@ -24,7 +24,7 @@ export type GoalTreeHead = {
   tree: GoalTree;
 };
 
-/** One edit; mirrors `buzz_core::goal_tree::GoalOp`. */
+/** One edit; mirrors `kuzz_core::goal_tree::GoalOp`. */
 export type GoalOp =
   | { op: "set_root"; id: string; title: string; note?: string | null }
   | {
@@ -122,7 +122,7 @@ export async function restoreGoalTree(
   await invokeTauri("restore_goal_tree", { channelId, revision });
 }
 
-/** A fresh node id in the same shape as `buzz_core::goal_tree::new_node_id`. */
+/** A fresh node id in the same shape as `kuzz_core::goal_tree::new_node_id`. */
 export function newGoalId(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);

@@ -1,6 +1,6 @@
-import 'package:buzz/features/goals/goal_links.dart';
-import 'package:buzz/features/goals/goal_tree.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/goals/goal_links.dart';
+import 'package:kuzz/features/goals/goal_tree.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _editor =

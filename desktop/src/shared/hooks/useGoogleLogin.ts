@@ -11,7 +11,7 @@ import {
 
 type Phase = "opening" | "waiting" | "completing" | "signup" | null;
 
-/** The user's answer on the "Create your Buzz account" screen. */
+/** The user's answer on the "Create your Kuzz account" screen. */
 export type SignupChoice = "create" | "different" | "close";
 
 /** Owns one native login attempt, including its browser-only cancellation. */
@@ -47,7 +47,7 @@ export function useGoogleLogin() {
   }
 
   /**
-   * A sign-in whose Google account has no Buzz account yet: create it, pick
+   * A sign-in whose Google account has no Kuzz account yet: create it, pick
    * another Google account (a fresh sign-in), or stop. Until "Create
    * account" the server holds nothing for it.
    */
@@ -142,7 +142,7 @@ export function useGoogleLogin() {
     }
   }
 
-  /** Answer the "Create your Buzz account" screen. */
+  /** Answer the "Create your Kuzz account" screen. */
   function answerSignup(choice: SignupChoice) {
     answer.current?.(choice);
   }

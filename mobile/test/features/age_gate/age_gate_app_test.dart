@@ -1,19 +1,19 @@
 import 'dart:async';
 
-import 'package:buzz/app.dart';
-import 'package:buzz/features/age_gate/age_restriction_page.dart';
-import 'package:buzz/features/age_gate/age_signal_push_bootstrap.dart';
-import 'package:buzz/features/age_gate/age_signal_provider.dart';
-import 'package:buzz/features/channels/unread_badge/unread_badge_provider.dart';
-import 'package:buzz/features/home/home_page.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/token/token.dart';
-import 'package:buzz/shared/huddle/huddle.dart';
+import 'package:kuzz/app.dart';
+import 'package:kuzz/features/age_gate/age_restriction_page.dart';
+import 'package:kuzz/features/age_gate/age_signal_push_bootstrap.dart';
+import 'package:kuzz/features/age_gate/age_signal_provider.dart';
+import 'package:kuzz/features/channels/unread_badge/unread_badge_provider.dart';
+import 'package:kuzz/features/home/home_page.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/huddle/huddle.dart';
 import '../../shared/community/community_storage_test.dart'
     show FakeSecureStorage;
-import 'package:buzz/shared/push/push_bootstrap.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:kuzz/shared/push/push_bootstrap.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -318,7 +318,7 @@ void main() {
       );
       await tester.pump();
       expect(find.byType(HomePage), findsOneWidget);
-      expect(find.byType(BuzzPushBootstrap), findsOneWidget);
+      expect(find.byType(KuzzPushBootstrap), findsOneWidget);
       expect(relaySession.builds, 1);
       expect(requests, 1);
 
@@ -345,7 +345,7 @@ void main() {
       );
       expect(find.byType(HomePage), restricted ? findsNothing : findsOneWidget);
       expect(
-        find.byType(BuzzPushBootstrap),
+        find.byType(KuzzPushBootstrap),
         restricted ? findsNothing : findsOneWidget,
       );
       await tester.pumpWidget(const SizedBox.shrink());
@@ -519,7 +519,7 @@ class _RecordingTokenAuthNotifier extends _UnauthenticatedAuthNotifier {
 /// Holds the browser round-trip open so the test can interleave events.
 class _HeldWebAuthLauncher implements WebAuthLauncher {
   @override
-  Future<String> callbackScheme() async => buzzMobileCallbackScheme;
+  Future<String> callbackScheme() async => kuzzMobileCallbackScheme;
 
   Uri? opened;
   Completer<Uri>? pending;

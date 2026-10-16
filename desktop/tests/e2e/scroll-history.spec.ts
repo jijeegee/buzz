@@ -75,13 +75,13 @@ test("channel switch settles at the newest message after virtualized rows measur
   await installMockBridge(page);
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   await page.evaluate(() => {
     const base = Math.floor(Date.now() / 1000);
     for (let index = 0; index < 80; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `switch-bottom ${index} ${"variable-height ".repeat(
           index % 7,
@@ -131,12 +131,12 @@ test("first channel load paints the first window without waiting for the row-flo
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   await page.evaluate(() => {
-    const root = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+    const root = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
       channelName: "general",
       content: "cold-load root",
       createdAt: 1_700_000_000,
@@ -144,7 +144,7 @@ test("first channel load paints the first window without waiting for the row-flo
     if (!root) throw new Error("Failed to seed cold-load root");
 
     for (let index = 0; index < 360; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `cold-load reply ${index}`,
         parentEventId: root.id,
@@ -152,9 +152,9 @@ test("first channel load paints the first window without waiting for the row-flo
       });
     }
 
-    window.__BUZZ_E2E__ = {
-      ...window.__BUZZ_E2E__,
-      mock: { ...window.__BUZZ_E2E__?.mock, channelWindowDelayMs: 5_000 },
+    window.__KUZZ_E2E__ = {
+      ...window.__KUZZ_E2E__,
+      mock: { ...window.__KUZZ_E2E__?.mock, channelWindowDelayMs: 5_000 },
     };
   });
 
@@ -180,7 +180,7 @@ test("preserves user scroll while older channel history loads", async ({
   await installMockBridge(page);
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   // The 600-row seed exceeds the 50-row head window, leaving genuinely older
@@ -247,9 +247,9 @@ test("preserves user scroll while older channel history loads", async ({
   // enough to observe the anchor across the landing. channelWindowDelayMs is read
   // live by the bridge, so toggling it here applies to the next fetch only.
   await page.evaluate(() => {
-    window.__BUZZ_E2E__ = {
-      ...window.__BUZZ_E2E__,
-      mock: { ...window.__BUZZ_E2E__?.mock, channelWindowDelayMs: 1_000 },
+    window.__KUZZ_E2E__ = {
+      ...window.__KUZZ_E2E__,
+      mock: { ...window.__KUZZ_E2E__?.mock, channelWindowDelayMs: 1_000 },
     };
     (
       window as unknown as { __CHANNEL_WINDOW_INFLIGHT__?: number }
@@ -362,18 +362,18 @@ test("does not teleport upward when user abandons fetch by jumping to bottom", a
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   await page.evaluate(() => {
     for (let index = 0; index < 40; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `visible current ${index}\nsecond line ${index}`,
       });
     }
-    window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
+    window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
       channelName: "general",
       count: 600,
       lineCount: 3,
@@ -400,10 +400,10 @@ test("does not teleport upward when user abandons fetch by jumping to bottom", a
   // "scroll up, observe prepend land, scroll back to bottom" -- a different
   // test). 5s is comfortably longer than the wheel-up loop in practice.
   await page.evaluate(() => {
-    window.__BUZZ_E2E__ = {
-      ...window.__BUZZ_E2E__,
+    window.__KUZZ_E2E__ = {
+      ...window.__KUZZ_E2E__,
       mock: {
-        ...window.__BUZZ_E2E__?.mock,
+        ...window.__KUZZ_E2E__?.mock,
         channelWindowDelayMs: 5_000,
       },
     };
@@ -575,12 +575,12 @@ test("reserves imeta image height before a synthetic image loads", async ({
   await installMockBridge(page);
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   await page.evaluate(
     ({ content, extraTags }) => {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content,
         extraTags,
@@ -638,8 +638,8 @@ test("deep-link to a message in older history scrolls and highlights it", async 
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   // Seed the channel with a small live window plus a large prepended
@@ -650,13 +650,13 @@ test("deep-link to a message in older history scrolls and highlights it", async 
       // Monotonic createdAt so `visible current 39` (seeded last) sorts to the
       // genuine last row rather than a random UUID-tiebreak position; matches
       // the channel-intro seed precedent. The :630 assertion stays untouched.
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `visible current ${index}\nsecond line ${index}`,
         createdAt: 1_700_000_000 + index,
       });
     }
-    const events = window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
+    const events = window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
       channelName: "general",
       count: 600,
       lineCount: 3,
@@ -846,7 +846,7 @@ test("unified channel search opens rows regardless of history position", async (
   await installMockBridge(page);
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   const ALPHA = "NEEDLE-ALPHA-c7b3";
@@ -867,7 +867,7 @@ test("unified channel search opens rows regardless of history position", async (
         // Monotonic createdAt so ALPHA/BRAVO land at their true sorted
         // positions (index 20 / 110) rather than random UUID-tiebreak slots;
         // matches the channel-intro seed precedent. Needle assertions untouched.
-        window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+        window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
           channelName: "general",
           content: body,
           createdAt: 1_700_000_000 + i,
@@ -1079,7 +1079,7 @@ test("composer expansion does not push bottom row out of viewport", async ({
   await installMockBridge(page);
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   // Seed enough messages that the timeline is scrollable. The bottom
@@ -1097,7 +1097,7 @@ test("composer expansion does not push bottom row out of viewport", async ({
         // virtualized window, so `toContainText(BOTTOM_NEEDLE)` flakes. A
         // distinct stamp per row sorts the needle to the true last row.
         // Matches the channel-intro seed precedent (1_700_000_001 + index).
-        window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+        window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
           channelName: "general",
           content: body,
           createdAt: 1_700_000_000 + i,
@@ -1201,12 +1201,12 @@ test("mounted rows cover the viewport beneath the composer in both directions", 
   await installMockBridge(page);
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   await page.evaluate(() => {
     for (let index = 0; index < 120; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `direction row ${index}\nsecond line ${index}`,
         createdAt: 1_700_000_000 + index,
@@ -1293,13 +1293,13 @@ test("fast middle-page scroll settles with continuous mounted coverage", async (
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   await page.evaluate(() => {
     for (let index = 0; index < 180; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `settle row ${index}\nline two ${index}\nline three ${index}`,
         createdAt: 1_700_000_000 + index,
@@ -1319,7 +1319,7 @@ test("fast middle-page scroll settles with continuous mounted coverage", async (
   });
 
   await page.waitForFunction(() =>
-    window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+    window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
       channelName: "general",
       kind: 39005,
     }),
@@ -1330,7 +1330,7 @@ test("fast middle-page scroll settles with continuous mounted coverage", async (
     .scrollHeight;
   await page.evaluate(() => {
     for (let index = 0; index < 100; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `prepended settle row ${index}\nolder line two ${index}\nolder line three ${index}`,
         createdAt: 1_699_999_000 + index,
@@ -1412,7 +1412,7 @@ test("in-viewport reflow above the anchor row does not push it down", async ({
   await installMockBridge(page);
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   // Seed enough rows that the timeline becomes scrollable with several
@@ -1422,7 +1422,7 @@ test("in-viewport reflow above the anchor row does not push it down", async ({
       // Monotonic createdAt so `resize-anchor row 59` (seeded last) sorts to
       // the genuine last row rather than a random UUID-tiebreak position; see
       // the composer seed for the full rationale.
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `resize-anchor row ${index}\nsecond line ${index}\nthird line ${index}`,
         createdAt: 1_700_000_000 + index,
@@ -1532,18 +1532,18 @@ test("channel intro stays hidden while older history is loading", async ({
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   await page.evaluate(() => {
     for (let index = 0; index < 40; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `visible current ${index}\nsecond line ${index}`,
       });
     }
-    window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
+    window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
       channelName: "general",
       count: 600,
       lineCount: 3,
@@ -1557,10 +1557,10 @@ test("channel intro stays hidden while older history is loading", async ({
 
   // Pace the older fetch so it stays in flight long enough to assert against.
   await page.evaluate(() => {
-    window.__BUZZ_E2E__ = {
-      ...window.__BUZZ_E2E__,
+    window.__KUZZ_E2E__ = {
+      ...window.__KUZZ_E2E__,
       mock: {
-        ...window.__BUZZ_E2E__?.mock,
+        ...window.__KUZZ_E2E__?.mock,
         channelWindowDelayMs: 5_000,
       },
     };
@@ -1633,8 +1633,8 @@ test("channel intro stays hidden while paginating past the timeline cap", async 
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   // Seed past the 2000-event cap: a current window plus ~2100 older roots.
@@ -1642,12 +1642,12 @@ test("channel intro stays hidden while paginating past the timeline cap", async 
   // roots in a way that falsely signals "channel start reached".
   await page.evaluate(() => {
     for (let index = 0; index < 60; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `recent ${index}`,
       });
     }
-    window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
+    window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
       channelName: "general",
       count: 2100,
       lineCount: 2,
@@ -1771,18 +1771,18 @@ test("older-history fetches never overlap (no concurrent in-flight requests)", a
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   await page.evaluate(() => {
     for (let index = 0; index < 60; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `recent ${index}`,
       });
     }
-    window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
+    window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
       channelName: "general",
       count: 1200,
       lineCount: 2,
@@ -1790,9 +1790,9 @@ test("older-history fetches never overlap (no concurrent in-flight requests)", a
     (
       window as unknown as { __CHANNEL_WINDOW_INFLIGHT_PEAK__?: number }
     ).__CHANNEL_WINDOW_INFLIGHT_PEAK__ = 0;
-    window.__BUZZ_E2E__ = {
-      ...window.__BUZZ_E2E__,
-      mock: { ...window.__BUZZ_E2E__?.mock, channelWindowDelayMs: 400 },
+    window.__KUZZ_E2E__ = {
+      ...window.__KUZZ_E2E__,
+      mock: { ...window.__KUZZ_E2E__?.mock, channelWindowDelayMs: 400 },
     };
   });
 
@@ -1842,25 +1842,25 @@ test("older-history spinner stays visible in viewport while fetching mid-scroll"
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   await page.evaluate(() => {
     for (let index = 0; index < 60; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `recent ${index}`,
       });
     }
-    window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
+    window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
       channelName: "general",
       count: 1200,
       lineCount: 2,
     });
-    window.__BUZZ_E2E__ = {
-      ...window.__BUZZ_E2E__,
-      mock: { ...window.__BUZZ_E2E__?.mock, channelWindowDelayMs: 2_000 },
+    window.__KUZZ_E2E__ = {
+      ...window.__KUZZ_E2E__,
+      mock: { ...window.__KUZZ_E2E__?.mock, channelWindowDelayMs: 2_000 },
     };
   });
 
@@ -1932,8 +1932,8 @@ test("one scroll-up gesture pages older history once, not to the channel top", a
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   // Deep seed: a current window plus ~1200 older roots, far more than a single
@@ -1941,12 +1941,12 @@ test("one scroll-up gesture pages older history once, not to the channel top", a
   // "mock older 0"; if it pages once per gesture, it stops well short.
   await page.evaluate(() => {
     for (let index = 0; index < 60; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `recent ${index}`,
       });
     }
-    window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
+    window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
       channelName: "general",
       count: 1200,
       lineCount: 2,
@@ -2027,18 +2027,18 @@ test("older-history prepend keeps the reading row fixed (no jump to oldest)", as
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
+      typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__ === "function",
   );
 
   await page.evaluate(() => {
     for (let index = 0; index < 40; index += 1) {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `recent ${index}`,
       });
     }
-    window.__BUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
+    window.__KUZZ_E2E_PREPEND_MOCK_HISTORY__?.({
       channelName: "general",
       count: 1200,
       lineCount: 2,
@@ -2066,9 +2066,9 @@ test("older-history prepend keeps the reading row fixed (no jump to oldest)", as
   // and after it lands. The cold window leaves older roots behind the composite
   // cursor, so one scroll-up to the top band fires a genuine page.
   await page.evaluate(() => {
-    window.__BUZZ_E2E__ = {
-      ...window.__BUZZ_E2E__,
-      mock: { ...window.__BUZZ_E2E__?.mock, channelWindowDelayMs: 1_500 },
+    window.__KUZZ_E2E__ = {
+      ...window.__KUZZ_E2E__,
+      mock: { ...window.__KUZZ_E2E__?.mock, channelWindowDelayMs: 1_500 },
     };
     (
       window as unknown as { __CHANNEL_WINDOW_INFLIGHT__?: number }
@@ -2154,7 +2154,7 @@ test("thread summary badge survives a retained older-history prepend", async ({
   await installMockBridge(page);
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   // Seed a reply to the NEWEST deep-history row before the channel is opened:
@@ -2163,7 +2163,7 @@ test("thread summary badge survives a retained older-history prepend", async ({
   // driven purely by the relay-shaped 39005 page summary — exactly the state
   // the deferred-pass entry fallback used to drop.
   await page.evaluate(() => {
-    window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+    window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
       channelName: "deep-history",
       content: "summary-only reply",
       parentEventId: "mock-deep-history-599",

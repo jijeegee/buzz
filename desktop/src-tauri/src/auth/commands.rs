@@ -56,12 +56,12 @@ pub struct TokenAuthStatus {
     /// Agents a sign-out could not confirm stopped (still stopping, or the
     /// stop failed). The sign-out itself went through.
     pub agents_not_stopped: usize,
-    /// The chosen Google account has no Buzz account yet: nothing was
+    /// The chosen Google account has no Kuzz account yet: nothing was
     /// created; the UI asks, then calls `confirm_signup` or `cancel_signup`.
     pub signup: Option<SignupPrompt>,
 }
 
-/// What the "Create your Buzz account" screen shows.
+/// What the "Create your Kuzz account" screen shows.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignupPrompt {
@@ -201,7 +201,7 @@ fn device_name() -> String {
 /// Sign in to the current community with Google: system browser + loopback
 /// redirect + PKCE (plan §3.2). Resolves once the session is active.
 ///
-/// The chosen Google account decides the Buzz account; it becomes the active
+/// The chosen Google account decides the Kuzz account; it becomes the active
 /// account and accounts already signed in here stay signed in. `connect`
 /// links the current key to the Google account instead (a key-only account
 /// protecting itself). `allow_restore` is accepted for older callers and no
@@ -237,7 +237,7 @@ pub async fn login_with_google(
     .await
 }
 
-/// Create the Buzz account the user confirmed on the "Create your Buzz
+/// Create the Kuzz account the user confirmed on the "Create your Kuzz
 /// account" screen, then finish signing in to it.
 #[tauri::command]
 pub async fn confirm_signup(app: AppHandle) -> Result<TokenAuthStatus, String> {
@@ -361,7 +361,7 @@ async fn login_inner(
             .and_then(|_| window.show())
             .and_then(|_| window.set_focus())
         {
-            eprintln!("buzz-desktop: could not activate sign-in window: {error}");
+            eprintln!("kuzz-desktop: could not activate sign-in window: {error}");
         }
     }
     let tokens = match api::complete_login(&state.http_client, &origin, &code, &pkce.verifier)
@@ -417,7 +417,7 @@ async fn finish_sign_in(
     let origin = origin.to_owned();
     verify_login_mode(backup, tokens.identity_mode.as_deref())?;
     let principal = PublicKey::from_hex(&tokens.principal_id).map_err(|e| {
-        eprintln!("buzz-desktop: the relay returned an invalid account id: {e}");
+        eprintln!("kuzz-desktop: the relay returned an invalid account id: {e}");
         "Couldn't sign in. Try again.".to_string()
     })?;
     // Under the refresh lock: an in-flight refresh of an older generation can
@@ -443,7 +443,7 @@ async fn finish_sign_in(
                 // server-side instead of leaving it alive.
                 if let Err(revoke) = api::logout(&state.http_client, &origin, &tokens.access).await
                 {
-                    eprintln!("buzz-desktop: auth: revoking a failed key-backup sign-in: {revoke}");
+                    eprintln!("kuzz-desktop: auth: revoking a failed key-backup sign-in: {revoke}");
                 }
                 return Err(error);
             }
@@ -465,7 +465,7 @@ async fn finish_sign_in(
         KeyringRefreshStore.remember_legacy_token_account(&origin)?;
         if let Err(error) = KeyringRefreshStore.store(&origin, &tokens.refresh) {
             // The session still works for this run; the next launch asks again.
-            eprintln!("buzz-desktop: auth: could not store the session in the keyring: {error}");
+            eprintln!("kuzz-desktop: auth: could not store the session in the keyring: {error}");
         }
     }
     // This account is signed in here now; other accounts' sign-outs stay. A
@@ -543,7 +543,7 @@ fn remember_signed_in_profile(
                 me.avatar_url,
                 None,
             ),
-            Err(error) => eprintln!("buzz-desktop: accounts: profile not fetched: {error}"),
+            Err(error) => eprintln!("kuzz-desktop: accounts: profile not fetched: {error}"),
         }
     });
 }
@@ -559,7 +559,7 @@ fn start_owner_agents(app: &AppHandle, owner: PublicKey, resume: Vec<String>) {
         let records = match crate::managed_agents::load_managed_agents(&app) {
             Ok(records) => records,
             Err(error) => {
-                eprintln!("buzz-desktop: auth: agents not started after sign-in: {error}");
+                eprintln!("kuzz-desktop: auth: agents not started after sign-in: {error}");
                 return;
             }
         };
@@ -571,7 +571,7 @@ fn start_owner_agents(app: &AppHandle, owner: PublicKey, resume: Vec<String>) {
                 relay_url.clone(),
                 app.clone(),
             ) {
-                eprintln!("buzz-desktop: auth: agent {pubkey} not started after sign-in: {error}");
+                eprintln!("kuzz-desktop: auth: agent {pubkey} not started after sign-in: {error}");
             }
         }
     });
@@ -844,9 +844,9 @@ pub async fn logout_on_this_device(app: AppHandle) -> Result<TokenAuthStatus, St
             match tokio::time::timeout(std::time::Duration::from_secs(30), revoke).await {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
-                    eprintln!("buzz-desktop: auth: device-only sign-out not revoked: {error}")
+                    eprintln!("kuzz-desktop: auth: device-only sign-out not revoked: {error}")
                 }
-                Err(_) => eprintln!("buzz-desktop: auth: device-only sign-out revoke timed out"),
+                Err(_) => eprintln!("kuzz-desktop: auth: device-only sign-out revoke timed out"),
             }
         });
     }
@@ -1008,7 +1008,7 @@ async fn sign_out_account_now(
             origin,
             &account,
         ) {
-            eprintln!("buzz-desktop: auth: account list not updated on sign-out: {error}");
+            eprintln!("kuzz-desktop: auth: account list not updated on sign-out: {error}");
         }
     }
     // Listed again now that the sign-out is recorded: a start that passed the
@@ -1036,11 +1036,11 @@ async fn sign_out_account_now(
     if let Some(next) = next {
         match super::accounts::switch_account(app.clone(), next.to_hex()).await {
             Ok(Some(warning)) => {
-                eprintln!("buzz-desktop: auth: switched after sign-out with: {warning}")
+                eprintln!("kuzz-desktop: auth: switched after sign-out with: {warning}")
             }
             Ok(None) => {}
             Err(error) => {
-                eprintln!("buzz-desktop: auth: no switch after sign-out: {error}");
+                eprintln!("kuzz-desktop: auth: no switch after sign-out: {error}");
                 emit_changed(app, origin);
                 return Ok(SignedOut {
                     switched_to: None,
@@ -1084,17 +1084,17 @@ async fn await_agent_stops(
     match tokio::time::timeout(limit, stopping).await {
         Ok(Ok(failures)) => {
             for failure in &failures {
-                eprintln!("buzz-desktop: auth: agent not stopped on sign-out: {failure}");
+                eprintln!("kuzz-desktop: auth: agent not stopped on sign-out: {failure}");
             }
             failures.len()
         }
         Ok(Err(error)) => {
-            eprintln!("buzz-desktop: auth: agents not stopped on sign-out: {error}");
+            eprintln!("kuzz-desktop: auth: agents not stopped on sign-out: {error}");
             attempted
         }
         Err(_) => {
             eprintln!(
-                "buzz-desktop: auth: {attempted} agent(s) still stopping after {}s; signing out anyway",
+                "kuzz-desktop: auth: {attempted} agent(s) still stopping after {}s; signing out anyway",
                 limit.as_secs()
             );
             attempted
@@ -1113,9 +1113,9 @@ pub(crate) fn install_session_ended_hook(app: &AppHandle) {
         .set_ended_hook(std::sync::Arc::new(move |origin, account, code| {
             let app = hook_app.clone();
             tauri::async_runtime::spawn(async move {
-                eprintln!("buzz-desktop: auth: the relay ended a session on {origin} ({code}); signing it out");
+                eprintln!("kuzz-desktop: auth: the relay ended a session on {origin} ({code}); signing it out");
                 if let Err(error) = sign_out_account(&app, &origin, account, false).await {
-                    eprintln!("buzz-desktop: auth: sign-out after {code} failed: {error}");
+                    eprintln!("kuzz-desktop: auth: sign-out after {code} failed: {error}");
                     // The UI still learns the session ended.
                     emit_changed(&app, &origin);
                 }
@@ -1150,7 +1150,7 @@ async fn revoke_stored(
     match api::refresh(client, origin, refresh).await {
         Ok(tokens) => {
             if let Err(error) = save(&tokens.refresh.0) {
-                eprintln!("buzz-desktop: auth: rotated token not kept before sign-out: {error}");
+                eprintln!("kuzz-desktop: auth: rotated token not kept before sign-out: {error}");
             }
             revoke_session(client, origin, &tokens.access.0).await
         }
@@ -1440,8 +1440,8 @@ pub(crate) async fn logout_all_best_effort(state: &AppState) {
         let call = api::logout(&state.http_client, &origin, &session.access);
         match tokio::time::timeout(std::time::Duration::from_secs(5), call).await {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => eprintln!("buzz-desktop: auth: sign-out of {origin}: {error}"),
-            Err(_) => eprintln!("buzz-desktop: auth: sign-out of {origin} timed out"),
+            Ok(Err(error)) => eprintln!("kuzz-desktop: auth: sign-out of {origin}: {error}"),
+            Err(_) => eprintln!("kuzz-desktop: auth: sign-out of {origin} timed out"),
         }
     }
     // Wait out any in-flight refresh so none writes a token after the reset
@@ -1494,7 +1494,7 @@ mod tests {
         let mut record: crate::managed_agents::ManagedAgentRecord =
             serde_json::from_value(serde_json::json!({
                 "pubkey": nostr::Keys::generate().public_key().to_hex(),
-                "name": "Scout", "relay_url": "wss://relay.test", "acp_command": "buzz-acp",
+                "name": "Scout", "relay_url": "wss://relay.test", "acp_command": "kuzz-acp",
                 "agent_command": "goose", "agent_args": [], "mcp_command": "",
                 "turn_timeout_seconds": 320, "system_prompt": null,
                 "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"

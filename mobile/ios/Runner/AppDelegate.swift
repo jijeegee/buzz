@@ -1,5 +1,5 @@
 import AVFoundation
-import BuzzPushKit
+import KuzzPushKit
 import DeclaredAgeRange
 import Flutter
 import UIKit
@@ -11,19 +11,19 @@ import os.log
   private var mediaUploadChannel: FlutterMethodChannel?
   private var pushChannel: FlutterMethodChannel?
   private let apnsRegistrationBuffer = APNsRegistrationBuffer()
-  private let pushNavigationBuffer = BuzzPushNavigationBuffer()
+  private let pushNavigationBuffer = KuzzPushNavigationBuffer()
   private var apnsDeviceToken: Data?
-  private lazy var endpointGrantStore = BuzzPushEndpointGrantKeychainStore(
-    accessGroup: Bundle.main.object(forInfoDictionaryKey: "BuzzKeychainAccessGroup") as? String
+  private lazy var endpointGrantStore = KuzzPushEndpointGrantKeychainStore(
+    accessGroup: Bundle.main.object(forInfoDictionaryKey: "KuzzKeychainAccessGroup") as? String
   )
   private var enrollmentTask: Task<Void, Never>?
   var appGroupIdentifier: String? {
-    Bundle.main.object(forInfoDictionaryKey: "BuzzAppGroupIdentifier") as? String
+    Bundle.main.object(forInfoDictionaryKey: "KuzzAppGroupIdentifier") as? String
   }
   private var pushKeychainAccessGroup: String? {
-    Bundle.main.object(forInfoDictionaryKey: "BuzzKeychainAccessGroup") as? String
+    Bundle.main.object(forInfoDictionaryKey: "KuzzKeychainAccessGroup") as? String
   }
-  private lazy var pushSnapshotBridge = BuzzPushSnapshotBridge(
+  private lazy var pushSnapshotBridge = KuzzPushSnapshotBridge(
     appGroupIdentifier: appGroupIdentifier,
     endpointGrantStore: endpointGrantStore,
     keychainAccessGroup: pushKeychainAccessGroup
@@ -58,14 +58,14 @@ import os.log
     let messenger = engineBridge.applicationRegistrar.messenger()
     huddleMediaPlugin = HuddleMediaPlugin(messenger: messenger)
     mediaUploadChannel = FlutterMethodChannel(
-      name: "buzz/media_upload",
+      name: "kuzz/media_upload",
       binaryMessenger: messenger
     )
     mediaUploadChannel?.setMethodCallHandler { [weak self] call, result in
       self?.handleMediaUploadMethodCall(call, result: result)
     }
     pushChannel = FlutterMethodChannel(
-      name: "buzz/push",
+      name: "kuzz/push",
       binaryMessenger: messenger
     )
     pushChannel?.setMethodCallHandler { [weak self] call, result in
@@ -75,14 +75,14 @@ import os.log
       self?.pushChannel?.invokeMethod(update.method, arguments: update.arguments)
     }
     qrScannerChannel = FlutterMethodChannel(
-      name: "buzz/qr_scanner",
+      name: "kuzz/qr_scanner",
       binaryMessenger: messenger
     )
     qrScannerChannel?.setMethodCallHandler { call, result in
       Self.handleQrScannerMethodCall(call, result: result)
     }
     inlinePhotoPickerSupportChannel = FlutterMethodChannel(
-      name: "buzz/inline_photo_picker",
+      name: "kuzz/inline_photo_picker",
       binaryMessenger: messenger
     )
     inlinePhotoPickerSupportChannel?.setMethodCallHandler { call, result in
@@ -98,11 +98,11 @@ import os.log
     }
 
     ageSignalChannel = FlutterMethodChannel(
-      name: "buzz/age_signal",
+      name: "kuzz/age_signal",
       binaryMessenger: messenger
     )
     let ageSignalRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzAgeSignal"
+      forPlugin: "KuzzAgeSignal"
     )
     ageSignalChannel?.setMethodCallHandler { [weak self] call, result in
       self?.handleAgeSignalMethodCall(
@@ -113,26 +113,26 @@ import os.log
     }
 
     if let inlinePhotoPickerRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzInlinePhotoPicker"
+      forPlugin: "KuzzInlinePhotoPicker"
     ) {
       inlinePhotoPickerRegistrar.register(
         InlinePhotoPickerFactory(
           messenger: messenger,
           parentViewController: inlinePhotoPickerRegistrar.viewController
         ),
-        withId: "buzz/inline_photo_picker"
+        withId: "kuzz/inline_photo_picker"
       )
     }
 
     if let concentricSheetRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzConcentricSheetSurface"
+      forPlugin: "KuzzConcentricSheetSurface"
     ) {
       concentricSheetRegistrar.register(
         ConcentricSheetSurfaceFactory(messenger: messenger),
-        withId: "buzz/concentric_sheet_surface"
+        withId: "kuzz/concentric_sheet_surface"
       )
       concentricSheetSurfaceChannel = FlutterMethodChannel(
-        name: "buzz/concentric_sheet_surface",
+        name: "kuzz/concentric_sheet_surface",
         binaryMessenger: messenger
       )
       concentricSheetSurfaceChannel?.setMethodCallHandler { call, result in
@@ -149,61 +149,61 @@ import os.log
     }
 
     if let jumpToLatestGlassRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzJumpToLatestGlassButton"
+      forPlugin: "KuzzJumpToLatestGlassButton"
     ) {
       jumpToLatestGlassRegistrar.register(
         JumpToLatestGlassButtonFactory(messenger: messenger),
-        withId: "buzz/jump_to_latest_glass"
+        withId: "kuzz/jump_to_latest_glass"
       )
     }
 
     if let navigationGlassRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzNavigationGlassButton"
+      forPlugin: "KuzzNavigationGlassButton"
     ) {
       navigationGlassRegistrar.register(
         NavigationGlassButtonFactory(messenger: messenger),
-        withId: "buzz/navigation_glass"
+        withId: "kuzz/navigation_glass"
       )
     }
 
     if let segmentedControlRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzNativeSegmentedControl"
+      forPlugin: "KuzzNativeSegmentedControl"
     ) {
       segmentedControlRegistrar.register(
         NativeSegmentedControlFactory(messenger: messenger),
-        withId: "buzz/native_segmented_control"
+        withId: "kuzz/native_segmented_control"
       )
     }
 
     if let skinToneRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzNativeSkinToneControl"
+      forPlugin: "KuzzNativeSkinToneControl"
     ) {
       skinToneRegistrar.register(
         NativeSkinToneControlFactory(messenger: messenger),
-        withId: "buzz/native_skin_tone_control"
+        withId: "kuzz/native_skin_tone_control"
       )
     }
 
     if let stickyDateGlassRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzStickyDateGlassHeader"
+      forPlugin: "KuzzStickyDateGlassHeader"
     ) {
       stickyDateGlassRegistrar.register(
         StickyDateGlassHeaderFactory(messenger: messenger),
-        withId: "buzz/sticky_date_glass"
+        withId: "kuzz/sticky_date_glass"
       )
     }
 
     if let themePaginationGlassRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzThemePaginationGlassControl"
+      forPlugin: "KuzzThemePaginationGlassControl"
     ) {
       themePaginationGlassRegistrar.register(
         ThemePaginationGlassControlFactory(messenger: messenger),
-        withId: "buzz/theme_pagination_glass"
+        withId: "kuzz/theme_pagination_glass"
       )
     }
 
     let nativeAttachmentRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzNativeAttachmentPopover"
+      forPlugin: "KuzzNativeAttachmentPopover"
     )
     nativeAttachmentPopoverCoordinator = NativeAttachmentPopoverCoordinator(
       messenger: messenger,
@@ -211,7 +211,7 @@ import os.log
     )
 
     let nativeEmojiPickerRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzNativeEmojiPicker"
+      forPlugin: "KuzzNativeEmojiPicker"
     )
     nativeEmojiPickerCoordinator = NativeEmojiPickerCoordinator(
       messenger: messenger,
@@ -219,7 +219,7 @@ import os.log
     )
 
     let nativeProfileTextEditorRegistrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "BuzzNativeProfileTextEditor"
+      forPlugin: "KuzzNativeProfileTextEditor"
     )
     nativeProfileTextEditorCoordinator = NativeProfileTextEditorCoordinator(
       messenger: messenger,
@@ -227,15 +227,15 @@ import os.log
     )
     if #available(iOS 16.0, *),
       let nativeMessageActionsRegistrar = engineBridge.pluginRegistry.registrar(
-        forPlugin: "BuzzNativeMessageActionSurface"
+        forPlugin: "KuzzNativeMessageActionSurface"
       )
     {
       nativeMessageActionsRegistrar.register(
         NativeMessageActionSurfaceFactory(messenger: messenger),
-        withId: "buzz/native_message_action_surface"
+        withId: "kuzz/native_message_action_surface"
       )
       nativeMessageActionSurfaceSupportChannel = FlutterMethodChannel(
-        name: "buzz/native_message_action_surface",
+        name: "kuzz/native_message_action_surface",
         binaryMessenger: messenger
       )
       nativeMessageActionSurfaceSupportChannel?.setMethodCallHandler { call, result in
@@ -309,10 +309,10 @@ import os.log
     case .declinedSharing:
       return noAgeSignalResponse
     case .sharing(let range):
-      return BuzzAgeSignalPayload.sharing(
+      return KuzzAgeSignalPayload.sharing(
         exclusiveUpperBound: range.upperBound, lowerBound: range.lowerBound)
     @unknown default:
-      throw NSError(domain: "BuzzAgeSignal", code: 1,
+      throw NSError(domain: "KuzzAgeSignal", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "Unsupported age signal response"])
     }
   }
@@ -417,7 +417,7 @@ import os.log
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
-    BuzzPushNotificationResponseCoordinator.handle(
+    KuzzPushNotificationResponseCoordinator.handle(
       actionIdentifier: response.actionIdentifier,
       userInfo: response.notification.request.content.userInfo,
       onTarget: { target in
@@ -447,7 +447,7 @@ import os.log
     )
   }
 
-  private func deliverPushNavigationTarget(_ target: BuzzPushNavigationTarget) {
+  private func deliverPushNavigationTarget(_ target: KuzzPushNavigationTarget) {
     pushChannel?.invokeMethod(
       "notificationOpened",
       arguments: target.flutterArguments
@@ -482,8 +482,8 @@ import os.log
         guard let arguments = call.arguments as? [String: Any],
           let gatewayText = arguments["gatewayUrl"] as? String,
           let gatewayURL = URL(string: gatewayText)
-        else { throw BuzzDevPushEnrollmentError.invalidGatewayURL }
-        let driver = try BuzzDevPushEnrollmentDriver(
+        else { throw KuzzDevPushEnrollmentError.invalidGatewayURL }
+        let driver = try KuzzDevPushEnrollmentDriver(
           gatewayBaseURL: gatewayURL,
           store: endpointGrantStore,
           appAttestKeychainAccessGroup: pushKeychainAccessGroup
@@ -545,7 +545,7 @@ import os.log
       _, error in
       if let error {
         os_log(
-          "Buzz notification authorization request failed: %{public}@",
+          "Kuzz notification authorization request failed: %{public}@",
           type: .error,
           error.localizedDescription
         )
@@ -608,11 +608,11 @@ import os.log
     }
 
     do {
-      let driver = try BuzzDevPushEnrollmentDriver(
+      let driver = try KuzzDevPushEnrollmentDriver(
         gatewayBaseURL: gatewayURL,
         store: endpointGrantStore,
         appAttestKeychainAccessGroup: Bundle.main.object(
-          forInfoDictionaryKey: "BuzzKeychainAccessGroup"
+          forInfoDictionaryKey: "KuzzKeychainAccessGroup"
         ) as? String
       )
       enrollmentTask = Task { [weak self] in
@@ -879,7 +879,7 @@ import os.log
       let exportSession = AVAssetExportSession(
         asset: composition,
         // Passthrough preserves the source's HEVC codec and container
-        // metadata. Buzz accepts only canonical H.264/AAC MP4s with no
+        // metadata. Kuzz accepts only canonical H.264/AAC MP4s with no
         // metadata channels, so re-encode instead of copying the movie.
         presetName: AVAssetExportPresetMediumQuality
       )
@@ -912,7 +912,7 @@ import os.log
       case .completed:
         do {
           // AVFoundation writes a standard sample-dependency table (`sdtp`).
-          // Older Buzz relays mistook that playback-only box for metadata. Keep
+          // Older Kuzz relays mistook that playback-only box for metadata. Keep
           // its size and payload in a `free` box so chunk offsets stay valid and
           // uploads work before those relays receive the validator fix.
           try MP4Canonicalizer.neutralizeSampleDependencyBoxes(at: outputURL)
@@ -997,14 +997,14 @@ import os.log
         guard let posterImage else {
           throw lastError
             ?? NSError(
-              domain: "BuzzVideoPoster",
+              domain: "KuzzVideoPoster",
               code: 1,
               userInfo: [NSLocalizedDescriptionKey: "Unable to decode a video frame."]
             )
         }
         guard let jpegData = try MediaSanitizer.encodeJpeg(UIImage(cgImage: posterImage)) else {
           throw NSError(
-            domain: "BuzzVideoPoster",
+            domain: "KuzzVideoPoster",
             code: 2,
             userInfo: [NSLocalizedDescriptionKey: "Unable to encode video poster."]
           )
@@ -1027,7 +1027,7 @@ import os.log
   }
 }
 
-extension BuzzPushNavigationTarget {
+extension KuzzPushNavigationTarget {
   fileprivate var flutterArguments: [String: String] {
     [
       "eventId": eventID,

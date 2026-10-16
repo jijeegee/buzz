@@ -13,7 +13,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import 'media_viewer_hero.dart';
 

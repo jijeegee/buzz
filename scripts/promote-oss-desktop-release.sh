@@ -2,14 +2,14 @@
 set -euo pipefail
 
 VERSION="${1:-}"
-REPOSITORY="${GITHUB_REPOSITORY:-block/buzz}"
+REPOSITORY="${GITHUB_REPOSITORY:-block/kuzz}"
 TAG="desktop-v${VERSION}"
 CANDIDATE="updater-manifest.json"
-ROLLING_TAG="buzz-desktop-latest"
+ROLLING_TAG="kuzz-desktop-latest"
 EXPECTED_PLATFORMS='["darwin-aarch64","darwin-x86_64","linux-x86_64","windows-x86_64"]'
 
 fail() { echo "::error::$*" >&2; exit 1; }
-[[ "$REPOSITORY" == "block/buzz" ]] || fail "promotion is restricted to block/buzz"
+[[ "$REPOSITORY" == "block/kuzz" ]] || fail "promotion is restricted to block/kuzz"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "version must be stable semver X.Y.Z"
 command -v gh >/dev/null || fail "gh is required"
 command -v jq >/dev/null || fail "jq is required"

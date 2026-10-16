@@ -9,20 +9,20 @@ import { getMentionOffsets } from "./hasMention";
 /**
  * Dual-flavor clipboard support for mentions.
  *
- * Every Buzz copy writes two flavors:
+ * Every Kuzz copy writes two flavors:
  *  - `text/plain` — what a human should read anywhere: sigils restored, no
  *    pubkeys. This is what external apps (TextEdit, Slack, …) receive.
  *  - `text/html` — the same content, with each mention wrapped in a span
- *    carrying its pubkey. Pasting back into a Buzz composer harvests those
+ *    carrying its pubkey. Pasting back into a Kuzz composer harvests those
  *    records, registers `name → pubkey` with the mention machinery, and the
  *    chip re-lights with the exact tagged identity.
  *
  * The wrapper marker declares what the *plain* flavor holds so paste knows
- * which content path to use — see `BuzzCopyKind`.
+ * which content path to use — see `KuzzCopyKind`.
  */
 
-/** Marks clipboard HTML that Buzz produced, and what its plain flavor holds. */
-export const BUZZ_COPY_ATTRIBUTE = "data-buzz-copy";
+/** Marks clipboard HTML that Kuzz produced, and what its plain flavor holds. */
+export const KUZZ_COPY_ATTRIBUTE = "data-kuzz-copy";
 /** 64-hex pubkey of the mentioned identity. */
 export const MENTION_PUBKEY_ATTRIBUTE = "data-mention-pubkey";
 /** `human` or `agent` — decides which highlight the re-lit chip gets. */
@@ -59,7 +59,7 @@ export type ChipTextMatch = "full" | "truncated" | "fragment";
  * keep one — so they cannot drift apart on what counts as a whole chip.
  *
  * - `full` — the text carries the whole label, allowing for what a legitimate
- *   chip picks up in transit: Buzz's copy handlers write the sigil into the
+ *   chip picks up in transit: Kuzz's copy handlers write the sigil into the
  *   text, `buildMentionSpanHtml` keeps the author's casing over the label's,
  *   and a pasteboard round trip can swap spaces for U+00A0.
  * - `truncated` — the text is the ellipsized form `truncateInlineChipLabel`
@@ -114,14 +114,14 @@ export function matchChipTextToLabel(
 }
 
 /**
- * What the `text/plain` flavor of a Buzz copy contains.
+ * What the `text/plain` flavor of a Kuzz copy contains.
  *
  * - `markdown` — Markdown source (copy-message, composer copy/cut). Paste
  *   inserts the plain flavor so TipTap's Markdown parsing behaves exactly as
  *   it does for a plain-text paste.
  * - `rich` — rendered timeline HTML. Paste keeps the HTML content path.
  */
-export type BuzzCopyKind = "markdown" | "rich";
+export type KuzzCopyKind = "markdown" | "rich";
 
 /** A `name → pubkey` pair the composer can register on paste. */
 export type MentionIdentity = {
@@ -255,7 +255,7 @@ export function buildMentionClipboardHtml({
 }: {
   text: string;
   identities: readonly MentionIdentity[];
-  kind?: BuzzCopyKind;
+  kind?: KuzzCopyKind;
 }): string | null {
   const matches = findMentionMatches(text, identities);
   if (matches.length === 0) return null;
@@ -280,18 +280,18 @@ export function buildMentionClipboardHtml({
   }
   pushText(text.slice(cursor));
 
-  return `<span ${BUZZ_COPY_ATTRIBUTE}="${kind}">${parts.join("")}</span>`;
+  return `<span ${KUZZ_COPY_ATTRIBUTE}="${kind}">${parts.join("")}</span>`;
 }
 
-/** The Buzz copy marker on clipboard HTML, or `null` for foreign HTML. */
-export function getBuzzCopyKind(html: string): BuzzCopyKind | null {
+/** The Kuzz copy marker on clipboard HTML, or `null` for foreign HTML. */
+export function getKuzzCopyKind(html: string): KuzzCopyKind | null {
   const match = html.match(
     new RegExp(
-      `\\b${BUZZ_COPY_ATTRIBUTE}\\s*=\\s*["'](markdown|rich)["']`,
+      `\\b${KUZZ_COPY_ATTRIBUTE}\\s*=\\s*["'](markdown|rich)["']`,
       "i",
     ),
   );
-  return (match?.[1] as BuzzCopyKind | undefined) ?? null;
+  return (match?.[1] as KuzzCopyKind | undefined) ?? null;
 }
 
 function readAttribute(tag: string, name: string): string | null {
@@ -303,7 +303,7 @@ function readAttribute(tag: string, name: string): string | null {
 }
 
 /**
- * Recover the `label → pubkey` records a Buzz copy embedded in its HTML.
+ * Recover the `label → pubkey` records a Kuzz copy embedded in its HTML.
  *
  * Reads the label from `data-mention-label` rather than the element's text so
  * the result never depends on how a pasteboard round-trip reformatted the
@@ -369,7 +369,7 @@ export function selectVisibleMentionIdentities(
 }
 
 /**
- * Narrow copied records to the pairs trusted Buzz state vouches for.
+ * Narrow copied records to the pairs trusted Kuzz state vouches for.
  *
  * Must resolve to a subset of what it was handed; callers enforce that rather
  * than assume it, so the seam cannot widen into "the verifier decides what
@@ -408,7 +408,7 @@ export async function selectVouchedMentionIdentities(
  *
  * Three conditions, all necessary. The clipboard has to *carry* the record;
  * the content the paste inserts has to *show* its label, so no binding
- * outlives a paste the user could not see; and trusted Buzz state has to
+ * outlives a paste the user could not see; and trusted Kuzz state has to
  * *vouch* for the pair, because a visible `@John Smith` beside an attacker's
  * key is visible either way.
  *

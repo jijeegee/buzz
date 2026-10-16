@@ -30,22 +30,22 @@ import { JSDOM } from "jsdom";
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === "@/features/messages/ui/MessageComposer") {
-      return { shortCircuit: true, url: "buzz-inbox-stub:MessageComposer" };
+      return { shortCircuit: true, url: "kuzz-inbox-stub:MessageComposer" };
     }
     if (specifier === "@/features/settings/UpdateIndicator") {
-      return { shortCircuit: true, url: "buzz-inbox-stub:UpdateIndicator" };
+      return { shortCircuit: true, url: "kuzz-inbox-stub:UpdateIndicator" };
     }
     return nextResolve(specifier, context);
   },
   load(url, context, nextLoad) {
-    if (url === "buzz-inbox-stub:MessageComposer") {
+    if (url === "kuzz-inbox-stub:MessageComposer") {
       return {
         format: "module",
         shortCircuit: true,
         source: "export const MessageComposer = () => null;\n",
       };
     }
-    if (url === "buzz-inbox-stub:UpdateIndicator") {
+    if (url === "kuzz-inbox-stub:UpdateIndicator") {
       // The real UpdateIndicator pulls in UpdaterProvider's background-check
       // setInterval, which keeps the event loop alive past the test. It has
       // nothing to do with the reopen contract, so stub it to a null render.
@@ -238,7 +238,7 @@ dom.window.__TAURI_EVENT_PLUGIN_INTERNALS__ =
 
 function seedCommunity() {
   window.localStorage.setItem(
-    "buzz-communities",
+    "kuzz-communities",
     JSON.stringify([
       {
         id: "community-a",
@@ -249,7 +249,7 @@ function seedCommunity() {
       },
     ]),
   );
-  window.localStorage.setItem("buzz-active-community-id", "community-a");
+  window.localStorage.setItem("kuzz-active-community-id", "community-a");
 }
 
 const HIDDEN_DM_ITEM = {

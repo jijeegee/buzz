@@ -12,7 +12,7 @@ use mesh_llm_node::models::{default_huggingface_cache_dir, scan_installed_models
 use mesh_llm_system::hardware;
 use mesh_llm_system::vram::{format_rated_capacity, rated_capacity_gb};
 
-/// Buzz-curated tier picks. These are the models we know survive the agent
+/// Kuzz-curated tier picks. These are the models we know survive the agent
 /// harness on shared compute.
 ///
 /// The recommended ladder follows rated unified memory:
@@ -40,8 +40,8 @@ const CURATED_MEDIUM_MIN_RATED_GB: u64 = 32;
 /// cache and runtime use.
 const CURATED_LARGE_MIN_RATED_GB: u64 = 64;
 
-/// The Buzz-curated recommendation for a machine's rated memory capacity.
-fn buzz_recommended_model(rated_gb: Option<u64>) -> &'static str {
+/// The Kuzz-curated recommendation for a machine's rated memory capacity.
+fn kuzz_recommended_model(rated_gb: Option<u64>) -> &'static str {
     match rated_gb {
         Some(gb) if gb >= CURATED_LARGE_MIN_RATED_GB => CURATED_LARGE,
         Some(gb) if gb >= CURATED_MEDIUM_MIN_RATED_GB => CURATED_MEDIUM,
@@ -49,7 +49,7 @@ fn buzz_recommended_model(rated_gb: Option<u64>) -> &'static str {
     }
 }
 
-/// Convert Buzz's historical curated package aliases into the canonical model
+/// Convert Kuzz's historical curated package aliases into the canonical model
 /// ids advertised and accepted by Mesh's OpenAI ingress.
 pub(crate) fn canonical_curated_model_id(model_id: &str) -> &str {
     match model_id.trim() {
@@ -105,7 +105,7 @@ pub struct MeshCatalogEntry {
     pub fit: ModelFit,
     pub installed: bool,
     pub recommended: bool,
-    /// Buzz-curated pick — known to survive the agent harness. Curated
+    /// Kuzz-curated pick — known to survive the agent harness. Curated
     /// entries render above the fold; everything else is "advanced".
     pub curated: bool,
 }
@@ -184,7 +184,7 @@ fn build_catalog(
         })
         .collect();
 
-    let recommended = Some(buzz_recommended_model(rated_capacity_gb(vram_bytes)).to_string());
+    let recommended = Some(kuzz_recommended_model(rated_capacity_gb(vram_bytes)).to_string());
     for entry in &mut entries {
         entry.recommended = recommended.as_deref() == Some(entry.name.as_str());
         // All curated tiers are always offered: the recommendation plus
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn recommendation_follows_buzz_curated_ladder() {
+    fn recommendation_follows_kuzz_curated_ladder() {
         assert_eq!(CURATED_SMALL, "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M");
         assert_eq!(CURATED_MEDIUM, "unsloth/Qwen3.5-9B-GGUF:Q4_K_M");
         assert_eq!(CURATED_LARGE, "unsloth/Qwen3.8-27B-GGUF:Q4_K_M");

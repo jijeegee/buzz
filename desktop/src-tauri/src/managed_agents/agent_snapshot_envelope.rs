@@ -6,7 +6,7 @@
 //! symmetric over the (owner, agent) pair, so BOTH the owner's and the
 //! agent's nsec decrypt the card — nobody else's does (NIP-AE's scheme).
 //!
-//! Wire contract (agreed with Wren, buzz-agent-trading-cards thread):
+//! Wire contract (agreed with Wren, kuzz-agent-trading-cards thread):
 //! - Plain cards keep today's exact bytes; detection dispatches once on the
 //!   exact `format` discriminator and rejects unknown versions/schemes
 //!   rather than falling through to manifest parsing.
@@ -21,7 +21,7 @@
 //! - Decrypt/auth failures return only the locked-card refusal — never
 //!   partial plaintext or crypto details.
 
-use buzz_core_pkg::engram::NIP44_PLAINTEXT_MAX;
+use kuzz_core_pkg::engram::NIP44_PLAINTEXT_MAX;
 use nostr::nips::nip44::{self, Version};
 use nostr::{Keys, PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
@@ -377,7 +377,7 @@ mod tests {
             auth_tag: None,
             relay_url: "ws://localhost:3000".to_string(),
             avatar_url: None,
-            acp_command: "buzz-acp".to_string(),
+            acp_command: "kuzz-acp".to_string(),
             agent_command: "goose".to_string(),
             agent_args: vec![],
             mcp_command: String::new(),
@@ -544,7 +544,7 @@ mod tests {
             .contains("scheme"));
 
         // Unknown top-level format never falls through to manifest parsing.
-        let unknown = serde_json::json!({"format": "buzz-agent-snapshot-v9", "version": 1});
+        let unknown = serde_json::json!({"format": "kuzz-agent-snapshot-v9", "version": 1});
         let err = parse_chunk_payload(unknown.to_string().as_bytes()).unwrap_err();
         assert!(err.contains("Unsupported snapshot format"), "{err}");
 

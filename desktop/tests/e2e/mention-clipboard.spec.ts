@@ -64,7 +64,7 @@ async function waitForMockLiveSubscription(page: Page, channelName: string) {
     .poll(() =>
       page.evaluate(
         (currentChannelName) =>
-          window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+          window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
             channelName: currentChannelName,
           }) ?? false,
         channelName,
@@ -82,7 +82,7 @@ async function waitForTimelineSettled(page: Page) {
 async function emitMentionMessage(page: Page, channelName: string) {
   const event = await page.evaluate(
     ({ channel, content, mentionPubkey, pubkey }) =>
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: channel,
         content,
         mentionPubkeys: [mentionPubkey],
@@ -174,8 +174,8 @@ async function copyFromTimeline(
 async function openInboxMentionItem(page: Page) {
   const item = await page.evaluate(
     ({ channelId, content, mentionPubkey, pubkey, viewerPubkey }) => {
-      const emit = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-      const push = window.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+      const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const push = window.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!emit || !push)
         throw new Error("Mock feed helpers are not installed");
       const event = emit({
@@ -373,13 +373,13 @@ async function pasteAfterComposerText(
   }, flavors);
 }
 
-/** The flavors a Buzz copy of `body` writes for a "John Smith" chip. */
+/** The flavors a Kuzz copy of `body` writes for a "John Smith" chip. */
 function mentionFlavors(pubkey: string, body: string) {
   const at = body.indexOf(MENTION_SIGIL);
   if (at < 0) throw new Error(`Body names nobody: ${body}`);
   return {
     html:
-      '<span data-buzz-copy="markdown">' +
+      '<span data-kuzz-copy="markdown">' +
       body.slice(0, at) +
       `<span data-mention="" data-mention-pubkey="${pubkey}" ` +
       `data-mention-label="${MENTION_LABEL}">${MENTION_SIGIL}</span>` +
@@ -399,7 +399,7 @@ function mentionFlavors(pubkey: string, body: string) {
  */
 async function holdRelayProfileLookups(page: Page, hold: boolean) {
   return page.evaluate(
-    (next) => window.__BUZZ_E2E_HOLD_USERS_BATCH__?.(next) ?? 0,
+    (next) => window.__KUZZ_E2E_HOLD_USERS_BATCH__?.(next) ?? 0,
     hold,
   );
 }
@@ -439,7 +439,7 @@ async function waitForHeldProfileLookup(page: Page, pubkey: string) {
   await expect.poll(() => askedRelayAboutProfile(page, pubkey)).toBe(true);
   await expect
     .poll(() =>
-      page.evaluate(() => window.__BUZZ_E2E_USERS_BATCH_PENDING__?.() ?? 0),
+      page.evaluate(() => window.__KUZZ_E2E_USERS_BATCH_PENDING__?.() ?? 0),
     )
     .toBeGreaterThan(0);
 }
@@ -452,7 +452,7 @@ async function waitForHeldProfileLookup(page: Page, pubkey: string) {
  */
 async function readSentMentionPubkeys(page: Page, content: string) {
   return page.evaluate((expectedContent) => {
-    for (const entry of window.__BUZZ_E2E_COMMAND_LOG__ ?? []) {
+    for (const entry of window.__KUZZ_E2E_COMMAND_LOG__ ?? []) {
       if (entry.command === "send_channel_message") {
         const payload = entry.payload as
           | { content?: string; mentionPubkeys?: string[] | null }
@@ -477,7 +477,7 @@ async function readSentMentionPubkeys(page: Page, content: string) {
 async function askedRelayAboutProfile(page: Page, pubkey: string) {
   return page.evaluate(
     (wanted) =>
-      (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).some(
+      (window.__KUZZ_E2E_COMMAND_LOG__ ?? []).some(
         (entry) =>
           entry.command === "get_users_batch" &&
           (
@@ -556,13 +556,13 @@ test("copy message writes the identity sidecar beside readable plain text", asyn
   await page.getByRole("menuitem", { name: "Copy message" }).click();
 
   const written = await page.evaluate(
-    () => window.__BUZZ_E2E_LAST_CLIPBOARD__ ?? null,
+    () => window.__KUZZ_E2E_LAST_CLIPBOARD__ ?? null,
   );
   expect(written?.text).toBe(MESSAGE_BODY);
   expect(written?.text).not.toMatch(ANY_64_HEX);
   expect(written?.html).toContain(`data-mention-pubkey="${JOHN_SMITH_PUBKEY}"`);
   // "Copy message" copies Markdown source, so paste must take the text path.
-  expect(written?.html).toContain('data-buzz-copy="markdown"');
+  expect(written?.html).toContain('data-kuzz-copy="markdown"');
 
   await page.getByTestId("channel-bob-tyler").click();
   await expect(page.getByTestId("chat-title")).toHaveText("bob-tyler");
@@ -612,7 +612,7 @@ test("an identity the pasted content never shows binds no name", async ({
   // accepting one the user cannot see would rebind the name for the session.
   await pasteIntoComposer(page, {
     html:
-      '<span data-buzz-copy="markdown">' +
+      '<span data-kuzz-copy="markdown">' +
       `<span data-mention="" data-mention-pubkey="${IMPOSTOR_PUBKEY}" ` +
       'data-mention-label="John Smith"></span>look at this</span>',
     text: "look at this",
@@ -646,7 +646,7 @@ test("an identity vouched for only by dropped markup binds no name", async ({
   await expect(page.getByTestId("chat-title")).toHaveText("bob-tyler");
 
   // The same claim as above, hidden where ProseMirror's parser throws it away
-  // rather than in an empty span. No `data-buzz-copy` marker, so this takes
+  // rather than in an empty span. No `data-kuzz-copy` marker, so this takes
   // the rich HTML branch, where the gate reads the normalized markup's text.
   const input = page.getByTestId("message-input");
   await pasteIntoComposer(page, {
@@ -692,7 +692,7 @@ test("a visible pair no trusted state vouches for binds no name", async ({
   const input = page.getByTestId("message-input");
   await pasteIntoComposer(page, {
     html:
-      '<span data-buzz-copy="markdown">' +
+      '<span data-kuzz-copy="markdown">' +
       `<span data-mention="" data-mention-pubkey="${IMPOSTOR_PUBKEY}" ` +
       'data-mention-label="John Smith">@John Smith</span> fixed the bug' +
       "</span>",
@@ -734,7 +734,7 @@ test("forum post and reply selection copies carry the mention", async ({
   // are fetched via `get_forum_posts`, not received over a live subscription.
   const { postId, replyId } = await page.evaluate(
     ({ postBody, replyBody, mentionPubkey, pubkey }) => {
-      const emit = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock message emitter is not installed");
       const post = emit({
         channelName: "watercooler",
@@ -818,14 +818,14 @@ test("home inbox copy message carries the mention out of the detail pane", async
   await page.getByRole("menuitem", { name: "Copy message" }).click();
 
   const written = await page.evaluate(
-    () => window.__BUZZ_E2E_LAST_CLIPBOARD__ ?? null,
+    () => window.__KUZZ_E2E_LAST_CLIPBOARD__ ?? null,
   );
   expect(written?.text).toBe(MESSAGE_BODY);
   expect(written?.text).not.toMatch(ANY_64_HEX);
   // Without the row's `profiles`, the identities resolve empty and the copy
   // writes no HTML flavor at all.
   expect(written?.html).toContain(`data-mention-pubkey="${JOHN_SMITH_PUBKEY}"`);
-  expect(written?.html).toContain('data-buzz-copy="markdown"');
+  expect(written?.html).toContain('data-kuzz-copy="markdown"');
 
   await page.getByTestId("channel-bob-tyler").click();
   await expect(page.getByTestId("chat-title")).toHaveText("bob-tyler");
@@ -892,14 +892,14 @@ test("a chip whose spaces became NBSP in transit still pastes as a mention", asy
   await page.getByTestId("channel-bob-tyler").click();
   await expect(page.getByTestId("chat-title")).toHaveText("bob-tyler");
 
-  // A Buzz timeline copy as the pasteboard can hand it back: the chip's spaces
+  // A Kuzz timeline copy as the pasteboard can hand it back: the chip's spaces
   // swapped for U+00A0. The paste normalizer tolerates that when judging the
   // chip whole, so it must insert the label the chip declares — the mention
   // decorations, the visibility gate, and the send-time extractor all want the
   // label's literal characters, and none of them would find "@John<NBSP>Smith".
   await pasteIntoComposer(page, {
     html:
-      '<span data-buzz-copy="rich">' +
+      '<span data-kuzz-copy="rich">' +
       `<span data-mention="" data-mention-pubkey="${JOHN_SMITH_PUBKEY}" ` +
       `data-mention-label="John Smith">@John${NBSP}Smith</span>` +
       " fixed the bug</span>",
@@ -924,7 +924,7 @@ test("a boundary-crossing default copy pastes its chip fragment without a sigil"
   await emitMentionMessage(page, "general");
 
   // A drag from inside the chip into the sentence after it covers no chip
-  // fully, so Buzz's copy handler declines and the browser's default copy
+  // fully, so Kuzz's copy handler declines and the browser's default copy
   // runs — serializing the partially covered chip element with its full
   // identity attributes around only the covered slice of its text.
   const flavors = await page.evaluate((pubkey) => {

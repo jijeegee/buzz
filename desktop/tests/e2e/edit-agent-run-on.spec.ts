@@ -21,7 +21,7 @@ const KUBERNETES_CONFIG = {
   inactivity_seconds: 7200,
   memory_limit: "1Gi",
   memory_request: "1Gi",
-  namespace: "buzz-agents-gfq7aq",
+  namespace: "kuzz-agents-gfq7aq",
 };
 
 async function openEditDialog(
@@ -67,7 +67,7 @@ test("editing a kubernetes agent shows its saved run-on settings", async ({
 
   // Every saved field renders as a labeled row with its stored value.
   await expect(runOn.getByTestId("edit-agent-run-on-namespace")).toContainText(
-    "buzz-agents-gfq7aq",
+    "kuzz-agents-gfq7aq",
   );
   await expect(runOn.getByTestId("edit-agent-run-on-context")).toContainText(
     "docker-desktop",

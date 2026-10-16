@@ -19,7 +19,7 @@ import {
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
 
-import { BuzzInlineLink, BuzzLinkChip } from "./BuzzLinkChip";
+import { KuzzInlineLink, KuzzLinkChip } from "./KuzzLinkChip";
 import { MessageLinkPill } from "./MessageLinkPill";
 import { useMarkdownRuntime } from "./runtimeContext";
 import { useInlineTooltipPosition } from "./useInlineTooltipPosition";
@@ -75,7 +75,7 @@ function ChannelMetadataTooltip({
           {description ? (
             <span
               className="line-clamp-2 [overflow-wrap:anywhere] whitespace-normal"
-              data-buzz-tooltip-metadata-content=""
+              data-kuzz-tooltip-metadata-content=""
             >
               {description}
             </span>
@@ -85,7 +85,7 @@ function ChannelMetadataTooltip({
               "line-clamp-2 max-w-full [overflow-wrap:anywhere] whitespace-normal text-2xs text-secondary-foreground/80",
               description && "mt-1",
             )}
-            data-buzz-tooltip-metadata-type=""
+            data-kuzz-tooltip-metadata-type=""
           >
             {channelTooltipFooter(channel)}
           </span>
@@ -121,7 +121,7 @@ function ChannelPermalinkChipContents({
 }) {
   return (
     <ChannelMetadataTooltip channel={channel}>
-      <BuzzLinkChip
+      <KuzzLinkChip
         data-channel-deep-link={dataChannelDeepLink}
         href={href}
         icon="channel"
@@ -134,7 +134,7 @@ function ChannelPermalinkChipContents({
         wrapping
       >
         {label}
-      </BuzzLinkChip>
+      </KuzzLinkChip>
     </ChannelMetadataTooltip>
   );
 }
@@ -179,13 +179,13 @@ function ResolvedAuthoredDeepLink({
   const label = getReactNodeText(children);
   if (!openable) {
     return (
-      <span className="font-medium text-current" data-buzz-link={href}>
+      <span className="font-medium text-current" data-kuzz-link={href}>
         {children}
       </span>
     );
   }
   return (
-    <BuzzInlineLink
+    <KuzzInlineLink
       href={href}
       title={href}
       aria-label={`${messageLink ? "Open message" : "Open channel"}: ${label}`}
@@ -195,16 +195,16 @@ function ResolvedAuthoredDeepLink({
       }
     >
       {children}
-    </BuzzInlineLink>
+    </KuzzInlineLink>
   );
 }
 
 /**
- * Renders an intentionally-labeled `buzz://channel|message` deep link through
+ * Renders an intentionally-labeled `kuzz://channel|message` deep link through
  * the shared visibility gate. Known channels are interactive immediately;
  * unknown ids without a runtime resolver stay inert; otherwise a bounded
  * per-id lookup decides openability. Both parser families
- * (`buzz://channel/...` and `buzz://message?...`) share this decision so a
+ * (`kuzz://channel/...` and `kuzz://message?...`) share this decision so a
  * private destination can never render clickable via a custom label.
  */
 export function AuthoredDeepLinkAnchor({
@@ -232,7 +232,7 @@ export function AuthoredDeepLinkAnchor({
   const knownChannel = channels?.find((c) => c.id === channelId);
   if (knownChannel) {
     return (
-      <BuzzInlineLink
+      <KuzzInlineLink
         href={href}
         title={href}
         aria-label={`${messageLink ? "Open message" : "Open channel"}: ${label}`}
@@ -240,12 +240,12 @@ export function AuthoredDeepLinkAnchor({
         onOpenLink={openLink}
       >
         {children}
-      </BuzzInlineLink>
+      </KuzzInlineLink>
     );
   }
   if (!resolveChannelReferences) {
     return (
-      <span className="font-medium text-current" data-buzz-link={href}>
+      <span className="font-medium text-current" data-kuzz-link={href}>
         {children}
       </span>
     );
@@ -408,7 +408,7 @@ function ChannelReferenceChip({
 }: ChannelReferenceChipProps) {
   return (
     <ChannelMetadataTooltip channel={channel}>
-      <BuzzLinkChip
+      <KuzzLinkChip
         data-channel-link=""
         // The chip drops the `#` for display; copy restores it from here.
         data-channel-label={channelName}
@@ -424,7 +424,7 @@ function ChannelReferenceChip({
         wrapping
       >
         {channelName}
-      </BuzzLinkChip>
+      </KuzzLinkChip>
     </ChannelMetadataTooltip>
   );
 }

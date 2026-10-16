@@ -6,7 +6,7 @@ fn record(starred: bool, local: bool) -> ManagedAgentRecord {
         "name": "Honey",
         "private_key_nsec": "",
         "relay_url": "",
-        "acp_command": "buzz-acp",
+        "acp_command": "kuzz-acp",
         "agent_command": "goose",
         "agent_args": [],
         "mcp_command": "",

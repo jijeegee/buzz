@@ -29,12 +29,12 @@ import { installRadixDialogGlobals } from "./canvasDialogTestEnv.mjs";
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === "@/shared/ui/markdown") {
-      return { shortCircuit: true, url: "buzz-canvas-stub:markdown" };
+      return { shortCircuit: true, url: "kuzz-canvas-stub:markdown" };
     }
     return nextResolve(specifier, context);
   },
   load(url, context, nextLoad) {
-    if (url === "buzz-canvas-stub:markdown") {
+    if (url === "kuzz-canvas-stub:markdown") {
       return {
         format: "module",
         shortCircuit: true,

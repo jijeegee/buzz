@@ -73,7 +73,7 @@ async function verifyBackup(page: Page, password: string) {
 async function backupSaveCallCount(page: Page) {
   return page.evaluate(
     () =>
-      window.__BUZZ_E2E_COMMANDS__?.filter(
+      window.__KUZZ_E2E_COMMANDS__?.filter(
         (command) => command === "save_ncryptsec_copy",
       ).length ?? 0,
   );

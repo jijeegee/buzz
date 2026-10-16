@@ -2,7 +2,7 @@ import type {
   AcpRuntimeCatalogEntry,
   GlobalAgentConfig,
 } from "@/shared/api/types";
-import { BUZZ_AGENT_THINKING_EFFORT } from "../ui/buzzAgentConfig";
+import { KUZZ_AGENT_THINKING_EFFORT } from "../ui/kuzzAgentConfig";
 
 /**
  * Lifecycle status of the ACP runtime catalog query on a per-agent surface.
@@ -69,7 +69,7 @@ export type AgentConfigFieldDescriptor =
   | {
       kind: "effort";
       optionSource:
-        | "buzzAgentCatalog"
+        | "kuzzAgentCatalog"
         | "legacyProviderModelCatalog"
         | "harnessNative";
       currentPersistence:
@@ -210,18 +210,18 @@ export function deriveAgentConfigFieldModel({
     //   - global/onboarding: native key, matching the launch projection's global
     //     tier (native-only; the legacy alias is record/persona scope), so a
     //     selection actually reaches the spawn rather than persisting a key the
-    //     projection ignores. For buzz-agent this IS BUZZ_AGENT_THINKING_EFFORT.
-    //   - definition/instance: still the generic legacy BUZZ_AGENT_THINKING_EFFORT
+    //     projection ignores. For kuzz-agent this IS KUZZ_AGENT_THINKING_EFFORT.
+    //   - definition/instance: still the generic legacy KUZZ_AGENT_THINKING_EFFORT
     //     row, unchanged pending the per-agent migration.
     const nativeKey = runtime.thinkingEnvVar;
     const persistenceKey =
       scope === "global" || scope === "onboarding"
         ? nativeKey
-        : BUZZ_AGENT_THINKING_EFFORT;
+        : KUZZ_AGENT_THINKING_EFFORT;
     fields.push({
       kind: "effort",
       optionSource:
-        runtime.id === "buzz-agent" ? "buzzAgentCatalog" : "harnessNative",
+        runtime.id === "kuzz-agent" ? "kuzzAgentCatalog" : "harnessNative",
       currentPersistence: {
         kind: "envVar",
         key: persistenceKey,
@@ -306,8 +306,8 @@ export function getRenderableEffortField(
  *
  * Per-surface consequences (assuming standard descriptor sets):
  * - Global: effort key + numeric keys rendered by the descriptors
- * - Per-agent buzz-agent: effort key + 3 numeric keys
- * - Per-agent Goose: 2 numeric keys only — Goose effort (BUZZ_AGENT_THINKING_EFFORT)
+ * - Per-agent kuzz-agent: effort key + 3 numeric keys
+ * - Per-agent Goose: 2 numeric keys only — Goose effort (KUZZ_AGENT_THINKING_EFFORT)
  *   stays a visible generic env row because no effort control renders per-agent
  *   for Goose (effort migration is out of scope)
  */

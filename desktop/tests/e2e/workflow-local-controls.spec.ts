@@ -6,7 +6,7 @@ import { installMockBridge } from "../helpers/bridge";
 
 declare global {
   interface Window {
-    __BUZZ_WORKFLOW_BATCH_CALLS__?: {
+    __KUZZ_WORKFLOW_BATCH_CALLS__?: {
       eventBatches: number[];
       userBatches: number[];
     };
@@ -119,7 +119,7 @@ test("confirms activation after create and preserves a safe disabled path", asyn
     .poll(() =>
       page.evaluate(
         () =>
-          (window.__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
+          (window.__KUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
             (call) => call.command === "create_workflow",
           ).length,
       ),
@@ -131,7 +131,7 @@ test("confirms activation after create and preserves a safe disabled path", asyn
   await expect(dialog).toBeHidden();
 
   const yaml = await page.evaluate(() => {
-    const call = [...(window.__BUZZ_E2E_COMMAND_PAYLOADS__ ?? [])]
+    const call = [...(window.__KUZZ_E2E_COMMAND_PAYLOADS__ ?? [])]
       .reverse()
       .find((candidate) => candidate.command === "create_workflow");
     return (call?.payload as { yamlDefinition?: string } | undefined)
@@ -270,8 +270,8 @@ test("round-trips and reopens structured message-text conditions", async ({
   page,
 }) => {
   const name = `message_condition_${Date.now()}`;
-  const text = 'deploy "buzz"\\path';
-  const expression = 'str_ends_with(trigger_text, "deploy \\"buzz\\"\\\\path")';
+  const text = 'deploy "kuzz"\\path';
+  const expression = 'str_ends_with(trigger_text, "deploy \\"kuzz\\"\\\\path")';
   const dialog = await openCreateWorkflow(page, name);
 
   await dialog
@@ -502,7 +502,7 @@ test("workflow grid batches card author and message presentation reads", async (
     }
 
     const calls = { eventBatches: [], userBatches: [] };
-    window.__BUZZ_WORKFLOW_BATCH_CALLS__ = calls;
+    window.__KUZZ_WORKFLOW_BATCH_CALLS__ = calls;
     window.__TAURI_INTERNALS__.invoke = async (command, args) => {
       if (command === "get_events") {
         calls.eventBatches.push(
@@ -525,7 +525,7 @@ test("workflow grid batches card author and message presentation reads", async (
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const calls = window.__BUZZ_WORKFLOW_BATCH_CALLS__;
+        const calls = window.__KUZZ_WORKFLOW_BATCH_CALLS__;
         return {
           eventBatchCount: calls?.eventBatches.filter((size) => size === 40)
             .length,
@@ -542,10 +542,10 @@ test("does not select stale picker results when Enter outruns deferred filtering
 }) => {
   await page.goto("/");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
   await page.evaluate(() => {
-    window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+    window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
       channelName: "agents",
       content: "Deferred message candidate",
       id: "d".repeat(64),

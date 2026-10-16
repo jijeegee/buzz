@@ -144,8 +144,8 @@ export function imageReserveStyle(args: {
   if (hiddenSpoilerMediaSize) {
     const ratio = `${hiddenSpoilerMediaSize.width} / ${hiddenSpoilerMediaSize.height}`;
     return {
-      "--buzz-spoiler-media-aspect-ratio": ratio,
-      "--buzz-spoiler-media-width": `${hiddenSpoilerMediaSize.width}px`,
+      "--kuzz-spoiler-media-aspect-ratio": ratio,
+      "--kuzz-spoiler-media-width": `${hiddenSpoilerMediaSize.width}px`,
       aspectRatio: ratio,
       height: "auto",
       width: `${hiddenSpoilerMediaSize.width}px`,
@@ -162,26 +162,26 @@ export function imageReserveStyle(args: {
 
 export function isInsideHiddenSpoiler(element: Element): boolean {
   return (
-    element.closest('.buzz-spoiler[data-spoiler][data-revealed="false"]') !==
+    element.closest('.kuzz-spoiler[data-spoiler][data-revealed="false"]') !==
     null
   );
 }
 
 /**
- * `urlTransform` for `<ReactMarkdown>` that preserves `buzz://` deep links
- * used by Buzz — both `buzz://message?…` links and `buzz://pr|issue|repo?…`
+ * `urlTransform` for `<ReactMarkdown>` that preserves `kuzz://` deep links
+ * used by Kuzz — both `kuzz://message?…` links and `kuzz://pr|issue|repo?…`
  * entity links. The default transform strips unknown schemes (returns `""`)
  * before the `a` component override can see them, which would break copy →
  * paste → click end-to-end.
  *
  * Policy:
- * - `buzz://message` hrefs — preserved unconditionally (handled by the
+ * - `kuzz://message` hrefs — preserved unconditionally (handled by the
  *   message-link pill renderer).
- * - `buzz://pr|issue|repo` hrefs — preserved only when `parseEntityLink`
- *   succeeds, keeping the sanitizer active against arbitrary `buzz://` URIs.
+ * - `kuzz://pr|issue|repo` hrefs — preserved only when `parseEntityLink`
+ *   succeeds, keeping the sanitizer active against arbitrary `kuzz://` URIs.
  * - Everything else delegates to `defaultUrlTransform`.
  */
-export function buzzDeepLinkUrlTransform(value: string, key: string): string {
+export function kuzzDeepLinkUrlTransform(value: string, key: string): string {
   if (key !== "href") return defaultUrlTransform(value);
   if (isMessageLink(value) || isChannelLink(value)) return value;
   if (parseEntityLink(value).ok) return value;
@@ -189,11 +189,11 @@ export function buzzDeepLinkUrlTransform(value: string, key: string): string {
 }
 
 /**
- * @deprecated Preserved for external callers; use `buzzDeepLinkUrlTransform`
- * which also handles `buzz://pr|issue|repo` entity links.
+ * @deprecated Preserved for external callers; use `kuzzDeepLinkUrlTransform`
+ * which also handles `kuzz://pr|issue|repo` entity links.
  */
 export function messageLinkUrlTransform(value: string, key: string): string {
-  return buzzDeepLinkUrlTransform(value, key);
+  return kuzzDeepLinkUrlTransform(value, key);
 }
 
 export function getReactNodeText(node: React.ReactNode): string {

@@ -21,7 +21,7 @@ class KeyBackupException implements Exception {
   @override
   String toString() => message;
 
-  /// [code] for a Google account that belongs to a different Buzz account
+  /// [code] for a Google account that belongs to a different Kuzz account
   /// than this community; the user should pick another Google account.
   static const accountMismatch = 'account_mismatch';
 
@@ -35,7 +35,7 @@ const _tryAgain = KeyBackupException(
   'Couldn’t connect your Google account. Try again.',
 );
 const _mismatch = KeyBackupException(
-  'This Google account is linked to a different Buzz account. '
+  'This Google account is linked to a different Kuzz account. '
   'Try a different Google account.',
   code: KeyBackupException.accountMismatch,
 );
@@ -47,7 +47,7 @@ class PendingBackupKeyStore {
     : _storage = storage ?? const FlutterSecureStorage();
   final FlutterSecureStorage _storage;
   String _key(String origin, String account) =>
-      'buzz.key-backup.pending.v1:${jsonEncode([origin, account])}';
+      'kuzz.key-backup.pending.v1:${jsonEncode([origin, account])}';
   Future<String?> read(String origin, String account) =>
       _storage.read(key: _key(origin, account));
   Future<void> write(String origin, String account, String nsec) =>
@@ -411,7 +411,7 @@ class GoogleKeyBackupService {
   void _validateTransport() {
     final uri = Uri.parse(origin);
     const allowLocal = bool.fromEnvironment(
-      'BUZZ_ALLOW_INSECURE_LOCAL_KEY_BACKUP',
+      'KUZZ_ALLOW_INSECURE_LOCAL_KEY_BACKUP',
     );
     if (uri.scheme != 'https' &&
         !(allowLocal &&

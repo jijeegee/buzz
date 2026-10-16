@@ -68,7 +68,7 @@ bool debugUnrestrictedServerForTests = false;
 /// - [KuzzEnvironment.prod]: its table origin; the dart-define overrides are
 ///   ignored;
 /// - [KuzzEnvironment.dev]: an explicit [keyBackupOriginDefine]
-///   (`BUZZ_KEY_BACKUP_ORIGIN`), else [relayUrlDefine] (`BUZZ_RELAY_URL`),
+///   (`KUZZ_KEY_BACKUP_ORIGIN`), else [relayUrlDefine] (`KUZZ_RELAY_URL`),
 ///   else its table origin;
 /// - the test harness ([unrestrictedForTests]) gets `null`, which keeps the
 ///   multi-server upstream behaviour for suites using fake relay hosts.
@@ -119,8 +119,8 @@ bool isServerAllowed(String url, {required String? builtInOrigin}) =>
 /// without a provider ref (push lease background work).
 String? appBuiltInServerOrigin() => builtInServerOrigin(
   parseKuzzEnvironment(_kuzzEnv.value),
-  keyBackupOriginDefine: const String.fromEnvironment('BUZZ_KEY_BACKUP_ORIGIN'),
-  relayUrlDefine: const String.fromEnvironment('BUZZ_RELAY_URL'),
+  keyBackupOriginDefine: const String.fromEnvironment('KUZZ_KEY_BACKUP_ORIGIN'),
+  relayUrlDefine: const String.fromEnvironment('KUZZ_RELAY_URL'),
   unrestrictedForTests: debugUnrestrictedServerForTests,
 );
 

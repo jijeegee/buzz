@@ -19,7 +19,7 @@ class IosGlassThemePagination extends HookWidget {
     required this.inactiveColor,
   });
 
-  static const viewType = 'buzz/theme_pagination_glass';
+  static const viewType = 'kuzz/theme_pagination_glass';
 
   final int count;
   final int selected;

@@ -649,7 +649,7 @@ function account(pubkey, overrides = {}) {
     state: "signed_in",
     active: false,
     displayName: null,
-    buzzName: null,
+    kuzzName: null,
     avatarUrl: null,
     email: null,
     lastUsedAt: null,
@@ -665,7 +665,7 @@ test("the account card names the active account and its sign-out", async () => {
   accounts = [
     account("cd".repeat(32), {
       active: true,
-      buzzName: "Jiho",
+      kuzzName: "Jiho",
       displayName: "Jiho Google",
       email: "jiho@example.com",
     }),
@@ -763,7 +763,7 @@ test("sign-out leaves stopping agents to the backend and reloads once", async (t
     "the UI stops nothing itself",
   );
   assert.equal(reload.mock.callCount(), 1);
-  assert.equal(window.sessionStorage.getItem("buzz:switching-to"), null);
+  assert.equal(window.sessionStorage.getItem("kuzz:switching-to"), null);
   logoutBehavior = undefined;
   runtimes = [];
   await unmount();
@@ -785,7 +785,7 @@ test("signing out of the active account goes straight to the next one", async (t
   await settle(() => reload.mock.callCount() > 0);
   assert.equal(reload.mock.callCount(), 1);
   assert.equal(
-    window.sessionStorage.getItem("buzz:switching-to"),
+    window.sessionStorage.getItem("kuzz:switching-to"),
     "Switching to Work…",
   );
   accountSwitch.takeAccountSwitchAtBoot();
@@ -892,7 +892,7 @@ test("the card lists this computer's accounts to switch to or add, like the prof
     [{ pubkey: "ef".repeat(32) }],
   );
   assert.equal(
-    window.sessionStorage.getItem("buzz:switching-to"),
+    window.sessionStorage.getItem("kuzz:switching-to"),
     null,
     "nothing reloads before the switch settles",
   );

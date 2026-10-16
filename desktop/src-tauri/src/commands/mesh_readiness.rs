@@ -1,4 +1,4 @@
-//! Startup readiness for Buzz shared compute.
+//! Startup readiness for Kuzz shared compute.
 //!
 //! Mesh can bind its HTTP ingress and advertise a model shortly before the
 //! router has installed a usable target. These helpers probe the exact chat

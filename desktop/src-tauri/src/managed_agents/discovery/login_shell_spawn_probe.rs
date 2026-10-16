@@ -26,7 +26,7 @@ pub(crate) fn count() -> usize {
 }
 
 #[cfg(unix)]
-const CHILD_TEST: &str = "BUZZ_LOGIN_SHELL_PROBE_TEST";
+const CHILD_TEST: &str = "KUZZ_LOGIN_SHELL_PROBE_TEST";
 
 #[cfg(unix)]
 fn is_isolated_process() -> bool {
@@ -79,7 +79,7 @@ fn isolated_counter_excludes_parent_probes_but_counts_own_workers() {
     let probe_on_worker = || {
         std::thread::spawn(|| {
             // A real production probe, independent of the shared PATH cache.
-            super::find_via_login_shell("buzz-absent-probe-isolation-xyzzy")
+            super::find_via_login_shell("kuzz-absent-probe-isolation-xyzzy")
         })
         .join()
         .expect("probe worker must finish")

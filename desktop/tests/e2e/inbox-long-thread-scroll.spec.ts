@@ -11,7 +11,7 @@ import { TEST_IDENTITIES, installMockBridge } from "../helpers/bridge";
  */
 
 const GENERAL_CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
-const INBOX_FILTER_STORAGE_KEY = "buzz.desktop.inbox-filter";
+const INBOX_FILTER_STORAGE_KEY = "kuzz.desktop.inbox-filter";
 const REPLY_COUNT = 120;
 const ROOT_ID = "1f".repeat(32);
 const ROOT_TEXT = "LT thread root";
@@ -26,7 +26,7 @@ type RelayEventLike = {
 };
 
 type MockWindow = Window & {
-  __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+  __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
     channelName: string;
     content: string;
     parentEventId?: string;
@@ -35,7 +35,7 @@ type MockWindow = Window & {
     id?: string;
     mentionPubkeys?: string[];
   }) => RelayEventLike;
-  __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
+  __KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
     category: "mention" | "needs_action" | "activity" | "agent_activity";
     channel_id: string | null;
     channel_name: string;
@@ -54,12 +54,12 @@ type Category = "mention" | "needs_action";
 async function seedLongMarkdownThread(page: Page) {
   await page.waitForFunction(
     () =>
-      typeof (window as MockWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
+      typeof (window as MockWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
       "function",
   );
   return page.evaluate(
     ({ rootId, rootText, replies, alice, tyler }) => {
-      const emit = (window as MockWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const emit = (window as MockWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("emitter missing");
       const base = Math.floor(Date.now() / 1000) - 10_000;
       emit({
@@ -114,7 +114,7 @@ async function seedLongMarkdownThread(page: Page) {
 async function pushFeed(page: Page, event: RelayEventLike, category: Category) {
   await page.evaluate(
     ({ ev, channelId, cat }) => {
-      (window as MockWindow).__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?.({
+      (window as MockWindow).__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?.({
         category: cat,
         channel_id: channelId,
         channel_name: "general",
@@ -197,7 +197,7 @@ async function setScrollTopZero(page: Page, testId: string) {
 async function emitLiveReplies(page: Page, count: number, startIndex: number) {
   await page.evaluate(
     ({ rootId, alice, n, start }) => {
-      const emit = (window as MockWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const emit = (window as MockWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       for (let i = 0; i < n; i += 1) {
         emit?.({
           channelName: "general",
@@ -314,12 +314,12 @@ for (const path of PATHS) {
         threadWindowCalls: (
           (
             window as unknown as {
-              __BUZZ_E2E_COMMAND_PAYLOADS__?: Array<{
+              __KUZZ_E2E_COMMAND_PAYLOADS__?: Array<{
                 command: string;
                 payload: unknown;
               }>;
             }
-          ).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []
+          ).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? []
         )
           .filter((entry) => entry.command === "get_thread_windows")
           .map((entry) => JSON.stringify(entry.payload)),

@@ -250,7 +250,7 @@ fn serialized_catalog_matches_the_typescript_contract() {
         created_at: 42,
         agent: CatalogAgentProjection {
             effort_level: None,
-            acp_command: Some("buzz-janet-acp".into()),
+            acp_command: Some("kuzz-janet-acp".into()),
             display_name: "Ada".into(),
             avatar_url: Some("https://example.com/a.png".into()),
             description: Some("A kind agent.".into()),
@@ -276,7 +276,7 @@ fn serialized_catalog_matches_the_typescript_contract() {
             "description": "A kind agent.",
             "systemPrompt": "be kind",
             "runtime": "acp",
-            "acpCommand": "buzz-janet-acp",
+            "acpCommand": "kuzz-janet-acp",
             "model": "m1",
             "provider": "p1",
             "namePool": ["Ada", "Lin"],
@@ -292,7 +292,7 @@ fn serialized_catalog_matches_the_typescript_contract() {
 fn catalog_preserves_portable_acp_alias_and_rejects_nonportable_values() {
     let mut content = valid_content("Reviewer");
     assert_eq!(parse_agent(&content.to_string()).unwrap().acp_command, None);
-    for command in ["buzz-acp", "buzz-janet-acp"] {
+    for command in ["kuzz-acp", "kuzz-janet-acp"] {
         content["acp_command"] = json!(command);
         let projected = parse_agent(&content.to_string()).unwrap();
         assert_eq!(projected.acp_command.as_deref(), Some(command));
@@ -302,10 +302,10 @@ fn catalog_preserves_portable_acp_alias_and_rejects_nonportable_values() {
         );
     }
     for command in [
-        json!("/tmp/buzz-janet-acp"),
-        json!(r"C:\buzz-janet-acp.cmd"),
+        json!("/tmp/kuzz-janet-acp"),
+        json!(r"C:\kuzz-janet-acp.cmd"),
         json!("sh"),
-        json!("buzz-a&b-acp"),
+        json!("kuzz-a&b-acp"),
         json!(7),
     ] {
         content["acp_command"] = command;
@@ -324,9 +324,9 @@ fn shared_persona_publication_is_portable_and_catalog_readable() {
     persona.shared = true;
     for (command, projected) in [
         (Some("/opt/custom-acp"), None),
-        (Some("buzz-janet-acp"), Some("buzz-janet-acp")),
-        (Some("buzz-acp"), Some("buzz-acp")),
-        (None, Some("buzz-acp")),
+        (Some("kuzz-janet-acp"), Some("kuzz-janet-acp")),
+        (Some("kuzz-acp"), Some("kuzz-acp")),
+        (None, Some("kuzz-acp")),
     ] {
         persona.acp_command = command.map(str::to_string);
         let published = build_persona_event(&persona)

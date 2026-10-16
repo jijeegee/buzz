@@ -5,7 +5,7 @@ import * as React from "react";
  * persists it as the preference every later player starts from, so a viewer
  * who watches at 2x does not have to re-select it per video.
  */
-export const VIDEO_PLAYBACK_SPEED_STORAGE_KEY = "buzz.media.videoPlaybackSpeed";
+export const VIDEO_PLAYBACK_SPEED_STORAGE_KEY = "kuzz.media.videoPlaybackSpeed";
 
 /** Selectable speeds, fastest first to match the control's menu order. */
 export const VIDEO_PLAYBACK_SPEEDS = [

@@ -5,7 +5,7 @@ export const MAX_IN_MEMORY_AGENT_AUDIENCES = 200;
  * Fork: added and removed agents survive restarts and account switches on
  * this device. Scopes already include the owner, channel and composer.
  */
-export const AGENT_AUDIENCE_STORAGE_KEY = "buzz.messages.agentAudiences.v1";
+export const AGENT_AUDIENCE_STORAGE_KEY = "kuzz.messages.agentAudiences.v1";
 
 const listeners = new Set<() => void>();
 const revisions = new Map<string, number>();

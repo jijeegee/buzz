@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:buzz/shared/auth/token/token_session.dart';
-import 'package:buzz/shared/huddle/huddle_auth.dart';
-import 'package:buzz/shared/huddle/huddle_transport.dart';
+import 'package:kuzz/shared/auth/token/token_session.dart';
+import 'package:kuzz/shared/huddle/huddle_auth.dart';
+import 'package:kuzz/shared/huddle/huddle_transport.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 

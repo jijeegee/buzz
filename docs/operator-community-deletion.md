@@ -1,7 +1,7 @@
 # Community Deletion Operator Job
 
-Buzz executes whole-community deletion through the typed, one-shot
-`/usr/local/bin/buzz-admin deletions drain` command. The Helm chart can schedule
+Kuzz executes whole-community deletion through the typed, one-shot
+`/usr/local/bin/kuzz-admin deletions drain` command. The Helm chart can schedule
 that command as a Kubernetes CronJob; it does not call relay HTTP and it does
 not add another queue or retry service.
 
@@ -23,7 +23,7 @@ existing Secret and a dedicated, pre-created service account:
 
 ```yaml
 secrets:
-  existingSecret: buzz-operator-secrets
+  existingSecret: kuzz-operator-secrets
 
 operatorJobs:
   deletionDrain:
@@ -31,9 +31,9 @@ operatorJobs:
     schedule: "*/5 * * * *"
     activeDeadlineSeconds: 3600
     terminationGracePeriodSeconds: 30
-    serviceAccountName: buzz-deletion-drain
+    serviceAccountName: kuzz-deletion-drain
     podLabels:
-      tags.datadoghq.com/service: buzz-deletion-drain
+      tags.datadoghq.com/service: kuzz-deletion-drain
     podAnnotations:
       sidecar.istio.io/inject: "false"
     resources:
@@ -47,10 +47,10 @@ operatorJobs:
 
 Set `s3.endpoint`, `s3.bucket`, `s3.region`, and `s3.addressingStyle` in chart
 values. The selected Secret must contain `DATABASE_URL` and `REDIS_URL`; it may
-contain `BUZZ_S3_ACCESS_KEY` and `BUZZ_S3_SECRET_KEY` when the object store uses
+contain `KUZZ_S3_ACCESS_KEY` and `KUZZ_S3_SECRET_KEY` when the object store uses
 static credentials. The pod receives only those connection values and the four
-non-secret S3 settings. It does not receive `BUZZ_RELAY_PRIVATE_KEY`,
-`BUZZ_GIT_HOOK_HMAC_SECRET`, `RELAY_URL`, or the full Secret through `envFrom`.
+non-secret S3 settings. It does not receive `KUZZ_RELAY_PRIVATE_KEY`,
+`KUZZ_GIT_HOOK_HMAC_SECRET`, `RELAY_URL`, or the full Secret through `envFrom`.
 The pod also disables service-account token automounting and Kubernetes service
 link environment injection because the executor does not call the Kubernetes
 API or discover cluster Services. This disables the ordinary Kubernetes API
@@ -76,7 +76,7 @@ reports their objects with the `null` version id.
 
 1. Confirm database migrations are current. For operator-origin requests,
    confirm explicit inventory and operator approval with
-   `buzz-admin deletions inspect <request-id>`. For owner-origin requests,
+   `kuzz-admin deletions inspect <request-id>`. For owner-origin requests,
    expect the drain to record `approval_origin: owner_automatic`; `approved_by`
    is the immutable mediating operator, not the owner.
 2. Confirm the selected Secret contains the required keys and the S3 principal
@@ -92,18 +92,18 @@ reports their objects with the `null` version id.
 
    The name is `<bounded-fullname>-deletion-drain`. The chart truncates only the
    fullname portion when needed so the suffix remains stable within Kubernetes'
-   52-character CronJob name limit. `buzz.fullname` collapses to the release
+   52-character CronJob name limit. `kuzz.fullname` collapses to the release
    name when the release name already contains the chart name, so
-   `helm install buzz ...` renders `buzz-deletion-drain`, not
-   `buzz-buzz-deletion-drain`.
+   `helm install kuzz ...` renders `kuzz-deletion-drain`, not
+   `kuzz-kuzz-deletion-drain`.
 5. Start one staffed manual run with
    `kubectl create job --from=cronjob/<cronjob-name> <job-name>`.
-6. Follow pod logs and re-run `buzz-admin deletions inspect <request-id>` to
+6. Follow pod logs and re-run `kuzz-admin deletions inspect <request-id>` to
    verify lease, checkpoint, retry, blocked, and terminal state.
 7. If a run fails or times out, fix the recorded dependency or permission
    failure. Do not add Kubernetes retries: the next scheduled drain consults the
    durable retry/checkpoint state and resumes only when the store allows it.
-7. Use `buzz-admin deletions abort` as privileged recovery while a request is
+7. Use `kuzz-admin deletions abort` as privileged recovery while a request is
    still at `submitted` or `inventoried` when safe preparation cannot continue.
    Abort preserves the archived community and immutable request evidence. An
    operator may also `unblock` a remediated preparation failure.
@@ -121,7 +121,7 @@ not learn why a pod went away. Two consequences matter when reading state:
   stages therefore repeats indefinitely: each run increments `attempts` and
   burns the window again while the retry budget never moves and the request is
   never blocked.
-- Diagnose this from both sides. `buzz-admin deletions inspect <request-id>`
+- Diagnose this from both sides. `kuzz-admin deletions inspect <request-id>`
   shows a rising `attempts` with a flat `retry_count` and no `last_error`;
   Kubernetes holds the reason. The chart labels the CronJob and the drain pods,
   but not the generated Jobs, so find the attempts with
@@ -131,7 +131,7 @@ not learn why a pod went away. Two consequences matter when reading state:
 Size `activeDeadlineSeconds` for the longest single stage this community will
 run, not for the average run. To recover, either raise the deadline and let the
 schedule pick the request back up, or take one staffed run with
-`buzz-admin deletions run <request-id>` outside the CronJob's deadline.
+`kuzz-admin deletions run <request-id>` outside the CronJob's deadline.
 
 `terminationGracePeriodSeconds` is a best-effort window, not a guarantee. The
 drain command handles `SIGTERM` and releases its lease cleanly when it wins the
@@ -191,12 +191,12 @@ rejects with `409` and `code: "limit_reached"` (the `error` message keeps its
 `limit_reached:` prefix for older clients):
 
 - **Active:** live ownership plus incomplete owner deletions
-  (`BUZZ_MAX_COMMUNITIES_PER_OWNER`, default 5). A deletion keeps its slot
+  (`KUZZ_MAX_COMMUNITIES_PER_OWNER`, default 5). A deletion keeps its slot
   until logical completion records `completed_at`.
 - **Lifetime:** live ownership plus every non-aborted owner deletion, including
   completed ones, capped at an absolute 20 regardless of the active limit.
   Lifetime usage includes live ownership, so no owner can hold more than 20
-  live communities; a `BUZZ_MAX_COMMUNITIES_PER_OWNER` above 20 is
+  live communities; a `KUZZ_MAX_COMMUNITIES_PER_OWNER` above 20 is
   unreachable, and owner lists would report a `quota_limit` the owner can
   never reach.
   Deleted communities keep their hosts as permanent tombstones, so this bounds

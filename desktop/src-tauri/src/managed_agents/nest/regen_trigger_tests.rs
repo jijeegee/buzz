@@ -10,7 +10,7 @@ use std::time::Duration;
 
 #[test]
 fn real_trigger_coalesces_and_survives_a_stalled_old_workspace() {
-    const CHILD: &str = "BUZZ_NEST_REGEN_TEST_HOME";
+    const CHILD: &str = "KUZZ_NEST_REGEN_TEST_HOME";
     if let Some(home) = std::env::var_os(CHILD) {
         let home = PathBuf::from(home);
         assert_eq!(std::env::var_os("HOME").unwrap(), home.as_os_str());
@@ -30,8 +30,8 @@ fn real_trigger_coalesces_and_survives_a_stalled_old_workspace() {
         .env(CHILD, home.path()).env("HOME", home.path())
         .env("XDG_DATA_HOME", home.path()).env("APPDATA", home.path())
         .env("LOCALAPPDATA", home.path())
-        .env_remove("BUZZ_PRIVATE_KEY").env_remove("BUZZ_AUTH_TAG")
-        .env_remove("BUZZ_RELAY_URL").env_remove("BUZZ_NETWORK_TRACE")
+        .env_remove("KUZZ_PRIVATE_KEY").env_remove("KUZZ_AUTH_TAG")
+        .env_remove("KUZZ_RELAY_URL").env_remove("KUZZ_NETWORK_TRACE")
         .output().unwrap();
     assert!(
         output.status.success(),

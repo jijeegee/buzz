@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
-/// Goal tree (kind 40110) — mirrors `buzz_core::goal_tree`.
+/// Goal tree (kind 40110) — mirrors `kuzz_core::goal_tree`.
 ///
 /// One document per channel or DM. The root is the conversation's single
 /// layer 1 goal; every other goal hangs below one parent, so a goal's layer
@@ -315,7 +315,7 @@ String newGoalId() {
   return 'g_$hex';
 }
 
-/// One edit; mirrors `buzz_core::goal_tree::GoalOp`. Writers keep the op so
+/// One edit; mirrors `kuzz_core::goal_tree::GoalOp`. Writers keep the op so
 /// they can re-apply it to a newer head after a conflict.
 sealed class GoalOp {
   const GoalOp();

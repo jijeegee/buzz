@@ -42,7 +42,7 @@ abstract interface class RefreshTokenStore {
 class SecureRefreshTokenStore implements RefreshTokenStore {
   SecureRefreshTokenStore({
     FlutterSecureStorage? storage,
-    this.keyPrefix = 'buzz.auth.refresh.v1',
+    this.keyPrefix = 'kuzz.auth.refresh.v1',
   }) : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
@@ -50,7 +50,7 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
   String _keyFor(String origin) => '$keyPrefix:$origin';
 
   /// Storage key for [origin]'s record.
-  static String keyFor(String origin) => 'buzz.auth.refresh.v1:$origin';
+  static String keyFor(String origin) => 'kuzz.auth.refresh.v1:$origin';
 
   /// Readable after the first unlock (background refresh) but never synced
   /// or restored to another device: a refresh token is bound to this device.

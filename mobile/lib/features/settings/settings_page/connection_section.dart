@@ -117,7 +117,7 @@ class _RemoveCommunitySection extends ConsumerWidget {
 
 void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
   final usesPrivateKey = !ref.read(relayConfigProvider).tokenAuth;
-  showBuzzDialog<void>(
+  showKuzzDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Remove community from this device?'),
@@ -170,7 +170,7 @@ Future<bool?> _confirmSignOut(
   BuildContext context, {
   required bool hasBuiltInServer,
 }) {
-  return showBuzzDialog<bool>(
+  return showKuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       key: const Key('settings-sign-out-dialog'),

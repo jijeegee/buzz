@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:buzz/features/sign_in/token_sign_in_page.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/default_community.dart';
-import 'package:buzz/shared/auth/google_key_backup.dart';
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/features/sign_in/token_sign_in_page.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
+import 'package:kuzz/shared/auth/google_key_backup.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

@@ -8,7 +8,7 @@
  */
 
 /** Storage key for the pending login. */
-export const PENDING_LOGIN_KEY = "buzz.web.oidc.pending";
+export const PENDING_LOGIN_KEY = "kuzz.web.oidc.pending";
 
 /** The minimal `Storage` surface used here (sessionStorage in the browser). */
 export type KeyValueStorage = Pick<

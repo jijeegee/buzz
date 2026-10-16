@@ -49,7 +49,7 @@ pub(crate) fn parse_deployed_roles(content: Option<&str>) -> HashMap<String, Rou
         return HashMap::new();
     };
     serde_json::from_str(content).unwrap_or_else(|error| {
-        eprintln!("buzz-desktop: unreadable {DEPLOYED_ROLES_FILE} ({error}); ignoring it");
+        eprintln!("kuzz-desktop: unreadable {DEPLOYED_ROLES_FILE} ({error}); ignoring it");
         HashMap::new()
     })
 }
@@ -143,7 +143,7 @@ pub(crate) fn launch_role<R: tauri::Runtime>(
     let records = match load_managed_agents_without_keys(app) {
         Ok(records) => records,
         Err(error) => {
-            eprintln!("buzz-desktop: routing hold check skipped: {error}");
+            eprintln!("kuzz-desktop: routing hold check skipped: {error}");
             return desired_role;
         }
     };

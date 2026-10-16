@@ -64,7 +64,7 @@ class FlutterWebAuth2Launcher implements WebAuthLauncher {
       if (defaultTargetPlatform == TargetPlatform.android) {
         try {
           await const MethodChannel(
-            'buzz/auth_browser',
+            'kuzz/auth_browser',
           ).invokeMethod<void>('returnToApp');
         } on PlatformException {
           // Window recovery must not discard an already received callback.

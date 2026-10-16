@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:buzz/features/settings/account_page.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/settings/account_page.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

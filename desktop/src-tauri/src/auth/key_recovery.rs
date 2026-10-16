@@ -95,7 +95,7 @@ fn proof(keys: &Keys, account: &str, origin: &str, challenge: Challenge) -> Resu
         || challenge.challenge.len() != 64
         || !challenge.challenge.bytes().all(|v| v.is_ascii_hexdigit())
     {
-        eprintln!("buzz-desktop: key backup: the relay returned an invalid backup challenge");
+        eprintln!("kuzz-desktop: key backup: the relay returned an invalid backup challenge");
         return Err("Couldn't restore your account. Try again.".into());
     }
     let tags = [
@@ -134,7 +134,7 @@ async fn status(
         || (status.state == "absent" && status.pubkey.is_some())
         || (status.state == "ready" && status.pubkey.is_none())
     {
-        eprintln!("buzz-desktop: key backup: the relay returned an invalid backup status");
+        eprintln!("kuzz-desktop: key backup: the relay returned an invalid backup status");
         return Err("Couldn't restore your account. Try again.".into());
     }
     Ok(status)
@@ -151,7 +151,7 @@ async fn restore(
         .as_deref()
         .and_then(|v| PublicKey::from_hex(v).ok())
         .ok_or_else(|| {
-            eprintln!("buzz-desktop: key backup: the stored backup has an invalid public key");
+            eprintln!("kuzz-desktop: key backup: the stored backup has an invalid public key");
             "Couldn't restore your account."
         })?;
     let restored: RestoredKey = api::send_json(
@@ -284,7 +284,7 @@ fn persist_pending(state: &AppState, keys: &Keys) -> Result<(), String> {
 /// here stay signed in. The current key is linked to the Google account only
 /// for an explicit `connect` (a signed-in key-only account protecting itself)
 /// or when it is the unused first-install key; otherwise a Google account with
-/// no backup gets a new key and a new Buzz account.
+/// no backup gets a new key and a new Kuzz account.
 pub(crate) async fn complete<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     origin: &str,
@@ -439,7 +439,7 @@ pub(crate) async fn complete<R: tauri::Runtime>(
             ) {
                 Ok(restored) => restored,
                 Err(rollback) => {
-                    eprintln!("buzz-desktop: auth: failed sign-in not rolled back: {rollback}");
+                    eprintln!("kuzz-desktop: auth: failed sign-in not rolled back: {rollback}");
                     false
                 }
             };
@@ -472,11 +472,11 @@ pub(crate) async fn complete<R: tauri::Runtime>(
             match api::refresh(&client, &origin, &old).await {
                 Ok(replaced) => {
                     if let Err(error) = api::logout(&client, &origin, &replaced.access).await {
-                        eprintln!("buzz-desktop: auth: replaced session not revoked: {error}");
+                        eprintln!("kuzz-desktop: auth: replaced session not revoked: {error}");
                     }
                 }
                 Err(error) => {
-                    eprintln!("buzz-desktop: auth: replaced session already ended: {error}")
+                    eprintln!("kuzz-desktop: auth: replaced session already ended: {error}")
                 }
             }
         });

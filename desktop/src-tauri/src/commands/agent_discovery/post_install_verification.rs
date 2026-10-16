@@ -7,7 +7,7 @@ pub(super) fn run(
     steps: &mut Vec<InstallStepResult>,
     reporter: &InstallReporter,
 ) {
-    // Observe PATH changes and binaries added after Buzz launched.
+    // Observe PATH changes and binaries added after Kuzz launched.
     crate::managed_agents::refresh_login_shell_path();
     crate::managed_agents::clear_resolve_cache();
 

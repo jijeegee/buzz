@@ -19,7 +19,7 @@ function makeTool(overrides = {}) {
     type: "tool",
     title: "read_file",
     toolName: "read_file",
-    buzzToolName: null,
+    kuzzToolName: null,
     status: "completed",
     args: { path: "src/App.tsx" },
     result: "",

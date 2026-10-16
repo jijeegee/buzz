@@ -187,7 +187,7 @@ mod tests {
             "https://www.youtube.com/",
             "https://www.youtube.com/watch",
             "https://www.youtube.com/watch?v=",
-            "https://www.youtube.com/@buzz",
+            "https://www.youtube.com/@kuzz",
             "https://youtube.com.evil.example/watch?v=hLFs9JtMaRg",
             "https://notyoutube.com/watch?v=hLFs9JtMaRg",
         ] {
@@ -316,14 +316,14 @@ mod tests {
     fn converts_response_to_bounded_preview_metadata() {
         let (metadata, thumbnail_url) = oembed_metadata(OEmbedResponse {
             title: "  Video   title  ".to_string(),
-            author_name: Some("Buzz Creator".to_string()),
+            author_name: Some("Kuzz Creator".to_string()),
             provider_name: Some("YouTube".to_string()),
             thumbnail_url: Some("https://i.ytimg.com/vi/example/hqdefault.jpg".to_string()),
         })
         .unwrap();
         assert_eq!(metadata.title, "Video title");
         assert_eq!(metadata.site_name.as_deref(), Some("YouTube"));
-        assert_eq!(metadata.description.as_deref(), Some("Buzz Creator"));
+        assert_eq!(metadata.description.as_deref(), Some("Kuzz Creator"));
         assert_eq!(metadata.image_fetch_state, LinkPreviewImageFetchState::None);
         assert_eq!(
             thumbnail_url.unwrap().as_str(),

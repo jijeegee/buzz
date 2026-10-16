@@ -10,7 +10,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'voice_note_play_pause_icon.dart';
 import 'voice_note_recording.dart';
 import 'voice_note_waveform.dart';
@@ -223,7 +223,7 @@ class VoiceNoteAttachment extends HookConsumerWidget {
                   ),
                   icon: state.isLoading
                       ? ExcludeSemantics(
-                          child: BuzzLoadingIndicator(
+                          child: KuzzLoadingIndicator(
                             size: 18,
                             color: context.colors.onSecondaryContainer,
                           ),

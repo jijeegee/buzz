@@ -206,7 +206,7 @@ export function prepareLinkPreview(
   candidate: SupportedLinkPreview,
 ): Promise<string[] | null> {
   if (
-    candidate.href.startsWith("buzz://") ||
+    candidate.href.startsWith("kuzz://") ||
     !isValidLinkPreviewSnapshotCanonicalUrl(candidate.href)
   ) {
     return Promise.resolve(null);
@@ -262,7 +262,7 @@ export function prepareBackgroundLinkPreviews(
 ): PreparedBackgroundLinkPreviews | null {
   const external = candidates.filter(
     (candidate) =>
-      !candidate.href.startsWith("buzz://") &&
+      !candidate.href.startsWith("kuzz://") &&
       isValidLinkPreviewSnapshotCanonicalUrl(candidate.href),
   );
   if (external.length === 0) return null;

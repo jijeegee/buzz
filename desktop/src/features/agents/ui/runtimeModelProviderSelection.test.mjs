@@ -18,21 +18,21 @@ const base = {
 // --- selectionOnRuntimeChange ---
 
 test("runtime switch clears stale effort env aliases (native + ACP sentinel), preserving the Save-gated column", () => {
-  // Claude/buzz-agent → Goose: the previous runtime's effort env aliases are
+  // Claude/kuzz-agent → Goose: the previous runtime's effort env aliases are
   // stale under Goose. They are cleared; unrelated env survives. The canonical
   // effort column is Save-gated, not in this state, so it is untouched here.
   const next = selectionOnRuntimeChange(
     {
       ...base,
       envVars: {
-        BUZZ_ACP_EFFORT_LEVEL: "high",
-        BUZZ_AGENT_THINKING_EFFORT: "medium",
+        KUZZ_ACP_EFFORT_LEVEL: "high",
+        KUZZ_AGENT_THINKING_EFFORT: "medium",
         GOOSE_THINKING_EFFORT: "max",
         KEEP: "x",
       },
     },
     {
-      previousRuntime: "buzz-agent",
+      previousRuntime: "kuzz-agent",
       nextRuntime: "goose",
       nextRuntimeCanChooseProvider: true,
       lockedRuntimeReset: "full",
@@ -65,7 +65,7 @@ test("runtime change to a provider-locked runtime, full reset (Persona/Edit): cl
       envVars: { ANTHROPIC_API_KEY: "sk-1", KEEP: "x" },
     },
     {
-      previousRuntime: "buzz-agent",
+      previousRuntime: "kuzz-agent",
       nextRuntime: "claude",
       nextRuntimeCanChooseProvider: false,
       lockedRuntimeReset: "full",
@@ -87,7 +87,7 @@ test("runtime change to a provider-locked runtime, provider-only reset (Create):
       model: "my-custom",
     },
     {
-      previousRuntime: "buzz-agent",
+      previousRuntime: "kuzz-agent",
       nextRuntime: "claude",
       nextRuntimeCanChooseProvider: false,
       lockedRuntimeReset: "provider-only",
@@ -106,7 +106,7 @@ test("runtime change between provider-selection runtimes keeps provider state", 
   };
   const next = selectionOnRuntimeChange(current, {
     previousRuntime: "goose",
-    nextRuntime: "buzz-agent",
+    nextRuntime: "kuzz-agent",
     nextRuntimeCanChooseProvider: true,
     lockedRuntimeReset: "full",
   });
@@ -124,7 +124,7 @@ test("provider switch clears the previous managed API key and sets the provider"
       envVars: { ANTHROPIC_API_KEY: "sk-1", KEEP: "x" },
     },
     {
-      runtime: "buzz-agent",
+      runtime: "kuzz-agent",
       nextValue: "openai",
       clearModelWhenApiKeyMissing: false,
     },
@@ -142,7 +142,7 @@ test("custom-provider entry clears the managed key and enters custom editing", (
       envVars: { ANTHROPIC_API_KEY: "sk-1" },
     },
     {
-      runtime: "buzz-agent",
+      runtime: "kuzz-agent",
       nextValue: "__custom_provider__",
       clearModelWhenApiKeyMissing: false,
     },
@@ -156,7 +156,7 @@ test("auto-provider selection maps to empty provider", () => {
   const next = selectionOnProviderDropdownChange(
     { ...base, provider: "anthropic", envVars: { ANTHROPIC_API_KEY: "sk-1" } },
     {
-      runtime: "buzz-agent",
+      runtime: "kuzz-agent",
       nextValue: "__auto_provider__",
       clearModelWhenApiKeyMissing: false,
     },
@@ -169,7 +169,7 @@ test("Persona mode clears the model when the new provider's API key is missing",
   const next = selectionOnProviderDropdownChange(
     { ...base, model: "claude-4", provider: "" },
     {
-      runtime: "buzz-agent",
+      runtime: "kuzz-agent",
       nextValue: "anthropic",
       clearModelWhenApiKeyMissing: true,
     },
@@ -184,7 +184,7 @@ test("Create/Edit mode keeps the model when the new provider's API key is missin
   const next = selectionOnProviderDropdownChange(
     { ...base, model: "my-custom-model", provider: "" },
     {
-      runtime: "buzz-agent",
+      runtime: "kuzz-agent",
       nextValue: "anthropic",
       clearModelWhenApiKeyMissing: false,
     },
@@ -196,7 +196,7 @@ test("custom-model editing suppresses the model-scope clear on provider switch",
   const next = selectionOnProviderDropdownChange(
     { ...base, model: "anything", isCustomModelEditing: true },
     {
-      runtime: "buzz-agent",
+      runtime: "kuzz-agent",
       nextValue: "openai",
       clearModelWhenApiKeyMissing: false,
     },

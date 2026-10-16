@@ -43,7 +43,7 @@ const TIMELINE_KINDS: [u32; 11] = [
     43004,
     43005,
     43006,
-    buzz_core_pkg::kind::KIND_HUDDLE_STARTED,
+    kuzz_core_pkg::kind::KIND_HUDDLE_STARTED,
 ];
 
 #[tauri::command]
@@ -76,13 +76,13 @@ pub async fn get_feed(
             1,
             45001,
             45003,
-            buzz_core_pkg::kind::KIND_GIT_PULL_REQUEST,
-            buzz_core_pkg::kind::KIND_GIT_PR_UPDATE,
-            buzz_core_pkg::kind::KIND_GIT_ISSUE,
-            buzz_core_pkg::kind::KIND_GIT_STATUS_OPEN,
-            buzz_core_pkg::kind::KIND_GIT_STATUS_MERGED,
-            buzz_core_pkg::kind::KIND_GIT_STATUS_CLOSED,
-            buzz_core_pkg::kind::KIND_GIT_STATUS_DRAFT,
+            kuzz_core_pkg::kind::KIND_GIT_PULL_REQUEST,
+            kuzz_core_pkg::kind::KIND_GIT_PR_UPDATE,
+            kuzz_core_pkg::kind::KIND_GIT_ISSUE,
+            kuzz_core_pkg::kind::KIND_GIT_STATUS_OPEN,
+            kuzz_core_pkg::kind::KIND_GIT_STATUS_MERGED,
+            kuzz_core_pkg::kind::KIND_GIT_STATUS_CLOSED,
+            kuzz_core_pkg::kind::KIND_GIT_STATUS_DRAFT,
         ],
         "#p": [my_pubkey],
         "limit": cap,
@@ -450,11 +450,11 @@ pub async fn send_channel_message(
         expected_signer_pubkey.as_deref(),
         &signing_keys.public_key().to_hex(),
     )?;
-    let kind_num = kind.unwrap_or(buzz_core_pkg::kind::KIND_STREAM_MESSAGE);
-    if sent_from_thread_tag.is_some() && kind_num != buzz_core_pkg::kind::KIND_STREAM_MESSAGE {
+    let kind_num = kind.unwrap_or(kuzz_core_pkg::kind::KIND_STREAM_MESSAGE);
+    if sent_from_thread_tag.is_some() && kind_num != kuzz_core_pkg::kind::KIND_STREAM_MESSAGE {
         return Err("sent-from-thread provenance requires a stream message".into());
     }
-    if quote_tag.is_some() && kind_num != buzz_core_pkg::kind::KIND_STREAM_MESSAGE {
+    if quote_tag.is_some() && kind_num != kuzz_core_pkg::kind::KIND_STREAM_MESSAGE {
         return Err("quote tags require a stream message".into());
     }
     if root_event_id.is_some() && parent_event_id.is_none() {
@@ -464,14 +464,14 @@ pub async fn send_channel_message(
     let mut resolved_root: Option<String> = None;
 
     let builder = match kind_num {
-        buzz_core_pkg::kind::KIND_FORUM_POST => events::build_forum_post(
+        kuzz_core_pkg::kind::KIND_FORUM_POST => events::build_forum_post(
             channel_uuid,
             content.trim(),
             &mention_refs,
             &media,
             &mention_refs_only,
         )?,
-        buzz_core_pkg::kind::KIND_FORUM_COMMENT => {
+        kuzz_core_pkg::kind::KIND_FORUM_COMMENT => {
             let parent_id = parent_event_id
                 .as_deref()
                 .ok_or("forum comment requires parent_event_id")?;
@@ -571,7 +571,7 @@ async fn find_managed_agent_channel_message_by_marker(
 
     for _ in 0..10 {
         let mut filter = serde_json::json!({
-            "kinds": [buzz_core_pkg::kind::KIND_STREAM_MESSAGE],
+            "kinds": [kuzz_core_pkg::kind::KIND_STREAM_MESSAGE],
             "#h": [channel_id],
             "limit": 500,
         });
@@ -659,7 +659,7 @@ fn legacy_managed_agent_auth_tag(
         return Ok(None);
     }
 
-    buzz_sdk_pkg::nip_oa::compute_auth_tag(owner_keys, agent_pubkey, "")
+    kuzz_sdk_pkg::nip_oa::compute_auth_tag(owner_keys, agent_pubkey, "")
         .map(Some)
         .map_err(|error| format!("failed to compute managed agent auth tag: {error}"))
 }
@@ -961,14 +961,14 @@ pub async fn add_reaction(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let target_eid = EventId::from_hex(&event_id).map_err(|e| {
-        eprintln!("buzz-desktop: invalid event ID: {e}");
+        eprintln!("kuzz-desktop: invalid event ID: {e}");
         "Couldn't find this message.".to_string()
     })?;
     let builder = match emoji_url {
         // Custom-emoji reaction (NIP-30): kind:7 with `:shortcode:` content and
         // an `["emoji", shortcode, url]` tag. Delegates to the SDK builder so
         // shortcode normalization + validation match the relay exactly.
-        Some(url) => buzz_sdk_pkg::build_custom_emoji_reaction(target_eid, emoji.trim(), &url)
+        Some(url) => kuzz_sdk_pkg::build_custom_emoji_reaction(target_eid, emoji.trim(), &url)
             .map_err(|e| format!("invalid custom emoji reaction: {e}"))?,
         None => events::build_reaction(target_eid, emoji.trim())?,
     };
@@ -1040,7 +1040,7 @@ pub async fn edit_message(
     let channel_uuid = uuid::Uuid::parse_str(&input.channel_id)
         .map_err(|_| format!("invalid channel UUID: {}", input.channel_id))?;
     let target_eid = EventId::from_hex(&input.event_id).map_err(|e| {
-        eprintln!("buzz-desktop: invalid event ID: {e}");
+        eprintln!("kuzz-desktop: invalid event ID: {e}");
         "Couldn't find this message.".to_string()
     })?;
     let trimmed = input.content.trim();
@@ -1076,7 +1076,7 @@ pub async fn delete_message(
     let channel_uuid = uuid::Uuid::parse_str(&channel_id)
         .map_err(|_| format!("invalid channel UUID: {channel_id}"))?;
     let target_eid = EventId::from_hex(&event_id).map_err(|e| {
-        eprintln!("buzz-desktop: invalid event ID: {e}");
+        eprintln!("kuzz-desktop: invalid event ID: {e}");
         "Couldn't find this message.".to_string()
     })?;
     let builder = events::build_delete_compat(channel_uuid, target_eid)?;

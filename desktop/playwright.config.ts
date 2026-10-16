@@ -153,7 +153,7 @@ export default defineConfig({
         "**/inbox-title-overlap.spec.ts",
         "**/message-author-overlap.spec.ts",
         "**/chat-bubbles-screenshots.spec.ts",
-        "**/buzz-theme-screenshots.spec.ts",
+        "**/kuzz-theme-screenshots.spec.ts",
         "**/appearance-previews.spec.ts",
         "**/channel-sort.spec.ts",
         "**/identity-lost.spec.ts",

@@ -11,7 +11,7 @@ const JOIN_POLICY_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// Log the original join-policy failure and return the user-facing text.
 /// Callers never pass the relay URL itself: it may embed credentials.
 fn join_policy_error(cause: impl std::fmt::Display, user_text: &str) -> String {
-    eprintln!("buzz-desktop: join policy: {cause}");
+    eprintln!("kuzz-desktop: join policy: {cause}");
     user_text.to_string()
 }
 

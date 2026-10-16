@@ -5,7 +5,7 @@ const { recordQuickReactionEmoji, setQuickReactionAccount } = await import(
   "./useQuickReactionEmojis.ts"
 );
 
-const KEY = "buzz.quick-reaction-emojis.v1";
+const KEY = "kuzz.quick-reaction-emojis.v1";
 const alice = "a".repeat(64);
 const bob = "b".repeat(64);
 
@@ -17,7 +17,7 @@ function stored(key) {
 // saved before accounts existed seed every account until it has its own.
 test("quick reactions are kept per account, seeded from the community's old recents", () => {
   localStorage.clear();
-  localStorage.setItem("buzz-active-community-id", "c1");
+  localStorage.setItem("kuzz-active-community-id", "c1");
   localStorage.setItem(
     `${KEY}:c1`,
     JSON.stringify([{ emoji: "🔥", count: 3, lastUsedAt: 1 }]),

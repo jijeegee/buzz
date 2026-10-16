@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 
 void main() {
   group('themePairs', () {
@@ -62,12 +62,12 @@ void main() {
       }
     });
 
-    test('Buzz is first and remaining themes are sorted by display name', () {
+    test('Kuzz is first and remaining themes are sorted by display name', () {
       final groups = themeGroups();
 
-      expect(groups.paired.first.name, buzzThemeName);
-      expect(groups.light.first.name, buzzThemeName);
-      expect(groups.dark.first.name, buzzDarkThemeName);
+      expect(groups.paired.first.name, kuzzThemeName);
+      expect(groups.light.first.name, kuzzThemeName);
+      expect(groups.dark.first.name, kuzzDarkThemeName);
 
       for (final list in [groups.paired, groups.light, groups.dark]) {
         final names = list.skip(1).map((t) => t.displayName).toList();
@@ -155,8 +155,8 @@ void main() {
 
       expect(resolved.forcedMode, ThemeMode.dark);
       expect(resolved.dark.brightness, Brightness.dark);
-      expect(resolved.darkTheme?.name, buzzDarkThemeName);
-      expect(resolved.dark, generateColorScheme(findTheme(buzzDarkThemeName)!));
+      expect(resolved.darkTheme?.name, kuzzDarkThemeName);
+      expect(resolved.dark, generateColorScheme(findTheme(kuzzDarkThemeName)!));
     });
 
     test('light mode falls back to the default pair when pick is unpaired', () {
@@ -164,8 +164,8 @@ void main() {
 
       expect(resolved.forcedMode, ThemeMode.light);
       expect(resolved.light.brightness, Brightness.light);
-      expect(resolved.lightTheme?.name, buzzThemeName);
-      expect(resolved.light, generateColorScheme(findTheme(buzzThemeName)!));
+      expect(resolved.lightTheme?.name, kuzzThemeName);
+      expect(resolved.light, generateColorScheme(findTheme(kuzzThemeName)!));
     });
 
     test('an unknown scheme name falls back to the default theme', () {

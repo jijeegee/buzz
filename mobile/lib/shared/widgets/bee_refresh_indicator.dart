@@ -9,7 +9,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../theme/theme.dart';
 import 'flapping_bee.dart';
 
-/// Replaces the standard pull-to-refresh spinner with Buzz's loading bee.
+/// Replaces the standard pull-to-refresh spinner with Kuzz's loading bee.
 ///
 /// Flutter continues to own the gesture, refresh lifecycle, and accessibility
 /// semantics. This widget maps those states into the elastic pull, retained

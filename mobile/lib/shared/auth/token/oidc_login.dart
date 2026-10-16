@@ -6,7 +6,7 @@ import 'pkce.dart';
 import 'web_auth_launcher.dart';
 
 export 'mobile_callback.dart'
-    show buzzMobileCallbackScheme, buzzMobileRedirectUri;
+    show kuzzMobileCallbackScheme, kuzzMobileRedirectUri;
 
 /// The OIDC login did not produce tokens.
 class OidcLoginException implements Exception {
@@ -36,7 +36,7 @@ Future<LoginGrant> runOidcLogin({
   String? deviceName,
   String? installId,
   String identityMode = 'token',
-  String callbackScheme = buzzMobileCallbackScheme,
+  String callbackScheme = kuzzMobileCallbackScheme,
   Random? random,
 }) async {
   final pkce = PkcePair.generate(random);

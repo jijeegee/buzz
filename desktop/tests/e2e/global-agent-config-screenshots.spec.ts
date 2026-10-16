@@ -56,20 +56,20 @@ async function selectDropdownOption(
     .click({ timeout: 5_000 });
 }
 
-// A runtime catalog with both a provider-selection runtime (buzz-agent) and a
+// A runtime catalog with both a provider-selection runtime (kuzz-agent) and a
 // CLI-login runtime (Claude Code) marked available, so Claude Code appears and
 // is selectable in the harness dropdown. Same shape the readiness spec uses.
 const CATALOG_WITH_CLAUDE = [
   {
-    id: "buzz-agent",
-    label: "Buzz Agent",
+    id: "kuzz-agent",
+    label: "Kuzz Agent",
     avatar_url: "",
     availability: "available",
-    command: "buzz-agent",
-    binary_path: "/usr/local/bin/buzz-agent",
+    command: "kuzz-agent",
+    binary_path: "/usr/local/bin/kuzz-agent",
     default_args: [],
-    mcp_command: "buzz-dev-mcp",
-    install_hint: "Ships with the Buzz desktop app.",
+    mcp_command: "kuzz-dev-mcp",
+    install_hint: "Ships with the Kuzz desktop app.",
     install_instructions_url: "https://github.com/block/buzz",
     can_auto_install: false,
     underlying_cli_path: null,
@@ -97,15 +97,15 @@ const CATALOG_WITH_CLAUDE = [
 // the Edit/Save-mode test to seed an editable Codex agent.
 const CATALOG_WITH_CODEX = [
   {
-    id: "buzz-agent",
-    label: "Buzz Agent",
+    id: "kuzz-agent",
+    label: "Kuzz Agent",
     avatar_url: "",
     availability: "available",
-    command: "buzz-agent",
-    binary_path: "/usr/local/bin/buzz-agent",
+    command: "kuzz-agent",
+    binary_path: "/usr/local/bin/kuzz-agent",
     default_args: [],
-    mcp_command: "buzz-dev-mcp",
-    install_hint: "Ships with the Buzz desktop app.",
+    mcp_command: "kuzz-dev-mcp",
+    install_hint: "Ships with the Kuzz desktop app.",
     install_instructions_url: "https://github.com/block/buzz",
     can_auto_install: false,
     underlying_cli_path: null,
@@ -132,15 +132,15 @@ const CATALOG_WITH_CODEX = [
 // empty runtime — the precondition for blankRuntimeModelProviderEditable.
 const CATALOG_NONE_AVAILABLE = [
   {
-    id: "buzz-agent",
-    label: "Buzz Agent",
+    id: "kuzz-agent",
+    label: "Kuzz Agent",
     avatar_url: "",
     availability: "not_installed",
-    command: "buzz-agent",
+    command: "kuzz-agent",
     binary_path: null,
     default_args: [],
-    mcp_command: "buzz-dev-mcp",
-    install_hint: "Ships with the Buzz desktop app.",
+    mcp_command: "kuzz-dev-mcp",
+    install_hint: "Ships with the Kuzz desktop app.",
     install_instructions_url: "https://github.com/block/buzz",
     can_auto_install: false,
     underlying_cli_path: null,
@@ -238,12 +238,12 @@ test.describe("global agent config screenshots", () => {
     const saved = await page.evaluate(async () =>
       (
         window as typeof window & {
-          __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+          __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
             command: string,
             payload: unknown,
           ) => Promise<unknown>;
         }
-      ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
+      ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
     );
     expect(saved).toMatchObject({ preferred_runtime: "codex" });
   });
@@ -281,12 +281,12 @@ test.describe("global agent config screenshots", () => {
     const persisted = await page.evaluate(async () =>
       (
         window as typeof window & {
-          __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+          __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
             command: string,
             payload: unknown,
           ) => Promise<unknown>;
         }
-      ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
+      ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
     );
     expect(persisted).toMatchObject({ model: modelId });
   });
@@ -325,12 +325,12 @@ test.describe("global agent config screenshots", () => {
     const persisted = await page.evaluate(async () =>
       (
         window as typeof window & {
-          __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+          __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
             command: string,
             payload: unknown,
           ) => Promise<unknown>;
         }
-      ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
+      ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
     );
     expect(persisted).toMatchObject({ model: modelId });
   });
@@ -405,12 +405,12 @@ test.describe("global agent config screenshots", () => {
       page.evaluate(async () =>
         (
           window as typeof window & {
-            __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+            __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
               command: string,
               payload: unknown,
             ) => Promise<unknown>;
           }
-        ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
+        ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
       );
     await expect.poll(persisted).toMatchObject({ model: siblingId });
 
@@ -538,17 +538,17 @@ test.describe("global agent config screenshots", () => {
     await installMockBridge(page, {
       bakedBuildEnv: [
         {
-          key: "BUZZ_AGENT_PROVIDER",
+          key: "KUZZ_AGENT_PROVIDER",
           value: "anthropic",
           masked: false,
         },
         {
-          key: "BUZZ_AGENT_MODEL",
+          key: "KUZZ_AGENT_MODEL",
           value: "claude-opus-4-8",
           masked: false,
         },
         {
-          key: "BUZZ_AGENT_THINKING_EFFORT",
+          key: "KUZZ_AGENT_THINKING_EFFORT",
           value: "high",
           masked: false,
         },
@@ -580,17 +580,17 @@ test.describe("global agent config screenshots", () => {
       globalAgentConfig: {
         provider: "anthropic",
         model: "claude-opus-4-5",
-        env_vars: { BUZZ_AGENT_THINKING_EFFORT: "low" },
+        env_vars: { KUZZ_AGENT_THINKING_EFFORT: "low" },
       },
       bakedBuildEnv: [
         {
-          key: "BUZZ_AGENT_PROVIDER",
+          key: "KUZZ_AGENT_PROVIDER",
           value: "databricks_v2",
           masked: false,
         },
-        { key: "BUZZ_AGENT_MODEL", value: "build-model", masked: false },
+        { key: "KUZZ_AGENT_MODEL", value: "build-model", masked: false },
         {
-          key: "BUZZ_AGENT_THINKING_EFFORT",
+          key: "KUZZ_AGENT_THINKING_EFFORT",
           value: "high",
           masked: false,
         },
@@ -656,7 +656,7 @@ test.describe("global agent config screenshots", () => {
     );
 
     const harness = defaultsDialog.getByTestId("global-agent-default-harness");
-    await expect(harness).toHaveText("Buzz Agent");
+    await expect(harness).toHaveText("Kuzz Agent");
     const provider = defaultsDialog.getByTestId("global-agent-provider");
     await expect(provider).toBeVisible();
     await waitForAnimations(page);
@@ -731,7 +731,7 @@ test.describe("global agent config screenshots", () => {
     });
   });
 
-  test("unset defaults persist the visible Buzz Agent fallback", async ({
+  test("unset defaults persist the visible Kuzz Agent fallback", async ({
     page,
   }) => {
     await installMockBridge(page);
@@ -744,7 +744,7 @@ test.describe("global agent config screenshots", () => {
     const defaultsDialog = page.getByTestId("agent-ai-defaults-dialog");
     await expect(
       defaultsDialog.getByTestId("global-agent-default-harness"),
-    ).toHaveText("Buzz Agent");
+    ).toHaveText("Kuzz Agent");
 
     await defaultsDialog.getByTestId("global-agent-provider").click();
     await page.getByTestId("global-agent-provider-option-anthropic").click();
@@ -758,15 +758,15 @@ test.describe("global agent config screenshots", () => {
     const saved = await page.evaluate(async () =>
       (
         window as typeof window & {
-          __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+          __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
             command: string,
             payload: unknown,
           ) => Promise<unknown>;
         }
-      ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
+      ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null),
     );
     expect(saved).toMatchObject({
-      preferred_runtime: "buzz-agent",
+      preferred_runtime: "kuzz-agent",
       provider: "anthropic",
     });
   });
@@ -777,7 +777,7 @@ test.describe("global agent config screenshots", () => {
     await installMockBridge(page, {
       acpRuntimesCatalog: CATALOG_WITH_CLAUDE,
       globalAgentConfig: {
-        preferred_runtime: "buzz-agent",
+        preferred_runtime: "kuzz-agent",
         provider: "anthropic",
         model: "claude-opus-4-5",
         env_vars: { ANTHROPIC_API_KEY: "sk-ant-global-value" },
@@ -786,7 +786,7 @@ test.describe("global agent config screenshots", () => {
     await openCreateDialog(page);
 
     const defaults = page.getByTestId("agent-ai-defaults-notice");
-    await expect(defaults).toContainText("Buzz Agent");
+    await expect(defaults).toContainText("Kuzz Agent");
     await defaults
       .getByRole("button", { name: "Edit global defaults" })
       .click();
@@ -810,12 +810,12 @@ test.describe("global agent config screenshots", () => {
         page.evaluate(() => {
           const log = (
             window as Window & {
-              __BUZZ_E2E_COMMAND_LOG__?: Array<{
+              __KUZZ_E2E_COMMAND_LOG__?: Array<{
                 command: string;
                 payload: { input?: Record<string, unknown> };
               }>;
             }
-          ).__BUZZ_E2E_COMMAND_LOG__;
+          ).__KUZZ_E2E_COMMAND_LOG__;
           const createPayload = log?.find(
             (entry) => entry.command === "create_persona",
           )?.payload.input;
@@ -830,7 +830,7 @@ test.describe("global agent config screenshots", () => {
   }) => {
     await installMockBridge(page, {
       globalAgentConfig: {
-        preferred_runtime: "buzz-agent",
+        preferred_runtime: "kuzz-agent",
         provider: "anthropic",
         model: "claude-opus-4-5",
         env_vars: {},
@@ -864,13 +864,13 @@ test.describe("global agent config screenshots", () => {
     await expect(harness).toBeVisible();
     await expect(harness).toContainText("Choose a harness");
 
-    await selectDropdownOption(page, harness, "Buzz Agent (not installed)");
+    await selectDropdownOption(page, harness, "Kuzz Agent (not installed)");
     await expect(
       customSection
         .locator("p")
-        .filter({ hasText: "Buzz Agent is not installed." }),
+        .filter({ hasText: "Kuzz Agent is not installed." }),
     ).toContainText(
-      "Buzz Agent is not installed. Ships with the Buzz desktop app. Visit Settings > Agents to set it up.",
+      "Kuzz Agent is not installed. Ships with the Kuzz desktop app. Visit Settings > Agents to set it up.",
     );
     await expect(page.getByTestId("persona-dialog-submit")).toBeDisabled();
   });
@@ -914,7 +914,7 @@ test.describe("global agent config screenshots", () => {
       defaultsSection.getByText("Harness", { exact: true }),
     ).toBeVisible();
     await expect(
-      defaultsSection.getByText("Buzz Agent", { exact: true }),
+      defaultsSection.getByText("Kuzz Agent", { exact: true }),
     ).toBeVisible();
 
     // Global provider satisfies the provider-default rule → submit enabled.
@@ -1159,7 +1159,7 @@ test.describe("global agent config screenshots", () => {
       globalAgentConfig: {
         provider: "databricks_v2",
         model: null,
-        preferred_runtime: "buzz-agent",
+        preferred_runtime: "kuzz-agent",
         env_vars: { OPENAI_API_KEY: "sk-placeholder" },
       },
     });

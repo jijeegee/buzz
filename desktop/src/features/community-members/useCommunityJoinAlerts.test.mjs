@@ -213,7 +213,7 @@ const notifications = [];
  * click target rather than its visible body text.
  */
 function alertedPubkey(entry) {
-  return entry.options?.extra?.buzzNotificationTarget?.pubkey ?? null;
+  return entry.options?.extra?.kuzzNotificationTarget?.pubkey ?? null;
 }
 /**
  * Optional hook fired synchronously from inside the Notification constructor.
@@ -311,7 +311,7 @@ function snapshot(
 /** Seed the communities the provider will load from localStorage. */
 function seedCommunities(activeId) {
   storage.set(
-    "buzz-communities",
+    "kuzz-communities",
     JSON.stringify([
       {
         id: COMMUNITY_A,
@@ -327,7 +327,7 @@ function seedCommunities(activeId) {
       },
     ]),
   );
-  storage.set("buzz-active-community-id", activeId);
+  storage.set("kuzz-active-community-id", activeId);
 }
 
 /**
@@ -566,7 +566,7 @@ function deferProfileLookup() {
 
 function ledgerKeys() {
   return [...storage.keys()].filter((key) =>
-    key.startsWith("buzz-community-join-seen.v1"),
+    key.startsWith("kuzz-community-join-seen.v1"),
   );
 }
 
@@ -655,7 +655,7 @@ describe("useCommunityJoinAlerts — mounted subscription behaviour", () => {
     assert.deepEqual(
       ledgerKeys(),
       [],
-      "no buzz-community-join-seen.v1 key may be created for a plain member",
+      "no kuzz-community-join-seen.v1 key may be created for a plain member",
     );
 
     await unmount();

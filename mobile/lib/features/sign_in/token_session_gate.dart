@@ -7,7 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/auth/auth.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
 import 'token_sign_in_page.dart';
 
@@ -112,7 +112,7 @@ class _GateSplash extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     body: Center(
-      child: BuzzLoadingIndicator(size: 56, semanticLabel: semanticLabel),
+      child: KuzzLoadingIndicator(size: 56, semanticLabel: semanticLabel),
     ),
   );
 }
@@ -268,7 +268,7 @@ class _SessionRecoveryView extends ConsumerWidget {
               liveRegion: true,
               child: Text(
                 session.errorMessage ??
-                    'Your sign-in is saved. Buzz will keep it until you '
+                    'Your sign-in is saved. Kuzz will keep it until you '
                         'retry or sign in again.',
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,

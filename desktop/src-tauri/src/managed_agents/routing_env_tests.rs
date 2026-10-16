@@ -11,7 +11,7 @@ fn env_state(command: &Command, key: &str) -> Option<Option<String>> {
 
 fn generated_dir() -> PathBuf {
     std::env::temp_dir()
-        .join("buzz-test-app-data")
+        .join("kuzz-test-app-data")
         .join("agents")
         .join("routing")
 }
@@ -225,7 +225,7 @@ fn lead_env_without_a_prompt_is_the_addendum_alone() {
 #[test]
 fn lead_env_inlines_a_prompt_file() {
     let path = std::env::temp_dir().join(format!(
-        "buzz-lead-prompt-{}.md",
+        "kuzz-lead-prompt-{}.md",
         uuid::Uuid::new_v4().simple()
     ));
     std::fs::write(&path, "From a file.").expect("write prompt");
@@ -267,7 +267,7 @@ fn generated_path_match_resolves_dot_segments_and_windows_case() {
 /// key, so parallel tests reading the real routing keys are unaffected.)
 #[test]
 fn effective_value_falls_back_to_the_inherited_environment() {
-    let key = format!("BUZZ_TEST_INHERITED_{}", uuid::Uuid::new_v4().simple());
+    let key = format!("KUZZ_TEST_INHERITED_{}", uuid::Uuid::new_v4().simple());
     std::env::set_var(&key, "from-parent");
     let mut command = Command::new("true");
     assert_eq!(

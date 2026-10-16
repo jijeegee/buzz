@@ -1,6 +1,6 @@
 //! Signed-event builders for desktop write operations.
 //!
-//! Mirrors the buzz-sdk builder patterns but uses nostr 0.37 API
+//! Mirrors the kuzz-sdk builder patterns but uses nostr 0.37 API
 //! (the desktop is excluded from the workspace which pins nostr 0.36).
 //!
 //! Mental model:
@@ -8,7 +8,7 @@
 //!
 //! Each function validates inputs and returns a nostr::EventBuilder.
 //! Signing and submission happen in relay::submit_event.
-use buzz_core_pkg::kind::{KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST};
+use kuzz_core_pkg::kind::{KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST};
 use nostr::{EventBuilder, EventId, Kind, Tag};
 use uuid::Uuid;
 
@@ -20,13 +20,13 @@ use message_tags::{
 };
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/// Maximum content size — matches buzz-sdk (64 KiB).
+/// Maximum content size — matches kuzz-sdk (64 KiB).
 const MAX_CONTENT_BYTES: usize = 64 * 1024;
 
-/// Maximum mention count — matches buzz-sdk.
+/// Maximum mention count — matches kuzz-sdk.
 const MAX_MENTIONS: usize = 50;
 
-/// Maximum emoji length in characters — matches buzz-sdk.
+/// Maximum emoji length in characters — matches kuzz-sdk.
 const MAX_EMOJI_CHARS: usize = 64;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ pub fn build_create_channel(
     about: Option<&str>,
     ttl_seconds: Option<i32>,
 ) -> Result<EventBuilder, String> {
-    let name = buzz_sdk_pkg::canonical_channel_name(name);
+    let name = kuzz_sdk_pkg::canonical_channel_name(name);
     if name.trim().is_empty() {
         return Err("channel name is required".into());
     }
@@ -162,7 +162,7 @@ pub fn build_update_channel(
             return Err("visibility must be \"open\" or \"private\"".into());
         }
     }
-    let name = name.map(buzz_sdk_pkg::canonical_channel_name);
+    let name = name.map(kuzz_sdk_pkg::canonical_channel_name);
     if name.is_some_and(|name| name.trim().is_empty()) {
         return Err("channel name is required".into());
     }
@@ -701,7 +701,7 @@ fn identity_archive_tags(
         }
         check_pubkey(&auth[1])?;
         if auth[3].len() != 128 || !auth[3].chars().all(|c| c.is_ascii_hexdigit()) {
-            eprintln!("buzz-desktop: auth tag signature must be 128-character hex");
+            eprintln!("kuzz-desktop: auth tag signature must be 128-character hex");
             return Err("Something went wrong with this agent. Try again.".into());
         }
         tags.push(tag(vec!["auth", &auth[1], &auth[2], &auth[3]])?);
@@ -794,7 +794,7 @@ pub fn build_contact_list(
 /// channel id and replies via OK message with `response:{channel_id}`.
 pub fn build_dm_open(pubkeys: &[String]) -> Result<EventBuilder, String> {
     if pubkeys.is_empty() {
-        eprintln!("buzz-desktop: dm_open requires at least one pubkey");
+        eprintln!("kuzz-desktop: dm_open requires at least one pubkey");
         return Err("Something went wrong. Try again.".into());
     }
     let mut tags: Vec<Tag> = Vec::with_capacity(pubkeys.len());

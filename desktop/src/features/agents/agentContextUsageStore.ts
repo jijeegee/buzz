@@ -38,7 +38,7 @@ export type AgentContextUsage = {
 export const CONTEXT_USAGE_EVENT_KIND = "context_usage";
 /** Upper bound on retained scopes; the least recently updated are evicted. */
 export const MAX_CONTEXT_USAGE_ENTRIES = 400;
-const STORAGE_PREFIX = "buzz-agent-context-usage.v1";
+const STORAGE_PREFIX = "kuzz-agent-context-usage.v1";
 
 const entries = new Map<string, AgentContextUsage>();
 const listeners = new Set<() => void>();

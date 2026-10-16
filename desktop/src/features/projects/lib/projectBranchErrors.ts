@@ -1,6 +1,6 @@
 /**
  * Relay push-policy denial token for a repository with no `buzz-channel`
- * binding. Declared in Rust as `buzz-core::git_perms::
+ * binding. Declared in Rust as `kuzz-core::git_perms::
  * GIT_NO_CHANNEL_BINDING_TOKEN`; the relay's denial body starts with it
  * ("no_channel_binding: repository has no channel binding"). The legacy
  * spaced phrase is kept as a second matcher so this build also recognizes

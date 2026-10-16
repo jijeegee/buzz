@@ -864,7 +864,7 @@ async fn probe_inner_bearer_401_is_not_admin_api() {
     )
     .await
     .unwrap();
-    // Bearer is no longer a recognized Buzz admin mode; an unrecognized 401
+    // Bearer is no longer a recognized Kuzz admin mode; an unrecognized 401
     // challenge classifies as NotAdminApi.
     assert!(matches!(result, AdminProbeResult::NotAdminApi));
 }

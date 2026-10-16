@@ -9,7 +9,7 @@ fn record(pubkey: &str, starred: bool, deployed: bool) -> ManagedAgentRecord {
         "name": pubkey,
         "private_key_nsec": "",
         "relay_url": "",
-        "acp_command": "buzz-acp",
+        "acp_command": "kuzz-acp",
         "agent_command": "goose",
         "agent_args": [],
         "mcp_command": "",

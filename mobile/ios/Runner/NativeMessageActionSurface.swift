@@ -329,7 +329,7 @@ final class NativeMessageActionSurfacePlatformView: NSObject,
       )
     )
     channel = FlutterMethodChannel(
-      name: "buzz/native_message_action_surface/\(viewId)",
+      name: "kuzz/native_message_action_surface/\(viewId)",
       binaryMessenger: messenger
     )
     super.init()

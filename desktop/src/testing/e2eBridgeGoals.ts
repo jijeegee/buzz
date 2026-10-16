@@ -1,6 +1,6 @@
 /**
  * E2E mock of the goal tree and layer 0 goal Tauri commands. Mirrors the
- * relevant `buzz_core::goal_tree::GoalTree::apply` rules (including "linking
+ * relevant `kuzz_core::goal_tree::GoalTree::apply` rules (including "linking
  * a thread starts an open goal") closely enough for UI tests; validation is
  * left to the real backend.
  */

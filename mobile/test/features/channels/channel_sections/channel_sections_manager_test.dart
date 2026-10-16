@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:buzz/features/channels/channel_sections/channel_sections_manager.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/channels/channel_sections/channel_sections_manager.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 
 void main() {
   late SharedPreferences prefs;

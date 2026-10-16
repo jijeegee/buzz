@@ -6,7 +6,7 @@
 //! Each local agent gets its own `live-settings/<agent pubkey>.json` (see
 //! [`LiveSettingsFile`]), written at spawn and rewritten whenever one of
 //! these settings changes. Only the file's path rides in the environment
-//! (`BUZZ_ACP_LIVE_SETTINGS_FILE`); the harness re-reads the file every turn,
+//! (`KUZZ_ACP_LIVE_SETTINGS_FILE`); the harness re-reads the file every turn,
 //! tells live sessions about a change once, and gives new sessions the
 //! current values. Because a change needs no restart, these settings are not
 //! part of the restart-required spawn snapshot.
@@ -32,14 +32,14 @@ use super::channel_routing::RoutingRole;
 use super::types::{AgentDefinition, ManagedAgentRecord, TeamRecord};
 use super::{AcpSessionPolicy, GlobalAgentConfig};
 
-/// The harness flag naming the live settings file (`buzz-acp
+/// The harness flag naming the live settings file (`kuzz-acp
 /// --live-settings-file`).
-pub(crate) const LIVE_SETTINGS_ENV_VAR: &str = "BUZZ_ACP_LIVE_SETTINGS_FILE";
-const SYSTEM_PROMPT_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT";
-const SYSTEM_PROMPT_FILE_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT_FILE";
-const TEAM_INSTRUCTIONS_ENV_VAR: &str = "BUZZ_ACP_TEAM_INSTRUCTIONS";
+pub(crate) const LIVE_SETTINGS_ENV_VAR: &str = "KUZZ_ACP_LIVE_SETTINGS_FILE";
+const SYSTEM_PROMPT_ENV_VAR: &str = "KUZZ_ACP_SYSTEM_PROMPT";
+const SYSTEM_PROMPT_FILE_ENV_VAR: &str = "KUZZ_ACP_SYSTEM_PROMPT_FILE";
+const TEAM_INSTRUCTIONS_ENV_VAR: &str = "KUZZ_ACP_TEAM_INSTRUCTIONS";
 
-/// One agent's live settings as its harness reads them (`buzz-acp`'s
+/// One agent's live settings as its harness reads them (`kuzz-acp`'s
 /// `live_settings::LiveSettingsFile`). Values use the spelling of their
 /// launch variables; an absent field means "not set".
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
@@ -78,9 +78,9 @@ pub(crate) struct LiveSettingsInputs<'a> {
     /// routing addendum.
     pub system_prompt: Option<&'a str>,
     /// The layered user env the launch applies (`descriptor.env`). It is
-    /// written after the Buzz-set team instructions, so an explicit
-    /// `BUZZ_ACP_TEAM_INSTRUCTIONS` wins; a lead launch inlines a
-    /// `BUZZ_ACP_SYSTEM_PROMPT_FILE`.
+    /// written after the Kuzz-set team instructions, so an explicit
+    /// `KUZZ_ACP_TEAM_INSTRUCTIONS` wins; a lead launch inlines a
+    /// `KUZZ_ACP_SYSTEM_PROMPT_FILE`.
     pub user_env: &'a BTreeMap<String, String>,
     /// The bound team's instructions (`effective_team_instructions`).
     pub team_instructions: Option<&'a str>,
@@ -106,8 +106,8 @@ impl LiveSettingsFile {
             session_policy,
             routing_role,
         } = inputs;
-        // User env is written after the Buzz-set prompt, so an explicit
-        // `BUZZ_ACP_SYSTEM_PROMPT` is what the process launches with.
+        // User env is written after the Kuzz-set prompt, so an explicit
+        // `KUZZ_ACP_SYSTEM_PROMPT` is what the process launches with.
         let system_prompt = user_env
             .get(SYSTEM_PROMPT_ENV_VAR)
             .map(String::as_str)
@@ -212,7 +212,7 @@ pub(crate) fn write_spawn_live_settings<R: tauri::Runtime>(
     let path = live_settings_path(&super::managed_agents_base_dir(app)?, &record.pubkey);
     if let Err(error) = write_live_settings_file(&path, settings) {
         eprintln!(
-            "buzz-desktop: live settings for agent {}: {error}",
+            "kuzz-desktop: live settings for agent {}: {error}",
             record.pubkey
         );
     }
@@ -282,7 +282,7 @@ pub(crate) fn schedule_live_settings_sync<R: tauri::Runtime>(app: &AppHandle<R>)
         let _serial = SYNC_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         SYNC_QUEUED.store(false, Ordering::SeqCst);
         if let Err(error) = sync_running_agents(&app) {
-            eprintln!("buzz-desktop: live settings sync: {error}");
+            eprintln!("kuzz-desktop: live settings sync: {error}");
         }
     });
 }
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn a_user_env_prompt_wins_like_at_launch() {
-        // Spawn writes user env after the Buzz-set prompt, so the env value
+        // Spawn writes user env after the Kuzz-set prompt, so the env value
         // is what the process launched with; the file must not replace it.
         let env = BTreeMap::from([(SYSTEM_PROMPT_ENV_VAR.to_string(), "From env.".to_string())]);
         let plain = LiveSettingsFile::from_inputs(inputs(
@@ -446,7 +446,7 @@ mod tests {
             AcpSessionPolicy::Channel,
             RoutingRole::Lead,
         ));
-        let mut command = std::process::Command::new("buzz-acp");
+        let mut command = std::process::Command::new("kuzz-acp");
         command.env(SYSTEM_PROMPT_ENV_VAR, "You are Eva.");
         command.env(SYSTEM_PROMPT_ENV_VAR, "From env.");
         super::super::routing_env::apply_lead_env(
@@ -503,8 +503,8 @@ mod tests {
             AcpSessionPolicy::Channel,
             RoutingRole::Lead,
         ));
-        let mut command = std::process::Command::new("buzz-acp");
-        command.env("BUZZ_ACP_SYSTEM_PROMPT", "You are Eva.");
+        let mut command = std::process::Command::new("kuzz-acp");
+        command.env("KUZZ_ACP_SYSTEM_PROMPT", "You are Eva.");
         super::super::routing_env::apply_lead_env(
             &mut command,
             Path::new("rules.toml"),
@@ -513,7 +513,7 @@ mod tests {
         .unwrap();
         let launched = command
             .get_envs()
-            .find(|(key, _)| *key == "BUZZ_ACP_SYSTEM_PROMPT")
+            .find(|(key, _)| *key == "KUZZ_ACP_SYSTEM_PROMPT")
             .and_then(|(_, value)| value)
             .map(|value| value.to_string_lossy().into_owned());
         assert_eq!(lead.system_prompt, launched);

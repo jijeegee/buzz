@@ -64,7 +64,7 @@ class ThreadNameStorage {
   ThreadNameStorage(this.prefs, this.scope);
   String _key(ThreadNameKey key) => '$scope:${key.channelId}:${key.headId}';
   NostrEvent? read(ThreadNameKey key) {
-    final raw = prefs.getString('buzz-thread-name:${_key(key)}');
+    final raw = prefs.getString('kuzz-thread-name:${_key(key)}');
     if (raw == null) return null;
     try {
       return latestThreadName(key, [
@@ -79,14 +79,14 @@ class ThreadNameStorage {
   Future<void> write(ThreadNameKey key, NostrEvent event) async {
     final selected = latestThreadName(key, [?read(key), event]);
     if (selected == null) return;
-    final cacheKey = 'buzz-thread-name:${_key(key)}';
+    final cacheKey = 'kuzz-thread-name:${_key(key)}';
     if (!await prefs.setString(cacheKey, jsonEncode(selected.toJson()))) {
       throw StateError('Could not cache the thread name.');
     }
     final keys =
         prefs
             .getKeys()
-            .where((k) => k.startsWith('buzz-thread-name:$scope:'))
+            .where((k) => k.startsWith('kuzz-thread-name:$scope:'))
             .toList()
           ..sort();
     for (final old
@@ -98,15 +98,15 @@ class ThreadNameStorage {
   }
 
   String? draft(ThreadNameKey key) =>
-      prefs.getString('buzz-thread-name-draft:${_key(key)}');
+      prefs.getString('kuzz-thread-name-draft:${_key(key)}');
   Future<void> saveDraft(ThreadNameKey key, String text) async {
-    if (!await prefs.setString('buzz-thread-name-draft:${_key(key)}', text)) {
+    if (!await prefs.setString('kuzz-thread-name-draft:${_key(key)}', text)) {
       throw StateError('Could not keep the draft on this device.');
     }
   }
 
   Future<void> clearDraft(ThreadNameKey key) async {
-    if (!await prefs.remove('buzz-thread-name-draft:${_key(key)}')) {
+    if (!await prefs.remove('kuzz-thread-name-draft:${_key(key)}')) {
       throw StateError('Could not clear the saved draft.');
     }
   }

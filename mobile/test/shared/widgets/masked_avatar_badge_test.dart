@@ -2,8 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/masked_avatar_badge.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/widgets/masked_avatar_badge.dart';
 
 void main() {
   group('avatarBadgeMaskPath', () {

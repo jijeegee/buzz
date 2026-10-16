@@ -288,10 +288,10 @@ describe("SetupStep cached-ready revalidation", () => {
     queryClient.clear();
   });
 
-  it("hands Buzz directly to API config while forced discovery is pending", async () => {
+  it("hands Kuzz directly to API config while forced discovery is pending", async () => {
     const queryClient = makeQueryClient();
     queryClient.setQueryData(acpRuntimesQueryKey, [
-      catalogEntry("buzz-agent", "not_applicable"),
+      catalogEntry("kuzz-agent", "not_applicable"),
       catalogEntry("goose", "not_applicable"),
     ]);
 
@@ -324,25 +324,25 @@ describe("SetupStep cached-ready revalidation", () => {
     });
     assert.deepEqual(
       nextCalls,
-      [[["buzz-agent"], "method"]],
-      "Buzz API configuration does not wait for runtime discovery",
+      [[["kuzz-agent"], "method"]],
+      "Kuzz API configuration does not wait for runtime discovery",
     );
 
     await act(async () => {
-      pending.resolve([rawReadyEntry("buzz-agent"), rawReadyEntry("goose")]);
+      pending.resolve([rawReadyEntry("kuzz-agent"), rawReadyEntry("goose")]);
       await new Promise((r) => setTimeout(r, 50));
     });
 
     assert.deepEqual(
       nextCalls,
-      [[["buzz-agent"], "method"]],
+      [[["kuzz-agent"], "method"]],
       "discovery completion does not navigate a second time",
     );
     assert.ok(
       readyRuntimeIdSnapshots.some(
         (snapshot) =>
           snapshot.length === 2 &&
-          snapshot.includes("buzz-agent") &&
+          snapshot.includes("kuzz-agent") &&
           snapshot.includes("goose"),
       ),
       "catalog readiness may still be published independently of the selected handoff",

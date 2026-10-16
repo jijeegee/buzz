@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:buzz/shared/relay/relay_access_tokens.dart';
-import 'package:buzz/shared/relay/relay_socket.dart';
+import 'package:kuzz/shared/relay/relay_access_tokens.dart';
+import 'package:kuzz/shared/relay/relay_socket.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fake_relay_access_tokens.dart';

@@ -2,7 +2,7 @@ import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
 
-/// The Buzz mark at a caller-controlled wing position.
+/// The Kuzz mark at a caller-controlled wing position.
 ///
 /// The geometry matches the desktop loading bee. Callers drive the wings
 /// themselves, which lets one painter serve both the tap-to-flutter mark

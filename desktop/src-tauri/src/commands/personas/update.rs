@@ -383,7 +383,7 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
                 .map(|_| ()),
             };
             if let Err(e) = synced {
-                eprintln!("buzz-desktop: relay profile sync failed after persona update: {e}");
+                eprintln!("kuzz-desktop: relay profile sync failed after persona update: {e}");
             }
         }
     }

@@ -1,4 +1,4 @@
-//! buzz-agent OpenRouter readiness tests, split from `readiness.rs`'s `tests`
+//! kuzz-agent OpenRouter readiness tests, split from `readiness.rs`'s `tests`
 //! module so that file stays under the desktop file-size ratchet.
 //!
 //! Declared as a child of `mod tests` via `#[path]`, so `use super::*` resolves
@@ -7,12 +7,12 @@
 use super::*;
 
 #[test]
-fn buzz_agent_openrouter_with_all_fields_is_ready() {
+fn kuzz_agent_openrouter_with_all_fields_is_ready() {
     let env = make_env(
-        "buzz-agent",
+        "kuzz-agent",
         env_with(&[
-            ("BUZZ_AGENT_PROVIDER", "openrouter"),
-            ("BUZZ_AGENT_MODEL", "anthropic/claude-sonnet-4"),
+            ("KUZZ_AGENT_PROVIDER", "openrouter"),
+            ("KUZZ_AGENT_MODEL", "anthropic/claude-sonnet-4"),
             ("OPENROUTER_API_KEY", "sk-or-test-key"),
         ]),
     );
@@ -24,12 +24,12 @@ fn buzz_agent_openrouter_with_all_fields_is_ready() {
 }
 
 #[test]
-fn buzz_agent_openrouter_missing_key_returns_not_ready() {
+fn kuzz_agent_openrouter_missing_key_returns_not_ready() {
     let env = make_env(
-        "buzz-agent",
+        "kuzz-agent",
         env_with(&[
-            ("BUZZ_AGENT_PROVIDER", "openrouter"),
-            ("BUZZ_AGENT_MODEL", "anthropic/claude-sonnet-4"),
+            ("KUZZ_AGENT_PROVIDER", "openrouter"),
+            ("KUZZ_AGENT_MODEL", "anthropic/claude-sonnet-4"),
         ]),
     );
     let result = agent_readiness(&env);
@@ -40,11 +40,11 @@ fn buzz_agent_openrouter_missing_key_returns_not_ready() {
 }
 
 #[test]
-fn buzz_agent_openrouter_with_provider_model_fallback_is_ready() {
+fn kuzz_agent_openrouter_with_provider_model_fallback_is_ready() {
     let env = make_env(
-        "buzz-agent",
+        "kuzz-agent",
         env_with(&[
-            ("BUZZ_AGENT_PROVIDER", "openrouter"),
+            ("KUZZ_AGENT_PROVIDER", "openrouter"),
             ("OPENROUTER_MODEL", "google/gemini-2.5-flash"),
             ("OPENROUTER_API_KEY", "sk-or-test-key"),
         ]),

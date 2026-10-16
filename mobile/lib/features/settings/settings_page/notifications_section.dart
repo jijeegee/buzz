@@ -22,10 +22,10 @@ class _NotificationsSection extends ConsumerWidget {
         !optOutPending) {
       return const SizedBox.shrink();
     }
-    final authorization = ref.watch(buzzPushAuthorizationStatusProvider);
+    final authorization = ref.watch(kuzzPushAuthorizationStatusProvider);
     final status = authorization.value;
     final permissionUnavailable = authorization.hasError;
-    final permissionDenied = status == BuzzPushAuthorizationStatus.denied;
+    final permissionDenied = status == KuzzPushAuthorizationStatus.denied;
     final showSettingsRecovery =
         optOutPending ||
         (community.pushNotificationsEnabled &&
@@ -41,19 +41,19 @@ class _NotificationsSection extends ConsumerWidget {
         : !hasCapability
         ? 'Push support unavailable; you can still turn notifications off'
         : switch (status) {
-            BuzzPushAuthorizationStatus.notDetermined =>
+            KuzzPushAuthorizationStatus.notDetermined =>
               'Waiting for iOS notification permission',
-            BuzzPushAuthorizationStatus.denied =>
-              'Enabled in Buzz, but disabled in iOS Settings',
-            BuzzPushAuthorizationStatus.authorized ||
-            BuzzPushAuthorizationStatus.provisional ||
-            BuzzPushAuthorizationStatus.ephemeral =>
+            KuzzPushAuthorizationStatus.denied =>
+              'Enabled in Kuzz, but disabled in iOS Settings',
+            KuzzPushAuthorizationStatus.authorized ||
+            KuzzPushAuthorizationStatus.provisional ||
+            KuzzPushAuthorizationStatus.ephemeral =>
               hasBuiltInServer
                   ? 'Receive message notifications'
                   : 'Receive message notifications from this community',
             null when authorization.isLoading =>
               'Checking iOS notification permission',
-            null => 'Enabled in Buzz; iOS permission status unavailable',
+            null => 'Enabled in Kuzz; iOS permission status unavailable',
           };
 
     return AppListCard(
@@ -97,7 +97,7 @@ class _NotificationsSection extends ConsumerWidget {
             icon: LucideIcons.settings,
             title: 'Open iOS Notification Settings',
             onTap: () => unawaited(
-              ref.read(buzzPushNotificationSettingsOpenerProvider)(),
+              ref.read(kuzzPushNotificationSettingsOpenerProvider)(),
             ),
           ),
       ],

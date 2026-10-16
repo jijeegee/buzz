@@ -13,8 +13,8 @@ use super::*;
 #[test]
 fn numeric_context_limit_inherits_from_persona_env() {
     let record = test_record();
-    let runtime = buzz_agent_runtime();
-    let tiers = persona_env_tiers("BUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000");
+    let runtime = kuzz_agent_runtime();
+    let tiers = persona_env_tiers("KUZZ_AGENT_MAX_CONTEXT_TOKENS", "200000");
 
     let surface = read_config_surface(&record, Some(runtime), None, &tiers, None);
 
@@ -27,17 +27,17 @@ fn numeric_context_limit_inherits_from_persona_env() {
 fn record_max_tokens_overrides_global_env_with_secondary() {
     let mut record = test_record();
     record.env_vars.insert(
-        "BUZZ_AGENT_MAX_OUTPUT_TOKENS".to_string(),
+        "KUZZ_AGENT_MAX_OUTPUT_TOKENS".to_string(),
         "8192".to_string(),
     );
-    let runtime = buzz_agent_runtime();
-    let tiers = global_env_tiers("BUZZ_AGENT_MAX_OUTPUT_TOKENS", "16384");
+    let runtime = kuzz_agent_runtime();
+    let tiers = global_env_tiers("KUZZ_AGENT_MAX_OUTPUT_TOKENS", "16384");
 
     let surface = read_config_surface(&record, Some(runtime), None, &tiers, None);
 
     let field = surface.normalized.max_output_tokens.unwrap();
     assert_eq!(field.value.as_deref(), Some("8192"));
-    assert_eq!(field.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(field.origin, ConfigOrigin::KuzzExplicit);
     // Global value is the overridden secondary.
     assert_eq!(field.overridden_value.as_deref(), Some("16384"));
     assert_eq!(field.overridden_origin, Some(ConfigOrigin::GlobalDefault));
@@ -45,7 +45,7 @@ fn record_max_tokens_overrides_global_env_with_secondary() {
 
 // ── Env-vs-structured collision tests (plan v3, Phase 2) ─────────────────────
 
-/// Collision test 1: persona structured prompt + global env BUZZ_ACP_SYSTEM_PROMPT
+/// Collision test 1: persona structured prompt + global env KUZZ_ACP_SYSTEM_PROMPT
 /// → global env wins (env block sits entirely above structured).
 #[test]
 fn global_env_prompt_wins_over_persona_structured_prompt() {
@@ -55,7 +55,7 @@ fn global_env_prompt_wins_over_persona_structured_prompt() {
         global_env: {
             let mut m = BTreeMap::new();
             m.insert(
-                "BUZZ_ACP_SYSTEM_PROMPT".to_string(),
+                "KUZZ_ACP_SYSTEM_PROMPT".to_string(),
                 "global-env-prompt".to_string(),
             );
             m
@@ -126,9 +126,9 @@ fn structured_fallback_intact_when_no_env_representation() {
 #[test]
 fn post_sanitization_empty_global_env_falls_through_to_persona_tier() {
     let record = test_record();
-    let runtime = buzz_agent_rt();
+    let runtime = kuzz_agent_rt();
     // No global env (stripped); persona provides the valid fallback.
-    let tiers = persona_env_tiers("BUZZ_AGENT_THINKING_EFFORT", "medium");
+    let tiers = persona_env_tiers("KUZZ_AGENT_THINKING_EFFORT", "medium");
 
     let surface = read_config_surface(&record, Some(runtime), None, &tiers, None);
 
@@ -144,15 +144,15 @@ fn post_sanitization_empty_global_env_falls_through_to_persona_tier() {
 // definition-less record with both structured and env prompt — env wins.
 
 /// Pass-3 clarification: record.system_prompt = A + record env
-/// BUZZ_ACP_SYSTEM_PROMPT = B → B wins as BuzzExplicit.
+/// KUZZ_ACP_SYSTEM_PROMPT = B → B wins as KuzzExplicit.
 /// The env block sits above the struct block per v3 candidate-preparation
 /// contract; current reader semantics (struct before env) would be wrong.
 #[test]
-fn record_env_prompt_wins_over_record_struct_prompt_as_buzz_explicit() {
+fn record_env_prompt_wins_over_record_struct_prompt_as_kuzz_explicit() {
     let mut record = test_record();
     record.system_prompt = Some("struct-prompt-A".to_string());
     record.env_vars.insert(
-        "BUZZ_ACP_SYSTEM_PROMPT".to_string(),
+        "KUZZ_ACP_SYSTEM_PROMPT".to_string(),
         "env-prompt-B".to_string(),
     );
     let runtime = test_runtime();
@@ -161,10 +161,10 @@ fn record_env_prompt_wins_over_record_struct_prompt_as_buzz_explicit() {
 
     let prompt = surface.normalized.system_prompt.unwrap();
     assert_eq!(prompt.value.as_deref(), Some("env-prompt-B"));
-    assert_eq!(prompt.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(prompt.origin, ConfigOrigin::KuzzExplicit);
     // Struct prompt is the secondary.
     assert_eq!(prompt.overridden_value.as_deref(), Some("struct-prompt-A"));
-    assert_eq!(prompt.overridden_origin, Some(ConfigOrigin::BuzzExplicit));
+    assert_eq!(prompt.overridden_origin, Some(ConfigOrigin::KuzzExplicit));
 }
 
 // ── Definition env tier tests (Layer 2b) ─────────────────────────────────────
@@ -259,24 +259,24 @@ fn reserved_key_absent_from_definition_env_falls_through() {
 
 // ── B4/B5 canonical effort_level tier tests ────────────────────────────────
 //
-// record.effort_level is the Buzz-canonical seeded value (the effort a spawn
+// record.effort_level is the Kuzz-canonical seeded value (the effort a spawn
 // applies at next session start via `apply_effort_env`). It must surface as
-// BuzzExplicit and take precedence over the config-file tier, but not over a
+// KuzzExplicit and take precedence over the config-file tier, but not over a
 // record env var override.
 
-/// B4: record.effort_level surfaces as BuzzExplicit when no env var is set.
+/// B4: record.effort_level surfaces as KuzzExplicit when no env var is set.
 #[test]
-fn b4_canonical_effort_level_surfaces_as_buzz_explicit() {
+fn b4_canonical_effort_level_surfaces_as_kuzz_explicit() {
     let mut record = test_record();
     record.effort_level = Some("high".to_string());
-    let runtime = buzz_agent_runtime();
+    let runtime = kuzz_agent_runtime();
     let surface = read_config_surface(&record, Some(runtime), None, &no_tiers(), None);
     let effort = surface
         .normalized
         .thinking_effort
         .expect("effort must surface from canonical record tier");
     assert_eq!(effort.value.as_deref(), Some("high"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
 }
 
 /// B4: record.effort_level shadows the config-file tier.
@@ -285,14 +285,14 @@ fn b4_canonical_effort_level_shadows_file_tier() {
     let mut record = test_record();
     record.effort_level = Some("medium".to_string());
     // No env var set — the config-file tier would win if canonical were absent.
-    let runtime = buzz_agent_runtime();
+    let runtime = kuzz_agent_runtime();
     let surface = read_config_surface(&record, Some(runtime), None, &no_tiers(), None);
     let effort = surface
         .normalized
         .thinking_effort
         .expect("canonical effort must shadow file tier");
     assert_eq!(effort.value.as_deref(), Some("medium"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
 }
 
 /// B4: a record env var override still wins over record.effort_level, which
@@ -303,15 +303,15 @@ fn b4_record_env_var_wins_over_canonical_effort_level() {
     record.effort_level = Some("low".to_string());
     record
         .env_vars
-        .insert("BUZZ_AGENT_THINKING_EFFORT".to_string(), "high".to_string());
-    let runtime = buzz_agent_runtime();
+        .insert("KUZZ_AGENT_THINKING_EFFORT".to_string(), "high".to_string());
+    let runtime = kuzz_agent_runtime();
     let surface = read_config_surface(&record, Some(runtime), None, &no_tiers(), None);
     let effort = surface
         .normalized
         .thinking_effort
         .expect("env var must win over canonical effort");
     assert_eq!(effort.value.as_deref(), Some("high"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
     assert_eq!(effort.overridden_value.as_deref(), Some("low"));
 }
 
@@ -319,7 +319,7 @@ fn b4_record_env_var_wins_over_canonical_effort_level() {
 #[test]
 fn b4_none_canonical_effort_does_not_surface() {
     let record = test_record(); // effort_level defaults to None
-    let runtime = buzz_agent_runtime();
+    let runtime = kuzz_agent_runtime();
     let surface = read_config_surface(&record, Some(runtime), None, &no_tiers(), None);
     assert!(
         surface.normalized.thinking_effort.is_none(),
@@ -395,7 +395,7 @@ fn claude_config_dir_none_falls_back_to_home_claude_json() {
 fn effort_option_selected_by_category_drives_all_facts() {
     let mut record = test_record();
     record.effort_level = Some("high".to_string());
-    let runtime = buzz_agent_rt();
+    let runtime = kuzz_agent_rt();
     let cache = SessionConfigCache {
         config_options: vec![AcpConfigOptionEntry {
             config_id: "thinking-level".to_string(),
@@ -430,7 +430,7 @@ fn effort_option_selected_by_category_drives_all_facts() {
         .thinking_effort
         .expect("effort must surface with both configured and running facts");
     assert_eq!(effort.value.as_deref(), Some("high"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
     assert_eq!(effort.overridden_value.as_deref(), Some("default"));
     assert_eq!(
         effort.overridden_origin,
@@ -574,7 +574,7 @@ fn goose_invalid_record_native_skips_to_column_in_reader_and_projection() {
         .expect("valid column must win when native is invalid");
     // Reader: invalid native skipped, column wins.
     assert_eq!(effort.value.as_deref(), Some("high"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
     // Projection agrees on value.
     assert_eq!(
         projection_value(&record, &BTreeMap::new()).as_deref(),
@@ -595,7 +595,7 @@ fn goose_aliases_canonicalize_in_reader_and_projection() {
     let surface = read_config_surface(&record, Some(runtime), None, &no_tiers(), None);
     let effort = surface.normalized.thinking_effort.unwrap();
     assert_eq!(effort.value.as_deref(), Some("max"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
     assert_eq!(
         projection_value(&record, &BTreeMap::new()).as_deref(),
         Some("max")
@@ -634,7 +634,7 @@ fn goose_record_native_outranks_column_in_reader_and_projection() {
     let surface = read_config_surface(&record, Some(runtime), None, &no_tiers(), None);
     let effort = surface.normalized.thinking_effort.unwrap();
     assert_eq!(effort.value.as_deref(), Some("high"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
     // Column is the overridden baseline (next distinct tier below native).
     assert_eq!(effort.overridden_value.as_deref(), Some("low"));
     // Projection resolves the same authority.
@@ -671,13 +671,13 @@ fn goose_invalid_record_tiers_fall_through_to_global_in_reader_and_projection() 
     );
 }
 
-/// Goose legacy alias (`BUZZ_AGENT_THINKING_EFFORT`) is accepted for the record
+/// Goose legacy alias (`KUZZ_AGENT_THINKING_EFFORT`) is accepted for the record
 /// tier below the column, canonicalized, in reader and projection alike.
 #[test]
 fn goose_record_legacy_alias_below_column_in_reader_and_projection() {
     let mut record = test_record();
     record.env_vars.insert(
-        "BUZZ_AGENT_THINKING_EFFORT".to_string(),
+        "KUZZ_AGENT_THINKING_EFFORT".to_string(),
         "xhigh".to_string(),
     );
     let runtime = test_runtime();
@@ -688,7 +688,7 @@ fn goose_record_legacy_alias_below_column_in_reader_and_projection() {
         .thinking_effort
         .expect("record legacy alias must surface when native and column are absent");
     assert_eq!(effort.value.as_deref(), Some("max"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
     assert_eq!(
         projection_value(&record, &BTreeMap::new()).as_deref(),
         Some("max")
@@ -787,7 +787,7 @@ fn goose_invalid_acp_skips_and_record_wins() {
     let surface = read_config_surface(&record, Some(runtime), Some(&cache), &no_tiers(), None);
     let effort = surface.normalized.thinking_effort.unwrap();
     assert_eq!(effort.value.as_deref(), Some("high"));
-    assert_eq!(effort.origin, ConfigOrigin::BuzzExplicit);
+    assert_eq!(effort.origin, ConfigOrigin::KuzzExplicit);
     assert_eq!(
         projection_value(&record, &BTreeMap::new()).as_deref(),
         Some("high")
@@ -797,12 +797,12 @@ fn goose_invalid_acp_skips_and_record_wins() {
 // ── Consumed-legacy Advanced suppression (F2) ────────────────────────────────
 //
 // When the record's native effort key is absent/invalid and the legacy key
-// (`BUZZ_AGENT_THINKING_EFFORT`) supplies the normalized record effort, the
+// (`KUZZ_AGENT_THINKING_EFFORT`) supplies the normalized record effort, the
 // legacy key must NOT also re-appear as a generic Advanced field — one
 // persisted fact must not surface through two controls. Invalid/unconsumed
 // legacy values stay visible in Advanced.
 
-/// Record has valid legacy `BUZZ_AGENT_THINKING_EFFORT=high` and no native
+/// Record has valid legacy `KUZZ_AGENT_THINKING_EFFORT=high` and no native
 /// `GOOSE_THINKING_EFFORT` → effort surfaces from the legacy alias AND the
 /// legacy key must NOT re-appear in Advanced.
 #[test]
@@ -810,7 +810,7 @@ fn record_consumed_legacy_effort_hidden_from_advanced_reader() {
     let mut record = test_record();
     record
         .env_vars
-        .insert("BUZZ_AGENT_THINKING_EFFORT".to_string(), "high".to_string());
+        .insert("KUZZ_AGENT_THINKING_EFFORT".to_string(), "high".to_string());
     let runtime = test_runtime(); // Goose (native GOOSE_THINKING_EFFORT)
 
     let surface = with_goose_path_root(Some("/nonexistent"), || {
@@ -825,7 +825,7 @@ fn record_consumed_legacy_effort_hidden_from_advanced_reader() {
 
     let advanced_keys: Vec<&str> = surface.advanced.iter().map(|f| f.key.as_str()).collect();
     assert!(
-        !advanced_keys.contains(&"BUZZ_AGENT_THINKING_EFFORT"),
+        !advanced_keys.contains(&"KUZZ_AGENT_THINKING_EFFORT"),
         "consumed legacy effort key must not double-emit in advanced; got {advanced_keys:?}"
     );
 }
@@ -839,7 +839,7 @@ fn record_legacy_effort_shadowed_by_column_stays_visible_in_advanced_reader() {
     record.effort_level = Some("high".to_string());
     record
         .env_vars
-        .insert("BUZZ_AGENT_THINKING_EFFORT".to_string(), "low".to_string());
+        .insert("KUZZ_AGENT_THINKING_EFFORT".to_string(), "low".to_string());
     let runtime = test_runtime(); // Goose
 
     let surface = with_goose_path_root(Some("/nonexistent"), || {
@@ -853,18 +853,18 @@ fn record_legacy_effort_shadowed_by_column_stays_visible_in_advanced_reader() {
     assert_eq!(effort.value.as_deref(), Some("high"));
     let advanced_keys: Vec<&str> = surface.advanced.iter().map(|f| f.key.as_str()).collect();
     assert!(
-        advanced_keys.contains(&"BUZZ_AGENT_THINKING_EFFORT"),
+        advanced_keys.contains(&"KUZZ_AGENT_THINKING_EFFORT"),
         "valid but unconsumed record legacy must remain visible in Advanced; got {advanced_keys:?}"
     );
 }
 
-/// An invalid legacy `BUZZ_AGENT_THINKING_EFFORT` value is unconsumed, so it
+/// An invalid legacy `KUZZ_AGENT_THINKING_EFFORT` value is unconsumed, so it
 /// stays visible in Advanced.
 #[test]
 fn record_invalid_legacy_effort_stays_visible_in_advanced_reader() {
     let mut record = test_record();
     record.env_vars.insert(
-        "BUZZ_AGENT_THINKING_EFFORT".to_string(),
+        "KUZZ_AGENT_THINKING_EFFORT".to_string(),
         "bogus".to_string(),
     );
     let runtime = test_runtime(); // Goose
@@ -879,7 +879,7 @@ fn record_invalid_legacy_effort_stays_visible_in_advanced_reader() {
     );
     let advanced_keys: Vec<&str> = surface.advanced.iter().map(|f| f.key.as_str()).collect();
     assert!(
-        advanced_keys.contains(&"BUZZ_AGENT_THINKING_EFFORT"),
+        advanced_keys.contains(&"KUZZ_AGENT_THINKING_EFFORT"),
         "unconsumed legacy key must stay visible in advanced; got {advanced_keys:?}"
     );
 }

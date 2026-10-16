@@ -18,7 +18,7 @@ const workflow = readFileSync(
   new URL("../.github/workflows/ci.yml", import.meta.url),
   "utf8",
 );
-const scratch = mkdtempSync(join(tmpdir(), "buzz-ci-selection-"));
+const scratch = mkdtempSync(join(tmpdir(), "kuzz-ci-selection-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const actionSha = workflow.match(/uses: dorny\/paths-filter@([a-f0-9]{40})/)[1];
 const filters = workflow
@@ -129,7 +129,7 @@ async function select(paths, pullRequest = false, apiStatus = 200) {
     server = createServer((request, response) => {
       assert.equal(
         request.url,
-        "/repos/block/buzz/pulls/7809/files?per_page=100",
+        "/repos/block/kuzz/pulls/7809/files?per_page=100",
       );
       response.setHeader("Content-Type", "application/json");
       if (apiStatus !== 200) {
@@ -168,7 +168,7 @@ async function select(paths, pullRequest = false, apiStatus = 200) {
         INPUT_REF: "",
         GITHUB_EVENT_NAME: pullRequest ? "pull_request" : "",
         GITHUB_EVENT_PATH: pullRequest ? eventPath : "",
-        GITHUB_REPOSITORY: "block/buzz",
+        GITHUB_REPOSITORY: "block/kuzz",
         GITHUB_API_URL: apiUrl || "https://api.github.com",
         GITHUB_OUTPUT: output,
         "INPUT_PREDICATE-QUANTIFIER":
@@ -220,14 +220,14 @@ const scenarios = [
   ["mobile release script", ["scripts/mobile-release.sh"], ["mobile"]],
   ["desktop", ["desktop/src/main.tsx"], ["desktop"]],
   ["Tauri", ["desktop/src-tauri/src/main.rs"], ["desktop", "desktop-rust"]],
-  ["relay", ["crates/buzz-relay/src/main.rs"], ["rust"]],
+  ["relay", ["crates/kuzz-relay/src/main.rs"], ["rust"]],
   ["migration", ["migrations/123.sql"], ["rust"]],
   ["shared workflow", [".github/workflows/ci.yml"], ["rust", "mobile"]],
   ["integration services", ["docker-compose.yml"], ["rust"]],
   ["CI integration images", ["docker-compose.ci.yml"], ["rust"]],
   [
     "mixed mobile and relay",
-    ["mobile/lib/main.dart", "crates/buzz-core/src/lib.rs"],
+    ["mobile/lib/main.dart", "crates/kuzz-core/src/lib.rs"],
     ["rust", "mobile"],
   ],
   [
@@ -247,7 +247,7 @@ const scenarios = [
     ["docs/mobile/design.md", "docs/nips/NIP-FI.md"],
     [],
   ],
-  ["crate Markdown", ["crates/buzz-cli/README.md"], ["rust"]],
+  ["crate Markdown", ["crates/kuzz-cli/README.md"], ["rust"]],
   ["desktop Markdown", ["desktop/README.md"], ["desktop"]],
   [
     "Tauri Markdown",
@@ -265,10 +265,10 @@ const scenarios = [
   ],
   [
     "mixed documentation and relay",
-    ["docs/desktop/design.md", "crates/buzz-relay/src/lib.rs"],
+    ["docs/desktop/design.md", "crates/kuzz-relay/src/lib.rs"],
     ["rust"],
   ],
-  ["embedded ACP prompt", ["crates/buzz-acp/src/base_prompt.md"], ["rust"]],
+  ["embedded ACP prompt", ["crates/kuzz-acp/src/base_prompt.md"], ["rust"]],
   [
     "embedded Tauri skill",
     ["desktop/src-tauri/src/managed_agents/nest_skill.md"],

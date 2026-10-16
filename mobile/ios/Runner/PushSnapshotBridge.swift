@@ -1,31 +1,31 @@
-import BuzzPushKit
+import KuzzPushKit
 import Flutter
 import Foundation
 import Intents
 import UserNotifications
 
-final class BuzzPushSnapshotBridge {
+final class KuzzPushSnapshotBridge {
   private let containerURL: () -> URL?
-  private let endpointGrantStore: BuzzPushEndpointGrantKeychainStore
-  private let interactionDeletionDeadline: BuzzInteractionDeletionDeadline
+  private let endpointGrantStore: KuzzPushEndpointGrantKeychainStore
+  private let interactionDeletionDeadline: KuzzInteractionDeletionDeadline
   private let keychainAccessGroup: String?
   private let queue = DispatchQueue(
-    label: "xyz.block.buzz.push-snapshot",
+    label: "app.kuzz.push-snapshot",
     qos: .utility
   )
-  private lazy var store: BuzzPushPresentationCacheStore? = {
+  private lazy var store: KuzzPushPresentationCacheStore? = {
     guard let container = containerURL() else { return nil }
-    return BuzzPushPresentationCacheStore(containerURL: container)
+    return KuzzPushPresentationCacheStore(containerURL: container)
   }()
-  private let ageRestrictionSession = BuzzAgeRestrictionSession()
+  private let ageRestrictionSession = KuzzAgeRestrictionSession()
 
   init(
     appGroupIdentifier: String?,
-    endpointGrantStore: BuzzPushEndpointGrantKeychainStore,
+    endpointGrantStore: KuzzPushEndpointGrantKeychainStore,
     keychainAccessGroup: String?,
     containerURL: (() -> URL?)? = nil,
-    interactionDeletionDeadline: BuzzInteractionDeletionDeadline =
-      BuzzInteractionDeletionDeadline(
+    interactionDeletionDeadline: KuzzInteractionDeletionDeadline =
+      KuzzInteractionDeletionDeadline(
         timeout: 5,
         deleteAllInteractions: { completion in
           INInteraction.deleteAll(completion: completion)
@@ -53,7 +53,7 @@ final class BuzzPushSnapshotBridge {
     if call.method == "restoreAgeRestrictedNotifications" {
       queue.async { [self] in
         ageRestrictionSession.release()
-        BuzzInteractionCleanupRetry(
+        KuzzInteractionCleanupRetry(
           containerURL: containerURL(), deletion: interactionDeletionDeadline
         ).retryPending { error in
           Self.complete(result, value: error.map {
@@ -96,7 +96,7 @@ final class BuzzPushSnapshotBridge {
       do {
         guard let self, let container = containerURL() else {
           throw NSError(
-            domain: "BuzzPushSnapshotBridge",
+            domain: "KuzzPushSnapshotBridge",
             code: 1,
             userInfo: [
               NSLocalizedDescriptionKey: "The age-restriction session container is unavailable."
@@ -109,7 +109,7 @@ final class BuzzPushSnapshotBridge {
         let center = UNUserNotificationCenter.current()
         center.removeAllDeliveredNotifications()
         center.removeAllPendingNotificationRequests()
-        BuzzInteractionCleanupRetry(
+        KuzzInteractionCleanupRetry(
           containerURL: container, deletion: interactionDeletionDeadline
         ).request { error in
           Self.complete(
@@ -143,7 +143,7 @@ final class BuzzPushSnapshotBridge {
   ) {
     guard let communities = arguments["communities"] as? [[String: Any]],
       let signingKeys = arguments["signingKeys"] as? [String: String],
-      communities.count <= BuzzPushPresentationCacheStore.maximumCommunities,
+      communities.count <= KuzzPushPresentationCacheStore.maximumCommunities,
       !requiresStore || arguments["settleFence"] is Bool
     else {
       result(
@@ -201,7 +201,7 @@ final class BuzzPushSnapshotBridge {
         let decoded = try JSONDecoder().decode([PushLeaseCommunity].self, from: data)
         // Ordinary snapshot maintenance never changes age access.
         try store.replaceCommunities(decoded)
-        try BuzzPushKeychain.replace(
+        try KuzzPushKeychain.replace(
           signingKeys: signingKeys,
           accessGroup: self.keychainAccessGroup
         )
@@ -221,14 +221,14 @@ final class BuzzPushSnapshotBridge {
 
   static func relayMetadataPubkey(
     relayURL: String,
-    grants: [BuzzPushEndpointGrantRecord]
+    grants: [KuzzPushEndpointGrantRecord]
   ) -> String? {
-    guard let origin = BuzzPushPresentationCacheStore.canonicalRelayOrigin(relayURL) else {
+    guard let origin = KuzzPushPresentationCacheStore.canonicalRelayOrigin(relayURL) else {
       return nil
     }
     return grants.filter {
-      $0.appProfile == BuzzDevPushEnrollmentDriver.appProfile
-        && BuzzPushPresentationCacheStore.canonicalRelayOrigin($0.relayOrigin) == origin
+      $0.appProfile == KuzzDevPushEnrollmentDriver.appProfile
+        && KuzzPushPresentationCacheStore.canonicalRelayOrigin($0.relayOrigin) == origin
     }.max {
       $0.generation < $1.generation
     }?.relayMetadataPubkey
@@ -238,7 +238,7 @@ final class BuzzPushSnapshotBridge {
     guard let arguments = rawArguments as? [String: Any],
       let communityID = arguments["communityId"] as? String,
       let rawEvents = arguments["events"] as? [[String: Any]],
-      rawEvents.count <= BuzzPushPresentationCacheStore.maximumProfiles
+      rawEvents.count <= KuzzPushPresentationCacheStore.maximumProfiles
     else {
       result(
         FlutterError(
@@ -259,7 +259,7 @@ final class BuzzPushSnapshotBridge {
         try store?.updateProfiles(
           communityID: communityID,
           relayOrigin: community.relayUrl,
-          updates: events.map { BuzzPushProfileCacheUpdate(event: $0) }
+          updates: events.map { KuzzPushProfileCacheUpdate(event: $0) }
         )
         Self.complete(result, value: nil)
       } catch {
@@ -280,8 +280,8 @@ final class BuzzPushSnapshotBridge {
       let communityID = arguments["communityId"] as? String,
       let rawMetadataEvents = arguments["metadataEvents"] as? [[String: Any]],
       let rawMembershipEvents = arguments["membershipEvents"] as? [[String: Any]],
-      rawMetadataEvents.count <= BuzzPushPresentationCacheStore.maximumChannels,
-      rawMembershipEvents.count <= BuzzPushPresentationCacheStore.maximumChannels
+      rawMetadataEvents.count <= KuzzPushPresentationCacheStore.maximumChannels,
+      rawMembershipEvents.count <= KuzzPushPresentationCacheStore.maximumChannels
     else {
       result(
         FlutterError(
@@ -367,8 +367,8 @@ final class BuzzPushSnapshotBridge {
   private func community(id: String) -> PushLeaseCommunity? {
     guard let container = containerURL(),
       let data = try? Data(
-        contentsOf: container.appendingPathComponent(BuzzPushPresentationCacheStore.fileName)),
-      let snapshot = try? JSONDecoder().decode(BuzzPushPresentationCacheSnapshot.self, from: data)
+        contentsOf: container.appendingPathComponent(KuzzPushPresentationCacheStore.fileName)),
+      let snapshot = try? JSONDecoder().decode(KuzzPushPresentationCacheSnapshot.self, from: data)
     else { return nil }
     return snapshot.communities.first { $0.id == id }
   }

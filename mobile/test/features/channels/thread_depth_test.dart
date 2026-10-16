@@ -1,5 +1,5 @@
-import 'package:buzz/features/channels/thread_depth.dart';
-import 'package:buzz/features/channels/timeline_message.dart';
+import 'package:kuzz/features/channels/thread_depth.dart';
+import 'package:kuzz/features/channels/timeline_message.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 TimelineMessage _msg(String id, {String? parentId, String? rootId}) =>

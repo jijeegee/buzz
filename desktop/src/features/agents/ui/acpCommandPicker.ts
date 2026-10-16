@@ -1,7 +1,7 @@
 import type { AcpCommandCandidate } from "@/shared/api/acpCommands";
 import type { PersonaDropdownOption } from "./agentConfigOptions";
 
-export const DEFAULT_ACP_COMMAND_VALUE = "buzz-acp";
+export const DEFAULT_ACP_COMMAND_VALUE = "kuzz-acp";
 
 export function acpCommandPickerState(
   command: string,

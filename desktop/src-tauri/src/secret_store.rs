@@ -14,7 +14,7 @@
 //! feature gates the whole store; when it is off, [`SecretStore`] is unusable
 //! and callers fall back to their own `0o600` file storage.
 //!
-//! The store is deliberately NOT on any env-read path. `BUZZ_PRIVATE_KEY`
+//! The store is deliberately NOT on any env-read path. `KUZZ_PRIVATE_KEY`
 //! resolution for harnessed agents and CI is handled upstream (an env
 //! short-circuit for the human key, child-process env injection for agents);
 //! adding an env tier here would duplicate that precedence and create a
@@ -94,9 +94,9 @@ fn utf16_units(value: &str) -> usize {
 
 // ── Interprocess advisory lock ─────────────────────────────────────────────
 //
-// Two concurrent Buzz processes (e.g. the signed DMG build and an unsigned dev
+// Two concurrent Kuzz processes (e.g. the signed DMG build and an unsigned dev
 // build via `just staging`) share the same OS keychain blob because the
-// service name `"buzz-desktop"` is a constant — it does not key off the bundle
+// service name `"kuzz-desktop"` is a constant — it does not key off the bundle
 // identifier. Each process holds its own in-memory cache, so without an
 // interprocess lock a warm-cache write in process A drops keys added by process
 // B between A's last cache-warming read and A's write.
@@ -105,13 +105,13 @@ fn utf16_units(value: &str) -> usize {
 // performs a fresh `read_blob_raw()` inside the lock, applies the mutation,
 // writes back, and releases. The cache is still updated after a successful
 // write, so same-process reads remain fast. The lock is file-based at a fixed
-// per-user path `/tmp/buzz-keychain-<uid>-<service>.lock` on Unix — a path
+// per-user path `/tmp/kuzz-keychain-<uid>-<service>.lock` on Unix — a path
 // that is invariant to `$TMPDIR`/process environment, so both the GUI-launched
 // signed DMG and a terminal-launched dev build always take the same lock.
 
 /// Return the path of the advisory lockfile for `service`.
 ///
-/// The path is `/tmp/buzz-keychain-<uid>-<service>.lock` on Unix — a
+/// The path is `/tmp/kuzz-keychain-<uid>-<service>.lock` on Unix — a
 /// deterministic per-user path that is invariant to `$TMPDIR`/process
 /// environment. Both a GUI-launched signed DMG (`launchd`, env-stripped) and a
 /// terminal-launched dev build resolve `/tmp` to the same inode, so they
@@ -125,13 +125,13 @@ fn blob_lockfile_path(service: &str) -> PathBuf {
         // Use the real UID so distinct users get distinct lockfiles.
         // SAFETY: getuid() is always safe on Unix — it never fails.
         let uid = unsafe { libc::getuid() };
-        PathBuf::from(format!("/tmp/buzz-keychain-{uid}-{service}.lock"))
+        PathBuf::from(format!("/tmp/kuzz-keychain-{uid}-{service}.lock"))
     }
     #[cfg(not(unix))]
     {
         // Windows: no lockfile used (named mutex instead); this path is only
         // used to derive the mutex name and for test assertions.
-        std::env::temp_dir().join(format!("buzz-keychain-{service}.lock"))
+        std::env::temp_dir().join(format!("kuzz-keychain-{service}.lock"))
     }
 }
 
@@ -190,7 +190,7 @@ impl BlobLockGuard {
             // needed. Derive a unique mutex name from the lockfile path so
             // distinct services get distinct mutexes.
             let name_str = format!(
-                "Local\\BuzzKeychain-{}",
+                "Local\\KuzzKeychain-{}",
                 path.file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("default")
@@ -286,7 +286,7 @@ impl SecretStore {
     /// cache and one mutex — so concurrent blob read-modify-write operations
     /// see each other's writes and the last-writer-wins race is closed.
     ///
-    /// Only one service name (`"buzz-desktop"`) is used in practice. If a
+    /// Only one service name (`"kuzz-desktop"`) is used in practice. If a
     /// second service name is ever needed, this can be extended to a registry.
     pub fn shared(service: &'static str) -> &'static SecretStore {
         use std::sync::OnceLock;
@@ -304,7 +304,7 @@ const SECURE_STORAGE_ERROR: &str = "Couldn't access secure storage on this devic
 /// `Display` cannot contain secret material (keyring / OS errors, never the
 /// stored value itself).
 fn storage_error(context: &str, cause: impl std::fmt::Display) -> String {
-    eprintln!("buzz-desktop: secure storage {context}: {cause}");
+    eprintln!("kuzz-desktop: secure storage {context}: {cause}");
     SECURE_STORAGE_ERROR.to_string()
 }
 
@@ -468,9 +468,9 @@ impl SecretStore {
     where
         F: FnOnce(&mut HashMap<String, String>),
     {
-        // Acquire the interprocess advisory lock first. All Buzz processes
+        // Acquire the interprocess advisory lock first. All Kuzz processes
         // using the same service name contend on the same lockfile at
-        // /tmp/buzz-keychain-<uid>-<service>.lock (a deterministic per-user
+        // /tmp/kuzz-keychain-<uid>-<service>.lock (a deterministic per-user
         // path invariant to $TMPDIR), so only one process performs a
         // read-modify-write at a time.
         let _lock = acquire_blob_lock(&self.service)?;
@@ -864,6 +864,78 @@ impl SecretStore {
         }
     }
 
+    /// One-time copy of every secret this app kept under `legacy_service`
+    /// (the keyring service name before the product rename).
+    ///
+    /// Runs only while this service has no blob yet. Standalone credentials
+    /// (refresh tokens, per-account slots listed by the `account.index.*`
+    /// entries) are copied first and the blob last, so the blob's presence
+    /// marks a finished import. Legacy entries are left in place.
+    /// Returns the number of credentials copied.
+    pub fn import_from_legacy_service(&self, legacy_service: &str) -> Result<usize, String> {
+        #[cfg(feature = "system-keyring")]
+        {
+            if self.read_blob_raw_keyring()?.is_some() {
+                return Ok(0);
+            }
+            let legacy = SecretStore::keyring(legacy_service);
+            let Some(blob) = legacy.read_blob_raw_keyring()? else {
+                return Ok(0);
+            };
+            let map: HashMap<String, String> = serde_json::from_slice(&blob)
+                .map_err(|e| format!("legacy blob parse: {e}"))?;
+            let mut keys: Vec<String> = map
+                .iter()
+                .filter(|(_, value)| value.is_empty())
+                .map(|(key, _)| key.clone())
+                .collect();
+            for n in 0..crate::auth::accounts::MAX_INDEX_CHUNKS {
+                let key = crate::auth::accounts::index_chunk_key(n);
+                let Some(chunk) = legacy.read_entry(&key)? else {
+                    break;
+                };
+                for line in chunk.lines() {
+                    let mut parts = line.split(' ');
+                    let (Some(pubkey), Some(origin)) = (parts.next(), parts.next()) else {
+                        continue;
+                    };
+                    keys.push(format!("account.{pubkey}.identity"));
+                    keys.push(format!("account.{pubkey}.refresh.{origin}"));
+                }
+                keys.push(key);
+            }
+            let mut copied = 0;
+            for key in keys {
+                if let Some(value) = legacy.read_entry(&key)? {
+                    self.write_standalone(&key, &value)?;
+                    copied += 1;
+                }
+            }
+            self.write_blob_raw_keyring(&blob)?;
+            *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            Ok(copied + 1)
+        }
+        #[cfg(not(feature = "system-keyring"))]
+        {
+            let _ = legacy_service;
+            Ok(0)
+        }
+    }
+
+    /// Read one credential by its exact name, without blob fallback.
+    #[cfg(feature = "system-keyring")]
+    fn read_entry(&self, key: &str) -> Result<Option<String>, String> {
+        let entry = keyring_entry(&self.service, key).map_err(|e| storage_error("entry", e))?;
+        match entry.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) if is_keyring_availability_error(&e.to_string()) => {
+                Err(storage_error("unavailable", e))
+            }
+            Err(e) => Err(storage_error("read", e)),
+        }
+    }
+
     /// Store `value` for `key`. Reports `Err` on availability failures — callers
     /// decide whether to fall back to file storage.
     pub fn store(&self, key: &str, value: &str) -> Result<(), String> {
@@ -1155,7 +1227,7 @@ mod tests {
     fn probe_returns_present_when_key_in_cache() {
         let mut map = HashMap::new();
         map.insert("identity".to_string(), "nsec1test".to_string());
-        let store = SecretStore::with_cache("buzz-test-cache-hit", Some(map));
+        let store = SecretStore::with_cache("kuzz-test-cache-hit", Some(map));
         // Cache is warm and contains "identity" — probe must return Present
         // without touching the keychain.
         assert_eq!(store.probe("identity"), KeyringProbe::Present);
@@ -1165,7 +1237,7 @@ mod tests {
     fn load_returns_value_when_key_in_cache() {
         let mut map = HashMap::new();
         map.insert("identity".to_string(), "nsec1test".to_string());
-        let store = SecretStore::with_cache("buzz-test-load-cache-hit", Some(map));
+        let store = SecretStore::with_cache("kuzz-test-load-cache-hit", Some(map));
         // Cache is warm and contains "identity" — load must return the value
         // without touching the keychain.
         assert_eq!(
@@ -1187,7 +1259,7 @@ mod tests {
         // mutate_blob would build from its stale {k1} cache and write
         // {k1, k3}, silently dropping k2. With the fix, A always re-reads
         // from the keychain inside the lock, so the result is {k1, k2, k3}.
-        let svc = "buzz-test-race-stale-cache";
+        let svc = "kuzz-test-race-stale-cache";
 
         // Clean state.
         let setup = SecretStore::keyring(svc);
@@ -1236,7 +1308,7 @@ mod tests {
     fn test_concurrent_adds_neither_key_dropped() {
         // Two sequential stores from distinct instances (simulating two
         // processes each adding one key) must both be durably visible.
-        let svc = "buzz-test-race-concurrent-add";
+        let svc = "kuzz-test-race-concurrent-add";
 
         let setup = SecretStore::keyring(svc);
         let _ = setup.delete("agent_a");
@@ -1271,7 +1343,7 @@ mod tests {
         // invariant to $TMPDIR — so both a GUI-launched DMG (env-stripped by
         // launchd) and a terminal-launched dev build resolve the same inode and
         // achieve mutual exclusion.
-        let path = blob_lockfile_path("buzz-desktop");
+        let path = blob_lockfile_path("kuzz-desktop");
         #[cfg(unix)]
         {
             let uid = unsafe { libc::getuid() };
@@ -1288,8 +1360,8 @@ mod tests {
                 "lockfile {path:?} must contain uid {uid}"
             );
             assert!(
-                name.contains("buzz-keychain"),
-                "lockfile name must contain 'buzz-keychain'"
+                name.contains("kuzz-keychain"),
+                "lockfile name must contain 'kuzz-keychain'"
             );
         }
         #[cfg(not(unix))]
@@ -1297,8 +1369,8 @@ mod tests {
             assert!(
                 path.file_name()
                     .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.contains("buzz-keychain")),
-                "lockfile name must contain 'buzz-keychain'"
+                    .is_some_and(|n| n.contains("kuzz-keychain")),
+                "lockfile name must contain 'kuzz-keychain'"
             );
         }
     }
@@ -1307,7 +1379,7 @@ mod tests {
     fn test_blob_lock_acquire_and_release() {
         // Verify the advisory lock can be acquired and released without errors.
         // This exercises the real flock/mutex path on the current platform.
-        let guard = acquire_blob_lock("buzz-test-lock-smoke");
+        let guard = acquire_blob_lock("kuzz-test-lock-smoke");
         assert!(
             guard.is_ok(),
             "advisory lock acquire must succeed: {:?}",
@@ -1315,7 +1387,7 @@ mod tests {
         );
         // Drop the guard — lock is released. A second acquire must succeed.
         drop(guard);
-        let guard2 = acquire_blob_lock("buzz-test-lock-smoke");
+        let guard2 = acquire_blob_lock("kuzz-test-lock-smoke");
         assert!(
             guard2.is_ok(),
             "advisory lock re-acquire after release must succeed: {:?}",
@@ -1333,7 +1405,7 @@ mod tests {
         // against the durable cache, not an unpersisted candidate.
         //
         // This is a real-keychain integration test. Run locally with:
-        //   cargo test -p buzz-desktop -- --ignored mutate_blob_does_not_advance
+        //   cargo test -p kuzz-desktop -- --ignored mutate_blob_does_not_advance
         //
         // On a machine with a reachable keychain the `store()` call succeeds
         // (result.is_ok()) and the write-failure branch is skipped — the test
@@ -1344,7 +1416,7 @@ mod tests {
         //   2. The failed key is not present (the dirty candidate was discarded).
         let mut map = HashMap::new();
         map.insert("existing".to_string(), "durable_val".to_string());
-        let store = SecretStore::with_cache("buzz-test-cow-write-fail", Some(map));
+        let store = SecretStore::with_cache("kuzz-test-cow-write-fail", Some(map));
 
         // Attempt to add a new key — this calls write_blob_raw against the
         // real keychain; with copy-on-write the cache must remain at {existing}
@@ -1403,14 +1475,14 @@ mod tests {
 
     // Integration tests that exercise the real OS keychain. Skipped in CI
     // (unsigned builds lack keychain entitlements); run locally with:
-    //   cargo test -p buzz-desktop -- --ignored blob_
+    //   cargo test -p kuzz-desktop -- --ignored blob_
     //
     // Each test uses a unique service name to avoid cross-test pollution.
 
     #[ignore = "requires real OS keychain (run locally)"]
     #[test]
     fn blob_stores_and_retrieves_multiple_keys() {
-        let store = SecretStore::keyring("buzz-test-blob-multi");
+        let store = SecretStore::keyring("kuzz-test-blob-multi");
         store.store("key_a", "val_a").unwrap();
         store.store("key_b", "val_b").unwrap();
         assert_eq!(store.load("key_a").unwrap(), Some("val_a".to_string()));
@@ -1424,7 +1496,7 @@ mod tests {
     #[ignore = "requires real OS keychain (run locally)"]
     #[test]
     fn blob_probe_present_absent_unreachable() {
-        let store = SecretStore::keyring("buzz-test-blob-probe");
+        let store = SecretStore::keyring("kuzz-test-blob-probe");
         // No blob yet — key absent, backend reachable.
         assert_eq!(store.probe("identity"), KeyringProbe::ReachableButEmpty);
         store.store("identity", "nsec1test").unwrap();
@@ -1439,7 +1511,7 @@ mod tests {
     #[ignore = "requires real OS keychain (run locally)"]
     #[test]
     fn blob_delete_removes_key_not_others() {
-        let store = SecretStore::keyring("buzz-test-blob-delete");
+        let store = SecretStore::keyring("kuzz-test-blob-delete");
         store.store("keep", "keep_val").unwrap();
         store.store("remove", "remove_val").unwrap();
         store.delete("remove").unwrap();
@@ -1452,7 +1524,7 @@ mod tests {
     #[ignore = "requires real OS keychain (run locally)"]
     #[test]
     fn blob_migration_from_per_key_entry() {
-        let svc = "buzz-test-blob-migration";
+        let svc = "kuzz-test-blob-migration";
         let key = "identity";
         let value = "nsec1migrationtest";
 
@@ -1485,7 +1557,7 @@ mod tests {
     #[ignore = "requires real OS keychain (run locally)"]
     #[test]
     fn delete_all_with_legacy_cleanup_removes_per_key_identity() {
-        let svc = "buzz-test-delete-all-legacy";
+        let svc = "kuzz-test-delete-all-legacy";
         let key = "identity";
         let value = "nsec1legacytest";
 
@@ -1550,7 +1622,7 @@ mod tests {
     #[ignore = "requires real OS keychain (run locally)"]
     #[test]
     fn windows_refresh_token_lives_outside_the_blob() {
-        let svc = "buzz-test-standalone-refresh";
+        let svc = "kuzz-test-standalone-refresh";
         let key = "auth.refresh.https://relay.test";
         let token = format!("bzr_{}", "t".repeat(600));
         let store = SecretStore::keyring(svc);
@@ -1593,7 +1665,7 @@ mod tests {
     #[ignore = "requires real OS keychain (run locally)"]
     #[test]
     fn windows_token_kept_in_the_blob_by_an_older_build_still_loads() {
-        let svc = "buzz-test-standalone-legacy";
+        let svc = "kuzz-test-standalone-legacy";
         let key = "auth.refresh.https://relay.test";
         let store = SecretStore::keyring(svc);
         let _ = store.delete_all_with_legacy_cleanup();
@@ -1620,7 +1692,7 @@ mod tests {
     #[ignore = "requires real OS keychain (run locally)"]
     #[test]
     fn windows_agent_keys_stop_at_the_soft_limit_but_account_keys_fit() {
-        let svc = "buzz-test-agent-soft-limit";
+        let svc = "kuzz-test-agent-soft-limit";
         let store = SecretStore::keyring(svc);
         let _ = store.delete_all_with_legacy_cleanup();
         let nsec = format!("nsec1{}", "a".repeat(58));

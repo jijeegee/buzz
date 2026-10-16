@@ -31,7 +31,7 @@ def generate(output):
     # Work at 4x resolution to antialias the rounded edge at every icon size.
     scale = 4
     canvas = Image.new("RGBA", (1024 * scale, 1024 * scale))
-    with Image.open(ICONS / "buzz-source.png") as source:
+    with Image.open(ICONS / "kuzz-source.png") as source:
         tile = source.convert("RGBA").resize(
             (824 * scale, 824 * scale), Image.Resampling.LANCZOS
         )
@@ -41,8 +41,8 @@ def generate(output):
     )
     canvas.paste(tile, (100 * scale, 100 * scale), mask)
 
-    with tempfile.TemporaryDirectory(prefix="buzz-macos-icon-") as temporary:
-        iconset = Path(temporary) / "Buzz.iconset"
+    with tempfile.TemporaryDirectory(prefix="kuzz-macos-icon-") as temporary:
+        iconset = Path(temporary) / "Kuzz.iconset"
         iconset.mkdir()
         for size in (16, 32, 128, 256, 512):
             for density in (1, 2):
@@ -58,7 +58,7 @@ def generate(output):
 
 def verify(candidate, reference):
     """Reject missing/extra representations and any decoded pixel drift."""
-    with tempfile.TemporaryDirectory(prefix="buzz-icon-check-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="kuzz-icon-check-") as temporary:
         sets = []
         for name, icon in (("candidate", candidate), ("reference", reference)):
             iconset = Path(temporary) / f"{name}.iconset"
@@ -81,7 +81,7 @@ def main():
     parser.add_argument("--output", type=Path, default=ICONS / "icon.icns")
     args = parser.parse_args()
     if args.check:
-        with tempfile.TemporaryDirectory(prefix="buzz-icon-regenerate-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="kuzz-icon-regenerate-") as temporary:
             generated = Path(temporary) / "icon.icns"
             generate(generated)
             verify(args.output, generated)

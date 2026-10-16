@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:buzz/features/age_gate/age_signal_provider.dart';
+import 'package:kuzz/features/age_gate/age_signal_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

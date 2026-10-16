@@ -26,12 +26,12 @@ use crate::auth::{OriginAuth, TokenAuthState};
 use crate::managed_agents::{BackendKind, ManagedAgentRecord};
 
 /// Retired kind:0 field that once published an agent's host device tag.
-pub(crate) const RETIRED_HOST_DEVICE_FIELD: &str = "buzz_host_device";
+pub(crate) const RETIRED_HOST_DEVICE_FIELD: &str = "kuzz_host_device";
 
-/// Author-only agent host-devices kind (see `buzz_core::kind`).
+/// Author-only agent host-devices kind (see `kuzz_core::kind`).
 pub(crate) const KIND_AGENT_HOST_DEVICES: u16 = 30180;
 
-/// Author-only device robot kind (see `buzz_core::kind`).
+/// Author-only device robot kind (see `kuzz_core::kind`).
 const KIND_DEVICE_ROBOT: u16 = 30181;
 
 /// Content of the last accepted publish per `(origin, d tag)`, so repeated
@@ -151,7 +151,7 @@ fn signed_in_devices(state: &AppState, origin: &str) -> Vec<AccountDevice> {
                 background: true,
             }),
             Err(error) => eprintln!(
-                "buzz-desktop: agent host devices of {}: {error}",
+                "kuzz-desktop: agent host devices of {}: {error}",
                 &account.to_hex()[..8]
             ),
         }
@@ -349,7 +349,7 @@ async fn assign_background_robot(state: &AppState, device: &AccountDevice) {
     {
         Ok(events) => events,
         Err(error) => {
-            eprintln!("buzz-desktop: could not read device robots: {error}");
+            eprintln!("kuzz-desktop: could not read device robots: {error}");
             return;
         }
     };
@@ -364,7 +364,7 @@ async fn assign_background_robot(state: &AppState, device: &AccountDevice) {
         crate::relay::submit_event_at_with_keys(builder, state, &api_base_url, &device.credential)
             .await
     {
-        eprintln!("buzz-desktop: could not store a device robot: {error}");
+        eprintln!("kuzz-desktop: could not store a device robot: {error}");
     }
 }
 
@@ -395,7 +395,7 @@ pub(crate) async fn clear_agent_host_devices(
     };
     let content = host_devices_content(&[]);
     if let Err(error) = submit_host_devices(state, origin, &device_id, &credential, content).await {
-        eprintln!("buzz-desktop: could not clear agent host devices before sign-out: {error}");
+        eprintln!("kuzz-desktop: could not clear agent host devices before sign-out: {error}");
     }
 }
 
@@ -418,7 +418,7 @@ pub(crate) fn spawn_publish_agent_host_devices<R: tauri::Runtime>(app: &tauri::A
             let Err(error) = publish_agent_host_devices(&app).await else {
                 return;
             };
-            eprintln!("buzz-desktop: could not publish agent host devices: {error}");
+            eprintln!("kuzz-desktop: could not publish agent host devices: {error}");
             let Some(&delay) = delays.next() else {
                 return;
             };
@@ -580,7 +580,7 @@ mod tests {
                 "name": "Scout",
                 "private_key_nsec": "",
                 "relay_url": "",
-                "acp_command": "buzz-acp",
+                "acp_command": "kuzz-acp",
                 "agent_command": "goose",
                 "agent_args": [],
                 "mcp_command": "",
@@ -637,7 +637,7 @@ mod tests {
                 "name": "Scout",
                 "private_key_nsec": "",
                 "relay_url": "",
-                "acp_command": "buzz-acp",
+                "acp_command": "kuzz-acp",
                 "agent_command": "goose",
                 "agent_args": [],
                 "mcp_command": "",

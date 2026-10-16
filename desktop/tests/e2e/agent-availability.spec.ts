@@ -44,7 +44,7 @@ test("saved deployment with offline presence is not shown as online", async ({
   await expect
     .poll(() =>
       page.evaluate(() =>
-        window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+        window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
           channelName: "agents",
           kind: 20001,
         }),
@@ -54,7 +54,7 @@ test("saved deployment with offline presence is not shown as online", async ({
   for (const status of ["online", "away", "offline"] as const) {
     await page.evaluate(
       ({ pubkey, status }) => {
-        const emit = window.__BUZZ_E2E_EMIT_MOCK_PRESENCE__;
+        const emit = window.__KUZZ_E2E_EMIT_MOCK_PRESENCE__;
         if (!emit) throw new Error("Mock presence emitter is unavailable.");
         emit({ pubkey, status });
       },
@@ -90,7 +90,7 @@ test("saved deployment with offline presence is not shown as online", async ({
       ).toHaveAttribute("aria-label", "Shutdown");
       expect(
         await page.evaluate(() =>
-          (window.__BUZZ_E2E_COMMANDS__ ?? []).filter((command) =>
+          (window.__KUZZ_E2E_COMMANDS__ ?? []).filter((command) =>
             ["start_managed_agent", "stop_managed_agent"].includes(command),
           ),
         ),
@@ -98,7 +98,7 @@ test("saved deployment with offline presence is not shown as online", async ({
     }
   }
   await page.evaluate(() =>
-    window.__BUZZ_E2E_SET_RELAY_CONNECTION_STATE__?.("disconnected"),
+    window.__KUZZ_E2E_SET_RELAY_CONNECTION_STATE__?.("disconnected"),
   );
   await expect(page.getByTestId("user-profile-presence-badge")).toHaveCount(0);
   await expect(dot).toHaveAttribute(
@@ -164,14 +164,14 @@ test("missing snapshot is offline but failed reads cannot reuse cached online", 
     await page.evaluate(async (response) => {
       const w = window as typeof window & {
         __AVAILABILITY_RESPONSE__?: typeof response;
-        __BUZZ_E2E_QUERY_CLIENT__?: {
+        __KUZZ_E2E_QUERY_CLIENT__?: {
           invalidateQueries: (filter: { queryKey: string[] }) => Promise<void>;
         };
       };
       w.__AVAILABILITY_RESPONSE__ = response;
-      if (!w.__BUZZ_E2E_QUERY_CLIENT__)
+      if (!w.__KUZZ_E2E_QUERY_CLIENT__)
         throw new Error("Query client unavailable");
-      await w.__BUZZ_E2E_QUERY_CLIENT__.invalidateQueries({
+      await w.__KUZZ_E2E_QUERY_CLIENT__.invalidateQueries({
         queryKey: ["presence"],
       });
     }, response);
@@ -207,7 +207,7 @@ test("stopped local with authored presence has a dot, not an invokable Start", a
   await expect
     .poll(() =>
       page.evaluate(() =>
-        window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+        window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
           channelName: "agents",
           kind: 20001,
         }),
@@ -216,7 +216,7 @@ test("stopped local with authored presence has a dot, not an invokable Start", a
     .toBe(true);
   await page.evaluate(
     (pubkey) =>
-      window.__BUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status: "online" }),
+      window.__KUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status: "online" }),
     LOCAL,
   );
   await expect(
@@ -234,7 +234,7 @@ test("stopped local with authored presence has a dot, not an invokable Start", a
   await action.press("Space");
   expect(
     await page.evaluate(() =>
-      (window.__BUZZ_E2E_COMMANDS__ ?? []).filter((command) =>
+      (window.__KUZZ_E2E_COMMANDS__ ?? []).filter((command) =>
         ["start_managed_agent", "stop_managed_agent"].includes(command),
       ),
     ),
@@ -252,7 +252,7 @@ test("stopped local with authored presence has a dot, not an invokable Start", a
   for (const status of ["away", "offline"] as const) {
     await page.evaluate(
       ({ pubkey, status }) =>
-        window.__BUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status }),
+        window.__KUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status }),
       { pubkey: LOCAL, status },
     );
     await expect(badge).toHaveAttribute(
@@ -302,7 +302,7 @@ test("member menu cannot start a present stopped local runtime", async ({
   await expect
     .poll(() =>
       page.evaluate(() =>
-        window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+        window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
           channelName: "agents",
           kind: 20001,
         }),
@@ -311,7 +311,7 @@ test("member menu cannot start a present stopped local runtime", async ({
     .toBe(true);
   await page.evaluate(
     (pubkey) =>
-      window.__BUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status: "away" }),
+      window.__KUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status: "away" }),
     LOCAL,
   );
   await row.hover();
@@ -325,14 +325,14 @@ test("member menu cannot start a present stopped local runtime", async ({
   await action.evaluate((node: HTMLElement) => node.click());
   expect(
     await page.evaluate(() =>
-      (window.__BUZZ_E2E_COMMANDS__ ?? []).filter((command) =>
+      (window.__KUZZ_E2E_COMMANDS__ ?? []).filter((command) =>
         /^(start|stop)_managed_agent/.test(command),
       ),
     ),
   ).toEqual([]);
   await page.evaluate(
     (pubkey) =>
-      window.__BUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status: "offline" }),
+      window.__KUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status: "offline" }),
     LOCAL,
   );
   await expect(action).not.toHaveAttribute("aria-disabled", "true");
@@ -341,7 +341,7 @@ test("member menu cannot start a present stopped local runtime", async ({
     .poll(() =>
       page.evaluate(
         () =>
-          (window.__BUZZ_E2E_COMMANDS__ ?? []).filter(
+          (window.__KUZZ_E2E_COMMANDS__ ?? []).filter(
             (command) => command === "start_managed_agent_runtime",
           ).length,
       ),
@@ -387,7 +387,7 @@ for (const surface of ["agents", "members"] as const) {
             options: unknown,
           ) => Promise<unknown>;
         };
-        __BUZZ_E2E_QUERY_CLIENT__: {
+        __KUZZ_E2E_QUERY_CLIENT__: {
           invalidateQueries: (filter: { queryKey: string[] }) => Promise<void>;
         };
       };
@@ -401,7 +401,7 @@ for (const surface of ["agents", "members"] as const) {
         return original(command, payload, options);
       };
       try {
-        await w.__BUZZ_E2E_QUERY_CLIENT__.invalidateQueries({
+        await w.__KUZZ_E2E_QUERY_CLIENT__.invalidateQueries({
           queryKey: ["presence"],
         });
       } finally {
@@ -414,7 +414,7 @@ for (const surface of ["agents", "members"] as const) {
     await expect
       .poll(() =>
         page.evaluate(() =>
-          window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+          window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
             channelName: "agents",
             kind: 20001,
           }),
@@ -423,7 +423,7 @@ for (const surface of ["agents", "members"] as const) {
       .toBe(true);
     await page.evaluate(
       (pubkey) =>
-        window.__BUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status: "away" }),
+        window.__KUZZ_E2E_EMIT_MOCK_PRESENCE__?.({ pubkey, status: "away" }),
       LOCAL,
     );
     if (surface === "agents") {
@@ -566,7 +566,7 @@ test("hover profile preserves unknown availability and announces only establishe
       async ({ response, pubkey }) => {
         const w = window as typeof window & {
           __POPOVER_RESPONSE__?: typeof response;
-          __BUZZ_E2E_QUERY_CLIENT__?: {
+          __KUZZ_E2E_QUERY_CLIENT__?: {
             invalidateQueries: (filter: {
               queryKey: string[];
               exact: boolean;
@@ -574,9 +574,9 @@ test("hover profile preserves unknown availability and announces only establishe
           };
         };
         w.__POPOVER_RESPONSE__ = response;
-        if (!w.__BUZZ_E2E_QUERY_CLIENT__)
+        if (!w.__KUZZ_E2E_QUERY_CLIENT__)
           throw new Error("Query client unavailable");
-        await w.__BUZZ_E2E_QUERY_CLIENT__.invalidateQueries({
+        await w.__KUZZ_E2E_QUERY_CLIENT__.invalidateQueries({
           queryKey: ["presence", pubkey],
           exact: true,
         });
@@ -587,7 +587,7 @@ test("hover profile preserves unknown availability and announces only establishe
     else await expectStatus(response === "online" ? "Online" : "Offline");
   }
   await page.evaluate(() =>
-    window.__BUZZ_E2E_SET_RELAY_CONNECTION_STATE__?.("disconnected"),
+    window.__KUZZ_E2E_SET_RELAY_CONNECTION_STATE__?.("disconnected"),
   );
   await expectUnknown();
   await expect(popover).toBeVisible();
@@ -666,10 +666,10 @@ for (const scenario of [
             w.__DELETE_EFFECTS__?.push("remove-member");
           return original(command, payload, options);
         };
-        await window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+        await window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
           queryKey: ["managed-agents"],
         });
-        await window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+        await window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
           queryKey: ["presence", pubkey],
           exact: true,
         });
@@ -693,14 +693,14 @@ for (const scenario of [
         (
           window as typeof window & { __DELETE_FAIL_PRESENCE__?: boolean }
         ).__DELETE_FAIL_PRESENCE__ = true;
-        await window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+        await window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
           queryKey: ["presence", pubkey],
           exact: true,
         });
       }, LOCAL);
     } else if (scenario.startsWith("disconnected")) {
       await page.evaluate(() =>
-        window.__BUZZ_E2E_SET_RELAY_CONNECTION_STATE__?.("disconnected"),
+        window.__KUZZ_E2E_SET_RELAY_CONNECTION_STATE__?.("disconnected"),
       );
     }
     if (scenario !== "offline")

@@ -19,16 +19,16 @@ jobs:
     # The trusted prepare step checks the live PR author's repo permission
     # (write, maintain, or admin), not author_association, which hides private
     # org membership from the workflow token. Other PRs require this exact
-    # command from a user with write access: @buzz-security-review <full-head-sha>
+    # command from a user with write access: @kuzz-security-review <full-head-sha>
     if: >-
-      github.repository == 'block/buzz' && (
+      github.repository == 'block/kuzz' && (
         (
           github.event_name == 'pull_request_target' &&
           github.event.pull_request.draft == false
         ) || (
           github.event_name == 'issue_comment' &&
           github.event.issue.pull_request &&
-          startsWith(github.event.comment.body, '@buzz-security-review ')
+          startsWith(github.event.comment.body, '@kuzz-security-review ')
         )
       )
     runs-on: ubuntu-latest
@@ -62,7 +62,7 @@ jobs:
   prepare-base-reconciliation:
     name: Find Reviews From the Previous Base
     if: >-
-      github.repository == 'block/buzz' && (
+      github.repository == 'block/kuzz' && (
         github.event_name == 'push' ||
         github.event_name == 'repository_dispatch'
       )
@@ -182,7 +182,7 @@ jobs:
   invalidate-previous-review:
     name: Mark Previous Review Stale
     if: >-
-      github.repository == 'block/buzz' &&
+      github.repository == 'block/kuzz' &&
       github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -387,10 +387,10 @@ jobs:
               }
             }
           prompt: |
-            # Buzz Security, Correctness & Reliability Review
+            # Kuzz Security, Correctness & Reliability Review
 
             You are reviewing pull request #${{ needs.prepare-review.outputs.pr_number }}
-            for Buzz, an open-source, Nostr-based collaboration platform. Buzz includes
+            for Kuzz, an open-source, Nostr-based collaboration platform. Kuzz includes
             a multi-tenant Rust relay, Postgres event store and search, Redis pub/sub,
             git smart HTTP hosting, workflow and agent execution surfaces, a Tauri/React
             desktop client, a browser client, and a Flutter mobile client.

@@ -139,7 +139,7 @@ function MoreActionsMenu({
     !message.pending && message.kind !== KIND_HUDDLE_STARTED;
   // "Copy message" copies the Markdown body verbatim, so its plain flavor is
   // already readable anywhere. The HTML sidecar adds only identity, letting a
-  // paste back into Buzz re-light each chip with the pubkey the author tagged.
+  // paste back into Kuzz re-light each chip with the pubkey the author tagged.
   const mentionIdentities = useMessageMentionIdentities(message.tags, profiles);
 
   // A report needs a real, delivered event to target and a known author to

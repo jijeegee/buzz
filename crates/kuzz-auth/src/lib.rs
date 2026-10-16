@@ -1,0 +1,312 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
+//! `kuzz-auth` — Authentication and authorization for the Kuzz relay.
+//!
+//! ## Auth paths
+//!
+//! | Path | Transport | Description |
+//! |------|-----------|-------------|
+//! | NIP-42 | WebSocket | Challenge/response; client signs kind:22242 event |
+//! | NIP-98 | HTTP | Signed kind:27235 event in `Authorization: Nostr` header |
+//! | Token | WebSocket + HTTP | Opaque server-issued token (`["AUTH", {"token"}]`, `Authorization: Bearer`) |
+//!
+//! ## Security invariants
+//!
+//! - **AUTH events (kind:22242) are NEVER stored or logged.**
+//! - All paths produce an [`AuthContext`] bound to the connection.
+//! - Opaque tokens are stored only as SHA-256 hashes ([`token`]); the OIDC
+//!   IdP is contacted only during login ([`oidc`]).
+
+/// Channel access checking trait and helpers.
+pub mod access;
+/// Authentication error types.
+pub mod error;
+/// Custodial encryption and account-bound proof verification for key recovery.
+pub mod key_backup;
+/// NIP-42 challenge–response authentication.
+pub mod nip42;
+/// NIP-98 HTTP Auth verification (kind:27235).
+pub mod nip98;
+/// NIP-98 replay protection — shared, community-scoped, atomic seen-set.
+pub mod nip98_replay;
+/// NIP-FI federated-identity assertion verifier and contracts.
+pub mod nip_fi;
+/// OpenID Connect relying-party support (centralized identity login).
+pub mod oidc;
+/// Per-connection rate limiting.
+pub mod rate_limit;
+/// OAuth scope parsing and enforcement.
+pub mod scope;
+/// Opaque bearer tokens (generation, hashing, PKCE).
+pub mod token;
+
+pub use access::{check_read_access, check_write_access, require_scope, ChannelAccessChecker};
+pub use error::AuthError;
+pub use nip42::{generate_challenge, verify_nip42_event};
+pub use nip98::verify_nip98_event;
+pub use nip98_replay::{
+    nip98_replay_key, nip98_replay_key_for_scope, Nip98ReplayGuard, DEFAULT_REPLAY_TTL_SECS,
+    MAX_REPLAY_TTL_SECS,
+};
+pub use rate_limit::{
+    ip_rate_limit_key, rate_limit_key, LimitType, RateLimitConfig, RateLimitResult, RateLimiter,
+};
+pub use scope::{parse_scopes, Scope};
+pub use token::{generate_token, hash_token, TokenKind, TokenSecret};
+
+pub use nip_fi::{
+    command_replay_key, validate_nip_fi_config, AssertionKeySet, AssertionPolicyId,
+    CanonicalCapabilities, ClientSubjectPosture, CommandError, CommandIssuerPolicy,
+    CommandPolicyError, CommandReplayGuard, CommandResult, CommandVerifier, CommunityBinding,
+    CommunityBindingError, ConfidentialAssertion, CrossPodMergeResult, DenialClass, DenySetFull,
+    FederatedAssertionVerifier, FederatedIdentity, FederatedIdentityDiscovery, FreshnessClass,
+    HttpJwksFetcher, IssuerCapacity, IssuerJwksConfig, IssuerKeySource, IssuerPolicy,
+    IssuerPolicyError, IssuerRegistry, JwksFetchError, JwksFetcher, JwksSourceContract,
+    NipFiDenyMap, NipFiMode, NipFiStartupError, ProductionJwksSource, RevalidationDependencies,
+    SubjectClass, SubjectClassContract, TokenClass, TransportContractId, VerifiedAssertion,
+    VerifierError, VerifyAssertion, CLIENT_ATTACHED_HEADER, COMMAND_JWT_TYP,
+    MAX_COMMAND_AGE_SECONDS, NOSTR_PUBKEY_CLAIM, OAUTH_CLIENT_ID_CLAIM,
+};
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use access::MockAccessChecker;
+#[cfg(any(test, feature = "test-utils"))]
+pub use nip98_replay::AlwaysFreshReplayGuard;
+#[cfg(any(test, feature = "test-utils"))]
+pub use nip_fi::jwks::ScriptedJwksFetcher;
+#[cfg(any(test, feature = "test-utils"))]
+pub use nip_fi::InMemoryCommandReplayGuard;
+#[cfg(any(test, feature = "test-utils"))]
+pub use nip_fi::StaticIssuerKeySource;
+#[cfg(any(test, feature = "test-utils"))]
+pub use nip_fi::ToggleJwksFetcher;
+#[cfg(any(test, feature = "test-utils"))]
+pub use rate_limit::AlwaysAllowRateLimiter;
+
+/// How the connection was authenticated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthMethod {
+    /// NIP-42 challenge/response — Schnorr signature over kind:22242.
+    Nip42,
+    /// NIP-98 HTTP Auth — Schnorr signature over kind:27235.
+    Nip98,
+    /// Opaque server-issued access token (centralized identity). Events from
+    /// such a connection are server-stamped drafts, never client-signed.
+    Token,
+}
+
+/// The access token a token-authenticated connection is bound to.
+///
+/// A connection is bound to exactly one token hash at a time; a same-principal
+/// re-AUTH swaps the binding (see the relay's WS token handler). Revocation
+/// fan-out matches on [`TokenBinding::token_hash`] only, so closing one token
+/// never closes another connection of the same principal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenBinding {
+    /// The authenticated principal (equals [`AuthContext::pubkey`]).
+    pub principal: kuzz_core::principal::PrincipalId,
+    /// Kind of the bound token.
+    pub kind: kuzz_core::principal::AccessTokenKind,
+    /// SHA-256 of the bound token.
+    pub token_hash: [u8; 32],
+    /// Token expiry; `None` for headless bot tokens.
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Device of a user session token.
+    pub device_id: Option<uuid::Uuid>,
+    /// Session of a user token.
+    pub session_id: Option<uuid::Uuid>,
+    /// Bot id of a bot token (equals the principal).
+    pub bot_id: Option<kuzz_core::principal::PrincipalId>,
+    /// Owner of a bot token's bot.
+    pub bot_owner: Option<kuzz_core::principal::PrincipalId>,
+    /// Whether the principal holds the `operator` role in the DB roster.
+    pub is_operator: bool,
+}
+
+/// The result of a successful authentication, bound to a connection.
+#[derive(Debug, Clone)]
+pub struct AuthContext {
+    /// The authenticated Nostr public key.
+    pub pubkey: nostr::PublicKey,
+    /// Permission scopes granted to this connection.
+    pub scopes: Vec<Scope>,
+    /// Channel restriction (reserved for future per-channel access control).
+    ///
+    /// `None` means unrestricted.
+    pub channel_ids: Option<Vec<uuid::Uuid>>,
+    /// How the connection was authenticated.
+    pub auth_method: AuthMethod,
+    /// NIP-OA verified owner pubkey (if authenticated via owner attestation).
+    ///
+    /// `None` for direct relay members or non-NIP-OA auth paths.
+    /// Set by the relay membership gate when NIP-OA fallback succeeds.
+    pub agent_owner_pubkey: Option<nostr::PublicKey>,
+    /// Token binding when `auth_method` is [`AuthMethod::Token`] (boxed to
+    /// keep key-auth contexts small).
+    pub token: Option<Box<TokenBinding>>,
+}
+
+impl AuthContext {
+    /// Returns `true` if this context includes the given [`Scope`].
+    pub fn has_scope(&self, scope: &Scope) -> bool {
+        self.scopes.contains(scope)
+    }
+}
+
+/// Top-level authentication configuration, typically loaded from the relay's TOML config file.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct AuthConfig {
+    /// Per-user and per-IP rate limit thresholds.
+    #[serde(default)]
+    pub rate_limits: RateLimitConfig,
+}
+
+/// Simplified auth service — NIP-42 and NIP-98 only.
+/// No JWT validation, no token management, no IdP runtime dependency.
+#[derive(Debug, Clone)]
+pub struct AuthService {
+    config: AuthConfig,
+}
+
+impl AuthService {
+    /// Create a new `AuthService` with the given configuration.
+    pub fn new(config: AuthConfig) -> Self {
+        Self { config }
+    }
+
+    /// Return a reference to the auth configuration.
+    pub fn config(&self) -> &AuthConfig {
+        &self.config
+    }
+
+    /// Verify a NIP-42 AUTH event and return an [`AuthContext`].
+    ///
+    /// Pure cryptographic verification — no network calls, no JWT, no tokens.
+    pub async fn verify_auth_event(
+        &self,
+        auth_event: nostr::Event,
+        expected_challenge: &str,
+        relay_url: &str,
+    ) -> Result<AuthContext, AuthError> {
+        // Verify NIP-42 signature (spawn_blocking for CPU-bound Schnorr verify)
+        let event_clone = auth_event.clone();
+        let challenge_owned = expected_challenge.to_string();
+        let relay_owned = relay_url.to_string();
+        tokio::task::spawn_blocking(move || {
+            verify_nip42_event(&event_clone, &challenge_owned, &relay_owned)
+        })
+        .await
+        .map_err(|_| AuthError::Internal("spawn_blocking panicked".into()))??;
+
+        // In pure Nostr mode, all authenticated connections get full scopes.
+        // Per-channel access is enforced by the relay's membership checks (NIP-29).
+        Ok(AuthContext {
+            pubkey: auth_event.pubkey,
+            scopes: Scope::all_known(),
+            channel_ids: None,
+            auth_method: AuthMethod::Nip42,
+            agent_owner_pubkey: None, // Set later by relay membership gate if NIP-OA
+            token: None,
+        })
+    }
+}
+
+/// Derive a deterministic Nostr pubkey from a username string.
+///
+/// Uses `SHA-256("kuzz-test-key:{username}")` as the secret key material.
+/// This matches the derivation used by the desktop's `set_test_identity` function,
+/// allowing the relay to resolve usernames to Nostr pubkeys in dev mode.
+///
+/// # ⚠️ SECURITY — Dev/test only
+///
+/// This function is gated behind `#[cfg(any(test, feature = "dev"))]`
+/// and **must never be compiled into a production release build**.
+///
+/// - The derived keys are deterministic and predictable from the username alone.
+/// - Any attacker who knows a username can compute the corresponding private key.
+#[cfg(any(test, feature = "dev"))]
+pub fn derive_pubkey_from_username(username: &str) -> Result<nostr::PublicKey, AuthError> {
+    use sha2::{Digest, Sha256};
+    let seed = format!("kuzz-test-key:{username}");
+    let hash: [u8; 32] = Sha256::digest(seed.as_bytes()).into();
+    let secret_key = nostr::SecretKey::from_slice(&hash)
+        .map_err(|e| AuthError::Internal(format!("key derivation failed: {e}")))?;
+    Ok(nostr::Keys::new(secret_key).public_key())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nostr::{EventBuilder, Keys, Kind, RelayUrl};
+
+    fn make_auth_event(keys: &Keys, challenge: &str, relay_url: &str) -> nostr::Event {
+        let url = RelayUrl::parse(relay_url).expect("valid url");
+        EventBuilder::auth(challenge, url)
+            .sign_with_keys(keys)
+            .expect("signing failed")
+    }
+
+    fn test_service() -> AuthService {
+        AuthService::new(AuthConfig::default())
+    }
+
+    #[test]
+    fn auth_context_scope_check() {
+        let keys = Keys::generate();
+        let ctx = AuthContext {
+            pubkey: keys.public_key(),
+            scopes: vec![Scope::MessagesRead, Scope::ChannelsRead],
+            channel_ids: None,
+            auth_method: AuthMethod::Nip42,
+            agent_owner_pubkey: None,
+            token: None,
+        };
+        assert!(ctx.has_scope(&Scope::MessagesRead));
+        assert!(!ctx.has_scope(&Scope::MessagesWrite));
+    }
+
+    #[tokio::test]
+    async fn nip42_auth_succeeds() {
+        let keys = Keys::generate();
+        let challenge = generate_challenge();
+        let relay = "wss://relay.example.com";
+        let event = make_auth_event(&keys, &challenge, relay);
+
+        let ctx = test_service()
+            .verify_auth_event(event, &challenge, relay)
+            .await
+            .expect("NIP-42 auth should succeed");
+
+        assert_eq!(ctx.pubkey, keys.public_key());
+        assert_eq!(ctx.auth_method, AuthMethod::Nip42);
+        assert!(ctx.has_scope(&Scope::MessagesRead));
+        assert!(ctx.has_scope(&Scope::MessagesWrite));
+    }
+
+    #[tokio::test]
+    async fn wrong_challenge_rejected() {
+        let keys = Keys::generate();
+        let challenge = generate_challenge();
+        let relay = "wss://relay.example.com";
+        let event = make_auth_event(&keys, &challenge, relay);
+
+        let result = test_service()
+            .verify_auth_event(event, "wrong-challenge", relay)
+            .await;
+        assert!(matches!(result, Err(AuthError::ChallengeMismatch)));
+    }
+
+    #[tokio::test]
+    async fn wrong_kind_rejected() {
+        let keys = Keys::generate();
+        let event = EventBuilder::new(Kind::TextNote, "not auth")
+            .tags([])
+            .sign_with_keys(&keys)
+            .expect("sign");
+
+        let result = test_service()
+            .verify_auth_event(event, &generate_challenge(), "wss://relay.example.com")
+            .await;
+        assert!(matches!(result, Err(AuthError::InvalidSignature)));
+    }
+}

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:buzz/shared/identity_names/identity_names.dart';
-import 'package:buzz/shared/identity_names/identity_names_provider.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/user_profile.dart';
-import 'package:buzz/features/pulse/compose_note_page.dart';
-import 'package:buzz/features/pulse/pulse_models.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/avatar_image.dart';
+import 'package:kuzz/shared/identity_names/identity_names.dart';
+import 'package:kuzz/shared/identity_names/identity_names_provider.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/features/pulse/compose_note_page.dart';
+import 'package:kuzz/features/pulse/pulse_models.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/widgets/avatar_image.dart';
 
 class _FakeUserCacheNotifier extends UserCacheNotifier {
   final Map<String, UserProfile> _users;
@@ -218,7 +218,7 @@ void main() {
       id: 'note2',
       pubkey: 'alice_pk',
       createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000 - 60,
-      content: '#buzz\n![image](https://example.com/big.png)',
+      content: '#kuzz\n![image](https://example.com/big.png)',
       tags: const [
         [
           'imeta',

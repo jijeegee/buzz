@@ -37,7 +37,7 @@ const DIFF_ENTRIES = [
     field: "env.OPENAI_API_KEY",
     change: { kind: "masked" as const, before: "••••abc1", after: "••••xyz9" },
   },
-  { field: "env.BUZZ_LOG", change: { kind: "added" as const } },
+  { field: "env.KUZZ_LOG", change: { kind: "added" as const } },
   {
     field: "relay_url",
     change: { kind: "masked" as const, before: "••••", after: "••••" },
@@ -311,7 +311,7 @@ test.describe("restart-diff screenshots", () => {
     page,
   }) => {
     await page.addInitScript(() => {
-      window.localStorage.setItem("buzz-theme", "catppuccin-mocha");
+      window.localStorage.setItem("kuzz-theme", "catppuccin-mocha");
     });
     await installMockBridge(page, {
       managedAgents: [RESTART_AGENT],

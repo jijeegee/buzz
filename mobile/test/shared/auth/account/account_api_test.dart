@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:buzz/shared/auth/account/account_api.dart';
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/auth/account/account_api.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

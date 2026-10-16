@@ -151,7 +151,7 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
           // Drain each page before fetching another, retaining at most one raw
           // response while later requests coalesce as pubkeys in _pending.
           await _pushExport.export(
-            () => cacheBuzzPushProfileEvents(communityID, events),
+            () => cacheKuzzPushProfileEvents(communityID, events),
           );
         }
       }

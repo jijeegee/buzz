@@ -1,4 +1,4 @@
-# Buzz — development task runner
+# Kuzz — development task runner
 
 set dotenv-load := true
 
@@ -65,8 +65,8 @@ hooks:
     git config --local core.hooksPath "$HOOKS_DIR"
     lefthook install --force
 
-# Wipe development state and recreate a clean environment. Installed Buzz is preserved.
-[confirm("This will DELETE all development data and preserve installed Buzz. Continue? (y/N)")]
+# Wipe development state and recreate a clean environment. Installed Kuzz is preserved.
+[confirm("This will DELETE all development data and preserve installed Kuzz. Continue? (y/N)")]
 reset:
     ./scripts/dev-reset.sh --yes
 
@@ -171,9 +171,9 @@ _ensure-sidecar-stubs:
     set -euo pipefail
     TARGET=$(rustc -vV | sed -n 's|host: ||p')
     mkdir -p desktop/src-tauri/binaries
-    SIDECARS=(buzz-acp buzz-agent buzz-dev-mcp git-credential-nostr buzz)
+    SIDECARS=(kuzz-acp kuzz-agent kuzz-dev-mcp git-credential-nostr kuzz)
     if [[ "$TARGET" != *windows* ]]; then
-        SIDECARS+=(buzz-backend-kubernetes)
+        SIDECARS+=(kuzz-backend-kubernetes)
     fi
     for bin in "${SIDECARS[@]}"; do
         touch "desktop/src-tauri/binaries/${bin}-${TARGET}"
@@ -183,8 +183,8 @@ _ensure-sidecar-stubs:
 _ensure-services:
     #!/usr/bin/env bash
     set -euo pipefail
-    pg=$(docker inspect --format '{{"{{"}}.State.Health.Status{{"}}"}}' buzz-postgres 2>/dev/null || echo "not_found")
-    redis=$(docker inspect --format '{{"{{"}}.State.Health.Status{{"}}"}}' buzz-redis 2>/dev/null || echo "not_found")
+    pg=$(docker inspect --format '{{"{{"}}.State.Health.Status{{"}}"}}' kuzz-postgres 2>/dev/null || echo "not_found")
+    redis=$(docker inspect --format '{{"{{"}}.State.Health.Status{{"}}"}}' kuzz-redis 2>/dev/null || echo "not_found")
     if [[ "$pg" == "healthy" && "$redis" == "healthy" ]]; then
         echo "Services already healthy"
         exit 0
@@ -193,8 +193,8 @@ _ensure-services:
     docker compose up -d || true
     echo -n "Waiting for services"
     for i in $(seq 1 40); do
-        pg=$(docker inspect --format '{{"{{"}}.State.Health.Status{{"}}"}}' buzz-postgres 2>/dev/null || echo "not_found")
-        redis=$(docker inspect --format '{{"{{"}}.State.Health.Status{{"}}"}}' buzz-redis 2>/dev/null || echo "not_found")
+        pg=$(docker inspect --format '{{"{{"}}.State.Health.Status{{"}}"}}' kuzz-postgres 2>/dev/null || echo "not_found")
+        redis=$(docker inspect --format '{{"{{"}}.State.Health.Status{{"}}"}}' kuzz-redis 2>/dev/null || echo "not_found")
         if [[ "$pg" == "healthy" && "$redis" == "healthy" ]]; then
             echo " ready"
             exit 0
@@ -207,7 +207,7 @@ _ensure-services:
 
 # Apply database migrations and seed the local dev community if the dev database is running
 _ensure-migrations: _ensure-services
-    cargo run -p buzz-admin -- migrate
+    cargo run -p kuzz-admin -- migrate
     ./scripts/seed-local-community.sh
 
 # Run clippy on the desktop Tauri Rust crate
@@ -231,7 +231,7 @@ desktop-tauri-test: _ensure-sidecar-stubs
 # This is intentionally excluded from shared CI: scheduler contention makes a
 # wall-clock assertion flaky, and the release profile is the shipped shape.
 desktop-terminal-performance-test:
-    cargo test --manifest-path desktop/src-tauri/crates/buzz-terminal/Cargo.toml --release --test latency g3_renderer_acquire_stays_within_frame_budget -- --ignored --exact --nocapture
+    cargo test --manifest-path desktop/src-tauri/crates/kuzz-terminal/Cargo.toml --release --test latency g3_renderer_acquire_stays_within_frame_budget -- --ignored --exact --nocapture
 
 # Verify compiled-flag behavior under both compile states (clean + capability set).
 # Runs the auto-connect and owner-only access focused tests twice with
@@ -242,32 +242,32 @@ desktop-tauri-test-compiled-flags: _ensure-sidecar-stubs
     set -euo pipefail
     cd desktop/src-tauri
     echo "=== Clean build (no flag) → expect false ==="
-    env -u BUZZ_BUILD_AUTO_CONNECT_DEFAULT_RELAY \
-      BUZZ_TEST_EXPECTED_AUTO_CONNECT_DEFAULT_RELAY=false \
+    env -u KUZZ_BUILD_AUTO_CONNECT_DEFAULT_RELAY \
+      KUZZ_TEST_EXPECTED_AUTO_CONNECT_DEFAULT_RELAY=false \
       cargo test compiled_flag_matches_expected -- --ignored --nocapture
-    env -u BUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY \
-      BUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY=false \
+    env -u KUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY \
+      KUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY=false \
       cargo test --lib
-    env -u BUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY \
-      BUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY=false \
+    env -u KUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY \
+      KUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY=false \
       cargo test compiled_policy_matches_expected -- --ignored --nocapture
     echo "=== Internal build (flags set) → expect true ==="
-    BUZZ_BUILD_AUTO_CONNECT_DEFAULT_RELAY=1 \
-      BUZZ_TEST_EXPECTED_AUTO_CONNECT_DEFAULT_RELAY=true \
+    KUZZ_BUILD_AUTO_CONNECT_DEFAULT_RELAY=1 \
+      KUZZ_TEST_EXPECTED_AUTO_CONNECT_DEFAULT_RELAY=true \
       cargo test compiled_flag_matches_expected -- --ignored --nocapture
-    BUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY=1 \
-      BUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY=true \
+    KUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY=1 \
+      KUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY=true \
       cargo test --lib
-    BUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY=1 \
-      BUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY=true \
+    KUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY=1 \
+      KUZZ_TEST_EXPECTED_AGENT_ACCESS_OWNER_ONLY=true \
       cargo test compiled_policy_matches_expected -- --ignored --nocapture
     echo "=== Maximum accepted demo name reaches Rust build validation ==="
     DEMO_CONFIG="$(node ../scripts/demo-build-config.mjs "$(printf 'x%.0s' {1..31})" /dev/null 1234567812345678)"
     DEMO_SLUG="$(node -e 'console.log(JSON.parse(process.argv[1]).slug)' "$DEMO_CONFIG")"
-    BUZZ_BUILD_DEMO_SLUG="$DEMO_SLUG" \
-      BUZZ_TEST_EXPECTED_DEMO_SLUG="$DEMO_SLUG" \
+    KUZZ_BUILD_DEMO_SLUG="$DEMO_SLUG" \
+      KUZZ_TEST_EXPECTED_DEMO_SLUG="$DEMO_SLUG" \
       cargo test compiled_demo_slug_matches_expected -- --ignored --nocapture
-    BUZZ_BUILD_DEMO_SLUG="$DEMO_SLUG" cargo test --workspace
+    KUZZ_BUILD_DEMO_SLUG="$DEMO_SLUG" cargo test --workspace
     if node ../scripts/demo-build-config.mjs "$(printf 'x%.0s' {1..32})" /dev/null 1234567812345678; then
       echo "A 32-character demo name unexpectedly passed JavaScript validation" >&2
       exit 1
@@ -282,14 +282,14 @@ desktop-release-build target="aarch64-apple-darwin":
     set -euo pipefail
     TARGET={{target}}
     mkdir -p desktop/src-tauri/binaries
-    touch "desktop/src-tauri/binaries/buzz-acp-$TARGET"
-    touch "desktop/src-tauri/binaries/buzz-agent-$TARGET"
+    touch "desktop/src-tauri/binaries/kuzz-acp-$TARGET"
+    touch "desktop/src-tauri/binaries/kuzz-agent-$TARGET"
     if [[ "$TARGET" != *windows* ]]; then
-        touch "desktop/src-tauri/binaries/buzz-backend-kubernetes-$TARGET"
+        touch "desktop/src-tauri/binaries/kuzz-backend-kubernetes-$TARGET"
     fi
-    touch "desktop/src-tauri/binaries/buzz-dev-mcp-$TARGET"
+    touch "desktop/src-tauri/binaries/kuzz-dev-mcp-$TARGET"
     touch "desktop/src-tauri/binaries/git-credential-nostr-$TARGET"
-    touch "desktop/src-tauri/binaries/buzz-$TARGET"
+    touch "desktop/src-tauri/binaries/kuzz-$TARGET"
     pnpm install
     cd {{desktop_dir}} && pnpm tauri build --features mesh-llm --target {{target}}
 
@@ -299,7 +299,7 @@ desktop-demo-build demo_name target="aarch64-apple-darwin":
     set -euo pipefail
     TARGET={{target}}
     [[ "$(uname -s)" == "Darwin" && "$TARGET" == *-apple-darwin ]] || { echo "Demo DMGs require a macOS Apple target" >&2; exit 2; }
-    CONFIG_PATH="$(mktemp "${TMPDIR:-/tmp}/buzz-demo-config.XXXXXX")"
+    CONFIG_PATH="$(mktemp "${TMPDIR:-/tmp}/kuzz-demo-config.XXXXXX")"
     trap 'rm -f "$CONFIG_PATH"' EXIT
     DEMO_BUILD_ID="$(node -e 'console.log(require("node:crypto").randomBytes(8).toString("hex"))')"
     DEMO_CONFIG="$(node desktop/scripts/demo-build-config.mjs {{quote(demo_name)}} "$CONFIG_PATH" "$DEMO_BUILD_ID")"
@@ -309,12 +309,12 @@ desktop-demo-build demo_name target="aarch64-apple-darwin":
     DMG_FILE_STEM="$(read_config dmgFileStem)"
     DEMO_SLUG="$(read_config slug)"
     cargo build --release --target "$TARGET" \
-      -p buzz-acp -p buzz-agent -p buzz-backend-kubernetes -p buzz-dev-mcp \
-      -p git-credential-nostr -p buzz-cli
+      -p kuzz-acp -p kuzz-agent -p kuzz-backend-kubernetes -p kuzz-dev-mcp \
+      -p git-credential-nostr -p kuzz-cli
     ./scripts/bundle-sidecars.sh "$TARGET"
     pnpm install
     cd {{desktop_dir}}
-    BUZZ_BUILD_DEMO_SLUG="$DEMO_SLUG" pnpm tauri build --features mesh-llm --target "$TARGET" --bundles app --config "$CONFIG_PATH"
+    KUZZ_BUILD_DEMO_SLUG="$DEMO_SLUG" pnpm tauri build --features mesh-llm --target "$TARGET" --bundles app --config "$CONFIG_PATH"
     cd ..
     VERSION="$(node -p "require('./desktop/package.json').version")"
     DMG_ARCH="${TARGET%%-*}"; [[ "$DMG_ARCH" == "x86_64" ]] && DMG_ARCH=x64
@@ -364,63 +364,63 @@ test-unit:
     set -euo pipefail
     ./scripts/test-ensure-local-relay-key.sh
     if command -v cargo-nextest &>/dev/null; then
-        cargo nextest run -p buzz-core -p buzz-auth --lib
-        cargo nextest run -p buzz-audit --lib
+        cargo nextest run -p kuzz-core -p kuzz-auth --lib
+        cargo nextest run -p kuzz-audit --lib
         # S4 cross-pod NIP-FI disconnect payload tests (infra-free).
-        cargo nextest run -p buzz-pubsub --lib -E 'test(/^conn_control::tests::nip_fi_disconnect_/)'
-        # buzz-auth NIP-FI verifier doctests. The sealed-authority
+        cargo nextest run -p kuzz-pubsub --lib -E 'test(/^conn_control::tests::nip_fi_disconnect_/)'
+        # kuzz-auth NIP-FI verifier doctests. The sealed-authority
         # `compile_fail` doctests prove the default-feature public API alone
         # cannot forge the issuer→JWKS authority; nextest does not run
         # doctests, hence this separate step. The verifier's regression suite
         # lives in the in-crate `#[cfg(test)] mod tests`, so `--lib` above
         # already runs it.
-        cargo test -p buzz-auth --doc
-        cargo nextest run -p buzz-voice --lib
-        cargo nextest run -p buzz-cli
-        # buzz-sdk builder/validation unit tests: pure event-builder and input
+        cargo test -p kuzz-auth --doc
+        cargo nextest run -p kuzz-voice --lib
+        cargo nextest run -p kuzz-cli
+        # kuzz-sdk builder/validation unit tests: pure event-builder and input
         # validation (e.g. the canvas writer-discipline/skew guard and the
         # canvas_write_survived predicate), no infra. `--lib` runs all unit
         # tests without the rustdoc dependency-resolution flake the full-package
         # invocation hits. Enumerated explicitly because nothing in CI runs
         # `cargo test --workspace` — membership buys clippy/check, not tests.
-        cargo nextest run -p buzz-sdk --lib
-        # buzz-acp owns the relay-to-agent trust boundary. Run its tests here so
+        cargo nextest run -p kuzz-sdk --lib
+        # kuzz-acp owns the relay-to-agent trust boundary. Run its tests here so
         # forged relay events cannot regain a path into agent routing unnoticed.
-        cargo nextest run -p buzz-acp
-        # buzz-db migrator/lint tests: pure SQL-parsing unit tests (no infra).
+        cargo nextest run -p kuzz-acp
+        # kuzz-db migrator/lint tests: pure SQL-parsing unit tests (no infra).
         # They guard the embedded-migrator invariant (the complete checked-in
         # additive migration set; legacy cutover/backfill remains an operator
         # script, not startup state) and the tenant-scoping lints. The
-        # Postgres-backed buzz-db tests are
+        # Postgres-backed kuzz-db tests are
         # #[ignore]d, so --lib runs only the infra-free set. Without this gate a
         # stray file in migrations/ or a broken lint ships green.
-        cargo nextest run -p buzz-db --lib
+        cargo nextest run -p kuzz-db --lib
         # Storage accounting crosses three crates whose focused regression
         # suites are otherwise absent from the infra-free unit lane.
-        cargo nextest run -p buzz-media --lib \
+        cargo nextest run -p kuzz-media --lib \
             -E 'test(=bucket_index::tests::bucket_snapshot_json_round_trip_preserves_community_keys)'
-        cargo nextest run -p buzz-admin \
+        cargo nextest run -p kuzz-admin \
             -E 'test(storage_snapshot)'
-        # Multi-tenant conformance gate (buzz-conformance): the independent
+        # Multi-tenant conformance gate (kuzz-conformance): the independent
         # replay checker + golden fixtures. No infra — pure in-process trace
         # replay — so it belongs in the unit job. Run all targets (lib + the
         # tests/replay_fixtures.rs integration test), not just --lib.
-        cargo nextest run -p buzz-conformance
+        cargo nextest run -p kuzz-conformance
         # Gateway unit and black-box HTTP tests are infra-free. Postgres-backed
         # contract/race tests run in the dedicated CI job below.
-        cargo nextest run -p buzz-push-gateway
-        cargo nextest run -p buzz-push-gateway --features personal-dev-app-attest
+        cargo nextest run -p kuzz-push-gateway
+        cargo nextest run -p kuzz-push-gateway --features personal-dev-app-attest
         # Kubernetes backend provider: the decision layers (state machine, GC
         # planner, env precedence, naming, wire) are pure functions with a fake
         # substrate, so they belong in the unit job. Enumerated explicitly
         # because nothing in CI runs `cargo test --workspace` — workspace
         # membership alone buys clippy/check, not a single executed test.
-        cargo nextest run -p buzz-backend-kubernetes
+        cargo nextest run -p kuzz-backend-kubernetes
         # Feature-flag crate coverage: run once with LaunchDarkly enabled.
         # This includes all default tests plus the cfg(feature="launchdarkly")
         # tests, avoiding duplicate default-only execution in the unit lane.
-        cargo nextest run -p buzz-feature-flags --features launchdarkly
-        # buzz-agent: two infra-free concerns run together by executing the
+        cargo nextest run -p kuzz-feature-flags --features launchdarkly
+        # kuzz-agent: two infra-free concerns run together by executing the
         # whole crate (lib + integration tests), because nothing in CI runs
         # `cargo test --workspace`, so without this stanza neither the crate's
         # library tests nor its integration tests execute remotely.
@@ -434,17 +434,17 @@ test-unit:
         #     integration tests): lock single-flight, cooldown, cross-process
         #     crash recovery — infra-free via a stub OIDC provider and an
         #     injected browser opener, no network or Postgres.
-        cargo nextest run -p buzz-agent
-        # Admin API auth-boundary tests (api::admin in buzz-relay): the NIP-98
+        cargo nextest run -p kuzz-agent
+        # Admin API auth-boundary tests (api::admin in kuzz-relay): the NIP-98
         # duplicate-tag rejections, the Host/Origin replay-ordering causal pair,
         # the admin.localhost origin/advertisement/canonical-URL pins, and the
         # host-oracle/credential-first checks. These are the regression guard for
         # the /api/admin/v1 moderation auth surface. Enumerated explicitly because
         # nothing in CI runs `cargo test --workspace`, `just test-unit` did not
-        # enumerate `buzz-relay --lib`, and Backend Integration selects only the
+        # enumerate `kuzz-relay --lib`, and Backend Integration selects only the
         # #[ignore]d Postgres suites — so these non-ignored tests ran in no lane
         # and a red one could ship green (exactly how a broken admin test slipped
-        # past every gate once). Scoped to api::admin, not the whole buzz-relay
+        # past every gate once). Scoped to api::admin, not the whole kuzz-relay
         # --lib, because api::media has non-ignored tests that require Postgres.
         # DB-backed api::admin tests are #[ignore]d and run in the PostgreSQL
         # lane; the non-ignored ones reject before touching the database. Any
@@ -469,12 +469,12 @@ test-unit:
         # neighbours: nip_fi_http, nip_fi_config, router, api::parse_query_tests,
         # and the Git transport off_mode_precedence_tests. All are infra-free
         # and finish in well under a second with no DATABASE_URL, so none wait
-        # out the sqlx acquire timeout. `--bin buzz-relay` adds main.rs's
+        # out the sqlx acquire timeout. `--bin kuzz-relay` adds main.rs's
         # `tests::` module (JWKS refresh cadence) and `composition_tests::`
         # (JWKS source + refresh-loop composition), which `--lib` cannot reach
         # because they live in the binary target; the nested
         # `tests::postgres_tests::` stays in the PostgreSQL lane.
-        cargo nextest run -p buzz-relay --lib --bin buzz-relay \
+        cargo nextest run -p kuzz-relay --lib --bin kuzz-relay \
             -E 'test(/^api::admin::/) + test(/^handlers::channel_authz::/) + test(/^handlers::moderation_authz::/) + test(/^handlers::side_effects::tests::/) + test(/^storage_sweep::tests::/) + test(/^nip_fi_core::tests::/) + test(/^nip_fi_http::tests::/) + test(/^nip_fi_config::tests::/) + test(/^readiness::tests::/) + test(/^router::tests::/) + test(/^api::parse_query_tests::/) + test(/^api::git::transport::off_mode_precedence_tests::/) + test(/^audio::join::tests::/) + test(/^audio::handler::tests::/) + test(/^nip_fi_gate::tests::/) + test(/^nip_fi_session::tests::/) + test(=state::tests::neither_a_confirmed_inactive_community_nor_a_failed_lookup_admits_the_socket) + test(=handlers::req::tests::timed_out_historical_read_deregisters_before_closed) + test(=handlers::req::tests::superseded_timeout_leaves_replacement_intact) + test(=handlers::req::tests::search_claim_retires_live_and_yields_to_replacement) + test(=handlers::req::tests::concurrent_claims_and_stale_teardowns_keep_the_last_owner) + test(=handlers::req::tests::timeout_closed_is_emitted_before_a_replacement_can_claim) + test(=handlers::req::tests::revoke_then_replacement_keeps_replacement_whole) + test(=handlers::req::tests::claims_after_connection_cleanup_are_refused) + test(=handlers::req::tests::dropped_terminal_frame_cancels_connection) + test(=handlers::req::tests::revoke_dropped_terminal_frame_cancels_connection) + (kind(bin) & (test(/^tests::/) + test(/^composition_tests::/) + test(/^env_filter_tests::/)) - test(/^tests::postgres_tests::/))'
         # Note on audio::join::tests scope: the full suite is infra-free (no DB,
         # no Redis). The infra-free audio/FI regression witnesses — bootstrap
@@ -492,7 +492,7 @@ test-unit:
         # acquire timeout) stay out. NIP-FI tests that need Postgres live in
         # postgres_tests and
         # run in the PostgreSQL lane. Keep scripts/run-tests.sh in step.
-        cargo nextest run -p buzz-relay --lib -E '
+        cargo nextest run -p kuzz-relay --lib -E '
                 test(/^nip_fi_upgrade::/)
                 + test(/^metrics::contract_tests::/)
                 + test(=audio::room::tests::roster_revisions_are_ordered_and_snapshot_is_authoritative)
@@ -539,7 +539,7 @@ test-unit:
         # ACP author-gate and queue tests protect the trust boundary between
         # relay events and agent prompts. They are infra-free; ignored lifecycle
         # tests remain excluded and run in their dedicated integration lanes.
-        cargo nextest run -p buzz-acp --lib
+        cargo nextest run -p kuzz-acp --lib
     else
         ./scripts/run-tests.sh unit
     fi
@@ -550,14 +550,14 @@ test-integration:
 
 # Regenerate the model-capability normative corpus from the production Rust
 # resolver. The corpus is a golden snapshot, never hand-edited: this runs the
-# `#[ignore]`d writer test in buzz-agent, which serializes `resolve()` over the
+# `#[ignore]`d writer test in kuzz-agent, which serializes `resolve()` over the
 # inputs-only question table to scripts/normative-corpus.json. Run this after
 # any model-capabilities.json edit, then commit the regenerated file. The
 # `corpus_matches_generated_snapshot` gate fails CI if the committed file drifts.
 regen-model-corpus:
-    cargo test -p buzz-agent --lib model_capabilities::tests::regen_corpus_file -- --ignored --exact
+    cargo test -p kuzz-agent --lib model_capabilities::tests::regen_corpus_file -- --ignored --exact
 
-# Buzz shared compute e2e: current desktop discovery/admission logic and
+# Kuzz shared compute e2e: current desktop discovery/admission logic and
 # Playwright UI coverage.
 mesh-e2e:
     cargo test --manifest-path {{desktop_dir}}/src-tauri/Cargo.toml --features mesh-llm mesh_llm --lib
@@ -566,42 +566,42 @@ mesh-e2e:
 # Reset only development state, seed deterministic local channels, and launch
 # the mesh-enabled desktop with the repository's public Tyler test identity.
 # This is for local verification only; never point this identity at staging/prod.
-[confirm("This will reset development data, preserve installed Buzz, then launch a seeded mesh dev app. Continue? (y/N)")]
+[confirm("This will reset development data, preserve installed Kuzz, then launch a seeded mesh dev app. Continue? (y/N)")]
 mesh-dev-fresh:
     #!/usr/bin/env bash
     set -euo pipefail
     ./scripts/dev-reset.sh --yes
     ./scripts/setup-desktop-test-data.sh
-    export BUZZ_PRIVATE_KEY="3dbaebadb5dfd777ff25149ee230d907a15a9e1294b40b830661e65bb42f6c03"
-    export BUZZ_REQUIRE_RELAY_MEMBERSHIP=true
-    export BUZZ_ALLOW_NIP_OA_AUTH=true
+    export KUZZ_PRIVATE_KEY="3dbaebadb5dfd777ff25149ee230d907a15a9e1294b40b830661e65bb42f6c03"
+    export KUZZ_REQUIRE_RELAY_MEMBERSHIP=true
+    export KUZZ_ALLOW_NIP_OA_AUTH=true
     export RELAY_OWNER_PUBKEY="e5ebc6cdb579be112e336cc319b5989b4bb6af11786ea90dbe52b5f08d741b34"
-    export BUZZ_RELAY_PRIVATE_KEY="0000000000000000000000000000000000000000000000000000000000000001"
-    export BUZZ_RECONCILE_CHANNELS=true
-    export BUZZ_RESET_WEBVIEW_STATE=1
+    export KUZZ_RELAY_PRIVATE_KEY="0000000000000000000000000000000000000000000000000000000000000001"
+    export KUZZ_RECONCILE_CHANNELS=true
+    export KUZZ_RESET_WEBVIEW_STATE=1
     exec just mesh=1 dev
 
 # Real serve->client->inference on this machine (not CI).
 mesh-e2e-hardware:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo run -p buzz-mesh-smoke --example mesh_serve_client_smoke
+    cargo run -p kuzz-mesh-smoke --example mesh_serve_client_smoke
 
 # Three isolated node processes: trusted member joins and infers; stranger is rejected.
-# Uses temp homes and explicit mesh owner keystores. Never reads the Buzz Keychain.
+# Uses temp homes and explicit mesh owner keystores. Never reads the Kuzz Keychain.
 mesh-e2e-admission:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo run -p buzz-mesh-smoke --example mesh_admission_smoke
+    cargo run -p kuzz-mesh-smoke --example mesh_admission_smoke
 
 # Full hardware confidence suite: routing, owner admission, and real agent inference.
 mesh-e2e-confidence:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo build --release -p buzz-agent -p buzz-dev-mcp
-    cargo run -p buzz-mesh-smoke --example mesh_serve_client_smoke
-    cargo run -p buzz-mesh-smoke --example mesh_admission_smoke
-    cargo run -p buzz-mesh-smoke --example mesh_agent_e2e
+    cargo build --release -p kuzz-agent -p kuzz-dev-mcp
+    cargo run -p kuzz-mesh-smoke --example mesh_serve_client_smoke
+    cargo run -p kuzz-mesh-smoke --example mesh_admission_smoke
+    cargo run -p kuzz-mesh-smoke --example mesh_agent_e2e
 
 # Take desktop screenshots using the mock bridge
 desktop-screenshot *ARGS:
@@ -626,7 +626,7 @@ relay: bootstrap _ensure-migrations
     set -o allexport
     source .env
     set +o allexport
-    cargo run -p buzz-relay
+    cargo run -p kuzz-relay
 
 # Post one root + N replies (and a few reactions) to the local dev relay, for eyeballing long threads
 seed-long-thread replies="187":
@@ -642,7 +642,7 @@ relay-web: bootstrap _ensure-migrations
     set +o allexport
     [[ -d node_modules ]] || pnpm install
     pnpm -C web build
-    BUZZ_WEB_DIR=./web/dist cargo run -p buzz-relay
+    KUZZ_WEB_DIR=./web/dist cargo run -p kuzz-relay
 
 # Build and run the private admin dashboard
 admin: bootstrap _ensure-migrations
@@ -654,16 +654,16 @@ admin: bootstrap _ensure-migrations
     set +o allexport
     [[ -d node_modules ]] || pnpm install
     pnpm -C admin-web build
-    export BUZZ_ADMIN_HOST="${BUZZ_ADMIN_HOST:-admin.localhost:3000}"
-    export BUZZ_ADMIN_WEB_DIR="${BUZZ_ADMIN_WEB_DIR:-{{justfile_directory()}}/admin-web/dist}"
+    export KUZZ_ADMIN_HOST="${KUZZ_ADMIN_HOST:-admin.localhost:3000}"
+    export KUZZ_ADMIN_WEB_DIR="${KUZZ_ADMIN_WEB_DIR:-{{justfile_directory()}}/admin-web/dist}"
     # Default to disabled auth locally: localhost is the network boundary and a
     # NIP-07 signer extension can't be assumed in dev. Override per run with
-    # BUZZ_ADMIN_AUTH=nip98 (plus RELAY_OPERATOR_PUBKEYS or RELAY_OWNER_PUBKEY)
+    # KUZZ_ADMIN_AUTH=nip98 (plus RELAY_OPERATOR_PUBKEYS or RELAY_OWNER_PUBKEY)
     # to exercise the authenticated path.
-    export BUZZ_ADMIN_AUTH="${BUZZ_ADMIN_AUTH:-disabled}"
-    echo "Admin dashboard: http://${BUZZ_ADMIN_HOST}/reports"
-    echo "Auth mode: ${BUZZ_ADMIN_AUTH} (set BUZZ_ADMIN_AUTH=nip98 to require a signed operator)"
-    cargo run -p buzz-relay
+    export KUZZ_ADMIN_AUTH="${KUZZ_ADMIN_AUTH:-disabled}"
+    echo "Admin dashboard: http://${KUZZ_ADMIN_HOST}/reports"
+    echo "Auth mode: ${KUZZ_ADMIN_AUTH} (set KUZZ_ADMIN_AUTH=nip98 to require a signed operator)"
+    cargo run -p kuzz-relay
 
 # Seed deterministic reports and product feedback for local admin dashboard review
 admin-seed: _ensure-migrations
@@ -671,9 +671,9 @@ admin-seed: _ensure-migrations
 
 # Run focused relay and browser checks for the admin dashboard
 admin-check: fmt-check
-    cargo check -p buzz-relay --all-targets
-    cargo test -p buzz-relay api::admin
-    cargo test -p buzz-relay router::tests
+    cargo check -p kuzz-relay --all-targets
+    cargo test -p kuzz-relay api::admin
+    cargo test -p kuzz-relay router::tests
     pnpm -C admin-web check
     pnpm -C admin-web test:e2e
 
@@ -684,7 +684,7 @@ relay-release: bootstrap _ensure-migrations
     set -o allexport
     source .env
     set +o allexport
-    cargo run -p buzz-relay --release
+    cargo run -p kuzz-relay --release
 
 
 # Run the desktop Tauri app in dev mode with a local relay (ports and identity derived from worktree)
@@ -695,28 +695,28 @@ dev *ARGS: bootstrap _ensure-sidecar-stubs _ensure-migrations
     set -o allexport
     source .env
     set +o allexport
-    bind_addr="${BUZZ_BIND_ADDR:-0.0.0.0:3000}"
+    bind_addr="${KUZZ_BIND_ADDR:-0.0.0.0:3000}"
     relay_port="${bind_addr##*:}"; [[ -n "$relay_port" ]] || relay_port=3000
-    health_port="${BUZZ_HEALTH_PORT:-8080}"
-    metrics_port="${BUZZ_METRICS_PORT:-9102}"
+    health_port="${KUZZ_HEALTH_PORT:-8080}"
+    metrics_port="${KUZZ_METRICS_PORT:-9102}"
     if command -v lsof >/dev/null 2>&1; then
         for spec in "relay:$relay_port" "health:$health_port" "metrics:$metrics_port"; do
             name="${spec%%:*}"; port="${spec##*:}"
             if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
                 echo "Error: $name port $port is already in use; refusing to launch desktop against a stale relay." >&2
                 lsof -nP -iTCP:"$port" -sTCP:LISTEN >&2 || true
-                echo "Stop the process above (often a stale buzz-relay) and rerun: just dev" >&2
+                echo "Stop the process above (often a stale kuzz-relay) and rerun: just dev" >&2
                 exit 1
             fi
         done
     fi
-    cargo build -p buzz-acp -p buzz-agent -p buzz-backend-kubernetes -p buzz-dev-mcp -p buzz-cli -p git-credential-nostr -p buzz-relay
+    cargo build -p kuzz-acp -p kuzz-agent -p kuzz-backend-kubernetes -p kuzz-dev-mcp -p kuzz-cli -p git-credential-nostr -p kuzz-relay
     # Docker Desktop's forwarded MinIO port can stall under the deployment
     # probe's 32 concurrent writers. Keep the gate enabled in local dev, using
     # the bounded profile already used by the relay test launcher.
-    export BUZZ_GIT_PROBE_WRITERS="${BUZZ_GIT_PROBE_WRITERS:-8}"
-    export BUZZ_GIT_PROBE_ROUNDS="${BUZZ_GIT_PROBE_ROUNDS:-2}"
-    ./target/debug/buzz-relay &
+    export KUZZ_GIT_PROBE_WRITERS="${KUZZ_GIT_PROBE_WRITERS:-8}"
+    export KUZZ_GIT_PROBE_ROUNDS="${KUZZ_GIT_PROBE_ROUNDS:-2}"
+    ./target/debug/kuzz-relay &
     RELAY_PID=$!
     cleanup() {
         [[ -n "${INSTANCE_ID:-}" ]] && ../scripts/cleanup-instance-agents.sh "$INSTANCE_ID" || true
@@ -726,7 +726,7 @@ dev *ARGS: bootstrap _ensure-sidecar-stubs _ensure-migrations
     relay_ready=false
     for _ in $(seq 1 120); do
         if ! kill -0 "$RELAY_PID" 2>/dev/null; then
-            echo "Error: buzz-relay exited during startup; refusing to launch desktop." >&2
+            echo "Error: kuzz-relay exited during startup; refusing to launch desktop." >&2
             wait "$RELAY_PID" || true
             exit 1
         fi
@@ -737,16 +737,16 @@ dev *ARGS: bootstrap _ensure-sidecar-stubs _ensure-migrations
         sleep 0.5
     done
     if [[ "$relay_ready" != true ]]; then
-        echo "Error: buzz-relay did not become healthy within 60 seconds; refusing to launch desktop." >&2
+        echo "Error: kuzz-relay did not become healthy within 60 seconds; refusing to launch desktop." >&2
         exit 1
     fi
     cd {{desktop_dir}}
     [[ -d node_modules ]] || pnpm install
     source ../scripts/instance-env.sh
-    INSTANCE_ID=$(node -e "console.log(JSON.parse(process.env.BUZZ_TAURI_CONFIG).identifier)")
-    echo "Starting on Vite port ${BUZZ_VITE_PORT}, relay ${BUZZ_RELAY_URL}"
+    INSTANCE_ID=$(node -e "console.log(JSON.parse(process.env.KUZZ_TAURI_CONFIG).identifier)")
+    echo "Starting on Vite port ${KUZZ_VITE_PORT}, relay ${KUZZ_RELAY_URL}"
     FEATURES=(); [[ -n "{{mesh}}" ]] && FEATURES=(--features mesh-llm)
-    pnpm exec tauri dev ${FEATURES[@]+"${FEATURES[@]}"} --config "$BUZZ_TAURI_CONFIG" {{ARGS}}
+    pnpm exec tauri dev ${FEATURES[@]+"${FEATURES[@]}"} --config "$KUZZ_TAURI_CONFIG" {{ARGS}}
 
 # Run only the desktop app. No relay, database, Docker, migrations, or .env are needed.
 # The app opens normally and asks for a community before making a relay connection.
@@ -754,32 +754,32 @@ desktop-standalone *ARGS: _ensure-sidecar-stubs
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
-    cargo build -p buzz-acp -p buzz-agent -p buzz-backend-kubernetes -p buzz-dev-mcp -p buzz-cli -p git-credential-nostr
+    cargo build -p kuzz-acp -p kuzz-agent -p kuzz-backend-kubernetes -p kuzz-dev-mcp -p kuzz-cli -p git-credential-nostr
     TARGET=$(rustc -vV | sed -n 's|host: ||p')
     TARGET_DIR=$(cargo metadata --format-version 1 --no-deps | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).target_directory")
-    for bin in buzz-acp buzz-agent buzz-backend-kubernetes buzz-dev-mcp git-credential-nostr buzz; do
+    for bin in kuzz-acp kuzz-agent kuzz-backend-kubernetes kuzz-dev-mcp git-credential-nostr kuzz; do
         cp "${TARGET_DIR}/debug/${bin}" "desktop/src-tauri/binaries/${bin}-${TARGET}"
         chmod +x "desktop/src-tauri/binaries/${bin}-${TARGET}"
     done
     cd {{desktop_dir}}
     [[ -d node_modules ]] || pnpm install
-    unset BUZZ_PRIVATE_KEY BUZZ_SHARE_IDENTITY
+    unset KUZZ_PRIVATE_KEY KUZZ_SHARE_IDENTITY
     if [[ -n "{{fresh}}" ]]; then
-        export BUZZ_RESET_WEBVIEW_STATE=1
+        export KUZZ_RESET_WEBVIEW_STATE=1
     fi
     source ../scripts/instance-env.sh
-    INSTANCE_ID=$(node -e "console.log(JSON.parse(process.env.BUZZ_TAURI_CONFIG).identifier)")
-    export BUZZ_DEV_KEYRING_SERVICE="buzz-desktop-dev.${BUZZ_INSTANCE_SLUG:-main}"
+    INSTANCE_ID=$(node -e "console.log(JSON.parse(process.env.KUZZ_TAURI_CONFIG).identifier)")
+    export KUZZ_DEV_KEYRING_SERVICE="kuzz-desktop-dev.${KUZZ_INSTANCE_SLUG:-main}"
     if [[ -n "{{fresh}}" ]]; then
-        ../scripts/reset-desktop-standalone-state.sh "$INSTANCE_ID" "$BUZZ_DEV_KEYRING_SERVICE"
+        ../scripts/reset-desktop-standalone-state.sh "$INSTANCE_ID" "$KUZZ_DEV_KEYRING_SERVICE"
     fi
     trap '../scripts/cleanup-instance-agents.sh "$INSTANCE_ID" || true' EXIT
-    echo "Starting standalone desktop on Vite port ${BUZZ_VITE_PORT}; no relay services were started"
+    echo "Starting standalone desktop on Vite port ${KUZZ_VITE_PORT}; no relay services were started"
     FEATURES=()
     if [[ -n "{{mesh}}" ]]; then
         FEATURES=(--features mesh-llm)
     fi
-    pnpm exec tauri dev ${FEATURES[@]+"${FEATURES[@]}"} --config "$BUZZ_TAURI_CONFIG" {{ARGS}}
+    pnpm exec tauri dev ${FEATURES[@]+"${FEATURES[@]}"} --config "$KUZZ_TAURI_CONFIG" {{ARGS}}
 
 # Run the desktop app against the internal staging relay (installs deps + builds agent tools automatically)
 staging *ARGS: bootstrap _ensure-sidecar-stubs
@@ -787,34 +787,34 @@ staging *ARGS: bootstrap _ensure-sidecar-stubs
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
     pnpm install  # unconditional: staging must always start with a clean dep tree
-    cargo build --release -p buzz-acp -p buzz-agent -p buzz-backend-kubernetes -p buzz-dev-mcp -p buzz-cli -p git-credential-nostr
+    cargo build --release -p kuzz-acp -p kuzz-agent -p kuzz-backend-kubernetes -p kuzz-dev-mcp -p kuzz-cli -p git-credential-nostr
     FEATURES=()
     if [[ -n "{{mesh}}" ]]; then
         FEATURES=(--features mesh-llm)
     fi
     # Replace 0-byte sidecar stubs with real binaries so tauri dev picks them up.
-    # buzz: the CLI sidecar. buzz-backend-kubernetes: provider discovery scans the
-    # exe dir for executable buzz-backend-* files, so the non-executable stub that
+    # kuzz: the CLI sidecar. kuzz-backend-kubernetes: provider discovery scans the
+    # exe dir for executable kuzz-backend-* files, so the non-executable stub that
     # tauri dev copies next to the exe would hide the provider from "Run on".
     TARGET=$(rustc -vV | sed -n 's|host: ||p')
     TARGET_DIR=$(cargo metadata --format-version 1 --no-deps | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).target_directory")
-    STAGING_SIDECARS=(buzz)
+    STAGING_SIDECARS=(kuzz)
     if [[ "$TARGET" != *windows* ]]; then
-        STAGING_SIDECARS+=(buzz-backend-kubernetes)
+        STAGING_SIDECARS+=(kuzz-backend-kubernetes)
     fi
     for bin in "${STAGING_SIDECARS[@]}"; do
         cp "${TARGET_DIR}/release/${bin}" "desktop/src-tauri/binaries/${bin}-${TARGET}"
         chmod +x "desktop/src-tauri/binaries/${bin}-${TARGET}"
     done
     cd {{desktop_dir}}
-    export BUZZ_RELAY_URL="wss://buzz.test.blockstaging.build"
+    export KUZZ_RELAY_URL="wss://kuzz.test.blockstaging.build"
     source ../scripts/instance-env.sh
     # Ctrl+C kills the Tauri app before its in-process sweep finishes, leaking
     # agent workers. Reap this instance's agents on exit as a backstop.
-    INSTANCE_ID=$(node -e "console.log(JSON.parse(process.env.BUZZ_TAURI_CONFIG).identifier)")
+    INSTANCE_ID=$(node -e "console.log(JSON.parse(process.env.KUZZ_TAURI_CONFIG).identifier)")
     trap '../scripts/cleanup-instance-agents.sh "$INSTANCE_ID" || true' EXIT
-    echo "Starting staging on Vite port ${BUZZ_VITE_PORT}, relay ${BUZZ_RELAY_URL}"
-    pnpm exec tauri dev ${FEATURES[@]+"${FEATURES[@]}"} --config "$BUZZ_TAURI_CONFIG" {{ARGS}}
+    echo "Starting staging on Vite port ${KUZZ_VITE_PORT}, relay ${KUZZ_RELAY_URL}"
+    pnpm exec tauri dev ${FEATURES[@]+"${FEATURES[@]}"} --config "$KUZZ_TAURI_CONFIG" {{ARGS}}
 
 # Run the desktop app against the production relay (installs deps + builds agent tools automatically)
 production *ARGS: bootstrap _ensure-sidecar-stubs
@@ -822,34 +822,34 @@ production *ARGS: bootstrap _ensure-sidecar-stubs
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
     pnpm install  # unconditional: production must always start with a clean dep tree
-    cargo build --release -p buzz-acp -p buzz-agent -p buzz-backend-kubernetes -p buzz-dev-mcp -p buzz-cli -p git-credential-nostr
+    cargo build --release -p kuzz-acp -p kuzz-agent -p kuzz-backend-kubernetes -p kuzz-dev-mcp -p kuzz-cli -p git-credential-nostr
     FEATURES=()
     if [[ -n "{{mesh}}" ]]; then
         FEATURES=(--features mesh-llm)
     fi
     # Replace 0-byte sidecar stubs with real binaries so tauri dev picks them up.
-    # buzz: the CLI sidecar. buzz-backend-kubernetes: provider discovery scans the
-    # exe dir for executable buzz-backend-* files, so the non-executable stub that
+    # kuzz: the CLI sidecar. kuzz-backend-kubernetes: provider discovery scans the
+    # exe dir for executable kuzz-backend-* files, so the non-executable stub that
     # tauri dev copies next to the exe would hide the provider from "Run on".
     TARGET=$(rustc -vV | sed -n 's|host: ||p')
     TARGET_DIR=$(cargo metadata --format-version 1 --no-deps | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).target_directory")
-    PRODUCTION_SIDECARS=(buzz)
+    PRODUCTION_SIDECARS=(kuzz)
     if [[ "$TARGET" != *windows* ]]; then
-        PRODUCTION_SIDECARS+=(buzz-backend-kubernetes)
+        PRODUCTION_SIDECARS+=(kuzz-backend-kubernetes)
     fi
     for bin in "${PRODUCTION_SIDECARS[@]}"; do
         cp "${TARGET_DIR}/release/${bin}" "desktop/src-tauri/binaries/${bin}-${TARGET}"
         chmod +x "desktop/src-tauri/binaries/${bin}-${TARGET}"
     done
     cd {{desktop_dir}}
-    export BUZZ_RELAY_URL="wss://buzz.block.builderlab.xyz"
+    export KUZZ_RELAY_URL="wss://buzz.block.builderlab.xyz"
     source ../scripts/instance-env.sh
     # Ctrl+C kills the Tauri app before its in-process sweep finishes, leaking
     # agent workers. Reap this instance's agents on exit as a backstop.
-    INSTANCE_ID=$(node -e "console.log(JSON.parse(process.env.BUZZ_TAURI_CONFIG).identifier)")
+    INSTANCE_ID=$(node -e "console.log(JSON.parse(process.env.KUZZ_TAURI_CONFIG).identifier)")
     trap '../scripts/cleanup-instance-agents.sh "$INSTANCE_ID" || true' EXIT
-    echo "Starting production on Vite port ${BUZZ_VITE_PORT}, relay ${BUZZ_RELAY_URL}"
-    pnpm exec tauri dev ${FEATURES[@]+"${FEATURES[@]}"} --config "$BUZZ_TAURI_CONFIG" {{ARGS}}
+    echo "Starting production on Vite port ${KUZZ_VITE_PORT}, relay ${KUZZ_RELAY_URL}"
+    pnpm exec tauri dev ${FEATURES[@]+"${FEATURES[@]}"} --config "$KUZZ_TAURI_CONFIG" {{ARGS}}
 
 # Run the desktop frontend dev server (port derived from worktree)
 desktop-dev:
@@ -858,8 +858,8 @@ desktop-dev:
     cd {{desktop_dir}}
     [[ -d node_modules ]] || pnpm install
     source ../scripts/instance-env.sh
-    echo "Starting frontend dev server on Vite port ${BUZZ_VITE_PORT}, relay ${BUZZ_RELAY_URL}"
-    pnpm exec vite --port "${BUZZ_VITE_PORT}" --strictPort
+    echo "Starting frontend dev server on Vite port ${KUZZ_VITE_PORT}, relay ${KUZZ_RELAY_URL}"
+    pnpm exec vite --port "${KUZZ_VITE_PORT}" --strictPort
 
 # ─── Web ─────────────────────────────────────────────────────────────────────
 
@@ -869,9 +869,9 @@ web:
     set -euo pipefail
     [[ -d node_modules ]] || pnpm install
     source scripts/instance-env.sh
-    export VITE_PORT=$((BUZZ_VITE_PORT + 100))
-    export VITE_RELAY_URL="${BUZZ_RELAY_URL}"
-    echo "Starting web dev server on port ${VITE_PORT}, relay ${BUZZ_RELAY_URL}"
+    export VITE_PORT=$((KUZZ_VITE_PORT + 100))
+    export VITE_RELAY_URL="${KUZZ_RELAY_URL}"
+    echo "Starting web dev server on port ${VITE_PORT}, relay ${KUZZ_RELAY_URL}"
     cd {{web_dir}}
     pnpm exec vite --port "${VITE_PORT}" --strictPort
 
@@ -918,7 +918,7 @@ mobile-check:
 # Run mobile tests
 mobile-test:
     /bin/bash ./scripts/test-mobile-gateway-recipes.sh
-    unset GIT_DIR GIT_WORK_TREE; cd {{mobile_dir}} && flutter test --dart-define=BUZZ_PUSH_GATEWAY_URL=https://push.example
+    unset GIT_DIR GIT_WORK_TREE; cd {{mobile_dir}} && flutter test --dart-define=KUZZ_PUSH_GATEWAY_URL=https://push.example
     unset GIT_DIR GIT_WORK_TREE; cd {{mobile_dir}} && flutter test test/shared/push/push_unconfigured_build_test.dart
 
 # Regenerate the emoji dataset asset from desktop's emoji-mart install.
@@ -931,9 +931,9 @@ mobile-build-android:
     #!/usr/bin/env bash
     set -euo pipefail
     ./scripts/mobile-worktree-overrides.sh
-    set -- build apk --debug --no-pub --dart-define="BUZZ_KEY_BACKUP_ORIGIN=${BUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}"
-    if [[ -n "${BUZZ_PUSH_GATEWAY_URL:-}" ]]; then
-        set -- "$@" --dart-define="BUZZ_PUSH_GATEWAY_URL=${BUZZ_PUSH_GATEWAY_URL}"
+    set -- build apk --debug --no-pub --dart-define="KUZZ_KEY_BACKUP_ORIGIN=${KUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}"
+    if [[ -n "${KUZZ_PUSH_GATEWAY_URL:-}" ]]; then
+        set -- "$@" --dart-define="KUZZ_PUSH_GATEWAY_URL=${KUZZ_PUSH_GATEWAY_URL}"
     fi
     unset GIT_DIR GIT_WORK_TREE
     cd {{mobile_dir}}
@@ -948,20 +948,20 @@ mobile-dev:
         sleep 3
     fi
     ./scripts/mobile-worktree-overrides.sh
-    gateway_url="${BUZZ_PUSH_GATEWAY_URL:-}"
+    gateway_url="${KUZZ_PUSH_GATEWAY_URL:-}"
     overrides_file="{{mobile_dir}}/ios/Flutter/AppOverrides.xcconfig"
     if [[ -z "$gateway_url" && -f "$overrides_file" ]]; then
-        gateway_url="$(sed -nE 's/^[[:space:]]*BUZZ_PUSH_GATEWAY_URL[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$/\1/p' "$overrides_file" | tail -n 1 | sed 's/\$()//g')"
+        gateway_url="$(sed -nE 's/^[[:space:]]*KUZZ_PUSH_GATEWAY_URL[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$/\1/p' "$overrides_file" | tail -n 1 | sed 's/\$()//g')"
     fi
-    set -- run --dart-define="BUZZ_KEY_BACKUP_ORIGIN=${BUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}"
+    set -- run --dart-define="KUZZ_KEY_BACKUP_ORIGIN=${KUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}"
     if [[ -n "$gateway_url" ]]; then
-        set -- "$@" --dart-define="BUZZ_PUSH_GATEWAY_URL=${gateway_url}"
+        set -- "$@" --dart-define="KUZZ_PUSH_GATEWAY_URL=${gateway_url}"
     fi
     cd {{mobile_dir}}
     unset GIT_DIR GIT_WORK_TREE
     flutter "$@"
 
-# Uninstall stale worktree-suffixed Buzz debug installs (production apps kept)
+# Uninstall stale worktree-suffixed Kuzz debug installs (production apps kept)
 mobile-clean:
     ./scripts/mobile-worktree-clean.sh
 
@@ -989,7 +989,7 @@ get-current-version:
 
 # Read the current relay version from its crate manifest
 get-current-relay-version:
-    @grep -m1 '^version = ' crates/buzz-relay/Cargo.toml | sed -E 's/version = "(.*)"/\1/'
+    @grep -m1 '^version = ' crates/kuzz-relay/Cargo.toml | sed -E 's/version = "(.*)"/\1/'
 
 # Compute next minor version (e.g., 0.3.0 → 0.4.0)
 get-next-minor-version:
@@ -1029,18 +1029,18 @@ bump-desktop-version version:
     "
     # Regenerate lockfiles
     pnpm install --lockfile-only
-    cargo update -p buzz-desktop --manifest-path desktop/src-tauri/Cargo.toml
+    cargo update -p kuzz-desktop --manifest-path desktop/src-tauri/Cargo.toml
     echo "Bumped desktop manifests to {{ version }} and regenerated lockfiles"
 
 # Bump the relay crate version and regenerate the lockfile
 bump-relay-version version:
     #!/usr/bin/env bash
     set -euo pipefail
-    # buzz-relay carries its own `version =` (not version.workspace), so the
+    # kuzz-relay carries its own `version =` (not version.workspace), so the
     # replace targets the package version line only.
-    perl -i -pe 's/^version = ".*"/version = "{{ version }}"/' crates/buzz-relay/Cargo.toml
-    cargo update -p buzz-relay
-    echo "Bumped buzz-relay to {{ version }} and regenerated Cargo.lock"
+    perl -i -pe 's/^version = ".*"/version = "{{ version }}"/' crates/kuzz-relay/Cargo.toml
+    cargo update -p kuzz-relay
+    echo "Bumped kuzz-relay to {{ version }} and regenerated Cargo.lock"
 
 # Open or update the desktop release PR from an immutable origin/main snapshot
 release-desktop *ARGS:
@@ -1086,18 +1086,18 @@ _release-pr lane version:
             TAG_PREFIX="v"
             CHANGELOG="CHANGELOG.md"
             ADD_FILES=(desktop/package.json desktop/src-tauri/tauri.conf.json desktop/src-tauri/Cargo.toml desktop/src-tauri/Cargo.lock pnpm-lock.yaml CHANGELOG.md)
-            LOG_PATHS=(desktop/ crates/buzz-core/ crates/buzz-persona/ crates/buzz-sdk/ crates/buzz-agent/)
-            ARTIFACT="Buzz Desktop" ;;
+            LOG_PATHS=(desktop/ crates/kuzz-core/ crates/kuzz-persona/ crates/kuzz-sdk/ crates/kuzz-agent/)
+            ARTIFACT="Kuzz Desktop" ;;
         relay)
             BRANCH_PREFIX="relay-release"
             TAG_FETCH='relay-v*'
             TAG_MATCH='relay-v[0-9]*'
             TAG_EXCLUDE='relay-v*-*'
             TAG_PREFIX="relay-v"
-            CHANGELOG="crates/buzz-relay/CHANGELOG.md"
-            ADD_FILES=(crates/buzz-relay/Cargo.toml Cargo.lock crates/buzz-relay/CHANGELOG.md)
-            LOG_PATHS=(crates/buzz-relay/ crates/buzz-core/ crates/buzz-db/ crates/buzz-auth/ crates/buzz-pubsub/ crates/buzz-search/ crates/buzz-audit/ crates/buzz-media/ crates/buzz-sdk/ crates/buzz-workflow/ crates/buzz-conformance/ migrations/)
-            ARTIFACT="Buzz Relay" ;;
+            CHANGELOG="crates/kuzz-relay/CHANGELOG.md"
+            ADD_FILES=(crates/kuzz-relay/Cargo.toml Cargo.lock crates/kuzz-relay/CHANGELOG.md)
+            LOG_PATHS=(crates/kuzz-relay/ crates/kuzz-core/ crates/kuzz-db/ crates/kuzz-auth/ crates/kuzz-pubsub/ crates/kuzz-search/ crates/kuzz-audit/ crates/kuzz-media/ crates/kuzz-sdk/ crates/kuzz-workflow/ crates/kuzz-conformance/ migrations/)
+            ARTIFACT="Kuzz Relay" ;;
         *)
             echo "Error: unknown release lane '{{ lane }}'"
             exit 1 ;;
@@ -1219,38 +1219,38 @@ _release-pr lane version:
 
 # ─── Agent Harness ────────────────────────────────────────────────────────────
 
-# Run a goose agent connected to a Buzz relay (foreground)
-goose relay="ws://localhost:3000" agents="1" heartbeat="0" prompt="" key="$BUZZ_PRIVATE_KEY":
+# Run a goose agent connected to a Kuzz relay (foreground)
+goose relay="ws://localhost:3000" agents="1" heartbeat="0" prompt="" key="$KUZZ_PRIVATE_KEY":
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
     source ./scripts/_goose-env.sh "{{relay}}" "{{key}}" "{{agents}}" "{{heartbeat}}" "{{prompt}}"
-    exec env "${env_args[@]}" ./target/release/buzz-acp
+    exec env "${env_args[@]}" ./target/release/kuzz-acp
 
 # Run a goose agent in the background (screen session named 'goose-agent-N')
-goose-bg relay="ws://localhost:3000" agents="1" heartbeat="0" prompt="" key="$BUZZ_PRIVATE_KEY":
+goose-bg relay="ws://localhost:3000" agents="1" heartbeat="0" prompt="" key="$KUZZ_PRIVATE_KEY":
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
     source ./scripts/_goose-env.sh "{{relay}}" "{{key}}" "{{agents}}" "{{heartbeat}}" "{{prompt}}"
-    screen -dmS goose-agent-{{agents}} bash -c "$(printf '%q ' env "${env_args[@]}") ./target/release/buzz-acp"
+    screen -dmS goose-agent-{{agents}} bash -c "$(printf '%q ' env "${env_args[@]}") ./target/release/kuzz-acp"
     echo "Agent running in screen session 'goose-agent-{{agents}}'. Attach with: screen -r goose-agent-{{agents}}"
 
 # ─── Benchmarking ─────────────────────────────────────────────────────────────
 
-# Run the Buzz orchestra benchmark — TB defaults to leaderboard-eligible k=5; Buzz task layers default to regression k=1 and workflow k=3. Stands up its own Docker stack; --gui opens a live spectator desktop app; other flags pass to benchmark.py (--dataset/--path, --layer, --include-task, --attempts, --manifest, --dry-run, ...)
+# Run the Kuzz orchestra benchmark — TB defaults to leaderboard-eligible k=5; Kuzz task layers default to regression k=1 and workflow k=3. Stands up its own Docker stack; --gui opens a live spectator desktop app; other flags pass to benchmark.py (--dataset/--path, --layer, --include-task, --attempts, --manifest, --dry-run, ...)
 benchmark *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     export PATH="{{justfile_directory()}}/bin:$PATH"
-    uv run --project benchmarks/harbor-buzz-orchestra/testbed \
-        benchmarks/harbor-buzz-orchestra/scripts/benchmark.py {{ARGS}}
+    uv run --project benchmarks/harbor-kuzz-orchestra/testbed \
+        benchmarks/harbor-kuzz-orchestra/scripts/benchmark.py {{ARGS}}
 
 # Run the benchmark adapter + testbed gate exactly as CI does (pytest + ruff, pinned ruff from pyproject)
 benchmark-check:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd "{{justfile_directory()}}/benchmarks/harbor-buzz-orchestra"
+    cd "{{justfile_directory()}}/benchmarks/harbor-kuzz-orchestra"
     # CI installs the dev extra with pip, so pyproject — not uv.lock — decides
     # which ruff lints. Read the pin from there so this recipe cannot drift
     # from the workflow (a floating specifier once meant CI failed on RUF100
@@ -1259,18 +1259,18 @@ benchmark-check:
     for project in . testbed; do
         (
             cd "$project"
-            echo "── harbor-buzz-orchestra/$project (ruff $ruff_pin)"
+            echo "── harbor-kuzz-orchestra/$project (ruff $ruff_pin)"
             uv run --frozen pytest -q
             uvx "ruff@$ruff_pin" check .
             uvx "ruff@$ruff_pin" format --check .
         )
     done
-    # The task verifiers live in the sibling benchmarks/buzz-dataset, so they
+    # The task verifiers live in the sibling benchmarks/kuzz-dataset, so they
     # need the harness config passed explicitly to stay linted.
-    echo "── buzz-dataset (ruff $ruff_pin)"
-    uvx "ruff@$ruff_pin" check --config pyproject.toml ../buzz-dataset
-    uvx "ruff@$ruff_pin" format --check --config pyproject.toml ../buzz-dataset
+    echo "── kuzz-dataset (ruff $ruff_pin)"
+    uvx "ruff@$ruff_pin" check --config pyproject.toml ../kuzz-dataset
+    uvx "ruff@$ruff_pin" format --check --config pyproject.toml ../kuzz-dataset
 
 # Stop the benchmark Docker stack (state and channels are kept)
 benchmark-down:
-    docker compose --project-name buzz-benchmark down
+    docker compose --project-name kuzz-benchmark down

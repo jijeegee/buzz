@@ -24,7 +24,7 @@ fn migrate_pollen_agent_name_in_file(path: &Path, now: &str) {
     };
     let Ok(mut records) = serde_json::from_str::<Vec<serde_json::Value>>(&contents) else {
         eprintln!(
-            "buzz-desktop: migrate-pollen-agent-name: invalid JSON in {}",
+            "kuzz-desktop: migrate-pollen-agent-name: invalid JSON in {}",
             path.display()
         );
         return;
@@ -183,18 +183,18 @@ fn migrate_pollen_agent_name_in_file(path: &Path, now: &str) {
         // leaves harmless stale items. The loader verifies each queued expected
         // name against the durable record before publishing.
         if let Err(error) = persist_profile_reconcile_queue(path, &profile_reconciliations) {
-            eprintln!("buzz-desktop: migrate-pollen-agent-name: {error}");
+            eprintln!("kuzz-desktop: migrate-pollen-agent-name: {error}");
             return;
         }
         if let Ok(bytes) = serde_json::to_vec_pretty(&records) {
             if let Err(error) = crate::managed_agents::atomic_write_json_restricted(path, &bytes) {
-                eprintln!("buzz-desktop: migrate-pollen-agent-name: {error}");
+                eprintln!("kuzz-desktop: migrate-pollen-agent-name: {error}");
             }
         }
     } else if changed {
         if let Ok(bytes) = serde_json::to_vec_pretty(&records) {
             if let Err(error) = crate::managed_agents::atomic_write_json_restricted(path, &bytes) {
-                eprintln!("buzz-desktop: migrate-pollen-agent-name: {error}");
+                eprintln!("kuzz-desktop: migrate-pollen-agent-name: {error}");
             }
         }
     }
@@ -378,7 +378,7 @@ pub(crate) fn write_profile_reconcile_queue(
 }
 
 pub(crate) fn profile_reconcile_relay_key(relay_url: &str) -> Result<String, String> {
-    buzz_core_pkg::relay::normalize_relay_url(relay_url)
+    kuzz_core_pkg::relay::normalize_relay_url(relay_url)
         .map_err(|error| format!("invalid profile reconcile relay: {error}"))
 }
 
@@ -460,7 +460,7 @@ fn remove_pollen_from_legacy_fizz_name_pool(
 ) -> bool {
     const LEGACY_FIZZ_NAME_POOL: &[&str] = &[
         "Nectar", "Comet", "Bramble", "Clover", "Pollen", "Amber", "Daisy", "Mason", "Thistle",
-        "Waxwing", "Hive", "Meadow", "Juniper", "Aster", "Sage", "Willow", "Orchard", "Buzz",
+        "Waxwing", "Hive", "Meadow", "Juniper", "Aster", "Sage", "Willow", "Orchard", "Kuzz",
     ];
     let Some(names) = record
         .get("name_pool")

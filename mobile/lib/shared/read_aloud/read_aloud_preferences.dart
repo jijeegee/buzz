@@ -8,7 +8,7 @@ final readAloudEnabledProvider = NotifierProvider<ReadAloudPreference, bool>(
 
 /// Persists only successful writes; the settings UI reports storage failures.
 class ReadAloudPreference extends Notifier<bool> {
-  static const key = 'buzz_mobile_read_aloud_enabled';
+  static const key = 'kuzz_mobile_read_aloud_enabled';
   @override
   bool build() => ref.watch(savedPrefsProvider).getBool(key) ?? false;
 
@@ -27,7 +27,7 @@ final readAloudEngineProvider =
 
 /// Keeps the engine choice on this device without changing Android settings.
 class ReadAloudEnginePreference extends Notifier<String> {
-  static const key = 'buzz_mobile_read_aloud_engine';
+  static const key = 'kuzz_mobile_read_aloud_engine';
 
   @override
   String build() => ref.watch(savedPrefsProvider).getString(key) ?? '';

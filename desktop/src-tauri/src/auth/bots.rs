@@ -13,9 +13,9 @@
 //!    profile preparation) then issues a fresh 1 h bot token
 //!    (`POST /auth/bots/{id}/token`).
 //! 2. The synchronous spawn takes that token ([`spawn_auth`]) and injects
-//!    `BUZZ_BOT_TOKEN` (+ `BUZZ_BOT_TOKEN_EXPIRES_AT`); it never injects the
+//!    `KUZZ_BOT_TOKEN` (+ `KUZZ_BOT_TOKEN_EXPIRES_AT`); it never injects the
 //!    agent's private key or NIP-OA tag in token mode.
-//! 3. `buzz-acp` exits 78 when its token can no longer be refreshed. The exit
+//! 3. `kuzz-acp` exits 78 when its token can no longer be refreshed. The exit
 //!    is queued ([`note_exit`]); the auth watchdog reissues and restarts, at
 //!    most [`RESTART_CAP`] times per [`RESTART_WINDOW`] ([`RestartLimiter`]).
 //!    At the cap the agent is parked as auth-failed until the user presses
@@ -37,7 +37,7 @@ use super::{origin_for, CredentialMode, UserSession};
 use crate::app_state::AppState;
 use crate::managed_agents::ManagedAgentRecord;
 
-/// `buzz-acp` exit code: the bot token is unusable (plan §4.11).
+/// `kuzz-acp` exit code: the bot token is unusable (plan §4.11).
 pub(crate) const EXIT_AUTH_TERMINAL: i32 = 78;
 /// Auto-restarts allowed per agent within [`RESTART_WINDOW`].
 pub(crate) const RESTART_CAP: usize = 3;
@@ -45,13 +45,13 @@ pub(crate) const RESTART_CAP: usize = 3;
 pub(crate) const RESTART_WINDOW: Duration = Duration::from_secs(10 * 60);
 
 /// Token-carrying env vars Desktop owns for every managed-agent spawn: always
-/// stripped first, then (token mode) only `BUZZ_BOT_TOKEN*` re-injected.
+/// stripped first, then (token mode) only `KUZZ_BOT_TOKEN*` re-injected.
 pub(crate) const TOKEN_ENV_KEYS: [&str; 5] = [
-    "BUZZ_BOT_TOKEN",
-    "BUZZ_ACCESS_TOKEN",
-    "BUZZ_TOKEN_BROKER_URL",
-    "BUZZ_TOKEN_BROKER_SECRET",
-    "BUZZ_BOT_TOKEN_EXPIRES_AT",
+    "KUZZ_BOT_TOKEN",
+    "KUZZ_ACCESS_TOKEN",
+    "KUZZ_TOKEN_BROKER_URL",
+    "KUZZ_TOKEN_BROKER_SECRET",
+    "KUZZ_BOT_TOKEN_EXPIRES_AT",
 ];
 
 /// Outcome of recording an auth-terminal exit.
@@ -380,7 +380,7 @@ pub(crate) fn rewrite_record(ops: &impl MoveOps, from: &str, to: &str) -> Result
     let key_gone = match ops.drop_local_key(from) {
         Ok(()) => true,
         Err(error) => {
-            eprintln!("buzz-desktop: auth: could not remove the moved agent's local key: {error}");
+            eprintln!("kuzz-desktop: auth: could not remove the moved agent's local key: {error}");
             false
         }
     };
@@ -450,7 +450,7 @@ pub(crate) fn sweep_journal(
             match ops.drop_local_key(&from) {
                 Ok(()) => journal_set(dir, &origin, &from, None)?,
                 Err(error) => {
-                    eprintln!("buzz-desktop: auth: moved agent key still in the keyring: {error}");
+                    eprintln!("kuzz-desktop: auth: moved agent key still in the keyring: {error}");
                 }
             }
         }
@@ -481,7 +481,7 @@ pub(crate) fn sweep_adoption_journal<R: tauri::Runtime>(app: &tauri::AppHandle<R
         )
     })();
     if let Err(error) = result {
-        eprintln!("buzz-desktop: auth: adoption journal sweep failed: {error}");
+        eprintln!("kuzz-desktop: auth: adoption journal sweep failed: {error}");
     }
 }
 
@@ -539,7 +539,7 @@ pub(crate) fn adopt(
     if settled {
         if let Err(error) = journal_set(dir, origin, agent, None) {
             // Harmless leftover: the startup sweep clears it.
-            eprintln!("buzz-desktop: auth: could not clear the adoption journal: {error}");
+            eprintln!("kuzz-desktop: auth: could not clear the adoption journal: {error}");
         }
     }
     *moved = Some(bot_id.clone());
@@ -603,7 +603,7 @@ impl<R: tauri::Runtime> AdoptionEffects for StoreEffects<'_, R> {
             api::delete_bot(&reqwest::Client::new(), &origin, &access, &bot_id).await
         });
         if !matches!(result, Ok(Ok(()))) {
-            eprintln!("buzz-desktop: auth: could not delete an unjournaled bot");
+            eprintln!("kuzz-desktop: auth: could not delete an unjournaled bot");
         }
     }
 
@@ -665,7 +665,7 @@ impl<R: tauri::Runtime> MoveOps for StoreMoveOps<'_, R> {
         // The agent list does not poll while idle: without this the UI keeps
         // the old pubkey and Start/Stop/Edit/Delete miss the record.
         if let Err(error) = self.app.emit("agents-data-changed", ()) {
-            eprintln!("buzz-desktop: auth: could not announce the moved agent: {error}");
+            eprintln!("kuzz-desktop: auth: could not announce the moved agent: {error}");
         }
     }
 }
@@ -1023,7 +1023,7 @@ pub(crate) fn managed_agent_message_keys(
     }
     let keys = nostr::Keys::parse(record.private_key_nsec.trim()).map_err(|_| {
         eprintln!(
-            "buzz-desktop: failed to parse managed agent key (details withheld: secret input)"
+            "kuzz-desktop: failed to parse managed agent key (details withheld: secret input)"
         );
         "Something went wrong with this agent. Try again.".to_string()
     })?;
@@ -1089,18 +1089,18 @@ pub(crate) fn apply_spawn_auth(
     }
     match auth {
         SpawnAuth::Keys => {
-            command.env("BUZZ_PRIVATE_KEY", private_key_nsec);
+            command.env("KUZZ_PRIVATE_KEY", private_key_nsec);
             match auth_tag {
-                Some(tag) => command.env("BUZZ_AUTH_TAG", tag),
-                None => command.env_remove("BUZZ_AUTH_TAG"),
+                Some(tag) => command.env("KUZZ_AUTH_TAG", tag),
+                None => command.env_remove("KUZZ_AUTH_TAG"),
             };
         }
         SpawnAuth::Token(token) => {
-            command.env_remove("BUZZ_PRIVATE_KEY");
-            command.env_remove("BUZZ_AUTH_TAG");
-            command.env("BUZZ_BOT_TOKEN", token.token.as_str());
+            command.env_remove("KUZZ_PRIVATE_KEY");
+            command.env_remove("KUZZ_AUTH_TAG");
+            command.env("KUZZ_BOT_TOKEN", token.token.as_str());
             if let Some(expires_at) = token.expires_at {
-                command.env("BUZZ_BOT_TOKEN_EXPIRES_AT", expires_at.to_string());
+                command.env("KUZZ_BOT_TOKEN_EXPIRES_AT", expires_at.to_string());
             }
         }
     }
@@ -1142,7 +1142,7 @@ pub(crate) fn revoke_on_stop<R: tauri::Runtime>(app: &tauri::AppHandle<R>, agent
     .and_then(|inner| inner);
     if let Err(error) = result {
         // The token still expires within the hour; Stop never fails on this.
-        eprintln!("buzz-desktop: auth: bot token revoke on stop failed: {error}");
+        eprintln!("kuzz-desktop: auth: bot token revoke on stop failed: {error}");
     }
 }
 
@@ -1266,7 +1266,7 @@ pub(crate) async fn discard_new_agent(state: &AppState, origin: &str, bot_id: &s
             .await
             .is_err()
         {
-            eprintln!("buzz-desktop: auth: could not delete an unsaved agent's bot");
+            eprintln!("kuzz-desktop: auth: could not delete an unsaved agent's bot");
         }
     }
 }

@@ -23,7 +23,7 @@ import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 import { BackupStep } from "./BackupStep";
 import { DefaultConfigStep } from "./DefaultConfigStep";
 import { DownloadKeyStep } from "./DownloadKeyStep";
-import { KuzzWordmark } from "@/shared/ui/buzz-logo/KuzzWordmark";
+import { KuzzWordmark } from "@/shared/ui/kuzz-logo/KuzzWordmark";
 import { GoogleSignInButton } from "./GoogleSignInButton";
 import {
   backupSessionToPasswordEntry,
@@ -379,7 +379,7 @@ export function MachineOnboardingFlow({
   if (page === "identity") {
     return (
       <div
-        className="buzz-onboarding-neutral-theme buzz-startup-shell buzz-onboarding-welcome flex max-h-dvh items-start justify-center overflow-x-hidden overflow-y-auto px-4 py-8 text-foreground"
+        className="kuzz-onboarding-neutral-theme kuzz-startup-shell kuzz-onboarding-welcome flex max-h-dvh items-start justify-center overflow-x-hidden overflow-y-auto px-4 py-8 text-foreground"
         data-testid="machine-onboarding-gate"
       >
         <StartupWindowDragRegion />

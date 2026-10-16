@@ -5,10 +5,10 @@
 //! in the parent.
 
 use super::runtime_metadata::{
-    KnownAcpRuntime, BUZZ_AGENT_EFFORT_VALUES, CLAUDE_THOUGHT_LEVEL_OPTION,
+    KnownAcpRuntime, KUZZ_AGENT_EFFORT_VALUES, CLAUDE_THOUGHT_LEVEL_OPTION,
     CODEX_THOUGHT_LEVEL_OPTION, GOOSE_EFFORT_NORMALIZATION,
 };
-use super::{BUZZ_AGENT_AVATAR_URL, CLAUDE_CODE_AVATAR_URL, CODEX_AVATAR_URL, GOOSE_AVATAR_URL};
+use super::{KUZZ_AGENT_AVATAR_URL, CLAUDE_CODE_AVATAR_URL, CODEX_AVATAR_URL, GOOSE_AVATAR_URL};
 
 pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
     KnownAcpRuntime {
@@ -77,8 +77,8 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         config_file_format: Some("json"),
         supports_acp_native_config: false,
         thinking_env_var: None,
-        effort_normalization: None, // claude: canonical routes through BUZZ_ACP_EFFORT_LEVEL (ACP startup)
-        effort_accepted_values: None, // claude: adapter accepts any value over BUZZ_ACP_EFFORT_LEVEL
+        effort_normalization: None, // claude: canonical routes through KUZZ_ACP_EFFORT_LEVEL (ACP startup)
+        effort_accepted_values: None, // claude: adapter accepts any value over KUZZ_ACP_EFFORT_LEVEL
         effort_thought_level: Some(&CLAUDE_THOUGHT_LEVEL_OPTION), // claude-agent-acp `effort` thought_level option
         max_tokens_env_var: None,
         context_limit_env_var: None,
@@ -95,7 +95,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         commands: &["codex-acp"],
         aliases: &[],
         avatar_url: CODEX_AVATAR_URL,
-        mcp_command: Some("buzz-dev-mcp"),
+        mcp_command: Some("kuzz-dev-mcp"),
         mcp_hooks: false,
         underlying_cli: Some("codex"),
         cli_install_commands: &["curl -fsSL https://chatgpt.com/codex/install.sh | sh"],
@@ -115,8 +115,8 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         config_file_format: Some("toml"),
         supports_acp_native_config: false,
         thinking_env_var: None,
-        effort_normalization: None, // codex: canonical routes through BUZZ_ACP_EFFORT_LEVEL (ACP startup)
-        effort_accepted_values: None, // codex: adapter accepts any value over BUZZ_ACP_EFFORT_LEVEL
+        effort_normalization: None, // codex: canonical routes through KUZZ_ACP_EFFORT_LEVEL (ACP startup)
+        effort_accepted_values: None, // codex: adapter accepts any value over KUZZ_ACP_EFFORT_LEVEL
         effort_thought_level: Some(&CODEX_THOUGHT_LEVEL_OPTION), // codex-acp 2.x `reasoning_effort` thought_level option
         max_tokens_env_var: None,
         context_limit_env_var: None,
@@ -129,12 +129,12 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         auth_probe_args: Some(&["codex", "login", "status"]),
     },
     KnownAcpRuntime {
-        id: "buzz-agent",
+        id: "kuzz-agent",
         label: "Kuzz Agent",
-        commands: &["buzz-agent"],
+        commands: &["kuzz-agent"],
         aliases: &[],
-        avatar_url: BUZZ_AGENT_AVATAR_URL,
-        mcp_command: Some("buzz-dev-mcp"),
+        avatar_url: KUZZ_AGENT_AVATAR_URL,
+        mcp_command: Some("kuzz-dev-mcp"),
         mcp_hooks: true,
         underlying_cli: None,
         cli_install_commands: &[],
@@ -146,23 +146,23 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         adapter_install_hint: "",
         skill_dir: None,
         supports_acp_model_switching: true,
-        model_env_var: Some("BUZZ_AGENT_MODEL"),
-        provider_env_var: Some("BUZZ_AGENT_PROVIDER"),
+        model_env_var: Some("KUZZ_AGENT_MODEL"),
+        provider_env_var: Some("KUZZ_AGENT_PROVIDER"),
         provider_locked: false,
-        // Text-only completions remain in Activity. Managed Buzz agents must
+        // Text-only completions remain in Activity. Managed Kuzz agents must
         // be reminded to publish via the existing bounded reply guard.
         // Explicit layered user settings still override this default.
-        default_env: &[("BUZZ_AGENT_REQUIRE_REPLY", "1")],
+        default_env: &[("KUZZ_AGENT_REQUIRE_REPLY", "1")],
         config_file_path: None,
         config_file_format: None,
         supports_acp_native_config: false,
-        thinking_env_var: Some("BUZZ_AGENT_THINKING_EFFORT"),
-        effort_normalization: None, // buzz-agent: per-model catalog; see getProviderEffortConfig() in TS
-        effort_accepted_values: Some(BUZZ_AGENT_EFFORT_VALUES), // buzz-agent: parse_thinking_effort's accepted set
-        effort_thought_level: None, // buzz-agent: native env knob outranks the saved column; picker would be ignored
-        max_tokens_env_var: Some("BUZZ_AGENT_MAX_OUTPUT_TOKENS"),
-        context_limit_env_var: Some("BUZZ_AGENT_MAX_CONTEXT_TOKENS"),
-        max_rounds_env_var: Some("BUZZ_AGENT_MAX_ROUNDS"),
+        thinking_env_var: Some("KUZZ_AGENT_THINKING_EFFORT"),
+        effort_normalization: None, // kuzz-agent: per-model catalog; see getProviderEffortConfig() in TS
+        effort_accepted_values: Some(KUZZ_AGENT_EFFORT_VALUES), // kuzz-agent: parse_thinking_effort's accepted set
+        effort_thought_level: None, // kuzz-agent: native env knob outranks the saved column; picker would be ignored
+        max_tokens_env_var: Some("KUZZ_AGENT_MAX_OUTPUT_TOKENS"),
+        context_limit_env_var: Some("KUZZ_AGENT_MAX_CONTEXT_TOKENS"),
+        max_rounds_env_var: Some("KUZZ_AGENT_MAX_ROUNDS"),
         required_normalized_fields: &["model", "provider"],
         login_hint: None,
         supports_chatgpt_subscription: true,

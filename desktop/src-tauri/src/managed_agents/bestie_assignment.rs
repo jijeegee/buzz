@@ -347,7 +347,7 @@ fn with_agent_assignments_cleared_using<T>(
                 // Keep the journal as a durable cleanup record; launch/command
                 // recovery will observe the absent agent, re-clear these exact
                 // scopes idempotently, and retry journal removal.
-                eprintln!("buzz-desktop: {error}; cleanup will retry");
+                eprintln!("kuzz-desktop: {error}; cleanup will retry");
             }
             Ok(value)
         }

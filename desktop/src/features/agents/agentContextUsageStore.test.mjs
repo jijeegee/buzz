@@ -291,7 +291,7 @@ describe("agentContextUsageStore", () => {
     it("persists per owner and restores after a restart", () => {
       setContextUsageOwnerScope(OWNER);
       ingestContextUsageEvents(AGENT, [usageEvent({ used: 42 })]);
-      const raw = storage.getItem(`buzz-agent-context-usage.v1:${OWNER}`);
+      const raw = storage.getItem(`kuzz-agent-context-usage.v1:${OWNER}`);
       assert.ok(raw);
       assert.equal(JSON.parse(raw).entries.length, 1);
 
@@ -320,7 +320,7 @@ describe("agentContextUsageStore", () => {
       assert.equal(getAgentContextUsage(AGENT, "chan-1", ROOT)?.used, 9);
       assert.equal(getAgentContextUsage(AGENT, "chan-1", ROOT_2)?.used, 2);
       const persisted = JSON.parse(
-        storage.getItem(`buzz-agent-context-usage.v1:${OWNER}`),
+        storage.getItem(`kuzz-agent-context-usage.v1:${OWNER}`),
       );
       assert.equal(persisted.entries.length, 2);
     });
@@ -336,7 +336,7 @@ describe("agentContextUsageStore", () => {
 
     it("drops malformed persisted entries and survives corrupt JSON", () => {
       storage.setItem(
-        `buzz-agent-context-usage.v1:${OWNER}`,
+        `kuzz-agent-context-usage.v1:${OWNER}`,
         JSON.stringify({
           entries: [
             { agentPubkey: AGENT_KEY, channelId: "chan-1", used: 1 },
@@ -349,7 +349,7 @@ describe("agentContextUsageStore", () => {
       assert.equal(getAgentContextUsage(AGENT, "chan-1", ROOT)?.used, 3);
 
       _testResetAgentContextUsageStore();
-      storage.setItem(`buzz-agent-context-usage.v1:${OWNER_2}`, "{not json");
+      storage.setItem(`kuzz-agent-context-usage.v1:${OWNER_2}`, "{not json");
       setContextUsageOwnerScope(OWNER_2);
       assert.deepEqual(getAgentContextUsages(AGENT), []);
     });

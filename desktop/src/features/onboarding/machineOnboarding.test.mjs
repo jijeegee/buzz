@@ -43,8 +43,8 @@ const PUBKEY_A =
   "aaaaaa1111112222223333334444445555556666667777778888889999990000aa";
 const PUBKEY_B =
   "bbbbbb1111112222223333334444445555556666667777778888889999990000bb";
-const LEGACY_KEY = `buzz-onboarding-complete.v1:${PUBKEY_A}`;
-const V2_KEY = `buzz-machine-onboarding-complete.v2:${PUBKEY_A}`;
+const LEGACY_KEY = `kuzz-onboarding-complete.v1:${PUBKEY_A}`;
+const V2_KEY = `kuzz-machine-onboarding-complete.v2:${PUBKEY_A}`;
 
 // ── Fix A regression case ────────────────────────────────────────────────────
 

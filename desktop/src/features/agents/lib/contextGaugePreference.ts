@@ -1,7 +1,7 @@
 import * as React from "react";
 
 export const CONTEXT_GAUGE_ENABLED_STORAGE_KEY =
-  "buzz.agents.contextGaugeEnabled";
+  "kuzz.agents.contextGaugeEnabled";
 export const DEFAULT_CONTEXT_GAUGE_ENABLED = true;
 
 const listeners = new Set<() => void>();

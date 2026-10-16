@@ -104,9 +104,9 @@ test("describes configured workflow steps on the canvas", () => {
     workflowStepDescription({
       id: "reaction",
       action: "add_reaction",
-      emoji: ":buzz:",
+      emoji: ":kuzz:",
     }),
-    ":buzz:",
+    ":kuzz:",
   );
   assert.equal(
     workflowStepDescription({

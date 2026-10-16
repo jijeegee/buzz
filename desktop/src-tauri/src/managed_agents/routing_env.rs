@@ -4,25 +4,25 @@
 //! the record's star), and this module turns it into harness env so the role
 //! a process runs with and the role the UI reports cannot disagree:
 //!
-//! - [`RoutingRole::Dispatcher`] (Host): `BUZZ_ACP_DISPATCHER=true`. `buzz-acp`
+//! - [`RoutingRole::Dispatcher`] (Host): `KUZZ_ACP_DISPATCHER=true`. `kuzz-acp`
 //!   reads it as a clap `bool` and, when set, subscribes to every non-DM
 //!   channel without a mention filter and swaps in its compiled-in dispatcher
 //!   base prompt.
-//! - [`RoutingRole::Lead`]: `BUZZ_ACP_SUBSCRIBE=config` with `BUZZ_ACP_CONFIG`
+//! - [`RoutingRole::Lead`]: `KUZZ_ACP_SUBSCRIBE=config` with `KUZZ_ACP_CONFIG`
 //!   at the generated rules (`channel_routing::lead_rules`) and the listening
-//!   addendum appended to the system prompt, plus `BUZZ_ACP_CHANNEL_ROSTER=true`
+//!   addendum appended to the system prompt, plus `KUZZ_ACP_CHANNEL_ROSTER=true`
 //!   so the harness injects the `<channel-roster>` section ([`apply_lead_env`]).
 //! - Any role but Dispatcher: the dispatcher flag is removed, so a value
 //!   inherited from the desktop's own environment can never promote an agent.
 //!
-//! `BUZZ_ACP_DISPATCHER_CONFIG` (the per-channel human/AI allowlist JSON) is
+//! `KUZZ_ACP_DISPATCHER_CONFIG` (the per-channel human/AI allowlist JSON) is
 //! **never** set: an absent config means the harness applies its default gate
 //! (channel owner/admin plus the agent's own owner; no AI authors). Both
 //! dispatcher keys are reserved env keys so a saved or ambient value cannot
 //! turn an ordinary agent into a router, or hand it a custom gate.
 //!
-//! No residue across modes: `BUZZ_ACP_SUBSCRIBE`/`BUZZ_ACP_CONFIG` are not
-//! reserved (users may run their own Config-mode rules), but a `BUZZ_ACP_CONFIG`
+//! No residue across modes: `KUZZ_ACP_SUBSCRIBE`/`KUZZ_ACP_CONFIG` are not
+//! reserved (users may run their own Config-mode rules), but a `KUZZ_ACP_CONFIG`
 //! pointing into the desktop's generated routing directory belongs to the
 //! Lead role, so for every other role both keys are scrubbed — a Lead-era
 //! value copied into an agent's env cannot outlive the mode. A user's own
@@ -38,30 +38,30 @@ use std::process::Command;
 
 use super::channel_routing::RoutingRole;
 
-/// Harness flag that turns on dispatcher mode (`buzz-acp --dispatcher`).
-pub(crate) const DISPATCHER_ENV_VAR: &str = "BUZZ_ACP_DISPATCHER";
-/// Harness per-channel gate policy (`buzz-acp --dispatcher-config`). The
+/// Harness flag that turns on dispatcher mode (`kuzz-acp --dispatcher`).
+pub(crate) const DISPATCHER_ENV_VAR: &str = "KUZZ_ACP_DISPATCHER";
+/// Harness per-channel gate policy (`kuzz-acp --dispatcher-config`). The
 /// desktop never sets it; it is reserved and scrubbed so the harness default
 /// gate is what actually runs.
-pub(crate) const DISPATCHER_CONFIG_ENV_VAR: &str = "BUZZ_ACP_DISPATCHER_CONFIG";
-/// Harness subscription mode (`buzz-acp --subscribe`); `config` reads rules.
-pub(crate) const SUBSCRIBE_ENV_VAR: &str = "BUZZ_ACP_SUBSCRIBE";
-/// Harness Config-mode rules file (`buzz-acp --config`).
-pub(crate) const CONFIG_ENV_VAR: &str = "BUZZ_ACP_CONFIG";
-/// Harness flag that injects the `<channel-roster>` section (`buzz-acp
+pub(crate) const DISPATCHER_CONFIG_ENV_VAR: &str = "KUZZ_ACP_DISPATCHER_CONFIG";
+/// Harness subscription mode (`kuzz-acp --subscribe`); `config` reads rules.
+pub(crate) const SUBSCRIBE_ENV_VAR: &str = "KUZZ_ACP_SUBSCRIBE";
+/// Harness Config-mode rules file (`kuzz-acp --config`).
+pub(crate) const CONFIG_ENV_VAR: &str = "KUZZ_ACP_CONFIG";
+/// Harness flag that injects the `<channel-roster>` section (`kuzz-acp
 /// --channel-roster`). Set only for leads; reserved and removed otherwise.
-pub(crate) const CHANNEL_ROSTER_ENV_VAR: &str = "BUZZ_ACP_CHANNEL_ROSTER";
-/// `buzz-acp --subscribe` value that reads rules from `BUZZ_ACP_CONFIG`.
+pub(crate) const CHANNEL_ROSTER_ENV_VAR: &str = "KUZZ_ACP_CHANNEL_ROSTER";
+/// `kuzz-acp --subscribe` value that reads rules from `KUZZ_ACP_CONFIG`.
 const LEAD_SUBSCRIBE_MODE: &str = "config";
-/// Harness system prompt, inline (`buzz-acp --system-prompt`).
-const SYSTEM_PROMPT_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT";
+/// Harness system prompt, inline (`kuzz-acp --system-prompt`).
+const SYSTEM_PROMPT_ENV_VAR: &str = "KUZZ_ACP_SYSTEM_PROMPT";
 /// Harness system prompt from a file; conflicts with the inline key.
-const SYSTEM_PROMPT_FILE_ENV_VAR: &str = "BUZZ_ACP_SYSTEM_PROMPT_FILE";
+const SYSTEM_PROMPT_FILE_ENV_VAR: &str = "KUZZ_ACP_SYSTEM_PROMPT_FILE";
 /// The spelling clap's `bool` env parser accepts, matching the
-/// `BUZZ_ACP_LAZY_POOL=true` convention the spawn path already uses.
+/// `KUZZ_ACP_LAZY_POOL=true` convention the spawn path already uses.
 const DISPATCHER_ENABLED: &str = "true";
 
-/// Whether a `BUZZ_ACP_CONFIG` value names a file the desktop generated.
+/// Whether a `KUZZ_ACP_CONFIG` value names a file the desktop generated.
 /// Compared lexically after resolving `.`/`..` (the file may not exist, so
 /// no canonicalize), and case-insensitively on Windows, whose paths are.
 fn is_generated_rules_path(value: &OsStr, generated_dir: &Path) -> bool {
@@ -130,7 +130,7 @@ pub(crate) fn apply_routing_env(
 
 /// Stamp the Lead role's subscription and listening instructions. Call after
 /// [`apply_routing_env`], and only for [`RoutingRole::Lead`], so these values
-/// win over user env: `BUZZ_ACP_SUBSCRIBE=config` with `BUZZ_ACP_CONFIG` at
+/// win over user env: `KUZZ_ACP_SUBSCRIBE=config` with `KUZZ_ACP_CONFIG` at
 /// the generated `rules_path`, and `addendum` appended to the system prompt
 /// the child would otherwise get. A prompt given as a file is inlined (the
 /// harness rejects both prompt keys together) and the file key removed.

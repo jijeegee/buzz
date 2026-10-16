@@ -92,7 +92,7 @@ pub async fn route_message(
                 .ok_or_else(|| "routing provider has no HTTP client".to_string())?;
             let model = resolved.model.clone();
             route_with_deadline(&input, deadline, |system, user| async move {
-                buzz_agent_pkg::complete_once(
+                kuzz_agent_pkg::complete_once(
                     &cfg,
                     &system,
                     &user,
@@ -134,7 +134,7 @@ pub async fn route_message(
         .map_err(|e| format!("spawn_blocking failed: {e}"))
         .and_then(|result| result);
         if let Err(error) = written {
-            eprintln!("buzz-desktop: smart routing log append failed: {error}");
+            eprintln!("kuzz-desktop: smart routing log append failed: {error}");
         }
     }
     Ok(outcome.result)

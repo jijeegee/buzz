@@ -18,7 +18,7 @@ import {
 
 import { isEntityLink, parseEntityLink } from "./entityLink";
 import {
-  buzzEntityFallbackTitle,
+  kuzzEntityFallbackTitle,
   type SupportedLinkPreview,
 } from "./linkPreview";
 
@@ -433,7 +433,7 @@ function compactMetadata(
 }
 
 /** Resolve builder-focused metadata only from the active relay. */
-export async function fetchBuzzEntityMetadata(
+export async function fetchKuzzEntityMetadata(
   href: string,
   fetchEvents: EntityEventFetcher = (filter) => relayClient.fetchEvents(filter),
 ): Promise<LinkPreviewMetadata | null> {
@@ -529,11 +529,11 @@ export async function fetchBuzzEntityMetadata(
 }
 
 const entityMetadataLoader = createMetadataLoader({
-  fetcher: (href) => fetchBuzzEntityMetadata(href),
+  fetcher: (href) => fetchKuzzEntityMetadata(href),
 });
 
 /** Share deduplicated relay-native entity metadata across cards and inline tooltips. */
-export async function loadBuzzEntityMetadata(
+export async function loadKuzzEntityMetadata(
   href: string,
 ): Promise<LinkPreviewMetadata | null> {
   const load = entityMetadataLoader.load(href);
@@ -569,7 +569,7 @@ type ResolvedMetadataByHref = Record<
 export function shouldResolveTitle(preview: SupportedLinkPreview): boolean {
   if (!isEntityLink(preview.href)) return true;
   const parsed = parseEntityLink(preview.href);
-  return parsed.ok && preview.title === buzzEntityFallbackTitle(parsed.value);
+  return parsed.ok && preview.title === kuzzEntityFallbackTitle(parsed.value);
 }
 
 export function resolveLinkPreview(
@@ -579,7 +579,7 @@ export function resolveLinkPreview(
   if (metadata === undefined) {
     return {
       ...preview,
-      imageState: isBuzzEntityPreview(preview) ? "none" : "pending",
+      imageState: isKuzzEntityPreview(preview) ? "none" : "pending",
     };
   }
   if (metadata === null) {
@@ -596,12 +596,12 @@ export function resolveLinkPreview(
       : "none";
   return {
     ...preview,
-    snapshotReady: !preview.href.startsWith("buzz://"),
+    snapshotReady: !preview.href.startsWith("kuzz://"),
     title: shouldResolveTitle(preview) ? metadata.title : preview.title,
     description: metadata.description,
     faviconDataUrl: metadata.faviconDataUrl,
     provider:
-      (preview.kind === "generic-link" || isBuzzEntityPreview(preview)) &&
+      (preview.kind === "generic-link" || isKuzzEntityPreview(preview)) &&
       metadata.siteName
         ? metadata.siteName
         : preview.provider,
@@ -611,21 +611,21 @@ export function resolveLinkPreview(
   };
 }
 
-export function isBuzzEntityPreview(preview: SupportedLinkPreview): boolean {
+export function isKuzzEntityPreview(preview: SupportedLinkPreview): boolean {
   return (
-    preview.kind === "buzz-pull-request" ||
-    preview.kind === "buzz-issue" ||
-    preview.kind === "buzz-repository" ||
-    preview.kind === "buzz-project"
+    preview.kind === "kuzz-pull-request" ||
+    preview.kind === "kuzz-issue" ||
+    preview.kind === "kuzz-repository" ||
+    preview.kind === "kuzz-project"
   );
 }
 
 /**
- * Recipient-side `buzz://` entity cards must render even when the relay
+ * Recipient-side `kuzz://` entity cards must render even when the relay
  * lookup yields no metadata: `useResolvedLinkPreviews` drops null-metadata
  * previews (correct for external links — no metadata means no card), but
  * entity links always carry a usable fallback title (the repo d-tag, or
- * `<dtag> #<id8>` for PRs/issues — see `buzzEntityFallbackTitle`). Re-adds
+ * `<dtag> #<id8>` for PRs/issues — see `kuzzEntityFallbackTitle`). Re-adds
  * recognized entity previews on their fallback title; non-entity previews
  * keep the hook's drop behavior.
  */
@@ -637,7 +637,7 @@ export function withEntityFallbacks(
   return previews.flatMap((preview) => {
     const match = byHref.get(preview.href);
     if (match) return [match];
-    return isBuzzEntityPreview(preview)
+    return isKuzzEntityPreview(preview)
       ? [{ ...preview, imageState: "none" as const }]
       : [];
   });
@@ -700,7 +700,7 @@ export function useResolvedLinkPreviews(
     if (refetchNewNegatives) {
       // Invalidate first, before the peek/load loop below reads the cache, so a
       // newly-present href loads fresh instead of resolving to its stale miss.
-      // buzz:// entity links resolve off the relay, not this cache — skip them.
+      // kuzz:// entity links resolve off the relay, not this cache — skip them.
       // Newness is judged against the live href set when supplied (so a
       // debounce-swallowed leave/re-entry still counts), else against previews.
       const seen = seenHrefsRef.current;
@@ -726,7 +726,7 @@ export function useResolvedLinkPreviews(
         if (
           alreadyHandled ||
           !liveNow.includes(preview.href) ||
-          preview.href.startsWith("buzz://")
+          preview.href.startsWith("kuzz://")
         ) {
           continue;
         }
@@ -792,7 +792,7 @@ export function useResolvedLinkPreviews(
 
     const cancelScheduledLoads: Array<() => void> = [];
     for (const preview of previews) {
-      const loader = preview.href.startsWith("buzz://")
+      const loader = preview.href.startsWith("kuzz://")
         ? entityMetadataLoader
         : metadataLoader;
       const cached = loader.peek(preview.href);

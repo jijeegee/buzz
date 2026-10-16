@@ -12,7 +12,7 @@ import { ProvidersSettingsTab } from "./ProvidersSettingsTab";
 import { TaskModelsSettingsTab } from "./TaskModelsSettingsTab";
 
 /**
- * Settings › Models: the AI Buzz itself relies on.
+ * Settings › Models: the AI Kuzz itself relies on.
  *
  * - **Providers** — per provider, the subscription sign-in (the harness whose
  *   CLI login bills it) and the API key, plus the single "Default for new

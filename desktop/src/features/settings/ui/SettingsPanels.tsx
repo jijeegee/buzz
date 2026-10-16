@@ -37,7 +37,7 @@ import { cn } from "@/shared/lib/cn";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { Badge } from "@/shared/ui/badge";
-import { isBuzzTheme, useTheme } from "@/shared/theme/ThemeProvider";
+import { isKuzzTheme, useTheme } from "@/shared/theme/ThemeProvider";
 import {
   LIGHT_THEMES,
   SYNTAX_THEMES,
@@ -45,7 +45,7 @@ import {
   getThemePair,
 } from "@/shared/theme/theme-loader";
 import {
-  BUZZ_GRADIENT_STOPS,
+  KUZZ_GRADIENT_STOPS,
   SystemPreferencePreviewFrame,
   ThemePreviewFrame,
   type ThemePreviewVars,
@@ -253,7 +253,7 @@ function formatThemeLabel(name: string): string {
   return name
     .split("-")
     .map((w) =>
-      w === "buzz" ? "Kuzz" : w.charAt(0).toUpperCase() + w.slice(1),
+      w === "kuzz" ? "Kuzz" : w.charAt(0).toUpperCase() + w.slice(1),
     )
     .join(" ");
 }
@@ -355,9 +355,9 @@ function PairedThemeTile({
             ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
             : "group-hover:ring-2 group-hover:ring-border",
         )}
-        darkGradient={darkName ? BUZZ_GRADIENT_STOPS[darkName] : undefined}
+        darkGradient={darkName ? KUZZ_GRADIENT_STOPS[darkName] : undefined}
         darkVars={darkVars}
-        lightGradient={BUZZ_GRADIENT_STOPS[lightName]}
+        lightGradient={KUZZ_GRADIENT_STOPS[lightName]}
         lightVars={lightVars}
       />
       <span
@@ -398,7 +398,7 @@ function SingleThemeTile({
             ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
             : "group-hover:ring-2 group-hover:ring-border",
         )}
-        sidebarGradient={BUZZ_GRADIENT_STOPS[name]}
+        sidebarGradient={KUZZ_GRADIENT_STOPS[name]}
         vars={vars}
       />
       <span
@@ -423,8 +423,8 @@ const APPEARANCE_MODE_OPTIONS = [
 
 // Reveal/hide motion for the accent picker: a small translate + opacity fade.
 // The picker sits below the theme grid and reads as tucking up behind it, so
-// it enters from above (slides *down* into place when a non-Buzz theme reveals
-// it) and exits upward (slides up behind the grid when Buzz hides it). No
+// it enters from above (slides *down* into place when a non-Kuzz theme reveals
+// it) and exits upward (slides up behind the grid when Kuzz hides it). No
 // height/scale — height collapse clipped the swatches behind the grid's bottom
 // fade (the "white bar"). Snappier than the modal 0.2s since this is a small
 // settings control, sharing the modal/ProfileSettingsCard easing curve.
@@ -454,11 +454,11 @@ function ThemeSettingsCard() {
   const showCommunityScope = !singleServer && communities.length > 1;
   const communityLabel = appearanceCommunityLabel(activeCommunity?.name);
 
-  // Buzz themes pin a neutral accent (GitHub black in light, white in dark),
-  // so the accent picker is hidden while a Buzz theme is active. `themeName` is
-  // the effective theme, so this also covers System mode resolving to Buzz.
-  const buzzThemeSelected = isBuzzTheme(themeName);
-  const accentPickerHidden = buzzThemeSelected;
+  // Kuzz themes pin a neutral accent (GitHub black in light, white in dark),
+  // so the accent picker is hidden while a Kuzz theme is active. `themeName` is
+  // the effective theme, so this also covers System mode resolving to Kuzz.
+  const kuzzThemeSelected = isKuzzTheme(themeName);
+  const accentPickerHidden = kuzzThemeSelected;
   const shouldReduceMotion = useReducedMotion();
 
   const previewVarsByTheme = useThemePreviewVars();
@@ -559,19 +559,19 @@ function ThemeSettingsCard() {
       className="h-[112px] w-[168px] shrink-0"
       darkGradient={
         selectedPairedDarkTheme
-          ? BUZZ_GRADIENT_STOPS[selectedPairedDarkTheme]
+          ? KUZZ_GRADIENT_STOPS[selectedPairedDarkTheme]
           : undefined
       }
       darkVars={
         selectedPairedDarkTheme ? getVars(selectedPairedDarkTheme) : null
       }
-      lightGradient={BUZZ_GRADIENT_STOPS[selectedPairedTheme]}
+      lightGradient={KUZZ_GRADIENT_STOPS[selectedPairedTheme]}
       lightVars={getVars(selectedPairedTheme)}
     />
   ) : (
     <ThemePreviewFrame
       className="h-[112px] w-[168px] shrink-0"
-      sidebarGradient={BUZZ_GRADIENT_STOPS[selectedTheme]}
+      sidebarGradient={KUZZ_GRADIENT_STOPS[selectedTheme]}
       vars={getVars(selectedTheme)}
     />
   );
@@ -593,7 +593,7 @@ function ThemeSettingsCard() {
           }}
         />
         {/* Bottom fade — hidden while the accent picker is visible so its
-            near-white gradient (Buzz light) can't mask the swatches below it
+            near-white gradient (Kuzz light) can't mask the swatches below it
             (the "white bar"). Kept only when the picker is hidden. */}
         {accentPickerHidden ? (
           <div
@@ -766,7 +766,7 @@ function ThemeSettingsCard() {
             </AnimatePresence>
           )}
 
-          {/* Accent color picker — hidden for Buzz themes (pinned neutral accent).
+          {/* Accent color picker — hidden for Kuzz themes (pinned neutral accent).
               Reveal/hide with the translate-up + opacity fade defined by
               ACCENT_PICKER_TRANSITION above. Reduced motion skips the transition
               and just renders/unrenders. */}
@@ -800,7 +800,7 @@ function ThemeSettingsCard() {
           )}
 
           <GlassBackgroundSetting />
-          {buzzThemeSelected ? <ProminentActiveTabSetting /> : null}
+          {kuzzThemeSelected ? <ProminentActiveTabSetting /> : null}
         </SettingsOptionGroup>
 
         <SettingsOptionGroup

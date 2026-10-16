@@ -23,7 +23,7 @@ pub(crate) struct EffortNormalization {
 /// Source: `crates/goose-provider-types/src/thinking.rs` at Goose `2db0e31fe`.
 /// Canonical Display values: `off`, `low`, `medium`, `high`, `max`.
 /// Aliases (case-insensitive): `none|disabled→off`, `med→medium`, `xhigh→max`.
-/// `minimal` (Buzz-only) is invalid — skipped as absent at every tier.
+/// `minimal` (Kuzz-only) is invalid — skipped as absent at every tier.
 pub(crate) static GOOSE_EFFORT_NORMALIZATION: EffortNormalization = EffortNormalization {
     canonical: &["off", "low", "medium", "high", "max"],
     aliases: &[
@@ -34,17 +34,17 @@ pub(crate) static GOOSE_EFFORT_NORMALIZATION: EffortNormalization = EffortNormal
     ],
 };
 
-/// buzz-agent's accepted persisted thinking-effort values — a validation-only
-/// contract, NOT a canonicalization one. Unlike Goose, buzz-agent keeps `xhigh`
+/// kuzz-agent's accepted persisted thinking-effort values — a validation-only
+/// contract, NOT a canonicalization one. Unlike Goose, kuzz-agent keeps `xhigh`
 /// and `max` as *distinct* efforts, so these values are validated (invalid →
 /// skip as absent) but never aliased or collapsed.
 ///
-/// Source of truth: `parse_thinking_effort`, `crates/buzz-agent/src/config.rs`
+/// Source of truth: `parse_thinking_effort`, `crates/kuzz-agent/src/config.rs`
 /// (`none|minimal|low|medium|high|xhigh|max`). A destination-vocabulary check
 /// at projection time keeps a foreign canonical (e.g. Goose `off`) from being
-/// emitted as `BUZZ_AGENT_THINKING_EFFORT=off`, which the parser rejects at
+/// emitted as `KUZZ_AGENT_THINKING_EFFORT=off`, which the parser rejects at
 /// config init (child exits 2).
-pub(crate) static BUZZ_AGENT_EFFORT_VALUES: &[&str] =
+pub(crate) static KUZZ_AGENT_EFFORT_VALUES: &[&str] =
     &["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /// A harness's ACP `thought_level` config option — the one effort fact the
@@ -58,7 +58,7 @@ pub(crate) static BUZZ_AGENT_EFFORT_VALUES: &[&str] =
 /// Model-dependent extremes (`minimal`, `xhigh`, `max`, `ultra`) are
 /// deliberately absent — a rejected startup value is logged and ignored by the
 /// adapter, so the fallback must never promise a level the model may refuse.
-/// Spawn still routes the saved column through `BUZZ_ACP_EFFORT_LEVEL`
+/// Spawn still routes the saved column through `KUZZ_ACP_EFFORT_LEVEL`
 /// unfiltered; this is not a validation contract.
 pub(crate) struct AcpThoughtLevelOption {
     pub config_option_id: &'static str,
@@ -146,8 +146,8 @@ pub(crate) struct KnownAcpRuntime {
     /// Human-readable hint about installing the ACP adapter.
     pub adapter_install_hint: &'static str,
     /// Harness-specific skill discovery directory (e.g. `.goose/skills`).
-    /// `Some(dir)` → Buzz creates a symlink at `<nest>/<dir>/buzz-cli`
-    /// pointing to the canonical `.agents/skills/buzz-cli`. `None` → this
+    /// `Some(dir)` → Kuzz creates a symlink at `<nest>/<dir>/kuzz-cli`
+    /// pointing to the canonical `.agents/skills/kuzz-cli`. `None` → this
     /// runtime reads the canonical path directly or has no skill support.
     pub skill_dir: Option<&'static str>,
     /// Whether this runtime handles model switching via ACP protocol natively.
@@ -172,10 +172,10 @@ pub(crate) struct KnownAcpRuntime {
     /// resolution, override tracking, and B-equality comparison.
     ///
     /// `None` — harness accepts any provider/model-specific value via its own
-    /// catalog (buzz-agent); see `getProviderEffortConfig()` in TS for that
-    /// path. Contract-less does NOT mean keyless: buzz-agent still has a native
+    /// catalog (kuzz-agent); see `getProviderEffortConfig()` in TS for that
+    /// path. Contract-less does NOT mean keyless: kuzz-agent still has a native
     /// `thinking_env_var`, and Claude/Codex route the canonical through
-    /// `BUZZ_ACP_EFFORT_LEVEL` for ACP startup even with `thinking_env_var: None`.
+    /// `KUZZ_ACP_EFFORT_LEVEL` for ACP startup even with `thinking_env_var: None`.
     ///
     /// The single canonical authority shared by UI choices, the launch
     /// projection, and the reader. No value-authority logic may live outside
@@ -183,7 +183,7 @@ pub(crate) struct KnownAcpRuntime {
     pub effort_normalization: Option<&'static EffortNormalization>,
     /// Accepted persisted effort values for a runtime that has NO
     /// canonicalization contract but still constrains its vocabulary
-    /// (buzz-agent: `parse_thinking_effort`'s accepted set). Used only for
+    /// (kuzz-agent: `parse_thinking_effort`'s accepted set). Used only for
     /// destination-vocabulary validation at projection/read time — a candidate
     /// outside this set is skipped as absent, so a foreign canonical (e.g.
     /// Goose `off`) is never emitted under `thinking_env_var` where the
@@ -191,7 +191,7 @@ pub(crate) struct KnownAcpRuntime {
     ///
     /// `None` means "no validation": Goose validates through
     /// `effort_normalization`; Claude/Codex and unknown/custom runtimes accept
-    /// any string over the `BUZZ_ACP_EFFORT_LEVEL` transport.
+    /// any string over the `KUZZ_ACP_EFFORT_LEVEL` transport.
     pub effort_accepted_values: Option<&'static [&'static str]>,
     /// The harness's ACP `thought_level` effort option, when its adapter
     /// advertises one that `apply_startup_effort` can set: the option id plus
@@ -200,7 +200,7 @@ pub(crate) struct KnownAcpRuntime {
     /// Claude Code / Codex / Hermes agent can be created or edited with an
     /// effort on day one. Discovered options always win when present.
     ///
-    /// `None` for Goose (its own env knob + `effort_normalization`), buzz-agent
+    /// `None` for Goose (its own env knob + `effort_normalization`), kuzz-agent
     /// (its native env knob outranks the saved column, so a picker would be
     /// ignored), and unknown/custom runtimes.
     ///
@@ -220,7 +220,7 @@ pub(crate) struct KnownAcpRuntime {
     /// Keys match the camelCase names used in `NormalizedConfig` (e.g. "model", "provider").
     pub required_normalized_fields: &'static [&'static str],
     /// Human-readable hint shown in Doctor when the runtime is available but not
-    /// authenticated. `None` for runtimes that have no login step (goose, buzz-agent).
+    /// authenticated. `None` for runtimes that have no login step (goose, kuzz-agent).
     pub login_hint: Option<&'static str>,
     /// The LLM provider id (`anthropic`, `openai`) whose bill this harness's
     /// CLI login pays. This is the only fact tying a "Subscription" sign-in

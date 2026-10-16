@@ -1,13 +1,13 @@
-import 'package:buzz/features/settings/settings_page.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/push/dev_push_lease.dart';
-import 'package:buzz/shared/push/push_bootstrap.dart';
-import 'package:buzz/shared/push/push_bridge.dart';
-import 'package:buzz/shared/push/push_relay_capability_provider.dart';
-import 'package:buzz/shared/relay/relay_provider.dart';
-import 'package:buzz/shared/relay/relay_session.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/settings/settings_page.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/push/dev_push_lease.dart';
+import 'package:kuzz/shared/push/push_bootstrap.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
+import 'package:kuzz/shared/push/push_relay_capability_provider.dart';
+import 'package:kuzz/shared/relay/relay_provider.dart';
+import 'package:kuzz/shared/relay/relay_session.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,12 +34,12 @@ void main() {
           isNull,
         );
         expect(
-          buzzPushLifecycleEnabled(
+          kuzzPushLifecycleEnabled(
             community: Community.create(
               name: 'Team',
               relayUrl: 'wss://relay.example',
             ).copyWith(pushNotificationsEnabled: true),
-            descriptor: const BuzzPushLeaseDescriptor(
+            descriptor: const KuzzPushLeaseDescriptor(
               origin: 'wss://relay.example',
               executorKeyId: 'key',
               executorPubkey: 'pubkey',
@@ -59,7 +59,7 @@ void main() {
     test('never requests native registration or gateway grants', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      const channel = MethodChannel('buzz/push');
+      const channel = MethodChannel('kuzz/push');
       final calls = <String>[];
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -68,8 +68,8 @@ void main() {
         return null;
       });
       addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-      await startBuzzPushRegistration();
-      expect(await readBuzzPushEndpointGrants(), isEmpty);
+      await startKuzzPushRegistration();
+      expect(await readKuzzPushEndpointGrants(), isEmpty);
       expect(calls, isEmpty);
     });
 
@@ -90,7 +90,7 @@ void main() {
                 relayUrl: 'wss://relay.example',
               ),
             ),
-            buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+            kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
               () async =>
                   throw StateError('must not query notification permission'),
             ),

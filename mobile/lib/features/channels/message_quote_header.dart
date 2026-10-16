@@ -16,7 +16,7 @@ import 'timeline_message.dart';
 /// Resolves the quoted message from [loadedMessages] first and falls back to
 /// an event lookup by id. Tapping it scrolls to the original in place when the
 /// enclosing [QuoteJumpScope] already shows it; otherwise it opens the original
-/// through the same `buzz://message` deep-link navigation used by message
+/// through the same `kuzz://message` deep-link navigation used by message
 /// links. Renders nothing when [tags] has no well-formed quote.
 class MessageQuoteHeader extends ConsumerWidget {
   final String channelId;

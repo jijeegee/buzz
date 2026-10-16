@@ -193,7 +193,7 @@ pub async fn set_channel_routing(
             // Residue only: a leftover file is inert and the launch sweep
             // retries, so a failed sweep must not fail the saved switch.
             if let Err(error) = lead_rules::sweep_stale_lead_rules(&app, runtimes) {
-                eprintln!("buzz-desktop: lead rules sweep: {error}");
+                eprintln!("kuzz-desktop: lead rules sweep: {error}");
             }
             Ok(mode)
         })

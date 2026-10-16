@@ -91,7 +91,7 @@ fn accepts_unconditional_and_applicable_conditional_ownership() {
         // Check that deterministic fixture signing agrees with the SDK verifier.
         let json = serde_json::to_string(tag.as_slice()).unwrap();
         assert_eq!(
-            buzz_sdk_pkg::nip_oa::verify_auth_tag(&json, &keys(2).public_key()).unwrap(),
+            kuzz_sdk_pkg::nip_oa::verify_auth_tag(&json, &keys(2).public_key()).unwrap(),
             keys(1).public_key()
         );
         assert_ownership(&profile(vec![tag]), Some(keys(1).public_key().to_hex()));

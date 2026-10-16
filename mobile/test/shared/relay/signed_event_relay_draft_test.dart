@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:buzz/shared/auth/auth_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/auth/auth_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

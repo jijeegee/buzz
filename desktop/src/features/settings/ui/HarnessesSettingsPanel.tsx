@@ -63,7 +63,7 @@ function GitBashCard({
             className="mt-3 space-y-1 text-sm text-muted-foreground/70"
             data-settings-subcopy
           >
-            <p>Required for buzz-agent shell tools on Windows.</p>
+            <p>Required for kuzz-agent shell tools on Windows.</p>
             <p>{prerequisite.installHint}</p>
           </div>
         ) : null}

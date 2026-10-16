@@ -7,21 +7,21 @@ import {
 } from "./acpCommandPicker.ts";
 
 const candidate = {
-  command: "buzz-janet-acp",
-  binaryPath: "/bin/buzz-janet-acp",
+  command: "kuzz-janet-acp",
+  binaryPath: "/bin/kuzz-janet-acp",
 };
 
 test("stock and discovered commands select discovered options", () => {
-  const defaultState = acpCommandPickerState("buzz-acp", [candidate]);
-  assert.equal(defaultState.selectValue, "buzz-acp");
+  const defaultState = acpCommandPickerState("kuzz-acp", [candidate]);
+  assert.equal(defaultState.selectValue, "kuzz-acp");
   assert.deepEqual(defaultState.options, [
-    { label: "Kuzz ACP (default)", value: "buzz-acp" },
-    { label: "buzz-janet-acp", value: "buzz-janet-acp" },
+    { label: "Kuzz ACP (default)", value: "kuzz-acp" },
+    { label: "kuzz-janet-acp", value: "kuzz-janet-acp" },
   ]);
 
   assert.equal(
-    acpCommandPickerState("buzz-janet-acp", [candidate]).selectValue,
-    "buzz-janet-acp",
+    acpCommandPickerState("kuzz-janet-acp", [candidate]).selectValue,
+    "kuzz-janet-acp",
   );
 });
 
@@ -43,17 +43,17 @@ test("a persisted unknown command is preserved as a read-only current option", (
 });
 
 test("late discovery replaces the current marker without changing the command", () => {
-  const before = acpCommandPickerState("buzz-janet-acp", []);
+  const before = acpCommandPickerState("kuzz-janet-acp", []);
   assert.deepEqual(before.options.at(-1), {
     disabled: true,
-    label: "buzz-janet-acp (unavailable)",
-    value: "buzz-janet-acp",
+    label: "kuzz-janet-acp (unavailable)",
+    value: "kuzz-janet-acp",
   });
 
-  const after = acpCommandPickerState("buzz-janet-acp", [candidate]);
-  assert.equal(after.selectValue, "buzz-janet-acp");
+  const after = acpCommandPickerState("kuzz-janet-acp", [candidate]);
+  assert.equal(after.selectValue, "kuzz-janet-acp");
   assert.deepEqual(after.options.at(-1), {
-    label: "buzz-janet-acp",
-    value: "buzz-janet-acp",
+    label: "kuzz-janet-acp",
+    value: "kuzz-janet-acp",
   });
 });

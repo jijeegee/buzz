@@ -38,12 +38,12 @@ async fn query_filter_batches(
         |batch| async move {
             let _permit = semaphore.acquire().await.map_err(|error| {
                 eprintln!(
-                    "buzz-desktop: {error_label}: directory concurrency semaphore closed: {error}"
+                    "kuzz-desktop: {error_label}: directory concurrency semaphore closed: {error}"
                 );
                 AGENT_DIRECTORY_ERROR.to_string()
             })?;
             query_relay(state, batch).await.map_err(|error| {
-                eprintln!("buzz-desktop: {error_label}: {error}");
+                eprintln!("kuzz-desktop: {error_label}: {error}");
                 AGENT_DIRECTORY_ERROR.to_string()
             })
         },
@@ -140,7 +140,7 @@ async fn list_relay_agents_for_selection(
     let relay_pubkey = identity_archive::fetch_relay_self(state)
         .await?
         .ok_or_else(|| {
-            eprintln!("buzz-desktop: relay agent membership authority is unavailable");
+            eprintln!("kuzz-desktop: relay agent membership authority is unavailable");
             AGENT_DIRECTORY_ERROR.to_string()
         })?;
 
@@ -159,7 +159,7 @@ async fn list_relay_agents_for_selection(
         query_all_relay_pages(state, owned_filter)
             .await
             .map_err(|error| {
-                eprintln!("buzz-desktop: relay owned-agent query failed: {error}");
+                eprintln!("kuzz-desktop: relay owned-agent query failed: {error}");
                 AGENT_DIRECTORY_ERROR.to_string()
             })
     };
@@ -180,7 +180,7 @@ async fn list_relay_agents_for_selection(
         query_all_relay_pages(state, membership_filter)
             .await
             .map_err(|error| {
-                eprintln!("buzz-desktop: relay agent channel-membership query failed: {error}");
+                eprintln!("kuzz-desktop: relay agent channel-membership query failed: {error}");
                 AGENT_DIRECTORY_ERROR.to_string()
             })
     };
@@ -463,7 +463,7 @@ mod tests {
 mod real_relay_tests {
     use super::*;
     use crate::{app_state::build_app_state, events, managed_agents, relay};
-    use buzz_core_pkg::kind::KIND_MANAGED_AGENT;
+    use kuzz_core_pkg::kind::KIND_MANAGED_AGENT;
     use nostr::{EventBuilder, Keys, Kind, Tag};
     use uuid::Uuid;
 
@@ -604,7 +604,7 @@ mod real_relay_tests {
         let compat_owner = nostr::Keys::parse(&owner.secret_key().to_secret_hex()).unwrap();
         let compat_agent = nostr::PublicKey::from_hex(&agent.public_key().to_hex()).unwrap();
         let auth_tag =
-            buzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "").unwrap();
+            kuzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "").unwrap();
         relay::sync_managed_agent_profile(
             &owner_state,
             &relay_ws_url(),

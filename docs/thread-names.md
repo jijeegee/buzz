@@ -29,8 +29,8 @@ not a compare-and-swap operation. History is preserved in the event store.
 Agents can use:
 
 ```sh
-buzz messages name-thread --channel <UUID> --event <HEAD_ID> --name "Thread naming"
-buzz messages name-thread --channel <UUID> --event <HEAD_ID> --name ""
+kuzz messages name-thread --channel <UUID> --event <HEAD_ID> --name "Thread naming"
+kuzz messages name-thread --channel <UUID> --event <HEAD_ID> --name ""
 ```
 
 Deploy the updated relay before clients, because older relays reject the new

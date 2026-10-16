@@ -1,16 +1,16 @@
 import 'dart:async';
 
-import 'package:buzz/features/settings/settings_page.dart';
-import 'package:buzz/shared/community/community_membership_provider.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/push/push_bridge.dart';
-import 'package:buzz/shared/push/dev_push_lease.dart';
-import 'package:buzz/shared/push/push_relay_capability_provider.dart';
-import 'package:buzz/shared/relay/app_lifecycle_provider.dart';
-import 'package:buzz/shared/widgets/app_list.dart';
-import 'package:buzz/shared/widgets/app_list_card.dart';
+import 'package:kuzz/features/settings/settings_page.dart';
+import 'package:kuzz/shared/community/community_membership_provider.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
+import 'package:kuzz/shared/push/dev_push_lease.dart';
+import 'package:kuzz/shared/push/push_relay_capability_provider.dart';
+import 'package:kuzz/shared/relay/app_lifecycle_provider.dart';
+import 'package:kuzz/shared/widgets/app_list.dart';
+import 'package:kuzz/shared/widgets/app_list_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,8 +21,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() {
     PackageInfo.setMockInitialValues(
-      appName: 'Buzz',
-      packageName: 'xyz.block.buzz',
+      appName: 'Kuzz',
+      packageName: 'app.kuzz',
       version: '0.16.0',
       buildNumber: '432',
       buildSignature: '',
@@ -38,8 +38,8 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       PackageInfo.setMockInitialValues(
-        appName: 'Buzz',
-        packageName: 'xyz.block.buzz',
+        appName: 'Kuzz',
+        packageName: 'app.kuzz',
         version: '0.16.0',
         buildNumber: buildNumber,
         buildSignature: '',
@@ -87,7 +87,7 @@ void main() {
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
-      final capability = Completer<BuzzPushLeaseDescriptor?>();
+      final capability = Completer<KuzzPushLeaseDescriptor?>();
       var permissionReads = 0;
       await tester.pumpWidget(
         ProviderScope(
@@ -102,10 +102,10 @@ void main() {
             currentRelayPushDescriptorProvider.overrideWith(
               (ref) => capability.future,
             ),
-            buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+            kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
               () async {
                 permissionReads += 1;
-                return BuzzPushAuthorizationStatus.authorized;
+                return KuzzPushAuthorizationStatus.authorized;
               },
             ),
           ],
@@ -160,7 +160,7 @@ void main() {
       relayUrl: 'wss://relay.example',
     ).copyWith(pushNotificationsEnabled: true);
 
-    final capability = Future<BuzzPushLeaseDescriptor?>.value(_pushDescriptor);
+    final capability = Future<KuzzPushLeaseDescriptor?>.value(_pushDescriptor);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -169,8 +169,8 @@ void main() {
           activeCommunityProvider.overrideWith((ref) async => community),
           currentRelayPushDescriptorProvider.overrideWith((ref) => capability),
           appLifecycleProvider.overrideWith(_SettingsLifecycleNotifier.new),
-          buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
-            () async => BuzzPushAuthorizationStatus.authorized,
+          kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+            () async => KuzzPushAuthorizationStatus.authorized,
           ),
         ],
         child: MaterialApp(
@@ -224,10 +224,10 @@ void main() {
             (ref) async => _pushDescriptor,
           ),
           appLifecycleProvider.overrideWith(_SettingsLifecycleNotifier.new),
-          buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
-            () async => BuzzPushAuthorizationStatus.denied,
+          kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+            () async => KuzzPushAuthorizationStatus.denied,
           ),
-          buzzPushNotificationSettingsOpenerProvider.overrideWithValue(
+          kuzzPushNotificationSettingsOpenerProvider.overrideWithValue(
             () async {
               openSettingsCalls += 1;
               return true;
@@ -257,7 +257,7 @@ void main() {
       isTrue,
     );
     expect(
-      find.text('Enabled in Buzz, but disabled in iOS Settings'),
+      find.text('Enabled in Kuzz, but disabled in iOS Settings'),
       findsOneWidget,
     );
     await tester.tap(
@@ -289,7 +289,7 @@ void main() {
             (ref) async => _pushDescriptor,
           ),
           appLifecycleProvider.overrideWith(_SettingsLifecycleNotifier.new),
-          buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+          kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
             () async => throw StateError('authorization unavailable'),
           ),
         ],
@@ -305,7 +305,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Enabled in Buzz; iOS permission status unavailable'),
+      find.text('Enabled in Kuzz; iOS permission status unavailable'),
       findsOneWidget,
     );
     expect(
@@ -485,9 +485,9 @@ void main() {
       (view) =>
           (view.creationParams as Map<Object?, Object?>?)?['label'] == 'Edit',
     );
-    expect(nativeClose.viewType, 'buzz/navigation_glass');
+    expect(nativeClose.viewType, 'kuzz/navigation_glass');
     expect(nativeClose.creationParams, containsPair('icon', 'close'));
-    expect(nativeEdit.viewType, 'buzz/navigation_glass');
+    expect(nativeEdit.viewType, 'kuzz/navigation_glass');
     expect(nativeEdit.creationParams, containsPair('controlWidth', 56.0));
     expect(find.byTooltip('Close settings'), findsOneWidget);
     debugDefaultTargetPlatformOverride = null;
@@ -641,7 +641,7 @@ void main() {
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
-    expect(prefs.getBool('buzz_mobile_read_aloud_enabled'), isTrue);
+    expect(prefs.getBool('kuzz_mobile_read_aloud_enabled'), isTrue);
   });
 
   testWidgets('uses a 24dp rhythm between profile settings groups', (
@@ -686,7 +686,7 @@ class _SettingsLifecycleNotifier extends AppLifecycleNotifier {
   AppLifecycleState build() => AppLifecycleState.resumed;
 }
 
-const _pushDescriptor = BuzzPushLeaseDescriptor(
+const _pushDescriptor = KuzzPushLeaseDescriptor(
   origin: 'wss://relay.example',
   executorKeyId: 'key',
   executorPubkey: 'pubkey',

@@ -7,7 +7,7 @@
 This section is non-normative. It gives the mental model for the requirements
 that follow.
 
-A Buzz data backfill repairs existing PostgreSQL rows after a compatible schema
+A Kuzz data backfill repairs existing PostgreSQL rows after a compatible schema
 is available. It may start automatically with the relay or manually while the
 relay serves traffic. If a worker stops, another worker resumes from committed
 progress.
@@ -497,11 +497,11 @@ losing and stale commits are observed rather than inferred from timing.
 
 ## Component mapping
 
-| Responsibility | Buzz component |
+| Responsibility | Kuzz component |
 |---|---|
-| Stable-ID registration, lifecycle, durable store, claims, fencing, checkpoints, retry, and validation | The new `buzz-backfill` crate owns the domain and persistence. |
-| Database and transaction primitives for atomic mutation and checkpoint progress | `buzz-db` provides narrow primitives. It does not own backfill records, policy, or orchestration, and it does not expose its connection pool. |
-| Discovery, automatic execution, configuration, startup ordering, and readiness | `buzz-relay` composes the engine with startup and serving coordination. |
+| Stable-ID registration, lifecycle, durable store, claims, fencing, checkpoints, retry, and validation | The new `kuzz-backfill` crate owns the domain and persistence. |
+| Database and transaction primitives for atomic mutation and checkpoint progress | `kuzz-db` provides narrow primitives. It does not own backfill records, policy, or orchestration, and it does not expose its connection pool. |
+| Discovery, automatic execution, configuration, startup ordering, and readiness | `kuzz-relay` composes the engine with startup and serving coordination. |
 | Authorized reads, lifecycle actions, validation, audit, conflicts, and diagnostics | Relay deployment-admin interfaces expose the contract; tools use them instead of accessing tables. |
 | List, detail, progress, diagnostics, readiness, and controls | The desktop/admin client projects relay state and never stores another lifecycle. |
 

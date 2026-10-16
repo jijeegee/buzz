@@ -124,7 +124,7 @@ pub fn apply_agent_command_update(
 }
 
 /// Strip every record-level thinking-effort env alias — all known native keys
-/// plus the legacy `BUZZ_AGENT_THINKING_EFFORT` alias — from `env_vars`.
+/// plus the legacy `KUZZ_AGENT_THINKING_EFFORT` alias — from `env_vars`.
 ///
 /// Called at the `update_managed_agent` boundary on the pin→inherit transition,
 /// AFTER caller-supplied `env_vars` have been applied, so the cleared aliases

@@ -17,7 +17,7 @@ kinds/WS, timeline/composer, attachments/replies/reactions and supported agents.
 No separate chat stack, synthetic community or implicit community membership.
 
 Read: AGENTS, VISION, VISION_MOBILE, VISION_SOVEREIGN, VISION_AGENT,
-VISION_MODERATION, root/buzz-db TESTING and Google recovery plan/validation.
+VISION_MODERATION, root/kuzz-db TESTING and Google recovery plan/validation.
 Intentional extension: optional community affiliation. Existing community
 isolation, signing identities, recovery and local agent execution rules remain.
 
@@ -54,7 +54,7 @@ Keep partition-qualified Redis/caches. Community deletion/write fences remain
 mandatory for affiliated scopes; standalone writes validate their registered
 scope and never manufacture a community deletion lease.
 
-Configuration: `BUZZ_STANDALONE_RELAY_URL` explicitly registers the standalone
+Configuration: `KUZZ_STANDALONE_RELAY_URL` explicitly registers the standalone
 host at startup (never on arbitrary inbound hosts). Reject conflicts with an
 affiliated host. If it equals the canonical relay URL, skip community/owner/
 allowlist bootstrap there; otherwise retain canonical community bootstrap and

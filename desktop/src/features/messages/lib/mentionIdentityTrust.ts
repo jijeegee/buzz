@@ -4,13 +4,13 @@ import {
 } from "./mentionClipboard";
 
 /**
- * Whether trusted Buzz state vouches for a copied `label → pubkey` pair.
+ * Whether trusted Kuzz state vouches for a copied `label → pubkey` pair.
  *
  * Clipboard HTML is attacker-authored: any page can carry
  * `<span data-mention-pubkey="<their key>" data-mention-label="John Smith">
  * @John Smith</span>`, and that pastes as a plausible, *visible* mention.
  * Visibility only proves the user saw a name — not that the name belongs to
- * the key beside it. A marker Buzz writes proves less still, since an attacker
+ * the key beside it. A marker Kuzz writes proves less still, since an attacker
  * can write the same marker.
  *
  * So the pair itself has to be checked against state the community supplied:

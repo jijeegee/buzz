@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:buzz/shared/widgets/bee_refresh_indicator.dart';
-import 'package:buzz/shared/widgets/flapping_bee.dart';
+import 'package:kuzz/shared/widgets/bee_refresh_indicator.dart';
+import 'package:kuzz/shared/widgets/flapping_bee.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';

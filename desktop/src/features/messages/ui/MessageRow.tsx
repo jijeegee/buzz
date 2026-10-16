@@ -707,8 +707,8 @@ export const MessageRow = React.memo(
             : cn(
                 "rounded-2xl px-3 py-1.5",
                 isOwnMessage
-                  ? "rounded-br-md bg-[var(--buzz-bubble-own)]"
-                  : "rounded-bl-md bg-[var(--buzz-bubble-other)] shadow-[var(--buzz-bubble-other-shadow)]",
+                  ? "rounded-br-md bg-[var(--kuzz-bubble-own)]"
+                  : "rounded-bl-md bg-[var(--kuzz-bubble-other)] shadow-[var(--kuzz-bubble-other-shadow)]",
               ),
         )}
         data-chat-bubble=""

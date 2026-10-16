@@ -6,7 +6,7 @@ import { isAgentMentionChannelType } from "@/features/agents/lib/agentAutocomple
  * composer hook evaluates it once, on Enter.
  *
  * Only the user's own composer sends reach this path — agents post through
- * `buzz-cli`, never this UI — so AI-authored messages are never routed.
+ * `kuzz-cli`, never this UI — so AI-authored messages are never routed.
  */
 export type AutoAssignGateInput = {
   /** The applied channel routing is Smart routing (not merely saved). */

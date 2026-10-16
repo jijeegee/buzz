@@ -40,7 +40,7 @@ const { migrateLegacyCommunityStorageBeforeRender } = await import(
   "./legacyCommunityStorage.ts"
 );
 
-const COMPLETION_KEY_PREFIX = "buzz-onboarding-complete.v1:";
+const COMPLETION_KEY_PREFIX = "kuzz-onboarding-complete.v1:";
 
 // Only the localhost community is left after the legacy relay was removed.
 async function reloadWithLegacy({
@@ -50,10 +50,10 @@ async function reloadWithLegacy({
 }) {
   localStorage.clear();
   localStorage.setItem(
-    "buzz-communities",
+    "kuzz-communities",
     JSON.stringify([{ id: "local", name: "Local", relayUrl: savedLocalRelay }]),
   );
-  localStorage.setItem("buzz-active-community-id", "local");
+  localStorage.setItem("kuzz-active-community-id", "local");
   removedRelays.clear();
   removedRelays.add(LEGACY_RELAY);
   legacyWorkspaces = workspaces;
@@ -68,7 +68,7 @@ const local = { id: "local", name: "Local", relayUrl: LOCAL_RELAY };
 
 test("a reload whose legacy migration brings back a removed relay re-admits it once", async () => {
   const readds = await reloadWithLegacy({ workspaces: [legacy, local] });
-  assert.match(localStorage.getItem("buzz-communities"), /legacy\.example/);
+  assert.match(localStorage.getItem("kuzz-communities"), /legacy\.example/);
   assert.equal(removedRelays.has(LEGACY_RELAY), false, "legacy relay admitted");
   // The unchanged localhost community is not re-admitted.
   assert.equal(readds, 1);
@@ -87,7 +87,7 @@ test("a failed onboarding-completion write after the list is saved still re-admi
       workspaces: [legacy],
       completions: [{ pubkey: "ab".repeat(32), value: "1" }],
     });
-    assert.equal(localStorage.getItem("buzz-active-community-id"), "legacy");
+    assert.equal(localStorage.getItem("kuzz-active-community-id"), "legacy");
     assert.equal(
       removedRelays.has(LEGACY_RELAY),
       false,

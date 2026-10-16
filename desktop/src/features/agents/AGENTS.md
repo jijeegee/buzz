@@ -4,7 +4,7 @@ Scope: `desktop/src/features/agents/` (config surfaces, shared config renderer,
 and the agent config core). Read this before changing how harness / provider /
 model / effort configuration is modeled, rendered, persisted, or applied.
 
-Plan of record: `Buzz/Harness-Provider-Model.md` in Morgan's Obsidian vault
+Plan of record: `Kuzz/Harness-Provider-Model.md` in Morgan's Obsidian vault
 (PR sequence, decisions log). PRs: #2140 (rename), #2148 (flag reduction),
 #2156 (honest model states), #2158 (Agent Config Core).
 
@@ -49,7 +49,7 @@ with a TypeScript lookup table or an id comparison in a component.
    (`hasRenderableAgentConfigField`, `getRenderableEffortField`).
 2. **Effort reads/writes go through the descriptor.** Use the effort
    descriptor's `currentPersistence` key — never a raw
-   `BUZZ_AGENT_THINKING_EFFORT` literal in UI code. `currentPersistence` is
+   `KUZZ_AGENT_THINKING_EFFORT` literal in UI code. `currentPersistence` is
    where the value lives *today*; `targetApplication` is how the harness
    *should* receive it. They intentionally differ until PR 2.7 migrates
    Goose/Claude — do not "fix" one to match the other without doing the
@@ -97,7 +97,7 @@ with a TypeScript lookup table or an id comparison in a component.
    disables editing while awaiting `set_global_agent_config`, advances only on
    success, and leaves the draft in place with a retryable inline error on
    failure. A harness selection alone does not enable Next when the harness
-   requires provider/model/credential config (e.g. buzz-agent with no
+   requires provider/model/credential config (e.g. kuzz-agent with no
    provider). Baked build env and runtime-file config satisfy the gate. Drafts
    intentionally do not survive an app restart.
    `onboarding-agent-defaults.spec.ts` is the acceptance gate for anything
@@ -115,17 +115,17 @@ with a TypeScript lookup table or an id comparison in a component.
    `onboarding-agent-defaults.spec.ts`.
    **An optional-model harness never requires a model in Customize either.**
    The persona Create/Edit "Customize for this agent" section requires the
-   provider+model pair only for provider-selection harnesses (Buzz Agent /
+   provider+model pair only for provider-selection harnesses (Kuzz Agent /
    Goose — the ones the backend `required_normalized_fields` gate refuses to
    spawn without it). For every other harness an empty model is the
    "harness default" choice: Save stays enabled, the picker keeps a blank
    `HARNESS_DEFAULT_MODEL_OPTION` row above the discovered models so the user
-   can return to it, and spawn omits `BUZZ_ACP_MODEL` so the harness runs on
+   can return to it, and spawn omits `KUZZ_ACP_MODEL` so the harness runs on
    its own configured model. Gate: `agentAiConfigurationPolicy.test.mjs`.
 9. **The defaults modal is progressively disclosed.** An unset global config
-   starts on the Buzz Agent-first deployment fallback and carries that visible
+   starts on the Kuzz Agent-first deployment fallback and carries that visible
    harness into the next saved edit. The `progressive-defaults` disclosure
-   preset therefore begins at Provider for Buzz Agent, then reveals Model,
+   preset therefore begins at Provider for Kuzz Agent, then reveals Model,
    Effort, and Advanced only after a provider is configured. Harnesses whose
    runtime metadata has no provider field skip that gate. Reveals animate their
    height through Motion and become immediate when reduced motion is requested.
@@ -185,7 +185,7 @@ with a TypeScript lookup table or an id comparison in a component.
    must never bypass the instance command's stop, persist, publish, and restart
    boundary.** An unknown location falls back to the local wording — never hedge
    with "computer or server". A remote host requires an
-   installed `buzz-backend-*` provider, and without one `WhereToRunSection`
+   installed `kuzz-backend-*` provider, and without one `WhereToRunSection`
    never renders, so "server" would name a concept the owner has never been
    shown; when it *is* remote they picked that host from the selector
    themselves. Never synthesize a run location a surface doesn't have. Don't
@@ -274,19 +274,19 @@ with a TypeScript lookup table or an id comparison in a component.
    ```
 
    Every tier has the same shape — native env key above its structured column —
-   so a Goose/buzz-agent knob set in Global AI Defaults is never outranked by a
+   so a Goose/kuzz-agent knob set in Global AI Defaults is never outranked by a
    global column that dialog could not show for that harness (and
    `resetConfigForHarnessChange` clears the column on a harness switch anyway).
    The env tiers need the runtime's native key; the three columns do not, so
    for the ACP thought-level harnesses (Claude Code, Codex, Hermes — no native
    knob) the columns are the only authorities and the resolved value rides the
-   retained transport key `BUZZ_ACP_EFFORT_LEVEL`. Goose and buzz-agent keep
-   their native env knob (`GOOSE_THINKING_EFFORT` / `BUZZ_AGENT_THINKING_EFFORT`)
+   retained transport key `KUZZ_ACP_EFFORT_LEVEL`. Goose and kuzz-agent keep
+   their native env knob (`GOOSE_THINKING_EFFORT` / `KUZZ_AGENT_THINKING_EFFORT`)
    and its `EffortSelectField`; the catalog's `effort_thought_level` is `None`
-   for them, so the column picker hides. The buzz-agent knob renders in the basic
+   for them, so the column picker hides. The kuzz-agent knob renders in the basic
    section directly under the model choice in both `AgentInstanceEditDialog`
    and `AgentDefinitionDialog` (not under Advanced): effort is part of the
-   model choice for every harness. At request time `buzz-agent` answers a
+   model choice for every harness. At request time `kuzz-agent` answers a
    provider effort rejection with at most two retries (the nearest level the
    provider lists, sent verbatim, then effort omitted) and never rewrites the
    saved value. The picker clears a saved value only after the user changes
@@ -295,7 +295,7 @@ with a TypeScript lookup table or an id comparison in a component.
    options come from the static manifest unless model discovery reports the
    selected model's levels (`AgentModelInfo.supportedEfforts` /
    `defaultEffort`, filled from the ChatGPT subscription catalog's
-   `supported_reasoning_levels`); then only those levels that buzz-agent
+   `supported_reasoning_levels`); then only those levels that kuzz-agent
    parses are offered (`getProviderEffortConfig`'s `catalog` argument).
 
    **Where each write goes.** Create embeds the pick in `create_persona`
@@ -368,8 +368,8 @@ with a TypeScript lookup table or an id comparison in a component.
 
    **Cut invariant — live mid-conversation effort machinery was deliberately
    removed.** Effort is spawn-scoped only: the worker holds one `startup_effort`
-   read from `BUZZ_ACP_EFFORT_LEVEL` and applies it once at session creation
-   (`apply_startup_effort` in `buzz-acp/src/pool.rs`); there is no pool-level
+   read from `KUZZ_ACP_EFFORT_LEVEL` and applies it once at session creation
+   (`apply_startup_effort` in `kuzz-acp/src/pool.rs`); there is no pool-level
    effort authority, no live effort switching, and no effort-ack frame. Do not
    reintroduce a live effort-switch RPC, a pool effort field, or a
    mid-conversation effort control without a plan ruling. The archived live-effort
@@ -424,12 +424,12 @@ with a TypeScript lookup table or an id comparison in a component.
     refresh only local persona/team/managed-agent caches; they must never
     invalidate the remote relay directory.
 
-17. **Databricks model discovery has one shared catalog authority.** Desktop and ACP call the shared `buzz-agent` discovery library; Desktop passes the effective merged `DATABRICKS_MODEL_FILTER` explicitly, and the library applies it to raw workspace endpoint IDs and Unity Catalog model-service FQNs after the additive union. A successful filtered-empty catalog is authoritative: it stays empty, disables switching, and never falls through to configured or known-model fallback. Verified provider-qualified exact records in `scripts/model-capabilities.json` take precedence for UC FQNs: `data_workflow_tools.goose.goose-claude-opus-5-5` uses Anthropic Messages, adaptive thinking, and `output_config.effort` (default medium). This does not confer capabilities on other namespaces or similarly named services. Uncurated UC FQNs do not inherit family effort capabilities: Claude service components select Anthropic Messages and expose no effort choices, while GPT-5-or-newer service components select OpenAI Responses with neutral fallback effort capabilities; other uncurated FQNs use MLflow Chat Completions. Catalog/schema components never infer routing. Keep exact-record precedence and fallback rules identical in the Rust and TypeScript capability interpreters and shared corpus. Effort inheritance, persistence, and clearing semantics are unchanged. Global Defaults preserves the discovered model ID as the selected value while its closed trigger renders the provider-scoped display label; do not force the raw persisted ID over that label.
+17. **Databricks model discovery has one shared catalog authority.** Desktop and ACP call the shared `kuzz-agent` discovery library; Desktop passes the effective merged `DATABRICKS_MODEL_FILTER` explicitly, and the library applies it to raw workspace endpoint IDs and Unity Catalog model-service FQNs after the additive union. A successful filtered-empty catalog is authoritative: it stays empty, disables switching, and never falls through to configured or known-model fallback. Verified provider-qualified exact records in `scripts/model-capabilities.json` take precedence for UC FQNs: `data_workflow_tools.goose.goose-claude-opus-5-5` uses Anthropic Messages, adaptive thinking, and `output_config.effort` (default medium). This does not confer capabilities on other namespaces or similarly named services. Uncurated UC FQNs do not inherit family effort capabilities: Claude service components select Anthropic Messages and expose no effort choices, while GPT-5-or-newer service components select OpenAI Responses with neutral fallback effort capabilities; other uncurated FQNs use MLflow Chat Completions. Catalog/schema components never infer routing. Keep exact-record precedence and fallback rules identical in the Rust and TypeScript capability interpreters and shared corpus. Effort inheritance, persistence, and clearing semantics are unchanged. Global Defaults preserves the discovered model ID as the selected value while its closed trigger renders the provider-scoped display label; do not force the raw persisted ID over that label.
 
-18. **ACP transport is persona-owned before deployment.** Select `acp_command` in the persona create/edit form beside the harness. Deployment inherits that value; linked instances do not expose a competing post-deploy override. Legacy definitions without the field use `buzz-acp`; definition-less agents retain their stored command. Switching a linked definition back to stock resets the instance transport on the next spawn. Shared persona events and restart snapshots carry the field so edits apply on the next spawn.
+18. **ACP transport is persona-owned before deployment.** Select `acp_command` in the persona create/edit form beside the harness. Deployment inherits that value; linked instances do not expose a competing post-deploy override. Legacy definitions without the field use `kuzz-acp`; definition-less agents retain their stored command. Switching a linked definition back to stock resets the instance transport on the next spawn. Shared persona events and restart snapshots carry the field so edits apply on the next spawn.
 
 19. **ACP command selection is convention-based.** The editor always offers
-    stock `buzz-acp` and installed executable `buzz-*-acp` aliases discovered
+    stock `kuzz-acp` and installed executable `kuzz-*-acp` aliases discovered
     from normal executable search directories. It does not offer arbitrary
     command entry. A persisted value outside that set remains visible as an
     unavailable compatibility option but is not editable; selecting a conventional
@@ -479,9 +479,9 @@ with a TypeScript lookup table or an id comparison in a component.
     policy), the prospective restart snapshot (summary builder), and remote
     deploy (`agents_deploy.rs` `policy_env`) all call it, then
     `managed_agents/routing_env.rs` turns the role into env. Dispatcher ->
-    `BUZZ_ACP_DISPATCHER=true` (clap `bool` spelling, same as
-    `BUZZ_ACP_LAZY_POOL`); any other role -> the key is removed. The desktop
-    never sets `BUZZ_ACP_DISPATCHER_CONFIG` (the harness default gate,
+    `KUZZ_ACP_DISPATCHER=true` (clap `bool` spelling, same as
+    `KUZZ_ACP_LAZY_POOL`); any other role -> the key is removed. The desktop
+    never sets `KUZZ_ACP_DISPATCHER_CONFIG` (the harness default gate,
     channel owner/admin + the agent's owner with no AI authors, is what runs),
     and both keys are reserved env keys so a saved value can neither promote
     an ordinary agent to a router nor hand it a custom gate. The dispatcher
@@ -505,7 +505,7 @@ with a TypeScript lookup table or an id comparison in a component.
     a missing star — that made the setting look like a no-op).
     The switch is seeded from the desktop-local
     preference `lib/defaultAiPreferences.ts` (localStorage
-    `buzz-default-ai-auto-join`, default on, broken JSON reads as the default;
+    `kuzz-default-ai-auto-join`, default on, broken JSON reads as the default;
     the global "Join new channels I create" checkbox lives under the routing
     agent picker in the Agents page Channel routing card; Settings › Agents
     no longer carries it). It is **not** a
@@ -586,7 +586,7 @@ with a TypeScript lookup table or an id comparison in a component.
     role table: Host + star -> Dispatcher (any backend); Lead + star + local +
     owner known -> Lead; everything else, including the star under Off or
     Smart routing, -> None. `routing_env::apply_routing_env` also scrubs
-    `BUZZ_ACP_SUBSCRIBE`/`BUZZ_ACP_CONFIG` when the config points into the
+    `KUZZ_ACP_SUBSCRIBE`/`KUZZ_ACP_CONFIG` when the config points into the
     desktop-generated `<app-data>/agents/routing/` directory and the role is
     not Lead, so a Lead-era value cannot outlive the mode; a user's own rules
     file elsewhere is preserved (those keys are deliberately not reserved).
@@ -646,13 +646,13 @@ with a TypeScript lookup table or an id comparison in a component.
     `lead-listen` (kind 9, no mention, `author == "<owner hex>" &&
     !str_contains(content, "@")`), both `channels = "all"`.
     `lead_rules::apply_lead_spawn` runs right after `apply_routing_env` and
-    sets `BUZZ_ACP_SUBSCRIBE=config`, `BUZZ_ACP_CONFIG=<that file>`, and
+    sets `KUZZ_ACP_SUBSCRIBE=config`, `KUZZ_ACP_CONFIG=<that file>`, and
     appends `LEAD_LISTEN_ADDENDUM` to the system prompt the child would
     otherwise get (a prompt file is inlined); a write failure fails the spawn
     rather than silently running Mentions mode. Any other role's spawn deletes
     its own leftover file, and `set_channel_routing` plus app start sweep every
     `lead-*.toml` not used by a tracked Lead process. The rendering is pinned
-    byte-for-byte to `crates/buzz-acp/tests/fixtures/lead_rules.toml`, which
+    byte-for-byte to `crates/kuzz-acp/tests/fixtures/lead_rules.toml`, which
     the harness's `lead_rules_fixture_tests` load and match events against —
     change both together. Lead is local-only: `set_channel_routing` refuses a
     remote agent (`lead_unavailable_reason`, mirroring the role table) and the
@@ -675,9 +675,9 @@ with a TypeScript lookup table or an id comparison in a component.
     `{messageIds, pubkeys, relation: new|continue|amend|cancel, of}`, and
     `useMentionSendFlow`'s `deliverAutoRoute` publishes, per message, one
     same-body kind:40003 edit that newly `p`-tags its group's agents plus
-    `["mention", pk, "auto-route"]` (buzz-acp wakes an agent on an edit that
+    `["mention", pk, "auto-route"]` (kuzz-acp wakes an agent on an edit that
     newly mentions it, so no harness change). A follow-up's edit also
-    carries `["buzz:route", relation, of, thread_root, note]`: buzz-acp
+    carries `["buzz:route", relation, of, thread_root, note]`: kuzz-acp
     (`queue::route_follow_up`, resolved edits only, so the owner's) anchors
     the reply in `thread_root` and adds a `<follow-up>` line ("supplement or
     fix, don't redo", or "stop"); `note` says the same in the prompt's Tags. `messages/lib/autoRouteLedger.ts`
@@ -712,12 +712,12 @@ with a TypeScript lookup table or an id comparison in a component.
     change restarts nothing); its row renders provider + model through
     `ModelEffortFields` with `effort: null` (the router never thinks). Its
     Provider select lists every route explicitly, with real availability:
-    API keys (Anthropic, OpenAI, OpenRouter — `buzz-agent::complete_once`
+    API keys (Anthropic, OpenAI, OpenRouter — `kuzz-agent::complete_once`
     over HTTP, keys from the Providers tab's `GlobalAgentConfig.env_vars`,
     then the process env), "Codex (ChatGPT subscription)" (`codex exec`
     one-shot) and "Claude Code (Claude subscription, slower)" (`claude -p`
     one-shot). Subscription routes go only through the official CLI on its
-    own sign-in (`message_routing/cli.rs`): Buzz never reads, stores, or logs
+    own sign-in (`message_routing/cli.rs`): Kuzz never reads, stores, or logs
     subscription tokens, and Claude subscription OAuth is never reused over
     HTTP (Anthropic policy). Automatic is fastest first: the global default
     API-key provider, other API keys, Codex, Claude Code. Smart routing is
@@ -761,7 +761,7 @@ rather than offer an ineffective command. An authorized owner can instead use
 the CLI with the channel and target thread root:
 
 ```sh
-buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
+kuzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   --mention <agent-pubkey> --content '!cancel'
 ```
 
@@ -836,7 +836,7 @@ any other result.
 - Smart routing (rule 24): Rust `message_routing::tests` (prompt text,
   aliasing, caps, strict parser table, provider/model resolution incl.
   subscription-only, deadline timeout, log lines) and
-  `managed_agents::task_models` tests; `buzz-agent` `complete_once_tests`;
+  `managed_agents::task_models` tests; `kuzz-agent` `complete_once_tests`;
   `messages/lib/autoAssignGate.test.mjs` (every skip reason),
   `messages/lib/routerRoster.test.mjs` (description priority, caps),
   `messages/ui/useAutoAssign.jsdom-test.mjs` (batch timing and draft hold,
@@ -936,7 +936,7 @@ New blank persona drafts explicitly seed `behavior.sessionPolicy: "thread"`
 (Each thread); create submits that choice and linked instances
 inherit it. New standalone managed agents seed Thread in
 `resolve_mint_behavioral_defaults`. Only Thread launches get
-`BUZZ_ACP_STATE_DIR` (`<app data>/agents/state`), which enables the harness
+`KUZZ_ACP_STATE_DIR` (`<app data>/agents/state`), which enables the harness
 session-resume ledger; Channel launches remove it. The stored string
 `main_and_threads` (written by a short-lived development build) deserializes
 as Thread in Rust and in mock catalog parsing; never offer it as a third

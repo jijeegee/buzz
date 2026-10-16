@@ -81,7 +81,7 @@ function storedPersona(overrides = {}) {
     avatarUrl: null,
     description: null,
     systemPrompt: "You help.",
-    acpCommand: "buzz-acp",
+    acpCommand: "kuzz-acp",
     runtime: "claude",
     model: "fable[1m]",
     provider: null,
@@ -161,7 +161,7 @@ async function openEditDialog(persona = storedPersona()) {
     render(
       createElement(
         ThemeProvider,
-        { defaultTheme: "buzz" },
+        { defaultTheme: "kuzz" },
         createElement(
           QueryClientProvider,
           { client },

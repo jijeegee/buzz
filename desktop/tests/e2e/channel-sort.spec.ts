@@ -3,7 +3,7 @@ import { TEST_IDENTITIES } from "../helpers/bridge";
 import { installChatListBridge } from "../helpers/chatListBridge";
 
 const MOCK_PUBKEY = "deadbeef".repeat(8);
-const SORT_STORAGE_KEY = `buzz-channel-sort.v1:${MOCK_PUBKEY}:${encodeURIComponent("ws://localhost:3000")}`;
+const SORT_STORAGE_KEY = `kuzz-channel-sort.v1:${MOCK_PUBKEY}:${encodeURIComponent("ws://localhost:3000")}`;
 
 test("mixed chat activity reorders live while personal pins stay first", async ({
   page,
@@ -37,7 +37,7 @@ test("mixed chat activity reorders live while personal pins stay first", async (
       .poll(() =>
         page.evaluate(
           (name) =>
-            window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+            window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
               channelName: name,
               kind: 9,
               exactChannel: true,
@@ -49,7 +49,7 @@ test("mixed chat activity reorders live while personal pins stay first", async (
     await list.getByTestId("channel-general").click();
     await page.evaluate(
       ({ name, createdAt, pubkey }) => {
-        window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+        window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
           channelName: name,
           createdAt,
           pubkey,

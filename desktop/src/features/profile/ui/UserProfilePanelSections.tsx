@@ -204,7 +204,7 @@ export function ProfileSummaryView({
   const [stickyTabsElement, setStickyTabsElement] =
     React.useState<HTMLDivElement | null>(null);
   const stickyHeroRef = useMeasuredCssVariable({
-    cssVariable: "--buzz-profile-sticky-hero-height",
+    cssVariable: "--kuzz-profile-sticky-hero-height",
     enabled: isBot,
     resetKey: displayName,
     resetValue: "0px",
@@ -504,7 +504,7 @@ export function ProfileSummaryView({
               style={
                 isBot
                   ? {
-                      top: "var(--buzz-profile-sticky-hero-height, 0px)",
+                      top: "var(--kuzz-profile-sticky-hero-height, 0px)",
                     }
                   : undefined
               }

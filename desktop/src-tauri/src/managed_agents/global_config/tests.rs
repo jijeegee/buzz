@@ -26,7 +26,7 @@ fn validate_accepts_valid_env_vars() {
 
 #[test]
 fn validate_rejects_reserved_key() {
-    let config = config_with_env(&[("BUZZ_PRIVATE_KEY", "should-not-be-settable")]);
+    let config = config_with_env(&[("KUZZ_PRIVATE_KEY", "should-not-be-settable")]);
     let err = validate_global_config(&config).unwrap_err();
     assert!(
         err.contains("reserved"),
@@ -55,8 +55,8 @@ fn validate_rejects_derived_key_goose_model() {
 }
 
 #[test]
-fn validate_rejects_derived_key_buzz_agent_provider() {
-    let config = config_with_env(&[("BUZZ_AGENT_PROVIDER", "anthropic")]);
+fn validate_rejects_derived_key_kuzz_agent_provider() {
+    let config = config_with_env(&[("KUZZ_AGENT_PROVIDER", "anthropic")]);
     let err = validate_global_config(&config).unwrap_err();
     assert!(
         err.contains("structured provider/model fields"),
@@ -79,7 +79,7 @@ fn validate_ignores_empty_values_for_reserved_key_check() {
     // A reserved key with an EMPTY value is a no-op (stripped at save time).
     // validate_global_config skips empty-value entries so it does not reject
     // an empty clear for a key that happens to share a name with a reserved key.
-    let config = config_with_env(&[("BUZZ_PRIVATE_KEY", "")]);
+    let config = config_with_env(&[("KUZZ_PRIVATE_KEY", "")]);
     // Strip is done inside validate — empty values are stripped before checking.
     assert!(
         validate_global_config(&config).is_ok(),
@@ -309,7 +309,7 @@ fn bare_record() -> ManagedAgentRecord {
         auth_tag: None,
         relay_url: "ws://localhost:3000".to_string(),
         avatar_url: None,
-        acp_command: "buzz-acp".to_string(),
+        acp_command: "kuzz-acp".to_string(),
         agent_command: "goose".to_string(),
         agent_command_override: None,
         agent_args: vec![],
@@ -501,7 +501,7 @@ fn inherited_shared_compute_translates_to_supported_agent_transport() {
         provider: Some(super::super::RELAY_MESH_PROVIDER_ID.to_string()),
         ..Default::default()
     };
-    let runtime = super::super::known_acp_runtime("buzz-agent").expect("buzz-agent runtime");
+    let runtime = super::super::known_acp_runtime("kuzz-agent").expect("kuzz-agent runtime");
 
     let effective = super::super::readiness::resolve_effective_agent_env(
         &record,
@@ -511,11 +511,11 @@ fn inherited_shared_compute_translates_to_supported_agent_transport() {
     );
 
     assert_eq!(
-        effective.env.get("BUZZ_AGENT_PROVIDER").map(String::as_str),
+        effective.env.get("KUZZ_AGENT_PROVIDER").map(String::as_str),
         Some("openai")
     );
     assert_eq!(
-        effective.env.get("BUZZ_AGENT_MODEL").map(String::as_str),
+        effective.env.get("KUZZ_AGENT_MODEL").map(String::as_str),
         Some(super::super::RELAY_MESH_VIRTUAL_MODEL_ID)
     );
     assert_eq!(
@@ -578,7 +578,7 @@ fn git_config_stripped_from_every_env_layer_before_descriptor() {
             .collect(),
         ..Default::default()
     };
-    let runtime = super::super::known_acp_runtime("buzz-agent").expect("buzz-agent runtime");
+    let runtime = super::super::known_acp_runtime("kuzz-agent").expect("kuzz-agent runtime");
 
     let effective = super::super::readiness::resolve_effective_agent_env(
         &record,
@@ -600,24 +600,24 @@ fn git_config_stripped_from_every_env_layer_before_descriptor() {
     );
 }
 
-/// `BUZZ_GIT_IDENTITY` reaches the harness only through this resolved env, and
+/// `KUZZ_GIT_IDENTITY` reaches the harness only through this resolved env, and
 /// the harness reads it once at startup. A per-agent value must therefore beat
 /// the persona and global values here, in both directions.
 #[test]
 fn per_agent_git_identity_mode_beats_persona_and_global() {
-    let runtime = super::super::known_acp_runtime("buzz-agent").expect("buzz-agent runtime");
+    let runtime = super::super::known_acp_runtime("kuzz-agent").expect("kuzz-agent runtime");
     for (agent, global) in [("user", "agent"), ("agent", "user")] {
         let mut persona = persona("p", Some("model"), Some("anthropic"));
-        persona.env_vars = [("BUZZ_GIT_IDENTITY".to_string(), global.to_string())]
+        persona.env_vars = [("KUZZ_GIT_IDENTITY".to_string(), global.to_string())]
             .into_iter()
             .collect();
         let mut record = bare_record();
         record.persona_id = Some("p".to_string());
-        record.env_vars = [("BUZZ_GIT_IDENTITY".to_string(), agent.to_string())]
+        record.env_vars = [("KUZZ_GIT_IDENTITY".to_string(), agent.to_string())]
             .into_iter()
             .collect();
         let global_config = GlobalAgentConfig {
-            env_vars: [("BUZZ_GIT_IDENTITY".to_string(), global.to_string())]
+            env_vars: [("KUZZ_GIT_IDENTITY".to_string(), global.to_string())]
                 .into_iter()
                 .collect(),
             ..Default::default()
@@ -629,7 +629,7 @@ fn per_agent_git_identity_mode_beats_persona_and_global() {
             &global_config,
         );
         assert_eq!(
-            effective.env.get("BUZZ_GIT_IDENTITY").map(String::as_str),
+            effective.env.get("KUZZ_GIT_IDENTITY").map(String::as_str),
             Some(agent)
         );
     }

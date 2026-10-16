@@ -50,7 +50,7 @@ class _ThemePreviewExperience extends HookConsumerWidget {
     final selectedBaseScheme = platformBrightness == Brightness.dark
         ? selectedResolved.dark
         : selectedResolved.light;
-    final supportsAccent = !isBuzzTheme(selectedDisplayed.name);
+    final supportsAccent = !isKuzzTheme(selectedDisplayed.name);
 
     void updateMode(ThemeMode mode) {
       final normalized = mode == ThemeMode.system
@@ -364,11 +364,11 @@ class _ThemeDevicePairPreview extends StatelessWidget {
     final base = platformBrightness == Brightness.dark
         ? resolved.dark
         : resolved.light;
-    final effectiveAccent = isBuzzTheme(displayed.name)
+    final effectiveAccent = isKuzzTheme(displayed.name)
         ? defaultAccentIndex
         : accentIndex;
     final scheme = applyAccent(base, effectiveAccent);
-    final gradient = buzzTopSectionGradient(displayed.name, scheme.brightness);
+    final gradient = kuzzTopSectionGradient(displayed.name, scheme.brightness);
     final previewTheme = scheme.brightness == Brightness.dark
         ? AppTheme.dark(colorScheme: scheme, topSectionGradient: gradient)
         : AppTheme.light(colorScheme: scheme, topSectionGradient: gradient);

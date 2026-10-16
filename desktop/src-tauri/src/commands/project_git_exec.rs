@@ -281,14 +281,14 @@ pub(crate) fn validate_clone_url(clone_url: &str) -> Result<(), String> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("clone URL must be http or https".into());
     }
-    // Buzz git remotes are served at `…/git/<owner-pubkey>/<repo-id>` — a
+    // Kuzz git remotes are served at `…/git/<owner-pubkey>/<repo-id>` — a
     // literal `git` segment followed by the 64-hex owner pubkey and a
     // non-empty repository id (the relay may live under a path prefix).
     let segments = parsed
         .path_segments()
         .map(|segments| segments.filter(|s| !s.is_empty()).collect::<Vec<_>>())
         .unwrap_or_default();
-    let is_buzz_repo_path = segments
+    let is_kuzz_repo_path = segments
         .iter()
         .rposition(|segment| *segment == "git")
         .filter(|index| segments.len() == index + 3)
@@ -298,7 +298,7 @@ pub(crate) fn validate_clone_url(clone_url: &str) -> Result<(), String> {
                 && !segments[index + 2].is_empty()
         })
         .unwrap_or(false);
-    if !is_buzz_repo_path {
+    if !is_kuzz_repo_path {
         return Err("clone URL must point at a Kuzz git repository".into());
     }
     Ok(())
@@ -401,10 +401,10 @@ mod tests {
     #[test]
     fn credential_helper_config_value_uses_forward_slashes() {
         let path =
-            std::path::PathBuf::from(r"C:\Users\x\AppData\Local\Buzz\git-credential-nostr.exe");
+            std::path::PathBuf::from(r"C:\Users\x\AppData\Local\Kuzz\git-credential-nostr.exe");
         assert_eq!(
             credential_helper_config_value(&path),
-            "C:/Users/x/AppData/Local/Buzz/git-credential-nostr.exe",
+            "C:/Users/x/AppData/Local/Kuzz/git-credential-nostr.exe",
         );
     }
 
@@ -413,7 +413,7 @@ mod tests {
         assert_eq!(
             git_subcommand(&[
                 "-c",
-                "user.name=Buzz User",
+                "user.name=Kuzz User",
                 "-c",
                 "user.email=user@example.com",
                 "merge",
@@ -432,7 +432,7 @@ mod tests {
         assert!(git_needs_credentials(&["fetch", "origin"]));
         assert!(git_needs_credentials(&[
             "-c",
-            "user.name=Buzz User",
+            "user.name=Kuzz User",
             "merge",
             "HEAD"
         ]));
@@ -477,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_clone_url_requires_buzz_repo_shape() {
+    fn validate_clone_url_requires_kuzz_repo_shape() {
         let owner = "a".repeat(64);
         assert!(validate_clone_url(&format!("https://relay.example/git/{owner}/repo")).is_ok());
         assert!(
@@ -516,7 +516,7 @@ mod tests {
         assert!(validate_local_clone_url("http://github.com/block/buzz").is_err());
         assert!(validate_local_clone_url("https://github.com/block/buzz/issues").is_err());
         assert!(validate_local_clone_url("https://user@github.com/block/buzz").is_err());
-        assert!(validate_local_clone_url("https://github.com.evil.test/block/buzz").is_err());
-        assert!(validate_local_clone_url("https://gitlab.com/block/buzz").is_err());
+        assert!(validate_local_clone_url("https://github.com.evil.test/block/kuzz").is_err());
+        assert!(validate_local_clone_url("https://gitlab.com/block/kuzz").is_err());
     }
 }

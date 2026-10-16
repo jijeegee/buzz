@@ -71,7 +71,7 @@ app validation read-only; exercise mutations in an isolated mock harness.
   preserved forum sorting, row hover/selection and legacy-section consolidation.
   The mock native boundary needed its existing non-token AUTH
   responses (as in the stage-1 fixture); production auth was not changed.
-- Native observation on 2026-10-06: the existing `Buzz Google Recovery DEV`
+- Native observation on 2026-10-06: the existing `Kuzz Google Recovery DEV`
   process/window remained running. After HMR, its real WebView on 22446 showed
   one Chats list with four existing rows, no old split lists and no Vite error.
   The selected community and signed-in app remained available. Inspection used

@@ -1,4 +1,4 @@
-mod buzz_agent;
+mod kuzz_agent;
 mod claude;
 mod codex;
 pub(crate) mod effort;
@@ -13,9 +13,9 @@ pub(crate) use types::*;
 ///
 /// Harnesses whose native `thinking_env_var` differs from this constant
 /// (currently: Goose uses `GOOSE_THINKING_EFFORT`) need the alias resolver in
-/// [`effort`] to translate old saves. buzz-agent's native key equals this
+/// [`effort`] to translate old saves. kuzz-agent's native key equals this
 /// constant, so no aliasing applies there.
-pub(crate) const LEGACY_THINKING_EFFORT_KEY: &str = "BUZZ_AGENT_THINKING_EFFORT";
+pub(crate) const LEGACY_THINKING_EFFORT_KEY: &str = "KUZZ_AGENT_THINKING_EFFORT";
 
 /// Return all known native thinking-effort env keys across all runtimes.
 ///
@@ -32,7 +32,7 @@ pub(crate) fn all_known_effort_keys() -> impl Iterator<Item = &'static str> {
 ///
 /// Used by readiness evaluation to silence requirements that are already
 /// satisfied in the file config layer — the harness reads this file at startup
-/// so env vars we would otherwise require are not needed from Buzz.
+/// so env vars we would otherwise require are not needed from Kuzz.
 pub(crate) fn read_goose_file_config() -> Option<RuntimeFileConfig> {
     goose::read_config_file()
 }

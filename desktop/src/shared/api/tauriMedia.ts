@@ -20,10 +20,10 @@ export async function uploadMediaFile(
   onDispatch?: () => void,
 ): Promise<BlobDescriptor> {
   const headers: Record<string, string> = {
-    "x-buzz-filename": encodeRawIpcHeader(file.name),
+    "x-kuzz-filename": encodeRawIpcHeader(file.name),
   };
   if (progressId) {
-    headers["x-buzz-progress-id"] = encodeRawIpcHeader(progressId);
+    headers["x-kuzz-progress-id"] = encodeRawIpcHeader(progressId);
   }
 
   if (signal?.aborted) throw new Error("upload cancelled");

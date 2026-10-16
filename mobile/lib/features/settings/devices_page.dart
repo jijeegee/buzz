@@ -13,7 +13,7 @@ import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
 
 /// Signed-in devices and account security for a token relay: remote
@@ -271,7 +271,7 @@ class DevicesPage extends HookConsumerWidget {
               const Padding(
                 padding: EdgeInsets.all(Grid.sm),
                 child: Center(
-                  child: BuzzLoadingIndicator(
+                  child: KuzzLoadingIndicator(
                     size: 32,
                     semanticLabel: 'Loading devices',
                   ),
@@ -414,7 +414,7 @@ Future<DeviceRobotVariant?> _askDeviceRobot(
   BuildContext context,
   String deviceName,
   DeviceRobotVariant? current,
-) => showBuzzDialog<DeviceRobotVariant>(
+) => showKuzzDialog<DeviceRobotVariant>(
   context: context,
   builder: (_) => DeviceRobotPickerDialog(
     deviceName: deviceName,
@@ -555,7 +555,7 @@ class _DeviceRobotPickerDialogState extends State<DeviceRobotPickerDialog> {
 
 /// The new name for a device, trimmed; `null` when cancelled or empty.
 Future<String?> _askDeviceName(BuildContext context, String current) async {
-  final name = await showBuzzDialog<String>(
+  final name = await showKuzzDialog<String>(
     context: context,
     builder: (_) => _DeviceNameDialog(initial: current),
   );
@@ -617,7 +617,7 @@ Future<bool> _confirm(
   required String body,
   required String action,
 }) async {
-  final confirmed = await showBuzzDialog<bool>(
+  final confirmed = await showKuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Text(title),

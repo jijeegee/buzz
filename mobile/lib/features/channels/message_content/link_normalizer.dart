@@ -1,18 +1,19 @@
 const _markdownDelimiters = ['***', '___', '**', '__', '~~', '*', '_'];
 
 final _autolinkPattern = RegExp(
-  r'<((?:https?://|buzz://(?:message\?|join\?|channel/|(?:pr|issue|repo)\?))[^>]+)>',
+  r'<((?:https?://|kuzz://(?:message\?|join\?|channel/|(?:pr|issue|repo)\?))[^>]+)>',
 );
 final _bareLinkPattern = RegExp(
-  r'(?<![(\]=])(?:https?://|buzz://(?:message\?|join\?|channel/|(?:pr|issue|repo)\?))[^\s)>\]]+',
+  r'(?<![(\]=])(?:https?://|kuzz://(?:message\?|join\?|channel/|(?:pr|issue|repo)\?))[^\s)>\]]+',
 );
 final _trailingPunctuationPattern = RegExp(r'[.,!?:;]+$');
 final _backtickRunPattern = RegExp(r'`+');
 
-/// Converts supported Buzz and HTTP(S) autolinks and bare links into Markdown
+/// Converts supported Kuzz and HTTP(S) autolinks and bare links into Markdown
 /// links while leaving inline and fenced code untouched. Punctuation peeling
-/// is limited to Buzz URLs so existing HTTP(S) destinations stay unchanged.
+/// is limited to Kuzz URLs so existing HTTP(S) destinations stay unchanged.
 String normalizeBareLinks(String content) {
+  content = upgradeLegacyAppLinks(content);
   final buffer = StringBuffer();
   var offset = 0;
   var proseStart = 0;
@@ -126,10 +127,10 @@ String _normalizeBareLink(String segment, Match match) {
   final matched = match[0]!;
   var url = matched;
   var trailing = '';
-  final isBuzzUrl = matched.startsWith('buzz://');
+  final isKuzzUrl = matched.startsWith('kuzz://');
   final start = match.start;
 
-  if (isBuzzUrl) {
+  if (isKuzzUrl) {
     final outsidePunctuation = _trailingPunctuationPattern.firstMatch(url);
     if (outsidePunctuation != null) {
       url = url.substring(0, outsidePunctuation.start);
@@ -154,7 +155,7 @@ String _normalizeBareLink(String segment, Match match) {
     }
   }
 
-  if (isBuzzUrl) {
+  if (isKuzzUrl) {
     final punctuation = _trailingPunctuationPattern.firstMatch(url);
     if (punctuation != null) {
       url = url.substring(0, punctuation.start);
@@ -185,4 +186,13 @@ bool _hasUnclosedMarkdownDelimiter(String prefix, String delimiter) {
     if (open || canOpen) open = !open;
     offset = afterIndex;
   }
+}
+
+// Messages written before the product rename carry old-scheme app links.
+final _legacyAppLink = RegExp(r'(^|[^\w.+/-])buzz://'); // kuzz-rename: keep
+
+/// Rewrites old-scheme app links to `kuzz://` so every parser opens them.
+String upgradeLegacyAppLinks(String text) {
+  if (!text.contains('buzz://')) return text; // kuzz-rename: keep
+  return text.replaceAllMapped(_legacyAppLink, (m) => '${m[1]}kuzz://');
 }

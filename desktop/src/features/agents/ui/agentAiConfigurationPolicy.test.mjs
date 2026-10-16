@@ -95,7 +95,7 @@ test("Codex/Claude/Hermes Customize needs neither the hidden provider nor a mode
     true,
   );
   // An empty model is the harness's own default — the spawn omits
-  // BUZZ_ACP_MODEL and the harness picks (e.g. Hermes config.yaml's model,
+  // KUZZ_ACP_MODEL and the harness picks (e.g. Hermes config.yaml's model,
   // which may be a subscription-gated id the discovered picker never lists).
   assert.equal(
     agentAiConfigurationModeSatisfied(
@@ -107,7 +107,7 @@ test("Codex/Claude/Hermes Customize needs neither the hidden provider nor a mode
   );
 });
 
-test("Buzz Agent/Goose Customize still requires both provider and model", () => {
+test("Kuzz Agent/Goose Customize still requires both provider and model", () => {
   assert.equal(
     agentAiConfigurationModeSatisfied(
       "custom",

@@ -4,9 +4,9 @@ use super::*;
 fn voice_models_follow_the_selected_build_nest() {
     let home = PathBuf::from("/Users/example");
     for nest_name in [
-        ".buzz",
-        ".buzz-demo-workstream-board",
-        ".buzz-demo-second-demo",
+        ".kuzz",
+        ".kuzz-demo-workstream-board",
+        ".kuzz-demo-second-demo",
     ] {
         let nest = home.join(nest_name);
         assert_eq!(models_dir(nest.clone()), nest.join("models"));

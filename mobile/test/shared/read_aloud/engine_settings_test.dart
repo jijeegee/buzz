@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:buzz/features/settings/read_aloud_engine_settings.dart';
-import 'package:buzz/shared/read_aloud/read_aloud_preferences.dart';
-import 'package:buzz/shared/read_aloud/system_speech_engine.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/settings/read_aloud_engine_settings.dart';
+import 'package:kuzz/shared/read_aloud/read_aloud_preferences.dart';
+import 'package:kuzz/shared/read_aloud/system_speech_engine.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

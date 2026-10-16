@@ -62,7 +62,7 @@ pub async fn publish_note(
     let reply_id = reply_to
         .map(|hex| {
             EventId::from_hex(&hex).map_err(|e| {
-                eprintln!("buzz-desktop: invalid reply_to event id: {e}");
+                eprintln!("kuzz-desktop: invalid reply_to event id: {e}");
                 "Couldn't find this message.".to_string()
             })
         })

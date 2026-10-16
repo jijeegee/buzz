@@ -1,14 +1,14 @@
 import 'dart:async';
 
-import 'package:buzz/app.dart';
-import 'package:buzz/features/age_gate/age_signal_provider.dart';
-import 'package:buzz/features/home/home_page.dart';
-import 'package:buzz/features/sign_in/token_sign_in_page.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/token/token.dart';
-import 'package:buzz/shared/community/add_community_route.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:kuzz/app.dart';
+import 'package:kuzz/features/age_gate/age_signal_provider.dart';
+import 'package:kuzz/features/home/home_page.dart';
+import 'package:kuzz/features/sign_in/token_sign_in_page.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/community/add_community_route.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

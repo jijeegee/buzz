@@ -1,6 +1,6 @@
 /**
  * Utilities for extracting and parsing the `buzz:config-nudge` sentinel that
- * `buzz-acp`'s setup-listener appends to its kind:9 nudge body.
+ * `kuzz-acp`'s setup-listener appends to its kind:9 nudge body.
  *
  * Wire format (appended by `setup_mode.rs::nudge_body()`):
  *

@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:buzz/shared/read_aloud/speech_audio_session.dart';
-import 'package:buzz/shared/read_aloud/speech_engine.dart';
-import 'package:buzz/shared/read_aloud/system_speech_engine.dart';
+import 'package:kuzz/shared/read_aloud/speech_audio_session.dart';
+import 'package:kuzz/shared/read_aloud/speech_engine.dart';
+import 'package:kuzz/shared/read_aloud/system_speech_engine.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 

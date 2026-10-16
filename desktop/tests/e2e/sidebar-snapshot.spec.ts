@@ -11,7 +11,7 @@ const READ_DELAY_MS = 600;
 const SNAPSHOT_FRAME_DELAY_MS = 3_000;
 
 function snapshotKey(relayUrl: string, ownerPubkey = OWNER_PUBKEY) {
-  return `buzz-channels.v1:${relayUrl}:${ownerPubkey.toLowerCase()}`;
+  return `kuzz-channels.v1:${relayUrl}:${ownerPubkey.toLowerCase()}`;
 }
 
 function makeSnapshotChannel(index: number, prefix = "snapshot") {
@@ -39,9 +39,9 @@ function makeSnapshotChannel(index: number, prefix = "snapshot") {
 const FULL_SNAPSHOT = Array.from({ length: 14 }, (_, index) =>
   makeSnapshotChannel(index),
 );
-const SNAPSHOT_DIAGNOSTIC_MARK = "buzz:sidebar:snapshot-diagnostic";
-const FULL_SIDEBAR_PAINT_MARK = "buzz:sidebar:full-list-painted";
-const BOOT_TO_FULL_SIDEBAR_MEASURE = "buzz:sidebar:boot-to-full-list-painted";
+const SNAPSHOT_DIAGNOSTIC_MARK = "kuzz:sidebar:snapshot-diagnostic";
+const FULL_SIDEBAR_PAINT_MARK = "kuzz:sidebar:full-list-painted";
+const BOOT_TO_FULL_SIDEBAR_MEASURE = "kuzz:sidebar:boot-to-full-list-painted";
 
 function snapshotIntegrity(
   ownerPubkey: string,
@@ -145,11 +145,11 @@ async function seedCommunities(page: Page, communityPubkey = OWNER_PUBKEY) {
         },
       ];
       window.localStorage.setItem(
-        "buzz-communities",
+        "kuzz-communities",
         JSON.stringify(communities),
       );
       window.localStorage.setItem(
-        "buzz-active-community-id",
+        "kuzz-active-community-id",
         communities[0].id,
       );
     },
@@ -159,7 +159,7 @@ async function seedCommunities(page: Page, communityPubkey = OWNER_PUBKEY) {
 
 async function getChannelsPayloads(page: Page) {
   return page.evaluate(() =>
-    (window.__BUZZ_E2E_COMMAND_LOG__ ?? [])
+    (window.__KUZZ_E2E_COMMAND_LOG__ ?? [])
       .filter((entry) => entry.command === "get_channels")
       .map((entry) => entry.payload as { knownHash?: unknown }),
   );
@@ -167,7 +167,7 @@ async function getChannelsPayloads(page: Page) {
 
 async function mutateDisplayedChannels(page: Page, channelName: string) {
   await page.evaluate((name) => {
-    const queryClient = window.__BUZZ_E2E_QUERY_CLIENT__ as
+    const queryClient = window.__KUZZ_E2E_QUERY_CLIENT__ as
       | {
           setQueryData: (
             queryKey: readonly string[],
@@ -208,10 +208,10 @@ async function readPersistedSnapshot(page: Page) {
 async function trackSnapshotRows(page: Page) {
   await page.addInitScript(() => {
     const testWindow = window as Window & {
-      __BUZZ_E2E_SNAPSHOT_ROWS_SEEN__?: string[];
+      __KUZZ_E2E_SNAPSHOT_ROWS_SEEN__?: string[];
     };
     const seen: string[] = [];
-    testWindow.__BUZZ_E2E_SNAPSHOT_ROWS_SEEN__ = seen;
+    testWindow.__KUZZ_E2E_SNAPSHOT_ROWS_SEEN__ = seen;
     const record = (node: Node) => {
       if (!(node instanceof Element)) return;
       const rows = node.matches('[data-channel-id^="snapshot-"]')
@@ -235,9 +235,9 @@ async function getTrackedSnapshotRows(page: Page) {
     () =>
       (
         window as Window & {
-          __BUZZ_E2E_SNAPSHOT_ROWS_SEEN__?: string[];
+          __KUZZ_E2E_SNAPSHOT_ROWS_SEEN__?: string[];
         }
-      ).__BUZZ_E2E_SNAPSHOT_ROWS_SEEN__ ?? [],
+      ).__KUZZ_E2E_SNAPSHOT_ROWS_SEEN__ ?? [],
   );
 }
 
@@ -304,7 +304,7 @@ test("matching not-modified preserves display mutations without persisting them"
   await expect
     .poll(() =>
       page.evaluate(() =>
-        window.__BUZZ_E2E_QUERY_CLIENT__?.getQueryState(["channels"]),
+        window.__KUZZ_E2E_QUERY_CLIENT__?.getQueryState(["channels"]),
       ),
     )
     .toMatchObject({ fetchStatus: "idle", status: "success" });
@@ -312,14 +312,14 @@ test("matching not-modified preserves display mutations without persisting them"
   // Exercise the mutation during a real revalidation, not a race between boot
   // rendering and a fixed response delay. The cold-boot test covers first paint.
   await page.evaluate(() => {
-    window.__BUZZ_E2E_DEFER_NEXT_CHANNELS_READ__?.();
-    void window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+    window.__KUZZ_E2E_DEFER_NEXT_CHANNELS_READ__?.();
+    void window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
       queryKey: ["channels"],
       exact: true,
     });
   });
   await expect
-    .poll(() => page.evaluate(() => window.__BUZZ_E2E_CHANNELS_READ_PENDING__))
+    .poll(() => page.evaluate(() => window.__KUZZ_E2E_CHANNELS_READ_PENDING__))
     .toBe(1);
   await mutateDisplayedChannels(page, optimisticName);
   await expect(
@@ -327,14 +327,14 @@ test("matching not-modified preserves display mutations without persisting them"
   ).toBeVisible();
 
   expect(
-    await page.evaluate(() => window.__BUZZ_E2E_RELEASE_CHANNELS_READ__?.()),
+    await page.evaluate(() => window.__KUZZ_E2E_RELEASE_CHANNELS_READ__?.()),
   ).toBe(1);
   // Invocation logging only proves the request started. Wait for the query to
   // consume its response before checking either display state or persistence.
   await expect
     .poll(() =>
       page.evaluate(() =>
-        window.__BUZZ_E2E_QUERY_CLIENT__?.getQueryState(["channels"]),
+        window.__KUZZ_E2E_QUERY_CLIENT__?.getQueryState(["channels"]),
       ),
     )
     .toMatchObject({ fetchStatus: "idle", status: "success" });

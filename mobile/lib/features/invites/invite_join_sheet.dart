@@ -5,12 +5,12 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import 'invite_join_provider.dart';
 
 Future<bool?> showInviteJoinSheet(BuildContext context) {
-  return showBuzzModalBottomSheet<bool>(
+  return showKuzzModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     // The route remains a normal modal while idle, but its contents install a
@@ -89,7 +89,7 @@ class InviteJoinSheet extends ConsumerWidget {
                   ? 'Finish setting up'
                   : hasBuiltInServer
                   ? 'Join?'
-                  : 'Join this Buzz community?',
+                  : 'Join this Kuzz community?',
               key: const Key('invite-join-title'),
               style: context.textTheme.titleLarge,
             ),
@@ -204,7 +204,7 @@ class InviteJoinSheet extends ConsumerWidget {
                         ? SizedBox(
                             width: 16,
                             height: 16,
-                            child: BuzzLoadingIndicator(
+                            child: KuzzLoadingIndicator(
                               size: 16,
                               semanticLabel: isStarterSetupRecovery
                                   ? 'Finishing setup'

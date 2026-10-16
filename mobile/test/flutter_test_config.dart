@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:buzz/shared/auth/default_community.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
 
 /// Runs before every test file. The app always pins the built-in server
 /// (`kuzzServerOrigin`); suites that use fake relay hosts run with the

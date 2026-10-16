@@ -13,7 +13,7 @@ const GENERAL_CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 const REPLY_COUNT = 120;
 const FILLER_COUNT = 30;
 const ROOT_ID = "nfroot0001";
-const INBOX_FILTER_STORAGE_KEY = "buzz.desktop.inbox-filter";
+const INBOX_FILTER_STORAGE_KEY = "kuzz.desktop.inbox-filter";
 /** Mock latency for get_thread_windows, so in-flight states are observable. */
 const THREAD_DELAY_MS = 600;
 
@@ -27,7 +27,7 @@ type RelayEventLike = {
 };
 
 type MockWindow = Window & {
-  __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+  __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
     channelName: string;
     content: string;
     parentEventId?: string;
@@ -35,7 +35,7 @@ type MockWindow = Window & {
     createdAt?: number;
     id?: string;
   }) => RelayEventLike;
-  __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
+  __KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
     category: "mention" | "needs_action" | "activity" | "agent_activity";
     channel_id: string | null;
     channel_name: string;
@@ -46,7 +46,7 @@ type MockWindow = Window & {
     pubkey: string;
     tags: string[][];
   }) => unknown;
-  __BUZZ_E2E_COMMAND_PAYLOADS__?: Array<{ command: string; payload: unknown }>;
+  __KUZZ_E2E_COMMAND_PAYLOADS__?: Array<{ command: string; payload: unknown }>;
 };
 
 type ThreadWindowsPayload = {
@@ -70,12 +70,12 @@ function replyText(index: number) {
 async function seedLongThread(page: Page, fillerCount = FILLER_COUNT) {
   await page.waitForFunction(
     () =>
-      typeof (window as MockWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
+      typeof (window as MockWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
       "function",
   );
   return page.evaluate(
     ({ rootId, replies, fillers, alice }) => {
-      const emit = (window as MockWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const emit = (window as MockWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("emitter missing");
       const now = Math.floor(Date.now() / 1000);
       const base = now - 5_000;
@@ -117,7 +117,7 @@ async function seedLongThread(page: Page, fillerCount = FILLER_COUNT) {
 
 async function clearCommandLog(page: Page) {
   await page.evaluate(() => {
-    const log = (window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__;
+    const log = (window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__;
     if (log) log.length = 0;
   });
 }
@@ -125,7 +125,7 @@ async function clearCommandLog(page: Page) {
 async function threadWindowCalls(page: Page): Promise<ThreadWindowsPayload[]> {
   return page.evaluate(
     () =>
-      ((window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? [])
+      ((window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? [])
         .filter((entry) => entry.command === "get_thread_windows")
         .map((entry) => entry.payload) as ThreadWindowsPayload[],
   );
@@ -134,7 +134,7 @@ async function threadWindowCalls(page: Page): Promise<ThreadWindowsPayload[]> {
 async function fullThreadReads(page: Page) {
   return page.evaluate(
     () =>
-      ((window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
+      ((window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
         (entry) => entry.command === "get_thread_replies",
       ).length,
   );
@@ -352,7 +352,7 @@ test.describe("newest-first threads", () => {
       if (!latest) throw new Error("no reply seeded");
       await page.evaluate(
         ({ event, channelId }) => {
-          (window as MockWindow).__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?.({
+          (window as MockWindow).__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?.({
             category: "mention",
             channel_id: channelId,
             channel_name: "general",

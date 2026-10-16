@@ -21,13 +21,13 @@ async function waitForMockLiveSubscription(page: Page, channelName: string) {
         (currentChannelName) =>
           (
             window as Window & {
-              __BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
+              __KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
                 channelName: string;
                 kind: number;
                 exactChannel: boolean;
               }) => boolean;
             }
-          ).__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+          ).__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
             channelName: currentChannelName,
             kind: 9,
             exactChannel: true,
@@ -135,7 +135,7 @@ test("keeps pasted snapshots and channel drops out of an active voice note", asy
       const clipboardData = new DataTransfer();
       clipboardData.setData(
         "text/html",
-        `<a data-buzz-agent-snapshot="${payload}" href="https://relay.example/media/shared.agent.png">Snapshot</a>`,
+        `<a data-kuzz-agent-snapshot="${payload}" href="https://relay.example/media/shared.agent.png">Snapshot</a>`,
       );
       editor.dispatchEvent(
         new ClipboardEvent("paste", {
@@ -228,9 +228,9 @@ test("discards while voice-note processing is pending", async ({ page }) => {
     const pendingDecodes: Array<(buffer: AudioBuffer) => void> = [];
     (
       window as Window & {
-        __BUZZ_E2E_RESOLVE_VOICE_NOTE_DECODE__?: () => void;
+        __KUZZ_E2E_RESOLVE_VOICE_NOTE_DECODE__?: () => void;
       }
-    ).__BUZZ_E2E_RESOLVE_VOICE_NOTE_DECODE__ = () => {
+    ).__KUZZ_E2E_RESOLVE_VOICE_NOTE_DECODE__ = () => {
       pendingDecodes.shift()?.({
         duration: 1,
         getChannelData: () => new Float32Array([0]),
@@ -262,9 +262,9 @@ test("discards while voice-note processing is pending", async ({ page }) => {
     await page.evaluate(() =>
       (
         window as Window & {
-          __BUZZ_E2E_RESOLVE_VOICE_NOTE_DECODE__?: () => void;
+          __KUZZ_E2E_RESOLVE_VOICE_NOTE_DECODE__?: () => void;
         }
-      ).__BUZZ_E2E_RESOLVE_VOICE_NOTE_DECODE__?.(),
+      ).__KUZZ_E2E_RESOLVE_VOICE_NOTE_DECODE__?.(),
     );
     await expect(page.getByTestId("composer-voice-note-card")).toHaveCount(0);
   };
@@ -287,13 +287,13 @@ test("surfaces waveform and playback failures with retry", async ({ page }) => {
     ({ audioUrl }) => {
       const emit = (
         window as Window & {
-          __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
             channelName: string;
             content: string;
             extraTags: string[][];
           }) => unknown;
         }
-      ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock message emitter is unavailable.");
       emit({
         channelName: "general",
@@ -351,13 +351,13 @@ test("resumes a Play click that landed before the source finished loading", asyn
     ({ audioUrl }) => {
       const emit = (
         window as Window & {
-          __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
             channelName: string;
             content: string;
             extraTags: string[][];
           }) => unknown;
         }
-      ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock message emitter is unavailable.");
       emit({
         channelName: "general",
@@ -403,7 +403,7 @@ test("generic audio retains the relay-native download action", async ({
   await waitForMockLiveSubscription(page, "general");
   await page.evaluate(
     ({ href }) => {
-      const emit = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock message emitter is unavailable.");
       emit({
         channelName: "general",
@@ -424,7 +424,7 @@ test("generic audio retains the relay-native download action", async ({
     .poll(() =>
       page.evaluate(
         () =>
-          window.__BUZZ_E2E_COMMAND_LOG__?.find(
+          window.__KUZZ_E2E_COMMAND_LOG__?.find(
             ({ command }) => command === "download_file",
           ) ?? null,
       ),
@@ -442,7 +442,7 @@ test("voice notes omit the relay-native download action", async ({ page }) => {
   await waitForMockLiveSubscription(page, "general");
   await page.evaluate(
     ({ href }) => {
-      const emit = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock message emitter is unavailable.");
       emit({
         channelName: "general",
@@ -472,15 +472,15 @@ test("hard-caps audio work and cancels active and queued loads on unmount", asyn
   page,
 }) => {
   await page.addInitScript(() => {
-    window.__BUZZ_E2E_HOLD_MEDIA_FETCHES__ = true;
+    window.__KUZZ_E2E_HOLD_MEDIA_FETCHES__ = true;
     const originalCreate = URL.createObjectURL.bind(URL);
     const originalRevoke = URL.revokeObjectURL.bind(URL);
     const counters = { created: 0, revoked: 0 };
     (
       window as Window & {
-        __BUZZ_E2E_AUDIO_OBJECT_URLS__?: typeof counters;
+        __KUZZ_E2E_AUDIO_OBJECT_URLS__?: typeof counters;
       }
-    ).__BUZZ_E2E_AUDIO_OBJECT_URLS__ = counters;
+    ).__KUZZ_E2E_AUDIO_OBJECT_URLS__ = counters;
     URL.createObjectURL = (object) => {
       counters.created += 1;
       return originalCreate(object);
@@ -502,14 +502,14 @@ test("hard-caps audio work and cancels active and queued loads on unmount", asyn
     ({ audioUrl }) => {
       const emit = (
         window as Window & {
-          __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
             channelName: string;
             content: string;
             extraTags: string[][];
             createdAt: number;
           }) => unknown;
         }
-      ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock message emitter is unavailable.");
       const createdAt = Math.floor(Date.now() / 1000);
       for (let index = 0; index < 24; index += 1) {
@@ -538,24 +538,24 @@ test("hard-caps audio work and cancels active and queued loads on unmount", asyn
   const readFetchCount = () =>
     page.evaluate(
       () =>
-        window.__BUZZ_E2E_COMMANDS__?.filter(
+        window.__KUZZ_E2E_COMMANDS__?.filter(
           (command) => command === "fetch_media_bytes",
         ).length ?? 0,
     );
   await expect
     .poll(() =>
       page.evaluate(
-        () => window.__BUZZ_E2E_MEDIA_FETCH_STATE__ ?? { active: 0, peak: 0 },
+        () => window.__KUZZ_E2E_MEDIA_FETCH_STATE__ ?? { active: 0, peak: 0 },
       ),
     )
     .toEqual({ active: 3, peak: 3 });
   await expect
-    .poll(() => page.evaluate(() => window.__BUZZ_E2E_AUDIO_LOAD_STATE__?.()))
+    .poll(() => page.evaluate(() => window.__KUZZ_E2E_AUDIO_LOAD_STATE__?.()))
     .toEqual({ active: 3, queued: 21 });
   expect(await readFetchCount()).toBe(3);
   expect(
     await page.evaluate(
-      () => window.__BUZZ_E2E_AUDIO_OBJECT_URLS__?.created ?? 0,
+      () => window.__KUZZ_E2E_AUDIO_OBJECT_URLS__?.created ?? 0,
     ),
   ).toBe(0);
 
@@ -563,14 +563,14 @@ test("hard-caps audio work and cancels active and queued loads on unmount", asyn
   await expect(cards).toHaveCount(0);
   await expect
     .poll(() =>
-      page.evaluate(() => window.__BUZZ_E2E_MEDIA_FETCH_STATE__?.active ?? -1),
+      page.evaluate(() => window.__KUZZ_E2E_MEDIA_FETCH_STATE__?.active ?? -1),
     )
     .toBe(0);
   await expect
-    .poll(() => page.evaluate(() => window.__BUZZ_E2E_AUDIO_LOAD_STATE__?.()))
+    .poll(() => page.evaluate(() => window.__KUZZ_E2E_AUDIO_LOAD_STATE__?.()))
     .toEqual({ active: 0, queued: 0 });
   const commandCounts = await page.evaluate(() => {
-    const commands = window.__BUZZ_E2E_COMMANDS__ ?? [];
+    const commands = window.__KUZZ_E2E_COMMANDS__ ?? [];
     return {
       cancelled: commands.filter((command) => command === "cancel_media_fetch")
         .length,
@@ -582,7 +582,7 @@ test("hard-caps audio work and cancels active and queued loads on unmount", asyn
   });
   expect(commandCounts).toEqual({ cancelled: 3, fetched: 3, released: 3 });
   expect(
-    await page.evaluate(() => window.__BUZZ_E2E_AUDIO_OBJECT_URLS__),
+    await page.evaluate(() => window.__KUZZ_E2E_AUDIO_OBJECT_URLS__),
   ).toEqual({ created: 0, revoked: 0 });
 });
 
@@ -914,13 +914,13 @@ test("starting a duplicate voice-note player pauses the other instance", async (
     ({ audioUrl }) => {
       const emit = (
         window as Window & {
-          __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
             channelName: string;
             content: string;
             extraTags: string[][];
           }) => unknown;
         }
-      ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock message emitter is unavailable.");
       const input = {
         channelName: "general",

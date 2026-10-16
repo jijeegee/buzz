@@ -75,7 +75,7 @@ const signedIn = [
     state: "signed_in",
     active: true,
     displayName: null,
-    buzzName: null,
+    kuzzName: null,
     avatarUrl: null,
     email: null,
     lastUsedAt: null,

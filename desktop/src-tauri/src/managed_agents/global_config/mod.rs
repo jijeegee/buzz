@@ -8,7 +8,7 @@
 //! # Precedence (low → high)
 //!
 //! ```text
-//! baked build env  <  GLOBAL  <  definition (linked) / instance (legacy)  <  Buzz-identity
+//! baked build env  <  GLOBAL  <  definition (linked) / instance (legacy)  <  Kuzz-identity
 //! ```
 //!
 //! # Semantics
@@ -75,7 +75,7 @@ pub struct GlobalAgentConfig {
     /// Code, Codex, Hermes), set by the effort companion beside the default
     /// model in Global AI Defaults. The launch projection reads it below the
     /// persona tier and below the global native env key — native > column,
-    /// like every tier — so a Goose/buzz-agent knob set in the same dialog is
+    /// like every tier — so a Goose/kuzz-agent knob set in the same dialog is
     /// never outranked by a stale column (`config_bridge::effort`). `None` = adapter default; omitted from the
     /// file while unset so existing configs round-trip byte-identically.
     #[serde(default, skip_serializing_if = "Option::is_none")]

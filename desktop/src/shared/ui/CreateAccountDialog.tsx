@@ -10,7 +10,7 @@ import {
 } from "./alert-dialog";
 
 /**
- * "Create your Buzz account": the Google account just chosen has no Buzz
+ * "Create your Kuzz account": the Google account just chosen has no Kuzz
  * account yet. Nothing exists until "Create account"; "Use a different
  * account" opens Google's account picker again, and closing stops here.
  */

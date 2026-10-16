@@ -160,7 +160,7 @@ beforeEach(async () => {
   setDetachedToastScope({ relayUrl: RELAY_A, signerPubkey: SELF });
   window.localStorage.clear();
   window.localStorage.setItem(
-    "buzz-communities",
+    "kuzz-communities",
     JSON.stringify([
       {
         id: "community-a",
@@ -178,7 +178,7 @@ beforeEach(async () => {
       },
     ]),
   );
-  window.localStorage.setItem("buzz-active-community-id", "community-a");
+  window.localStorage.setItem("kuzz-active-community-id", "community-a");
 });
 
 /**
@@ -263,7 +263,7 @@ async function importIdentity(act, rendered, client, pubkey) {
 }
 
 const AGENT_RECORD = { pubkey: AGENT, name: "fizz" };
-const OTHER_AGENT_RECORD = { pubkey: OTHER_AGENT, name: "buzz" };
+const OTHER_AGENT_RECORD = { pubkey: OTHER_AGENT, name: "kuzz" };
 
 /** Lets queued microtasks (the mutation, and the map's `finally`) run. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -552,8 +552,8 @@ test("a wake is refused while the identity that would scope it is unresolved", a
 });
 
 test("a wake is refused when no community is active to scope it", async () => {
-  window.localStorage.setItem("buzz-communities", JSON.stringify([]));
-  window.localStorage.removeItem("buzz-active-community-id");
+  window.localStorage.setItem("kuzz-communities", JSON.stringify([]));
+  window.localStorage.removeItem("kuzz-active-community-id");
   const { act, rendered } = await renderDetachedStart();
 
   let fired;
@@ -573,7 +573,7 @@ test("a blank relay URL is refused rather than sent as no assertion", async () =
   // it discards a missing one, so emptiness has to be judged on the trimmed
   // form here — a blank stored URL is an unscoped wake, not a scoped one.
   window.localStorage.setItem(
-    "buzz-communities",
+    "kuzz-communities",
     JSON.stringify([
       {
         id: "community-blank",
@@ -584,7 +584,7 @@ test("a blank relay URL is refused rather than sent as no assertion", async () =
       },
     ]),
   );
-  window.localStorage.setItem("buzz-active-community-id", "community-blank");
+  window.localStorage.setItem("kuzz-active-community-id", "community-blank");
   const { act, rendered } = await renderDetachedStart();
 
   await act(async () => {

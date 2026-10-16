@@ -65,7 +65,7 @@ enum MP4Canonicalizer {
 
   private static func invalidMp4BoxError() -> NSError {
     NSError(
-      domain: "BuzzVideoTranscode",
+      domain: "KuzzVideoTranscode",
       code: 1,
       userInfo: [NSLocalizedDescriptionKey: "Invalid MP4 box structure."]
     )

@@ -1,7 +1,7 @@
 /**
  * Browser session for relays that advertise token auth (plan §3.2 web row,
  * §2.3): the access token lives only in this object's memory; the refresh
- * token is the relay's HttpOnly `buzz_refresh` cookie, which JavaScript never
+ * token is the relay's HttpOnly `kuzz_refresh` cookie, which JavaScript never
  * sees. `POST /auth/refresh` with an empty body rotates the cookie and
  * returns a new access token.
  *
@@ -169,7 +169,7 @@ export class WebSession {
     }
     if (json.identity_mode && json.identity_mode !== "token") {
       throw new Error(
-        "Google key recovery is supported in Buzz desktop or mobile. Your browser identity was not changed.",
+        "Google key recovery is supported in Kuzz desktop or mobile. Your browser identity was not changed.",
       );
     }
     this.generation += 1;

@@ -1,8 +1,8 @@
-import 'package:buzz/features/activity/feed_item.dart';
-import 'package:buzz/features/activity/inbox_item.dart';
-import 'package:buzz/features/activity/inbox_preload.dart';
-import 'package:buzz/features/channels/channel_preload.dart';
-import 'package:buzz/features/channels/thread_replies_provider.dart';
+import 'package:kuzz/features/activity/feed_item.dart';
+import 'package:kuzz/features/activity/inbox_item.dart';
+import 'package:kuzz/features/activity/inbox_preload.dart';
+import 'package:kuzz/features/channels/channel_preload.dart';
+import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

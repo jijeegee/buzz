@@ -168,7 +168,7 @@ export function AvatarFramingSlider({
     left: `${percentFromSliderValue(resetValue, min, max)}%`,
   };
   const sliderControl = (
-    <div className="buzz-avatar-framing-slider-wrapper">
+    <div className="kuzz-avatar-framing-slider-wrapper">
       <div
         aria-label={ariaLabel}
         aria-describedby={tipText ? tipId : ariaDescribedBy}
@@ -177,8 +177,8 @@ export function AvatarFramingSlider({
         aria-valuenow={value}
         aria-valuetext={ariaValueText}
         className={cn(
-          "buzz-avatar-framing-slider",
-          compact && "buzz-avatar-framing-slider--compact",
+          "kuzz-avatar-framing-slider",
+          compact && "kuzz-avatar-framing-slider--compact",
         )}
         data-active={isActive ? "true" : undefined}
         data-handle-visible={handleAlwaysVisible ? "true" : undefined}
@@ -238,16 +238,16 @@ export function AvatarFramingSlider({
         role="slider"
         style={
           {
-            "--buzz-avatar-framing-slider-fill": `${fill}%`,
+            "--kuzz-avatar-framing-slider-fill": `${fill}%`,
           } as React.CSSProperties
         }
         tabIndex={disabled ? -1 : 0}
       >
-        <div className="buzz-avatar-framing-slider-hashmarks">
+        <div className="kuzz-avatar-framing-slider-hashmarks">
           {ticks.map((tick) => (
             <span
               aria-hidden="true"
-              className="buzz-avatar-framing-slider-hashmark"
+              className="kuzz-avatar-framing-slider-hashmark"
               key={tick}
               style={{
                 left: `${percentFromSliderValue(tick, min, max)}%`,
@@ -255,12 +255,12 @@ export function AvatarFramingSlider({
             />
           ))}
         </div>
-        <div aria-hidden="true" className="buzz-avatar-framing-slider-fill" />
-        <div aria-hidden="true" className="buzz-avatar-framing-slider-handle" />
+        <div aria-hidden="true" className="kuzz-avatar-framing-slider-fill" />
+        <div aria-hidden="true" className="kuzz-avatar-framing-slider-handle" />
       </div>
       <button
         aria-label={resetLabel}
-        className="buzz-avatar-framing-slider-hashmark"
+        className="kuzz-avatar-framing-slider-hashmark"
         data-reset="true"
         data-testid={resetTestId}
         disabled={disabled}
@@ -277,7 +277,7 @@ export function AvatarFramingSlider({
       />
       {tipText ? (
         <p
-          className="buzz-avatar-framing-slider-tip"
+          className="kuzz-avatar-framing-slider-tip"
           data-visible={isActive ? "true" : undefined}
           id={tipId}
         >

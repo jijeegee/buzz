@@ -28,7 +28,7 @@ use crate::{
     relay::{relay_ws_url_with_override, sync_managed_agent_profile},
 };
 
-/// Query available models from an agent via `buzz-acp models --json`.
+/// Query available models from an agent via `kuzz-acp models --json`.
 ///
 /// Spawns a short-lived subprocess (no relay connection needed). The subprocess
 /// starts the agent, queries its model catalog, and exits. ~2-5s total.
@@ -238,7 +238,7 @@ pub async fn discover_agent_models(
         &merged_env,
     );
 
-    // Buzz shared compute discovery must not depend on the local OpenAI ingress: that
+    // Kuzz shared compute discovery must not depend on the local OpenAI ingress: that
     // client endpoint is started only after a live target is selected.
     #[cfg(feature = "mesh-llm")]
     if input.provider.as_deref().map(str::trim)
@@ -494,7 +494,7 @@ async fn discover_openai_compatible_models(
     selected_model: Option<String>,
 ) -> Result<Option<AgentModelsResponse>, String> {
     if provider.as_deref().map(str::trim) == Some("openai-subscription") {
-        let entries = buzz_agent_pkg::catalog::discover_subscription_models(
+        let entries = kuzz_agent_pkg::catalog::discover_subscription_models(
             env.get("CODEX_HOME")
                 .filter(|s| !s.is_empty())
                 .map(std::path::PathBuf::from),
@@ -739,7 +739,7 @@ pub(super) use update::{flush_managed_agent_policy, managed_agent_access_policy_
 
 // ── Model normalization ───────────────────────────────────────────────────────
 
-/// Normalize raw `buzz-acp models --json` output into a typed DTO for the frontend.
+/// Normalize raw `kuzz-acp models --json` output into a typed DTO for the frontend.
 ///
 /// Merges models from both ACP paths (stable configOptions + unstable SessionModelState),
 /// deduplicates by ID (stable takes precedence), and returns a unified list.

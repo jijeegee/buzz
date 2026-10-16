@@ -13,7 +13,7 @@ export type Tree = { [key: string]: Tree | Reg | undefined };
 /** Device id stamped on registers imported from meta-less (legacy) data. */
 export const LEGACY_DEV = "0".repeat(16);
 
-const CLOCK_KEY = "buzz-sidebar-clock.v1";
+const CLOCK_KEY = "kuzz-sidebar-clock.v1";
 const DEV_RE = /^[0-9a-f]{16}$/;
 const encoder = new TextEncoder();
 

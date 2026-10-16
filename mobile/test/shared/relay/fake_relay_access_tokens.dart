@@ -1,5 +1,5 @@
-import 'package:buzz/shared/auth/token/token_session.dart';
-import 'package:buzz/shared/relay/relay_access_tokens.dart';
+import 'package:kuzz/shared/auth/token/token_session.dart';
+import 'package:kuzz/shared/relay/relay_access_tokens.dart';
 
 /// Scriptable [RelayAccessTokens] for transport tests.
 class FakeRelayAccessTokens implements RelayAccessTokens {

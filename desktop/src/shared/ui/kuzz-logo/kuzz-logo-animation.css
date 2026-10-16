@@ -1,0 +1,88 @@
+.kuzz-logo {
+  display: grid;
+  place-items: center;
+  inline-size: fit-content;
+}
+
+.kuzz-logo--screen {
+  min-block-size: 100vh;
+  inline-size: 100%;
+  overflow: hidden;
+}
+
+.kuzz-logo--background {
+  background-color: var(--kuzz-brand-blue, #0047a0);
+  background-image: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.12) 1.2px,
+    transparent 1.3px
+  );
+  background-position: 0 0;
+  background-size: 37px 37px;
+}
+
+.kuzz-logo__mark {
+  display: block;
+  inline-size: min(466px, calc(100vw - 32px));
+  block-size: auto;
+  overflow: visible;
+}
+
+.kuzz-logo--compact {
+  inline-size: 1.5rem;
+}
+
+.kuzz-logo--compact .kuzz-logo__mark {
+  inline-size: 100%;
+  block-size: auto;
+  max-inline-size: 100%;
+}
+
+.kuzz-logo__ink {
+  fill: currentColor;
+}
+
+@keyframes kuzz-logo-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.kuzz-logo--pulse .kuzz-logo__mark {
+  animation: kuzz-logo-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes kuzz-logo-scale-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.kuzz-logo--scale-pulse .kuzz-logo__mark {
+  animation: kuzz-logo-scale-pulse 1.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kuzz-logo animate {
+    display: none;
+  }
+
+  .kuzz-logo--pulse .kuzz-logo__mark {
+    animation: none;
+    opacity: 0.8;
+  }
+
+  .kuzz-logo--scale-pulse .kuzz-logo__mark {
+    animation: none;
+    transform: none;
+  }
+}

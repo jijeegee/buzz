@@ -294,7 +294,7 @@ function renderDialog(onOpenChange, agentOverrides = {}) {
   return render(
     createElement(
       ThemeProvider,
-      { defaultTheme: "buzz" },
+      { defaultTheme: "kuzz" },
       createElement(
         QueryClientProvider,
         { client },
@@ -956,7 +956,7 @@ test("runtime switch clears touched effort — no effortLevel dispatched after s
     "fallback-sourced options must carry the model-dependence hint",
   );
   // The stored column ("low") survives a runtime switch and is what the next
-  // spawn launches as BUZZ_ACP_EFFORT_LEVEL, so the picker must keep showing it
+  // spawn launches as KUZZ_ACP_EFFORT_LEVEL, so the picker must keep showing it
   // — never "Adapter default" or the pre-switch "High" pick.
   assert.equal(
     effortTrigger.textContent?.trim(),

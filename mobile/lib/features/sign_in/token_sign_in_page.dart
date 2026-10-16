@@ -9,7 +9,7 @@ import '../../shared/auth/google_key_backup.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
 
 /// "Sign in with Google" for relays with centralized token auth.
@@ -60,7 +60,7 @@ class TokenSignInPage extends HookConsumerWidget {
     final checking = useState(false);
     final completing = useState(false);
     final message = useState<String?>(null);
-    // The Google account chosen belongs to another Buzz account: the way
+    // The Google account chosen belongs to another Kuzz account: the way
     // forward is choosing a different Google account (the relay always asks
     // Google for the account chooser), never switching identities.
     final accountMismatch = useState(false);
@@ -286,7 +286,7 @@ class TokenSignInPage extends HookConsumerWidget {
               resumeSignedOut
                   ? 'Sign in again'
                   : keyBackup.value
-                  ? 'Welcome to Buzz'
+                  ? 'Welcome to Kuzz'
                   : dualMode.value
                   ? 'Existing account sign-in'
                   : lockedOrigin == null
@@ -303,7 +303,7 @@ class TokenSignInPage extends HookConsumerWidget {
                         : 'Your communities and messages are still on this device. '
                               'Sign in to pick up where you left off.'
                   : keyBackup.value
-                  ? 'Sign in on your first device or restore the same Buzz identity here. '
+                  ? 'Sign in on your first device or restore the same Kuzz identity here. '
                         'If this account has no backup, your current key is linked, '
                         'or a new key is created on this device. The server encrypts '
                         'the backup, but its operator or anyone controlling your '
@@ -314,7 +314,7 @@ class TokenSignInPage extends HookConsumerWidget {
                         ? 'Return to an account created before key recovery was added. '
                               'Its existing identity and history are kept. '
                               'New accounts use Google key recovery.'
-                        : 'Relays with Buzz accounts let you sign in with Google.'
+                        : 'Relays with Kuzz accounts let you sign in with Google.'
                   : hasBuiltInServer
                   ? 'Your session ended. Sign in again to continue.'
                   : 'Your session on $lockedOrigin ended. Sign in again '
@@ -397,7 +397,7 @@ class TokenSignInPage extends HookConsumerWidget {
             if (busy) ...[
               const SizedBox(height: Grid.sm),
               const Center(
-                child: BuzzLoadingIndicator(
+                child: KuzzLoadingIndicator(
                   size: 32,
                   semanticLabel: 'Signing in',
                 ),

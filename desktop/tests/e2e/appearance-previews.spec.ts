@@ -4,19 +4,19 @@ import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge } from "../helpers/bridge";
 
 const SHOTS = "test-results/appearance-previews";
-const THEME_STORAGE_KEY = "buzz-theme";
-const LINK_PREVIEW_STYLE_STORAGE_KEY = "buzz.appearance.linkPreviewStyle";
-const THREAD_VIEW_MODE_STORAGE_KEY = "buzz.channels.threadViewMode";
+const THEME_STORAGE_KEY = "kuzz-theme";
+const LINK_PREVIEW_STYLE_STORAGE_KEY = "kuzz.appearance.linkPreviewStyle";
+const THREAD_VIEW_MODE_STORAGE_KEY = "kuzz.channels.threadViewMode";
 
 async function openAppearance(
   page: Page,
   {
     linkStyle = "compact",
-    theme = "buzz",
+    theme = "kuzz",
     threadMode = "split",
   }: {
     linkStyle?: "compact" | "rich";
-    theme?: "buzz" | "buzz-dark";
+    theme?: "kuzz" | "kuzz-dark";
     threadMode?: "focus" | "split";
   } = {},
 ) {
@@ -154,7 +154,7 @@ test("appearance previews stay grouped and responsive", async ({ page }) => {
   await page.setViewportSize({ width: 840, height: 900 });
   await openAppearance(page, {
     linkStyle: "rich",
-    theme: "buzz-dark",
+    theme: "kuzz-dark",
     threadMode: "focus",
   });
 

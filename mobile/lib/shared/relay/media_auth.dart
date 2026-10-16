@@ -21,7 +21,7 @@ const _mediaGetAuthRefreshMarginSeconds = 60;
 ///
 /// Returns an empty map for non-relay URLs or when no signing key is available,
 /// so callers can safely use this on arbitrary profile/custom-emoji URLs without
-/// leaking Buzz credentials to third-party hosts.
+/// leaking Kuzz credentials to third-party hosts.
 ///
 /// With a 60-second proof lifetime the refresh margin equals the lifetime, so
 /// `_refreshAt == signedAt` and the cache never hits: every call mints a fresh
@@ -150,7 +150,7 @@ class MediaGetAuthService {
 
     return nostr.Event.from(
       kind: _mediaGetAuthKind,
-      content: 'Get buzz-media',
+      content: 'Get kuzz-media',
       tags: tags,
       secretKey: privkeyHex,
       verify: false,

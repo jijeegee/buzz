@@ -186,7 +186,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
                 : false,
             pushSubscriptionState: legacyKey == null
                 ? existing.pushSubscriptionState
-                : const BuzzPushLeaseSubscriptionState.desired(),
+                : const KuzzPushLeaseSubscriptionState.desired(),
           )
         : Community.create(
             name: Community.nameFromUrl(origin),

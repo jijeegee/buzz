@@ -6,8 +6,8 @@ import '../../../shared/auth/token/relay_origin.dart';
 
 /// Durable personal pins are isolated by signer and normalized community.
 String channelStarsKey(String pubkey, {String? origin}) => origin == null
-    ? 'buzz.channel-stars.v1:$pubkey'
-    : 'buzz.channel-stars.v2:${jsonEncode([pubkey, normalizeRelayOrigin(origin)])}';
+    ? 'kuzz.channel-stars.v1:$pubkey'
+    : 'kuzz.channel-stars.v2:${jsonEncode([pubkey, normalizeRelayOrigin(origin)])}';
 
 class ChannelStarEntry {
   final bool starred;
@@ -99,7 +99,7 @@ class ChannelStarsStorage {
     if (_prefs.containsKey(key)) return read(pubkey, origin: canonical);
     final legacy = _prefs.getString(channelStarsKey(pubkey));
     if (legacy == null) return const ChannelStarStore();
-    final claim = 'buzz.channel-stars.migrated-origin:$pubkey';
+    final claim = 'kuzz.channel-stars.migrated-origin:$pubkey';
     final owner = _prefs.getString(claim);
     if (owner != null && owner != canonical) return const ChannelStarStore();
     if (owner == null && !await _prefs.setString(claim, canonical)) {

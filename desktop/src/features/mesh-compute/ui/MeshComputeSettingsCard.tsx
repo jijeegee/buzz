@@ -40,8 +40,8 @@ import { useMeshServingUsage } from "../hooks/useMeshServingUsage";
 import { deriveMeshShareToggle } from "../shareToggleState";
 import { deriveServingIndicator } from "../servingUsage";
 
-const MODEL_DRAFT_STORAGE_KEY = "buzz.mesh-compute.share.model.v1";
-const MAX_VRAM_DRAFT_STORAGE_KEY = "buzz.mesh-compute.share.max-vram-gb.v1";
+const MODEL_DRAFT_STORAGE_KEY = "kuzz.mesh-compute.share.model.v1";
+const MAX_VRAM_DRAFT_STORAGE_KEY = "kuzz.mesh-compute.share.max-vram-gb.v1";
 
 // Keep the Share compute controls visually and behaviorally aligned with the
 // agent configuration fields. This is intentionally the same shell used by

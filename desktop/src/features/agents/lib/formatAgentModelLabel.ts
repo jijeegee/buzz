@@ -16,7 +16,7 @@ export { canonicalizeProvider };
  *   1. Non-blank discovered/API name (e.g. from `AgentModelInfo.name`) that is
  *      genuinely distinct from the id. A discovered name that merely echoes the
  *      trimmed id carries no display information, so it is treated as absent and
- *      falls through to the registry tier — this covers buzz-agent's Databricks
+ *      falls through to the registry tier — this covers kuzz-agent's Databricks
  *      discovery contract (`{id, name: id}`) and any harness/version skew that
  *      echoes the id as the name.
  *   2. Registry lookup by id:
@@ -36,7 +36,7 @@ export { canonicalizeProvider };
  *
  * `resolveModelCapabilities` canonicalizes the provider internally. The
  * providerless registry lookup applies the same family-token stripping and
- * unique-match guard as buzz-agent discovery; only unique exact-record aliases
+ * unique-match guard as kuzz-agent discovery; only unique exact-record aliases
  * get a label.
  */
 export function resolveModelLabel(

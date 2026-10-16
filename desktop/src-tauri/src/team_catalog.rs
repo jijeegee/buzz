@@ -13,7 +13,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use buzz_core_pkg::kind::{event_is_shared, KIND_TEAM_CATALOG};
+use kuzz_core_pkg::kind::{event_is_shared, KIND_TEAM_CATALOG};
 use nostr::Event;
 use serde::Serialize;
 use tauri::State;
@@ -188,7 +188,7 @@ enum PageProgress {
 /// test drives the exact seam production does, not a stubbed result.
 fn verify_page(page: Vec<Event>) -> Vec<Event> {
     page.into_iter()
-        .filter(buzz_core_pkg::draft::verify_served_event)
+        .filter(kuzz_core_pkg::draft::verify_served_event)
         .collect()
 }
 

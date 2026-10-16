@@ -68,7 +68,7 @@ final class ConcentricSheetSurfacePlatformView: NSObject, FlutterPlatformView {
     rootView.addSubview(surfaceView)
 
     channel = FlutterMethodChannel(
-      name: "buzz/concentric_sheet_surface/\(viewId)",
+      name: "kuzz/concentric_sheet_surface/\(viewId)",
       binaryMessenger: messenger
     )
 

@@ -41,14 +41,14 @@ async function install(page: Page, channel = "general", agents = false) {
 
 async function recipients(page: Page, content: string) {
   return page.evaluate((content) => {
-    const signed = (window.__BUZZ_E2E_SIGNED_EVENTS__ ?? [])
+    const signed = (window.__KUZZ_E2E_SIGNED_EVENTS__ ?? [])
       .filter((event) => event.content === content)
       .map((event) =>
         event.tags.filter((tag) => tag[0] === "p").map((tag) => tag[1]),
       );
     if (signed.length > 0) return signed;
     // Thread sends use native IPC in the mock bridge, not signed capture.
-    return (window.__BUZZ_E2E_COMMAND_LOG__ ?? [])
+    return (window.__KUZZ_E2E_COMMAND_LOG__ ?? [])
       .filter((call) => call.command === "send_channel_message")
       .map(
         (call) =>
@@ -158,7 +158,7 @@ for (const removal of ["delete", "audience-remove", "audience-unpin"]) {
   }) => {
     const [a, b] = ["a".repeat(64), "b".repeat(64)];
     await page.addInitScript(() =>
-      localStorage.setItem("buzz.messages.keepMentionedAgentsPinned", "true"),
+      localStorage.setItem("kuzz.messages.keepMentionedAgentsPinned", "true"),
     );
     await installMockBridge(page, {
       managedAgents: [a, b].map((pubkey) => ({
@@ -287,7 +287,7 @@ test("selected duplicate labels survive send, reopen, replacement and second reo
   // capture. Assert the real composer's native command payload and reopened UI.
   const editPayload = (content: string) =>
     page.evaluate((content) => {
-      const call = window.__BUZZ_E2E_COMMAND_LOG__
+      const call = window.__KUZZ_E2E_COMMAND_LOG__
         ?.filter((call) => call.command === "edit_message")
         .at(-1);
       const input = (
@@ -404,7 +404,7 @@ test("editing to a longer typed member drops the original shorter reference", as
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const call = window.__BUZZ_E2E_COMMAND_LOG__
+        const call = window.__KUZZ_E2E_COMMAND_LOG__
           ?.filter((call) => call.command === "edit_message")
           .at(-1);
         const input = (
@@ -601,13 +601,13 @@ for (const replacement of [
     await page.goto("/");
     await page.getByTestId("channel-general").click();
     await page.waitForFunction(() =>
-      window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+      window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
         channelName: "general",
       }),
     );
     const ids = await page.evaluate(
       ({ first, second }) => {
-        const emit = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+        const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
         if (!emit) throw new Error("Missing emitter");
         const root = emit({
           channelName: "general",
@@ -653,7 +653,7 @@ for (const replacement of [
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const call = window.__BUZZ_E2E_COMMAND_LOG__
+          const call = window.__KUZZ_E2E_COMMAND_LOG__
             ?.filter((call) => call.command === "edit_message")
             .at(-1);
           const args = (
@@ -703,13 +703,13 @@ for (const mixed of [false, true]) {
     await page.goto("/");
     await page.getByTestId("channel-general").click();
     await page.waitForFunction(() =>
-      window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+      window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
         channelName: "general",
       }),
     );
     const ids = await page.evaluate(
       ({ delivered }) => {
-        const emit = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+        const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
         if (!emit) throw new Error("Missing emitter");
         const root = emit({
           channelName: "general",
@@ -754,7 +754,7 @@ for (const mixed of [false, true]) {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const call = window.__BUZZ_E2E_COMMAND_LOG__
+          const call = window.__KUZZ_E2E_COMMAND_LOG__
             ?.filter((call) => call.command === "edit_message")
             .at(-1);
           const args = (
@@ -796,7 +796,7 @@ for (const selection of ["picker", "automatic"]) {
   }) => {
     const [a, b, pasted] = ["a".repeat(64), "b".repeat(64), "c".repeat(64)];
     await page.addInitScript(() =>
-      localStorage.setItem("buzz.messages.keepMentionedAgentsPinned", "true"),
+      localStorage.setItem("kuzz.messages.keepMentionedAgentsPinned", "true"),
     );
     await installMockBridge(page, {
       managedAgents: [a, b].map((pubkey) => ({
@@ -814,13 +814,13 @@ for (const selection of ["picker", "automatic"]) {
     const input = composer.getByTestId("message-input");
     await input.fill("@Scout");
     await composer.getByTestId(`mention-suggestion-${a}`).click();
-    await page.evaluate(() => window.__BUZZ_E2E_HOLD_USERS_BATCH__?.(true));
+    await page.evaluate(() => window.__KUZZ_E2E_HOLD_USERS_BATCH__?.(true));
     await input.evaluate((element, pubkey) => {
       const clipboardData = new DataTransfer();
       clipboardData.setData("text/plain", "@Scout pasted ");
       clipboardData.setData(
         "text/html",
-        `<span data-buzz-copy="markdown"><span data-mention="" data-mention-label="Scout" data-mention-pubkey="${pubkey}">@Scout</span> pasted </span>`,
+        `<span data-kuzz-copy="markdown"><span data-mention="" data-mention-label="Scout" data-mention-pubkey="${pubkey}">@Scout</span> pasted </span>`,
       );
       element.dispatchEvent(
         new ClipboardEvent("paste", {
@@ -833,7 +833,7 @@ for (const selection of ["picker", "automatic"]) {
     await expect(input).toHaveText("@Scout @Scout pasted ");
     await expect
       .poll(() =>
-        page.evaluate(() => window.__BUZZ_E2E_USERS_BATCH_PENDING__?.() ?? 0),
+        page.evaluate(() => window.__KUZZ_E2E_USERS_BATCH_PENDING__?.() ?? 0),
       )
       .toBeGreaterThan(0);
     if (selection === "picker") {
@@ -848,7 +848,7 @@ for (const selection of ["picker", "automatic"]) {
     const content = (await input.innerText()).trim();
     expect(
       await page.evaluate(
-        () => window.__BUZZ_E2E_HOLD_USERS_BATCH__?.(false) ?? 0,
+        () => window.__KUZZ_E2E_HOLD_USERS_BATCH__?.(false) ?? 0,
       ),
     ).toBeGreaterThan(0);
     await composer.getByTestId("send-message").click();
@@ -940,12 +940,12 @@ for (const partial of [false, true]) {
     await page.goto("/");
     await page.getByTestId("channel-general").click();
     await page.waitForFunction(() =>
-      window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+      window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
         channelName: "general",
       }),
     );
     await page.evaluate((keys) => {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: `@Scout (${keys[0]}) and @Scout (${keys[1]}) compact collision`,
         mentionPubkeys: keys,
@@ -1025,7 +1025,7 @@ for (const partial of [false, true]) {
         .poll(() =>
           page.evaluate(
             (marker) =>
-              (window.__BUZZ_E2E_SIGNED_EVENTS__ ?? [])
+              (window.__KUZZ_E2E_SIGNED_EVENTS__ ?? [])
                 .filter(
                   (event) =>
                     event.kind === 9 && event.content.endsWith(marker.trim()),

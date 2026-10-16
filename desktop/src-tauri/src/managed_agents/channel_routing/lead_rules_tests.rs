@@ -3,7 +3,7 @@ use crate::managed_agents::channel_routing::{routing_role_for, ChannelRoutingMod
 
 /// The harness tests match events against this exact file, so a rendering
 /// change here must be mirrored there (and vice versa).
-const FIXTURE: &str = include_str!("../../../../../crates/buzz-acp/tests/fixtures/lead_rules.toml");
+const FIXTURE: &str = include_str!("../../../../../crates/kuzz-acp/tests/fixtures/lead_rules.toml");
 /// Pubkey of secret key 1 — the owner the fixture listens to.
 const FIXTURE_OWNER: &str = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 const AGENT: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
@@ -19,7 +19,7 @@ fn env_state(command: &Command, key: &str) -> Option<Option<String>> {
 
 fn temp_dir(label: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "buzz-lead-rules-{label}-{}",
+        "kuzz-lead-rules-{label}-{}",
         uuid::Uuid::new_v4().simple()
     ));
     std::fs::create_dir_all(&dir).expect("create temp dir");
@@ -32,7 +32,7 @@ fn record(local: bool) -> ManagedAgentRecord {
         "name": "Coder",
         "private_key_nsec": "",
         "relay_url": "",
-        "acp_command": "buzz-acp",
+        "acp_command": "kuzz-acp",
         "agent_command": "goose",
         "agent_args": [],
         "mcp_command": "",
@@ -97,7 +97,7 @@ fn file_name_uses_the_first_twelve_hex_chars() {
 fn a_lead_spawn_writes_its_rules_and_stamps_the_listening_env() {
     let dir = temp_dir("spawn");
     let mut command = Command::new("true");
-    command.env("BUZZ_ACP_SYSTEM_PROMPT", "You are Coder.");
+    command.env("KUZZ_ACP_SYSTEM_PROMPT", "You are Coder.");
     apply_lead_spawn(
         &mut command,
         RoutingRole::Lead,
@@ -113,15 +113,15 @@ fn a_lead_spawn_writes_its_rules_and_stamps_the_listening_env() {
         render_lead_rules(FIXTURE_OWNER).expect("valid owner")
     );
     assert_eq!(
-        env_state(&command, "BUZZ_ACP_SUBSCRIBE"),
+        env_state(&command, "KUZZ_ACP_SUBSCRIBE"),
         Some(Some("config".into()))
     );
     assert_eq!(
-        env_state(&command, "BUZZ_ACP_CONFIG"),
+        env_state(&command, "KUZZ_ACP_CONFIG"),
         Some(Some(path.to_string_lossy().into_owned()))
     );
     assert_eq!(
-        env_state(&command, "BUZZ_ACP_SYSTEM_PROMPT"),
+        env_state(&command, "KUZZ_ACP_SYSTEM_PROMPT"),
         Some(Some(format!("You are Coder.\n\n{LEAD_LISTEN_ADDENDUM}")))
     );
     let _ = std::fs::remove_dir_all(&dir);
@@ -146,7 +146,7 @@ fn a_lead_spawn_fails_rather_than_falling_back_to_mentions() {
         Ok(temp_dir("no-owner")),
     )
     .is_err());
-    assert_eq!(env_state(&command, "BUZZ_ACP_SUBSCRIBE"), None);
+    assert_eq!(env_state(&command, "KUZZ_ACP_SUBSCRIBE"), None);
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn a_non_lead_spawn_drops_only_its_own_leftover_file() {
         .expect("non-lead spawn never fails on cleanup");
         assert!(!mine.exists(), "{role:?}");
         assert!(theirs.exists(), "{role:?}");
-        assert_eq!(env_state(&command, "BUZZ_ACP_SUBSCRIBE"), None, "{role:?}");
+        assert_eq!(env_state(&command, "KUZZ_ACP_SUBSCRIBE"), None, "{role:?}");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

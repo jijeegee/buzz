@@ -1,16 +1,16 @@
 import 'dart:convert';
 
-/// User-visible Buzz message kinds. This mirrors
+/// User-visible Kuzz message kinds. This mirrors
 /// `EventKind.channelMessageEventKinds` without importing feature code into
 /// the shared push layer.
-const buzzPushEligibleKinds = [9, 40002, 45001, 45003];
-const buzzPushSelfDirectedKinds = buzzPushEligibleKinds;
-const buzzPushRenderableKinds = buzzPushEligibleKinds;
-const buzzPushChannelKinds = [9];
-const buzzPushChannelChunkSize = 50;
-const buzzPushMaxSubscriptions = 16;
-const buzzPushMaxIgnoreFilters = 8;
-const buzzPushHellthreadParticipantLimit = 20;
+const kuzzPushEligibleKinds = [9, 40002, 45001, 45003];
+const kuzzPushSelfDirectedKinds = kuzzPushEligibleKinds;
+const kuzzPushRenderableKinds = kuzzPushEligibleKinds;
+const kuzzPushChannelKinds = [9];
+const kuzzPushChannelChunkSize = 50;
+const kuzzPushMaxSubscriptions = 16;
+const kuzzPushMaxIgnoreFilters = 8;
+const kuzzPushHellthreadParticipantLimit = 20;
 
 const _supportedNotificationClasses = {'default'};
 const _filterKeys = {'kinds', 'authors', '#p', '#h', '#e'};
@@ -19,16 +19,16 @@ final _channelIdPattern = RegExp(
   r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
 );
 
-enum BuzzPushLeaseSubscriptionAuthority { desired, accepted }
+enum KuzzPushLeaseSubscriptionAuthority { desired, accepted }
 
-class BuzzPushFilter {
+class KuzzPushFilter {
   final List<int> kinds;
   final List<String>? authors;
   final List<String>? pTags;
   final List<String>? hTags;
   final List<String>? eTags;
 
-  BuzzPushFilter({
+  KuzzPushFilter({
     required Iterable<int> kinds,
     Iterable<String>? authors,
     Iterable<String>? pTags,
@@ -50,9 +50,9 @@ class BuzzPushFilter {
     if (eTags != null) '#e': eTags,
   };
 
-  factory BuzzPushFilter.fromJson(Map<String, dynamic> json) {
+  factory KuzzPushFilter.fromJson(Map<String, dynamic> json) {
     _rejectUnknownKeys(json, _filterKeys, 'push filter');
-    return BuzzPushFilter(
+    return KuzzPushFilter(
       kinds: _intList(json, 'kinds'),
       authors: _optionalStringList(json, 'authors'),
       pTags: _optionalStringList(json, '#p'),
@@ -63,7 +63,7 @@ class BuzzPushFilter {
 
   void _validate() {
     if (kinds.isEmpty ||
-        kinds.any((kind) => !buzzPushEligibleKinds.contains(kind))) {
+        kinds.any((kind) => !kuzzPushEligibleKinds.contains(kind))) {
       throw const FormatException('Push filter contains invalid kinds.');
     }
     for (final value in [...?authors, ...?pTags, ...?eTags]) {
@@ -83,33 +83,33 @@ class BuzzPushFilter {
   }
 }
 
-class BuzzPushSuppression {
+class KuzzPushSuppression {
   final int pTagsMax;
 
-  const BuzzPushSuppression({required this.pTagsMax}) : assert(pTagsMax > 0);
+  const KuzzPushSuppression({required this.pTagsMax}) : assert(pTagsMax > 0);
 
   Map<String, dynamic> toJson() => {'p_tags_max': pTagsMax};
 
-  factory BuzzPushSuppression.fromJson(Map<String, dynamic> json) {
+  factory KuzzPushSuppression.fromJson(Map<String, dynamic> json) {
     _rejectUnknownKeys(json, const {'p_tags_max'}, 'push suppression');
     final value = json['p_tags_max'];
     if (value is! int || value <= 0) {
       throw const FormatException('p_tags_max must be a positive integer.');
     }
-    return BuzzPushSuppression(pTagsMax: value);
+    return KuzzPushSuppression(pTagsMax: value);
   }
 }
 
-class BuzzPushSubscription {
-  final BuzzPushFilter filter;
+class KuzzPushSubscription {
+  final KuzzPushFilter filter;
   final String notificationClass;
-  final List<BuzzPushFilter> ignore;
-  final BuzzPushSuppression? suppress;
+  final List<KuzzPushFilter> ignore;
+  final KuzzPushSuppression? suppress;
 
-  BuzzPushSubscription({
+  KuzzPushSubscription({
     required this.filter,
     required this.notificationClass,
-    Iterable<BuzzPushFilter> ignore = const [],
+    Iterable<KuzzPushFilter> ignore = const [],
     this.suppress,
   }) : ignore = List.unmodifiable(ignore) {
     if (!_supportedNotificationClasses.contains(notificationClass)) {
@@ -120,7 +120,7 @@ class BuzzPushSubscription {
         filter.hTags == null) {
       throw const FormatException('Push subscription filter is not narrowed.');
     }
-    if (this.ignore.length > buzzPushMaxIgnoreFilters) {
+    if (this.ignore.length > kuzzPushMaxIgnoreFilters) {
       throw const FormatException(
         'Push subscription has too many ignore filters.',
       );
@@ -135,7 +135,7 @@ class BuzzPushSubscription {
     if (suppress != null) 'suppress': suppress!.toJson(),
   };
 
-  factory BuzzPushSubscription.fromJson(Map<String, dynamic> json) {
+  factory KuzzPushSubscription.fromJson(Map<String, dynamic> json) {
     _rejectUnknownKeys(json, const {
       'filter',
       'class',
@@ -157,19 +157,19 @@ class BuzzPushSubscription {
         'Push subscription suppress must be an object.',
       );
     }
-    return BuzzPushSubscription(
-      filter: BuzzPushFilter.fromJson(Map<String, dynamic>.from(filter)),
+    return KuzzPushSubscription(
+      filter: KuzzPushFilter.fromJson(Map<String, dynamic>.from(filter)),
       notificationClass: notificationClass,
       ignore: [
         for (final raw in ignore as List<dynamic>? ?? const [])
           if (raw is Map)
-            BuzzPushFilter.fromJson(Map<String, dynamic>.from(raw))
+            KuzzPushFilter.fromJson(Map<String, dynamic>.from(raw))
           else
             throw const FormatException('Malformed push ignore filter.'),
       ],
       suppress: suppress == null
           ? null
-          : BuzzPushSuppression.fromJson(Map<String, dynamic>.from(suppress)),
+          : KuzzPushSuppression.fromJson(Map<String, dynamic>.from(suppress)),
     );
   }
 }
@@ -177,10 +177,10 @@ class BuzzPushSubscription {
 /// Desired and relay-accepted lease subscriptions are intentionally separate.
 /// Keeping both sets makes relay rejection or expiry detectable instead of
 /// assuming the desired lease was accepted unchanged.
-class BuzzPushLeaseSubscriptionState {
-  final BuzzPushLeaseSubscriptionAuthority authority;
-  final List<BuzzPushSubscription> desired;
-  final List<BuzzPushSubscription>? accepted;
+class KuzzPushLeaseSubscriptionState {
+  final KuzzPushLeaseSubscriptionAuthority authority;
+  final List<KuzzPushSubscription> desired;
+  final List<KuzzPushSubscription>? accepted;
 
   /// Monotonic generation of the relay-facing kind-30350 lease.
   final int? acceptedGeneration;
@@ -197,7 +197,7 @@ class BuzzPushLeaseSubscriptionState {
   /// lost is safely superseded without weakening strict relay monotonicity.
   final int? pendingTombstoneGeneration;
 
-  const BuzzPushLeaseSubscriptionState.desired({
+  const KuzzPushLeaseSubscriptionState.desired({
     this.desired = const [],
     this.accepted,
     this.acceptedGeneration,
@@ -209,15 +209,15 @@ class BuzzPushLeaseSubscriptionState {
                  generationCursor != null &&
                  pendingTombstoneGeneration <= generationCursor),
        ),
-       authority = BuzzPushLeaseSubscriptionAuthority.desired;
+       authority = KuzzPushLeaseSubscriptionAuthority.desired;
 
-  BuzzPushLeaseSubscriptionState.accepted({
-    required Iterable<BuzzPushSubscription> desired,
-    required Iterable<BuzzPushSubscription> acceptedSubscriptions,
+  KuzzPushLeaseSubscriptionState.accepted({
+    required Iterable<KuzzPushSubscription> desired,
+    required Iterable<KuzzPushSubscription> acceptedSubscriptions,
     required this.acceptedGeneration,
     this.generationCursor,
     this.pendingTombstoneGeneration,
-  }) : authority = BuzzPushLeaseSubscriptionAuthority.accepted,
+  }) : authority = KuzzPushLeaseSubscriptionAuthority.accepted,
        desired = List.unmodifiable(desired),
        accepted = List.unmodifiable(acceptedSubscriptions) {
     if (acceptedGeneration == null || acceptedGeneration! <= 0) {
@@ -245,26 +245,26 @@ class BuzzPushLeaseSubscriptionState {
     }
   }
 
-  List<BuzzPushSubscription> get authoritative => switch (authority) {
-    BuzzPushLeaseSubscriptionAuthority.desired => desired,
-    BuzzPushLeaseSubscriptionAuthority.accepted => accepted!,
+  List<KuzzPushSubscription> get authoritative => switch (authority) {
+    KuzzPushLeaseSubscriptionAuthority.desired => desired,
+    KuzzPushLeaseSubscriptionAuthority.accepted => accepted!,
   };
 
-  BuzzPushLeaseSubscriptionState withDesired(
-    Iterable<BuzzPushSubscription> subscriptions,
+  KuzzPushLeaseSubscriptionState withDesired(
+    Iterable<KuzzPushSubscription> subscriptions,
   ) {
-    final updated = List<BuzzPushSubscription>.unmodifiable(subscriptions);
+    final updated = List<KuzzPushSubscription>.unmodifiable(subscriptions);
     return switch (authority) {
-      BuzzPushLeaseSubscriptionAuthority.desired =>
-        BuzzPushLeaseSubscriptionState.desired(
+      KuzzPushLeaseSubscriptionAuthority.desired =>
+        KuzzPushLeaseSubscriptionState.desired(
           desired: updated,
           accepted: accepted,
           acceptedGeneration: acceptedGeneration,
           generationCursor: generationCursor,
           pendingTombstoneGeneration: pendingTombstoneGeneration,
         ),
-      BuzzPushLeaseSubscriptionAuthority.accepted =>
-        BuzzPushLeaseSubscriptionState.accepted(
+      KuzzPushLeaseSubscriptionAuthority.accepted =>
+        KuzzPushLeaseSubscriptionState.accepted(
           desired: updated,
           acceptedSubscriptions: accepted!,
           acceptedGeneration: acceptedGeneration,
@@ -274,10 +274,10 @@ class BuzzPushLeaseSubscriptionState {
     };
   }
 
-  BuzzPushLeaseSubscriptionState withAccepted({
-    required Iterable<BuzzPushSubscription> subscriptions,
+  KuzzPushLeaseSubscriptionState withAccepted({
+    required Iterable<KuzzPushSubscription> subscriptions,
     required int generation,
-  }) => BuzzPushLeaseSubscriptionState.accepted(
+  }) => KuzzPushLeaseSubscriptionState.accepted(
     desired: desired,
     acceptedSubscriptions: subscriptions,
     acceptedGeneration: generation,
@@ -291,23 +291,23 @@ class BuzzPushLeaseSubscriptionState {
         : null,
   );
 
-  BuzzPushLeaseSubscriptionState withReservedGeneration(int generation) {
+  KuzzPushLeaseSubscriptionState withReservedGeneration(int generation) {
     if (generation <= (generationCursor ?? acceptedGeneration ?? 0)) {
       throw const FormatException(
         'Reserved push lease generation must advance monotonically.',
       );
     }
     return switch (authority) {
-      BuzzPushLeaseSubscriptionAuthority.desired =>
-        BuzzPushLeaseSubscriptionState.desired(
+      KuzzPushLeaseSubscriptionAuthority.desired =>
+        KuzzPushLeaseSubscriptionState.desired(
           desired: desired,
           accepted: accepted,
           acceptedGeneration: acceptedGeneration,
           generationCursor: generation,
           pendingTombstoneGeneration: pendingTombstoneGeneration,
         ),
-      BuzzPushLeaseSubscriptionAuthority.accepted =>
-        BuzzPushLeaseSubscriptionState.accepted(
+      KuzzPushLeaseSubscriptionAuthority.accepted =>
+        KuzzPushLeaseSubscriptionState.accepted(
           desired: desired,
           acceptedSubscriptions: accepted!,
           acceptedGeneration: acceptedGeneration,
@@ -317,13 +317,13 @@ class BuzzPushLeaseSubscriptionState {
     };
   }
 
-  BuzzPushLeaseSubscriptionState withPendingTombstone(int generation) {
+  KuzzPushLeaseSubscriptionState withPendingTombstone(int generation) {
     if (generation <= (generationCursor ?? acceptedGeneration ?? 0)) {
       throw const FormatException(
         'Pending push tombstone generation must advance monotonically.',
       );
     }
-    return BuzzPushLeaseSubscriptionState.desired(
+    return KuzzPushLeaseSubscriptionState.desired(
       desired: desired,
       accepted: accepted,
       acceptedGeneration: acceptedGeneration,
@@ -334,12 +334,12 @@ class BuzzPushLeaseSubscriptionState {
 
   /// Migrates a generation reserved by an older client before the explicit
   /// tombstone journal field existed.
-  BuzzPushLeaseSubscriptionState withPendingTombstoneAtCursor() {
+  KuzzPushLeaseSubscriptionState withPendingTombstoneAtCursor() {
     final generation = generationCursor;
     if (generation == null || generation <= (acceptedGeneration ?? 0)) {
       return this;
     }
-    return BuzzPushLeaseSubscriptionState.desired(
+    return KuzzPushLeaseSubscriptionState.desired(
       desired: desired,
       accepted: accepted,
       acceptedGeneration: acceptedGeneration,
@@ -348,12 +348,12 @@ class BuzzPushLeaseSubscriptionState {
     );
   }
 
-  BuzzPushLeaseSubscriptionState withAcceptedTombstone(int generation) {
+  KuzzPushLeaseSubscriptionState withAcceptedTombstone(int generation) {
     if (generation != pendingTombstoneGeneration ||
         generation < (acceptedGeneration ?? 0)) {
       return this;
     }
-    return BuzzPushLeaseSubscriptionState.desired(
+    return KuzzPushLeaseSubscriptionState.desired(
       desired: desired,
       acceptedGeneration: generation,
       generationCursor:
@@ -374,7 +374,7 @@ class BuzzPushLeaseSubscriptionState {
       'pendingTombstoneGeneration': pendingTombstoneGeneration,
   };
 
-  factory BuzzPushLeaseSubscriptionState.fromJson(Map<String, dynamic> json) {
+  factory KuzzPushLeaseSubscriptionState.fromJson(Map<String, dynamic> json) {
     _rejectUnknownKeys(json, const {
       'authority',
       'desired',
@@ -422,7 +422,7 @@ class BuzzPushLeaseSubscriptionState {
       );
     }
     return switch (authority) {
-      'desired' => BuzzPushLeaseSubscriptionState.desired(
+      'desired' => KuzzPushLeaseSubscriptionState.desired(
         desired: desired,
         accepted: accepted,
         acceptedGeneration: acceptedGeneration as int?,
@@ -430,7 +430,7 @@ class BuzzPushLeaseSubscriptionState {
         pendingTombstoneGeneration: pendingTombstoneGeneration as int?,
       ),
       'accepted' when accepted != null && acceptedGeneration is int =>
-        BuzzPushLeaseSubscriptionState.accepted(
+        KuzzPushLeaseSubscriptionState.accepted(
           desired: desired,
           acceptedSubscriptions: accepted,
           acceptedGeneration: acceptedGeneration,
@@ -445,7 +445,7 @@ class BuzzPushLeaseSubscriptionState {
   }
 }
 
-List<BuzzPushSubscription> buildDesiredBuzzPushSubscriptions({
+List<KuzzPushSubscription> buildDesiredKuzzPushSubscriptions({
   required String myPubkey,
   Iterable<String> channelIds = const [],
   Iterable<String> mutedChannelIds = const [],
@@ -459,28 +459,28 @@ List<BuzzPushSubscription> buildDesiredBuzzPushSubscriptions({
   final normalizedMuted = mutedChannelIds.map(_normalizeChannelID).toSet();
   final activeMuted =
       normalizedMuted.intersection(normalizedChannelIds).toList()..sort();
-  final mutedIgnoreFilters = <BuzzPushFilter>[];
-  for (final chunk in _chunks(activeMuted, buzzPushChannelChunkSize)) {
+  final mutedIgnoreFilters = <KuzzPushFilter>[];
+  for (final chunk in _chunks(activeMuted, kuzzPushChannelChunkSize)) {
     mutedIgnoreFilters.add(
-      BuzzPushFilter(kinds: buzzPushChannelKinds, hTags: chunk),
+      KuzzPushFilter(kinds: kuzzPushChannelKinds, hTags: chunk),
     );
   }
-  if (mutedIgnoreFilters.length + 1 > buzzPushMaxIgnoreFilters) {
+  if (mutedIgnoreFilters.length + 1 > kuzzPushMaxIgnoreFilters) {
     throw const FormatException('Too many muted channels for a push lease.');
   }
 
-  final selfAuthored = BuzzPushFilter(
-    kinds: buzzPushRenderableKinds,
+  final selfAuthored = KuzzPushFilter(
+    kinds: kuzzPushRenderableKinds,
     authors: [normalizedPubkey],
   );
   final ignores = [selfAuthored, ...mutedIgnoreFilters];
-  const suppression = BuzzPushSuppression(
-    pTagsMax: buzzPushHellthreadParticipantLimit,
+  const suppression = KuzzPushSuppression(
+    pTagsMax: kuzzPushHellthreadParticipantLimit,
   );
-  final subscriptions = <BuzzPushSubscription>[
-    BuzzPushSubscription(
-      filter: BuzzPushFilter(
-        kinds: buzzPushSelfDirectedKinds,
+  final subscriptions = <KuzzPushSubscription>[
+    KuzzPushSubscription(
+      filter: KuzzPushFilter(
+        kinds: kuzzPushSelfDirectedKinds,
         pTags: [normalizedPubkey],
       ),
       notificationClass: 'default',
@@ -491,30 +491,30 @@ List<BuzzPushSubscription> buildDesiredBuzzPushSubscriptions({
 
   final channels = normalizedChannelIds.difference(normalizedMuted).toList()
     ..sort();
-  for (final chunk in _chunks(channels, buzzPushChannelChunkSize)) {
+  for (final chunk in _chunks(channels, kuzzPushChannelChunkSize)) {
     subscriptions.add(
-      BuzzPushSubscription(
-        filter: BuzzPushFilter(kinds: buzzPushChannelKinds, hTags: chunk),
+      KuzzPushSubscription(
+        filter: KuzzPushFilter(kinds: kuzzPushChannelKinds, hTags: chunk),
         notificationClass: 'default',
         ignore: ignores,
         suppress: suppression,
       ),
     );
   }
-  if (subscriptions.length > buzzPushMaxSubscriptions) {
+  if (subscriptions.length > kuzzPushMaxSubscriptions) {
     throw const FormatException('Too many channels for a push lease.');
   }
   return List.unmodifiable(subscriptions);
 }
 
-String buzzPushSubscriptionsFingerprint(
-  List<BuzzPushSubscription> subscriptions,
+String kuzzPushSubscriptionsFingerprint(
+  List<KuzzPushSubscription> subscriptions,
 ) => jsonEncode([
   for (final subscription in subscriptions) subscription.toJson(),
 ]);
 
-String buzzPushSubscriptionStateFingerprint(
-  BuzzPushLeaseSubscriptionState state,
+String kuzzPushSubscriptionStateFingerprint(
+  KuzzPushLeaseSubscriptionState state,
 ) => jsonEncode(state.toJson());
 
 List<List<String>> _chunks(List<String> values, int size) => [
@@ -550,7 +550,7 @@ List<String>? _optionalStringList(Map<String, dynamic> json, String key) {
   return raw.cast<String>();
 }
 
-List<BuzzPushSubscription> _subscriptionList(
+List<KuzzPushSubscription> _subscriptionList(
   Object? raw,
   String label, {
   bool allowEmpty = false,
@@ -561,7 +561,7 @@ List<BuzzPushSubscription> _subscriptionList(
   return [
     for (final item in raw)
       if (item is Map)
-        BuzzPushSubscription.fromJson(Map<String, dynamic>.from(item))
+        KuzzPushSubscription.fromJson(Map<String, dynamic>.from(item))
       else
         throw FormatException('Malformed $label subscription.'),
   ];

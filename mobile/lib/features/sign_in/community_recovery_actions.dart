@@ -57,7 +57,7 @@ class CommunityRecoveryActions extends HookConsumerWidget {
     }
 
     Future<void> remove(Community community) async {
-      final confirmed = await showBuzzDialog<bool>(
+      final confirmed = await showKuzzDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text('Remove ${community.name}?'),

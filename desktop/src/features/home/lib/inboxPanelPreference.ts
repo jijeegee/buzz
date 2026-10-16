@@ -8,7 +8,7 @@ import * as React from "react";
  * shown by the sidebar's Inbox button. Persisted in localStorage like other
  * device-level layout preferences.
  */
-const STORAGE_KEY = "buzz.desktop.inbox-panel-open";
+const STORAGE_KEY = "kuzz.desktop.inbox-panel-open";
 
 const listeners = new Set<() => void>();
 

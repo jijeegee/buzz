@@ -82,7 +82,7 @@ impl SignedOutMarkers {
             Ok(origins) => (origins, false),
             Err(error) => {
                 eprintln!(
-                    "buzz-desktop: auth: sign-out marker unreadable, staying signed out: {error}"
+                    "kuzz-desktop: auth: sign-out marker unreadable, staying signed out: {error}"
                 );
                 (HashMap::new(), true)
             }
@@ -279,7 +279,7 @@ fn write(path: Option<&Path>, origins: &HashMap<MarkerKey, Marker>) -> Result<()
         file.commit()
     })();
     result.map_err(|error| {
-        eprintln!("buzz-desktop: auth: could not write sign-out marker: {error}");
+        eprintln!("kuzz-desktop: auth: could not write sign-out marker: {error}");
         FAILED.to_owned()
     })
 }

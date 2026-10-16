@@ -23,7 +23,7 @@ String speechEngineLabel(String engine) => switch (engine) {
   _ => engine,
 };
 
-/// Free system TTS adapter. Speech text never goes to a Buzz/cloud endpoint.
+/// Free system TTS adapter. Speech text never goes to a Kuzz/cloud endpoint.
 class SystemSpeechEngine implements SpeechEngine {
   SystemSpeechEngine({
     SpeechAudioSession? audio,

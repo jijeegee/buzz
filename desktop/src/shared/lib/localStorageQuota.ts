@@ -8,16 +8,16 @@
  */
 
 const PURE_CACHE_KEY_PREFIXES = [
-  "buzz-channel-messages.v1:",
-  "buzz-channels.v1:",
-  "buzz-observed-unread.v1:",
-  "buzz-projects.v1:",
-  "buzz-sidebar-skeleton-shape.v1:",
-  "buzz-timeline-skeleton-shape.v1:",
-  "buzz-user-labels.v1:",
+  "kuzz-channel-messages.v1:",
+  "kuzz-channels.v1:",
+  "kuzz-observed-unread.v1:",
+  "kuzz-projects.v1:",
+  "kuzz-sidebar-skeleton-shape.v1:",
+  "kuzz-timeline-skeleton-shape.v1:",
+  "kuzz-user-labels.v1:",
 ];
 
-const QUOTA_RECOVERY_MARKER_KEY = "buzz-local-storage-quota-recovery.v1";
+const QUOTA_RECOVERY_MARKER_KEY = "kuzz-local-storage-quota-recovery.v1";
 
 // Keep disposable snapshots below 2 MiB, leaving roughly 3 MiB of WebKit's
 // observed ~5 MiB origin quota for identities, communities, preferences, and

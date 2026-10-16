@@ -26,10 +26,10 @@ pub(crate) fn runtime_metadata_env_vars<'a>(
 
 /// Env var carrying the session title to the harness. Shared with
 /// `spawn_snapshot` so the restart badge records the same key the spawn writes.
-pub(crate) const SESSION_TITLE_ENV_VAR: &str = "BUZZ_ACP_SESSION_TITLE";
+pub(crate) const SESSION_TITLE_ENV_VAR: &str = "KUZZ_ACP_SESSION_TITLE";
 /// Stable agent display name forwarded to the ACP tool surface for git
 /// attribution and private-conversation provenance.
-pub(crate) const DISPLAY_NAME_ENV_VAR: &str = "BUZZ_ACP_DISPLAY_NAME";
+pub(crate) const DISPLAY_NAME_ENV_VAR: &str = "KUZZ_ACP_DISPLAY_NAME";
 
 /// Apply the shared stable agent name to both session display metadata and
 /// git attribution, clearing both keys when no usable name is available.
@@ -49,13 +49,13 @@ pub(crate) fn apply_agent_display_env(command: &mut std::process::Command, title
 /// provider deploy path (`commands::agents::provider_deploy`) so the local
 /// spawn and the remote `launch.policy_env` injection name the key from one
 /// place.
-pub(crate) const REPLAY_FLOOR_ENV_VAR: &str = "BUZZ_ACP_REPLAY_FLOOR";
+pub(crate) const REPLAY_FLOOR_ENV_VAR: &str = "KUZZ_ACP_REPLAY_FLOOR";
 
 /// Apply the publish-first replay floor: inject [`REPLAY_FLOOR_ENV_VAR`] from
 /// `replay_floor_unix` (or leave the key untouched if `None`).
 ///
 /// Must be called **after** `descriptor.env` is written so this send's floor
-/// wins over any user-supplied `BUZZ_ACP_REPLAY_FLOOR` entry — the same
+/// wins over any user-supplied `KUZZ_ACP_REPLAY_FLOOR` entry — the same
 /// authority ordering [`super::apply_effort_env`] asserts for effort, and the
 /// same shadow strip `apply_replay_floor` performs on the provider payload's
 /// `launch.env` tier. Without it a persona/global/agent env entry would
@@ -92,7 +92,7 @@ pub(crate) fn apply_replay_floor_env(
 ///
 /// The harness still owns whitespace collapsing, the length cap, and channel
 /// qualification — see `sanitize_session_title` and `compose_session_title` in
-/// `buzz-acp`.
+/// `kuzz-acp`.
 pub(crate) fn resolve_session_title(display_name: Option<&str>, name: &str) -> Option<String> {
     [display_name, Some(name)]
         .into_iter()
@@ -109,13 +109,13 @@ pub(crate) fn resolve_session_title(display_name: Option<&str>, name: &str) -> O
 }
 
 /// Build the `RUST_LOG` value forwarded to the agent child: keep an existing
-/// filter that already mentions `buzz_acp`, append `buzz_acp=info` to any other
-/// non-empty filter, and default to `buzz_acp=info` when unset.
+/// filter that already mentions `kuzz_acp`, append `kuzz_acp=info` to any other
+/// non-empty filter, and default to `kuzz_acp=info` when unset.
 pub(crate) fn child_rust_log_filter() -> String {
     match std::env::var("RUST_LOG") {
-        Ok(existing) if existing.contains("buzz_acp") => existing,
-        Ok(existing) if !existing.trim().is_empty() => format!("{existing},buzz_acp=info"),
-        _ => "buzz_acp=info".to_string(),
+        Ok(existing) if existing.contains("kuzz_acp") => existing,
+        Ok(existing) if !existing.trim().is_empty() => format!("{existing},kuzz_acp=info"),
+        _ => "kuzz_acp=info".to_string(),
     }
 }
 

@@ -69,7 +69,7 @@ test("shouldOpenDoctor_missingBinary_routesToAgentRuntimes", () => {
   );
 });
 
-test("missingBinaryRecoveryMessage_requiresBuzzRestart", () => {
+test("missingBinaryRecoveryMessage_requiresKuzzRestart", () => {
   assert.equal(
     missingBinaryRecoveryMessage(),
     "not found in PATH — install it or update PATH, then restart Kuzz",

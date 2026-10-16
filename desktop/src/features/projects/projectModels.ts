@@ -423,7 +423,7 @@ function repositoryToLegacyProject(repository: Repository): Project {
 /**
  * Builds deletion thresholds from relay-accepted tombstones. The relay has
  * already enforced that each signer controls the addressed coordinate,
- * including Buzz's NIP-OA owner delegation for agent-authored events.
+ * including Kuzz's NIP-OA owner delegation for agent-authored events.
  */
 function buildDeletionThresholds(
   deletionEvents: RelayEvent[],

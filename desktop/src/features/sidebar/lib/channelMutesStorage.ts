@@ -1,4 +1,4 @@
-const STORAGE_KEY_PREFIX = "buzz-channel-mutes.v1";
+const STORAGE_KEY_PREFIX = "kuzz-channel-mutes.v1";
 export const MAX_CHANNEL_MUTE_ENTRIES = 500;
 
 export type ChannelMuteEntry = {

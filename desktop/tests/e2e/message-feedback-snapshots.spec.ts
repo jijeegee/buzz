@@ -15,11 +15,11 @@ async function waitForMockLiveSubscription(
         ({ ch }) =>
           (
             window as Window & {
-              __BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
+              __KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
                 channelName: string;
               }) => boolean;
             }
-          ).__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({ channelName: ch }) ??
+          ).__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({ channelName: ch }) ??
           false,
         { ch: channelName },
       );
@@ -43,14 +43,14 @@ test("pending continuation keeps Sending next to its timestamp", async ({
     ({ firstMessage, secondMessage, timestamp }) => {
       const emit = (
         window as Window & {
-          __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
             channelName: string;
             content: string;
             createdAt: number;
             pending?: boolean;
           }) => unknown;
         }
-      ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       emit?.({
         channelName: "general",
         content: firstMessage,
@@ -100,10 +100,10 @@ test("profile hover uses the channel hover surface", async ({ page }) => {
 
   const profile = page.getByTestId("sidebar-profile-card");
   const channel = page.getByTestId("channel-random");
-  await expect(page.locator("html")).toHaveAttribute("data-buzz-sidebar", "");
+  await expect(page.locator("html")).toHaveAttribute("data-kuzz-sidebar", "");
   const hoverSurface = await channel.evaluate((element) => {
     const probe = document.createElement("span");
-    probe.style.backgroundColor = "var(--buzz-hover-surface)";
+    probe.style.backgroundColor = "var(--kuzz-hover-surface)";
     element.append(probe);
     const color = getComputedStyle(probe).backgroundColor;
     probe.remove();

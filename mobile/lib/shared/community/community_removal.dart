@@ -28,7 +28,7 @@ Future<bool> removeCommunityWithRelaySignOut(
       return true;
     } on TokenSessionException catch (error) {
       if (!context.mounted) return false;
-      final choice = await showBuzzDialog<_RelaySignOutChoice>(
+      final choice = await showKuzzDialog<_RelaySignOutChoice>(
         context: context,
         builder: (dialogContext) =>
             _RelaySignOutFailedDialog(message: error.message),

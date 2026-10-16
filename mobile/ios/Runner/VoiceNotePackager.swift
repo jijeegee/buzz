@@ -80,7 +80,7 @@ enum VoiceNotePackager {
             input.expectsMediaDataInRealTime = false
             guard writer.canAdd(input) else {
                 throw NSError(
-                    domain: "BuzzVoiceNote",
+                    domain: "KuzzVoiceNote",
                     code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Unable to create the video envelope."]
                 )
@@ -97,14 +97,14 @@ enum VoiceNotePackager {
             guard writer.startWriting() else {
                 throw writer.error
                     ?? NSError(
-                        domain: "BuzzVoiceNote",
+                        domain: "KuzzVoiceNote",
                         code: 2,
                         userInfo: [NSLocalizedDescriptionKey: "Unable to start the video envelope."]
                     )
             }
             writer.startSession(atSourceTime: .zero)
 
-            let queue = DispatchQueue(label: "xyz.block.buzz.voice-note-envelope")
+            let queue = DispatchQueue(label: "app.kuzz.voice-note-envelope")
             var completed = false
             func complete(_ trackResult: Result<URL, Error>) {
                 guard !completed else { return }
@@ -119,7 +119,7 @@ enum VoiceNotePackager {
                 complete(
                     .failure(
                         NSError(
-                            domain: "BuzzVoiceNote",
+                            domain: "KuzzVoiceNote",
                             code: 9,
                             userInfo: [NSLocalizedDescriptionKey: "Video envelope generation timed out."]
                         )
@@ -140,7 +140,7 @@ enum VoiceNotePackager {
                         .failure(
                             writer.error
                                 ?? NSError(
-                                    domain: "BuzzVoiceNote",
+                                    domain: "KuzzVoiceNote",
                                     code: 3,
                                     userInfo: [NSLocalizedDescriptionKey: "Unable to write the video envelope."]
                                 )
@@ -159,7 +159,7 @@ enum VoiceNotePackager {
                                 .failure(
                                     writer.error
                                         ?? NSError(
-                                            domain: "BuzzVoiceNote",
+                                            domain: "KuzzVoiceNote",
                                             code: 4,
                                             userInfo: [NSLocalizedDescriptionKey: "Unable to finish the video envelope."]
                                         )
@@ -217,7 +217,7 @@ enum VoiceNotePackager {
                 )
             else {
                 throw NSError(
-                    domain: "BuzzVoiceNote",
+                    domain: "KuzzVoiceNote",
                     code: 5,
                     userInfo: [NSLocalizedDescriptionKey: "Unable to assemble the voice note envelope."]
                 )
@@ -263,7 +263,7 @@ enum VoiceNotePackager {
         exportSession.shouldOptimizeForNetworkUse = true
         exportSession.metadata = []
         exportSession.metadataItemFilter = nil
-        let completionQueue = DispatchQueue(label: "xyz.block.buzz.voice-note-export")
+        let completionQueue = DispatchQueue(label: "app.kuzz.voice-note-export")
         let completion = VoiceNoteExportCompletion(
             outputURL: outputURL,
             videoURL: videoURL

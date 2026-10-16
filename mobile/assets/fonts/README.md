@@ -11,14 +11,14 @@ font metrics, or variation tables are removed. The license remains in
 To reproduce from the repository root:
 
 ```sh
-mkdir -p /tmp/buzz-inter-source
+mkdir -p /tmp/kuzz-inter-source
 for font in InterVariable.ttf InterVariable-Italic.ttf; do
-  git show ec7ea38f62ea917f15e85a678bc94f3bbee5bb64:mobile/assets/fonts/$font > /tmp/buzz-inter-source/$font
+  git show ec7ea38f62ea917f15e85a678bc94f3bbee5bb64:mobile/assets/fonts/$font > /tmp/kuzz-inter-source/$font
 done
-python3 -m venv /tmp/buzz-inter-tools
-/tmp/buzz-inter-tools/bin/pip install fonttools==4.60.1
-/tmp/buzz-inter-tools/bin/python mobile/scripts/prepare-inter.py /tmp/buzz-inter-source
-/tmp/buzz-inter-tools/bin/python mobile/scripts/prepare-inter.py /tmp/buzz-inter-source --check
+python3 -m venv /tmp/kuzz-inter-tools
+/tmp/kuzz-inter-tools/bin/pip install fonttools==4.60.1
+/tmp/kuzz-inter-tools/bin/python mobile/scripts/prepare-inter.py /tmp/kuzz-inter-source
+/tmp/kuzz-inter-tools/bin/python mobile/scripts/prepare-inter.py /tmp/kuzz-inter-source --check
 ```
 
 The script checks pristine source hashes and verifies every character mapping

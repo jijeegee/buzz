@@ -2,7 +2,7 @@
 
 const MARKER = "<!-- codex-security-review -->";
 const STALE_MARKER = "<!-- codex-security-review-stale -->";
-const REVIEW_COMMAND = "@buzz-security-review";
+const REVIEW_COMMAND = "@kuzz-security-review";
 const CURRENT_REVIEW_LABEL = "codex-security-review-current";
 const RECONCILIATION_BATCH_SIZE = 32;
 const MAX_RECONCILIATION_PASSES = 2;
@@ -362,7 +362,7 @@ async function prepare({ github, context, core }) {
       return;
     }
     const command = context.payload.comment?.body || "";
-    const match = /^@buzz-security-review ([0-9a-f]{40})$/.exec(command);
+    const match = /^@kuzz-security-review ([0-9a-f]{40})$/.exec(command);
     if (!match) {
       core.setFailed(
         `Review commands must be exactly "${REVIEW_COMMAND} <full-head-sha>".`,

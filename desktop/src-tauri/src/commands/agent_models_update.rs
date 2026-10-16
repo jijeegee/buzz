@@ -189,7 +189,7 @@ pub async fn update_managed_agent(
             record.parallelism = parallelism;
         }
         // turn_timeout_seconds is intentionally not applied here —
-        // BUZZ_ACP_TURN_TIMEOUT is deprecated and ignored by the harness.
+        // KUZZ_ACP_TURN_TIMEOUT is deprecated and ignored by the harness.
         // Use idle_timeout_seconds or max_turn_duration_seconds instead.
         // Store the relay override exactly as supplied (trimmed). An explicit
         // value pins the agent; empty falls back to the workspace relay at
@@ -407,11 +407,11 @@ pub async fn update_managed_agent(
         && crate::managed_agents::persona_events::active_pending_event(
             &app,
             &state,
-            buzz_core_pkg::kind::KIND_MANAGED_AGENT,
+            kuzz_core_pkg::kind::KIND_MANAGED_AGENT,
             &summary.pubkey,
         )?
     {
-        eprintln!("buzz-desktop: managed policy sync failed: relay did not accept the updated policy; retry queued");
+        eprintln!("kuzz-desktop: managed policy sync failed: relay did not accept the updated policy; retry queued");
         profile_sync_error = Some("Couldn't sync agent changes. Kuzz will retry.".to_string());
     }
 
@@ -443,10 +443,10 @@ pub async fn update_managed_agent(
             .map(|_| ()),
         };
         if let Err(sync_error) = synced {
-            eprintln!("buzz-desktop: agent profile sync failed: {sync_error}");
+            eprintln!("kuzz-desktop: agent profile sync failed: {sync_error}");
             let rollback = rollback.ok_or_else(|| {
                 eprintln!(
-                    "buzz-desktop: missing local rollback state after relay profile sync failure"
+                    "kuzz-desktop: missing local rollback state after relay profile sync failure"
                 );
                 "Couldn't sync agent changes. Try again.".to_string()
             })?;
@@ -465,7 +465,7 @@ pub async fn update_managed_agent(
                 {
                     Ok(_) => String::new(),
                     Err(error) => {
-                        eprintln!("buzz-desktop: agent restart after rollback failed: {error}");
+                        eprintln!("kuzz-desktop: agent restart after rollback failed: {error}");
                         " The agent also couldn't restart.".to_string()
                     }
                 }

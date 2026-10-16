@@ -12,7 +12,7 @@ globalThis.localStorage = {
   setItem: (key, value) => values.set(key, String(value)),
 };
 
-values.set("buzz.media.videoPlaybackSpeed", "2");
+values.set("kuzz.media.videoPlaybackSpeed", "2");
 
 const preference = await import("./videoPlaybackSpeedPreference.ts");
 
@@ -65,13 +65,13 @@ test("notifies mounted consumers when another window changes the speed", () => {
     notifications += 1;
   });
 
-  values.set("buzz.media.videoPlaybackSpeed", "0.5");
-  windowListeners.get("storage")({ key: "buzz.media.videoPlaybackSpeed" });
+  values.set("kuzz.media.videoPlaybackSpeed", "0.5");
+  windowListeners.get("storage")({ key: "kuzz.media.videoPlaybackSpeed" });
   assert.equal(preference.getVideoPlaybackSpeed(), 0.5);
   assert.equal(notifications, 1);
 
   // A redundant storage event must not needlessly re-render every player.
-  windowListeners.get("storage")({ key: "buzz.media.videoPlaybackSpeed" });
+  windowListeners.get("storage")({ key: "kuzz.media.videoPlaybackSpeed" });
   assert.equal(notifications, 1);
   unsubscribe();
 });

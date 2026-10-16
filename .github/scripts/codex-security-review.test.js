@@ -35,11 +35,11 @@ function pullRequest({
     base: {
       ref: "main",
       sha: baseSha,
-      repo: { full_name: "block/buzz" },
+      repo: { full_name: "block/kuzz" },
     },
     head: {
       sha: headSha,
-      repo: { full_name: "outside/buzz" },
+      repo: { full_name: "outside/kuzz" },
     },
     changed_files: 1,
     labels,
@@ -161,12 +161,12 @@ function harness({
     eventName: "issue_comment",
     payload: {
       comment: {
-        body: `@buzz-security-review ${HEAD_SHA}`,
+        body: `@kuzz-security-review ${HEAD_SHA}`,
         user: { login: "block-member" },
       },
       issue: { number: 6816 },
     },
-    repo: { owner: "block", repo: "buzz" },
+    repo: { owner: "block", repo: "kuzz" },
   };
   return {
     context,
@@ -204,12 +204,12 @@ const NO_FINDINGS_REVIEW = {
 async function postReview(state, review = NO_FINDINGS_REVIEW) {
   const environment = {
     CODEX_MODEL: "gpt-5.6-sol",
-    GITHUB_REPOSITORY: "block/buzz",
+    GITHUB_REPOSITORY: "block/kuzz",
     GITHUB_RUN_ID: "1234",
     GITHUB_SERVER_URL: "https://github.com",
     REVIEW_BASE_SHA: BASE_SHA,
     REVIEW_COMMIT_RANGE: `${BASE_SHA}...${HEAD_SHA}`,
-    REVIEW_HEAD_REPO: "outside/buzz",
+    REVIEW_HEAD_REPO: "outside/kuzz",
     REVIEW_HEAD_SHA: HEAD_SHA,
     REVIEW_JSON: JSON.stringify(review),
     REVIEW_PR_NUMBER: "6816",
@@ -255,7 +255,7 @@ test("prepare binds a member command to the named head SHA", async () => {
   assert.match(moved.failures[0], new RegExp(OTHER_HEAD_SHA));
   assert.match(
     moved.failures[0],
-    new RegExp(`@buzz-security-review ${OTHER_HEAD_SHA}`),
+    new RegExp(`@kuzz-security-review ${OTHER_HEAD_SHA}`),
   );
 });
 
@@ -369,7 +369,7 @@ test("review commands require a commenter with write access", async () => {
 
   const malformed = harness();
   malformed.context.payload.comment = {
-    body: "@buzz-security-review foo",
+    body: "@kuzz-security-review foo",
     user: { login: "outside-contributor" },
   };
   await prepare(malformed);
@@ -414,7 +414,7 @@ test("PR mutation jobs use pull request write permission", () => {
 
 test("prepare rejects review commands without a full exact SHA", async () => {
   const state = harness();
-  state.context.payload.comment.body = "@buzz-security-review";
+  state.context.payload.comment.body = "@kuzz-security-review";
 
   await prepare(state);
 
@@ -449,7 +449,7 @@ test("invalidation compares the complete base and head range", async () => {
   assert.ok(stale.updated[0].body.includes(`${BASE_SHA}...${HEAD_SHA}`));
   assert.match(
     stale.updated[0].body,
-    new RegExp(`@buzz-security-review ${HEAD_SHA}`),
+    new RegExp(`@kuzz-security-review ${HEAD_SHA}`),
   );
   assert.equal(stale.removedLabels.length, 1);
 

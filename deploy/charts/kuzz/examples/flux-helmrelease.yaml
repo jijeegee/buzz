@@ -1,0 +1,63 @@
+# Flux HelmRelease — GitOps-safe Kuzz install.
+#
+# Prerequisite: a Secret named `kuzz-secrets` in namespace `kuzz`. See
+# `secret-sample.yaml`. Flux renders the chart server-side via the
+# helm-controller, which (like ArgoCD) treats chart-side `randAlphaNum`
+# autogen as non-idempotent. `existingSecret` is the only safe path.
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kuzz
+  namespace: kuzz
+spec:
+  type: oci
+  url: oci://ghcr.io/block/buzz/charts
+  interval: 10m
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kuzz
+  namespace: kuzz
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: kuzz
+      version: "0.1.0"
+      sourceRef:
+        kind: HelmRepository
+        name: kuzz
+  values:
+    relayUrl: wss://kuzz.example.com
+    ownerPubkey: "0000000000000000000000000000000000000000000000000000000000000000"  # replace
+    replicaCount: 3
+
+    secrets:
+      existingSecret: kuzz-secrets
+
+
+    s3:
+      endpoint: "https://s3.us-east-1.amazonaws.com"
+      bucket: "kuzz-media"
+      region: "us-east-1"
+      addressingStyle: virtual
+
+    persistence:
+      git:
+        enabled: true
+        accessMode: ReadWriteOnce      # RWO is fine at any replicaCount (object-store-backed git)
+        storageClass: ""               # any RWO class; no shared/RWX filesystem needed
+        size: 50Gi
+
+    ingress:
+      enabled: true
+      className: nginx
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      tls:
+        - hosts: [kuzz.example.com]
+          secretName: kuzz-tls

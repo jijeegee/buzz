@@ -17,7 +17,7 @@
 //!   every agent's file whenever a goal is saved and at each spawn, and
 //!   deletes it with the agent. The harness re-reads it every turn, so an
 //!   edit reaches running agents on their next message, with no restart.
-//!   Only the path is passed at spawn (`BUZZ_ACP_LAYER0_GOALS_FILE`, which
+//!   Only the path is passed at spawn (`KUZZ_ACP_LAYER0_GOALS_FILE`, which
 //!   the harness removes from its own environment); goal text never rides
 //!   in environment variables.
 //!
@@ -30,7 +30,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use buzz_core_pkg::kind::{KIND_PUBLIC_GOAL, MAX_PUBLIC_GOAL_CHARS};
+use kuzz_core_pkg::kind::{KIND_PUBLIC_GOAL, MAX_PUBLIC_GOAL_CHARS};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -60,7 +60,7 @@ struct Layer0Store {
 }
 
 /// One agent's layer 0 goals as its harness reads them
-/// (`buzz-acp`'s `layer0_goals::Layer0File`). Absent fields mean no goal.
+/// (`kuzz-acp`'s `layer0_goals::Layer0File`). Absent fields mean no goal.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AgentGoalsFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -144,7 +144,7 @@ fn write_agent_goals_file(path: &Path, goals: &AgentGoalsFile) -> Result<(), Str
 }
 
 /// Write `record`'s goals file from the current store and return its path,
-/// for `BUZZ_ACP_LAYER0_GOALS_FILE` at spawn. A failed write still returns
+/// for `KUZZ_ACP_LAYER0_GOALS_FILE` at spawn. A failed write still returns
 /// the path (the harness treats a missing file as "no goals"), so the next
 /// goal edit, which rewrites every agent's file, can reach this agent.
 pub(crate) fn sync_agent_goals_file<R: tauri::Runtime>(
@@ -161,7 +161,7 @@ pub(crate) fn sync_agent_goals_file<R: tauri::Runtime>(
     );
     if let Err(error) = write_agent_goals_file(&path, &goals) {
         eprintln!(
-            "buzz-desktop: layer 0 goals for agent {}: {error}",
+            "kuzz-desktop: layer 0 goals for agent {}: {error}",
             record.pubkey
         );
     }

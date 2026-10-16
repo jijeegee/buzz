@@ -258,7 +258,7 @@ test("a write that cannot land is reported, not thrown", () => {
 });
 
 test("notification copy names the community when known", () => {
-  assert.equal(joinAlertTitle("Buzz HQ"), "New member in Buzz HQ");
+  assert.equal(joinAlertTitle("Kuzz HQ"), "New member in Kuzz HQ");
   assert.equal(joinAlertTitle("  "), "New member joined");
   assert.equal(joinAlertTitle(null), "New member joined");
   assert.equal(joinAlertBody("Alice"), "Alice joined");

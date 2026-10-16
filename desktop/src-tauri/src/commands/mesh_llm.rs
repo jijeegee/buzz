@@ -156,16 +156,16 @@ fn restart_to_share(
 
 pub type CmdResult<T> = Result<T, String>;
 
-fn buzz_mesh_name_for_relay(relay_url: &str) -> String {
+fn kuzz_mesh_name_for_relay(relay_url: &str) -> String {
     let normalized = url::Url::parse(relay_url.trim())
         .map(|url| url.origin().ascii_serialization())
         .unwrap_or_else(|_| relay_url.trim().trim_end_matches('/').to_ascii_lowercase());
     let digest = hex::encode(Sha256::digest(normalized.as_bytes()));
-    format!("buzz-community-{}", &digest[..32])
+    format!("kuzz-community-{}", &digest[..32])
 }
 
-pub(super) fn buzz_mesh_name(state: &AppState) -> String {
-    buzz_mesh_name_for_relay(&relay::relay_ws_url_with_override(state))
+pub(super) fn kuzz_mesh_name(state: &AppState) -> String {
+    kuzz_mesh_name_for_relay(&relay::relay_ws_url_with_override(state))
 }
 
 fn advance_mesh_status_cursor(
@@ -257,16 +257,16 @@ pub(crate) async fn resolve_trusted_owner_ids_or_self_only(state: &AppState) -> 
     match resolve_trusted_owner_ids(state).await {
         Ok(owners) => owners,
         Err(error) => {
-            eprintln!("buzz-mesh: roster query failed; allowing only this node: {error}");
+            eprintln!("kuzz-mesh: roster query failed; allowing only this node: {error}");
             Vec::new()
         }
     }
 }
 
-/// Choose validated live endpoints from other runtimes in this Buzz community.
+/// Choose validated live endpoints from other runtimes in this Kuzz community.
 /// The stable relay-derived mesh name gives every runtime the same MeshLLM mesh
 /// identity; these endpoints supply transport bootstrap only.
-fn buzz_mesh_join_targets(
+fn kuzz_mesh_join_targets(
     mut targets: Vec<mesh_llm::MeshServeTarget>,
     self_owner_id: &str,
 ) -> Vec<mesh_llm::MeshServeTarget> {
@@ -290,9 +290,9 @@ fn buzz_mesh_join_targets(
 }
 
 /// Resolve the validated member endpoint this runtime should join to enter the
-/// existing Buzz community mesh. `Ok(None)` means this machine is the first
+/// existing Kuzz community mesh. `Ok(None)` means this machine is the first
 /// live serving member (or is itself the shared bootstrap contact).
-pub(crate) async fn resolve_buzz_mesh_join_targets_at(
+pub(crate) async fn resolve_kuzz_mesh_join_targets_at(
     state: &AppState,
     relay_url: &str,
 ) -> Result<Vec<mesh_llm::MeshServeTarget>, String> {
@@ -300,7 +300,7 @@ pub(crate) async fn resolve_buzz_mesh_join_targets_at(
     let self_owner_id = mesh_llm::ensure_owner_identity()
         .map_err(|error| format!("failed to load mesh owner identity: {error}"))?
         .owner_id;
-    Ok(buzz_mesh_join_targets(
+    Ok(kuzz_mesh_join_targets(
         mesh_llm::availability_from_events(events).serve_targets,
         &self_owner_id,
     ))
@@ -310,7 +310,7 @@ pub(crate) async fn resolve_buzz_mesh_join_targets_at(
 /// snapshot. A node start used to repeat the full membership + status query
 /// for each value, making Share Compute startup both slower and more exposed
 /// to inconsistent snapshots.
-async fn resolve_buzz_mesh_startup_at(
+async fn resolve_kuzz_mesh_startup_at(
     state: &AppState,
     relay_url: &str,
 ) -> (Vec<String>, Option<String>) {
@@ -320,7 +320,7 @@ async fn resolve_buzz_mesh_startup_at(
             let join_token = mesh_llm::ensure_owner_identity()
                 .ok()
                 .and_then(|identity| {
-                    buzz_mesh_join_targets(
+                    kuzz_mesh_join_targets(
                         mesh_llm::availability_from_events(events).serve_targets,
                         &identity.owner_id,
                     )
@@ -335,7 +335,7 @@ async fn resolve_buzz_mesh_startup_at(
             // Compute must still start for the first member and through a
             // transient relay outage; the coordinator retries convergence.
             eprintln!(
-                "buzz-mesh: startup discovery failed; allowing only this node and starting isolated for now: {error}"
+                "kuzz-mesh: startup discovery failed; allowing only this node and starting isolated for now: {error}"
             );
             (Vec::new(), None)
         }
@@ -360,14 +360,14 @@ pub(crate) async fn restore_mesh_sharing<R: tauri::Runtime>(
         .relay_url
         .clone()
         .unwrap_or_else(|| relay::relay_ws_url_with_override(state));
-    let (trusted_owner_ids, join_token) = resolve_buzz_mesh_startup_at(state, &relay_url).await;
+    let (trusted_owner_ids, join_token) = resolve_kuzz_mesh_startup_at(state, &relay_url).await;
     let mut runtime = state.mesh_llm_runtime.lock().await;
     if runtime.is_some() {
         return Ok(());
     }
     if config.start_on_next_launch {
         // Consume a role-switch request before doing any potentially long model
-        // work. If Buzz exits during that work, the next launch stays stopped.
+        // work. If Kuzz exits during that work, the next launch stays stopped.
         config = pending_new_start_checkpoint(&config);
         save_mesh_sharing_config(app, &config)?;
     }
@@ -379,7 +379,7 @@ pub(crate) async fn restore_mesh_sharing<R: tauri::Runtime>(
         model_id: Some(config.model_id.clone()),
         max_vram_gb: config.max_vram_gb,
         join_token,
-        mesh_name: Some(buzz_mesh_name_for_relay(&relay_url)),
+        mesh_name: Some(kuzz_mesh_name_for_relay(&relay_url)),
         relay_url: Some(relay_url),
         trusted_owner_ids: Some(trusted_owner_ids),
     };
@@ -402,7 +402,7 @@ pub(crate) async fn restore_mesh_sharing<R: tauri::Runtime>(
     drop(runtime);
     if let Err(error) = wait_for_mesh_inference(&config.model_id).await {
         eprintln!(
-            "buzz-mesh: restored node is not inference-ready yet ({error}); \
+            "kuzz-mesh: restored node is not inference-ready yet ({error}); \
              leaving it to warm up without tearing it down"
         );
     }
@@ -456,13 +456,13 @@ pub async fn mesh_start_node(
     // endpoint from one snapshot so UI startup does not repeat relay probes.
     if request.trusted_owner_ids.is_none() || request.join_token.is_none() {
         let (trusted_owner_ids, join_token) =
-            resolve_buzz_mesh_startup_at(&state, &relay_url).await;
+            resolve_kuzz_mesh_startup_at(&state, &relay_url).await;
         request.trusted_owner_ids.get_or_insert(trusted_owner_ids);
         if request.join_token.is_none() {
             request.join_token = join_token;
         }
     }
-    request.mesh_name = Some(buzz_mesh_name_for_relay(&relay_url));
+    request.mesh_name = Some(kuzz_mesh_name_for_relay(&relay_url));
     let mut runtime = state.mesh_llm_runtime.lock().await;
 
     let plan = match runtime.as_ref() {
@@ -482,7 +482,7 @@ pub async fn mesh_start_node(
 
     if let Some(config) = sharing_config.as_ref() {
         // Persist a DISARMED checkpoint to cover the window of the potentially
-        // long `start()` below: if Buzz exits before the runtime is installed
+        // long `start()` below: if Kuzz exits before the runtime is installed
         // and tracked, the next launch stays stopped rather than trying to
         // restore a node that never came up. The enabled config is armed right
         // after install succeeds.
@@ -498,7 +498,7 @@ pub async fn mesh_start_node(
             let cleanup = started.stop().await;
             if let Err(cleanup_error) = &cleanup {
                 eprintln!(
-                    "buzz-mesh: started node status failed and cleanup was incomplete: {cleanup_error:#}"
+                    "kuzz-mesh: started node status failed and cleanup was incomplete: {cleanup_error:#}"
                 );
             }
             // The handle was never installed into AppState, so shutdown cannot
@@ -530,7 +530,7 @@ pub async fn mesh_start_node(
         save_mesh_sharing_config(&app, config)?;
         if let Err(error) = wait_for_mesh_inference(&config.model_id).await {
             eprintln!(
-                "buzz-mesh: node started but inference is not ready yet ({error}); \
+                "kuzz-mesh: node started but inference is not ready yet ({error}); \
                  leaving it to warm up (Share Compute stays armed for next launch)"
             );
         }
@@ -596,7 +596,7 @@ pub(crate) async fn ensure_client_node_for_model(
         model_id: None,
         max_vram_gb: None,
         join_token: Some(join_token.clone()),
-        mesh_name: Some(buzz_mesh_name(state)),
+        mesh_name: Some(kuzz_mesh_name(state)),
         relay_url: Some(relay::relay_ws_url_with_override(state)),
         trusted_owner_ids: Some(resolve_trusted_owner_ids_or_self_only(state).await),
     };
@@ -681,7 +681,7 @@ fn pick_serve_target_for_model(
 /// wait until its inference router is actually ready. Otherwise re-resolve a
 /// current bootstrap target from the members' client-signed discovery notes,
 /// then bring up the local MeshLLM client. The endpoint contains MeshLLM's
-/// encrypted iroh relay addresses, so no Buzz relay connection coordination is
+/// encrypted iroh relay addresses, so no Kuzz relay connection coordination is
 /// required. The two failure modes get distinct, actionable copy:
 /// a relay query failure ("could not refresh targets") is not the same as a
 /// relay that answered with no live target for this model ("peer offline").

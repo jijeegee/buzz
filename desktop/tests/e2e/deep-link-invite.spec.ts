@@ -9,7 +9,7 @@ import { seedActiveIdentity } from "../helpers/onboarding";
 
 const DEFAULT_MOCK_PUBKEY = "deadbeef".repeat(8);
 const COMMUNITY_ONBOARDING_PUBKEY = TEST_IDENTITIES.tyler.pubkey;
-const TRANSACTION_STORAGE_KEY = "buzz-community-onboarding-transaction.v1";
+const TRANSACTION_STORAGE_KEY = "kuzz-community-onboarding-transaction.v1";
 const COMMUNITY_RELAY_URL = "wss://hive.example.com";
 
 const PENDING_JOIN_LINK = {
@@ -197,7 +197,7 @@ test("add-community deep link opens one editable prefill and acknowledges the qu
   await expect(communityInput).toHaveValue("");
 
   const acknowledgements = await page.evaluate(() =>
-    (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).filter(
+    (window.__KUZZ_E2E_COMMAND_LOG__ ?? []).filter(
       (entry) => entry.command === "acknowledge_pending_community_deep_link",
     ),
   );
@@ -230,7 +230,7 @@ test("queued add-community links open and acknowledge one at a time", async ({
   await expect
     .poll(() =>
       page.evaluate(() =>
-        (window.__BUZZ_E2E_COMMAND_LOG__ ?? [])
+        (window.__KUZZ_E2E_COMMAND_LOG__ ?? [])
           .filter(
             (entry) =>
               entry.command === "acknowledge_pending_community_deep_link",
@@ -248,7 +248,7 @@ test("queued add-community links open and acknowledge one at a time", async ({
   await expect
     .poll(() =>
       page.evaluate(() =>
-        (window.__BUZZ_E2E_COMMAND_LOG__ ?? [])
+        (window.__KUZZ_E2E_COMMAND_LOG__ ?? [])
           .filter(
             (entry) =>
               entry.command === "acknowledge_pending_community_deep_link",
@@ -269,7 +269,7 @@ test("community onboarding lands on Welcome without joining public channels", as
   await page.addInitScript(
     ({ pubkey, relayUrl, storageKey }) => {
       window.localStorage.setItem(
-        `buzz-machine-onboarding-complete.v2:${pubkey}`,
+        `kuzz-machine-onboarding-complete.v2:${pubkey}`,
         "true",
       );
       const timestamp = new Date().toISOString();
@@ -307,7 +307,7 @@ test("community onboarding lands on Welcome without joining public channels", as
   expect(
     await page.evaluate(
       () =>
-        window.__BUZZ_E2E_COMMANDS__?.filter(
+        window.__KUZZ_E2E_COMMANDS__?.filter(
           (command) => command === "ensure_starter_channels",
         ).length ?? 0,
     ),
@@ -322,7 +322,7 @@ test("required Welcome creation failure keeps community onboarding open", async 
   await page.addInitScript(
     ({ pubkey, relayUrl, storageKey }) => {
       window.localStorage.setItem(
-        `buzz-machine-onboarding-complete.v2:${pubkey}`,
+        `kuzz-machine-onboarding-complete.v2:${pubkey}`,
         "true",
       );
       const timestamp = new Date().toISOString();
@@ -373,7 +373,7 @@ test("persisted deep-link invite hands off to Joining after machine onboarding",
   await page.addInitScript(
     ({ pubkey, storageKey }) => {
       window.localStorage.setItem(
-        `buzz-machine-onboarding-complete.v2:${pubkey}`,
+        `kuzz-machine-onboarding-complete.v2:${pubkey}`,
         "true",
       );
       const timestamp = new Date().toISOString();

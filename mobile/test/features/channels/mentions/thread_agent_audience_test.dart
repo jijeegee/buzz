@@ -1,5 +1,5 @@
-import 'package:buzz/features/channels/mentions/thread_agent_audience.dart';
-import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:kuzz/features/channels/mentions/thread_agent_audience.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';

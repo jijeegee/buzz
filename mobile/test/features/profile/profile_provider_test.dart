@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:buzz/features/profile/profile_provider.dart';
-import 'package:buzz/shared/profile/profile_event_parser.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/user_profile.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/utils/string_utils.dart';
+import 'package:kuzz/features/profile/profile_provider.dart';
+import 'package:kuzz/shared/profile/profile_event_parser.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/utils/string_utils.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -34,7 +34,7 @@ void main() {
         content: jsonEncode({
           'name': 'alice',
           'display_name': 'Alice',
-          'about': 'Building Buzz',
+          'about': 'Building Kuzz',
           'picture': 'https://relay.example/alice.png',
           'nip05': 'alice@example.com',
           'custom': 'preserve-me',
@@ -60,7 +60,7 @@ void main() {
         jsonDecode(relaySession.published.single.content)
             as Map<String, dynamic>;
     expect(content['display_name'], 'Alice L');
-    expect(content['about'], 'Building Buzz');
+    expect(content['about'], 'Building Kuzz');
     expect(content['picture'], 'https://relay.example/alice.png');
     expect(content['nip05'], 'alice@example.com');
     expect(content['custom'], 'preserve-me');
@@ -161,7 +161,7 @@ void main() {
         content: jsonEncode({
           'name': 'legacy-alice',
           'display_name': 'Alice',
-          'about': 'Building Buzz',
+          'about': 'Building Kuzz',
         }),
         sig: 'sig',
       ),
@@ -175,7 +175,7 @@ void main() {
     final content =
         jsonDecode(relaySession.published.single.content)
             as Map<String, dynamic>;
-    expect(content, {'about': 'Building Buzz'});
+    expect(content, {'about': 'Building Kuzz'});
     final profile = container.read(profileProvider).requireValue!;
     expect(profile.displayName, isNull);
     // The exact compact label is pinned; its npub shape is covered by the
@@ -616,7 +616,7 @@ void main() {
             onTimeout: () => throw StateError('setting Away did not resolve'),
           );
       expect(container.read(presenceProvider).value, 'away');
-      expect(prefs.getString('buzz_presence_preference_aabb'), 'away');
+      expect(prefs.getString('kuzz_presence_preference_aabb'), 'away');
 
       container.dispose();
       container = _buildContainer(prefs);
@@ -640,7 +640,7 @@ void main() {
             onTimeout: () => throw StateError('setting Online did not resolve'),
           );
       expect(container.read(presenceProvider).value, 'online');
-      expect(prefs.getString('buzz_presence_preference_aabb'), 'auto');
+      expect(prefs.getString('kuzz_presence_preference_aabb'), 'auto');
     },
   );
 }

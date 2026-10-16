@@ -12,7 +12,7 @@ import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
 /**
- * Secondary Google sign-in for accounts created by an earlier Buzz version
+ * Secondary Google sign-in for accounts created by an earlier Kuzz version
  * (legacy token accounts). Plain Google sign-in cannot reach those accounts
  * on a new device, so the route stays, in plain words.
  */

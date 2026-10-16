@@ -17,7 +17,7 @@ use crate::{
 };
 
 fn canonical_relay(relay_url: &str) -> Result<String, String> {
-    buzz_core_pkg::relay::normalize_relay_url(relay_url).map_err(|error| error.to_string())
+    kuzz_core_pkg::relay::normalize_relay_url(relay_url).map_err(|error| error.to_string())
 }
 
 fn assert_expected_scope(
@@ -45,7 +45,7 @@ fn validate_agent_pubkey(pubkey: &str) -> Result<String, String> {
             .chars()
             .all(|character| character.is_ascii_hexdigit())
     {
-        eprintln!("buzz-desktop: Bestie agent pubkey must be 64 hexadecimal characters");
+        eprintln!("kuzz-desktop: Bestie agent pubkey must be 64 hexadecimal characters");
         return Err("Something went wrong with this agent. Try again.".to_string());
     }
     Ok(normalized)

@@ -7,7 +7,7 @@ import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../channels/message_content.dart';
@@ -88,7 +88,7 @@ class ComposeNotePage extends HookConsumerWidget {
                   ? SizedBox(
                       width: 16,
                       height: 16,
-                      child: BuzzLoadingIndicator(
+                      child: KuzzLoadingIndicator(
                         size: 16,
                         semanticLabel: _isReply
                             ? 'Sending reply'

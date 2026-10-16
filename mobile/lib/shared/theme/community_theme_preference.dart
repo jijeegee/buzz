@@ -10,7 +10,7 @@ import 'theme_provider.dart' show effectiveTheme, schemeForAppearanceMode;
 
 const communityThemeDTag = 'community-theme';
 const defaultCommunityTheme = CommunityThemePreference(
-  theme: 'buzz',
+  theme: 'kuzz',
   accent: '#3b82f6',
   followSystem: true,
 );
@@ -93,13 +93,13 @@ class CommunityThemePreference {
 }
 
 class CommunityThemeStorage {
-  static const _prefix = 'buzz-community-theme.v1';
-  static const _outboxPrefix = 'buzz-community-theme-outbox.v1';
-  static const _migrationPrefix = 'buzz-community-theme-migrated.v1';
-  static const _deviceModeKey = 'buzz-device-appearance-mode.v1';
-  static const _legacyModeKey = 'buzz_theme_mode';
-  static const _legacyAccentKey = 'buzz_accent_color';
-  static const _legacySchemeKey = 'buzz_color_scheme';
+  static const _prefix = 'kuzz-community-theme.v1';
+  static const _outboxPrefix = 'kuzz-community-theme-outbox.v1';
+  static const _migrationPrefix = 'kuzz-community-theme-migrated.v1';
+  static const _deviceModeKey = 'kuzz-device-appearance-mode.v1';
+  static const _legacyModeKey = 'kuzz_theme_mode';
+  static const _legacyAccentKey = 'kuzz_accent_color';
+  static const _legacySchemeKey = 'kuzz_color_scheme';
 
   final SharedPreferences prefs;
 
@@ -183,7 +183,7 @@ class CommunityThemeStorage {
         ThemeMode.values.where((value) => value.name == modeName).firstOrNull ??
         ThemeMode.system;
     final storedTheme = prefs.getString(_legacySchemeKey);
-    final theme = findTheme(storedTheme ?? 'buzz')?.name ?? 'buzz';
+    final theme = findTheme(storedTheme ?? 'kuzz')?.name ?? 'kuzz';
     final legacyAccent = prefs.getInt(_legacyAccentKey);
     final resolvedTheme = switch (mode) {
       ThemeMode.system => schemeForAppearanceMode(theme, mode) ?? theme,

@@ -37,9 +37,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:buzz/features/channels/media_viewer_page.dart';
-import 'package:buzz/shared/relay/media_auth.dart';
-import 'package:buzz/shared/relay/media_image.dart';
+import 'package:kuzz/features/channels/media_viewer_page.dart';
+import 'package:kuzz/shared/relay/media_auth.dart';
+import 'package:kuzz/shared/relay/media_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -525,7 +525,7 @@ void main() {
     );
 
     // Wait for the body-cancellation signal rather than a fixed sleep.
-    // disableAnimations: true stops BuzzLoadingIndicator from repeating so
+    // disableAnimations: true stops KuzzLoadingIndicator from repeating so
     // pumpAndSettle converges once the error state is set.
     // With drain(), cancelledCompleter never completes and this times out.
     await tester.runAsync(

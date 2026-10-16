@@ -1,4 +1,4 @@
-import 'package:buzz/features/channels/message_actions/native_message_action_selection.dart';
+import 'package:kuzz/features/channels/message_actions/native_message_action_selection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 Future<void> _select(WidgetTester tester, int viewId, String action) async {
   tester.binding.channelBuffers.push(
-    'buzz/native_message_action_surface/$viewId',
+    'kuzz/native_message_action_surface/$viewId',
     const StandardMethodCodec().encodeMethodCall(
       MethodCall('selected', {'id': action}),
     ),

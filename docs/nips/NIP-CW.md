@@ -37,7 +37,7 @@ A relay that computes thread structure at ingest already knows which events are 
 
 This NIP does not change ingest, storage, or fan-out. Rows returned in a window are ordinary stored events; the overlays are computed per query and never stored.
 
-This NIP does not define around-target retrieval or cross-page snapshot isolation. It defines protocol compatibility and fallback rules, but the Buzz thread-mode implementation ships no client opt-in or fallback implementation. Thread mode starts at the newest reply and continues toward older replies.
+This NIP does not define around-target retrieval or cross-page snapshot isolation. It defines protocol compatibility and fallback rules, but the Kuzz thread-mode implementation ships no client opt-in or fallback implementation. Thread mode starts at the newest reply and continues toward older replies.
 
 This NIP does not require WebSocket REQ support. A relay MAY serve window filters only on an HTTP query surface and ignore the extension fields on REQ (see §Degradation).
 
@@ -46,7 +46,7 @@ This NIP does not require WebSocket REQ support. A relay MAY serve window filter
 This document uses MUST, MUST NOT, SHOULD, MAY, and RECOMMENDED as defined in RFC 2119.
 
 - **relay identity**: The keypair whose pubkey the relay advertises (e.g. NIP-11 `self`). All overlay events are signed with it.
-- **row**: A stored, signed event returned as part of the page proper (usually client-authored; Buzz also stores relay-signed events carrying actor provenance). Rows are the only events that count against `limit`.
+- **row**: A stored, signed event returned as part of the page proper (usually client-authored; Kuzz also stores relay-signed events carrying actor provenance). Rows are the only events that count against `limit`.
 - **top-level**: An event that opens a thread rather than replying into one — defined by wire tags in §Channel-mode Top-level Classification.
 - **overlay**: A relay-signed event (`kind:39005`, `kind:39006`, or `kind:39007`) synthesized at query time. Overlays are metadata *about* rows: never a row, never a cursor input, never durable history.
 - **composite cursor**: The pair `(created_at, id)` identifying a position in the total order. `created_at` is unix seconds; `id` is a 64-character lowercase hex event id.
@@ -54,7 +54,7 @@ This document uses MUST, MUST NOT, SHOULD, MAY, and RECOMMENDED as defined in RF
 
 ## Channel-mode Request
 
-A channel-mode window request is a standard filter plus extension fields, submitted wherever the relay accepts filters (for Buzz: the NIP-98-authenticated HTTP bridge `POST /query`):
+A channel-mode window request is a standard filter plus extension fields, submitted wherever the relay accepts filters (for Kuzz: the NIP-98-authenticated HTTP bridge `POST /query`):
 
 ```jsonc
 {
@@ -70,8 +70,8 @@ A channel-mode window request is a standard filter plus extension fields, submit
 ```
 
 - `top_level` — MUST be boolean `true` to select the window path. Any other value (absent, `false`, string, number) means the filter is served as a normal filter.
-- `#h` — the window MUST target exactly one channel. Zero or multiple channels: reject with an error (Buzz: HTTP `400`). A channel the requester cannot access is handled by §Channel-mode Access Scoping, not by an error that confirms the channel exists.
-- `limit` — the row budget. Overlays and aux events MUST NOT count against it. Relays SHOULD clamp it to a documented range (Buzz: default 50, maximum 200, minimum 1).
+- `#h` — the window MUST target exactly one channel. Zero or multiple channels: reject with an error (Kuzz: HTTP `400`). A channel the requester cannot access is handled by §Channel-mode Access Scoping, not by an error that confirms the channel exists.
+- `limit` — the row budget. Overlays and aux events MUST NOT count against it. Relays SHOULD clamp it to a documented range (Kuzz: default 50, maximum 200, minimum 1).
 - `until` + `before_id` — the request cursor: the `next_cursor` from the previous page's `kind:39006` overlay, echoed verbatim — `until` = `next_cursor.created_at`, `before_id` = `next_cursor.id`. **Both present or both absent.** Exactly one present MUST be rejected: a timestamp-only cursor silently loses or duplicates same-second rows, which is the failure mode this NIP exists to remove. Both absent = head-of-channel request.
 - `kinds` — optional; restricts which kinds may be rows. It does not affect overlay or aux kinds.
 
@@ -114,7 +114,7 @@ An event is a **reply** iff it carries a NIP-10 *marked* `e` tag with the `reply
 
 From that predicate:
 
-- **depth** 0 = not a reply. A reply's depth is its parent's depth + 1, following `reply` markers up the ancestry (relays MAY cap depth; Buzz rejects beyond 100). A reply MUST target a parent in the same channel; its `root` marker, when present, MUST agree with the parent's ancestry.
+- **depth** 0 = not a reply. A reply's depth is its parent's depth + 1, following `reply` markers up the ancestry (relays MAY cap depth; Kuzz rejects beyond 100). A reply MUST target a parent in the same channel; its `root` marker, when present, MUST agree with the parent's ancestry.
 - **broadcast**: a reply is *broadcast to the channel* iff it carries the exact tag `["broadcast", "1"]`. Broadcasting is an author's opt-in to surface a depth-1 reply on the channel timeline as well as in its thread.
 
 An event is **top-level** — eligible to be a window row — iff its depth is 0, or its depth is 1 and it is broadcast.
@@ -128,7 +128,7 @@ For a valid window filter on an accessible channel (§Channel-mode Access Scopin
 1. **Select rows.** From the target channel, take events that are top-level (§Channel-mode Top-level Classification), not deleted, and matching `kinds` if present, in the total order `created_at DESC, id ASC` (`id` compared bytewise). With a cursor `(ts, id)`, retain only events where `created_at < ts OR (created_at = ts AND id > id)`.
 2. **Probe exhaustion.** Evaluate the query with an internal budget of `limit + 1` rows *after all predicates*. If `limit + 1` rows match, `has_more = true` and the sentinel row is discarded — it MUST NOT appear on the wire, in overlays, or in the aux closure. Otherwise `has_more = false`.
 3. **Derive the next cursor.** If `has_more`, `next_cursor` is the **scan position**: the composite cursor of the last retained candidate, captured *before* any serving-time reconstruction or filtering of individual events. Otherwise `next_cursor = null`. The invariant `next_cursor = null ⇔ has_more = false` MUST hold. Because it is a scan position, `next_cursor` MAY reference an event that does not appear in the response (e.g. one skipped by the relay as unreconstructable); it is authoritative regardless, and deriving it from delivered rows instead would stall pagination on every skipped event.
-4. **Append the aux closure** (if `include_aux` and at least one row): two hops of events referencing the rows by `e` tag. Hop 1: reactions (`kind:7`), deletions (`kind:5`, `kind:9005`), and edits (Buzz `kind:40003`) whose `e` tag is a row id. Hop 2: deletions whose `e` tag is a hop-1 event id (a delete-of-a-reaction). Each event appears at most once; access-scoped events the requester cannot read are omitted. Relays MAY cap each hop (Buzz: 1000 events per hop).
+4. **Append the aux closure** (if `include_aux` and at least one row): two hops of events referencing the rows by `e` tag. Hop 1: reactions (`kind:7`), deletions (`kind:5`, `kind:9005`), and edits (Kuzz `kind:40003`) whose `e` tag is a row id. Hop 2: deletions whose `e` tag is a hop-1 event id (a delete-of-a-reaction). Each event appears at most once; access-scoped events the requester cannot read are omitted. Relays MAY cap each hop (Kuzz: 1000 events per hop).
 5. **Append thread summaries** (if `include_summaries`): one `kind:39005` per row that has at least one reply. Rows without replies get none.
 6. **Append window bounds**: exactly one `kind:39006` per served window response, always — including empty and exhausted pages.
 
@@ -136,7 +136,7 @@ The response is the surface's ordinary flat array of signed events — rows firs
 
 ## Channel-mode Access Scoping
 
-Access is evaluated before any of the steps above. A syntactically valid window request for a channel the requester cannot access — including a channel that does not exist — MUST produce the relay's ordinary access-scoped result for that surface, with **no rows and no overlays**. For Buzz's query surface that ordinary result is an empty array, exactly as any other filter against an inaccessible channel produces.
+Access is evaluated before any of the steps above. A syntactically valid window request for a channel the requester cannot access — including a channel that does not exist — MUST produce the relay's ordinary access-scoped result for that surface, with **no rows and no overlays**. For Kuzz's query surface that ordinary result is an empty array, exactly as any other filter against an inaccessible channel produces.
 
 Two consequences implementers MUST NOT miss:
 
@@ -200,7 +200,7 @@ Exactly one per served window response. The **only** authority on exhaustion. Ta
 
 ## Legacy Oldest-first Threads
 
-Buzz's authenticated `POST /query` also supports an older thread path, separate
+Kuzz's authenticated `POST /query` also supports an older thread path, separate
 from both window modes. It is selected by a single `#e` root and `depth_limit`,
 with `thread_window` absent or false:
 
@@ -245,7 +245,7 @@ legacy thread continuation fields and MUST NOT be reused as such.
 ## Thread Mode
 
 `thread_window: true` requests a newest-first page of replies to one root. It is
-served through Buzz's NIP-98-authenticated `POST /query`; channel mode,
+served through Kuzz's NIP-98-authenticated `POST /query`; channel mode,
 `kind:39006`, and the legacy oldest-first thread path are unchanged. The response
 is a flat array of reply events, optional auxiliary events, and exactly one
 relay-signed `kind:39007` bounds event. This specification adds no endpoint,
@@ -306,14 +306,14 @@ For an authorized request the relay MUST:
    pages. Refresh access for the **entire query batch** before releasing any
    events or bounds. If the reader's accessible-channel set changed while any
    window was built, discard all accumulated output and return a retryable
-   error (Buzz: HTTP `503`). This includes cross-channel auxiliary access.
+   error (Kuzz: HTTP `503`). This includes cross-channel auxiliary access.
 
 Rows alone count against `limit`. Auxiliary events and bounds do not.
 Inaccessible and nonexistent channels return no events or bounds.
 
 ### Resource Limits and Recovery
 
-Buzz shares resource limits across all thread-window filters in one query,
+Kuzz shares resource limits across all thread-window filters in one query,
 including replica retries: 64 auxiliary SQL scans, 8,192 raw reply and auxiliary
 rows (including probes), 8 MiB of their combined content plus serialized tags, 8 MiB
 of serialized output, and an eight-second overall deadline. Reply and auxiliary
@@ -367,14 +367,14 @@ An extension-unaware relay may return legacy oldest-first history without
 bounds. A client that explicitly falls back MUST restart with clean legacy
 pagination state and MUST NOT reuse a descending cursor. Invalid signatures,
 authorization failures, timeouts, corruption, or incomplete auxiliary closure
-MUST NOT trigger compatibility fallback. Buzz currently ships no thread-mode
+MUST NOT trigger compatibility fallback. Kuzz currently ships no thread-mode
 client opt-in or fallback implementation.
 
 ## Degradation
 
 The channel-mode extension fields in this NIP are *additional* keys on a standard filter, and clients and relays that do not implement it need no changes:
 
-- **Extension-unaware relay**: a tolerant filter parser (one that ignores unknown keys, as common NIP-01 implementations do) serves the filter as a plain `kinds` + `#h` query — a complete, correct, standard event stream. A strict parser may instead reject the filter outright. Both are safe: neither produces a wrong-but-plausible top-level timeline. A client MUST treat *either* signal — a response with no valid `kind:39006`, or an error/unsupported-filter response — as a downgrade, and fall back by reissuing a clean standard filter with all extension keys removed and assembling threads client-side. (Buzz's own WebSocket REQ path is such a tolerant parser: the filter deserializer drops the extension fields, so a window filter on REQ serves the standard query.)
+- **Extension-unaware relay**: a tolerant filter parser (one that ignores unknown keys, as common NIP-01 implementations do) serves the filter as a plain `kinds` + `#h` query — a complete, correct, standard event stream. A strict parser may instead reject the filter outright. Both are safe: neither produces a wrong-but-plausible top-level timeline. A client MUST treat *either* signal — a response with no valid `kind:39006`, or an error/unsupported-filter response — as a downgrade, and fall back by reissuing a clean standard filter with all extension keys removed and assembling threads client-side. (Kuzz's own WebSocket REQ path is such a tolerant parser: the filter deserializer drops the extension fields, so a window filter on REQ serves the standard query.)
 - **Extension-unaware client**: never sends `top_level`, never sees an overlay kind, and observes a completely standard relay.
 
 A relay implementing this NIP MAY advertise it in its NIP-11 relay information document; the discovery mechanism is out of scope for this NIP. A client needs no advertisement to probe safely: send one head window request and apply the downgrade rule above — the presence of a valid `kind:39006` is the capability signal.
@@ -391,7 +391,7 @@ Client-submitted `39005`/`39006`/`39007` events MUST be rejected at ingest (rela
 
 `kind:39006` and `kind:39007` are the pagination authorities for channel and thread mode respectively. Thread-mode clients MUST perform the signer, signature, tag, and request-binding verification specified in §Thread Bounds. Before using the channel-window fast path, a client MUST adopt exactly one of these trust profiles:
 
-- **Authenticated-transport profile** (what Buzz desktop ships): the client speaks to a relay it deliberately configured as its source of truth, over TLS (HTTPS/WSS) to that configured origin — server-origin authentication comes from the TLS certificate chain, which is what proves the response bytes came from the relay. (NIP-98 request signing and NIP-42 auth run over this channel too, but they authenticate the *requester* to the relay for access control; they are not evidence of response provenance.) The MUST-level structural checks of §Channel-mode Client Behavior step 5 — exactly one bounds, request binding, parseable content, `has_more`/`next_cursor` agreement — are still mandatory and are what #1500 enforces. The SHOULD-level checks of step 5 (exact tag cardinality, runtime field-type validation) and cryptographically binding channel overlay signatures to the advertised NIP-11 identity are future hardening, to be applied uniformly across relay-signed reads (with NIP-DV, NIP-IA), not a current channel-mode guarantee. Under this profile, "relay-signed" is a TLS-origin claim, not a client-verified cryptographic one.
+- **Authenticated-transport profile** (what Kuzz desktop ships): the client speaks to a relay it deliberately configured as its source of truth, over TLS (HTTPS/WSS) to that configured origin — server-origin authentication comes from the TLS certificate chain, which is what proves the response bytes came from the relay. (NIP-98 request signing and NIP-42 auth run over this channel too, but they authenticate the *requester* to the relay for access control; they are not evidence of response provenance.) The MUST-level structural checks of §Channel-mode Client Behavior step 5 — exactly one bounds, request binding, parseable content, `has_more`/`next_cursor` agreement — are still mandatory and are what #1500 enforces. The SHOULD-level checks of step 5 (exact tag cardinality, runtime field-type validation) and cryptographically binding channel overlay signatures to the advertised NIP-11 identity are future hardening, to be applied uniformly across relay-signed reads (with NIP-DV, NIP-IA), not a current channel-mode guarantee. Under this profile, "relay-signed" is a TLS-origin claim, not a client-verified cryptographic one.
 - **Identity-verified profile**: the client has obtained and trusts the relay identity pubkey out-of-band or via NIP-11. It MUST verify each overlay's event id, Schnorr signature, and signer against that identity, and treat any failure as the §Channel-mode Client Behavior step-5 discard. This is the profile for clients that cannot or do not authenticate their transport end-to-end.
 
 A channel-mode client with neither an authenticated transport nor a verifiable relay identity MUST NOT use the channel-window fast path: it falls back to the standard filter (§Degradation), where it verifies every event signature itself. Thread mode has the stricter verification and clean-legacy-restart rules in §Thread Bounds; it MUST NOT downgrade on an invalid signed response.
@@ -409,7 +409,7 @@ A channel-mode client with neither an authenticated transport nor a verifiable r
 - **NIP-01**: Supplies the filter grammar this NIP extends and the parameterized-replaceable semantics overlays lean on. (Degradation safety comes from this NIP's explicit downgrade-and-retry rule, not from assuming universal unknown-field tolerance.)
 - **NIP-29**: Supplies the channel model (`h` tags, group-scoped reads) windows are scoped by.
 - **NIP-50** and relay-side search: sibling precedent — a relay-computed view requested through extended filter fields, invisible to relays that do not implement it.
-- **NIP-98**: Authenticates the HTTP query surface Buzz serves windows on.
+- **NIP-98**: Authenticates the HTTP query surface Kuzz serves windows on.
 - **NIP-11**: Names the relay identity that signs overlays and the natural place to advertise support.
 
 ## Recovering summaries after deletion

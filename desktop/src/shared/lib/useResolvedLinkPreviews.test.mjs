@@ -5,9 +5,9 @@ import { JSDOM } from "jsdom";
 
 import {
   __linkPreviewMetadataTest,
-  fetchBuzzEntityMetadata,
+  fetchKuzzEntityMetadata,
   loadLinkPreviewMetadata,
-  isBuzzEntityPreview,
+  isKuzzEntityPreview,
   resetLinkPreviewMetadataCache,
   resolveLinkPreview,
   withEntityFallbacks,
@@ -51,12 +51,12 @@ test("pending external metadata reserves the image treatment", () => {
   });
 });
 
-test("pending Buzz entity metadata remains image-less", () => {
+test("pending Kuzz entity metadata remains image-less", () => {
   const entityPreview = {
-    kind: "buzz-repository",
-    href: `buzz://repo?owner=${"cd".repeat(32)}&d=buzz`,
-    provider: "Buzz",
-    title: "buzz",
+    kind: "kuzz-repository",
+    href: `kuzz://repo?owner=${"cd".repeat(32)}&d=kuzz`,
+    provider: "Kuzz",
+    title: "kuzz",
     typeLabel: "repo",
   };
   assert.deepEqual(resolveLinkPreview(entityPreview, undefined), {
@@ -217,10 +217,10 @@ test("metadata loader coalesces fragment variants and bounds concurrency", async
 
 test("withEntityFallbacks re-adds previews dropped by null metadata", () => {
   const entityPreview = {
-    kind: "buzz-pull-request",
-    href: `buzz://pr?id=${"ab".repeat(32)}&owner=${"cd".repeat(32)}&d=buzz`,
-    provider: "Buzz",
-    title: `buzz #${"ab".repeat(4)}`,
+    kind: "kuzz-pull-request",
+    href: `kuzz://pr?id=${"ab".repeat(32)}&owner=${"cd".repeat(32)}&d=kuzz`,
+    provider: "Kuzz",
+    title: `kuzz #${"ab".repeat(4)}`,
     typeLabel: "Review",
   };
 
@@ -231,17 +231,17 @@ test("withEntityFallbacks re-adds previews dropped by null metadata", () => {
 
 test("withEntityFallbacks keeps resolved previews and preserves order", () => {
   const first = {
-    kind: "buzz-repository",
-    href: `buzz://repo?owner=${"cd".repeat(32)}&d=buzz`,
-    provider: "Buzz",
-    title: "buzz",
+    kind: "kuzz-repository",
+    href: `kuzz://repo?owner=${"cd".repeat(32)}&d=kuzz`,
+    provider: "Kuzz",
+    title: "kuzz",
     typeLabel: "repo",
   };
   const second = {
-    kind: "buzz-issue",
-    href: `buzz://issue?id=${"ef".repeat(32)}&owner=${"cd".repeat(32)}&d=buzz`,
-    provider: "Buzz",
-    title: `buzz #${"ef".repeat(4)}`,
+    kind: "kuzz-issue",
+    href: `kuzz://issue?id=${"ef".repeat(32)}&owner=${"cd".repeat(32)}&d=kuzz`,
+    provider: "Kuzz",
+    title: `kuzz #${"ef".repeat(4)}`,
     typeLabel: "Task",
   };
   const resolvedSecond = {
@@ -258,15 +258,15 @@ test("withEntityFallbacks keeps resolved previews and preserves order", () => {
 
 test("entity fallback eligibility is kind-scoped", () => {
   assert.equal(
-    isBuzzEntityPreview({
+    isKuzzEntityPreview({
       ...preview,
-      kind: "buzz-repository",
-      href: `buzz://repo?owner=${"cd".repeat(32)}&d=buzz`,
+      kind: "kuzz-repository",
+      href: `kuzz://repo?owner=${"cd".repeat(32)}&d=kuzz`,
     }),
     true,
   );
   assert.equal(
-    isBuzzEntityPreview({ ...preview, href: "buzz://future?id=example" }),
+    isKuzzEntityPreview({ ...preview, href: "kuzz://future?id=example" }),
     false,
   );
 });
@@ -274,7 +274,7 @@ test("entity fallback eligibility is kind-scoped", () => {
 test("withEntityFallbacks still drops unresolved external links", () => {
   assert.deepEqual(withEntityFallbacks([preview], []), []);
   assert.deepEqual(
-    withEntityFallbacks([{ ...preview, href: "buzz://future?id=example" }], []),
+    withEntityFallbacks([{ ...preview, href: "kuzz://future?id=example" }], []),
     [],
   );
 });
@@ -290,11 +290,11 @@ function relayEvent({
   return { id, kind, pubkey, created_at: createdAt, content, tags, sig: "" };
 }
 
-test("Buzz PR metadata includes repository identity and trusted root context", async () => {
+test("Kuzz PR metadata includes repository identity and trusted root context", async () => {
   const owner = "cd".repeat(32);
   const attacker = "ef".repeat(32);
   const id = "ab".repeat(32);
-  const repoAddress = `30617:${owner}:buzz`;
+  const repoAddress = `30617:${owner}:kuzz`;
   const commit = "1234567".padEnd(40, "0");
   const events = [
     relayEvent({
@@ -302,8 +302,8 @@ test("Buzz PR metadata includes repository identity and trusted root context", a
       kind: 30617,
       pubkey: owner,
       tags: [
-        ["d", "buzz"],
-        ["name", "Buzz Desktop"],
+        ["d", "kuzz"],
+        ["name", "Kuzz Desktop"],
         ["default-branch", "main"],
       ],
     }),
@@ -367,29 +367,29 @@ test("Buzz PR metadata includes repository identity and trusted root context", a
       .sort((left, right) => right.created_at - left.created_at)
       .slice(0, filter.limit);
 
-  const result = await fetchBuzzEntityMetadata(
-    `buzz://pr?id=${id}&owner=${owner}&d=buzz`,
+  const result = await fetchKuzzEntityMetadata(
+    `kuzz://pr?id=${id}&owner=${owner}&d=kuzz`,
     fetchEvents,
   );
-  assert.equal(result?.siteName, "Buzz Desktop");
+  assert.equal(result?.siteName, "Kuzz Desktop");
   assert.equal(result?.title, "Restore entity cards");
   assert.equal(result?.description, null);
   assert.equal(result?.faviconDataUrl, null);
   assert.equal(result?.imageDataUrl, null);
 });
 
-test("Buzz entity roots reject ambiguous repository tags", async () => {
+test("Kuzz entity roots reject ambiguous repository tags", async () => {
   const owner = "cd".repeat(32);
   const attacker = "ef".repeat(32);
-  const targetAddress = `30617:${owner}:buzz`;
+  const targetAddress = `30617:${owner}:kuzz`;
   const attackerAddress = `30617:${attacker}:other`;
   const repository = relayEvent({
     id: "01".repeat(32),
     kind: 30617,
     pubkey: owner,
     tags: [
-      ["d", "buzz"],
-      ["name", "Buzz Desktop"],
+      ["d", "kuzz"],
+      ["name", "Kuzz Desktop"],
       ["default-branch", "main"],
     ],
   });
@@ -409,8 +409,8 @@ test("Buzz entity roots reject ambiguous repository tags", async () => {
         ["subject", "Misbound entity"],
       ],
     });
-    const result = await fetchBuzzEntityMetadata(
-      `buzz://${type}?id=${id}&owner=${owner}&d=buzz`,
+    const result = await fetchKuzzEntityMetadata(
+      `kuzz://${type}?id=${id}&owner=${owner}&d=kuzz`,
       async (filter) =>
         filter.kinds?.includes(30617)
           ? [repository]
@@ -422,10 +422,10 @@ test("Buzz entity roots reject ambiguous repository tags", async () => {
   }
 });
 
-test("Buzz repository metadata stays image-less and exposes default branch", async () => {
+test("Kuzz repository metadata stays image-less and exposes default branch", async () => {
   const owner = "cd".repeat(32);
-  const result = await fetchBuzzEntityMetadata(
-    `buzz://repo?owner=${owner}&d=relay-tools`,
+  const result = await fetchKuzzEntityMetadata(
+    `kuzz://repo?owner=${owner}&d=relay-tools`,
     async () => [
       relayEvent({
         id: "01".repeat(32),
@@ -450,10 +450,10 @@ test("Buzz repository metadata stays image-less and exposes default branch", asy
   assert.equal(result?.imageDomain, null);
 });
 
-test("Buzz project metadata resolves from the 30621 announcement", async () => {
+test("Kuzz project metadata resolves from the 30621 announcement", async () => {
   const owner = "cd".repeat(32);
-  const result = await fetchBuzzEntityMetadata(
-    `buzz://project?owner=${owner}&d=pollinator`,
+  const result = await fetchKuzzEntityMetadata(
+    `kuzz://project?owner=${owner}&d=pollinator`,
     async () => [
       relayEvent({
         id: "01".repeat(32),
@@ -475,19 +475,19 @@ test("Buzz project metadata resolves from the 30621 announcement", async () => {
   assert.equal(result?.imageDataUrl, null);
 });
 
-test("Buzz project metadata declines a missing or invalid announcement", async () => {
+test("Kuzz project metadata declines a missing or invalid announcement", async () => {
   const owner = "cd".repeat(32);
   assert.equal(
-    await fetchBuzzEntityMetadata(
-      `buzz://project?owner=${owner}&d=pollinator`,
+    await fetchKuzzEntityMetadata(
+      `kuzz://project?owner=${owner}&d=pollinator`,
       async () => [],
     ),
     null,
   );
   // Two `d` tags fail NIP-MP envelope validation.
   assert.equal(
-    await fetchBuzzEntityMetadata(
-      `buzz://project?owner=${owner}&d=pollinator`,
+    await fetchKuzzEntityMetadata(
+      `kuzz://project?owner=${owner}&d=pollinator`,
       async () => [
         relayEvent({
           id: "01".repeat(32),

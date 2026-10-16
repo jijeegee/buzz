@@ -36,7 +36,7 @@ pub(crate) struct PendingNavigationDeepLinks(Mutex<VecDeque<PendingNavigationDee
 impl PendingNavigationDeepLinks {
     fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<PendingNavigationDeepLink>> {
         self.0.lock().unwrap_or_else(|poisoned| {
-            eprintln!("buzz-desktop: recovering poisoned pending navigation deep-link queue");
+            eprintln!("kuzz-desktop: recovering poisoned pending navigation deep-link queue");
             poisoned.into_inner()
         })
     }
@@ -243,13 +243,13 @@ fn activate_main_window(app: &tauri::AppHandle) {
     };
 
     if let Err(error) = window.unminimize() {
-        eprintln!("buzz-desktop: failed to unminimize main window for deep link: {error}");
+        eprintln!("kuzz-desktop: failed to unminimize main window for deep link: {error}");
     }
     if let Err(error) = window.show() {
-        eprintln!("buzz-desktop: failed to show main window for deep link: {error}");
+        eprintln!("kuzz-desktop: failed to show main window for deep link: {error}");
     }
     if let Err(error) = window.set_focus() {
-        eprintln!("buzz-desktop: failed to focus main window for deep link: {error}");
+        eprintln!("kuzz-desktop: failed to focus main window for deep link: {error}");
     }
 }
 
@@ -301,11 +301,11 @@ pub(crate) fn install_deep_link_handlers(app: &mut tauri::App) {
             }
         }
         Ok(None) => {}
-        Err(error) => eprintln!("buzz-desktop: failed to read launch deep link: {error}"),
+        Err(error) => eprintln!("kuzz-desktop: failed to read launch deep link: {error}"),
     }
 }
 
-/// Parse the query string of a `buzz://message?…` URL into the JSON
+/// Parse the query string of a `kuzz://message?…` URL into the JSON
 /// payload emitted on `deep-link-message`. Returns `None` when a required
 /// param (`channel`, `id`) is missing or empty — mirroring the validation
 /// policy of the `connect` arm so the frontend never sees a half-formed
@@ -337,7 +337,7 @@ fn parse_message_deep_link(url: &Url) -> Option<serde_json::Value> {
     }))
 }
 
-/// Parse the query string of a `buzz://join?…` URL into the JSON payload
+/// Parse the query string of a `kuzz://join?…` URL into the JSON payload
 /// emitted on `deep-link-join`. Requires a ws(s) `relay` URL and a non-empty
 /// `code`; returns `None` otherwise so the frontend never sees a half-formed
 /// payload.
@@ -364,8 +364,8 @@ fn parse_join_deep_link(url: &Url) -> Option<serde_json::Value> {
     }))
 }
 
-/// Hosts of the `buzz://` git-entity links built by
-/// `desktop/src/shared/lib/entityLink.ts` and `crates/buzz-cli/src/links.rs`.
+/// Hosts of the `kuzz://` git-entity links built by
+/// `desktop/src/shared/lib/entityLink.ts` and `crates/kuzz-cli/src/links.rs`.
 const ENTITY_LINK_HOSTS: [&str; 4] = ["repo", "project", "pr", "issue"];
 
 fn is_hex64(value: &str) -> bool {
@@ -388,12 +388,12 @@ fn is_linkable_dtag(value: &str) -> bool {
         && !value.contains("..")
 }
 
-/// Validate a `buzz://repo|project|pr|issue?…` link and return it verbatim
+/// Validate a `kuzz://repo|project|pr|issue?…` link and return it verbatim
 /// for the frontend, which re-parses it with `parseEntityLink` before
 /// navigating. Validating here too keeps a malformed link from raising and
 /// focusing the window for a navigation that would then be declined.
 ///
-/// Workspace tabs addressable by `buzz://repo|project` links — mirrors
+/// Workspace tabs addressable by `kuzz://repo|project` links — mirrors
 /// `ENTITY_LINK_TABS` in `entityLink.ts`.
 const ENTITY_LINK_TABS: [&str; 6] = [
     "files",
@@ -412,7 +412,7 @@ fn canonical_entity_deep_link(url: &Url, build_scheme: &str) -> Option<String> {
     }
     parse_entity_deep_link(url)?;
     let mut canonical = url.clone();
-    canonical.set_scheme("buzz").ok()?;
+    canonical.set_scheme("kuzz").ok()?;
     Some(canonical.into())
 }
 
@@ -598,29 +598,29 @@ fn parse_nostr_bind_deep_link(url: &Url) -> Result<NostrBindDeepLinkPayload, Str
     })
 }
 
-/// Handle an incoming `buzz://` deep link URL.
+/// Handle an incoming `kuzz://` deep link URL.
 ///
 /// Currently supports:
-/// - `buzz://connect?relay=<ws(s)://...>` — emits `deep-link-connect` to the frontend
-/// - `buzz://repo|project|pr|issue?…` — emits `deep-link-entity` to the frontend
+/// - `kuzz://connect?relay=<ws(s)://...>` — emits `deep-link-connect` to the frontend
+/// - `kuzz://repo|project|pr|issue?…` — emits `deep-link-entity` to the frontend
 pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
     let url = match Url::parse(url_str) {
         Ok(u) => u,
         Err(e) => {
-            eprintln!("buzz-desktop: invalid deep link URL {url_str:?}: {e}");
+            eprintln!("kuzz-desktop: invalid deep link URL {url_str:?}: {e}");
             return;
         }
     };
 
     if url.scheme() != crate::build_identity::deep_link_scheme() {
-        eprintln!("buzz-desktop: ignoring unsupported deep link scheme: {url_str}");
+        eprintln!("kuzz-desktop: ignoring unsupported deep link scheme: {url_str}");
         return;
     }
 
     match url.host_str() {
         Some("connect") => {
             let Some(relay_url) = parse_websocket_relay_param(&url) else {
-                eprintln!("buzz-desktop: connect deep link missing/invalid relay: {url_str}");
+                eprintln!("kuzz-desktop: connect deep link missing/invalid relay: {url_str}");
                 return;
             };
             activate_main_window(app);
@@ -628,11 +628,11 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
             let _ = app.emit("deep-link-connect", relay_url);
         }
         Some("join") => {
-            // `buzz://join?relay=<ws(s)://...>&code=<invite code>` — fired by
+            // `kuzz://join?relay=<ws(s)://...>&code=<invite code>` — fired by
             // the relay's /invite/<code> landing page. The frontend claims the
             // invite against the relay's HTTP API, then adds the workspace.
             let Some(payload) = parse_join_deep_link(&url) else {
-                eprintln!("buzz-desktop: join deep link missing/invalid relay or code: {url_str}");
+                eprintln!("kuzz-desktop: join deep link missing/invalid relay or code: {url_str}");
                 return;
             };
             activate_main_window(app);
@@ -644,7 +644,7 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
         }
         Some("add-community") => {
             let Some(payload) = parse_add_community_deep_link(&url) else {
-                eprintln!("buzz-desktop: add-community deep link missing/invalid relay: {url_str}");
+                eprintln!("kuzz-desktop: add-community deep link missing/invalid relay: {url_str}");
                 return;
             };
             activate_main_window(app);
@@ -660,7 +660,7 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
         }
         Some("channel") => {
             let Some(payload) = parse_channel_deep_link(&url) else {
-                eprintln!("buzz-desktop: channel deep link missing/invalid channel: {url_str}");
+                eprintln!("kuzz-desktop: channel deep link missing/invalid channel: {url_str}");
                 return;
             };
             activate_main_window(app);
@@ -673,7 +673,7 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
             }
         }
         Some("message") => {
-            // `buzz://message?channel=<uuid>&id=<eventId>[&thread=<rootId>]`
+            // `kuzz://message?channel=<uuid>&id=<eventId>[&thread=<rootId>]`
             //
             // Validation policy mirrors the `connect` arm: parse what we
             // need, refuse to emit anything if a required param is missing
@@ -682,7 +682,7 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
             // structure on this side (serde JSON) and let the TS code own
             // any further normalisation.
             let Some(payload) = parse_message_deep_link(&url) else {
-                eprintln!("buzz-desktop: message deep link missing channel or id: {url_str}");
+                eprintln!("kuzz-desktop: message deep link missing channel or id: {url_str}");
                 return;
             };
             activate_main_window(app);
@@ -691,12 +691,12 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
         }
         Some("repo" | "project" | "pr" | "issue") => {
             // OS routing uses this build's scheme; frontend navigation consumes
-            // canonical buzz:// entity links rather than transport identity.
+            // canonical kuzz:// entity links rather than transport identity.
             let Some(href) = canonical_entity_deep_link(
                 &url,
                 crate::build_identity::deep_link_scheme().as_ref(),
             ) else {
-                eprintln!("buzz-desktop: malformed entity deep link: {url_str}");
+                eprintln!("kuzz-desktop: malformed entity deep link: {url_str}");
                 return;
             };
             activate_main_window(app);
@@ -709,14 +709,14 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
                 let _ = app.emit("deep-link-nostr-bind", payload);
             }
             Err(error) => {
-                eprintln!("buzz-desktop: rejecting nostr-bind deep link: {error}: {url_str}");
+                eprintln!("kuzz-desktop: rejecting nostr-bind deep link: {error}: {url_str}");
             }
         },
         Some(action) => {
-            eprintln!("buzz-desktop: unknown deep link action: {action}");
+            eprintln!("kuzz-desktop: unknown deep link action: {action}");
         }
         None => {
-            eprintln!("buzz-desktop: deep link missing action: {url_str}");
+            eprintln!("kuzz-desktop: deep link missing action: {url_str}");
         }
     }
 }

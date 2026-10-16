@@ -3,8 +3,8 @@ name: Mesh Lifecycle
 # relay-derived allowlist → join → CPU inference over QUIC → stranger denied
 # (relay membership rejection + no routed inference, with a differential
 # trusted-inference health proof so a dead serve node can't fake a denial).
-# Runs the full Buzz "shared compute" join story with three real mesh-llm
-# node processes on one runner, using the Buzz relay as the control plane
+# Runs the full Kuzz "shared compute" join story with three real mesh-llm
+# node processes on one runner, using the Kuzz relay as the control plane
 # (no hand-carried invite tokens). Mirrors the shape mesh-llm's own CI uses
 # for its two-node smokes (tiny CPU model, one runner, real QUIC mesh).
 
@@ -12,11 +12,11 @@ on:
   push:
     branches: [main]
     paths:
-      - 'crates/buzz-mesh-smoke/**'
-      - 'crates/buzz-relay/Cargo.toml'
-      - 'crates/buzz-admin/**'
-      - 'crates/buzz-test-client/**'
-      - 'crates/buzz-ws-client/**'
+      - 'crates/kuzz-mesh-smoke/**'
+      - 'crates/kuzz-relay/Cargo.toml'
+      - 'crates/kuzz-admin/**'
+      - 'crates/kuzz-test-client/**'
+      - 'crates/kuzz-ws-client/**'
       - 'Cargo.lock'
       - 'desktop/src-tauri/src/mesh_llm/**'
       - 'scripts/ci-mesh-lifecycle-smoke.sh'
@@ -26,11 +26,11 @@ on:
       - 'docker-compose.ci.yml'
   pull_request:
     paths:
-      - 'crates/buzz-mesh-smoke/**'
-      - 'crates/buzz-relay/Cargo.toml'
-      - 'crates/buzz-admin/**'
-      - 'crates/buzz-test-client/**'
-      - 'crates/buzz-ws-client/**'
+      - 'crates/kuzz-mesh-smoke/**'
+      - 'crates/kuzz-relay/Cargo.toml'
+      - 'crates/kuzz-admin/**'
+      - 'crates/kuzz-test-client/**'
+      - 'crates/kuzz-ws-client/**'
       - 'Cargo.lock'
       - 'desktop/src-tauri/src/mesh_llm/**'
       - 'scripts/ci-mesh-lifecycle-smoke.sh'
@@ -112,6 +112,6 @@ jobs:
         with:
           name: mesh-lifecycle-logs
           path: |
-            /tmp/buzz-relay.log
+            /tmp/kuzz-relay.log
             /tmp/mesh-lifecycle-harness.log
           if-no-files-found: ignore

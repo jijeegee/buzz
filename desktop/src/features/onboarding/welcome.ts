@@ -12,16 +12,16 @@ export const WELCOME_CHANNEL_DESCRIPTION =
  *  no longer join it; members who already did keep its welcome experience. */
 export const STARTER_WELCOME_CHANNEL_NAME = "welcome-everyone";
 export const WELCOME_CHANNEL_READY_EVENT =
-  "buzz:onboarding-welcome-channel-ready";
+  "kuzz:onboarding-welcome-channel-ready";
 export const WELCOME_SURFACE_READY_EVENT =
-  "buzz:onboarding-welcome-surface-ready";
+  "kuzz:onboarding-welcome-surface-ready";
 
 const PENDING_WELCOME_CHANNEL_STORAGE_KEY =
-  "buzz:onboarding-welcome-channel.v1";
+  "kuzz:onboarding-welcome-channel.v1";
 const WELCOME_INITIAL_UNREAD_SUPPRESSION_STORAGE_KEY =
-  "buzz:onboarding-welcome-initial-unread-suppression.v1";
+  "kuzz:onboarding-welcome-initial-unread-suppression.v1";
 const PENDING_WELCOME_CHANNEL_MAX_AGE_MS = 5 * 60 * 1000;
-const WELCOME_CHANNEL_ENSURED_STORAGE_KEY = "buzz-welcome-channel-ensured.v2";
+const WELCOME_CHANNEL_ENSURED_STORAGE_KEY = "kuzz-welcome-channel-ensured.v2";
 
 type WelcomeChannelClient = {
   createChannel: (input: CreateChannelInput) => Promise<Channel>;

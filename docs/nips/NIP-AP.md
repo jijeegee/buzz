@@ -87,7 +87,7 @@ The `content` field is a **plaintext** (unencrypted) JSON object:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `system_prompt` | string \| null | `null` | The system prompt injected into agent sessions. Optional since the unified agent model: a definition can be pure configuration (e.g. provider/model only). Readers MUST treat an absent or `null` prompt as "no prompt". |
-| `acp_command` | string \| null | `"buzz-acp"` | ACP transport command, distinct from the runtime/harness. See transport portability below. |
+| `acp_command` | string \| null | `"kuzz-acp"` | ACP transport command, distinct from the runtime/harness. See transport portability below. |
 | `avatar_url` | string \| null | `null` | URL to an avatar image. |
 | `runtime` | string \| null | `null` | ACP runtime identifier (e.g. `"goose"`, `"claude-code"`). |
 | `model` | string \| null | `null` | Model identifier (e.g. `"claude-opus-4"`). |
@@ -108,14 +108,14 @@ Unknown fields MUST be ignored by readers (forward compatibility).
 
 ### Transport portability
 
-`acp_command` is optional; legacy absence/null selects stock `buzz-acp` for
-new definitions. Portable commands are `buzz-acp` or a name of at most 255
-ASCII bytes matching `buzz-[A-Za-z0-9_-]+-acp`. Discovery resolves these aliases
+`acp_command` is optional; legacy absence/null selects stock `kuzz-acp` for
+new definitions. Portable commands are `kuzz-acp` or a name of at most 255
+ASCII bytes matching `kuzz-[A-Za-z0-9_-]+-acp`. Discovery resolves these aliases
 on the receiving device; publication does not guarantee local availability.
 
 Catalog publications carry `["shared", "true"]`. Their writers MUST omit
 nonportable commands (including machine-local paths), and MUST emit explicit
-`"buzz-acp"` when stock is selected. Foreign catalog readers MUST reject a
+`"kuzz-acp"` when stock is selected. Foreign catalog readers MUST reject a
 present nonportable value, and use stock when the field is omitted/null.
 
 Owner-to-self synchronization of non-catalog heads retains existing custom
@@ -123,7 +123,7 @@ command compatibility; it is not a foreign adoption path or a sandbox. On an
 owner's existing definition, absent/null transport on a shared head MUST
 preserve an existing nonportable local command, because that value may have
 been redacted. Otherwise absence selects stock. An explicit portable value,
-including `"buzz-acp"`, replaces the previous command. A shared custom command
+including `"kuzz-acp"`, replaces the previous command. A shared custom command
 therefore remains local rather than synchronizing its path to another device.
 The `shared` tag is catalog presentation, not confidentiality: all kind:30175
 content remains plaintext, including non-catalog heads.
@@ -284,7 +284,7 @@ Kind `30178` is stored globally and its content is unvalidated, exactly as for `
 
 Kind `30175` uses **shared-tag-gated read semantics** to protect system prompts and `respond_to_allowlist` from being visible to all community members as a side-effect of device sync.
 
-The gate is kind-generic: the relay applies it to every kind in `SHARED_GATED_KINDS` (`buzz-core/src/kind.rs`), currently `30175` and the `30178` team-catalog projection described below. The rules and enforcement surfaces are identical for each member kind.
+The gate is kind-generic: the relay applies it to every kind in `SHARED_GATED_KINDS` (`kuzz-core/src/kind.rs`), currently `30175` and the `30178` team-catalog projection described below. The rules and enforcement surfaces are identical for each member kind.
 
 **Rules:**
 

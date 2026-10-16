@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
-use buzz_core_pkg::kind::{event_is_shared, KIND_PERSONA};
+use kuzz_core_pkg::kind::{event_is_shared, KIND_PERSONA};
 use nostr::{EventBuilder, Kind, Tag};
 use serde::{Deserialize, Serialize};
 
@@ -405,7 +405,7 @@ pub(crate) async fn flush_pending_events_at(
             .map_err(|e| format!("failed to parse retained event '{}': {e}", current.d_tag))?;
 
         // Relay ingest rejects any event whose `created_at` is more than
-        // ±900s from server time (`crates/buzz-relay/src/handlers/ingest.rs`
+        // ±900s from server time (`crates/kuzz-relay/src/handlers/ingest.rs`
         // MAX_TIMESTAMP_DRIFT_SECS). A kind:5 tombstone is signed strictly past
         // the head it retracts, so its retained `created_at` is the domination
         // floor `f`: any publish at `t >= f` still soft-deletes the head (NIP-09
@@ -430,7 +430,7 @@ pub(crate) async fn flush_pending_events_at(
                 continue;
             }
             redate_tombstone(&event, now.max(current.created_at), owner_keys)?
-        } else if buzz_core_pkg::kind::is_identity_archive_request_kind(current.kind) {
+        } else if kuzz_core_pkg::kind::is_identity_archive_request_kind(current.kind) {
             // NIP-IA requests are freshness-checked by the relay (±120s on
             // `created_at`), so a request retained while the relay was
             // unreachable would be permanently stale. Re-sign with a fresh
@@ -640,7 +640,7 @@ pub fn apply_persona_snapshot(record: &mut ManagedAgentRecord, persona: &AgentDe
     if let Some(prompt) = snapshot.system_prompt {
         record.system_prompt = Some(prompt);
     }
-    // The definition view omits stock buzz-acp. Absence therefore resets a
+    // The definition view omits stock kuzz-acp. Absence therefore resets a
     // previously selected wrapper; preserving the instance would resurrect it.
     record.acp_command = snapshot
         .acp_command

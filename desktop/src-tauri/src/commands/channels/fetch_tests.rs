@@ -220,7 +220,7 @@ async fn directory_fetches_only_uncovered_rosters_and_keeps_hidden_dm_behavior()
         roster(&keys, "hidden-dm", &[&me, &other]),
         event(
             &keys,
-            buzz_core_pkg::kind::KIND_DM_VISIBILITY.try_into().unwrap(),
+            kuzz_core_pkg::kind::KIND_DM_VISIBILITY.try_into().unwrap(),
             vec![vec!["p", &me], vec!["h", "hidden-dm"]],
         ),
         event(&keys, 9, vec![vec!["h", "joined"]]),

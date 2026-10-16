@@ -103,7 +103,7 @@ fn managed_node_failed_step(stderr: String) -> InstallStepResult {
 }
 
 pub(super) fn managed_node_runtime_ready() -> bool {
-    let Some(node) = crate::managed_agents::buzz_managed_node_bin_path() else {
+    let Some(node) = crate::managed_agents::kuzz_managed_node_bin_path() else {
         return false;
     };
     if !node.is_file() {
@@ -217,7 +217,7 @@ pub(super) fn managed_node_orphaned() -> bool {
 
 /// Returns `true` when an adapter at `resolved` should be invalidated.
 ///
-/// Only a Buzz-managed shim (path under `managed_prefix`) with an orphaned
+/// Only a Kuzz-managed shim (path under `managed_prefix`) with an orphaned
 /// runtime is invalidated; external adapters are always preserved.
 pub(super) fn should_invalidate_adapter(
     resolved: &std::path::Path,
@@ -242,7 +242,7 @@ pub(super) fn resolve_adapter_path(
         .any(|cmd| is_npm_global_install(cmd));
     if needs_managed_npm {
         if let (Some(ref path), Some(ref managed_bin)) =
-            (&resolved, crate::managed_agents::buzz_managed_npm_bin_dir())
+            (&resolved, crate::managed_agents::kuzz_managed_npm_bin_dir())
         {
             if should_invalidate_adapter(path, managed_bin, managed_node_orphaned()) {
                 return None;
@@ -259,7 +259,7 @@ fn managed_node_install_lock() -> &'static Mutex<()> {
 }
 
 pub(super) fn managed_node_runtime_supported() -> bool {
-    MANAGED_NODE_ARTIFACT.is_some() && crate::managed_agents::buzz_managed_node_bin_dir().is_some()
+    MANAGED_NODE_ARTIFACT.is_some() && crate::managed_agents::kuzz_managed_node_bin_dir().is_some()
 }
 
 pub(super) fn ensure_managed_node_runtime_blocking() -> Result<(), Box<InstallStepResult>> {
@@ -270,7 +270,7 @@ pub(super) fn ensure_managed_node_runtime_blocking() -> Result<(), Box<InstallSt
     let Some(artifact) = MANAGED_NODE_ARTIFACT else {
         return Err(Box::new(managed_node_unsupported_step()));
     };
-    let Some(root) = crate::managed_agents::buzz_managed_node_root() else {
+    let Some(root) = crate::managed_agents::kuzz_managed_node_root() else {
         return Err(Box::new(managed_node_failed_step(
             "failed to resolve Kuzz app-data directory for private Node.js runtime".to_string(),
         )));
@@ -594,7 +594,7 @@ fn verify_node_tree(dir: &std::path::Path) -> Result<(), String> {
 
 // ── managed npm adapter installs ──────────────────────────────────────────────
 
-/// Guidance text shown when the Buzz-private npm prefix is not available.
+/// Guidance text shown when the Kuzz-private npm prefix is not available.
 fn managed_npm_prefix_hint() -> String {
     "Kuzz could not create its private Node tools directory. Check app-data directory permissions, restart Kuzz, then click Install again.".to_string()
 }
@@ -604,7 +604,7 @@ pub(super) fn managed_npm_command(command: &str) -> Result<Option<String>, Box<I
         return Ok(None);
     }
 
-    let Some(prefix) = crate::managed_agents::buzz_managed_npm_prefix() else {
+    let Some(prefix) = crate::managed_agents::kuzz_managed_npm_prefix() else {
         return Err(Box::new(InstallStepResult {
             step: "adapter".to_string(),
             command: command.to_string(),

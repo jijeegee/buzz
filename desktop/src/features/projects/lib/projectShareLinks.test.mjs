@@ -47,19 +47,19 @@ test("parseAddressableCoordinate rejects malformed coordinates", () => {
 test("projectShareLink links explicit projects by their 30621 coordinate", () => {
   assert.equal(
     projectShareLink({ projectAddress: PROJECT_ADDRESS }),
-    `buzz://project?owner=${OWNER}&d=pollinator`,
+    `kuzz://project?owner=${OWNER}&d=pollinator`,
   );
 });
 
 test("projectShareLink carries the active workspace tab for both link kinds", () => {
   assert.equal(
     projectShareLink({ projectAddress: PROJECT_ADDRESS }, "prs"),
-    `buzz://project?owner=${OWNER}&d=pollinator&tab=prs`,
+    `kuzz://project?owner=${OWNER}&d=pollinator&tab=prs`,
   );
-  // Legacy projects share as buzz://repo and keep the tab too.
+  // Legacy projects share as kuzz://repo and keep the tab too.
   assert.equal(
     projectShareLink({ projectAddress: REPO_ADDRESS }, "issues"),
-    `buzz://repo?owner=${OWNER}&d=flappy-bee&tab=issues`,
+    `kuzz://repo?owner=${OWNER}&d=flappy-bee&tab=issues`,
   );
 });
 
@@ -80,7 +80,7 @@ test("workspace tab ids map onto link tabs and back", () => {
 test("projectShareLink links legacy projects as their backing repository", () => {
   assert.equal(
     projectShareLink({ projectAddress: REPO_ADDRESS }),
-    `buzz://repo?owner=${OWNER}&d=flappy-bee`,
+    `kuzz://repo?owner=${OWNER}&d=flappy-bee`,
   );
 });
 
@@ -105,7 +105,7 @@ test("projectShareLink declines coordinates the link format cannot express", () 
 test("repositoryShareLink links the repository coordinate", () => {
   assert.equal(
     repositoryShareLink({ repoAddress: REPO_ADDRESS }),
-    `buzz://repo?owner=${OWNER}&d=flappy-bee`,
+    `kuzz://repo?owner=${OWNER}&d=flappy-bee`,
   );
   assert.equal(
     repositoryShareLink({ repoAddress: PROJECT_ADDRESS }),
@@ -117,11 +117,11 @@ test("repositoryShareLink links the repository coordinate", () => {
 test("issue and pull request links carry the event id and repo coordinate", () => {
   assert.equal(
     issueShareLink({ id: EVENT_ID, repoAddress: REPO_ADDRESS }),
-    `buzz://issue?id=${EVENT_ID}&owner=${OWNER}&d=flappy-bee`,
+    `kuzz://issue?id=${EVENT_ID}&owner=${OWNER}&d=flappy-bee`,
   );
   assert.equal(
     pullRequestShareLink({ id: EVENT_ID, repoAddress: REPO_ADDRESS }),
-    `buzz://pr?id=${EVENT_ID}&owner=${OWNER}&d=flappy-bee`,
+    `kuzz://pr?id=${EVENT_ID}&owner=${OWNER}&d=flappy-bee`,
   );
 });
 

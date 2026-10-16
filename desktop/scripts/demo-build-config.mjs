@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const PRODUCTION_IDENTIFIER = "xyz.block.buzz.app";
+const PRODUCTION_IDENTIFIER = "app.kuzz.app";
 // The build ID suffix is 17 characters including its separator, and the Rust
 // build contract caps the complete demo slug at 48 ASCII bytes.
 const MAX_DEMO_SLUG_LENGTH = 48;
@@ -10,12 +10,12 @@ const DEMO_BUILD_ID_SUFFIX_LENGTH = 17;
 const MAX_DEMO_NAME_LENGTH = MAX_DEMO_SLUG_LENGTH - DEMO_BUILD_ID_SUFFIX_LENGTH;
 
 export const productionBuildIdentity = Object.freeze({
-  productName: "Buzz",
+  productName: "Kuzz",
   identifier: PRODUCTION_IDENTIFIER,
-  deepLinkScheme: "buzz",
-  keyringService: "buzz-desktop",
-  nestName: ".buzz",
-  cliName: "buzz",
+  deepLinkScheme: "kuzz",
+  keyringService: "kuzz-desktop",
+  nestName: ".kuzz",
+  cliName: "kuzz",
 });
 
 export function demoBuildConfig(
@@ -47,7 +47,7 @@ export function demoBuildConfig(
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   const slug = `${readableSlug}-${buildId}`;
-  const productName = `Buzz ${name}`;
+  const productName = `Kuzz ${name}`;
   return {
     name,
     slug,
@@ -56,14 +56,14 @@ export function demoBuildConfig(
     dmgFileStem: productName.replace(/ /g, "_"),
     identifier: `${PRODUCTION_IDENTIFIER}.demo.${slug}`,
     appDataIdentity: `${PRODUCTION_IDENTIFIER}.demo.${slug}`,
-    deepLinkScheme: `buzz-demo-${slug}`,
-    keyringService: `buzz-desktop-demo.${slug}`,
-    nestName: `.buzz-demo-${slug}`,
-    cliName: `buzz-demo-${slug}`,
+    deepLinkScheme: `kuzz-demo-${slug}`,
+    keyringService: `kuzz-desktop-demo.${slug}`,
+    nestName: `.kuzz-demo-${slug}`,
+    cliName: `kuzz-demo-${slug}`,
     tauriConfig: {
       productName,
       identifier: `${PRODUCTION_IDENTIFIER}.demo.${slug}`,
-      plugins: { "deep-link": { desktop: { schemes: [`buzz-demo-${slug}`] } } },
+      plugins: { "deep-link": { desktop: { schemes: [`kuzz-demo-${slug}`] } } },
       bundle: { targets: ["app"] },
     },
   };

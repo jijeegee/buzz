@@ -39,7 +39,7 @@ import 'shared/push/push_relay_capability_provider.dart';
 import 'shared/relay/relay.dart';
 import 'shared/read_state/read_state_provider.dart';
 import 'shared/theme/theme.dart';
-import 'shared/widgets/buzz_loading_indicator.dart';
+import 'shared/widgets/kuzz_loading_indicator.dart';
 
 /// App-level bridge from invite joining to the channels feature.
 ///
@@ -143,11 +143,11 @@ class App extends HookConsumerWidget {
     // Derive the gradient from the themes that produced each color scheme.
     // This keeps fallbacks and pinned brightness changes aligned with the
     // rendered palette rather than the raw persisted selection.
-    final buzzLightGradient = buzzTopSectionGradient(
+    final kuzzLightGradient = kuzzTopSectionGradient(
       resolved.lightTheme?.name ?? '',
       lightScheme.brightness,
     );
-    final buzzDarkGradient = buzzTopSectionGradient(
+    final kuzzDarkGradient = kuzzTopSectionGradient(
       resolved.darkTheme?.name ?? '',
       darkScheme.brightness,
     );
@@ -173,7 +173,7 @@ class App extends HookConsumerWidget {
       hasUnreadInbox = ref.watch(_unreadInboxItemCountProvider) > 0;
     }
 
-    // Start listening for buzz:// links immediately (even pre-auth) so a
+    // Start listening for kuzz:// links immediately (even pre-auth) so a
     // cold-start link survives until the authenticated UI can dispatch it.
     ref.watch(pendingDeepLinkProvider);
 
@@ -204,14 +204,14 @@ class App extends HookConsumerWidget {
     return MaterialApp(
       navigatorKey: _mobileRootNavigatorKey,
       navigatorObservers: [voiceNoteRouteObserver, readAloudRouteObserver],
-      title: 'Buzz',
+      title: 'Kuzz',
       theme: AppTheme.light(
         colorScheme: lightScheme,
-        topSectionGradient: buzzLightGradient,
+        topSectionGradient: kuzzLightGradient,
       ),
       darkTheme: AppTheme.dark(
         colorScheme: darkScheme,
-        topSectionGradient: buzzDarkGradient,
+        topSectionGradient: kuzzDarkGradient,
       ),
       themeMode: effectiveMode,
       routes: {addCommunityRouteName: (_) => const TokenSignInPage()},
@@ -313,7 +313,7 @@ class _SplashScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(
-        child: BuzzLoadingIndicator(size: 56, semanticLabel: 'Starting Buzz'),
+        child: KuzzLoadingIndicator(size: 56, semanticLabel: 'Starting Kuzz'),
       ),
     );
   }

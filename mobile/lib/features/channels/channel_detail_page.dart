@@ -25,7 +25,7 @@ import '../../shared/theme/theme.dart';
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/bouncing_dots_indicator.dart';
 import '../../shared/widgets/concentric_sheet_surface.dart';
 import '../../shared/widgets/frosted_app_bar.dart';

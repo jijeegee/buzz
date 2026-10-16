@@ -7,12 +7,12 @@ import {
   type SyntaxThemeName,
 } from "./theme-loader";
 
-const STORAGE_KEY_PREFIX = "buzz-community-theme.v1";
-const OUTBOX_KEY_PREFIX = "buzz-community-theme-outbox.v1";
-const MIGRATION_KEY_PREFIX = "buzz-community-theme-migrated.v1";
+const STORAGE_KEY_PREFIX = "kuzz-community-theme.v1";
+const OUTBOX_KEY_PREFIX = "kuzz-community-theme-outbox.v1";
+const MIGRATION_KEY_PREFIX = "kuzz-community-theme-migrated.v1";
 // Light/dark/system is a property of the device, not the account: it is kept
 // here only and overlaid on every synced preference before it is applied.
-const DEVICE_APPEARANCE_MODE_KEY = "buzz-device-appearance-mode.v1";
+const DEVICE_APPEARANCE_MODE_KEY = "kuzz-device-appearance-mode.v1";
 
 export type DeviceAppearanceMode = "system" | "light" | "dark";
 
@@ -25,7 +25,7 @@ export type CommunityThemePreference = {
 
 export const DEFAULT_COMMUNITY_THEME: CommunityThemePreference = Object.freeze({
   version: 1,
-  theme: "buzz",
+  theme: "kuzz",
   accent: "#3b82f6",
   followSystem: true,
 });

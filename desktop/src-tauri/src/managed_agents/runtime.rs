@@ -19,7 +19,7 @@ mod path;
 pub(in crate::managed_agents) use path::build_augmented_path;
 pub(crate) use path::{compose_path_entries, should_skip_claude_executable, should_use_inherited};
 
-/// Custom ACP harnesses do not run buzz-acp's Git bootstrap. Preserve the
+/// Custom ACP harnesses do not run kuzz-acp's Git bootstrap. Preserve the
 /// Desktop-provided relay credential helper for those commands.
 fn apply_custom_acp_git_credentials(
     command: &mut std::process::Command,
@@ -33,7 +33,7 @@ fn apply_custom_acp_git_credentials(
     }
     let Some(helper) = credential_helper else {
         eprintln!(
-            "buzz-desktop: git-credential-nostr not found — custom ACP command will not have automatic Buzz git auth"
+            "kuzz-desktop: git-credential-nostr not found — custom ACP command will not have automatic Kuzz git auth"
         );
         return;
     };
@@ -77,11 +77,11 @@ pub(crate) use sweep::sweep_untracked_bundle_harnesses;
 mod process;
 #[cfg(test)]
 use process::{
-    buzz_marker_entry, name_matches_interpreter, name_matches_known_binary,
+    kuzz_marker_entry, name_matches_interpreter, name_matches_known_binary,
     terminate_runtime_receipt_with, valid_agent_runtime_receipt_with,
 };
 pub(crate) use process::{
-    current_instance_id, process_belongs_to_us, process_has_buzz_marker, process_is_running,
+    current_instance_id, process_belongs_to_us, process_has_kuzz_marker, process_is_running,
     terminate_process, terminate_untracked_pair_runtime, valid_agent_runtime_receipt,
 };
 
@@ -529,10 +529,10 @@ pub(crate) fn spawn_with_effort_proof(
 /// local processes (`channel_routing::live_local_roles`), for the hold rule.
 ///
 /// `replay_floor_unix`: optional unix-seconds replay floor for the harness's
-/// startup watermark (`BUZZ_ACP_REPLAY_FLOOR`). A publish-first mention send
+/// startup watermark (`KUZZ_ACP_REPLAY_FLOOR`). A publish-first mention send
 /// publishes the triggering message before this spawn and passes its send
 /// timestamp here so the harness's first REQ replays past that message no
-/// matter how long the spawn takes. buzz-acp clamps stale floors to ~15 min.
+/// matter how long the spawn takes. kuzz-acp clamps stale floors to ~15 min.
 /// Decide and apply the child's relay credential: the record's key (and NIP-OA
 /// tag) in key mode, the bot token prepared before the locks in token mode,
 /// with every Desktop-owned token variable stripped first. `spawn_agent_child`
@@ -664,7 +664,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             Some(path) => Some(path),
             None => {
                 eprintln!(
-                    "buzz-desktop: mcp_command {effective_mcp_command:?} not found, skipping"
+                    "kuzz-desktop: mcp_command {effective_mcp_command:?} not found, skipping"
                 );
                 None
             }
@@ -681,7 +681,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Augment PATH for DMG launches so child processes can find:
     //   - bundled CLI via ~/.local/bin symlink
     //   - nvm-managed node/npm (nvm initializes only in interactive shells)
-    //   - bundled sidecars (buzz, buzz-acp, etc.) via exe parent (Contents/MacOS/)
+    //   - bundled sidecars (kuzz, kuzz-acp, etc.) via exe parent (Contents/MacOS/)
     //   - runtimes (node, python, etc.) via login shell PATH
     let nvm_bin = dirs::home_dir()
         .as_deref()
@@ -715,27 +715,27 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         record,
         &effective_relay_url,
     )?;
-    command.env("BUZZ_RELAY_URL", &effective_relay_url);
-    command.env("BUZZ_ACP_LAZY_POOL", if lazy { "true" } else { "false" });
-    command.env("BUZZ_ACP_IDLE_POOL_SLEEP", idle_pool_sleep_env(lazy));
+    command.env("KUZZ_RELAY_URL", &effective_relay_url);
+    command.env("KUZZ_ACP_LAZY_POOL", if lazy { "true" } else { "false" });
+    command.env("KUZZ_ACP_IDLE_POOL_SLEEP", idle_pool_sleep_env(lazy));
     // Publish-first mention sends hand the harness the send timestamp as a
     // startup replay floor. Strip any ambient value here — before the
     // `descriptor.env` loop — so a floor from the parent environment can never
     // leak into an unrelated spawn; the caller's floor is asserted AFTER that
     // loop by `apply_replay_floor_env` so saved user env cannot shadow it.
     command.env_remove(REPLAY_FLOOR_ENV_VAR);
-    command.env("BUZZ_ACP_AGENT_COMMAND", &resolved_agent_command);
-    command.env("BUZZ_ACP_AGENT_ARGS", agent_args.join(","));
+    command.env("KUZZ_ACP_AGENT_COMMAND", &resolved_agent_command);
+    command.env("KUZZ_ACP_AGENT_ARGS", agent_args.join(","));
     match &resolved_mcp_command {
         Some(mcp_cmd) => {
-            command.env("BUZZ_ACP_MCP_COMMAND", mcp_cmd);
+            command.env("KUZZ_ACP_MCP_COMMAND", mcp_cmd);
         }
         None => {
-            command.env("BUZZ_ACP_MCP_COMMAND", "");
+            command.env("KUZZ_ACP_MCP_COMMAND", "");
         }
     }
     // Enable MCP hook tools (_Stop, _PostCompact) for agents that need them.
-    // Uses "*" because build_mcp_servers() hard-codes the server name to "buzz-mcp".
+    // Uses "*" because build_mcp_servers() hard-codes the server name to "kuzz-mcp".
     let runtime_meta = known_acp_runtime(effective_command);
     if runtime_meta.is_some_and(|r| r.mcp_hooks) {
         command.env("MCP_HOOK_SERVERS", "*");
@@ -745,20 +745,20 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // `spawned_setup_mode` is stamped on `ManagedAgentProcess` below.
     let spawned_setup_mode =
         apply_setup_payload_env(&mut command, record, &descriptor, runtime_meta);
-    // Emit BUZZ_ACP_IDLE_TIMEOUT only when explicitly set; the harness
+    // Emit KUZZ_ACP_IDLE_TIMEOUT only when explicitly set; the harness
     // DEFAULT_IDLE_TIMEOUT_SECS is the single source of truth. The deprecated
-    // BUZZ_ACP_TURN_TIMEOUT pinned agents to a stale default (320s).
+    // KUZZ_ACP_TURN_TIMEOUT pinned agents to a stale default (320s).
     if let Some(idle) = record.idle_timeout_seconds {
-        command.env("BUZZ_ACP_IDLE_TIMEOUT", idle.to_string());
+        command.env("KUZZ_ACP_IDLE_TIMEOUT", idle.to_string());
     }
 
     if let Some(max_dur) = record.max_turn_duration_seconds {
-        command.env("BUZZ_ACP_MAX_TURN_DURATION", max_dur.to_string());
+        command.env("KUZZ_ACP_MAX_TURN_DURATION", max_dur.to_string());
     }
     let acp_n = super::acp_agents_value(effective_command, record.parallelism);
-    command.env("BUZZ_ACP_AGENTS", acp_n);
-    command.env("BUZZ_ACP_MULTIPLE_EVENT_HANDLING", "steer");
-    command.env("BUZZ_ACP_DEDUP", "queue");
+    command.env("KUZZ_ACP_AGENTS", acp_n);
+    command.env("KUZZ_ACP_MULTIPLE_EVENT_HANDLING", "steer");
+    command.env("KUZZ_ACP_DEDUP", "queue");
     if let Some(meta) = runtime_meta {
         for (key, value) in meta.default_env {
             if std::env::var(key).is_err() {
@@ -772,21 +772,21 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // context itself needs no switch: the harness adds it only in
     // conversations that have a goal tree.
     for key in [
-        "BUZZ_ACP_GOALS",
-        "BUZZ_ACP_AGENT_GOAL",
-        "BUZZ_ACP_OWNER_GOAL",
+        "KUZZ_ACP_GOALS",
+        "KUZZ_ACP_AGENT_GOAL",
+        "KUZZ_ACP_OWNER_GOAL",
     ] {
         command.env_remove(key);
     }
     match crate::commands::sync_agent_goals_file(app, record, owner_hex) {
-        Ok(path) => command.env("BUZZ_ACP_LAYER0_GOALS_FILE", path),
-        Err(_) => command.env_remove("BUZZ_ACP_LAYER0_GOALS_FILE"),
+        Ok(path) => command.env("KUZZ_ACP_LAYER0_GOALS_FILE", path),
+        Err(_) => command.env_remove("KUZZ_ACP_LAYER0_GOALS_FILE"),
     };
     let team_instructions = super::spawn_snapshot::effective_team_instructions(record, &teams);
     if let Some(instructions) = &team_instructions {
-        command.env("BUZZ_ACP_TEAM_INSTRUCTIONS", instructions);
+        command.env("KUZZ_ACP_TEAM_INSTRUCTIONS", instructions);
     } else {
-        command.env_remove("BUZZ_ACP_TEAM_INSTRUCTIONS");
+        command.env_remove("KUZZ_ACP_TEAM_INSTRUCTIONS");
     }
 
     // Prompt, model, and provider all come from the single `effective_cfg`
@@ -806,15 +806,15 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     let effective_provider = effective_cfg.provider.value;
 
     if let Some(prompt) = &effective_prompt {
-        command.env("BUZZ_ACP_SYSTEM_PROMPT", prompt);
+        command.env("KUZZ_ACP_SYSTEM_PROMPT", prompt);
     } else {
-        command.env_remove("BUZZ_ACP_SYSTEM_PROMPT");
+        command.env_remove("KUZZ_ACP_SYSTEM_PROMPT");
     }
     // Shared compute stores `auto`, but the wire name is MeshLLM's virtual
     // `mesh` model. Translate here too, so the harness and the LLM client are
-    // told the same thing: `BUZZ_ACP_MODEL=auto` would name a model the mesh
-    // never advertises, leaving buzz-acp to warn and fall back on every new
-    // session while `BUZZ_AGENT_MODEL` said `mesh`.
+    // told the same thing: `KUZZ_ACP_MODEL=auto` would name a model the mesh
+    // never advertises, leaving kuzz-acp to warn and fall back on every new
+    // session while `KUZZ_AGENT_MODEL` said `mesh`.
     #[cfg(feature = "mesh-llm")]
     let acp_model = match (&mesh_model_id, effective_model.as_deref()) {
         (Some(mesh_model_id), _) => Some(super::relay_mesh_wire_model(mesh_model_id).to_string()),
@@ -823,9 +823,9 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     #[cfg(not(feature = "mesh-llm"))]
     let acp_model = effective_model.as_deref().map(str::to_owned);
     if let Some(model) = acp_model.as_deref() {
-        command.env("BUZZ_ACP_MODEL", model);
+        command.env("KUZZ_ACP_MODEL", model);
     } else {
-        command.env_remove("BUZZ_ACP_MODEL");
+        command.env_remove("KUZZ_ACP_MODEL");
     }
     // Session title for the harness to pass out-of-band on `session/new`. The
     // adapter names the session after it; it never reaches the prompt, so this
@@ -860,9 +860,9 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
             command.env(key, value);
         }
     }
-    command.env_remove("BUZZ_ACP_PRIVATE_KEY");
-    command.env_remove("BUZZ_ACP_API_TOKEN");
-    command.env_remove("BUZZ_API_TOKEN");
+    command.env_remove("KUZZ_ACP_PRIVATE_KEY");
+    command.env_remove("KUZZ_ACP_API_TOKEN");
+    command.env_remove("KUZZ_API_TOKEN");
 
     // Inbound author gate: who is this agent allowed to respond to?
     // Validation is strict here — a malformed allowlist on disk fails before
@@ -876,9 +876,9 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         command.env_remove(key);
     }
 
-    command.env("BUZZ_ACP_RELAY_OBSERVER", "true");
+    command.env("KUZZ_ACP_RELAY_OBSERVER", "true");
 
-    // buzz-acp owns Git identity, scoped credentials, signing and key cleanup.
+    // kuzz-acp owns Git identity, scoped credentials, signing and key cleanup.
     // An advanced custom ACP command bypasses that harness, so retain the
     // earlier Desktop credential setup for that supported override.
     if record.acp_command != super::DEFAULT_ACP_COMMAND
@@ -894,7 +894,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     }
 
     // User env (descriptor.env): fully-layered floor→runtime→definition→global→persona→agent,
-    // reserved-key filtered. Written last so user-explicit values win over Buzz-set env.
+    // reserved-key filtered. Written last so user-explicit values win over Kuzz-set env.
     // `HERMES_HOME` is written by the same call, after the user env.
     super::hermes_profile::apply_user_env_then_hermes_home(
         &mut command,
@@ -975,12 +975,12 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Publish-first replay floor: written AFTER the `descriptor.env` loop, the
     // same post-loop authority ordering the A1 model write uses. This send's
     // floor is invocation state and must win over a saved
-    // BUZZ_ACP_REPLAY_FLOOR — the shadow `apply_replay_floor` strips from the
+    // KUZZ_ACP_REPLAY_FLOOR — the shadow `apply_replay_floor` strips from the
     // provider payload's `launch.env` tier for the same reason.
     apply_replay_floor_env(&mut command, replay_floor_unix);
 
     // A1: for local claude agents, ANTHROPIC_MODEL is the single startup model authority.
-    // BUZZ_ACP_MODEL is removed (live ACP switches only; two authorities in the same env
+    // KUZZ_ACP_MODEL is removed (live ACP switches only; two authorities in the same env
     // would be ambiguous).
     if record.backend == super::BackendKind::Local && runtime_meta.is_some_and(|r| r.id == "claude")
     {
@@ -988,7 +988,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     }
     configure_runtime_cli(&mut command, runtime_meta);
 
-    // Buzz shared compute is stored as a native provider; derive the OpenAI-compatible
+    // Kuzz shared compute is stored as a native provider; derive the OpenAI-compatible
     // transport at spawn time and scrub any unrelated ambient OpenAI key.
     // Gate on `mesh_model_id` (derived from `effective_cfg.relay_mesh_model_id()`
     // above) — not on `effective_provider` directly — so the mesh gate here
@@ -1005,8 +1005,8 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Stamp desktop ownership and an unpredictable harness-generation identity.
     let start_nonce = uuid::Uuid::new_v4().simple().to_string();
     command
-        .env("BUZZ_MANAGED_AGENT", current_instance_id(app))
-        .env("BUZZ_MANAGED_AGENT_START_NONCE", &start_nonce);
+        .env("KUZZ_MANAGED_AGENT", current_instance_id(app))
+        .env("KUZZ_MANAGED_AGENT_START_NONCE", &start_nonce);
 
     // Stamp spawn config from values above, BEFORE spawning — a post-spawn
     // re-resolve races config edits and would stamp the wrong values.
@@ -1030,7 +1030,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         command.process_group(0);
     }
     // Windows: suppress the harness console window. Without this a bare
-    // terminal pops for buzz-acp.exe and lingers (the app itself sets
+    // terminal pops for kuzz-acp.exe and lingers (the app itself sets
     // windows_subsystem="windows", but the spawned child does not inherit it).
     #[cfg(windows)]
     {

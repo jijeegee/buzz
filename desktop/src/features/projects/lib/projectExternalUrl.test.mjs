@@ -22,8 +22,8 @@ test("normalizes clone URLs before adding the selected ref", () => {
 
 test("keeps unsupported and unscoped URLs unchanged", () => {
   assert.equal(
-    projectExternalRefUrl("https://gitlab.com/block/buzz", "main"),
-    "https://gitlab.com/block/buzz",
+    projectExternalRefUrl("https://gitlab.com/block/kuzz", "main"),
+    "https://gitlab.com/block/kuzz",
   );
   assert.equal(
     projectExternalRefUrl("https://github.com/block/buzz", null),

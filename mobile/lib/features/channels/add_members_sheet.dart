@@ -7,7 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
 import 'channel_management_provider.dart';
 
@@ -242,7 +242,7 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                           },
                         ),
                   loading: () => const Center(
-                    child: BuzzLoadingIndicator(
+                    child: KuzzLoadingIndicator(
                       size: 44,
                       semanticLabel: 'Loading people and agents',
                     ),

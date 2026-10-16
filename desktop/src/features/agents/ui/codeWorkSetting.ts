@@ -1,12 +1,12 @@
 import type { EnvVarsValue } from "./EnvVarsEditor";
 
 /**
- * The per-agent "Code work" setting lives in the agent's env vars: buzz-acp
+ * The per-agent "Code work" setting lives in the agent's env vars: kuzz-acp
  * leaves the engineering and repository guidance out of its base prompt when
  * this is `"true"`. Absent means on, so existing agents keep that guidance.
- * buzz-acp accepts exactly `"true"` or `"false"`.
+ * kuzz-acp accepts exactly `"true"` or `"false"`.
  */
-export const CODE_WORK_OFF_ENV_KEY = "BUZZ_ACP_NO_CODE_WORK";
+export const CODE_WORK_OFF_ENV_KEY = "KUZZ_ACP_NO_CODE_WORK";
 
 /** Whether Code work is on, reading own env over the inherited layer. */
 export function codeWorkEnabled(

@@ -19,8 +19,8 @@ import 'push_subscription.dart';
 const _pushBootstrapRetryDelay = Duration(seconds: 5);
 
 @visibleForTesting
-class BuzzPushAttemptGate {
-  BuzzPushAttemptGate({this.retryDelay = _pushBootstrapRetryDelay});
+class KuzzPushAttemptGate {
+  KuzzPushAttemptGate({this.retryDelay = _pushBootstrapRetryDelay});
 
   final Duration retryDelay;
   String? _attempt;
@@ -70,25 +70,25 @@ class BuzzPushAttemptGate {
 }
 
 @visibleForTesting
-String buzzPushPublicationAttemptKey({
+String kuzzPushPublicationAttemptKey({
   required String communityId,
   required String relayBaseUrl,
   required String token,
-  required BuzzPushLeaseDescriptor descriptor,
-  required List<BuzzPushSubscription> subscriptions,
+  required KuzzPushLeaseDescriptor descriptor,
+  required List<KuzzPushSubscription> subscriptions,
 }) => [
   communityId,
   relayBaseUrl,
   token,
   descriptor.executorKeyId,
   descriptor.executorPubkey,
-  buzzPushSubscriptionsFingerprint(subscriptions),
+  kuzzPushSubscriptionsFingerprint(subscriptions),
 ].join('|');
 
 @visibleForTesting
-bool buzzPushLifecycleEnabled({
+bool kuzzPushLifecycleEnabled({
   required Community? community,
-  required BuzzPushLeaseDescriptor? descriptor,
+  required KuzzPushLeaseDescriptor? descriptor,
 }) =>
     Env.pushGatewayConfigured &&
     community?.pushNotificationsEnabled == true &&
@@ -96,12 +96,12 @@ bool buzzPushLifecycleEnabled({
 
 /// Starts APNs registration when the active community opts in.
 @visibleForTesting
-class BuzzPushRegistrationBootstrap extends HookWidget {
-  const BuzzPushRegistrationBootstrap({
+class KuzzPushRegistrationBootstrap extends HookWidget {
+  const KuzzPushRegistrationBootstrap({
     required this.shouldRegister,
     required this.attemptKey,
     required this.child,
-    this.startRegistration = startBuzzPushRegistration,
+    this.startRegistration = startKuzzPushRegistration,
     super.key,
   });
 
@@ -112,7 +112,7 @@ class BuzzPushRegistrationBootstrap extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final attemptGate = useMemoized(BuzzPushAttemptGate.new);
+    final attemptGate = useMemoized(KuzzPushAttemptGate.new);
     final retry = useState(0);
     useEffect(() => attemptGate.dispose, const []);
     useEffect(() {
@@ -138,7 +138,7 @@ class BuzzPushRegistrationBootstrap extends HookWidget {
 }
 
 @visibleForTesting
-Future<int> publishBuzzPushLeaseRecoverably({
+Future<int> publishKuzzPushLeaseRecoverably({
   required Future<int> Function() reserveGeneration,
   required Future<void> Function(int generation) publish,
   required Future<bool> Function(int generation) markAccepted,
@@ -153,19 +153,19 @@ Future<int> publishBuzzPushLeaseRecoverably({
 
 /// Starts the push lifecycle only after authenticated relay connectivity and a
 /// push-capable NIP-11 descriptor are both present.
-class BuzzPushBootstrap extends HookConsumerWidget {
-  const BuzzPushBootstrap({required this.child, super.key});
+class KuzzPushBootstrap extends HookConsumerWidget {
+  const KuzzPushBootstrap({required this.child, super.key});
 
   final Widget child;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     useListenable(apnsDeviceToken);
-    final publicationAttempt = useMemoized(BuzzPushAttemptGate.new);
-    final tombstoneAttempt = useMemoized(BuzzPushAttemptGate.new);
+    final publicationAttempt = useMemoized(KuzzPushAttemptGate.new);
+    final tombstoneAttempt = useMemoized(KuzzPushAttemptGate.new);
     final publicationRetry = useState(0);
     final tombstoneRetry = useState(0);
-    final revocationOutbox = ref.watch(buzzPushLeaseRevocationOutboxProvider);
+    final revocationOutbox = ref.watch(kuzzPushLeaseRevocationOutboxProvider);
     final session = ref.watch(relaySessionProvider);
     final communities = ref.watch(communityListProvider).value ?? const [];
     final config = ref.watch(relayConfigProvider);
@@ -263,7 +263,7 @@ class BuzzPushBootstrap extends HookConsumerWidget {
     useEffect(
       () {
         if (!_ready(session, config, community, memberPubkey) ||
-            !buzzPushLifecycleEnabled(
+            !kuzzPushLifecycleEnabled(
               community: community,
               descriptor: descriptor,
             ) ||
@@ -274,7 +274,7 @@ class BuzzPushBootstrap extends HookConsumerWidget {
         final activeDescriptor = descriptor!;
         final state = activeCommunity.pushSubscriptionState;
         if (state.desired.isEmpty) return null;
-        final attempt = buzzPushPublicationAttemptKey(
+        final attempt = kuzzPushPublicationAttemptKey(
           communityId: activeCommunity.id,
           relayBaseUrl: config.baseUrl,
           token: token,
@@ -336,10 +336,10 @@ class BuzzPushBootstrap extends HookConsumerWidget {
       ],
     );
 
-    return BuzzPushRegistrationBootstrap(
+    return KuzzPushRegistrationBootstrap(
       shouldRegister:
           _ready(session, config, community, memberPubkey) &&
-          buzzPushLifecycleEnabled(
+          kuzzPushLifecycleEnabled(
             community: community,
             descriptor: descriptor,
           ),
@@ -361,7 +361,7 @@ class BuzzPushBootstrap extends HookConsumerWidget {
       memberPubkey != null &&
       memberPubkey.isNotEmpty;
 
-  static Future<BuzzPushEndpointGrant> _publish(
+  static Future<KuzzPushEndpointGrant> _publish(
     WidgetRef ref,
     RelayConfig config,
     Community community,
@@ -370,19 +370,19 @@ class BuzzPushBootstrap extends HookConsumerWidget {
   ) async {
     final state = community.pushSubscriptionState;
     final desired = state.desired;
-    final descriptor = await fetchBuzzPushLeaseDescriptor(config.baseUrl);
-    final grant = await enrollBuzzPush(config.wsUrl, Env.pushGatewayUrl);
+    final descriptor = await fetchKuzzPushLeaseDescriptor(config.baseUrl);
+    final grant = await enrollKuzzPush(config.wsUrl, Env.pushGatewayUrl);
     await ref.read(communityListProvider.notifier).syncSnapshot();
     // Relay lease replacement and gateway delegation are independent state
     // machines. Subscription changes advance only the kind-30350 generation;
     // the opaque grant remains reusable until its own authority changes.
     final notifier = ref.read(communityListProvider.notifier);
-    await publishBuzzPushLeaseRecoverably(
+    await publishKuzzPushLeaseRecoverably(
       reserveGeneration: () => notifier.reservePushLeaseGeneration(
         community.id,
         installationId: community.pushLeaseInstallationId,
       ),
-      publish: (leaseGeneration) => publishBuzzDevPushLeaseThroughRelay(
+      publish: (leaseGeneration) => publishKuzzDevPushLeaseThroughRelay(
         grant: grant,
         leaseInstallationId: community.pushLeaseInstallationId,
         leaseGeneration: leaseGeneration,

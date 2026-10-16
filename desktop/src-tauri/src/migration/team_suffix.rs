@@ -2,13 +2,13 @@
 //!
 //! Records written before the runtime team framing landed have their team
 //! instructions BAKED into `system_prompt` by the now-removed
-//! `compose_prompt()` in buzz-persona:
+//! `compose_prompt()` in kuzz-persona:
 //!
 //! ```text
 //! {persona_prompt}\n\n---\n# Team Instructions\n{instructions}
 //! ```
 //!
-//! `with_team()` in `buzz-acp/src/pool.rs` now appends the LIVE
+//! `with_team()` in `kuzz-acp/src/pool.rs` now appends the LIVE
 //! `[Team Instructions]` section on top of that stored value, so an affected
 //! agent receives two team-instruction blocks per turn — the frozen copy first,
 //! the live one second — and the observer feed renders two Team Instructions
@@ -52,10 +52,10 @@ pub fn strip_baked_team_instructions(app: &tauri::AppHandle) {
     match strip_baked_team_instructions_in_dir(&base_dir) {
         Ok(0) => {}
         Ok(stripped) => eprintln!(
-            "buzz-desktop: team-suffix-strip: removed the baked team-instructions suffix from \
+            "kuzz-desktop: team-suffix-strip: removed the baked team-instructions suffix from \
              {stripped} record(s)"
         ),
-        Err(e) => eprintln!("buzz-desktop: team-suffix-strip: {e}"),
+        Err(e) => eprintln!("kuzz-desktop: team-suffix-strip: {e}"),
     }
 }
 

@@ -6,12 +6,12 @@
  * feeds the canonical response back into the component tree.
  *
  * Pass-2 regression (PR #4625): optionSource was "legacyProviderModelCatalog"
- * so AgentConfigFields used buzz-agent vocab (no "off"), clearing the value.
+ * so AgentConfigFields used kuzz-agent vocab (no "off"), clearing the value.
  * Pass-3 fix: isHarnessNativeEffort branch uses `runtime.effortCanonicalValues`.
  *
  * Mutation proofs:
  *   - Removing the isHarnessNativeEffort branch (AgentConfigFields.tsx:634-636)
- *     reverts effortValidForRenderer to buzz-agent vocab (no "off") → the custom
+ *     reverts effortValidForRenderer to kuzz-agent vocab (no "off") → the custom
  *     trigger shows the inherit placeholder instead of "Off" → both tests RED.
  *   - Removing "off" from effortCanonicalValues in fromRawAcpRuntimeCatalogEntry
  *     removes it from effortValidForRenderer → same failure.
@@ -123,8 +123,8 @@ let setGlobalAgentConfig;
 before(async () => {
   ({ act, render, screen, cleanup } = await import("@testing-library/react"));
   ({ AgentConfigFields } = await import("./AgentConfigFields.tsx"));
-  ({ EffortSelectField } = await import("./buzzAgentModelTuningFields.tsx"));
-  ({ getProviderEffortConfig } = await import("./buzzAgentConfig.ts"));
+  ({ EffortSelectField } = await import("./kuzzAgentModelTuningFields.tsx"));
+  ({ getProviderEffortConfig } = await import("./kuzzAgentConfig.ts"));
   ({ fromRawAcpRuntimeCatalogEntry } = await import(
     "../../../shared/api/tauri.ts"
   ));
@@ -247,7 +247,7 @@ test("Claude FQN picker presents provider default with no selectable effort", as
 
 test("AgentConfigFields (useCustomSelect): Goose off renders 'Off' in custom trigger (mount)", async () => {
   // Regression: without the isHarnessNativeEffort branch, effortValidForRenderer
-  // uses buzz-agent vocab (no "off"); the custom trigger shows the inherit
+  // uses kuzz-agent vocab (no "off"); the custom trigger shows the inherit
   // placeholder. With the fix, Goose's own catalog vocab is used and the trigger
   // shows "Off" with raw data-value="off".
   const runtime = fromRawAcpRuntimeCatalogEntry(rawGooseCatalogEntry());

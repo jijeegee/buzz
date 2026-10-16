@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:isolate';
 
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/profile_event_parser.dart';
-import 'package:buzz/shared/push/push_presentation_cache.dart';
-import 'package:buzz/shared/push/push_presentation_export_recovery.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/profile_event_parser.dart';
+import 'package:kuzz/shared/push/push_presentation_cache.dart';
+import 'package:kuzz/shared/push/push_presentation_export_recovery.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
-const _bridge = MethodChannel('buzz/push');
+const _bridge = MethodChannel('kuzz/push');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -54,11 +54,11 @@ void main() {
         });
         final filler = _signed(0);
         final queued = [
-          cacheBuzzPushProfileEvents('blocker', [filler]),
+          cacheKuzzPushProfileEvents('blocker', [filler]),
         ];
         await entered.future;
         for (var i = 1; i < 8; i++) {
-          queued.add(cacheBuzzPushProfileEvents('queued-$i', [filler]));
+          queued.add(cacheKuzzPushProfileEvents('queued-$i', [filler]));
         }
         final event = _signed(profiles ? 0 : 39000);
         final membership = _signed(39002);
@@ -141,11 +141,11 @@ void main() {
           return null;
         });
         final queued = [
-          cacheBuzzPushProfileEvents('blocker', [_signed(0)]),
+          cacheKuzzPushProfileEvents('blocker', [_signed(0)]),
         ];
         await entered.future;
         for (var i = 1; i < 8; i++) {
-          queued.add(cacheBuzzPushProfileEvents('queued-$i', [_signed(0)]));
+          queued.add(cacheKuzzPushProfileEvents('queued-$i', [_signed(0)]));
         }
         final first = _signed(profiles ? 0 : 39000);
         expected.add(first.id);
@@ -308,7 +308,7 @@ void main() {
         await failure.future.timeout(const Duration(seconds: 5));
         expect(nativeCalls, 0);
         final terminalError = pushPresentationExportError.value;
-        await cacheBuzzPushProfileEvents('unrelated-success', [_signed(0)]);
+        await cacheKuzzPushProfileEvents('unrelated-success', [_signed(0)]);
         expect(nativeCalls, 1);
         expect(pushPresentationExportError.value, terminalError);
       },
@@ -468,10 +468,10 @@ void main() {
         );
         final queued = <Future<void>>[];
         Future<void> saturate() async {
-          queued.add(cacheBuzzPushProfileEvents('blocker', [_signed(0)]));
+          queued.add(cacheKuzzPushProfileEvents('blocker', [_signed(0)]));
           await blockerEntered.future;
           for (var i = 1; i < 8; i++) {
-            queued.add(cacheBuzzPushProfileEvents('queued-$i', [_signed(0)]));
+            queued.add(cacheKuzzPushProfileEvents('queued-$i', [_signed(0)]));
           }
         }
 

@@ -7,7 +7,7 @@ import * as React from "react";
  * `GlobalAgentConfig`: saving that config restarts every local agent, which
  * a membership preference must never do.
  */
-export const DEFAULT_AI_AUTO_JOIN_STORAGE_KEY = "buzz-default-ai-auto-join";
+export const DEFAULT_AI_AUTO_JOIN_STORAGE_KEY = "kuzz-default-ai-auto-join";
 export const DEFAULT_AI_AUTO_JOIN_DEFAULT = true;
 
 const listeners = new Set<() => void>();

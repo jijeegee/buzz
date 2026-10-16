@@ -47,10 +47,10 @@ const tauriMock = {
       case "discover_acp_providers":
         return Promise.resolve([
           {
-            id: "buzz-agent",
-            label: "Buzz Agent",
+            id: "kuzz-agent",
+            label: "Kuzz Agent",
             availability: "available",
-            command: "buzz-agent",
+            command: "kuzz-agent",
             default_args: [],
             mcp_command: null,
             source: "builtin",

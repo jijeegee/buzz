@@ -1,6 +1,6 @@
-import 'package:buzz/shared/deeplink/deep_link.dart';
-import 'package:buzz/shared/deeplink/pending_deep_link_provider.dart';
-import 'package:buzz/shared/push/push_bridge.dart';
+import 'package:kuzz/shared/deeplink/deep_link.dart';
+import 'package:kuzz/shared/deeplink/pending_deep_link_provider.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

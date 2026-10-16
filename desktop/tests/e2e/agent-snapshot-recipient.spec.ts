@@ -27,9 +27,9 @@ async function readCommandLog(page: import("@playwright/test").Page) {
     () =>
       (
         window as Window & {
-          __BUZZ_E2E_COMMAND_LOG__?: CommandLogEntry[];
+          __KUZZ_E2E_COMMAND_LOG__?: CommandLogEntry[];
         }
-      ).__BUZZ_E2E_COMMAND_LOG__ ?? [],
+      ).__KUZZ_E2E_COMMAND_LOG__ ?? [],
   );
 }
 
@@ -44,9 +44,9 @@ async function invokeMockCommand(
     () =>
       typeof (
         window as Window & {
-          __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: unknown;
+          __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: unknown;
         }
-      ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__ === "function",
+      ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__ === "function",
     null,
     { timeout: 5_000 },
   );
@@ -54,12 +54,12 @@ async function invokeMockCommand(
     async ({ command: cmd, payload: request }) => {
       const invoke = (
         window as Window & {
-          __BUZZ_E2E_INVOKE_MOCK_COMMAND__: (
+          __KUZZ_E2E_INVOKE_MOCK_COMMAND__: (
             command: string,
             payload: Record<string, unknown>,
           ) => Promise<unknown>;
         }
-      ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__;
+      ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__;
       return invoke(cmd, request);
     },
     { command, payload },

@@ -9,13 +9,13 @@ implementation and explicitly superseding conflicting sections of
 
 | Area | Paths and behavior |
 |---|---|
-| Cryptography | `crates/buzz-auth/src/key_backup.rs`, `key_backup/tests.rs`, crate manifest/export: AES-256-GCM envelope, random nonces, version/account/pubkey/key-id AAD, redacted/zeroizing secrets, signed link-proof validation. |
-| Persistence | `crates/buzz-db/src/store/identity/{principal,key_backup,mod}.rs`, `key_backup_postgres_tests.rs`: immutable account mode, provider/subject identity, transactional first-device initialization, unique pubkey binding, session recency. |
+| Cryptography | `crates/kuzz-auth/src/key_backup.rs`, `key_backup/tests.rs`, crate manifest/export: AES-256-GCM envelope, random nonces, version/account/pubkey/key-id AAD, redacted/zeroizing secrets, signed link-proof validation. |
+| Persistence | `crates/kuzz-db/src/store/identity/{principal,key_backup,mod}.rs`, `key_backup_postgres_tests.rs`: immutable account mode, provider/subject identity, transactional first-device initialization, unique pubkey binding, session recency. |
 | Schema | `migrations/0059_custodial_key_backup.sql`, `schema/schema.sql`, `scripts/reconcile-schema-after-pgschema.sql`, DB migration/partition test expectations: both bootstrap paths and operator-global registry reconciliation. |
-| Relay | `crates/buzz-relay/src/{identity,api/auth}/`, `router.rs`, `nip11.rs`, crate manifest: independent custody feature flag, OIDC mode propagation, authorized challenge/backup/restore, export freshness/rates, no-store including rejection responses, token messaging/bot exclusion. |
+| Relay | `crates/kuzz-relay/src/{identity,api/auth}/`, `router.rs`, `nip11.rs`, crate manifest: independent custody feature flag, OIDC mode propagation, authorized challenge/backup/restore, export freshness/rates, no-store including rejection responses, token messaging/bot exclusion. |
 | Desktop | `desktop/src-tauri/src/auth/`, `app_state{,_tests}.rs`, `commands/identity.rs`, `relay/submit.rs`, managed-agent spawn tests: strict OS-keyring recovery, protected established identities, signed credential selection, stable refresh and agents. Onboarding/Settings and shared auth API under `desktop/src/` expose the real flow. |
 | Mobile | `mobile/lib/shared/auth/`, `shared/community/`, sign-in/Settings and invite joining: secure pending key, status-first initialization/recovery, separate custody sessions, preserved signed communities, existing-key linking, same-key invite claims. Tests under corresponding `mobile/test/` paths. |
-| Web/CLI | `web/src/shared/auth/`, `crates/buzz-cli/src/{commands/auth*,auth_loopback.rs}`: preserve supported signed and legacy token paths; request explicit token mode and reject unsupported custody adoption with an actionable explanation. |
+| Web/CLI | `web/src/shared/auth/`, `crates/kuzz-cli/src/{commands/auth*,auth_loopback.rs}`: preserve supported signed and legacy token paths; request explicit token mode and reject unsupported custody adoption with an actionable explanation. |
 | Operations/design | `.env.example`, both design documents and this report. `Cargo.lock` records the two added direct dependencies already present in the dependency graph. |
 
 Google sessions authorize recovery storage. The original client public key
@@ -69,18 +69,18 @@ test code, and no real Google acceptance is implied.
 
 | Command / check | Observed result |
 |---|---|
-| `cargo test -p buzz-auth --lib --offline` | 267 passed, including all 4 new crypto/proof tests. |
-| `cargo test -p buzz-db key_backup --offline -- --ignored --test-threads=1` | 3 passed against isolated local Postgres; repeated after current changes against the migration-created database. |
+| `cargo test -p kuzz-auth --lib --offline` | 267 passed, including all 4 new crypto/proof tests. |
+| `cargo test -p kuzz-db key_backup --offline -- --ignored --test-threads=1` | 3 passed against isolated local Postgres; repeated after current changes against the migration-created database. |
 | DB test executable, `runtime::migration::postgres_tests:: --test-threads=1` | 14 passed, 9 explicitly ignored infrastructure tests. The earlier `...::tests` filter matched zero tests and is not counted as validation. |
-| `cargo test -p buzz-relay --lib custody --offline` | 6 passed; 4 live tests ignored by this non-live invocation and exercised separately below. |
+| `cargo test -p kuzz-relay --lib custody --offline` | 6 passed; 4 live tests ignored by this non-live invocation and exercised separately below. |
 | Relay test executable, `api::auth::router_tests:: --test-threads=1` | 8 passed, including no-store on body-limit errors and unknown/disabled auth routes. |
-| `cargo test -p buzz-relay --lib api::auth::live_tests::key_backup --offline -- --ignored --test-threads=1` | All 6 live HTTP/Postgres/Redis tests passed. Google provider alone is mocked. |
+| `cargo test -p kuzz-relay --lib api::auth::live_tests::key_backup --offline -- --ignored --test-threads=1` | All 6 live HTTP/Postgres/Redis tests passed. Google provider alone is mocked. |
 | Relay live tests: `oidc_login_ws_draft_and_reads_round_trip`, `refresh_rotation_replay_and_reuse_detection`, `every_revocation_path_revokes_its_tokens`, each `--exact --ignored --test-threads=1` | All 3 passed against the same isolated services, covering retained legacy token login/messages, renewal and revocation. |
-| `cargo test -p buzz-cli commands::auth::tests --offline` | 29 passed, including rejecting custody before storing a token identity. |
-| `cargo test -p buzz-sdk nip_oa --offline` | 24 passed. |
-| `cargo test -p buzz-acp --lib test_allowlist --offline -- --test-threads=1` | 4 passed. |
+| `cargo test -p kuzz-cli commands::auth::tests --offline` | 29 passed, including rejecting custody before storing a token identity. |
+| `cargo test -p kuzz-sdk nip_oa --offline` | 24 passed. |
+| `cargo test -p kuzz-acp --lib test_allowlist --offline -- --test-threads=1` | 4 passed. |
 | Fresh ACP test executable: `author_gate_tests`, `scope::tests`, `conversation_context_delta`, `two_threads_in_one_channel_get_distinct_sessions`, `idle_channel_switch_preserves_all_sibling_sessions_and_model` | Respectively 28, 13, 4, 1 and 1 passed: owner/sibling/allowlist/DM gates, mentions/thread scope, conversation and sibling session continuity. |
-| `cargo clippy -p buzz-auth -p buzz-db -p buzz-relay -p buzz-cli --all-targets --offline -- -D warnings` | Passed, including final rerun. |
+| `cargo clippy -p kuzz-auth -p kuzz-db -p kuzz-relay -p kuzz-cli --all-targets --offline -- -D warnings` | Passed, including final rerun. |
 | `cargo fmt --all -- --check` | Passed. |
 | `cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib auth:: --offline` | Final 83/83 passed; includes login-mode selection, logout/restart, mismatched completion, lost-owner recovery and key-agent preservation regressions. Existing Windows warnings remain. |
 | Desktop fresh test executable: `app_state::tests`, `respond_to` | 49 and 17 passed; keyring persistence and agent routing. |
@@ -104,8 +104,8 @@ initialization, ciphertext/AAD corruption, token bot denial, old token login,
 and explicit unsupported web/CLI signup.
 
 Two new local databases were used, leaving all pre-existing databases intact:
-`buzz_key_recovery_codex_20261005` (desired schema) and
-`buzz_key_recovery_migration_codex_20261005` (all migrations 1–59).
+`kuzz_key_recovery_codex_20261005` (desired schema) and
+`kuzz_key_recovery_migration_codex_20261005` (all migrations 1–59).
 Redis database 15 was checked empty before use; no flush was issued. Temporary
 test helpers compiled against existing Rust artifacts applied the desired
 schema/reconciliation and the full SQLx migrator. A live reconciliation test
@@ -131,11 +131,11 @@ dartaotruntime.exe frontend_server_aot.dart.snapshot
 
 flutter_tester.exe --disable-vm-service --non-interactive
   --use-test-fonts --disable-asset-fonts
-  --flutter-assets-dir=C:/Users/jijee/projects/buzz/mobile/build/unit_test_assets
+  --flutter-assets-dir=C:/Users/jijee/projects/kuzz/mobile/build/unit_test_assets
   build/key-backup-regressions.dill
 ```
 
-Environment: `FLUTTER_TEST=true`, `APP_NAME=buzz`, `UNIT_TEST_ASSETS` set to
+Environment: `FLUTTER_TEST=true`, `APP_NAME=kuzz`, `UNIT_TEST_ASSETS` set to
 that assets directory. Assertions were inspected in the output because this
 direct engine can return exit 0 even when tests fail. The final log explicitly
 reports `+153: All tests passed!`. Local evidence remains under the original

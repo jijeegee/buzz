@@ -234,7 +234,7 @@ test("feedback filters keep long community names usable", async ({ page }) => {
         {
           id: "long-community",
           communityId: "long-community",
-          communityHost: `${"long-community-name.".repeat(4)}buzz.example.com`,
+          communityHost: `${"long-community-name.".repeat(4)}kuzz.example.com`,
           submitterPubkey: "21".repeat(32),
           category: "bug",
           bodySummary: "The filter row stays within its container",

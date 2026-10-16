@@ -3,7 +3,7 @@ import { installMockBridge } from "../helpers/bridge";
 import { passThroughBackupStep } from "../helpers/onboarding";
 
 function runtime(
-  id: "buzz-agent" | "claude" | "codex" | "goose",
+  id: "kuzz-agent" | "claude" | "codex" | "goose",
   availability: string,
   authStatus: Record<string, unknown>,
   overrides: Record<string, unknown> = {},
@@ -11,8 +11,8 @@ function runtime(
   return {
     id,
     label:
-      id === "buzz-agent"
-        ? "Buzz Agent"
+      id === "kuzz-agent"
+        ? "Kuzz Agent"
         : id === "claude"
           ? "Claude Code"
           : id === "codex"
@@ -61,12 +61,12 @@ async function readSavedRuntime(page: Parameters<typeof installMockBridge>[0]) {
   return await page.evaluate(async () => {
     const result = await (
       window as Window & {
-        __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+        __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
           command: string,
           payload: unknown,
         ) => Promise<{ preferred_runtime?: string | null }>;
       }
-    ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null);
+    ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("get_global_agent_config", null);
     return result?.preferred_runtime ?? null;
   });
 }
@@ -77,12 +77,12 @@ async function readGlobalConfigSetterCallCount(
   return await page.evaluate(async () => {
     return await (
       window as Window & {
-        __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+        __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
           command: string,
           payload: unknown,
         ) => Promise<number>;
       }
-    ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.(
+    ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.(
       "get_global_agent_config_set_call_count",
       null,
     );
@@ -100,7 +100,7 @@ test("setup filters the bundled harnesses by connection method", async ({
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "available", { status: "not_applicable" }),
+        runtime("kuzz-agent", "available", { status: "not_applicable" }),
         runtime("goose", "available", { status: "not_applicable" }),
         runtime("codex", "available", { status: "logged_in" }),
         runtime("claude", "available", { status: "logged_in" }),
@@ -125,7 +125,7 @@ test("setup filters the bundled harnesses by connection method", async ({
   await expect(page.getByTestId("onboarding-runtime-claude")).toBeVisible();
   await expect(page.getByTestId("onboarding-runtime-codex")).toBeVisible();
   await expect(page.getByTestId("onboarding-runtime-goose")).toHaveCount(0);
-  await expect(page.getByTestId("onboarding-runtime-buzz-agent")).toHaveCount(
+  await expect(page.getByTestId("onboarding-runtime-kuzz-agent")).toHaveCount(
     0,
   );
   await page.getByTestId("onboarding-back").click();
@@ -177,19 +177,19 @@ test("setup filters the bundled harnesses by connection method", async ({
     page.getByRole("heading", { name: "Choose a harness" }),
   ).toBeVisible();
   await expect(page.getByTestId("onboarding-runtime-goose")).toBeVisible();
-  await expect(page.getByTestId("onboarding-runtime-buzz-agent")).toBeVisible();
+  await expect(page.getByTestId("onboarding-runtime-kuzz-agent")).toBeVisible();
   await expect(page.getByTestId("onboarding-runtime-claude")).toHaveCount(0);
   await expect(page.getByTestId("onboarding-runtime-codex")).toHaveCount(0);
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await expect(page.getByText(/More harnesses can be added in/)).toHaveCount(0);
 
   const recommended = page.getByTestId(
-    "onboarding-runtime-recommended-buzz-agent",
+    "onboarding-runtime-recommended-kuzz-agent",
   );
-  const chevron = page.getByTestId("onboarding-runtime-chevron-buzz-agent");
+  const chevron = page.getByTestId("onboarding-runtime-chevron-kuzz-agent");
   await expect(recommended).toBeVisible();
   await expect(
-    page.getByTestId("onboarding-runtime-ready-buzz-agent"),
+    page.getByTestId("onboarding-runtime-ready-kuzz-agent"),
   ).toHaveCount(0);
   const [recommendedBox, chevronBox] = await Promise.all([
     recommended.boundingBox(),
@@ -201,8 +201,8 @@ test("setup filters the bundled harnesses by connection method", async ({
   expect(recommendedBox.x).toBeLessThan(chevronBox.x);
 
   const [iconBox, titleBox] = await Promise.all([
-    page.getByTestId("onboarding-runtime-icon-buzz-agent").boundingBox(),
-    page.getByTestId("onboarding-runtime-title-buzz-agent").boundingBox(),
+    page.getByTestId("onboarding-runtime-icon-kuzz-agent").boundingBox(),
+    page.getByTestId("onboarding-runtime-title-kuzz-agent").boundingBox(),
   ]);
   if (!iconBox || !titleBox) {
     throw new Error("Could not measure harness icon alignment");
@@ -211,14 +211,14 @@ test("setup filters the bundled harnesses by connection method", async ({
   const titleCenter = titleBox.y + titleBox.height / 2;
   expect(Math.abs(iconCenter - titleCenter)).toBeLessThanOrEqual(1);
 
-  const selectableBuzzCard = page.getByTestId("onboarding-runtime-buzz-agent");
-  await selectableBuzzCard.hover();
-  await expect(selectableBuzzCard).not.toHaveCSS(
+  const selectableKuzzCard = page.getByTestId("onboarding-runtime-kuzz-agent");
+  await selectableKuzzCard.hover();
+  await expect(selectableKuzzCard).not.toHaveCSS(
     "background-color",
     "rgba(0, 0, 0, 0)",
   );
   const [rowBackground, recommendedBackground] = await Promise.all([
-    selectableBuzzCard.evaluate(
+    selectableKuzzCard.evaluate(
       (element) => window.getComputedStyle(element).backgroundColor,
     ),
     recommended.evaluate(
@@ -232,7 +232,7 @@ test("setup filters the bundled harnesses by connection method", async ({
   await expect(page.getByTestId("onboarding-setup-next")).toHaveCount(0);
   await expect(setupSkip).not.toHaveClass(/animate-in|fade-in/);
 
-  await page.getByTestId("onboarding-runtime-details-buzz-agent").click();
+  await page.getByTestId("onboarding-runtime-details-kuzz-agent").click();
   await expect(
     page.getByRole("heading", { name: "Connect with an API key" }),
   ).toBeVisible();
@@ -243,14 +243,14 @@ test("setup filters the bundled harnesses by connection method", async ({
   await expect(page.getByTestId("onboarding-setup-next")).toHaveCount(0);
 });
 
-test("API selection opens Buzz config immediately while discovery is pending", async ({
+test("API selection opens Kuzz config immediately while discovery is pending", async ({
   page,
 }) => {
   await installMockBridge(
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "available", { status: "not_applicable" }),
+        runtime("kuzz-agent", "available", { status: "not_applicable" }),
         runtime("goose", "available", { status: "not_applicable" }),
       ],
       acpRuntimesDelayMs: 3_000,
@@ -260,10 +260,10 @@ test("API selection opens Buzz config immediately while discovery is pending", a
   await page.goto("/");
   await navigateToSetupPage(page, null);
 
-  // Selecting API never waits on discovery or shows Buzz's generic auth step.
+  // Selecting API never waits on discovery or shows Kuzz's generic auth step.
   await page.getByTestId("onboarding-harness-method-api").click();
   await expect(page.getByTestId("onboarding-page-config")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Connect Buzz" })).toHaveCount(
+  await expect(page.getByRole("heading", { name: "Connect Kuzz" })).toHaveCount(
     0,
   );
   await expect(page.getByTestId("global-agent-provider")).toBeVisible();
@@ -274,18 +274,18 @@ test("API selection opens Buzz config immediately while discovery is pending", a
   await expect(
     page.getByRole("heading", { name: "Choose a harness" }),
   ).toBeVisible();
-  await expect(page.getByTestId("onboarding-runtime-buzz-agent")).toBeVisible();
+  await expect(page.getByTestId("onboarding-runtime-kuzz-agent")).toBeVisible();
   await expect(page.getByTestId("onboarding-runtime-goose")).toBeVisible();
 });
 
-test("choosing signed-out Buzz skips the generic harness auth step", async ({
+test("choosing signed-out Kuzz skips the generic harness auth step", async ({
   page,
 }) => {
   await installMockBridge(
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "available", { status: "logged_out" }),
+        runtime("kuzz-agent", "available", { status: "logged_out" }),
         runtime("goose", "available", { status: "not_applicable" }),
       ],
     },
@@ -299,10 +299,10 @@ test("choosing signed-out Buzz skips the generic harness auth step", async ({
   await expect(
     page.getByRole("heading", { name: "Choose a harness" }),
   ).toBeVisible();
-  await page.getByTestId("onboarding-runtime-details-buzz-agent").click();
+  await page.getByTestId("onboarding-runtime-details-kuzz-agent").click();
 
   await expect(page.getByTestId("onboarding-page-config")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Connect Buzz" })).toHaveCount(
+  await expect(page.getByRole("heading", { name: "Connect Kuzz" })).toHaveCount(
     0,
   );
   await expect(page.getByTestId("global-agent-provider")).toBeVisible();
@@ -320,7 +320,7 @@ test("setup distinguishes a missing CLI from an installed desktop app", async ({
           "not_installed",
           { status: "unknown" },
           {
-            install_hint: "Buzz talks to Codex through the Codex CLI.",
+            install_hint: "Kuzz talks to Codex through the Codex CLI.",
             install_instructions_url:
               "https://developers.openai.com/codex/cli/",
           },
@@ -364,7 +364,7 @@ test("setup distinguishes a missing CLI from an installed desktop app", async ({
   await expect(
     page
       .getByTestId("onboarding-page-2")
-      .locator(".buzz-onboarding-transition-line"),
+      .locator(".kuzz-onboarding-transition-line"),
   ).toHaveAttribute("data-onboarding-direction", "forward");
 
   await page.getByTestId("onboarding-back").click();
@@ -372,7 +372,7 @@ test("setup distinguishes a missing CLI from an installed desktop app", async ({
   await expect(
     page
       .getByTestId("onboarding-page-2")
-      .locator(".buzz-onboarding-transition-line"),
+      .locator(".kuzz-onboarding-transition-line"),
   ).toHaveAttribute("data-onboarding-direction", "backward");
 });
 
@@ -641,7 +641,7 @@ test("defaults renders only fields supported by the selected harness", async ({
         runtime("claude", "available", { status: "logged_in" }),
       ],
       globalAgentConfig: {
-        env_vars: { BUZZ_AGENT_THINKING_EFFORT: "high" },
+        env_vars: { KUZZ_AGENT_THINKING_EFFORT: "high" },
         provider: null,
         model: "stale-model",
         preferred_runtime: null,
@@ -815,7 +815,7 @@ test("Back preserves incomplete defaults draft without writing", async ({
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "available", { status: "not_applicable" }),
+        runtime("kuzz-agent", "available", { status: "not_applicable" }),
         runtime("claude", "available", { status: "logged_in" }),
       ],
       discoverAgentModels: {
@@ -837,7 +837,7 @@ test("Back preserves incomplete defaults draft without writing", async ({
   await expect(
     page
       .getByTestId("onboarding-page-config")
-      .locator(".buzz-onboarding-transition-line"),
+      .locator(".kuzz-onboarding-transition-line"),
   ).toHaveAttribute("data-onboarding-direction", "forward");
 
   await expect(page.getByTestId("global-agent-default-harness")).toHaveCount(0);
@@ -850,7 +850,7 @@ test("Back preserves incomplete defaults draft without writing", async ({
   await expect(
     page
       .getByTestId("onboarding-page-2")
-      .locator(".buzz-onboarding-transition-line"),
+      .locator(".kuzz-onboarding-transition-line"),
   ).toHaveAttribute("data-onboarding-direction", "backward");
   expect(await readSavedRuntime(page)).toBeNull();
   expect(await readGlobalConfigSetterCallCount(page)).toBe(0);
@@ -860,7 +860,7 @@ test("Back preserves incomplete defaults draft without writing", async ({
   await expect(
     page
       .getByTestId("onboarding-page-config")
-      .locator(".buzz-onboarding-transition-line"),
+      .locator(".kuzz-onboarding-transition-line"),
   ).toHaveAttribute("data-onboarding-direction", "forward");
   await expect(page.getByTestId("global-agent-default-harness")).toHaveCount(0);
   await expect(page.getByTestId("global-agent-provider")).toHaveText(
@@ -877,7 +877,7 @@ test("defaults auto-selects the only ready visible harness", async ({
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "not_installed", { status: "not_applicable" }),
+        runtime("kuzz-agent", "not_installed", { status: "not_applicable" }),
         runtime("goose", "not_installed", { status: "not_applicable" }),
         runtime("claude", "available", { status: "logged_in" }),
         runtime("codex", "available", { status: "logged_out" }),
@@ -1026,7 +1026,7 @@ test("defaults carries the chosen subscription harness forward", async ({
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "available", { status: "not_applicable" }),
+        runtime("kuzz-agent", "available", { status: "not_applicable" }),
         runtime("goose", "available", { status: "not_applicable" }),
         runtime("claude", "available", { status: "logged_in" }),
         runtime("codex", "available", { status: "logged_in" }),
@@ -1059,7 +1059,7 @@ test("defaults carries the chosen subscription harness forward", async ({
     page.getByTestId("global-agent-default-harness-option-goose"),
   ).toHaveCount(0);
   await expect(
-    page.getByTestId("global-agent-default-harness-option-buzz-agent"),
+    page.getByTestId("global-agent-default-harness-option-kuzz-agent"),
   ).toHaveCount(0);
   await page.keyboard.press("Escape");
   expect(await readSavedRuntime(page)).toBeNull();
@@ -1081,7 +1081,7 @@ test("Finish stays disabled until a provider-required harness is fully configure
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "available", { status: "not_applicable" }),
+        runtime("kuzz-agent", "available", { status: "not_applicable" }),
       ],
       discoverAgentModels: {
         models: [{ id: "claude-sonnet-4", name: "Claude Sonnet 4" }],
@@ -1100,7 +1100,7 @@ test("Finish stays disabled until a provider-required harness is fully configure
   await navigateToSetupPage(page, "api");
   await expect(page.getByTestId("onboarding-page-config")).toBeVisible();
 
-  // buzz-agent auto-selects as the only ready harness, but with no provider
+  // kuzz-agent auto-selects as the only ready harness, but with no provider
   // configured the default is not launchable — Finish must be gated.
   await expect(page.getByTestId("global-agent-default-harness")).toHaveCount(0);
   const finish = page.getByTestId("onboarding-finish");
@@ -1135,7 +1135,7 @@ test("Finish stays disabled until a provider-required harness is fully configure
   await expect(finish).toBeEnabled();
   await finish.click();
   await expect(page.getByText("Find your community")).toBeVisible();
-  expect(await readSavedRuntime(page)).toBe("buzz-agent");
+  expect(await readSavedRuntime(page)).toBe("kuzz-agent");
 });
 
 test("API key options stay hidden when credential validation is not accepted", async ({
@@ -1145,7 +1145,7 @@ test("API key options stay hidden when credential validation is not accepted", a
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "available", { status: "not_applicable" }),
+        runtime("kuzz-agent", "available", { status: "not_applicable" }),
       ],
       discoverAgentModelsError:
         "Anthropic model discovery HTTP 401: invalid x-api-key",
@@ -1183,10 +1183,10 @@ test("baked build config keeps Finish enabled without manual provider setup", as
     page,
     {
       acpRuntimesCatalog: [
-        runtime("buzz-agent", "available", { status: "not_applicable" }),
+        runtime("kuzz-agent", "available", { status: "not_applicable" }),
       ],
       bakedBuildEnv: [
-        { key: "BUZZ_AGENT_PROVIDER", masked: false, value: "databricks_v2" },
+        { key: "KUZZ_AGENT_PROVIDER", masked: false, value: "databricks_v2" },
         {
           key: "DATABRICKS_HOST",
           masked: false,

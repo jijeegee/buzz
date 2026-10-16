@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
@@ -368,7 +368,7 @@ void main() {
       final h = Harness();
       await h.controller.restore();
       h.launcher.respond = (start) =>
-          Uri.parse('xyz.block.buzz://auth/cb').replace(
+          Uri.parse('app.kuzz://auth/cb').replace(
             queryParameters: {
               'error': 'principal_disabled',
               'state': start.queryParameters['state']!,

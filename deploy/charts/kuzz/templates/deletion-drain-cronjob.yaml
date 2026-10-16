@@ -1,0 +1,4 @@
+{{- include "kuzz.validate" . -}}
+{{- if .Values.operatorJobs.deletionDrain.enabled }}
+{{- include "kuzz.operatorCronJob" (dict "root" . "type" "deletionDrain") }}
+{{- end }}

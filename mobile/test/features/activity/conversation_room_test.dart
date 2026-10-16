@@ -1,7 +1,7 @@
-import 'package:buzz/features/activity/conversation_room.dart';
-import 'package:buzz/features/activity/feed_item.dart';
-import 'package:buzz/features/activity/inbox_item.dart';
-import 'package:buzz/features/channels/channel.dart';
+import 'package:kuzz/features/activity/conversation_room.dart';
+import 'package:kuzz/features/activity/feed_item.dart';
+import 'package:kuzz/features/activity/inbox_item.dart';
+import 'package:kuzz/features/channels/channel.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const me = 'aaaa000000000000000000000000000000000000000000000000000000000000';

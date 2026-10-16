@@ -5,8 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart' as audio;
 import 'package:record/record.dart';
-import 'package:buzz/features/channels/voice_note_composer_recorder.dart';
-import 'package:buzz/features/channels/voice_note_recording.dart';
+import 'package:kuzz/features/channels/voice_note_composer_recorder.dart';
+import 'package:kuzz/features/channels/voice_note_recording.dart';
 
 class _DelayedRecorderBackend implements VoiceNoteRecorderBackend {
   final permission = Completer<bool>();

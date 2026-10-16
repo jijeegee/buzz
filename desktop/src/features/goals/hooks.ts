@@ -14,7 +14,7 @@ import {
 } from "@/shared/api/tauriGoals";
 import { classifyGoalLinks } from "./goalLinks";
 
-/** Kind 40110 — see `buzz_core::kind::KIND_GOAL_TREE`. */
+/** Kind 40110 — see `kuzz_core::kind::KIND_GOAL_TREE`. */
 export const KIND_GOAL_TREE = 40110;
 
 const goalTreeKey = (channelId: string | null) => ["goal-tree", channelId];

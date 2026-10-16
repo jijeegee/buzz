@@ -48,12 +48,12 @@ const tauriMock = {
     if (command === "discover_acp_providers") {
       return Promise.resolve([
         {
-          id: "buzz-agent",
-          label: "Buzz Agent",
+          id: "kuzz-agent",
+          label: "Kuzz Agent",
           avatar_url: "",
           availability: "available",
-          command: "buzz-agent",
-          binary_path: "/bin/buzz-agent",
+          command: "kuzz-agent",
+          binary_path: "/bin/kuzz-agent",
           default_args: [],
           mcp_command: null,
         },

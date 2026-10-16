@@ -11,7 +11,7 @@ test("shared thread names support limits, Korean composition, live updates and c
   await page.getByTestId("channel-general").click();
   await expect(page.getByTestId("chat-title")).toHaveText("general");
   const root = await page.evaluate(() =>
-    window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+    window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
       channelName: "general",
       content: "Thread naming task",
     }),
@@ -19,7 +19,7 @@ test("shared thread names support limits, Korean composition, live updates and c
   if (!root) throw new Error("No thread head");
   await page.evaluate(
     (id) =>
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: "Working on it",
         parentEventId: id,
@@ -66,7 +66,7 @@ test("shared thread names support limits, Korean composition, live updates and c
   // A different participant renames the thread over the live subscription.
   await page.evaluate(
     (id) =>
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         kind: 40009,
         content: "공유된 새 이름",

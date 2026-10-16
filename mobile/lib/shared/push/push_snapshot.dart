@@ -1,19 +1,19 @@
 import 'push_subscription.dart';
 
 /// The minimum community state shared with the iOS notification extension.
-class BuzzPushCommunitySnapshot {
+class KuzzPushCommunitySnapshot {
   final String id;
   final String name;
   final String relayUrl;
   final String? pubkey;
-  final List<BuzzPushSubscription> subscriptions;
+  final List<KuzzPushSubscription> subscriptions;
 
-  BuzzPushCommunitySnapshot({
+  KuzzPushCommunitySnapshot({
     required this.id,
     required this.name,
     required this.relayUrl,
     this.pubkey,
-    required Iterable<BuzzPushSubscription> subscriptions,
+    required Iterable<KuzzPushSubscription> subscriptions,
   }) : subscriptions = List.unmodifiable(subscriptions);
 
   Map<String, dynamic> toJson() => {
@@ -35,15 +35,15 @@ class BuzzPushCommunitySnapshot {
     ],
   };
 
-  factory BuzzPushCommunitySnapshot.fromJson(Map<String, dynamic> json) {
-    return BuzzPushCommunitySnapshot(
+  factory KuzzPushCommunitySnapshot.fromJson(Map<String, dynamic> json) {
+    return KuzzPushCommunitySnapshot(
       id: json['id'] as String,
       name: json['name'] as String,
       relayUrl: json['relayUrl'] as String,
       pubkey: json['pubkey'] as String?,
       subscriptions: [
         for (final raw in json['policies'] as List<dynamic>)
-          BuzzPushSubscription.fromJson({
+          KuzzPushSubscription.fromJson({
             ...Map<String, dynamic>.from(raw as Map),
             'class': 'default',
           }),

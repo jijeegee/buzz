@@ -20,7 +20,7 @@ const defaultTauriEntrypoint = path.resolve(
 
 function runTauri(args, options = {}) {
   const entrypoint =
-    process.env.BUZZ_TAURI_CLI_ENTRYPOINT ?? defaultTauriEntrypoint;
+    process.env.KUZZ_TAURI_CLI_ENTRYPOINT ?? defaultTauriEntrypoint;
   const result = spawnSync(process.execPath, [entrypoint, ...args], {
     cwd: desktopRoot,
     env: { ...process.env, ...options.env },
@@ -37,7 +37,7 @@ export function runTauriCommand(args) {
   // entire invocation a private directory so concurrent OSS/internal packages
   // cannot replace one another's assets between those two operations.
   let invocationRoot = mkdtempSync(
-    path.join(tmpdir(), "buzz-tauri-package-assets-"),
+    path.join(tmpdir(), "kuzz-tauri-package-assets-"),
   );
   // `frontendDist` deserializes into an untagged enum whose first variant is a
   // URL, and a Windows absolute path parses as one -- `C:` becomes the scheme.
@@ -51,7 +51,7 @@ export function runTauriCommand(args) {
   if (path.isAbsolute(relativeTo(invocationRoot))) {
     rmSync(invocationRoot, { recursive: true, force: true });
     invocationRoot = mkdtempSync(
-      path.join(desktopRoot, ".buzz-tauri-package-assets-"),
+      path.join(desktopRoot, ".kuzz-tauri-package-assets-"),
     );
   }
   const frontendDist = path.join(invocationRoot, "dist");
@@ -65,7 +65,7 @@ export function runTauriCommand(args) {
     const tauriArgs = [...args];
     tauriArgs.splice(configIndex, 0, "--config", outputOverride);
     return runTauri(tauriArgs, {
-      env: { BUZZ_PROTECTED_BUILD_OUTPUT: frontendDist },
+      env: { KUZZ_PROTECTED_BUILD_OUTPUT: frontendDist },
     });
   } finally {
     rmSync(invocationRoot, { recursive: true, force: true });

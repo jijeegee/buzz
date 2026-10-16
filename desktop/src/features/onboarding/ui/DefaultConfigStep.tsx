@@ -45,7 +45,7 @@ type DefaultConfigStepProps = {
 
 function formatHarnessLabel(runtime: AcpRuntimeCatalogEntry | undefined) {
   if (!runtime) return "Select a harness";
-  return runtime.id === "buzz-agent" ? "Kuzz" : runtime.label;
+  return runtime.id === "kuzz-agent" ? "Kuzz" : runtime.label;
 }
 
 function AgentDefaultsSection({
@@ -216,7 +216,7 @@ function AgentDefaultsSection({
     onPersistenceStateChange({
       // configIsValid comes from AgentConfigFields' onValidityChange and
       // covers model + provider credentials — a harness selection alone is
-      // not a working default (e.g. buzz-agent with no provider configured).
+      // not a working default (e.g. kuzz-agent with no provider configured).
       canComplete: selectedRuntimeId.length > 0 && configIsValid,
       commit: commitPersistence,
     });

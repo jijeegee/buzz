@@ -47,13 +47,13 @@ export type TokenAuthStatus = {
   /** Agents a sign-out could not confirm stopped; the sign-out went through. */
   agentsNotStopped?: number;
   /**
-   * The chosen Google account has no Buzz account yet and nothing was
+   * The chosen Google account has no Kuzz account yet and nothing was
    * created: ask, then `confirmSignup` or `cancelSignup`.
    */
   signup?: SignupPrompt | null;
 };
 
-/** What the "Create your Buzz account" screen shows. */
+/** What the "Create your Kuzz account" screen shows. */
 export type SignupPrompt = {
   email: string | null;
   displayName: string | null;
@@ -78,7 +78,7 @@ export function getTokenAuthStatus(): Promise<TokenAuthStatus> {
 
 /**
  * Open the system browser for Google sign-in; resolves once signed in. The
- * chosen Google account decides the Buzz account, which becomes the active
+ * chosen Google account decides the Kuzz account, which becomes the active
  * account; accounts already signed in here stay signed in. `connect` links
  * the current key-only account to Google instead.
  */
@@ -107,7 +107,7 @@ export function onActiveAccountChanged(
   );
 }
 
-/** One Buzz account on this computer. */
+/** One Kuzz account on this computer. */
 export type AccountSummary = {
   pubkey: string;
   origin: string;
@@ -115,8 +115,8 @@ export type AccountSummary = {
   active: boolean;
   /** The Google name. */
   displayName: string | null;
-  /** The Buzz profile name; menus prefer it. */
-  buzzName: string | null;
+  /** The Kuzz profile name; menus prefer it. */
+  kuzzName: string | null;
   avatarUrl: string | null;
   email: string | null;
   /** Unix seconds of the last sign-in or switch to it. */
@@ -128,7 +128,7 @@ export type WatchableAccount = {
   origin: string;
   pubkey: string;
   displayName: string | null;
-  buzzName: string | null;
+  kuzzName: string | null;
   email: string | null;
 };
 
@@ -149,14 +149,14 @@ export function listAccounts(): Promise<AccountSummary[]> {
 }
 
 /**
- * Record the active account's Buzz profile name for the account menu (ignored
+ * Record the active account's Kuzz profile name for the account menu (ignored
  * unless `pubkey` is the active account).
  */
-export function rememberAccountBuzzName(
+export function rememberAccountKuzzName(
   pubkey: string,
   name: string,
 ): Promise<void> {
-  return invokeTauri<void>("remember_account_buzz_name", { pubkey, name });
+  return invokeTauri<void>("remember_account_kuzz_name", { pubkey, name });
 }
 
 /**
@@ -194,7 +194,7 @@ export function cancelGoogleLogin(attemptId: string): Promise<boolean> {
   return invokeTauri<boolean>("cancel_google_login", { attemptId });
 }
 
-/** Create the Buzz account the user confirmed and finish signing in. */
+/** Create the Kuzz account the user confirmed and finish signing in. */
 export function confirmSignup(): Promise<TokenAuthStatus> {
   return invokeTauri<TokenAuthStatus>("confirm_signup");
 }

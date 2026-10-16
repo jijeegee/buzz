@@ -31,8 +31,8 @@ import { Input } from "@/shared/ui/input";
 import { setManagedAgentAutoRestart } from "@/shared/api/tauriManagedAgents";
 import { effortSentinelLabel } from "./effortPicker";
 import { EditAgentAdvancedFields } from "./EditAgentAdvancedFields";
-import { BuzzAgentModelTuningFields } from "./buzzAgentModelTuningFields";
-import { isBuzzAgentRuntime } from "./buzzAgentConfig";
+import { KuzzAgentModelTuningFields } from "./kuzzAgentModelTuningFields";
+import { isKuzzAgentRuntime } from "./kuzzAgentConfig";
 import {
   ADVANCED_FIELDS_MOTION_TRANSITION,
   AUTO_PROVIDER_DROPDOWN_VALUE,
@@ -329,7 +329,7 @@ export function AgentInstanceEditDialog({
   // switch the surface is the OLD runtime's resolution — a Goose
   // `GOOSE_THINKING_EFFORT` tier would be shown for a runtime that never reads
   // it — so it is the stored column (`agent.effortLevel`), the only tier an
-  // ACP thought-level runtime launches (`BUZZ_ACP_EFFORT_LEVEL`).
+  // ACP thought-level runtime launches (`KUZZ_ACP_EFFORT_LEVEL`).
   const launchEffortLevel = runtimeTouched.current
     ? agent.effortLevel
     : (configSurfaceQuery.data?.normalized.thinkingEffort?.value ?? null);
@@ -589,13 +589,13 @@ export function AgentInstanceEditDialog({
   function handleProviderDropdownChange(nextValue: string) {
     const nextProvider =
       nextValue === AUTO_PROVIDER_DROPDOWN_VALUE ? "" : nextValue;
-    if (nextProvider === "relay-mesh" && selectedRuntimeId !== "buzz-agent") {
-      handleRuntimeDropdownChange("buzz-agent");
+    if (nextProvider === "relay-mesh" && selectedRuntimeId !== "kuzz-agent") {
+      handleRuntimeDropdownChange("kuzz-agent");
     }
     const nextSelection = selectionOnProviderDropdownChange(selection, {
       runtime:
         nextProvider === "relay-mesh"
-          ? "buzz-agent"
+          ? "kuzz-agent"
           : (selectedRuntime?.id ?? selectedRuntimeId),
       nextValue,
       clearModelWhenApiKeyMissing: false,
@@ -880,7 +880,7 @@ export function AgentInstanceEditDialog({
   const trimmedProvider = provider.trim();
   const hideProviderIds = React.useMemo(
     () =>
-      (bakedEnvKeys ?? []).includes("BUZZ_AGENT_PROVIDER")
+      (bakedEnvKeys ?? []).includes("KUZZ_AGENT_PROVIDER")
         ? BLOCK_BUILD_HIDDEN_PROVIDER_IDS
         : new Set<string>(),
     [bakedEnvKeys],
@@ -1133,8 +1133,8 @@ export function AgentInstanceEditDialog({
             />
 
             {/* Kuzz effort sits with the model choice, like the ACP picker. */}
-            {isBuzzAgentRuntime(prospectiveRuntimeId) ? (
-              <BuzzAgentModelTuningFields
+            {isKuzzAgentRuntime(prospectiveRuntimeId) ? (
+              <KuzzAgentModelTuningFields
                 catalogEfforts={discoveredModelOptions?.find(
                   (option) => option.id === (inheritedSubmission.model ?? ""),
                 )}

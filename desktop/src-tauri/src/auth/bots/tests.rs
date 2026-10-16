@@ -91,7 +91,7 @@ fn env_of(command: &std::process::Command) -> HashMap<String, Option<String>> {
 
 #[test]
 fn token_spawn_env_has_bot_token_and_no_key() {
-    let mut command = std::process::Command::new("buzz-acp");
+    let mut command = std::process::Command::new("kuzz-acp");
     let auth = SpawnAuth::Token(IssuedBotToken {
         origin: "o".into(),
         bot_id: "b".into(),
@@ -100,17 +100,17 @@ fn token_spawn_env_has_bot_token_and_no_key() {
     });
     apply_spawn_auth(&mut command, &auth, "nsec1secret", Some("[\"auth\"]"));
     let env = env_of(&command);
-    assert_eq!(env["BUZZ_BOT_TOKEN"].as_deref(), Some("bzb_live"));
+    assert_eq!(env["KUZZ_BOT_TOKEN"].as_deref(), Some("bzb_live"));
     assert_eq!(
-        env["BUZZ_BOT_TOKEN_EXPIRES_AT"].as_deref(),
+        env["KUZZ_BOT_TOKEN_EXPIRES_AT"].as_deref(),
         Some("1900000000")
     );
-    assert_eq!(env["BUZZ_PRIVATE_KEY"], None, "key must be removed");
-    assert_eq!(env["BUZZ_AUTH_TAG"], None);
+    assert_eq!(env["KUZZ_PRIVATE_KEY"], None, "key must be removed");
+    assert_eq!(env["KUZZ_AUTH_TAG"], None);
     for key in [
-        "BUZZ_ACCESS_TOKEN",
-        "BUZZ_TOKEN_BROKER_URL",
-        "BUZZ_TOKEN_BROKER_SECRET",
+        "KUZZ_ACCESS_TOKEN",
+        "KUZZ_TOKEN_BROKER_URL",
+        "KUZZ_TOKEN_BROKER_SECRET",
     ] {
         assert_eq!(env[key], None, "{key} must be stripped");
     }
@@ -118,12 +118,12 @@ fn token_spawn_env_has_bot_token_and_no_key() {
 
 #[test]
 fn key_spawn_env_is_unchanged_and_strips_token_vars() {
-    let mut command = std::process::Command::new("buzz-acp");
+    let mut command = std::process::Command::new("kuzz-acp");
     apply_spawn_auth(&mut command, &SpawnAuth::Keys, "nsec1secret", None);
     let env = env_of(&command);
-    assert_eq!(env["BUZZ_PRIVATE_KEY"].as_deref(), Some("nsec1secret"));
-    assert_eq!(env["BUZZ_AUTH_TAG"], None);
-    assert_eq!(env["BUZZ_BOT_TOKEN"], None);
+    assert_eq!(env["KUZZ_PRIVATE_KEY"].as_deref(), Some("nsec1secret"));
+    assert_eq!(env["KUZZ_AUTH_TAG"], None);
+    assert_eq!(env["KUZZ_BOT_TOKEN"], None);
 }
 
 // ── adoption ───────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ fn keyed_record(keys: &nostr::Keys) -> ManagedAgentRecord {
             "name": "Scout",
             "private_key_nsec": "",
             "relay_url": "",
-            "acp_command": "buzz-acp",
+            "acp_command": "kuzz-acp",
             "agent_command": "goose",
             "agent_args": [],
             "mcp_command": "",

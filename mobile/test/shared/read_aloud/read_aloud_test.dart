@@ -1,14 +1,14 @@
 import 'dart:async';
 
-import 'package:buzz/features/settings/experiments_settings.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/read_aloud/speech_audio_gate.dart';
-import 'package:buzz/shared/read_aloud/read_aloud_controller.dart';
-import 'package:buzz/shared/read_aloud/read_aloud_message.dart';
-import 'package:buzz/shared/read_aloud/read_aloud_preferences.dart';
-import 'package:buzz/shared/read_aloud/speech_engine.dart';
-import 'package:buzz/shared/read_aloud/spoken_text_surface.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/settings/experiments_settings.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/read_aloud/speech_audio_gate.dart';
+import 'package:kuzz/shared/read_aloud/read_aloud_controller.dart';
+import 'package:kuzz/shared/read_aloud/read_aloud_message.dart';
+import 'package:kuzz/shared/read_aloud/read_aloud_preferences.dart';
+import 'package:kuzz/shared/read_aloud/speech_engine.dart';
+import 'package:kuzz/shared/read_aloud/spoken_text_surface.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

@@ -199,7 +199,7 @@ test("pinning persists the choice and never deletes stored communities", () => {
   const other = community("other", "wss://old.example");
   const ours = community("ours", BUILT_IN);
   saveCommunities([other, ours]);
-  globalThis.localStorage.setItem("buzz-active-community-id", "other");
+  globalThis.localStorage.setItem("kuzz-active-community-id", "other");
 
   pinStoredCommunitiesToBuiltInServer(BUILT_IN);
 
@@ -213,7 +213,7 @@ test("pinning persists the choice and never deletes stored communities", () => {
 test("loading resolves once and pins storage", async () => {
   const other = community("other", "wss://old.example");
   saveCommunities([other]);
-  globalThis.localStorage.setItem("buzz-active-community-id", "other");
+  globalThis.localStorage.setItem("kuzz-active-community-id", "other");
   let reads = 0;
   const read = async () => {
     reads += 1;

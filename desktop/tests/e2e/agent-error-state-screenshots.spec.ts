@@ -60,7 +60,7 @@ async function setAgentPresence(
   await expect
     .poll(() =>
       page.evaluate(() =>
-        window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+        window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
           channelName: "agents",
           kind: 20001,
         }),
@@ -69,7 +69,7 @@ async function setAgentPresence(
     .toBe(true);
   await page.evaluate(
     ({ pubkeys, status }) => {
-      const emit = window.__BUZZ_E2E_EMIT_MOCK_PRESENCE__;
+      const emit = window.__KUZZ_E2E_EMIT_MOCK_PRESENCE__;
       if (!emit) throw new Error("Mock presence emitter is unavailable.");
       for (const pubkey of pubkeys) emit({ pubkey, status });
     },

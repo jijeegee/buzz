@@ -8,21 +8,21 @@ IFS=','
 for encoded in ${DART_DEFINES:-}; do
   decoded=$(printf '%s' "$encoded" | base64 --decode 2>/dev/null || printf '%s' "$encoded" | base64 -D 2>/dev/null || true)
   case "$decoded" in
-    BUZZ_PUSH_GATEWAY_URL=*)
+    KUZZ_PUSH_GATEWAY_URL=*)
       if [ "$has_dart_define" = true ]; then
-        echo "error: BUZZ_PUSH_GATEWAY_URL must be supplied at most once." >&2
+        echo "error: KUZZ_PUSH_GATEWAY_URL must be supplied at most once." >&2
         exit 1
       fi
       has_dart_define=true
-      gateway_origin=${decoded#BUZZ_PUSH_GATEWAY_URL=}
+      gateway_origin=${decoded#KUZZ_PUSH_GATEWAY_URL=}
       ;;
   esac
 done
 IFS=$old_ifs
 
-if [ "$has_dart_define" = false ] && [ -n "${BUZZ_PUSH_GATEWAY_URL:-}" ]; then
-  gateway_origin=$BUZZ_PUSH_GATEWAY_URL
-  encoded=$(printf '%s' "BUZZ_PUSH_GATEWAY_URL=$gateway_origin" | base64 | tr -d '\n')
+if [ "$has_dart_define" = false ] && [ -n "${KUZZ_PUSH_GATEWAY_URL:-}" ]; then
+  gateway_origin=$KUZZ_PUSH_GATEWAY_URL
+  encoded=$(printf '%s' "KUZZ_PUSH_GATEWAY_URL=$gateway_origin" | base64 | tr -d '\n')
   DART_DEFINES=${DART_DEFINES:+$DART_DEFINES,}$encoded
   export DART_DEFINES
 fi
@@ -42,7 +42,7 @@ if [ -z "$dart_bin" ] || [ ! -x "$dart_bin" ]; then
   dart_bin=$(command -v dart || true)
 fi
 if [ -z "$dart_bin" ]; then
-  echo "error: Dart is required to validate BUZZ_PUSH_GATEWAY_URL." >&2
+  echo "error: Dart is required to validate KUZZ_PUSH_GATEWAY_URL." >&2
   exit 1
 fi
 case ${CONFIGURATION:-Release} in

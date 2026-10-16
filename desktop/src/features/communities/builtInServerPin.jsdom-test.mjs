@@ -67,13 +67,13 @@ async function mount() {
 
 test("loading the built-in server selects its stored community", async () => {
   localStorage.setItem(
-    "buzz-communities",
+    "kuzz-communities",
     JSON.stringify([
       entry("other", "wss://old.example"),
       entry("ours", BUILT_IN),
     ]),
   );
-  localStorage.setItem("buzz-active-community-id", "other");
+  localStorage.setItem("kuzz-active-community-id", "other");
   setBuiltInServerForTests(undefined);
   const { seen, current } = await mount();
   assert.equal(seen.at(-1), "other", "upstream choice while loading");
@@ -83,7 +83,7 @@ test("loading the built-in server selects its stored community", async () => {
     await loadBuiltInServer(async () => BUILT_IN, "production");
   });
   assert.deepEqual([...new Set(seen)], ["ours"]);
-  assert.equal(localStorage.getItem("buzz-active-community-id"), "ours");
+  assert.equal(localStorage.getItem("kuzz-active-community-id"), "ours");
   assert.equal(current().communities.length, 2, "nothing deleted");
 
   await act(async () => current().switchCommunity("other"));
@@ -92,10 +92,10 @@ test("loading the built-in server selects its stored community", async () => {
 
 test("only other servers stored: the built-in one is added and selected", async () => {
   localStorage.setItem(
-    "buzz-communities",
+    "kuzz-communities",
     JSON.stringify([entry("other", "wss://old.example")]),
   );
-  localStorage.setItem("buzz-active-community-id", "other");
+  localStorage.setItem("kuzz-active-community-id", "other");
   const { current } = await mount();
   await act(async () => {
     await loadBuiltInServer(async () => BUILT_IN, "production");

@@ -26,14 +26,14 @@ test("global defaults and create/edit clear subscription on unsupported harness 
     provider: "openai-subscription",
     model: "gpt-test",
     env_vars: {},
-    preferred_runtime: "buzz-agent",
+    preferred_runtime: "kuzz-agent",
   };
   assert.equal(
     resetConfigForHarnessChange(config, "goose", false).provider,
     null,
   );
   assert.equal(
-    resetConfigForHarnessChange(config, "buzz-agent", true).provider,
+    resetConfigForHarnessChange(config, "kuzz-agent", true).provider,
     "openai-subscription",
   );
   const next = selectionOnRuntimeChange(
@@ -45,7 +45,7 @@ test("global defaults and create/edit clear subscription on unsupported harness 
       isCustomProviderEditing: false,
     },
     {
-      previousRuntime: "buzz-agent",
+      previousRuntime: "kuzz-agent",
       nextRuntime: "goose",
       nextRuntimeCanChooseProvider: true,
       nextRuntimeSupportsChatgptSubscription: false,

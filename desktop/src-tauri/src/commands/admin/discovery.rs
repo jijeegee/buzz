@@ -80,8 +80,8 @@ pub(super) fn admin_origin_from_nip11(info: &AdminApiInfo) -> Option<origin::Adm
 /// `discover_admin_origin_at`.
 pub(super) fn advertised_host_is_reserved(origin: &origin::AdminOrigin) -> bool {
     match origin.resolution_target().0 {
-        url::Host::Ipv4(ip) => buzz_core_pkg::network::is_private_ip(&std::net::IpAddr::V4(ip)),
-        url::Host::Ipv6(ip) => buzz_core_pkg::network::is_private_ip(&std::net::IpAddr::V6(ip)),
+        url::Host::Ipv4(ip) => kuzz_core_pkg::network::is_private_ip(&std::net::IpAddr::V4(ip)),
+        url::Host::Ipv6(ip) => kuzz_core_pkg::network::is_private_ip(&std::net::IpAddr::V6(ip)),
         url::Host::Domain(name) => name.eq_ignore_ascii_case("localhost"),
     }
 }
@@ -138,7 +138,7 @@ where
         return false;
     };
     match resolve(name, port).await {
-        Ok(addrs) => addrs.is_empty() || addrs.iter().any(buzz_core_pkg::network::is_private_ip),
+        Ok(addrs) => addrs.is_empty() || addrs.iter().any(kuzz_core_pkg::network::is_private_ip),
         // A resolution failure is not a positive private verdict; the reserved
         // check has already run, and a same-host auto-probe or the operator's
         // explicit save re-validates the origin against the live network.
@@ -354,7 +354,7 @@ mod tests {
 
     #[tokio::test]
     async fn discover_returns_origin_when_public_admin_api_advertised() {
-        let body = r#"{"name":"Buzz Relay","supported_nips":[1,11],"admin_api":"https://admin.example.com"}"#;
+        let body = r#"{"name":"Kuzz Relay","supported_nips":[1,11],"admin_api":"https://admin.example.com"}"#;
         let addr = serve_sequence(vec![(
             "200 OK",
             "Content-Type: application/nostr+json\r\n",
@@ -380,7 +380,7 @@ mod tests {
 
     #[tokio::test]
     async fn discover_returns_none_when_admin_api_absent() {
-        let body = r#"{"name":"Buzz Relay","supported_nips":[1,11]}"#;
+        let body = r#"{"name":"Kuzz Relay","supported_nips":[1,11]}"#;
         let addr = serve_sequence(vec![(
             "200 OK",
             "Content-Type: application/nostr+json\r\n",
@@ -560,7 +560,7 @@ mod tests {
 
     #[tokio::test]
     async fn discover_reads_a_normal_nip11_document() {
-        let body = br#"{"name":"Buzz Relay","supported_nips":[1,11],"admin_api":"https://admin.example.com"}"#;
+        let body = br#"{"name":"Kuzz Relay","supported_nips":[1,11],"admin_api":"https://admin.example.com"}"#;
         let head = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/nostr+json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             body.len()

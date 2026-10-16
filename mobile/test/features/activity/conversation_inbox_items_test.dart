@@ -1,9 +1,9 @@
-import 'package:buzz/features/activity/activity_provider.dart';
-import 'package:buzz/features/activity/feed_item.dart';
-import 'package:buzz/features/activity/inbox_summary.dart';
-import 'package:buzz/features/activity/inbox_summary_provider.dart';
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/activity/activity_provider.dart';
+import 'package:kuzz/features/activity/feed_item.dart';
+import 'package:kuzz/features/activity/inbox_summary.dart';
+import 'package:kuzz/features/activity/inbox_summary_provider.dart';
+import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
