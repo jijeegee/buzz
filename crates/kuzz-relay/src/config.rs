@@ -314,8 +314,10 @@ pub struct Config {
     /// Chats server-state writes (`KUZZ_CHAT_STATE_WRITES`, default off).
     ///
     /// On: each new message also records read positions, thread follows, and
-    /// thread close state, and indexes its mentions in the same transaction.
-    /// Off: the message write path is unchanged. Turning it off is the
+    /// thread close state, and indexes its mentions in the same transaction,
+    /// and the `chat_list` / `mark_read` / `thread_follow` `/query` requests
+    /// are served. Off: the message write path is unchanged and those
+    /// requests answer `404 chat_state_disabled`. Turning it off is the
     /// rollback for migration 0067.
     pub chat_state_writes: bool,
 
