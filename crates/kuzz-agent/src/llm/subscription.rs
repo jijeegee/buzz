@@ -1,19 +1,71 @@
-//! Codex subscription Responses transport inside the existing LLM module.
+//! ChatGPT plan Responses transport ("Sign in with ChatGPT") inside the
+//! existing LLM module. Only the public Responses endpoint receives these
+//! tokens; the ChatGPT `backend-api` is never used.
 use super::*;
 
-const RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
+/// The plan route accepts function tools only inside a namespace.
+const TOOL_NAMESPACE: &str = "kuzz";
+
+/// Fields the ChatGPT plan route rejects (OpenAI "Preview limitations").
+const UNSUPPORTED_FIELDS: &[&str] = &[
+    "background",
+    "conversation",
+    "max_output_tokens",
+    "max_tool_calls",
+    "metadata",
+    "moderation",
+    "multi_agent",
+    "prompt",
+    "prompt_cache_retention",
+    "previous_response_id",
+    "safety_identifier",
+    "temperature",
+    "top_logprobs",
+    "top_p",
+    "truncation",
+    "user",
+];
 
 fn subscription_body(body: &Value) -> Value {
     let mut body = body.clone();
     if let Some(fields) = body.as_object_mut() {
-        fields.remove("max_output_tokens");
+        for field in UNSUPPORTED_FIELDS {
+            fields.remove(*field);
+        }
         fields.insert("store".into(), json!(false));
         fields.insert("stream".into(), json!(true));
     }
-    // Summary requests use a string on the API-key route. The subscription
-    // route requires explicit input items, with the same client-owned history.
+    // Summary requests use a string on the API-key route. The plan route
+    // requires explicit input items, with the same client-owned history.
     if let Some(text) = body["input"].as_str() {
         body["input"] = json!([{"role":"user","content":text}]);
+    }
+    // Explicit system items are rejected; developer messages are accepted.
+    // Function tools must be grouped in a namespace, and echoed calls carry it.
+    if let Some(items) = body["input"].as_array_mut() {
+        for item in items {
+            if item["role"] == "system" {
+                item["role"] = json!("developer");
+            }
+            if item["type"] == "function_call" && item.get("namespace").is_none() {
+                item["namespace"] = json!(TOOL_NAMESPACE);
+            }
+        }
+    }
+    if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
+        let (functions, others): (Vec<Value>, Vec<Value>) = std::mem::take(tools)
+            .into_iter()
+            .partition(|t| t["type"] == "function");
+        *tools = others;
+        if !functions.is_empty() {
+            tools.push(json!({
+                "type": "namespace",
+                "name": TOOL_NAMESPACE,
+                "description": "Kuzz agent tools.",
+                "tools": functions,
+            }));
+        }
     }
     body
 }
@@ -24,13 +76,13 @@ impl Llm {
         cfg: &Config,
         body: &Value,
     ) -> Result<Value, AgentError> {
-        // Never use OPENAI_COMPAT_BASE_URL for subscription credentials.
+        // Never use OPENAI_COMPAT_BASE_URL for ChatGPT plan credentials.
         tokio::time::timeout(
             cfg.llm_timeout,
             self.subscription_request(cfg, &subscription_body(body), RESPONSES_URL),
         )
         .await
-        .map_err(|_| AgentError::Llm("ChatGPT subscription request deadline exceeded".into()))?
+        .map_err(|_| AgentError::Llm("ChatGPT plan request deadline exceeded".into()))?
     }
 
     async fn subscription_request(
@@ -40,26 +92,16 @@ impl Llm {
         url: &str,
     ) -> Result<Value, AgentError> {
         let mut bearer = self.auth.bearer().await?;
-        // The subscription backend routes on the `session_id` header, not the
-        // body's `prompt_cache_key`: measured 2026-10-14 on gpt-6-sol, a
-        // repeated 4.5k-token prefix hit the cache ~85% of the time with the
-        // header and ~15% without it, body key or not. Codex sends the same.
-        let session = body["prompt_cache_key"].as_str();
         for attempt in 0..2 {
-            let account = crate::auth::codex::account_id(&bearer)?;
-            let mut request = self
+            let request = self
                 .http
                 .post(url)
                 .bearer_auth(&bearer)
-                .header("ChatGPT-Account-Id", account)
                 .header("Accept", "text/event-stream");
-            if let Some(session) = session {
-                request = request.header("session_id", session);
-            }
             let response = tokio::time::timeout(cfg.llm_timeout, request.json(body).send())
                 .await
-                .map_err(|_| AgentError::Llm("ChatGPT subscription request timed out".into()))?
-                .map_err(|_| AgentError::Llm("ChatGPT subscription connection failed".into()))?;
+                .map_err(|_| AgentError::Llm("ChatGPT plan request timed out".into()))?
+                .map_err(|_| AgentError::Llm("ChatGPT plan connection failed".into()))?;
             let status = response.status();
             if status == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
                 bearer = self.auth.refresh_now(&bearer).await?;
@@ -68,26 +110,76 @@ impl Llm {
             if !status.is_success() {
                 // No automatic API-key fallback or replay on a stream failure.
                 let detail = read_error_body(response).await;
-                if status.as_u16() == 400 || status.as_u16() == 404 {
-                    return Err(classify_failure(&detail, status.as_u16() == 404));
-                }
-                return Err(match status.as_u16() {
-                    401 | 403 => AgentError::LlmAuth(
-                        "ChatGPT subscription rejected the request; check sign-in and model access"
-                            .into(),
-                    ),
-                    429 => AgentError::Llm(
-                        "ChatGPT subscription usage limit reached; retry later".into(),
-                    ),
-                    _ => AgentError::Llm(format!("ChatGPT subscription HTTP {}", status.as_u16())),
-                });
+                return Err(classify_http_failure(status.as_u16(), &detail));
             }
             return read_stream(response, cfg.llm_timeout).await;
         }
-        Err(AgentError::LlmAuth(
-            "ChatGPT subscription sign-in required".into(),
-        ))
+        Err(AgentError::LlmAuth("ChatGPT plan sign-in required".into()))
     }
+}
+
+/// Map a pre-stream HTTP failure. Plan-specific codes come first; generic
+/// statuses keep the existing recovery paths (context, effort, model).
+fn classify_http_failure(status: u16, detail: &str) -> AgentError {
+    if let Some(error) = plan_error(detail) {
+        return error;
+    }
+    match status {
+        400 | 404 => classify_failure(detail, status == 404),
+        401 => AgentError::LlmAuth(
+            "ChatGPT plan rejected the sign-in; sign in again in Settings › Models › Providers"
+                .into(),
+        ),
+        403 => AgentError::LlmAuth(
+            "ChatGPT plan use is not permitted for this account or region".into(),
+        ),
+        429 => AgentError::Llm(usage_limit_message()),
+        503 => AgentError::Llm("ChatGPT plan is temporarily unavailable; retry later".into()),
+        _ => AgentError::Llm(format!("ChatGPT plan HTTP {status}")),
+    }
+}
+
+fn usage_limit_message() -> String {
+    format!(
+        "ChatGPT plan usage limit reached. Manage usage: {}",
+        crate::auth::chatgpt::MANAGE_USAGE_URL
+    )
+}
+
+/// Recognize the structured plan-sharing codes OpenAI documents, in either an
+/// HTTP error body or a failed stream event. Raw bodies are never echoed.
+fn plan_error(detail: &str) -> Option<AgentError> {
+    let value: Value = serde_json::from_str(detail).ok()?;
+    let error = value
+        .pointer("/error")
+        .or_else(|| value.pointer("/response/error"))?;
+    let code = error["code"].as_str()?;
+    Some(match code {
+        "subscription_sharing_usage_limit_exceeded" => AgentError::Llm(usage_limit_message()),
+        "subscription_sharing_usage_unavailable" | "subscription_sharing_user_unavailable" => {
+            AgentError::Llm("ChatGPT plan usage could not be checked; retry later".into())
+        }
+        "subscription_sharing_user_not_eligible" => AgentError::LlmAuth(
+            "ChatGPT plan use is not available for this account or workspace".into(),
+        ),
+        "subscription_sharing_invalid_user"
+        | "chatpass_v2_scope_not_authorized"
+        | "chatpass_v2_invalid_authorization_context" => AgentError::LlmAuth(
+            "ChatGPT plan rejected the sign-in; sign in again in Settings › Models › Providers"
+                .into(),
+        ),
+        "subscription_sharing_unsupported_capability" => {
+            let param = error["param"]
+                .as_str()
+                .filter(|p| p.len() <= 80 && p.chars().all(|c| c.is_ascii_graphic()))
+                .unwrap_or("request");
+            AgentError::Llm(format!("ChatGPT plan does not support this {param}"))
+        }
+        "subscription_sharing_route_not_supported" => {
+            AgentError::Llm("ChatGPT plan does not support this request route".into())
+        }
+        _ => return None,
+    })
 }
 
 struct Events {
@@ -110,9 +202,7 @@ impl Events {
     fn push(&mut self, bytes: &[u8]) -> Result<Option<Value>, AgentError> {
         self.bytes = self.bytes.saturating_add(bytes.len());
         if self.bytes > MAX_LLM_RESPONSE_BYTES {
-            return Err(AgentError::Llm(
-                "ChatGPT subscription response too large".into(),
-            ));
+            return Err(AgentError::Llm("ChatGPT plan response too large".into()));
         }
         self.pending.extend_from_slice(bytes);
         while let Some(end) = self.pending.iter().position(|b| *b == b'\n') {
@@ -124,7 +214,7 @@ impl Events {
                     continue;
                 }
                 let event: Value = serde_json::from_slice(&self.data)
-                    .map_err(|_| AgentError::Llm("invalid ChatGPT subscription event".into()))?;
+                    .map_err(|_| AgentError::Llm("invalid ChatGPT plan event".into()))?;
                 self.data.clear();
                 match event["type"].as_str() {
                     Some("response.output_item.done") => {
@@ -164,7 +254,10 @@ impl Events {
                     Some(
                         "response.failed" | "response.incomplete" | "error" | "response.completed",
                     ) => {
-                        return Err(classify_failure(&event.to_string(), false));
+                        let detail = event.to_string();
+                        return Err(
+                            plan_error(&detail).unwrap_or_else(|| classify_failure(&detail, false))
+                        );
                     }
                     _ => {}
                 }
@@ -172,7 +265,7 @@ impl Events {
                 let data = data.strip_prefix(b" ").unwrap_or(data);
                 if data == b"[DONE]" {
                     return Err(AgentError::Llm(
-                        "ChatGPT subscription stream ended without a completed response".into(),
+                        "ChatGPT plan stream ended without a completed response".into(),
                     ));
                 }
                 if !self.data.is_empty() {
@@ -188,10 +281,10 @@ impl Events {
 fn classify_failure(detail: &str, model_not_found: bool) -> AgentError {
     // Inspect provider diagnostics without echoing raw prompt/account data.
     if is_context_length_error(detail) {
-        AgentError::LlmContextExceeded("ChatGPT subscription context window exceeded".into())
+        AgentError::LlmContextExceeded("ChatGPT plan context window exceeded".into())
     } else if is_unsupported_image_input_error(detail) {
         AgentError::UnsupportedImageInput(
-            "ChatGPT subscription model does not accept this image input".into(),
+            "ChatGPT plan model does not accept this image input".into(),
         )
     } else if super::is_unsupported_effort_error(detail) {
         // Keep only the provider's supported-level list (no prompt/account
@@ -201,13 +294,13 @@ fn classify_failure(detail: &str, model_not_found: bool) -> AgentError {
             .map(ThinkingEffort::openai_effort_str)
             .collect::<Vec<_>>();
         AgentError::LlmUnsupportedEffort(format!(
-            "ChatGPT subscription rejected the reasoning effort; supported values: {}",
+            "ChatGPT plan rejected the reasoning effort; supported values: {}",
             supported.join(", ")
         ))
     } else if model_not_found {
-        AgentError::LlmModelNotFound("ChatGPT subscription model not found".into())
+        AgentError::LlmModelNotFound("ChatGPT plan model not found".into())
     } else {
-        AgentError::Llm("ChatGPT subscription request failed or did not complete".into())
+        AgentError::Llm("ChatGPT plan request failed or did not complete".into())
     }
 }
 
@@ -219,8 +312,8 @@ async fn read_stream(
     loop {
         let chunk = tokio::time::timeout(idle_timeout, response.chunk())
             .await
-            .map_err(|_| AgentError::Llm("ChatGPT subscription stream timed out".into()))?
-            .map_err(|_| AgentError::Llm("ChatGPT subscription stream interrupted".into()))?;
+            .map_err(|_| AgentError::Llm("ChatGPT plan stream timed out".into()))?
+            .map_err(|_| AgentError::Llm("ChatGPT plan stream interrupted".into()))?;
         match chunk {
             Some(bytes) => {
                 if let Some(response) = events.push(&bytes)? {
@@ -229,7 +322,7 @@ async fn read_stream(
             }
             None => {
                 return Err(AgentError::Llm(
-                    "ChatGPT subscription stream ended before completion".into(),
+                    "ChatGPT plan stream ended before completion".into(),
                 ));
             }
         }
@@ -255,7 +348,7 @@ mod tests {
         };
         assert_eq!(
             detail,
-            "ChatGPT subscription rejected the reasoning effort; supported values: none, low, medium, high, xhigh, max"
+            "ChatGPT plan rejected the reasoning effort; supported values: none, low, medium, high, xhigh, max"
         );
     }
 
@@ -364,7 +457,101 @@ mod tests {
     }
 
     #[test]
-    fn subscription_body_keeps_cache_key_for_session_header() {
+    fn plan_body_drops_rejected_fields_and_system_items() {
+        let body = subscription_body(&json!({
+            "model":"m","temperature":0.2,"top_p":1,"metadata":{},"user":"u",
+            "previous_response_id":"r","truncation":"auto","instructions":"sys",
+            "input":[{"role":"system","content":"x"},{"role":"user","content":"y"}]
+        }));
+        for field in [
+            "temperature",
+            "top_p",
+            "metadata",
+            "user",
+            "previous_response_id",
+            "truncation",
+        ] {
+            assert!(body.get(field).is_none(), "{field}");
+        }
+        assert_eq!(body["instructions"], "sys");
+        assert_eq!(body["input"][0]["role"], "developer");
+        assert_eq!(body["input"][1]["role"], "user");
+    }
+
+    #[test]
+    fn plan_body_groups_function_tools_in_a_namespace() {
+        let tool = json!({"type":"function","name":"echo","description":"d","parameters":{}});
+        let body = subscription_body(&json!({
+            "model":"m","tools":[tool],"tool_choice":"auto",
+            "input":[
+                {"type":"function_call","call_id":"c1","name":"echo","arguments":"{}"},
+                {"type":"function_call_output","call_id":"c1","output":"ok"}
+            ]
+        }));
+        assert_eq!(
+            body["tools"],
+            json!([{"type":"namespace","name":"kuzz","description":"Kuzz agent tools.","tools":[tool]}])
+        );
+        assert_eq!(body["input"][0]["namespace"], "kuzz");
+        assert!(body["input"][1].get("namespace").is_none());
+        // A namespaced call parses back to the plain tool name.
+        let parsed = parse_responses(json!({"status":"completed","output":[
+            {"type":"function_call","name":"echo","namespace":"kuzz","call_id":"c2","arguments":"{}"}
+        ]}))
+        .unwrap();
+        assert_eq!(parsed.tool_calls[0].name, "echo");
+    }
+
+    #[test]
+    fn plan_error_codes_map_to_actionable_errors() {
+        let limit =
+            r#"{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"m"}}"#;
+        let AgentError::Llm(text) = classify_http_failure(429, limit) else {
+            panic!("usage limit should be a retryable LLM error");
+        };
+        assert!(
+            text.contains("https://chatgpt.com/settings/usage"),
+            "{text}"
+        );
+        let streamed = json!({"type":"response.failed","response":{"status":"failed","error":{"code":"subscription_sharing_usage_limit_exceeded"}}});
+        let err = Events::new()
+            .push(
+                format!(
+                    "data: {streamed}
+
+"
+                )
+                .as_bytes(),
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("usage limit"), "{err}");
+        assert!(matches!(
+            classify_http_failure(
+                403,
+                r#"{"error":{"code":"subscription_sharing_user_not_eligible"}}"#
+            ),
+            AgentError::LlmAuth(_)
+        ));
+        let AgentError::Llm(text) = classify_http_failure(
+            400,
+            r#"{"error":{"code":"subscription_sharing_unsupported_capability","param":"tools[0]"}}"#,
+        ) else {
+            panic!("unsupported capability should name the parameter");
+        };
+        assert!(text.contains("tools[0]"), "{text}");
+        // Direct-admission bodies without an error object keep status mapping.
+        assert!(matches!(
+            classify_http_failure(401, r#"{"detail":"no"}"#),
+            AgentError::LlmAuth(_)
+        ));
+        assert!(matches!(
+            classify_http_failure(404, "{}"),
+            AgentError::LlmModelNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn subscription_body_keeps_cache_key() {
         let body =
             subscription_body(&json!({"model":"test","input":[],"prompt_cache_key":"ses_1"}));
         assert_eq!(body["prompt_cache_key"].as_str(), Some("ses_1"));

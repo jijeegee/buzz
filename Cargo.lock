@@ -4343,6 +4343,7 @@ dependencies = [
  "fs2",
  "getrandom 0.4.3",
  "hex",
+ "jsonwebtoken",
  "nix 0.31.3",
  "rcgen",
  "reqwest 0.13.4",

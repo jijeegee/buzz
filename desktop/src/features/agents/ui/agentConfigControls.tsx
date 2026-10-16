@@ -27,6 +27,7 @@ import {
 } from "./agentConfigOptions";
 import { MODEL_DISCOVERY_LOADING_VALUE } from "./usePersonaModelDiscovery";
 import type { PersonaModelDiscoveryStatus } from "./personaModelDiscoveryStatus";
+import { ChatGptPlanAgentNotice } from "./ChatGptPlanControls";
 
 export const MODEL_NO_MODELS_VALUE = "__no_models__";
 
@@ -601,6 +602,9 @@ export function AgentModelField({
       ) : null}
       {showStatusMessage && statusMessage ? (
         <p className="text-xs text-muted-foreground">{statusMessage}</p>
+      ) : null}
+      {provider?.trim() === "openai-subscription" ? (
+        <ChatGptPlanAgentNotice />
       ) : null}
     </div>
   );
