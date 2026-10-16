@@ -108,6 +108,7 @@ part 'channel_detail_page/huddle_reactions.dart';
 part 'channel_detail_page/message_bubble.dart';
 part 'channel_detail_page/banners.dart';
 part 'channel_detail_page/app_bar.dart';
+part 'channel_detail_page/direct_thread.dart';
 
 /// Fetch deep-link targets that may be outside the loaded channel window.
 Future<void> _loadDeepLinkEvents(
@@ -317,6 +318,13 @@ class ChannelDetailPage extends HookConsumerWidget {
     final detailsAsync = ref.watch(channelDetailsProvider(channel.id));
     final channelsAsync = ref.watch(channelsProvider);
     final messagesState = ref.watch(channelMessagesProvider(channel.id));
+    final opensThreadDirectly =
+        initialThreadRootId != null &&
+        !channel.isForum &&
+        initialThreadRouteBehavior ==
+            InitialThreadRouteBehavior.replaceCurrentRoute;
+    final didOpenDirectThread = useRef(false);
+    final deepLinkLoads = useState(0);
     final huddleLifecycle =
         ref.watch(huddleLifecycleProvider(channel.id)).value ?? const [];
     final sessionStatus = ref.watch(relaySessionProvider).status;
@@ -587,7 +595,11 @@ class ChannelDetailPage extends HookConsumerWidget {
         };
         if (eventIds.isEmpty) return null;
         final notifier = ref.read(channelMessagesProvider(channel.id).notifier);
-        unawaited(_loadDeepLinkEvents(ref, channel.id, eventIds));
+        unawaited(
+          _loadDeepLinkEvents(ref, channel.id, eventIds).then((_) {
+            if (context.mounted) deepLinkLoads.value++;
+          }),
+        );
         return () => notifier.releaseDeepLinkEvents(eventIds);
       },
       [
@@ -614,6 +626,61 @@ class ChannelDetailPage extends HookConsumerWidget {
       return subscription.close;
     }, [channel.id, initialThreadRootId]);
 
+    // A thread opened straight from Inbox, a draft, a goal or a notification
+    // never shows the channel: this route stands in with a thread-shaped
+    // placeholder and swaps itself for the thread once the head is known,
+    // either cached on the timeline or fetched by id above.
+    final directThreadEvents = messagesState.value ?? const <NostrEvent>[];
+    final directThreadHead = opensThreadDirectly
+        ? directThreadEvents
+                  .where((event) => event.id == initialThreadRootId)
+                  .firstOrNull ??
+              ref
+                  .read(channelMessagesProvider(channel.id).notifier)
+                  .deepLinkEvent(initialThreadRootId!)
+        : null;
+    // The head could not be found (deleted, or the fetch failed) once both the
+    // by-id fetch and the timeline have settled: show the channel instead.
+    final directThreadMissing =
+        opensThreadDirectly &&
+        directThreadHead == null &&
+        deepLinkLoads.value > 0 &&
+        messagesState.hasValue &&
+        !messagesState.isLoading;
+    useEffect(() {
+      final rootId = initialThreadRootId;
+      final head = directThreadHead;
+      if (rootId == null || head == null || didOpenDirectThread.value) {
+        return null;
+      }
+      didOpenDirectThread.value = true;
+      final events = directThreadEvents;
+      final messages = formatTimeline([
+        ...events,
+        if (!events.any((event) => event.id == rootId)) head,
+      ], currentPubkey: currentPubkey);
+      final threadHead = messages.firstWhere((message) => message.id == rootId);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted || ModalRoute.of(context)?.isCurrent != true) {
+          return;
+        }
+        Navigator.of(context).pushReplacement(
+          _DirectThreadRoute(
+            builder: (_) => ThreadDetailPage(
+              threadHead: threadHead,
+              allMessages: messages,
+              channelId: channel.id,
+              currentPubkey: currentPubkey,
+              isMember: resolvedChannel.isMember,
+              isArchived: resolvedChannel.isArchived,
+              initialMessageId: initialMessageId,
+            ),
+          ),
+        );
+      });
+      return null;
+    }, [directThreadHead]);
+
     useEffect(() {
       if (!readState.isReady || readTimestamp == null) {
         return null;
@@ -627,6 +694,13 @@ class ChannelDetailPage extends HookConsumerWidget {
             .clearObservedUnreadCoveredByRead(channel.id, readTimestamp);
       });
     }, [channel.id, readState.isReady, readTimestamp]);
+
+    if (opensThreadDirectly && !directThreadMissing) {
+      return _DirectThreadPlaceholder(
+        channelId: channel.id,
+        rootId: initialThreadRootId!,
+      );
+    }
 
     return FrostedScaffold(
       resizeToAvoidBottomInset:

@@ -11784,6 +11784,81 @@ void main() {
       expect(replyQueries, 1);
     });
 
+    testWidgets('opens an initial thread without showing the channel', (
+      tester,
+    ) async {
+      final chatter = _textMsg(
+        id: 'chatter',
+        pubkey: 'bob',
+        content: 'Channel chatter',
+      );
+      final root = _textMsg(
+        id: 'root',
+        pubkey: 'alice',
+        content: 'Thread root',
+        createdAt: 1050,
+      );
+      final headFetch = Completer<void>();
+      final messagesNotifier = _PendingHeadMessagesNotifier([
+        chatter,
+      ], headFetch.future);
+
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [chatter],
+          messagesNotifier: messagesNotifier,
+          initialThreadRootId: 'root',
+          initialThreadRouteBehavior:
+              InitialThreadRouteBehavior.replaceCurrentRoute,
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('direct-thread-placeholder')),
+        findsOneWidget,
+      );
+      expect(find.text('Thread'), findsOneWidget);
+      expect(find.text('Channel chatter'), findsNothing);
+
+      messagesNotifier.setMessages([chatter, root]);
+      headFetch.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ThreadDetailPage), findsOneWidget);
+      expect(find.byType(ChannelDetailPage), findsNothing);
+    });
+
+    testWidgets('shows the channel when an initial thread head is missing', (
+      tester,
+    ) async {
+      final chatter = _textMsg(
+        id: 'chatter',
+        pubkey: 'bob',
+        content: 'Channel chatter',
+      );
+
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [chatter],
+          messagesNotifier: _PendingHeadMessagesNotifier([
+            chatter,
+          ], Future<void>.value()),
+          initialThreadRootId: 'deleted-root',
+          initialThreadRouteBehavior:
+              InitialThreadRouteBehavior.replaceCurrentRoute,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('direct-thread-placeholder')),
+        findsNothing,
+      );
+      expect(find.text('Channel chatter'), findsOneWidget);
+      expect(find.byType(ThreadDetailPage), findsNothing);
+    });
+
     testWidgets('does not replace a newer route after delayed hydration', (
       tester,
     ) async {
@@ -15289,6 +15364,16 @@ class _FakeMessagesNotifier extends ChannelMessagesNotifier {
     _hasLoadedMessages = true;
     state = AsyncData(messages);
   }
+}
+
+/// Holds the by-id head fetch open until the test releases it.
+class _PendingHeadMessagesNotifier extends _FakeMessagesNotifier {
+  _PendingHeadMessagesNotifier(super.messages, this.headFetch);
+
+  final Future<void> headFetch;
+
+  @override
+  Future<void> loadEventsById(Iterable<String> eventIds) => headFetch;
 }
 
 /// Counts loads; each settles after mount, like the real network load.

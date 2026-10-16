@@ -153,6 +153,10 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
               initialThreadRootId: link is MessageDeepLink
                   ? link.threadRootId
                   : null,
+              // A notification for a thread reply opens the thread itself;
+              // Back returns to where the app was, not to the channel.
+              initialThreadRouteBehavior:
+                  InitialThreadRouteBehavior.replaceCurrentRoute,
             ),
       ),
     );

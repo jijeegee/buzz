@@ -995,6 +995,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     state = AsyncData(merged);
   }
 
+  /// An event fetched by id for a deep link, before the timeline shows it.
+  NostrEvent? deepLinkEvent(String id) => _deepLinkEvents[id];
+
   /// Stops pinning deep-link-only events into subsequent window rebuilds.
   void releaseDeepLinkEvents(Iterable<String> eventIds) {
     for (final id in eventIds) {
