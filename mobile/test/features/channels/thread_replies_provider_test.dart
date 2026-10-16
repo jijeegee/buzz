@@ -25,6 +25,11 @@ class _FakeRelaySession extends RelaySessionNotifier {
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 8),
   }) async {
+    // A relay without thread windows: the thread query falls back to its
+    // complete scan, which these tests exercise.
+    if (filters.any((filter) => filter.extensions['thread_window'] == true)) {
+      return const [];
+    }
     queryCount++;
     filtersSeen.addAll(filters);
     final gate = nextQueryGate;
@@ -150,6 +155,68 @@ void main() {
     );
     return (container, fakeSession, subscription);
   }
+
+  test(
+    'a closed thread keeps its replies and reopens without a refetch',
+    () async {
+      final (container, fakeSession, subscription) = makeHarness([
+        _reply('r1', 1000),
+      ]);
+      addTearDown(container.dispose);
+
+      await container.read(threadRepliesProvider(args).future);
+      final queriesAfterFirstLoad = fakeSession.queryCount;
+
+      // Close the thread page, then reopen it.
+      subscription.close();
+      await container.pump();
+      final reopened = container.listen(threadRepliesProvider(args), (_, _) {});
+      addTearDown(reopened.close);
+
+      expect(
+        container.read(threadRepliesProvider(args)).value?.map((e) => e.id),
+        ['r1'],
+      );
+      await container.pump();
+      expect(fakeSession.queryCount, queriesAfterFirstLoad);
+    },
+  );
+
+  test(
+    'a reply while the thread is closed refreshes only when it reopens',
+    () async {
+      final (container, fakeSession, subscription) = makeHarness([
+        _reply('r1', 1000),
+      ]);
+      addTearDown(container.dispose);
+
+      await container.read(threadRepliesProvider(args).future);
+      final queriesAfterFirstLoad = fakeSession.queryCount;
+      subscription.close();
+      await container.pump();
+
+      // A live reply marks the closed thread stale: no fetch yet.
+      fakeSession.replies = [_reply('r1', 1000), _reply('r2', 2000)];
+      container.read(threadRepliesStaleProvider(args).notifier).markStale();
+      await container.pump();
+      expect(fakeSession.queryCount, queriesAfterFirstLoad);
+
+      // Reopening shows the kept replies while one refresh runs.
+      final reopened = container.listen(threadRepliesProvider(args), (_, _) {});
+      addTearDown(reopened.close);
+      expect(
+        container.read(threadRepliesProvider(args)).value?.map((e) => e.id),
+        ['r1'],
+      );
+      // The held refresh starts right after the reopen.
+      await container.pump();
+      final refreshed = await container.read(
+        threadRepliesProvider(args).future,
+      );
+      expect(refreshed.map((event) => event.id), ['r1', 'r2']);
+      expect(fakeSession.queryCount, queriesAfterFirstLoad + 1);
+    },
+  );
 
   test('thread replies keep desktop same-second id order', () {
     expect(
@@ -348,7 +415,7 @@ void main() {
     },
   );
 
-  test('reopening a disposed thread performs a fresh load', () async {
+  test('a thread released after retention reloads fresh', () async {
     final (container, fakeSession, subscription) = makeHarness([
       _reply('r1', 1000),
     ]);
@@ -357,15 +424,61 @@ void main() {
     await container.read(threadRepliesProvider(args).future);
     final queriesAfterFirstLoad = fakeSession.queryCount;
 
-    // Close the page: the auto-disposed query is torn down…
+    // Closing keeps the query; disposing it (retention over) drops it…
     subscription.close();
     await container.pump();
+    expect(container.exists(threadRepliesProvider(args)), isTrue);
+    container.invalidate(threadRepliesProvider(args));
+    await container.pump();
 
-    // …so reopening loads fresh instead of serving a stale cache.
+    // …so the next open loads fresh instead of serving a stale cache.
     fakeSession.replies = [_reply('r1', 1000), _reply('r2', 2000)];
     container.listen(threadRepliesProvider(args), (_, _) {});
     final reopened = await container.read(threadRepliesProvider(args).future);
     expect(reopened.map((event) => event.id), ['r1', 'r2']);
     expect(fakeSession.queryCount, queriesAfterFirstLoad + 1);
   });
+
+  test(
+    'closed threads past the cap release the longest-closed first',
+    () async {
+      final session = _FakeRelaySession()..replies = [_reply('r1', 1000)];
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(() => session),
+          closedThreadRetentionProvider.overrideWithValue(
+            ClosedThreadRetention(maxThreads: 2),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final threads = [
+        for (var i = 0; i < 3; i++)
+          ThreadRepliesArgs(channelId: 'channel', rootId: 'root-$i'),
+      ];
+      for (final thread in threads) {
+        final subscription = container.listen(
+          threadRepliesProvider(thread),
+          (_, _) {},
+        );
+        await container.read(threadRepliesProvider(thread).future);
+        subscription.close();
+        await container.pump();
+      }
+      await container.pump();
+
+      expect(container.exists(threadRepliesProvider(threads[0])), isFalse);
+      expect(container.exists(threadRepliesProvider(threads[1])), isTrue);
+      expect(container.exists(threadRepliesProvider(threads[2])), isTrue);
+      expect(container.read(closedThreadRetentionProvider).length, 2);
+
+      // Reopening a kept thread takes it off the release list.
+      final reopened = container.listen(
+        threadRepliesProvider(threads[1]),
+        (_, _) {},
+      );
+      addTearDown(reopened.close);
+      expect(container.read(closedThreadRetentionProvider).length, 1);
+    },
+  );
 }

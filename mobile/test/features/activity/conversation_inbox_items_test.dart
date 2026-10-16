@@ -1,5 +1,7 @@
 import 'package:buzz/features/activity/activity_provider.dart';
 import 'package:buzz/features/activity/feed_item.dart';
+import 'package:buzz/features/activity/inbox_summary.dart';
+import 'package:buzz/features/activity/inbox_summary_provider.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +15,13 @@ class _EmptyActivityNotifier extends ActivityNotifier {
     activity: const [],
     agentActivity: const [],
   );
+}
+
+/// A relay without the summary envelope: the view loads per room.
+class _UnsupportedSummaryNotifier extends InboxSummaryNotifier {
+  @override
+  Future<InboxSummaryState> build() =>
+      Future.error(const InboxSummaryUnsupportedException());
 }
 
 class _MutableChannelsNotifier extends ChannelsNotifier {
@@ -61,8 +70,8 @@ FeedItem _message(String id, String channelId, int createdAt, String pubkey) =>
     );
 
 void main() {
-  test('a room re-sorts by its newest message after the view loaded, '
-      'including my own send', () async {
+  test('per-room fallback: a room re-sorts by its newest message after the '
+      'view loaded, including my own send', () async {
     final channels = _MutableChannelsNotifier([
       _channel('c1', 100),
       _channel('c2', 150),
@@ -71,6 +80,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         activityProvider.overrideWith(_EmptyActivityNotifier.new),
+        inboxSummaryProvider.overrideWith(_UnsupportedSummaryNotifier.new),
         channelsProvider.overrideWith(() => channels),
         channelActivityProvider.overrideWith(
           (ref) async => [

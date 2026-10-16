@@ -215,15 +215,44 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 8),
   }) async {
+    final decoded = await queryRelayJson([
+      for (final filter in filters) filter.toJson(),
+    ], timeout: timeout);
+    if (decoded is! List) {
+      throw const FormatException('relay returned malformed query response');
+    }
+    try {
+      return [
+        for (final eventJson in decoded)
+          if (eventJson is Map<String, dynamic>)
+            NostrEvent.fromJson(eventJson)
+          else
+            throw const FormatException('relay returned malformed query event'),
+      ];
+    } catch (error) {
+      if (error is FormatException) rethrow;
+      throw FormatException('relay returned malformed query event: $error');
+    }
+  }
+
+  /// Whether relay back-pressure is currently pausing requests. Background
+  /// work checks this to yield instead of queueing behind the window.
+  bool get isRateLimited => _rateLimitGate.isActive;
+
+  /// Execute a one-shot `/query` with raw filter objects and return the
+  /// decoded JSON body. Opt-in envelopes (for example `inbox_summary`) answer
+  /// with an object rather than an event array.
+  Future<Object?> queryRelayJson(
+    List<Map<String, dynamic>> filters, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
     if (_disposed || _ageRestricted) {
       throw StateError('Relay session is unavailable');
     }
     final generation = _contextGeneration;
     final config = ref.read(relayConfigProvider);
     final url = Uri.parse(config.baseUrl).resolve('/query').toString();
-    final bodyBytes = utf8.encode(
-      jsonEncode(filters.map((filter) => filter.toJson()).toList()),
-    );
+    final bodyBytes = utf8.encode(jsonEncode(filters));
     // Reuse the session transport on success. A timeout rotates immediately
     // for new queries, then closes the retired client after its peers finish.
     Future<http.Response> post(String authorization) => _httpQueryClient.post(
@@ -253,22 +282,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       _activateRateLimitGateFromHttpError(response.body);
       throw RelayException(response.statusCode, response.body);
     }
-    final decoded = jsonDecode(response.body);
-    if (decoded is! List) {
-      throw const FormatException('relay returned malformed query response');
-    }
-    try {
-      return [
-        for (final eventJson in decoded)
-          if (eventJson is Map<String, dynamic>)
-            NostrEvent.fromJson(eventJson)
-          else
-            throw const FormatException('relay returned malformed query event'),
-      ];
-    } catch (error) {
-      if (error is FormatException) rethrow;
-      throw FormatException('relay returned malformed query event: $error');
-    }
+    return jsonDecode(response.body);
   }
 
   void _activateRateLimitGateFromHttpError(String body) {

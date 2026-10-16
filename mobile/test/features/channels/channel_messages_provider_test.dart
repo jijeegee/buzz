@@ -1241,6 +1241,8 @@ void main() {
       subscription.close();
       await _pumpEventQueue();
       container.listen(threadRepliesProvider(args), (_, _) {});
+      // A retained thread with sends awaiting proof rescans right after reopen.
+      await _pumpEventQueue();
       await container.read(threadRepliesProvider(args).future);
       final targets = session.queryFilters
           .where((f) => f.kinds.contains(EventKind.deletion))
@@ -5390,6 +5392,11 @@ class _RecordingRelaySessionNotifier extends RelaySessionNotifier {
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 8),
   }) async {
+    // A relay without thread windows: the thread query falls back to its
+    // complete scan, which these tests exercise.
+    if (filters.any((filter) => filter.extensions['thread_window'] == true)) {
+      return const [];
+    }
     operations.add('query');
     queryFilters.addAll(filters);
     if (_queryResults.isEmpty) throw Exception('unsupported');

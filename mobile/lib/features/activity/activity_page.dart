@@ -39,6 +39,9 @@ import 'conversation_room.dart';
 import 'dm_resurface.dart';
 import 'inbox_item.dart';
 import 'inbox_local_state_provider.dart';
+import 'inbox_preload.dart';
+import 'inbox_summary.dart';
+import 'inbox_summary_provider.dart';
 import 'inbox_view_preferences_provider.dart';
 import 'inbox_read_state.dart';
 import 'reminders_provider.dart';
@@ -125,6 +128,9 @@ class ActivityPage extends HookConsumerWidget {
         ? ref.watch(conversationInboxItemsProvider)
         : ref.watch(inboxItemsProvider);
     final myPk = ref.watch(myPubkeyProvider);
+    final serverUnread = filter == InboxFilter.conversations
+        ? ref.watch(inboxSummaryUnreadProvider)
+        : const <String, InboxServerUnread>{};
 
     // Cache the last non-empty feed so the UI doesn't flash on rebuild.
     final hasLoadedOnce = useRef(false);
@@ -162,6 +168,14 @@ class ActivityPage extends HookConsumerWidget {
     }, [preloadPubkeysKey]);
 
     final unreadVisibleCount = visibleItems.where((i) => !isDone(i)).length;
+
+    // Rooms and threads behind the top chat-list rows load in the background.
+    final markPreloadInput = useInboxPreload(
+      ref,
+      visibleItems,
+      enabled: filter == InboxFilter.conversations,
+      scrollController: scrollController,
+    );
 
     void markItemRead(InboxItem item) {
       final notifier = ref.read(readStateProvider.notifier);
@@ -345,7 +359,9 @@ class ActivityPage extends HookConsumerWidget {
         ref.read(activityProvider.notifier).refresh(),
         ref.read(remindersProvider.notifier).refresh(),
         if (filter == InboxFilter.conversations)
-          ref.refresh(channelActivityProvider.future),
+          inboxSummaryFailed(ref.read(inboxSummaryProvider))
+              ? ref.refresh(channelActivityProvider.future)
+              : ref.read(inboxSummaryProvider.notifier).refresh(),
       ]);
     }
 
@@ -406,6 +422,7 @@ class ActivityPage extends HookConsumerWidget {
                     final channel = item.item.channelId != null
                         ? channelById[item.item.channelId]
                         : null;
+                    final done = isDone(item);
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -416,7 +433,13 @@ class ActivityPage extends HookConsumerWidget {
                           item: item,
                           channel: channel,
                           currentPubkey: myPk,
-                          isDone: isDone(item),
+                          isDone: done,
+                          serverUnread: inboxRowServerUnread(
+                            item,
+                            serverUnread,
+                            isDone: done,
+                            markerOf: markerOf,
+                          ),
                           onTap: () => unawaited(openItem(item)),
                           onMarkRead: () => markItemRead(item),
                           onMarkUnread: () => markItemUnread(item),
@@ -466,12 +489,15 @@ class ActivityPage extends HookConsumerWidget {
         key: const ValueKey('activity-content-safe-area'),
         top: false,
         bottom: false,
-        child: bodyRidesOverTopSection
-            ? body
-            : Padding(
-                padding: EdgeInsets.only(top: topSectionHeight),
-                child: body,
-              ),
+        child: Listener(
+          onPointerDown: (_) => markPreloadInput(),
+          child: bodyRidesOverTopSection
+              ? body
+              : Padding(
+                  padding: EdgeInsets.only(top: topSectionHeight),
+                  child: body,
+                ),
+        ),
       ),
     );
   }

@@ -6,11 +6,15 @@ import 'package:buzz/features/activity/activity_provider.dart';
 import 'package:buzz/features/activity/compose_drafts_provider.dart';
 import 'package:buzz/features/activity/feed_item.dart';
 import 'package:buzz/features/activity/inbox_item.dart';
+import 'package:buzz/features/activity/inbox_summary.dart';
+import 'package:buzz/features/activity/inbox_summary_provider.dart';
 import 'package:buzz/features/activity/reminders_provider.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_detail_page.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
+import 'package:buzz/features/channels/channel_preload.dart';
 import 'package:buzz/features/channels/message_content.dart';
+import 'package:buzz/features/channels/thread_replies_provider.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:buzz/shared/identity_names/identity_names.dart';
 import 'package:buzz/shared/mentions/agent_identity_provider.dart';
@@ -151,6 +155,7 @@ void main() {
           () => _FakeComposeDraftsNotifier(drafts),
         ),
         remindersProvider.overrideWith(() => _FakeRemindersNotifier(reminders)),
+        channelPreloaderProvider.overrideWith(_RecordingPreloader.new),
         ...overrides,
       ],
       child: MaterialApp(
@@ -749,6 +754,7 @@ void main() {
     await tester.pumpWidget(
       await buildTestable(
         overrides: [
+          inboxSummaryProvider.overrideWith(_UnsupportedSummaryNotifier.new),
           channelActivityProvider.overrideWith((ref) async => const []),
         ],
       ),
@@ -784,6 +790,7 @@ void main() {
       await tester.pumpWidget(
         await buildTestable(
           overrides: [
+            inboxSummaryProvider.overrideWith(_UnsupportedSummaryNotifier.new),
             channelActivityProvider.overrideWith((ref) async => const []),
           ],
         ),
@@ -809,6 +816,89 @@ void main() {
       }
     });
   }
+  testWidgets('Channels + Threads rows show the relay unread count until '
+      'the row is read', (tester) async {
+    final page = parseInboxSummaryResponse({
+      'inbox_summary': 1,
+      'rows': [
+        {
+          'type': 'room',
+          'channel_id': 'ch1',
+          'channel_type': 'stream',
+          'root_id': null,
+          'at': now,
+          'at_us': now * 1000000,
+          'key': 'ch1',
+          'reply_count': null,
+          'unread': 3,
+          'unread_overflow': false,
+          'latest': {
+            'id': 'summary-latest',
+            'pubkey': 'bob_pk',
+            'created_at': now,
+            'kind': 9,
+            'tags': [
+              ['h', 'ch1'],
+            ],
+            'content': 'Latest from the summary',
+          },
+          'root': null,
+        },
+      ],
+      'next': null,
+    });
+    await tester.pumpWidget(
+      await buildTestable(
+        feed: HomeFeedResponse(
+          mentions: const [],
+          needsAction: const [],
+          activity: const [],
+          agentActivity: const [],
+        ),
+        readContexts: {'ch1': now - 100},
+        overrides: [
+          inboxSummaryProvider.overrideWith(
+            () => _SummaryNotifier(
+              InboxSummaryState(
+                rows: page.rows,
+                next: null,
+                sentRead: {'ch1': now - 100},
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('activity-filter-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Channels + Threads'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Latest from the summary'), findsOneWidget);
+    expect(find.text('3 unread'), findsOneWidget);
+    // The room behind the top row loads in the background.
+    expect(_RecordingPreloader.preloadedRooms, contains('ch1'));
+
+    await tester.longPress(
+      find.byKey(const ValueKey('inbox-row-summary-latest')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('Mark as read'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 unread'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('inbox-unread-dot-summary-latest')),
+      findsNothing,
+    );
+  });
 
   testWidgets('filter menu supports accessibility text scaling', (
     tester,
@@ -1122,6 +1212,43 @@ class _PendingActivityNotifier extends ActivityNotifier {
 class _ErrorActivityNotifier extends ActivityNotifier {
   @override
   Future<HomeFeedResponse> build() => Future.error('Connection refused');
+}
+
+/// Records preload requests without touching the relay.
+class _RecordingPreloader extends ChannelPreloader {
+  _RecordingPreloader(super.ref);
+
+  static final List<String> preloadedRooms = [];
+
+  @override
+  bool get canRequest => true;
+
+  @override
+  Future<List<String>> preloadRooms(List<ChannelPreloadTarget> targets) async {
+    preloadedRooms.addAll(targets.map((target) => target.channelId));
+    return const [];
+  }
+
+  @override
+  Future<int> preloadThreads(
+    List<ThreadRepliesArgs> threads, {
+    Future<bool> Function()? beforeRequest,
+  }) async => 0;
+}
+
+class _UnsupportedSummaryNotifier extends InboxSummaryNotifier {
+  @override
+  Future<InboxSummaryState> build() =>
+      Future.error(const InboxSummaryUnsupportedException());
+}
+
+class _SummaryNotifier extends InboxSummaryNotifier {
+  _SummaryNotifier(this._summary);
+
+  final InboxSummaryState _summary;
+
+  @override
+  Future<InboxSummaryState> build() async => _summary;
 }
 
 class _FakeChannelsNotifier extends ChannelsNotifier {

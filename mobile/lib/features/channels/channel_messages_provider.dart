@@ -470,20 +470,20 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
     final rootId = thread.rootId;
     if (rootId != null) {
-      ref.invalidate(
-        threadRepliesProvider(
-          ThreadRepliesArgs(channelId: channelId, rootId: rootId),
-        ),
-      );
+      _markThreadStale(ThreadRepliesArgs(channelId: channelId, rootId: rootId));
     }
     final parentId = thread.parentId;
     if (parentId != null && parentId != rootId) {
-      ref.invalidate(
-        threadRepliesProvider(
-          ThreadRepliesArgs(channelId: channelId, rootId: parentId),
-        ),
+      _markThreadStale(
+        ThreadRepliesArgs(channelId: channelId, rootId: parentId),
       );
     }
+  }
+
+  /// An open thread refreshes now; a closed, retained one when reopened.
+  void _markThreadStale(ThreadRepliesArgs args) {
+    if (!ref.exists(threadRepliesProvider(args))) return;
+    ref.read(threadRepliesStaleProvider(args).notifier).markStale();
   }
 
   bool _mergeWindowEventIntoStore(NostrEvent event, {int? summaryVersion}) {
