@@ -162,6 +162,11 @@ pub struct Db {
     /// not yet probed (or the probe hit a transient error and will retry).
     /// Shared across `Db` clones.
     pub(crate) reader_aurora_identity: std::sync::Arc<std::sync::OnceLock<bool>>,
+    /// Chats server-state switch (relay env `KUZZ_CHAT_STATE_WRITES`, default
+    /// off). On: message inserts also write read positions, thread follows,
+    /// and thread state, and index mentions in the same transaction. Off: the
+    /// message write path is exactly the pre-switch behavior.
+    pub(crate) chat_state_writes: bool,
 }
 
 /// The session that served (or will serve) a routed read, so follow-up
@@ -634,6 +639,7 @@ impl Db {
             fence: std::sync::Arc::new(replica_fence::ReplicaFence::new()),
             replica_read_max_age,
             reader_aurora_identity: std::sync::Arc::new(std::sync::OnceLock::new()),
+            chat_state_writes: false,
         })
     }
 
@@ -868,6 +874,7 @@ impl Db {
             fence: std::sync::Arc::new(replica_fence::ReplicaFence::new()),
             replica_read_max_age: None,
             reader_aurora_identity: std::sync::Arc::new(std::sync::OnceLock::new()),
+            chat_state_writes: false,
         }
     }
 
@@ -887,7 +894,23 @@ impl Db {
             fence: std::sync::Arc::new(replica_fence::ReplicaFence::new()),
             replica_read_max_age: None,
             reader_aurora_identity: std::sync::Arc::new(std::sync::OnceLock::new()),
+            chat_state_writes: false,
         }
+    }
+
+    /// Turn the Chats server-state writes on or off (default off).
+    ///
+    /// See the `chat_state` store module for what is written. Rollback is
+    /// turning this off: the additive columns and tables are then unused.
+    #[must_use]
+    pub fn with_chat_state_writes(mut self, enabled: bool) -> Self {
+        self.chat_state_writes = enabled;
+        self
+    }
+
+    /// Whether the Chats server-state writes are on.
+    pub fn chat_state_writes(&self) -> bool {
+        self.chat_state_writes
     }
 
     /// Test hook: set the head-fetch routing budget (Predicate A), which
