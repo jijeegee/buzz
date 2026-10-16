@@ -3589,6 +3589,9 @@ async fn ingest_event_inner(
     // DM members whose hidden DM this message brought back (chat-state switch
     // on only); their visibility snapshot is republished after commit.
     let mut unhidden_dm_members: Vec<Vec<u8>> = Vec::new();
+    // The message closed or reopened its thread (chat-state switch on only);
+    // the author's other devices get a chat-state ping after commit.
+    let mut thread_close_changed = false;
     let (stored_event, was_inserted) = if workflow_deletion {
         // A single commit owns public acceptance, domain mutation, and dispatch.
         // Failure rolls everything back; identical concurrent requests cannot
@@ -3670,6 +3673,7 @@ async fn ingest_event_inner(
         {
             Ok((stored_event, was_inserted, chat_state)) => {
                 unhidden_dm_members = chat_state.unhidden_dm_members;
+                thread_close_changed = chat_state.thread_close_changed;
                 (stored_event, was_inserted)
             }
             Err(e) => {
@@ -3725,6 +3729,17 @@ async fn ingest_event_inner(
                 .await
         {
             warn!(event_id = %event_id_hex, "DM visibility snapshot after unhide failed: {e}");
+        }
+    }
+    if thread_close_changed {
+        if let Err(e) = crate::handlers::side_effects::publish_chat_state_ping(
+            tenant,
+            state,
+            &event.pubkey.to_bytes(),
+        )
+        .await
+        {
+            warn!(event_id = %event_id_hex, "chat-state ping after thread close failed: {e}");
         }
     }
 
