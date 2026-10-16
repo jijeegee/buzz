@@ -79,6 +79,32 @@ Cursor grammar: `until` MUST be a non-negative integer of unix seconds represent
 
 Offset/page-number pagination MUST NOT be honored on the window path.
 
+### Newer direction
+
+A relay that advertises `nip-cw-newer` in NIP-11 `supported_extensions` also
+pages toward the present from an anchor (opening at a first unread or a linked
+message, then scrolling down):
+
+```jsonc
+{ "top_level": true, "#h": ["<channel-id>"], "limit": 50,
+  "since": 1751500000,           // ┐ composite newer cursor —
+  "after_id": "<64-hex id>" }    // ┘ both, never mixed with until/before_id
+```
+
+- Rows strictly after the cursor in the mirrored order `(created_at ASC, id
+  DESC)`, oldest first. An older page and a newer page from the same cursor
+  together cover every other row exactly once.
+- `after_id` without `since`, a malformed `after_id`, or `since`/`after_id`
+  together with `until`/`before_id` MUST be rejected. `since` without
+  `after_id` keeps its existing meaning on this path (ignored; head request).
+- The `kind:39006` `d` suffix is `after:<created_at>:<event_id>`, and the
+  content adds `"direction":"newer"`. Older pages keep their exact bounds.
+- `has_more: false` means "newest as of this query"; the client continues
+  with its live subscription. A timestamp-only anchor (a read marker) uses the
+  cursor `(ts, "f"*64)`: newer then returns every row at or after `ts`.
+- A replica's older-cursor coverage proof does not cover rows above the
+  cursor; newer pages MUST be served with head-page freshness.
+
 ## Channel-mode Top-level Classification
 
 The row set must be reproducible from wire data alone, so the reply/top-level distinction is defined by tags, not by any relay's storage schema.
@@ -245,7 +271,11 @@ four entries from `9`, `40002`, `45001`, and `45003`; relays normalize them to
 a sorted, distinct list. `limit` defaults to 50 and MUST be 1–200;
 `depth_limit` defaults to 100 and MUST be 1–100; `include_aux` defaults to
 false. A continuation MUST provide both `until` and `before_id`, or neither for
-the head page. Unknown fields, malformed values, and mixing thread windows with
+the head page. A relay advertising `nip-cw-newer` also accepts `since` +
+`after_id` (both, never with `until`/`before_id`): replies strictly after
+that cursor, oldest first in `(created_at ASC, id DESC)` order, with
+`"direction":"newer"` in the bounds content and binding. A newer request
+always carries a cursor. Unknown fields, malformed values, and mixing thread windows with
 another query mode MUST be rejected. A query MAY contain at most four window
 filters.
 
@@ -321,7 +351,8 @@ The binding is SHA-256 over compact UTF-8 JSON of this ordered array:
 
 ```jsonc
 ["tw",1,"older","<host>","<reader hex>","<channel>","<root>",50,100,[9,40002],null,true]
-// host, reader, channel, root, limit, depth, sorted kinds, request cursor, include_aux
+// direction ("older" or "newer"), host, reader, channel, root, limit, depth,
+// sorted kinds, request cursor, include_aux
 // cursor is null or [<seconds>,"<lowercase id>"]
 ```
 

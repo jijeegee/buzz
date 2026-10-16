@@ -1155,6 +1155,31 @@ async fn channel_window_routes_head_to_writer_and_cursor_pages_to_replica() {
         "cursor page must be served by the replica"
     );
 
+    // Newer page → writer: the replica's cursor proof covers only rows at or
+    // below the cursor, so rows above it (`fresh`) must come from the writer.
+    let m1_cursor = (
+        chrono::DateTime::from_timestamp(base as i64, 0).unwrap(),
+        m1.id.as_bytes().to_vec(),
+    );
+    let (newer, _) = db
+        .get_channel_window_newer_with_session(cid, channel, 10, m1_cursor, None)
+        .await
+        .expect("newer window");
+    let newer_contents: Vec<String> = newer
+        .rows
+        .iter()
+        .map(|r| r.stored_event.event.content.clone())
+        .collect();
+    assert_eq!(
+        newer_contents,
+        vec![
+            "m2".to_string(),
+            "m3".to_string(),
+            "fresh-writer-only".to_string()
+        ],
+        "newer page must be served by the writer"
+    );
+
     drop_scratch_db(&admin, replica, &rname).await;
     drop_scratch_db(&admin, writer, &wname).await;
 }

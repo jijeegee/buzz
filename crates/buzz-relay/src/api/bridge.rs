@@ -444,7 +444,12 @@ enum BeforeId {
 }
 
 fn extract_before_id(raw: &Value) -> BeforeId {
-    let Some(value) = raw.get("before_id") else {
+    extract_cursor_id(raw, "before_id")
+}
+
+/// The id half of a composite cursor under `key` (`before_id` or `after_id`).
+fn extract_cursor_id(raw: &Value, key: &str) -> BeforeId {
+    let Some(value) = raw.get(key) else {
         return BeforeId::Absent;
     };
     match value
@@ -758,14 +763,47 @@ async fn handle_channel_window_filter(
         BeforeId::Valid(id) => Some(id),
         BeforeId::Absent => None,
     };
-    let cursor = match (filter.until, before_id) {
+    let after_id = match extract_cursor_id(raw, "after_id") {
+        BeforeId::Malformed => {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "top_level: after_id must be a 64-hex event id",
+            ));
+        }
+        BeforeId::Valid(id) => Some(id),
+        BeforeId::Absent => None,
+    };
+    // `since` + `after_id` pages toward the present, oldest first. `since`
+    // alone stays ignored as before, so existing head requests are unchanged.
+    let newer = after_id.is_some();
+    if newer && (before_id.is_some() || filter.until.is_some()) {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "top_level: until/before_id and since/after_id conflict",
+        ));
+    }
+    let (bound, id) = if newer {
+        (filter.since, after_id)
+    } else {
+        (filter.until, before_id)
+    };
+    let cursor = match (bound, id) {
         (Some(ts), Some(id)) => {
             let ts = chrono::DateTime::from_timestamp(ts.as_secs() as i64, 0).ok_or_else(|| {
-                api_error(StatusCode::BAD_REQUEST, "top_level: until is out of range")
+                api_error(
+                    StatusCode::BAD_REQUEST,
+                    "top_level: cursor time is out of range",
+                )
             })?;
             Some((ts, id))
         }
         (None, None) => None,
+        _ if newer => {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "top_level newer cursor requires both since and after_id",
+            ));
+        }
         _ => {
             return Err(api_error(
                 StatusCode::BAD_REQUEST,
@@ -784,17 +822,34 @@ async fn handle_channel_window_filter(
         .as_ref()
         .map(|ks| ks.iter().map(|k| k.as_u16() as u32).collect());
 
-    let (window, mut session) = state
-        .db
-        .get_channel_window_with_session(
-            tenant.community(),
-            ch_id,
-            limit,
-            cursor.clone(),
-            kind_filter.as_deref(),
-        )
-        .await
-        .map_err(|e| internal_error(&format!("channel window error: {e}")))?;
+    let window = match (&cursor, newer) {
+        (Some(cursor), true) => {
+            state
+                .db
+                .get_channel_window_newer_with_session(
+                    tenant.community(),
+                    ch_id,
+                    limit,
+                    cursor.clone(),
+                    kind_filter.as_deref(),
+                )
+                .await
+        }
+        _ => {
+            state
+                .db
+                .get_channel_window_with_session(
+                    tenant.community(),
+                    ch_id,
+                    limit,
+                    cursor.clone(),
+                    kind_filter.as_deref(),
+                )
+                .await
+        }
+    };
+    let (window, mut session) =
+        window.map_err(|e| internal_error(&format!("channel window error: {e}")))?;
 
     // 1. Rows, in keyset order.
     let mut row_ids_hex = Vec::with_capacity(window.rows.len());
@@ -886,18 +941,32 @@ async fn handle_channel_window_filter(
     // 4. Window bounds: exactly one 39006 per window response — the only
     //    authority on exhaustion. `rows < limit` proves nothing on an
     //    exact-multiple final page.
+    //    A newer page names its direction in both `d` and content; an older
+    //    page's bounds stay byte-identical to before the newer direction.
     let cursor_suffix = match &cursor {
+        Some((ts, id)) if newer => format!("after:{}:{}", ts.timestamp(), hex::encode(id)),
         Some((ts, id)) => format!("{}:{}", ts.timestamp(), hex::encode(id)),
         None => "head".to_owned(),
     };
     let d_val = format!("{ch_hex}:{cursor_suffix}");
-    let content = serde_json::json!({
-        "has_more": window.has_more,
-        "next_cursor": window.next_cursor.as_ref().map(|(ts, id)| serde_json::json!({
+    let next_cursor = window.next_cursor.as_ref().map(|(ts, id)| {
+        serde_json::json!({
             "created_at": ts.timestamp(),
             "id": hex::encode(id),
-        })),
+        })
     });
+    let content = if newer {
+        serde_json::json!({
+            "direction": "newer",
+            "has_more": window.has_more,
+            "next_cursor": next_cursor,
+        })
+    } else {
+        serde_json::json!({
+            "has_more": window.has_more,
+            "next_cursor": next_cursor,
+        })
+    };
     let tags = vec![parse_tag(["d", &d_val])?, parse_tag(["h", &ch_hex])?];
     let overlay = sign_overlay(KIND_WINDOW_BOUNDS, tags, content.to_string())?;
     let v = serde_json::to_value(&overlay)
@@ -4009,6 +4078,21 @@ mod postgres_tests {
     fn extract_before_id_absent() {
         let raw = serde_json::json!({});
         assert!(matches!(extract_before_id(&raw), BeforeId::Absent));
+    }
+
+    #[test]
+    fn extract_cursor_id_reads_after_id() {
+        let raw = serde_json::json!({ "after_id": "b".repeat(64) });
+        assert!(matches!(
+            extract_cursor_id(&raw, "after_id"),
+            BeforeId::Valid(_)
+        ));
+        assert!(matches!(extract_before_id(&raw), BeforeId::Absent));
+        let bad = serde_json::json!({ "after_id": "b".repeat(63) });
+        assert!(matches!(
+            extract_cursor_id(&bad, "after_id"),
+            BeforeId::Malformed
+        ));
     }
 
     #[test]

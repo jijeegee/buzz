@@ -171,7 +171,7 @@ impl Fixture {
         );
         let content: Value = serde_json::from_str(&event.content).unwrap();
         assert_eq!(content["version"], 1);
-        assert_eq!(content["direction"], "older");
+        assert_eq!(content["direction"], request.direction.as_str());
         assert_eq!(
             content["has_more"].as_bool().unwrap(),
             !content["next_cursor"].is_null()
@@ -309,6 +309,22 @@ async fn thread_window_real_query_signed_bounds_and_sentinel_aux() {
     let tail = f.query(&next).await;
     assert_eq!(f.bounds(&tail, &next)["next_cursor"], Value::Null);
     assert_eq!(ids(&tail, Some(9)), [replies[0].id.to_hex()]);
+    // Newer from the same cursor: every later reply, oldest first, signed as
+    // a newer page with its own binding.
+    let mut newer = filter.clone();
+    newer["since"] = bounds["next_cursor"]["created_at"].clone();
+    newer["after_id"] = bounds["next_cursor"]["id"].clone();
+    let forward = f.query(&newer).await;
+    let forward_bounds = f.bounds(&forward, &newer);
+    assert_eq!(forward_bounds["direction"], "newer");
+    assert_eq!(forward_bounds["has_more"], false);
+    let expected: Vec<String> = replies[2..].iter().map(|r| r.id.to_hex()).collect();
+    assert_eq!(ids(&forward, Some(9)), expected);
+    let mut mixed = newer.clone();
+    mixed["until"] = next["until"].clone();
+    mixed["before_id"] = next["before_id"].clone();
+    let (status, _) = f.post(&f.keys, "/query", json!([mixed])).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     // Actual mobile sentinel + unbounded depth remain valid ONLY in legacy.
     // Both cursor spellings and absent/false opt-in preserve ASC/ASC and no bounds.
     for flag in [None, Some(false)] {
@@ -532,3 +548,86 @@ async fn thread_window_router_aux_row_cap_and_corrupt_page() {
 mod failure_postgres_tests;
 
 mod review_postgres_tests;
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn channel_window_newer_pages_oldest_first_with_signed_bounds() {
+    let f = Fixture::new().await;
+    let base = f.root.created_at.as_secs();
+    let mut later = Vec::new();
+    for n in 1..=3 {
+        let message = event(&f.keys, f.channel, 9, &format!("later {n}"), None, base + n);
+        f.state
+            .db
+            .insert_event(f.community, &message, Some(f.channel))
+            .await
+            .unwrap();
+        later.push(message);
+    }
+    let window_bounds = |response: &Value| -> (String, Value) {
+        let bounds = response
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| v["kind"] == 39006)
+            .collect::<Vec<_>>();
+        assert_eq!(bounds.len(), 1, "{response}");
+        let event: Event = serde_json::from_value(bounds[0].clone()).unwrap();
+        event.verify().unwrap();
+        let d = event
+            .tags
+            .iter()
+            .find(|tag| tag.kind() == nostr::TagKind::d())
+            .and_then(|tag| tag.content())
+            .unwrap()
+            .to_string();
+        (d, serde_json::from_str(&event.content).unwrap())
+    };
+
+    // Older pages keep their bounds shape: no direction, `<ch>:head`.
+    let head = json!({"top_level":true,"#h":[f.channel],"kinds":[9],"limit":2});
+    let page = f.query(&head).await;
+    assert_eq!(
+        ids(&page, Some(9)),
+        [later[2].id.to_hex(), later[1].id.to_hex()]
+    );
+    let (d, content) = window_bounds(&page);
+    assert_eq!(d, format!("{}:head", f.channel));
+    assert!(content.get("direction").is_none(), "{content}");
+
+    // Newer from the root: oldest first, two at a time.
+    let mut newer = json!({"top_level":true,"#h":[f.channel],"kinds":[9],"limit":2,
+        "since":base, "after_id":f.root.id.to_hex()});
+    let page = f.query(&newer).await;
+    assert_eq!(
+        ids(&page, Some(9)),
+        [later[0].id.to_hex(), later[1].id.to_hex()]
+    );
+    let (d, content) = window_bounds(&page);
+    assert_eq!(
+        d,
+        format!("{}:after:{base}:{}", f.channel, f.root.id.to_hex())
+    );
+    assert_eq!(content["direction"], "newer");
+    assert_eq!(content["has_more"], true);
+    assert_eq!(content["next_cursor"]["id"], later[1].id.to_hex());
+    newer["since"] = content["next_cursor"]["created_at"].clone();
+    newer["after_id"] = content["next_cursor"]["id"].clone();
+    let page = f.query(&newer).await;
+    assert_eq!(ids(&page, Some(9)), [later[2].id.to_hex()]);
+    let (_, content) = window_bounds(&page);
+    assert_eq!(content["has_more"], false);
+    assert_eq!(content["next_cursor"], Value::Null);
+
+    for bad in [
+        json!({"top_level":true,"#h":[f.channel],"kinds":[9],
+            "after_id":f.root.id.to_hex()}),
+        json!({"top_level":true,"#h":[f.channel],"kinds":[9],"since":base,
+            "after_id":f.root.id.to_hex(),"until":base,"before_id":f.root.id.to_hex()}),
+        json!({"top_level":true,"#h":[f.channel],"kinds":[9],"since":base,
+            "after_id":"zz"}),
+    ] {
+        let (status, _) = f.post(&f.keys, "/query", json!([bad])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+}

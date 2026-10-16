@@ -54,6 +54,14 @@ A standard bridge filter plus extension fields:
 
 `page`/OFFSET is not honored on the window path.
 
+`since` + `after_id` (both, never with `until`/`before_id`) pages toward
+the present instead: rows strictly after that cursor, oldest first
+(`created_at ASC, id DESC`). The bounds `d` suffix is
+`after:<created_at>:<id>` and its content adds `"direction":"newer"`.
+Newer pages route like head pages (writer by default), since a replica's
+cursor proof only covers rows at or below the cursor. Advertised as
+`nip-cw-newer` in NIP-11. See docs/nips/NIP-CW.md §Newer direction.
+
 ## Top-level predicate
 
 A row is top-level iff `depth IS NULL OR depth = 0 OR (depth = 1 AND
