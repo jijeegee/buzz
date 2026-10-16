@@ -37,10 +37,22 @@ function load(): Promise<void> {
   return loading;
 }
 
+function reloadOnFocus() {
+  void load();
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
-  if (snapshot.isPending) void load();
-  return () => listeners.delete(listener);
+  // Agents can end a dead session on their own; re-read on every mount and
+  // whenever the window regains focus so Settings never shows a stale state.
+  void load();
+  if (listeners.size === 1) window.addEventListener("focus", reloadOnFocus);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      window.removeEventListener("focus", reloadOnFocus);
+    }
+  };
 }
 
 export function useChatGptPlanStatus(): Snapshot {

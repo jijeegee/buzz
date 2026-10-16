@@ -99,13 +99,6 @@ impl Credentials {
             .as_deref()
             .filter(|t| !t.is_empty() && self.expires_at > now_secs() + REFRESH_LEEWAY_SECS)
     }
-
-    fn clear_tokens(&mut self) {
-        self.access_token = None;
-        self.refresh_token = None;
-        self.expires_at = 0;
-        self.scopes.clear();
-    }
 }
 
 /// What the desktop shows. Never contains a token.
@@ -189,6 +182,20 @@ impl ChatGptLogin {
 
     fn lock_path(&self) -> PathBuf {
         self.dir.join("credentials.lock")
+    }
+
+    /// Marks that the one-time "You're using your ChatGPT plan" notice ran.
+    fn notice_path(&self) -> PathBuf {
+        self.dir.join("plan-notice-shown")
+    }
+
+    /// Drop the whole credential record (tokens and registration).
+    fn forget(&self) -> Result<(), AgentError> {
+        match fs::remove_file(self.credentials_path()) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(auth_error("could not clear the sign-in")),
+        }
     }
 
     fn host_id_path(&self) -> PathBuf {
@@ -277,8 +284,11 @@ impl ChatGptLogin {
     /// Run the browser sign-in and save the result.
     pub async fn sign_in(&self, opener: &dyn BrowserOpener) -> Result<ChatGptSignIn, AgentError> {
         let host_id = self.host_id()?;
-        let saved = self.read();
-        let first_sign_in = saved.is_none();
+        // Re-authorize the saved client only while signed in (to re-request
+        // plan consent). After sign-out or a dead session a fresh registration
+        // lets the user pick any ChatGPT account.
+        let saved = self.read().filter(Credentials::signed_in);
+        let first_sign_in = !self.notice_path().exists();
         let attempt = self.authorize(opener, &host_id, saved.as_ref()).await?;
         let token = self
             .exchange(
@@ -313,6 +323,9 @@ impl ChatGptLogin {
             .await
             .map_err(|_| auth_error("another sign-in is in progress"))?;
         self.write(&creds)?;
+        if creds.plan_enabled() {
+            let _ = fs::write(self.notice_path(), b"");
+        }
         Ok(ChatGptSignIn {
             status: ChatGptStatus {
                 signed_in: true,
@@ -329,15 +342,14 @@ impl ChatGptLogin {
         let _lock = acquire_auth_lock(&self.lock_path(), Instant::now() + LOCK_TIMEOUT)
             .await
             .map_err(|_| auth_error("the sign-in is busy; try again"))?;
-        let Some(mut creds) = self.read() else {
+        let Some(creds) = self.read() else {
             return Ok(true);
         };
         let mut revoked = true;
         if let Some(refresh) = creds.refresh_token.clone() {
             revoked = self.revoke(&creds.client_id, &refresh).await;
         }
-        creds.clear_tokens();
-        self.write(&creds)?;
+        self.forget()?;
         Ok(revoked)
     }
 
@@ -593,6 +605,14 @@ impl ChatGptLogin {
         // Read the shared file on every call (it is small): another process
         // may have refreshed, and a desktop sign-out must take effect at once.
         let creds = self.read().ok_or_else(sign_in_required)?;
+        if !creds.signed_in() {
+            return Err(sign_in_required());
+        }
+        if !creds.plan_enabled() {
+            return Err(auth_error(
+                "ChatGPT plan use was not allowed; sign in again and allow it",
+            ));
+        }
         if let Some(token) = creds.fresh_access().filter(|t| Some(*t) != rejected) {
             let token = token.to_owned();
             return Ok(token);
@@ -619,8 +639,8 @@ impl ChatGptLogin {
                 Ok(access)
             }
             Refresh::Unusable => {
-                creds.clear_tokens();
-                self.write(&creds)?;
+                // Dead session or client: the next sign-in registers afresh.
+                self.forget()?;
                 Err(auth_error(
                     "the ChatGPT sign-in expired or was disconnected; sign in again",
                 ))
@@ -703,6 +723,8 @@ fn is_unusable_refresh(code: &str) -> bool {
             | "refresh_token_expired"
             | "refresh_token_invalidated"
             | "refresh_token_reused"
+            // The registered client itself is gone: register again.
+            | "invalid_client"
     )
 }
 
@@ -888,16 +910,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dead_refresh_token_clears_tokens_but_keeps_registration() {
+    async fn dead_refresh_token_forgets_the_session() {
         let dir = tempfile::tempdir().unwrap();
         let (base, _hits, _server) = token_server(json!({"error":"invalid_grant"}), 400).await;
         let login = ChatGptLogin::for_test(dir.path(), &base);
         login.write(&seeded(now_secs())).unwrap();
         let err = login.bearer().await.unwrap_err();
         assert!(matches!(err, AgentError::LlmAuth(_)), "{err:?}");
-        let saved = login.read().unwrap();
-        assert_eq!(saved.client_id, "oaiapp_test");
-        assert!(!saved.signed_in());
+        // The next sign-in registers afresh, so any account can be chosen.
+        assert!(login.read().is_none());
         assert!(!login.status().signed_in);
     }
 
@@ -931,9 +952,18 @@ mod tests {
         let login = ChatGptLogin::for_test(dir.path(), "http://127.0.0.1:9");
         login.write(&seeded(now_secs() + 3600)).unwrap();
         assert!(!login.sign_out().await.unwrap());
-        let saved = login.read().unwrap();
-        assert!(!saved.signed_in());
-        assert_eq!(saved.subject, "user-1");
+        assert!(login.read().is_none());
+        assert!(matches!(login.bearer().await, Err(AgentError::LlmAuth(_))));
+    }
+
+    #[tokio::test]
+    async fn fresh_token_without_plan_scope_is_never_used() {
+        let dir = tempfile::tempdir().unwrap();
+        let login = ChatGptLogin::for_test(dir.path(), "http://127.0.0.1:9");
+        let mut creds = seeded(now_secs() + 3600);
+        creds.scopes.retain(|s| s != PLAN_SCOPE);
+        login.write(&creds).unwrap();
+        assert!(matches!(login.bearer().await, Err(AgentError::LlmAuth(_))));
     }
 
     #[test]
@@ -973,6 +1003,7 @@ mod tests {
         ] {
             assert!(is_unusable_refresh(code));
         }
-        assert!(!is_unusable_refresh("invalid_client"));
+        assert!(is_unusable_refresh("invalid_client"));
+        assert!(!is_unusable_refresh("invalid_request"));
     }
 }
