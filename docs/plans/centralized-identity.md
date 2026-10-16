@@ -281,9 +281,9 @@ S → C: {principal_id, access: bzs_, refresh: bzr_, expires_in} (web은 refresh
 | Desktop (Tauri) | 시스템 브라우저(`tauri-plugin-opener`) | `http://127.0.0.1:<임시포트>/cb` (loopback, RFC 8252 §7.3) | Rust가 로그인 동안만 loopback 리스너를 띄운다. 응답은 "Kuzz로 돌아가세요" 정적 HTML. 5분 타임아웃 |
 | Mobile (Flutter) | `flutter_web_auth_2`(iOS `ASWebAuthenticationSession`, Android Custom Tabs) | `app.kuzz://auth/cb` (custom scheme) | PKCE 동일 |
 | CLI (`kuzz auth login`) | 시스템 브라우저 | `http://127.0.0.1:<임시포트>/cb` | Desktop과 동일 loopback. `devices.platform='cli'` |
-| Web (`web/`) | 같은 탭 리다이렉트 | `https://<relay-origin>/auth/cb` | 완료 후 refresh는 `Set-Cookie: buzz_refresh=...; HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh`, access는 JS 메모리 |
+| Web (`web/`) | 같은 탭 리다이렉트 | `https://<relay-origin>/auth/cb` | 완료 후 refresh는 `Set-Cookie: kuzz_refresh=...; HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh`, access는 JS 메모리 |
 
-Web 쿠키 제약: `web/`은 relay가 직접 서빙하므로(`router.rs:406 ServeDir`) same-origin이고 `SameSite=Strict`가 성립한다. web을 별도 origin에 두려면 `SameSite=None` + CORS 허용 목록 + CSRF 토큰이 추가로 필요하며 이 계획 범위 밖이다. web의 `/auth/refresh` 응답 본문은 refresh를 **생략**하고 `Set-Cookie`로만 회전시킨다. `POST /auth/logout`은 `Set-Cookie: buzz_refresh=; Max-Age=0`로 쿠키를 지운다.
+Web 쿠키 제약: `web/`은 relay가 직접 서빙하므로(`router.rs:406 ServeDir`) same-origin이고 `SameSite=Strict`가 성립한다. web을 별도 origin에 두려면 `SameSite=None` + CORS 허용 목록 + CSRF 토큰이 추가로 필요하며 이 계획 범위 밖이다. web의 `/auth/refresh` 응답 본문은 refresh를 **생략**하고 `Set-Cookie`로만 회전시킨다. `POST /auth/logout`은 `Set-Cookie: kuzz_refresh=; Max-Age=0`로 쿠키를 지운다.
 
 서버가 허용하는 `redirect_uri`: `http://127.0.0.1:*/cb`(desktop, cli), 설정된 custom scheme(mobile), relay origin(web). 그 외는 400. `AUTH_TOKEN_ENABLED=false`(Phase 0 기본)이면 `/auth/*` 전체(OIDC 포함)가 라우팅되지 않아 미지 경로와 똑같이 응답하고(현재 fallback 403) WS 토큰 AUTH도 거절된다.
 provider 확장: `AUTH_OIDC_PROVIDERS=google[,apple]` 설정과 `identities.provider` CHECK 확장만으로 Apple을 추가한다. 경로는 `/auth/oidc/{provider}/start|callback`으로 provider가 경로 변수다.

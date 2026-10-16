@@ -20,7 +20,7 @@ export function extractPromptText(payload: Record<string, unknown>): string {
 }
 
 const SEMANTIC_PROMPT_SECTION_START =
-  /^\s*<(?:workspace|base|agent-instructions|system|team-instructions|core-memory|huddle-instructions|channel-canvas|context|thread-context|conversation-context|kuzz-event|kuzz-events|what-you-were-working-on|new-message-arrived-while-you-were-working|previous-request-interrupted-before-completion|new-request-supersedes-previous)(?:\s[^>]*)?>/;
+  /^\s*<(?:workspace|base|agent-instructions|system|team-instructions|core-memory|huddle-instructions|channel-canvas|context|thread-context|conversation-context|kuzz-event|kuzz-events|buzz-event|buzz-events|what-you-were-working-on|new-message-arrived-while-you-were-working|previous-request-interrupted-before-completion|new-request-supersedes-previous)(?:\s[^>]*)?>/; // kuzz-rename: keep
 
 /**
  * Parse ACP prompt blocks without losing the connector-facing slash-command
@@ -418,6 +418,9 @@ function splitSemanticTurnSections(text: string): {
     "conversation-context",
     "kuzz-event",
     "kuzz-events",
+    // Transcripts saved before the rename. kuzz-rename: keep
+    "buzz-event", // kuzz-rename: keep
+    "buzz-events", // kuzz-rename: keep
     "what-you-were-working-on",
     "new-message-arrived-while-you-were-working",
     "previous-request-interrupted-before-completion",
@@ -474,8 +477,10 @@ function semanticTurnTitle(
       return `${label} (${attributes.included} of ${attributes.total} messages${truncated})`;
     }
     case "kuzz-event":
+    case "buzz-event": // kuzz-rename: keep
       return attributes.type ? `Kuzz event: ${attributes.type}` : "Kuzz event";
     case "kuzz-events":
+    case "buzz-events": // kuzz-rename: keep
       return `Kuzz events — ${attributes.count} events`;
     case "what-you-were-working-on":
       return "What you were working on";

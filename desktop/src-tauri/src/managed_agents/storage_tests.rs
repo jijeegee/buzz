@@ -830,3 +830,18 @@ fn install_log_filename_accepts_ordinary_runtime_ids() {
         );
     }
 }
+
+#[test]
+fn legacy_sidecar_names_are_upgraded_on_load() {
+    let stored = r#"[{"acp_command":"buzz-acp","agent_command":"buzz-agent","mcp_command":"buzz-dev-mcp","name":"buzz-acp-fan"}]"#; // kuzz-rename: keep
+    let upgraded = super::upgrade_legacy_sidecar_names(stored);
+    assert_eq!(
+        upgraded,
+        r#"[{"acp_command":"kuzz-acp","agent_command":"kuzz-agent","mcp_command":"kuzz-dev-mcp","name":"buzz-acp-fan"}]"# // kuzz-rename: keep
+    );
+    let current = r#"{"acp_command":"kuzz-acp"}"#;
+    assert!(matches!(
+        super::upgrade_legacy_sidecar_names(current),
+        std::borrow::Cow::Borrowed(_)
+    ));
+}

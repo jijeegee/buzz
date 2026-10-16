@@ -41,7 +41,6 @@ buzz.push.delegate.v1
 buzz.push.rotate-endpoint.v1
 buzz.push.revoke-delegation.v1
 buzz.push.revoke-installation.v1
-buzz_refresh
 # Crypto domain separation
 buzz/custodial-key-backup/v1
 buzz/nsec-backup/v1

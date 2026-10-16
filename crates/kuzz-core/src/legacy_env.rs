@@ -1,7 +1,7 @@
 //! Accept environment variables written under the product's former name.
 //!
 //! Deployed servers, saved agent settings and build scripts still set
-//! `BUZZ_*` variables. Each binary copies them to their `KUZZ_*` names at
+//! variables under the former prefix. Each binary copies them to their `KUZZ_*` names at
 //! startup so both spellings keep working.
 
 /// Prefix used before the rename. kuzz-rename: keep
@@ -16,7 +16,7 @@ pub fn current_name(name: &str) -> Option<String> {
         .map(|rest| format!("{PREFIX}{rest}"))
 }
 
-/// Copies every `BUZZ_*` variable to its `KUZZ_*` name unless the new name is
+/// Copies every former-prefix variable to its `KUZZ_*` name unless the new name is
 /// already set. Call from a synchronous `main` before any thread starts.
 pub fn adopt_legacy_env() {
     let pending: Vec<(String, std::ffi::OsString)> = std::env::vars_os()

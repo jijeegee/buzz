@@ -335,7 +335,7 @@ function classifyDeveloperToolName(value: string | null | undefined) {
   if (!value) return null;
 
   const normalized = normalizeToolNameText(value);
-  const base = normalized.replace(/^kuzz_dev_mcp_/, "");
+  const base = normalized.replace(/^(?:kuzz|buzz)_dev_mcp_/, ""); // kuzz-rename: keep
 
   if (base === "shell" || normalized.endsWith("_shell")) return "shell";
   if (base === "read_file" || normalized.endsWith("_read_file"))

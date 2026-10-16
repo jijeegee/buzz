@@ -6,7 +6,7 @@ fn main() {
     }
 }
 
-/// Copies former `KUZZ_*` variables to their `KUZZ_*` names (see
+/// Copies former-prefix variables to their `KUZZ_*` names (see
 /// `kuzz_core::legacy_env`; this crate does not depend on kuzz-core).
 fn adopt_legacy_env() {
     let pending: Vec<(String, std::ffi::OsString)> = std::env::vars_os()

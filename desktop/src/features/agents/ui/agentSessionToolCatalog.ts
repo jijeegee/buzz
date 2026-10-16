@@ -209,7 +209,7 @@ export function normalizeToolName(title: string): string {
   const knownName = findKuzzToolName(title, true);
   if (knownName) return knownName;
 
-  const normalized = normalizeToolNameText(title).replace(/^kuzz_/, "");
+  const normalized = normalizeToolNameText(title).replace(/^(?:kuzz|buzz)_/, ""); // kuzz-rename: keep
   return normalized.match(/[a-z][a-z0-9_]+/)?.[0] ?? normalized;
 }
 

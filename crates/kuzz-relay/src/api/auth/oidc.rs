@@ -560,7 +560,7 @@ pub(super) fn issue_session_tokens(
 /// `Set-Cookie` for the web refresh token (HttpOnly, path-scoped).
 pub(super) fn refresh_cookie(value: &str, max_age_secs: u64) -> String {
     format!(
-        "buzz_refresh={value}; HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh; Max-Age={max_age_secs}"
+        "kuzz_refresh={value}; HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh; Max-Age={max_age_secs}"
     )
 }
 

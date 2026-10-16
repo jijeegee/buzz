@@ -41,7 +41,7 @@ fn cookie_refresh(headers: &HeaderMap) -> Option<String> {
         .iter()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|value| value.split(';'))
-        .filter_map(|pair| pair.trim().strip_prefix("buzz_refresh="))
+        .filter_map(|pair| pair.trim().strip_prefix("kuzz_refresh="))
         .map(str::to_owned)
         .find(|value| !value.is_empty())
 }
@@ -82,7 +82,7 @@ async fn cached_rotation(
     }
 }
 
-/// `POST /auth/refresh` `{refresh}` (or the web `buzz_refresh` cookie).
+/// `POST /auth/refresh` `{refresh}` (or the web `kuzz_refresh` cookie).
 ///
 /// Order (plan §3.6): replay cache → DB rotation. A consumed token presented
 /// again after the replay window revokes the whole session (`refresh_reused`).
