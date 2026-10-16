@@ -339,7 +339,8 @@ async fn first_reply_follows_author_root_author_and_mentions_of_members_only() {
     assert_eq!(state.last_seq, Some(first_seq));
     assert!(state.closed_at.is_none());
 
-    // Root author and root mentions are seeded on the first reply only.
+    // A missing root-author row is seeded again by a later reply (the first
+    // reply may have been a close marker, which seeds nothing).
     sqlx::query("DELETE FROM thread_follows WHERE community_id = $1 AND pubkey = $2")
         .bind(f.scope.as_uuid())
         .bind(pk(&owner))
@@ -347,7 +348,10 @@ async fn first_reply_follows_author_root_author_and_mentions_of_members_only() {
         .await
         .expect("drop root author row");
     f.reply(room, &root, &replier, 120, Vec::new()).await;
-    assert_eq!(f.follow(&root, &owner).await, None);
+    assert_eq!(
+        f.follow(&root, &owner).await.map(|row| row.state),
+        Some("auto".into())
+    );
 }
 
 #[tokio::test]

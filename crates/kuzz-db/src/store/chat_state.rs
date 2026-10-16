@@ -210,7 +210,7 @@ async fn apply_reply(
     marker: Option<ThreadMarker>,
 ) -> Result<()> {
     // The root must be a live event in this same channel. Its author and
-    // mentions seed the first reply's follows.
+    // mentions seed follows.
     let root_row = sqlx::query(
         "SELECT pubkey, tags FROM events \
          WHERE community_id = $1 AND id = $2 AND channel_id = $3 AND deleted_at IS NULL \
@@ -304,27 +304,17 @@ async fn apply_reply(
     .execute(&mut **tx)
     .await?;
 
-    // People mentioned in the reply, plus on the first reply the root author
-    // and people mentioned in the root: auto-follow when they have no row.
+    // People mentioned in the reply, the root author, and people mentioned in
+    // the root: auto-follow when they have no row. Seeding on every reply (not
+    // only the first) keeps this right when a close marker was the first reply.
     // An existing row (including `unfollowed`) is left as it is.
     let mut candidates = mentioned_pubkeys(event_tag_vecs(event));
-    let descendants: Option<i32> = sqlx::query_scalar(
-        "SELECT descendant_count FROM thread_metadata \
-         WHERE community_id = $1 AND event_id = $2 AND depth = 0 \
-         LIMIT 1",
-    )
-    .bind(community)
-    .bind(root)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if descendants == Some(1) {
-        let root_author: Vec<u8> = root_row.try_get("pubkey")?;
-        let root_tags: serde_json::Value = root_row.try_get("tags")?;
-        let root_tags: Vec<Vec<String>> = serde_json::from_value(root_tags).unwrap_or_default();
-        for pubkey in std::iter::once(root_author).chain(mentioned_pubkeys(root_tags)) {
-            if pubkey.len() == 32 && !candidates.contains(&pubkey) {
-                candidates.push(pubkey);
-            }
+    let root_author: Vec<u8> = root_row.try_get("pubkey")?;
+    let root_tags: serde_json::Value = root_row.try_get("tags")?;
+    let root_tags: Vec<Vec<String>> = serde_json::from_value(root_tags).unwrap_or_default();
+    for pubkey in std::iter::once(root_author).chain(mentioned_pubkeys(root_tags)) {
+        if pubkey.len() == 32 && !candidates.contains(&pubkey) {
+            candidates.push(pubkey);
         }
     }
     candidates.retain(|pubkey| pubkey.as_slice() != author);
