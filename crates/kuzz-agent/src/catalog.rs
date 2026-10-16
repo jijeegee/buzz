@@ -24,23 +24,21 @@ use crate::{
     types::AgentError,
 };
 
-/// List the models offered by the existing local ChatGPT subscription login.
+/// List the models the signed-in ChatGPT plan offers (`GET /v1/models`).
 /// The endpoint is fixed; OpenAI-compatible URLs never receive this bearer.
 pub async fn discover_subscription_models(
-    codex_home: Option<std::path::PathBuf>,
+    config_root: Option<std::path::PathBuf>,
 ) -> Result<Vec<SubscriptionModelEntry>, AgentError> {
-    let source = crate::auth::codex::CodexTokenSource::with_home(codex_home)?;
-    let bearer = source.bearer_no_browser().await?;
-    let account = crate::auth::codex::account_id(&bearer)?;
+    let login = crate::auth::chatgpt::ChatGptLogin::new(config_root)?;
+    let bearer = login.bearer_no_browser().await?;
     let client = Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(CATALOG_REQUEST_TIMEOUT)
         .build()
         .map_err(|_| AgentError::Llm("ChatGPT model catalog HTTP setup failed".into()))?;
     let mut response = client
-        .get("https://chatgpt.com/backend-api/codex/models?client_version=0.159.3")
+        .get(format!("{}/models", login.api_base()))
         .bearer_auth(bearer)
-        .header("ChatGPT-Account-Id", account)
         .send()
         .await
         .map_err(|_| AgentError::Llm("ChatGPT model catalog request failed".into()))?;
@@ -66,7 +64,8 @@ pub async fn discover_subscription_models(
     parse_subscription_catalog(&value)
 }
 
-/// Parse the ChatGPT subscription `/models` body into picker entries.
+/// Parse the ChatGPT plan `/models` body into picker entries, keeping models
+/// meant for display (`visibility: "list"`) in server order.
 fn parse_subscription_catalog(value: &Value) -> Result<Vec<SubscriptionModelEntry>, AgentError> {
     let entries = value["models"]
         .as_array()
@@ -74,7 +73,7 @@ fn parse_subscription_catalog(value: &Value) -> Result<Vec<SubscriptionModelEntr
     let mut seen = HashSet::new();
     Ok(entries
         .iter()
-        .filter(|item| item["visibility"].as_str() != Some("hide"))
+        .filter(|item| item["visibility"].as_str() == Some("list"))
         .filter_map(|item| {
             let id = item["slug"].as_str()?.to_owned();
             if id.is_empty() || !seen.insert(id.clone()) {

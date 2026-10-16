@@ -68,6 +68,8 @@ dirs = "6"
 # crate stays buildable on the repo's declared 1.88 MSRV (those std APIs are
 # 1.89+).
 fs2 = "0.4"
+# ID-token signature check for Sign in with ChatGPT.
+jsonwebtoken = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["signal", "process"] }

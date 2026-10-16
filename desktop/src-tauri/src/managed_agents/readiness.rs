@@ -521,13 +521,16 @@ fn kuzz_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
     let env_key_missing = |key: &str| effective.env.get(key).is_none_or(|v| v.is_empty());
     match provider {
         Some("openai-subscription") => {
-            let home = effective.env.get("CODEX_HOME").filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
-            if let Err(error) = kuzz_agent_pkg::auth::codex::CodexTokenSource::with_home(home)
-                .and_then(|source| source.check_login())
-            {
+            let signed_in = crate::build_identity::demo_config_home()
+                .ok()
+                .and_then(|root| kuzz_agent_pkg::auth::chatgpt::ChatGptLogin::new(root).ok())
+                .is_some_and(|login| login.check_login().is_ok());
+            if !signed_in {
                 missing.push(Requirement::CliLogin {
-                    probe_args: vec!["codex".into(), "login".into(), "status".into()],
-                    setup_copy: error.to_string(),
+                    probe_args: vec!["ChatGPT".into()],
+                    setup_copy:
+                        "Continue with ChatGPT in Settings › Models › Providers to use your ChatGPT plan"
+                            .into(),
                     availability: AcpAvailabilityStatus::Available,
                 });
             }

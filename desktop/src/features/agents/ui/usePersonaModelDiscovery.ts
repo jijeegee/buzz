@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { useChatGptPlanStatus } from "@/features/agents/useChatGptPlan";
 import { discoverAgentModels } from "@/shared/api/agentModels";
 import type {
   AcpRuntimeCatalogEntry,
@@ -227,6 +228,11 @@ export function usePersonaModelDiscovery({
     () => stableModelDiscoveryEnvKey(envVars),
     [envVars],
   );
+  const chatGptPlan = useChatGptPlanStatus();
+  const chatGptSignedIn =
+    trimmedProvider === "openai-subscription"
+      ? Boolean(chatGptPlan.data?.signedIn && chatGptPlan.data.planEnabled)
+      : null;
   const modelDiscoveryArgsKey = JSON.stringify(
     selectedRuntime?.defaultArgs ?? [],
   );
@@ -240,9 +246,12 @@ export function usePersonaModelDiscovery({
       agentArgs: modelDiscoveryArgsKey,
       provider: trimmedProvider,
       envVars: modelDiscoveryEnvKey,
+      // Reload the ChatGPT plan's model list right after sign-in or sign-out.
+      chatGptSignedIn: chatGptSignedIn,
     });
   }, [
     canDiscoverModelOptions,
+    chatGptSignedIn,
     discoveryAgentCommand,
     modelDiscoveryArgsKey,
     modelDiscoveryEnvKey,

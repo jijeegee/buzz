@@ -495,9 +495,7 @@ async fn discover_openai_compatible_models(
 ) -> Result<Option<AgentModelsResponse>, String> {
     if provider.as_deref().map(str::trim) == Some("openai-subscription") {
         let entries = kuzz_agent_pkg::catalog::discover_subscription_models(
-            env.get("CODEX_HOME")
-                .filter(|s| !s.is_empty())
-                .map(std::path::PathBuf::from),
+            crate::build_identity::demo_config_home()?,
         )
         .await
         .map_err(|error| error.to_string())?;
