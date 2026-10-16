@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
+import 'window_anchor.dart';
 
 /// Replies a thread opens with: about one screen of conversation and more.
 const threadWindowPageReplies = 50;
@@ -25,10 +26,14 @@ bool _isReplyRow(NostrEvent event) => _threadRowKinds.contains(event.kind);
 
 /// Whether [event] is a reply row the window holds or rules out by span:
 /// rows no newer than [state]'s `newestCovered` come from the window alone.
-/// Other events (reactions, edits, deletions) and newer live rows do not.
+/// Other events (reactions, edits, deletions) and newer live rows do not,
+/// except while newer pages remain: a live row then sits past rows not yet
+/// loaded, so it waits for those pages instead of showing past the gap.
 bool isCoveredByThreadWindow(NostrEvent event, ThreadWindowState state) {
+  if (!_isReplyRow(event)) return false;
+  if (state.hasNewer) return true;
   final covered = state.newestCovered;
-  return covered != null && _isReplyRow(event) && !_isNewerThan(event, covered);
+  return covered != null && !_isNewerThan(event, covered);
 }
 
 /// The newest reply row among [events], as a window cursor.
@@ -55,18 +60,21 @@ class ThreadWindowCursor {
   int get hashCode => Object.hash(createdAt, eventId);
 }
 
-/// One newest-first page of a thread as the relay serves it.
+/// One page of a thread as the relay serves it: newest first for an older
+/// page, oldest first for a newer one.
 class ThreadWindowPage {
   final List<NostrEvent> events;
   final bool hasMore;
 
-  /// Cursor for the next older page, when [hasMore].
+  /// Cursor for the next page in [direction], when [hasMore].
   final ThreadWindowCursor? nextCursor;
+  final WindowPageDirection direction;
 
   const ThreadWindowPage({
     required this.events,
     required this.hasMore,
     this.nextCursor,
+    this.direction = WindowPageDirection.older,
   });
 }
 
@@ -75,15 +83,22 @@ class ThreadWindowPage {
 /// newest reply a relay read has vouched for, so a later newest page can tell
 /// whether it connects to what is cached. Mirrors desktop's
 /// `ThreadWindowState`.
+///
+/// A window opened at a reply also pages forward: while [hasNewer], replies
+/// after the loaded ones are still to be fetched from [newerCursor].
 class ThreadWindowState {
   final bool hasOlder;
   final ThreadWindowCursor? olderCursor;
   final ThreadWindowCursor? newestCovered;
+  final bool hasNewer;
+  final ThreadWindowCursor? newerCursor;
 
   const ThreadWindowState({
     required this.hasOlder,
     this.olderCursor,
     this.newestCovered,
+    this.hasNewer = false,
+    this.newerCursor,
   });
 }
 
@@ -178,6 +193,10 @@ ThreadWindow mergeNewestThreadPage(
   }
   final covered = cached?.state.newestCovered;
   if (covered == null || !_reachesBack(pageOldest, covered)) {
+    // A window opened at a reply has not paged up to this newest page yet:
+    // restarting from the page would drop what the reader is looking at.
+    // Keep it; its newer pages close the gap.
+    if (cached != null && cached.state.hasNewer) return cached;
     final older = _olderState(page);
     return ThreadWindow(
       events: _sorted(keep),
@@ -216,40 +235,129 @@ ThreadWindow mergeOlderThreadPage(ThreadWindow? cached, ThreadWindowPage page) {
       olderCursor: older.olderCursor,
       newestCovered:
           cached?.state.newestCovered ?? _newestOf(events.where(_isReplyRow)),
+      hasNewer: cached?.state.hasNewer ?? false,
+      newerCursor: cached?.state.newerCursor,
     ),
   );
 }
 
-/// The newest-first reply window of one thread, starting at [cursor] (the
-/// oldest reply already loaded) or at the newest reply when null.
+/// Opens the window at an anchor: [older] runs back from the anchor cursor
+/// (the anchor reply first, when there is one) and [newer] forward from it.
+/// Cached rows are replaced, since they may not border these pages; other
+/// cached events ride along.
+ThreadWindow mergeMiddleThreadPages(
+  ThreadWindow? cached,
+  ThreadWindowPage older,
+  ThreadWindowPage newer,
+) {
+  if (older.direction != WindowPageDirection.older ||
+      newer.direction != WindowPageDirection.newer) {
+    throw ArgumentError('A middle thread window needs older and newer pages.');
+  }
+  final carried = (cached?.events ?? const <NostrEvent>[]).where(
+    (event) => !_isReplyRow(event),
+  );
+  final events = _sorted([...older.events, ...newer.events, ...carried]);
+  final olderState = _olderState(older);
+  final newerState = _newerState(newer);
+  return ThreadWindow(
+    events: events,
+    state: ThreadWindowState(
+      hasOlder: olderState.hasOlder,
+      olderCursor: olderState.olderCursor,
+      newestCovered: _newestOf(events.where(_isReplyRow)),
+      hasNewer: newerState.hasNewer,
+      newerCursor: newerState.newerCursor,
+    ),
+  );
+}
+
+/// Starts the window over at a newest [page], dropping every cached row (a
+/// window opened at a reply would otherwise be kept); other cached events
+/// ride along.
+ThreadWindow restartThreadWindowAtNewest(
+  ThreadWindow? cached,
+  ThreadWindowPage page,
+) => mergeNewestThreadPage(
+  ThreadWindow(
+    events: [
+      for (final event in cached?.events ?? const <NostrEvent>[])
+        if (!_isReplyRow(event)) event,
+    ],
+    state: const ThreadWindowState(hasOlder: false),
+  ),
+  page,
+);
+
+/// Folds a newer page (fetched from `newerCursor`) into the cached replies.
+ThreadWindow mergeNewerThreadPage(ThreadWindow? cached, ThreadWindowPage page) {
+  if (page.direction != WindowPageDirection.newer) {
+    throw ArgumentError('Expected a newer thread page.');
+  }
+  final events = _sorted([
+    ...(cached?.events ?? const <NostrEvent>[]),
+    ...page.events,
+  ]);
+  final newerState = _newerState(page);
+  return ThreadWindow(
+    events: events,
+    state: ThreadWindowState(
+      hasOlder: cached?.state.hasOlder ?? false,
+      olderCursor: cached?.state.olderCursor,
+      newestCovered: _newestOf(events.where(_isReplyRow)),
+      hasNewer: newerState.hasNewer,
+      newerCursor: newerState.newerCursor,
+    ),
+  );
+}
+
+({bool hasNewer, ThreadWindowCursor? newerCursor}) _newerState(
+  ThreadWindowPage page,
+) => page.hasMore && page.nextCursor != null
+    ? (hasNewer: true, newerCursor: page.nextCursor)
+    : (hasNewer: false, newerCursor: null);
+
+/// One reply window of a thread. Older windows run newest first from
+/// [cursor] (the oldest reply already loaded), or from the newest reply when
+/// null; newer windows run oldest first after [cursor], which they require.
 NostrFilter threadWindowFilter({
   required String channelId,
   required String rootId,
   ThreadWindowCursor? cursor,
+  WindowPageDirection direction = WindowPageDirection.older,
   int limit = threadWindowPageReplies,
-}) => NostrFilter(
-  kinds: threadWindowKinds,
-  tags: {
-    '#h': [channelId],
-    '#e': [rootId],
-  },
-  limit: limit,
-  until: cursor?.createdAt,
-  // Rows only: reactions and edits reach thread rows through their own paths.
-  extensions: {
-    'thread_window': true,
-    'include_aux': false,
-    if (cursor != null) 'before_id': cursor.eventId,
-  },
-);
+}) {
+  final newer = direction == WindowPageDirection.newer;
+  if (newer && cursor == null) {
+    throw ArgumentError('A newer thread window needs a cursor.');
+  }
+  return NostrFilter(
+    kinds: threadWindowKinds,
+    tags: {
+      '#h': [channelId],
+      '#e': [rootId],
+    },
+    limit: limit,
+    until: newer ? null : cursor?.createdAt,
+    since: newer ? cursor!.createdAt : null,
+    // Rows only: reactions and edits reach thread rows through their own paths.
+    extensions: {
+      'thread_window': true,
+      'include_aux': false,
+      if (cursor != null) newer ? 'after_id' : 'before_id': cursor.eventId,
+    },
+  );
+}
 
 /// Reads one thread window out of a `/query` response: the events up to the
 /// `39007` bounds overlay tagged with this thread. Returns null when the relay
 /// served no window for it (no access, or a relay without thread windows).
+/// Bounds that name a different [direction] than requested are rejected.
 ThreadWindowPage? parseThreadWindowPage(
   List<NostrEvent> events, {
   required String channelId,
   required String rootId,
+  WindowPageDirection direction = WindowPageDirection.older,
 }) {
   final segment = <NostrEvent>[];
   for (final event in events) {
@@ -269,6 +377,10 @@ ThreadWindowPage? parseThreadWindowPage(
       bounds = null;
     }
     final map = bounds is Map ? bounds : const {};
+    final newer = direction == WindowPageDirection.newer;
+    if (newer ? map['direction'] != 'newer' : map['direction'] == 'newer') {
+      throw const FormatException('Thread window bounds run the wrong way.');
+    }
     final hasMore = map['has_more'] == true;
     final next = map['next_cursor'];
     final nextCursor =
@@ -282,6 +394,7 @@ ThreadWindowPage? parseThreadWindowPage(
       events: List.unmodifiable(segment),
       hasMore: hasMore && nextCursor != null,
       nextCursor: hasMore ? nextCursor : null,
+      direction: direction,
     );
   }
   return null;

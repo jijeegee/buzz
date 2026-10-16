@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/features/channels/thread_window.dart';
+import 'package:kuzz/features/channels/window_anchor.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -44,7 +45,11 @@ List<int> _ids(ThreadWindow window) =>
 List<int> _range(int from, int to) => [for (var n = from; n <= to; n++) n];
 
 /// The relay's bounds overlay closing one thread window.
-NostrEvent _bounds({required bool hasMore, int? next}) => NostrEvent(
+NostrEvent _bounds({
+  required bool hasMore,
+  int? next,
+  String direction = 'older',
+}) => NostrEvent(
   id: 'f' * 64,
   pubkey: 'relay',
   createdAt: 0,
@@ -54,6 +59,8 @@ NostrEvent _bounds({required bool hasMore, int? next}) => NostrEvent(
     ['e', _root],
   ],
   content: jsonEncode({
+    'version': 1,
+    'direction': direction,
     'has_more': hasMore,
     'next_cursor': next == null
         ? null
@@ -62,7 +69,18 @@ NostrEvent _bounds({required bool hasMore, int? next}) => NostrEvent(
   sig: '',
 );
 
-/// Serves thread windows over replies 1..[total], newest first.
+/// A relay page holding replies [from]..[to] (inclusive), oldest first.
+ThreadWindowPage _newerPage(int from, int to, {required bool hasMore}) =>
+    ThreadWindowPage(
+      events: [for (var n = from; n <= to; n++) _reply(n)],
+      hasMore: hasMore,
+      nextCursor: hasMore ? _cursor(to) : null,
+      direction: WindowPageDirection.newer,
+    );
+
+/// Serves thread windows over replies 1..[total] with the relay's keyset
+/// predicates: newest first from `until`/`before_id`, or oldest first after
+/// `since`/`after_id`.
 class _WindowRelay extends RelaySessionNotifier {
   _WindowRelay(this.total);
 
@@ -88,14 +106,62 @@ class _WindowRelay extends RelaySessionNotifier {
       return [for (var n = 1; n <= total; n++) _reply(n)];
     }
     windowFilters.add(filter);
-    final newest = filter.until == null ? total : filter.until! - 1;
-    final oldest = (newest - filter.limit + 1).clamp(1, newest);
-    final hasMore = oldest > 1;
+    final afterId = filter.extensions['after_id'] as String?;
+    final beforeId = filter.extensions['before_id'] as String?;
+    final all = [for (var n = 1; n <= total; n++) _reply(n)];
+    final List<NostrEvent> candidates;
+    if (afterId != null) {
+      final since = filter.since!;
+      candidates = all
+          .where(
+            (e) =>
+                e.createdAt > since ||
+                (e.createdAt == since && e.id.compareTo(afterId) < 0),
+          )
+          .toList();
+    } else {
+      final until = filter.until;
+      candidates = all.reversed
+          .where(
+            (e) =>
+                until == null ||
+                e.createdAt < until ||
+                (e.createdAt == until && e.id.compareTo(beforeId!) > 0),
+          )
+          .toList();
+    }
+    final page = candidates.take(filter.limit).toList();
+    final hasMore = candidates.length > filter.limit;
     return [
-      for (var n = newest; n >= oldest; n--) _reply(n),
-      _bounds(hasMore: hasMore, next: hasMore ? oldest : null),
+      ...page,
+      _bounds(
+        hasMore: hasMore,
+        next: hasMore ? page.last.createdAt : null,
+        direction: afterId == null ? 'older' : 'newer',
+      ),
     ];
   }
+}
+
+Future<void> _settle(ProviderContainer container) async {
+  for (var i = 0; i < 5; i++) {
+    await container.pump();
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
+ProviderContainer _container(_WindowRelay relay, {bool newer = true}) {
+  final container = ProviderContainer(
+    overrides: [
+      relaySessionProvider.overrideWith(() => relay),
+      relayInfoProvider.overrideWith(
+        (ref) async =>
+            RelayInfo(supportedExtensions: {if (newer) newerWindowExtension}),
+      ),
+    ],
+  );
+  addTearDown(container.dispose);
+  return container;
 }
 
 void main() {
@@ -197,6 +263,218 @@ void main() {
       parseThreadWindowPage([_reply(3)], channelId: _room, rootId: _root),
       isNull,
     );
+  });
+
+  group('middle thread window', () {
+    // Opened at reply 30: older 11..30, newer 31..50 with more to come.
+    ThreadWindow middle() => mergeMiddleThreadPages(
+      null,
+      _page(11, 30, hasMore: true),
+      _newerPage(31, 50, hasMore: true),
+    );
+
+    test('opens with a page each way and pages forward without gaps', () {
+      var window = middle();
+      expect(_ids(window), _range(11, 50));
+      expect(window.state.hasOlder, isTrue);
+      expect(window.state.hasNewer, isTrue);
+      expect(window.state.newerCursor, _cursor(50));
+      window = mergeNewerThreadPage(window, _newerPage(51, 70, hasMore: true));
+      window = mergeNewerThreadPage(window, _newerPage(71, 80, hasMore: false));
+      expect(_ids(window), _range(11, 80));
+      expect(window.state.hasNewer, isFalse);
+      expect(window.state.newerCursor, isNull);
+      expect(window.state.newestCovered, _cursor(80));
+      expect(window.state.olderCursor, _cursor(11));
+    });
+
+    test('a newest-page refresh does not clobber it before they meet', () {
+      final window = middle();
+      expect(
+        mergeNewestThreadPage(window, _page(71, 120, hasMore: true)),
+        same(window),
+      );
+    });
+
+    test('a newest page that reaches it connects and ends hasNewer', () {
+      final window = mergeNewestThreadPage(
+        middle(),
+        _page(41, 90, hasMore: true),
+      );
+      expect(_ids(window), _range(11, 90));
+      expect(window.state.hasNewer, isFalse);
+      expect(window.state.hasOlder, isTrue);
+      expect(window.state.olderCursor, _cursor(11));
+      expect(window.state.newestCovered, _cursor(90));
+    });
+
+    test('older pages keep its newer edge', () {
+      final window = mergeOlderThreadPage(
+        middle(),
+        _page(1, 10, hasMore: false),
+      );
+      expect(_ids(window), _range(1, 50));
+      expect(window.state.hasNewer, isTrue);
+      expect(window.state.newerCursor, _cursor(50));
+    });
+
+    test('holds live replies back while newer pages remain', () {
+      final state = middle().state;
+      expect(isCoveredByThreadWindow(_reply(500), state), isTrue);
+      final reaction = NostrEvent(
+        id: 'r' * 64,
+        pubkey: 'b' * 64,
+        createdAt: 500,
+        kind: 7,
+        tags: const [],
+        content: '+',
+        sig: '',
+      );
+      expect(isCoveredByThreadWindow(reaction, state), isFalse);
+      final connected = mergeNewerThreadPage(
+        middle(),
+        _newerPage(51, 60, hasMore: false),
+      ).state;
+      expect(isCoveredByThreadWindow(_reply(500), connected), isFalse);
+      expect(isCoveredByThreadWindow(_reply(55), connected), isTrue);
+    });
+
+    test('parseThreadWindowPage checks the bounds direction', () {
+      final newer = parseThreadWindowPage(
+        [_reply(4), _reply(5), _bounds(hasMore: false, direction: 'newer')],
+        channelId: _room,
+        rootId: _root,
+        direction: WindowPageDirection.newer,
+      );
+      expect(newer?.direction, WindowPageDirection.newer);
+      expect(newer?.events.map((e) => e.createdAt), [4, 5]);
+      expect(
+        () => parseThreadWindowPage(
+          [_reply(4), _bounds(hasMore: false)],
+          channelId: _room,
+          rootId: _root,
+          direction: WindowPageDirection.newer,
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => parseThreadWindowPage(
+          [_reply(4), _bounds(hasMore: false, direction: 'newer')],
+          channelId: _room,
+          rootId: _root,
+        ),
+        throwsFormatException,
+      );
+    });
+  });
+
+  group('ThreadWindowNotifier opened at a reply', () {
+    const args = ThreadRepliesArgs(channelId: _room, rootId: _root);
+
+    test(
+      'opens at a reply, survives a stale refresh, and pages to the newest',
+      () async {
+        final relay = _WindowRelay(200);
+        final container = _container(relay);
+        final shown = container.listen(
+          threadRepliesWithLocalProvider(args),
+          (_, _) {},
+        );
+        await container.read(threadRepliesProvider(args).future);
+        final window = container.read(threadWindowProvider(args).notifier);
+        List<int> held() => _ids(container.read(threadWindowProvider(args))!);
+
+        expect(
+          await window.openAt(createdAt: 180, eventId: _reply(180).id),
+          isTrue,
+        );
+        expect(window.windowGeneration, 1);
+        final preceding = windowAnchorCursor(
+          createdAt: 180,
+          eventId: _reply(180).id,
+        ).eventId;
+        final opening = relay.windowFilters.skip(1).toList();
+        expect(opening[0].until, 180);
+        expect(opening[0].extensions['before_id'], preceding);
+        expect(opening[1].since, 180);
+        expect(opening[1].until, isNull);
+        expect(opening[1].extensions['after_id'], preceding);
+        // The anchor leads the older page; the newer page follows it.
+        expect(held(), _range(131, 200));
+        expect(window.hasNewer, isFalse);
+
+        // Reopen far enough back that newer pages remain.
+        expect(
+          await window.openAt(createdAt: 30, eventId: _reply(30).id),
+          isTrue,
+        );
+        expect(window.windowGeneration, 2);
+        expect(held(), _range(1, 80));
+        expect(window.hasNewer, isTrue);
+
+        // A live reply marks the thread stale; its newest-page refresh must
+        // keep the window the reader is in.
+        relay.total = 201;
+        final fetched = relay.windowFilters.length;
+        container.read(threadRepliesStaleProvider(args).notifier).markStale();
+        await _settle(container);
+        // The refresh did fetch the newest page (and found it disconnected).
+        expect(relay.windowFilters.length, fetched + 1);
+        expect(relay.windowFilters.last.until, isNull);
+        expect(relay.windowFilters.last.since, isNull);
+        expect(held(), _range(1, 80));
+        expect(window.hasNewer, isTrue);
+        expect(shown.read().value?.map((e) => e.createdAt), _range(1, 80));
+
+        final firstNewer = relay.windowFilters.length;
+        for (var i = 0; window.hasNewer; i++) {
+          expect(i, lessThan(10));
+          expect(await window.loadNewer(), isTrue);
+        }
+        await container.pump();
+        expect(shown.read().value?.map((e) => e.createdAt), _range(1, 201));
+        final newer = relay.windowFilters.skip(firstNewer).toList();
+        expect(newer.length, 3);
+        expect(newer.first.since, 80);
+        expect(newer.first.extensions['after_id'], _reply(80).id);
+        expect(newer.last.extensions['after_id'], _reply(180).id);
+      },
+    );
+
+    test('without nip-cw-newer openAt leaves the window as it was', () async {
+      final relay = _WindowRelay(120);
+      final container = _container(relay, newer: false);
+      container.listen(threadRepliesWithLocalProvider(args), (_, _) {});
+      await container.read(threadRepliesProvider(args).future);
+      final window = container.read(threadWindowProvider(args).notifier);
+      final before = container.read(threadWindowProvider(args));
+
+      expect(
+        await window.openAt(createdAt: 30, eventId: _reply(30).id),
+        isFalse,
+      );
+      expect(container.read(threadWindowProvider(args)), same(before));
+      expect(relay.windowFilters.length, 1);
+      expect(window.windowGeneration, 0);
+      expect(await window.loadNewer(), isFalse);
+      expect(await window.jumpToLatest(), isFalse);
+    });
+
+    test('jumpToLatest starts over at the newest page', () async {
+      final relay = _WindowRelay(200);
+      final container = _container(relay);
+      container.listen(threadRepliesWithLocalProvider(args), (_, _) {});
+      await container.read(threadRepliesProvider(args).future);
+      final window = container.read(threadWindowProvider(args).notifier);
+      await window.openAt(createdAt: 30, eventId: _reply(30).id);
+
+      expect(await window.jumpToLatest(), isTrue);
+      final latest = container.read(threadWindowProvider(args))!;
+      expect(_ids(latest), _range(151, 200));
+      expect(latest.state.hasNewer, isFalse);
+      expect(latest.state.olderCursor, _cursor(151));
+      expect(window.windowGeneration, 2);
+    });
   });
 
   group('threadRepliesProvider with thread windows', () {

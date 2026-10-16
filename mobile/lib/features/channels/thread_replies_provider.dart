@@ -8,6 +8,7 @@ import 'channel_event_order.dart';
 import 'channel_messages_provider.dart';
 import 'pending_local_messages_provider.dart';
 import 'thread_window.dart';
+import 'window_anchor.dart';
 
 class ThreadRepliesArgs {
   final String channelId;
@@ -287,12 +288,18 @@ final threadRepliesProvider = FutureProvider.autoDispose
 /// The replies one thread holds in newest-first windows, and how far back
 /// they reach. Lives as long as the thread's query (see
 /// [threadRepliesProvider]); older pages fold in here without refetching it.
+///
+/// A thread can also be opened at a reply ([openAt]); it then pages toward
+/// the present with [loadNewer], and the query's newest-page refreshes leave
+/// it alone until they connect to it.
 class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   final ThreadRepliesArgs args;
 
   ThreadWindowNotifier(this.args);
 
   bool _loadingOlder = false;
+  bool _loadingNewer = false;
+  int _windowGeneration = 0;
 
   @override
   ThreadWindow? build() => null;
@@ -301,8 +308,106 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
 
   bool get isLoadingOlder => _loadingOlder;
 
+  /// Whether replies after the loaded ones remain to page in.
+  bool get hasNewer => state?.state.hasNewer ?? false;
+
+  bool get isLoadingNewer => _loadingNewer;
+
+  /// Changes whenever the window is replaced by one that does not continue it
+  /// ([openAt], [jumpToLatest]), so a list can reset its scroll position.
+  int get windowGeneration => _windowGeneration;
+
   ThreadWindow foldNewest(ThreadWindowPage page) =>
       state = mergeNewestThreadPage(state, page);
+
+  /// Opens the thread at a reply ([eventId] at [createdAt]) or, without an
+  /// id, after a read marker at [createdAt], with a page each way. Returns
+  /// false, leaving the window as it was, when the relay lacks
+  /// `nip-cw-newer` or serves no window.
+  Future<bool> openAt({required int createdAt, String? eventId}) async {
+    final info = await ref.read(relayInfoProvider.future);
+    // An unreadable document is not proof of no support: retry next time.
+    if (info == null) ref.invalidate(relayInfoProvider);
+    if (!ref.mounted || !(info?.supports(newerWindowExtension) ?? false)) {
+      return false;
+    }
+    final generation = ++_windowGeneration;
+    final anchor = windowAnchorCursor(createdAt: createdAt, eventId: eventId);
+    final cursor = ThreadWindowCursor(
+      createdAt: anchor.createdAt,
+      eventId: anchor.eventId,
+    );
+    try {
+      final pages = await Future.wait([
+        for (final direction in WindowPageDirection.values)
+          _fetchPage(cursor, direction),
+      ]);
+      // A later openAt or jumpToLatest owns the window now.
+      if (!ref.mounted || generation != _windowGeneration) return false;
+      final older = pages[0];
+      final newer = pages[1];
+      if (older == null || newer == null) return false;
+      state = mergeMiddleThreadPages(state, older, newer);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Loads the page after the newest held reply of a window opened at a
+  /// reply. Returns whether a page was applied; the last one ends [hasNewer].
+  Future<bool> loadNewer() async {
+    final current = state;
+    final cursor = current?.state.newerCursor;
+    if (_loadingNewer || current == null || !current.state.hasNewer) {
+      return false;
+    }
+    if (cursor == null) return false;
+    _loadingNewer = true;
+    try {
+      final page = await _fetchPage(cursor, WindowPageDirection.newer);
+      if (!ref.mounted || page == null) return false;
+      // openAt or jumpToLatest may have replaced the window meanwhile.
+      if (state?.state.newerCursor != cursor) return false;
+      state = mergeNewerThreadPage(state, page);
+      return true;
+    } finally {
+      _loadingNewer = false;
+    }
+  }
+
+  /// Leaves a window opened at a reply for the newest page. Returns whether
+  /// the window changed.
+  Future<bool> jumpToLatest() async {
+    if (!hasNewer) return false;
+    final generation = ++_windowGeneration;
+    final page = await _fetchPage(null, WindowPageDirection.older);
+    if (!ref.mounted || page == null || generation != _windowGeneration) {
+      return false;
+    }
+    state = restartThreadWindowAtNewest(state, page);
+    return true;
+  }
+
+  Future<ThreadWindowPage?> _fetchPage(
+    ThreadWindowCursor? cursor,
+    WindowPageDirection direction,
+  ) async {
+    final session = ref.read(relaySessionProvider.notifier);
+    return parseThreadWindowPage(
+      await session.queryRelay([
+        threadWindowFilter(
+          channelId: args.channelId,
+          rootId: args.rootId,
+          cursor: cursor,
+          direction: direction,
+        ),
+      ]),
+      channelId: args.channelId,
+      rootId: args.rootId,
+      direction: direction,
+    );
+  }
 
   void replaceComplete(List<NostrEvent> replies) {
     state = ThreadWindow(
