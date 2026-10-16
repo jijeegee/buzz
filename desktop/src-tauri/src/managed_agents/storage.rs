@@ -252,24 +252,6 @@ pub(crate) fn spawn_key_refusal(record: &ManagedAgentRecord) -> Option<String> {
     })
 }
 
-/// Stores written before the product rename name the bundled sidecars by their
-/// old names. Map those exact JSON string values to the current names.
-pub(crate) fn upgrade_legacy_sidecar_names(content: &str) -> std::borrow::Cow<'_, str> {
-    const LEGACY: [(&str, &str); 3] = [
-        ("\"buzz-acp\"", "\"kuzz-acp\""), // kuzz-rename: keep
-        ("\"buzz-dev-mcp\"", "\"kuzz-dev-mcp\""), // kuzz-rename: keep
-        ("\"buzz-agent\"", "\"kuzz-agent\""), // kuzz-rename: keep
-    ];
-    if !LEGACY.iter().any(|(old, _)| content.contains(old)) {
-        return std::borrow::Cow::Borrowed(content);
-    }
-    let mut upgraded = content.to_string();
-    for (old, new) in LEGACY {
-        upgraded = upgraded.replace(old, new);
-    }
-    std::borrow::Cow::Owned(upgraded)
-}
-
 /// Read the raw unified store — keyed instances AND key-less definitions —
 /// with fail-loud parse handling. Internal seam; public readers filter.
 fn load_agent_store<R: tauri::Runtime>(
@@ -282,7 +264,6 @@ fn load_agent_store<R: tauri::Runtime>(
 
     let content = fs::read_to_string(&path)
         .map_err(|error| format!("failed to read agent store: {error}"))?;
-    let content = upgrade_legacy_sidecar_names(&content);
     serde_json::from_str(&content).map_err(|error| {
         // Fail loudly and preserve the evidence: a later in-app save rewrites
         // this file wholesale, which would silently destroy a malformed hand

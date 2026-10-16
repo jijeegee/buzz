@@ -1077,7 +1077,7 @@ fn reconcile_legacy_command_names_in_file(path: &Path) {
             .and_then(|v| v.as_str())
             .map(str::to_string)
         {
-            if acp_command == "sprout-acp" {
+            if matches!(acp_command.as_str(), "sprout-acp" | "buzz-acp") { // kuzz-rename: keep
                 changed |= replace_command_field(obj, "acp_command", "kuzz-acp".to_string());
             }
         }
@@ -1087,7 +1087,7 @@ fn reconcile_legacy_command_names_in_file(path: &Path) {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        if agent_command == "sprout-agent" {
+        if matches!(agent_command.as_str(), "sprout-agent" | "buzz-agent") { // kuzz-rename: keep
             agent_command = "kuzz-agent".to_string();
             changed |= replace_command_field(obj, "agent_command", agent_command.clone());
         }
@@ -1098,11 +1098,11 @@ fn reconcile_legacy_command_names_in_file(path: &Path) {
             .map(str::to_string)
         {
             match mcp_command.as_str() {
-                "sprout-dev-mcp" => {
+                "sprout-dev-mcp" | "buzz-dev-mcp" => { // kuzz-rename: keep
                     changed |=
                         replace_command_field(obj, "mcp_command", "kuzz-dev-mcp".to_string());
                 }
-                "sprout-mcp" | "sprout-mcp-server" | "kuzz-mcp-server" => {
+                "sprout-mcp" | "sprout-mcp-server" | "kuzz-mcp-server" | "buzz-mcp-server" => { // kuzz-rename: keep
                     let replacement = if agent_command == "kuzz-agent" {
                         "kuzz-dev-mcp"
                     } else {
@@ -1123,7 +1123,7 @@ fn reconcile_legacy_persona_runtimes_in_file(path: &Path) {
         let Some(runtime) = obj.get("runtime").and_then(|v| v.as_str()) else {
             return false;
         };
-        if runtime != "sprout-agent" {
+        if !matches!(runtime, "sprout-agent" | "buzz-agent") { // kuzz-rename: keep
             return false;
         }
         eprintln!(
@@ -1148,7 +1148,7 @@ fn rewrite_legacy_persona_md_runtime(content: &str) -> Option<String> {
     let mut value = serde_yaml::from_str::<serde_yaml::Value>(frontmatter).ok()?;
     let mapping = value.as_mapping_mut()?;
     let runtime = mapping.get_mut(serde_yaml::Value::String("runtime".to_string()))?;
-    if runtime.as_str()? != "sprout-agent" {
+    if !matches!(runtime.as_str()?, "sprout-agent" | "buzz-agent") { // kuzz-rename: keep
         return None;
     }
     *runtime = serde_yaml::Value::String("kuzz-agent".to_string());
