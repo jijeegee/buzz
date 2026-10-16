@@ -174,13 +174,12 @@ pub async fn filter_fanout_by_access(
     };
 
     // Owner-only kinds (kind:30622 DM visibility, kind:44200 agent turn
-    // metrics) reach only the pubkey named in their `p` tag. Same predicate as
-    // the pull paths, applied here so local and Redis delivery share it — a
-    // kindless `ids:[…]` subscription can otherwise match these events.
+    // metrics, kind:24210 chat-state pings) reach only the pubkey named in
+    // their `p` tag. Same predicate as the pull paths, applied here so local
+    // and Redis delivery share it — a kindless `ids:[…]` subscription can
+    // otherwise match these events.
     let kind = event_kind_u32(&stored_event.event);
-    let matches = if kind == kuzz_core::kind::KIND_DM_VISIBILITY
-        || kind == kuzz_core::kind::KIND_AGENT_TURN_METRIC
-    {
+    let matches = if kuzz_core::filter::is_owner_only_kind(kind) {
         matches
             .into_iter()
             .filter(|(conn_id, _)| {
@@ -933,6 +932,13 @@ async fn handle_ephemeral_event(
     conn: Arc<ConnectionState>,
     state: Arc<AppState>,
 ) -> Result<(), IngestError> {
+    // Relay-signed ephemeral kinds (chat-state pings) are never accepted
+    // from clients: a forged ping could otherwise reach the tagged user.
+    if kuzz_core::kind::is_relay_only_kind(event_kind_u32(&event)) {
+        return Err(IngestError::Rejected(
+            "restricted: relay-only kind".to_string(),
+        ));
+    }
     let event_clone = event.clone();
     let event_id = event.id.to_hex();
     let verify_result = tokio::task::spawn_blocking(move || {
@@ -1966,6 +1972,118 @@ mod tests {
                 .await
                 .unwrap();
         }
+
+        /// A client cannot forge the relay-signed chat-state ping over the
+        /// WebSocket ephemeral path: it is refused before any fan-out, so the
+        /// tagged user's devices never see it.
+        #[tokio::test]
+        #[ignore = "requires PostgreSQL"]
+        async fn client_chat_state_ping_is_refused_before_fan_out() {
+            use kuzz_core::kind::KIND_CHAT_STATE_PING;
+
+            let state = fanout_access::test_state().await;
+            let pool = sqlx::PgPool::connect(&state.config.database_url)
+                .await
+                .unwrap();
+            let community_uuid = Uuid::new_v4();
+            let host = format!("forged-ping-{}.example", community_uuid.simple());
+            sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
+                .bind(community_uuid)
+                .bind(&host)
+                .execute(&pool)
+                .await
+                .expect("seed active community");
+            let tenant = TenantContext::resolved(CommunityId::from_uuid(community_uuid), host);
+            let (forger, victim) = (Keys::generate(), Keys::generate());
+            let (send_tx, mut send_rx) = mpsc::channel(10);
+            let (ctrl_tx, _ctrl_rx) = mpsc::channel(10);
+            let conn = Arc::new(crate::connection::ConnectionState {
+                conn_id: Uuid::new_v4(),
+                tenant: tenant.clone(),
+                remote_addr: "127.0.0.1:1234".parse().unwrap(),
+                auth_state: std::sync::Mutex::new(crate::connection::AuthState::Authenticated(
+                    kuzz_auth::AuthContext {
+                        pubkey: forger.public_key(),
+                        scopes: vec![],
+                        channel_ids: None,
+                        auth_method: kuzz_auth::AuthMethod::Nip42,
+                        agent_owner_pubkey: None,
+                        token: None,
+                    },
+                )),
+                subscriptions: Arc::new(Mutex::new(HashMap::new())),
+                send_tx,
+                ctrl_tx,
+                terminal_ctrl_tx: {
+                    let (tx, _) = mpsc::channel(1);
+                    tx
+                },
+                cancel: CancellationToken::new(),
+                backpressure_count: Arc::new(AtomicU8::new(0)),
+                grace_limit: 3,
+                nip_fi_assertion: None,
+                session_deadline: None,
+                nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
+                    CancellationToken::new(),
+                ),
+                community_control: crate::state::CommunityConnectionControl::new(
+                    CancellationToken::new(),
+                ),
+            });
+            let watcher = Uuid::new_v4();
+            let (tx, mut rx) = mpsc::channel(10);
+            let (ctrl, _ctrl_rx) = mpsc::channel(10);
+            state.conn_manager.register(
+                watcher,
+                tx,
+                ctrl,
+                tokio::sync::mpsc::channel(1).0,
+                None,
+                CancellationToken::new(),
+                tenant.community(),
+                Arc::new(AtomicU8::new(0)),
+                Arc::new(Mutex::new(HashMap::new())),
+                3,
+                crate::state::CommunityConnectionControl::new(
+                    tokio_util::sync::CancellationToken::new(),
+                ),
+            );
+            state
+                .conn_manager
+                .set_authenticated_pubkey(watcher, victim.public_key().to_bytes().to_vec());
+            state.sub_registry.register_scoped(
+                tenant.community(),
+                watcher,
+                "pings".into(),
+                vec![Filter::new()
+                    .kind(Kind::Custom(KIND_CHAT_STATE_PING as u16))
+                    .pubkey(victim.public_key())],
+                None,
+            );
+
+            let forged = EventBuilder::new(Kind::Custom(KIND_CHAT_STATE_PING as u16), "")
+                .tags([Tag::parse(["p", &victim.public_key().to_hex()]).unwrap()])
+                .sign_with_keys(&forger)
+                .unwrap();
+            super::super::handle_event(forged.clone(), conn.clone(), state.clone()).await;
+            let axum::extract::ws::Message::Text(text) = send_rx.try_recv().expect("ACK") else {
+                panic!("expected text ACK");
+            };
+            let ack: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(ack[1], forged.id.to_hex());
+            assert_eq!(ack[2], false);
+            assert_eq!(ack[3], "restricted: relay-only kind");
+            assert!(
+                rx.try_recv().is_err(),
+                "a forged ping never reaches the victim"
+            );
+
+            sqlx::query("DELETE FROM communities WHERE id = $1")
+                .bind(community_uuid)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
     }
 
     mod pubsub_fanout {
@@ -2081,6 +2199,7 @@ mod tests {
             for kind in [
                 kuzz_core::kind::KIND_DM_VISIBILITY,
                 kuzz_core::kind::KIND_AGENT_TURN_METRIC,
+                kuzz_core::kind::KIND_CHAT_STATE_PING,
             ] {
                 let state = test_state().await;
                 let owner = Keys::generate();
@@ -2138,6 +2257,7 @@ mod tests {
             for kind in [
                 kuzz_core::kind::KIND_DM_VISIBILITY,
                 kuzz_core::kind::KIND_AGENT_TURN_METRIC,
+                kuzz_core::kind::KIND_CHAT_STATE_PING,
             ] {
                 let state = test_state().await;
                 let tenant = kuzz_core::tenant::TenantContext::resolved(
@@ -2191,6 +2311,54 @@ mod tests {
                     "kind {kind}: stranger must not receive"
                 );
             }
+        }
+
+        /// A chat-state ping reaches every connection of the user it names
+        /// and no one else, not even a stranger whose subscription matches
+        /// the kind and the user's `#p`.
+        #[tokio::test]
+        async fn chat_state_ping_reaches_only_the_users_own_connections() {
+            use kuzz_core::kind::KIND_CHAT_STATE_PING;
+
+            let state = test_state().await;
+            let tenant = kuzz_core::tenant::TenantContext::resolved(
+                kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
+                "ping.test",
+            );
+            let (user, stranger) = (Keys::generate(), Keys::generate());
+            let ping_filter = || {
+                Filter::new()
+                    .kind(Kind::Custom(KIND_CHAT_STATE_PING as u16))
+                    .pubkey(user.public_key())
+            };
+            let user_pk = Some(user.public_key().to_bytes().to_vec());
+            let stranger_pk = Some(stranger.public_key().to_bytes().to_vec());
+            let (_, mut phone) = register_global_sub(&state, "p", ping_filter(), user_pk.clone());
+            let (_, mut laptop) = register_global_sub(&state, "l", ping_filter(), user_pk);
+            let (_, mut snoop) = register_global_sub(&state, "s", ping_filter(), stranger_pk);
+            let (_, mut anonymous) = register_global_sub(&state, "a", ping_filter(), None);
+
+            crate::handlers::side_effects::publish_chat_state_ping(
+                &tenant,
+                &state,
+                &user.public_key().to_bytes(),
+            )
+            .await
+            .expect("ping");
+
+            let first = event_from_ws_message(phone.try_recv().expect("phone pinged"));
+            let second = event_from_ws_message(laptop.try_recv().expect("laptop pinged"));
+            assert_eq!(first.id, second.id);
+            assert_eq!(first.kind, Kind::Custom(KIND_CHAT_STATE_PING as u16));
+            assert_eq!(first.pubkey, state.relay_keypair.public_key());
+            assert!(first.verify().is_ok());
+            assert!(first.content.is_empty());
+            assert!(snoop.try_recv().is_err(), "stranger must not receive");
+            assert!(
+                anonymous.try_recv().is_err(),
+                "unauthenticated must not receive"
+            );
+            assert!(phone.try_recv().is_err(), "delivered once");
         }
 
         #[tokio::test]
@@ -2823,6 +2991,7 @@ mod tests {
             for kind in [
                 kuzz_core::kind::KIND_DM_VISIBILITY,
                 kuzz_core::kind::KIND_AGENT_TURN_METRIC,
+                kuzz_core::kind::KIND_CHAT_STATE_PING,
             ] {
                 let event = EventBuilder::new(Kind::Custom(kind as u16), "{}")
                     .tags([nostr::Tag::parse(["p", &owner.public_key().to_hex()]).expect("p")])
