@@ -4,6 +4,8 @@
 use super::*;
 
 const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
+/// The plan route accepts function tools only inside a namespace.
+const TOOL_NAMESPACE: &str = "kuzz";
 
 /// Fields the ChatGPT plan route rejects (OpenAI "Preview limitations").
 const UNSUPPORTED_FIELDS: &[&str] = &[
@@ -40,11 +42,29 @@ fn subscription_body(body: &Value) -> Value {
         body["input"] = json!([{"role":"user","content":text}]);
     }
     // Explicit system items are rejected; developer messages are accepted.
+    // Function tools must be grouped in a namespace, and echoed calls carry it.
     if let Some(items) = body["input"].as_array_mut() {
         for item in items {
             if item["role"] == "system" {
                 item["role"] = json!("developer");
             }
+            if item["type"] == "function_call" && item.get("namespace").is_none() {
+                item["namespace"] = json!(TOOL_NAMESPACE);
+            }
+        }
+    }
+    if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
+        let (functions, others): (Vec<Value>, Vec<Value>) = std::mem::take(tools)
+            .into_iter()
+            .partition(|t| t["type"] == "function");
+        *tools = others;
+        if !functions.is_empty() {
+            tools.push(json!({
+                "type": "namespace",
+                "name": TOOL_NAMESPACE,
+                "description": "Kuzz agent tools.",
+                "tools": functions,
+            }));
         }
     }
     body
@@ -456,6 +476,30 @@ mod tests {
         assert_eq!(body["instructions"], "sys");
         assert_eq!(body["input"][0]["role"], "developer");
         assert_eq!(body["input"][1]["role"], "user");
+    }
+
+    #[test]
+    fn plan_body_groups_function_tools_in_a_namespace() {
+        let tool = json!({"type":"function","name":"echo","description":"d","parameters":{}});
+        let body = subscription_body(&json!({
+            "model":"m","tools":[tool],"tool_choice":"auto",
+            "input":[
+                {"type":"function_call","call_id":"c1","name":"echo","arguments":"{}"},
+                {"type":"function_call_output","call_id":"c1","output":"ok"}
+            ]
+        }));
+        assert_eq!(
+            body["tools"],
+            json!([{"type":"namespace","name":"kuzz","description":"Kuzz agent tools.","tools":[tool]}])
+        );
+        assert_eq!(body["input"][0]["namespace"], "kuzz");
+        assert!(body["input"][1].get("namespace").is_none());
+        // A namespaced call parses back to the plain tool name.
+        let parsed = parse_responses(json!({"status":"completed","output":[
+            {"type":"function_call","name":"echo","namespace":"kuzz","call_id":"c2","arguments":"{}"}
+        ]}))
+        .unwrap();
+        assert_eq!(parsed.tool_calls[0].name, "echo");
     }
 
     #[test]
