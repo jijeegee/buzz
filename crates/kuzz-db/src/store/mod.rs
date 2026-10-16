@@ -12,6 +12,8 @@ pub mod archived_identities;
 pub mod channel;
 /// Channel membership and roster persistence.
 pub mod channel_members;
+/// One-off backfill of server-side chat state from message history.
+pub mod chat_backfill;
 /// Chats list for one reader, read from server-side chat state.
 pub mod chat_list;
 /// Server-side chat state written with each message (read positions, thread
@@ -84,6 +86,9 @@ mod artifact_postgres_tests;
 
 #[cfg(test)]
 mod channel_history_postgres_tests;
+
+#[cfg(test)]
+mod chat_backfill_postgres_tests;
 
 #[cfg(test)]
 mod chat_list_postgres_tests;
