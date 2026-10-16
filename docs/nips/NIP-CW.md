@@ -99,8 +99,9 @@ message, then scrolling down):
   `after_id` keeps its existing meaning on this path (ignored; head request).
 - The `kind:39006` `d` suffix is `after:<created_at>:<event_id>`, and the
   content adds `"direction":"newer"`. Older pages keep their exact bounds.
-- `has_more: false` means "newest as of this query"; the client continues
-  with its live subscription. A timestamp-only anchor (a read marker) uses the
+- `has_more: false` means "newest as of this query". Newer pages have head
+  freshness, so the client SHOULD open its live subscription before the final
+  newer page (or with `since` at or before the last cursor) and dedupe by id. A timestamp-only anchor (a read marker) uses the
   cursor `(ts, "f"*64)`: newer then returns every row at or after `ts`.
 - A replica's older-cursor coverage proof does not cover rows above the
   cursor; newer pages MUST be served with head-page freshness.

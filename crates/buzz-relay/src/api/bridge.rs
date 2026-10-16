@@ -792,7 +792,11 @@ async fn handle_channel_window_filter(
             let ts = chrono::DateTime::from_timestamp(ts.as_secs() as i64, 0).ok_or_else(|| {
                 api_error(
                     StatusCode::BAD_REQUEST,
-                    "top_level: cursor time is out of range",
+                    if newer {
+                        "top_level: since is out of range"
+                    } else {
+                        "top_level: until is out of range"
+                    },
                 )
             })?;
             Some((ts, id))
