@@ -29,7 +29,7 @@ import {
 import { useSmoothCorners } from "@/shared/ui/smoothCorners";
 import { MorphingPlayPauseIcon } from "./MorphingPlayPauseIcon";
 
-const PLAY_EVENT = "buzz-voice-note-play";
+const PLAY_EVENT = "kuzz-voice-note-play";
 const INITIAL_BAR_COUNT = 38;
 const BAR_KEYS = Array.from(
   { length: 256 },

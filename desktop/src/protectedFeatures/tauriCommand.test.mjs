@@ -12,7 +12,7 @@ const desktopRoot = path.resolve(
 );
 const configDir = path.join(desktopRoot, "src-tauri");
 const wrapper = path.join(desktopRoot, "scripts/tauri-command.mjs");
-const fakeCli = path.join(tmpdir(), `buzz-fake-tauri-${process.pid}.mjs`);
+const fakeCli = path.join(tmpdir(), `kuzz-fake-tauri-${process.pid}.mjs`);
 
 writeFileSync(
   fakeCli,
@@ -24,17 +24,17 @@ const override = JSON.parse(args[configIndex + 1]);
 const configured = override.build.frontendDist;
 // Tauri resolves frontendDist against the directory holding tauri.conf.json
 // (config_parent.join(path) in tauri-codegen), not against the process cwd.
-const output = path.resolve(process.env.BUZZ_TEST_CONFIG_DIR, configured);
+const output = path.resolve(process.env.KUZZ_TEST_CONFIG_DIR, configured);
 // Write through the producer path the wrapper publishes and read back through
 // the config-resolved consumer path. Doing both against one path would make the
 // fake agree with itself no matter where the wrapper pointed frontendDist.
-const producer = process.env.BUZZ_PROTECTED_BUILD_OUTPUT;
+const producer = process.env.KUZZ_PROTECTED_BUILD_OUTPUT;
 mkdirSync(producer, { recursive: true });
-writeFileSync(path.join(producer, "variant.txt"), process.env.VITE_BUZZ_BESTIE);
+writeFileSync(path.join(producer, "variant.txt"), process.env.VITE_KUZZ_BESTIE);
 await new Promise((resolve) => setTimeout(resolve, 100));
 const observed = readFileSync(path.join(output, "variant.txt"), "utf8");
 writeFileSync(
-  process.env.BUZZ_TEST_RESULT,
+  process.env.KUZZ_TEST_RESULT,
   JSON.stringify({ args, configured, output, observed }),
 );
 `,
@@ -49,10 +49,10 @@ function packageVariant(variant, result, runnerArguments = []) {
         cwd: desktopRoot,
         env: {
           ...process.env,
-          BUZZ_TAURI_CLI_ENTRYPOINT: fakeCli,
-          BUZZ_TEST_CONFIG_DIR: configDir,
-          BUZZ_TEST_RESULT: result,
-          VITE_BUZZ_BESTIE: variant,
+          KUZZ_TAURI_CLI_ENTRYPOINT: fakeCli,
+          KUZZ_TEST_CONFIG_DIR: configDir,
+          KUZZ_TEST_RESULT: result,
+          VITE_KUZZ_BESTIE: variant,
         },
         stdio: "inherit",
       },
@@ -65,7 +65,7 @@ function packageVariant(variant, result, runnerArguments = []) {
 }
 
 test("opposite Tauri package variants own private frontend artifacts", async () => {
-  const resultRoot = path.join(tmpdir(), `buzz-tauri-results-${process.pid}`);
+  const resultRoot = path.join(tmpdir(), `kuzz-tauri-results-${process.pid}`);
   mkdirSync(resultRoot, { recursive: true });
   const ossResult = path.join(resultRoot, "oss.json");
   const internalResult = path.join(resultRoot, "internal.json");
@@ -85,7 +85,7 @@ test("opposite Tauri package variants own private frontend artifacts", async () 
 test("private config precedes Cargo runner arguments", async () => {
   const result = path.join(
     tmpdir(),
-    `buzz-tauri-runner-arguments-${process.pid}.json`,
+    `kuzz-tauri-runner-arguments-${process.pid}.json`,
   );
   await packageVariant("0", result, [
     "--config",
@@ -108,7 +108,7 @@ test("private config precedes Cargo runner arguments", async () => {
 test("private frontendDist is never mistaken for a URL", async () => {
   const result = path.join(
     tmpdir(),
-    `buzz-tauri-frontend-dist-${process.pid}.json`,
+    `kuzz-tauri-frontend-dist-${process.pid}.json`,
   );
   await packageVariant("0", result);
   const invocation = JSON.parse(readFileSync(result, "utf8"));

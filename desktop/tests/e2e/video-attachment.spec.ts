@@ -22,9 +22,9 @@ const MENU_OFF_RELAY_VIDEO_SHA = "f".repeat(64);
 const MENU_OFF_RELAY_VIDEO_URL = `https://cdn.example.com/media/${MENU_OFF_RELAY_VIDEO_SHA}.mp4`;
 const VIDEO_REVIEW_NEUTRAL_ACCENT = "neutral";
 const VIDEO_REVIEW_LIGHT_THEME = "catppuccin-latte";
-// The fresh-profile default is the Buzz theme, which pins the neutral accent
+// The fresh-profile default is the Kuzz theme, which pins the neutral accent
 // regardless of the stored accent color. Accent-driven review foreground
-// assertions must run on a non-Buzz theme for the seeded accent to apply.
+// assertions must run on a non-Kuzz theme for the seeded accent to apply.
 const VIDEO_REVIEW_ACCENT_THEME = "houston";
 const VIDEO_REVIEW_ACCENT = "#ec4899";
 const VIDEO_REVIEW_ACCENT_FOREGROUND_RGB = "rgb(240, 115, 177)";
@@ -50,11 +50,11 @@ async function waitForMockLiveSubscription(page: Page, channelName: string) {
         return (
           (
             window as Window & {
-              __BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
+              __KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
                 channelName: string;
               }) => boolean;
             }
-          ).__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({ channelName }) ?? false
+          ).__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({ channelName }) ?? false
         );
       }, channelName);
     })
@@ -71,14 +71,14 @@ function emitMockMessage(
     ({ channelName, content, extraTags, parentEventId }) => {
       const emit = (
         window as Window & {
-          __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
             channelName: string;
             content: string;
             extraTags?: string[][];
             parentEventId?: string;
           }) => unknown;
         }
-      ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) {
         throw new Error("Mock message emitter is unavailable.");
       }
@@ -102,7 +102,7 @@ function pushMockFeedItems(
     ({ category, channelId, messages }) => {
       const pushFeedItem = (
         window as Window & {
-          __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
+          __KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
             category: "mention" | "needs_action";
             channel_id: string;
             channel_name: string;
@@ -114,7 +114,7 @@ function pushMockFeedItems(
             tags: string[][];
           }) => unknown;
         }
-      ).__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+      ).__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!pushFeedItem) throw new Error("Mock feed helper is unavailable.");
       for (const message of messages) {
         pushFeedItem({
@@ -144,9 +144,9 @@ async function installVideoReviewHarness(
   await page.addInitScript(
     ({ accentColor, themeName }) => {
       if (themeName) {
-        window.localStorage.setItem("buzz-theme", themeName);
+        window.localStorage.setItem("kuzz-theme", themeName);
       }
-      window.localStorage.setItem("buzz-accent-color", accentColor);
+      window.localStorage.setItem("kuzz-accent-color", accentColor);
 
       type MediaState = {
         currentTime: number;
@@ -1555,8 +1555,8 @@ test("right-click menus expose distinct selectors for links, relay video, and of
     .poll(() =>
       page.evaluate(
         () =>
-          (window as Window & { __BUZZ_E2E_COMMANDS__?: string[] })
-            .__BUZZ_E2E_COMMANDS__ ?? [],
+          (window as Window & { __KUZZ_E2E_COMMANDS__?: string[] })
+            .__KUZZ_E2E_COMMANDS__ ?? [],
       ),
     )
     .toContain("download_file");

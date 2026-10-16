@@ -213,12 +213,12 @@ fn env_vars_applied_before_effort_ordering_invariant() {
 
 #[test]
 fn effort_write_sweeps_acp_sentinel_in_env_vars() {
-    // A local record whose env_vars contain BUZZ_ACP_EFFORT_LEVEL (e.g. manually
+    // A local record whose env_vars contain KUZZ_ACP_EFFORT_LEVEL (e.g. manually
     // set by a user) plus a concurrent explicit effort_level write. The column
     // must be set to the explicit value AND the sentinel must be removed.
     let mut record = local_record();
     record.env_vars.insert(
-        "BUZZ_ACP_EFFORT_LEVEL".to_string(),
+        "KUZZ_ACP_EFFORT_LEVEL".to_string(),
         "old-sentinel".to_string(),
     );
     apply_record_field_updates(&mut record, None, false, Some(Some("high".to_string())))
@@ -229,7 +229,7 @@ fn effort_write_sweeps_acp_sentinel_in_env_vars() {
         "effort write must set the column"
     );
     assert!(
-        !record.env_vars.contains_key("BUZZ_ACP_EFFORT_LEVEL"),
+        !record.env_vars.contains_key("KUZZ_ACP_EFFORT_LEVEL"),
         "ACP sentinel in env_vars must be swept by the alias-removal step"
     );
 }
@@ -241,7 +241,7 @@ fn effort_clear_sweeps_acp_sentinel_in_env_vars() {
     let mut record = local_record();
     record.effort_level = Some("high".to_string());
     record.env_vars.insert(
-        "BUZZ_ACP_EFFORT_LEVEL".to_string(),
+        "KUZZ_ACP_EFFORT_LEVEL".to_string(),
         "old-sentinel".to_string(),
     );
     apply_record_field_updates(&mut record, None, false, Some(None))
@@ -251,7 +251,7 @@ fn effort_clear_sweeps_acp_sentinel_in_env_vars() {
         "effort clear must zero the column"
     );
     assert!(
-        !record.env_vars.contains_key("BUZZ_ACP_EFFORT_LEVEL"),
+        !record.env_vars.contains_key("KUZZ_ACP_EFFORT_LEVEL"),
         "ACP sentinel in env_vars must be swept on clear"
     );
 }

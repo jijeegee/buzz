@@ -4,12 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
-import 'package:buzz/shared/auth/auth_provider.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/community/community_storage.dart';
-import 'package:buzz/shared/push/push_bridge.dart';
-import 'package:buzz/shared/push/push_subscription.dart';
+import 'package:kuzz/shared/auth/auth_provider.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/community/community_storage.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
+import 'package:kuzz/shared/push/push_subscription.dart';
 
 import '../community/community_storage_test.dart';
 
@@ -436,7 +436,7 @@ void main() {
             pubkey: keys.public,
             pushNotificationsEnabled: true,
             pushSubscriptionState:
-                const BuzzPushLeaseSubscriptionState.desired()
+                const KuzzPushLeaseSubscriptionState.desired()
                     .withReservedGeneration(4),
           );
       await storage.save(legacy);

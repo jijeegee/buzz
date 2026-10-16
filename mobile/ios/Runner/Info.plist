@@ -2,10 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>BuzzAppGroupIdentifier</key>
-	<string>$(BUZZ_APP_GROUP_IDENTIFIER)</string>
-	<key>BuzzKeychainAccessGroup</key>
-	<string>$(AppIdentifierPrefix)$(BUZZ_KEYCHAIN_ACCESS_GROUP)</string>
+	<key>KuzzAppGroupIdentifier</key>
+	<string>$(KUZZ_APP_GROUP_IDENTIFIER)</string>
+	<key>KuzzKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)$(KUZZ_KEYCHAIN_ACCESS_GROUP)</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -19,7 +19,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Buzz</string>
+	<string>Kuzz</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -32,10 +32,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.buzz.deeplink</string>
+			<string>com.kuzz.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>buzz</string>
+				<string>kuzz</string>
 			</array>
 		</dict>
 	</array>
@@ -48,15 +48,15 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Buzz uses Face ID to confirm sensitive identity transfers.</string>
+	<string>Kuzz uses Face ID to confirm sensitive identity transfers.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Buzz uses the camera to take profile photos and animated avatars, and attach photos to messages.</string>
+	<string>Kuzz uses the camera to take profile photos and animated avatars, and attach photos to messages.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Buzz needs microphone access so you can speak in Huddles and record voice notes.</string>
+	<string>Kuzz needs microphone access so you can speak in Huddles and record voice notes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Buzz uses your photo library to select profile photos and images to attach to messages.</string>
+	<string>Kuzz uses your photo library to select profile photos and images to attach to messages.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Buzz needs permission to save images to your photo library.</string>
+	<string>Kuzz needs permission to save images to your photo library.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INSendMessageIntent</string>

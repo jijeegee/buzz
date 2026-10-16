@@ -377,7 +377,7 @@ export type ManagedAgent = {
   autoRestartOnConfigChange: boolean;
   backend: ManagedAgentBackend;
   backendAgentId: string | null;
-  /** Who the agent should respond to. Maps to `buzz-acp --respond-to`. */
+  /** Who the agent should respond to. Maps to `kuzz-acp --respond-to`. */
   respondTo: RespondToMode;
   /**
    * Normalized 64-char lowercase hex pubkeys. Used only when `respondTo` is
@@ -389,13 +389,13 @@ export type ManagedAgent = {
    * The effective value (`AgentConfigSurface.normalized.thinkingEffort`) is
    * resolved across env tiers under the current runtime's contract; this is
    * what an ACP thought-level runtime (Claude Code / Codex / Hermes, no native
-   * env knob) launches as `BUZZ_ACP_EFFORT_LEVEL`. The Edit dialog's picker
+   * env knob) launches as `KUZZ_ACP_EFFORT_LEVEL`. The Edit dialog's picker
    * reads it after an in-dialog runtime switch. `null` = adapter default.
    */
   effortLevel: string | null;
 };
 
-/** Inbound author gate mode. Mirrors buzz-acp's --respond-to CLI flag. */
+/** Inbound author gate mode. Mirrors kuzz-acp's --respond-to CLI flag. */
 export type RespondToMode = "owner-only" | "allowlist" | "anyone";
 
 export type BackendProviderCandidate = {
@@ -500,7 +500,7 @@ export type ControlResultFrame = {
    * `compact_session` `stale` results; parse with `parseContextReading`.
    */
   reading?: unknown;
-  /** Buzz channel UUID from the observer envelope; disambiguates channels. */
+  /** Kuzz channel UUID from the observer envelope; disambiguates channels. */
   channelId?: string | null;
 };
 
@@ -555,7 +555,7 @@ export type AcpRuntimeCatalogEntry = {
    * Non-null only for runtimes with a static finite effort vocabulary
    * (currently Goose: `["off","low","medium","high","max"]`). The renderer
    * uses this instead of the TS-side `GOOSE_EFFORT_CANONICAL_VALUES` duplicate.
-   * Null for buzz-agent (provider/model catalog), Claude/Codex/unknown runtimes.
+   * Null for kuzz-agent (provider/model catalog), Claude/Codex/unknown runtimes.
    */
   effortCanonicalValues: string[] | null;
   /**
@@ -567,7 +567,7 @@ export type AcpRuntimeCatalogEntry = {
    *
    * Non-null only for ACP thought-level harnesses (Claude Code `effort`, Codex
    * and Hermes `reasoning_effort`, each with `["low","medium","high"]`, the
-   * subset every current model accepts). Null for Goose, buzz-agent, the other
+   * subset every current model accepts). Null for Goose, kuzz-agent, the other
    * presets, and custom runtimes. Display-only: never a validation contract,
    * and discovered `effortOptions` win when present.
    */
@@ -669,7 +669,7 @@ export type AgentModelInfo = {
 
 // ── Config bridge types ──────────────────────────────────────────────────────
 export type ConfigOrigin =
-  | "buzzExplicit"
+  | "kuzzExplicit"
   | "acpNativeRead"
   | "acpConfigOption"
   | "envVar"

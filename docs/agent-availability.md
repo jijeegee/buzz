@@ -106,7 +106,7 @@ same per-instance rules, treating unqueried siblings as unknown.
   use `tests/helpers/welcomeTeam.ts`, without changing the product readiness wait.
 
 Mock create/start/stop only model runtime bookkeeping. Scenarios that require
-availability use `__BUZZ_E2E_EMIT_MOCK_PRESENCE__` to seed the snapshot and emit
+availability use `__KUZZ_E2E_EMIT_MOCK_PRESENCE__` to seed the snapshot and emit
 kind 20001 with the agent as author. Updating a directory row or posting a chat
 message is not presence. Mock browser tests do not certify native relay TTL,
 provider termination, or substrate health.

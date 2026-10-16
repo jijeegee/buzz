@@ -43,7 +43,7 @@ export type MarkdownRuntime = {
   leadingInlineContent?: React.ReactNode;
   mentionPubkeysByName?: Record<string, string>;
   onOpenChannel: (channelId: string) => void;
-  /** Navigate to a Buzz git entity (`buzz://pr|issue|repo` deep link). */
+  /** Navigate to a Kuzz git entity (`kuzz://pr|issue|repo` deep link). */
   onOpenEntityLink: (link: ParsedEntityLink) => void;
   onOpenMessageLink: (link: ParsedMessageLink) => void;
   /**

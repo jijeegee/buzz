@@ -65,7 +65,7 @@ final class CommunityTransitionCoordinator {
         } catch (error, stackTrace) {
           developer.log(
             'Community transition cleanup failed',
-            name: 'buzz.community',
+            name: 'kuzz.community',
             error: error,
             stackTrace: stackTrace,
           );
@@ -90,7 +90,7 @@ typedef CommunitySnapshotWriter =
 final communitySnapshotWriterProvider = Provider<CommunitySnapshotWriter>((
   ref,
 ) {
-  return registerBuzzPushCommunitySnapshot;
+  return registerKuzzPushCommunitySnapshot;
 });
 
 final _communitySnapshotSyncProvider = Provider<_CommunitySnapshotSync>((ref) {
@@ -114,14 +114,14 @@ typedef CommunityPushLeaseRevocationEnqueuer =
 
 final communityPushLeaseRevocationEnqueuerProvider =
     Provider<CommunityPushLeaseRevocationEnqueuer>((ref) {
-      return ref.read(buzzPushLeaseRevocationOutboxProvider).enqueueCommunity;
+      return ref.read(kuzzPushLeaseRevocationOutboxProvider).enqueueCommunity;
     });
 
 typedef CommunityPushLeaseRevocationTrigger = Future<void> Function();
 
 final communityPushLeaseRevocationTriggerProvider =
     Provider<CommunityPushLeaseRevocationTrigger>((ref) {
-      return ref.read(buzzPushLeaseRevocationOutboxProvider).trigger;
+      return ref.read(kuzzPushLeaseRevocationOutboxProvider).trigger;
     });
 
 Future<void> _deactivateCommunityPushLease(
@@ -148,12 +148,12 @@ Future<void> _deactivateCommunityPushLease(
   final decoded = nostr.Nip19.decode(payload: nsec);
   // Derived from the signing key, never from the recorded identity.
   final memberPubkey = nostr.Keys(decoded.data).public;
-  final descriptor = await fetchBuzzPushLeaseDescriptor(community.relayUrl);
-  final matchingGrant = (await readBuzzPushEndpointGrants())
+  final descriptor = await fetchKuzzPushLeaseDescriptor(community.relayUrl);
+  final matchingGrant = (await readKuzzPushEndpointGrants())
       .where(
         (grant) =>
             grant.relayOrigin == descriptor.origin &&
-            grant.appProfile == buzzDevPushAppProfile,
+            grant.appProfile == kuzzDevPushAppProfile,
       )
       .firstOrNull;
   if (matchingGrant == null) {
@@ -174,7 +174,7 @@ Future<void> _deactivateCommunityPushLease(
   // active publication lose to this tombstone.
   final tombstoneGeneration =
       generation ?? (state.generationCursor ?? acceptedGeneration!) + 2;
-  await publishBuzzPushLeaseTombstone(
+  await publishKuzzPushLeaseTombstone(
     descriptor: descriptor,
     installationId: installationId,
     generation: tombstoneGeneration,
@@ -217,7 +217,7 @@ class _CommunitySnapshotSync {
     final communities = (await _read())
         .where((community) => !community.signedOut)
         .toList();
-    await registerBuzzPushCommunitySnapshotStrict(
+    await registerKuzzPushCommunitySnapshotStrict(
       communities,
       settleFence: false,
     );
@@ -239,7 +239,7 @@ class _CommunitySnapshotSync {
             community.pubkey,
             community.nsec,
             community.pushNotificationsEnabled,
-            buzzPushSubscriptionStateFingerprint(
+            kuzzPushSubscriptionStateFingerprint(
               community.pushSubscriptionState,
             ),
           ].join('\u0000'),
@@ -447,7 +447,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
 
   Future<void> updateDesiredPushSubscriptions(
     String id,
-    List<BuzzPushSubscription> desired,
+    List<KuzzPushSubscription> desired,
   ) => _serializePushMutation(() async {
     final storage = ref.read(communityStorageProvider);
     final current = await storage.loadAll();
@@ -455,10 +455,10 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     if (index < 0) return;
 
     final community = current[index];
-    if (buzzPushSubscriptionsFingerprint(
+    if (kuzzPushSubscriptionsFingerprint(
           community.pushSubscriptionState.desired,
         ) ==
-        buzzPushSubscriptionsFingerprint(desired)) {
+        kuzzPushSubscriptionsFingerprint(desired)) {
       return;
     }
     final updated = community.copyWith(
@@ -508,7 +508,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
 
   Future<bool> markPushLeaseAccepted(
     String id, {
-    required List<BuzzPushSubscription> subscriptions,
+    required List<KuzzPushSubscription> subscriptions,
     required int generation,
     Object? installationId = _unspecifiedInstallation,
   }) => _serializePushMutation(() async {
@@ -528,10 +528,10 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     final generationCursor =
         community.pushSubscriptionState.generationCursor ?? 0;
     if (generation < max(acceptedGeneration, generationCursor)) return false;
-    if (buzzPushSubscriptionsFingerprint(
+    if (kuzzPushSubscriptionsFingerprint(
           community.pushSubscriptionState.desired,
         ) !=
-        buzzPushSubscriptionsFingerprint(subscriptions)) {
+        kuzzPushSubscriptionsFingerprint(subscriptions)) {
       return false;
     }
     final updated = community.copyWith(
@@ -580,7 +580,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       try {
         await retryPendingPushLeaseTombstone(id);
       } catch (_) {
-        // The durable journal remains pending. BuzzPushBootstrap retries it
+        // The durable journal remains pending. KuzzPushBootstrap retries it
         // after reconnect while all registration/enrollment paths stay off.
       }
     }

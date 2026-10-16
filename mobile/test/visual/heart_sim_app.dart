@@ -1,8 +1,8 @@
-import 'package:buzz/features/channels/message_content.dart';
-import 'package:buzz/shared/custom_emoji/custom_emoji_provider.dart';
-import 'package:buzz/features/channels/reaction_row.dart';
-import 'package:buzz/features/channels/timeline_message.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/channels/message_content.dart';
+import 'package:kuzz/shared/custom_emoji/custom_emoji_provider.dart';
+import 'package:kuzz/features/channels/reaction_row.dart';
+import 'package:kuzz/features/channels/timeline_message.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

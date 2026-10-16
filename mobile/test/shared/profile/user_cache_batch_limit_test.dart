@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +13,7 @@ import 'package:nostr/nostr.dart' as nostr;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const bridge = MethodChannel('buzz/push');
+  const bridge = MethodChannel('kuzz/push');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 

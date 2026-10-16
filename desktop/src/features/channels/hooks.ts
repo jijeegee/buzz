@@ -97,11 +97,11 @@ export function sortChannels(channels: Channel[]) {
 }
 
 export const CHANNELS_SNAPSHOT_DIAGNOSTIC_MARK =
-  "buzz:sidebar:snapshot-diagnostic";
+  "kuzz:sidebar:snapshot-diagnostic";
 export const CHANNELS_FULL_SIDEBAR_PAINT_MARK =
-  "buzz:sidebar:full-list-painted";
+  "kuzz:sidebar:full-list-painted";
 export const CHANNELS_BOOT_TO_FULL_SIDEBAR_MEASURE =
-  "buzz:sidebar:boot-to-full-list-painted";
+  "kuzz:sidebar:boot-to-full-list-painted";
 
 const markedSnapshotKeys = new Set<string>();
 const measuredSidebarKeys = new Set<string>();

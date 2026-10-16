@@ -40,7 +40,7 @@ class _ShutterButton extends StatelessWidget {
                     switchInCurve: Curves.easeOutCubic,
                     switchOutCurve: Curves.easeOutCubic,
                     child: busy
-                        ? BuzzLoadingIndicator(
+                        ? KuzzLoadingIndicator(
                             key: const ValueKey('image-camera-capturing'),
                             size: 24,
                             color: context.colors.onSurface,

@@ -1,8 +1,8 @@
-import 'package:buzz/features/goals/goal_links.dart';
-import 'package:buzz/features/goals/goal_provider.dart';
-import 'package:buzz/features/goals/goal_tree.dart';
-import 'package:buzz/features/goals/thread_goal_chip.dart';
-import 'package:buzz/features/goals/thread_goals_page.dart';
+import 'package:kuzz/features/goals/goal_links.dart';
+import 'package:kuzz/features/goals/goal_provider.dart';
+import 'package:kuzz/features/goals/goal_tree.dart';
+import 'package:kuzz/features/goals/thread_goal_chip.dart';
+import 'package:kuzz/features/goals/thread_goals_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:buzz/shared/devices/device_robot.dart';
-import 'package:buzz/shared/devices/device_robot_icon.dart';
+import 'package:kuzz/shared/devices/device_robot.dart';
+import 'package:kuzz/shared/devices/device_robot_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';

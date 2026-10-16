@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-// nostr 0.36 alias — required for cross-version bridging with buzz-sdk.
+// nostr 0.36 alias — required for cross-version bridging with kuzz-sdk.
 
 use crate::app_state::AppState;
 #[allow(unused_imports)] // trait methods used by relay helpers and `relay::submit`
@@ -263,7 +263,7 @@ pub(crate) async fn parse_json_response<T: DeserializeOwned>(
     // "relay unreachable: request timed out" label.
     response.json::<T>().await.map_err(|e| {
         classify_body_timeout(&e).unwrap_or_else(|| {
-            eprintln!("buzz-desktop: relay returned malformed response: {e}");
+            eprintln!("kuzz-desktop: relay returned malformed response: {e}");
             MALFORMED_RESPONSE_MESSAGE.to_string()
         })
     })
@@ -504,7 +504,7 @@ async fn send_query_request_as<T: DeserializeOwned>(
 
 /// Parse a command-event OK message of the form `"response:<json>"`.
 ///
-/// Buzz's command kinds (e.g. 41010, 30620, 46020) acknowledge writes via
+/// Kuzz's command kinds (e.g. 41010, 30620, 46020) acknowledge writes via
 /// relay OK messages whose payload is a `response:`-prefixed JSON document.
 /// This helper strips the prefix and deserializes the remainder as `T`.
 pub fn parse_command_response<T: DeserializeOwned>(message: &str) -> Result<T, String> {
@@ -524,7 +524,7 @@ pub fn parse_command_response<T: DeserializeOwned>(message: &str) -> Result<T, S
 /// This is a pure function (no I/O) extracted from `sync_managed_agent_profile` so that
 /// the event-building and auth-tag-injection logic can be unit tested without HTTP calls.
 ///
-/// `buzz-sdk` uses `nostr 0.36` while the desktop crate uses `nostr 0.37`. Cross-version
+/// `kuzz-sdk` uses `nostr 0.36` while the desktop crate uses `nostr 0.37`. Cross-version
 /// bridging is done via hex-encoded public keys and raw tag slices — both versions share the
 /// same wire format.
 fn build_profile_event(
@@ -543,11 +543,11 @@ fn build_profile_event(
             .map_err(|e| format!("failed to convert agent pubkey for auth verification: {e}"))?;
 
         // Verify Schnorr signature before injecting into profile event.
-        buzz_sdk_pkg::nip_oa::verify_auth_tag(tag_json, &compat_pubkey)
+        kuzz_sdk_pkg::nip_oa::verify_auth_tag(tag_json, &compat_pubkey)
             .map_err(|e| format!("auth tag verification failed for profile event: {e}"))?;
 
         // parse_auth_tag returns a nostr 0.36 Tag; bridge to nostr 0.37 via raw slice.
-        let compat_tag = buzz_sdk_pkg::nip_oa::parse_auth_tag(tag_json)
+        let compat_tag = kuzz_sdk_pkg::nip_oa::parse_auth_tag(tag_json)
             .map_err(|e| format!("failed to parse verified auth tag: {e}"))?;
         let tag = nostr::Tag::parse(compat_tag.as_slice())
             .map_err(|e| format!("failed to convert auth tag to nostr 0.37: {e}"))?;
@@ -640,7 +640,7 @@ pub async fn sync_managed_agent_profile(
     let result: SubmitEventResponse = parse_json_response(response).await?;
     if !result.accepted {
         eprintln!(
-            "buzz-desktop: relay rejected agent profile: {}",
+            "kuzz-desktop: relay rejected agent profile: {}",
             result.message
         );
         return Err("Couldn't save. Try again.".to_string());
@@ -708,7 +708,7 @@ pub struct AgentProfileInfo {
     /// Published public description (kind:0 `about`).
     pub about: Option<String>,
     /// Whether the profile still carries the retired public
-    /// `buzz_host_device` field; reconciliation republishes to drop it.
+    /// `kuzz_host_device` field; reconciliation republishes to drop it.
     pub carries_host_device: bool,
 }
 

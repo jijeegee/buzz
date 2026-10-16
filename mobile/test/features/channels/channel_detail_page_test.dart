@@ -25,60 +25,60 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:pointycastle/digests/sha256.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channel_detail_page.dart';
-import 'package:buzz/features/channels/chat_bubble_row.dart';
-import 'package:buzz/features/channels/channel_management_provider.dart';
-import 'package:buzz/features/channels/channel_messages_provider.dart';
-import 'package:buzz/features/channels/channel_window.dart';
-import 'package:buzz/features/channels/channel_mutes/channel_mutes_provider.dart';
-import 'package:buzz/features/channels/channel_mutes/channel_mutes_storage.dart';
-import 'package:buzz/features/channels/channel_stars/channel_stars_provider.dart';
-import 'package:buzz/features/channels/channel_stars/channel_stars_storage.dart';
-import 'package:buzz/features/channels/channel_typing_provider.dart';
-import 'package:buzz/features/channels/members_sheet.dart';
-import 'package:buzz/features/channels/composer_dock_size_reporter.dart';
-import 'package:buzz/features/channels/date_formatters.dart';
-import 'package:buzz/features/channels/day_divider.dart';
-import 'package:buzz/features/channels/emoji_picker.dart';
-import 'package:buzz/features/channels/ime_metrics_settle_observer.dart';
-import 'package:buzz/features/channels/local_message_send_animation_provider.dart';
-import 'package:buzz/features/channels/message_action_backdrop_state.dart';
-import 'package:buzz/features/channels/message_actions.dart';
-import 'package:buzz/features/channels/mobile_huddle_controller.dart';
-import 'package:buzz/features/channels/reaction_row.dart';
-import 'package:buzz/features/channels/thread_detail_page.dart';
-import 'package:buzz/features/channels/thread_replies_provider.dart';
-import 'package:buzz/features/channels/thread_window.dart';
-import 'package:buzz/features/channels/timeline_message.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/shared/read_state/read_state_provider.dart';
-import 'package:buzz/features/channels/unread_badge/observed_unread_event.dart';
-import 'package:buzz/features/channels/small_avatar.dart';
-import 'package:buzz/features/profile/profile_provider.dart';
-import 'package:buzz/features/profile/presence_cache_provider.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/user_profile.dart';
-import 'package:buzz/features/profile/user_profile_sheet.dart';
-import 'package:buzz/shared/identity_names/identity_names.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/deeplink/deep_link.dart';
-import 'package:buzz/shared/deeplink/pending_deep_link_provider.dart';
-import 'package:buzz/shared/emoji/emoji_burst.dart';
-import 'package:buzz/shared/mentions/agent_identity_provider.dart';
-import 'package:buzz/shared/huddle/huddle.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/app_list_card.dart';
-import 'package:buzz/shared/widgets/avatar_image.dart';
-import 'package:buzz/shared/widgets/frosted_app_bar.dart';
-import 'package:buzz/shared/widgets/frosted_scaffold.dart';
-import 'package:buzz/shared/widgets/flapping_bee.dart';
-import 'package:buzz/shared/widgets/keyboard_dismiss_on_drag.dart';
-import 'package:buzz/shared/widgets/ios_glass_navigation_button.dart';
-import 'package:buzz/shared/widgets/lucide_star_icon.dart';
-import 'package:buzz/shared/widgets/masked_avatar_badge.dart';
-import 'package:buzz/shared/widgets/skeleton.dart';
+import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channel_detail_page.dart';
+import 'package:kuzz/features/channels/chat_bubble_row.dart';
+import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/features/channels/channel_messages_provider.dart';
+import 'package:kuzz/features/channels/channel_window.dart';
+import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart';
+import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart';
+import 'package:kuzz/features/channels/channel_stars/channel_stars_provider.dart';
+import 'package:kuzz/features/channels/channel_stars/channel_stars_storage.dart';
+import 'package:kuzz/features/channels/channel_typing_provider.dart';
+import 'package:kuzz/features/channels/members_sheet.dart';
+import 'package:kuzz/features/channels/composer_dock_size_reporter.dart';
+import 'package:kuzz/features/channels/date_formatters.dart';
+import 'package:kuzz/features/channels/day_divider.dart';
+import 'package:kuzz/features/channels/emoji_picker.dart';
+import 'package:kuzz/features/channels/ime_metrics_settle_observer.dart';
+import 'package:kuzz/features/channels/local_message_send_animation_provider.dart';
+import 'package:kuzz/features/channels/message_action_backdrop_state.dart';
+import 'package:kuzz/features/channels/message_actions.dart';
+import 'package:kuzz/features/channels/mobile_huddle_controller.dart';
+import 'package:kuzz/features/channels/reaction_row.dart';
+import 'package:kuzz/features/channels/thread_detail_page.dart';
+import 'package:kuzz/features/channels/thread_replies_provider.dart';
+import 'package:kuzz/features/channels/thread_window.dart';
+import 'package:kuzz/features/channels/timeline_message.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/shared/read_state/read_state_provider.dart';
+import 'package:kuzz/features/channels/unread_badge/observed_unread_event.dart';
+import 'package:kuzz/features/channels/small_avatar.dart';
+import 'package:kuzz/features/profile/profile_provider.dart';
+import 'package:kuzz/features/profile/presence_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/features/profile/user_profile_sheet.dart';
+import 'package:kuzz/shared/identity_names/identity_names.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/deeplink/deep_link.dart';
+import 'package:kuzz/shared/deeplink/pending_deep_link_provider.dart';
+import 'package:kuzz/shared/emoji/emoji_burst.dart';
+import 'package:kuzz/shared/mentions/agent_identity_provider.dart';
+import 'package:kuzz/shared/huddle/huddle.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/widgets/app_list_card.dart';
+import 'package:kuzz/shared/widgets/avatar_image.dart';
+import 'package:kuzz/shared/widgets/frosted_app_bar.dart';
+import 'package:kuzz/shared/widgets/frosted_scaffold.dart';
+import 'package:kuzz/shared/widgets/flapping_bee.dart';
+import 'package:kuzz/shared/widgets/keyboard_dismiss_on_drag.dart';
+import 'package:kuzz/shared/widgets/ios_glass_navigation_button.dart';
+import 'package:kuzz/shared/widgets/lucide_star_icon.dart';
+import 'package:kuzz/shared/widgets/masked_avatar_badge.dart';
+import 'package:kuzz/shared/widgets/skeleton.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 part 'thread_reply_refresh_cases.dart';
@@ -3351,7 +3351,7 @@ void main() {
       const posterUrl = 'https://relay.example/media/alice-poster.png';
       const animationUrl = 'https://relay.example/media/alice-avatar.png';
       final profileUrl =
-          '$posterUrl#buzz-anim=${Uri.encodeComponent(animationUrl)}';
+          '$posterUrl#kuzz-anim=${Uri.encodeComponent(animationUrl)}';
       final mediaClient = http_testing.MockClient(
         (_) async => http.Response.bytes(_transparentPng, 200),
       );
@@ -9135,7 +9135,7 @@ void main() {
         const posterUrl = 'https://relay.example/media/alice-poster.png';
         const animationUrl = 'https://relay.example/media/alice-avatar.png';
         final profileUrl =
-            '$posterUrl#buzz-anim=${Uri.encodeComponent(animationUrl)}';
+            '$posterUrl#kuzz-anim=${Uri.encodeComponent(animationUrl)}';
         final animationResponse = Completer<http.Response>();
         final mediaClient = http_testing.MockClient(
           (request) => request.url.toString() == animationUrl
@@ -10020,7 +10020,7 @@ void main() {
     testWidgets('matches the channel header placement on iOS', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      const nativeChannel = MethodChannel('buzz/navigation_glass/43');
+      const nativeChannel = MethodChannel('kuzz/navigation_glass/43');
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         nativeChannel,
         (_) async => null,
@@ -10156,7 +10156,7 @@ void main() {
           matching: find.byType(UiKitView),
         );
         final nativeView = tester.widget<UiKitView>(nativeViewFinder);
-        expect(nativeView.viewType, 'buzz/navigation_glass');
+        expect(nativeView.viewType, 'kuzz/navigation_glass');
         expect(
           (nativeView.creationParams as Map<String, Object>)['icon'],
           'back',
@@ -14387,7 +14387,7 @@ void main() {
       );
       nativeView.onPlatformViewCreated!(42);
       await tester.pump();
-      const nativeChannel = MethodChannel('buzz/jump_to_latest_glass/42');
+      const nativeChannel = MethodChannel('kuzz/jump_to_latest_glass/42');
       await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
         nativeChannel.name,
         nativeChannel.codec.encodeMethodCall(const MethodCall('pressed')),

@@ -3,7 +3,7 @@ import type * as React from "react";
 import { MESSAGE_MARKDOWN_CLASS } from "@/shared/ui/mentionChip";
 
 import {
-  BUZZ_COPY_ATTRIBUTE,
+  KUZZ_COPY_ATTRIBUTE,
   CHANNEL_LABEL_ATTRIBUTE,
   matchChipTextToLabel,
   MENTION_KIND_ATTRIBUTE,
@@ -139,7 +139,7 @@ export function buildTimelineClipboardFlavors(
 
   if (!restoreChipSigils(clone)) return null;
 
-  const html = `<span ${BUZZ_COPY_ATTRIBUTE}="rich">${clone.innerHTML}</span>`;
+  const html = `<span ${KUZZ_COPY_ATTRIBUTE}="rich">${clone.innerHTML}</span>`;
 
   // `innerText` is layout-aware, so the plain flavor keeps the block structure
   // of a multi-message selection — with the sigils back and the chips inlined.

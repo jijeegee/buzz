@@ -164,7 +164,7 @@ const EMPTY_THREAD_REPLIES: MainTimelineEntry[] = [];
  * Applied to the outermost pane so scrolling never clips the shadow.
  */
 export const THREAD_LAYER_CLASS =
-  "bg-[var(--buzz-thread-canvas)] shadow-[var(--buzz-thread-layer-shadow)]";
+  "bg-[var(--kuzz-thread-canvas)] shadow-[var(--kuzz-thread-layer-shadow)]";
 const THREAD_PANEL_SUMMARY_INDENT_OFFSET_REM = 0;
 
 export function MessageThreadPanel({
@@ -583,8 +583,8 @@ export function MessageThreadPanel({
 
   const threadScrollRegion = (
     <AuxiliaryPanelBody
-      className="overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--buzz-thread-canvas)] pb-24"
-      data-buzz-conversation-scroll
+      className="overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--kuzz-thread-canvas)] pb-24"
+      data-kuzz-conversation-scroll
       data-testid="message-thread-body"
       mode={isHuddleTranscript ? "panel" : undefined}
       onCopy={handleTimelineMentionCopy}

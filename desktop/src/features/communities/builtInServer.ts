@@ -94,7 +94,7 @@ export function ensureAllowedServer(relayUrl: string): void {
 }
 
 /**
- * What to do with a `buzz://connect|join|add-community` link. With a built-in
+ * What to do with a `kuzz://connect|join|add-community` link. With a built-in
  * server, links for another host are rejected (nothing is added or switched)
  * and add-community links for the built-in server are dropped: it is already
  * the only server.

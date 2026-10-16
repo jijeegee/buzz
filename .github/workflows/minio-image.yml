@@ -62,19 +62,19 @@ jobs:
         if: always()
         run: docker compose down --volumes
       - name: Log in to GHCR
-        if: github.repository == 'block/buzz' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.repository == 'block/kuzz' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish tested image
-        if: github.repository == 'block/buzz' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.repository == 'block/kuzz' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |
           docker push "$MINIO_CI_IMAGE"
           docker tag "$MINIO_CI_IMAGE" "$IMAGE_NAME:latest"
           docker push "$IMAGE_NAME:latest"
           {
             echo "Published $MINIO_CI_IMAGE and $IMAGE_NAME:latest"
-            echo 'First publication: make the buzz-minio package public before enabling CI consumers.'
+            echo 'First publication: make the kuzz-minio package public before enabling CI consumers.'
           } >> "$GITHUB_STEP_SUMMARY"

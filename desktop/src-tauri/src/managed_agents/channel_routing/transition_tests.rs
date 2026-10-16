@@ -128,7 +128,7 @@ fn record(index: usize, starred: bool, local: bool) -> ManagedAgentRecord {
         "name": format!("agent-{index}"),
         "private_key_nsec": "",
         "relay_url": "",
-        "acp_command": "buzz-acp",
+        "acp_command": "kuzz-acp",
         "agent_command": "goose",
         "agent_args": [],
         "mcp_command": "",

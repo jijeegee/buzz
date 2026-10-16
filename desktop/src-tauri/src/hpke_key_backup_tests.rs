@@ -149,7 +149,7 @@ fn metadata_ciphertext_and_encapsulation_tampering_fail_closed() {
     assert!(DH_KEM_P256_HKDF_SHA256_AES_256
         .open(
             &EncapsulatedSecret(enc),
-            b"buzz/nsec-backup/v2",
+            b"kuzz/nsec-backup/v2",
             &aad,
             &ciphertext,
             &private_key,

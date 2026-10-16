@@ -24,7 +24,6 @@ KEEP_MARKER = "kuzz-rename: keep"
 SKIP_CONTENT = [
     re.compile(r"(^|/)migrations/[^/]+\.sql$"),
     re.compile(r"(^|/)desktop/src-tauri/src/testdata/hpke_nsec_backup_v1\.json$"),
-    re.compile(r"^CHANGELOG\.md$"),
     re.compile(r"(^|/)Podfile\.lock$"),
     re.compile(r"^schema/schema\.sql$"),
     re.compile(r"app_attest_transcripts\.json$"),

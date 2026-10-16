@@ -1,29 +1,29 @@
-name: buzz-prod
+name: kuzz-prod
 
 services:
   relay:
-    image: ${BUZZ_IMAGE:-ghcr.io/block/buzz:main}
+    image: ${KUZZ_IMAGE:-ghcr.io/block/buzz:main}
     env_file:
       - .env
     environment:
-      BUZZ_BIND_ADDR: 0.0.0.0:3000
-      BUZZ_HEALTH_PORT: "8080"
-      BUZZ_METRICS_PORT: "9102"
-      DATABASE_URL: postgres://${POSTGRES_USER:-buzz}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-buzz}
+      KUZZ_BIND_ADDR: 0.0.0.0:3000
+      KUZZ_HEALTH_PORT: "8080"
+      KUZZ_METRICS_PORT: "9102"
+      DATABASE_URL: postgres://${POSTGRES_USER:-kuzz}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kuzz}
       REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379
-      BUZZ_S3_ENDPOINT: http://minio:9000
+      KUZZ_S3_ENDPOINT: http://minio:9000
       # Docker DNS resolves `minio`, not arbitrary `<bucket>.minio` hosts.
-      BUZZ_S3_ADDRESSING_STYLE: path
-      BUZZ_S3_ACCESS_KEY: ${BUZZ_S3_ACCESS_KEY:?set BUZZ_S3_ACCESS_KEY}
-      BUZZ_S3_SECRET_KEY: ${BUZZ_S3_SECRET_KEY:?set BUZZ_S3_SECRET_KEY}
-      BUZZ_S3_BUCKET: ${BUZZ_S3_BUCKET:-buzz-media}
-      BUZZ_GIT_REPO_PATH: /data/git
-      BUZZ_AUTO_MIGRATE: ${BUZZ_AUTO_MIGRATE:-false}
-      BUZZ_GIT_CONFORMANCE_PROBE: ${BUZZ_GIT_CONFORMANCE_PROBE:-true}
+      KUZZ_S3_ADDRESSING_STYLE: path
+      KUZZ_S3_ACCESS_KEY: ${KUZZ_S3_ACCESS_KEY:?set KUZZ_S3_ACCESS_KEY}
+      KUZZ_S3_SECRET_KEY: ${KUZZ_S3_SECRET_KEY:?set KUZZ_S3_SECRET_KEY}
+      KUZZ_S3_BUCKET: ${KUZZ_S3_BUCKET:-kuzz-media}
+      KUZZ_GIT_REPO_PATH: /data/git
+      KUZZ_AUTO_MIGRATE: ${KUZZ_AUTO_MIGRATE:-false}
+      KUZZ_GIT_CONFORMANCE_PROBE: ${KUZZ_GIT_CONFORMANCE_PROBE:-true}
     ports:
-      - "${BUZZ_HTTP_PORT:-3000}:3000"
+      - "${KUZZ_HTTP_PORT:-3000}:3000"
     volumes:
-      - buzz-git-data:/data/git
+      - kuzz-git-data:/data/git
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,17 +46,17 @@ services:
       start_period: 30s
     restart: unless-stopped
     networks:
-      - buzz-net
+      - kuzz-net
 
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-buzz}
-      POSTGRES_USER: ${POSTGRES_USER:-buzz}
+      POSTGRES_DB: ${POSTGRES_DB:-kuzz}
+      POSTGRES_USER: ${POSTGRES_USER:-kuzz}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - buzz-postgres-data:/var/lib/postgresql/data
+      - kuzz-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -65,7 +65,7 @@ services:
       start_period: 10s
     restart: unless-stopped
     networks:
-      - buzz-net
+      - kuzz-net
 
   redis:
     image: redis:7-alpine
@@ -73,7 +73,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
     volumes:
-      - buzz-redis-data:/data
+      - kuzz-redis-data:/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 5s
@@ -82,16 +82,16 @@ services:
       start_period: 5s
     restart: unless-stopped
     networks:
-      - buzz-net
+      - kuzz-net
 
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${BUZZ_S3_ACCESS_KEY:?set BUZZ_S3_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${BUZZ_S3_SECRET_KEY:?set BUZZ_S3_SECRET_KEY}
+      MINIO_ROOT_USER: ${KUZZ_S3_ACCESS_KEY:?set KUZZ_S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${KUZZ_S3_SECRET_KEY:?set KUZZ_S3_SECRET_KEY}
     volumes:
-      - buzz-minio-data:/data
+      - kuzz-minio-data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 5s
@@ -100,7 +100,7 @@ services:
       start_period: 10s
     restart: unless-stopped
     networks:
-      - buzz-net
+      - kuzz-net
 
   minio-init:
     image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
@@ -108,35 +108,35 @@ services:
       minio:
         condition: service_healthy
     environment:
-      BUZZ_S3_ACCESS_KEY: ${BUZZ_S3_ACCESS_KEY:?set BUZZ_S3_ACCESS_KEY}
-      BUZZ_S3_SECRET_KEY: ${BUZZ_S3_SECRET_KEY:?set BUZZ_S3_SECRET_KEY}
-      BUZZ_S3_BUCKET: ${BUZZ_S3_BUCKET:-buzz-media}
+      KUZZ_S3_ACCESS_KEY: ${KUZZ_S3_ACCESS_KEY:?set KUZZ_S3_ACCESS_KEY}
+      KUZZ_S3_SECRET_KEY: ${KUZZ_S3_SECRET_KEY:?set KUZZ_S3_SECRET_KEY}
+      KUZZ_S3_BUCKET: ${KUZZ_S3_BUCKET:-kuzz-media}
     entrypoint: >
       /bin/sh -euc '
-        mc alias set local http://minio:9000 "$${BUZZ_S3_ACCESS_KEY}" "$${BUZZ_S3_SECRET_KEY}"
-        mc mb --ignore-existing "local/$${BUZZ_S3_BUCKET}"
-        mc anonymous set none "local/$${BUZZ_S3_BUCKET}"
+        mc alias set local http://minio:9000 "$${KUZZ_S3_ACCESS_KEY}" "$${KUZZ_S3_SECRET_KEY}"
+        mc mb --ignore-existing "local/$${KUZZ_S3_BUCKET}"
+        mc anonymous set none "local/$${KUZZ_S3_BUCKET}"
       '
     restart: "no"
     networks:
-      - buzz-net
+      - kuzz-net
 
 volumes:
-  buzz-postgres-data:
+  kuzz-postgres-data:
     labels:
-      com.buzz.volume: postgres
-  buzz-redis-data:
+      com.kuzz.volume: postgres
+  kuzz-redis-data:
     labels:
-      com.buzz.volume: redis
-  buzz-minio-data:
+      com.kuzz.volume: redis
+  kuzz-minio-data:
     labels:
-      com.buzz.volume: minio
-  buzz-git-data:
+      com.kuzz.volume: minio
+  kuzz-git-data:
     labels:
-      com.buzz.volume: git
+      com.kuzz.volume: git
 
 networks:
-  buzz-net:
+  kuzz-net:
     driver: bridge
     labels:
-      com.buzz.network: production
+      com.kuzz.network: production

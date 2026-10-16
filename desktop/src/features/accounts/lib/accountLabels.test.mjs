@@ -17,7 +17,7 @@ function account(pubkey, overrides = {}) {
     state: "signed_in",
     active: false,
     displayName: null,
-    buzzName: null,
+    kuzzName: null,
     avatarUrl: null,
     email: null,
     lastUsedAt: null,
@@ -38,16 +38,16 @@ test("an account goes by its name, else its email, else a short id", () => {
   assert.equal(accountLabel(account(pubkey)), "Account ab12cd34");
 });
 
-test("label priority: Buzz name, Google name, email, short id", () => {
+test("label priority: Kuzz name, Google name, email, short id", () => {
   const pubkey = "ab12cd34".repeat(8);
   const rows = [
     [
-      { buzzName: "akak", displayName: "akauuzk ka", email: "a@x.io" },
+      { kuzzName: "akak", displayName: "akauuzk ka", email: "a@x.io" },
       "akak",
       "a@x.io",
     ],
     [
-      { buzzName: " ", displayName: "akauuzk ka", email: "a@x.io" },
+      { kuzzName: " ", displayName: "akauuzk ka", email: "a@x.io" },
       "akauuzk ka",
       "a@x.io",
     ],

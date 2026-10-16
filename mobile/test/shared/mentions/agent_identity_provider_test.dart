@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:buzz/features/channels/agent_activity/working_bots_provider.dart';
-import 'package:buzz/features/channels/channel_management_provider.dart';
-import 'package:buzz/shared/mentions/agent_identity_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/channels/agent_activity/working_bots_provider.dart';
+import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/shared/mentions/agent_identity_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 
 void main() {
   test('refreshes channel bot roles from live membership updates', () async {

@@ -1,4 +1,4 @@
-# Buzz Docker Compose deployment
+# Kuzz Docker Compose deployment
 
 This is the single-node/VPS deployment bundle. It is intentionally separate from
 the root `docker-compose.yml`, which remains local development infrastructure.
@@ -16,7 +16,7 @@ For a public VPS with automatic Let's Encrypt certificates:
 
 ```bash
 cd deploy/compose
-BUZZ_COMPOSE_TLS=true ./run.sh start
+KUZZ_COMPOSE_TLS=true ./run.sh start
 ```
 
 The bootstrap script should eventually replace manual `.env` editing for normal
@@ -27,23 +27,23 @@ keypair.
 
 - Requires Docker Compose v2.24.4 or newer; the TLS override uses Compose's
   `!reset` tag to remove the direct relay port when Caddy terminates HTTPS.
-- Default `BUZZ_IMAGE` tracks `ghcr.io/block/buzz:main` for early testing. Pin it to `ghcr.io/block/buzz:sha-<7>` or a semver release tag for production once available.
-- Keep `BUZZ_RELAY_PRIVATE_KEY`, `BUZZ_GIT_HOOK_HMAC_SECRET`, database/Redis,
+- Default `KUZZ_IMAGE` tracks `ghcr.io/block/buzz:main` for early testing. Pin it to `ghcr.io/block/buzz:sha-<7>` or a semver release tag for production once available.
+- Keep `KUZZ_RELAY_PRIVATE_KEY`, `KUZZ_GIT_HOOK_HMAC_SECRET`, database/Redis,
   and S3 secrets stable across restarts.
-- `RELAY_OWNER_PUBKEY` is intentionally not prefixed with `BUZZ_`; it must be a
+- `RELAY_OWNER_PUBKEY` is intentionally not prefixed with `KUZZ_`; it must be a
   64-character hex Nostr pubkey when closed relay mode is enabled.
-- `BUZZ_AUTO_MIGRATE` is opt-in. Set `BUZZ_AUTO_MIGRATE=true` or run
-  `buzz-admin migrate` before starting the relay when bootstrapping a fresh
+- `KUZZ_AUTO_MIGRATE` is opt-in. Set `KUZZ_AUTO_MIGRATE=true` or run
+  `kuzz-admin migrate` before starting the relay when bootstrapping a fresh
   database. Auto-migration requires an image that includes embedded SQLx
   migrations.
 - The stack uses Postgres, Redis, MinIO, and a git data volume because
-  those are real Buzz dependencies today. Minimal mode can simplify this later.
+  those are real Kuzz dependencies today. Minimal mode can simplify this later.
 - Mobile push remains off by default. To use the public gateway, keep the
-  template's explicit `BUZZ_PUSH_GATEWAY_DELIVERY_URL` and set
-  `BUZZ_PUSH_ENABLED=true`. To use another gateway, replace the exact HTTPS
+  template's explicit `KUZZ_PUSH_GATEWAY_DELIVERY_URL` and set
+  `KUZZ_PUSH_ENABLED=true`. To use another gateway, replace the exact HTTPS
   `/v1/deliveries/apns` URL before enabling push.
 - The bundled Compose stack fixes the relay endpoint to `http://minio:9000` and
-  `BUZZ_S3_ADDRESSING_STYLE=path`: Docker DNS resolves `minio`, not
+  `KUZZ_S3_ADDRESSING_STYLE=path`: Docker DNS resolves `minio`, not
   `<bucket>.minio`. It is not configurable for an external S3 provider through
   `.env`; use the Helm chart or a custom Compose configuration for providers
   such as new Railway Storage Buckets that require `virtual` addressing.
@@ -60,6 +60,6 @@ cp .env.example .env
 $EDITOR .env
 ./run.sh config
 ./run.sh start
-curl -fsS "http://127.0.0.1:$(grep -E '^BUZZ_HTTP_PORT=' .env | cut -d= -f2-)/_liveness"
+curl -fsS "http://127.0.0.1:$(grep -E '^KUZZ_HTTP_PORT=' .env | cut -d= -f2-)/_liveness"
 ./run.sh status
 ```

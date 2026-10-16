@@ -9,15 +9,15 @@ import {
 } from "./RespondToField";
 import type { PersonaBehaviorDraft } from "./personaBehaviorDraft";
 import {
-  isBuzzAgentRuntime,
-  BUZZ_AGENT_THINKING_EFFORT,
-} from "./buzzAgentConfig";
+  isKuzzAgentRuntime,
+  KUZZ_AGENT_THINKING_EFFORT,
+} from "./kuzzAgentConfig";
 import {
   AGENT_PARALLELISM_HELP,
   AGENT_PARALLELISM_PLACEHOLDER,
   parallelismCapHint,
 } from "../lib/agentParallelism";
-import { NumericTuningFields } from "./buzzAgentModelTuningFields";
+import { NumericTuningFields } from "./kuzzAgentModelTuningFields";
 import {
   CARD_MINT_KEY_ANNOTATIONS,
   PERSONA_FIELD_CONTROL_CLASS,
@@ -62,7 +62,7 @@ export function PersonaAdvancedFields({
   /** Env vars to display as inherited defaults in tuning-field placeholders.
    *  For templates, pass `globalConfig.env_vars` (the fallback layer). */
   inheritedEnvVars?: EnvVarsValue;
-  /** Runtime id for the buzz-agent effort-tuning knob visibility gate. */
+  /** Runtime id for the kuzz-agent effort-tuning knob visibility gate. */
   modelTuningRuntimeId?: string;
   namePoolText: string;
   onBehaviorDraftChange: (value: PersonaBehaviorDraft) => void;
@@ -106,8 +106,8 @@ export function PersonaAdvancedFields({
     () => [
       ...hiddenEnvKeys,
       CODE_WORK_OFF_ENV_KEY,
-      ...(isBuzzAgentRuntime(modelTuningRuntimeId)
-        ? [BUZZ_AGENT_THINKING_EFFORT]
+      ...(isKuzzAgentRuntime(modelTuningRuntimeId)
+        ? [KUZZ_AGENT_THINKING_EFFORT]
         : []),
       ...structuredEnvKeys(numericDescriptors),
     ],

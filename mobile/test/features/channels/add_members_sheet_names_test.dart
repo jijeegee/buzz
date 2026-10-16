@@ -1,8 +1,8 @@
-import 'package:buzz/features/channels/add_members_sheet.dart';
-import 'package:buzz/features/channels/channel_management_provider.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/user_profile.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/channels/add_members_sheet.dart';
+import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

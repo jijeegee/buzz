@@ -704,7 +704,7 @@ const MessageTimelineBase = React.forwardRef<
   return (
     <TooltipProvider>
       <div
-        className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--buzz-chat-canvas)]"
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--kuzz-chat-canvas)]"
         onCopy={handleTimelineMentionCopy}
       >
         {showUnreadPill ? (
@@ -751,7 +751,7 @@ const MessageTimelineBase = React.forwardRef<
                   : "pb-4",
               ),
           )}
-          data-buzz-conversation-scroll={
+          data-kuzz-conversation-scroll={
             useTimelineVirtualizer && showMessageList ? undefined : "true"
           }
           data-scroll-restoration-id={scrollRestorationId}

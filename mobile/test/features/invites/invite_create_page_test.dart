@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:buzz/features/invites/invite_create_page.dart';
-import 'package:buzz/features/invites/invite_create_provider.dart';
-import 'package:buzz/shared/community/community_membership_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/utils/string_utils.dart';
+import 'package:kuzz/features/invites/invite_create_page.dart';
+import 'package:kuzz/features/invites/invite_create_provider.dart';
+import 'package:kuzz/shared/community/community_membership_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/utils/string_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// A Google account with no Buzz account yet: the native sign-in returns a
+// A Google account with no Kuzz account yet: the native sign-in returns a
 // `signup` prompt (the relay created nothing). The shared login hook shows
-// "Create your Buzz account" and only "Create account" creates it; "Use a
+// "Create your Kuzz account" and only "Create account" creates it; "Use a
 // different account" starts a fresh Google sign-in and closing stops.
 
 const calls = [];

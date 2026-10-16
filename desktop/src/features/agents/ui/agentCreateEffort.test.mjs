@@ -96,7 +96,7 @@ function rawPersona(input) {
     description: input.description ?? null,
     avatar_url: input.avatarUrl ?? null,
     system_prompt: input.systemPrompt ?? "",
-    acp_command: input.acpCommand ?? "buzz-acp",
+    acp_command: input.acpCommand ?? "kuzz-acp",
     runtime: input.runtime ?? null,
     model: input.model ?? null,
     provider: input.provider ?? null,
@@ -123,7 +123,7 @@ function rawAgent(input) {
     persona_id: input.personaId ?? null,
     runtime: "claude",
     relay_url: "wss://relay.example",
-    acp_command: input.acpCommand ?? "buzz-acp",
+    acp_command: input.acpCommand ?? "kuzz-acp",
     agent_command: input.agentCommand ?? "claude-cmd",
     agent_command_override: null,
     agent_args: [],
@@ -232,7 +232,7 @@ function renderCreateEntryPoint() {
       null,
       createElement(
         ThemeProvider,
-        { defaultTheme: "buzz" },
+        { defaultTheme: "kuzz" },
         createElement(
           QueryClientProvider,
           { client },

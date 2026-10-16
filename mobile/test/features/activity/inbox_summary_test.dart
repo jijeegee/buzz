@@ -1,7 +1,7 @@
-import 'package:buzz/features/activity/feed_item.dart';
-import 'package:buzz/features/activity/inbox_item.dart';
-import 'package:buzz/features/activity/inbox_summary.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/activity/feed_item.dart';
+import 'package:kuzz/features/activity/inbox_item.dart';
+import 'package:kuzz/features/activity/inbox_summary.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _room = '11111111-1111-4111-8111-111111111111';

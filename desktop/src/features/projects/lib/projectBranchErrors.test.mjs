@@ -7,7 +7,7 @@ import {
 } from "./projectBranchErrors.ts";
 
 test("recognizes the relay's stable denial token", () => {
-  // Body produced by the relay push policy (buzz-core
+  // Body produced by the relay push policy (kuzz-core
   // GIT_NO_CHANNEL_BINDING_BODY), as it arrives wrapped in git stderr.
   assert.ok(
     isNoChannelBindingError(

@@ -13,7 +13,7 @@ import { ONBOARDING_INK_ICON_CLASS } from "./OnboardingChrome";
 import { OnboardingFooter } from "./OnboardingFooter";
 
 const IDENTITY_KEY_HELP_SEEN_STORAGE_KEY =
-  "buzz.machine-onboarding.identity-key-help-seen.v1";
+  "kuzz.machine-onboarding.identity-key-help-seen.v1";
 const IDENTITY_KEY_HELP_DELAY_MS = 2_000;
 
 function hasSeenIdentityKeyHelp(): boolean {
@@ -95,7 +95,7 @@ export function IdentityKeyHelpDialog({
         <OnboardingFooter className="max-w-none">{trigger}</OnboardingFooter>
       )}
       <DialogContent
-        className="buzz-onboarding-neutral-theme max-w-[47.5rem] -translate-y-5"
+        className="kuzz-onboarding-neutral-theme max-w-[47.5rem] -translate-y-5"
         closeButtonClassName={ONBOARDING_INK_ICON_CLASS}
         data-system-color-scheme="light"
         data-testid="identity-key-help-dialog"
@@ -108,7 +108,7 @@ export function IdentityKeyHelpDialog({
           </DialogTitle>
           <DialogDescription
             asChild
-            className="mt-6 space-y-4 text-pretty text-base leading-7 text-[color:var(--buzz-onboarding-backup-ink)]"
+            className="mt-6 space-y-4 text-pretty text-base leading-7 text-[color:var(--kuzz-onboarding-backup-ink)]"
           >
             <div>
               <IdentityKeyHelpBody />

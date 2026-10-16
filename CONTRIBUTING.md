@@ -1,6 +1,6 @@
-# Contributing to Buzz
+# Contributing to Kuzz
 
-Welcome, and thank you for your interest in contributing! Buzz is an
+Welcome, and thank you for your interest in contributing! Kuzz is an
 open-source project and we're glad you're here. This guide will help you
 get from zero to a merged pull request.
 
@@ -33,7 +33,7 @@ report instead.
 
 This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md).
 By participating you agree to uphold these standards. Please report
-unacceptable behavior to **conduct@buzz-relay.org**.
+unacceptable behavior to **conduct@kuzz-relay.org**.
 
 ---
 
@@ -43,7 +43,7 @@ Before starting, search [open PRs](https://github.com/block/buzz/pulls) and [ope
 
 For anything beyond a small fix, opening an issue first is strongly recommended. Describe the problem and proposed solution so a maintainer can acknowledge the approach before you build — it avoids two people building the same thing in parallel.
 
-Buzz is an agent platform, so AI-assisted PRs are welcome. No need to disclose the tools you used, but you own and must have reviewed the final code. Submissions that are clearly unreviewed may be closed with a pointer here.
+Kuzz is an agent platform, so AI-assisted PRs are welcome. No need to disclose the tools you used, but you own and must have reviewed the final code. Submissions that are clearly unreviewed may be closed with a pointer here.
 
 We squash-merge, so your PR title becomes the commit subject in `main`. Use [Conventional Commits](https://www.conventionalcommits.org/) format: `feat(mcp): add get_feed_actions tool`. The type prefix (`feat`, `fix`, `docs`, `refactor`, `test`, `chore`) is required. See the [Commit Messages](#commit-messages) section for the full reference.
 
@@ -138,7 +138,7 @@ clippy`, `just test-unit`, and `just test` need no GTK.
 ```bash
 # 1. Clone the repo
 git clone https://github.com/block/buzz.git
-cd buzz
+cd kuzz
 
 # 2. Activate Hermit (optional but recommended)
 . ./bin/activate-hermit
@@ -182,14 +182,14 @@ just desktop-dev  # terminal 2 — Vite dev server only (no Tauri shell)
 
 ```bash
 just down    # Stop Docker services, keep data
-just reset   # Wipe all dev state and recreate it; installed Buzz is preserved
+just reset   # Wipe all dev state and recreate it; installed Kuzz is preserved
 ```
 
 Development desktop state uses separate bundle identifiers
-(`xyz.block.buzz.app.dev` and per-worktree variants), a separate keyring service
-(`buzz-desktop-dev`), and `~/.buzz-dev`. `just reset` removes those dev-only
+(`app.kuzz.app.dev` and per-worktree variants), a separate keyring service
+(`kuzz-desktop-dev`), and `~/.kuzz-dev`. `just reset` removes those dev-only
 locations and the local Docker volumes. It does not touch the installed app's
-`xyz.block.buzz.app` data, `buzz-desktop` keyring service, or `~/.buzz` nest.
+`app.kuzz.app` data, `kuzz-desktop` keyring service, or `~/.kuzz` nest.
 
 ---
 
@@ -224,7 +224,7 @@ filename prefix instead. Tests that also require infrastructure beyond
 PostgreSQL and Redis live under an `external_infra*_tests` module and are
 excluded without changing their descriptive function names.
 
-See the [buzz-db testing guide](crates/buzz-db/TESTING.md) for the crate-level
+See the [kuzz-db testing guide](crates/kuzz-db/TESTING.md) for the crate-level
 checklist.
 
 `scripts/test-postgres-test-discovery.sh` enforces the convention across every
@@ -236,15 +236,15 @@ does not require a separate package-list update.
 
 The `postgres-ci` nextest profile creates one database per test process, so
 destructive and concurrent tests must use the database URL supplied through
-`BUZZ_TEST_DATABASE_URL`, `TEST_DATABASE_URL`, or `DATABASE_URL`; do not
+`KUZZ_TEST_DATABASE_URL`, `TEST_DATABASE_URL`, or `DATABASE_URL`; do not
 hard-code the shared development database. Ordinary tests receive the committed
 desired-state schema from `schema/schema.sql`. Tests under
 `migration::postgres_tests` receive an empty database and own the embedded
 migration lifecycle. A test outside that module whose behavior intentionally
 depends on migration-created triggers or seed rows uses a
 `migration_schema_` function-name prefix and also receives an empty database
-with `BUZZ_TEST_SCHEMA_MODE=migration`. Test helpers that normally call the
-migrator honor `BUZZ_TEST_SCHEMA_MODE=desired` so the desired-state contract is
+with `KUZZ_TEST_SCHEMA_MODE=migration`. Test helpers that normally call the
+migrator honor `KUZZ_TEST_SCHEMA_MODE=desired` so the desired-state contract is
 not re-migrated.
 
 Tests that inspect cluster-wide PostgreSQL state or open least-privilege
@@ -258,7 +258,7 @@ superuser access. The complete inventory includes privilege-boundary tests that
 create temporary roles and inspect all sessions, so grant that role
 `CREATEROLE` and membership in `pg_read_all_stats` (or use an ephemeral
 superuser, as CI does).
-Set `BUZZ_POSTGRES_ADMIN_URL` to that role's maintenance database, and set
+Set `KUZZ_POSTGRES_ADMIN_URL` to that role's maintenance database, and set
 `PGHOST`, `PGPORT`, `PGUSER`, and `PGPASSWORD` for the desired-state
 schema bootstrap. PostgreSQL client tools are resolved from `PATH` unless
 `PG_BIN_DIR` is set. Tests that use Redis read `REDIS_URL`.
@@ -275,7 +275,7 @@ races and emits a warning if all five attempts fail.
 
 ### End-to-End Tests
 
-End-to-end tests live in `crates/buzz-test-client/tests/`:
+End-to-end tests live in `crates/kuzz-test-client/tests/`:
 
 - `e2e_relay.rs` — WebSocket relay tests
 - `e2e_mcp.rs` — MCP tool tests
@@ -286,7 +286,7 @@ End-to-end tests live in `crates/buzz-test-client/tests/`:
 Run them with (requires running infrastructure):
 
 ```bash
-cargo test -p buzz-test-client -- --ignored
+cargo test -p kuzz-test-client -- --ignored
 ```
 
 See `TESTING.md` for the full multi-agent E2E testing guide.
@@ -441,7 +441,7 @@ design principles:
 **The relay is the single source of truth.** All state flows through the
 event store. Crates communicate through the database and Redis pub/sub — not
 through direct function calls across crate boundaries (with the exception
-of `buzz-core` types, which are shared everywhere).
+of `kuzz-core` types, which are shared everywhere).
 
 **Event kinds are the only switch.** Every action in the system — a message,
 a reaction, a workflow step, a canvas update — is a Nostr event with a kind
@@ -452,7 +452,7 @@ to existing clients.
 
 ## Ecosystem
 
-Buzz is developed across multiple repositories. This repo (`block/buzz`)
+Kuzz is developed across multiple repositories. This repo (`block/kuzz`)
 is the open-source home for all application code — the relay, desktop app,
 mobile app, CLI, and agent harness. Internal repositories handle
 enterprise-signed builds and infrastructure deployment.
@@ -460,7 +460,7 @@ enterprise-signed builds and infrastructure deployment.
 See [AGENTS.md § Ecosystem](AGENTS.md#ecosystem) for the full repo table and
 dependency diagram.
 
-**External contributors:** Fork `block/buzz`, open a PR, and CI runs
+**External contributors:** Fork `block/kuzz`, open a PR, and CI runs
 automatically. No special access is required.
 
 **Block team members:** See the internal
@@ -472,7 +472,7 @@ for team access setup, onboarding, and the full repo inventory. See
 
 ## How to Add a New Event Kind
 
-1. **Define the kind constant** in `buzz-core/src/kind.rs`:
+1. **Define the kind constant** in `kuzz-core/src/kind.rs`:
 
    ```rust
    /// My new event kind — description of what it represents.
@@ -483,7 +483,7 @@ for team access setup, onboarding, and the full repo inventory. See
    Check the `ALL_KINDS` array for collisions. Each sub-range is documented
    with comments in the file.
 
-2. **Define the payload type** in the appropriate module in `buzz-core/src/`
+2. **Define the payload type** in the appropriate module in `kuzz-core/src/`
    (e.g., alongside `event.rs`) if the content field is structured JSON:
 
    ```rust
@@ -495,7 +495,7 @@ for team access setup, onboarding, and the full repo inventory. See
    ```
 
 3. **Register the kind's required scope** in
-   `crates/buzz-relay/src/handlers/ingest.rs` inside
+   `crates/kuzz-relay/src/handlers/ingest.rs` inside
    `required_scope_for_kind()`. This controls which auth scope a caller
    needs to submit the event:
 
@@ -504,7 +504,7 @@ for team access setup, onboarding, and the full repo inventory. See
    ```
 
 4. **Handle post-storage side effects** by adding a match arm in
-   `crates/buzz-relay/src/handlers/side_effects.rs` inside
+   `crates/kuzz-relay/src/handlers/side_effects.rs` inside
    `handle_side_effects()`:
 
    ```rust
@@ -515,11 +515,11 @@ for team access setup, onboarding, and the full repo inventory. See
    notifications, cache invalidation, or derived data. If the new kind
    also needs an HTTP bridge surface (for example, a protocol helper that
    cannot practically use WebSocket), add a handler in
-   `crates/buzz-relay/src/api/` and register it in
-   `crates/buzz-relay/src/router.rs`.
+   `crates/kuzz-relay/src/api/` and register it in
+   `crates/kuzz-relay/src/router.rs`.
 
 5. **Persist to the database** — if the event needs to be queryable, add a
-   handler in `buzz-db/src/` (e.g., `buzz-db/src/my_feature.rs`) with
+   handler in `kuzz-db/src/` (e.g., `kuzz-db/src/my_feature.rs`) with
    the appropriate `INSERT` and `SELECT` queries.
 
 6. **Index for search** (if applicable) — Postgres FTS indexes persisted
@@ -532,7 +532,7 @@ for team access setup, onboarding, and the full repo inventory. See
    needed unless you need custom audit metadata.
 
 8. **Write tests** — add a unit test for payload serialization in
-   `buzz-core` and an integration test in `buzz-test-client` that sends
+   `kuzz-core` and an integration test in `kuzz-test-client` that sends
    the new event kind and verifies the expected behavior.
 
 9. **Document** — `kind.rs` is the authoritative registry of all kind numbers.
@@ -551,23 +551,23 @@ health probes.
 If an HTTP endpoint is still necessary:
 
 1. **Define the handler** in the appropriate module under
-   `crates/buzz-relay/src/api/`. Resolve the request tenant before any auth or
+   `crates/kuzz-relay/src/api/`. Resolve the request tenant before any auth or
    data lookup, use NIP-98 when the endpoint accepts user credentials, and keep
    community scoping explicit.
 
-2. **Register the route** in `crates/buzz-relay/src/router.rs` using the
+2. **Register the route** in `crates/kuzz-relay/src/router.rs` using the
    narrowest path possible. Do not add new `/api/*` compatibility routes unless
    the product decision explicitly calls for one.
 
-3. **Add database queries** in `buzz-db/src/` only when the endpoint cannot be
+3. **Add database queries** in `kuzz-db/src/` only when the endpoint cannot be
    expressed through the existing event query paths.
 
 4. **Handle errors** using the `api_error()`, `internal_error()`, and
-   `not_found()` helpers in `buzz-relay/src/api/mod.rs`. Return
+   `not_found()` helpers in `kuzz-relay/src/api/mod.rs`. Return
    `(StatusCode, Json<Value>)` tuples.
 
-5. **Write tests** with the `buzz-test-client` harness in
-   `crates/buzz-test-client/tests/`, covering auth, community scoping, and the
+5. **Write tests** with the `kuzz-test-client` harness in
+   `crates/kuzz-test-client/tests/`, covering auth, community scoping, and the
    relevant success path.
 
 6. **Document** any public endpoint in `ARCHITECTURE.md` and user-facing docs.
@@ -576,7 +576,7 @@ If an HTTP endpoint is still necessary:
 
 ## License and CLA
 
-Buzz is licensed under the **Apache License, Version 2.0**. See
+Kuzz is licensed under the **Apache License, Version 2.0**. See
 [LICENSE](LICENSE) for the full text.
 
 By submitting a pull request, you agree that your contribution is licensed
@@ -587,5 +587,5 @@ their sign-off. When in doubt, check with your legal team.
 
 ---
 
-*Thank you for contributing to Buzz. Every bug report, documentation fix,
+*Thank you for contributing to Kuzz. Every bug report, documentation fix,
 and code contribution makes the project better for everyone. 🐝*

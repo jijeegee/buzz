@@ -1069,7 +1069,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
-name = "buzz-agent"
+name = "kuzz-agent"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
@@ -1096,7 +1096,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-core"
+name = "kuzz-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
@@ -1117,7 +1117,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-desktop"
+name = "kuzz-desktop"
 version = "0.5.26"
 dependencies = [
  "anyhow",
@@ -1127,14 +1127,14 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "block2",
- "buzz-agent",
- "buzz-core",
- "buzz-media",
- "buzz-persona",
- "buzz-sdk",
- "buzz-terminal",
- "buzz-voice",
- "buzz-ws-client",
+ "kuzz-agent",
+ "kuzz-core",
+ "kuzz-media",
+ "kuzz-persona",
+ "kuzz-sdk",
+ "kuzz-terminal",
+ "kuzz-voice",
+ "kuzz-ws-client",
  "bytes",
  "bzip2 0.6.1",
  "chrono",
@@ -1212,12 +1212,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-media"
+name = "kuzz-media"
 version = "0.1.0"
 dependencies = [
  "axum",
  "blurhash",
- "buzz-core",
+ "kuzz-core",
  "bytes",
  "chrono",
  "futures-core",
@@ -1243,7 +1243,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-persona"
+name = "kuzz-persona"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -1253,10 +1253,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-sdk"
+name = "kuzz-sdk"
 version = "0.1.0"
 dependencies = [
- "buzz-core",
+ "kuzz-core",
  "nostr 0.44.7",
  "serde",
  "serde_json",
@@ -1265,7 +1265,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-terminal"
+name = "kuzz-terminal"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
@@ -1275,7 +1275,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-voice"
+name = "kuzz-voice"
 version = "0.1.0"
 dependencies = [
  "atomic-write-file",
@@ -1293,7 +1293,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-ws-client"
+name = "kuzz-ws-client"
 version = "0.1.0"
 dependencies = [
  "futures-util",

@@ -55,9 +55,9 @@ fn migrate_legacy_retention_into(
     ) {
         Ok(0) => {}
         Ok(copied) => {
-            eprintln!("buzz-desktop: adopted {copied} legacy retained event(s) into this community")
+            eprintln!("kuzz-desktop: adopted {copied} legacy retained event(s) into this community")
         }
-        Err(error) => eprintln!("buzz-desktop: legacy retention migration failed: {error}"),
+        Err(error) => eprintln!("kuzz-desktop: legacy retention migration failed: {error}"),
     }
 }
 
@@ -231,7 +231,7 @@ pub async fn apply_workspace(
         // ── Validate before mutating ──────────────────────────────────────────
         let parsed_keys = match nsec.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             Some(nsec_trimmed) => Some(Keys::parse(nsec_trimmed).map_err(|_| {
-                eprintln!("buzz-desktop: invalid nsec (details withheld: secret input)");
+                eprintln!("kuzz-desktop: invalid nsec (details withheld: secret input)");
                 "Couldn't restore your account.".to_string()
             })?),
             None => None,
@@ -294,10 +294,10 @@ pub async fn apply_workspace(
         // `repos-dir-error`.
         if let Some(nest) = nest.as_deref() {
             if let Err(error) = write_persisted_repos_dir(nest, effective_repos_dir.as_deref()) {
-                eprintln!("buzz-desktop: persist repos dir failed: {error}");
+                eprintln!("kuzz-desktop: persist repos dir failed: {error}");
             }
             if let Err(error) = ensure_repos_symlink(nest, effective_repos_dir.as_deref()) {
-                eprintln!("buzz-desktop: repos dir setup failed: {error}");
+                eprintln!("kuzz-desktop: repos dir setup failed: {error}");
                 let _ = app.emit("repos-dir-error", error);
             }
         }
@@ -399,13 +399,13 @@ pub async fn apply_workspace(
                 if let Err(error) =
                     crate::commands::mesh_llm::restore_mesh_sharing(&app, &state).await
                 {
-                    eprintln!("buzz-desktop: failed to restore Share Compute: {error}");
+                    eprintln!("kuzz-desktop: failed to restore Share Compute: {error}");
                 }
             }
             crate::mesh_llm::publish_current_status_once(&app, "workspace apply").await;
             if let Some(restore) = restore {
                 if let Err(error) = restore.await {
-                    eprintln!("buzz-desktop: failed to restore managed agents: {error}");
+                    eprintln!("kuzz-desktop: failed to restore managed agents: {error}");
                 }
             }
         });
@@ -418,7 +418,7 @@ pub async fn apply_workspace(
         tauri::async_runtime::spawn(async move {
             let _restore_lock = restore_lock;
             if let Err(error) = restore.await {
-                eprintln!("buzz-desktop: failed to restore managed agents: {error}");
+                eprintln!("kuzz-desktop: failed to restore managed agents: {error}");
             }
         });
         return Ok(());

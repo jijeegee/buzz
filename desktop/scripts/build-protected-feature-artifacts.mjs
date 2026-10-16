@@ -29,7 +29,7 @@ function buildVariant({ internal, output }) {
     ...process.env,
     // Pin both children explicitly. Deleting the OSS value lets Vite reload
     // `=1` from .env.local or a mode-specific env file.
-    VITE_BUZZ_BESTIE: internal ? "1" : "0",
+    VITE_KUZZ_BESTIE: internal ? "1" : "0",
   };
 
   const result = spawnSync(
@@ -88,7 +88,7 @@ export function assertArtifactContract({ ossOutput, internalOutput }) {
 
 /** Resolve the requested output with the same precedence used by Vite config. */
 export function selectInternalVariant({ processEnv, modeEnv }) {
-  return (processEnv.VITE_BUZZ_BESTIE ?? modeEnv.VITE_BUZZ_BESTIE) === "1";
+  return (processEnv.VITE_KUZZ_BESTIE ?? modeEnv.VITE_KUZZ_BESTIE) === "1";
 }
 
 /** Build and inspect both graphs, leaving the requested variant in dist. */
@@ -121,10 +121,10 @@ function main() {
     modeEnv: loadEnv("production", desktopRoot, ""),
   });
   const scratchRoot = mkdtempSync(
-    path.join(tmpdir(), "buzz-protected-feature-artifacts-"),
+    path.join(tmpdir(), "kuzz-protected-feature-artifacts-"),
   );
-  const selectedOutput = process.env.BUZZ_PROTECTED_BUILD_OUTPUT
-    ? path.resolve(process.env.BUZZ_PROTECTED_BUILD_OUTPUT)
+  const selectedOutput = process.env.KUZZ_PROTECTED_BUILD_OUTPUT
+    ? path.resolve(process.env.KUZZ_PROTECTED_BUILD_OUTPUT)
     : path.join(desktopRoot, "dist");
   const alternateOutput = path.join(scratchRoot, "alternate");
 

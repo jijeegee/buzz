@@ -58,11 +58,11 @@ const codex = runtime({
   command: null,
   binaryPath: null,
 });
-const buzzAgent = runtime({
-  id: "buzz-agent",
-  label: "Buzz Agent",
-  modelEnvVar: "BUZZ_AGENT_MODEL",
-  providerEnvVar: "BUZZ_AGENT_PROVIDER",
+const kuzzAgent = runtime({
+  id: "kuzz-agent",
+  label: "Kuzz Agent",
+  modelEnvVar: "KUZZ_AGENT_MODEL",
+  providerEnvVar: "KUZZ_AGENT_PROVIDER",
 });
 const goose = runtime({
   id: "goose",
@@ -70,12 +70,12 @@ const goose = runtime({
   modelEnvVar: "GOOSE_MODEL",
   providerEnvVar: "GOOSE_PROVIDER",
 });
-const catalog = [goose, claude, codex, buzzAgent];
+const catalog = [goose, claude, codex, kuzzAgent];
 
 test("ChatGPT subscription default preserves a selected capable Kuzz harness", () => {
-  const capable = { ...buzzAgent, supportsChatgptSubscription: true };
+  const capable = { ...kuzzAgent, supportsChatgptSubscription: true };
   const before = config({
-    preferred_runtime: "buzz-agent",
+    preferred_runtime: "kuzz-agent",
     provider: "openai",
     model: "old",
   });
@@ -85,10 +85,10 @@ test("ChatGPT subscription default preserves a selected capable Kuzz harness", (
     (option) => option.id === "openai:subscription",
   );
   assert.equal(option.available, true);
-  assert.equal(option.runtime.id, "buzz-agent");
+  assert.equal(option.runtime.id, "kuzz-agent");
   assert.equal(option.label, "OpenAI · ChatGPT subscription");
   const next = nextGlobalConfigForDefault(before, row, "subscription");
-  assert.equal(next.preferred_runtime, "buzz-agent");
+  assert.equal(next.preferred_runtime, "kuzz-agent");
   assert.equal(next.provider, "openai-subscription");
   assert.equal(next.model, null);
   const after = buildProviderRows([goose, claude, codex, capable], next);
@@ -122,7 +122,7 @@ test("subscription runtimes are matched only through subscriptionProvider", () =
   // A runtime that *looks* like Claude but publishes no fact is not matched —
   // the id is never consulted.
   const unlabeled = runtime({ id: "claude", label: "Claude Code" });
-  const rowsWithoutFact = buildProviderRows([unlabeled, buzzAgent], config());
+  const rowsWithoutFact = buildProviderRows([unlabeled, kuzzAgent], config());
   assert.equal(rowFor(rowsWithoutFact, "anthropic").subscriptionRuntime, null);
 });
 
@@ -189,13 +189,13 @@ test("the API-key harness is an available provider-selection runtime", () => {
     catalog,
     config({ preferred_runtime: "claude" }),
   );
-  assert.equal(rowFor(preferClaude, "anthropic").apiKeyRuntime, buzzAgent);
+  assert.equal(rowFor(preferClaude, "anthropic").apiKeyRuntime, kuzzAgent);
   // Nothing installed that takes a provider → no API-key harness.
   const none = buildProviderRows([claude, codex], config());
   assert.equal(rowFor(none, "anthropic").apiKeyRuntime, null);
   // An uninstalled provider runtime is never chosen.
   const uninstalled = buildProviderRows(
-    [claude, runtime({ ...buzzAgent, availability: "not_installed" })],
+    [claude, runtime({ ...kuzzAgent, availability: "not_installed" })],
     config(),
   );
   assert.equal(rowFor(uninstalled, "anthropic").apiKeyRuntime, null);
@@ -218,7 +218,7 @@ test("defaultPath: at most one row across the table is selected", () => {
       expect: { openai: "subscription" },
     },
     {
-      cfg: config({ preferred_runtime: "buzz-agent", provider: "anthropic" }),
+      cfg: config({ preferred_runtime: "kuzz-agent", provider: "anthropic" }),
       expect: { anthropic: "api-key" },
     },
     {
@@ -289,9 +289,9 @@ test("defaultOptions lists every provider × path with a harness, one selected",
   assert.equal(options[0].label, "Anthropic · Subscription");
   assert.equal(options[0].detail, "Claude Code sign-in");
   assert.equal(options[2].detail, "Codex sign-in — not installed");
-  assert.equal(options[1].detail, "Buzz Agent with ANTHROPIC_API_KEY");
+  assert.equal(options[1].detail, "Kuzz Agent with ANTHROPIC_API_KEY");
   assert.equal(options[6].label, "Databricks · Workspace");
-  assert.equal(options[6].detail, "Buzz Agent with workspace sign-in");
+  assert.equal(options[6].detail, "Kuzz Agent with workspace sign-in");
 
   const noProviderHarness = defaultOptions(
     buildProviderRows([claude], config()),
@@ -307,11 +307,11 @@ test("defaultOptions lists every provider × path with a harness, one selected",
 
 test("choosing a subscription switches the harness and clears model/effort, never sets a model", () => {
   const before = config({
-    preferred_runtime: "buzz-agent",
+    preferred_runtime: "kuzz-agent",
     provider: "anthropic",
     model: "claude-sonnet",
     effort_level: "high",
-    env_vars: { ANTHROPIC_API_KEY: "sk", BUZZ_AGENT_THINKING_EFFORT: "high" },
+    env_vars: { ANTHROPIC_API_KEY: "sk", KUZZ_AGENT_THINKING_EFFORT: "high" },
   });
   const rows = buildProviderRows(catalog, before);
   const next = nextGlobalConfigForDefault(
@@ -326,7 +326,7 @@ test("choosing a subscription switches the harness and clears model/effort, neve
   assert.equal(next.provider, null);
   // The key stays: it is still the API-key path's credential.
   assert.equal(next.env_vars.ANTHROPIC_API_KEY, "sk");
-  assert.equal("BUZZ_AGENT_THINKING_EFFORT" in next.env_vars, false);
+  assert.equal("KUZZ_AGENT_THINKING_EFFORT" in next.env_vars, false);
   assert.equal(before.model, "claude-sonnet", "input is not mutated");
 });
 
@@ -359,7 +359,7 @@ test("choosing the API-key path from a login harness switches to the provider ha
     rowFor(rows, "openai"),
     "api-key",
   );
-  assert.equal(next.preferred_runtime, "buzz-agent");
+  assert.equal(next.preferred_runtime, "kuzz-agent");
   assert.equal(next.provider, "openai");
   assert.equal(next.model, null);
 });
@@ -376,7 +376,7 @@ test("re-choosing the current default is a no-op and a missing harness yields nu
     null,
   );
   const sameProvider = config({
-    preferred_runtime: "buzz-agent",
+    preferred_runtime: "kuzz-agent",
     provider: "openai",
   });
   const sameRows = buildProviderRows(catalog, sameProvider);
@@ -425,7 +425,7 @@ test("every default change leaves model unset", () => {
 
 test("an API-key save touches only that env var", () => {
   const before = config({
-    preferred_runtime: "buzz-agent",
+    preferred_runtime: "kuzz-agent",
     provider: "anthropic",
     model: "claude-sonnet",
     env_vars: { OPENAI_COMPAT_API_KEY: "keep" },

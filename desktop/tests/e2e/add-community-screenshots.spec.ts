@@ -24,10 +24,10 @@ const COMMUNITIES = [
 test.beforeEach(async ({ page }) => {
   await page.addInitScript((communities) => {
     window.localStorage.setItem(
-      "buzz-communities",
+      "kuzz-communities",
       JSON.stringify(communities),
     );
-    window.localStorage.setItem("buzz-active-community-id", communities[0].id);
+    window.localStorage.setItem("kuzz-active-community-id", communities[0].id);
   }, COMMUNITIES);
   await installMockBridge(
     page,
@@ -71,7 +71,7 @@ test.skip("identity: npub-only account key is recovery, never a ready create flo
   // Presence of the identity object must not read as a ready account: the
   // mismatch recovery branch owns the create tab instead.
   await expect(
-    page.getByText("This Builderlab account uses a different Buzz identity."),
+    page.getByText("This Builderlab account uses a different Kuzz identity."),
   ).toBeVisible();
   await expect(page.getByText("Account: Unavailable")).toBeVisible();
   await expect(
@@ -116,7 +116,7 @@ test.skip("identity: padded same-key hex is a ready create flow, not a mismatch"
   // The create form — and with it the create action — is available.
   await expect(page.getByTestId("hosted-community-create-name")).toBeVisible();
   await expect(
-    page.getByText("This Builderlab account uses a different Buzz identity."),
+    page.getByText("This Builderlab account uses a different Kuzz identity."),
   ).toHaveCount(0);
 });
 
@@ -170,7 +170,7 @@ test.skip("identity: create owner shows the bound key's npub, never the hosted n
   await page.getByTestId("community-rail-add").click();
   await page.getByTestId("add-community-create").click();
   await expect(
-    page.getByText("This Builderlab account uses a different Buzz identity."),
+    page.getByText("This Builderlab account uses a different Kuzz identity."),
   ).toBeVisible();
   await expect(
     page.getByText(`Account: ${npubEncode("f".repeat(64))}`),
@@ -205,7 +205,7 @@ test.skip("identity: create owner renders the neutral label when the bound hex i
   await page.getByTestId("community-rail-add").click();
   await page.getByTestId("add-community-create").click();
   await expect(
-    page.getByText("This Builderlab account uses a different Buzz identity."),
+    page.getByText("This Builderlab account uses a different Kuzz identity."),
   ).toBeVisible();
   await expect(page.getByText("Account: Unavailable")).toBeVisible();
   await expect(page.getByText(npubEncode("b".repeat(64)))).toHaveCount(0);

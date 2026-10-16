@@ -26,18 +26,18 @@ STUB
 chmod +x "$fixture/bin/flutter" "$fixture/bin/pgrep" "$fixture/scripts/mobile-worktree-overrides.sh"
 export PATH="$fixture/bin:$PATH"
 export CALL_LOG="$fixture/arguments"
-unset BUZZ_PUSH_GATEWAY_URL
-unset BUZZ_KEY_BACKUP_ORIGIN
+unset KUZZ_PUSH_GATEWAY_URL
+unset KUZZ_KEY_BACKUP_ORIGIN
 
 for recipe in mobile-dev mobile-build-android; do
   for mode in omitted supplied; do
-    unset BUZZ_PUSH_GATEWAY_URL
-    unset BUZZ_KEY_BACKUP_ORIGIN
+    unset KUZZ_PUSH_GATEWAY_URL
+    unset KUZZ_KEY_BACKUP_ORIGIN
     if [[ "$mode" == supplied ]]; then
       # A space catches accidental splitting. The build gate validates URLs;
       # this test checks exact argument forwarding.
-      export BUZZ_PUSH_GATEWAY_URL='https://push.example/value with space'
-      export BUZZ_KEY_BACKUP_ORIGIN='https://recovery.example:8443'
+      export KUZZ_PUSH_GATEWAY_URL='https://push.example/value with space'
+      export KUZZ_KEY_BACKUP_ORIGIN='https://recovery.example:8443'
     fi
     (cd "$fixture" && /bin/bash "$fixture/$recipe")
     if [[ "$recipe" == mobile-dev ]]; then
@@ -45,19 +45,19 @@ for recipe in mobile-dev mobile-build-android; do
     else
       printf '%s\n' build apk --debug --no-pub > "$fixture/expected"
     fi
-    printf '%s\n' "--dart-define=BUZZ_KEY_BACKUP_ORIGIN=${BUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}" >> "$fixture/expected"
+    printf '%s\n' "--dart-define=KUZZ_KEY_BACKUP_ORIGIN=${KUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}" >> "$fixture/expected"
     if [[ "$mode" == supplied ]]; then
-      printf '%s\n' "--dart-define=BUZZ_PUSH_GATEWAY_URL=$BUZZ_PUSH_GATEWAY_URL" >> "$fixture/expected"
+      printf '%s\n' "--dart-define=KUZZ_PUSH_GATEWAY_URL=$KUZZ_PUSH_GATEWAY_URL" >> "$fixture/expected"
     fi
     diff -u "$fixture/expected" "$CALL_LOG"
     printf 'PASS %s %s\n' "$recipe" "$mode"
   done
 done
 
-unset BUZZ_PUSH_GATEWAY_URL
-unset BUZZ_KEY_BACKUP_ORIGIN
-printf '%s\n' 'BUZZ_PUSH_GATEWAY_URL = https:/$()/push.example' > "$fixture/mobile/ios/Flutter/AppOverrides.xcconfig"
+unset KUZZ_PUSH_GATEWAY_URL
+unset KUZZ_KEY_BACKUP_ORIGIN
+printf '%s\n' 'KUZZ_PUSH_GATEWAY_URL = https:/$()/push.example' > "$fixture/mobile/ios/Flutter/AppOverrides.xcconfig"
 (cd "$fixture" && /bin/bash "$fixture/mobile-dev")
-printf '%s\n' run '--dart-define=BUZZ_KEY_BACKUP_ORIGIN=https://jihobuzz.duckdns.org:8443' '--dart-define=BUZZ_PUSH_GATEWAY_URL=https://push.example' > "$fixture/expected"
+printf '%s\n' run '--dart-define=KUZZ_KEY_BACKUP_ORIGIN=https://jihobuzz.duckdns.org:8443' '--dart-define=KUZZ_PUSH_GATEWAY_URL=https://push.example' > "$fixture/expected"
 diff -u "$fixture/expected" "$CALL_LOG"
 printf 'PASS mobile-dev Xcode override\n'

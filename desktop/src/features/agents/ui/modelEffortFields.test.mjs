@@ -78,7 +78,7 @@ const claudeRuntime = {
     fallbackValues: ["low", "medium", "high"],
   },
 };
-// Goose / buzz-agent / custom harnesses publish no ACP effort option.
+// Goose / kuzz-agent / custom harnesses publish no ACP effort option.
 const gooseRuntime = { effortThoughtLevel: null };
 
 function modelControl() {

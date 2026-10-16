@@ -54,7 +54,7 @@ pub(super) fn mention_reference_tags(
 
 /// Smart routing's follow-up note on a delivery edit: `["buzz:route",
 /// relation, of, thread_root, note]`. `of` is the earlier delivered message
-/// and `thread_root` the thread that agent answered in. buzz-acp anchors the
+/// and `thread_root` the thread that agent answered in. kuzz-acp anchors the
 /// reply in `thread_root` and adds a follow-up line to the prompt
 /// (`queue::route_follow_up`); `note` says the same in plain language for
 /// any harness that only renders the tags.

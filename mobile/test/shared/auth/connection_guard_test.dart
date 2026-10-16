@@ -2,11 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-import 'package:buzz/shared/auth/default_community.dart';
-import 'package:buzz/shared/huddle/huddle_auth.dart';
-import 'package:buzz/shared/huddle/huddle_transport.dart';
-import 'package:buzz/shared/relay/relay_socket.dart';
-import 'package:buzz/shared/relay/signed_event_relay.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
+import 'package:kuzz/shared/huddle/huddle_auth.dart';
+import 'package:kuzz/shared/huddle/huddle_transport.dart';
+import 'package:kuzz/shared/relay/relay_socket.dart';
+import 'package:kuzz/shared/relay/signed_event_relay.dart';
 
 const _parentChannelId = '11111111-2222-4333-8444-555555555555';
 const _ephemeralChannelId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';

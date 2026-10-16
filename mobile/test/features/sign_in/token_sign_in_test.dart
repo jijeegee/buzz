@@ -1,9 +1,9 @@
-import 'package:buzz/features/sign_in/signed_out_page.dart';
-import 'package:buzz/features/sign_in/token_session_gate.dart';
-import 'package:buzz/features/sign_in/token_sign_in_page.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/default_community.dart';
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/features/sign_in/signed_out_page.dart';
+import 'package:kuzz/features/sign_in/token_session_gate.dart';
+import 'package:kuzz/features/sign_in/token_sign_in_page.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -157,9 +157,9 @@ void main() {
       expect(opened.queryParameters['client'], 'mobile');
       expect(
         opened.queryParameters['redirect_uri'],
-        'xyz.block.buzz://auth/cb',
+        'app.kuzz://auth/cb',
       );
-      expect(h.launcher.schemes.single, 'xyz.block.buzz');
+      expect(h.launcher.schemes.single, 'app.kuzz');
       expect(
         h.store.data[_origin],
         StoredTokenSession(refreshToken: 'bzr_login', principalId: _principal),

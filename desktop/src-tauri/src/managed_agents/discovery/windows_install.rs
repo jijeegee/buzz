@@ -52,7 +52,7 @@
 
 /// Build the Windows CLI install command for one runtime.
 ///
-/// `slug` names the downloaded script (`buzz-install-<slug>.ps1`) so concurrent
+/// `slug` names the downloaded script (`kuzz-install-<slug>.ps1`) so concurrent
 /// installs of different runtimes cannot overwrite each other's file. The
 /// optional third argument carries a runtime's env prefix (Goose's
 /// `$env:CONFIGURE='false'; `) and must end with `; `.
@@ -67,7 +67,7 @@ macro_rules! windows_install_command {
             "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"",
             $env_prefix,
             "$ErrorActionPreference='Stop'; ",
-            "$installer=Join-Path $env:TEMP 'buzz-install-",
+            "$installer=Join-Path $env:TEMP 'kuzz-install-",
             $slug,
             ".ps1'; ",
             "Invoke-RestMethod ",
@@ -137,7 +137,7 @@ mod tests {
                 "{id}: must execute the downloaded file. Got: {command}"
             );
             assert!(
-                command.contains(&format!("buzz-install-{id}.ps1")),
+                command.contains(&format!("kuzz-install-{id}.ps1")),
                 "{id}: script name must be runtime-specific so concurrent installs of \
                  different runtimes cannot overwrite each other. Got: {command}"
             );

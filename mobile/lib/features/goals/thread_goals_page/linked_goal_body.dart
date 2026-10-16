@@ -198,7 +198,7 @@ class _LinkedGoalBody extends ConsumerWidget {
   }
 
   Future<void> _relink(BuildContext context, WidgetRef ref) async {
-    final choice = await showBuzzModalBottomSheet<({GoalRow row, bool create})>(
+    final choice = await showKuzzModalBottomSheet<({GoalRow row, bool create})>(
       context: context,
       title: 'Link to a goal',
       isScrollControlled: true,

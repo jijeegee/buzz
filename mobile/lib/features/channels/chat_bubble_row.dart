@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/theme/buzz_theme.dart';
+import '../../shared/theme/kuzz_theme.dart';
 import '../../shared/theme/grid.dart';
 import '../../shared/theme/message_typography.dart';
 import '../../shared/theme/theme_extensions.dart';
@@ -26,8 +26,8 @@ const chatListRightInset = 12.0;
 const _bubbleRadius = Radius.circular(16);
 const _bubbleTailRadius = Radius.circular(6);
 
-/// Bubble fills, mirroring desktop's `--buzz-bubble-own` /
-/// `--buzz-bubble-other` / `--buzz-bubble-other-shadow` in
+/// Bubble fills, mirroring desktop's `--kuzz-bubble-own` /
+/// `--kuzz-bubble-other` / `--kuzz-bubble-other-shadow` in
 /// `desktop/src/shared/styles/globals/theme.css`. Only the bubbles are
 /// painted; the timeline background is left to the theme.
 class ChatBubbleColors {
@@ -41,7 +41,7 @@ class ChatBubbleColors {
     this.otherShadow = const [],
   });
 
-  static const _buzzLight = ChatBubbleColors(
+  static const _kuzzLight = ChatBubbleColors(
     own: Color(0xFFDDE3EA),
     other: Color(0xFFFFFFFF),
     otherShadow: [
@@ -50,7 +50,7 @@ class ChatBubbleColors {
     ],
   );
 
-  static const _buzzDark = ChatBubbleColors(
+  static const _kuzzDark = ChatBubbleColors(
     own: Color(0xFF3A404A),
     other: Color(0xFF262B33),
   );
@@ -58,7 +58,7 @@ class ChatBubbleColors {
   static ChatBubbleColors of(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = scheme.brightness == Brightness.dark;
-    if (isBuzzThemeContext(context)) return isDark ? _buzzDark : _buzzLight;
+    if (isKuzzThemeContext(context)) return isDark ? _kuzzDark : _kuzzLight;
     // Desktop's default: `hsl(var(--muted))` and `hsl(var(--primary) / 0.15)`.
     return ChatBubbleColors(
       own: Color.alphaBlend(

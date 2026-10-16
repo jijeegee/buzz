@@ -3,7 +3,7 @@
 With the repository's Hermit environment active, run from `mobile/`:
 
 ```sh
-flutter test --dart-define=BUZZ_RUN_BENCHMARKS=true test/benchmark/channel_live_burst_test.dart
+flutter test --dart-define=KUZZ_RUN_BENCHMARKS=true test/benchmark/channel_live_burst_test.dart
 ```
 
 The diagnostic is skipped by default. It does not use a relay, credentials, or

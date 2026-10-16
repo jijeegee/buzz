@@ -7,7 +7,7 @@ leave access allowed. There is one attempt per provider lifecycle, with no
 blocking retry or restart flow.
 
 Production enforcement remains disabled. Dogfood builds can opt in with the
-Flutter define `BUZZ_AGE_GATING_ENABLED=true`. This enables the same notifier used
+Flutter define `KUZZ_AGE_GATING_ENABLED=true`. This enables the same notifier used
 by the native-channel and app tests. No real-device build is a PR prerequisite;
 actual OS prompts, signing, and account behavior will be checked in dogfood.
 

@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:buzz/features/channels/channel_head_cache.dart';
-import 'package:buzz/features/channels/channel_preload.dart';
-import 'package:buzz/features/channels/thread_replies_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/channels/channel_head_cache.dart';
+import 'package:kuzz/features/channels/channel_preload.dart';
+import 'package:kuzz/features/channels/thread_replies_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

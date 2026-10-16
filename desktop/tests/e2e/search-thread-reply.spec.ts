@@ -80,12 +80,12 @@ test("relay copy arrives late: placeholder waits, then opens the thread", async 
     type CachedQuery = { queryKey: unknown[]; state: { data: unknown } };
     const client = (
       window as unknown as {
-        __BUZZ_E2E_QUERY_CLIENT__: {
+        __KUZZ_E2E_QUERY_CLIENT__: {
           getQueryCache: () => { getAll: () => CachedQuery[] };
           setQueryData: (key: unknown[], data: unknown) => void;
         };
       }
-    ).__BUZZ_E2E_QUERY_CLIENT__;
+    ).__KUZZ_E2E_QUERY_CLIENT__;
     const isTarget = (event: unknown) =>
       (event as { id?: string } | null)?.id === eventId;
     let count = 0;
@@ -104,8 +104,8 @@ test("relay copy arrives late: placeholder waits, then opens the thread", async 
   expect(removed).toBeGreaterThan(0);
   await page.evaluate((eventId) => {
     (
-      window as Window & { __BUZZ_E2E_DEFER_GET_EVENT__?: string | null }
-    ).__BUZZ_E2E_DEFER_GET_EVENT__ = eventId;
+      window as Window & { __KUZZ_E2E_DEFER_GET_EVENT__?: string | null }
+    ).__KUZZ_E2E_DEFER_GET_EVENT__ = eventId;
   }, id);
   await openSearchHit(page, id);
   // While only the placeholder exists, no reply panel may open for it.
@@ -113,8 +113,8 @@ test("relay copy arrives late: placeholder waits, then opens the thread", async 
   await expect(page).not.toHaveURL(new RegExp(`thread=${id}`));
   const released = await page.evaluate(() =>
     (
-      window as Window & { __BUZZ_E2E_RELEASE_GET_EVENT__?: () => number }
-    ).__BUZZ_E2E_RELEASE_GET_EVENT__?.(),
+      window as Window & { __KUZZ_E2E_RELEASE_GET_EVENT__?: () => number }
+    ).__KUZZ_E2E_RELEASE_GET_EVENT__?.(),
   );
   expect(released).toBeGreaterThan(0);
   await expectInsideThread(page, id);

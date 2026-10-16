@@ -1,5 +1,5 @@
-import 'package:buzz/features/invites/invite_create_provider.dart';
-import 'package:buzz/shared/utils/string_utils.dart';
+import 'package:kuzz/features/invites/invite_create_provider.dart';
+import 'package:kuzz/shared/utils/string_utils.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostr/nostr.dart' as nostr;
 

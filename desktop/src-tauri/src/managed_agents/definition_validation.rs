@@ -67,7 +67,7 @@ pub(crate) const MAX_EFFORT_LEVEL_CHARS: usize = 64;
 /// Validate a thinking-effort level at every boundary that can write one:
 /// definition create/update, the inbound kind:30175 content, the community
 /// catalog parser, and the global defaults. The value is emitted verbatim into
-/// the child's env (`BUZZ_ACP_EFFORT_LEVEL`) and bypasses the env-var
+/// the child's env (`KUZZ_ACP_EFFORT_LEVEL`) and bypasses the env-var
 /// sanitizer, so NUL and other control characters are rejected here, blank is
 /// rejected (callers normalize blank to "unset" first), and the
 /// [`MAX_EFFORT_LEVEL_CHARS`] cap keeps a relay-supplied blob out of `cmd.env`.

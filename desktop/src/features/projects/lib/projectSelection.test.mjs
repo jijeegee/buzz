@@ -19,28 +19,28 @@ const taskA = selectionItemFromTask({
   author: "aa",
   channelId: "channel-1",
   id: "issue-a",
-  shareLink: "buzz://issue?id=a",
+  shareLink: "kuzz://issue?id=a",
   title: "Fix login",
 });
 const taskB = selectionItemFromTask({
   author: "bb",
   channelId: "channel-1",
   id: "issue-b",
-  shareLink: "buzz://issue?id=b",
+  shareLink: "kuzz://issue?id=b",
   title: "Fix logout",
 });
 const taskC = selectionItemFromTask({
   author: "cc",
   channelId: "channel-2",
   id: "issue-c",
-  shareLink: "buzz://issue?id=c",
+  shareLink: "kuzz://issue?id=c",
   title: "Fix signup",
 });
 const commit = selectionItemFromCommit({
   channelId: "channel-1",
   commitHash: "abc",
-  projectId: "buzz",
-  shareLink: "buzz://commit?h=abc",
+  projectId: "kuzz",
+  shareLink: "kuzz://commit?h=abc",
   title: "Ship the pod",
 });
 
@@ -131,7 +131,7 @@ test("discuss content prefers share links and the majority channel", () => {
   ]);
   assert.equal(
     projectSelectionDiscussContent([taskA, taskB]),
-    "Let's talk about these tasks:\n\nbuzz://issue?id=a\nbuzz://issue?id=b",
+    "Let's talk about these tasks:\n\nkuzz://issue?id=a\nkuzz://issue?id=b",
   );
   assert.equal(projectSelectionTitle([commit]), "1 commit");
 });

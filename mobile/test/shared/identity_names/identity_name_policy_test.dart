@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:buzz/shared/identity_names/identity_name_policy.dart';
+import 'package:kuzz/shared/identity_names/identity_name_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // Vendored, unmodified copy of the portable fixtures pinned in

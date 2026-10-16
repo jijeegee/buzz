@@ -15,8 +15,8 @@ import { identityReload } from "@/shared/api/tokenAuth";
 export const SWITCH_INCOMPLETE_NOTICE =
   "Switched accounts. Some communities could not move to this account yet; sign in again there if they ask.";
 
-const SWITCHING_KEY = "buzz:switching-to";
-const NOTICE_KEY = "buzz:account-switch-notice";
+const SWITCHING_KEY = "kuzz:switching-to";
+const NOTICE_KEY = "kuzz:account-switch-notice";
 
 let holds = 0;
 let deferred = false;

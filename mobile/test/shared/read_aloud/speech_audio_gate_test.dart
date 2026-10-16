@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'package:buzz/features/channels/voice_note_attachment.dart';
-import 'package:buzz/features/channels/voice_note_recording.dart';
-import 'package:buzz/shared/read_aloud/speech_audio_gate.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/channels/voice_note_attachment.dart';
+import 'package:kuzz/features/channels/voice_note_recording.dart';
+import 'package:kuzz/shared/read_aloud/speech_audio_gate.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

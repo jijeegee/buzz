@@ -1,4 +1,4 @@
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 
 /// A connected relay session that records subscriptions and publishes, and
 /// lets a test deliver live events to every subscription.

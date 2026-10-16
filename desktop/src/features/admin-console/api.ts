@@ -123,7 +123,7 @@ export async function discoverAdminOrigin(): Promise<{
 
 // ── Wire DTO types ────────────────────────────────────────────────────────
 //
-// Mirror `crates/buzz-db/src/admin_moderation.rs` field-for-field.
+// Mirror `crates/kuzz-db/src/admin_moderation.rs` field-for-field.
 // Rust structs use `#[serde(rename_all = "camelCase")]`; DateTime<Utc>
 // serialises to an ISO-8601 string; Option<T> serialises to null / absent.
 
@@ -198,7 +198,7 @@ export type AdminFeedbackDto = {
 
 /**
  * Feedback list row returned by the relay's `GET /admin/feedback` handler.
- * Authoritative source: `buzz-relay/src/api/admin/mod.rs` `FeedbackSummary`.
+ * Authoritative source: `kuzz-relay/src/api/admin/mod.rs` `FeedbackSummary`.
  *
  * This is a separate, leaner shape from `AdminFeedbackDto` — the list
  * endpoint summarises the body and omits event/tag detail fields that are

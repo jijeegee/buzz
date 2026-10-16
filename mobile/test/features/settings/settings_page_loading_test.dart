@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:buzz/features/settings/settings_page.dart';
-import 'package:buzz/shared/community/community_membership_provider.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/settings/settings_page.dart';
+import 'package:kuzz/shared/community/community_membership_provider.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,8 +55,8 @@ void main() {
     expect(find.text('v0.16.0 (432)'), findsNothing);
     expect(find.byTooltip('Close settings'), findsOneWidget);
     metadata.complete({
-      'appName': 'Buzz',
-      'packageName': 'xyz.block.buzz',
+      'appName': 'Kuzz',
+      'packageName': 'app.kuzz',
       'version': '0.16.0',
       'buildNumber': '432',
       'buildSignature': '',

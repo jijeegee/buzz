@@ -16,7 +16,7 @@ const SHOTS = "test-results/inbox-panel";
 const GENERAL_CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 
 type MockFeedWindow = Window & {
-  __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+  __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
     channelName: string;
     content: string;
     createdAt?: number;
@@ -31,7 +31,7 @@ type MockFeedWindow = Window & {
     pubkey: string;
     tags: string[][];
   };
-  __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
+  __KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
     category: "mention" | "needs_action" | "activity" | "agent_activity";
     channel_id: string | null;
     channel_name: string;
@@ -52,15 +52,15 @@ async function seedGeneralMessages(page: Page) {
   await page.waitForFunction(() => {
     const win = window as MockFeedWindow;
     return (
-      typeof win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
+      typeof win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
     );
   });
   await page.evaluate(
     ({ channelId, senderPubkey }) => {
       const win = window as MockFeedWindow;
-      const emit = win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-      const push = win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+      const emit = win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const push = win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!emit || !push) throw new Error("Mock bridge helpers missing.");
       const now = Math.floor(Date.now() / 1000);
       const root = emit({
@@ -190,7 +190,7 @@ test.describe("inbox panel beside the chat screen", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(
       page.evaluate(() =>
-        window.localStorage.getItem("buzz.channels.inboxThreadViewMode"),
+        window.localStorage.getItem("kuzz.channels.inboxThreadViewMode"),
       ),
     ).resolves.toBe("split");
   });
@@ -204,8 +204,8 @@ test.describe("inbox panel beside the chat screen", () => {
     await page.evaluate(
       ({ channelId, senderPubkey }) => {
         const win = window as MockFeedWindow;
-        const emit = win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-        const push = win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+        const emit = win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+        const push = win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
         if (!emit || !push) throw new Error("Mock bridge helpers missing.");
         const now = Math.floor(Date.now() / 1000);
         for (let index = 0; index < 20; index += 1) {
@@ -279,7 +279,7 @@ test.describe("inbox rows land exactly where they point", () => {
     page,
   }) => {
     await page.addInitScript(() => {
-      window.localStorage.setItem("buzz.desktop.inbox-filter", "conversations");
+      window.localStorage.setItem("kuzz.desktop.inbox-filter", "conversations");
     });
     await installMockBridge(page, { mode: "mock" });
     await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -288,7 +288,7 @@ test.describe("inbox rows land exactly where they point", () => {
     // Make #general long enough to scroll, ending in a message the inbox
     // never lists: "the channel's newest" must mean the room, not the feed.
     await page.evaluate(() => {
-      const emit = (window as MockFeedWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const emit = (window as MockFeedWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock bridge helpers missing.");
       const now = Math.floor(Date.now() / 1000);
       for (let index = 0; index < 40; index += 1) {
@@ -361,7 +361,7 @@ test.describe("Channels + Threads is a chat list", () => {
 
   test("my own latest message brings its room to the top", async ({ page }) => {
     await page.addInitScript(() => {
-      window.localStorage.setItem("buzz.desktop.inbox-filter", "conversations");
+      window.localStorage.setItem("kuzz.desktop.inbox-filter", "conversations");
     });
     await installMockBridge(page, { mode: "mock" });
     await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -370,14 +370,14 @@ test.describe("Channels + Threads is a chat list", () => {
     });
     await page.waitForFunction(
       () =>
-        typeof (window as MockFeedWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
+        typeof (window as MockFeedWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
         "function",
     );
 
     // A message I send never reaches the mention feed; the chat list must
     // still show its room, newest first.
     await page.evaluate(() => {
-      const emit = (window as MockFeedWindow).__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const emit = (window as MockFeedWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("Mock bridge helpers missing.");
       emit({
         channelName: "random",

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:buzz/features/activity/dm_resurface.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/activity/dm_resurface.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 
 void main() {
   const self =

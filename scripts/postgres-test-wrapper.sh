@@ -7,8 +7,8 @@ set -euo pipefail
 : "${NEXTEST_BINARY_ID:?nextest must provide NEXTEST_BINARY_ID}"
 : "${NEXTEST_TEST_NAME:?nextest must provide NEXTEST_TEST_NAME}"
 : "${NEXTEST_ATTEMPT_ID:?nextest must provide NEXTEST_ATTEMPT_ID}"
-: "${BUZZ_POSTGRES_ADMIN_URL:?setup must provide BUZZ_POSTGRES_ADMIN_URL}"
-: "${BUZZ_POSTGRES_DESIRED_TEMPLATE:?setup must provide BUZZ_POSTGRES_DESIRED_TEMPLATE}"
+: "${KUZZ_POSTGRES_ADMIN_URL:?setup must provide KUZZ_POSTGRES_ADMIN_URL}"
+: "${KUZZ_POSTGRES_DESIRED_TEMPLATE:?setup must provide KUZZ_POSTGRES_DESIRED_TEMPLATE}"
 
 resolve_pg_command() {
   local name="$1"
@@ -44,9 +44,9 @@ dropdb="$(resolve_pg_command dropdb)"
 identity="${NEXTEST_RUN_ID}:${NEXTEST_BINARY_ID}:${NEXTEST_TEST_NAME}:${NEXTEST_ATTEMPT_ID}"
 database_hash="$(printf '%s' "$identity" | sha256_hex)"
 database_hash="${database_hash:0:24}"
-database="buzz_nt_${database_hash}"
+database="kuzz_nt_${database_hash}"
 schema_mode="desired"
-source_database="$BUZZ_POSTGRES_DESIRED_TEMPLATE"
+source_database="$KUZZ_POSTGRES_DESIRED_TEMPLATE"
 
 # A leading separator lets the same patterns cover root and nested test paths.
 qualified_test_name="::$NEXTEST_TEST_NAME"
@@ -62,7 +62,7 @@ cleanup() {
   local attempt
   for attempt in 1 2 3 4 5; do
     if "$dropdb" --if-exists --force \
-      --maintenance-db="$BUZZ_POSTGRES_ADMIN_URL" \
+      --maintenance-db="$KUZZ_POSTGRES_ADMIN_URL" \
       "$database" >/dev/null 2>&1; then
       return 0
     fi
@@ -79,14 +79,14 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 "$createdb" \
-  --maintenance-db="$BUZZ_POSTGRES_ADMIN_URL" \
+  --maintenance-db="$KUZZ_POSTGRES_ADMIN_URL" \
   --template="$source_database" \
   "$database"
 
-database_url="${BUZZ_POSTGRES_ADMIN_URL%/*}/$database"
+database_url="${KUZZ_POSTGRES_ADMIN_URL%/*}/$database"
 export DATABASE_URL="$database_url"
 export TEST_DATABASE_URL="$database_url"
-export BUZZ_TEST_DATABASE_URL="$database_url"
-export BUZZ_TEST_SCHEMA_MODE="$schema_mode"
+export KUZZ_TEST_DATABASE_URL="$database_url"
+export KUZZ_TEST_SCHEMA_MODE="$schema_mode"
 
 "$@"

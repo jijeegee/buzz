@@ -4,13 +4,13 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:nostr/nostr.dart' as nostr;
 
-import 'package:buzz/features/invites/invite_join_provider.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/default_community.dart';
-import 'package:buzz/shared/deeplink/deep_link.dart';
-import 'package:buzz/shared/deeplink/pending_deep_link_provider.dart';
-import 'package:buzz/shared/push/push_lease_revocation_outbox.dart';
-import 'package:buzz/shared/relay/relay_provider.dart';
+import 'package:kuzz/features/invites/invite_join_provider.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
+import 'package:kuzz/shared/deeplink/deep_link.dart';
+import 'package:kuzz/shared/deeplink/pending_deep_link_provider.dart';
+import 'package:kuzz/shared/push/push_lease_revocation_outbox.dart';
+import 'package:kuzz/shared/relay/relay_provider.dart';
 
 import '../community/community_storage_test.dart';
 
@@ -93,7 +93,7 @@ void main() {
     test('wss/https of the same host:port are the same server', () {
       for (final url in [
         'wss://jihobuzz.duckdns.org:8443',
-        'https://JIHOBUZZ.duckdns.org:8443/path',
+        'https://JIHOKUZZ.duckdns.org:8443/path',
         'https://jihobuzz.duckdns.org:8443',
       ]) {
         expect(isBuiltInServerUrl(url, _builtIn), isTrue, reason: url);
@@ -415,7 +415,7 @@ void main() {
     debugUnrestrictedServerForTests = false;
     addTearDown(() => debugUnrestrictedServerForTests = previous);
     final keys = nostr.Keys.generate();
-    final record = BuzzPushLeaseRevocationRecord(
+    final record = KuzzPushLeaseRevocationRecord(
       relayUrl: 'https://other.example',
       relayOrigin: 'wss://other.example',
       memberPubkey: keys.public,
@@ -427,7 +427,7 @@ void main() {
       nextAttemptAt: 0,
     );
     await expectLater(
-      publishBuzzPushLeaseRevocation(record),
+      publishKuzzPushLeaseRevocation(record),
       throwsA(
         isA<StateError>().having(
           (error) => error.message,

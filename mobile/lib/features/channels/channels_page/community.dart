@@ -10,7 +10,7 @@ class _CommunitySwitcherSheet extends HookConsumerWidget {
     final isEditing = useState(false);
 
     return SafeArea(
-      child: BuzzTitledSheetLayout(
+      child: KuzzTitledSheetLayout(
         key: const Key('community-switcher-sheet'),
         title: 'Switch Community',
         titleKey: const Key('community-switcher-title'),
@@ -33,7 +33,7 @@ class _CommunitySwitcherSheet extends HookConsumerWidget {
           loading: () => const SizedBox(
             height: 120,
             child: Center(
-              child: BuzzLoadingIndicator(
+              child: KuzzLoadingIndicator(
                 size: 40,
                 semanticLabel: 'Loading communities',
               ),
@@ -376,7 +376,7 @@ Future<void> _confirmRemoveCommunity(
   Community community, {
   required bool closeSheetAfterRemoval,
 }) async {
-  final confirmed = await showBuzzDialog<bool>(
+  final confirmed = await showKuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog.adaptive(
       title: const Text('Remove community from this device?'),

@@ -27,7 +27,7 @@ export interface DeepLinkDeps {
 export type ChannelDeepLinkPayload = { channelId: string };
 
 /**
- * Payload emitted by the Rust deep-link handler for `buzz://message?…`.
+ * Payload emitted by the Rust deep-link handler for `kuzz://message?…`.
  * Field names match the JSON shape produced in `desktop/src-tauri/src/lib.rs`.
  */
 export type MessageDeepLinkPayload = {
@@ -59,7 +59,7 @@ export type NostrBindDeepLinkPayload = {
 };
 
 /**
- * Payload emitted by the Rust deep-link handler for `buzz://join?…` —
+ * Payload emitted by the Rust deep-link handler for `kuzz://join?…` —
  * a relay invite from the web landing page (`/invite/<code>`).
  */
 export type JoinDeepLinkPayload = {
@@ -133,16 +133,16 @@ async function drainPendingCommunityDeepLinks(deps: DeepLinkDeps) {
 /**
  * Register listeners for deep-link events emitted by the Rust backend.
  *
- * When a `buzz://connect?relay=<url>` link is opened, the handler
+ * When a `kuzz://connect?relay=<url>` link is opened, the handler
  * adds a community for the relay (deduplicating by URL) and switches
  * to it. Returns an unlisten function to tear down all listeners.
  *
- * When a `buzz://join?relay=<url>&code=<invite>` link is opened (relay
+ * When a `kuzz://join?relay=<url>&code=<invite>` link is opened (relay
  * invite landing page), the handler first claims the invite against the
  * relay's HTTP API — signed by this app's identity key — and only adds and
  * switches to the community once the relay has admitted the key.
  *
- * `buzz://message?…` is handled separately by `listenForNavigationDeepLinks`,
+ * `kuzz://message?…` is handled separately by `listenForNavigationDeepLinks`,
  * because it needs to dispatch into the router which only exists below the
  * `RouterProvider` in the component tree.
  */
@@ -298,7 +298,7 @@ export async function listenForNavigationDeepLinks(
 }
 
 /**
- * Register a listener for `deep-link-entity` events — the `buzz://` share
+ * Register a listener for `deep-link-entity` events — the `kuzz://` share
  * links for projects, repositories, issues, and pull requests. The payload is
  * the raw URL; callers parse it with `parseEntityLink` before navigating.
  */

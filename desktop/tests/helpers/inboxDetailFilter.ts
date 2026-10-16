@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-const INBOX_FILTER_STORAGE_KEY = "buzz.desktop.inbox-filter";
+const INBOX_FILTER_STORAGE_KEY = "kuzz.desktop.inbox-filter";
 
 /**
  * Chat-message rows in All / Mentions / Threads / Channels + Threads now enter
@@ -15,7 +15,7 @@ export async function openInboxOnNeedsAction(page: Page) {
 }
 
 type MockFeedWindow = Window & {
-  __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+  __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
     channelName: string;
     content: string;
     id?: string;
@@ -27,7 +27,7 @@ type MockFeedWindow = Window & {
     pubkey: string;
     tags: string[][];
   };
-  __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
+  __KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
     category: "needs_action";
     channel_id: string;
     channel_name: string;
@@ -47,15 +47,15 @@ export async function openNeedsActionDetail(page: Page, content: string) {
   await page.waitForFunction(() => {
     const win = window as MockFeedWindow;
     return (
-      typeof win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
+      typeof win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
     );
   });
   const id = await page.evaluate(
     ({ channelId, text }) => {
       const win = window as MockFeedWindow;
-      const emit = win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-      const push = win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+      const emit = win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const push = win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!emit || !push) throw new Error("Mock bridge helpers missing.");
       const event = emit({ channelName: "general", content: text });
       push({

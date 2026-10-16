@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
-import 'package:buzz/shared/theme/app_markdown_theme.dart';
-import 'package:buzz/shared/theme/app_theme.dart';
-import 'package:buzz/shared/theme/code_style.dart';
+import 'package:kuzz/shared/theme/app_markdown_theme.dart';
+import 'package:kuzz/shared/theme/app_theme.dart';
+import 'package:kuzz/shared/theme/code_style.dart';
 
 /// The Markdown theme a widget reads under [theme], with [wrapped] deciding
 /// whether the app states its code style above it.

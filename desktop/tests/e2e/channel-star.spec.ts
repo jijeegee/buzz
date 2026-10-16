@@ -3,7 +3,7 @@ import { installChatListBridge } from "../helpers/chatListBridge";
 
 const MOCK_PUBKEY = "deadbeef".repeat(8);
 const ENGINEERING_ID = "1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9";
-const STORAGE_KEY = `buzz-channel-stars.v1:${MOCK_PUBKEY}:${encodeURIComponent("ws://localhost:3000")}`;
+const STORAGE_KEY = `kuzz-channel-stars.v1:${MOCK_PUBKEY}:${encodeURIComponent("ws://localhost:3000")}`;
 
 test("personal Pin/Unpin uses one Chats list and survives reload", async ({
   page,

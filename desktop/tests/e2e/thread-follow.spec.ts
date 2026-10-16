@@ -5,7 +5,7 @@ import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 
 const CHANNEL = "general";
 const SELF_PUBKEY = "deadbeef".repeat(8);
-const STORAGE_KEY = `buzz-thread-follows.v1:${SELF_PUBKEY}`;
+const STORAGE_KEY = `kuzz-thread-follows.v1:${SELF_PUBKEY}`;
 const SCREENSHOTS = "test-results/thread-follow";
 
 type MockMessage = { id: string; created_at: number; pubkey: string };
@@ -18,7 +18,7 @@ async function waitForMockLiveSubscription(
     .poll(() =>
       page.evaluate(
         (name) =>
-          window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+          window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
             channelName: name,
           }) ?? false,
         channelName,
@@ -42,7 +42,7 @@ async function emitMessage(
 ): Promise<MockMessage> {
   const message = await page.evaluate(
     (payload) =>
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: payload.channelName,
         content: payload.content,
         parentEventId: payload.parentEventId,
@@ -134,7 +134,7 @@ async function captureMessageMenu(
 
 async function notificationBodies(page: import("@playwright/test").Page) {
   return page.evaluate(() =>
-    (window.__BUZZ_E2E_NOTIFICATIONS__ ?? []).map((entry) => entry.body),
+    (window.__KUZZ_E2E_NOTIFICATIONS__ ?? []).map((entry) => entry.body),
   );
 }
 
@@ -145,7 +145,7 @@ async function waitForMessageProcessing(
   await expect
     .poll(() =>
       page.evaluate((id) => {
-        const queryClient = window.__BUZZ_E2E_QUERY_CLIENT__ as unknown as {
+        const queryClient = window.__KUZZ_E2E_QUERY_CLIENT__ as unknown as {
           getQueriesData: (filter: unknown) => Array<[unknown, unknown]>;
         };
         return queryClient

@@ -17,7 +17,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  BUZZ_TEST_POSTGRES_PASSWORD: buzz_dev
+  KUZZ_TEST_POSTGRES_PASSWORD: kuzz_dev
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
 jobs:
@@ -43,12 +43,12 @@ jobs:
         run: |
           TARGET=$(rustc -vV | sed -n 's|host: ||p')
           mkdir -p desktop/src-tauri/binaries
-          touch "desktop/src-tauri/binaries/buzz-acp-$TARGET"
-          touch "desktop/src-tauri/binaries/buzz-agent-$TARGET"
-          touch "desktop/src-tauri/binaries/buzz-backend-kubernetes-$TARGET"
-          touch "desktop/src-tauri/binaries/buzz-dev-mcp-$TARGET"
+          touch "desktop/src-tauri/binaries/kuzz-acp-$TARGET"
+          touch "desktop/src-tauri/binaries/kuzz-agent-$TARGET"
+          touch "desktop/src-tauri/binaries/kuzz-backend-kubernetes-$TARGET"
+          touch "desktop/src-tauri/binaries/kuzz-dev-mcp-$TARGET"
           touch "desktop/src-tauri/binaries/git-credential-nostr-$TARGET"
-          touch "desktop/src-tauri/binaries/buzz-$TARGET"
+          touch "desktop/src-tauri/binaries/kuzz-$TARGET"
       # Mesh rev is derived from Cargo.lock so a dependency bump needs no
       # lockstep edit here; the cache key tracks it automatically.
       - name: Resolve mesh-llm rev

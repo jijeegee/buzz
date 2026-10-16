@@ -10,7 +10,7 @@ import {
 const runtimes = [
   { id: "claude" },
   { id: "codex" },
-  { id: "buzz-agent" },
+  { id: "kuzz-agent" },
   { id: "goose" },
   { id: "cursor" },
   { id: "openclaw" },
@@ -26,7 +26,7 @@ test("subscription and API choices expose the prototype catalog groups", () => {
   );
   assert.deepEqual(
     getRuntimesForConnectionMethod(runtimes, "api").map(({ id }) => id),
-    ["buzz-agent", "goose", "openclaw"],
+    ["kuzz-agent", "goose", "openclaw"],
   );
 });
 
@@ -40,7 +40,7 @@ test("custom harnesses are not assigned an onboarding connection method", () => 
 
 test("runtime ordering keeps one contiguous not-installed section", () => {
   const mixed = [
-    { id: "buzz-agent", availability: "not_installed" },
+    { id: "kuzz-agent", availability: "not_installed" },
     { id: "goose", availability: "available" },
     { id: "openclaw", availability: "not_installed" },
     { id: "opencode", availability: "available" },
@@ -53,7 +53,7 @@ test("runtime ordering keeps one contiguous not-installed section", () => {
     [
       "goose:available",
       "opencode:available",
-      "buzz-agent:not_installed",
+      "kuzz-agent:not_installed",
       "openclaw:not_installed",
     ],
   );

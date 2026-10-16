@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:buzz/features/profile/image_avatar_capture.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/profile/image_avatar_capture.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

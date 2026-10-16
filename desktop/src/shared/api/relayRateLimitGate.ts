@@ -47,7 +47,7 @@ export function parseRateLimitHint(msg: string): number | null {
  * window. An explicit zero adds no hold; it is not a missing hint and does not
  * clear an existing deadline. Negative or absent hints use the 10-second default.
  *
- * Note: buzz-acp uses a 5s no-hint default; desktop deliberately uses 10s here
+ * Note: kuzz-acp uses a 5s no-hint default; desktop deliberately uses 10s here
  * for a wider back-off window on degraded connections.
  */
 export function activateRateLimit(retryInSeconds: number | null): void {

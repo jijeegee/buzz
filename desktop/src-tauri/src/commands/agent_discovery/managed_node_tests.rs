@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_npm_eacces_hint_guidance_mentions_buzz_private_dir() {
+fn test_npm_eacces_hint_guidance_mentions_kuzz_private_dir() {
     let hint = npm_eacces_hint("EACCES: permission denied", "npm install -g foo").unwrap();
     assert!(
         hint.contains("Kuzz's private Node tools directory"),
@@ -14,32 +14,32 @@ fn test_rewrite_npm_install_uses_private_prefix() {
     assert_eq!(
         rewrite_npm_global_install(
             "npm install -g @agentclientprotocol/codex-acp",
-            "'/tmp/Buzz Node'"
+            "'/tmp/Kuzz Node'"
         ),
-        "npm install --global --prefix '/tmp/Buzz Node' @agentclientprotocol/codex-acp"
+        "npm install --global --prefix '/tmp/Kuzz Node' @agentclientprotocol/codex-acp"
     );
 }
 
 #[test]
 fn test_rewrite_npm_i_uses_private_prefix() {
     assert_eq!(
-        rewrite_npm_global_install("npm i -g some-package", "'/tmp/buzz'"),
-        "npm i --global --prefix '/tmp/buzz' some-package"
+        rewrite_npm_global_install("npm i -g some-package", "'/tmp/kuzz'"),
+        "npm i --global --prefix '/tmp/kuzz' some-package"
     );
 }
 
 #[test]
 fn test_rewrite_npm_uninstall_uses_private_prefix() {
     assert_eq!(
-        rewrite_npm_global_install("npm uninstall -g @zed-industries/codex-acp", "'/tmp/buzz'"),
-        "npm uninstall --global --prefix '/tmp/buzz' @zed-industries/codex-acp"
+        rewrite_npm_global_install("npm uninstall -g @zed-industries/codex-acp", "'/tmp/kuzz'"),
+        "npm uninstall --global --prefix '/tmp/kuzz' @zed-industries/codex-acp"
     );
 }
 
 #[test]
 fn test_rewrite_ignores_non_global_command() {
     assert_eq!(
-        rewrite_npm_global_install("npm install foo", "'/tmp/buzz'"),
+        rewrite_npm_global_install("npm install foo", "'/tmp/kuzz'"),
         "npm install foo"
     );
 }
@@ -47,8 +47,8 @@ fn test_rewrite_ignores_non_global_command() {
 #[test]
 fn test_shell_quote_escapes_single_quotes() {
     assert_eq!(
-        shell_quote(std::path::Path::new("/tmp/Buzz's Node")),
-        "'/tmp/Buzz'\\''s Node'"
+        shell_quote(std::path::Path::new("/tmp/Kuzz's Node")),
+        "'/tmp/Kuzz'\\''s Node'"
     );
 }
 
@@ -239,7 +239,7 @@ fn test_should_invalidate_adapter_keeps_managed_shim_when_node_healthy() {
 
 #[test]
 fn test_resolve_adapter_path_returns_none_when_binary_absent() {
-    let commands: &[&str] = &["nonexistent-buzz-test-binary-xyz"];
+    let commands: &[&str] = &["nonexistent-kuzz-test-binary-xyz"];
     let adapter_install_commands: &[&str] = &["curl -fsSL https://example.com | bash"];
     assert!(
         resolve_adapter_path(commands, adapter_install_commands).is_none(),
@@ -464,7 +464,7 @@ fn test_probe_node_windows_returns_false_on_wrong_version_output() {
 /// Returns false when the node binary path does not exist (fast path, no spawn).
 #[test]
 fn test_managed_node_runtime_ready_returns_false_when_binary_absent() {
-    let Some(node) = crate::managed_agents::buzz_managed_node_bin_path() else {
+    let Some(node) = crate::managed_agents::kuzz_managed_node_bin_path() else {
         assert!(
             !managed_node_runtime_ready(),
             "managed_node_runtime_ready must return false when no path resolves"

@@ -1,9 +1,9 @@
-import 'package:buzz/shared/devices/agent_badge_widgets.dart';
-import 'package:buzz/shared/devices/agent_host_devices.dart';
-import 'package:buzz/shared/devices/device_robot.dart';
-import 'package:buzz/shared/devices/device_robot_icon.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/user_profile.dart';
+import 'package:kuzz/shared/devices/agent_badge_widgets.dart';
+import 'package:kuzz/shared/devices/agent_host_devices.dart';
+import 'package:kuzz/shared/devices/device_robot.dart';
+import 'package:kuzz/shared/devices/device_robot_icon.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

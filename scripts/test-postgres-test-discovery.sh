@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 checker="$repo_root/scripts/check-postgres-test-discovery.py"
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/buzz-postgres-discovery.XXXXXX")"
+fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/kuzz-postgres-discovery.XXXXXX")"
 trap 'rm -rf "$fixture_root"' EXIT
 
 mkdir -p "$fixture_root/src/standard" "$fixture_root/src/tests" "$fixture_root/tests/common"

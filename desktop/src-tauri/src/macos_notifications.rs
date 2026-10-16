@@ -32,7 +32,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::commands::NATIVE_NOTIFICATION_ACTIVATED_EVENT;
 
-const TARGET_USER_INFO_KEY: &str = "buzzNotificationTarget";
+const TARGET_USER_INFO_KEY: &str = "kuzzNotificationTarget";
 const MAX_PENDING_ACTIVATIONS: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -64,7 +64,7 @@ define_class!(
     // Sync. Apple does not guarantee a queue for notification delegate calls;
     // both Tauri operations used by the callbacks are thread-safe.
     #[unsafe(super(NSObject))]
-    #[name = "BuzzNotificationCenterDelegate"]
+    #[name = "KuzzNotificationCenterDelegate"]
     #[thread_kind = AnyThread]
     #[ivars = NotificationDelegateIvars]
     struct NotificationDelegate;
@@ -101,14 +101,14 @@ define_class!(
                         .emit(NATIVE_NOTIFICATION_ACTIVATED_EVENT, ())
                     {
                         eprintln!(
-                            "buzz-desktop: failed to emit macOS notification activation: {error}"
+                            "kuzz-desktop: failed to emit macOS notification activation: {error}"
                         );
                     }
                 }
             }
 
             // Apple requires this for every response, including dismissals and
-            // malformed notifications that Buzz intentionally ignores.
+            // malformed notifications that Kuzz intentionally ignores.
             completion_handler.call(());
         }
     }
@@ -129,7 +129,7 @@ pub(crate) fn init(app: &AppHandle) -> tauri::Result<()> {
         // objc2 cannot turn that exception into a Rust error, so do not call
         // into the framework at all in this environment.
         eprintln!(
-            "buzz-desktop: macOS notifications disabled because the process is not running from an app bundle"
+            "kuzz-desktop: macOS notifications disabled because the process is not running from an app bundle"
         );
         return Ok(());
     }
@@ -153,7 +153,7 @@ pub(crate) fn init(app: &AppHandle) -> tauri::Result<()> {
             register_missing_badge(notification_settings_sync, request_notification_access_sync);
         if let Err(error) = result {
             // Leave the native setting unchanged; a later launch can retry.
-            eprintln!("buzz-desktop: failed to register macOS badge authorization: {error}");
+            eprintln!("kuzz-desktop: failed to register macOS badge authorization: {error}");
         }
     });
     Ok(())
@@ -213,7 +213,7 @@ pub(crate) async fn notification_permission_state() -> Result<NotificationPermis
 }
 
 fn notification_authorization_options() -> UNAuthorizationOptions {
-    // Register every interaction Buzz uses, including its Dock badge.
+    // Register every interaction Kuzz uses, including its Dock badge.
     UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound | UNAuthorizationOptions::Badge
 }
 
@@ -309,7 +309,7 @@ pub(crate) async fn show(
 fn queue_activation(target: serde_json::Value) {
     let queue = PENDING_ACTIVATIONS.get_or_init(Default::default);
     let Ok(mut queue) = queue.lock() else {
-        eprintln!("buzz-desktop: macOS notification activation queue is unavailable");
+        eprintln!("kuzz-desktop: macOS notification activation queue is unavailable");
         return;
     };
     if queue.len() == MAX_PENDING_ACTIVATIONS {
@@ -453,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn requests_all_interactions_used_by_buzz() {
+    fn requests_all_interactions_used_by_kuzz() {
         let options = notification_authorization_options();
         assert!(options.contains(UNAuthorizationOptions::Alert));
         assert!(options.contains(UNAuthorizationOptions::Sound));
@@ -483,20 +483,20 @@ mod tests {
     #[test]
     fn requires_the_executable_to_use_the_app_bundle_layout() {
         assert!(is_application_bundle_layout(
-            Path::new("/Applications/Buzz.app"),
-            Path::new("/Applications/Buzz.app/Contents/MacOS/buzz-desktop"),
+            Path::new("/Applications/Kuzz.app"),
+            Path::new("/Applications/Kuzz.app/Contents/MacOS/kuzz-desktop"),
         ));
         assert!(!is_application_bundle_layout(
             Path::new("/tmp/Fake.app"),
-            Path::new("/tmp/Fake.app/buzz-desktop"),
+            Path::new("/tmp/Fake.app/kuzz-desktop"),
         ));
         assert!(!is_application_bundle_layout(
-            Path::new("/Users/developer/buzz/desktop/src-tauri/target/debug"),
-            Path::new("/Users/developer/buzz/desktop/src-tauri/target/debug/buzz-desktop"),
+            Path::new("/Users/developer/kuzz/desktop/src-tauri/target/debug"),
+            Path::new("/Users/developer/kuzz/desktop/src-tauri/target/debug/kuzz-desktop"),
         ));
         assert!(!is_application_bundle_layout(
-            Path::new("/Applications/Buzz.app"),
-            Path::new("/Applications/Other.app/Contents/MacOS/buzz-desktop"),
+            Path::new("/Applications/Kuzz.app"),
+            Path::new("/Applications/Other.app/Contents/MacOS/kuzz-desktop"),
         ));
     }
 

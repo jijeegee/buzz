@@ -1,5 +1,5 @@
-import 'package:buzz/features/goals/goal_provider.dart';
-import 'package:buzz/features/goals/goal_tree.dart';
+import 'package:kuzz/features/goals/goal_provider.dart';
+import 'package:kuzz/features/goals/goal_tree.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -20,17 +20,17 @@ GoalTree _sample() {
   return tree;
 }
 
-/// Pinned in `crates/buzz-core/src/goal_tree.rs` too: the relay must accept
+/// Pinned in `crates/kuzz-core/src/goal_tree.rs` too: the relay must accept
 /// exactly what this client writes.
 const _relayFixture =
     r'{"v":1,"nodes":[{"id":"root","parent":null,"title":"Ship it","note":"Key info","status":"open","order":0,"updated_by":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","updated_at":1700000000},{"id":"a","parent":"root","title":"A","status":"in_progress","threads":["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],"order":0,"updated_by":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","updated_at":1700000000}]}';
 
 void main() {
-  test('links exactly like buzz-core (shared fixture)', () {
+  test('links exactly like kuzz-core (shared fixture)', () {
     final fixture =
         jsonDecode(
               File(
-                '../crates/buzz-core/fixtures/goal_link_fixture.json',
+                '../crates/kuzz-core/fixtures/goal_link_fixture.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;

@@ -74,7 +74,7 @@ fn inbound_for(d_tag: &str, display_name: &str) -> AgentDefinition {
 fn in_app_persona_matches_existing_uuid_and_patches() {
     let mut personas = vec![local_in_app()];
     let mut inbound = inbound_for(UUID, "Remote");
-    inbound.acp_command = Some("buzz-janet-acp".to_string());
+    inbound.acp_command = Some("kuzz-janet-acp".to_string());
     apply_inbound_persona(&mut personas, inbound);
 
     assert_eq!(personas.len(), 1, "no duplicate row");
@@ -82,7 +82,7 @@ fn in_app_persona_matches_existing_uuid_and_patches() {
     // Projected fields patched.
     assert_eq!(p.display_name, "Remote");
     assert_eq!(p.system_prompt, "remote prompt");
-    assert_eq!(p.acp_command.as_deref(), Some("buzz-janet-acp"));
+    assert_eq!(p.acp_command.as_deref(), Some("kuzz-janet-acp"));
     assert_eq!(p.provider, Some("openai".to_string()));
     // Local identity + secrets + lineage preserved.
     assert_eq!(p.id, UUID);
@@ -193,11 +193,11 @@ fn local_agent() -> ManagedAgentRecord {
         auth_tag: Some("localauthtag".to_string()),
         relay_url: "wss://relay.local".to_string(),
         avatar_url: None,
-        acp_command: "buzz-acp".to_string(),
+        acp_command: "kuzz-acp".to_string(),
         agent_command: "goose".to_string(),
         agent_command_override: Some("claude".to_string()),
         agent_args: vec![],
-        mcp_command: "buzz-dev-mcp".to_string(),
+        mcp_command: "kuzz-dev-mcp".to_string(),
         turn_timeout_seconds: 320,
         idle_timeout_seconds: None,
         max_turn_duration_seconds: None,
@@ -212,7 +212,7 @@ fn local_agent() -> ManagedAgentRecord {
         auto_restart_on_config_change: true,
         runtime_pid: Some(1234),
         backend: crate::managed_agents::BackendKind::Provider {
-            id: "buzz-backend".to_string(),
+            id: "kuzz-backend".to_string(),
             config: serde_json::json!({ "api_key": "localproviderkey" }),
         },
         backend_agent_id: Some("local-remote-id".to_string()),
@@ -323,7 +323,7 @@ fn inbound_managed_agent_drops_injected_secrets_and_harness() {
         Some("claude".to_string()),
         "harness override overwritten"
     );
-    assert_eq!(a.mcp_command, "buzz-dev-mcp", "mcp command overwritten");
+    assert_eq!(a.mcp_command, "kuzz-dev-mcp", "mcp command overwritten");
     assert_eq!(a.relay_url, "wss://relay.local", "relay url overwritten");
     assert_eq!(a.runtime_pid, Some(1234), "runtime pid overwritten");
     match &a.backend {
@@ -965,7 +965,7 @@ fn shared_transport_redaction_preserves_local_override_but_explicit_stock_resets
     apply_inbound_persona(&mut fresh_device, persona_from_event(&event).unwrap());
     assert_eq!(fresh_device[0].acp_command, None);
     // Redaction must not preserve a stale portable wrapper.
-    personas[0].acp_command = Some("buzz-old-acp".into());
+    personas[0].acp_command = Some("kuzz-old-acp".into());
     apply_inbound_persona(&mut personas, persona_from_event(&event).unwrap());
     assert_eq!(personas[0].acp_command, None);
     // Stock is normalized to None by the store, but shared publication makes
@@ -977,7 +977,7 @@ fn shared_transport_redaction_preserves_local_override_but_explicit_stock_resets
         .sign_with_keys(&keys)
         .unwrap();
     apply_inbound_persona(&mut personas, persona_from_event(&reset).unwrap());
-    assert_eq!(personas[0].acp_command.as_deref(), Some("buzz-acp"));
+    assert_eq!(personas[0].acp_command.as_deref(), Some("kuzz-acp"));
     // Non-catalog owner-sync keeps both legacy custom values and clears.
     published.shared = false;
     published.acp_command = Some("/opt/other-acp".into());

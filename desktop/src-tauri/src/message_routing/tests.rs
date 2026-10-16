@@ -76,7 +76,7 @@ fn input(text: &str, roster: Vec<RouterRosterEntry>) -> RouteMessageInput {
 
 fn team() -> Vec<RouterRosterEntry> {
     vec![
-        entry(1, "Coder", Some("Writes and fixes code in the buzz repo.")),
+        entry(1, "Coder", Some("Writes and fixes code in the kuzz repo.")),
         entry(
             2,
             "Translator",
@@ -119,7 +119,7 @@ fn user_prompt_aliases_everything_and_never_carries_ids() {
     assert_eq!(
         prompt,
         "ROSTER\n\
-         a1 | Coder | Writes and fixes code in the buzz repo.\n\
+         a1 | Coder | Writes and fixes code in the kuzz repo.\n\
          a2 | Translator | Translates between Korean and English.\n\
          a3 | Researcher\n\
          HUMANS: Jiho\n\

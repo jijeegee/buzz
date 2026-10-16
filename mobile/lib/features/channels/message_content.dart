@@ -195,7 +195,7 @@ class MessageContent extends HookConsumerWidget {
         } else {
           ref
               .read(pendingDeepLinkProvider.notifier)
-              .open(Uri(scheme: 'buzz', host: 'channel', path: channelId));
+              .open(Uri(scheme: 'kuzz', host: 'channel', path: channelId));
         }
       },
       const [],
@@ -431,15 +431,15 @@ class MessageContent extends HookConsumerWidget {
       return _buildMedia(context, url, imeta);
     }
     final uri = Uri.tryParse(url);
-    final buzzLink = uri?.scheme == 'buzz'
-        ? parseBuzzDeepLink(uri!) ?? parseEntityDeepLink(uri)
+    final kuzzLink = uri?.scheme == 'kuzz'
+        ? parseKuzzDeepLink(uri!) ?? parseEntityDeepLink(uri)
         : null;
-    final isBuzzLink =
-        buzzLink is ChannelDeepLink ||
-        buzzLink is MessageDeepLink ||
-        buzzLink is EntityDeepLink;
-    final isCanonicalBuzzLabel = isBuzzLink && text == url;
-    final buzzPresentation = switch (buzzLink) {
+    final isKuzzLink =
+        kuzzLink is ChannelDeepLink ||
+        kuzzLink is MessageDeepLink ||
+        kuzzLink is EntityDeepLink;
+    final isCanonicalKuzzLabel = isKuzzLink && text == url;
+    final kuzzPresentation = switch (kuzzLink) {
       ChannelDeepLink(:final channelId) => (
         icon: LucideIcons.hash,
         label:
@@ -482,7 +482,7 @@ class MessageContent extends HookConsumerWidget {
       decoration: TextDecoration.underline,
       decorationColor: context.colors.primary,
     );
-    final linkTextWidget = isCanonicalBuzzLabel
+    final linkTextWidget = isCanonicalKuzzLabel
         ? Text(
             text,
             style: baseStyle.copyWith(
@@ -492,20 +492,20 @@ class MessageContent extends HookConsumerWidget {
           )
         : Text.rich(TextSpan(style: authoredLinkStyle, children: [linkText]));
 
-    final renderedLink = isCanonicalBuzzLabel && buzzPresentation != null
+    final renderedLink = isCanonicalKuzzLabel && kuzzPresentation != null
         ? _TokenPill(
-            key: ValueKey('buzz-link-chip:$url'),
-            icon: buzzPresentation.icon,
-            interactive: buzzPresentation.interactive,
-            semanticLabel: buzzPresentation.semanticLabel,
-            text: buzzPresentation.label,
+            key: ValueKey('kuzz-link-chip:$url'),
+            icon: kuzzPresentation.icon,
+            interactive: kuzzPresentation.interactive,
+            semanticLabel: kuzzPresentation.semanticLabel,
+            text: kuzzPresentation.label,
             textStyle: baseStyle.copyWith(fontWeight: FontWeight.w600),
           )
         : linkTextWidget;
 
     // Mobile has no repo/PR/issue destination yet. Keep these presentation-only
     // instead of exposing a control whose tap cannot do anything.
-    if (buzzLink is EntityDeepLink) {
+    if (kuzzLink is EntityDeepLink) {
       return IgnorePointer(child: renderedLink);
     }
 
@@ -518,8 +518,8 @@ class MessageContent extends HookConsumerWidget {
         // references so detail-page callers can suppress self-navigation.
         // Message and join links still need the top-level authenticated
         // dispatcher.
-        if (uri.scheme == 'buzz') {
-          final deepLink = parseBuzzDeepLink(uri);
+        if (uri.scheme == 'kuzz') {
+          final deepLink = parseKuzzDeepLink(uri);
           if (deepLink case ChannelDeepLink(:final channelId)) {
             resolvedChannelTap(channelId);
           } else if (deepLink is MessageDeepLink ||

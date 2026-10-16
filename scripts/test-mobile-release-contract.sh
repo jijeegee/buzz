@@ -9,7 +9,7 @@ remote="$tmp/remote.git"
 work="$tmp/work"
 operator="$tmp/operator"
 bin="$tmp/bin"
-canonical_origin="git@github.com:block/buzz.git"
+canonical_origin="git@github.com:block/kuzz.git"
 mkdir -p "$bin"
 
 cat > "$bin/gh" <<'GH'
@@ -17,7 +17,7 @@ cat > "$bin/gh" <<'GH'
 set -euo pipefail
 case "${1:-}:${2:-}" in
   --version:*) printf 'gh version %s (test)\n' "${GH_VERSION:-2.94.0}" ;;
-  api:repos/block/buzz/rulesets/14378754)
+  api:repos/block/kuzz/rulesets/14378754)
     case "$*" in
       *'.enforcement'*) printf '%s\n' "${GH_TAG_RULESET_STATE:-active}" ;;
       *'.current_user_can_bypass'*) printf '%s\n' "${GH_CURRENT_USER_CAN_BYPASS-always}" ;;
@@ -72,7 +72,7 @@ case "${1:-}:${2:-}" in
         "mobile-v${version}-rc.${expected}" "$sha"
     else
       git -C "$GH_WORKTREE" -c tag.gpgSign=false tag -a \
-        -m "Buzz Mobile $version release candidate $expected" \
+        -m "Kuzz Mobile $version release candidate $expected" \
         "mobile-v${version}-rc.${expected}" "$sha"
     fi
     git -C "$GH_WORKTREE" -c core.hooksPath=/dev/null push -q \

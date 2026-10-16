@@ -9,31 +9,31 @@ import {
 const expected = (name, slug) => ({
   name,
   slug,
-  productName: `Buzz ${name}`,
-  dmgVolumeName: `Buzz ${name}`,
-  dmgFileStem: `Buzz_${name.replace(/ /g, "_")}`,
-  identifier: `xyz.block.buzz.app.demo.${slug}`,
-  appDataIdentity: `xyz.block.buzz.app.demo.${slug}`,
-  deepLinkScheme: `buzz-demo-${slug}`,
-  keyringService: `buzz-desktop-demo.${slug}`,
-  nestName: `.buzz-demo-${slug}`,
-  cliName: `buzz-demo-${slug}`,
+  productName: `Kuzz ${name}`,
+  dmgVolumeName: `Kuzz ${name}`,
+  dmgFileStem: `Kuzz_${name.replace(/ /g, "_")}`,
+  identifier: `app.kuzz.app.demo.${slug}`,
+  appDataIdentity: `app.kuzz.app.demo.${slug}`,
+  deepLinkScheme: `kuzz-demo-${slug}`,
+  keyringService: `kuzz-desktop-demo.${slug}`,
+  nestName: `.kuzz-demo-${slug}`,
+  cliName: `kuzz-demo-${slug}`,
   tauriConfig: {
-    productName: `Buzz ${name}`,
-    identifier: `xyz.block.buzz.app.demo.${slug}`,
-    plugins: { "deep-link": { desktop: { schemes: [`buzz-demo-${slug}`] } } },
+    productName: `Kuzz ${name}`,
+    identifier: `app.kuzz.app.demo.${slug}`,
+    plugins: { "deep-link": { desktop: { schemes: [`kuzz-demo-${slug}`] } } },
     bundle: { targets: ["app"] },
   },
 });
 
 test("production identity remains unchanged", () => {
   assert.deepEqual(productionBuildIdentity, {
-    productName: "Buzz",
-    identifier: "xyz.block.buzz.app",
-    deepLinkScheme: "buzz",
-    keyringService: "buzz-desktop",
-    nestName: ".buzz",
-    cliName: "buzz",
+    productName: "Kuzz",
+    identifier: "app.kuzz.app",
+    deepLinkScheme: "kuzz",
+    keyringService: "kuzz-desktop",
+    nestName: ".kuzz",
+    cliName: "kuzz",
   });
 });
 

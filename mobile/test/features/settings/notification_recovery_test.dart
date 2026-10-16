@@ -1,16 +1,16 @@
 import 'dart:async';
 
-import 'package:buzz/features/settings/settings_page.dart';
-import 'package:buzz/shared/auth/auth_provider.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/community/community_storage.dart';
-import 'package:buzz/shared/push/dev_push_lease.dart';
-import 'package:buzz/shared/push/push_bridge.dart';
-import 'package:buzz/shared/push/push_relay_capability_provider.dart';
-import 'package:buzz/shared/push/push_subscription.dart';
-import 'package:buzz/shared/relay/app_lifecycle_provider.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/settings/settings_page.dart';
+import 'package:kuzz/shared/auth/auth_provider.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/community/community_storage.dart';
+import 'package:kuzz/shared/push/dev_push_lease.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
+import 'package:kuzz/shared/push/push_relay_capability_provider.dart';
+import 'package:kuzz/shared/push/push_subscription.dart';
+import 'package:kuzz/shared/relay/app_lifecycle_provider.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,8 +31,8 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       PackageInfo.setMockInitialValues(
-        appName: 'Buzz',
-        packageName: 'buzz',
+        appName: 'Kuzz',
+        packageName: 'kuzz',
         version: '1.0.0',
         buildNumber: '1',
         buildSignature: '',
@@ -41,8 +41,8 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final storage = CommunityStorage(secure: FakeSecureStorage());
       final subscriptions = [
-        BuzzPushSubscription(
-          filter: BuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
+        KuzzPushSubscription(
+          filter: KuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
           notificationClass: 'default',
         ),
       ];
@@ -52,13 +52,13 @@ void main() {
             relayUrl: 'https://relay.example',
           ).copyWith(
             pushNotificationsEnabled: true,
-            pushSubscriptionState: BuzzPushLeaseSubscriptionState.desired(
+            pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
               desired: subscriptions,
             ).withAccepted(subscriptions: subscriptions, generation: 7),
           );
       await storage.save(community);
       await storage.saveActiveId(community.id);
-      final pending = Completer<BuzzPushLeaseDescriptor?>();
+      final pending = Completer<KuzzPushLeaseDescriptor?>();
       final snapshots = <List<Community>>[];
       final tombstones = <int?>[];
       var settingsOpened = 0;
@@ -87,10 +87,10 @@ void main() {
               return Future.value(null);
             }),
             appLifecycleProvider.overrideWith(_Lifecycle.new),
-            buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
-              () async => BuzzPushAuthorizationStatus.denied,
+            kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+              () async => KuzzPushAuthorizationStatus.denied,
             ),
-            buzzPushNotificationSettingsOpenerProvider.overrideWithValue(
+            kuzzPushNotificationSettingsOpenerProvider.overrideWithValue(
               () async {
                 settingsOpened++;
                 return true;

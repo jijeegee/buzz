@@ -29,7 +29,7 @@ export function formatMentionDisplayLabel(
 /**
  * The pre-npub key compaction a chip rendered before keys displayed as npub.
  * Retired from rendering; kept byte-exact so clipboard validation can still
- * recognize whole chips copied by an older Buzz, re-binding them to the exact
+ * recognize whole chips copied by an older Kuzz, re-binding them to the exact
  * identity their record declares instead of degrading them to plain text.
  */
 export function formatLegacyMentionDisplayLabel(

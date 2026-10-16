@@ -2,15 +2,15 @@ import type { AccountSummary } from "@/shared/api/tokenAuth";
 
 type Labelled = Pick<
   AccountSummary,
-  "buzzName" | "displayName" | "email" | "pubkey"
+  "kuzzName" | "displayName" | "email" | "pubkey"
 >;
 
 /**
- * The name an account goes by in menus: its Buzz profile name, else its
+ * The name an account goes by in menus: its Kuzz profile name, else its
  * Google name, else its email, else a short id.
  */
 export function accountLabel(account: Labelled): string {
-  const name = account.buzzName?.trim() || account.displayName?.trim();
+  const name = account.kuzzName?.trim() || account.displayName?.trim();
   if (name) return name;
   const email = account.email?.trim();
   if (email) return email;

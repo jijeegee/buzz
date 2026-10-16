@@ -1064,7 +1064,7 @@ function ImageBlock({ alt, dim, resolvedSrc, src, thumbSrc }: ImageBlockProps) {
 
     updateHiddenState();
 
-    const spoiler = trigger.closest(".buzz-spoiler[data-spoiler]");
+    const spoiler = trigger.closest(".kuzz-spoiler[data-spoiler]");
     if (!spoiler) return;
 
     const observer = new MutationObserver(updateHiddenState);
@@ -1292,7 +1292,7 @@ export function createMarkdownComponents(
       );
     }
 
-    // Keep Buzz channel/message navigation in-app.
+    // Keep Kuzz channel/message navigation in-app.
     if (href) {
       if (parseChannelLink(href).ok) {
         return (
@@ -1337,7 +1337,7 @@ export function createMarkdownComponents(
       // Malformed message deep links fall through to external handling.
     }
 
-    // `buzz://pr|issue|repo|project?…` entity links navigate in-app;
+    // `kuzz://pr|issue|repo|project?…` entity links navigate in-app;
     // malformed ones fall through to the default anchor. The provider-backed
     // component keeps metadata tooltips available for both raw chips and
     // authored Markdown labels.
@@ -1355,7 +1355,7 @@ export function createMarkdownComponents(
       );
       if (
         parseEntityLink(href).ok ||
-        parseSupportedLinkPreview(href, relayOrigin)?.href.startsWith("buzz://")
+        parseSupportedLinkPreview(href, relayOrigin)?.href.startsWith("kuzz://")
       )
         return entityAnchor;
     }

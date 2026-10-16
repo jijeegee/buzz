@@ -5,8 +5,8 @@
 //! `expected-revision` precondition. A conflict re-applies the same operation
 //! to the newer head, so concurrent editors never drop each other's changes.
 
-use buzz_core_pkg::goal_tree::{GoalOp, GoalTree};
-use buzz_core_pkg::kind::KIND_GOAL_TREE;
+use kuzz_core_pkg::goal_tree::{GoalOp, GoalTree};
+use kuzz_core_pkg::kind::KIND_GOAL_TREE;
 use tauri::State;
 
 use crate::{
@@ -111,7 +111,7 @@ async fn write(
             }
             Edit::Replace(replacement) => tree = replacement.clone(),
         }
-        let builder = buzz_sdk_pkg::build_set_goal_tree(uuid, &tree, &revision, head_created_at)
+        let builder = kuzz_sdk_pkg::build_set_goal_tree(uuid, &tree, &revision, head_created_at)
             .map_err(|e| e.to_string())?;
         match submit_event(builder, state).await {
             Ok(result) => {

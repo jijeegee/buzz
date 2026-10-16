@@ -476,7 +476,7 @@ pub async fn create_managed_agent(
     crate::managed_agents::validate_user_env_keys(&input.env_vars)?;
 
     // Validate & normalize the respond-to allowlist BEFORE any side effects.
-    // The harness has its own validator (buzz-acp/src/config.rs) but we want
+    // The harness has its own validator (kuzz-acp/src/config.rs) but we want
     // to catch malformed input at the boundary so the agent never tries to
     // start with a list that will crash it on launch. The mode/allowlist
     // pairing (and the definition-default fallback) is resolved later at the
@@ -522,7 +522,7 @@ pub async fn create_managed_agent(
             return Err(format!("agent {pubkey} already exists"));
         }
         let private_key_nsec = keys.secret_key().to_bech32().map_err(|e| {
-            eprintln!("buzz-desktop: failed to encode private key: {e}");
+            eprintln!("kuzz-desktop: failed to encode private key: {e}");
             "Something went wrong with this agent. Try again.".to_string()
         })?;
 
@@ -559,17 +559,17 @@ pub async fn create_managed_agent(
         None
     } else {
         let owner_keys = state.signing_keys()?;
-        // Bridge nostr 0.37 → 0.36 (buzz-sdk) via hex round-trip.
+        // Bridge nostr 0.37 → 0.36 (kuzz-sdk) via hex round-trip.
         let compat_owner = nostr::Keys::parse(&owner_keys.secret_key().to_secret_hex())
             .map_err(|e| format!("failed to bridge owner keys: {e}"))?;
         let compat_agent =
             nostr::PublicKey::from_hex(&agent_keys.public_key().to_hex()).map_err(|e| {
-                eprintln!("buzz-desktop: failed to bridge agent pubkey: {e}");
+                eprintln!("kuzz-desktop: failed to bridge agent pubkey: {e}");
                 "Something went wrong with this agent. Try again.".to_string()
             })?;
-        let tag = buzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
+        let tag = kuzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
             .map_err(|e| {
-                eprintln!("buzz-desktop: failed to compute NIP-OA auth tag: {e}");
+                eprintln!("kuzz-desktop: failed to compute NIP-OA auth tag: {e}");
                 "Something went wrong with this agent. Try again.".to_string()
             })?;
         Some(tag)
@@ -766,7 +766,7 @@ pub async fn create_managed_agent(
             agent_command_override,
             agent_args,
             mcp_command,
-            // BUZZ_ACP_TURN_TIMEOUT is deprecated and ignored by the harness;
+            // KUZZ_ACP_TURN_TIMEOUT is deprecated and ignored by the harness;
             // store the schema default only. Use idle_timeout_seconds or
             // max_turn_duration_seconds for actual turn-length control.
             turn_timeout_seconds: DEFAULT_AGENT_TURN_TIMEOUT_SECONDS,
@@ -1183,7 +1183,7 @@ pub async fn start_managed_agent(
                     .await
             {
                 eprintln!(
-                    "buzz-desktop: profile reconciliation failed for agent {reconcile_pubkey}: {e}"
+                    "kuzz-desktop: profile reconciliation failed for agent {reconcile_pubkey}: {e}"
                 );
             }
         });

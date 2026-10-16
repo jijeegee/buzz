@@ -23,7 +23,7 @@ const SHOTS = "test-results/inbox-title-overlap";
 const ENGINEERING_CHANNEL_ID = "1c7e1c02-87bb-5e88-b2da-5a7a9432d0c9";
 
 type MockWindow = Window & {
-  __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+  __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
     channelName: string;
     content: string;
     parentEventId?: string | null;
@@ -31,7 +31,7 @@ type MockWindow = Window & {
     mentionPubkeys?: string[];
     id?: string;
   }) => RelayEvent;
-  __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
+  __KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
     category: "mention" | "needs_action" | "activity" | "agent_activity";
     channel_id: string | null;
     channel_name: string;
@@ -55,7 +55,7 @@ test.describe("inbox detail title overflow", () => {
   }) => {
     await page.addInitScript(() => {
       window.sessionStorage.setItem(
-        "buzz.desktop.home-inbox-list-width",
+        "kuzz.desktop.home-inbox-list-width",
         "520",
       );
     });
@@ -68,8 +68,8 @@ test.describe("inbox detail title overflow", () => {
     await page.waitForFunction(() => {
       const win = window as MockWindow;
       return (
-        typeof win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-        typeof win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
+        typeof win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+        typeof win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
       );
     });
 
@@ -77,8 +77,8 @@ test.describe("inbox detail title overflow", () => {
     await page.evaluate(
       ({ channelId, currentPubkey, id, senderPubkey }) => {
         const win = window as MockWindow;
-        const emit = win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-        const push = win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+        const emit = win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+        const push = win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
         if (!emit || !push) {
           throw new Error("Mock bridge helpers are not installed.");
         }

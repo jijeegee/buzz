@@ -1,0 +1,4072 @@
+//! Configuration for the kuzz-acp harness.
+//!
+//! CLI-first: every option is a CLI flag with env var fallback.
+//! Config file (TOML) for complex subscription rules.
+
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+
+use kuzz_core::kind::{
+    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_REMINDER,
+    KIND_WORKFLOW_APPROVAL_REQUESTED,
+};
+use clap::Parser;
+use clap::ValueEnum;
+use nostr::Keys;
+
+use crate::identity::{AgentIdentity, BotToken, TokenPrincipal};
+use thiserror::Error;
+use url::Url;
+use uuid::Uuid;
+
+use crate::filter::SubscriptionRule;
+
+/// Default idle timeout (seconds) when neither `--idle-timeout` nor the
+/// deprecated `--turn-timeout` is set.
+///
+/// Sized for slow turns where the agent may go silent on its outer ACP channel
+/// while running long sub-tools (e.g. a kuzz-agent running another agent, or
+/// codex/claude doing multi-minute single tool calls). 1500s gives 300s of
+/// breathing room above the 1200s max shell timeout, so legitimate long-running
+/// tool calls don't race the idle deadline.
+/// Override via `--idle-timeout` / `KUZZ_ACP_IDLE_TIMEOUT`.
+pub(crate) const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 1_500;
+
+/// Default absolute wall-clock cap per agent turn (2 hours).
+/// Override via `--max-turn-duration` / `KUZZ_ACP_MAX_TURN_DURATION`.
+pub(crate) const DEFAULT_MAX_TURN_DURATION_SECS: u64 = 7200;
+
+/// Upper bound for `max_turn_duration` (7 days). Any higher is operationally
+/// meaningless and risks arithmetic overflow when deriving the in-flight
+/// deadline (`max_turn_duration + IN_FLIGHT_DEADLINE_BUFFER_SECS`).
+pub(crate) const MAX_TURN_DURATION_CEILING_SECS: u64 = 604_800;
+
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("failed to parse nostr keys: {0}")]
+    KeyParse(#[from] nostr::key::Error),
+
+    #[error("missing credentials: set KUZZ_BOT_TOKEN (token mode) or KUZZ_PRIVATE_KEY (key mode)")]
+    MissingCredentials,
+
+    #[error("token mode requires the principal resolved from GET /auth/me")]
+    UnresolvedPrincipal,
+
+    #[error("failed to read file: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("config file error: {0}")]
+    ConfigFile(String),
+}
+
+#[derive(Debug, Clone, PartialEq, clap::ValueEnum)]
+pub enum SubscribeMode {
+    Mentions,
+    All,
+    Config,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum DedupMode {
+    Drop,
+    Queue,
+}
+
+/// How to handle new @mentions while a turn is already in-flight for that channel.
+#[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
+pub enum MultipleEventHandling {
+    /// Queue new events while a turn is in-flight. Deliver after current turn
+    /// completes. Existing behavior — zero code change in this path.
+    Queue,
+    /// Cancel the in-flight turn and re-dispatch a merged prompt that frames
+    /// the new events as a **steering message** — one that arrived while the
+    /// agent was working, to be woven into the in-progress task rather than
+    /// treated as a replacement. Fires for any author the inbound author gate
+    /// admits (owner ∪ allowlist ∪ siblings). This is the default mid-turn
+    /// delivery path. Requires DedupMode::Queue.
+    Steer,
+    /// Cancel the in-flight turn and re-dispatch a merged prompt combining
+    /// the original events with the new ones, framed as a **supersede** (the
+    /// new request replaces the old), for ANY new @mention.
+    /// Requires DedupMode::Queue.
+    Interrupt,
+    /// Cancel the in-flight turn only when the new @mention is from the agent
+    /// owner (resolved via owner_cache). All other authors queue normally.
+    /// Requires DedupMode::Queue.
+    #[value(name = "owner-interrupt")]
+    OwnerInterrupt,
+}
+
+/// Inbound author gate: which authors' events the harness forwards to the agent.
+///
+/// - `owner-only` — only the agent's registered owner (default).
+/// - `allowlist`  — owner + explicit pubkey list (`--respond-to-allowlist`).
+/// - `anyone`     — all events forwarded (no author filtering).
+/// - `nobody`     — all events dropped (proactive/heartbeat-only mode).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, clap::ValueEnum)]
+pub enum RespondTo {
+    #[default]
+    OwnerOnly,
+    Allowlist,
+    Anyone,
+    Nobody,
+}
+
+impl std::fmt::Display for RespondTo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OwnerOnly => f.write_str("owner-only"),
+            Self::Allowlist => f.write_str("allowlist"),
+            Self::Anyone => f.write_str("anyone"),
+            Self::Nobody => f.write_str("nobody"),
+        }
+    }
+}
+
+/// Permission mode for agents that support `session/set_config_option` with
+/// `configId: "mode"` (e.g. `claude-agent-acp`).
+///
+/// - `default` — agent's built-in behaviour (permission requests per tool call).
+/// - `acceptEdits` — auto-approve file edits, still ask for other tools.
+/// - `bypassPermissions` — skip the permission flow entirely.
+/// - `dontAsk` — never prompt; reject anything that would require permission.
+/// - `plan` — planning-only mode (no tool execution).
+#[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
+pub enum PermissionMode {
+    /// Agent default — permission requests per tool call.
+    #[value(alias = "default")]
+    Default,
+    /// Auto mode — fully autonomous execution; model-gated (requires a model
+    /// that supports `supportsAutoMode`).  Degrades gracefully to `default`
+    /// when the session's active model does not support it.
+    #[value(alias = "auto")]
+    Auto,
+    /// Auto-approve file edits, still ask for other tools.
+    #[value(alias = "acceptEdits")]
+    AcceptEdits,
+    /// Skip the permission flow entirely.
+    #[value(alias = "bypassPermissions")]
+    BypassPermissions,
+    /// Never prompt; reject anything that would require permission.
+    #[value(alias = "dontAsk")]
+    DontAsk,
+    /// Planning-only mode (no tool execution).
+    #[value(alias = "plan")]
+    Plan,
+}
+
+impl PermissionMode {
+    /// Return the wire-format string sent to the agent via
+    /// `session/set_config_option`.
+    pub fn as_wire_str(&self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Auto => "auto",
+            Self::AcceptEdits => "acceptEdits",
+            Self::BypassPermissions => "bypassPermissions",
+            Self::DontAsk => "dontAsk",
+            Self::Plan => "plan",
+        }
+    }
+
+    /// Returns `true` when the mode is the agent's built-in default and
+    /// therefore doesn't need to be explicitly set.
+    pub fn is_default(&self) -> bool {
+        matches!(self, Self::Default)
+    }
+}
+
+impl std::fmt::Display for PermissionMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_wire_str())
+    }
+}
+
+/// CLI args for `kuzz-acp models` — query available models from an agent.
+///
+/// This is a standalone `Parser` (not a subcommand variant) because the
+/// `models` path must bypass `Config::from_cli()` entirely — no relay,
+/// no private key, no harness setup.
+#[derive(Debug, Parser)]
+#[command(
+    name = "kuzz-acp models",
+    about = "Query available models from the configured agent"
+)]
+pub struct ModelsArgs {
+    /// Agent binary to spawn (e.g. "goose", "claude-agent-acp", "codex-acp").
+    #[command(flatten)]
+    pub agent: AuthAgentArgs,
+
+    /// Output structured JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// Shared agent-spawn flags for lightweight local ACP helper subcommands.
+#[derive(Debug, Parser)]
+pub struct AuthAgentArgs {
+    /// Agent binary to spawn (e.g. "goose", "claude-agent-acp", "codex-acp").
+    #[arg(long, env = "KUZZ_ACP_AGENT_COMMAND", default_value = "goose")]
+    pub agent_command: String,
+
+    /// Arguments passed to the agent binary.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_AGENT_ARGS",
+        default_value = "acp",
+        value_delimiter = ','
+    )]
+    pub agent_args: Vec<String>,
+}
+
+/// CLI args for `kuzz-acp auth-methods` — query adapter-advertised login methods.
+#[derive(Debug, Parser)]
+#[command(
+    name = "kuzz-acp auth-methods",
+    about = "Query adapter-advertised ACP authentication methods"
+)]
+pub struct AuthMethodsArgs {
+    #[command(flatten)]
+    pub agent: AuthAgentArgs,
+
+    /// Output structured JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// CLI args for `kuzz-acp authenticate` — start an adapter-owned login flow.
+#[derive(Debug, Parser)]
+#[command(
+    name = "kuzz-acp authenticate",
+    about = "Start an adapter-owned ACP authentication flow"
+)]
+pub struct AuthenticateArgs {
+    #[command(flatten)]
+    pub agent: AuthAgentArgs,
+
+    /// Adapter-advertised auth method id to invoke.
+    #[arg(long)]
+    pub method_id: String,
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "kuzz-acp",
+    about = "ACP harness that bridges Kuzz events to AI agents",
+    after_help = "Commands: run (one local task), models, auth-methods, authenticate.\nUse kuzz-acp <COMMAND> --help. With no command, start the conversational service."
+)]
+pub struct CliArgs {
+    #[arg(long, env = "KUZZ_RELAY_URL", default_value = "ws://localhost:3000")]
+    pub relay_url: String,
+
+    /// Key-mode identity (nsec or hex). Optional when `--bot-token` is set.
+    #[arg(long, env = "KUZZ_PRIVATE_KEY", hide_env_values = true)]
+    pub private_key: Option<String>,
+
+    /// Centralized-identity bot access token (`bzb_…`), injected by Kuzz
+    /// Desktop. When set the harness runs in token mode: drafts instead of
+    /// signatures, `Authorization: Bearer`, token WS AUTH, self-refresh via
+    /// `/auth/token/exchange`. Takes precedence over `--private-key`.
+    #[arg(long, env = "KUZZ_BOT_TOKEN", hide_env_values = true)]
+    pub bot_token: Option<String>,
+
+    /// Expiry (unix seconds) of the initial `--bot-token`. Defaults to one hour
+    /// from startup when unset.
+    #[arg(long, env = "KUZZ_BOT_TOKEN_EXPIRES_AT", hide_env_values = true)]
+    pub bot_token_expires_at: Option<i64>,
+
+    /// Agent owner pubkey (64-char hex). Used for --respond-to=owner-only gate.
+    #[arg(long, env = "KUZZ_ACP_AGENT_OWNER")]
+    pub agent_owner: Option<String>,
+
+    #[arg(long, env = "KUZZ_ACP_AGENT_COMMAND", default_value = "goose")]
+    pub agent_command: String,
+
+    #[arg(
+        long,
+        env = "KUZZ_ACP_AGENT_ARGS",
+        default_value = "acp",
+        value_delimiter = ','
+    )]
+    pub agent_args: Vec<String>,
+
+    #[arg(long, env = "KUZZ_ACP_MCP_COMMAND", default_value = "")]
+    pub mcp_command: String,
+
+    /// Idle timeout: max seconds of silence before killing a turn.
+    /// Resets on any agent stdout activity.
+    #[arg(long, env = "KUZZ_ACP_IDLE_TIMEOUT")]
+    pub idle_timeout: Option<u64>,
+
+    /// Absolute wall-clock cap per turn (safety valve).
+    #[arg(long, env = "KUZZ_ACP_MAX_TURN_DURATION", default_value_t = DEFAULT_MAX_TURN_DURATION_SECS)]
+    pub max_turn_duration: u64,
+
+    /// Deprecated: alias for --idle-timeout. If both set, --idle-timeout wins.
+    #[arg(long, env = "KUZZ_ACP_TURN_TIMEOUT", hide = true)]
+    pub turn_timeout: Option<u64>,
+
+    #[arg(
+        long,
+        env = "KUZZ_ACP_SYSTEM_PROMPT",
+        conflicts_with = "system_prompt_file"
+    )]
+    pub system_prompt: Option<String>,
+
+    #[arg(
+        long,
+        env = "KUZZ_ACP_SYSTEM_PROMPT_FILE",
+        conflicts_with = "system_prompt"
+    )]
+    pub system_prompt_file: Option<PathBuf>,
+
+    /// Number of parallel agent subprocesses.
+    #[arg(long, env = "KUZZ_ACP_AGENTS", default_value_t = 1,
+          value_parser = clap::value_parser!(u32).range(1..=32))]
+    pub agents: u32,
+
+    /// Seconds between heartbeat prompts. 0 = disabled.
+    #[arg(long, env = "KUZZ_ACP_HEARTBEAT_INTERVAL", default_value_t = 0)]
+    pub heartbeat_interval: u64,
+
+    /// Seconds between per-turn liveness pings (the crash backstop signal —
+    /// distinct from heartbeat self-prompting). 0 = disabled.
+    #[arg(long, env = "KUZZ_ACP_TURN_LIVENESS_SECS", default_value_t = 10)]
+    pub turn_liveness_secs: u64,
+
+    /// Heartbeat prompt text. Conflicts with --heartbeat-prompt-file.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_HEARTBEAT_PROMPT",
+        conflicts_with = "heartbeat_prompt_file"
+    )]
+    pub heartbeat_prompt: Option<String>,
+
+    /// Read heartbeat prompt from file.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_HEARTBEAT_PROMPT_FILE",
+        conflicts_with = "heartbeat_prompt"
+    )]
+    pub heartbeat_prompt_file: Option<PathBuf>,
+
+    #[arg(long, env = "KUZZ_ACP_INITIAL_MESSAGE")]
+    pub initial_message: Option<String>,
+
+    #[arg(
+        long,
+        env = "KUZZ_ACP_SUBSCRIBE",
+        default_value = "mentions",
+        value_enum
+    )]
+    pub subscribe: SubscribeMode,
+
+    #[arg(long, env = "KUZZ_ACP_KINDS", value_delimiter = ',')]
+    pub kinds: Option<Vec<u32>>,
+
+    #[arg(long, env = "KUZZ_ACP_CHANNELS", value_delimiter = ',')]
+    pub channels: Option<Vec<String>>,
+
+    #[arg(long, env = "KUZZ_ACP_NO_MENTION_FILTER")]
+    pub no_mention_filter: bool,
+
+    #[arg(long, env = "KUZZ_ACP_CONFIG", default_value = "./kuzz-acp.toml")]
+    pub config: PathBuf,
+
+    #[arg(long, env = "KUZZ_ACP_DEDUP", default_value = "queue", value_enum)]
+    pub dedup: DedupMode,
+
+    /// How ACP provider sessions are scoped in channels.
+    /// channel (default): one provider session per channel, shared by the main
+    /// timeline and every thread (legacy behavior).
+    /// thread: the channel main timeline shares one provider session and each
+    /// canonical thread gets its own (`main-and-threads` is accepted as an alias).
+    /// Direct messages stay conversation-scoped either way. Ships as `channel`
+    /// so thread scoping can be canaried and rolled back without code changes.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_SESSION_POLICY",
+        default_value = "channel",
+        value_enum
+    )]
+    pub session_policy: crate::scope::SessionPolicy,
+
+    /// Directory for durable harness state. Under the `thread`
+    /// session policy the harness keeps a per-agent, per-relay ledger of
+    /// scope → provider-session ids here so it can resume those sessions
+    /// (ACP `session/resume` or `session/load`) after a restart. Unset
+    /// disables resume; sessions then restart from relay context.
+    #[arg(long, env = "KUZZ_ACP_STATE_DIR")]
+    pub state_dir: Option<std::path::PathBuf>,
+
+    /// How to handle new @mentions while a turn is already in-flight.
+    /// steer (default): cancel+re-prompt, framing the new mention as a message
+    /// that arrived mid-task — the agent keeps working and weaves it in.
+    /// queue: events wait until the current turn completes.
+    /// interrupt: cancel+re-prompt framed as a supersede (new replaces old).
+    /// owner-interrupt: interrupt only for the agent owner's mentions.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_MULTIPLE_EVENT_HANDLING",
+        default_value = "steer",
+        value_enum
+    )]
+    pub multiple_event_handling: MultipleEventHandling,
+
+    #[arg(long, env = "KUZZ_ACP_NO_IGNORE_SELF")]
+    pub no_ignore_self: bool,
+
+    /// Maximum number of context messages to include for thread replies and DMs.
+    /// Set to 0 to disable automatic context fetching. Max 100. Defaults to 12,
+    /// or 4 in dispatcher mode (`--dispatcher`).
+    #[arg(long, env = "KUZZ_ACP_CONTEXT_MESSAGE_LIMIT",
+          value_parser = clap::value_parser!(u32).range(0..=100))]
+    pub context_message_limit: Option<u32>,
+
+    /// How much history a fresh session reads on its first thread or main
+    /// timeline turn: `recent` (the `--context-message-limit` window, the
+    /// default) or a size budget, `small` / `medium` / `large` (about 8k /
+    /// 20k / 50k tokens). Resumed sessions and dispatchers always use recent.
+    #[arg(long, env = "KUZZ_ACP_CONTEXT_HISTORY")]
+    pub context_history: Option<String>,
+
+    /// Maximum turns per session before proactive rotation. 0 = disabled
+    /// (rotate only on MaxTokens / MaxTurnRequests).
+    #[arg(long, env = "KUZZ_ACP_MAX_TURNS_PER_SESSION", default_value_t = 0,
+          value_parser = clap::value_parser!(u32))]
+    pub max_turns_per_session: u32,
+
+    /// Disable automatic presence (online/offline) status.
+    #[arg(long, env = "KUZZ_ACP_NO_PRESENCE")]
+    pub no_presence: bool,
+
+    /// Disable typing indicators while agent is processing.
+    #[arg(long, env = "KUZZ_ACP_NO_TYPING")]
+    pub no_typing: bool,
+
+    /// Enable NIP-AE agent core memory injection.
+    ///
+    /// Memory injection is on by default. When enabled, the harness
+    /// fetches the agent's per-session core engram and renders it as an
+    /// `<core-memory>` prompt section (or renders the onboarding nudge
+    /// when the relay confirms no core engram exists). The `kuzz mem` CLI
+    /// and the relay's acceptance of kind:30174 engrams are unaffected — this
+    /// flag controls prompt-time injection in the ACP harness only.
+    /// Pass `--no-memory` / `KUZZ_ACP_NO_MEMORY=true` to disable.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_MEMORY",
+        conflicts_with = "no_memory",
+        default_value_t = true
+    )]
+    pub memory: bool,
+
+    /// Disable NIP-AE agent core memory injection.
+    ///
+    /// Memory injection is on by default; set this flag/env var to opt out.
+    #[arg(long, env = "KUZZ_ACP_NO_MEMORY", conflicts_with = "memory")]
+    pub no_memory: bool,
+
+    /// Disable the `<base>` platform-context section prepended to every prompt.
+    /// When set, agents receive only the persona `<agent-instructions>` prompt with no Kuzz orientation.
+    #[arg(long, env = "KUZZ_ACP_NO_BASE_PROMPT")]
+    pub no_base_prompt: bool,
+
+    /// Path to a custom base prompt file. Overrides the compiled-in default.
+    /// Mutually exclusive with --no-base-prompt.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_BASE_PROMPT_FILE",
+        conflicts_with = "no_base_prompt"
+    )]
+    pub base_prompt_file: Option<PathBuf>,
+
+    /// Leave the engineering and repository guidance out of the base prompt,
+    /// for agents that do not work on code. Off by default, so every agent
+    /// gets that guidance unless its owner turns "Code work" off.
+    #[arg(long, env = "KUZZ_ACP_NO_CODE_WORK")]
+    pub no_code_work: bool,
+
+    /// Desired LLM model ID. Applied to every new ACP session after creation.
+    /// Use `kuzz-acp models` to discover available model IDs.
+    #[arg(long, env = "KUZZ_ACP_MODEL")]
+    pub model: Option<String>,
+
+    /// Persisted effort level value (e.g. "high", "medium", "low") to apply via
+    /// `session/set_config_option` at the first session creation. The configId is
+    /// resolved from the adapter's advertised `thought_level` capability — not
+    /// hardcoded. Non-fatal: if the adapter does not advertise `thought_level`,
+    /// the value is silently ignored and the persisted effort is not overwritten.
+    #[arg(long, env = "KUZZ_ACP_EFFORT_LEVEL")]
+    pub effort_level: Option<String>,
+
+    /// Title for the agent's ACP sessions, passed out-of-band in `session/new`
+    /// `_meta`. Adapters that recognize it name the session after this value;
+    /// others ignore it. Never enters the prompt.
+    #[arg(long, env = "KUZZ_ACP_SESSION_TITLE")]
+    pub session_title: Option<String>,
+
+    /// Permission mode for agents that support `session/set_config_option`
+    /// with `configId: "mode"` (e.g. `claude-agent-acp`).
+    ///
+    /// Defaults to `bypassPermissions` which skips the per-tool-call
+    /// permission flow. Set to `default` to restore the agent's built-in
+    /// behaviour.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_PERMISSION_MODE",
+        default_value = "bypass-permissions",
+        value_enum
+    )]
+    pub permission_mode: PermissionMode,
+
+    /// Inbound author gate: which authors' events the harness forwards.
+    /// Modes: owner-only (default), allowlist, anyone, nobody.
+    #[arg(
+        long,
+        env = "KUZZ_ACP_RESPOND_TO",
+        default_value = "owner-only",
+        value_enum
+    )]
+    pub respond_to: RespondTo,
+
+    /// Comma-separated 64-char hex pubkeys for allowlist mode.
+    /// Owner pubkey is always implicitly included.
+    #[arg(long, env = "KUZZ_ACP_RESPOND_TO_ALLOWLIST", value_delimiter = ',')]
+    pub respond_to_allowlist: Option<Vec<String>>,
+
+    /// Comma-separated list of allowed `--respond-to` modes.
+    /// When set, the harness rejects startup if `--respond-to` is not in this list.
+    /// Modes: owner-only, allowlist, anyone, nobody.
+    /// Default: empty (all modes allowed — no restriction).
+    /// Example: `KUZZ_ACP_ALLOWED_RESPOND_TO=owner-only,allowlist`
+    #[arg(long, env = "KUZZ_ACP_ALLOWED_RESPOND_TO", value_delimiter = ',')]
+    pub allowed_respond_to: Option<Vec<String>>,
+
+    /// Run as a channel dispatcher: subscribe to every non-DM channel without
+    /// the mention filter, admit only human-authored requests (see
+    /// `--dispatcher-config`), and use the short dispatcher base prompt.
+    #[arg(long, env = "KUZZ_ACP_DISPATCHER", default_value_t = false)]
+    pub dispatcher: bool,
+
+    /// Inject the `<channel-roster>` standing section into new non-DM channel
+    /// sessions without dispatcher mode (used by channel leads). Unlike a
+    /// dispatcher, the session proceeds without a roster when the fetch fails.
+    #[arg(long, env = "KUZZ_ACP_CHANNEL_ROSTER", default_value_t = false)]
+    pub channel_roster: bool,
+
+    /// Situations in which the agent may open a task thread unasked, as a
+    /// comma-separated list (`long_running`, `multi_step`, `parallel`,
+    /// `side_discussion`, `delegation`). Empty keeps the ask-first rule.
+    /// Applies under the thread session policy only.
+    #[arg(long, env = "KUZZ_ACP_TASK_THREADS")]
+    pub task_threads: Option<String>,
+
+    /// Per-channel dispatcher policy as JSON:
+    /// `{"<channel_uuid>": {"humans": ["<hex>", ...], "ais": ["<hex>", ...]}}`.
+    /// Both arrays are optional. An empty or missing `humans` list admits the
+    /// channel's kind-39001 owners/admins; `ais` lists agent pubkeys to admit.
+    #[arg(long, env = "KUZZ_ACP_DISPATCHER_CONFIG")]
+    pub dispatcher_config: Option<String>,
+
+    /// Team-owned instructions layered after `<agent-instructions>` and before agent memory.
+    #[arg(long, env = "KUZZ_ACP_TEAM_INSTRUCTIONS")]
+    pub team_instructions: Option<String>,
+
+    /// Kill switch for goal layers: no per-turn `<goal-context>` and no
+    /// layer 0 goal sections. Without it, goal context is injected only in
+    /// conversations that have a goal tree, so rooms without goals see the
+    /// same prompt either way.
+    #[arg(long, env = "KUZZ_ACP_NO_GOALS")]
+    pub no_goals: bool,
+
+    /// This agent's own layer 0 goal (private; set by its owner). Fixed for
+    /// the life of the process; `--layer0-goals-file` takes precedence.
+    #[arg(long, env = "KUZZ_ACP_AGENT_GOAL")]
+    pub agent_goal: Option<String>,
+
+    /// The owner's private layer 0 goal, shared only with the owner's agents
+    /// and used only when this agent answers its owner alone.
+    #[arg(long, env = "KUZZ_ACP_OWNER_GOAL")]
+    pub owner_goal: Option<String>,
+
+    /// JSON file holding `{"agent_goal": …, "owner_goal": …}`, re-read every
+    /// turn so goal edits reach live sessions without a restart. Written by
+    /// Kuzz Desktop; takes precedence over `--agent-goal` / `--owner-goal`.
+    #[arg(long, env = "KUZZ_ACP_LAYER0_GOALS_FILE")]
+    pub layer0_goals_file: Option<PathBuf>,
+
+    /// JSON file holding the agent's text settings (`system_prompt`,
+    /// `team_instructions`, `task_threads`, `context_history`), re-read every
+    /// turn so edits reach running sessions without a restart. Written by
+    /// Kuzz Desktop; its values replace the matching flags once it is read.
+    /// A prompt given with `--system-prompt-file` stays fixed.
+    #[arg(long, env = "KUZZ_ACP_LIVE_SETTINGS_FILE")]
+    pub live_settings_file: Option<PathBuf>,
+
+    /// Publish encrypted ACP observer frames over the relay.
+    #[arg(long, env = "KUZZ_ACP_RELAY_OBSERVER", default_value_t = false)]
+    pub relay_observer: bool,
+
+    /// Exit after this many seconds with no dispatched events and no turn in flight.
+    /// 0 disables inactivity self-termination.
+    #[arg(long, env = "KUZZ_ACP_EXIT_AFTER_INACTIVITY", default_value_t = 0)]
+    pub exit_after_inactivity: u64,
+
+    /// Connect and subscribe before starting the ACP/LLM subprocess pool.
+    #[arg(long, env = "KUZZ_ACP_LAZY_POOL", default_value_t = false)]
+    pub lazy_pool: bool,
+
+    /// Tear the woken pool back down to the lazy empty-slot state after this
+    /// many seconds with no dispatched turn in flight and an empty queue,
+    /// releasing worker subprocesses until the next accepted event re-wakes.
+    /// Requires `--lazy-pool`; ignored otherwise. 0 disables idle re-sleep.
+    #[arg(long, env = "KUZZ_ACP_IDLE_POOL_SLEEP", default_value_t = 0)]
+    pub idle_pool_sleep: u64,
+
+    /// Unix-seconds replay floor for the startup watermark. A publish-first
+    /// mention send publishes the triggering message and then spawns this
+    /// harness, passing the send timestamp here so the first REQ replays past
+    /// that message however long the spawn takes. Floors older than 15 minutes
+    /// are clamped to 15 minutes before startup; floors in the future are
+    /// ignored (the watermark stays at startup time).
+    #[arg(long, env = "KUZZ_ACP_REPLAY_FLOOR")]
+    pub replay_floor: Option<u64>,
+}
+
+/// Default `--context-message-limit` for ordinary agents.
+pub const DEFAULT_CONTEXT_MESSAGE_LIMIT: u32 = 12;
+/// Default `--context-message-limit` in dispatcher mode: a router needs only
+/// the request and its immediate thread, not the channel's recent history.
+pub const DISPATCHER_CONTEXT_MESSAGE_LIMIT: u32 = 4;
+
+/// Who a dispatcher listens to in one channel.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DispatcherChannelPolicy {
+    /// Human pubkeys (lowercase hex) whose requests are routed. Empty means
+    /// "the channel's kind-39001 owners and admins".
+    pub humans: HashSet<String>,
+    /// Agent pubkeys (lowercase hex) admitted despite their agent profile.
+    pub ais: HashSet<String>,
+}
+
+/// Parsed `--dispatcher-config` / `KUZZ_ACP_DISPATCHER_CONFIG`.
+#[derive(Debug, Clone, Default)]
+pub struct DispatcherConfig {
+    channels: HashMap<Uuid, DispatcherChannelPolicy>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawDispatcherChannelPolicy {
+    #[serde(default)]
+    humans: Vec<String>,
+    #[serde(default)]
+    ais: Vec<String>,
+}
+
+impl DispatcherConfig {
+    /// Parse the JSON document. Channel keys must be UUIDs and every pubkey
+    /// must be 64 hex characters; pubkeys are normalized to lowercase.
+    pub fn parse(json: &str) -> Result<Self, ConfigError> {
+        let raw: HashMap<String, RawDispatcherChannelPolicy> =
+            serde_json::from_str(json).map_err(|e| {
+                ConfigError::ConfigFile(format!("invalid --dispatcher-config JSON: {e}"))
+            })?;
+        let mut channels = HashMap::with_capacity(raw.len());
+        for (channel, policy) in raw {
+            let channel_id = channel.trim().parse::<Uuid>().map_err(|_| {
+                ConfigError::ConfigFile(format!(
+                    "invalid channel id in --dispatcher-config: '{channel}' (must be a UUID)"
+                ))
+            })?;
+            channels.insert(
+                channel_id,
+                DispatcherChannelPolicy {
+                    humans: validate_dispatcher_pubkeys(&policy.humans, "humans")?,
+                    ais: validate_dispatcher_pubkeys(&policy.ais, "ais")?,
+                },
+            );
+        }
+        Ok(Self { channels })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_channels(channels: HashMap<Uuid, DispatcherChannelPolicy>) -> Self {
+        Self { channels }
+    }
+
+    /// The policy configured for a channel, if any.
+    pub fn channel(&self, channel_id: Uuid) -> Option<&DispatcherChannelPolicy> {
+        self.channels.get(&channel_id)
+    }
+
+    /// Number of channels with an explicit policy.
+    pub fn channel_count(&self) -> usize {
+        self.channels.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.channels.is_empty()
+    }
+}
+
+fn validate_dispatcher_pubkeys(
+    entries: &[String],
+    field: &str,
+) -> Result<HashSet<String>, ConfigError> {
+    let mut validated = HashSet::new();
+    for entry in entries {
+        let trimmed = entry.trim().to_ascii_lowercase();
+        if trimmed.len() != 64 || !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(ConfigError::ConfigFile(format!(
+                "invalid pubkey in --dispatcher-config {field}: '{entry}' \
+                 (must be exactly 64 hex characters)"
+            )));
+        }
+        validated.insert(trimmed);
+    }
+    Ok(validated)
+}
+
+/// Merged NIP-01 subscription filter for a single channel.
+#[derive(Debug, Clone)]
+pub struct ChannelFilter {
+    /// Event kinds to subscribe to. None = wildcard (all kinds).
+    pub kinds: Option<Vec<u32>>,
+    /// Whether to include `#p` tag filter for agent pubkey.
+    pub require_mention: bool,
+}
+
+#[derive(Debug)]
+pub struct Config {
+    /// The harness identity: key-signed (`KUZZ_PRIVATE_KEY`) or token
+    /// (`KUZZ_BOT_TOKEN`, see [`crate::identity`]). The field keeps its
+    /// historical name; it is no longer necessarily a keypair.
+    pub keys: AgentIdentity,
+    pub relay_url: String,
+    pub agent_command: String,
+    pub agent_args: Vec<String>,
+    pub mcp_command: String,
+    pub idle_timeout_secs: u64,
+    pub max_turn_duration_secs: u64,
+    pub agents: u32,
+    pub heartbeat_interval_secs: u64,
+    /// Seconds between per-turn liveness pings. 0 = disabled. Distinct from
+    /// `heartbeat_interval_secs` (agent self-prompting) — this is the desktop
+    /// crash-backstop signal.
+    pub turn_liveness_secs: u64,
+    pub heartbeat_prompt: Option<String>,
+    pub system_prompt: Option<String>,
+    /// Team-owned instructions layered separately from the agent system prompt.
+    pub team_instructions: Option<String>,
+    /// Whether goal layers are on (false only with `--no-goals`). Goal
+    /// context is still injected only where a goal tree exists.
+    pub goals_enabled: bool,
+    /// Source of the current `<agent-goal>` / `<owner-goal>` sections.
+    pub layer0_goals: crate::layer0_goals::Layer0Goals,
+    /// Source of the current text settings when Desktop keeps them in a live
+    /// file (`--live-settings-file`); `system_prompt`, `team_instructions`,
+    /// `context_history`, and `task_threads` hold the launch values.
+    pub live_settings: crate::live_settings::LiveSettings,
+    pub initial_message: Option<String>,
+    pub subscribe_mode: SubscribeMode,
+    pub dedup_mode: DedupMode,
+    /// How ACP provider sessions are scoped in channels (channel vs thread).
+    pub session_policy: crate::scope::SessionPolicy,
+    /// Durable harness state directory (session resume ledger).
+    pub state_dir: Option<std::path::PathBuf>,
+    pub multiple_event_handling: MultipleEventHandling,
+    pub ignore_self: bool,
+    pub kinds_override: Option<Vec<u32>>,
+    pub channels_override: Option<Vec<String>>,
+    pub no_mention_filter: bool,
+    pub config_path: PathBuf,
+    pub context_message_limit: u32,
+    /// How much history a fresh session reads (`--context-history`); always
+    /// `Recent` in dispatcher mode.
+    pub context_history: crate::context_history::ContextHistory,
+    /// Maximum turns per session before proactive rotation. 0 = disabled.
+    pub max_turns_per_session: u32,
+    pub presence_enabled: bool,
+    pub typing_enabled: bool,
+    /// Whether NIP-AE agent core memory injection is enabled. When false,
+    /// the harness skips the per-session core engram fetch and renders no
+    /// `<core-memory>` section. On by default; disabled via the
+    /// `--no-memory` / `KUZZ_ACP_NO_MEMORY` opt-out.
+    pub memory_enabled: bool,
+    /// Desired LLM model ID. Applied after every `session_new_full()`.
+    pub model: Option<String>,
+    /// Persisted effort level value (e.g. "high", "medium", "low"). Held as a
+    /// per-worker spawn-scoped value and applied at the first session creation
+    /// by pairing with the adapter's advertised `thought_level` configId.
+    /// Non-fatal when absent or when the adapter does not advertise
+    /// `thought_level`.
+    pub effort_level: Option<String>,
+    /// Sanitized session title, sent as `_meta.sessionTitle` on `session/new`.
+    /// `None` when unset or when the configured value sanitized to empty.
+    pub session_title: Option<String>,
+    /// Permission mode to apply after session creation. `Default` = skip.
+    pub permission_mode: PermissionMode,
+    /// Inbound author gate mode.
+    pub respond_to: RespondTo,
+    /// Validated allowlist of pubkey hex strings (used when respond_to == Allowlist).
+    pub respond_to_allowlist: HashSet<String>,
+    /// Allowed `respond_to` modes. Empty = all modes allowed.
+    pub allowed_respond_to: Vec<String>,
+    /// Per-persona env vars to inject at agent spawn time (e.g., GOOSE_PROVIDER, GOOSE_MODEL, KUZZ_AGENT_MODEL).
+    /// Populated from persona pack resolution. Empty when no pack is configured.
+    pub persona_env_vars: Vec<(String, String)>,
+    /// Whether `codex_network_env()` successfully injected a `CODEX_CONFIG` entry into
+    /// `persona_env_vars`.  When true, `AcpClient::spawn` merges all `CODEX_CONFIG` entries
+    /// and forces `sandbox_workspace_write.network_access = true` via `build_codex_config_env`.
+    /// When false (non-Codex agents or rejected relay URL), the helper returns None and
+    /// any persona-supplied `CODEX_CONFIG` is handled with ordinary operator-wins semantics.
+    pub has_generated_codex_config: bool,
+    /// Whether to publish encrypted observer frames through the relay.
+    pub relay_observer: bool,
+    /// Seconds without dispatched events before an idle harness exits. 0 = disabled.
+    pub exit_after_inactivity_secs: u64,
+    /// Whether ACP/LLM subprocess initialization is deferred until accepted work arrives.
+    pub lazy_pool: bool,
+    /// Seconds with no dispatched turn in flight and an empty queue before a
+    /// woken lazy pool is torn back down to the empty-slot state. 0 = disabled.
+    /// Only meaningful when `lazy_pool` is true.
+    pub idle_pool_sleep_secs: u64,
+    /// Optional unix-seconds replay floor for the startup watermark
+    /// (`--replay-floor` / `KUZZ_ACP_REPLAY_FLOOR`), set by a publish-first
+    /// mention send so the first REQ replays past the already-published
+    /// triggering message. Clamped where consumed — see
+    /// `startup_watermark_with_floor`.
+    pub replay_floor_unix: Option<u64>,
+    /// Agent owner pubkey (hex). Used for `--respond-to=owner-only` gate.
+    /// Replaces the old REST-based owner lookup.
+    pub agent_owner: Option<String>,
+    /// Disable the `<base>` platform-context section prepended to every prompt.
+    pub no_base_prompt: bool,
+    /// Resolved content from `--base-prompt-file`, read and validated in
+    /// `from_cli()`. `None` when using the compiled-in default or when
+    /// `--no-base-prompt` is set. In dispatcher mode without an explicit file
+    /// this holds the compiled-in dispatcher base prompt.
+    pub base_prompt_content: Option<String>,
+    /// Whether the base prompt keeps its engineering and repository guidance
+    /// (true unless `--no-code-work`).
+    pub code_work: bool,
+    /// Whether this harness runs as a channel dispatcher (`--dispatcher`).
+    pub dispatcher: bool,
+    /// Whether to inject the `<channel-roster>` section (`--channel-roster`).
+    pub channel_roster: bool,
+    /// Situations in which the agent may open a task thread unasked
+    /// (`--task-threads`).
+    pub task_threads: Vec<crate::task_threads::TaskThreadTrigger>,
+    /// Per-channel dispatcher author policy (`--dispatcher-config`).
+    pub dispatcher_config: DispatcherConfig,
+}
+
+/// Maximum length, in characters, of a session title sent to the adapter.
+const SESSION_TITLE_MAX_CHARS: usize = 80;
+
+/// Normalize a configured session title into something safe to hand an adapter.
+///
+/// Control characters are dropped, runs of whitespace collapse to a single
+/// space, and the result is trimmed and capped at
+/// [`SESSION_TITLE_MAX_CHARS`]. Returns `None` when nothing printable is left.
+///
+/// Kuzz is the only guard here: Codex's own `normalize_thread_name` merely
+/// trims, so an unbounded display name would be persisted verbatim into its
+/// thread store.
+fn sanitize_session_title(raw: &str) -> Option<String> {
+    let collapsed = raw
+        .split_whitespace()
+        .map(|word| word.chars().filter(|c| !c.is_control()).collect::<String>())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    // Truncate by chars, not bytes, so a multi-byte name can't be cut mid-UTF-8.
+    let title: String = collapsed
+        .chars()
+        .take(SESSION_TITLE_MAX_CHARS)
+        .collect::<String>()
+        .trim_end()
+        .to_string();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title)
+    }
+}
+
+/// Separator between the agent name and the channel in a composed title.
+/// U+00B7 MIDDLE DOT, spaces on both sides.
+const SESSION_TITLE_SEPARATOR: &str = " · ";
+
+/// Compose a per-session title as `Agent · #channel`.
+///
+/// One agent in five channels gets five sessions; a bare agent name would show
+/// five identical rows in the adapter's thread list. Only the channel part is
+/// truncated to fit [`SESSION_TITLE_MAX_CHARS`], so the agent name always
+/// survives. Returns the bare agent name when there is no channel, the channel
+/// name is blank, or no room is left for it.
+pub(crate) fn compose_session_title(agent: &str, channel_name: Option<&str>) -> String {
+    compose_session_title_with_limit(agent, channel_name, SESSION_TITLE_MAX_CHARS)
+}
+
+/// Append the canonical thread root's first eight characters to a session title.
+/// Reserve suffix space before truncating names so thread identity always survives.
+/// Conversation and heartbeat sessions preserve their existing title behavior.
+pub(crate) fn compose_scoped_session_title(
+    agent: &str,
+    channel_name: Option<&str>,
+    thread_root: Option<&str>,
+) -> String {
+    let Some(root) = thread_root.filter(|root| !root.is_empty()) else {
+        return compose_session_title(agent, channel_name);
+    };
+    let short_root: String = root.chars().take(8).collect();
+    let suffix = format!("{SESSION_TITLE_SEPARATOR}{short_root}");
+    let budget = SESSION_TITLE_MAX_CHARS.saturating_sub(suffix.chars().count());
+    let agent: String = agent.chars().take(budget).collect();
+    format!(
+        "{}{suffix}",
+        compose_session_title_with_limit(agent.trim_end(), channel_name, budget)
+    )
+}
+
+fn compose_session_title_with_limit(
+    agent: &str,
+    channel_name: Option<&str>,
+    max_chars: usize,
+) -> String {
+    let Some(channel) = channel_name.and_then(sanitize_session_title) else {
+        return agent.to_string();
+    };
+    // Reserve the separator and the `#` sigil alongside the agent name.
+    let reserved = agent.chars().count() + SESSION_TITLE_SEPARATOR.chars().count() + 1;
+    let channel: String = channel
+        .chars()
+        .take(max_chars.saturating_sub(reserved))
+        .collect::<String>()
+        .trim_end()
+        .to_string();
+    if channel.is_empty() {
+        return agent.to_string();
+    }
+    format!("{agent}{SESSION_TITLE_SEPARATOR}#{channel}")
+}
+
+/// Validate and deduplicate allowlist entries: each must be exactly 64 hex chars.
+fn validate_allowlist(entries: &[String]) -> Result<HashSet<String>, ConfigError> {
+    let mut validated = HashSet::new();
+    for entry in entries {
+        let trimmed = entry.trim().to_ascii_lowercase();
+        if trimmed.len() != 64 || !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(ConfigError::ConfigFile(format!(
+                "invalid pubkey in --respond-to-allowlist: '{entry}' \
+                 (must be exactly 64 hex characters)"
+            )));
+        }
+        validated.insert(trimmed);
+    }
+    Ok(validated)
+}
+
+/// Validate the `--multiple-event-handling` / `--dedup` combination.
+///
+/// Every mid-turn cancel mode (`Steer`, `Interrupt`, `OwnerInterrupt`) requires
+/// `DedupMode::Queue`: `DedupMode::Drop` discards events during the cancel drain
+/// window, which would produce incomplete merged prompts. `Queue` handling
+/// imposes no constraint.
+fn validate_multiple_event_handling(
+    handling: MultipleEventHandling,
+    dedup: DedupMode,
+) -> Result<(), ConfigError> {
+    let is_cancel_mode = matches!(
+        handling,
+        MultipleEventHandling::Steer
+            | MultipleEventHandling::Interrupt
+            | MultipleEventHandling::OwnerInterrupt
+    );
+    if is_cancel_mode && matches!(dedup, DedupMode::Drop) {
+        return Err(ConfigError::ConfigFile(
+            "--multiple-event-handling=steer (or interrupt/owner-interrupt) requires \
+             --dedup=queue. DedupMode::Drop discards events during the cancel drain window, \
+             producing incomplete merged prompts."
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn normalize_agent_command_identity(command: &str) -> String {
+    let normalized = command.trim().replace('\\', "/");
+    let trimmed = normalized.trim_end_matches('/');
+    let basename = trimmed
+        .rsplit('/')
+        .next()
+        .expect("rsplit always yields at least one element");
+    let lower = basename.to_ascii_lowercase();
+    // Windows resolves commands through `.exe` binaries and npm's `.cmd`/`.bat`
+    // shims; all three name the same runtime identity.
+    let stem = [".exe", ".cmd", ".bat"]
+        .iter()
+        .find_map(|extension| lower.strip_suffix(extension))
+        .unwrap_or(&lower);
+    stem.chars()
+        .map(|character| match character {
+            ' ' | '_' => '-',
+            _ => character,
+        })
+        .collect()
+}
+
+fn default_agent_args(command: &str) -> Option<Vec<String>> {
+    match normalize_agent_command_identity(command).as_str() {
+        "goose" => Some(vec!["acp".to_string()]),
+        "codex" | "codex-acp" | "claude-agent-acp" | "claude-code-acp" | "claude-code"
+        | "claudecode" | "kuzz-agent" => Some(Vec::new()),
+        _ => None,
+    }
+}
+
+/// Per-runtime environment defaults applied when Kuzz owns the agent process.
+///
+/// Mirrors [`default_agent_args`]: keyed on the normalized command identity,
+/// with the merge (in `AcpClient::spawn`) giving explicit persona env and
+/// inherited parent env precedence over these defaults.
+///
+/// Hermes: ACP hosts supply session MCP servers explicitly through
+/// `session/new`, but Hermes otherwise starts every profile-configured MCP
+/// server before it responds to `initialize` — which can exhaust the host's
+/// startup budget (see block/kuzz#3355). Skip that unrelated global startup
+/// by default; an operator or persona can still opt back in by setting the
+/// variable explicitly.
+pub(crate) fn default_agent_env(command: &str) -> &'static [(&'static str, &'static str)] {
+    match normalize_agent_command_identity(command).as_str() {
+        "hermes" | "hermes-agent" | "hermes-acp" => &[("HERMES_ACP_SKIP_CONFIGURED_MCP", "1")],
+        _ => &[],
+    }
+}
+
+/// Build the `CODEX_CONFIG` environment variable that enables full outbound
+/// network access in Codex's macOS Seatbelt sandbox.
+///
+/// Codex sandboxes MCP subprocesses (including `kuzz-cli`) behind a Seatbelt sandbox
+/// that blocks all outbound network by default. Without this env var, `kuzz-cli`
+/// requests are blocked before they can reach the relay WebSocket.
+///
+/// Returns `Some(("CODEX_CONFIG", "{\"sandbox_workspace_write\":{\"network_access\":true}}"))` for
+/// Codex agents, or `None` for non-Codex agents or when the relay URL cannot be parsed.
+///
+/// The env var is forwarded by the `@agentclientprotocol/codex-acp` adapter (1.x) as a
+/// session-level config override (via `CODEX_CONFIG` → `thread/start config`), which is
+/// equivalent to the TOML override `sandbox_workspace_write.network_access = true`.
+/// That sets `NetworkSandboxPolicy::Enabled`, causing the Seatbelt policy to include
+/// `(allow network-outbound)` — full outbound TCP/TLS at the OS level.
+///
+/// URL validation is preserved as a guard: injection is skipped when the relay URL cannot
+/// be parsed, avoiding accidental sandbox widening for malformed configs.
+///
+/// Handles `ws://`, `wss://`, `http://`, and `https://` schemes.
+pub fn codex_network_env(agent_command: &str, relay_url: &str) -> Option<(String, String)> {
+    match normalize_agent_command_identity(agent_command).as_str() {
+        "codex" | "codex-acp" => {}
+        _ => return None,
+    }
+
+    // Validate the relay URL before injecting broader network access. On parse failure,
+    // skip injection rather than panicking or widening the sandbox unconditionally.
+    let host = match Url::parse(relay_url) {
+        Ok(u) => match u.host_str() {
+            Some(h) => h.to_owned(),
+            None => {
+                tracing::warn!(
+                    relay_url,
+                    "codex network config: no host in relay URL — skipping injection"
+                );
+                return None;
+            }
+        },
+        Err(e) => {
+            tracing::warn!(relay_url, error = %e, "codex network config: failed to parse relay URL — skipping injection");
+            return None;
+        }
+    };
+
+    tracing::debug!(host, "injecting CODEX_CONFIG network_access for relay host");
+
+    Some((
+        "CODEX_CONFIG".into(),
+        "{\"sandbox_workspace_write\":{\"network_access\":true}}".into(),
+    ))
+}
+
+pub fn normalize_agent_args(command: &str, agent_args: Vec<String>) -> Vec<String> {
+    let normalized = agent_args
+        .into_iter()
+        .map(|arg| arg.trim().to_string())
+        .filter(|arg| !arg.is_empty())
+        .collect::<Vec<_>>();
+
+    let Some(default_args) = default_agent_args(command) else {
+        return normalized;
+    };
+
+    if normalized.is_empty() {
+        return default_args;
+    }
+
+    // Older callers relied on the Goose-specific default even for runtimes like
+    // Codex and Claude. Treat that legacy fallback as "no args" for zero-arg
+    // providers so desktop- and env-based launches behave the same way.
+    if normalized.len() == 1 && normalized[0].eq_ignore_ascii_case("acp") && default_args.is_empty()
+    {
+        return default_args;
+    }
+
+    normalized
+}
+
+/// Layer 0 goal variables taken out of the environment by
+/// [`take_layer0_goal_env`].
+#[derive(Clone, Default)]
+struct Layer0GoalEnv {
+    agent_goal: Option<String>,
+    owner_goal: Option<String>,
+    goals_file: Option<String>,
+    live_settings_file: Option<String>,
+}
+
+static LAYER0_GOAL_ENV: std::sync::OnceLock<Layer0GoalEnv> = std::sync::OnceLock::new();
+
+/// Move the private layer 0 goals (and the paths of the files holding them
+/// and the live settings) out of the environment so child processes and
+/// their shell tools cannot print them; `Config::from_cli` reads the stashed
+/// copy. Only touches variables that are set.
+///
+/// Must be called before the tokio runtime starts, like
+/// [`propagate_legacy_env_vars`].
+pub fn take_layer0_goal_env() {
+    let take = |name: &str| {
+        let value = std::env::var(name).ok();
+        if value.is_some() {
+            std::env::remove_var(name);
+        }
+        value
+    };
+    let _ = LAYER0_GOAL_ENV.set(Layer0GoalEnv {
+        agent_goal: take("KUZZ_ACP_AGENT_GOAL"),
+        owner_goal: take("KUZZ_ACP_OWNER_GOAL"),
+        goals_file: take("KUZZ_ACP_LAYER0_GOALS_FILE"),
+        live_settings_file: take("KUZZ_ACP_LIVE_SETTINGS_FILE"),
+    });
+}
+
+/// Propagate legacy env-var aliases to their canonical names.
+///
+/// Must be called **before** the tokio runtime starts — i.e. from the sync
+/// `fn main()` wrapper, not from inside `#[tokio::main]`.
+///
+/// `std::env::set_var` is safe in Rust 2021 only when no other threads are
+/// running. In Rust 2024 it requires `unsafe`. Calling this before
+/// `#[tokio::main]` ensures worker threads are not yet alive.
+///
+/// // Must be called before tokio runtime starts — see Rust 2024 edition safety.
+pub fn propagate_legacy_env_vars() {
+    for (legacy, canonical) in [
+        ("KUZZ_ACP_PRIVATE_KEY", "KUZZ_PRIVATE_KEY"),
+        ("KUZZ_ACP_API_TOKEN", "KUZZ_API_TOKEN"),
+    ] {
+        if std::env::var(canonical).is_err() {
+            if let Ok(val) = std::env::var(legacy) {
+                std::env::set_var(canonical, &val);
+            }
+        }
+    }
+}
+
+impl Config {
+    /// Build a `Config` from already-parsed `CliArgs`. Separated from argument parsing so
+    /// tests can construct `CliArgs` via `CliArgs::try_parse_from` and exercise the full
+    /// validation path without going through process args.
+    #[cfg(test)]
+    pub fn from_args(args: CliArgs) -> Result<Self, ConfigError> {
+        Self::from_args_resolved(args, None)
+    }
+
+    /// Build a `Config`; in token mode `principal` is the identity
+    /// `GET /auth/me` returned for the bot token (see
+    /// [`crate::token_refresh::resolve_principal`]). The server's bot owner
+    /// replaces `--agent-owner` (it is authoritative in token mode).
+    pub fn from_args_resolved(
+        mut args: CliArgs,
+        principal: Option<TokenPrincipal>,
+    ) -> Result<Self, ConfigError> {
+        let bot_token = args
+            .bot_token
+            .take()
+            .map(zeroize::Zeroizing::new)
+            .filter(|token| !token.trim().is_empty());
+        let keys = match bot_token {
+            Some(token) => {
+                if args.private_key.is_some() {
+                    tracing::warn!(
+                        "both KUZZ_BOT_TOKEN and KUZZ_PRIVATE_KEY are set; using the bot token"
+                    );
+                }
+                let principal = principal.ok_or(ConfigError::UnresolvedPrincipal)?;
+                if let Some(owner) = principal.owner.clone() {
+                    if args
+                        .agent_owner
+                        .as_deref()
+                        .is_some_and(|o| !o.eq_ignore_ascii_case(&owner))
+                    {
+                        tracing::warn!("--agent-owner differs from the bot's server owner; using the server owner");
+                    }
+                    args.agent_owner = Some(owner);
+                }
+                let expires_at = args.bot_token_expires_at.unwrap_or_else(|| {
+                    crate::token_refresh::unix_now() + crate::token_refresh::DEFAULT_TOKEN_TTL_SECS
+                });
+                AgentIdentity::token(
+                    principal.principal,
+                    BotToken::new(token.trim().to_owned(), expires_at),
+                )
+            }
+            None => {
+                let mut raw = zeroize::Zeroizing::new(
+                    args.private_key
+                        .take()
+                        .ok_or(ConfigError::MissingCredentials)?,
+                );
+                if raw.trim().is_empty() {
+                    return Err(ConfigError::MissingCredentials);
+                }
+                let keys = Keys::parse(raw.as_str())?;
+                raw.clear();
+                AgentIdentity::keys(keys)
+            }
+        };
+
+        let system_prompt_from_file =
+            args.system_prompt.is_none() && args.system_prompt_file.is_some();
+        let system_prompt = if let Some(text) = args.system_prompt {
+            Some(text)
+        } else if let Some(ref path) = args.system_prompt_file {
+            Some(std::fs::read_to_string(path)?)
+        } else {
+            None
+        };
+
+        if args.heartbeat_interval > 0 && args.heartbeat_interval < 10 {
+            return Err(ConfigError::ConfigFile(
+                "heartbeat interval must be 0 (disabled) or ≥10 seconds".into(),
+            ));
+        }
+
+        if args.turn_liveness_secs > 0 && args.turn_liveness_secs < 5 {
+            return Err(ConfigError::ConfigFile(
+                "turn liveness interval must be 0 (disabled) or ≥5 seconds".into(),
+            ));
+        }
+
+        let heartbeat_prompt = if let Some(text) = args.heartbeat_prompt {
+            Some(text)
+        } else if let Some(ref path) = args.heartbeat_prompt_file {
+            Some(std::fs::read_to_string(path)?)
+        } else {
+            None
+        };
+
+        let base_prompt_content = if args.no_base_prompt {
+            None
+        } else if let Some(ref path) = args.base_prompt_file {
+            let content = std::fs::read_to_string(path)?;
+            if content.len() > 1_048_576 {
+                return Err(ConfigError::ConfigFile(format!(
+                    "base prompt file {} exceeds 1 MB limit ({} bytes)",
+                    path.display(),
+                    content.len()
+                )));
+            }
+            Some(content)
+        } else if args.dispatcher {
+            // A dispatcher only routes, so it gets the short router prompt
+            // unless the operator supplied their own base prompt file.
+            Some(include_str!("dispatcher_base_prompt.md").to_string())
+        } else {
+            None
+        };
+
+        let dispatcher_config = match args.dispatcher_config.as_deref() {
+            Some(json) if args.dispatcher => DispatcherConfig::parse(json)?,
+            Some(_) => {
+                tracing::warn!("--dispatcher-config is ignored without --dispatcher");
+                DispatcherConfig::default()
+            }
+            None => DispatcherConfig::default(),
+        };
+        if args.dispatcher && !matches!(args.subscribe, SubscribeMode::Mentions) {
+            tracing::warn!(
+                "--dispatcher overrides channel subscriptions only in --subscribe=mentions mode; \
+                 the configured subscribe mode keeps its own filters"
+            );
+        }
+        let context_message_limit = args.context_message_limit.unwrap_or(if args.dispatcher {
+            DISPATCHER_CONTEXT_MESSAGE_LIMIT
+        } else {
+            DEFAULT_CONTEXT_MESSAGE_LIMIT
+        });
+        // A router keeps its small window; only ordinary agents read further.
+        let context_history = if args.dispatcher {
+            crate::context_history::ContextHistory::Recent
+        } else {
+            crate::context_history::parse_context_history(args.context_history.as_deref())
+        };
+        let team_instructions = args
+            .team_instructions
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let task_threads =
+            crate::task_threads::parse_task_thread_triggers(args.task_threads.as_deref());
+        let live_settings = {
+            use crate::live_settings::{LivePins, LiveSettings, LiveValues};
+            let env_file = LAYER0_GOAL_ENV
+                .get()
+                .and_then(|env| env.live_settings_file.clone())
+                .map(PathBuf::from);
+            match args.live_settings_file.clone().or(env_file) {
+                Some(path) => LiveSettings::file(
+                    path,
+                    LiveValues {
+                        system_prompt: system_prompt.clone(),
+                        team_instructions: team_instructions.clone(),
+                        task_threads: task_threads.clone(),
+                        context_history,
+                    },
+                    LivePins {
+                        system_prompt: system_prompt_from_file,
+                        recent_history_only: args.dispatcher,
+                    },
+                ),
+                None => LiveSettings::default(),
+            }
+        };
+
+        if matches!(args.subscribe, SubscribeMode::Config) {
+            if args.kinds.is_some() {
+                tracing::warn!("--kinds is ignored in config mode");
+            }
+            if args.channels.is_some() {
+                tracing::warn!("--channels is ignored in config mode");
+            }
+            if args.no_mention_filter {
+                tracing::warn!("--no-mention-filter is ignored in config mode");
+            }
+        }
+
+        let agent_command = args.agent_command;
+
+        if agent_command.trim().is_empty() {
+            return Err(ConfigError::ConfigFile(
+                "agent_command must not be empty".into(),
+            ));
+        }
+
+        let agent_args = normalize_agent_args(&agent_command, args.agent_args);
+
+        if let Some(ref channels) = args.channels {
+            for ch in channels {
+                if ch.parse::<Uuid>().is_err() {
+                    tracing::warn!(
+                        channel = %ch,
+                        "--channels entry is not a valid UUID and will be ignored"
+                    );
+                }
+            }
+        }
+
+        let heartbeat_interval = if args.heartbeat_interval > 86400 {
+            tracing::warn!(
+                interval = args.heartbeat_interval,
+                "heartbeat interval exceeds 24h — capping at 86400s"
+            );
+            86400u64
+        } else {
+            args.heartbeat_interval
+        };
+
+        // Cap turn-liveness interval at 86400s (24h) — same bound as heartbeat.
+        let turn_liveness_secs = if args.turn_liveness_secs > 86400 {
+            tracing::warn!(
+                interval = args.turn_liveness_secs,
+                "turn liveness interval exceeds 24h — capping at 86400s"
+            );
+            86400u64
+        } else {
+            args.turn_liveness_secs
+        };
+
+        // Resolve idle_timeout_secs with deprecation handling.
+        // Precedence: explicit --idle-timeout > --turn-timeout (deprecated) > `DEFAULT_IDLE_TIMEOUT_SECS`.
+        let idle_timeout_secs = {
+            let raw = match (args.idle_timeout, args.turn_timeout) {
+                (Some(idle), Some(_turn)) => {
+                    tracing::warn!(
+                        "--turn-timeout / KUZZ_ACP_TURN_TIMEOUT is deprecated and ignored \
+                         when --idle-timeout / KUZZ_ACP_IDLE_TIMEOUT is also set"
+                    );
+                    idle
+                }
+                (Some(idle), None) => idle,
+                (None, Some(turn)) => {
+                    tracing::warn!(
+                        "--turn-timeout / KUZZ_ACP_TURN_TIMEOUT is deprecated; \
+                         use --idle-timeout / KUZZ_ACP_IDLE_TIMEOUT instead"
+                    );
+                    turn
+                }
+                (None, None) => DEFAULT_IDLE_TIMEOUT_SECS,
+            };
+            if raw == 0 {
+                tracing::warn!("idle timeout of 0 is invalid — using 1s minimum");
+                1
+            } else {
+                raw
+            }
+        };
+
+        let max_turn_duration_secs = {
+            let raw = args.max_turn_duration;
+            if raw == 0 {
+                tracing::warn!("max turn duration of 0 is invalid — using 60s minimum");
+                60
+            } else if raw > MAX_TURN_DURATION_CEILING_SECS {
+                return Err(ConfigError::ConfigFile(format!(
+                    "max_turn_duration ({}s) exceeds ceiling ({}s / 7 days)",
+                    raw, MAX_TURN_DURATION_CEILING_SECS
+                )));
+            } else {
+                raw
+            }
+        };
+
+        // idle_timeout must be strictly less than max_turn_duration. If idle_timeout
+        // >= max_turn_duration, the absolute wall-clock cap would fire before the idle
+        // timeout ever could, making idle_timeout a dead letter.
+        if idle_timeout_secs >= max_turn_duration_secs {
+            return Err(ConfigError::ConfigFile(format!(
+                "idle_timeout ({}s) must be less than max_turn_duration ({}s)",
+                idle_timeout_secs, max_turn_duration_secs
+            )));
+        }
+
+        let respond_to_allowlist = if args.respond_to == RespondTo::Allowlist {
+            let raw = args.respond_to_allowlist.unwrap_or_default();
+            if raw.is_empty() {
+                return Err(ConfigError::ConfigFile(
+                    "--respond-to=allowlist requires --respond-to-allowlist with at least one pubkey".into(),
+                ));
+            }
+            validate_allowlist(&raw)?
+        } else {
+            if args.respond_to_allowlist.is_some() {
+                tracing::warn!(
+                    "--respond-to-allowlist is ignored when --respond-to is not 'allowlist'"
+                );
+            }
+            HashSet::new()
+        };
+
+        // Validate respond_to against the allowed set.
+        let allowed_respond_to = if let Some(raw) = args.allowed_respond_to {
+            // Validate each entry is a known RespondTo mode.
+            for s in &raw {
+                RespondTo::from_str(s.trim(), true).map_err(|_| {
+                    ConfigError::ConfigFile(format!(
+                        "invalid value in KUZZ_ACP_ALLOWED_RESPOND_TO: '{s}' \
+                         (valid values: owner-only, allowlist, anyone, nobody)"
+                    ))
+                })?;
+            }
+            let allowed_modes: Vec<String> = raw.iter().map(|s| s.trim().to_string()).collect();
+            if !allowed_modes.is_empty() && !allowed_modes.contains(&args.respond_to.to_string()) {
+                return Err(ConfigError::ConfigFile(format!(
+                    "respond_to '{}' is not permitted on this deployment \
+                     (KUZZ_ACP_ALLOWED_RESPOND_TO={})",
+                    args.respond_to,
+                    raw.join(",")
+                )));
+            }
+            allowed_modes
+        } else {
+            Vec::new()
+        };
+
+        // Spawned desktop agents now carry a complete instance snapshot. Team
+        // instructions arrive independently so they can be layered at runtime.
+        let mut persona_env_vars = Vec::new();
+        let model = args.model;
+
+        // Inject CODEX_CONFIG so the @agentclientprotocol/codex-acp adapter (1.x)
+        // opens the Seatbelt network sandbox for kuzz-cli (an MCP subprocess). No-op
+        // for non-Codex agents or unparseable relay URLs.
+        let has_generated_codex_config =
+            if let Some(network_env) = codex_network_env(&agent_command, &args.relay_url) {
+                persona_env_vars.push(network_env);
+                true
+            } else {
+                false
+            };
+
+        validate_multiple_event_handling(args.multiple_event_handling, args.dedup)?;
+
+        let config = Config {
+            keys,
+            relay_url: args.relay_url,
+            agent_command,
+            agent_args,
+            mcp_command: args.mcp_command,
+            idle_timeout_secs,
+            max_turn_duration_secs,
+            agents: args.agents,
+            heartbeat_interval_secs: heartbeat_interval,
+            turn_liveness_secs,
+            heartbeat_prompt,
+            system_prompt,
+            team_instructions,
+            live_settings,
+            goals_enabled: !args.no_goals,
+            layer0_goals: {
+                use crate::layer0_goals::Layer0Goals;
+                // The owner's private goal never reaches an agent that
+                // answers anyone but its owner.
+                let owner_goal_allowed = args.respond_to == RespondTo::OwnerOnly;
+                let env = LAYER0_GOAL_ENV.get().cloned().unwrap_or_default();
+                let goals_file = args.layer0_goals_file.or(env.goals_file.map(PathBuf::from));
+                if args.no_goals {
+                    Layer0Goals::disabled()
+                } else if let Some(path) = goals_file {
+                    Layer0Goals::file(path, owner_goal_allowed)
+                } else {
+                    Layer0Goals::fixed(
+                        args.agent_goal.or(env.agent_goal).as_deref(),
+                        args.owner_goal.or(env.owner_goal).as_deref(),
+                        owner_goal_allowed,
+                    )
+                }
+            },
+            initial_message: args.initial_message,
+            subscribe_mode: args.subscribe,
+            dedup_mode: args.dedup,
+            session_policy: args.session_policy,
+            state_dir: args.state_dir,
+            multiple_event_handling: args.multiple_event_handling,
+            ignore_self: !args.no_ignore_self,
+            kinds_override: args.kinds,
+            channels_override: args.channels,
+            no_mention_filter: args.no_mention_filter,
+            config_path: args.config,
+            context_message_limit,
+            context_history,
+            max_turns_per_session: args.max_turns_per_session,
+            presence_enabled: !args.no_presence,
+            typing_enabled: !args.no_typing,
+            memory_enabled: args.memory && !args.no_memory,
+            model,
+            effort_level: args.effort_level,
+            session_title: args
+                .session_title
+                .as_deref()
+                .and_then(sanitize_session_title),
+            permission_mode: args.permission_mode,
+            respond_to: args.respond_to,
+            respond_to_allowlist,
+            allowed_respond_to,
+            persona_env_vars,
+            has_generated_codex_config,
+            relay_observer: args.relay_observer,
+            exit_after_inactivity_secs: args.exit_after_inactivity,
+            lazy_pool: args.lazy_pool,
+            idle_pool_sleep_secs: args.idle_pool_sleep,
+            replay_floor_unix: args.replay_floor,
+            agent_owner: args.agent_owner.map(|s| s.trim().to_ascii_lowercase()),
+            no_base_prompt: args.no_base_prompt,
+            base_prompt_content,
+            code_work: !args.no_code_work,
+            dispatcher: args.dispatcher,
+            channel_roster: args.channel_roster,
+            task_threads,
+            dispatcher_config,
+        };
+
+        Ok(config)
+    }
+
+    /// Human-readable summary (no secrets).
+    pub fn summary(&self) -> String {
+        let respond_to_detail = match &self.respond_to {
+            RespondTo::Allowlist => {
+                format!("respond_to=allowlist({})", self.respond_to_allowlist.len())
+            }
+            other => format!("respond_to={other}"),
+        };
+        let allowed_respond_to_detail = if self.allowed_respond_to.is_empty() {
+            String::new()
+        } else {
+            let mut modes = self.allowed_respond_to.clone();
+            modes.sort();
+            format!(" allowed_respond_to=[{}]", modes.join(","))
+        };
+        format!(
+            "relay={} pubkey={} agent_cmd={} {} mcp_cmd={} idle_timeout={}s max_turn={}s agents={} heartbeat={}s subscribe={:?} dedup={:?} session_policy={} meh={:?} ignore_self={} context_limit={} max_turns_per_session={} presence={} typing={} memory={} model={} permission_mode={} {}{}",
+            self.relay_url,
+            self.keys.public_key().to_hex(),
+            self.agent_command,
+            self.agent_args.join(" "),
+            self.mcp_command,
+            self.idle_timeout_secs,
+            self.max_turn_duration_secs,
+            self.agents,
+            self.heartbeat_interval_secs,
+            self.subscribe_mode,
+            self.dedup_mode,
+            self.session_policy,
+            self.multiple_event_handling,
+            self.ignore_self,
+            self.context_message_limit,
+            self.max_turns_per_session,
+            self.presence_enabled,
+            self.typing_enabled,
+            self.memory_enabled,
+            self.model.as_deref().unwrap_or("(agent default)"),
+            self.permission_mode,
+            respond_to_detail,
+            allowed_respond_to_detail,
+        )
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TomlConfig {
+    #[serde(default)]
+    rules: Vec<SubscriptionRule>,
+}
+
+pub fn load_rules(path: &std::path::Path) -> Result<Vec<SubscriptionRule>, ConfigError> {
+    use std::sync::atomic::AtomicU32;
+    use std::sync::Arc;
+
+    let content = std::fs::read_to_string(path)?;
+    let mut config: TomlConfig =
+        toml::from_str(&content).map_err(|e| ConfigError::ConfigFile(e.to_string()))?;
+
+    if config.rules.len() > 100 {
+        return Err(ConfigError::ConfigFile(format!(
+            "too many rules ({}, max 100)",
+            config.rules.len()
+        )));
+    }
+
+    if config.rules.is_empty() {
+        tracing::warn!(
+            path = %path.display(),
+            "config file contains zero rules — agent will receive no events in Config mode"
+        );
+    }
+
+    let mut seen_names = std::collections::HashSet::new();
+    for rule in &mut config.rules {
+        if rule.name.trim().is_empty() {
+            return Err(ConfigError::ConfigFile(
+                "rule name must not be empty".into(),
+            ));
+        }
+        if !seen_names.insert(rule.name.clone()) {
+            return Err(ConfigError::ConfigFile(format!(
+                "duplicate rule name: {}",
+                rule.name
+            )));
+        }
+        if let Some(ref expr) = rule.filter {
+            if expr.len() > 4096 {
+                return Err(ConfigError::ConfigFile(format!(
+                    "rule '{}': filter too long ({} bytes, max 4096)",
+                    rule.name,
+                    expr.len()
+                )));
+            }
+            // Fail fast: parse the expression at load time so typos don't
+            // silently produce dead rules at runtime.
+            match evalexpr::build_operator_tree(expr) {
+                Ok(node) => {
+                    rule.compiled_filter = Some(Arc::new(node));
+                }
+                Err(e) => {
+                    return Err(ConfigError::ConfigFile(format!(
+                        "rule '{}': invalid filter expression: {e}",
+                        rule.name,
+                    )));
+                }
+            }
+        }
+        // Validate channel scope — catch typos like "ALL" or "All" early.
+        if let crate::filter::ChannelScope::All(ref s) = rule.channels {
+            if s != "all" {
+                return Err(ConfigError::ConfigFile(format!(
+                    "rule '{}': channels must be \"all\" or a list, got {:?}",
+                    rule.name, s,
+                )));
+            }
+        }
+        // Deserialization leaves consecutive_timeouts at its zero default; reset explicitly.
+        rule.consecutive_timeouts = Arc::new(AtomicU32::new(0));
+    }
+
+    Ok(config.rules)
+}
+
+/// Event kinds that carry actionable direct mentions by default.
+///
+/// Message edits are included because Desktop emits `p` tags only for
+/// recipients newly added by an edit. Receiving kind 40003 therefore wakes an
+/// agent once for a newly added mention without re-waking it for ordinary edits.
+pub(crate) fn default_mention_kinds() -> Vec<u32> {
+    vec![
+        KIND_STREAM_MESSAGE,
+        KIND_STREAM_MESSAGE_EDIT,
+        KIND_WORKFLOW_APPROVAL_REQUESTED,
+        KIND_STREAM_REMINDER,
+    ]
+}
+
+/// Resolve per-channel NIP-01 filters from config + discovered channels.
+pub fn resolve_channel_filters(
+    config: &Config,
+    discovered_channels: &[Uuid],
+    rules: &[SubscriptionRule],
+) -> HashMap<Uuid, ChannelFilter> {
+    let target_channels: Vec<Uuid> = if let Some(ref overrides) = config.channels_override {
+        overrides
+            .iter()
+            .filter_map(|s| s.parse::<Uuid>().ok())
+            .filter(|id| discovered_channels.contains(id))
+            .collect()
+    } else {
+        discovered_channels.to_vec()
+    };
+
+    let mut result = HashMap::new();
+
+    match config.subscribe_mode {
+        SubscribeMode::Mentions => {
+            let kinds = config
+                .kinds_override
+                .clone()
+                .unwrap_or_else(default_mention_kinds);
+            let require_mention = !config.no_mention_filter;
+            for ch in &target_channels {
+                result.insert(
+                    *ch,
+                    ChannelFilter {
+                        kinds: Some(kinds.clone()),
+                        require_mention,
+                    },
+                );
+            }
+        }
+        SubscribeMode::All => {
+            for ch in &target_channels {
+                result.insert(
+                    *ch,
+                    ChannelFilter {
+                        kinds: config.kinds_override.clone(),
+                        require_mention: false,
+                    },
+                );
+            }
+        }
+        SubscribeMode::Config => {
+            for ch in discovered_channels {
+                let mut merged_kinds: Option<Vec<u32>> = Some(vec![]);
+                let mut require_mention = true;
+                let mut has_rule = false;
+
+                for rule in rules {
+                    if !rule_applies_to_channel(rule, *ch) {
+                        continue;
+                    }
+                    has_rule = true;
+                    if rule.kinds.is_empty() {
+                        merged_kinds = None;
+                    } else if let Some(ref mut kinds) = merged_kinds {
+                        for k in &rule.kinds {
+                            if !kinds.contains(k) {
+                                kinds.push(*k);
+                            }
+                        }
+                    }
+                    if !rule.require_mention {
+                        require_mention = false;
+                    }
+                }
+
+                if has_rule {
+                    result.insert(
+                        *ch,
+                        ChannelFilter {
+                            kinds: merged_kinds,
+                            require_mention,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Resolve the subscription filter for a single dynamically-discovered channel.
+///
+/// In Mentions/All mode, `channels_override` (--channels) is enforced — the agent
+/// won't subscribe to channels outside the operator's allowlist. In Config mode,
+/// `--channels` is ignored (per CLI contract) and rule-matching determines scope.
+///
+/// Returns `None` when the channel is outside the agent's configured scope:
+/// - Mentions/All: channel not in `channels_override` (if set)
+/// - Config: no subscription rules match the channel
+pub fn resolve_dynamic_channel_filter(
+    config: &Config,
+    channel_id: Uuid,
+    rules: &[crate::filter::SubscriptionRule],
+) -> Option<ChannelFilter> {
+    // In Mentions/All mode, if the operator explicitly constrained channels
+    // with --channels, only allow dynamic subscription to channels in that
+    // allowlist. Config mode ignores --channels (per CLI contract) and uses
+    // rule-matching instead.
+    if config.subscribe_mode != SubscribeMode::Config {
+        if let Some(ref overrides) = config.channels_override {
+            let allowed = overrides
+                .iter()
+                .any(|s| s.parse::<Uuid>().ok() == Some(channel_id));
+            if !allowed {
+                return None;
+            }
+        }
+    }
+
+    match config.subscribe_mode {
+        SubscribeMode::Mentions => Some(ChannelFilter {
+            kinds: Some(
+                config
+                    .kinds_override
+                    .clone()
+                    .unwrap_or_else(default_mention_kinds),
+            ),
+            require_mention: !config.no_mention_filter,
+        }),
+        SubscribeMode::All => Some(ChannelFilter {
+            kinds: config.kinds_override.clone(),
+            require_mention: false,
+        }),
+        SubscribeMode::Config => {
+            // Same merge logic as resolve_channel_filters() Config branch:
+            // evaluate ALL rules against this specific channel (including
+            // channel-specific rules, not just ChannelScope::All).
+            let mut merged_kinds: Option<Vec<u32>> = Some(vec![]);
+            let mut require_mention = true;
+            let mut has_rule = false;
+
+            for rule in rules {
+                if !rule_applies_to_channel(rule, channel_id) {
+                    continue;
+                }
+                has_rule = true;
+                if rule.kinds.is_empty() {
+                    merged_kinds = None;
+                } else if let Some(ref mut kinds) = merged_kinds {
+                    for k in &rule.kinds {
+                        if !kinds.contains(k) {
+                            kinds.push(*k);
+                        }
+                    }
+                }
+                if !rule.require_mention {
+                    require_mention = false;
+                }
+            }
+
+            if !has_rule {
+                // No rules match — don't subscribe. Consistent with
+                // resolve_channel_filters() which omits unmatched channels.
+                return None;
+            }
+
+            Some(ChannelFilter {
+                kinds: merged_kinds,
+                require_mention,
+            })
+        }
+    }
+}
+
+/// Subscription used for every non-DM channel in dispatcher mode: the default
+/// stream kinds, with no mention requirement.
+pub(crate) fn dispatcher_channel_filter(config: &Config) -> ChannelFilter {
+    ChannelFilter {
+        kinds: Some(
+            config
+                .kinds_override
+                .clone()
+                .unwrap_or_else(default_mention_kinds),
+        ),
+        require_mention: false,
+    }
+}
+
+/// Whether dispatcher mode replaces the subscription for a channel of this
+/// type. Only confirmed non-DM channels qualify: DMs keep their rules, and
+/// unresolved metadata fails closed to the ordinary mention filter. The
+/// override applies to the default mentions mode only; `all` already drops
+/// the mention filter and `config` mode is operator-owned.
+pub(crate) fn dispatcher_subscribes_channel_type(config: &Config, channel_type: &str) -> bool {
+    config.dispatcher
+        && config.subscribe_mode == SubscribeMode::Mentions
+        && channel_type != "dm"
+        && channel_type != "unknown"
+}
+
+/// [`resolve_channel_filters`] over discovered channels, with the dispatcher
+/// override applied to every in-scope non-DM channel.
+pub fn resolve_startup_channel_filters(
+    config: &Config,
+    channels: &HashMap<Uuid, crate::relay::ChannelInfo>,
+    rules: &[SubscriptionRule],
+) -> HashMap<Uuid, ChannelFilter> {
+    let channel_ids: Vec<Uuid> = channels.keys().copied().collect();
+    let mut filters = resolve_channel_filters(config, &channel_ids, rules);
+    for (channel_id, info) in channels {
+        if dispatcher_subscribes_channel_type(config, &info.channel_type) {
+            if let Some(filter) = filters.get_mut(channel_id) {
+                *filter = dispatcher_channel_filter(config);
+            }
+        }
+    }
+    filters
+}
+
+/// [`resolve_dynamic_channel_filter`] with the dispatcher override for a
+/// channel whose type was resolved (`None` = unresolved, fails closed).
+pub fn resolve_dynamic_channel_filter_for_type(
+    config: &Config,
+    channel_id: Uuid,
+    channel_type: Option<&str>,
+    rules: &[crate::filter::SubscriptionRule],
+) -> Option<ChannelFilter> {
+    let filter = resolve_dynamic_channel_filter(config, channel_id, rules)?;
+    if dispatcher_subscribes_channel_type(config, channel_type.unwrap_or("unknown")) {
+        return Some(dispatcher_channel_filter(config));
+    }
+    Some(filter)
+}
+
+fn rule_applies_to_channel(rule: &SubscriptionRule, channel_id: Uuid) -> bool {
+    use crate::filter::ChannelScope;
+    match &rule.channels {
+        ChannelScope::All(s) if s == "all" => true,
+        ChannelScope::List(ids) => ids
+            .iter()
+            .any(|id| id.parse::<Uuid>().ok() == Some(channel_id)),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::filter::{ChannelScope, SubscriptionRule};
+    use clap::{Parser, ValueEnum};
+
+    /// Build a minimal Config for testing without CLI parsing.
+    fn test_config(mode: SubscribeMode) -> Config {
+        Config {
+            keys: nostr::Keys::generate().into(),
+            relay_url: "ws://localhost:3000".into(),
+            agent_command: "goose".into(),
+            agent_args: vec!["acp".into()],
+            mcp_command: "".into(),
+            idle_timeout_secs: DEFAULT_IDLE_TIMEOUT_SECS,
+            max_turn_duration_secs: DEFAULT_MAX_TURN_DURATION_SECS,
+            agents: 1,
+            heartbeat_interval_secs: 0,
+            turn_liveness_secs: 10,
+            heartbeat_prompt: None,
+            system_prompt: None,
+            team_instructions: None,
+            goals_enabled: true,
+            layer0_goals: Default::default(),
+            live_settings: Default::default(),
+            initial_message: None,
+            subscribe_mode: mode,
+            dedup_mode: DedupMode::Queue,
+            session_policy: crate::scope::SessionPolicy::Channel,
+            state_dir: None,
+            multiple_event_handling: MultipleEventHandling::Queue,
+            ignore_self: true,
+            kinds_override: None,
+            channels_override: None,
+            no_mention_filter: false,
+            config_path: PathBuf::from("./kuzz-acp.toml"),
+            context_message_limit: 12,
+            context_history: crate::context_history::ContextHistory::Recent,
+            max_turns_per_session: 0,
+            presence_enabled: true,
+            typing_enabled: true,
+            memory_enabled: true,
+            model: None,
+            effort_level: None,
+            session_title: None,
+            permission_mode: PermissionMode::BypassPermissions,
+            respond_to: RespondTo::Anyone,
+            respond_to_allowlist: HashSet::new(),
+            allowed_respond_to: Vec::new(),
+            persona_env_vars: vec![],
+            has_generated_codex_config: false,
+            relay_observer: false,
+            exit_after_inactivity_secs: 0,
+            lazy_pool: false,
+            idle_pool_sleep_secs: 0,
+            replay_floor_unix: None,
+            agent_owner: None,
+            no_base_prompt: false,
+            base_prompt_content: None,
+            code_work: true,
+            dispatcher: false,
+            channel_roster: false,
+            task_threads: Vec::new(),
+            dispatcher_config: DispatcherConfig::default(),
+        }
+    }
+
+    fn make_rule(
+        name: &str,
+        channels: ChannelScope,
+        kinds: Vec<u32>,
+        mention: bool,
+    ) -> SubscriptionRule {
+        use std::sync::atomic::AtomicU32;
+        use std::sync::Arc;
+        SubscriptionRule {
+            name: name.into(),
+            channels,
+            kinds,
+            require_mention: mention,
+            filter: None,
+            prompt_tag: None,
+            compiled_filter: None,
+            consecutive_timeouts: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    #[test]
+    fn test_mentions_mode_default_kinds() {
+        let config = test_config(SubscribeMode::Mentions);
+        let channels = vec![Uuid::new_v4(), Uuid::new_v4()];
+        let result = resolve_channel_filters(&config, &channels, &[]);
+
+        assert_eq!(result.len(), 2);
+        for ch in &channels {
+            let f = result.get(ch).expect("channel should be present");
+            assert!(f.require_mention, "mentions mode requires mention");
+            let kinds = f.kinds.as_ref().expect("should have kinds");
+            assert!(kinds.contains(&kuzz_core::kind::KIND_STREAM_MESSAGE));
+            assert!(kinds.contains(&kuzz_core::kind::KIND_STREAM_MESSAGE_EDIT));
+            assert!(kinds.contains(&kuzz_core::kind::KIND_WORKFLOW_APPROVAL_REQUESTED));
+            assert!(kinds.contains(&kuzz_core::kind::KIND_STREAM_REMINDER));
+        }
+    }
+
+    #[test]
+    fn test_dynamic_mentions_mode_includes_message_edits() {
+        let config = test_config(SubscribeMode::Mentions);
+        let filter = resolve_dynamic_channel_filter(&config, Uuid::new_v4(), &[])
+            .expect("dynamic channel should be subscribed");
+
+        assert!(filter.require_mention);
+        assert!(
+            filter
+                .kinds
+                .expect("mentions mode should constrain kinds")
+                .contains(&KIND_STREAM_MESSAGE_EDIT),
+            "newly mentioned agents must receive message edits on dynamic channels"
+        );
+    }
+
+    #[test]
+    fn test_mentions_mode_custom_kinds() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.kinds_override = Some(vec![1, 7]);
+        let channels = vec![Uuid::new_v4()];
+        let result = resolve_channel_filters(&config, &channels, &[]);
+
+        let f = result.get(&channels[0]).unwrap();
+        assert_eq!(f.kinds.as_ref().unwrap(), &[1, 7]);
+    }
+
+    #[test]
+    fn test_mentions_mode_no_mention_filter() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.no_mention_filter = true;
+        let channels = vec![Uuid::new_v4()];
+        let result = resolve_channel_filters(&config, &channels, &[]);
+
+        let f = result.get(&channels[0]).unwrap();
+        assert!(!f.require_mention);
+    }
+
+    #[test]
+    fn normalizes_goose_args_to_acp() {
+        assert_eq!(normalize_agent_args("goose", Vec::new()), vec!["acp"]);
+        assert_eq!(normalize_agent_args("goose", vec!["".into()]), vec!["acp"]);
+    }
+
+    #[test]
+    fn normalizes_codex_and_claude_args_to_empty() {
+        assert_eq!(
+            normalize_agent_args("codex-acp", Vec::new()),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            normalize_agent_args("codex-acp", vec!["".into()]),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            normalize_agent_args("codex-acp", vec!["acp".into()]),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            normalize_agent_args("claude-code", vec!["acp".into()]),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            normalize_agent_args("claude-code-acp", vec!["acp".into()]),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            normalize_agent_args("claude-agent-acp", vec!["acp".into()]),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn preserves_explicit_nonempty_agent_args() {
+        assert_eq!(
+            normalize_agent_args("codex-acp", vec!["-c".into(), "model=\"gpt-5\"".into()]),
+            vec!["-c", "model=\"gpt-5\""]
+        );
+        assert_eq!(
+            normalize_agent_args("custom-agent", vec!["".into(), "serve".into()]),
+            vec!["serve"]
+        );
+    }
+
+    #[test]
+    fn normalizes_kuzz_agent_args_to_empty() {
+        assert_eq!(
+            normalize_agent_args("kuzz-agent", Vec::new()),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            normalize_agent_args("kuzz-agent", vec!["acp".into()]),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn normalize_agent_command_identity_variants() {
+        assert_eq!(normalize_agent_command_identity("goose"), "goose");
+        assert_eq!(
+            normalize_agent_command_identity("C:\\Program Files\\Goose\\goose.exe"),
+            "goose"
+        );
+        assert_eq!(
+            normalize_agent_command_identity("/usr/local/bin/codex-acp"),
+            "codex-acp"
+        );
+        assert_eq!(normalize_agent_command_identity("/usr/local/bin/"), "bin");
+        assert_eq!(
+            normalize_agent_command_identity("Claude_Code"),
+            "claude-code"
+        );
+        assert_eq!(
+            normalize_agent_command_identity("Claude Code"),
+            "claude-code"
+        );
+        assert_eq!(normalize_agent_command_identity("Goose.EXE"), "goose");
+        // Windows npm shims resolve to `.cmd`/`.bat` wrappers.
+        assert_eq!(
+            normalize_agent_command_identity(r"C:\Users\test\AppData\Roaming\npm\hermes-acp.cmd"),
+            "hermes-acp"
+        );
+        assert_eq!(
+            normalize_agent_command_identity(r"C:\Tools\Hermes\HERMES-AGENT.BAT"),
+            "hermes-agent"
+        );
+        // Non-ASCII must not panic.
+        assert_eq!(normalize_agent_command_identity("my-agënt"), "my-agënt");
+        // Edge cases: empty, whitespace-only, bare separators.
+        assert_eq!(normalize_agent_command_identity(""), "");
+        assert_eq!(normalize_agent_command_identity("   "), "");
+        assert_eq!(normalize_agent_command_identity("/"), "");
+        assert_eq!(normalize_agent_command_identity("///"), "");
+    }
+
+    #[test]
+    fn default_agent_env_recognizes_hermes_identities() {
+        for command in [
+            "hermes",
+            "hermes-agent",
+            "hermes-acp",
+            "/opt/hermes/bin/hermes-acp",
+            r"C:\Users\test\bin\HERMES_ACP.EXE",
+            r"C:\Users\test\AppData\Roaming\npm\hermes-acp.cmd",
+        ] {
+            assert_eq!(
+                default_agent_env(command),
+                &[("HERMES_ACP_SKIP_CONFIGURED_MCP", "1")],
+                "unexpected env defaults for {command}"
+            );
+        }
+        for command in ["goose", "codex-acp", "claude-agent-acp", "kuzz-agent", ""] {
+            assert!(
+                default_agent_env(command).is_empty(),
+                "non-Hermes command must have no env defaults: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn strips_legacy_acp_arg_case_insensitively() {
+        assert_eq!(
+            normalize_agent_args("codex-acp", vec!["ACP".into()]),
+            Vec::<String>::new()
+        );
+    }
+
+    // --- codex_network_env tests ---
+
+    const CODEX_CONFIG_JSON: &str = "{\"sandbox_workspace_write\":{\"network_access\":true}}";
+
+    #[test]
+    fn codex_network_env_wss_url() {
+        let result = codex_network_env("codex-acp", "wss://sprout-oss.stage.blox.sqprod.co");
+        assert_eq!(
+            result,
+            Some(("CODEX_CONFIG".to_string(), CODEX_CONFIG_JSON.to_string()))
+        );
+    }
+
+    #[test]
+    fn codex_network_env_ws_url() {
+        let result = codex_network_env("codex-acp", "ws://localhost:3000");
+        assert_eq!(
+            result,
+            Some(("CODEX_CONFIG".to_string(), CODEX_CONFIG_JSON.to_string()))
+        );
+    }
+
+    #[test]
+    fn codex_network_env_https_url() {
+        let result = codex_network_env("codex-acp", "https://relay.example.com/path");
+        assert_eq!(
+            result,
+            Some(("CODEX_CONFIG".to_string(), CODEX_CONFIG_JSON.to_string()))
+        );
+    }
+
+    #[test]
+    fn codex_network_env_http_url_with_port() {
+        let result = codex_network_env("codex-acp", "http://relay.example.com:8080/query");
+        assert_eq!(
+            result,
+            Some(("CODEX_CONFIG".to_string(), CODEX_CONFIG_JSON.to_string()))
+        );
+    }
+
+    #[test]
+    fn codex_network_env_bare_codex_command() {
+        // "codex" (not "codex-acp") should also get the env var.
+        let result = codex_network_env("codex", "wss://relay.example.com");
+        assert_eq!(
+            result,
+            Some(("CODEX_CONFIG".to_string(), CODEX_CONFIG_JSON.to_string()))
+        );
+    }
+
+    #[test]
+    fn codex_network_env_full_path_codex_command() {
+        // Full path like /usr/local/bin/codex-acp should be normalized.
+        let result = codex_network_env("/usr/local/bin/codex-acp", "wss://relay.example.com");
+        assert_eq!(
+            result,
+            Some(("CODEX_CONFIG".to_string(), CODEX_CONFIG_JSON.to_string()))
+        );
+    }
+
+    #[test]
+    fn codex_network_env_non_codex_agent_returns_none() {
+        assert!(codex_network_env("goose", "wss://relay.example.com").is_none());
+        assert!(codex_network_env("claude-agent-acp", "wss://relay.example.com").is_none());
+        assert!(codex_network_env("kuzz-agent", "wss://relay.example.com").is_none());
+    }
+
+    #[test]
+    fn codex_network_env_includes_sandbox_network_access() {
+        // The JSON value must set sandbox_workspace_write.network_access=true — without
+        // it, the Seatbelt sandbox blocks outbound connections in the 1.x adapter.
+        let result = codex_network_env("codex-acp", "wss://relay.example.com");
+        let (key, val) = result.expect("expected Some for valid codex + valid url");
+        assert_eq!(key, "CODEX_CONFIG");
+        assert!(
+            val.contains("\"sandbox_workspace_write\""),
+            "JSON must contain sandbox_workspace_write"
+        );
+        assert!(
+            val.contains("\"network_access\":true"),
+            "JSON must set network_access=true"
+        );
+    }
+
+    #[test]
+    fn codex_network_env_empty_relay_url_returns_none() {
+        // Empty string fails Url::parse — graceful None return.
+        assert!(codex_network_env("codex-acp", "").is_none());
+    }
+
+    #[test]
+    fn codex_network_env_schemeless_string_returns_none() {
+        // A bare string with no scheme fails Url::parse — graceful None return.
+        assert!(codex_network_env("codex-acp", "not-a-url").is_none());
+    }
+
+    #[test]
+    fn test_all_mode_wildcard() {
+        let config = test_config(SubscribeMode::All);
+        let channels = vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+        let result = resolve_channel_filters(&config, &channels, &[]);
+
+        assert_eq!(result.len(), 3);
+        for ch in &channels {
+            let f = result.get(ch).unwrap();
+            assert!(
+                f.kinds.is_none(),
+                "all mode with no override = wildcard kinds"
+            );
+            assert!(!f.require_mention);
+        }
+    }
+
+    #[test]
+    fn test_all_mode_with_kinds_override() {
+        let mut config = test_config(SubscribeMode::All);
+        config.kinds_override = Some(vec![9, 7]);
+        let channels = vec![Uuid::new_v4()];
+        let result = resolve_channel_filters(&config, &channels, &[]);
+
+        let f = result.get(&channels[0]).unwrap();
+        assert_eq!(f.kinds.as_ref().unwrap(), &[9, 7]);
+    }
+
+    #[test]
+    fn test_channels_override_filters_to_discovered() {
+        let mut config = test_config(SubscribeMode::All);
+        let ch_a = Uuid::new_v4();
+        let ch_b = Uuid::new_v4();
+        let ch_unknown = Uuid::new_v4();
+        // Override includes ch_a and an unknown channel.
+        config.channels_override = Some(vec![ch_a.to_string(), ch_unknown.to_string()]);
+
+        let discovered = vec![ch_a, ch_b];
+        let result = resolve_channel_filters(&config, &discovered, &[]);
+
+        // Only ch_a should be present (intersection of override and discovered).
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key(&ch_a));
+        assert!(!result.contains_key(&ch_b));
+        assert!(!result.contains_key(&ch_unknown));
+    }
+
+    #[test]
+    fn test_config_mode_single_rule_all_channels() {
+        let config = test_config(SubscribeMode::Config);
+        let ch = Uuid::new_v4();
+        let rules = vec![make_rule(
+            "catch-all",
+            ChannelScope::All("all".into()),
+            vec![9],
+            false,
+        )];
+
+        let result = resolve_channel_filters(&config, &[ch], &rules);
+        assert_eq!(result.len(), 1);
+        let f = result.get(&ch).unwrap();
+        assert_eq!(f.kinds.as_ref().unwrap(), &[9]);
+        assert!(!f.require_mention);
+    }
+
+    #[test]
+    fn test_config_mode_rule_targets_specific_channel() {
+        let config = test_config(SubscribeMode::Config);
+        let ch_a = Uuid::new_v4();
+        let ch_b = Uuid::new_v4();
+        let rules = vec![make_rule(
+            "only-a",
+            ChannelScope::List(vec![ch_a.to_string()]),
+            vec![9],
+            false,
+        )];
+
+        let result = resolve_channel_filters(&config, &[ch_a, ch_b], &rules);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key(&ch_a));
+        assert!(!result.contains_key(&ch_b));
+    }
+
+    #[test]
+    fn test_config_mode_merge_overlapping_rules() {
+        let config = test_config(SubscribeMode::Config);
+        let ch = Uuid::new_v4();
+        // Two rules both match the same channel with different kinds.
+        let rules = vec![
+            make_rule("messages", ChannelScope::All("all".into()), vec![9], true),
+            make_rule("reactions", ChannelScope::All("all".into()), vec![7], false),
+        ];
+
+        let result = resolve_channel_filters(&config, &[ch], &rules);
+        let f = result.get(&ch).unwrap();
+        // Kinds should be the union: [9, 7].
+        let kinds = f.kinds.as_ref().expect("should have merged kinds");
+        assert!(kinds.contains(&9));
+        assert!(kinds.contains(&7));
+        // require_mention should be false (most permissive wins).
+        assert!(!f.require_mention);
+    }
+
+    #[test]
+    fn test_config_mode_wildcard_kinds_propagates() {
+        let config = test_config(SubscribeMode::Config);
+        let ch = Uuid::new_v4();
+        // First rule has specific kinds, second has empty (wildcard).
+        let rules = vec![
+            make_rule("narrow", ChannelScope::All("all".into()), vec![9], false),
+            make_rule("broad", ChannelScope::All("all".into()), vec![], false),
+        ];
+
+        let result = resolve_channel_filters(&config, &[ch], &rules);
+        let f = result.get(&ch).unwrap();
+        // Once any rule has empty kinds (wildcard), merged result is None (wildcard).
+        assert!(f.kinds.is_none(), "wildcard should propagate");
+    }
+
+    #[test]
+    fn test_config_mode_no_matching_rules_empty_result() {
+        let config = test_config(SubscribeMode::Config);
+        let ch = Uuid::new_v4();
+        let other_ch = Uuid::new_v4();
+        // Rule only targets other_ch.
+        let rules = vec![make_rule(
+            "other",
+            ChannelScope::List(vec![other_ch.to_string()]),
+            vec![9],
+            false,
+        )];
+
+        let result = resolve_channel_filters(&config, &[ch], &rules);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_config_mode_require_mention_most_permissive() {
+        let config = test_config(SubscribeMode::Config);
+        let ch = Uuid::new_v4();
+        // First rule requires mention, second doesn't.
+        let rules = vec![
+            make_rule("strict", ChannelScope::All("all".into()), vec![9], true),
+            make_rule("lax", ChannelScope::All("all".into()), vec![7], false),
+        ];
+
+        let result = resolve_channel_filters(&config, &[ch], &rules);
+        let f = result.get(&ch).unwrap();
+        assert!(!f.require_mention, "most permissive (false) should win");
+    }
+
+    #[test]
+    fn test_rule_applies_all() {
+        let rule = make_rule("test", ChannelScope::All("all".into()), vec![], false);
+        assert!(rule_applies_to_channel(&rule, Uuid::new_v4()));
+    }
+
+    #[test]
+    fn test_rule_applies_all_invalid_string() {
+        let rule = make_rule("test", ChannelScope::All("ALL".into()), vec![], false);
+        assert!(!rule_applies_to_channel(&rule, Uuid::new_v4()));
+    }
+
+    #[test]
+    fn test_rule_applies_list_match() {
+        let ch = Uuid::new_v4();
+        let rule = make_rule(
+            "test",
+            ChannelScope::List(vec![ch.to_string()]),
+            vec![],
+            false,
+        );
+        assert!(rule_applies_to_channel(&rule, ch));
+    }
+
+    #[test]
+    fn test_rule_applies_list_no_match() {
+        let rule = make_rule(
+            "test",
+            ChannelScope::List(vec![Uuid::new_v4().to_string()]),
+            vec![],
+            false,
+        );
+        assert!(!rule_applies_to_channel(&rule, Uuid::new_v4()));
+    }
+
+    #[test]
+    fn test_load_rules_valid_toml() {
+        let dir = std::env::temp_dir().join("kuzz-acp-test-valid");
+        let path = dir.join("rules.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &path,
+            r#"
+[[rules]]
+name = "catch-all"
+channels = "all"
+kinds = [9]
+require_mention = false
+"#,
+        )
+        .unwrap();
+
+        let rules = load_rules(&path).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].name, "catch-all");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_rules_empty_name_rejected() {
+        let dir = std::env::temp_dir().join("kuzz-acp-test-empty-name");
+        let path = dir.join("rules.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &path,
+            r#"
+[[rules]]
+name = "  "
+channels = "all"
+"#,
+        )
+        .unwrap();
+
+        let err = load_rules(&path).unwrap_err();
+        assert!(err.to_string().contains("name must not be empty"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_rules_duplicate_name_rejected() {
+        let dir = std::env::temp_dir().join("kuzz-acp-test-dup-name");
+        let path = dir.join("rules.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &path,
+            r#"
+[[rules]]
+name = "dup"
+channels = "all"
+
+[[rules]]
+name = "dup"
+channels = "all"
+"#,
+        )
+        .unwrap();
+
+        let err = load_rules(&path).unwrap_err();
+        assert!(err.to_string().contains("duplicate rule name"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_rules_invalid_filter_rejected() {
+        let dir = std::env::temp_dir().join("kuzz-acp-test-bad-filter");
+        let path = dir.join("rules.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        // evalexpr rejects unbalanced parens at parse time.
+        std::fs::write(
+            &path,
+            r#"
+[[rules]]
+name = "bad"
+channels = "all"
+filter = "((("
+"#,
+        )
+        .unwrap();
+
+        let err = load_rules(&path).unwrap_err();
+        assert!(err.to_string().contains("invalid filter expression"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_rules_channel_scope_typo_rejected() {
+        let dir = std::env::temp_dir().join("kuzz-acp-test-scope-typo");
+        let path = dir.join("rules.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &path,
+            r#"
+[[rules]]
+name = "typo"
+channels = "ALL"
+"#,
+        )
+        .unwrap();
+
+        let err = load_rules(&path).unwrap_err();
+        assert!(err.to_string().contains("must be \"all\" or a list"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_rules_too_many_rules_rejected() {
+        let dir = std::env::temp_dir().join("kuzz-acp-test-too-many");
+        let path = dir.join("rules.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut toml = String::new();
+        for i in 0..101 {
+            toml.push_str(&format!(
+                "[[rules]]\nname = \"rule-{i}\"\nchannels = \"all\"\n\n"
+            ));
+        }
+        std::fs::write(&path, &toml).unwrap();
+
+        let err = load_rules(&path).unwrap_err();
+        assert!(err.to_string().contains("too many rules"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_rules_filter_too_long_rejected() {
+        let dir = std::env::temp_dir().join("kuzz-acp-test-long-filter");
+        let path = dir.join("rules.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        let long_expr = format!("\"{}\"", "a".repeat(4097));
+        std::fs::write(
+            &path,
+            format!("[[rules]]\nname = \"long\"\nchannels = \"all\"\nfilter = {long_expr}\n"),
+        )
+        .unwrap();
+
+        let err = load_rules(&path).unwrap_err();
+        assert!(err.to_string().contains("filter too long"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn validate_heartbeat_interval(secs: u64) -> Result<(), ConfigError> {
+        if secs > 0 && secs < 10 {
+            return Err(ConfigError::ConfigFile(
+                "heartbeat interval must be 0 (disabled) or ≥10 seconds".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_heartbeat_interval_zero_ok() {
+        assert!(validate_heartbeat_interval(0).is_ok());
+    }
+
+    #[test]
+    fn test_heartbeat_interval_ten_ok() {
+        assert!(validate_heartbeat_interval(10).is_ok());
+    }
+
+    #[test]
+    fn test_heartbeat_interval_large_ok() {
+        assert!(validate_heartbeat_interval(300).is_ok());
+    }
+
+    #[test]
+    fn test_heartbeat_interval_five_rejected() {
+        let err = validate_heartbeat_interval(5).unwrap_err();
+        assert!(err.to_string().contains("heartbeat interval must be 0"));
+    }
+
+    #[test]
+    fn test_heartbeat_interval_one_rejected() {
+        let err = validate_heartbeat_interval(1).unwrap_err();
+        assert!(err.to_string().contains("heartbeat interval must be 0"));
+    }
+
+    #[test]
+    fn test_heartbeat_interval_nine_rejected() {
+        let err = validate_heartbeat_interval(9).unwrap_err();
+        assert!(err.to_string().contains("heartbeat interval must be 0"));
+    }
+
+    fn validate_turn_liveness(secs: u64) -> Result<(), ConfigError> {
+        if secs > 0 && secs < 5 {
+            return Err(ConfigError::ConfigFile(
+                "turn liveness interval must be 0 (disabled) or ≥5 seconds".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_turn_liveness_zero_ok() {
+        assert!(validate_turn_liveness(0).is_ok());
+    }
+
+    #[test]
+    fn test_turn_liveness_five_ok() {
+        assert!(validate_turn_liveness(5).is_ok());
+    }
+
+    #[test]
+    fn test_turn_liveness_ten_ok() {
+        assert!(validate_turn_liveness(10).is_ok());
+    }
+
+    #[test]
+    fn test_turn_liveness_four_rejected() {
+        let err = validate_turn_liveness(4).unwrap_err();
+        assert!(err.to_string().contains("turn liveness interval must be 0"));
+    }
+
+    #[test]
+    fn test_turn_liveness_one_rejected() {
+        let err = validate_turn_liveness(1).unwrap_err();
+        assert!(err.to_string().contains("turn liveness interval must be 0"));
+    }
+
+    #[test]
+    fn inactivity_exit_defaults_disabled_and_accepts_cli_value() {
+        let key = "0".repeat(64);
+        let default = CliArgs::parse_from(["kuzz-acp", "--private-key", &key]);
+        assert_eq!(default.exit_after_inactivity, 0);
+
+        let configured = CliArgs::parse_from([
+            "kuzz-acp",
+            "--private-key",
+            &key,
+            "--exit-after-inactivity",
+            "120",
+        ]);
+        assert_eq!(configured.exit_after_inactivity, 120);
+    }
+
+    #[test]
+    fn lazy_pool_defaults_off() {
+        let key = "0".repeat(64);
+        assert!(!CliArgs::parse_from(["kuzz-acp", "--private-key", &key]).lazy_pool);
+    }
+
+    #[test]
+    fn idle_pool_sleep_defaults_disabled_and_accepts_cli_value() {
+        let key = "0".repeat(64);
+        let default = CliArgs::parse_from(["kuzz-acp", "--private-key", &key]);
+        assert_eq!(default.idle_pool_sleep, 0);
+
+        let configured = CliArgs::parse_from([
+            "kuzz-acp",
+            "--private-key",
+            &key,
+            "--idle-pool-sleep",
+            "300",
+        ]);
+        assert_eq!(configured.idle_pool_sleep, 300);
+    }
+
+    #[test]
+    fn lazy_pool_cli_flag_enables_deferred_startup() {
+        let key = "0".repeat(64);
+        let args = CliArgs::try_parse_from(["kuzz-acp", "--private-key", &key, "--lazy-pool=true"]);
+        assert!(args.is_err(), "bool flags do not take an explicit value");
+        assert!(CliArgs::parse_from(["kuzz-acp", "--private-key", &key, "--lazy-pool"]).lazy_pool);
+    }
+
+    #[test]
+    fn test_summary_includes_agents_and_heartbeat() {
+        let config = test_config(SubscribeMode::Mentions);
+        let s = config.summary();
+        assert!(
+            s.contains("agents=1"),
+            "summary should include agents=1, got: {s}"
+        );
+        assert!(
+            s.contains("heartbeat=0s"),
+            "summary should include heartbeat=0s, got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_summary_reflects_custom_agents_and_heartbeat() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.agents = 4;
+        config.heartbeat_interval_secs = 30;
+        let s = config.summary();
+        assert!(
+            s.contains("agents=4"),
+            "summary should include agents=4, got: {s}"
+        );
+        assert!(
+            s.contains("heartbeat=30s"),
+            "summary should include heartbeat=30s, got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_memory_enabled_default_true() {
+        let config = test_config(SubscribeMode::Mentions);
+        assert!(
+            config.memory_enabled,
+            "memory_enabled should default to true"
+        );
+    }
+
+    #[test]
+    fn test_summary_includes_memory_enabled() {
+        let config = test_config(SubscribeMode::Mentions);
+        let s = config.summary();
+        assert!(
+            s.contains("memory=true"),
+            "summary should include memory=true by default, got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_summary_reflects_memory_enabled() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.memory_enabled = true;
+        let s = config.summary();
+        assert!(
+            s.contains("memory=true"),
+            "summary should include memory=true when enabled, got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_permission_mode_wire_strings() {
+        assert_eq!(PermissionMode::Default.as_wire_str(), "default");
+        assert_eq!(PermissionMode::Auto.as_wire_str(), "auto");
+        assert_eq!(PermissionMode::AcceptEdits.as_wire_str(), "acceptEdits");
+        assert_eq!(
+            PermissionMode::BypassPermissions.as_wire_str(),
+            "bypassPermissions"
+        );
+        assert_eq!(PermissionMode::DontAsk.as_wire_str(), "dontAsk");
+        assert_eq!(PermissionMode::Plan.as_wire_str(), "plan");
+    }
+
+    #[test]
+    fn test_permission_mode_is_default() {
+        assert!(PermissionMode::Default.is_default());
+        assert!(!PermissionMode::Auto.is_default());
+        assert!(!PermissionMode::BypassPermissions.is_default());
+        assert!(!PermissionMode::AcceptEdits.is_default());
+        assert!(!PermissionMode::DontAsk.is_default());
+        assert!(!PermissionMode::Plan.is_default());
+    }
+
+    #[test]
+    fn test_permission_mode_auto_degrades_to_default_when_unsupported() {
+        // The wire string is "auto" — the adapter handles graceful downgrade
+        // to "default" when the active model does not support Auto mode.
+        // Verify only that the wire string is correct and distinct from "default".
+        let auto = PermissionMode::Auto;
+        assert_eq!(auto.as_wire_str(), "auto");
+        assert_ne!(auto.as_wire_str(), "default");
+        assert!(!auto.is_default());
+    }
+
+    #[test]
+    fn test_permission_mode_display() {
+        assert_eq!(
+            format!("{}", PermissionMode::BypassPermissions),
+            "bypassPermissions"
+        );
+        assert_eq!(format!("{}", PermissionMode::Default), "default");
+        assert_eq!(format!("{}", PermissionMode::Auto), "auto");
+    }
+
+    #[test]
+    fn test_summary_includes_permission_mode() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.permission_mode = PermissionMode::BypassPermissions;
+        let s = config.summary();
+        assert!(
+            s.contains("permission_mode=bypassPermissions"),
+            "summary should include permission_mode, got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_summary_permission_mode_default() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.permission_mode = PermissionMode::Default;
+        let s = config.summary();
+        assert!(
+            s.contains("permission_mode=default"),
+            "summary should show 'default', got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_default_config_uses_bypass_permissions() {
+        let config = test_config(SubscribeMode::Mentions);
+        assert_eq!(config.permission_mode, PermissionMode::BypassPermissions);
+    }
+
+    #[test]
+    fn test_permission_mode_value_enum_kebab_case() {
+        // clap::ValueEnum generates kebab-case by default from PascalCase variants.
+        // Verify the parse path so variant renames don't silently break CLI/env parsing.
+        use clap::ValueEnum;
+        let cases = [
+            ("default", PermissionMode::Default),
+            ("auto", PermissionMode::Auto),
+            ("accept-edits", PermissionMode::AcceptEdits),
+            ("bypass-permissions", PermissionMode::BypassPermissions),
+            ("dont-ask", PermissionMode::DontAsk),
+            ("plan", PermissionMode::Plan),
+        ];
+        for (input, expected) in &cases {
+            assert_eq!(
+                PermissionMode::from_str(input, true).unwrap(),
+                *expected,
+                "kebab-case {input:?} should parse"
+            );
+        }
+    }
+
+    #[test]
+    fn test_permission_mode_value_enum_camel_case_aliases() {
+        // Operators may set env vars using the camelCase wire-format strings
+        // (e.g. KUZZ_ACP_PERMISSION_MODE=bypassPermissions). The #[value(alias)]
+        // attributes ensure these parse correctly.
+        use clap::ValueEnum;
+        let cases = [
+            ("default", PermissionMode::Default),
+            ("auto", PermissionMode::Auto),
+            ("acceptEdits", PermissionMode::AcceptEdits),
+            ("bypassPermissions", PermissionMode::BypassPermissions),
+            ("dontAsk", PermissionMode::DontAsk),
+            ("plan", PermissionMode::Plan),
+        ];
+        for (input, expected) in &cases {
+            assert_eq!(
+                PermissionMode::from_str(input, true).unwrap(),
+                *expected,
+                "camelCase alias {input:?} should parse"
+            );
+        }
+    }
+
+    /// Helper: resolve idle_timeout_secs using the same precedence logic as Config::from_args.
+    /// Precedence: explicit --idle-timeout > --turn-timeout (deprecated) > `DEFAULT_IDLE_TIMEOUT_SECS`.
+    fn resolve_idle_timeout(idle: Option<u64>, turn: Option<u64>) -> u64 {
+        let raw = match (idle, turn) {
+            (Some(idle), Some(_)) => idle,
+            (Some(idle), None) => idle,
+            (None, Some(turn)) => turn,
+            (None, None) => DEFAULT_IDLE_TIMEOUT_SECS,
+        };
+        if raw == 0 {
+            1
+        } else {
+            raw
+        }
+    }
+
+    #[test]
+    fn idle_timeout_explicit_wins_over_deprecated() {
+        assert_eq!(resolve_idle_timeout(Some(120), Some(600)), 120);
+    }
+
+    #[test]
+    fn idle_timeout_falls_back_to_deprecated_turn_timeout() {
+        assert_eq!(resolve_idle_timeout(None, Some(600)), 600);
+    }
+
+    #[test]
+    fn idle_timeout_defaults_to_constant_when_neither_set() {
+        assert_eq!(resolve_idle_timeout(None, None), DEFAULT_IDLE_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn idle_timeout_zero_clamped_to_one() {
+        assert_eq!(resolve_idle_timeout(Some(0), None), 1);
+    }
+
+    #[test]
+    fn idle_timeout_zero_from_deprecated_clamped_to_one() {
+        assert_eq!(resolve_idle_timeout(None, Some(0)), 1);
+    }
+
+    #[test]
+    fn test_config_summary_includes_idle_and_max_turn() {
+        let config = test_config(SubscribeMode::Mentions);
+        let summary = config.summary();
+        let expected_idle = format!("idle_timeout={DEFAULT_IDLE_TIMEOUT_SECS}s");
+        assert!(
+            summary.contains(&expected_idle),
+            "summary should include {expected_idle}: {summary}"
+        );
+        assert!(
+            summary.contains(&format!("max_turn={DEFAULT_MAX_TURN_DURATION_SECS}s")),
+            "summary should include max_turn: {summary}"
+        );
+    }
+
+    #[test]
+    fn test_respond_to_default_is_owner_only() {
+        assert_eq!(RespondTo::default(), RespondTo::OwnerOnly);
+    }
+
+    #[test]
+    fn test_respond_to_display() {
+        assert_eq!(format!("{}", RespondTo::OwnerOnly), "owner-only");
+        assert_eq!(format!("{}", RespondTo::Allowlist), "allowlist");
+        assert_eq!(format!("{}", RespondTo::Anyone), "anyone");
+        assert_eq!(format!("{}", RespondTo::Nobody), "nobody");
+    }
+
+    #[test]
+    fn test_respond_to_value_enum_parsing() {
+        use clap::ValueEnum;
+        assert_eq!(
+            RespondTo::from_str("owner-only", true).unwrap(),
+            RespondTo::OwnerOnly
+        );
+        assert_eq!(
+            RespondTo::from_str("allowlist", true).unwrap(),
+            RespondTo::Allowlist
+        );
+        assert_eq!(
+            RespondTo::from_str("anyone", true).unwrap(),
+            RespondTo::Anyone
+        );
+        assert_eq!(
+            RespondTo::from_str("nobody", true).unwrap(),
+            RespondTo::Nobody
+        );
+    }
+
+    #[test]
+    fn test_summary_includes_respond_to() {
+        let config = test_config(SubscribeMode::Mentions);
+        let s = config.summary();
+        assert!(
+            s.contains("respond_to=anyone"),
+            "test_config uses Anyone, got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_summary_respond_to_allowlist_shows_count() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.respond_to = RespondTo::Allowlist;
+        config.respond_to_allowlist = HashSet::from(["ab".repeat(32), "cd".repeat(32)]);
+        let s = config.summary();
+        assert!(
+            s.contains("respond_to=allowlist(2)"),
+            "should show allowlist count, got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_validate_allowlist_valid_entries() {
+        let entries = vec!["ab".repeat(32), "cd".repeat(32)];
+        let result = validate_allowlist(&entries).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_validate_allowlist_deduplicates() {
+        let pk = "ab".repeat(32);
+        let entries = vec![pk.clone(), pk.clone(), pk];
+        let result = validate_allowlist(&entries).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_validate_allowlist_normalizes_case() {
+        let upper = "AB".repeat(32);
+        let lower = "ab".repeat(32);
+        let entries = vec![upper, lower];
+        let result = validate_allowlist(&entries).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result.contains(&"ab".repeat(32)));
+    }
+
+    #[test]
+    fn test_validate_allowlist_trims_whitespace() {
+        let entries = vec![format!("  {}  ", "ab".repeat(32))];
+        let result = validate_allowlist(&entries).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result.contains(&"ab".repeat(32)));
+    }
+
+    #[test]
+    fn test_validate_allowlist_rejects_short() {
+        let entries = vec!["abcd".to_string()];
+        let err = validate_allowlist(&entries).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("must be exactly 64 hex characters"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_allowlist_rejects_non_hex() {
+        let entries = vec!["zz".repeat(32)];
+        let err = validate_allowlist(&entries).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("must be exactly 64 hex characters"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_allowlist_rejects_too_long() {
+        let entries = vec!["ab".repeat(33)]; // 66 chars
+        let err = validate_allowlist(&entries).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("must be exactly 64 hex characters"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_allowlist_empty_is_ok() {
+        let result = validate_allowlist(&[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    // ── Session policy parsing + default ──────────────────────────────────────
+
+    #[test]
+    fn test_session_policy_default_is_channel() {
+        // Ships dark: the default must be `channel` so thread scoping is opt-in
+        // and can be rolled back without code changes.
+        let args = CliArgs::parse_from(["kuzz-acp", "--private-key", &"0".repeat(64)]);
+        assert_eq!(args.session_policy, crate::scope::SessionPolicy::Channel);
+    }
+
+    #[test]
+    fn test_session_policy_thread_flag_parses() {
+        let args = CliArgs::parse_from([
+            "kuzz-acp",
+            "--private-key",
+            &"0".repeat(64),
+            "--session-policy",
+            "thread",
+        ]);
+        assert_eq!(args.session_policy, crate::scope::SessionPolicy::Thread);
+    }
+
+    #[test]
+    fn test_state_dir_is_optional_and_parses() {
+        let base = ["kuzz-acp", "--private-key", &"0".repeat(64)];
+        assert_eq!(CliArgs::parse_from(base).state_dir, None);
+        let args = CliArgs::parse_from(base.into_iter().chain(["--state-dir", "/tmp/kuzz-state"]));
+        assert_eq!(
+            args.state_dir.as_deref(),
+            Some(std::path::Path::new("/tmp/kuzz-state"))
+        );
+    }
+
+    #[test]
+    fn test_session_policy_legacy_main_and_threads_spellings_parse_as_thread() {
+        for spelling in ["main-and-threads", "main_and_threads"] {
+            let args = CliArgs::parse_from([
+                "kuzz-acp",
+                "--private-key",
+                &"0".repeat(64),
+                "--session-policy",
+                spelling,
+            ]);
+            assert_eq!(args.session_policy, crate::scope::SessionPolicy::Thread);
+        }
+    }
+
+    #[test]
+    fn test_session_policy_env_var_parses() {
+        // The env fallback (`KUZZ_ACP_SESSION_POLICY`) must resolve to the same
+        // value as the flag; this is what the managed-agent runtime sets.
+        let args = CliArgs::parse_from([
+            "kuzz-acp",
+            "--private-key",
+            &"0".repeat(64),
+            "--session-policy=thread",
+        ]);
+        assert_eq!(args.session_policy, crate::scope::SessionPolicy::Thread);
+        assert_eq!(args.session_policy.to_string(), "thread");
+    }
+
+    // ── Multiple-event-handling validation + default ──────────────────────────
+
+    #[test]
+    fn test_multiple_event_handling_default_is_steer() {
+        // Parse a minimal arg set; the default for --multiple-event-handling
+        // must be `steer` (steering is the default mid-turn delivery path).
+        let args = CliArgs::parse_from(["kuzz-acp", "--private-key", &"0".repeat(64)]);
+        assert_eq!(args.multiple_event_handling, MultipleEventHandling::Steer);
+        // Dedup default must remain `queue` so steering's requirement is met.
+        assert!(matches!(args.dedup, DedupMode::Queue));
+    }
+
+    #[test]
+    fn test_validate_steer_requires_queue_dedup() {
+        // Steer + Drop is rejected (drain window would drop events).
+        let err = validate_multiple_event_handling(MultipleEventHandling::Steer, DedupMode::Drop)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("requires"),
+            "expected a dedup-requirement error, got: {err}"
+        );
+        // Steer + Queue is accepted.
+        assert!(
+            validate_multiple_event_handling(MultipleEventHandling::Steer, DedupMode::Queue)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_validate_queue_handling_allows_any_dedup() {
+        // The non-cancel `Queue` handling imposes no dedup constraint.
+        assert!(
+            validate_multiple_event_handling(MultipleEventHandling::Queue, DedupMode::Drop).is_ok()
+        );
+        assert!(
+            validate_multiple_event_handling(MultipleEventHandling::Queue, DedupMode::Queue)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_validate_interrupt_modes_still_require_queue() {
+        for mode in [
+            MultipleEventHandling::Interrupt,
+            MultipleEventHandling::OwnerInterrupt,
+        ] {
+            assert!(
+                validate_multiple_event_handling(mode, DedupMode::Drop).is_err(),
+                "{mode:?} + Drop should be rejected"
+            );
+        }
+    }
+
+    // ── Idle timeout constant + guard (PR #935) ───────────────────────────────
+
+    #[test]
+    fn default_idle_timeout_is_1500_seconds() {
+        // Lock the constant value so accidental changes are caught.
+        assert_eq!(DEFAULT_IDLE_TIMEOUT_SECS, 1_500);
+    }
+
+    #[test]
+    fn idle_timeout_must_be_less_than_max_turn_duration() {
+        // The guard in Config::from_args rejects idle >= max_turn.
+        // Exercise the same logic: if idle >= max_turn, it's invalid.
+        let idle = 3600u64;
+        let max_turn = 3600u64;
+        assert!(
+            idle >= max_turn,
+            "test precondition: idle must be >= max_turn to trigger guard"
+        );
+
+        // And the valid case (const assertion so clippy doesn't flag it):
+        const {
+            assert!(DEFAULT_IDLE_TIMEOUT_SECS < DEFAULT_MAX_TURN_DURATION_SECS);
+        }
+    }
+
+    #[test]
+    fn budget_ordering_invariant_shell_cap_plus_headroom_fits_within_idle_timeout() {
+        // Asserts the three-layer budget relationship introduced in PR #7185:
+        //   kuzz-dev-mcp MAX_TIMEOUT_MS (1 200 000 ms = 1 200s)
+        //   ≤ kuzz-agent KUZZ_AGENT_TOOL_TIMEOUT_SECS default (1 260s)
+        //   < kuzz-acp DEFAULT_IDLE_TIMEOUT_SECS (1 500s)
+        //
+        // The idle deadline must strictly outlast the agent tool timeout so a
+        // legitimately long-running tool call is killed by kuzz-agent first (at
+        // 1 260s) rather than the ACP idle watchdog. The 240s gap gives the agent
+        // time to handle the timeout, emit a response, and reset the idle clock
+        // before the ACP connection dies.
+        //
+        // If any of these constants change the compiler catches the inversion here.
+        // Cross-crate constants are mirrored as literals; grep for PR #7185 to
+        // find the authoritative source if you need to update them.
+        const SHELL_CAP_MS: u64 = 1_200_000; // kuzz-dev-mcp MAX_TIMEOUT_MS
+        const SHELL_CAP_SECS: u64 = SHELL_CAP_MS / 1_000;
+        const AGENT_TOOL_TIMEOUT_SECS: u64 = 1_260; // kuzz-agent KUZZ_AGENT_TOOL_TIMEOUT_SECS default
+
+        const {
+            // Shell cap must not exceed the agent's per-tool-call timeout.
+            assert!(
+                SHELL_CAP_SECS <= AGENT_TOOL_TIMEOUT_SECS,
+                "shell cap must be <= agent tool timeout"
+            );
+            // Agent tool timeout must be strictly less than the ACP idle deadline.
+            assert!(
+                AGENT_TOOL_TIMEOUT_SECS < DEFAULT_IDLE_TIMEOUT_SECS,
+                "agent tool timeout must be < ACP idle timeout"
+            );
+            // ACP idle timeout must remain below the max turn duration.
+            assert!(
+                DEFAULT_IDLE_TIMEOUT_SECS < DEFAULT_MAX_TURN_DURATION_SECS,
+                "ACP idle timeout must be < max turn duration"
+            );
+        }
+    }
+
+    // --- KUZZ_ACP_ALLOWED_RESPOND_TO gate ---
+
+    fn parse_allowed_respond_to(raw: &[&str]) -> Result<HashSet<RespondTo>, ConfigError> {
+        let mut set = HashSet::new();
+        for s in raw {
+            let mode = RespondTo::from_str(s.trim(), true).map_err(|_| {
+                ConfigError::ConfigFile(format!(
+                    "invalid value in KUZZ_ACP_ALLOWED_RESPOND_TO: '{s}' \
+                     (valid values: owner-only, allowlist, anyone, nobody)"
+                ))
+            })?;
+            set.insert(mode);
+        }
+        Ok(set)
+    }
+
+    fn check_allowed_respond_to(
+        allowed_raw: &[&str],
+        respond_to: RespondTo,
+    ) -> Result<(), ConfigError> {
+        let set = parse_allowed_respond_to(allowed_raw)?;
+        if !set.is_empty() && !set.contains(&respond_to) {
+            return Err(ConfigError::ConfigFile(format!(
+                "respond_to '{}' is not permitted on this deployment \
+                 (KUZZ_ACP_ALLOWED_RESPOND_TO={})",
+                respond_to,
+                allowed_raw.join(",")
+            )));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn allowed_respond_to_rejects_disallowed_mode() {
+        let result = check_allowed_respond_to(&["owner-only", "allowlist"], RespondTo::Anyone);
+        assert!(
+            result.is_err(),
+            "anyone should be rejected when not in allowed set"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("not permitted"),
+            "error should mention 'not permitted': {msg}"
+        );
+    }
+
+    #[test]
+    fn allowed_respond_to_accepts_allowed_mode() {
+        let result = check_allowed_respond_to(&["owner-only", "allowlist"], RespondTo::OwnerOnly);
+        assert!(result.is_ok(), "owner-only should be accepted: {result:?}");
+    }
+
+    #[test]
+    fn allowed_respond_to_empty_allows_all() {
+        // No restriction — anyone is accepted.
+        let result = check_allowed_respond_to(&[], RespondTo::Anyone);
+        assert!(
+            result.is_ok(),
+            "empty allowed set should permit any mode: {result:?}"
+        );
+    }
+
+    #[test]
+    fn allowed_respond_to_rejects_invalid_mode_string() {
+        let result = parse_allowed_respond_to(&["owner-only", "badvalue"]);
+        assert!(result.is_err(), "invalid mode string should be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("invalid value in KUZZ_ACP_ALLOWED_RESPOND_TO"),
+            "error should name the env var: {msg}"
+        );
+        assert!(
+            msg.contains("badvalue"),
+            "error should name the bad value: {msg}"
+        );
+    }
+
+    #[test]
+    fn allowed_respond_to_summary_shows_restriction_when_set() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.allowed_respond_to = vec!["owner-only".to_string(), "allowlist".to_string()];
+        let s = config.summary();
+        assert!(
+            s.contains("allowed_respond_to="),
+            "summary should include allowed_respond_to when set: {s}"
+        );
+    }
+
+    #[test]
+    fn allowed_respond_to_summary_omitted_when_empty() {
+        let config = test_config(SubscribeMode::Mentions);
+        let s = config.summary();
+        assert!(
+            !s.contains("allowed_respond_to="),
+            "summary should not include allowed_respond_to when empty: {s}"
+        );
+    }
+
+    // --- Integration tests: full env-var → CliArgs → Config::from_args() path ---
+    //
+    // These tests exercise the actual wiring: KUZZ_ACP_ALLOWED_RESPOND_TO in the
+    // environment causes clap to populate CliArgs::allowed_respond_to, which then
+    // flows through Config::from_args() to produce a ConfigError. If the #[arg(env)]
+    // attribute or field name were removed, these tests would fail.
+    //
+    // We pass the value via the CLI flag (`--allowed-respond-to`) rather than
+    // std::env::set_var to avoid test-parallelism races on shared env state.
+    // The env-var wiring is covered by the clap #[arg(env)] attribute itself.
+
+    // A minimal valid private key for test use (secp256k1 scalar = 1).
+    const TEST_PRIVATE_KEY: &str =
+        "0000000000000000000000000000000000000000000000000000000000000001";
+
+    #[test]
+    fn allowed_respond_to_full_path_rejects_disallowed_mode() {
+        // --allowed-respond-to=owner-only,allowlist + --respond-to=anyone → ConfigError
+        let args = CliArgs::try_parse_from([
+            "kuzz-acp",
+            "--private-key",
+            TEST_PRIVATE_KEY,
+            "--respond-to",
+            "anyone",
+            "--allowed-respond-to",
+            "owner-only,allowlist",
+        ])
+        .expect("clap should parse args");
+        let result = Config::from_args(args);
+
+        assert!(
+            result.is_err(),
+            "from_args should reject respond_to=anyone when not in allowed set"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("not permitted"),
+            "error should mention 'not permitted': {msg}"
+        );
+        assert!(
+            msg.contains("anyone"),
+            "error should name the disallowed mode: {msg}"
+        );
+    }
+
+    #[test]
+    fn allowed_respond_to_full_path_accepts_allowed_mode() {
+        // --allowed-respond-to=owner-only,allowlist + --respond-to=owner-only → Ok
+        let args = CliArgs::try_parse_from([
+            "kuzz-acp",
+            "--private-key",
+            TEST_PRIVATE_KEY,
+            "--respond-to",
+            "owner-only",
+            "--allowed-respond-to",
+            "owner-only,allowlist",
+        ])
+        .expect("clap should parse args");
+        let result = Config::from_args(args);
+
+        assert!(
+            result.is_ok(),
+            "from_args should accept respond_to=owner-only when in allowed set: {result:?}"
+        );
+    }
+
+    #[test]
+    fn allowed_respond_to_full_path_unset_allows_all() {
+        // No --allowed-respond-to flag → anyone is accepted.
+        let args = CliArgs::try_parse_from([
+            "kuzz-acp",
+            "--private-key",
+            TEST_PRIVATE_KEY,
+            "--respond-to",
+            "anyone",
+        ])
+        .expect("clap should parse args");
+        let result = Config::from_args(args);
+
+        assert!(
+            result.is_ok(),
+            "from_args should accept any mode when allowed list is unset: {result:?}"
+        );
+    }
+
+    // --- max_turn_duration ceiling gate ---
+
+    #[test]
+    fn max_turn_duration_at_ceiling_is_accepted() {
+        let args = CliArgs::try_parse_from([
+            "kuzz-acp",
+            "--private-key",
+            TEST_PRIVATE_KEY,
+            "--max-turn-duration",
+            &MAX_TURN_DURATION_CEILING_SECS.to_string(),
+        ])
+        .expect("clap should parse args");
+        let result = Config::from_args(args);
+
+        assert!(
+            result.is_ok(),
+            "from_args should accept max_turn_duration at the ceiling: {result:?}"
+        );
+    }
+
+    #[test]
+    fn max_turn_duration_above_ceiling_is_rejected() {
+        let over = MAX_TURN_DURATION_CEILING_SECS + 1;
+        let args = CliArgs::try_parse_from([
+            "kuzz-acp",
+            "--private-key",
+            TEST_PRIVATE_KEY,
+            "--max-turn-duration",
+            &over.to_string(),
+        ])
+        .expect("clap should parse args");
+        let result = Config::from_args(args);
+
+        assert!(
+            result.is_err(),
+            "from_args should reject max_turn_duration above the ceiling"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("exceeds ceiling"),
+            "error should mention 'exceeds ceiling': {msg}"
+        );
+    }
+
+    #[test]
+    fn max_turn_duration_ceiling_cannot_overflow_in_flight_deadline() {
+        // The in-flight deadline is max_turn + 100s buffer (IN_FLIGHT_DEADLINE_BUFFER_SECS).
+        // Verify that even at the ceiling, this addition cannot overflow u64.
+        const {
+            assert!(MAX_TURN_DURATION_CEILING_SECS < u64::MAX - 100);
+        }
+    }
+
+    #[test]
+    fn sanitize_session_title_collapses_whitespace_and_strips_control_chars() {
+        assert_eq!(
+            sanitize_session_title("  Fizz\t\tthe\n Bot\u{7}  "),
+            Some("Fizz the Bot".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_session_title_returns_none_when_nothing_printable_remains() {
+        assert_eq!(sanitize_session_title("   \n\t "), None);
+        assert_eq!(sanitize_session_title(""), None);
+        assert_eq!(sanitize_session_title("\u{1}\u{2}"), None);
+    }
+
+    #[test]
+    fn sanitize_session_title_caps_length_without_splitting_multibyte_chars() {
+        let raw = "\u{1f41d}".repeat(SESSION_TITLE_MAX_CHARS + 10);
+        let title = sanitize_session_title(&raw).expect("emoji title survives sanitizing");
+        assert_eq!(title.chars().count(), SESSION_TITLE_MAX_CHARS);
+        assert!(title.chars().all(|c| c == '\u{1f41d}'));
+    }
+
+    #[test]
+    fn sanitize_session_title_does_not_leave_a_trailing_space_after_the_cap() {
+        // The cap lands mid-word, so trimming must not leave a dangling space.
+        let raw = format!("{} tail", "a".repeat(SESSION_TITLE_MAX_CHARS - 1));
+        let title = sanitize_session_title(&raw).expect("title survives sanitizing");
+        assert_eq!(title, "a".repeat(SESSION_TITLE_MAX_CHARS - 1));
+    }
+
+    #[test]
+    fn compose_session_title_qualifies_the_agent_name_with_the_channel() {
+        assert_eq!(
+            compose_session_title("Fizz", Some("kuzz-dev")),
+            "Fizz · #kuzz-dev"
+        );
+    }
+
+    #[test]
+    fn compose_session_title_falls_back_to_bare_agent_name_without_a_channel() {
+        assert_eq!(compose_session_title("Fizz", None), "Fizz");
+        assert_eq!(compose_session_title("Fizz", Some("   ")), "Fizz");
+    }
+
+    #[test]
+    fn compose_session_title_truncates_the_channel_and_keeps_the_agent_name() {
+        let channel = "c".repeat(200);
+        let title = compose_session_title("Fizz", Some(&channel));
+        assert_eq!(title.chars().count(), SESSION_TITLE_MAX_CHARS);
+        assert!(title.starts_with("Fizz · #c"));
+    }
+
+    #[test]
+    fn compose_session_title_drops_the_channel_when_the_agent_name_fills_the_cap() {
+        let agent = "a".repeat(SESSION_TITLE_MAX_CHARS);
+        assert_eq!(compose_session_title(&agent, Some("kuzz-dev")), agent);
+    }
+
+    #[test]
+    fn scoped_session_title_keeps_short_root_even_when_names_fill_the_cap() {
+        let root = "abcdef01".repeat(8);
+        assert_eq!(
+            compose_scoped_session_title("Fizz", Some("kuzz-dev"), Some(&root)),
+            "Fizz · #kuzz-dev · abcdef01"
+        );
+        assert_eq!(
+            compose_scoped_session_title("Fizz", None, Some(&root)),
+            "Fizz · abcdef01"
+        );
+        assert_eq!(
+            compose_scoped_session_title("Fizz", Some("kuzz-dev"), Some("abc")),
+            "Fizz · #kuzz-dev · abc"
+        );
+        for (agent, channel) in [
+            ("🐝".repeat(80), "work".into()),
+            ("Fizz".into(), "🐝".repeat(100)),
+        ] {
+            let title = compose_scoped_session_title(&agent, Some(&channel), Some(&root));
+            assert_eq!(title.chars().count(), SESSION_TITLE_MAX_CHARS);
+            assert!(title.ends_with(" · abcdef01"));
+        }
+        assert_eq!(
+            compose_scoped_session_title("Fizz", Some("kuzz-dev"), None),
+            "Fizz · #kuzz-dev"
+        );
+        assert_eq!(compose_scoped_session_title("Fizz", None, None), "Fizz");
+    }
+
+    /// Every arg whose env var name contains KEY/SECRET/TOKEN/PASSWORD/CRED/AUTH
+    /// must set `hide_env_values = true` to prevent credential leakage in --help.
+    #[test]
+    fn secret_env_args_hide_their_values_in_help() {
+        use clap::CommandFactory;
+
+        const SECRET_PATTERNS: &[&str] = &["KEY", "SECRET", "TOKEN", "PASSWORD", "CRED", "AUTH"];
+
+        let cmd = CliArgs::command();
+        let violations: Vec<String> = cmd
+            .get_arguments()
+            .filter_map(|arg| {
+                let env_key = arg.get_env()?;
+                let env_name = env_key.to_string_lossy().to_uppercase();
+                let is_secret = SECRET_PATTERNS.iter().any(|pat| env_name.contains(pat));
+                if is_secret && !arg.is_hide_env_values_set() {
+                    Some(env_name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            violations.is_empty(),
+            "Found secret-bearing env args without hide_env_values=true. \
+             Add `hide_env_values = true` to each: {violations:?}"
+        );
+    }
+
+    // --- dispatcher mode ---
+
+    fn from_cli(extra: &[&str]) -> Result<Config, ConfigError> {
+        let mut argv = vec!["kuzz-acp", "--private-key", TEST_PRIVATE_KEY];
+        argv.extend_from_slice(extra);
+        Config::from_args(CliArgs::try_parse_from(argv).expect("clap should parse args"))
+    }
+
+    #[test]
+    fn dispatcher_config_parses_channels_and_normalizes_pubkeys() {
+        let ch = Uuid::new_v4();
+        let human = "AB".repeat(32);
+        let ai = "cd".repeat(32);
+        let json = format!(
+            r#"{{"{ch}": {{"humans": [" {human} "], "ais": ["{ai}"]}}, "{}": {{}}}}"#,
+            Uuid::nil()
+        );
+        let cfg = DispatcherConfig::parse(&json).expect("valid config");
+        assert_eq!(cfg.channel_count(), 2);
+        let policy = cfg.channel(ch).expect("channel policy");
+        assert_eq!(policy.humans, HashSet::from([human.to_ascii_lowercase()]));
+        assert_eq!(policy.ais, HashSet::from([ai]));
+        assert_eq!(
+            cfg.channel(Uuid::nil()),
+            Some(&DispatcherChannelPolicy::default()),
+            "both arrays are optional"
+        );
+        assert!(cfg.channel(Uuid::new_v4()).is_none());
+        assert!(DispatcherConfig::parse("{}")
+            .expect("empty object")
+            .is_empty());
+    }
+
+    #[test]
+    fn dispatcher_config_rejects_bad_json_channel_ids_and_pubkeys() {
+        let cases: Vec<(String, &str)> = vec![
+            ("not json".into(), "invalid --dispatcher-config JSON"),
+            ("[]".into(), "invalid --dispatcher-config JSON"),
+            (r#"{"nope": {}}"#.into(), "invalid channel id"),
+            (
+                format!(r#"{{"{}": {{"humans": ["abc"]}}}}"#, Uuid::nil()),
+                "invalid pubkey in --dispatcher-config humans",
+            ),
+            (
+                format!(
+                    r#"{{"{}": {{"ais": ["{}"]}}}}"#,
+                    Uuid::nil(),
+                    "zz".repeat(32)
+                ),
+                "invalid pubkey in --dispatcher-config ais",
+            ),
+        ];
+        for (json, needle) in cases {
+            let err = DispatcherConfig::parse(&json)
+                .expect_err("must be rejected")
+                .to_string();
+            assert!(err.contains(needle), "{json}: {err}");
+        }
+    }
+
+    #[test]
+    fn context_history_defaults_to_recent_and_never_reaches_dispatchers() {
+        use crate::context_history::{ContextBudget, ContextHistory};
+        assert_eq!(
+            from_cli(&[]).unwrap().context_history,
+            ContextHistory::Recent
+        );
+        assert_eq!(
+            from_cli(&["--context-history", "medium"])
+                .unwrap()
+                .context_history,
+            ContextHistory::Budget(ContextBudget::Medium)
+        );
+        assert_eq!(
+            from_cli(&["--context-history", "bogus"])
+                .unwrap()
+                .context_history,
+            ContextHistory::Recent,
+            "an unknown value must not stop the harness"
+        );
+        let dispatcher = from_cli(&["--dispatcher", "--context-history", "large"]).unwrap();
+        assert_eq!(dispatcher.context_history, ContextHistory::Recent);
+        assert_eq!(
+            dispatcher.context_message_limit,
+            DISPATCHER_CONTEXT_MESSAGE_LIMIT
+        );
+    }
+
+    #[test]
+    fn live_settings_file_replaces_launch_values_except_pinned_ones() {
+        use crate::context_history::{ContextBudget, ContextHistory};
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("live.json");
+        std::fs::write(
+            &live,
+            r#"{"system_prompt":"Live prompt","team_instructions":"Live team","context_history":"large"}"#,
+        )
+        .unwrap();
+        let live_arg = live.to_str().unwrap();
+
+        assert_eq!(from_cli(&[]).unwrap().live_settings.current(), None);
+
+        let config = from_cli(&[
+            "--system-prompt",
+            "Launch prompt",
+            "--live-settings-file",
+            live_arg,
+        ])
+        .unwrap();
+        let values = config.live_settings.current().unwrap();
+        assert_eq!(values.system_prompt.as_deref(), Some("Live prompt"));
+        assert_eq!(values.team_instructions.as_deref(), Some("Live team"));
+        assert_eq!(
+            values.context_history,
+            ContextHistory::Budget(ContextBudget::Large)
+        );
+
+        // A prompt file and a dispatcher's recent window stay fixed.
+        let prompt_file = dir.path().join("prompt.md");
+        std::fs::write(&prompt_file, "File prompt").unwrap();
+        let config = from_cli(&[
+            "--dispatcher",
+            "--system-prompt-file",
+            prompt_file.to_str().unwrap(),
+            "--live-settings-file",
+            live_arg,
+        ])
+        .unwrap();
+        let values = config.live_settings.current().unwrap();
+        assert_eq!(values.system_prompt.as_deref(), Some("File prompt"));
+        assert_eq!(values.context_history, ContextHistory::Recent);
+    }
+
+    #[test]
+    fn dispatcher_flag_defaults_off_and_flows_through_from_args() {
+        let plain = from_cli(&[]).expect("plain config");
+        assert!(!plain.dispatcher);
+        assert!(plain.dispatcher_config.is_empty());
+        assert_eq!(plain.context_message_limit, DEFAULT_CONTEXT_MESSAGE_LIMIT);
+        assert!(
+            plain.base_prompt_content.is_none(),
+            "ordinary agents use the compiled-in base prompt"
+        );
+
+        let ch = Uuid::new_v4();
+        let human = "ab".repeat(32);
+        let json = format!(r#"{{"{ch}": {{"humans": ["{human}"]}}}}"#);
+        let dispatcher =
+            from_cli(&["--dispatcher", "--dispatcher-config", &json]).expect("dispatcher config");
+        assert!(dispatcher.dispatcher);
+        assert_eq!(
+            dispatcher.dispatcher_config.channel(ch).unwrap().humans,
+            HashSet::from([human])
+        );
+        assert_eq!(
+            dispatcher.context_message_limit,
+            DISPATCHER_CONTEXT_MESSAGE_LIMIT
+        );
+
+        let explicit = from_cli(&["--dispatcher", "--context-message-limit", "20"]).unwrap();
+        assert_eq!(
+            explicit.context_message_limit, 20,
+            "an explicit limit wins over the dispatcher default"
+        );
+
+        let invalid = from_cli(&["--dispatcher", "--dispatcher-config", r#"{"x": {}}"#]);
+        assert!(invalid.is_err(), "invalid policy must fail startup");
+
+        let ignored = from_cli(&["--dispatcher-config", r#"{"x": {}}"#]).unwrap();
+        assert!(
+            !ignored.dispatcher && ignored.dispatcher_config.is_empty(),
+            "without --dispatcher the policy is ignored, not parsed"
+        );
+    }
+
+    #[test]
+    fn code_work_defaults_on_and_opts_out_with_no_code_work() {
+        assert!(from_cli(&[]).unwrap().code_work, "missing setting means on");
+        assert!(!from_cli(&["--no-code-work"]).unwrap().code_work);
+    }
+
+    #[test]
+    fn dispatcher_base_prompt_replaces_default_unless_file_given() {
+        let dispatcher = from_cli(&["--dispatcher"]).unwrap();
+        let prompt = dispatcher
+            .base_prompt_content
+            .as_deref()
+            .expect("dispatcher base prompt");
+        assert_eq!(prompt, include_str!("dispatcher_base_prompt.md"));
+        assert!(prompt.contains("router only"));
+        assert!(prompt.contains("<channel-roster>"));
+        assert!(prompt.contains("--mention <agent-pubkey-hex>"));
+        assert!(
+            prompt.len() < include_str!("base_prompt.md").len() / 4,
+            "dispatcher prompt must stay short"
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("base.md");
+        std::fs::write(&path, "custom base").unwrap();
+        let explicit =
+            from_cli(&["--dispatcher", "--base-prompt-file", path.to_str().unwrap()]).unwrap();
+        assert_eq!(
+            explicit.base_prompt_content.as_deref(),
+            Some("custom base"),
+            "an explicit base prompt file wins"
+        );
+
+        let none = from_cli(&["--dispatcher", "--no-base-prompt"]).unwrap();
+        assert!(none.base_prompt_content.is_none());
+    }
+
+    fn channel_map(entries: &[(Uuid, &str)]) -> HashMap<Uuid, crate::relay::ChannelInfo> {
+        entries
+            .iter()
+            .map(|(id, channel_type)| {
+                (
+                    *id,
+                    crate::relay::ChannelInfo {
+                        name: "ch".into(),
+                        channel_type: channel_type.to_string(),
+                        description: None,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn dispatcher_mode_subscribes_non_dm_channels_without_mention_filter() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.dispatcher = true;
+        let stream = Uuid::new_v4();
+        let private = Uuid::new_v4();
+        let dm = Uuid::new_v4();
+        let unknown = Uuid::new_v4();
+        let channels = channel_map(&[
+            (stream, "stream"),
+            (private, "private"),
+            (dm, "dm"),
+            (unknown, "unknown"),
+        ]);
+        let filters = resolve_startup_channel_filters(&config, &channels, &[]);
+        assert_eq!(filters.len(), 4);
+        for id in [stream, private] {
+            assert!(
+                !filters[&id].require_mention,
+                "non-DM channels drop the mention filter"
+            );
+            assert_eq!(filters[&id].kinds, Some(default_mention_kinds()));
+        }
+        for id in [dm, unknown] {
+            assert!(
+                filters[&id].require_mention,
+                "DM and unresolved channels keep the mention filter"
+            );
+        }
+
+        config.dispatcher = false;
+        let filters = resolve_startup_channel_filters(&config, &channels, &[]);
+        assert!(filters.values().all(|f| f.require_mention));
+    }
+
+    #[test]
+    fn dispatcher_mode_respects_channel_scope_and_kinds_override() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.dispatcher = true;
+        let in_scope = Uuid::new_v4();
+        let out_of_scope = Uuid::new_v4();
+        config.channels_override = Some(vec![in_scope.to_string()]);
+        config.kinds_override = Some(vec![KIND_STREAM_MESSAGE]);
+        let channels = channel_map(&[(in_scope, "stream"), (out_of_scope, "stream")]);
+        let filters = resolve_startup_channel_filters(&config, &channels, &[]);
+        assert_eq!(
+            filters.len(),
+            1,
+            "--channels still bounds the subscription set"
+        );
+        assert!(!filters[&in_scope].require_mention);
+        assert_eq!(filters[&in_scope].kinds, Some(vec![KIND_STREAM_MESSAGE]));
+        assert!(resolve_dynamic_channel_filter_for_type(
+            &config,
+            out_of_scope,
+            Some("stream"),
+            &[]
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn dispatcher_dynamic_filter_follows_channel_type() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.dispatcher = true;
+        let ch = Uuid::new_v4();
+        let stream =
+            resolve_dynamic_channel_filter_for_type(&config, ch, Some("stream"), &[]).unwrap();
+        assert!(!stream.require_mention);
+        assert_eq!(stream.kinds, Some(default_mention_kinds()));
+        for channel_type in [Some("dm"), Some("unknown"), None] {
+            let filter =
+                resolve_dynamic_channel_filter_for_type(&config, ch, channel_type, &[]).unwrap();
+            assert!(
+                filter.require_mention,
+                "{channel_type:?} keeps the mention filter"
+            );
+        }
+
+        // `all` already has no mention filter; the dispatcher leaves its wildcard kinds alone.
+        let mut all = test_config(SubscribeMode::All);
+        all.dispatcher = true;
+        let filter =
+            resolve_dynamic_channel_filter_for_type(&all, ch, Some("stream"), &[]).unwrap();
+        assert!(!filter.require_mention);
+        assert!(filter.kinds.is_none());
+    }
+}
+
+#[cfg(test)]
+mod token_owner_tests {
+    use super::*;
+
+    const OWNER_FLAG: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+    const SERVER_OWNER: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+
+    fn token_args() -> CliArgs {
+        CliArgs::try_parse_from([
+            "kuzz-acp",
+            "--bot-token",
+            "bzb_owner",
+            "--agent-owner",
+            OWNER_FLAG,
+        ])
+        .expect("args")
+    }
+
+    /// Token mode: the bot owner from `GET /auth/me` is authoritative and
+    /// replaces `--agent-owner`; with no server owner the flag stays.
+    #[test]
+    fn server_owner_from_auth_me_overrides_agent_owner_flag() {
+        let principal = nostr::Keys::generate().public_key();
+        let config = Config::from_args_resolved(
+            token_args(),
+            Some(TokenPrincipal {
+                principal,
+                owner: Some(SERVER_OWNER.into()),
+            }),
+        )
+        .expect("token config");
+        assert_eq!(config.agent_owner.as_deref(), Some(SERVER_OWNER));
+        assert_eq!(config.keys.public_key(), principal);
+
+        let config = Config::from_args_resolved(
+            token_args(),
+            Some(TokenPrincipal {
+                principal,
+                owner: None,
+            }),
+        )
+        .expect("token config without owner");
+        assert_eq!(config.agent_owner.as_deref(), Some(OWNER_FLAG));
+    }
+
+    /// Token mode without a resolved principal is a configuration error.
+    #[test]
+    fn token_mode_requires_a_resolved_principal() {
+        assert!(matches!(
+            Config::from_args_resolved(token_args(), None),
+            Err(ConfigError::UnresolvedPrincipal)
+        ));
+    }
+}

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:buzz/shared/mentions/mention_bindings.dart';
+import 'package:kuzz/shared/mentions/mention_bindings.dart';
 
 void main() {
   final first = 'a' * 64;

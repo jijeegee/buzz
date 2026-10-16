@@ -81,7 +81,7 @@ export function getGlobalModelFallback(
   globalEnv: Readonly<Record<string, string>> = {},
 ): string | null {
   const universal = bakedEnv?.find(
-    (entry) => entry.key === "BUZZ_AGENT_MODEL" && !entry.masked,
+    (entry) => entry.key === "KUZZ_AGENT_MODEL" && !entry.masked,
   )?.value;
   if (universal?.trim()) return universal.trim();
 
@@ -152,19 +152,19 @@ export function getInheritedAgentDefaults(
     provider: resolveInheritedDefault(
       globalConfig.provider,
       bakedEnv,
-      "BUZZ_AGENT_PROVIDER",
+      "KUZZ_AGENT_PROVIDER",
     ),
     model: (() => {
       const structured = resolveInheritedDefault(
         globalConfig.model,
         bakedEnv,
-        "BUZZ_AGENT_MODEL",
+        "KUZZ_AGENT_MODEL",
       );
       if (structured.value) return structured;
       const provider = resolveInheritedDefault(
         globalConfig.provider,
         bakedEnv,
-        "BUZZ_AGENT_PROVIDER",
+        "KUZZ_AGENT_PROVIDER",
       );
       const fallback = getGlobalModelFallback(
         bakedEnv,
@@ -176,9 +176,9 @@ export function getInheritedAgentDefaults(
         : { source: null, value: "" };
     })(),
     effort: resolveInheritedDefault(
-      globalConfig.env_vars.BUZZ_AGENT_THINKING_EFFORT,
+      globalConfig.env_vars.KUZZ_AGENT_THINKING_EFFORT,
       bakedEnv,
-      "BUZZ_AGENT_THINKING_EFFORT",
+      "KUZZ_AGENT_THINKING_EFFORT",
     ),
   };
 }

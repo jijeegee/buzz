@@ -65,7 +65,7 @@ export function ProvidersSettingsTab() {
   // Internal Block builds bake a provider and hide Databricks v1 — the same
   // rule the agent dialogs apply.
   const hiddenProviderIds = (bakedEnvKeysQuery.data ?? []).includes(
-    "BUZZ_AGENT_PROVIDER",
+    "KUZZ_AGENT_PROVIDER",
   )
     ? BLOCK_BUILD_HIDDEN_PROVIDER_IDS
     : NO_HIDDEN_PROVIDERS;

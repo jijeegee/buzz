@@ -11,7 +11,7 @@ import { deviceRobotTag } from "@/shared/lib/deviceRobot";
 export const AUTH_DEVICES_QUERY_KEY = ["auth-devices"] as const;
 
 /** Window event fired after the device list changes (e.g. a rename). */
-export const AUTH_DEVICES_CHANGED_EVENT = "buzz:auth-devices-changed";
+export const AUTH_DEVICES_CHANGED_EVENT = "kuzz:auth-devices-changed";
 
 export function notifyAuthDevicesChanged() {
   window.dispatchEvent(new Event(AUTH_DEVICES_CHANGED_EVENT));

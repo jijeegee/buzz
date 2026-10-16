@@ -11,16 +11,16 @@ docker compose run --rm --no-deps --pull never minio-init
 docker compose exec -T minio sh -eu -c '
   minio --version
   mc --version
-  mc alias set local http://localhost:9000 buzz_dev buzz_dev_secret
-  printf "buzz-minio-smoke\n" > /tmp/expected
-  mc cp /tmp/expected local/buzz-media/smoke-test
-  mc cat local/buzz-media/smoke-test > /tmp/actual
+  mc alias set local http://localhost:9000 kuzz_dev kuzz_dev_secret
+  printf "kuzz-minio-smoke\n" > /tmp/expected
+  mc cp /tmp/expected local/kuzz-media/smoke-test
+  mc cat local/kuzz-media/smoke-test > /tmp/actual
   cmp /tmp/expected /tmp/actual
   status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
-    http://localhost:9000/buzz-media/smoke-test)
+    http://localhost:9000/kuzz-media/smoke-test)
   test "$status" = 403
-  mc rm local/buzz-media/smoke-test
-  if mc stat local/buzz-media/smoke-test; then
+  mc rm local/kuzz-media/smoke-test
+  if mc stat local/kuzz-media/smoke-test; then
     echo "Deleted object is still present" >&2
     exit 1
   fi

@@ -1,7 +1,7 @@
 //! Subscription routes: one routing call as a one-shot run of the official
 //! CLI (`codex exec` / `claude -p`) on that CLI's own sign-in.
 //!
-//! Buzz never reads, copies, or logs subscription tokens here — the CLI owns
+//! Kuzz never reads, copies, or logs subscription tokens here — the CLI owns
 //! them. The router instructions replace each CLI's own agent prompt (read
 //! from [`INSTRUCTIONS_FILE`] in the scratch directory), the user turn goes
 //! in on stdin (never the command line), every tool we can switch off is
@@ -230,7 +230,7 @@ pub fn cli_reply(
 /// Empty working directory for routing runs, so neither CLI picks up a
 /// project's instructions or files.
 fn scratch_dir() -> PathBuf {
-    std::env::temp_dir().join("buzz-router")
+    std::env::temp_dir().join("kuzz-router")
 }
 
 /// Run one routing call on a subscription route. Blocking (call it from

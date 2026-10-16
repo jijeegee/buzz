@@ -1,9 +1,9 @@
-import 'package:buzz/shared/auth/default_community.dart';
-import 'package:buzz/features/sign_in/signed_out_page.dart';
-import 'package:buzz/features/sign_in/token_sign_in_page.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/google_key_backup.dart';
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
+import 'package:kuzz/features/sign_in/signed_out_page.dart';
+import 'package:kuzz/features/sign_in/token_sign_in_page.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/google_key_backup.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -198,7 +198,7 @@ void main() {
   );
 
   testWidgets(
-    'a Google account linked to another Buzz account offers a different one',
+    'a Google account linked to another Kuzz account offers a different one',
     (tester) async {
       final keys = nostr.Keys.generate();
       final storage = CommunityStorage(secure: FakeSecureStorage());
@@ -217,7 +217,7 @@ void main() {
 
       expect(
         find.text(
-          'This Google account is linked to a different Buzz account. '
+          'This Google account is linked to a different Kuzz account. '
           'Try a different Google account.',
         ),
         findsOneWidget,

@@ -45,7 +45,7 @@ import { Switch } from "@/shared/ui/switch";
 import { SettingsOptionRow } from "./SettingsOptionGroup";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 
-/** Buzz navigation can use either its production tint or a stronger tab. */
+/** Kuzz navigation can use either its production tint or a stronger tab. */
 export function ProminentActiveTabSetting() {
   const { prominentActiveTab, setProminentActiveTab } = useTheme();
 
@@ -271,23 +271,23 @@ const LINK_PREVIEW_SAMPLE_BASE: Omit<ResolvedLinkPreview, "imageDataUrl"> = {
 };
 
 /**
- * Build the sample thumbnail as an SVG data URL from the Buzz gradient
+ * Build the sample thumbnail as an SVG data URL from the Kuzz gradient
  * tokens. Data-URL images cannot resolve CSS variables, so the token values
- * are read from the live stylesheet and baked in per render — if the Buzz
+ * are read from the live stylesheet and baked in per render — if the Kuzz
  * gradient ever changes in `theme.css`, this preview follows automatically.
  */
-function buzzGradientSampleImage(isDark: boolean): string {
+function kuzzGradientSampleImage(isDark: boolean): string {
   const styles = globalThis.document
     ? getComputedStyle(document.documentElement)
     : null;
   const readToken = (token: string, fallback: string): string =>
     styles?.getPropertyValue(token).trim() || fallback;
   const top = isDark
-    ? readToken("--buzz-gradient-dark-top", "#2a2d33")
-    : readToken("--buzz-gradient-light-top", "#eceef0");
+    ? readToken("--kuzz-gradient-dark-top", "#2a2d33")
+    : readToken("--kuzz-gradient-light-top", "#eceef0");
   const bottom = isDark
-    ? readToken("--buzz-gradient-dark-bottom", "#0a1423")
-    : readToken("--buzz-gradient-light-bottom", "#c4d0da");
+    ? readToken("--kuzz-gradient-dark-bottom", "#0a1423")
+    : readToken("--kuzz-gradient-light-bottom", "#c4d0da");
   const shapeToken = isDark ? "--foreground" : "--background";
   const shapeFallback = isDark ? "0 0% 98%" : "0 0% 100%";
   const shape = `hsl(${readToken(shapeToken, shapeFallback)})`;
@@ -309,7 +309,7 @@ function LinkPreviewSample({ style }: { style: LinkPreviewStyle }) {
   const preview = React.useMemo<ResolvedLinkPreview>(
     () => ({
       ...LINK_PREVIEW_SAMPLE_BASE,
-      imageDataUrl: buzzGradientSampleImage(isDark),
+      imageDataUrl: kuzzGradientSampleImage(isDark),
     }),
     [isDark],
   );
@@ -506,13 +506,13 @@ function ThreadLayoutDiagram({ mode }: { mode: ThreadViewMode }) {
   const { isDark } = useTheme();
   const gradientId = React.useId();
   // Inline SVG resolves CSS variables, so the frame gradient references the
-  // Buzz gradient tokens directly and follows theme.css automatically.
+  // Kuzz gradient tokens directly and follows theme.css automatically.
   const gradientTop = isDark
-    ? "var(--buzz-gradient-dark-top, #2a2d33)"
-    : "var(--buzz-gradient-light-top, #eceef0)";
+    ? "var(--kuzz-gradient-dark-top, #2a2d33)"
+    : "var(--kuzz-gradient-light-top, #eceef0)";
   const gradientBottom = isDark
-    ? "var(--buzz-gradient-dark-bottom, #0a1423)"
-    : "var(--buzz-gradient-light-bottom, #c4d0da)";
+    ? "var(--kuzz-gradient-dark-bottom, #0a1423)"
+    : "var(--kuzz-gradient-light-bottom, #c4d0da)";
   const channelSurface = "hsl(var(--muted))";
   const threadSurface = "hsl(var(--background))";
   const channelOpacity = isDark ? 0.88 : 0.78;

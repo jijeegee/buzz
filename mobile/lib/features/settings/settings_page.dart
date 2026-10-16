@@ -89,7 +89,7 @@ class SettingsPage extends HookConsumerWidget {
         unawaited(HapticFeedback.selectionClick());
         return _openAccountPage(context, tokenOrigin);
       }
-      final action = await showBuzzModalBottomSheet<_ProfileEditAction>(
+      final action = await showKuzzModalBottomSheet<_ProfileEditAction>(
         context: context,
         title: 'Edit profile',
         builder: (sheetContext) => SafeArea(

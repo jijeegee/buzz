@@ -37,8 +37,8 @@ import {
  */
 const EFFORT_ENV_ALIASES = [
   "GOOSE_THINKING_EFFORT",
-  "BUZZ_AGENT_THINKING_EFFORT",
-  "BUZZ_ACP_EFFORT_LEVEL",
+  "KUZZ_AGENT_THINKING_EFFORT",
+  "KUZZ_ACP_EFFORT_LEVEL",
 ] as const;
 export type RuntimeModelProviderSelection = {
   provider: string;

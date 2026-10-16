@@ -19,12 +19,12 @@ async function waitForMockLiveSubscription(
           ({ ch }) =>
             (
               window as Window & {
-                __BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
+                __KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
                   channelName: string;
                   kind: number;
                 }) => boolean;
               }
-            ).__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+            ).__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
               channelName: ch,
               kind: 9,
             }) ?? false,
@@ -51,7 +51,7 @@ async function emitMockMessage(
     ({ ch, msg, parentEventId, pubkey, ts, mentionPubkeys }) => {
       return (
         window as Window & {
-          __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
             channelName: string;
             content: string;
             parentEventId?: string | null;
@@ -60,7 +60,7 @@ async function emitMockMessage(
             mentionPubkeys?: string[];
           }) => { id: string; created_at: number; pubkey: string };
         }
-      ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: ch,
         content: msg,
         parentEventId: parentEventId ?? undefined,

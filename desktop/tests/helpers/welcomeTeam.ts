@@ -9,7 +9,7 @@ export async function invokeMockCommand<T>(
   return page.evaluate(
     async ({ command, payload }) => {
       const bridgeWindow = window as Window & {
-        __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+        __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
           command: string,
           payload?: Record<string, unknown>,
         ) => Promise<unknown>;
@@ -21,7 +21,7 @@ export async function invokeMockCommand<T>(
         };
       };
       const invoke =
-        bridgeWindow.__BUZZ_E2E_INVOKE_MOCK_COMMAND__ ??
+        bridgeWindow.__KUZZ_E2E_INVOKE_MOCK_COMMAND__ ??
         bridgeWindow.__TAURI_INTERNALS__?.invoke;
 
       if (!invoke) {
@@ -78,7 +78,7 @@ export async function publishWelcomeTeamPresence(page: Page) {
   const team = await waitForWelcomeTeam(page);
   await page.evaluate(
     (pubkeys) => {
-      const emit = window.__BUZZ_E2E_EMIT_MOCK_PRESENCE__;
+      const emit = window.__KUZZ_E2E_EMIT_MOCK_PRESENCE__;
       if (!emit) throw new Error("Mock presence emitter is unavailable.");
       for (const pubkey of pubkeys) emit({ pubkey, status: "online" });
     },

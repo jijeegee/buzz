@@ -21,7 +21,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  BUZZ_TEST_POSTGRES_PASSWORD: buzz_dev
+  KUZZ_TEST_POSTGRES_PASSWORD: kuzz_dev
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
 jobs:
@@ -98,10 +98,10 @@ jobs:
           CARGO_CMD: ${{ github.event_name == 'pull_request' && 'check' || 'build' }}
         run: |
           cross "$CARGO_CMD" --release --target "$TARGET" \
-            -p buzz-relay \
-            -p buzz-acp \
-            -p buzz-agent \
-            -p buzz-dev-mcp \
+            -p kuzz-relay \
+            -p kuzz-acp \
+            -p kuzz-agent \
+            -p kuzz-dev-mcp \
             -p git-credential-nostr \
             -p git-sign-nostr
 
@@ -138,23 +138,23 @@ jobs:
         shell: bash
         run: |
           mkdir -p desktop/src-tauri/binaries
-          for bin in buzz-acp buzz-agent buzz-dev-mcp git-credential-nostr buzz; do
+          for bin in kuzz-acp kuzz-agent kuzz-dev-mcp git-credential-nostr kuzz; do
             touch "desktop/src-tauri/binaries/${bin}-${TARGET}.exe"
           done
       - name: Clippy (workspace)
         run: cargo clippy --workspace --all-targets --target $env:TARGET -- -D warnings
       - name: Check (workspace)
         run: cargo check --workspace --all-targets --target $env:TARGET
-      - name: Test (buzz-dev-mcp)
-        # The Windows-only bash resolver lives in buzz-dev-mcp; its unit tests
+      - name: Test (kuzz-dev-mcp)
+        # The Windows-only bash resolver lives in kuzz-dev-mcp; its unit tests
         # only gate if this crate is tested ON Windows.
         # Serial: windows_resolver_tests mutate process-global env
-        # (BUZZ_SHELL/GIT_BASH/SystemRoot) that SharedState::new reads.
-        run: cargo test -p buzz-dev-mcp --target $env:TARGET -- --test-threads=1
+        # (KUZZ_SHELL/GIT_BASH/SystemRoot) that SharedState::new reads.
+        run: cargo test -p kuzz-dev-mcp --target $env:TARGET -- --test-threads=1
       - name: Test (ACP launch-prefix platform contract)
         # Execute the non-Unix refusal branch; a cross-compile cannot test it.
-        run: cargo test -p buzz-acp --target $env:TARGET --lib acp::launch::platform_tests
-      - name: Test (buzz-agent auth coordinator)
+        run: cargo test -p kuzz-acp --target $env:TARGET --lib acp::launch::platform_tests
+      - name: Test (kuzz-agent auth coordinator)
         # The auth coordinator single-flights on an OS advisory lock, which is
         # LockFileEx on Windows; this integration suite drives real second
         # processes on the same lock file, so it only exercises the Windows
@@ -167,7 +167,7 @@ jobs:
         # crash-release (flock drop on SIGKILL, guarded by #[cfg(unix)]) and
         # cross-process cache success/race (on-disk token handoff, also
         # #[cfg(unix)]).
-        run: cargo test -p buzz-agent --target $env:TARGET --test databricks_auth_coordinator
+        run: cargo test -p kuzz-agent --target $env:TARGET --test databricks_auth_coordinator
       # Smoke-test the new host-prereq contract: Git for Windows (which provides
       # bash) is available on the runner, a shell command round-trips, and bash
       # does NOT resolve from System32 (so WSL's launcher is never picked up).

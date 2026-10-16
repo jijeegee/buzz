@@ -34,10 +34,10 @@ import { normalizePubkey } from "@/shared/lib/pubkey";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-export const WELCOME_KICKOFF_OPENER_MARKER = "buzz-welcome-kickoff.opener.v1";
-export const WELCOME_KICKOFF_CLOSER_MARKER = "buzz-welcome-kickoff.closer.v1";
+export const WELCOME_KICKOFF_OPENER_MARKER = "kuzz-welcome-kickoff.opener.v1";
+export const WELCOME_KICKOFF_CLOSER_MARKER = "kuzz-welcome-kickoff.closer.v1";
 export const WELCOME_KICKOFF_PROVIDER_MARKER =
-  "buzz-welcome-kickoff.provider-required.v1";
+  "kuzz-welcome-kickoff.provider-required.v1";
 
 const openerMarker = welcomeKickoffMarker(WELCOME_KICKOFF_OPENER_MARKER);
 const closerMarker = welcomeKickoffMarker(WELCOME_KICKOFF_CLOSER_MARKER);
@@ -711,7 +711,7 @@ export function useWelcomeKickoff(
         }
         const openerAlreadySent = await markerExists(channelId, openerMarker);
 
-        // Start before publishing the mention. buzz-acp replays events from its
+        // Start before publishing the mention. kuzz-acp replays events from its
         // startup watermark, so no separate subscription-ready wait is needed.
         // On resume, restart unresolved teammates but never replay the opener.
         const agentsToStart = openerAlreadySent

@@ -32,7 +32,7 @@ type InlineChipProps =
       });
 
 /**
- * Shared visual primitive for mention, channel, and Buzz permalink chips.
+ * Shared visual primitive for mention, channel, and Kuzz permalink chips.
  *
  * Copy reads a chip's text back against the label its `data-*-label` attribute
  * declares (`matchChipTextToLabel`) to tell a whole chip from the fragment a

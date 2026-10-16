@@ -34,7 +34,7 @@ import {
 } from "@/features/projects/projectTaskCategories";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { ChannelMember } from "@/shared/api/types";
-import { BuzzLoadingState } from "@/shared/ui/BuzzLoadingState";
+import { KuzzLoadingState } from "@/shared/ui/KuzzLoadingState";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { IssueAssigneeFacepile, IssueAssigneesRow } from "./IssueAssigneesRow";
 import { DiscussedInChannels } from "./DiscussionChannels";
@@ -447,7 +447,7 @@ export function ProjectIssuesPanel({
   const loadError = error ?? issuesQuery.error;
 
   if (loading) {
-    return <BuzzLoadingState label="Loading tasks" />;
+    return <KuzzLoadingState label="Loading tasks" />;
   }
 
   if (resolvedItems.length === 0) {

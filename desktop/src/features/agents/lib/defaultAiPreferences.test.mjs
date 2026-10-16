@@ -7,7 +7,7 @@ globalThis.localStorage = {
   setItem: (key, value) => values.set(key, String(value)),
 };
 // A corrupted stored value must not break module load or flip the default.
-values.set("buzz-default-ai-auto-join", "{not json");
+values.set("kuzz-default-ai-auto-join", "{not json");
 
 const preference = await import("./defaultAiPreferences.ts");
 

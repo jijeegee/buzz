@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:buzz/features/settings/devices_page.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/devices/agent_host_devices.dart';
-import 'package:buzz/shared/devices/device_robot.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/settings/devices_page.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/devices/agent_host_devices.dart';
+import 'package:kuzz/shared/devices/device_robot.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

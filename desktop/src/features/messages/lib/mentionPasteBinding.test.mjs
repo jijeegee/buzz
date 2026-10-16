@@ -82,10 +82,10 @@ function viewWith(initialText) {
   return view;
 }
 
-/** Clipboard HTML in the shape a Buzz copy writes. */
+/** Clipboard HTML in the shape a Kuzz copy writes. */
 function clipboardHtml(label, pubkey, body) {
   return (
-    '<span data-buzz-copy="markdown">' +
+    '<span data-kuzz-copy="markdown">' +
     `<span data-mention="" data-mention-pubkey="${pubkey}" ` +
     `data-mention-label="${label}">@${label}</span>` +
     `${body}</span>`

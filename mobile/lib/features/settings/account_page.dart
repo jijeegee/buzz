@@ -11,7 +11,7 @@ import '../../shared/profile/user_profile.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 
 final _usernamePattern = RegExp(r'^[a-z0-9_]{3,32}$');
 
@@ -42,7 +42,7 @@ class AccountPage extends ConsumerWidget {
             onRetry: () => ref.invalidate(accountProfileProvider(origin)),
           ),
           _ => const Center(
-            child: BuzzLoadingIndicator(
+            child: KuzzLoadingIndicator(
               size: 32,
               semanticLabel: 'Loading account',
             ),
@@ -260,7 +260,7 @@ class _AccountForm extends HookConsumerWidget {
           key: const Key('account-save'),
           onPressed: busy ? null : () => unawaited(save()),
           child: saving.value
-              ? const BuzzLoadingIndicator(size: 20, semanticLabel: 'Saving')
+              ? const KuzzLoadingIndicator(size: 20, semanticLabel: 'Saving')
               : const Text('Save'),
         ),
         const SizedBox(height: Grid.xs),

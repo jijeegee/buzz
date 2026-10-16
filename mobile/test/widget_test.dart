@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:buzz/app.dart';
-import 'package:buzz/features/age_gate/age_signal_provider.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:kuzz/app.dart';
+import 'package:kuzz/features/age_gate/age_signal_provider.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
 
 void main() {
   testWidgets('App renders token sign-in onboarding when unauthenticated', (

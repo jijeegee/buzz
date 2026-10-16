@@ -113,14 +113,14 @@ pub fn run() {
             // would shut down the workers Tauri now depends on.
             std::mem::forget(runtime);
             eprintln!(
-                "buzz-mesh: installed tokio runtime with {} MiB worker stacks",
+                "kuzz-mesh: installed tokio runtime with {} MiB worker stacks",
                 crate::mesh_llm::MESH_WORKER_STACK_SIZE / (1024 * 1024)
             );
         }
         Err(error) => {
             // Fall back to Tauri's default runtime: the app still works,
             // only deep mesh-llm futures are at risk of stack overflow.
-            eprintln!("buzz-mesh: failed to build big-stack tokio runtime, using default: {error}");
+            eprintln!("kuzz-mesh: failed to build big-stack tokio runtime, using default: {error}");
         }
     }
     let builder = tauri::Builder::default()
@@ -188,7 +188,7 @@ pub fn run() {
                             .is_err()
                             {
                                 eprintln!(
-                                    "buzz-desktop: initial render did not commit before reveal timeout"
+                                    "kuzz-desktop: initial render did not commit before reveal timeout"
                                 );
                             }
 
@@ -214,17 +214,17 @@ pub fn run() {
     let builder = ptt_shortcut::install(builder);
 
     // Register the updater only in configured release builds; omit it locally.
-    #[cfg(buzz_updater_enabled)]
+    #[cfg(kuzz_updater_enabled)]
     let builder = if cfg!(debug_assertions) {
         builder
     } else {
         builder.plugin(tauri_plugin_updater::Builder::new().build())
     };
     let app = app_menu::install(builder)
-        .register_asynchronous_uri_scheme_protocol("buzz-media", |ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("kuzz-media", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             tauri::async_runtime::spawn(async move {
-                let response = media_proxy::handle_buzz_media(&app, &request).await;
+                let response = media_proxy::handle_kuzz_media(&app, &request).await;
                 responder.respond(response);
             });
         })
@@ -299,14 +299,14 @@ pub fn run() {
                 crate::auth::accounts::reconcile_on_launch(&data_dir);
             }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
-                eprintln!("buzz-desktop: fatal: identity resolution failed: {e}");
+                eprintln!("kuzz-desktop: fatal: identity resolution failed: {e}");
                 std::process::exit(1);
             }
             // "Signed out on this computer" markers, before anything can sign.
             // Without a data dir, sign-out cannot be saved and reports so.
             match app_handle.path().app_data_dir() {
                 Ok(data_dir) => state.token_auth.signed_out.load(&data_dir),
-                Err(e) => eprintln!("buzz-desktop: sign-out markers unavailable: {e}"),
+                Err(e) => eprintln!("kuzz-desktop: sign-out markers unavailable: {e}"),
             }
             // The relay ending an account's session for good signs that
             // account out here (and stops its agents), active or not.
@@ -339,7 +339,7 @@ pub fn run() {
                 crate::managed_agents::migrate_owners(&app_handle);
             }
             if let Err(e) = backfill_persona_snapshots(&app_handle) {
-                eprintln!("buzz-desktop: persona-snapshot backfill failed: {e}");
+                eprintln!("kuzz-desktop: persona-snapshot backfill failed: {e}");
             }
             // Settle agent moves onto server bots a crash interrupted (Hermes
             // profile follows the record, leftover local keys removed) before
@@ -406,12 +406,12 @@ pub fn run() {
                     .store(port, std::sync::atomic::Ordering::Relaxed);
             });
 
-            // Create the Buzz nest (~/.buzz or ~/.buzz-dev for dev builds) before
+            // Create the Kuzz nest (~/.kuzz or ~/.kuzz-dev for dev builds) before
             // agents are restored, so default_agent_workdir() resolves to the
             // nest directory. Non-fatal: agents fall back to $HOME if nest
             // creation fails.
             if let Err(error) = ensure_nest() {
-                eprintln!("buzz-desktop: failed to create nest: {error}");
+                eprintln!("kuzz-desktop: failed to create nest: {error}");
             }
             archive::spawn_warm_init(app_handle.clone());
 
@@ -445,14 +445,14 @@ pub fn run() {
             }
 
             // One-time migration for dev builds: copy accumulated knowledge
-            // from the shared ~/.buzz nest into the new dedicated ~/.buzz-dev
+            // from the shared ~/.kuzz nest into the new dedicated ~/.kuzz-dev
             // nest so no work is lost when the nest is first namespaced.
-            // Runs only when nest_dir() resolved to ~/.buzz-dev (dev instance).
-            // Suppressed after a reset so re-importing ~/.buzz into ~/.buzz-dev
+            // Runs only when nest_dir() resolved to ~/.kuzz-dev (dev instance).
+            // Suppressed after a reset so re-importing ~/.kuzz into ~/.kuzz-dev
             // doesn't re-populate what was just wiped.
             let is_dev_nest = managed_agents::nest_dir()
                 .and_then(|p| p.file_name().map(|n| n.to_os_string()))
-                .is_some_and(|n| n == ".buzz-dev");
+                .is_some_and(|n| n == ".kuzz-dev");
             if !reset_outcome.completed && is_dev_nest {
                 migration::migrate_dev_nest();
             }
@@ -462,7 +462,7 @@ pub fn run() {
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(parent) = exe.parent() {
                     if let Err(error) = managed_agents::ensure_cli_symlink(parent, is_dev_nest) {
-                        eprintln!("buzz-desktop: failed to create CLI symlink: {error}");
+                        eprintln!("kuzz-desktop: failed to create CLI symlink: {error}");
                     }
                 }
             }
@@ -553,7 +553,7 @@ pub fn run() {
                         )
                         .await
                         {
-                            eprintln!("buzz-desktop: event-flush: {e}");
+                            eprintln!("kuzz-desktop: event-flush: {e}");
                         }
                         tokio::time::sleep(Duration::from_secs(30)).await;
                     }
@@ -662,7 +662,7 @@ pub fn run() {
             auth::commands::login_with_google,
             auth::commands::own_agent_pubkeys,
             auth::accounts::list_accounts,
-            auth::accounts::remember_account_buzz_name,
+            auth::accounts::remember_account_kuzz_name,
             auth::accounts::list_watchable_accounts,
             auth::commands::confirm_signup,
             auth::commands::cancel_signup,
@@ -1002,11 +1002,11 @@ pub fn run() {
             event: WindowEvent::CloseRequested { api, .. },
             ..
         } if label == "main" => {
-            // Keep the webview alive so Buzz can be reopened from its tray menu.
+            // Keep the webview alive so Kuzz can be reopened from its tray menu.
             api.prevent_close();
             if let Some(window) = app_handle.get_webview_window("main") {
                 if let Err(error) = window.hide() {
-                    eprintln!("buzz-desktop: failed to hide main window: {error}");
+                    eprintln!("kuzz-desktop: failed to hide main window: {error}");
                 }
             }
         }
@@ -1029,7 +1029,7 @@ pub fn run() {
                     });
             if is_active_huddle_window {
                 if let Err(error) = app_handle.emit("huddle-companion-returned", ()) {
-                    eprintln!("buzz-desktop: failed to restore huddle drawer: {error}");
+                    eprintln!("kuzz-desktop: failed to restore huddle drawer: {error}");
                 }
             }
         }
@@ -1050,7 +1050,7 @@ pub fn run() {
             // AppKit terminates through libc exit(), which runs C++ static
             // destructors. The embedded ggml/Metal runtime currently aborts in
             // that destructor phase even after its node has stopped cleanly.
-            // End the process only after Buzz and Mesh shutdown above, while
+            // End the process only after Kuzz and Mesh shutdown above, while
             // deliberately skipping those native global destructors.
             #[cfg(all(feature = "mesh-llm", target_os = "macos"))]
             hard_exit_after_mesh_shutdown();

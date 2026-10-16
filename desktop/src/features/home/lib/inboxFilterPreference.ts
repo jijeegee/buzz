@@ -8,7 +8,7 @@ import { getStorageItem, setStorageItem } from "@/shared/lib/safeStorage";
  * shared by the inbox list and the feed layer (which loads extra channel
  * traffic only for the Channels + Threads view).
  */
-const STORAGE_KEY = "buzz.desktop.inbox-filter";
+const STORAGE_KEY = "kuzz.desktop.inbox-filter";
 
 const listeners = new Set<() => void>();
 

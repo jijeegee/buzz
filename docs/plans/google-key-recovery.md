@@ -13,7 +13,7 @@ deletion, global profile replacement, and Phase 3/4 deletion roadmap. Its Q7
 acceptance of lost agent history is withdrawn. Existing token accounts/data are
 preserved for compatibility, never silently converted or merged.
 
-Buzz identity remains the client's secp256k1 keypair. Signed events, pubkey
+Kuzz identity remains the client's secp256k1 keypair. Signed events, pubkey
 allowlists, p-tag mentions, NIP-OA owners/siblings, DM/channel membership,
 managed-agent keys/profiles/records, and AI conversation mappings keep their
 existing meaning. Google authenticates access to a custodial backup only. An

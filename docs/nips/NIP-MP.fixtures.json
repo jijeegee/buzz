@@ -45,11 +45,11 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz"
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz"
           ],
           [
             "a",
-            "30617:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:buzz-infra"
+            "30617:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:kuzz-infra"
           ],
           [
             "buzz-channel",
@@ -95,7 +95,7 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz"
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz"
           ],
           [
             "buzz-visibility",
@@ -389,11 +389,11 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz"
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz"
           ],
           [
             "a",
-            "30617:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:buzz"
+            "30617:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:kuzz"
           ]
         ]
       }
@@ -401,7 +401,7 @@
     {
       "name": "valid_member_dtag_contains_colon",
       "expect": "accept",
-      "note": "Repo `d` segment contains a colon. The coordinate splits into at most three parts, so the third part is the repo `d` value verbatim \u2014 `buzz:infra` here. Splitting on every colon instead would make any repo with a colon in its `d` tag unaddressable by a project.",
+      "note": "Repo `d` segment contains a colon. The coordinate splits into at most three parts, so the third part is the repo `d` value verbatim \u2014 `kuzz:infra` here. Splitting on every colon instead would make any repo with a colon in its `d` tag unaddressable by a project.",
       "template": {
         "kind": 30621,
         "content": "",
@@ -412,7 +412,7 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz:infra"
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz:infra"
           ]
         ]
       }
@@ -473,7 +473,7 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz",
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz",
             "wss://relay.example.com"
           ]
         ]
@@ -569,11 +569,11 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz"
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz"
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz"
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz"
           ]
         ]
       }
@@ -595,12 +595,12 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz",
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz",
             "wss://relay-one.example.com"
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz",
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz",
             "wss://relay-two.example.com"
           ]
         ]
@@ -1179,7 +1179,7 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz",
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz",
             "wss://relay.example.com",
             "unexpected"
           ]
@@ -1203,7 +1203,7 @@
           ],
           [
             "a",
-            "30618:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz"
+            "30618:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz"
           ]
         ]
       }
@@ -1225,7 +1225,7 @@
           ],
           [
             "a",
-            "30617:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz:buzz"
+            "30617:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz:kuzz"
           ]
         ]
       }
@@ -1247,7 +1247,7 @@
           ],
           [
             "a",
-            "30617:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:buzz"
+            "30617:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:kuzz"
           ]
         ]
       }
@@ -1269,7 +1269,7 @@
           ],
           [
             "a",
-            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:buzz"
+            "30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:kuzz"
           ]
         ]
       }

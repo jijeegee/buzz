@@ -1,14 +1,14 @@
 import 'dart:convert';
 
-import 'package:buzz/shared/auth/auth_provider.dart';
-import 'package:buzz/shared/crypto/nip44.dart';
-import 'package:buzz/shared/push/dev_push_lease.dart';
-import 'package:buzz/shared/push/push_bridge.dart';
-import 'package:buzz/shared/push/push_subscription.dart';
-import 'package:buzz/shared/relay/nostr_models.dart';
-import 'package:buzz/shared/relay/relay_session.dart';
-import 'package:buzz/shared/relay/relay_socket.dart';
-import 'package:buzz/shared/relay/signed_event_relay.dart';
+import 'package:kuzz/shared/auth/auth_provider.dart';
+import 'package:kuzz/shared/crypto/nip44.dart';
+import 'package:kuzz/shared/push/dev_push_lease.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
+import 'package:kuzz/shared/push/push_subscription.dart';
+import 'package:kuzz/shared/relay/nostr_models.dart';
+import 'package:kuzz/shared/relay/relay_session.dart';
+import 'package:kuzz/shared/relay/relay_socket.dart';
+import 'package:kuzz/shared/relay/signed_event_relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
@@ -22,15 +22,15 @@ void main() {
 
   test('publishes strict kind-30350 lease and waits for accepted OK', () async {
     Map<String, dynamic>? submitted;
-    final publication = await publishBuzzDevPushLease(
+    final publication = await publishKuzzDevPushLease(
       grant: grant,
       leaseGeneration: 7,
       descriptor: descriptor,
       nsec: signer.nsec,
       memberPubkey: signer.public,
       subscriptions: [
-        BuzzPushSubscription(
-          filter: BuzzPushFilter(kinds: const [9], pTags: [signer.public]),
+        KuzzPushSubscription(
+          filter: KuzzPushFilter(kinds: const [9], pTags: [signer.public]),
           notificationClass: 'default',
         ),
       ],
@@ -58,7 +58,7 @@ void main() {
     expect(publication.eventId, 'accepted-id');
     expect(grant.relayOrigin, descriptor.origin);
     expect(jsonDecode(publication.plaintext)['origin'], descriptor.origin);
-    expect(submitted!['kind'], buzzPushLeaseKind);
+    expect(submitted!['kind'], kuzzPushLeaseKind);
     expect(submitted!['createdAt'], 1752620000);
     expect(submitted!['tags'], [
       ['d', 'c' * 32],
@@ -92,7 +92,7 @@ void main() {
   test('uses the community lease address instead of the endpoint id', () async {
     List<List<String>>? submittedTags;
 
-    await publishBuzzDevPushLease(
+    await publishKuzzDevPushLease(
       grant: grant,
       leaseInstallationId: 'e' * 32,
       descriptor: descriptor,
@@ -120,7 +120,7 @@ void main() {
 
   test('rejects a malformed community lease address', () async {
     await expectLater(
-      publishBuzzDevPushLease(
+      publishKuzzDevPushLease(
         grant: grant,
         leaseInstallationId: 'malformed',
         descriptor: descriptor,
@@ -185,7 +185,7 @@ void main() {
       await _deliverAcknowledgement(acknowledgements, session);
       await rejection;
       final acceptedFuture = relayClient.submit(
-        kind: buzzPushLeaseKind,
+        kind: kuzzPushLeaseKind,
         content: 'restored',
         tags: [
           ['d', 'c' * 32],
@@ -198,7 +198,7 @@ void main() {
       final accepted = await acceptedFuture;
 
       expect(accepted.content, 'saved');
-      expect(events.map((event) => event.kind), [40002, buzzPushLeaseKind]);
+      expect(events.map((event) => event.kind), [40002, kuzzPushLeaseKind]);
       expect(events.every((event) => event.pubkey == signer.public), isTrue);
       for (final event in events) {
         expect(event.sig, isNotNull);
@@ -220,14 +220,14 @@ void main() {
 
   test('propagates relay rejection instead of accepting locally', () async {
     await expectLater(
-      publishBuzzDevPushLease(
+      publishKuzzDevPushLease(
         grant: grant,
         descriptor: descriptor,
         nsec: signer.nsec,
         memberPubkey: signer.public,
         subscriptions: [
-          BuzzPushSubscription(
-            filter: BuzzPushFilter(kinds: const [9], pTags: [signer.public]),
+          KuzzPushSubscription(
+            filter: KuzzPushFilter(kinds: const [9], pTags: [signer.public]),
             notificationClass: 'default',
           ),
         ],
@@ -252,7 +252,7 @@ void main() {
 
   test('publishes a minimal higher-generation inactive tombstone', () async {
     Map<String, dynamic>? submitted;
-    final publication = await publishBuzzPushLeaseTombstone(
+    final publication = await publishKuzzPushLeaseTombstone(
       descriptor: descriptor,
       installationId: grant.installationId,
       generation: 3,
@@ -286,7 +286,7 @@ void main() {
       'generation': 3,
       'active': false,
     });
-    expect(submitted!['kind'], buzzPushLeaseKind);
+    expect(submitted!['kind'], kuzzPushLeaseKind);
     expect(submitted!['tags'], [
       ['d', grant.installationId],
       ['expiration', '1755212000'],
@@ -305,7 +305,7 @@ void main() {
         'wss://tenant.example:8443/';
 
     expect(
-      () => BuzzPushLeaseDescriptor.fromRelayInformation(information),
+      () => KuzzPushLeaseDescriptor.fromRelayInformation(information),
       throwsA(isA<FormatException>()),
     );
   });
@@ -315,7 +315,7 @@ void main() {
     (information['push'] as Map<String, dynamic>)['h_grammar'] = 'opaque';
 
     expect(
-      () => BuzzPushLeaseDescriptor.fromRelayInformation(information),
+      () => KuzzPushLeaseDescriptor.fromRelayInformation(information),
       throwsA(isA<FormatException>()),
     );
   });
@@ -325,7 +325,7 @@ void main() {
     (information['push'] as Map<String, dynamic>)['future'] = true;
 
     expect(
-      () => BuzzPushLeaseDescriptor.fromRelayInformation(information),
+      () => KuzzPushLeaseDescriptor.fromRelayInformation(information),
       throwsA(isA<FormatException>()),
     );
   });
@@ -389,8 +389,8 @@ Future<void> _deliverAcknowledgement(
   session.debugHandleMessage(acknowledgements.removeAt(0));
 }
 
-BuzzPushLeaseDescriptor _descriptor(String relayPubkey) =>
-    BuzzPushLeaseDescriptor.fromRelayInformation(_descriptorJson(relayPubkey));
+KuzzPushLeaseDescriptor _descriptor(String relayPubkey) =>
+    KuzzPushLeaseDescriptor.fromRelayInformation(_descriptorJson(relayPubkey));
 
 Map<String, dynamic> _descriptorJson(String relayPubkey) => {
   'supported_extensions': ['nip-er', 'nip-pl'],
@@ -424,7 +424,7 @@ Map<String, dynamic> _descriptorJson(String relayPubkey) => {
   },
 };
 
-BuzzPushEndpointGrant _grant(String relayPubkey) => BuzzPushEndpointGrant(
+KuzzPushEndpointGrant _grant(String relayPubkey) => KuzzPushEndpointGrant(
   relayOrigin: 'wss://tenant.example:8443',
   relayPubkey: relayPubkey,
   installationId: 'c' * 32,

@@ -5,7 +5,7 @@ use super::*;
 fn fixture() -> (Keys, Event, Event) {
     let owner = Keys::generate();
     let agent = Keys::generate();
-    let auth = buzz_sdk_pkg::nip_oa::compute_auth_tag(&owner, &agent.public_key(), "")
+    let auth = kuzz_sdk_pkg::nip_oa::compute_auth_tag(&owner, &agent.public_key(), "")
         .expect("compute ownership");
     let values: Vec<String> = serde_json::from_str(&auth).expect("parse ownership");
     let profile = EventBuilder::new(Kind::Metadata, "{}")

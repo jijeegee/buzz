@@ -7,22 +7,22 @@ fn test_demo_reset_preserves_shared_and_other_build_state() {
     let app_data = tmp
         .path()
         .join("Application Support")
-        .join("xyz.block.buzz.app.demo.current-1234567812345678");
-    let demo_nest = home.join(".buzz-demo-current-1234567812345678");
-    let prod_nest = home.join(".buzz");
-    let other_demo_nest = home.join(".buzz-demo-other-8765432187654321");
+        .join("app.kuzz.app.demo.current-1234567812345678");
+    let demo_nest = home.join(".kuzz-demo-current-1234567812345678");
+    let prod_nest = home.join(".kuzz");
+    let other_demo_nest = home.join(".kuzz-demo-other-8765432187654321");
     let shared_sprout = home.join(".sprout");
-    let shared_agent = home.join(".config").join("buzz-agent");
+    let shared_agent = home.join(".config").join("kuzz-agent");
     let demo_config = home
         .join("Library")
         .join("Application Support")
-        .join("buzz-demo-current-1234567812345678");
-    let demo_oauth = demo_config.join("buzz-agent").join("oauth");
+        .join("kuzz-demo-current-1234567812345678");
+    let demo_oauth = demo_config.join("kuzz-agent").join("oauth");
     let other_demo_config = home
         .join("Library")
         .join("Application Support")
-        .join("buzz-demo-other-8765432187654321");
-    let other_demo_oauth = other_demo_config.join("buzz-agent").join("oauth");
+        .join("kuzz-demo-other-8765432187654321");
+    let other_demo_oauth = other_demo_config.join("kuzz-agent").join("oauth");
 
     for path in [
         &app_data,
@@ -100,7 +100,7 @@ fn demo_config_delete_failure_keeps_sentinel_until_retry() {
     assert!(config.exists());
 
     std::fs::remove_file(&config).unwrap();
-    let token = config.join("buzz-agent/oauth/databricks/token.json");
+    let token = config.join("kuzz-agent/oauth/databricks/token.json");
     std::fs::create_dir_all(token.parent().unwrap()).unwrap();
     std::fs::write(&token, "demo credential").unwrap();
     let second = run();
@@ -124,7 +124,7 @@ fn demo_oauth_permission_failure_preserves_retry_intent() {
     let tmp = TempDir::new().unwrap();
     let app_data = make_app_data(&tmp);
     let config = tmp.path().join("demo-config");
-    let oauth = config.join("buzz-agent/oauth/databricks");
+    let oauth = config.join("kuzz-agent/oauth/databricks");
     let token = oauth.join("token.json");
     std::fs::create_dir_all(&oauth).unwrap();
     std::fs::write(&token, "demo credential").unwrap();

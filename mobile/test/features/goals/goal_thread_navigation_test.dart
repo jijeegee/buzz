@@ -1,4 +1,4 @@
-import 'package:buzz/features/goals/goal_thread_navigation.dart';
+import 'package:kuzz/features/goals/goal_thread_navigation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

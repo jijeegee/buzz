@@ -43,11 +43,11 @@ test.describe("message author name overflow", () => {
     await page.getByTestId("channel-general").click();
     await expect(page.getByTestId("chat-title")).toHaveText("general");
     await page.waitForFunction(
-      () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+      () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
     );
     await page.evaluate(
       ({ pubkey, content }) => {
-        window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+        window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
           channelName: "general",
           content,
           pubkey,

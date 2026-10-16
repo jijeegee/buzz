@@ -9,7 +9,7 @@ type RootErrorBoundaryState = {
 };
 
 /**
- * Root-level render fence for the desktop app (block/buzz#5078).
+ * Root-level render fence for the desktop app (block/kuzz#5078).
  *
  * Any uncaught throw inside the React tree — in particular a WebKit
  * `SecurityError` from `localStorage.getItem` under a denied-storage origin,

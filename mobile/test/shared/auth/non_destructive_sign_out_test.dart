@@ -1,12 +1,12 @@
 import 'dart:async';
 
-import 'package:buzz/shared/auth/auth_provider.dart';
-import 'package:buzz/shared/auth/token/token.dart';
-import 'package:buzz/features/sign_in/signed_out_page.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/community/community_storage.dart';
-import 'package:buzz/shared/community/community_token_session.dart';
+import 'package:kuzz/shared/auth/auth_provider.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
+import 'package:kuzz/features/sign_in/signed_out_page.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/community/community_storage.dart';
+import 'package:kuzz/shared/community/community_token_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -308,7 +308,7 @@ void main() {
       await h.start();
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      const channel = MethodChannel('buzz/push');
+      const channel = MethodChannel('kuzz/push');
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
       messenger.setMockMethodCallHandler(channel, (call) async {

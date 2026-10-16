@@ -1,6 +1,6 @@
-import 'package:buzz/features/sign_in/token_session_gate.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/features/sign_in/token_session_gate.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

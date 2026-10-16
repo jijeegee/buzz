@@ -20,14 +20,14 @@ type ControlRequest = {
 };
 
 type E2eControlWindow = Window & {
-  __BUZZ_E2E_RUN_MODEL_SWITCH__?: (input: {
+  __KUZZ_E2E_RUN_MODEL_SWITCH__?: (input: {
     agentPubkey: string;
     channelIds: string[];
     modelId: string;
     requestId: string;
     timeoutMs?: number;
   }) => Promise<string>;
-  __BUZZ_E2E_MOUNT_AGENT_SESSION_PANEL__?: (input: {
+  __KUZZ_E2E_MOUNT_AGENT_SESSION_PANEL__?: (input: {
     agentPubkey: string;
     channelId: string;
     canInterruptTurn?: boolean;
@@ -36,7 +36,7 @@ type E2eControlWindow = Window & {
 
 async function waitForActiveTurnSeed(page: Page) {
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_SEED_ACTIVE_TURNS__ === "function",
+    () => typeof window.__KUZZ_E2E_SEED_ACTIVE_TURNS__ === "function",
     null,
     { timeout: 10_000 },
   );
@@ -45,7 +45,7 @@ async function waitForActiveTurnSeed(page: Page) {
 async function seedActiveTurn(page: Page, channelId: string) {
   await page.evaluate(
     ({ agentPubkey, channelId }) => {
-      window.__BUZZ_E2E_SEED_ACTIVE_TURNS__?.({
+      window.__KUZZ_E2E_SEED_ACTIVE_TURNS__?.({
         agentPubkey,
         channelId,
         turnId: `e2e-stop-${channelId}`,
@@ -99,7 +99,7 @@ async function openAgentActivity(
 
 async function readControlRequests(page: Page): Promise<ControlRequest[]> {
   return page.evaluate(
-    () => (window.__BUZZ_E2E_OBSERVER_CONTROLS__ ?? []) as ControlRequest[],
+    () => (window.__KUZZ_E2E_OBSERVER_CONTROLS__ ?? []) as ControlRequest[],
   );
 }
 
@@ -221,13 +221,13 @@ test.describe("agent control browser regressions", () => {
     await page.waitForFunction(
       () =>
         typeof (window as E2eControlWindow)
-          .__BUZZ_E2E_MOUNT_AGENT_SESSION_PANEL__ === "function",
+          .__KUZZ_E2E_MOUNT_AGENT_SESSION_PANEL__ === "function",
     );
     await waitForActiveTurnSeed(page);
     await seedActiveTurn(page, CHANNEL_AGENTS);
     await page.evaluate(
       ({ agentPubkey, channelId }) =>
-        (window as E2eControlWindow).__BUZZ_E2E_MOUNT_AGENT_SESSION_PANEL__?.({
+        (window as E2eControlWindow).__KUZZ_E2E_MOUNT_AGENT_SESSION_PANEL__?.({
           agentPubkey,
           channelId,
         }),
@@ -380,11 +380,11 @@ test.describe("agent control browser regressions", () => {
     });
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await page.waitForFunction(
-      () => typeof window.__BUZZ_E2E_RUN_MODEL_SWITCH__ === "function",
+      () => typeof window.__KUZZ_E2E_RUN_MODEL_SWITCH__ === "function",
     );
     const result = await page.evaluate(
       ({ agentPubkey, channelId, modelId, requestId }) =>
-        (window as E2eControlWindow).__BUZZ_E2E_RUN_MODEL_SWITCH__?.({
+        (window as E2eControlWindow).__KUZZ_E2E_RUN_MODEL_SWITCH__?.({
           agentPubkey,
           channelIds: [channelId],
           modelId,
@@ -430,11 +430,11 @@ test.describe("agent control browser regressions", () => {
     });
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await page.waitForFunction(
-      () => typeof window.__BUZZ_E2E_RUN_MODEL_SWITCH__ === "function",
+      () => typeof window.__KUZZ_E2E_RUN_MODEL_SWITCH__ === "function",
     );
     const resultPromise = page.evaluate(
       ({ agentPubkey, channelId, modelId, requestId }) =>
-        (window as E2eControlWindow).__BUZZ_E2E_RUN_MODEL_SWITCH__?.({
+        (window as E2eControlWindow).__KUZZ_E2E_RUN_MODEL_SWITCH__?.({
           agentPubkey,
           channelIds: [channelId],
           modelId,

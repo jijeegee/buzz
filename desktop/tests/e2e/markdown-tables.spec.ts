@@ -28,12 +28,12 @@ for (const surface of ["channel", "thread"] as const) {
     await page.getByTestId("channel-general").click();
     await expect(page.getByTestId("chat-title")).toHaveText("general");
     await page.waitForFunction(() =>
-      window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+      window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
         channelName: "general",
       }),
     );
     const root = await page.evaluate((body) => {
-      const root = window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      const root = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: body,
       });
@@ -115,7 +115,7 @@ test("unavoidably wide tables scroll locally without losing cells", async ({
   await page.goto("/");
   await page.getByTestId("channel-general").click();
   await page.waitForFunction(() =>
-    window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+    window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
       channelName: "general",
     }),
   );
@@ -124,7 +124,7 @@ test("unavoidably wide tables scroll locally without losing cells", async ({
     .map((row) => `| ${row.join(" | ")} |`)
     .join("\n");
   await page.evaluate((body) => {
-    window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+    window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
       channelName: "general",
       content: `Wide table fixture\n\n${body}`,
     });

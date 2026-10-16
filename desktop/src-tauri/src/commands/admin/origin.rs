@@ -318,9 +318,9 @@ mod tests {
     // The `url` crate (per the URL Standard) lowercases ASCII hostnames during
     // parsing. `AdminOrigin` preserves whatever the URL Standard produces —
     // which for ASCII hostnames is always lowercase. Host case is not a footgun:
-    // the relay lowercases `BUZZ_ADMIN_HOST` when it loads config AND compares
+    // the relay lowercases `KUZZ_ADMIN_HOST` when it loads config AND compares
     // inbound Host/Origin hosts case-insensitively, so a mixed-case
-    // `BUZZ_ADMIN_HOST` and a mixed-case desktop URL both resolve correctly.
+    // `KUZZ_ADMIN_HOST` and a mixed-case desktop URL both resolve correctly.
     // This test pins the desktop-side canonicalization regardless.
     #[test]
     fn host_case_preserved_as_supplied() {

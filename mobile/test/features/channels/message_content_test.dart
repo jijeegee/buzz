@@ -11,19 +11,19 @@ import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart' as audio;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/features/channels/message_content.dart';
-import 'package:buzz/features/channels/media_viewer_page.dart';
-import 'package:buzz/features/channels/voice_note_attachment.dart';
-import 'package:buzz/features/channels/voice_note_waveform.dart';
-import 'package:buzz/features/channels/voice_note_recording.dart';
-import 'package:buzz/shared/deeplink/deep_link.dart';
-import 'package:buzz/shared/deeplink/pending_deep_link_provider.dart';
-import 'package:buzz/shared/emoji/emoji_only.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/buzz_loading_indicator.dart';
+import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/message_content.dart';
+import 'package:kuzz/features/channels/media_viewer_page.dart';
+import 'package:kuzz/features/channels/voice_note_attachment.dart';
+import 'package:kuzz/features/channels/voice_note_waveform.dart';
+import 'package:kuzz/features/channels/voice_note_recording.dart';
+import 'package:kuzz/shared/deeplink/deep_link.dart';
+import 'package:kuzz/shared/deeplink/pending_deep_link_provider.dart';
+import 'package:kuzz/shared/emoji/emoji_only.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/widgets/kuzz_loading_indicator.dart';
 
 Widget _testable(
   Widget child, {
@@ -684,20 +684,20 @@ void main() {
       testWidgets('renders markdown link', (tester) async {
         await tester.pumpWidget(
           _testable(
-            const MessageContent(content: 'Check [Buzz](https://example.com)'),
+            const MessageContent(content: 'Check [Kuzz](https://example.com)'),
           ),
         );
 
         final allText = _allRichText(tester);
-        expect(allText, contains('Buzz'));
+        expect(allText, contains('Kuzz'));
         // Should not show raw markdown syntax.
-        expect(allText, isNot(contains('[Buzz]')));
+        expect(allText, isNot(contains('[Kuzz]')));
         expect(allText, isNot(contains('(https://example.com)')));
       });
 
-      testWidgets('renders and routes a buzz message link', (tester) async {
+      testWidgets('renders and routes a kuzz message link', (tester) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&thread=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+            'kuzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&thread=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '[Open message]($url)')),
@@ -722,16 +722,16 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes bare Buzz message links', (tester) async {
+      testWidgets('renders and routes bare Kuzz message links', (tester) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+            'kuzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: 'See $url now')),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsOneWidget);
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')));
+        expect(find.byKey(ValueKey('kuzz-link-chip:$url')), findsOneWidget);
+        await tester.tap(find.byKey(ValueKey('kuzz-link-chip:$url')));
         await tester.pump();
 
         final container = ProviderScope.containerOf(
@@ -747,19 +747,19 @@ void main() {
         );
       });
 
-      testWidgets('keeps Markdown delimiters outside bare Buzz links', (
+      testWidgets('keeps Markdown delimiters outside bare Kuzz links', (
         tester,
       ) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+            'kuzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '**$url**. and _${url}_')),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsNWidgets(2));
+        expect(find.byKey(ValueKey('kuzz-link-chip:$url')), findsNWidgets(2));
 
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')).first);
+        await tester.tap(find.byKey(ValueKey('kuzz-link-chip:$url')).first);
         await tester.pump();
         final container = ProviderScope.containerOf(
           tester.element(find.byType(MessageContent)),
@@ -778,7 +778,7 @@ void main() {
         tester,
       ) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+            'kuzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
         await tester.pumpWidget(
           _testable(
@@ -790,12 +790,12 @@ void main() {
           ),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsNWidgets(4));
+        expect(find.byKey(ValueKey('kuzz-link-chip:$url')), findsNWidgets(4));
         final container = ProviderScope.containerOf(
           tester.element(find.byType(MessageContent)),
         );
         for (final link
-            in find.byKey(ValueKey('buzz-link-chip:$url')).evaluate()) {
+            in find.byKey(ValueKey('kuzz-link-chip:$url')).evaluate()) {
           await tester.tap(find.byWidget(link.widget));
           await tester.pump();
           expect(
@@ -810,13 +810,13 @@ void main() {
         }
       });
 
-      testWidgets('excludes sentence punctuation from bare Buzz links', (
+      testWidgets('excludes sentence punctuation from bare Kuzz links', (
         tester,
       ) async {
         const messageUrl =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+            'kuzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
         const joinUrl =
-            'buzz://join?relay=wss%3A%2F%2Frelay.example.com&code=invite-1';
+            'kuzz://join?relay=wss%3A%2F%2Frelay.example.com&code=invite-1';
 
         await tester.pumpWidget(
           _testable(
@@ -825,13 +825,13 @@ void main() {
         );
 
         expect(
-          find.byKey(ValueKey('buzz-link-chip:$messageUrl')),
+          find.byKey(ValueKey('kuzz-link-chip:$messageUrl')),
           findsOneWidget,
         );
         expect(find.text(joinUrl), findsOneWidget);
         expect(_allRichText(tester), contains('See \u{FFFC}. Then \u{FFFC}!'));
 
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$messageUrl')));
+        await tester.tap(find.byKey(ValueKey('kuzz-link-chip:$messageUrl')));
         await tester.pump();
         final container = ProviderScope.containerOf(
           tester.element(find.byType(MessageContent)),
@@ -857,18 +857,18 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes autolinked Buzz thread links', (
+      testWidgets('renders and routes autolinked Kuzz thread links', (
         tester,
       ) async {
         const url =
-            'buzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&thread=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+            'kuzz://message?channel=580ca78b-9dae-46f3-8854-bd671853ba32&id=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&thread=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '<$url>')),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsOneWidget);
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')));
+        expect(find.byKey(ValueKey('kuzz-link-chip:$url')), findsOneWidget);
+        await tester.tap(find.byKey(ValueKey('kuzz-link-chip:$url')));
         await tester.pump();
 
         final container = ProviderScope.containerOf(
@@ -886,9 +886,9 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes bare Buzz join links', (tester) async {
+      testWidgets('renders and routes bare Kuzz join links', (tester) async {
         const url =
-            'buzz://join?relay=wss%3A%2F%2Frelay.example.com&code=invite-1';
+            'kuzz://join?relay=wss%3A%2F%2Frelay.example.com&code=invite-1';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: 'Join with $url')),
@@ -910,15 +910,15 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes bare Buzz channel links', (tester) async {
-        const url = 'buzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
+      testWidgets('renders and routes bare Kuzz channel links', (tester) async {
+        const url = 'kuzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: 'See $url now')),
         );
 
-        expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsOneWidget);
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')));
+        expect(find.byKey(ValueKey('kuzz-link-chip:$url')), findsOneWidget);
+        await tester.tap(find.byKey(ValueKey('kuzz-link-chip:$url')));
         await tester.pump();
 
         final container = ProviderScope.containerOf(
@@ -932,10 +932,10 @@ void main() {
         );
       });
 
-      testWidgets('renders and routes labeled Buzz channel links', (
+      testWidgets('renders and routes labeled Kuzz channel links', (
         tester,
       ) async {
-        const url = 'buzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
+        const url = 'kuzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '[Open channel]($url)')),
@@ -955,11 +955,11 @@ void main() {
         );
       });
 
-      testWidgets('routes rendered Buzz channel links through callback', (
+      testWidgets('routes rendered Kuzz channel links through callback', (
         tester,
       ) async {
         const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
-        const url = 'buzz://channel/$channelId';
+        const url = 'kuzz://channel/$channelId';
         String? tappedChannelId;
 
         await tester.pumpWidget(
@@ -981,16 +981,16 @@ void main() {
         expect(container.read(pendingDeepLinkProvider), isNull);
       });
 
-      testWidgets('renders and routes autolinked Buzz channel links', (
+      testWidgets('renders and routes autolinked Kuzz channel links', (
         tester,
       ) async {
-        const url = 'buzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
+        const url = 'kuzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: '<$url>')),
         );
 
-        await tester.tap(find.byKey(ValueKey('buzz-link-chip:$url')));
+        await tester.tap(find.byKey(ValueKey('kuzz-link-chip:$url')));
         await tester.pump();
 
         final container = ProviderScope.containerOf(
@@ -1004,11 +1004,11 @@ void main() {
         );
       });
 
-      testWidgets('leaves malformed Buzz channel forms as plain text', (
+      testWidgets('leaves malformed Kuzz channel forms as plain text', (
         tester,
       ) async {
         const url =
-            'buzz://channel?channel=580ca78b-9dae-46f3-8854-bd671853ba32';
+            'kuzz://channel?channel=580ca78b-9dae-46f3-8854-bd671853ba32';
 
         await tester.pumpWidget(
           _testable(const MessageContent(content: 'See $url now')),
@@ -1065,7 +1065,7 @@ void main() {
     });
 
     group('media attachments', () {
-      testWidgets('uses the shared Buzz loader while a voice note loads', (
+      testWidgets('uses the shared Kuzz loader while a voice note loads', (
         tester,
       ) async {
         const url = 'https://example.com/media/loading-voice-note.mp4';
@@ -1093,7 +1093,7 @@ void main() {
         );
         await tester.pump();
 
-        expect(find.byType(BuzzLoadingIndicator), findsOneWidget);
+        expect(find.byType(KuzzLoadingIndicator), findsOneWidget);
         expect(find.byType(CircularProgressIndicator), findsNothing);
         expect(
           find.bySemanticsLabel('Cancel voice note loading'),
@@ -2404,17 +2404,17 @@ Photos
       });
     });
 
-    group('Buzz permalink chips', () {
-      testWidgets('keeps authored Buzz labels as ordinary links', (
+    group('Kuzz permalink chips', () {
+      testWidgets('keeps authored Kuzz labels as ordinary links', (
         tester,
       ) async {
         final owner = 'ab' * 32;
         final id = 'cd' * 32;
         const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
         final links = {
-          'Open message': 'buzz://message?channel=$channelId&id=$id',
-          'Open channel': 'buzz://channel/$channelId',
-          'Release candidate': 'buzz://pr?id=$id&owner=$owner&d=buzz',
+          'Open message': 'kuzz://message?channel=$channelId&id=$id',
+          'Open channel': 'kuzz://channel/$channelId',
+          'Release candidate': 'kuzz://pr?id=$id&owner=$owner&d=kuzz',
         };
 
         await tester.pumpWidget(
@@ -2430,21 +2430,21 @@ Photos
 
         for (final entry in links.entries) {
           expect(
-            find.byKey(ValueKey('buzz-link-chip:${entry.value}')),
+            find.byKey(ValueKey('kuzz-link-chip:${entry.value}')),
             findsNothing,
           );
           expect(find.text(entry.key), findsOneWidget);
         }
       });
 
-      testWidgets('preserves formatting in authored Buzz labels', (
+      testWidgets('preserves formatting in authored Kuzz labels', (
         tester,
       ) async {
         const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
         await tester.pumpWidget(
           _testable(
             const MessageContent(
-              content: '[**design discussion**](buzz://channel/$channelId)',
+              content: '[**design discussion**](kuzz://channel/$channelId)',
             ),
           ),
         );
@@ -2460,11 +2460,11 @@ Photos
           final id = 'cd' * 32;
           const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
           final urls = [
-            'buzz://message?channel=$channelId&id=$id',
-            'buzz://channel/$channelId',
-            'buzz://repo?owner=$owner&d=buzz',
-            'buzz://pr?id=$id&owner=$owner&d=buzz',
-            'buzz://issue?id=$id&owner=$owner&d=buzz',
+            'kuzz://message?channel=$channelId&id=$id',
+            'kuzz://channel/$channelId',
+            'kuzz://repo?owner=$owner&d=kuzz',
+            'kuzz://pr?id=$id&owner=$owner&d=kuzz',
+            'kuzz://issue?id=$id&owner=$owner&d=kuzz',
           ];
           await tester.pumpWidget(
             _testable(
@@ -2477,12 +2477,12 @@ Photos
           await tester.pump();
 
           for (final url in urls) {
-            expect(find.byKey(ValueKey('buzz-link-chip:$url')), findsOneWidget);
+            expect(find.byKey(ValueKey('kuzz-link-chip:$url')), findsOneWidget);
           }
           expect(find.text('engineering · cdcdcdcd'), findsOneWidget);
           expect(find.text('engineering'), findsOneWidget);
-          expect(find.text('buzz'), findsOneWidget);
-          expect(find.text('buzz · cdcdcdcd'), findsNWidgets(2));
+          expect(find.text('kuzz'), findsOneWidget);
+          expect(find.text('kuzz · cdcdcdcd'), findsNWidgets(2));
           expect(find.byIcon(LucideIcons.messageSquare), findsOneWidget);
           expect(find.byIcon(LucideIcons.hash), findsOneWidget);
           expect(find.byIcon(LucideIcons.folderGit2), findsOneWidget);
@@ -2495,11 +2495,11 @@ Photos
             findsOneWidget,
           );
           expect(
-            find.bySemanticsLabel('Pull request cdcdcdcd in repository buzz'),
+            find.bySemanticsLabel('Pull request cdcdcdcd in repository kuzz'),
             findsOneWidget,
           );
           for (final url in urls.skip(2)) {
-            final chipKey = ValueKey('buzz-link-chip:$url');
+            final chipKey = ValueKey('kuzz-link-chip:$url');
             final ignoredChip = find.ancestor(
               of: find.byKey(chipKey),
               matching: find.byWidgetPredicate(
@@ -2521,8 +2521,8 @@ Photos
       ) async {
         final id = 'cd' * 32;
         const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
-        final messageUrl = 'buzz://message?channel=$channelId&id=$id';
-        const channelUrl = 'buzz://channel/$channelId';
+        final messageUrl = 'kuzz://message?channel=$channelId&id=$id';
+        const channelUrl = 'kuzz://channel/$channelId';
 
         await tester.pumpWidget(
           _testable(MessageContent(content: '$messageUrl $channelUrl')),

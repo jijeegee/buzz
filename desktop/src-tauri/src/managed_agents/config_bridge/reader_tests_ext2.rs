@@ -41,14 +41,14 @@ fn record_mixed_case_native_effort_wins_and_hidden_from_advanced_reader() {
     );
 }
 
-/// Mixed-case legacy record key `buzz_agent_thinking_effort=high` (no native,
+/// Mixed-case legacy record key `kuzz_agent_thinking_effort=high` (no native,
 /// no column) supplies the record effort AND is hidden from Advanced.
 #[test]
 fn record_mixed_case_legacy_effort_consumed_and_hidden_from_advanced_reader() {
     let mut record = test_record();
     record
         .env_vars
-        .insert("buzz_agent_thinking_effort".to_string(), "high".to_string());
+        .insert("kuzz_agent_thinking_effort".to_string(), "high".to_string());
     let runtime = test_runtime(); // Goose
 
     let surface = with_goose_path_root(Some("/nonexistent"), || {
@@ -63,7 +63,7 @@ fn record_mixed_case_legacy_effort_consumed_and_hidden_from_advanced_reader() {
 
     let advanced_keys: Vec<&str> = surface.advanced.iter().map(|f| f.key.as_str()).collect();
     assert!(
-        !advanced_keys.contains(&"buzz_agent_thinking_effort"),
+        !advanced_keys.contains(&"kuzz_agent_thinking_effort"),
         "consumed mixed-case legacy effort key must not appear in advanced; got {advanced_keys:?}"
     );
 }

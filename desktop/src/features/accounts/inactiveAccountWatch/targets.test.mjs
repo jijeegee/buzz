@@ -9,7 +9,7 @@ const account = (origin, pubkey) => ({
   origin,
   pubkey,
   displayName: null,
-  buzzName: null,
+  kuzzName: null,
   email: null,
 });
 

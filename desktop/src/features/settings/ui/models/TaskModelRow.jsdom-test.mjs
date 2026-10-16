@@ -90,7 +90,7 @@ const tauriMock = {
         });
       case "discover_agent_models":
         return Promise.resolve({
-          agentName: "buzz-agent",
+          agentName: "kuzz-agent",
           agentVersion: "0",
           models: [
             { id: "claude-haiku-4-5", name: null, description: null },

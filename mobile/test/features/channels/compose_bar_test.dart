@@ -14,31 +14,31 @@ import 'package:http/testing.dart' as http_testing;
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
-import 'package:buzz/features/activity/compose_drafts_provider.dart';
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channel_management_provider.dart';
-import 'package:buzz/features/channels/compose_bar.dart';
-import 'package:buzz/features/channels/mentions/thread_agent_audience.dart';
-import 'package:buzz/features/channels/send_message_provider.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/features/channels/photo_library.dart';
-import 'package:buzz/features/channels/voice_note_play_pause_icon.dart';
-import 'package:buzz/features/channels/voice_note_recording.dart';
-import 'package:buzz/features/channels/voice_note_waveform.dart';
-import 'package:buzz/shared/custom_emoji/custom_emoji.dart';
-import 'package:buzz/shared/custom_emoji/custom_emoji_provider.dart';
-import 'package:buzz/shared/devices/agent_badge_widgets.dart';
-import 'package:buzz/shared/devices/agent_host_devices.dart';
-import 'package:buzz/shared/devices/device_robot.dart';
-import 'package:buzz/shared/mentions/agent_identity_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/user_profile.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/utils/string_utils.dart';
-import 'package:buzz/shared/widgets/anchored_popover_menu.dart';
-import 'package:buzz/shared/widgets/avatar_image.dart';
-import 'package:buzz/shared/widgets/mobile_tab_footer_backdrop.dart';
+import 'package:kuzz/features/activity/compose_drafts_provider.dart';
+import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/features/channels/compose_bar.dart';
+import 'package:kuzz/features/channels/mentions/thread_agent_audience.dart';
+import 'package:kuzz/features/channels/send_message_provider.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/photo_library.dart';
+import 'package:kuzz/features/channels/voice_note_play_pause_icon.dart';
+import 'package:kuzz/features/channels/voice_note_recording.dart';
+import 'package:kuzz/features/channels/voice_note_waveform.dart';
+import 'package:kuzz/shared/custom_emoji/custom_emoji.dart';
+import 'package:kuzz/shared/custom_emoji/custom_emoji_provider.dart';
+import 'package:kuzz/shared/devices/agent_badge_widgets.dart';
+import 'package:kuzz/shared/devices/agent_host_devices.dart';
+import 'package:kuzz/shared/devices/device_robot.dart';
+import 'package:kuzz/shared/mentions/agent_identity_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/utils/string_utils.dart';
+import 'package:kuzz/shared/widgets/anchored_popover_menu.dart';
+import 'package:kuzz/shared/widgets/avatar_image.dart';
+import 'package:kuzz/shared/widgets/mobile_tab_footer_backdrop.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 part 'compose_bar_test/exact_mention_tests.dart';
@@ -147,9 +147,9 @@ List<int> _testPngChunk(String type, List<int> payload) {
   ];
 }
 
-const _mediaUploadPlatformChannel = MethodChannel('buzz/media_upload');
+const _mediaUploadPlatformChannel = MethodChannel('kuzz/media_upload');
 const _nativeAttachmentPopoverChannel = MethodChannel(
-  'buzz/native_attachment_popover',
+  'kuzz/native_attachment_popover',
 );
 
 void _setMockMediaUploadPlatformHandler(
@@ -3529,11 +3529,11 @@ void main() {
       final id = 'cd' * 32;
       const channelId = '580ca78b-9dae-46f3-8854-bd671853ba32';
       final urls = [
-        'buzz://message?channel=$channelId&id=$id',
-        'buzz://channel/$channelId',
-        'buzz://repo?owner=$owner&d=buzz',
-        'buzz://pr?id=$id&owner=$owner&d=buzz',
-        'buzz://issue?id=$id&owner=$owner&d=buzz',
+        'kuzz://message?channel=$channelId&id=$id',
+        'kuzz://channel/$channelId',
+        'kuzz://repo?owner=$owner&d=kuzz',
+        'kuzz://pr?id=$id&owner=$owner&d=kuzz',
+        'kuzz://issue?id=$id&owner=$owner&d=kuzz',
       ];
       await tester.pumpWidget(
         _buildComposeBar(
@@ -3564,27 +3564,27 @@ void main() {
           (widget) =>
               widget.key is ValueKey<String> &&
               (widget.key! as ValueKey<String>).value.startsWith(
-                'composer-buzz-link-chip:',
+                'composer-kuzz-link-chip:',
               ),
         ),
         findsNWidgets(5),
       );
       expect(
         find.byKey(
-          const ValueKey('composer-buzz-link-chip:engineering · cdcdcdcd'),
+          const ValueKey('composer-kuzz-link-chip:engineering · cdcdcdcd'),
         ),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:engineering')),
+        find.byKey(const ValueKey('composer-kuzz-link-chip:engineering')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:buzz')),
+        find.byKey(const ValueKey('composer-kuzz-link-chip:kuzz')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:buzz · cdcdcdcd')),
+        find.byKey(const ValueKey('composer-kuzz-link-chip:kuzz · cdcdcdcd')),
         findsNWidgets(2),
       );
       expect(
@@ -3597,7 +3597,7 @@ void main() {
       tester,
     ) async {
       final owner = 'ab' * 32;
-      final url = 'buzz://repo?owner=$owner&d=my_repo';
+      final url = 'kuzz://repo?owner=$owner&d=my_repo';
       final source = '**$url**';
       await tester.pumpWidget(
         _buildComposeBar(
@@ -3611,11 +3611,11 @@ void main() {
       await tester.pump();
 
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:my_repo')),
+        find.byKey(const ValueKey('composer-kuzz-link-chip:my_repo')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('composer-buzz-link-chip:my')),
+        find.byKey(const ValueKey('composer-kuzz-link-chip:my')),
         findsNothing,
       );
       expect(

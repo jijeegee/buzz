@@ -522,9 +522,9 @@ test("rehypeImageGallery: leaves a single trailing image in the text flow", () =
 
 // Regression test: react-markdown's `defaultUrlTransform` strips unknown
 // schemes (returns `""`) before our `a` component override can see them,
-// which would break copy → paste → click for `buzz://message?…` links and
-// `buzz://pr|issue|repo?…` entity links end-to-end. We pass a custom
-// `urlTransform` (`buzzDeepLinkUrlTransform`) that preserves valid Buzz
+// which would break copy → paste → click for `kuzz://message?…` links and
+// `kuzz://pr|issue|repo?…` entity links end-to-end. We pass a custom
+// `urlTransform` (`kuzzDeepLinkUrlTransform`) that preserves valid Kuzz
 // deep links and delegates everything else to `defaultUrlTransform`.
 //
 // This test renders real `<ReactMarkdown>` with the production transform
@@ -545,7 +545,7 @@ const OWNER_HEX =
 const EVENT_HEX =
   "c3b589fa5713ba25bad6dc095e2de00a4ac8f50050fdea00fc6444e603be1dd1";
 
-function buzzDeepLinkUrlTransform(value, key) {
+function kuzzDeepLinkUrlTransform(value, key) {
   if (key !== "href") return defaultUrlTransform(value);
   if (isMessageLink(value) || isChannelLink(value)) return value;
   if (parseEntityLink(value).ok) return value;
@@ -556,45 +556,45 @@ function renderMarkdown(content) {
   return renderToStaticMarkup(
     React.createElement(
       ReactMarkdown,
-      { urlTransform: buzzDeepLinkUrlTransform },
+      { urlTransform: kuzzDeepLinkUrlTransform },
       content,
     ),
   );
 }
 
-test("messageLinkUrlTransform: preserves buzz://message href", () => {
+test("messageLinkUrlTransform: preserves kuzz://message href", () => {
   const html = renderMarkdown(
-    "Click [here](buzz://message?channel=abc&id=xyz)",
+    "Click [here](kuzz://message?channel=abc&id=xyz)",
   );
   // HTML-encoded `&` in attributes is fine — the browser decodes back to `&`.
-  assert.match(html, /href="buzz:\/\/message\?channel=abc&(?:amp;)?id=xyz"/);
+  assert.match(html, /href="kuzz:\/\/message\?channel=abc&(?:amp;)?id=xyz"/);
 });
 
-test("messageLinkUrlTransform: preserves buzz://message autolink href", () => {
-  const html = renderMarkdown("<buzz://message?channel=abc&id=xyz>");
-  assert.match(html, /href="buzz:\/\/message\?channel=abc&(?:amp;)?id=xyz"/);
+test("messageLinkUrlTransform: preserves kuzz://message autolink href", () => {
+  const html = renderMarkdown("<kuzz://message?channel=abc&id=xyz>");
+  assert.match(html, /href="kuzz:\/\/message\?channel=abc&(?:amp;)?id=xyz"/);
 });
 
-test("messageLinkUrlTransform: preserves buzz://message href with thread", () => {
+test("messageLinkUrlTransform: preserves kuzz://message href with thread", () => {
   const html = renderMarkdown(
-    "[link](buzz://message?channel=c1&id=m1&thread=t1)",
+    "[link](kuzz://message?channel=c1&id=m1&thread=t1)",
   );
-  assert.match(html, /href="buzz:\/\/message\?[^"]*thread=t1"/);
+  assert.match(html, /href="kuzz:\/\/message\?[^"]*thread=t1"/);
 });
 
-test("messageLinkUrlTransform: preserves buzz://channel href", () => {
+test("messageLinkUrlTransform: preserves kuzz://channel href", () => {
   const html = renderMarkdown(
-    "Click [here](buzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32)",
+    "Click [here](kuzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32)",
   );
   assert.match(
     html,
-    /href="buzz:\/\/channel\/580ca78b-9dae-46f3-8854-bd671853ba32"/,
+    /href="kuzz:\/\/channel\/580ca78b-9dae-46f3-8854-bd671853ba32"/,
   );
 });
 
-test("messageLinkUrlTransform: rejects malformed buzz://channel href", () => {
+test("messageLinkUrlTransform: rejects malformed kuzz://channel href", () => {
   const html = renderMarkdown(
-    "Click [here](buzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32?extra=true)",
+    "Click [here](kuzz://channel/580ca78b-9dae-46f3-8854-bd671853ba32?extra=true)",
   );
   assert.match(html, /href=""/);
 });
@@ -611,63 +611,63 @@ test("messageLinkUrlTransform: passes http(s) through unchanged", () => {
   assert.match(html, /href="https:\/\/example\.com\/path"/);
 });
 
-test("messageLinkUrlTransform: preserves legacy buzz://message href", () => {
+test("messageLinkUrlTransform: preserves legacy kuzz://message href", () => {
   const html = renderMarkdown(
-    "Click [here](buzz://message?channel=abc&id=xyz)",
+    "Click [here](kuzz://message?channel=abc&id=xyz)",
   );
-  assert.match(html, /href="buzz:\/\/message\?channel=abc&(?:amp;)?id=xyz"/);
+  assert.match(html, /href="kuzz:\/\/message\?channel=abc&(?:amp;)?id=xyz"/);
 });
 
-test("messageLinkUrlTransform: leaves non-entity buzz:// schemes to default", () => {
-  // `buzz://connect?relay=…` is handled by a different code path (Tauri
+test("messageLinkUrlTransform: leaves non-entity kuzz:// schemes to default", () => {
+  // `kuzz://connect?relay=…` is handled by a different code path (Tauri
   // single-instance). The markdown renderer should let it pass through
   // defaultUrlTransform (which strips it) since it's not clickable in-app.
   const html = renderMarkdown(
-    "[connect](buzz://connect?relay=wss://relay.example)",
+    "[connect](kuzz://connect?relay=wss://relay.example)",
   );
   assert.match(html, /href=""/);
 });
 
-test("buzzDeepLinkUrlTransform: preserves buzz://pr entity link href", () => {
-  const prLink = `buzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`;
+test("kuzzDeepLinkUrlTransform: preserves kuzz://pr entity link href", () => {
+  const prLink = `kuzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`;
   const html = renderMarkdown(`[My PR](${prLink})`);
   // The href must survive — our transform preserves valid entity links.
-  assert.match(html, /href="buzz:\/\/pr\?/);
+  assert.match(html, /href="kuzz:\/\/pr\?/);
   assert.doesNotMatch(html, /href=""/);
 });
 
-test("buzzDeepLinkUrlTransform: preserves buzz://pr autolink href", () => {
-  const prLink = `buzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`;
+test("kuzzDeepLinkUrlTransform: preserves kuzz://pr autolink href", () => {
+  const prLink = `kuzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`;
   const html = renderMarkdown(`<${prLink}>`);
-  assert.match(html, /href="buzz:\/\/pr\?/);
+  assert.match(html, /href="kuzz:\/\/pr\?/);
   assert.doesNotMatch(html, /href=""/);
 });
 
-test("buzzDeepLinkUrlTransform: preserves buzz://issue entity link href", () => {
-  const issueLink = `buzz://issue?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`;
+test("kuzzDeepLinkUrlTransform: preserves kuzz://issue entity link href", () => {
+  const issueLink = `kuzz://issue?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`;
   const html = renderMarkdown(`[Issue title](${issueLink})`);
-  assert.match(html, /href="buzz:\/\/issue\?/);
+  assert.match(html, /href="kuzz:\/\/issue\?/);
   assert.doesNotMatch(html, /href=""/);
 });
 
-test("buzzDeepLinkUrlTransform: preserves buzz://repo entity link href", () => {
-  const repoLink = `buzz://repo?owner=${OWNER_HEX}&d=buzz-world`;
+test("kuzzDeepLinkUrlTransform: preserves kuzz://repo entity link href", () => {
+  const repoLink = `kuzz://repo?owner=${OWNER_HEX}&d=kuzz-world`;
   const html = renderMarkdown(`[My repo](${repoLink})`);
-  assert.match(html, /href="buzz:\/\/repo\?/);
+  assert.match(html, /href="kuzz:\/\/repo\?/);
   assert.doesNotMatch(html, /href=""/);
 });
 
-test("buzzDeepLinkUrlTransform: preserves buzz://project autolink href", () => {
-  const projectLink = `buzz://project?owner=${OWNER_HEX}&d=onboarding`;
+test("kuzzDeepLinkUrlTransform: preserves kuzz://project autolink href", () => {
+  const projectLink = `kuzz://project?owner=${OWNER_HEX}&d=onboarding`;
   const html = renderMarkdown(`<${projectLink}>`);
-  assert.match(html, /href="buzz:\/\/project\?/);
+  assert.match(html, /href="kuzz:\/\/project\?/);
   assert.doesNotMatch(html, /href=""/);
 });
 
-test("buzzDeepLinkUrlTransform: strips malformed buzz://pr (unknown param)", () => {
+test("kuzzDeepLinkUrlTransform: strips malformed kuzz://pr (unknown param)", () => {
   // Strict parser rejects unknown params — transform falls back to default sanitizer.
   const html = renderMarkdown(
-    `[link](buzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world&extra=ignored)`,
+    `[link](kuzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world&extra=ignored)`,
   );
   assert.match(html, /href=""/);
 });
@@ -740,8 +740,8 @@ test("renderEntityLinkAnchor_noRelayOrigin_cloneUrlReturnsNull", () => {
 });
 
 test("renderEntityLinkAnchor_directEntityLink_returnsAnchorRegardlessOfOrigin", () => {
-  // A direct buzz://pr link always resolves in-app — it does not require origin.
-  const prLink = `buzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`;
+  // A direct kuzz://pr link always resolves in-app — it does not require origin.
+  const prLink = `kuzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`;
   const el = renderEntityLinkAnchor({
     children: React.createElement("span", null, "My PR"),
     href: prLink,
@@ -751,7 +751,7 @@ test("renderEntityLinkAnchor_directEntityLink_returnsAnchorRegardlessOfOrigin", 
   assert.notEqual(
     el,
     null,
-    "direct buzz://pr link must produce an entity anchor regardless of origin",
+    "direct kuzz://pr link must produce an entity anchor regardless of origin",
   );
 });
 
@@ -776,7 +776,7 @@ test("remarkSpoilers: block delimiter spoilers expose a block prop to React", ()
   assert.equal(spoilerProps?.["data-block-spoiler"], "");
 });
 
-// `remark-gfm`'s autolinker only covers http(s)://, so bare `buzz://message`
+// `remark-gfm`'s autolinker only covers http(s)://, so bare `kuzz://message`
 // URLs in plain text never reach any rendering path without this plugin.
 // The plugin emits a custom `message-link` HAST element which markdown.tsx
 // renders as an inline pill. Tests operate on the mdast tree directly —
@@ -797,26 +797,26 @@ function text(value) {
   return { type: "text", value };
 }
 
-test("remarkMessageLinks: bare buzz://message URL is replaced", () => {
-  const tree = runPlugin(paragraph(text("buzz://message?channel=c&id=m")));
+test("remarkMessageLinks: bare kuzz://message URL is replaced", () => {
+  const tree = runPlugin(paragraph(text("kuzz://message?channel=c&id=m")));
   const para = tree.children[0];
   assert.equal(para.children.length, 1);
   assert.equal(para.children[0].type, "message-link");
-  assert.equal(para.children[0].value, "buzz://message?channel=c&id=m");
+  assert.equal(para.children[0].value, "kuzz://message?channel=c&id=m");
   assert.equal(para.children[0].data.hName, "message-link");
 });
 
-test("remarkMessageLinks: legacy bare buzz://message URL is replaced", () => {
-  const tree = runPlugin(paragraph(text("buzz://message?channel=c&id=m")));
+test("remarkMessageLinks: legacy bare kuzz://message URL is replaced", () => {
+  const tree = runPlugin(paragraph(text("kuzz://message?channel=c&id=m")));
   const para = tree.children[0];
   assert.equal(para.children.length, 1);
   assert.equal(para.children[0].type, "message-link");
-  assert.equal(para.children[0].value, "buzz://message?channel=c&id=m");
+  assert.equal(para.children[0].value, "kuzz://message?channel=c&id=m");
 });
 
 test("remarkMessageLinks: mid-sentence URL splits surrounding text", () => {
   const tree = runPlugin(
-    paragraph(text("see buzz://message?channel=c&id=m here")),
+    paragraph(text("see kuzz://message?channel=c&id=m here")),
   );
   const kids = tree.children[0].children;
   assert.equal(kids.length, 3);
@@ -831,28 +831,28 @@ test("remarkMessageLinks: two URLs in one text node both replaced", () => {
   const tree = runPlugin(
     paragraph(
       text(
-        "first buzz://message?channel=a&id=1 then buzz://message?channel=b&id=2 done",
+        "first kuzz://message?channel=a&id=1 then kuzz://message?channel=b&id=2 done",
       ),
     ),
   );
   const kids = tree.children[0].children;
   const links = kids.filter((c) => c.type === "message-link");
   assert.equal(links.length, 2);
-  assert.equal(links[0].value, "buzz://message?channel=a&id=1");
-  assert.equal(links[1].value, "buzz://message?channel=b&id=2");
+  assert.equal(links[0].value, "kuzz://message?channel=a&id=1");
+  assert.equal(links[1].value, "kuzz://message?channel=b&id=2");
 });
 
 test("remarkMessageLinks: trailing sentence punctuation stays outside URL", () => {
   for (const punctuation of [".", ",", ";", ":", "!", "?"]) {
     const tree = runPlugin(
-      paragraph(text(`see buzz://message?channel=c&id=m${punctuation}`)),
+      paragraph(text(`see kuzz://message?channel=c&id=m${punctuation}`)),
     );
     const kids = tree.children[0].children;
 
     assert.equal(kids.length, 3, punctuation);
     assert.equal(kids[0].value, "see ", punctuation);
     assert.equal(kids[1].type, "message-link", punctuation);
-    assert.equal(kids[1].value, "buzz://message?channel=c&id=m", punctuation);
+    assert.equal(kids[1].value, "kuzz://message?channel=c&id=m", punctuation);
     assert.equal(kids[2].type, "text", punctuation);
     assert.equal(kids[2].value, punctuation, punctuation);
   }
@@ -860,20 +860,20 @@ test("remarkMessageLinks: trailing sentence punctuation stays outside URL", () =
 
 test("remarkMessageLinks: URL inside parens keeps closing paren outside", () => {
   const tree = runPlugin(
-    paragraph(text("see (buzz://message?channel=c&id=m) for details")),
+    paragraph(text("see (kuzz://message?channel=c&id=m) for details")),
   );
   const kids = tree.children[0].children;
 
   assert.equal(kids.length, 3);
   assert.equal(kids[0].value, "see (");
   assert.equal(kids[1].type, "message-link");
-  assert.equal(kids[1].value, "buzz://message?channel=c&id=m");
+  assert.equal(kids[1].value, "kuzz://message?channel=c&id=m");
   assert.equal(kids[2].type, "text");
   assert.equal(kids[2].value, ") for details");
 });
 
 test("remarkMessageLinks: URL without trailing punctuation matches end-to-end", () => {
-  const value = "buzz://message?channel=c&id=m";
+  const value = "kuzz://message?channel=c&id=m";
   const tree = runPlugin(paragraph(text(value)));
   const kids = tree.children[0].children;
 
@@ -882,8 +882,8 @@ test("remarkMessageLinks: URL without trailing punctuation matches end-to-end", 
   assert.equal(kids[0].value, value);
 });
 
-test("remarkMessageLinks: non-message buzz:// URLs are not matched", () => {
-  const original = "buzz://connect?relay=wss://x.example";
+test("remarkMessageLinks: non-message kuzz:// URLs are not matched", () => {
+  const original = "kuzz://connect?relay=wss://x.example";
   const tree = runPlugin(paragraph(text(original)));
   const kids = tree.children[0].children;
   assert.equal(kids.length, 1);
@@ -902,7 +902,7 @@ test("remarkMessageLinks: text inside inlineCode is left alone", () => {
       {
         type: "paragraph",
         children: [
-          { type: "inlineCode", value: "buzz://message?channel=c&id=m" },
+          { type: "inlineCode", value: "kuzz://message?channel=c&id=m" },
         ],
       },
     ],
@@ -911,7 +911,7 @@ test("remarkMessageLinks: text inside inlineCode is left alone", () => {
   const kids = tree.children[0].children;
   assert.equal(kids.length, 1);
   assert.equal(kids[0].type, "inlineCode");
-  assert.equal(kids[0].value, "buzz://message?channel=c&id=m");
+  assert.equal(kids[0].value, "kuzz://message?channel=c&id=m");
 });
 
 // ── selectProseOrNudge render-level guard ─────────────────────────────────────
@@ -942,7 +942,7 @@ function nudgeBody(agentPubkey) {
     "**Fizz** needs configuration before it can respond:",
     "- set `ANTHROPIC_API_KEY` in Edit Agent → Environment variables",
     "",
-    "Open Edit Agent in the Buzz app to set these.",
+    "Open Edit Agent in the Kuzz app to set these.",
     "",
     "```buzz:config-nudge",
     JSON.stringify({
@@ -1068,18 +1068,18 @@ test("nudgeGuard_noSentinel_proseRenderedCardAbsent", () => {
   );
 });
 
-test("bare Buzz permalinks render cohesive icon-prefixed chips", () => {
+test("bare Kuzz permalinks render cohesive icon-prefixed chips", () => {
   const channelId = "580ca78b-9dae-46f3-8854-bd671853ba32";
-  const messageLink = `buzz://message?channel=${channelId}&id=${EVENT_HEX}`;
-  const compatibilityMessageLink = `buzz://channel/${channelId}/${EVENT_HEX}`;
-  const channelLink = `buzz://channel/${channelId}`;
+  const messageLink = `kuzz://message?channel=${channelId}&id=${EVENT_HEX}`;
+  const compatibilityMessageLink = `kuzz://channel/${channelId}/${EVENT_HEX}`;
+  const channelLink = `kuzz://channel/${channelId}`;
   const links = [
     messageLink,
     compatibilityMessageLink,
     channelLink,
-    `buzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`,
-    `buzz://issue?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`,
-    `buzz://repo?owner=${OWNER_HEX}&d=buzz-world`,
+    `kuzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`,
+    `kuzz://issue?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`,
+    `kuzz://repo?owner=${OWNER_HEX}&d=kuzz-world`,
   ];
   const markdown = renderCachedMarkdown({
     components: createMarkdownComponents(true, false),
@@ -1107,7 +1107,7 @@ test("bare Buzz permalinks render cohesive icon-prefixed chips", () => {
   );
 
   const visibleText = html.replace(/<[^>]+>/g, "");
-  assert.equal((html.match(/data-buzz-link=""/g) ?? []).length, 6);
+  assert.equal((html.match(/data-kuzz-link=""/g) ?? []).length, 6);
   assert.equal(
     (
       html.match(
@@ -1127,7 +1127,7 @@ test("bare Buzz permalinks render cohesive icon-prefixed chips", () => {
   assert.match(html, /inline-chip-icon-repo/);
   // PR, issue, and repository chips all use the stable repository identity;
   // fetched subjects and event hashes never alter their inline width.
-  assert.equal((visibleText.match(/buzz-world/g) ?? []).length, 3);
+  assert.equal((visibleText.match(/kuzz-world/g) ?? []).length, 3);
   assert.doesNotMatch(visibleText, /c3b589fa/);
 });
 
@@ -1143,25 +1143,25 @@ test("inline issue and pull-request chips show the repository name without the e
     );
 
   const issueHtml = renderEntityChip(
-    `buzz://issue?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`,
+    `kuzz://issue?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`,
   );
   const issueText = issueHtml.replace(/<[^>]+>/g, "");
-  assert.equal(issueText, "buzz-world");
+  assert.equal(issueText, "kuzz-world");
   assert.doesNotMatch(issueText, /c3b589fa/);
   assert.doesNotMatch(issueText, /·/);
   // Identity, icon, and navigation affordances survive the shorter label.
-  assert.match(issueHtml, /data-buzz-link-kind="issue"/);
+  assert.match(issueHtml, /data-kuzz-link-kind="issue"/);
   assert.match(issueHtml, /inline-chip-icon-issue/);
   assert.match(
     issueHtml,
-    /aria-label="Open issue c3b589fa in repository buzz-world"/,
+    /aria-label="Open issue c3b589fa in repository kuzz-world"/,
   );
 
   // Pull-request chips follow the same stable inline identity policy.
   const pullRequestText = renderEntityChip(
-    `buzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`,
+    `kuzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`,
   ).replace(/<[^>]+>/g, "");
-  assert.equal(pullRequestText, "buzz-world");
+  assert.equal(pullRequestText, "kuzz-world");
   assert.doesNotMatch(pullRequestText, /c3b589fa/);
   assert.doesNotMatch(pullRequestText, /·/);
 });
@@ -1171,7 +1171,7 @@ test("inline entity chip labels are bounded without truncating their accessible 
   const html = renderToStaticMarkup(
     renderEntityLinkAnchor({
       children: null,
-      href: `buzz://repo?owner=${OWNER_HEX}&d=${longRepository}`,
+      href: `kuzz://repo?owner=${OWNER_HEX}&d=${longRepository}`,
       onOpenEntityLink: () => {},
       relayOrigin: null,
     }),
@@ -1189,7 +1189,7 @@ test("inline message chips omit fetched metadata and the event hash", () => {
   const channelId = "580ca78b-9dae-46f3-8854-bd671853ba32";
   const markdown = renderCachedMarkdown({
     components: createMarkdownComponents(true, false),
-    content: `buzz://message?channel=${channelId}&id=${EVENT_HEX}`,
+    content: `kuzz://message?channel=${channelId}&id=${EVENT_HEX}`,
     variant: "inline-message-chip-metadata-test",
   });
   // A readable channel is the case that used to swap the chip label from the
@@ -1228,18 +1228,18 @@ test("inline message chips omit fetched metadata and the event hash", () => {
   assert.doesNotMatch(visibleText, /·/);
 });
 
-test("authored Buzz permalink labels remain ordinary links", () => {
+test("authored Kuzz permalink labels remain ordinary links", () => {
   const channelId = "580ca78b-9dae-46f3-8854-bd671853ba32";
   const links = [
-    `[the message](buzz://message?channel=${channelId}&id=${EVENT_HEX})`,
-    `[the compatibility message](buzz://channel/${channelId}/${EVENT_HEX})`,
-    `[**design discussion**](buzz://channel/${channelId})`,
-    `[the issue](buzz://issue?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world)`,
+    `[the message](kuzz://message?channel=${channelId}&id=${EVENT_HEX})`,
+    `[the compatibility message](kuzz://channel/${channelId}/${EVENT_HEX})`,
+    `[**design discussion**](kuzz://channel/${channelId})`,
+    `[the issue](kuzz://issue?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world)`,
   ];
   const markdown = renderCachedMarkdown({
     components: createMarkdownComponents(true, false),
     content: links.join(" "),
-    variant: "authored-buzz-link-integration-test",
+    variant: "authored-kuzz-link-integration-test",
   });
   const html = renderToStaticMarkup(
     React.createElement(
@@ -1261,7 +1261,7 @@ test("authored Buzz permalink labels remain ordinary links", () => {
     ),
   );
 
-  assert.equal((html.match(/data-buzz-link=""/g) ?? []).length, 0);
+  assert.equal((html.match(/data-kuzz-link=""/g) ?? []).length, 0);
   assert.match(html, />the message</);
   assert.match(html, />the compatibility message</);
   assert.match(html, /aria-label="Open message: the compatibility message"/);
@@ -1310,15 +1310,15 @@ test("generic audio attachments render outside paragraph markup", () => {
   assert.doesNotMatch(html, /<p[^>]*>\s*<div/);
 });
 
-test("bare Buzz permalinks shorten unavailable channel identifiers", () => {
+test("bare Kuzz permalinks shorten unavailable channel identifiers", () => {
   const channelId = "580ca78b-9dae-46f3-8854-bd671853ba32";
   const markdown = renderCachedMarkdown({
     components: createMarkdownComponents(true, false),
     content: [
-      `buzz://message?channel=${channelId}&id=${EVENT_HEX}`,
-      `buzz://channel/${channelId}`,
+      `kuzz://message?channel=${channelId}&id=${EVENT_HEX}`,
+      `kuzz://channel/${channelId}`,
     ].join(" "),
-    variant: "unknown-channel-buzz-link-integration-test",
+    variant: "unknown-channel-kuzz-link-integration-test",
   });
   const html = renderToStaticMarkup(
     React.createElement(
@@ -1448,8 +1448,8 @@ test("agent mentions retain the bot treatment instead of the human icon", () => 
   assert.doesNotMatch(html, />@alice</);
 });
 
-test("renderEntityLinkAnchor renders Buzz entity links as chips", () => {
-  const prLink = `buzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=buzz-world`;
+test("renderEntityLinkAnchor renders Kuzz entity links as chips", () => {
+  const prLink = `kuzz://pr?id=${EVENT_HEX}&owner=${OWNER_HEX}&d=kuzz-world`;
   const el = renderEntityLinkAnchor({
     children: "PR · abc123",
     href: prLink,
@@ -1458,29 +1458,29 @@ test("renderEntityLinkAnchor renders Buzz entity links as chips", () => {
     relayOrigin: null,
   });
   const html = renderToStaticMarkup(el);
-  assert.match(html, /data-buzz-link=""/);
+  assert.match(html, /data-kuzz-link=""/);
   assert.match(html, /<span/);
   assert.match(html, /role="button"/);
   assert.match(html, /tabindex="0"/);
-  assert.match(html, /data-buzz-link-kind="pr"/);
+  assert.match(html, /data-kuzz-link-kind="pr"/);
   assert.match(html, /wrapping-inline-chip/);
-  assert.match(html, /inline-chip-leading-fragment[^>]*>buzz-</);
+  assert.match(html, /inline-chip-leading-fragment[^>]*>kuzz-</);
   assert.doesNotMatch(html, /\btruncate\b/);
   assert.doesNotMatch(html, /<a/);
   assert.doesNotMatch(html, /<button/);
 });
 
 test("renderEntityLinkAnchor keeps chip styling when interaction is disabled", () => {
-  const repoLink = `buzz://repo?owner=${OWNER_HEX}&d=buzz-world`;
+  const repoLink = `kuzz://repo?owner=${OWNER_HEX}&d=kuzz-world`;
   const el = renderEntityLinkAnchor({
-    children: "buzz-world",
+    children: "kuzz-world",
     href: repoLink,
     interactive: false,
     onOpenEntityLink: () => {},
     relayOrigin: null,
   });
   const html = renderToStaticMarkup(el);
-  assert.match(html, /data-buzz-link=""/);
+  assert.match(html, /data-kuzz-link=""/);
   assert.match(html, /<span/);
   assert.match(html, /class="mention-chip\s/);
   assert.doesNotMatch(html, /<button/);

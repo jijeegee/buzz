@@ -8,7 +8,7 @@ Channel Artifacts
 
 Defines `kind:45010` for editable records called **artifacts**. Each artifact has one home channel and may be attached to a thread. Its home determines who can read it. Any number of artifacts, including of the same type, may share a channel or thread.
 
-The relay manages identity, access, and revisions. Clients define the content types, such as `buzz.task` or `buzz.project`.
+The relay manages identity, access, and revisions. Clients define the content types, such as `kuzz.task` or `kuzz.project`.
 
 ## Event format
 
@@ -21,7 +21,7 @@ Each event contains a complete snapshot. For example, a task created directly in
     ["ar", "1"],
     ["d", "04737c81-e5e8-4412-bb47-f446813cfeba"],
     ["h", "9b353519-f4fe-4757-aef4-bec6cc0ae54c"],
-    ["type", "buzz.task"],
+    ["type", "kuzz.task"],
     ["title", "Fix the payment timeout"],
     ["op", "create"],
     ["assignee", "<assignee-pubkey>"],
@@ -44,7 +44,7 @@ The `assignee` and `project` tags and the payload are illustrative, not required
 | `root` | Optional conversation anchor event ID within `h`. |
 | `prev` | Previous accepted revision ID; required except on creation. |
 
-Each listed tag has exactly two string elements and occurs once, except optional tags may be absent and `title` MUST be absent on `delete`. UUIDs are lowercase, hyphenated, and non-nil; event IDs are 64 lowercase hex characters. Type names are dot-separated lowercase ASCII components, each starting with a letter and otherwise using letters, digits, `_`, or `-`, up to 128 bytes total. `buzz.*` is reserved for published Buzz client contracts.
+Each listed tag has exactly two string elements and occurs once, except optional tags may be absent and `title` MUST be absent on `delete`. UUIDs are lowercase, hyphenated, and non-nil; event IDs are 64 lowercase hex characters. Type names are dot-separated lowercase ASCII components, each starting with a letter and otherwise using letters, digits, `_`, or `-`, up to 128 bytes total. `kuzz.*` is reserved for published Kuzz client contracts.
 
 Relays MUST reject invalid envelopes, unsupported envelope versions, and events with more than 256 tags. Normal event-size and write quotas apply.
 
@@ -52,7 +52,7 @@ Clients place fields needed for filtering in client-defined tags. The relay matc
 
 ## Identity and edits
 
-An artifact is identified by `(community, d)`, independently of its author or home. `d` and `type` are immutable. Kind 45010 is a regular stored event, not a NIP-01 addressable event. It falls in Buzz's forum and social kind range (45000–45999) but is not a forum post and follows none of the forum rules.
+An artifact is identified by `(community, d)`, independently of its author or home. `d` and `type` are immutable. Kind 45010 is a regular stored event, not a NIP-01 addressable event. It falls in Kuzz's forum and social kind range (45000–45999) but is not a forum post and follows none of the forum rules.
 
 Creation requires an unused `d`, `op=create`, and no `prev`. Every later revision MUST name the current accepted event in `prev`. The relay checks authorization and advances the current revision atomically: two competing edits cannot both succeed. Timestamps do not choose the winner.
 

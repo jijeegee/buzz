@@ -50,15 +50,15 @@ import { PersonaProviderApiKeyField } from "@/features/agents/ui/PersonaProvider
 import { usePersonaModelDiscovery } from "@/features/agents/ui/usePersonaModelDiscovery";
 import { resolveModelLabel } from "@/features/agents/lib/formatAgentModelLabel";
 import {
-  BUZZ_AGENT_THINKING_EFFORT,
+  KUZZ_AGENT_THINKING_EFFORT,
   getProviderEffortConfig,
-} from "@/features/agents/ui/buzzAgentConfig";
+} from "@/features/agents/ui/kuzzAgentConfig";
 import {
   EffortSelectField,
   NumericTuningFields,
   useEffortAutoClear,
   type NumericDescriptor,
-} from "@/features/agents/ui/buzzAgentModelTuningFields";
+} from "@/features/agents/ui/kuzzAgentModelTuningFields";
 import { SettingsOptionGroup } from "@/features/settings/ui/SettingsOptionGroup";
 import { AdvancedRequiredBadge } from "./AdvancedRequiredBadge";
 import { CardMintKeyCue } from "./CardMintKeyCue";
@@ -73,9 +73,9 @@ export const EMPTY_GLOBAL_CONFIG: GlobalAgentConfig = {
 };
 
 const BAKED_STRUCTURED_KEYS = new Set([
-  "BUZZ_AGENT_PROVIDER",
-  "BUZZ_AGENT_MODEL",
-  BUZZ_AGENT_THINKING_EFFORT,
+  "KUZZ_AGENT_PROVIDER",
+  "KUZZ_AGENT_MODEL",
+  KUZZ_AGENT_THINKING_EFFORT,
 ]);
 
 const PROGRESSIVE_FIELDS_TRANSITION = {
@@ -257,7 +257,7 @@ export function AgentConfigFields({
       ? effortField.currentPersistence.key
       : null;
   // True when the runtime owns its own effort vocabulary (e.g. Goose) and
-  // should bypass the buzz-agent provider/model catalog: harnessNative + envVar.
+  // should bypass the kuzz-agent provider/model catalog: harnessNative + envVar.
   const isHarnessNativeEffort =
     effortField?.optionSource === "harnessNative" &&
     effortField?.currentPersistence.kind === "envVar";
@@ -275,7 +275,7 @@ export function AgentConfigFields({
   ]);
   const bakedEnvMap = Object.fromEntries(bakedEnv.map((e) => [e.key, e.value]));
   const bakedProvider = React.useMemo(
-    () => bakedEnv.find((e) => e.key === "BUZZ_AGENT_PROVIDER")?.value ?? null,
+    () => bakedEnv.find((e) => e.key === "KUZZ_AGENT_PROVIDER")?.value ?? null,
     [bakedEnv],
   );
   const selectedRuntimeId = selectedRuntime?.id ?? "";
@@ -301,7 +301,7 @@ export function AgentConfigFields({
     fallbackModel !== null;
   const bakedEffort = React.useMemo(
     () =>
-      bakedEnv.find((e) => e.key === BUZZ_AGENT_THINKING_EFFORT)?.value ?? null,
+      bakedEnv.find((e) => e.key === KUZZ_AGENT_THINKING_EFFORT)?.value ?? null,
     [bakedEnv],
   );
   const bakedGenericRows = React.useMemo<readonly InheritedEnvRow[]>(
@@ -336,7 +336,7 @@ export function AgentConfigFields({
     selectedRuntimeId,
   )
     ? selectedRuntimeId
-    : "buzz-agent";
+    : "kuzz-agent";
   const bakedEnvKeys = React.useMemo(
     () => bakedEnv.map((entry) => entry.key),
     [bakedEnv],
@@ -587,17 +587,17 @@ export function AgentConfigFields({
     onConfigChange({ ...config, env_vars: next });
   };
 
-  // On internal Block builds, BUZZ_AGENT_PROVIDER is baked in and a boot
+  // On internal Block builds, KUZZ_AGENT_PROVIDER is baked in and a boot
   // migration rewrites v1→v2. Hide the legacy v1 option so it is not offered
   // for new selections; OSS builds show it.
   const hideProviderIds = React.useMemo(() => {
     const hidden = new Set<string>();
-    if (bakedEnvKeys.includes("BUZZ_AGENT_PROVIDER")) {
+    if (bakedEnvKeys.includes("KUZZ_AGENT_PROVIDER")) {
       for (const providerId of BLOCK_BUILD_HIDDEN_PROVIDER_IDS) {
         hidden.add(providerId);
       }
     }
-    if (selectedRuntimeId !== "buzz-agent") {
+    if (selectedRuntimeId !== "kuzz-agent") {
       hidden.add("relay-mesh");
     }
     return hidden;
@@ -652,7 +652,7 @@ export function AgentConfigFields({
   // column, offered as the default model's companion through the same
   // ModelEffortFields/effortPickerState path as the per-agent dialogs (the
   // picker hides itself when the catalog publishes no vocabulary). The
-  // env-var EffortSelectField above stays the Goose/buzz-agent control.
+  // env-var EffortSelectField above stays the Goose/kuzz-agent control.
   const thoughtLevelEffort =
     showEffortField &&
     !dependentFieldsDisabled &&
@@ -879,7 +879,7 @@ export function AgentConfigFields({
         </ModelEffortFields>
       ) : null}
 
-      {/* Thinking / Effort (native env knob: Goose, buzz-agent) */}
+      {/* Thinking / Effort (native env knob: Goose, kuzz-agent) */}
       {effortFieldVisible ? (
         <div className={blockClassName}>
           <EffortSelectField

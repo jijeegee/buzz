@@ -1,6 +1,6 @@
 import type { EditorView } from "@tiptap/pm/view";
 
-import { getBuzzCopyKind } from "./mentionClipboard";
+import { getKuzzCopyKind } from "./mentionClipboard";
 import type { BindPastedMentionIdentities } from "./mentionPasteBinding";
 import { normalizeMentionClipboardContent } from "./normalizeMentionClipboard";
 
@@ -20,14 +20,14 @@ function pastePlainText(view: EditorView, text: string): void {
 }
 
 /**
- * Paste clipboard HTML that carries Buzz mention markers.
+ * Paste clipboard HTML that carries Kuzz mention markers.
  *
  * Content follows the flavor the copy declared:
  *
  * - `markdown` — the copy's plain flavor *is* the Markdown source, so insert
  *   it through the text pipeline and TipTap parses `**bold**` exactly as it
  *   does for any other plain paste.
- * - `rich` (or legacy Buzz HTML with no marker) — keep the HTML path, with
+ * - `rich` (or legacy Kuzz HTML with no marker) — keep the HTML path, with
  *   chip wrappers flattened to sigil-bearing text.
  *
  * Identity rides along: binding the records is what makes a pasted multi-word
@@ -67,7 +67,7 @@ export function handleMentionClipboardPaste({
   };
 
   const text = clipboardData.getData("text/plain");
-  if (getBuzzCopyKind(html) === "markdown" && text) {
+  if (getKuzzCopyKind(html) === "markdown" && text) {
     preventDefault();
     pastePlainText(view, text);
     bind(text);

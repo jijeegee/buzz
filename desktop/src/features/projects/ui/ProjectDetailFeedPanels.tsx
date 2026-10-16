@@ -17,7 +17,7 @@ import { commitShareLink } from "@/features/projects/lib/projectShareLinks";
 import { relativeTime } from "@/features/projects/lib/projectsViewHelpers";
 import type { ProjectRepoCommit } from "@/shared/api/types";
 
-import { BuzzLoadingState } from "@/shared/ui/BuzzLoadingState";
+import { KuzzLoadingState } from "@/shared/ui/KuzzLoadingState";
 import {
   resolveUserLabel,
   type UserProfileLookup,
@@ -125,7 +125,7 @@ export function ContributorsPanel({
       return {
         avatarUrl: profile?.avatarUrl ?? null,
         commitCount: signedCounts.commits,
-        id: `buzz:${pubkey}`,
+        id: `kuzz:${pubkey}`,
         isAgent,
         label: resolveUserLabel({ profiles, pubkey }),
         profileLinked: true,
@@ -299,7 +299,7 @@ export function ActivityPanel({
   });
 
   if (isLoading) {
-    return <BuzzLoadingState label="Loading activity" />;
+    return <KuzzLoadingState label="Loading activity" />;
   }
 
   if (items.length === 0) {

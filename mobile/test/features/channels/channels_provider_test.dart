@@ -1,17 +1,17 @@
-import 'package:buzz/features/channels/channel_mutes/channel_mutes_provider.dart';
-import 'package:buzz/features/channels/channel_mutes/channel_mutes_storage.dart';
+import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart';
+import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart';
 import 'dart:async';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:buzz/features/channels/channel_management_provider.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/features/channels/room_goals_provider.dart';
-import 'package:buzz/features/goals/goal_provider.dart';
-import 'package:buzz/shared/read_state/read_state_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/room_goals_provider.dart';
+import 'package:kuzz/features/goals/goal_provider.dart';
+import 'package:kuzz/shared/read_state/read_state_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 
 part 'channels_provider_live_cases.dart';
 part 'channels_provider_terminal_cases.dart';

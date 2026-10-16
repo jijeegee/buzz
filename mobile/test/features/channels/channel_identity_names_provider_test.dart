@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channel_identity_names_provider.dart';
-import 'package:buzz/features/channels/channels_provider.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/user_profile.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channel_identity_names_provider.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

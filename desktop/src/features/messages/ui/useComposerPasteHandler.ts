@@ -5,12 +5,12 @@ import type { BlobDescriptor } from "@/shared/api/tauri";
 import { hasMentionClipboardHtml } from "@/features/messages/lib/normalizeMentionClipboard";
 import { handleMentionClipboardPaste } from "@/features/messages/lib/mentionClipboardPaste";
 import type { BindPastedMentionIdentities } from "@/features/messages/lib/mentionPasteBinding";
-import { getBuzzCodeBlockClipboardText } from "@/shared/lib/codeBlockClipboard";
+import { getKuzzCodeBlockClipboardText } from "@/shared/lib/codeBlockClipboard";
 
 export function useComposerPasteHandler(options: {
   editor: Editor | null;
   /**
-   * Teaches the composer each `name → pubkey` pair a Buzz copy carried, once
+   * Teaches the composer each `name → pubkey` pair a Kuzz copy carried, once
    * trusted state vouches for it. Without it, a paste binds nothing.
    */
   bindMentionIdentities?: BindPastedMentionIdentities;
@@ -39,7 +39,7 @@ export function useComposerPasteHandler(options: {
             if (file) void uploadFileRef.current(file);
             return true;
           }
-          const codeBlockText = getBuzzCodeBlockClipboardText(
+          const codeBlockText = getKuzzCodeBlockClipboardText(
             event.clipboardData,
           );
           if (codeBlockText !== null) {

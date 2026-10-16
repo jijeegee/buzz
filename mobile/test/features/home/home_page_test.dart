@@ -1,7 +1,7 @@
-import 'package:buzz/features/home/home_page.dart';
-import 'package:buzz/features/channels/channels_page.dart';
-import 'package:buzz/features/profile/profile_avatar.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/home/home_page.dart';
+import 'package:kuzz/features/channels/channels_page.dart';
+import 'package:kuzz/features/profile/profile_avatar.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -72,7 +72,7 @@ void main() {
     );
   });
 
-  testWidgets('keeps the Buzz backdrop behind the scalable Home screen', (
+  testWidgets('keeps the Kuzz backdrop behind the scalable Home screen', (
     tester,
   ) async {
     const gradient = LinearGradient(

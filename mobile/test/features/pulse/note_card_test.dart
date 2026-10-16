@@ -1,10 +1,10 @@
-import 'package:buzz/shared/identity_names/identity_names.dart';
-import 'package:buzz/shared/profile/user_cache_provider.dart';
-import 'package:buzz/shared/profile/user_profile.dart';
-import 'package:buzz/features/pulse/note_card.dart';
-import 'package:buzz/features/pulse/pulse_models.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/widgets/avatar_image.dart';
+import 'package:kuzz/shared/identity_names/identity_names.dart';
+import 'package:kuzz/shared/profile/user_cache_provider.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/features/pulse/note_card.dart';
+import 'package:kuzz/features/pulse/pulse_models.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/widgets/avatar_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

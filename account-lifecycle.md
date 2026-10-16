@@ -106,11 +106,11 @@ review and manual desktop/device acceptance remain outstanding.
   cancellation/error branch checks its original session generation.
 - Android debug application suffixes now select a distinct callback scheme in
   both the merged manifest and Dart's installed-package lookup. For the existing
-  `xyz.block.buzz.mobile.parity_dev` package that is
-  `xyz.block.buzz.parity-dev://auth/cb`. Production remains
-  `xyz.block.buzz://auth/cb`; iOS is unchanged.
+  `app.kuzz.mobile.parity_dev` package that is
+  `app.kuzz.parity-dev://auth/cb`. Production remains
+  `app.kuzz://auth/cb`; iOS is unchanged.
 - Before a later coordinated dev APK rollout, the relay must allow
-  `xyz.block.buzz.parity-dev` in `AUTH_MOBILE_REDIRECT_SCHEMES` alongside the
+  `app.kuzz.parity-dev` in `AUTH_MOBILE_REDIRECT_SCHEMES` alongside the
   existing production scheme. This task does not change or deploy that setting.
 - The duplicate-callback overwrite is confirmed in the installed
   `flutter_web_auth_2` 5.1.0 Android implementation
@@ -147,7 +147,7 @@ changed. The installed desktop binary is not replaced by library tests.
   This includes a rejection whose device-session cleanup completes after a
   newer recovery state: its completion cannot overwrite that state.
 - Android: Gradle configuration and actual debug main-manifest merge passed;
-  the merged `parity_dev` callback is `xyz.block.buzz.parity-dev://auth/cb`.
+  the merged `parity_dev` callback is `app.kuzz.parity-dev://auth/cb`.
   Release main-manifest merge could not resolve uncached AndroidX dependencies
   in offline mode. No APK was built or installed; no dependency upgrade or cache
   cleaning was performed.

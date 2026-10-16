@@ -52,18 +52,18 @@ fn strip_removes_baked_goose_native_key_collision() {
     );
 }
 
-/// Baked `BUZZ_AGENT_THINKING_EFFORT` collision: legacy alias stripped.
+/// Baked `KUZZ_AGENT_THINKING_EFFORT` collision: legacy alias stripped.
 #[test]
-fn strip_removes_baked_buzz_agent_native_key_collision() {
+fn strip_removes_baked_kuzz_agent_native_key_collision() {
     let mut cmd = std::process::Command::new("echo");
-    cmd.env(BUZZ_AGENT_KEY, "medium");
+    cmd.env(KUZZ_AGENT_KEY, "medium");
     strip_effort_keys_from_command(&mut cmd);
     let removed = cmd
         .get_envs()
-        .any(|(key, value)| key == BUZZ_AGENT_KEY && value.is_none());
+        .any(|(key, value)| key == KUZZ_AGENT_KEY && value.is_none());
     assert!(
         removed,
-        "BUZZ_AGENT_THINKING_EFFORT must be registered for removal after strip"
+        "KUZZ_AGENT_THINKING_EFFORT must be registered for removal after strip"
     );
 }
 
@@ -107,7 +107,7 @@ fn strip_does_not_remove_unrelated_env_key() {
 // turns these tests RED. The `EffortApplied` sentinel makes the call site in
 // `spawn_agent_child` a compile-time requirement.
 // Deletion proofs:
-//   - remove `build_buzz_agent_provider_defaults` inside → baked keys leak;
+//   - remove `build_kuzz_agent_provider_defaults` inside → baked keys leak;
 //   - remove `effort_launch_projection` → suppress list is empty, keys leak;
 //   - remove `apply_effort_launch_to_command` → stale keys remain, assertion fails.
 //
@@ -172,7 +172,7 @@ fn production_sequence_goose_inherited_collision_resolved_in_child() {
 
     let mut cmd = std::process::Command::new("/usr/bin/env");
     cmd.env(GOOSE_KEY, "baked-high");
-    cmd.env(BUZZ_AGENT_KEY, "legacy-medium");
+    cmd.env(KUZZ_AGENT_KEY, "legacy-medium");
     cmd.env("MY_AGENT_CONFIG", "keep-me");
 
     let mut r = record();
@@ -194,8 +194,8 @@ fn production_sequence_goose_inherited_collision_resolved_in_child() {
         "child must receive the projected Goose key; env:\n{child_env}"
     );
     assert!(
-        !child_env.contains(BUZZ_AGENT_KEY),
-        "legacy buzz-agent key must not reach child; env:\n{child_env}"
+        !child_env.contains(KUZZ_AGENT_KEY),
+        "legacy kuzz-agent key must not reach child; env:\n{child_env}"
     );
     assert!(
         !child_env.contains(ACP_KEY),
@@ -209,7 +209,7 @@ fn production_sequence_goose_inherited_collision_resolved_in_child() {
         child_env.contains("MY_AGENT_CONFIG=keep-me"),
         "unrelated key must survive; env:\n{child_env}"
     );
-    let effort_key_count = [GOOSE_KEY, BUZZ_AGENT_KEY, ACP_KEY]
+    let effort_key_count = [GOOSE_KEY, KUZZ_AGENT_KEY, ACP_KEY]
         .iter()
         .filter(|k| child_env.contains(&format!("{k}=")))
         .count();

@@ -1,10 +1,10 @@
-import 'package:buzz/features/settings/settings_page.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/auth/default_community.dart';
-import 'package:buzz/shared/community/community_membership_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme.dart';
-import 'package:buzz/shared/utils/string_utils.dart';
+import 'package:kuzz/features/settings/settings_page.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
+import 'package:kuzz/shared/community/community_membership_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/utils/string_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -20,8 +20,8 @@ void main() {
     tester,
   ) async {
     PackageInfo.setMockInitialValues(
-      appName: 'Buzz',
-      packageName: 'xyz.block.buzz',
+      appName: 'Kuzz',
+      packageName: 'app.kuzz',
       version: 'test',
       buildNumber: '1',
       buildSignature: '',
@@ -101,8 +101,8 @@ void main() {
     tester,
   ) async {
     PackageInfo.setMockInitialValues(
-      appName: 'Buzz',
-      packageName: 'xyz.block.buzz',
+      appName: 'Kuzz',
+      packageName: 'app.kuzz',
       version: 'test',
       buildNumber: '1',
       buildSignature: '',

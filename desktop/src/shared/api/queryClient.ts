@@ -35,7 +35,7 @@ const CONVERSATION_CACHE_KEYS = [
   ["thread-window-state"],
 ] as const;
 
-export function createBuzzQueryClient() {
+export function createKuzzQueryClient() {
   configureQueryFocusManager();
   const queryClient = new QueryClient({
     defaultOptions: {

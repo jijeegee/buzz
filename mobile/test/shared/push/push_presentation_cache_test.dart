@@ -1,5 +1,5 @@
-import 'package:buzz/shared/push/push_presentation_cache.dart';
-import 'package:buzz/shared/relay/nostr_models.dart';
+import 'package:kuzz/shared/push/push_presentation_cache.dart';
+import 'package:kuzz/shared/relay/nostr_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostr/nostr.dart' as nostr;
 

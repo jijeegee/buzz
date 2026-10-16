@@ -15,7 +15,7 @@ final keepMentionedAgentsPinnedProvider =
     );
 
 class KeepMentionedAgentsPinnedPreference extends Notifier<bool> {
-  static const key = 'buzz_mobile_keep_mentioned_agents_pinned';
+  static const key = 'kuzz_mobile_keep_mentioned_agents_pinned';
   static const defaultValue = false;
 
   @override
@@ -76,7 +76,7 @@ final threadAgentAudienceProvider =
 
 class ThreadAgentAudience extends Notifier<ThreadAgentAudienceState> {
   static const maxScopes = 200;
-  static const storageKey = 'buzz_mobile_agent_audiences_v1';
+  static const storageKey = 'kuzz_mobile_agent_audiences_v1';
 
   @override
   ThreadAgentAudienceState build() {

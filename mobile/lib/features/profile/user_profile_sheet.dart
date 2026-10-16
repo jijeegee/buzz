@@ -17,7 +17,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/buzz_action_tile.dart';
+import '../../shared/widgets/kuzz_action_tile.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/widgets/progressive_animated_avatar.dart';
 import '../channels/channel.dart';
@@ -38,7 +38,7 @@ void showUserProfileSheet(
   String pubkey, {
   ProviderListenable<IdentityNames>? names,
 }) {
-  showBuzzModalBottomSheet<Channel>(
+  showKuzzModalBottomSheet<Channel>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -289,7 +289,7 @@ class UserProfileSheet extends HookConsumerWidget {
                       children: [
                         if (pk != currentPubkey) ...[
                           Expanded(
-                            child: BuzzActionTile(
+                            child: KuzzActionTile(
                               icon: isOpeningDirectMessage.value
                                   ? null
                                   : LucideIcons.messageSquare,
@@ -304,7 +304,7 @@ class UserProfileSheet extends HookConsumerWidget {
                           const SizedBox(width: Grid.twelve),
                         ],
                         Expanded(
-                          child: BuzzActionTile(
+                          child: KuzzActionTile(
                             icon: copied.value
                                 ? LucideIcons.check
                                 : LucideIcons.key,

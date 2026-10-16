@@ -13,7 +13,7 @@
  * Just over the relay's hard staleness ceiling: a replica may serve a read
  * only while its last verified sync is within the configured budget, and the
  * budget is clamped to `FENCE_STALENESS` (30s, in
- * crates/buzz-db/src/runtime/replica_fence.rs). Past this, no supported
+ * crates/kuzz-db/src/runtime/replica_fence.rs). Past this, no supported
  * setting can return a pre-change list. Must move with `FENCE_STALENESS`.
  * Measured on the monotonic clock so a wall-clock jump can't shorten it.
  */

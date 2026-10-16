@@ -145,7 +145,7 @@ export function useAccountMenu({ open }: { open: boolean }) {
     busy: busy || login.pending,
     switchTo,
     signIn,
-    /** For the "Create your Buzz account" screen. */
+    /** For the "Create your Kuzz account" screen. */
     signupPrompt: { signup: login.signup, answerSignup: login.answerSignup },
   };
 }

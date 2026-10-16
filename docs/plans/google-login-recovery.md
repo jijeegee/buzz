@@ -1,13 +1,13 @@
 # Google login recovery
 
 Keep the existing onboarding order and account/key recovery contract. This change
-addresses browser waiting and returning to Buzz, without adding signup steps,
+addresses browser waiting and returning to Kuzz, without adding signup steps,
 reordering agent setup, changing profiles/invitations, or migrating identities.
 
 Desktop browser waiting offers Cancel sign-in. Cancellation owns a particular
 attempt and closes its loopback listener before allowing another attempt. Once
 the validated callback advances to account processing, cancellation no longer
-interrupts key/session persistence. The UI then says it is finishing in Buzz.
+interrupts key/session persistence. The UI then says it is finishing in Kuzz.
 Errors remain visible beside the retryable sign-in action.
 
 A valid callback restores/shows/focuses the existing main window. The browser

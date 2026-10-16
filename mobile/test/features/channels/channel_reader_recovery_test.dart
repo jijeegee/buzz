@@ -1,22 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:buzz/features/channels/channel_mutes/channel_mutes_manager.dart';
-import 'package:buzz/features/channels/channel_mutes/channel_mutes_provider.dart';
-import 'package:buzz/features/channels/channel_sections/channel_sections_provider.dart';
-import 'package:buzz/features/channels/channel_sort/channel_sort_provider.dart';
-import 'package:buzz/features/channels/channel_stars/channel_stars_provider.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:kuzz/features/channels/channel_mutes/channel_mutes_manager.dart';
+import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart';
+import 'package:kuzz/features/channels/channel_sections/channel_sections_provider.dart';
+import 'package:kuzz/features/channels/channel_sort/channel_sort_provider.dart';
+import 'package:kuzz/features/channels/channel_stars/channel_stars_provider.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:buzz/features/channels/channel_sections/channel_sections_manager.dart';
-import 'package:buzz/features/channels/channel_sort/channel_sort_manager.dart';
-import 'package:buzz/features/channels/channel_sort/channel_sort_storage.dart';
-import 'package:buzz/features/channels/channel_stars/channel_stars_manager.dart';
+import 'package:kuzz/features/channels/channel_sections/channel_sections_manager.dart';
+import 'package:kuzz/features/channels/channel_sort/channel_sort_manager.dart';
+import 'package:kuzz/features/channels/channel_sort/channel_sort_storage.dart';
+import 'package:kuzz/features/channels/channel_stars/channel_stars_manager.dart';
 import 'package:fake_async/fake_async.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

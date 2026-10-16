@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run-tests.sh — Run Buzz test suite
+# run-tests.sh — Run Kuzz test suite
 # =============================================================================
 # Usage:
 #   ./scripts/run-tests.sh              # run all tests (default)
@@ -40,12 +40,12 @@ if [[ -f ".env" ]]; then
   set +o allexport
 else
   # Use defaults matching docker-compose.yml
-  export DATABASE_URL="postgres://buzz:buzz_dev@localhost:5432/buzz" # sadscan:disable np.postgres.1
+  export DATABASE_URL="postgres://kuzz:kuzz_dev@localhost:5432/kuzz" # sadscan:disable np.postgres.1
   export PGHOST=localhost
   export PGPORT=5432
-  export PGUSER=buzz
-  export PGPASSWORD=buzz_dev
-  export PGDATABASE=buzz
+  export PGUSER=kuzz
+  export PGPASSWORD=kuzz_dev
+  export PGDATABASE=kuzz
   export REDIS_URL="redis://localhost:6379"
 fi
 
@@ -78,128 +78,128 @@ ensure_infra() {
 run_unit_tests() {
   section "Unit Tests (no infra required)"
 
-  run_test_step "buzz-core tests" \
-    cargo test -p buzz-core --lib -- --nocapture
+  run_test_step "kuzz-core tests" \
+    cargo test -p kuzz-core --lib -- --nocapture
 
-  run_test_step "buzz-audit tests" \
-    cargo test -p buzz-audit --lib -- --nocapture
+  run_test_step "kuzz-audit tests" \
+    cargo test -p kuzz-audit --lib -- --nocapture
 
-  run_test_step "buzz-auth unit tests" \
-    cargo test -p buzz-auth --lib -- --nocapture
+  run_test_step "kuzz-auth unit tests" \
+    cargo test -p kuzz-auth --lib -- --nocapture
 
   # S4 cross-pod NIP-FI disconnect payload tests (infra-free). Mirrors
   # `just test-unit`.
-  run_test_step "buzz-pubsub conn_control NIP-FI tests" \
-    cargo test -p buzz-pubsub --lib conn_control::tests::nip_fi_disconnect_ -- --nocapture
+  run_test_step "kuzz-pubsub conn_control NIP-FI tests" \
+    cargo test -p kuzz-pubsub --lib conn_control::tests::nip_fi_disconnect_ -- --nocapture
 
-  run_test_step "buzz-voice tests" \
-    cargo test -p buzz-voice --lib -- --nocapture
+  run_test_step "kuzz-voice tests" \
+    cargo test -p kuzz-voice --lib -- --nocapture
 
-  run_test_step "buzz-cli tests" \
-    cargo test -p buzz-cli -- --nocapture
+  run_test_step "kuzz-cli tests" \
+    cargo test -p kuzz-cli -- --nocapture
 
-  # buzz-sdk builder/validation unit tests: pure event-builder and input
+  # kuzz-sdk builder/validation unit tests: pure event-builder and input
   # validation, no infra. Mirrors the nextest path in `just test-unit` — the
   # two lists must stay in step. `--lib` matches the nextest invocation and
   # avoids the full-package rustdoc dependency-resolution flake.
-  run_test_step "buzz-sdk unit tests" \
-    cargo test -p buzz-sdk --lib -- --nocapture
+  run_test_step "kuzz-sdk unit tests" \
+    cargo test -p kuzz-sdk --lib -- --nocapture
 
   # Keep the relay-to-agent trust-boundary regressions in the fallback path
   # when cargo-nextest is unavailable.
-  run_test_step "buzz-acp tests" \
-    cargo test -p buzz-acp -- --nocapture
+  run_test_step "kuzz-acp tests" \
+    cargo test -p kuzz-acp -- --nocapture
 
 
-  # buzz-db migrator/lint unit tests (no infra): guard the embedded-migrator
+  # kuzz-db migrator/lint unit tests (no infra): guard the embedded-migrator
   # invariant (exactly the consolidated 0001; cutover/backfill stays an operator
   # script, not startup state) and the tenant-scoping lints. The Postgres-backed
-  # buzz-db tests are #[ignore]d; nothing here (or in integration mode below,
-  # which runs `cargo test -p buzz-db` without --ignored) runs them — they need a
+  # kuzz-db tests are #[ignore]d; nothing here (or in integration mode below,
+  # which runs `cargo test -p kuzz-db` without --ignored) runs them — they need a
   # separate isolated-DB gate, so --lib keeps this step infra-free.
-  run_test_step "buzz-db unit tests" \
-    cargo test -p buzz-db --lib -- --nocapture
+  run_test_step "kuzz-db unit tests" \
+    cargo test -p kuzz-db --lib -- --nocapture
 
-  run_test_step "buzz-media storage snapshot serialization test" \
-    cargo test -p buzz-media --lib bucket_index::tests::bucket_snapshot_json_round_trip_preserves_community_keys -- --exact --nocapture
+  run_test_step "kuzz-media storage snapshot serialization test" \
+    cargo test -p kuzz-media --lib bucket_index::tests::bucket_snapshot_json_round_trip_preserves_community_keys -- --exact --nocapture
 
-  run_test_step "buzz-admin storage snapshot tests" \
-    cargo test -p buzz-admin storage_snapshot -- --nocapture
+  run_test_step "kuzz-admin storage snapshot tests" \
+    cargo test -p kuzz-admin storage_snapshot -- --nocapture
 
   # Multi-tenant conformance gate: independent replay checker + golden
-  # fixtures (buzz-conformance). Pure in-process trace replay, no infra.
-  run_test_step "buzz-conformance tests" \
-    cargo test -p buzz-conformance -- --nocapture
+  # fixtures (kuzz-conformance). Pure in-process trace replay, no infra.
+  run_test_step "kuzz-conformance tests" \
+    cargo test -p kuzz-conformance -- --nocapture
 
-  run_test_step "buzz-push-gateway tests" \
-    cargo test -p buzz-push-gateway -- --nocapture
-  run_test_step "buzz-push-gateway personal development tests" \
-    cargo test -p buzz-push-gateway --features personal-dev-app-attest -- --nocapture
+  run_test_step "kuzz-push-gateway tests" \
+    cargo test -p kuzz-push-gateway -- --nocapture
+  run_test_step "kuzz-push-gateway personal development tests" \
+    cargo test -p kuzz-push-gateway --features personal-dev-app-attest -- --nocapture
 
   # Kubernetes backend provider: pure decision layers driven by a fake
   # substrate, no cluster. Mirrors the nextest path in `just test-unit` —
   # the two lists must stay in step or the fallback silently covers less.
-  run_test_step "buzz-backend-kubernetes tests" \
-    cargo test -p buzz-backend-kubernetes -- --nocapture
+  run_test_step "kuzz-backend-kubernetes tests" \
+    cargo test -p kuzz-backend-kubernetes -- --nocapture
 
   # Keep fallback parity with `just test-unit`: one LaunchDarkly-feature run
-  # exercises both default and feature-gated buzz-feature-flags tests.
-  run_test_step "buzz-feature-flags tests (launchdarkly)" \
-    cargo test -p buzz-feature-flags --features launchdarkly -- --nocapture
+  # exercises both default and feature-gated kuzz-feature-flags tests.
+  run_test_step "kuzz-feature-flags tests (launchdarkly)" \
+    cargo test -p kuzz-feature-flags --features launchdarkly -- --nocapture
 
-  # buzz-agent model-capabilities corpus: the Rust half of the cross-language
+  # kuzz-agent model-capabilities corpus: the Rust half of the cross-language
   # drift guard. model_capabilities.rs embeds scripts/model-capabilities.json +
   # scripts/normative-corpus.json via include_str! and replays the full locked
   # corpus as pure in-process tests (no infra). Mirrors the nextest path in
   # `just test-unit` — the two lists must stay in step.
-  run_test_step "buzz-agent unit tests" \
-    cargo test -p buzz-agent --lib -- --nocapture
+  run_test_step "kuzz-agent unit tests" \
+    cargo test -p kuzz-agent --lib -- --nocapture
 
   # ACP author-gate and queue tests are pure unit tests. Keep this fallback in
   # step with `just test-unit`; ignored lifecycle tests run elsewhere.
-  run_test_step "buzz-acp unit tests" \
-    cargo test -p buzz-acp --lib -- --nocapture
+  run_test_step "kuzz-acp unit tests" \
+    cargo test -p kuzz-acp --lib -- --nocapture
 
   # Mirror the relay filters from `just test-unit`: the three handler modules,
   # storage-snapshot helpers, readiness and router unit suites, and the single
   # scoped admission regression in state::tests, plus the REQ lifecycle tests.
-  run_test_step "buzz-relay channel authorization tests" \
-    cargo test -p buzz-relay --lib handlers::channel_authz:: -- --nocapture
+  run_test_step "kuzz-relay channel authorization tests" \
+    cargo test -p kuzz-relay --lib handlers::channel_authz:: -- --nocapture
 
-  run_test_step "buzz-relay moderation authorization tests" \
-    cargo test -p buzz-relay --lib handlers::moderation_authz:: -- --nocapture
+  run_test_step "kuzz-relay moderation authorization tests" \
+    cargo test -p kuzz-relay --lib handlers::moderation_authz:: -- --nocapture
 
-  run_test_step "buzz-relay side-effects helper tests" \
-    cargo test -p buzz-relay --lib handlers::side_effects::tests:: -- --nocapture
+  run_test_step "kuzz-relay side-effects helper tests" \
+    cargo test -p kuzz-relay --lib handlers::side_effects::tests:: -- --nocapture
 
-  run_test_step "buzz-relay storage snapshot tests" \
-    cargo test -p buzz-relay --lib storage_sweep::tests:: -- --nocapture
+  run_test_step "kuzz-relay storage snapshot tests" \
+    cargo test -p kuzz-relay --lib storage_sweep::tests:: -- --nocapture
 
   # Mirror the four audio/FI suites from `just test-unit`'s nextest expression.
   # These are infra-free (no DB, no Redis); the `#[ignore]`-gated DB witnesses
   # are excluded by cargo test's default filter. Keep in step with the Justfile
   # `test-unit` relay expression.
-  run_test_step "buzz-relay audio join tests" \
-    cargo test -p buzz-relay --lib audio::join::tests:: -- --nocapture
+  run_test_step "kuzz-relay audio join tests" \
+    cargo test -p kuzz-relay --lib audio::join::tests:: -- --nocapture
 
-  run_test_step "buzz-relay audio handler tests" \
-    cargo test -p buzz-relay --lib audio::handler::tests:: -- --nocapture
+  run_test_step "kuzz-relay audio handler tests" \
+    cargo test -p kuzz-relay --lib audio::handler::tests:: -- --nocapture
 
-  run_test_step "buzz-relay NIP-FI gate tests" \
-    cargo test -p buzz-relay --lib nip_fi_gate::tests:: -- --nocapture
+  run_test_step "kuzz-relay NIP-FI gate tests" \
+    cargo test -p kuzz-relay --lib nip_fi_gate::tests:: -- --nocapture
 
-  run_test_step "buzz-relay NIP-FI session tests" \
-    cargo test -p buzz-relay --lib nip_fi_session::tests:: -- --nocapture
+  run_test_step "kuzz-relay NIP-FI session tests" \
+    cargo test -p kuzz-relay --lib nip_fi_session::tests:: -- --nocapture
 
   # Mirror the NIP-FI (S3) stanza from `just test-unit`: module filters, then
   # each exact name. Keep this list in step with that stanza's `test(=...)`s.
-  run_test_step "buzz-relay NIP-FI config tests" \
-    cargo test -p buzz-relay --lib nip_fi_config:: -- --nocapture
+  run_test_step "kuzz-relay NIP-FI config tests" \
+    cargo test -p kuzz-relay --lib nip_fi_config:: -- --nocapture
 
   # Infra-free REQ subscription-lifecycle tests, by exact name: the rest of
   # handlers::req needs a database.
-  run_test_step "buzz-relay REQ subscription lifecycle tests" \
-    cargo test -p buzz-relay --lib -- --exact --nocapture \
+  run_test_step "kuzz-relay REQ subscription lifecycle tests" \
+    cargo test -p kuzz-relay --lib -- --exact --nocapture \
       handlers::req::tests::timed_out_historical_read_deregisters_before_closed \
       handlers::req::tests::superseded_timeout_leaves_replacement_intact \
       handlers::req::tests::search_claim_retires_live_and_yields_to_replacement \
@@ -210,35 +210,35 @@ run_unit_tests() {
       handlers::req::tests::dropped_terminal_frame_cancels_connection \
       handlers::req::tests::revoke_dropped_terminal_frame_cancels_connection
 
-  run_test_step "buzz-relay readiness tests" \
-    cargo test -p buzz-relay --lib readiness::tests:: -- --nocapture
+  run_test_step "kuzz-relay readiness tests" \
+    cargo test -p kuzz-relay --lib readiness::tests:: -- --nocapture
 
-  run_test_step "buzz-relay admission regression test" \
-    cargo test -p buzz-relay --lib state::tests::neither_a_confirmed_inactive_community_nor_a_failed_lookup_admits_the_socket -- --nocapture
+  run_test_step "kuzz-relay admission regression test" \
+    cargo test -p kuzz-relay --lib state::tests::neither_a_confirmed_inactive_community_nor_a_failed_lookup_admits_the_socket -- --nocapture
 
-  run_test_step "buzz-relay router tests" \
-    cargo test -p buzz-relay --lib router::tests:: -- --nocapture
+  run_test_step "kuzz-relay router tests" \
+    cargo test -p kuzz-relay --lib router::tests:: -- --nocapture
 
-  run_test_step "buzz-relay NIP-FI shared core tests" \
-    cargo test -p buzz-relay --lib nip_fi_core::tests:: -- --nocapture
+  run_test_step "kuzz-relay NIP-FI shared core tests" \
+    cargo test -p kuzz-relay --lib nip_fi_core::tests:: -- --nocapture
 
-  run_test_step "buzz-relay NIP-FI HTTP ingress tests" \
-    cargo test -p buzz-relay --lib nip_fi_http::tests:: -- --nocapture
+  run_test_step "kuzz-relay NIP-FI HTTP ingress tests" \
+    cargo test -p kuzz-relay --lib nip_fi_http::tests:: -- --nocapture
 
-  run_test_step "buzz-relay API query parsing tests" \
-    cargo test -p buzz-relay --lib api::parse_query_tests:: -- --nocapture
+  run_test_step "kuzz-relay API query parsing tests" \
+    cargo test -p kuzz-relay --lib api::parse_query_tests:: -- --nocapture
 
-  run_test_step "buzz-relay Git transport Off-mode precedence tests" \
-    cargo test -p buzz-relay --lib api::git::transport::off_mode_precedence_tests:: -- --nocapture
+  run_test_step "kuzz-relay Git transport Off-mode precedence tests" \
+    cargo test -p kuzz-relay --lib api::git::transport::off_mode_precedence_tests:: -- --nocapture
 
-  run_test_step "buzz-relay NIP-FI upgrade tests" \
-    cargo test -p buzz-relay --lib nip_fi_upgrade:: -- --nocapture
+  run_test_step "kuzz-relay NIP-FI upgrade tests" \
+    cargo test -p kuzz-relay --lib nip_fi_upgrade:: -- --nocapture
 
-  run_test_step "buzz-relay NIP-FI admin API tests" \
-    cargo test -p buzz-relay --lib api::nip_fi:: -- --nocapture
+  run_test_step "kuzz-relay NIP-FI admin API tests" \
+    cargo test -p kuzz-relay --lib api::nip_fi:: -- --nocapture
 
-  run_test_step "buzz-relay auth metrics contract tests" \
-    cargo test -p buzz-relay --lib metrics::contract_tests:: -- --nocapture
+  run_test_step "kuzz-relay auth metrics contract tests" \
+    cargo test -p kuzz-relay --lib metrics::contract_tests:: -- --nocapture
 
   local nip_fi_exact_tests=(
     audio::room::tests::roster_revisions_are_ordered_and_snapshot_is_authoritative
@@ -284,12 +284,12 @@ run_unit_tests() {
   )
   local name
   for name in "${nip_fi_exact_tests[@]}"; do
-    run_test_step "buzz-relay ${name}" \
-      cargo test -p buzz-relay --lib "$name" -- --exact --nocapture
+    run_test_step "kuzz-relay ${name}" \
+      cargo test -p kuzz-relay --lib "$name" -- --exact --nocapture
   done
 
-  run_test_step "buzz-relay binary tests" \
-    cargo test -p buzz-relay --bin buzz-relay -- --nocapture
+  run_test_step "kuzz-relay binary tests" \
+    cargo test -p kuzz-relay --bin kuzz-relay -- --nocapture
 }
 
 # ---- DB / integration tests (infra required) --------------------------------
@@ -299,14 +299,14 @@ run_integration_tests() {
 
   ensure_infra
 
-  run_test_step "buzz-db tests" \
-    cargo test -p buzz-db -- --nocapture
+  run_test_step "kuzz-db tests" \
+    cargo test -p kuzz-db -- --nocapture
 
-  if find crates/buzz-auth/tests -maxdepth 1 -name '*.rs' -print -quit 2>/dev/null | grep -q .; then
-    run_test_step "buzz-auth integration tests" \
-      cargo test -p buzz-auth --test '*' -- --nocapture
+  if find crates/kuzz-auth/tests -maxdepth 1 -name '*.rs' -print -quit 2>/dev/null | grep -q .; then
+    run_test_step "kuzz-auth integration tests" \
+      cargo test -p kuzz-auth --test '*' -- --nocapture
   else
-    run_test_step "buzz-auth (no integration tests found)" true
+    run_test_step "kuzz-auth (no integration tests found)" true
   fi
 
   run_test_step "workspace integration tests" \

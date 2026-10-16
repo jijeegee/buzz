@@ -761,7 +761,7 @@ export function ProjectsAgentPromptPage({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto px-4">
-          <div className="w-full pb-6 pt-[calc(var(--buzz-channel-content-top-padding,5.75rem)_+_1rem)]">
+          <div className="w-full pb-6 pt-[calc(var(--kuzz-channel-content-top-padding,5.75rem)_+_1rem)]">
             <div className="mb-4 flex justify-end">
               <Button
                 className="h-8 gap-1.5 rounded-full px-3 text-xs text-muted-foreground"

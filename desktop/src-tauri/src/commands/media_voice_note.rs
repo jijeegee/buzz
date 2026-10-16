@@ -32,7 +32,7 @@ pub(super) async fn prepare_voice_note_for_upload(
         }
 
         let tmp_input =
-            std::env::temp_dir().join(format!("buzz-voice-input-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("kuzz-voice-input-{}", uuid::Uuid::new_v4()));
         let result = (|| {
             std::fs::write(&tmp_input, &data)
                 .map_err(|error| format!("failed to prepare voice note: {error}"))?;

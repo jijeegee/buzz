@@ -4,7 +4,7 @@ import { seedActiveIdentity } from "../helpers/onboarding";
 
 const ORIGIN = "https://custody.example:8443";
 const RELAY = "wss://custody.example:8443";
-const TRANSACTION = "buzz-community-onboarding-transaction.v1";
+const TRANSACTION = "kuzz-community-onboarding-transaction.v1";
 const PUBKEY = TEST_IDENTITIES.alice.pubkey;
 
 type TestWindow = Window & {
@@ -64,7 +64,7 @@ async function installDefaultCommunity(
             const id = (args as { attemptId: string }).attemptId;
             return new Promise((_, reject) => {
               pendingLogin = { id, reject };
-              window.__BUZZ_E2E_EMIT_TAURI_EVENT__?.("google-login-progress", {
+              window.__KUZZ_E2E_EMIT_TAURI_EVENT__?.("google-login-progress", {
                 attemptId: id,
                 phase: "waiting",
               });
@@ -154,13 +154,13 @@ async function signIn(page: Page) {
   await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
   await expect(page.getByTestId("welcome-setup")).toHaveCount(0);
   expect(
-    await page.evaluate(() => localStorage.getItem("buzz-communities")),
+    await page.evaluate(() => localStorage.getItem("kuzz-communities")),
   ).toBeNull();
 }
 
 async function savedCommunities(page: Page) {
   return page.evaluate(() =>
-    JSON.parse(localStorage.getItem("buzz-communities") ?? "[]"),
+    JSON.parse(localStorage.getItem("kuzz-communities") ?? "[]"),
   );
 }
 
@@ -240,7 +240,7 @@ test("denied AUTH remains durable across reload, retries once with the same comm
   await installDefaultCommunity(page);
   await signIn(page);
   await page.evaluate(() =>
-    window.__BUZZ_E2E_QUEUE_AUTH_RESPONSES__?.([
+    window.__KUZZ_E2E_QUEUE_AUTH_RESPONSES__?.([
       { success: false, message: "restricted: not a relay member" },
     ]),
   );
@@ -310,10 +310,10 @@ test("configured users keep their chosen community", async ({ page }) => {
   });
   await page.addInitScript(() => {
     const communities = JSON.parse(
-      localStorage.getItem("buzz-communities") ?? "[]",
+      localStorage.getItem("kuzz-communities") ?? "[]",
     );
     communities[0].relayUrl = "wss://chosen.example";
-    localStorage.setItem("buzz-communities", JSON.stringify(communities));
+    localStorage.setItem("kuzz-communities", JSON.stringify(communities));
   });
   await page.goto("/");
   await expect

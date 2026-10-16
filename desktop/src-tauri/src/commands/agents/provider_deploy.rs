@@ -32,7 +32,7 @@ use crate::{
 ///
 /// `replay_floor_unix`: optional unix-seconds replay floor from a
 /// publish-first mention send. It is injected into the rebuilt payload's
-/// `launch.policy_env` as `BUZZ_ACP_REPLAY_FLOOR`, so the remote harness's
+/// `launch.policy_env` as `KUZZ_ACP_REPLAY_FLOOR`, so the remote harness's
 /// startup watermark replays back past the already-published triggering
 /// message exactly like a local spawn. Per-invocation only — never persisted
 /// on the record, so later redeploys do not carry a stale floor.
@@ -152,7 +152,7 @@ pub(crate) async fn deploy_to_provider(
             pubkey,
             crate::managed_agents::deployed_routing_role(&deployed_agent_json),
         ) {
-            eprintln!("buzz-desktop: failed to stamp deployed routing role for {pubkey}: {error}");
+            eprintln!("kuzz-desktop: failed to stamp deployed routing role for {pubkey}: {error}");
         }
     }
     result
@@ -180,7 +180,7 @@ fn assert_payload_scope(
             &crate::relay::relay_http_base_url(embedded_relay),
         )?,
         None if has_expectation(expected_relay_url) => {
-            eprintln!("buzz-desktop: deploy payload carries no relay; not deployed");
+            eprintln!("kuzz-desktop: deploy payload carries no relay; not deployed");
             return Err("Couldn't deploy the agent.".to_string());
         }
         None => {}
@@ -383,7 +383,7 @@ mod tests {
         serde_json::json!({
             "launch": {
                 "env": { "KEEP_ME": "yes" },
-                "policy_env": { "BUZZ_ACP_LAZY_POOL": "true" },
+                "policy_env": { "KUZZ_ACP_LAZY_POOL": "true" },
             },
         })
     }
@@ -391,16 +391,16 @@ mod tests {
     #[test]
     fn caller_replay_floor_rides_launch_policy_env() {
         // A publish-first mention send's floor must reach the remote harness
-        // as BUZZ_ACP_REPLAY_FLOOR, exactly like a local spawn's env.
+        // as KUZZ_ACP_REPLAY_FLOOR, exactly like a local spawn's env.
         let mut payload = launch_payload();
         apply_replay_floor(&mut payload, Some(1_756_600_000));
         assert_eq!(
-            payload["launch"]["policy_env"]["BUZZ_ACP_REPLAY_FLOOR"],
+            payload["launch"]["policy_env"]["KUZZ_ACP_REPLAY_FLOOR"],
             "1756600000"
         );
         assert_eq!(payload["launch"]["env"]["KEEP_ME"], "yes");
         assert_eq!(
-            payload["launch"]["policy_env"]["BUZZ_ACP_LAZY_POOL"],
+            payload["launch"]["policy_env"]["KUZZ_ACP_LAZY_POOL"],
             "true"
         );
     }
@@ -410,15 +410,15 @@ mod tests {
         // launch.env later-wins over policy_env in the remote three-tier
         // model; a persisted user floor must not shadow this send's floor.
         let mut payload = launch_payload();
-        payload["launch"]["env"]["BUZZ_ACP_REPLAY_FLOOR"] = "1".into();
-        payload["launch"]["env"]["buzz_acp_replay_floor"] = "2".into();
+        payload["launch"]["env"]["KUZZ_ACP_REPLAY_FLOOR"] = "1".into();
+        payload["launch"]["env"]["kuzz_acp_replay_floor"] = "2".into();
         apply_replay_floor(&mut payload, Some(42));
         assert_eq!(
-            payload["launch"]["policy_env"]["BUZZ_ACP_REPLAY_FLOOR"],
+            payload["launch"]["policy_env"]["KUZZ_ACP_REPLAY_FLOOR"],
             "42"
         );
-        assert!(payload["launch"]["env"]["BUZZ_ACP_REPLAY_FLOOR"].is_null());
-        assert!(payload["launch"]["env"]["buzz_acp_replay_floor"].is_null());
+        assert!(payload["launch"]["env"]["KUZZ_ACP_REPLAY_FLOOR"].is_null());
+        assert!(payload["launch"]["env"]["kuzz_acp_replay_floor"].is_null());
         assert_eq!(payload["launch"]["env"]["KEEP_ME"], "yes");
     }
 
@@ -427,7 +427,7 @@ mod tests {
         // Create-flow deploys and plain redeploys carry no floor: user env
         // passthrough stands and no stale floor is invented.
         let mut payload = launch_payload();
-        payload["launch"]["env"]["BUZZ_ACP_REPLAY_FLOOR"] = "1".into();
+        payload["launch"]["env"]["KUZZ_ACP_REPLAY_FLOOR"] = "1".into();
         let before = payload.clone();
         apply_replay_floor(&mut payload, None);
         assert_eq!(payload, before);
@@ -445,7 +445,7 @@ mod tests {
         let mut payload = serde_json::json!({ "launch": {} });
         apply_replay_floor(&mut payload, Some(42));
         assert_eq!(
-            payload["launch"]["policy_env"]["BUZZ_ACP_REPLAY_FLOOR"],
+            payload["launch"]["policy_env"]["KUZZ_ACP_REPLAY_FLOOR"],
             "42"
         );
     }

@@ -15,22 +15,22 @@ fi
 
 export PGHOST="${PGHOST:-localhost}"
 export PGPORT="${PGPORT:-5432}"
-export PGUSER="${PGUSER:-buzz}"
-export PGPASSWORD="${PGPASSWORD:-buzz_dev}"
-export PGDATABASE="${PGDATABASE:-buzz}"
+export PGUSER="${PGUSER:-kuzz}"
+export PGPASSWORD="${PGPASSWORD:-kuzz_dev}"
+export PGDATABASE="${PGDATABASE:-kuzz}"
 
 if command -v psql >/dev/null 2>&1; then
   run_psql() {
     PGPASSWORD="${PGPASSWORD}" psql -h "${PGHOST}" -p "${PGPORT}" \
       -U "${PGUSER}" -d "${PGDATABASE}" "$@"
   }
-elif docker exec buzz-postgres psql --version >/dev/null 2>&1; then
+elif docker exec kuzz-postgres psql --version >/dev/null 2>&1; then
   run_psql() {
-    docker exec -i -e PGPASSWORD="${PGPASSWORD}" buzz-postgres \
+    docker exec -i -e PGPASSWORD="${PGPASSWORD}" kuzz-postgres \
       psql -U "${PGUSER}" -d "${PGDATABASE}" "$@"
   }
 else
-  echo "error: neither psql nor buzz-postgres docker psql is available" >&2
+  echo "error: neither psql nor kuzz-postgres docker psql is available" >&2
   exit 1
 fi
 
@@ -69,14 +69,14 @@ upload_fixture() {
   size="$(fixture_size "${path}")"
   sidecar="$(printf '{"dim":"%s","blurhash":"","thumb_url":"","ext":"%s","mime_type":"%s","size":%s,"uploaded_at":0}' \
     "${dimensions}" "${extension}" "${mime}" "${size}")"
-  docker exec -i buzz-minio mc pipe --quiet --attr "Content-Type=${mime}" \
-    "local/${BUZZ_S3_BUCKET:-buzz-media}/${hash}.${extension}" < "${path}"
-  printf '%s' "${sidecar}" | docker exec -i buzz-minio mc pipe --quiet \
+  docker exec -i kuzz-minio mc pipe --quiet --attr "Content-Type=${mime}" \
+    "local/${KUZZ_S3_BUCKET:-kuzz-media}/${hash}.${extension}" < "${path}"
+  printf '%s' "${sidecar}" | docker exec -i kuzz-minio mc pipe --quiet \
     --attr "Content-Type=application/json" \
-    "local/${BUZZ_S3_BUCKET:-buzz-media}/_meta/${community_id}/${hash}.json"
+    "local/${KUZZ_S3_BUCKET:-kuzz-media}/_meta/${community_id}/${hash}.json"
 }
 
-fixture_dir="$(mktemp -d "${TMPDIR:-/tmp}/buzz-admin-feedback.XXXXXX")"
+fixture_dir="$(mktemp -d "${TMPDIR:-/tmp}/kuzz-admin-feedback.XXXXXX")"
 search_image="${REPO_ROOT}/docs/assets/screenshots/media-comments.png"
 workspace_image="${REPO_ROOT}/docs/assets/screenshots/channel-thread.png"
 quality_image="${REPO_ROOT}/docs/assets/screenshots/channel-agents.png"
@@ -84,9 +84,9 @@ composer_diagnostics="${fixture_dir}/composer-diagnostics.txt"
 workspace_diagnostics="${fixture_dir}/workspace-diagnostics.txt"
 trap 'rm -f "${composer_diagnostics}" "${workspace_diagnostics}"; rmdir "${fixture_dir}"' EXIT
 
-printf '%s\n' "buzz feedback diagnostics" "area: composer" \
+printf '%s\n' "kuzz feedback diagnostics" "area: composer" \
   "event: resumed_from_sleep" "result: composer_unresponsive" > "${composer_diagnostics}"
-printf '%s\n' "buzz feedback diagnostics" "area: workspace-switching" \
+printf '%s\n' "kuzz feedback diagnostics" "area: workspace-switching" \
   "from: design" "to: engineering" \
   "result: previous_sidebar_visible_for_one_frame" > "${workspace_diagnostics}"
 
@@ -96,8 +96,8 @@ quality_image_hash="$(fixture_hash "${quality_image}")"
 composer_diagnostics_hash="$(fixture_hash "${composer_diagnostics}")"
 workspace_diagnostics_hash="$(fixture_hash "${workspace_diagnostics}")"
 
-if ! docker exec buzz-minio mc alias set local http://localhost:9000 \
-  "${BUZZ_S3_ACCESS_KEY:-buzz_dev}" "${BUZZ_S3_SECRET_KEY:-buzz_dev_secret}" >/dev/null; then
+if ! docker exec kuzz-minio mc alias set local http://localhost:9000 \
+  "${KUZZ_S3_ACCESS_KEY:-kuzz_dev}" "${KUZZ_S3_SECRET_KEY:-kuzz_dev_secret}" >/dev/null; then
   echo "error: local MinIO is unavailable; run just setup first" >&2
   exit 1
 fi

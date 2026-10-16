@@ -13,7 +13,7 @@ void useNativeMessageActionSelection(
   // can clear the new handler on the same channel after a keyboard-driven rebuild.
   useEffect(() {
     if (viewId == null) return null;
-    final channel = MethodChannel('buzz/native_message_action_surface/$viewId');
+    final channel = MethodChannel('kuzz/native_message_action_surface/$viewId');
     channel.setMethodCallHandler((call) async {
       if (call.method != 'selected' || call.arguments is! Map) return;
       final actionId = (call.arguments as Map)['id'];

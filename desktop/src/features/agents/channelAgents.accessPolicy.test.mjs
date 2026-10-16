@@ -18,7 +18,7 @@ function rawAgent(overrides = {}) {
     name: "fizz",
     persona_id: null,
     relay_url: "wss://relay.example",
-    acp_command: "buzz-acp",
+    acp_command: "kuzz-acp",
     agent_command: "goose",
     agent_args: [],
     mcp_command: "",

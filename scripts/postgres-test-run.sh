@@ -3,7 +3,7 @@
 # database even when nextest fails or is interrupted.
 set -euo pipefail
 
-: "${BUZZ_POSTGRES_ADMIN_URL:?set BUZZ_POSTGRES_ADMIN_URL to an administrator database URL}"
+: "${KUZZ_POSTGRES_ADMIN_URL:?set KUZZ_POSTGRES_ADMIN_URL to an administrator database URL}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -36,18 +36,18 @@ sha256_hex() {
 }
 
 dropdb="$(resolve_pg_command dropdb)"
-run_identity="${BUZZ_TEST_RUN_ID:-${USER:-buzz}:$$:$(date -u +%s):${RANDOM:-0}}"
+run_identity="${KUZZ_TEST_RUN_ID:-${USER:-kuzz}:$$:$(date -u +%s):${RANDOM:-0}}"
 run_hash="$(printf '%s' "$run_identity" | sha256_hex)"
 run_hash="${run_hash:0:20}"
-template_database="buzz_nt_${run_hash}_desired"
-export BUZZ_TEST_RUN_ID="$run_identity"
-export BUZZ_POSTGRES_DESIRED_TEMPLATE="$template_database"
+template_database="kuzz_nt_${run_hash}_desired"
+export KUZZ_TEST_RUN_ID="$run_identity"
+export KUZZ_POSTGRES_DESIRED_TEMPLATE="$template_database"
 
 cleanup() {
   local attempt
   for attempt in 1 2 3 4 5; do
     if "$dropdb" --if-exists --force \
-      --maintenance-db="$BUZZ_POSTGRES_ADMIN_URL" \
+      --maintenance-db="$KUZZ_POSTGRES_ADMIN_URL" \
       "$template_database" >/dev/null 2>&1; then
       return 0
     fi

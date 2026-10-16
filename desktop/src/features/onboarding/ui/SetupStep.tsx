@@ -101,7 +101,7 @@ function RuntimeReadinessIndicator({
   return (
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute right-8 top-8 flex h-8 w-8 items-center justify-center rounded-full border border-[var(--buzz-welcome-chartreuse)] bg-[var(--buzz-welcome-chartreuse)]"
+      className="pointer-events-none absolute right-8 top-8 flex h-8 w-8 items-center justify-center rounded-full border border-[var(--kuzz-welcome-chartreuse)] bg-[var(--kuzz-welcome-chartreuse)]"
       data-testid={`onboarding-runtime-check-${runtime.id}`}
     >
       <Check
@@ -257,7 +257,7 @@ function RuntimeStatus({
       return (
         <Button
           aria-label={`Check ${runtime.label} again`}
-          className="buzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--buzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--buzz-welcome-chartreuse)]/40"
+          className="kuzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--kuzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--kuzz-welcome-chartreuse)]/40"
           data-testid={`onboarding-runtime-recheck-${runtime.id}`}
           onClick={() => void runtimesQuery.forceRefresh()}
           type="button"
@@ -277,7 +277,7 @@ function RuntimeStatus({
     return (
       <Button
         aria-label={`Check ${runtime.label} again`}
-        className="buzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--buzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--buzz-welcome-chartreuse)]/40"
+        className="kuzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--kuzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--kuzz-welcome-chartreuse)]/40"
         disabled={runtimesQuery.isFetching}
         onClick={() => void runtimesQuery.forceRefresh()}
         type="button"
@@ -293,7 +293,7 @@ function RuntimeStatus({
     return (
       <Button
         aria-label={`${installError ? "Retry installing" : "Install"} ${runtime.label}`}
-        className="buzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--buzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--buzz-welcome-chartreuse)]/40"
+        className="kuzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--kuzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--kuzz-welcome-chartreuse)]/40"
         data-testid={`onboarding-runtime-install-${runtime.id}`}
         onClick={onInstall}
         type="button"
@@ -307,7 +307,7 @@ function RuntimeStatus({
   return (
     <Button
       aria-label={`View ${runtime.label} install instructions`}
-      className="buzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--buzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--buzz-welcome-chartreuse)]/40"
+      className="kuzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--kuzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--kuzz-welcome-chartreuse)]/40"
       data-testid={`onboarding-runtime-instructions-${runtime.id}`}
       onClick={() => void openUrl(runtime.installInstructionsUrl)}
       type="button"
@@ -804,7 +804,7 @@ function RuntimeProvidersSection({
                     <RuntimeCard
                       installResults={installResults}
                       isRecommended={
-                        method === "api" && runtime.id === "buzz-agent"
+                        method === "api" && runtime.id === "kuzz-agent"
                       }
                       onInstallResultsChange={onInstallResultsChange}
                       onOpenDetails={() => onOpenDetails(runtime.id)}
@@ -1070,7 +1070,7 @@ function SetupStepContent({
     setLocalDirection("forward");
 
     if (nextMethod === "api") {
-      actions.next(["buzz-agent"], "method");
+      actions.next(["kuzz-agent"], "method");
       return;
     }
 
@@ -1079,7 +1079,7 @@ function SetupStepContent({
 
   function openRuntime(runtimeId: string) {
     setLocalDirection("forward");
-    if (runtimeId === "buzz-agent") {
+    if (runtimeId === "kuzz-agent") {
       actions.next([runtimeId]);
       return;
     }

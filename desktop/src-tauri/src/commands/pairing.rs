@@ -2,10 +2,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use buzz_core_pkg::kind::KIND_PAIRING;
-use buzz_core_pkg::pairing::qr::encode_qr;
-use buzz_core_pkg::pairing::session::PairingSession;
-use buzz_core_pkg::pairing::types::{AbortReason, PayloadType};
+use kuzz_core_pkg::kind::KIND_PAIRING;
+use kuzz_core_pkg::pairing::qr::encode_qr;
+use kuzz_core_pkg::pairing::session::PairingSession;
+use kuzz_core_pkg::pairing::types::{AbortReason, PayloadType};
 use futures_util::{SinkExt, StreamExt};
 use nostr::ToBech32;
 use serde::Serialize;
@@ -139,7 +139,7 @@ async fn start_pairing_session(
     if mode == PairingMode::SendIdentity {
         let keys = state.signing_keys()?;
         let nsec = keys.secret_key().to_bech32().map_err(|e| {
-            eprintln!("buzz-desktop: encode nsec: {e}");
+            eprintln!("kuzz-desktop: encode nsec: {e}");
             "Couldn't save your account on this device.".to_string()
         })?;
         let payload_json = serde_json::json!({
@@ -592,7 +592,7 @@ where
                 .next()
                 .await
                 .ok_or_else(|| {
-                    eprintln!("buzz-desktop: pairing: relay closed during auth");
+                    eprintln!("kuzz-desktop: pairing: relay closed during auth");
                     "Connection lost. Try pairing again.".to_string()
                 })?
                 .map_err(|e| format!("WS error during auth: {e}"))?;
@@ -612,7 +612,7 @@ where
     };
 
     let relay_url_parsed = nostr::RelayUrl::parse(relay_url).map_err(|e| {
-        eprintln!("buzz-desktop: pairing: invalid relay URL: {e}");
+        eprintln!("kuzz-desktop: pairing: invalid relay URL: {e}");
         "This link isn't valid.".to_string()
     })?;
     let auth_json = {
@@ -635,7 +635,7 @@ where
                 .next()
                 .await
                 .ok_or_else(|| {
-                    eprintln!("buzz-desktop: pairing: relay closed during auth OK");
+                    eprintln!("kuzz-desktop: pairing: relay closed during auth OK");
                     "Connection lost. Try pairing again.".to_string()
                 })?
                 .map_err(|e| format!("WS error during auth OK: {e}"))?;
@@ -656,7 +656,7 @@ fn event_to_relay_json(event: &nostr::Event) -> String {
     format!("[\"EVENT\",{}]", nostr::JsonUtil::as_json(event))
 }
 
-/// Parse a relay EVENT message into a nostr 0.36 Event (buzz-core compatible).
+/// Parse a relay EVENT message into a nostr 0.36 Event (kuzz-core compatible).
 fn parse_relay_event(text: &str, sub_id: &str) -> Option<nostr::Event> {
     let arr: serde_json::Value = serde_json::from_str(text).ok()?;
     let arr = arr.as_array()?;
@@ -740,7 +740,7 @@ fn resolve_pairing_relay_url(
         PairingRelay::Configured(url) => Ok(url),
         PairingRelay::LegacyPath => {
             let mut url = url::Url::parse(main_relay_url).map_err(|e| {
-                eprintln!("buzz-desktop: pairing: invalid relay URL: {e}");
+                eprintln!("kuzz-desktop: pairing: invalid relay URL: {e}");
                 "This link isn't valid.".to_string()
             })?;
             let path = url.path().trim_end_matches('/').to_string();
@@ -793,7 +793,7 @@ where
                 .next()
                 .await
                 .ok_or_else(|| {
-                    eprintln!("buzz-desktop: pairing: relay closed waiting for EOSE");
+                    eprintln!("kuzz-desktop: pairing: relay closed waiting for EOSE");
                     "Connection lost. Try pairing again.".to_string()
                 })?
                 .map_err(|e| format!("WS error waiting for EOSE: {e}"))?;

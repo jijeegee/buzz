@@ -132,24 +132,24 @@ export function ProfileAvatarEditor({
         ...(emojiPickerThemeVars ?? documentEmojiMartThemeVars),
         ...(presentation === "onboarding-modal"
           ? {
-              "--buzz-emoji-picker-category-icon-size": "18px",
-              "--buzz-emoji-picker-fade-height": "56px",
-              "--buzz-emoji-picker-fade-opacity": "1",
-              "--buzz-emoji-picker-nav-button-size": "32px",
-              "--buzz-emoji-picker-nav-padding-x": "12px",
-              "--buzz-emoji-picker-padding": "10px",
-              "--buzz-emoji-picker-scroll-padding-top": "18px",
+              "--kuzz-emoji-picker-category-icon-size": "18px",
+              "--kuzz-emoji-picker-fade-height": "56px",
+              "--kuzz-emoji-picker-fade-opacity": "1",
+              "--kuzz-emoji-picker-nav-button-size": "32px",
+              "--kuzz-emoji-picker-nav-padding-x": "12px",
+              "--kuzz-emoji-picker-padding": "10px",
+              "--kuzz-emoji-picker-scroll-padding-top": "18px",
             }
           : presentation === "onboarding-inline"
             ? {
-                "--buzz-emoji-picker-category-icon-size": "14px",
-                "--buzz-emoji-picker-fade-height": "0px",
-                "--buzz-emoji-picker-fade-opacity": "0",
-                "--buzz-emoji-picker-nav-button-size": "24px",
-                "--buzz-emoji-picker-nav-padding-x": "8px",
-                "--buzz-emoji-picker-padding": "8px",
-                "--buzz-emoji-picker-scroll-padding-top": "0px",
-                "--buzz-emoji-picker-search-control-height": "40px",
+                "--kuzz-emoji-picker-category-icon-size": "14px",
+                "--kuzz-emoji-picker-fade-height": "0px",
+                "--kuzz-emoji-picker-fade-opacity": "0",
+                "--kuzz-emoji-picker-nav-button-size": "24px",
+                "--kuzz-emoji-picker-nav-padding-x": "8px",
+                "--kuzz-emoji-picker-padding": "8px",
+                "--kuzz-emoji-picker-scroll-padding-top": "0px",
+                "--kuzz-emoji-picker-search-control-height": "40px",
               }
             : null),
       }) as React.CSSProperties,
@@ -294,14 +294,14 @@ export function ProfileAvatarEditor({
       }
 
       shadowRoot
-        .querySelectorAll('button[data-buzz-selected="true"]')
+        .querySelectorAll('button[data-kuzz-selected="true"]')
         .forEach((button) => {
-          button.removeAttribute("data-buzz-selected");
+          button.removeAttribute("data-kuzz-selected");
         });
       if (selectedEmoji) {
         shadowRoot.querySelectorAll(".category button").forEach((button) => {
           if (button.getAttribute("aria-label") === selectedEmoji) {
-            button.setAttribute("data-buzz-selected", "true");
+            button.setAttribute("data-kuzz-selected", "true");
           }
         });
       }
@@ -645,14 +645,14 @@ export function ProfileAvatarEditor({
                   <button
                     className={cn(
                       isOnboardingModal
-                        ? "relative flex h-32 flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-[color:rgb(var(--buzz-onboarding-avatar-control-fg)_/_0.7)] bg-transparent text-[rgb(var(--buzz-onboarding-avatar-control-fg))] transition-[background-color,border-color,box-shadow,color] duration-[250ms] ease-out hover:bg-[color:rgb(var(--buzz-onboarding-avatar-accent-bg)_/_0.18)] disabled:opacity-60"
+                        ? "relative flex h-32 flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-[color:rgb(var(--kuzz-onboarding-avatar-control-fg)_/_0.7)] bg-transparent text-[rgb(var(--kuzz-onboarding-avatar-control-fg))] transition-[background-color,border-color,box-shadow,color] duration-[250ms] ease-out hover:bg-[color:rgb(var(--kuzz-onboarding-avatar-accent-bg)_/_0.18)] disabled:opacity-60"
                         : cn(
                             "relative flex flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border border-transparent bg-muted text-foreground transition-[background-color,border-color,box-shadow,color] duration-[250ms] ease-out hover:bg-muted/80 disabled:opacity-60",
                             isOnboardingInline ? "h-full" : "h-[120px]",
                           ),
                       isImageDropActive &&
                         (isOnboardingModal
-                          ? "border-[rgb(var(--buzz-onboarding-avatar-control-fg))] bg-[color:rgb(var(--buzz-onboarding-avatar-accent-bg)_/_0.24)]"
+                          ? "border-[rgb(var(--kuzz-onboarding-avatar-control-fg))] bg-[color:rgb(var(--kuzz-onboarding-avatar-accent-bg)_/_0.24)]"
                           : "border-primary bg-primary/10 text-primary ring-1 ring-primary/35 hover:bg-primary/10"),
                     )}
                     data-dragging={isImageDropActive ? "true" : undefined}
@@ -686,11 +686,11 @@ export function ProfileAvatarEditor({
                       className={cn(
                         "relative transition-colors duration-[250ms] ease-out",
                         isOnboardingModal
-                          ? "text-sm font-normal text-[rgb(var(--buzz-onboarding-avatar-control-fg))]"
+                          ? "text-sm font-normal text-[rgb(var(--kuzz-onboarding-avatar-control-fg))]"
                           : "text-sm font-medium text-muted-foreground",
                         isImageDropActive &&
                           (isOnboardingModal
-                            ? "text-[rgb(var(--buzz-onboarding-avatar-control-fg))]"
+                            ? "text-[rgb(var(--kuzz-onboarding-avatar-control-fg))]"
                             : "text-primary"),
                       )}
                     >
@@ -715,7 +715,7 @@ export function ProfileAvatarEditor({
                     className={cn(
                       "flex items-center transition-colors duration-[250ms] ease-out",
                       isOnboardingModal
-                        ? "h-[52px] rounded-lg border border-[color:rgb(var(--buzz-onboarding-avatar-control-fg)_/_0.45)] bg-transparent px-5 focus-within:border-[rgb(var(--buzz-onboarding-avatar-control-fg))]"
+                        ? "h-[52px] rounded-lg border border-[color:rgb(var(--kuzz-onboarding-avatar-control-fg)_/_0.45)] bg-transparent px-5 focus-within:border-[rgb(var(--kuzz-onboarding-avatar-control-fg))]"
                         : "h-16 gap-3 rounded-xl bg-muted px-5 focus-within:bg-muted/80",
                     )}
                   >
@@ -728,7 +728,7 @@ export function ProfileAvatarEditor({
                       className={cn(
                         "min-w-0 flex-1 bg-transparent outline-none",
                         isOnboardingModal
-                          ? "text-center text-sm font-normal text-foreground placeholder:text-[color:rgb(var(--buzz-onboarding-avatar-control-fg)_/_0.55)]"
+                          ? "text-center text-sm font-normal text-foreground placeholder:text-[color:rgb(var(--kuzz-onboarding-avatar-control-fg)_/_0.55)]"
                           : "text-sm font-medium text-foreground placeholder:text-muted-foreground",
                       )}
                       data-testid={`${testIdPrefix}-url`}
@@ -806,7 +806,7 @@ export function ProfileAvatarEditor({
                 >
                   <div
                     className={cn(
-                      "buzz-emoji-mart relative z-0 overflow-hidden bg-muted transition-colors duration-[250ms] ease-out",
+                      "kuzz-emoji-mart relative z-0 overflow-hidden bg-muted transition-colors duration-[250ms] ease-out",
                       isOnboardingInline
                         ? "h-full min-h-0 rounded-2xl"
                         : isOnboardingModal
@@ -983,7 +983,7 @@ export function ProfileAvatarEditor({
                 asChild
                 className={cn(
                   isOnboardingModal
-                    ? "mx-auto mt-0 h-[2.375rem] min-w-24 rounded-full bg-[rgb(var(--buzz-onboarding-avatar-action-bg))] px-6 text-sm font-medium text-[rgb(var(--buzz-onboarding-avatar-action-fg))] hover:bg-[color:rgb(var(--buzz-onboarding-avatar-action-bg)_/_0.9)]"
+                    ? "mx-auto mt-0 h-[2.375rem] min-w-24 rounded-full bg-[rgb(var(--kuzz-onboarding-avatar-action-bg))] px-6 text-sm font-medium text-[rgb(var(--kuzz-onboarding-avatar-action-fg))] hover:bg-[color:rgb(var(--kuzz-onboarding-avatar-action-bg)_/_0.9)]"
                     : "mt-2 h-12 w-full rounded-xl",
                 )}
               >

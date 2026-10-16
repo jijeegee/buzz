@@ -38,13 +38,13 @@ export function agentAiConfigurationPairForMode({
  * Whether a Customize (explicit) AI pair is complete enough to submit.
  *
  * `needsProviderSelection` reflects whether the provider picker is actually
- * shown to the user: Buzz Agent / Goose expose it (and runtime-less legacy /
+ * shown to the user: Kuzz Agent / Goose expose it (and runtime-less legacy /
  * builtin definitions do too), so both provider and model are required — the
  * backend readiness gate (`required_normalized_fields`) refuses to spawn those
  * harnesses without the pair. Every other harness (Codex / Claude / Hermes /
  * presets / custom commands) drives its own provider AND its own default
  * model, so neither is required: an empty model means "the harness's own
- * default" and the spawn simply omits `BUZZ_ACP_MODEL`. Requiring a model
+ * default" and the spawn simply omits `KUZZ_ACP_MODEL`. Requiring a model
  * there forced users to pick an entry from the discovered list even when the
  * harness's native default (e.g. a subscription-gated model the static picker
  * cannot know about) was what they wanted. Callers should pass the

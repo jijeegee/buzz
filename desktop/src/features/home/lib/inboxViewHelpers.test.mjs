@@ -126,7 +126,7 @@ test("Inbox All includes each personally relevant message source", () => {
         id: "project-pull-request",
         kind: 1618,
         pubkey: "human",
-        tags: [["a", `30617:${"a".repeat(64)}:buzz`]],
+        tags: [["a", `30617:${"a".repeat(64)}:kuzz`]],
       },
     },
   ];

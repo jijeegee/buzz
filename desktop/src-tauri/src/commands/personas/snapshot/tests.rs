@@ -290,7 +290,7 @@ fn import_corrupt_bytes_fail_closed() {
 fn import_wrong_format_string_fails_closed() {
     use crate::managed_agents::agent_snapshot::encode_snapshot_json;
     let mut snapshot = make_snapshot(MemoryLevel::None, vec![]);
-    snapshot.format = "not-buzz-agent-snapshot".to_string();
+    snapshot.format = "not-kuzz-agent-snapshot".to_string();
     let bytes = encode_snapshot_json(&snapshot).unwrap();
     let result = decode_snapshot_from_bytes(&bytes);
     assert!(result.is_err(), "wrong format must fail closed");
@@ -868,13 +868,13 @@ fn import_source_identity_fields_never_consumed() {
 /// Verified by the sentinel slug value.
 #[test]
 fn import_core_slug_maps_to_core_body() {
-    let slug = buzz_core_pkg::engram::CORE_SLUG;
+    let slug = kuzz_core_pkg::engram::CORE_SLUG;
     assert_eq!(slug, "core", "CORE_SLUG must equal 'core'");
     // core slug → Body::Core; anything else → Body::Memory
-    let is_core = slug == buzz_core_pkg::engram::CORE_SLUG;
+    let is_core = slug == kuzz_core_pkg::engram::CORE_SLUG;
     assert!(is_core, "slug 'core' must map to Body::Core");
     let mem_slug = "mem/research";
-    let is_mem = mem_slug != buzz_core_pkg::engram::CORE_SLUG;
+    let is_mem = mem_slug != kuzz_core_pkg::engram::CORE_SLUG;
     assert!(is_mem, "slug 'mem/*' must map to Body::Memory");
 }
 

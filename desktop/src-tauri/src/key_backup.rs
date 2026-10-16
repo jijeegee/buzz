@@ -25,7 +25,7 @@ pub const BACKUP_LOG_N: u8 = 18;
 /// Highest scrypt cost accepted when decrypting an untrusted backup.
 ///
 /// NIP-49 intentionally leaves `log_n` client-selected. Capping it at the tier
-/// Buzz itself emits keeps generated and upstream-compatible lower-cost backups
+/// Kuzz itself emits keeps generated and upstream-compatible lower-cost backups
 /// readable without allowing a crafted payload to request unbounded memory
 /// before password authentication.
 pub const MAX_VERIFY_LOG_N: u8 = BACKUP_LOG_N;
@@ -125,7 +125,7 @@ pub fn recover_keys_from_input(input: &str, password: Option<&str>) -> Result<Ke
         decrypt_ncryptsec(trimmed, password)
     } else {
         Keys::parse(trimmed).map_err(|_| {
-            eprintln!("buzz-desktop: invalid private key (details withheld: secret input)");
+            eprintln!("kuzz-desktop: invalid private key (details withheld: secret input)");
             "Couldn't restore your account.".to_string()
         })
     }

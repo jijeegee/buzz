@@ -25,8 +25,8 @@ use nostr::PublicKey;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
-use buzz_core_pkg::engram::{self, extract_refs, select_head, validate_and_decrypt, Body};
-use buzz_core_pkg::kind::KIND_AGENT_ENGRAM;
+use kuzz_core_pkg::engram::{self, extract_refs, select_head, validate_and_decrypt, Body};
+use kuzz_core_pkg::kind::KIND_AGENT_ENGRAM;
 
 use crate::commands::identity_archive::{extract_oa_owner, fetch_kind0};
 use crate::{app_state::AppState, managed_agents::load_managed_agents, relay::query_relay};
@@ -135,7 +135,7 @@ pub async fn get_agent_memory(
     // owner path is cleared (PR #917 author signed off); decryption still
     // does the real guarding.)
     let agent = PublicKey::from_hex(&agent_pubkey).map_err(|e| {
-        eprintln!("buzz-desktop: agent pubkey must be 64-hex: {e}");
+        eprintln!("kuzz-desktop: agent pubkey must be 64-hex: {e}");
         "Something went wrong with this agent. Try again.".to_string()
     })?;
 
@@ -291,9 +291,9 @@ mod tests {
             nostr::SecretKey::from_slice(owner.secret_key().as_secret_bytes()).unwrap();
         let owner_compat_keys = nostr::Keys::new(owner_compat_secret);
         let tag_json =
-            buzz_sdk_pkg::nip_oa::compute_auth_tag(&owner_compat_keys, &agent_compat, "")
+            kuzz_sdk_pkg::nip_oa::compute_auth_tag(&owner_compat_keys, &agent_compat, "")
                 .expect("compute_auth_tag");
-        let compat_tag = buzz_sdk_pkg::nip_oa::parse_auth_tag(&tag_json).unwrap();
+        let compat_tag = kuzz_sdk_pkg::nip_oa::parse_auth_tag(&tag_json).unwrap();
         let tag = Tag::parse(compat_tag.as_slice()).unwrap();
         EventBuilder::new(Kind::Metadata, "{}")
             .tags([tag])

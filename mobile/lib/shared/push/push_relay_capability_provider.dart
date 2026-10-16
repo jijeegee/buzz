@@ -6,11 +6,11 @@ import '../relay/relay_provider.dart';
 import '../relay/relay_session.dart';
 import 'dev_push_lease.dart';
 
-typedef BuzzPushDescriptorFetcher =
-    Future<BuzzPushLeaseDescriptor> Function(String relayBaseUrl);
+typedef KuzzPushDescriptorFetcher =
+    Future<KuzzPushLeaseDescriptor> Function(String relayBaseUrl);
 
-final buzzPushDescriptorFetcherProvider = Provider<BuzzPushDescriptorFetcher>(
-  (ref) => fetchBuzzPushLeaseDescriptor,
+final kuzzPushDescriptorFetcherProvider = Provider<KuzzPushDescriptorFetcher>(
+  (ref) => fetchKuzzPushLeaseDescriptor,
 );
 
 /// The fully validated push capability advertised by the current relay.
@@ -20,7 +20,7 @@ final buzzPushDescriptorFetcherProvider = Provider<BuzzPushDescriptorFetcher>(
 /// descriptor is represented as no capability, so no notification permission,
 /// APNs registration, gateway enrollment, or relay lease can begin.
 final currentRelayPushDescriptorProvider =
-    FutureProvider.autoDispose<BuzzPushLeaseDescriptor?>((ref) async {
+    FutureProvider.autoDispose<KuzzPushLeaseDescriptor?>((ref) async {
       if (!Env.pushGatewayConfigured) return null;
       final session = ref.watch(relaySessionProvider);
       final config = ref.watch(relayConfigProvider);
@@ -35,15 +35,15 @@ final currentRelayPushDescriptorProvider =
         return null;
       }
 
-      return discoverBuzzPushRelayCapability(
+      return discoverKuzzPushRelayCapability(
         config.baseUrl,
-        fetchDescriptor: ref.read(buzzPushDescriptorFetcherProvider),
+        fetchDescriptor: ref.read(kuzzPushDescriptorFetcherProvider),
       );
     });
 
-Future<BuzzPushLeaseDescriptor?> discoverBuzzPushRelayCapability(
+Future<KuzzPushLeaseDescriptor?> discoverKuzzPushRelayCapability(
   String relayBaseUrl, {
-  required BuzzPushDescriptorFetcher fetchDescriptor,
+  required KuzzPushDescriptorFetcher fetchDescriptor,
 }) async {
   try {
     return await fetchDescriptor(relayBaseUrl);
@@ -54,8 +54,8 @@ Future<BuzzPushLeaseDescriptor?> discoverBuzzPushRelayCapability(
   }
 }
 
-Future<void> startBuzzPushRegistrationIfCapable(
-  BuzzPushLeaseDescriptor? descriptor, {
+Future<void> startKuzzPushRegistrationIfCapable(
+  KuzzPushLeaseDescriptor? descriptor, {
   required Future<void> Function() startRegistration,
 }) async {
   if (descriptor == null) return;

@@ -163,9 +163,9 @@ export function useMediaUpload({
 }: UseMediaUploadOptions = {}) {
   const e2eConfig = (
     window as Window & {
-      __BUZZ_E2E__?: { mock?: { deferredComposerUploads?: boolean } };
+      __KUZZ_E2E__?: { mock?: { deferredComposerUploads?: boolean } };
     }
-  ).__BUZZ_E2E__;
+  ).__KUZZ_E2E__;
   const queueUntilSend =
     deferUploadsUntilSend &&
     (!e2eConfig || e2eConfig.mock?.deferredComposerUploads === true);

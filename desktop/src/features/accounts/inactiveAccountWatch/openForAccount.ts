@@ -11,7 +11,7 @@ import { relayOrigin } from "./targets";
  * the account, then the message.
  */
 
-const PENDING_KEY = "buzz:notification-for-account";
+const PENDING_KEY = "kuzz:notification-for-account";
 /** A click older than this is dropped rather than acted on at some later start. */
 const PENDING_TTL_MS = 2 * 60_000;
 /** Server change + account change + one spare; more means something is stuck. */

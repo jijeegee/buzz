@@ -32,7 +32,7 @@ final installIdStoreProvider = Provider<InstallIdStore>(
 /// Custody grants cannot overwrite a pre-existing token messaging session.
 final keyBackupRefreshTokenStoreProvider = Provider<RefreshTokenStore>(
   (ref) =>
-      SecureRefreshTokenStore(keyPrefix: 'buzz.auth.key-backup.refresh.v1'),
+      SecureRefreshTokenStore(keyPrefix: 'kuzz.auth.key-backup.refresh.v1'),
 );
 
 /// System-browser launcher for OIDC. Override in tests.
@@ -51,9 +51,9 @@ final sessionTimerFactoryProvider = Provider<SessionTimerFactory>(
 /// Device label shown in the relay's device list.
 final authDeviceNameProvider = Provider<String>(
   (ref) => switch (defaultTargetPlatform) {
-    TargetPlatform.iOS => 'Buzz for iOS',
-    TargetPlatform.android => 'Buzz for Android',
-    _ => 'Buzz mobile',
+    TargetPlatform.iOS => 'Kuzz for iOS',
+    TargetPlatform.android => 'Kuzz for Android',
+    _ => 'Kuzz mobile',
   },
 );
 

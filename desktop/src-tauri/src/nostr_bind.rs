@@ -4,7 +4,7 @@ use url::Url;
 pub(crate) const AUDIENCE: &str = "buzz:nostr-identity";
 pub(crate) const ACTION: &str = "bind_nostr_identity";
 pub(crate) const CONTENT: &str = "";
-pub(crate) const KIND: u16 = buzz_core_pkg::kind::KIND_NOSTR_IDENTITY_BINDING as u16;
+pub(crate) const KIND: u16 = kuzz_core_pkg::kind::KIND_NOSTR_IDENTITY_BINDING as u16;
 pub(crate) const PROTOCOL: &str = "buzz-nostr-identity";
 pub(crate) const RETURN_MODE_CLIPBOARD: &str = "clipboard";
 pub(crate) const RETURN_MODE_BROWSER_FRAGMENT_V1: &str = "browser_fragment_v1";

@@ -34,7 +34,7 @@ function useProviderModels(
       if (!provider) return [];
       const keyEnv = PROVIDER_KEY_ENV[provider.id];
       const response = await discoverAgentModels({
-        agentCommand: "buzz-agent",
+        agentCommand: "kuzz-agent",
         provider: provider.id,
         envVars: keyEnv && apiKey ? { [keyEnv]: apiKey } : {},
       });

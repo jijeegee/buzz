@@ -165,7 +165,7 @@ buffalo
 bullfrog
 bunny
 busboy
-buzzard
+kuzzard
 cabin
 cactus
 cadillac

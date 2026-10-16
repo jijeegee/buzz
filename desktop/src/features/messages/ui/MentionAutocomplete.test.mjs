@@ -404,6 +404,6 @@ for (const duplicate of [false, true]) {
     });
     assert.equal(markers.length, 1);
     assert.equal(markers[0].title, "Not managed on this device");
-    assert.equal(view.queryByTitle("From another Buzz setup"), null);
+    assert.equal(view.queryByTitle("From another Kuzz setup"), null);
   });
 }

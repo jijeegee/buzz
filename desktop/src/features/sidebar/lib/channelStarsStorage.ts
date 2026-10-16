@@ -1,6 +1,6 @@
 import { normalizeRelayUrl } from "@/shared/lib/normalizeRelayUrl";
 
-const STORAGE_KEY_PREFIX = "buzz-channel-stars.v1";
+const STORAGE_KEY_PREFIX = "kuzz-channel-stars.v1";
 export const MAX_CHANNEL_STAR_ENTRIES = 500;
 
 export type ChannelStarEntry = {

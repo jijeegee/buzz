@@ -27,30 +27,30 @@ function createMemoryStorage(initial = {}) {
   };
 }
 
-test("migrateLegacyCommunityStorage promotes current Buzz workspace state", () => {
+test("migrateLegacyCommunityStorage promotes current Kuzz workspace state", () => {
   const storage = createMemoryStorage({
-    "buzz-workspaces": '[{"id":"current"}]',
-    "buzz-active-workspace-id": "current",
+    "kuzz-workspaces": '[{"id":"current"}]',
+    "kuzz-active-workspace-id": "current",
   });
 
   migrateLegacyCommunityStorage(storage);
 
-  assert.equal(storage.getItem("buzz-communities"), '[{"id":"current"}]');
-  assert.equal(storage.getItem("buzz-active-community-id"), "current");
+  assert.equal(storage.getItem("kuzz-communities"), '[{"id":"current"}]');
+  assert.equal(storage.getItem("kuzz-active-community-id"), "current");
 });
 
 test("migrateLegacyCommunityStorage does not overwrite new community state", () => {
   const storage = createMemoryStorage({
-    "buzz-communities": '[{"id":"new"}]',
-    "buzz-active-community-id": "new",
-    "buzz-workspaces": '[{"id":"old"}]',
-    "buzz-active-workspace-id": "old",
+    "kuzz-communities": '[{"id":"new"}]',
+    "kuzz-active-community-id": "new",
+    "kuzz-workspaces": '[{"id":"old"}]',
+    "kuzz-active-workspace-id": "old",
   });
 
   migrateLegacyCommunityStorage(storage);
 
-  assert.equal(storage.getItem("buzz-communities"), '[{"id":"new"}]');
-  assert.equal(storage.getItem("buzz-active-community-id"), "new");
+  assert.equal(storage.getItem("kuzz-communities"), '[{"id":"new"}]');
+  assert.equal(storage.getItem("kuzz-active-community-id"), "new");
 });
 
 test("signed-build relay defaults auto-connect during first-run onboarding", () => {
@@ -73,12 +73,12 @@ test("signed-build relay defaults auto-connect during first-run onboarding", () 
 
 test("failed first-community write preserves existing community data", () => {
   const storage = createMemoryStorage({
-    "buzz-communities": '[{"id":"existing"}]',
-    "buzz-workspaces": '[{"id":"legacy"}]',
-    "buzz-active-workspace-id": "legacy",
+    "kuzz-communities": '[{"id":"existing"}]',
+    "kuzz-workspaces": '[{"id":"legacy"}]',
+    "kuzz-active-workspace-id": "legacy",
   });
   storage.setItem = (key, value) => {
-    if (key === "buzz-communities") {
+    if (key === "kuzz-communities") {
       throw new Error("QuotaExceededError");
     }
     storage.values.set(key, String(value));
@@ -87,16 +87,16 @@ test("failed first-community write preserves existing community data", () => {
   globalThis.window = { localStorage: storage };
 
   assert.equal(initFirstCommunity("wss://relay.example.com", "pubkey"), null);
-  assert.equal(storage.getItem("buzz-communities"), '[{"id":"existing"}]');
-  assert.equal(storage.getItem("buzz-active-community-id"), null);
-  assert.equal(storage.getItem("buzz-workspaces"), '[{"id":"legacy"}]');
-  assert.equal(storage.getItem("buzz-active-workspace-id"), "legacy");
+  assert.equal(storage.getItem("kuzz-communities"), '[{"id":"existing"}]');
+  assert.equal(storage.getItem("kuzz-active-community-id"), null);
+  assert.equal(storage.getItem("kuzz-workspaces"), '[{"id":"legacy"}]');
+  assert.equal(storage.getItem("kuzz-active-workspace-id"), "legacy");
 });
 
 test("loading an existing community clears stale final-leave discovery", () => {
   const storage = createMemoryStorage({
-    "buzz-communities": '[{"id":"joined"}]',
-    "buzz-community-discovery-after-leave": "1",
+    "kuzz-communities": '[{"id":"joined"}]',
+    "kuzz-community-discovery-after-leave": "1",
   });
   globalThis.localStorage = storage;
   globalThis.window = { localStorage: storage };
@@ -119,11 +119,11 @@ test("completed final leave persists discovery until a community is saved", () =
 
 test("clearCommunityStorage preserves completed final-leave discovery", () => {
   const storage = createMemoryStorage({
-    "buzz-communities": "new",
-    "buzz-active-community-id": "new",
-    "buzz-workspaces": "old",
-    "buzz-active-workspace-id": "old",
-    "buzz-community-discovery-after-leave": "1",
+    "kuzz-communities": "new",
+    "kuzz-active-community-id": "new",
+    "kuzz-workspaces": "old",
+    "kuzz-active-workspace-id": "old",
+    "kuzz-community-discovery-after-leave": "1",
   });
 
   clearCommunityStorage(storage);

@@ -70,7 +70,7 @@ pub async fn set_canvas(
     let mut builder = events::build_set_canvas(uuid, &content, expected_revision.as_deref())?;
     if let Some(floor) = prior_head_created_at {
         builder = builder.custom_created_at(nostr::Timestamp::from(
-            buzz_sdk_pkg::canvas_write_created_at(floor as u64).map_err(|e| e.to_string())?,
+            kuzz_sdk_pkg::canvas_write_created_at(floor as u64).map_err(|e| e.to_string())?,
         ));
     }
     let result = submit_event(builder, &state).await?;
@@ -121,7 +121,7 @@ fn classify_post_write(
     match ancestry {
         Err(_) => Ok(false),
         Ok(revisions) => {
-            if buzz_sdk_pkg::canvas_write_survived(our_id, &revisions) {
+            if kuzz_sdk_pkg::canvas_write_survived(our_id, &revisions) {
                 Ok(true)
             } else {
                 Err(CANVAS_SUPERSEDED.to_string())
@@ -231,7 +231,7 @@ fn canvas_ancestry_filter(channel_id: &str) -> serde_json::Value {
     serde_json::json!({
         "kinds": [40100],
         "#h": [channel_id],
-        "limit": buzz_sdk_pkg::CANVAS_ANCESTRY_WALK_MAX,
+        "limit": kuzz_sdk_pkg::CANVAS_ANCESTRY_WALK_MAX,
         // Read-your-writes: this post-write verification read must observe
         // the caller's own just-accepted save, so it pins to the writer.
         "consistency": "strong",

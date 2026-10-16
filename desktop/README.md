@@ -1,4 +1,4 @@
-# Buzz
+# Kuzz
 
 Desktop chat shell with:
 

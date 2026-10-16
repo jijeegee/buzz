@@ -1,8 +1,8 @@
-import 'package:buzz/features/settings/account_page.dart';
-import 'package:buzz/features/settings/devices_page.dart';
-import 'package:buzz/features/settings/settings_page.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/utils/string_utils.dart';
+import 'package:kuzz/features/settings/account_page.dart';
+import 'package:kuzz/features/settings/devices_page.dart';
+import 'package:kuzz/features/settings/settings_page.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/utils/string_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';

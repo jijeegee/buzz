@@ -17,7 +17,7 @@ final class HuddleMediaPlugin {
 
   init(messenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(
-      name: "buzz/huddle_media",
+      name: "kuzz/huddle_media",
       binaryMessenger: messenger
     )
     channel.setMethodCallHandler { [weak self] call, result in

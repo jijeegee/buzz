@@ -103,16 +103,16 @@ test.describe("thread load failure", () => {
           () =>
             typeof (
               window as typeof window & {
-                __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: unknown;
+                __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: unknown;
               }
-            ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+            ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
         ),
       )
       .toBe(true);
     await page.evaluate((pubkey) => {
       (
         window as typeof window & {
-          __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
             channelName: string;
             content: string;
             parentEventId?: string;
@@ -120,7 +120,7 @@ test.describe("thread load failure", () => {
             createdAt?: number;
           }) => unknown;
         }
-      ).__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: "First reply to welcome",
         parentEventId: "mock-general-welcome",

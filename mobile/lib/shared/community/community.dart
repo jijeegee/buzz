@@ -26,7 +26,7 @@ class Community {
   final String? nsec;
   final SensitiveActionPolicy sensitiveActionPolicy;
   final bool pushNotificationsEnabled;
-  final BuzzPushLeaseSubscriptionState pushSubscriptionState;
+  final KuzzPushLeaseSubscriptionState pushSubscriptionState;
 
   /// Stable random address component for this community's relay push lease.
   ///
@@ -61,7 +61,7 @@ class Community {
     this.nsec,
     this.sensitiveActionPolicy = SensitiveActionPolicy.disabledByUser,
     this.pushNotificationsEnabled = false,
-    this.pushSubscriptionState = const BuzzPushLeaseSubscriptionState.desired(),
+    this.pushSubscriptionState = const KuzzPushLeaseSubscriptionState.desired(),
     this.pushLeaseInstallationId,
     this.starterSetupIncomplete = false,
     this.tokenAuth = false,
@@ -103,7 +103,7 @@ class Community {
     Object? nsec = _sentinel,
     SensitiveActionPolicy? sensitiveActionPolicy,
     bool? pushNotificationsEnabled,
-    BuzzPushLeaseSubscriptionState? pushSubscriptionState,
+    KuzzPushLeaseSubscriptionState? pushSubscriptionState,
     Object? pushLeaseInstallationId = _sentinel,
     bool? starterSetupIncomplete,
     bool? tokenAuth,
@@ -165,8 +165,8 @@ class Community {
     final pushNotificationsEnabled =
         json['pushNotificationsEnabled'] as bool? ?? false;
     var pushSubscriptionState = json['pushSubscriptionState'] == null
-        ? const BuzzPushLeaseSubscriptionState.desired()
-        : BuzzPushLeaseSubscriptionState.fromJson(
+        ? const KuzzPushLeaseSubscriptionState.desired()
+        : KuzzPushLeaseSubscriptionState.fromJson(
             Map<String, dynamic>.from(json['pushSubscriptionState'] as Map),
           );
     if (!pushNotificationsEnabled &&
@@ -199,7 +199,7 @@ class Community {
   Community resumeSession() => copyWith(
     signedOut: false,
     pushLeaseInstallationId: _newPushLeaseInstallationId(),
-    pushSubscriptionState: BuzzPushLeaseSubscriptionState.desired(
+    pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
       desired: pushSubscriptionState.desired,
     ),
   );

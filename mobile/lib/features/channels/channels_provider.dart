@@ -36,8 +36,8 @@ const _unreadCatchUpLimit = 1000;
 /// How long an unread catch-up waits for the read markers to load before
 /// giving up; the next refresh (reconnect backstop) starts a new one.
 const _readStateReadyTimeout = Duration(seconds: 30);
-const _participatedRootIdsPrefix = 'buzz-thread-participation.v1';
-const _authoredRootIdsPrefix = 'buzz-thread-authored.v1';
+const _participatedRootIdsPrefix = 'kuzz-thread-participation.v1';
+const _authoredRootIdsPrefix = 'kuzz-thread-authored.v1';
 
 /// Loads the user's channel list from the relay over WebSocket.
 ///

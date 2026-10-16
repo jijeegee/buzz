@@ -5,11 +5,11 @@
 //! - **API keys** (Anthropic, OpenAI, OpenRouter) are called directly with
 //!   the key the Providers tab saved.
 //! - **Codex (ChatGPT subscription)** runs the official `codex exec`
-//!   one-shot. The Codex CLI owns its sign-in; Buzz never reads its tokens.
+//!   one-shot. The Codex CLI owns its sign-in; Kuzz never reads its tokens.
 //! - **Claude Code (Claude subscription)** runs the official `claude -p`
 //!   one-shot. Anthropic does not allow third-party apps to reuse Claude
 //!   subscription OAuth tokens for direct API calls, so the CLI is the only
-//!   subscription path and Buzz never touches those tokens.
+//!   subscription path and Kuzz never touches those tokens.
 //!
 //! A CLI call takes ~5 s (process start + one agent turn) against well
 //! under 1 s for an API key, so Automatic prefers API keys. The per-route
@@ -124,7 +124,7 @@ impl RouterProvider {
         }
     }
 
-    /// Base-URL override honored the same way `buzz-agent` honors it, so a
+    /// Base-URL override honored the same way `kuzz-agent` honors it, so a
     /// proxy configured for agents also carries routing calls.
     fn base_url_env(self) -> Option<&'static str> {
         match self {
@@ -174,12 +174,12 @@ impl RouterProvider {
         }
     }
 
-    /// The `buzz-agent` provider of an API-key route.
-    pub(crate) fn agent_provider(self) -> Option<buzz_agent_pkg::Provider> {
+    /// The `kuzz-agent` provider of an API-key route.
+    pub(crate) fn agent_provider(self) -> Option<kuzz_agent_pkg::Provider> {
         match self {
-            Self::Anthropic => Some(buzz_agent_pkg::Provider::Anthropic),
-            Self::Openai => Some(buzz_agent_pkg::Provider::OpenAi),
-            Self::Openrouter => Some(buzz_agent_pkg::Provider::OpenRouter),
+            Self::Anthropic => Some(kuzz_agent_pkg::Provider::Anthropic),
+            Self::Openai => Some(kuzz_agent_pkg::Provider::OpenAi),
+            Self::Openrouter => Some(kuzz_agent_pkg::Provider::OpenRouter),
             Self::Codex | Self::ClaudeCode => None,
         }
     }

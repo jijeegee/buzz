@@ -54,12 +54,12 @@ test("ThemeProvider renders defaults when localStorage reads are denied", async 
   render(
     createElement(
       ThemeProvider,
-      { defaultTheme: "buzz" },
-      createElement("p", null, "Buzz is visible"),
+      { defaultTheme: "kuzz" },
+      createElement("p", null, "Kuzz is visible"),
     ),
   );
 
-  assert.ok(screen.getByText("Buzz is visible"));
+  assert.ok(screen.getByText("Kuzz is visible"));
 });
 
 test("root boundary shows recovery UI without exposing error details", async () => {

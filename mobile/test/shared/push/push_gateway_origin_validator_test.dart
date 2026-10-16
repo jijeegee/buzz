@@ -26,12 +26,12 @@ void main() {
         },
       );
       String define(String origin) =>
-          base64.encode(utf8.encode('BUZZ_PUSH_GATEWAY_URL=$origin'));
+          base64.encode(utf8.encode('KUZZ_PUSH_GATEWAY_URL=$origin'));
       final absent = await buildPhase({});
       expect(absent.exitCode, 0, reason: '${absent.stderr}');
       expect(absent.stdout, 'continued:');
       final configured = await buildPhase({
-        'BUZZ_PUSH_GATEWAY_URL': 'https://push.example',
+        'KUZZ_PUSH_GATEWAY_URL': 'https://push.example',
       });
       expect(configured.exitCode, 0, reason: '${configured.stderr}');
       expect(configured.stdout, 'continued:${define('https://push.example')}');

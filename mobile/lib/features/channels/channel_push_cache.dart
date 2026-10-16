@@ -18,7 +18,7 @@ extension _ChannelPushCache on ChannelsNotifier {
     _pushCacheExporting = true;
     try {
       await _pushExport.export(
-        () => cacheBuzzPushChannelEvents(communityID, metadata, membership),
+        () => cacheKuzzPushChannelEvents(communityID, metadata, membership),
       );
       // A failed operation is terminal only for its own input. A refresh that
       // arrived meanwhile still owns an independent dirty obligation.
@@ -90,7 +90,7 @@ extension _ChannelPushCache on ChannelsNotifier {
         await _pushExport.export(() async {
           final events = await snapshot;
           if (events == null || !current()) return;
-          await cacheBuzzPushChannelEvents(
+          await cacheKuzzPushChannelEvents(
             community,
             events.metadata,
             events.membership,

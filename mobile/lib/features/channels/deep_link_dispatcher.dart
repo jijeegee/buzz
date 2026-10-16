@@ -12,7 +12,7 @@ import 'channel.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';
 
-/// Routes pending `buzz://message` deep links into the channel view.
+/// Routes pending `kuzz://message` deep links into the channel view.
 ///
 /// Wraps the authenticated home subtree. Whenever a parsed link is parked in
 /// [pendingDeepLinkProvider] and the channel list is available, this pushes
@@ -20,7 +20,7 @@ import 'channels_provider.dart';
 /// held (not dropped) while channels are still loading, so cold-start links
 /// dispatch as soon as the first channel fetch completes.
 typedef DeepLinkDestinationBuilder =
-    Widget Function(Channel channel, BuzzDeepLink link);
+    Widget Function(Channel channel, KuzzDeepLink link);
 
 class DeepLinkDispatcher extends ConsumerStatefulWidget {
   final Widget child;
@@ -53,7 +53,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
   @override
   Widget build(BuildContext context) {
     // Re-evaluate dispatch when either a new link arrives or channels load.
-    ref.listen<BuzzDeepLink?>(pendingDeepLinkProvider, (_, link) {
+    ref.listen<KuzzDeepLink?>(pendingDeepLinkProvider, (_, link) {
       _maybeDispatch(link);
     });
     if (widget.dispatchMessageLinks) {
@@ -65,7 +65,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
     return widget.child;
   }
 
-  void _maybeDispatch(BuzzDeepLink? link) {
+  void _maybeDispatch(KuzzDeepLink? link) {
     if (link == null || _preparingInvite) return;
     if (link is InviteDeepLink) {
       _maybeDispatchInvite(link);
@@ -111,7 +111,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
     }
   }
 
-  void _dispatchNavigableLink(BuzzDeepLink link) {
+  void _dispatchNavigableLink(KuzzDeepLink link) {
     final channelId = switch (link) {
       MessageDeepLink(:final channelId) => channelId,
       ChannelDeepLink(:final channelId) => channelId,
@@ -142,7 +142,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
     ref.read(pendingDeepLinkProvider.notifier).consume();
   }
 
-  void _pushChannel(Channel channel, BuzzDeepLink link) {
+  void _pushChannel(Channel channel, KuzzDeepLink link) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>

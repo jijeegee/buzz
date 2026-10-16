@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:buzz/features/channels/message_content.dart';
+import 'package:kuzz/features/channels/message_content.dart';
 import '../../helpers/widget_helpers.dart';
 
 void main() {

@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:buzz/features/invites/invite_join_provider.dart';
-import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/deeplink/deep_link.dart';
+import 'package:kuzz/features/invites/invite_join_provider.dart';
+import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/deeplink/deep_link.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;

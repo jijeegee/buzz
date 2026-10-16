@@ -197,7 +197,7 @@ fn transcode_to_mp4_with_cancellation(
     cancellation: Option<&CancellationToken>,
 ) -> Result<std::path::PathBuf, String> {
     // UUID-based temp path — unique across concurrent uploads.
-    let output = std::env::temp_dir().join(format!("buzz-transcode-{}.mp4", uuid::Uuid::new_v4()));
+    let output = std::env::temp_dir().join(format!("kuzz-transcode-{}.mp4", uuid::Uuid::new_v4()));
 
     let result = run_ffmpeg_with_cancellation(
         ffmpeg_command(ffmpeg)
@@ -281,7 +281,7 @@ pub(super) fn transcode_voice_note_to_mp4_with_cancellation(
     cancellation: Option<&CancellationToken>,
 ) -> Result<std::path::PathBuf, String> {
     let ffmpeg = find_ffmpeg()?;
-    let output = std::env::temp_dir().join(format!("buzz-voice-note-{}.mp4", uuid::Uuid::new_v4()));
+    let output = std::env::temp_dir().join(format!("kuzz-voice-note-{}.mp4", uuid::Uuid::new_v4()));
 
     let result = run_ffmpeg_with_cancellation(
         ffmpeg_command(&ffmpeg)
@@ -371,7 +371,7 @@ fn transcode_heic_to_jpeg(
     cancellation: Option<&CancellationToken>,
 ) -> Result<std::path::PathBuf, String> {
     // UUID-based temp path — unique across concurrent uploads.
-    let output = std::env::temp_dir().join(format!("buzz-heic-{}.jpg", uuid::Uuid::new_v4()));
+    let output = std::env::temp_dir().join(format!("kuzz-heic-{}.jpg", uuid::Uuid::new_v4()));
 
     // Single-frame image decode — 60s is generous even for large HEICs.
     let heic_timeout = std::time::Duration::from_secs(60);
@@ -457,7 +457,7 @@ fn extract_poster_frame_with_cancellation(
     ffmpeg: &std::path::Path,
     cancellation: Option<&CancellationToken>,
 ) -> Result<std::path::PathBuf, String> {
-    let output = std::env::temp_dir().join(format!("buzz-poster-{}.jpg", uuid::Uuid::new_v4()));
+    let output = std::env::temp_dir().join(format!("kuzz-poster-{}.jpg", uuid::Uuid::new_v4()));
 
     // Poster extraction is a single-frame decode — 30s is generous.
     let poster_timeout = std::time::Duration::from_secs(30);
@@ -492,7 +492,7 @@ fn extract_poster_frame_with_cancellation(
     {
         if !result.status.success() {
             let stderr = String::from_utf8_lossy(&result.stderr);
-            eprintln!("buzz-desktop: poster seek-to-1s failed, trying first frame: {stderr}");
+            eprintln!("kuzz-desktop: poster seek-to-1s failed, trying first frame: {stderr}");
         }
         let _ = std::fs::remove_file(&output);
         let fallback = run_ffmpeg_with_cancellation(
@@ -517,7 +517,7 @@ fn extract_poster_frame_with_cancellation(
 
         if !fallback.status.success() || !output.exists() {
             let stderr = String::from_utf8_lossy(&fallback.stderr);
-            eprintln!("buzz-desktop: poster frame extraction failed: {stderr}");
+            eprintln!("kuzz-desktop: poster frame extraction failed: {stderr}");
             let _ = std::fs::remove_file(&output);
             return Err("ffmpeg could not extract a poster frame".to_string());
         }
@@ -552,7 +552,7 @@ pub(super) fn transcode_and_extract_poster_with_cancellation(
                 bytes
             }
             Err(e) => {
-                eprintln!("buzz-desktop: poster extraction failed (non-fatal): {e}");
+                eprintln!("kuzz-desktop: poster extraction failed (non-fatal): {e}");
                 None
             }
         };
@@ -704,7 +704,7 @@ mod tests {
             return;
         };
         let source =
-            std::env::temp_dir().join(format!("buzz-metadata-test-{}.mp4", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("kuzz-metadata-test-{}.mp4", uuid::Uuid::new_v4()));
         let generated = std::process::Command::new(&ffmpeg)
             .args(["-y", "-loglevel", "error", "-f", "lavfi", "-i"])
             .arg("testsrc2=size=64x64:rate=1")
@@ -748,7 +748,7 @@ mod tests {
         }
 
         let source =
-            std::env::temp_dir().join(format!("buzz-voice-test-{}.wav", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("kuzz-voice-test-{}.wav", uuid::Uuid::new_v4()));
         let sample_rate = 24_000u32;
         let sample_bytes = sample_rate as usize * 2;
         let mut wav = Vec::with_capacity(44 + sample_bytes);
@@ -775,13 +775,13 @@ mod tests {
                 return;
             }
         };
-        let relay_config = buzz_media_pkg::MediaConfig {
+        let relay_config = kuzz_media_pkg::MediaConfig {
             s3_endpoint: String::new(),
             s3_access_key: String::new(),
             s3_secret_key: String::new(),
             s3_bucket: String::new(),
             s3_region: "us-east-1".to_string(),
-            s3_addressing_style: buzz_media_pkg::S3AddressingStyle::Path,
+            s3_addressing_style: kuzz_media_pkg::S3AddressingStyle::Path,
             max_image_bytes: 50 * 1024 * 1024,
             max_gif_bytes: 10 * 1024 * 1024,
             max_video_bytes: 524_288_000,
@@ -791,7 +791,7 @@ mod tests {
             upload_ip_header: None,
             upload_port_header: None,
         };
-        let metadata = buzz_media_pkg::validation::validate_video_file(&output, &relay_config)
+        let metadata = kuzz_media_pkg::validation::validate_video_file(&output, &relay_config)
             .expect("relay rejected the canonical voice-note envelope");
         let _ = std::fs::remove_file(&source);
         let _ = std::fs::remove_file(&output);
@@ -813,7 +813,7 @@ mod tests {
 
         // Generate a small HEIC test image from a synthetic color source.
         let heic_path =
-            std::env::temp_dir().join(format!("buzz-test-{}.heic", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("kuzz-test-{}.heic", uuid::Uuid::new_v4()));
         let gen = std::process::Command::new(&ffmpeg)
             .args(["-y", "-loglevel", "error", "-f", "lavfi", "-i"])
             .arg("color=c=red:s=64x64:d=1")

@@ -13,7 +13,7 @@ import type { IdentityStorage } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Button } from "@/shared/ui/button";
-import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
+import { FuzzyLogo } from "@/shared/ui/kuzz-logo/FuzzyLogo";
 import { Spinner } from "@/shared/ui/spinner";
 import {
   ONBOARDING_PRIMARY_CTA_CLASS,
@@ -377,7 +377,7 @@ export function BackupStep({
               <p
                 className={cn(
                   ONBOARDING_KEY_TEXT_CLASS,
-                  "buzz-onboarding-key-text-v3 select-text break-all transition-[filter] duration-150 ease-out group-hover/key:select-none group-hover/key:blur-[4px] group-focus-within/key:select-none group-focus-within/key:blur-[4px] motion-reduce:transition-none",
+                  "kuzz-onboarding-key-text-v3 select-text break-all transition-[filter] duration-150 ease-out group-hover/key:select-none group-hover/key:blur-[4px] group-focus-within/key:select-none group-focus-within/key:blur-[4px] motion-reduce:transition-none",
                 )}
                 data-testid="backup-key-value"
               >

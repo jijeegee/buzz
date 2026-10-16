@@ -19,9 +19,9 @@ import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
 const COPY_SUCCESS_MESSAGE =
-  "Signed response copied. Paste it into the Buzz admin console.";
+  "Signed response copied. Paste it into the Kuzz admin console.";
 const PREVIEW_COPY_SUCCESS_MESSAGE = "Preview response copied.";
-const COPY_FAILURE_MESSAGE = "Buzz couldn't access the clipboard. Try again.";
+const COPY_FAILURE_MESSAGE = "Kuzz couldn't access the clipboard. Try again.";
 const EXPIRED_LINK_MESSAGE =
   "This binding link has expired. Request a new one from the requesting app.";
 const VERIFICATION_CODE_LENGTH = 6;
@@ -298,7 +298,7 @@ export function NostrBindConsentDialog() {
         .catch((error) => {
           console.warn("get_identity for nostr bind failed:", error);
           setIdentity(null);
-          setError("Could not load the current Buzz identity.");
+          setError("Could not load the current Kuzz identity.");
         });
     });
 
@@ -645,14 +645,14 @@ export function NostrBindConsentDialog() {
         {payload ? (
           <DialogPrimitive.Content
             aria-describedby="nostr-bind-description"
-            className="buzz-onboarding-neutral-theme buzz-startup-shell fixed inset-0 z-50 flex overflow-y-auto bg-background px-4 py-12 text-foreground outline-hidden"
+            className="kuzz-onboarding-neutral-theme kuzz-startup-shell fixed inset-0 z-50 flex overflow-y-auto bg-background px-4 py-12 text-foreground outline-hidden"
             data-system-color-scheme={systemColorScheme}
             data-testid="nostr-bind-page"
           >
             <StartupWindowDragRegion />
             <div className="m-auto flex w-full max-w-[500px] flex-col items-center text-center">
               <img
-                alt="Buzz"
+                alt="Kuzz"
                 className="h-14 w-14 rounded-xl shadow-xs"
                 src="/app-icon@2x.png"
                 srcSet="/app-icon@2x.png 1x, /app-icon@3x.png 2x"
@@ -668,15 +668,15 @@ export function NostrBindConsentDialog() {
                   <DialogPrimitive.Title className="mt-6 text-3xl font-semibold tracking-tight">
                     {payload.returnMode === "browser_fragment_v1"
                       ? "Continue in your browser"
-                      : "Finish on the Buzz website"}
+                      : "Finish on the Kuzz website"}
                   </DialogPrimitive.Title>
                   <DialogPrimitive.Description
                     className="mt-3 max-w-[440px] text-sm leading-6 text-muted-foreground"
                     id="nostr-bind-description"
                   >
                     {payload.returnMode === "browser_fragment_v1"
-                      ? "Buzz opened your browser to finish verification."
-                      : "Copy the response below, then paste it into the Buzz website to finish verification."}
+                      ? "Kuzz opened your browser to finish verification."
+                      : "Copy the response below, then paste it into the Kuzz website to finish verification."}
                   </DialogPrimitive.Description>
 
                   {error ? (

@@ -3,10 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/community/community_storage.dart';
-import 'package:buzz/shared/push/push_subscription.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/community/community_storage.dart';
+import 'package:kuzz/shared/push/push_subscription.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import 'community_storage_test.dart';
@@ -81,13 +81,13 @@ void main() {
       );
       // Seed legacy storage to exercise the same migration path as an app
       // upgrade.
-      fakeSecure['buzz_workspaces'] = jsonEncode([community.toJson()]);
+      fakeSecure['kuzz_workspaces'] = jsonEncode([community.toJson()]);
 
       container = createContainer();
       await container.read(communityListProvider.future);
 
       expect(snapshots.single.single.id, community.id);
-      expect(fakeSecure['buzz_workspaces'], isNull);
+      expect(fakeSecure['kuzz_workspaces'], isNull);
     });
 
     test('skips an unchanged snapshot after provider invalidation', () async {
@@ -160,11 +160,11 @@ void main() {
       () async {
         container = createContainer();
         await container.read(communityListProvider.future);
-        final subscription = BuzzPushSubscription(
-          filter: BuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
+        final subscription = KuzzPushSubscription(
+          filter: KuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
           notificationClass: 'default',
         );
-        final subscriptionState = BuzzPushLeaseSubscriptionState.desired(
+        final subscriptionState = KuzzPushLeaseSubscriptionState.desired(
           desired: [subscription],
         ).withAccepted(subscriptions: [subscription], generation: 4);
         final community =
@@ -189,8 +189,8 @@ void main() {
     test('older lease success cannot regress accepted generation', () async {
       container = createContainer();
       await container.read(communityListProvider.future);
-      final subscription = BuzzPushSubscription(
-        filter: BuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
+      final subscription = KuzzPushSubscription(
+        filter: KuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
         notificationClass: 'default',
       );
       final community =
@@ -199,7 +199,7 @@ void main() {
             relayUrl: 'https://test.example.com',
           ).copyWith(
             pushNotificationsEnabled: true,
-            pushSubscriptionState: BuzzPushLeaseSubscriptionState.desired(
+            pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
               desired: [subscription],
             ).withAccepted(subscriptions: [subscription], generation: 6),
           );
@@ -226,12 +226,12 @@ void main() {
     test('lease success cannot accept stale desired subscriptions', () async {
       container = createContainer();
       await container.read(communityListProvider.future);
-      final original = BuzzPushSubscription(
-        filter: BuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
+      final original = KuzzPushSubscription(
+        filter: KuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
         notificationClass: 'default',
       );
-      final replacement = BuzzPushSubscription(
-        filter: BuzzPushFilter(kinds: const [9], pTags: ['b' * 64]),
+      final replacement = KuzzPushSubscription(
+        filter: KuzzPushFilter(kinds: const [9], pTags: ['b' * 64]),
         notificationClass: 'default',
       );
       final community =
@@ -240,7 +240,7 @@ void main() {
             relayUrl: 'https://test.example.com',
           ).copyWith(
             pushNotificationsEnabled: true,
-            pushSubscriptionState: BuzzPushLeaseSubscriptionState.desired(
+            pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
               desired: [original],
             ),
           );
@@ -274,8 +274,8 @@ void main() {
     test('opt-out tombstones an in-flight first publication', () async {
       container = createContainer();
       await container.read(communityListProvider.future);
-      final subscription = BuzzPushSubscription(
-        filter: BuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
+      final subscription = KuzzPushSubscription(
+        filter: KuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
         notificationClass: 'default',
       );
       final community =
@@ -284,7 +284,7 @@ void main() {
             relayUrl: 'https://test.example.com',
           ).copyWith(
             pushNotificationsEnabled: true,
-            pushSubscriptionState: BuzzPushLeaseSubscriptionState.desired(
+            pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
               desired: [subscription],
             ),
           );
@@ -310,8 +310,8 @@ void main() {
     test('opt-out persists first and publishes a higher tombstone', () async {
       container = createContainer();
       await container.read(communityListProvider.future);
-      final subscription = BuzzPushSubscription(
-        filter: BuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
+      final subscription = KuzzPushSubscription(
+        filter: KuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
         notificationClass: 'default',
       );
       final community =
@@ -320,7 +320,7 @@ void main() {
             relayUrl: 'https://test.example.com',
           ).copyWith(
             pushNotificationsEnabled: true,
-            pushSubscriptionState: BuzzPushLeaseSubscriptionState.desired(
+            pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
               desired: [subscription],
             ).withAccepted(subscriptions: [subscription], generation: 7),
           );
@@ -360,8 +360,8 @@ void main() {
         };
         container = createContainer();
         await container.read(communityListProvider.future);
-        final subscription = BuzzPushSubscription(
-          filter: BuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
+        final subscription = KuzzPushSubscription(
+          filter: KuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
           notificationClass: 'default',
         );
         final community =
@@ -370,7 +370,7 @@ void main() {
               relayUrl: 'https://test.example.com',
             ).copyWith(
               pushNotificationsEnabled: true,
-              pushSubscriptionState: BuzzPushLeaseSubscriptionState.desired(
+              pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
                 desired: [subscription],
               ).withAccepted(subscriptions: [subscription], generation: 7),
             );

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${1:-buzz-sprig:contract-test}"
+IMAGE="${1:-kuzz-sprig:contract-test}"
 if [[ "${SKIP_BUILD:-0}" != 1 ]]; then
     docker build --file Dockerfile.sprig --tag "$IMAGE" .
 fi
@@ -12,8 +12,8 @@ assert_run() {
 
 assert_run '
   command -v bash git update-ca-certificates >/dev/null
-  test "$(readlink /usr/local/bin/buzz-acp)" = sprig
-  for name in buzz-agent buzz-dev-mcp rg tree buzz git-credential-nostr git-sign-nostr; do
+  test "$(readlink /usr/local/bin/kuzz-acp)" = sprig
+  for name in kuzz-agent kuzz-dev-mcp rg tree kuzz git-credential-nostr git-sign-nostr; do
     test "$(readlink "/usr/local/bin/$name")" = sprig
   done
   ! git config --system --get gpg.x509.program
@@ -23,7 +23,7 @@ assert_run '
 '
 
 docker run --rm --entrypoint /bin/bash \
-  -e BUZZ_RELAY_URL=wss://relay.example.test/ "$IMAGE" -ceu '
+  -e KUZZ_RELAY_URL=wss://relay.example.test/ "$IMAGE" -ceu '
     /usr/local/bin/sprig-entrypoint --help >/dev/null
     ! git config --global --get credential.https://relay.example.test/git.helper
     ! git config --global --get-all credential.helper
@@ -60,9 +60,9 @@ chmod 700 "$probe_dir/adapter"
 # Disposable test key; never used with any relay.
 GIT_AUTHOR_NAME='Inherited Human' GIT_AUTHOR_EMAIL=human@example.invalid \
 GIT_COMMITTER_NAME='Inherited Human' GIT_COMMITTER_EMAIL=human@example.invalid \
-BUZZ_PRIVATE_KEY=0000000000000000000000000000000000000000000000000000000000000001 \
-BUZZ_RELAY_URL=wss://relay.invalid \
-BUZZ_ACP_AGENT_COMMAND="$probe_dir/adapter" BUZZ_ACP_AGENT_ARGS= \
+KUZZ_PRIVATE_KEY=0000000000000000000000000000000000000000000000000000000000000001 \
+KUZZ_RELAY_URL=wss://relay.invalid \
+KUZZ_ACP_AGENT_COMMAND="$probe_dir/adapter" KUZZ_ACP_AGENT_ARGS= \
     /usr/local/bin/sprig-entrypoint > "$probe_dir/log" 2>&1 &
 pid=$!
 for _ in {1..100}; do

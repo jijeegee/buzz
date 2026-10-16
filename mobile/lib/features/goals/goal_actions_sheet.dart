@@ -45,7 +45,7 @@ Future<void> showGoalActions(
 }) async {
   final actions = ref.read(goalActionsProvider);
   final subGoals = tree.subtreeIds(node.id).length - 1;
-  final choice = await showBuzzModalBottomSheet<String>(
+  final choice = await showKuzzModalBottomSheet<String>(
     context: context,
     title: node.title,
     showDragHandle: true,

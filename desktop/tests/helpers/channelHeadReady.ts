@@ -11,14 +11,14 @@ export async function waitForMockChannelHeadReady(
   await page.waitForFunction(
     ({ channelId, channelName }) => {
       if (
-        !window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+        !window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
           channelName,
           kind: 39005,
         })
       ) {
         return false;
       }
-      const commands = window.__BUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
+      const commands = window.__KUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
       const liveIndex = commands.findIndex(({ command, payload }) => {
         if (command !== "plugin:websocket|send") return false;
         const message = (
@@ -49,7 +49,7 @@ export async function waitForMockChannelHeadReady(
             args.cursor === null
           );
         });
-      const state = window.__BUZZ_E2E_QUERY_CLIENT__?.getQueryState([
+      const state = window.__KUZZ_E2E_QUERY_CLIENT__?.getQueryState([
         "channel-messages",
         channelId,
       ]);

@@ -945,21 +945,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
 
 [[package]]
-name = "buzz-acp"
+name = "kuzz-acp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
- "buzz-core",
- "buzz-persona",
- "buzz-sdk",
- "buzz-token-broker",
+ "kuzz-core",
+ "kuzz-persona",
+ "kuzz-sdk",
+ "kuzz-token-broker",
  "chrono",
  "clap",
  "evalexpr",
  "futures-util",
- "git-credential-buzz",
+ "git-credential-kuzz",
  "git-credential-nostr",
  "git-sign-nostr",
  "hex",
@@ -985,19 +985,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-admin"
+name = "kuzz-admin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "buzz-audit",
- "buzz-auth",
- "buzz-core",
- "buzz-db",
- "buzz-deletion",
- "buzz-media",
- "buzz-pubsub",
- "buzz-search",
- "buzz-workflow",
+ "kuzz-audit",
+ "kuzz-auth",
+ "kuzz-core",
+ "kuzz-db",
+ "kuzz-deletion",
+ "kuzz-media",
+ "kuzz-pubsub",
+ "kuzz-search",
+ "kuzz-workflow",
  "clap",
  "deadpool-redis",
  "hex",
@@ -1013,7 +1013,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-agent"
+name = "kuzz-agent"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
@@ -1043,11 +1043,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-audit"
+name = "kuzz-audit"
 version = "0.1.0"
 dependencies = [
- "buzz-core",
- "buzz-datastore-tracing",
+ "kuzz-core",
+ "kuzz-datastore-tracing",
  "chrono",
  "futures-util",
  "hex",
@@ -1063,12 +1063,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-auth"
+name = "kuzz-auth"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
- "buzz-core",
+ "kuzz-core",
  "chrono",
  "dashmap",
  "futures-util",
@@ -1090,7 +1090,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-backend-kubernetes"
+name = "kuzz-backend-kubernetes"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -1110,16 +1110,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-cli"
+name = "kuzz-cli"
 version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
- "buzz-core",
- "buzz-persona",
- "buzz-sdk",
- "buzz-token-broker",
- "buzz-ws-client",
+ "kuzz-core",
+ "kuzz-persona",
+ "kuzz-sdk",
+ "kuzz-token-broker",
+ "kuzz-ws-client",
  "bytes",
  "chrono",
  "clap",
@@ -1145,7 +1145,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-conformance"
+name = "kuzz-conformance"
 version = "0.1.0"
 dependencies = [
  "proptest",
@@ -1156,7 +1156,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-core"
+name = "kuzz-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
@@ -1177,7 +1177,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-datastore-tracing"
+name = "kuzz-datastore-tracing"
 version = "0.1.0"
 dependencies = [
  "metrics",
@@ -1194,11 +1194,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-db"
+name = "kuzz-db"
 version = "0.1.0"
 dependencies = [
- "buzz-core",
- "buzz-datastore-tracing",
+ "kuzz-core",
+ "kuzz-datastore-tracing",
  "chrono",
  "futures-util",
  "hex",
@@ -1217,13 +1217,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-deletion"
+name = "kuzz-deletion"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "buzz-core",
- "buzz-db",
- "buzz-media",
+ "kuzz-core",
+ "kuzz-db",
+ "kuzz-media",
  "chrono",
  "clap",
  "deadpool-redis",
@@ -1239,12 +1239,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-dev-mcp"
+name = "kuzz-dev-mcp"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "buzz-cli",
- "buzz-core",
+ "kuzz-cli",
+ "kuzz-core",
  "ignore",
  "image",
  "nix 0.31.3",
@@ -1265,10 +1265,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-feature-flags"
+name = "kuzz-feature-flags"
 version = "0.1.0"
 dependencies = [
- "buzz-core",
+ "kuzz-core",
  "http",
  "launchdarkly-server-sdk",
  "serde_json",
@@ -1278,12 +1278,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-media"
+name = "kuzz-media"
 version = "0.1.0"
 dependencies = [
  "axum",
  "blurhash",
- "buzz-core",
+ "kuzz-core",
  "bytes",
  "chrono",
  "futures-core",
@@ -1309,11 +1309,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-mesh-smoke"
+name = "kuzz-mesh-smoke"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "buzz-test-client",
+ "kuzz-test-client",
  "ed25519-dalek",
  "hex",
  "mesh-llm-host-runtime",
@@ -1327,7 +1327,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-pair-relay"
+name = "kuzz-pair-relay"
 version = "0.1.0"
 dependencies = [
  "futures-util",
@@ -1344,10 +1344,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-pairing-cli"
+name = "kuzz-pairing-cli"
 version = "0.1.0"
 dependencies = [
- "buzz-core",
+ "kuzz-core",
  "clap",
  "futures-util",
  "hex",
@@ -1361,7 +1361,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-persona"
+name = "kuzz-persona"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -1372,11 +1372,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-pubsub"
+name = "kuzz-pubsub"
 version = "0.1.0"
 dependencies = [
- "buzz-auth",
- "buzz-core",
+ "kuzz-auth",
+ "kuzz-core",
  "chrono",
  "deadpool-redis",
  "futures-util",
@@ -1392,7 +1392,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-push-gateway"
+name = "kuzz-push-gateway"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
@@ -1426,7 +1426,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-relay"
+name = "kuzz-relay"
 version = "0.2.1"
 dependencies = [
  "anyhow",
@@ -1434,19 +1434,19 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
- "buzz-audit",
- "buzz-auth",
- "buzz-conformance",
- "buzz-core",
- "buzz-datastore-tracing",
- "buzz-db",
- "buzz-deletion",
- "buzz-media",
- "buzz-pubsub",
- "buzz-relay-mesh",
- "buzz-sdk",
- "buzz-search",
- "buzz-workflow",
+ "kuzz-audit",
+ "kuzz-auth",
+ "kuzz-conformance",
+ "kuzz-core",
+ "kuzz-datastore-tracing",
+ "kuzz-db",
+ "kuzz-deletion",
+ "kuzz-media",
+ "kuzz-pubsub",
+ "kuzz-relay-mesh",
+ "kuzz-sdk",
+ "kuzz-search",
+ "kuzz-workflow",
  "bytes",
  "chrono",
  "dashmap",
@@ -1498,7 +1498,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-relay-mesh"
+name = "kuzz-relay-mesh"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -1521,10 +1521,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-sdk"
+name = "kuzz-sdk"
 version = "0.1.0"
 dependencies = [
- "buzz-core",
+ "kuzz-core",
  "nostr 0.44.7",
  "serde",
  "serde_json",
@@ -1533,12 +1533,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-search"
+name = "kuzz-search"
 version = "0.1.0"
 dependencies = [
- "buzz-core",
- "buzz-datastore-tracing",
- "buzz-db",
+ "kuzz-core",
+ "kuzz-datastore-tracing",
+ "kuzz-db",
  "metrics",
  "sqlx",
  "thiserror 2.0.18",
@@ -1548,15 +1548,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-test-client"
+name = "kuzz-test-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "buzz-core",
- "buzz-media",
- "buzz-sdk",
- "buzz-ws-client",
+ "kuzz-core",
+ "kuzz-media",
+ "kuzz-sdk",
+ "kuzz-ws-client",
  "chrono",
  "futures-util",
  "hex",
@@ -1579,7 +1579,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-token-broker"
+name = "kuzz-token-broker"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -1589,7 +1589,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-voice"
+name = "kuzz-voice"
 version = "0.1.0"
 dependencies = [
  "atomic-write-file",
@@ -1608,12 +1608,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-workflow"
+name = "kuzz-workflow"
 version = "0.1.0"
 dependencies = [
- "buzz-core",
- "buzz-db",
- "buzz-deletion",
+ "kuzz-core",
+ "kuzz-db",
+ "kuzz-deletion",
  "chrono",
  "cron",
  "dashmap",
@@ -1632,7 +1632,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "buzz-ws-client"
+name = "kuzz-ws-client"
 version = "0.1.0"
 dependencies = [
  "futures-util",
@@ -2154,7 +2154,7 @@ name = "countdown-bot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "buzz-sdk",
+ "kuzz-sdk",
  "futures-util",
  "nostr 0.44.7",
  "serde_json",
@@ -3576,10 +3576,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-credential-buzz"
+name = "git-credential-kuzz"
 version = "0.1.0"
 dependencies = [
- "buzz-token-broker",
+ "kuzz-token-broker",
 ]
 
 [[package]]
@@ -9798,9 +9798,9 @@ dependencies = [
 name = "sprig"
 version = "0.1.0"
 dependencies = [
- "buzz-acp",
- "buzz-agent",
- "buzz-dev-mcp",
+ "kuzz-acp",
+ "kuzz-agent",
+ "kuzz-dev-mcp",
 ]
 
 [[package]]

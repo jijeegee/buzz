@@ -16,7 +16,7 @@ import remarkCustomEmoji, {
 import remarkMentions from "@/shared/lib/remarkMentions";
 import remarkSpoilers from "@/shared/lib/remarkSpoilers";
 
-import { buzzDeepLinkUrlTransform } from "./utils";
+import { kuzzDeepLinkUrlTransform } from "./utils";
 
 /**
  * Parsed-markdown element cache.
@@ -117,7 +117,7 @@ function buildMarkdownElement(input: MarkdownParseInputs): React.ReactElement {
       // biome-ignore lint/suspicious/noExplicitAny: PluggableList type not directly importable
     ] as any[],
     rehypePlugins,
-    urlTransform: buzzDeepLinkUrlTransform,
+    urlTransform: kuzzDeepLinkUrlTransform,
   });
 }
 

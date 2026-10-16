@@ -30,11 +30,11 @@ async function invokeMockCommand(
   await page.waitForFunction(
     () => {
       const w = window as Window & {
-        __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: unknown;
+        __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: unknown;
         __TAURI_INTERNALS__?: { invoke?: unknown };
       };
       return (
-        typeof w.__BUZZ_E2E_INVOKE_MOCK_COMMAND__ === "function" ||
+        typeof w.__KUZZ_E2E_INVOKE_MOCK_COMMAND__ === "function" ||
         typeof w.__TAURI_INTERNALS__?.invoke === "function"
       );
     },
@@ -44,7 +44,7 @@ async function invokeMockCommand(
   return page.evaluate(
     async ({ command: cmd, payload: pl }) => {
       const w = window as Window & {
-        __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+        __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
           command: string,
           payload?: Record<string, unknown>,
         ) => Promise<unknown>;
@@ -56,7 +56,7 @@ async function invokeMockCommand(
         };
       };
       const invoke =
-        w.__BUZZ_E2E_INVOKE_MOCK_COMMAND__ ?? w.__TAURI_INTERNALS__?.invoke;
+        w.__KUZZ_E2E_INVOKE_MOCK_COMMAND__ ?? w.__TAURI_INTERNALS__?.invoke;
       if (!invoke) throw new Error("Mock invoke bridge is unavailable.");
       return invoke(cmd, pl);
     },

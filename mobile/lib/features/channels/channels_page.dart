@@ -21,8 +21,8 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_brand_logo.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/bee_refresh_indicator.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
-import '../../shared/widgets/buzz_titled_sheet_layout.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_titled_sheet_layout.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/modal_presentation.dart';
@@ -301,7 +301,7 @@ class ChannelsPage extends HookConsumerWidget {
     void openCommunitySwitcher() {
       unawaited(HapticFeedback.selectionClick());
       ref.invalidate(communityIconProvider);
-      showBuzzModalBottomSheet<void>(
+      showKuzzModalBottomSheet<void>(
         context: context,
         showCloseButton: false,
         showDragHandle: false,
@@ -320,9 +320,9 @@ class ChannelsPage extends HookConsumerWidget {
       backgroundGradient: topSectionGradient,
       appBar: FrostedAppBar(
         horizontalInset: _kTopSectionInset,
-        // Let the full Buzz gradient show at rest. Once the list begins to
+        // Let the full Kuzz gradient show at rest. Once the list begins to
         // move beneath this row, build up blur over the first 64dp of scroll
-        // without adding the usual white frosted wash. The Buzz list is
+        // without adding the usual white frosted wash. The Kuzz list is
         // transparent, so the blurred pixels remain a continuation of the
         // pinned gradient instead of turning into a white header.
         frosted: !usesPinnedGradient || headerFrostProgress.value > 0,

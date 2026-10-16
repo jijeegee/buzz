@@ -16,8 +16,8 @@ import { ModelEffortFields } from "./ModelEffortFields";
 import { PersonaDropdownField } from "./PersonaDropdownField";
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import { PersonaAdvancedFields } from "./PersonaAdvancedFields";
-import { BuzzAgentModelTuningFields } from "./buzzAgentModelTuningFields";
-import { isBuzzAgentRuntime } from "./buzzAgentConfig";
+import { KuzzAgentModelTuningFields } from "./kuzzAgentModelTuningFields";
+import { isKuzzAgentRuntime } from "./kuzzAgentConfig";
 import { PersonaModelField } from "./PersonaModelField";
 import { runtimeAvailabilityWarning } from "./runtimeAvailabilityWarning";
 import { PersonaProviderApiKeyField } from "./PersonaProviderApiKeyField";
@@ -152,7 +152,7 @@ export function AgentDefinitionDialog({
   const aiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const [avatarUrl, setAvatarUrl] = React.useState("");
   const [systemPrompt, setSystemPrompt] = React.useState("");
-  const [acpCommand, setAcpCommand] = React.useState("buzz-acp");
+  const [acpCommand, setAcpCommand] = React.useState("kuzz-acp");
   const [runtime, setRuntime] = React.useState("");
   const [model, setModel] = React.useState("");
   const [isCustomModelEditing, setIsCustomModelEditing] = React.useState(false);
@@ -219,7 +219,7 @@ export function AgentDefinitionDialog({
     setDescriptionDraft(initialValues.description ?? "");
     setAvatarUrl(initialValues.avatarUrl ?? "");
     setSystemPrompt(initialValues.systemPrompt);
-    setAcpCommand(initialValues.acpCommand ?? "buzz-acp");
+    setAcpCommand(initialValues.acpCommand ?? "kuzz-acp");
     setRuntime(initialValues.runtime ?? "");
     setModel(initialValues.model ?? "");
     setIsCustomModelEditing(false);
@@ -316,7 +316,7 @@ export function AgentDefinitionDialog({
       setDisplayName("");
       setAvatarUrl("");
       setSystemPrompt("");
-      setAcpCommand("buzz-acp");
+      setAcpCommand("kuzz-acp");
       setRuntime("");
       setModel("");
       setIsCustomModelEditing(false);
@@ -369,7 +369,7 @@ export function AgentDefinitionDialog({
       description: descriptionDraft,
       avatarUrl: avatarUrl.trim() || undefined,
       systemPrompt: systemPrompt,
-      acpCommand: acpCommand.trim() || "buzz-acp",
+      acpCommand: acpCommand.trim() || "kuzz-acp",
       runtime: runtimeForSubmit,
       model: modelForSubmit,
       provider: providerForSubmit,
@@ -531,9 +531,9 @@ export function AgentDefinitionDialog({
   // projection as a local spawn), so no Run-on gate applies; only the
   // per-instance override in the instance dialog is local-only. The field
   // itself stays hidden for runtimes whose catalog entry publishes no
-  // effortThoughtLevel (Goose, buzz-agent, most presets, custom).
+  // effortThoughtLevel (Goose, kuzz-agent, most presets, custom).
   const effortFieldVisible = modelFieldVisible;
-  // Only provider-selection harnesses (Buzz Agent / Goose) need an explicit
+  // Only provider-selection harnesses (Kuzz Agent / Goose) need an explicit
   // model in Customize — the backend readiness gate requires the pair for
   // them. Every other harness owns its default model, so an empty model is a
   // valid "harness default" choice (see agentAiConfigurationPolicy).
@@ -603,13 +603,13 @@ export function AgentDefinitionDialog({
     modelFieldVisible,
     provider: effectiveProvider,
   });
-  // On internal Block builds, BUZZ_AGENT_PROVIDER is baked in and a boot
+  // On internal Block builds, KUZZ_AGENT_PROVIDER is baked in and a boot
   // migration rewrites any persisted Databricks v1 values → v2. Hide the v1
   // option there so it is not offered for new selections. OSS builds have no
   // baked provider, so v1 remains visible.
   const hideProviderIds = React.useMemo(
     () =>
-      (bakedEnvKeys ?? []).includes("BUZZ_AGENT_PROVIDER")
+      (bakedEnvKeys ?? []).includes("KUZZ_AGENT_PROVIDER")
         ? BLOCK_BUILD_HIDDEN_PROVIDER_IDS
         : new Set<string>(),
     [bakedEnvKeys],
@@ -774,11 +774,11 @@ export function AgentDefinitionDialog({
     setHasUserChanges(true);
     const nextProvider =
       nextValue === AUTO_PROVIDER_DROPDOWN_VALUE ? "" : nextValue;
-    if (nextProvider === "relay-mesh" && runtime !== "buzz-agent") {
-      handleRuntimeDropdownChange("buzz-agent");
+    if (nextProvider === "relay-mesh" && runtime !== "kuzz-agent") {
+      handleRuntimeDropdownChange("kuzz-agent");
     }
     const nextSelection = selectionOnProviderDropdownChange(selection, {
-      runtime: nextProvider === "relay-mesh" ? "buzz-agent" : runtime,
+      runtime: nextProvider === "relay-mesh" ? "kuzz-agent" : runtime,
       nextValue,
       clearModelWhenApiKeyMissing: true,
     });
@@ -1017,8 +1017,8 @@ export function AgentDefinitionDialog({
           </ModelEffortFields>
 
           {/* Kuzz effort sits with the model choice, like the ACP picker. */}
-          {isBuzzAgentRuntime(runtime) ? (
-            <BuzzAgentModelTuningFields
+          {isKuzzAgentRuntime(runtime) ? (
+            <KuzzAgentModelTuningFields
               catalogEfforts={discoveredModelOptions?.find(
                 (option) => option.id === model,
               )}

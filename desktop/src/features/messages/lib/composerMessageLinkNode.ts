@@ -34,13 +34,13 @@ export type ComposerMessageLinkAttributes = {
   href: string;
 };
 
-const BARE_BUZZ_LINK_AT_START =
-  /^buzz:\/\/(?:message\?|channel\/|(?:pr|issue|repo|project)\?)[^\s<>"')\]}*]+/i;
-const BUZZ_LINK_SUFFIX_AT_START =
+const BARE_KUZZ_LINK_AT_START =
+  /^kuzz:\/\/(?:message\?|channel\/|(?:pr|issue|repo|project)\?)[^\s<>"')\]}*]+/i;
+const KUZZ_LINK_SUFFIX_AT_START =
   /^:\/\/(?:message\?|channel\/|(?:pr|issue|repo|project)\?)[^\s<>"')\]}*]+/i;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
-function trimBareBuzzLink(value: string): string {
+function trimBareKuzzLink(value: string): string {
   let trimmed = value.replace(TRAILING_PUNCTUATION, "");
   while (/[)\]]$/.test(trimmed)) {
     const closing = trimmed.at(-1) ?? "";
@@ -106,7 +106,7 @@ export function resolveComposerMessageLinkAttributes(
   }
 }
 
-function unwrapExactBuzzLink(text: string): string | null {
+function unwrapExactKuzzLink(text: string): string | null {
   const href =
     text.startsWith("<") && text.endsWith(">") ? text.slice(1, -1) : text;
   if (!href || /\s/.test(href)) return null;
@@ -131,10 +131,10 @@ export function resolveExactLinkPaste(
   text: string,
   resolveChannelName: ComposerMessageLinkNodeOptions["resolveChannelName"],
 ): { href: string } | null {
-  const buzzHref = unwrapExactBuzzLink(text);
-  if (buzzHref) {
+  const kuzzHref = unwrapExactKuzzLink(text);
+  if (kuzzHref) {
     const attrs = resolveComposerMessageLinkAttributes(
-      buzzHref,
+      kuzzHref,
       resolveChannelName,
     );
     return attrs ? { href: attrs.href } : null;
@@ -148,7 +148,7 @@ export function resolveExactLinkPaste(
  * Resolves a clipboard payload for the *selected text* branch of paste
  * handling, where this handler is the only one that runs.
  *
- * The exact Buzz/http matchers win first, so Buzz links keep their canonical
+ * The exact Kuzz/http matchers win first, so Kuzz links keep their canonical
  * form. Anything else falls back to linkify with `defaultProtocol: "http"` —
  * the same matcher TipTap's `linkOnPaste` used before the composer took sole
  * ownership of this branch, so `www.example.com`, `foo@example.com` and
@@ -264,16 +264,16 @@ export function createComposerLinkPasteHandler(
       }
     }
 
-    const buzzHref = unwrapExactBuzzLink(text);
-    const buzzLinkType =
+    const kuzzHref = unwrapExactKuzzLink(text);
+    const kuzzLinkType =
       view.state.schema.nodes[COMPOSER_MESSAGE_LINK_NODE_NAME];
-    if (buzzHref && buzzLinkType) {
+    if (kuzzHref && kuzzLinkType) {
       const attrs = resolveComposerMessageLinkAttributes(
-        buzzHref,
+        kuzzHref,
         resolveChannelName,
       );
       if (attrs) {
-        replaceSelectionWithNode(view, buzzLinkType.create(attrs));
+        replaceSelectionWithNode(view, kuzzLinkType.create(attrs));
         event.preventDefault();
         return true;
       }
@@ -296,21 +296,21 @@ export function registerComposerMessageLinkMarkdownIt(
   md: any,
   options: ComposerMessageLinkNodeOptions,
 ): void {
-  const ruleName = "buzz_composer_message_link";
-  const tokenType = "buzz_composer_message_link";
+  const ruleName = "kuzz_composer_message_link";
+  const tokenType = "kuzz_composer_message_link";
   if (md.renderer.rules[tokenType]) return;
 
   // biome-ignore lint/suspicious/noExplicitAny: markdown-it state/silent
   const rule = (state: any, silent: boolean): boolean => {
     const remaining = state.src.slice(state.pos);
-    const fullMatch = BARE_BUZZ_LINK_AT_START.exec(remaining);
-    const suffixMatch = BUZZ_LINK_SUFFIX_AT_START.exec(remaining);
+    const fullMatch = BARE_KUZZ_LINK_AT_START.exec(remaining);
+    const suffixMatch = KUZZ_LINK_SUFFIX_AT_START.exec(remaining);
     const resumesTextToken =
-      !fullMatch && suffixMatch && /buzz$/i.test(state.pending ?? "");
+      !fullMatch && suffixMatch && /kuzz$/i.test(state.pending ?? "");
     const rawHref =
-      fullMatch?.[0] ?? (resumesTextToken ? `buzz${suffixMatch[0]}` : null);
+      fullMatch?.[0] ?? (resumesTextToken ? `kuzz${suffixMatch[0]}` : null);
     if (!rawHref) return false;
-    const href = trimBareBuzzLink(rawHref);
+    const href = trimBareKuzzLink(rawHref);
     const attrs = resolveComposerMessageLinkAttributes(
       href,
       options.resolveChannelName,
@@ -330,7 +330,7 @@ export function registerComposerMessageLinkMarkdownIt(
   md.renderer.rules[tokenType] = (tokens: any[], index: number): string => {
     const attrs = tokens[index].meta as ComposerMessageLinkAttributes;
     const escapeHtml = md.utils.escapeHtml;
-    return `<span data-composer-buzz-link="" data-channel-name="${escapeHtml(attrs.channelName)}" data-href="${escapeHtml(attrs.href)}"></span>`;
+    return `<span data-composer-kuzz-link="" data-channel-name="${escapeHtml(attrs.channelName)}" data-href="${escapeHtml(attrs.href)}"></span>`;
   };
 }
 
@@ -403,7 +403,7 @@ function composerLinkPresentation(
           ? `Open project ${entity.value.dtag}`
           : `Open ${entity.value.type === "pr" ? "pull request" : "issue"} ${shortId} in repository ${entity.value.dtag}`,
     channelName: "",
-    dataAttributes: { "data-buzz-link-kind": entity.value.type },
+    dataAttributes: { "data-kuzz-link-kind": entity.value.type },
     icon: entity.value.type,
     // Entity chips use only stable link-derived identity. Fetched metadata is
     // reserved for sent-message tooltips/cards, so every composer chip keeps the
@@ -475,7 +475,7 @@ export const ComposerMessageLinkNode =
 
     parseHTML() {
       return [
-        { tag: "span[data-composer-buzz-link]" },
+        { tag: "span[data-composer-kuzz-link]" },
         { tag: "span[data-composer-message-link]" },
       ];
     },
@@ -497,9 +497,9 @@ export const ComposerMessageLinkNode =
         mergeAttributes(HTMLAttributes, {
           "aria-label": presentation.ariaLabel,
           class: `${MENTION_CHIP_BASE_CLASSES} ${WRAPPING_INLINE_CHIP_CLASSES} ${inlineChipIconClasses(presentation.icon)} cursor-text`,
-          "data-buzz-link": "",
+          "data-kuzz-link": "",
           "data-channel-name": presentation.channelName,
-          "data-composer-buzz-link": "",
+          "data-composer-kuzz-link": "",
           "data-href": href,
           ...presentation.dataAttributes,
           title: presentation.ariaLabel,

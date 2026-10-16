@@ -7,7 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/relay/relay_closed_policy.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/load_error_view.dart';
 import '../../shared/widgets/bee_refresh_indicator.dart';
@@ -84,7 +84,7 @@ class ForumPostsView extends HookConsumerWidget {
               loading: () => Padding(
                 padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
                 child: const Center(
-                  child: BuzzLoadingIndicator(
+                  child: KuzzLoadingIndicator(
                     size: 44,
                     semanticLabel: 'Loading posts',
                   ),

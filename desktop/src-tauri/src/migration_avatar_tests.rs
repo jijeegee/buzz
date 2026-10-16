@@ -65,7 +65,7 @@ fn refresh_builtin_agent_avatars_updates_seeded_values_and_preserves_customizati
                 "persona_id": persona_id,
                 "relay_url": "ws://localhost:3000",
                 "avatar_url": avatar_url,
-                "acp_command": "buzz-acp",
+                "acp_command": "kuzz-acp",
                 "agent_command": "goose",
                 "agent_args": [],
                 "mcp_command": "",

@@ -27,7 +27,7 @@ take audio ownership only after speech stops and releases native focus.
 `SpeechEngine` is the replaceable interface, injected by `speechEngineProvider`.
 The initial implementation uses MIT-licensed `flutter_tts` 4.2.5 with Android
 TextToSpeech / iOS AVSpeechSynthesizer and `audio_session` for focus and release.
-It uses no paid API, API key, Buzz endpoint or uploaded audio. Replacing the
+It uses no paid API, API key, Kuzz endpoint or uploaded audio. Replacing the
 backend requires implementing prepare/speak/stop and preserving the UTF-16
 range/cancellation contract; the message UI stays the same.
 
@@ -49,7 +49,7 @@ Run the entire mobile suite and analyzer using the repository-pinned Flutter:
 
 ```sh
 flutter analyze
-flutter test --dart-define=BUZZ_PUSH_GATEWAY_URL=https://push.example
+flutter test --dart-define=KUZZ_PUSH_GATEWAY_URL=https://push.example
 ```
 
 Tests cover the actual message controls, preference persistence, pause/resume,

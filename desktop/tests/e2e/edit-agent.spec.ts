@@ -3,13 +3,13 @@ import { expect, test } from "@playwright/test";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 
 const BAKED_DEFAULTS = [
-  { key: "BUZZ_AGENT_PROVIDER", value: "anthropic", masked: false },
+  { key: "KUZZ_AGENT_PROVIDER", value: "anthropic", masked: false },
   {
-    key: "BUZZ_AGENT_MODEL",
+    key: "KUZZ_AGENT_MODEL",
     value: "claude-opus-4-8",
     masked: false,
   },
-  { key: "BUZZ_AGENT_THINKING_EFFORT", value: "high", masked: false },
+  { key: "KUZZ_AGENT_THINKING_EFFORT", value: "high", masked: false },
   { key: "ANTHROPIC_API_KEY", value: "sk-ant-baked-test", masked: true },
 ];
 
@@ -284,12 +284,12 @@ test.describe("edit agent dialog", () => {
       page.evaluate(async (pubkey) => {
         const agents = (await (
           window as typeof window & {
-            __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+            __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
               command: string,
               payload: unknown,
             ) => Promise<unknown>;
           }
-        ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("list_managed_agents", null)) as
+        ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("list_managed_agents", null)) as
           | Array<{ pubkey: string; model: string | null }>
           | undefined;
         return agents?.find((agent) => agent.pubkey === pubkey)?.model;
@@ -399,7 +399,7 @@ test.describe("edit agent dialog", () => {
       globalAgentConfig: {
         provider: "anthropic",
         model: "claude-opus-4-5",
-        env_vars: { BUZZ_AGENT_THINKING_EFFORT: "low" },
+        env_vars: { KUZZ_AGENT_THINKING_EFFORT: "low" },
       },
       managedAgents: [
         {
@@ -434,8 +434,8 @@ test.describe("edit agent dialog", () => {
     await installMockBridge(page, {
       acpCommands: [
         {
-          command: "buzz-janet-acp",
-          binaryPath: "/usr/local/bin/buzz-janet-acp",
+          command: "kuzz-janet-acp",
+          binaryPath: "/usr/local/bin/kuzz-janet-acp",
         },
       ],
       managedAgents: [
@@ -455,10 +455,10 @@ test.describe("edit agent dialog", () => {
     await expect(acpPicker).toBeVisible();
     await acpPicker.click();
     await expect(
-      page.getByRole("menuitemradio", { name: "buzz-janet-acp" }),
+      page.getByRole("menuitemradio", { name: "kuzz-janet-acp" }),
     ).toBeVisible();
-    await page.getByRole("menuitemradio", { name: "buzz-janet-acp" }).click();
-    await expect(acpPicker).toContainText("buzz-janet-acp");
+    await page.getByRole("menuitemradio", { name: "kuzz-janet-acp" }).click();
+    await expect(acpPicker).toContainText("kuzz-janet-acp");
     await page.screenshot({
       path: test.info().outputPath("acp-command-selected.png"),
       fullPage: true,
@@ -470,7 +470,7 @@ test.describe("edit agent dialog", () => {
     await page.getByTestId("user-profile-edit-agent").click();
     await page.getByRole("button", { name: "Advanced", exact: true }).click();
     await expect(page.locator("#edit-agent-acp-command")).toContainText(
-      "buzz-janet-acp",
+      "kuzz-janet-acp",
     );
     await page.screenshot({
       path: test.info().outputPath("acp-command-persisted.png"),

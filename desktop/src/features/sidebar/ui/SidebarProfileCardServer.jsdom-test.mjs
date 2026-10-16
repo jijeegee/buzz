@@ -78,8 +78,8 @@ afterEach(async () => {
 });
 
 async function renderCard({ builtIn, role, userStatus }) {
-  localStorage.setItem("buzz-communities", JSON.stringify([community]));
-  localStorage.setItem("buzz-active-community-id", community.id);
+  localStorage.setItem("kuzz-communities", JSON.stringify([community]));
+  localStorage.setItem("kuzz-active-community-id", community.id);
   setBuiltInServerForTests(builtIn);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },

@@ -135,7 +135,7 @@ test("senderNameFromSummary prefers displayName, then NIP-05, never a pubkey", (
     senderNameFromSummary({
       displayName: "Taylor",
       avatarUrl: null,
-      nip05Handle: "taylor@buzz.example",
+      nip05Handle: "taylor@kuzz.example",
       ownerPubkey: null,
     }),
     "Taylor",
@@ -144,10 +144,10 @@ test("senderNameFromSummary prefers displayName, then NIP-05, never a pubkey", (
     senderNameFromSummary({
       displayName: "  ",
       avatarUrl: null,
-      nip05Handle: "taylor@buzz.example",
+      nip05Handle: "taylor@kuzz.example",
       ownerPubkey: null,
     }),
-    "taylor@buzz.example",
+    "taylor@kuzz.example",
   );
   assert.equal(
     senderNameFromSummary({

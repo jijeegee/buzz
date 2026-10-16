@@ -1,7 +1,7 @@
 part of '../compose_bar.dart';
 
 const _nativeAttachmentPopoverChannel = MethodChannel(
-  'buzz/native_attachment_popover',
+  'kuzz/native_attachment_popover',
 );
 
 final _iosAttachmentPopoverCoordinator = _IOSAttachmentPopoverCoordinator(

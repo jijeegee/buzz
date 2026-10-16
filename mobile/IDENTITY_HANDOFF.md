@@ -15,7 +15,7 @@ test adapters (`dev_push_lease_test.dart` and
 
 - `flutter analyze`: **No issues found**.
 - `dart format --output=none --set-exit-if-changed .`: **642 files, 0 changed**.
-- `flutter test --dart-define=BUZZ_PUSH_GATEWAY_URL=https://push.example`:
+- `flutter test --dart-define=KUZZ_PUSH_GATEWAY_URL=https://push.example`:
   **2693 passed, 5 skipped, 2 failed**. Both remaining failures are the baseline
   Windows ComposeBar voice-note cases (`records, previews, uploads, and sends a
   voice note`; `voice note rejects an existing attachment like desktop`).
@@ -59,7 +59,7 @@ pairing has since been removed by Stage 2B below.
 | | Baseline (before changes) | Final |
 |---|---|---|
 | `flutter analyze` | exit 1, 2 issues (both pre-existing errors: `test/shared/push/dev_push_lease_test.dart:212` argument_type_not_assignable, `test/shared/push/push_presentation_export_test.dart:591` return_of_invalid_type) | exit 1, the same 2 pre-existing issues (no new ones) |
-| `flutter test --dart-define=BUZZ_PUSH_GATEWAY_URL=https://push.example` | exit 1, +2577 ~5 -4 (2 compose_bar voice-note tests + load failures of the 2 files above) | exit 1, +2630 ~5 -4: the same 4 baseline failures, no new ones (+53 passing tests) |
+| `flutter test --dart-define=KUZZ_PUSH_GATEWAY_URL=https://push.example` | exit 1, +2577 ~5 -4 (2 compose_bar voice-note tests + load failures of the 2 files above) | exit 1, +2630 ~5 -4: the same 4 baseline failures, no new ones (+53 passing tests) |
 | `dart format --output=none --set-exit-if-changed .` | — | exit 0, 628 files, 0 changed |
 
 ## Files
@@ -83,7 +83,7 @@ Modified:
 - `lib/app.dart` — token communities render Home behind `TokenSessionGate`;
   onboarding shows pairing plus a "Sign in with Google" entry.
 - `android/app/src/main/AndroidManifest.xml` — flutter_web_auth_2
-  `CallbackActivity` for `xyz.block.buzz://auth`.
+  `CallbackActivity` for `app.kuzz://auth`.
 - `pubspec.yaml`, `pubspec.lock`; `test/shared/auth/auth_provider_test.dart`,
   `test/features/pairing/pairing_provider_test.dart` (fake gains the new method),
   `test/shared/community/community_test.dart`.
@@ -101,10 +101,10 @@ Modified:
   `logout`; `AuthApiException.kind` is `terminal` (400/401/403/404) or
   `transient` (network, 408, 429, 5xx, malformed body).
 - `runOidcLogin(api, launcher)` — `client=mobile`,
-  `redirect_uri=xyz.block.buzz://auth/cb`; validates `state` before reading
+  `redirect_uri=app.kuzz://auth/cb`; validates `state` before reading
   `error`/`code`.
 - `RefreshTokenStore` / `SecureRefreshTokenStore` — key
-  `buzz.auth.refresh.v1:<origin>`, `{refresh, principal_id}` JSON,
+  `kuzz.auth.refresh.v1:<origin>`, `{refresh, principal_id}` JSON,
   `first_unlock_this_device`. Access tokens are memory-only.
 - `TokenSessionController` — `state`, `addListener`, `restore()`,
   `signIn()`, `currentAccessToken`, `ensureFreshAccessToken()`,
@@ -152,16 +152,16 @@ Modified:
 ## Native callback
 
 - Android: `com.linusu.flutter_web_auth_2.CallbackActivity`, exported,
-  `taskAffinity=""`, `scheme=xyz.block.buzz host=auth`. `MainActivity`
+  `taskAffinity=""`, `scheme=app.kuzz host=auth`. `MainActivity`
   already has `taskAffinity=""`.
 - iOS: no change. `ASWebAuthenticationSession` captures the callback scheme
   itself; no `CFBundleURLTypes` entry is needed (deployment target 16.0 ≥
   plugin minimum).
 - `scripts/mobile-worktree-overrides.sh` (read-only): worktree debug builds
-  change the bundle id / applicationId (`xyz.block.buzz.dogfood.mobile.<slug>`,
-  `xyz.block.buzz.mobile.<suffix>`) but **not** the callback scheme. On iOS
+  change the bundle id / applicationId (`app.kuzz.dogfood.mobile.<slug>`,
+  `app.kuzz.mobile.<suffix>`) but **not** the callback scheme. On iOS
   this is fine. On Android, several side-by-side installs all register
-  `xyz.block.buzz://auth`, so the OS may show a chooser or deliver the
+  `app.kuzz://auth`, so the OS may show a chooser or deliver the
   callback to another install; the relay only allows the configured
   `AUTH_MOBILE_REDIRECT_SCHEMES`. If side-by-side Android logins matter, make
   the scheme a manifest placeholder and add the per-worktree scheme to the
@@ -251,8 +251,8 @@ Paths are relative to `mobile/`.
 ### iOS native → decision needed
 - `push_bridge.dart:306-329` exports private keys.
 - `PushSnapshotBridge.swift:145,204`, `PushNativeState.swift:46-69`, `NotificationService.swift:46-50,162`.
-- `BuzzPushNotificationResolver.swift:122-150, 315-368` sign NIP-98 via `NostrHTTPAuth.swift:86-129`.
-- Signature checks on fetched events (`NostrHTTPAuth.swift:37`, resolver :160/:382, `BuzzPushPresentationCache.swift:214,293,340`) must change if events are server-stamped.
+- `KuzzPushNotificationResolver.swift:122-150, 315-368` sign NIP-98 via `NostrHTTPAuth.swift:86-129`.
+- Signature checks on fetched events (`NostrHTTPAuth.swift:37`, resolver :160/:382, `KuzzPushPresentationCache.swift:214,293,340`) must change if events are server-stamped.
 
 ## Stage 2 — remaining work
 
@@ -517,7 +517,7 @@ Status: slices 1-5 done and green. 2B only edited `mobile/` files outside the
 - `flutter analyze`: the 2 baseline errors only, both in 2A push tests:
   - `dev_push_lease_test.dart:212`
   - `push_presentation_export_test.dart:591`
-- `flutter test --dart-define=BUZZ_PUSH_GATEWAY_URL=https://push.example`:
+- `flutter test --dart-define=KUZZ_PUSH_GATEWAY_URL=https://push.example`:
   `+2628 ~5 -4`. The 4 failures are the same as the baseline:
   - 2 compose_bar voice-note tests
   - 2 load failures in the push test files above
@@ -642,13 +642,13 @@ then went green.
     session stalls and is kept rather than wiped. Logout still treats 404 as
     "already revoked".
 
-## Final integration check (2026-10-06, session buzz-b6)
+## Final integration check (2026-10-06, session kuzz-b6)
 
 Run from `mobile/` with `. /c/tmp/flutter-sdk/env.sh` (Flutter 3.41.7), after both review-fix rounds and an LF line-ending normalization:
 
 - `dart format --output=none --set-exit-if-changed .`: 642 files, 0 changed.
 - `flutter analyze`: 2 issues. These are the baseline errors only (`test/shared/push/dev_push_lease_test.dart:212`, `test/shared/push/push_presentation_export_test.dart:591`).
-- `flutter test --dart-define=BUZZ_PUSH_GATEWAY_URL=https://push.example`: `+2666 ~5 -4`. The baseline was `+2577 ~5 -4`. The 4 failures are the same as the baseline:
+- `flutter test --dart-define=KUZZ_PUSH_GATEWAY_URL=https://push.example`: `+2666 ~5 -4`. The baseline was `+2577 ~5 -4`. The 4 failures are the same as the baseline:
   - two ComposeBar voice-note tests (Windows path/mime)
   - two load failures in the push test files above
 - Sign-in generation fence mutation check: disabling `_isCurrent(startGeneration)` in `_runSignIn` makes 3 tests fail. They cover sign-out during the browser, sign-out during the exchange, and dispose during the browser. The guard was restored afterwards.
@@ -657,7 +657,7 @@ Run from `mobile/` with `. /c/tmp/flutter-sdk/env.sh` (Flutter 3.41.7), after bo
 
 Not yet exercised on a device or simulator. Each of these needs a native runtime and a token-enabled relay:
 - Google sign-in through `ASWebAuthenticationSession` and Custom Tabs
-- the `xyz.block.buzz://auth/cb` callback
+- the `app.kuzz://auth/cb` callback
 - keychain/keystore persistence across restarts
 - live WS, huddle, media and avatar round trips
 - device revoke

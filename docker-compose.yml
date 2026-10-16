@@ -1,22 +1,22 @@
-name: buzz
+name: kuzz
 
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: buzz-postgres
+    container_name: kuzz-postgres
     environment:
-      POSTGRES_USER: buzz
-      POSTGRES_PASSWORD: buzz_dev
-      POSTGRES_DB: buzz
+      POSTGRES_USER: kuzz
+      POSTGRES_PASSWORD: kuzz_dev
+      POSTGRES_DB: kuzz
       PGDATA: /var/lib/postgresql/data
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
-      - buzz-net
+      - kuzz-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U buzz"]
+      test: ["CMD-SHELL", "pg_isready -U kuzz"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -26,17 +26,17 @@ services:
         limits:
           memory: 512m
     labels:
-      com.buzz.service: "postgres"
-      com.buzz.env: "dev"
+      com.kuzz.service: "postgres"
+      com.kuzz.env: "dev"
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: buzz-redis
+    container_name: kuzz-redis
     ports:
       - "127.0.0.1:6379:6379"
     networks:
-      - buzz-net
+      - kuzz-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -48,17 +48,17 @@ services:
         limits:
           memory: 128m
     labels:
-      com.buzz.service: "redis"
-      com.buzz.env: "dev"
+      com.kuzz.service: "redis"
+      com.kuzz.env: "dev"
     restart: unless-stopped
 
   adminer:
     image: adminer:latest
-    container_name: buzz-adminer
+    container_name: kuzz-adminer
     ports:
       - "127.0.0.1:8082:8080"
     networks:
-      - buzz-net
+      - kuzz-net
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,13 +69,13 @@ services:
         limits:
           memory: 64m
     labels:
-      com.buzz.service: "adminer"
-      com.buzz.env: "dev"
+      com.kuzz.service: "adminer"
+      com.kuzz.env: "dev"
     restart: unless-stopped
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
-    container_name: buzz-keycloak
+    container_name: kuzz-keycloak
     command: start-dev --http-port=8080
     environment:
       KC_DB: dev-mem
@@ -84,7 +84,7 @@ services:
     ports:
       - "127.0.0.1:8180:8080"
     networks:
-      - buzz-net
+      - kuzz-net
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
       interval: 10s
@@ -96,24 +96,24 @@ services:
         limits:
           memory: 512m
     labels:
-      com.buzz.service: "keycloak"
-      com.buzz.env: "dev"
+      com.kuzz.service: "keycloak"
+      com.kuzz.env: "dev"
     restart: unless-stopped
 
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    container_name: buzz-minio
+    container_name: kuzz-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: buzz_dev
-      MINIO_ROOT_PASSWORD: buzz_dev_secret
+      MINIO_ROOT_USER: kuzz_dev
+      MINIO_ROOT_PASSWORD: kuzz_dev_secret
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
     networks:
-      - buzz-net
+      - kuzz-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
@@ -125,39 +125,39 @@ services:
         limits:
           memory: 256m
     labels:
-      com.buzz.service: "minio"
-      com.buzz.env: "dev"
+      com.kuzz.service: "minio"
+      com.kuzz.env: "dev"
     restart: unless-stopped
 
   minio-init:
     image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
-    container_name: buzz-minio-init
+    container_name: kuzz-minio-init
     depends_on:
       minio:
         condition: service_healthy
     networks:
-      - buzz-net
+      - kuzz-net
     entrypoint: >
       /bin/sh -c "
-        mc alias set local http://minio:9000 buzz_dev buzz_dev_secret &&
-        mc mb --ignore-existing local/buzz-media &&
-        mc anonymous set none local/buzz-media
+        mc alias set local http://minio:9000 kuzz_dev kuzz_dev_secret &&
+        mc mb --ignore-existing local/kuzz-media &&
+        mc anonymous set none local/kuzz-media
       "
     labels:
-      com.buzz.service: "minio-init"
-      com.buzz.env: "dev"
+      com.kuzz.service: "minio-init"
+      com.kuzz.env: "dev"
     restart: "no"
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: buzz-prometheus
+    container_name: kuzz-prometheus
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     networks:
-      - buzz-net
+      - kuzz-net
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:
@@ -165,27 +165,27 @@ services:
         limits:
           memory: 128m
     labels:
-      com.buzz.service: "prometheus"
-      com.buzz.env: "dev"
+      com.kuzz.service: "prometheus"
+      com.kuzz.env: "dev"
     restart: unless-stopped
 
 volumes:
   postgres-data:
-    name: buzz-postgres-data
+    name: kuzz-postgres-data
     labels:
-      com.buzz.volume: "postgres"
+      com.kuzz.volume: "postgres"
   minio-data:
-    name: buzz-minio-data
+    name: kuzz-minio-data
     labels:
-      com.buzz.volume: "minio"
+      com.kuzz.volume: "minio"
   prometheus-data:
-    name: buzz-prometheus-data
+    name: kuzz-prometheus-data
     labels:
-      com.buzz.volume: "prometheus"
+      com.kuzz.volume: "prometheus"
 
 networks:
-  buzz-net:
-    name: buzz-net
+  kuzz-net:
+    name: kuzz-net
     driver: bridge
     labels:
-      com.buzz.network: "dev"
+      com.kuzz.network: "dev"

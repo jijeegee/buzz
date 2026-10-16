@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:buzz/features/channels/channel_stars/channel_stars_manager.dart';
-import 'package:buzz/features/channels/channel_stars/channel_stars_storage.dart';
-import 'package:buzz/features/channels/channel_stars/channel_stars_provider.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
-import 'package:buzz/shared/theme/theme_provider.dart';
+import 'package:kuzz/features/channels/channel_stars/channel_stars_manager.dart';
+import 'package:kuzz/features/channels/channel_stars/channel_stars_storage.dart';
+import 'package:kuzz/features/channels/channel_stars/channel_stars_provider.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 

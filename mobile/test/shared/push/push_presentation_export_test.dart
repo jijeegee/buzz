@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:isolate';
 
-import 'package:buzz/shared/push/push_presentation_cache.dart';
-import 'package:buzz/shared/push/push_presentation_export_recovery.dart';
-import 'package:buzz/shared/relay/nostr_models.dart';
+import 'package:kuzz/shared/push/push_presentation_cache.dart';
+import 'package:kuzz/shared/push/push_presentation_export_recovery.dart';
+import 'package:kuzz/shared/relay/nostr_models.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
-const _channel = MethodChannel('buzz/push');
+const _channel = MethodChannel('kuzz/push');
 const _secret =
     '0000000000000000000000000000000000000000000000000000000000000001';
 
@@ -94,14 +94,14 @@ void main() {
           });
           final exported = PushPresentationExportRecovery().export(
             () => profiles
-                ? cacheBuzzPushProfileEvents('original-community', events)
-                : cacheBuzzPushChannelEvents(
+                ? cacheKuzzPushProfileEvents('original-community', events)
+                : cacheKuzzPushChannelEvents(
                     'original-community',
                     events,
                     memberships,
                   ),
           );
-          final following = cacheBuzzPushProfileEvents('following-community', [
+          final following = cacheKuzzPushProfileEvents('following-community', [
             _signed(0, 200),
           ]);
           expect(await exported, isTrue);
@@ -174,8 +174,8 @@ void main() {
         final recovery = PushPresentationExportRecovery();
         final succeeded = await recovery.export(
           () => profiles
-              ? cacheBuzzPushProfileEvents('failed-community', events)
-              : cacheBuzzPushChannelEvents(
+              ? cacheKuzzPushProfileEvents('failed-community', events)
+              : cacheKuzzPushChannelEvents(
                   'failed-community',
                   events,
                   memberships,
@@ -196,7 +196,7 @@ void main() {
           terminal,
           contains(profiles ? 'profile_cache_failed' : 'channel_cache_failed'),
         );
-        await cacheBuzzPushProfileEvents('following-community', [
+        await cacheKuzzPushProfileEvents('following-community', [
           _signed(0, 200),
         ]);
         expect(calls, hasLength(7));
@@ -224,7 +224,7 @@ void main() {
     });
     expect(
       await PushPresentationExportRecovery().export(
-        () => cacheBuzzPushProfileEvents('community', events),
+        () => cacheKuzzPushProfileEvents('community', events),
       ),
       isFalse,
     );
@@ -250,7 +250,7 @@ void main() {
       });
       expect(
         await PushPresentationExportRecovery().export(
-          () => cacheBuzzPushProfileEvents('community', [_signed(0, 100)]),
+          () => cacheKuzzPushProfileEvents('community', [_signed(0, 100)]),
         ),
         isFalse,
       );
@@ -266,7 +266,7 @@ void main() {
     });
     expect(
       await PushPresentationExportRecovery().export(
-        () => cacheBuzzPushProfileEvents('community', [_signed(0, 100)]),
+        () => cacheKuzzPushProfileEvents('community', [_signed(0, 100)]),
       ),
       isTrue,
     );
@@ -326,13 +326,13 @@ void main() {
           return null;
         });
         final largeExport = profiles
-            ? cacheBuzzPushProfileEvents('bounded-community', events)
-            : cacheBuzzPushChannelEvents(
+            ? cacheKuzzPushProfileEvents('bounded-community', events)
+            : cacheKuzzPushChannelEvents(
                 'bounded-community',
                 events,
                 memberships,
               );
-        final followingExport = cacheBuzzPushProfileEvents(
+        final followingExport = cacheKuzzPushProfileEvents(
           'following-community',
           [_signed(0, 200)],
         );
@@ -375,9 +375,9 @@ void main() {
         var timerRan = false;
         Timer.run(() => timerRan = true);
         if (kind == 0) {
-          await cacheBuzzPushProfileEvents('community', [event]);
+          await cacheKuzzPushProfileEvents('community', [event]);
         } else {
-          await cacheBuzzPushChannelEvents('community', [event], []);
+          await cacheKuzzPushChannelEvents('community', [event], []);
         }
         // The signal originates from reading the real signature in the worker.
         // Restoring synchronous verification cannot produce it. This is a
@@ -397,7 +397,7 @@ void main() {
     () async {
       final older = _signed(0, 100);
       final newestValid = _signed(0, 200);
-      await cacheBuzzPushProfileEvents('profiles-community', [
+      await cacheKuzzPushProfileEvents('profiles-community', [
         older,
         _tampered(_signed(0, 300)),
         newestValid,
@@ -416,7 +416,7 @@ void main() {
     () async {
       final metadata = _signed(39000, 200);
       final membership = _signed(39002, 200);
-      await cacheBuzzPushChannelEvents(
+      await cacheKuzzPushChannelEvents(
         'channels-community',
         [
           _signed(39000, 100),
@@ -454,14 +454,14 @@ void main() {
         return null;
       });
       final completed = <String>[];
-      final first = cacheBuzzPushProfileEvents('first', [
+      final first = cacheKuzzPushProfileEvents('first', [
         _signed(0, 100),
       ]).then((_) => completed.add('first'));
       await firstEntered.future;
-      final second = cacheBuzzPushChannelEvents('second', [
+      final second = cacheKuzzPushChannelEvents('second', [
         _signed(39000, 100),
       ], []).then((_) => completed.add('second'));
-      final third = cacheBuzzPushProfileEvents('third', [
+      final third = cacheKuzzPushProfileEvents('third', [
         _signed(0, 200),
       ]).then((_) => completed.add('third'));
       try {
@@ -497,15 +497,15 @@ void main() {
       });
       final event = _signed(0, 100);
       final admitted = [
-        cacheBuzzPushProfileEvents('0', [event]),
+        cacheKuzzPushProfileEvents('0', [event]),
       ];
       await entered.future;
       try {
         for (var i = 1; i < 8; i++) {
-          admitted.add(cacheBuzzPushProfileEvents('$i', [event]));
+          admitted.add(cacheKuzzPushProfileEvents('$i', [event]));
         }
         await expectLater(
-          cacheBuzzPushProfileEvents('rejected', [
+          cacheKuzzPushProfileEvents('rejected', [
             event,
           ]).timeout(const Duration(seconds: 5)),
           throwsStateError,
@@ -518,7 +518,7 @@ void main() {
       expect(calls.map((call) => call.arguments['communityId']), [
         for (var i = 0; i < 8; i++) '$i',
       ]);
-      await cacheBuzzPushProfileEvents('recovered', [event]);
+      await cacheKuzzPushProfileEvents('recovered', [event]);
       expect(calls.last.arguments['communityId'], 'recovered');
       expect(calls.length, 9);
     },
@@ -529,11 +529,11 @@ void main() {
     () async {
       final unsendable = ReceivePort();
       addTearDown(unsendable.close);
-      final failed = cacheBuzzPushProfileEvents('failed', [
+      final failed = cacheKuzzPushProfileEvents('failed', [
         _UnsendableEvent(_signed(0, 100), unsendable),
       ]);
       final failure = expectLater(failed, throwsArgumentError);
-      final next = cacheBuzzPushProfileEvents('next', [_signed(0, 200)]);
+      final next = cacheKuzzPushProfileEvents('next', [_signed(0, 200)]);
       await failure;
       await next.timeout(const Duration(seconds: 5));
       expect(calls.length, 1);

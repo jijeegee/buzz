@@ -34,7 +34,7 @@ const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60)
 pub(super) fn validate_download_url(url: &str, relay_base: &str) -> Result<(), String> {
     let parsed = url::Url::parse(url).map_err(|_| "invalid URL".to_string())?;
     let base = url::Url::parse(relay_base).map_err(|e| {
-        eprintln!("buzz-desktop: invalid relay base URL: {e}");
+        eprintln!("kuzz-desktop: invalid relay base URL: {e}");
         "Couldn't load media.".to_string()
     })?;
 

@@ -12,8 +12,8 @@ test("mock socket REQs preserve exact readiness semantics", async ({
   await expect(page.getByTestId("keyring-locked")).toBeVisible();
 
   const observed = await page.evaluate(async () => {
-    const invoke = window.__BUZZ_E2E_INVOKE_MOCK_COMMAND__;
-    const ready = window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__;
+    const invoke = window.__KUZZ_E2E_INVOKE_MOCK_COMMAND__;
+    const ready = window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__;
     if (!invoke || !ready) throw new Error("Mock socket bridge is unavailable");
     const channel = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
     const owner = "deadbeef".repeat(8);

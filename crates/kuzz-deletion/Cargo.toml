@@ -1,0 +1,28 @@
+[package]
+name = "kuzz-deletion"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Durable whole-community deletion engine for Kuzz"
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+kuzz-core = { workspace = true }
+kuzz-db = { workspace = true }
+kuzz-media = { workspace = true }
+chrono = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+deadpool-redis = { workspace = true }
+hex = { workspace = true }
+redis = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+sqlx = { workspace = true }

@@ -8,17 +8,17 @@ import 'package:uuid/uuid.dart';
 import 'read_state_format.dart';
 import 'read_state_time.dart';
 
-const _clientIdKeyPrefix = 'buzz.nip-rs.client-id';
-const _slotIdKeyPrefix = 'buzz.nip-rs.slot-id';
+const _clientIdKeyPrefix = 'kuzz.nip-rs.client-id';
+const _slotIdKeyPrefix = 'kuzz.nip-rs.slot-id';
 const _uuid = Uuid();
 
-String localReadStateKey(String pubkey) => 'buzz.channel-read-state.v2:$pubkey';
+String localReadStateKey(String pubkey) => 'kuzz.channel-read-state.v2:$pubkey';
 
 String localPublishableContextKey(String pubkey) =>
-    'buzz.channel-read-state.publishable.v1:$pubkey';
+    'kuzz.channel-read-state.publishable.v1:$pubkey';
 
 String localSourceCreatedAtKey(String pubkey) =>
-    'buzz.channel-read-state.source-created-at.v1:$pubkey';
+    'kuzz.channel-read-state.source-created-at.v1:$pubkey';
 
 String clientIdKey(String pubkey) => '$_clientIdKeyPrefix:$pubkey';
 

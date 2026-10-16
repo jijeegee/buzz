@@ -59,7 +59,7 @@ fn fake_cli(dir: &Path, name: &str, body: &str, exit_code: u8) -> PathBuf {
 #[test]
 fn profile_name_is_prefixed_lowercase_sixteen_hex() {
     let name = profile_name(PUBKEY).expect("hex pubkey");
-    assert_eq!(name, "buzz-3bf0c63fcb934634");
+    assert_eq!(name, "kuzz-3bf0c63fcb934634");
     assert_eq!(name.len(), PROFILE_PREFIX.len() + PROFILE_PUBKEY_CHARS);
 }
 
@@ -89,8 +89,8 @@ fn profile_name_rejects_non_hex_or_short_pubkeys() {
 fn profile_dir_follows_hermes_layout() {
     let root = PathBuf::from("hermes-root");
     assert_eq!(
-        profile_dir(&root, "buzz-0123456789abcdef"),
-        root.join("profiles").join("buzz-0123456789abcdef")
+        profile_dir(&root, "kuzz-0123456789abcdef"),
+        root.join("profiles").join("kuzz-0123456789abcdef")
     );
 }
 
@@ -119,7 +119,7 @@ fn root_unwraps_a_custom_hermes_home_that_is_a_profile() {
 fn root_is_the_native_home_for_any_hermes_home_under_it() {
     // Hermes's get_default_hermes_root: anything under the native home (the
     // home itself, one of its profiles, or an unrelated subdirectory such as
-    // `<native>/alt`) resolves to the native home, so Buzz must too.
+    // `<native>/alt`) resolves to the native home, so Kuzz must too.
     let native = PathBuf::from("native").join("hermes");
     for home in [
         native.clone(),
@@ -191,28 +191,28 @@ fn non_hermes_commands_are_not_recognised() {
 }
 
 #[test]
-fn deletion_guard_accepts_only_exact_buzz_profile_dirs() {
+fn deletion_guard_accepts_only_exact_kuzz_profile_dirs() {
     let root = PathBuf::from("hermes-root");
     let profiles = root.join("profiles");
-    assert!(is_buzz_profile_dir(
+    assert!(is_kuzz_profile_dir(
         &root,
-        &profiles.join("buzz-0123456789abcdef")
+        &profiles.join("kuzz-0123456789abcdef")
     ));
     for rejected in [
         root.clone(),
         profiles.clone(),
         profiles.join("work"),
-        profiles.join("buzz-"),
-        profiles.join("buzz-0123456789ABCDEF"),
-        profiles.join("buzz-0123456789abcdef0"),
-        profiles.join("buzz-0123456789abcdeg"),
-        root.join("buzz-0123456789abcdef"),
+        profiles.join("kuzz-"),
+        profiles.join("kuzz-0123456789ABCDEF"),
+        profiles.join("kuzz-0123456789abcdef0"),
+        profiles.join("kuzz-0123456789abcdeg"),
+        root.join("kuzz-0123456789abcdef"),
         PathBuf::from("elsewhere")
             .join("profiles")
-            .join("buzz-0123456789abcdef"),
+            .join("kuzz-0123456789abcdef"),
     ] {
         assert!(
-            !is_buzz_profile_dir(&root, &rejected),
+            !is_kuzz_profile_dir(&root, &rejected),
             "{} must not be deletable",
             rejected.display()
         );
@@ -227,7 +227,7 @@ fn record_on(runtime: Option<&str>) -> ManagedAgentRecord {
         "name": "agent",
         "persona_id": "persona-1",
         "relay_url": "ws://localhost:3000",
-        "acp_command": "buzz-acp",
+        "acp_command": "kuzz-acp",
         "agent_command": "",
         "agent_args": [],
         "mcp_command": "",
@@ -296,7 +296,7 @@ fn a_stale_hermes_record_needs_a_profile_without_a_resnapshot() {
 #[test]
 fn hermes_home_is_written_after_the_user_env_layer() {
     let profile = profile_in(Path::new("hermes-root"));
-    let mut command = Command::new("buzz-acp");
+    let mut command = Command::new("kuzz-acp");
     // A user-env value for HERMES_HOME — reserved, so normally stripped
     // upstream; this binds the second line of defence, the write order.
     let user_env = BTreeMap::from([
@@ -325,7 +325,7 @@ fn hermes_home_is_written_after_the_user_env_layer() {
 
 #[test]
 fn non_hermes_spawn_leaves_hermes_home_to_the_user_env() {
-    let mut command = Command::new("buzz-acp");
+    let mut command = Command::new("kuzz-acp");
     let user_env = BTreeMap::from([("OTHER".to_string(), "kept".to_string())]);
     apply_user_env_then_hermes_home(&mut command, &user_env, None);
     assert!(command
@@ -366,7 +366,7 @@ fn ensure_profile_skips_the_cli_for_an_existing_profile() {
     let ensured = ensure_profile(
         &profile,
         || panic!("an existing profile must not resolve the CLI"),
-        "Buzz agent: a",
+        "Kuzz agent: a",
     );
     assert_eq!(ensured, Ok(()));
 }
@@ -381,7 +381,7 @@ fn ensure_profile_adds_a_missing_env_file_without_overwriting_one() {
     // The source home has a .env, but an EXISTING profile is never re-seeded:
     // it only gets a placeholder.
     std::fs::write(root.path().join(".env"), "OPENROUTER_API_KEY=root\n").expect("write");
-    assert_eq!(ensure_profile(&profile, no_cli, "Buzz agent: a"), Ok(()));
+    assert_eq!(ensure_profile(&profile, no_cli, "Kuzz agent: a"), Ok(()));
     let env_path = profile.dir.join(".env");
     assert_eq!(
         std::fs::read_to_string(&env_path).expect("read"),
@@ -389,7 +389,7 @@ fn ensure_profile_adds_a_missing_env_file_without_overwriting_one() {
     );
 
     std::fs::write(&env_path, "OPENAI_API_KEY=agent-own\n").expect("write");
-    assert_eq!(ensure_profile(&profile, no_cli, "Buzz agent: a"), Ok(()));
+    assert_eq!(ensure_profile(&profile, no_cli, "Kuzz agent: a"), Ok(()));
     assert_eq!(
         std::fs::read_to_string(&env_path).expect("read"),
         "OPENAI_API_KEY=agent-own\n"
@@ -400,7 +400,7 @@ fn ensure_profile_adds_a_missing_env_file_without_overwriting_one() {
 fn ensure_profile_fails_closed_without_the_cli() {
     let root = tempfile::tempdir().expect("tempdir");
     let profile = profile_in(root.path());
-    let error = ensure_profile(&profile, no_cli, "Buzz agent: a").expect_err("must refuse");
+    let error = ensure_profile(&profile, no_cli, "Kuzz agent: a").expect_err("must refuse");
     assert!(error.contains("`hermes` command was not found"), "{error}");
     assert!(!profile.dir.exists());
 }
@@ -410,7 +410,7 @@ fn ensure_profile_fails_closed_when_the_cli_cannot_run() {
     let root = tempfile::tempdir().expect("tempdir");
     let profile = profile_in(root.path());
     let missing = root.path().join("no-such-hermes");
-    let error = ensure_profile(&profile, || Some(missing), "Buzz agent: a").expect_err("refuse");
+    let error = ensure_profile(&profile, || Some(missing), "Kuzz agent: a").expect_err("refuse");
     assert!(error.contains("hermes profile create"), "{error}");
 }
 
@@ -422,13 +422,13 @@ fn ensure_profile_accepts_a_failed_run_that_left_the_profile_behind() {
     let hermes = fake_cli(bin.path(), "hermes", CREATE_MARKER, 1);
 
     assert_eq!(
-        ensure_profile(&profile, || Some(hermes), "Buzz agent: a"),
+        ensure_profile(&profile, || Some(hermes), "Kuzz agent: a"),
         Ok(())
     );
     assert!(profile.dir.join("SOUL.md").is_file());
     assert!(
         profile.dir.join(".env").is_file(),
-        "Buzz must give the profile its own .env"
+        "Kuzz must give the profile its own .env"
     );
 }
 
@@ -439,7 +439,7 @@ fn ensure_profile_rejects_a_successful_run_that_created_nothing() {
     let profile = profile_in(root.path());
     let hermes = fake_cli(bin.path(), "hermes", "", 0);
 
-    let error = ensure_profile(&profile, || Some(hermes), "Buzz agent: a").expect_err("refuse");
+    let error = ensure_profile(&profile, || Some(hermes), "Kuzz agent: a").expect_err("refuse");
     assert!(error.contains("not created"), "{error}");
     assert!(!profile.dir.exists(), "no .env may be written into a void");
 }
@@ -451,7 +451,7 @@ fn ensure_profile_reports_cli_failure_output() {
     let profile = profile_in(root.path());
     let hermes = fake_cli(bin.path(), "hermes", "echo boom-from-hermes\n", 3);
 
-    let error = ensure_profile(&profile, || Some(hermes), "Buzz agent: a").expect_err("refuse");
+    let error = ensure_profile(&profile, || Some(hermes), "Kuzz agent: a").expect_err("refuse");
     assert!(error.contains("boom-from-hermes"), "{error}");
 }
 
@@ -459,9 +459,9 @@ fn ensure_profile_reports_cli_failure_output() {
 
 const SOURCE_ENV: &str = "\
 # root secrets
-BUZZ_PRIVATE_KEY=nsec1shared
-buzz_relay_url=wss://relay.example
-export BUZZ_AUTH_TAG=tag
+KUZZ_PRIVATE_KEY=nsec1shared
+kuzz_relay_url=wss://relay.example
+export KUZZ_AUTH_TAG=tag
 HERMES_HOME=/elsewhere
 NOSTR_PRIVATE_KEY=nsec1other
 GIT_CONFIG_COUNT=0
@@ -472,22 +472,22 @@ export ANTHROPIC_API_KEY='sk-ant=x'
 NO_EQUALS_LINE
 MULTI=\"line one
 line two\"
-BUZZ_MULTI=\"secret
+KUZZ_MULTI=\"secret
 still secret\"
 LAST=1
 ";
 
 #[test]
-fn strip_removes_every_buzz_owned_key() {
-    let kept = strip_buzz_owned_env(SOURCE_ENV);
+fn strip_removes_every_kuzz_owned_key() {
+    let kept = strip_kuzz_owned_env(SOURCE_ENV);
     for removed in [
-        "BUZZ_PRIVATE_KEY",
-        "buzz_relay_url",
-        "BUZZ_AUTH_TAG",
+        "KUZZ_PRIVATE_KEY",
+        "kuzz_relay_url",
+        "KUZZ_AUTH_TAG",
         "HERMES_HOME",
         "NOSTR_PRIVATE_KEY",
         "GIT_CONFIG_COUNT",
-        "BUZZ_MULTI",
+        "KUZZ_MULTI",
         "still secret",
         "nsec1",
         "root secrets",
@@ -501,23 +501,23 @@ fn strip_removes_every_buzz_owned_key() {
 }
 
 /// A headless bot token in the user's root Hermes `.env` (the 헤르홈 case,
-/// plan §6.2) must never be seeded into a Buzz-managed agent's profile: the
+/// plan §6.2) must never be seeded into a Kuzz-managed agent's profile: the
 /// agent would connect as a different bot.
 #[test]
 fn strip_removes_bearer_token_keys() {
-    let source = "BUZZ_BOT_TOKEN=bzk_rootheadlesstokenvalue
-export BUZZ_ACCESS_TOKEN=bzs_x
-BUZZ_TOKEN_BROKER_URL=http://127.0.0.1:1
-BUZZ_TOKEN_BROKER_SECRET=s
+    let source = "KUZZ_BOT_TOKEN=bzk_rootheadlesstokenvalue
+export KUZZ_ACCESS_TOKEN=bzs_x
+KUZZ_TOKEN_BROKER_URL=http://127.0.0.1:1
+KUZZ_TOKEN_BROKER_SECRET=s
 OPENROUTER_API_KEY=sk-or-123
 ";
-    let kept = strip_buzz_owned_env(source);
+    let kept = strip_kuzz_owned_env(source);
     for removed in [
-        "BUZZ_BOT_TOKEN",
+        "KUZZ_BOT_TOKEN",
         "bzk_rootheadlesstokenvalue",
-        "BUZZ_ACCESS_TOKEN",
-        "BUZZ_TOKEN_BROKER_URL",
-        "BUZZ_TOKEN_BROKER_SECRET",
+        "KUZZ_ACCESS_TOKEN",
+        "KUZZ_TOKEN_BROKER_URL",
+        "KUZZ_TOKEN_BROKER_SECRET",
     ] {
         assert!(
             !kept.contains(removed),
@@ -535,7 +535,7 @@ OPENROUTER_API_KEY=sk-or-123
 #[test]
 fn strip_keeps_other_assignments_verbatim() {
     assert_eq!(
-        strip_buzz_owned_env(SOURCE_ENV),
+        strip_kuzz_owned_env(SOURCE_ENV),
         "\
 OPENROUTER_API_KEY=sk-or-123
 QUOTED=\"a=b c\"
@@ -550,8 +550,8 @@ LAST=1
 
 #[test]
 fn strip_handles_crlf_and_escaped_quotes() {
-    let kept = strip_buzz_owned_env(
-        "A=\"x \\\" y\"\r\nBUZZ_PRIVATE_KEY=nsec1\r\nexportX=1\r\nexport\tB=2\r\n",
+    let kept = strip_kuzz_owned_env(
+        "A=\"x \\\" y\"\r\nKUZZ_PRIVATE_KEY=nsec1\r\nexportX=1\r\nexport\tB=2\r\n",
     );
     assert_eq!(kept, "A=\"x \\\" y\"\nexportX=1\nexport\tB=2\n");
 }
@@ -571,24 +571,24 @@ fn created_by_fake_cli(source_env: Option<&str>) -> (tempfile::TempDir, HermesPr
     let body = format!("{CREATE_MARKER}echo '# placeholder' > \"$HERMES_HOME/profiles/$3/.env\"\n");
     let hermes = fake_cli(bin.path(), "hermes", &body, 0);
     assert_eq!(
-        ensure_profile(&profile, || Some(hermes), "Buzz agent: a"),
+        ensure_profile(&profile, || Some(hermes), "Kuzz agent: a"),
         Ok(())
     );
     (root, profile)
 }
 
 #[test]
-fn a_new_profile_env_is_seeded_from_the_source_home_minus_buzz_keys() {
+fn a_new_profile_env_is_seeded_from_the_source_home_minus_kuzz_keys() {
     let (_root, profile) = created_by_fake_cli(Some(SOURCE_ENV));
     let env = std::fs::read_to_string(profile.dir.join(".env")).expect("read");
     assert!(env.starts_with(PROFILE_ENV_HEADER), "{env}");
     assert!(env.contains("OPENROUTER_API_KEY=sk-or-123\n"), "{env}");
-    assert!(!env.contains("BUZZ_PRIVATE_KEY"), "{env}");
+    assert!(!env.contains("KUZZ_PRIVATE_KEY"), "{env}");
     assert!(
         !env.contains("placeholder"),
         "Hermes's placeholder is replaced"
     );
-    assert!(!profile.dir.join(".env.buzz-seed").exists());
+    assert!(!profile.dir.join(".env.kuzz-seed").exists());
     assert_eq!(check_ready(&profile), Ok(()));
 }
 
@@ -602,7 +602,7 @@ fn a_new_profile_without_a_source_env_gets_the_placeholder() {
 #[test]
 fn a_desktop_hermes_home_is_the_seed_source() {
     let source = tempfile::tempdir().expect("tempdir");
-    std::fs::write(source.path().join(".env"), "FROM_PROFILE=1\nBUZZ_X=2\n").expect("write");
+    std::fs::write(source.path().join(".env"), "FROM_PROFILE=1\nKUZZ_X=2\n").expect("write");
     let root = tempfile::tempdir().expect("tempdir");
     let mut profile = profile_in(root.path());
     profile.source_home = source.path().to_path_buf();
@@ -678,7 +678,7 @@ fn delete_profile_runs_the_cli_then_removes_what_it_left() {
 
     let called = std::fs::read_to_string(root.path().join("called.txt")).expect("CLI invoked");
     assert!(
-        called.contains("profile delete buzz-3bf0c63fcb934634 -y"),
+        called.contains("profile delete kuzz-3bf0c63fcb934634 -y"),
         "{called}"
     );
     assert!(!profile.dir.exists(), "fallback must remove the profile");
@@ -788,8 +788,8 @@ fn every_agent_removal_path_cleans_up_the_profile() {
 #[test]
 fn description_is_flattened_to_one_line() {
     assert_eq!(
-        sanitize_description("Buzz agent: a\nb\u{0}c "),
-        "Buzz agent: a b c"
+        sanitize_description("Kuzz agent: a\nb\u{0}c "),
+        "Kuzz agent: a b c"
     );
 }
 

@@ -14,7 +14,7 @@ pub(super) fn sample_record() -> ManagedAgentRecord {
         auth_tag: None,
         relay_url: "ws://localhost:3000".into(),
         avatar_url: None,
-        acp_command: "buzz-acp".into(),
+        acp_command: "kuzz-acp".into(),
         agent_command: "goose".into(),
         agent_command_override: None,
         agent_args: vec![],
@@ -288,7 +288,7 @@ fn shared_persona_event_has_exact_tag_and_round_trips() {
 #[test]
 fn round_trip_serialization() {
     let mut record = sample_persona();
-    record.acp_command = Some("buzz-janet-acp".to_string());
+    record.acp_command = Some("kuzz-janet-acp".to_string());
     let builder = build_persona_event(&record).unwrap();
     let keys = nostr::Keys::generate();
     let event = builder.sign_with_keys(&keys).unwrap();
@@ -301,7 +301,7 @@ fn round_trip_serialization() {
         Some("https://example.com/avatar.png".to_string())
     );
     assert_eq!(restored.system_prompt, "You are a test assistant.");
-    assert_eq!(restored.acp_command.as_deref(), Some("buzz-janet-acp"));
+    assert_eq!(restored.acp_command.as_deref(), Some("kuzz-janet-acp"));
     assert_eq!(restored.runtime, Some("goose".to_string()));
     assert_eq!(restored.model, Some("claude-opus-4".to_string()));
     assert_eq!(restored.provider, Some("anthropic".to_string()));
@@ -351,12 +351,12 @@ fn content_matches_nip_ap_vector() {
     );
 
     let mut with_transport = content.clone();
-    with_transport.acp_command = Some("buzz-janet-acp".into());
+    with_transport.acp_command = Some("kuzz-janet-acp".into());
     assert_eq!(
         serde_json::to_string(&with_transport).unwrap(),
         VECTOR.replace(
             "\"avatar_url\":",
-            "\"acp_command\":\"buzz-janet-acp\",\"avatar_url\":"
+            "\"acp_command\":\"kuzz-janet-acp\",\"avatar_url\":"
         )
     );
 
@@ -755,14 +755,14 @@ fn description_change_does_not_change_content_hash() {
 fn snapshot_applies_persona_acp_command_to_linked_instance() {
     let mut record = sample_record();
     let mut persona = sample_persona();
-    persona.acp_command = Some("buzz-janet-acp".to_string());
+    persona.acp_command = Some("kuzz-janet-acp".to_string());
 
     apply_persona_snapshot(&mut record, &persona);
 
-    assert_eq!(record.acp_command, "buzz-janet-acp");
+    assert_eq!(record.acp_command, "kuzz-janet-acp");
 
     // Saving stock transport round-trips through the unified store as None.
-    persona.acp_command = Some("buzz-acp".to_string());
+    persona.acp_command = Some("kuzz-acp".to_string());
     let restored = persona
         .clone()
         .into_agent_record()
@@ -770,7 +770,7 @@ fn snapshot_applies_persona_acp_command_to_linked_instance() {
         .unwrap();
     assert_eq!(restored.acp_command, None);
     apply_persona_snapshot(&mut record, &restored);
-    assert_eq!(record.acp_command, "buzz-acp");
+    assert_eq!(record.acp_command, "kuzz-acp");
 
     // Owner-controlled legacy custom commands remain definition state.
     persona.acp_command = Some("/opt/custom-acp".to_string());

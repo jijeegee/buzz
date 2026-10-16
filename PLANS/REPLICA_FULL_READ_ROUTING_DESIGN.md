@@ -10,12 +10,12 @@ created: 2026-08-28
 `Db::query_events` always reads the **writer** pool. `Db::query_events_routed`
 (and its `_bounded` / `count` / feed siblings) opt a read into **replica
 routing**: the read may be served from a read replica when
-`BUZZ_REPLICA_READ_MAX_AGE_MS` is set, subject to the soundness predicate
+`KUZZ_REPLICA_READ_MAX_AGE_MS` is set, subject to the soundness predicate
 `RoutePredicate::for_query` derives from the query shape. The seam fails closed
 to the writer on replica errors, with one deliberate exception: a statement
 cancelled by `statement_timeout` (SQLSTATE `57014`) is surfaced rather than
 re-run, because the writer would run the same slow statement. It is a genuine
-no-op until the budget is configured (`crates/buzz-db/src/lib.rs`).
+no-op until the budget is configured (`crates/kuzz-db/src/lib.rs`).
 
 ## Routing rule
 
@@ -48,7 +48,7 @@ canvas save's head precondition. The client therefore signals intent with the
 The field only ever forces the **writer**, which is always the sound direction;
 there is deliberately **no** inverse "force replica" value, so it cannot be
 sprayed to bypass the replica-staleness guard on reads that should not. Parsed
-in `crates/buzz-relay/src/api/bridge.rs` (`extract_consistency`).
+in `crates/kuzz-relay/src/api/bridge.rs` (`extract_consistency`).
 
 ## Caller classification table
 
@@ -58,7 +58,7 @@ call site at head, plus the writer-pinned canvas row this change adds. (The
 `get_events_by_ids_routed`, `query_feed_*_routed`, and the `get_channel_window`
 cursor/head reads — are all display or bounded-count surfaces on the routed
 path; they carry their own soundness notes at their definitions in
-`crates/buzz-db/src/lib.rs` and are out of scope for this table.)
+`crates/kuzz-db/src/lib.rs` and are out of scope for this table.)
 
 | Caller / path label | Pool | Justification |
 |---|---|---|
@@ -73,4 +73,4 @@ The **writer** row is the only write-influencing entry; every other caller is a
 display or count surface that tolerates bounded staleness. Client canvas reads
 that gate a write set `consistency: strong` (Desktop
 `desktop/src-tauri/src/commands/canvas.rs`, CLI
-`crates/buzz-cli/src/commands/channels.rs`) so they land on the writer row.
+`crates/kuzz-cli/src/commands/channels.rs`) so they land on the writer row.

@@ -9,7 +9,7 @@ async function seedCustomSection(page: Page) {
   await page.addInitScript(
     ({ pubkey, section }) => {
       window.localStorage.setItem(
-        `buzz-channel-sections.v1:${pubkey}`,
+        `kuzz-channel-sections.v1:${pubkey}`,
         JSON.stringify({ version: 1, sections: [section], assignments: {} }),
       );
     },
@@ -80,7 +80,7 @@ test("channel browser sorts alphabetically or by member count", async ({
   await expect(rows).toHaveText([
     /#agents/,
     /#all-replies/,
-    /#buzz/,
+    /#kuzz/,
     /#deep-history/,
     /#design/,
     /#engineering/,
@@ -104,7 +104,7 @@ test("channel browser sorts alphabetically or by member count", async ({
     /#design/,
     /#sales/,
     /#secret-projects/,
-    /#buzz/,
+    /#kuzz/,
     /#welcome-everyone/,
   ]);
   await expect(page.getByTestId("channel-browser-sort")).toHaveAttribute(
@@ -130,7 +130,7 @@ test("channel browser sorts by recent activity", async ({ page }) => {
     /#sales/,
     /#engineering/,
     /#design/,
-    /#buzz/,
+    /#kuzz/,
     /#random/,
     /#secret-projects/,
     /#welcome-everyone/,
@@ -247,7 +247,7 @@ test("legacy sections do not split Chats or lose their saved preferences", async
     await page.evaluate(
       (pubkey) =>
         JSON.parse(
-          localStorage.getItem(`buzz-channel-sections.v1:${pubkey}`) ?? "null",
+          localStorage.getItem(`kuzz-channel-sections.v1:${pubkey}`) ?? "null",
         )?.sections,
       MOCK_PUBKEY,
     ),

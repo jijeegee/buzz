@@ -44,11 +44,11 @@ type MockFeedItem = {
 };
 
 type MockWindow = Window & {
-  __BUZZ_E2E_COMMAND_PAYLOADS__?: Array<{
+  __KUZZ_E2E_COMMAND_PAYLOADS__?: Array<{
     command: string;
     payload: unknown;
   }>;
-  __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+  __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
     channelName: string;
     content: string;
     parentEventId?: string | null;
@@ -65,13 +65,13 @@ type MockWindow = Window & {
     pubkey: string;
     tags: string[][];
   };
-  __BUZZ_E2E_INVALIDATE_CHANNELS__?: () => Promise<void>;
-  __BUZZ_E2E_RELEASE_SEND_MESSAGE_LIVE_ECHO__?: () => number;
-  __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+  __KUZZ_E2E_INVALIDATE_CHANNELS__?: () => Promise<void>;
+  __KUZZ_E2E_RELEASE_SEND_MESSAGE_LIVE_ECHO__?: () => number;
+  __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
     command: string,
     payload?: Record<string, unknown>,
   ) => Promise<unknown>;
-  __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: MockFeedItem) => unknown;
+  __KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: MockFeedItem) => unknown;
 };
 
 async function openMoreActions(
@@ -88,8 +88,8 @@ async function seedEmptyDeleteThread(page: import("@playwright/test").Page) {
   await page.waitForFunction(() => {
     const win = window as MockWindow;
     return (
-      typeof win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
+      typeof win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
     );
   });
   await page.evaluate(
@@ -102,8 +102,8 @@ async function seedEmptyDeleteThread(page: import("@playwright/test").Page) {
       rootId,
     }) => {
       const win = window as MockWindow;
-      const emit = win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-      const push = win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+      const emit = win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const push = win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!emit || !push)
         throw new Error("Mock bridge helpers are unavailable.");
       const root = emit({
@@ -171,7 +171,7 @@ async function submitEmptyEdit(
 function editCommandCount(page: import("@playwright/test").Page) {
   return page.evaluate(
     () =>
-      ((window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
+      ((window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
         (entry) => entry.command === "edit_message",
       ).length,
   );
@@ -197,14 +197,14 @@ test("editing an immediate attachment reply preserves its media tags", async ({
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
   await page.waitForFunction(
     () =>
-      typeof (window as MockWindow).__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__ ===
+      typeof (window as MockWindow).__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__ ===
       "function",
   );
 
   await page.evaluate(
     ({ channelId, messageId, pubkey }) => {
       const pushFeedItem = (window as MockWindow)
-        .__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+        .__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!pushFeedItem) {
         throw new Error("Mock feed helper is not installed.");
       }
@@ -245,7 +245,7 @@ test("editing an immediate attachment reply preserves its media tags", async ({
   await expect(detail.getByText("Sending")).toHaveCount(0);
 
   const sendPayload = await page.evaluate(() => {
-    const payloads = (window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
+    const payloads = (window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
     return payloads.findLast(
       (entry) => entry.command === "send_channel_message",
     )?.payload;
@@ -289,7 +289,7 @@ test("editing an immediate attachment reply preserves its media tags", async ({
   await expect(detail.getByTestId("edit-target")).toBeHidden();
 
   const editPayload = await page.evaluate(() => {
-    const payloads = (window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
+    const payloads = (window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
     return payloads.findLast((entry) => entry.command === "edit_message")
       ?.payload;
   });
@@ -313,7 +313,7 @@ test("editing an immediate attachment reply preserves its media tags", async ({
 
   const releasedEchoes = await page.evaluate(() => {
     const release = (window as MockWindow)
-      .__BUZZ_E2E_RELEASE_SEND_MESSAGE_LIVE_ECHO__;
+      .__KUZZ_E2E_RELEASE_SEND_MESSAGE_LIVE_ECHO__;
     if (!release) {
       throw new Error("Mock send-echo release helper is not installed.");
     }
@@ -335,7 +335,7 @@ test("Inbox offers Edit and Delete actions only for manageable messages", async 
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
   await page.waitForFunction(
     () =>
-      typeof (window as MockWindow).__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__ ===
+      typeof (window as MockWindow).__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__ ===
       "function",
   );
 
@@ -348,7 +348,7 @@ test("Inbox offers Edit and Delete actions only for manageable messages", async 
       ownMessageId,
     }) => {
       const pushFeedItem = (window as MockWindow)
-        .__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+        .__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!pushFeedItem) {
         throw new Error("Mock feed helper is not installed.");
       }
@@ -438,8 +438,8 @@ test("Inbox offers Edit and Delete actions only for manageable messages", async 
 
   await page.evaluate(async (channelId) => {
     const testWindow = window as MockWindow;
-    const invoke = testWindow.__BUZZ_E2E_INVOKE_MOCK_COMMAND__;
-    const invalidateChannels = testWindow.__BUZZ_E2E_INVALIDATE_CHANNELS__;
+    const invoke = testWindow.__KUZZ_E2E_INVOKE_MOCK_COMMAND__;
+    const invalidateChannels = testWindow.__KUZZ_E2E_INVALIDATE_CHANNELS__;
     if (!invoke || !invalidateChannels) {
       throw new Error("Mock channel helpers are not installed.");
     }
@@ -486,7 +486,7 @@ test("cancelling explicit Inbox deletion preserves the message and selection", a
   expect(
     await page.evaluate(
       () =>
-        ((window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
+        ((window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
           (entry) => entry.command === "delete_message",
         ).length,
     ),
@@ -518,7 +518,7 @@ test("explicit Inbox deletion targets the chosen non-selected message", async ({
     "home-inbox-selected-message",
   );
   const deletePayload = await page.evaluate(() => {
-    const payloads = (window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
+    const payloads = (window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
     return payloads.findLast((entry) => entry.command === "delete_message")
       ?.payload;
   });
@@ -553,7 +553,7 @@ test("empty edit confirms deletion of the edited non-selected Inbox row", async 
   expect(await editCommandCount(page)).toBe(editsBefore);
 
   const deletePayload = await page.evaluate(() => {
-    const payloads = (window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
+    const payloads = (window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? [];
     return payloads.findLast((entry) => entry.command === "delete_message")
       ?.payload;
   });
@@ -588,7 +588,7 @@ test("cancelling an empty Inbox edit deletion preserves content and edit mode", 
   expect(
     await page.evaluate(
       () =>
-        ((window as MockWindow).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
+        ((window as MockWindow).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? []).filter(
           (entry) => entry.command === "delete_message",
         ).length,
     ),
@@ -611,8 +611,8 @@ test("cold Inbox open drops an edit that was itself deleted", async ({
   await page.waitForFunction(() => {
     const win = window as MockWindow;
     return (
-      typeof win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
+      typeof win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
     );
   });
 
@@ -632,8 +632,8 @@ test("cold Inbox open drops an edit that was itself deleted", async ({
       siblingReplyId,
     }) => {
       const win = window as MockWindow;
-      const emit = win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-      const push = win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+      const emit = win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const push = win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!emit || !push) {
         throw new Error("Mock bridge helpers are unavailable.");
       }

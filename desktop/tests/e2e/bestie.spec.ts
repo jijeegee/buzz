@@ -9,7 +9,7 @@ const RELAY_URL = "ws://localhost:3000";
 async function enableBestie(page: import("@playwright/test").Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem(
-      "buzz-feature-overrides-v1",
+      "kuzz-feature-overrides-v1",
       JSON.stringify({ bestie: true }),
     );
   });
@@ -23,7 +23,7 @@ async function waitForMockLiveSubscription(
     .poll(() =>
       page.evaluate(
         (name) =>
-          window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+          window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
             channelName: name,
           }) ?? false,
         channelName,
@@ -323,12 +323,12 @@ test("assigns from an agent profile, reopens, drags, and offers the message acti
   await waitForMockLiveSubscription(page, bestieChannelName as string);
   await page.evaluate(
     ({ channelName, pubkey, targetId }) => {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName,
         content: "Here’s the concise reply.",
         pubkey,
       });
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName,
         content: "👀",
         extraTags: [["e", targetId]],

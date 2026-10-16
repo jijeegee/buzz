@@ -6,9 +6,9 @@
 //! far more often (every sign-in, restore and switch). Nothing here is secret
 //! and nothing depends on it; a missing or unreadable file only loses names.
 //! Name and avatar come from the relay's `/auth/me` (the Google profile), so
-//! an account has them even when its own UI was never opened here. The Buzz
+//! an account has them even when its own UI was never opened here. The Kuzz
 //! profile name is recorded separately whenever the account is active, and
-//! menus prefer it: the account is a Buzz account, Google is only how it
+//! menus prefer it: the account is a Kuzz account, Google is only how it
 //! signs in.
 
 use std::collections::BTreeMap;
@@ -29,9 +29,9 @@ pub(crate) struct AccountProfile {
     /// The Google name from `/auth/me`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
-    /// The account's own Buzz profile name, last seen while it was active.
+    /// The account's own Kuzz profile name, last seen while it was active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub buzz_name: Option<String>,
+    pub kuzz_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -62,13 +62,13 @@ pub(crate) fn load(data_dir: &Path) -> BTreeMap<String, AccountProfile> {
         Ok(file) if file.version == VERSION => file.profiles,
         Ok(file) => {
             eprintln!(
-                "buzz-desktop: accounts: profile file version {} ignored",
+                "kuzz-desktop: accounts: profile file version {} ignored",
                 file.version
             );
             BTreeMap::new()
         }
         Err(error) => {
-            eprintln!("buzz-desktop: accounts: profile file unreadable: {error}");
+            eprintln!("kuzz-desktop: accounts: profile file unreadable: {error}");
             BTreeMap::new()
         }
     }
@@ -118,20 +118,20 @@ pub(crate) fn learn(
         }
     });
     if let Err(error) = result {
-        eprintln!("buzz-desktop: accounts: profile not saved: {error}");
+        eprintln!("kuzz-desktop: accounts: profile not saved: {error}");
     }
 }
 
-/// Record `account`'s Buzz profile name. Blank keeps the one already known.
-pub(crate) fn learn_buzz_name(data_dir: &Path, account: &PublicKey, name: &str) {
+/// Record `account`'s Kuzz profile name. Blank keeps the one already known.
+pub(crate) fn learn_kuzz_name(data_dir: &Path, account: &PublicKey, name: &str) {
     let name = name.trim();
     if name.is_empty() {
         return;
     }
     if let Err(error) = update(data_dir, account, |profile| {
-        profile.buzz_name = Some(name.to_owned())
+        profile.kuzz_name = Some(name.to_owned())
     }) {
-        eprintln!("buzz-desktop: accounts: Buzz name not saved: {error}");
+        eprintln!("kuzz-desktop: accounts: Kuzz name not saved: {error}");
     }
 }
 
@@ -141,7 +141,7 @@ pub(crate) fn touch(data_dir: &Path, account: &PublicKey) {
     if let Err(error) = update(data_dir, account, |profile| {
         profile.last_used_at = Some(now)
     }) {
-        eprintln!("buzz-desktop: accounts: last use not saved: {error}");
+        eprintln!("kuzz-desktop: accounts: last use not saved: {error}");
     }
 }
 
@@ -168,8 +168,8 @@ mod tests {
             None,
         );
         touch(dir.path(), &account);
-        learn_buzz_name(dir.path(), &account, " akak ");
-        learn_buzz_name(dir.path(), &account, "  ");
+        learn_kuzz_name(dir.path(), &account, " akak ");
+        learn_kuzz_name(dir.path(), &account, "  ");
         // A relay that sends no email or name keeps what is known.
         learn(
             dir.path(),
@@ -185,7 +185,7 @@ mod tests {
             Some("https://img.test/a.png")
         );
         assert_eq!(profile.email.as_deref(), Some("j@test"));
-        assert_eq!(profile.buzz_name.as_deref(), Some("akak"));
+        assert_eq!(profile.kuzz_name.as_deref(), Some("akak"));
         assert!(profile.last_used_at.is_some());
 
         std::fs::write(dir.path().join(FILE_NAME), b"{not json").unwrap();

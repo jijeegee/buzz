@@ -6,7 +6,7 @@ Terminology is defined in [CONTEXT.md](../CONTEXT.md#notifications).
 
 ## Purpose
 
-Keep [mobile push notifications](../CONTEXT.md#mobile-push-notification) quiet while the user is active on a computer where Buzz can receive the relevant community's activity. The intended behavior follows Slack's desktop-first notification model; it does not require proof that each message was visible or read. Suppression does not guarantee an alert on another device. If desktop alerts are disabled or silenced, the user may receive no alert on either device, including for DMs and mentions. The message remains unread, and its suppressed mobile push notification is not replayed later.
+Keep [mobile push notifications](../CONTEXT.md#mobile-push-notification) quiet while the user is active on a computer where Kuzz can receive the relevant community's activity. The intended behavior follows Slack's desktop-first notification model; it does not require proof that each message was visible or read. Suppression does not guarantee an alert on another device. If desktop alerts are disabled or silenced, the user may receive no alert on either device, including for DMs and mentions. The message remains unread, and its suppressed mobile push notification is not replayed later.
 
 ## Agreed requirements
 
@@ -26,11 +26,11 @@ Keep [mobile push notifications](../CONTEXT.md#mobile-push-notification) quiet w
 
 ### Desktop activity and eligibility
 
-7. Activity in another application counts while Buzz runs in the background. The notified conversation need not be open. Suppression does not check whether desktop alerts can be shown: desktop notification permissions, Buzz alert settings, and OS Focus/Do Not Disturb modes do not affect eligibility.
+7. Activity in another application counts while Kuzz runs in the background. The notified conversation need not be open. Suppression does not check whether desktop alerts can be shown: desktop notification permissions, Kuzz alert settings, and OS Focus/Do Not Disturb modes do not affect eligibility.
 
 8. Suppression requires a working desktop connection to the relevant community. A broken connection must stop suppression for that community, even if the user remains active on the computer. Other connected communities may remain suppressed. Detection and propagation bounds remain to be specified.
 
-9. Work within existing permissions. Buzz must not request additional permissions solely to observe cursor or keyboard activity outside the app. If computer-wide activity cannot be established within existing permissions, [in-app activity](../CONTEXT.md#in-app-activity) within the last ten minutes suffices. Buzz need not still be focused when suppression is evaluated. Available signals still need to be established for each supported platform.
+9. Work within existing permissions. Kuzz must not request additional permissions solely to observe cursor or keyboard activity outside the app. If computer-wide activity cannot be established within existing permissions, [in-app activity](../CONTEXT.md#in-app-activity) within the last ten minutes suffices. Kuzz need not still be focused when suppression is evaluated. Available signals still need to be established for each supported platform.
 
 10. Any eligible active desktop session connected to the relevant community suffices to suppress mobile push notifications for that community. One desktop becoming inactive or unavailable does not cancel another desktop's eligibility.
 
@@ -42,7 +42,7 @@ Keep [mobile push notifications](../CONTEXT.md#mobile-push-notification) quiet w
 
 13. Use a ten-minute [desktop inactivity](../CONTEXT.md#desktop-inactivity) threshold measured from the last observed user interaction. Resume mobile push notifications as soon as the user is considered inactive, with no [additional notification delay](../CONTEXT.md#additional-notification-delay), subject to the bounded timing tolerance in rule 17.
 
-14. Locking or sleeping the computer, or quitting Buzz, immediately ends that desktop session's eligibility to suppress pushes, regardless of recent activity. Detection and propagation bounds remain to be specified.
+14. Locking or sleeping the computer, or quitting Kuzz, immediately ends that desktop session's eligibility to suppress pushes, regardless of recent activity. Detection and propagation bounds remain to be specified.
 
 15. A desktop session's suppression eligibility expires at most 30 seconds after the last reliable confirmation that it qualifies. This bounds stale suppression after an unannounced crash or loss of connectivity. Another qualifying desktop may still sustain suppression under rule 10. This expiry is separate from the ten-minute desktop inactivity threshold and adds no grace period after a known lock, sleep, quit, or inactivity transition.
 
@@ -90,8 +90,8 @@ Keep [mobile push notifications](../CONTEXT.md#mobile-push-notification) quiet w
 
 | Situation | Agreed outcome |
 | --- | --- |
-| User works in an editor; Buzz runs in the background and receives community activity | Suppress otherwise eligible mobile push notifications for that community |
-| User works in another app while Buzz qualifies for suppression, but desktop alerts are disabled, blocked by OS permissions, or silenced by Focus/Do Not Disturb | Suppress mobile push notifications even though neither device may alert; the message remains unread and the suppressed notification is not replayed |
+| User works in an editor; Kuzz runs in the background and receives community activity | Suppress otherwise eligible mobile push notifications for that community |
+| User works in another app while Kuzz qualifies for suppression, but desktop alerts are disabled, blocked by OS permissions, or silenced by Focus/Do Not Disturb | Suppress mobile push notifications even though neither device may alert; the message remains unread and the suppressed notification is not replayed |
 | One mobile installation disables push while another still needs suppression for the same identity and community | Continue desktop suppression activity signals |
 | No mobile installation needs suppression for an identity and community | Stop desktop suppression activity signals for that identity and community |
 | User views one channel; a DM arrives elsewhere in the same connected community | The DM need not be visible for its mobile push notification to be suppressed |
@@ -99,9 +99,9 @@ Keep [mobile push notifications](../CONTEXT.md#mobile-push-notification) quiet w
 | User reaches ten minutes of inactivity | Resume pushes for new eligible messages without an additional delay |
 | Unread messages were suppressed before the user became inactive | Keep their unread state; do not replay their mobile push notifications |
 | Observing computer-wide input would require new permission | Do not request it; use in-app activity within the last ten minutes |
-| Buzz loses focus after recent in-app activity | Losing focus alone does not end suppression; the ten-minute activity window still applies |
+| Kuzz loses focus after recent in-app activity | Losing focus alone does not end suppression; the ten-minute activity window still applies |
 | Activity or connection status is uncertain | Favor sending the otherwise eligible mobile push |
-| The only eligible desktop locks, sleeps, or quits Buzz | End suppression immediately, regardless of recent activity |
+| The only eligible desktop locks, sleeps, or quits Kuzz | End suppression immediately, regardless of recent activity |
 | One desktop locks while another remains active and connected to the community | Continue suppression based on the other desktop |
 | User views one community while other communities remain connected | Suppress mobile push notifications across all those connected communities |
 | The only qualifying desktop crashes or loses connectivity without warning | Expire its eligibility within 30 seconds of its last reliable confirmation; resume pushes for newly arriving eligible messages |
@@ -124,7 +124,7 @@ Keep [mobile push notifications](../CONTEXT.md#mobile-push-notification) quiet w
 
 [Slack's notification documentation](https://slack.com/help/articles/201355156-Configure-your-Slack-notifications) describes default delivery after one minute of screen lock or ten minutes without cursor activity, and separately offers immediate delivery, delivery upon inactivity, or additional delay. This spec uses delivery upon inactivity with a ten-minute inactivity threshold.
 
-The public documentation does not fully specify OS-wide versus app-focused activity detection, browser equivalence, arbitration among multiple devices, or queue behavior. Those details must not be represented as verified Slack behavior. Keyboard activity was discussed for Buzz, but Slack's cited text specifically names cursor activity.
+The public documentation does not fully specify OS-wide versus app-focused activity detection, browser equivalence, arbitration among multiple devices, or queue behavior. Those details must not be represented as verified Slack behavior. Keyboard activity was discussed for Kuzz, but Slack's cited text specifically names cursor activity.
 
 ## Architecture status
 
@@ -177,9 +177,9 @@ Repository observations during discovery (not desired-behavior requirements):
 
 - [Desktop presence](../desktop/src/features/presence/hooks.ts) derives automatic activity separately from manual away/offline preferences. It uses OS idle information when available and in-app activity otherwise.
 - [Presence timing](../desktop/src/features/presence/lib/presence.ts) already uses a ten-minute idle threshold, but a 60-second public-presence heartbeat.
-- [Relay presence storage](../crates/buzz-pubsub/src/presence.rs) is scoped by community and user, with a 180-second expiry. That existing state alone does not satisfy the 30-second, per-desktop-session suppression requirement.
-- [Push matching](../crates/buzz-relay/src/push_runtime.rs) currently happens at the relay, where event, user, community, and installation information meet.
-- [Gateway delivery requests](../crates/buzz-push-gateway/src/model.rs) carry an opaque grant, request identifier, and expiry, with no event payload. Gateway [authority](../crates/buzz-push-gateway/src/authority.rs) binds installations to relay delegations rather than maintaining desktop activity state.
+- [Relay presence storage](../crates/kuzz-pubsub/src/presence.rs) is scoped by community and user, with a 180-second expiry. That existing state alone does not satisfy the 30-second, per-desktop-session suppression requirement.
+- [Push matching](../crates/kuzz-relay/src/push_runtime.rs) currently happens at the relay, where event, user, community, and installation information meet.
+- [Gateway delivery requests](../crates/kuzz-push-gateway/src/model.rs) carry an opaque grant, request identifier, and expiry, with no event payload. Gateway [authority](../crates/kuzz-push-gateway/src/authority.rs) binds installations to relay delegations rather than maintaining desktop activity state.
 
 Relay enforcement fits existing community-scoped push matching and client connection boundaries. It assumes relay cooperation. User recourse for relay push abuse is separate work.
 

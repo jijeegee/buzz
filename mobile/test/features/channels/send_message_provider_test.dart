@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
-import 'package:buzz/features/channels/channel.dart';
-import 'package:buzz/features/channels/channel_management_provider.dart';
-import 'package:buzz/features/channels/message_quote.dart';
-import 'package:buzz/features/channels/send_message_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/features/channels/message_quote.dart';
+import 'package:kuzz/features/channels/send_message_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 
 void main() {
   test(

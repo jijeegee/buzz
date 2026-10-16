@@ -32,10 +32,10 @@ function fakeBuilder(calls) {
 
 describe("protected feature production artifact selection", () => {
   it("honors env-file selection while process overrides retain the requested dist", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "buzz-protected-build-test-"));
+    const root = mkdtempSync(path.join(tmpdir(), "kuzz-protected-build-test-"));
     const envRoot = path.join(root, "env");
     mkdirSync(envRoot);
-    writeFileSync(path.join(envRoot, ".env.local"), "VITE_BUZZ_BESTIE=1\n");
+    writeFileSync(path.join(envRoot, ".env.local"), "VITE_KUZZ_BESTIE=1\n");
 
     try {
       const modeEnv = loadEnv("production", envRoot, "");
@@ -68,7 +68,7 @@ describe("protected feature production artifact selection", () => {
       const ossAlternate = path.join(root, "oss-alternate");
       const ossCalls = [];
       const processSelectedOss = selectInternalVariant({
-        processEnv: { VITE_BUZZ_BESTIE: "0" },
+        processEnv: { VITE_KUZZ_BESTIE: "0" },
         modeEnv,
       });
 

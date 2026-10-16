@@ -3,11 +3,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
 import { waitForAnimations } from "../helpers/animations";
 
-const THEMES = ["buzz", "catppuccin-mocha"] as const;
+const THEMES = ["kuzz", "catppuccin-mocha"] as const;
 
 async function seedTheme(page: Page, theme: (typeof THEMES)[number]) {
   await page.addInitScript((value) => {
-    window.localStorage.setItem("buzz-theme", value);
+    window.localStorage.setItem("kuzz-theme", value);
   }, theme);
 }
 
@@ -41,7 +41,7 @@ async function expectMutedSupportingText(
   const footer = trigger
     .page()
     .getByRole("tooltip")
-    .locator('[data-buzz-tooltip-metadata-type=""]');
+    .locator('[data-kuzz-tooltip-metadata-type=""]');
   await expect(footer).toHaveText(expectedText);
   await expect(footer).toHaveClass(/text-secondary-foreground\/80/);
   await expect(footer).not.toHaveClass(/text-primary-foreground/);
@@ -117,9 +117,9 @@ for (const theme of THEMES) {
     const owner = "a".repeat(64);
     const issueId = "b".repeat(64);
     const links = [
-      `buzz://channel/${channelId}`,
-      `buzz://message?channel=${channelId}&id=mock-general-welcome`,
-      `buzz://issue?id=${issueId}&owner=${owner}&d=buzz-world`,
+      `kuzz://channel/${channelId}`,
+      `kuzz://message?channel=${channelId}&id=mock-general-welcome`,
+      `kuzz://issue?id=${issueId}&owner=${owner}&d=kuzz-world`,
     ].join(" ");
     const composer = page.getByTestId("message-input");
     await composer.evaluate((element, text) => {
@@ -134,7 +134,7 @@ for (const theme of THEMES) {
       );
     }, links);
 
-    const composerChips = composer.locator('[data-composer-buzz-link=""]');
+    const composerChips = composer.locator('[data-composer-kuzz-link=""]');
     await expect(composerChips).toHaveCount(3);
     await page.getByTestId("send-message").click();
 
@@ -152,9 +152,9 @@ for (const theme of THEMES) {
     await page.mouse.move(0, 0);
     await expectMutedSupportingText(
       row.getByRole("button", {
-        name: /Open issue .* in repository buzz-world/,
+        name: /Open issue .* in repository kuzz-world/,
       }),
-      "Issue · buzz-world",
+      "Issue · kuzz-world",
     );
   });
 }

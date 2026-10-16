@@ -1,11 +1,11 @@
-import BuzzPushKit
+import KuzzPushKit
 import Foundation
 import Security
 
 /// Keychain-backed endpoint grant storage. The opaque grant is never written to
 /// UserDefaults or logs. Dart can read the closed record through the push bridge.
-final class BuzzPushEndpointGrantKeychainStore: BuzzPushEndpointGrantStore {
-  private static let service = "buzz.push.endpoint-grants"
+final class KuzzPushEndpointGrantKeychainStore: KuzzPushEndpointGrantStore {
+  private static let service = "kuzz.push.endpoint-grants"
   private static let recordsAccount = "v2"
   private static let pendingAccount = "pending-v2"
 
@@ -15,7 +15,7 @@ final class BuzzPushEndpointGrantKeychainStore: BuzzPushEndpointGrantStore {
     self.accessGroup = accessGroup
   }
 
-  func records() throws -> [BuzzPushEndpointGrantRecord] {
+  func records() throws -> [KuzzPushEndpointGrantRecord] {
     var query = baseQuery(account: Self.recordsAccount)
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -26,17 +26,17 @@ final class BuzzPushEndpointGrantKeychainStore: BuzzPushEndpointGrantStore {
       throw keychainError(status, operation: "read")
     }
     do {
-      return try JSONDecoder().decode([BuzzPushEndpointGrantRecord].self, from: data)
+      return try JSONDecoder().decode([KuzzPushEndpointGrantRecord].self, from: data)
     } catch {
       throw NSError(
-        domain: "BuzzPushEndpointGrantStore",
+        domain: "KuzzPushEndpointGrantStore",
         code: 1,
         userInfo: [NSLocalizedDescriptionKey: "Stored endpoint grants are invalid: \(error)"]
       )
     }
   }
 
-  func save(_ record: BuzzPushEndpointGrantRecord) throws {
+  func save(_ record: KuzzPushEndpointGrantRecord) throws {
     var all = try records()
     all.removeAll {
       $0.gatewayOrigin == record.gatewayOrigin && $0.relayOrigin == record.relayOrigin
@@ -50,14 +50,14 @@ final class BuzzPushEndpointGrantKeychainStore: BuzzPushEndpointGrantStore {
     gatewayOrigin: String,
     relayOrigin: String,
     appProfile: String
-  ) throws -> BuzzPushPendingEnrollmentRecord? {
+  ) throws -> KuzzPushPendingEnrollmentRecord? {
     try pendingEnrollments().first {
       $0.gatewayOrigin == gatewayOrigin && $0.relayOrigin == relayOrigin
         && $0.appProfile == appProfile
     }
   }
 
-  func savePendingEnrollment(_ record: BuzzPushPendingEnrollmentRecord) throws {
+  func savePendingEnrollment(_ record: KuzzPushPendingEnrollmentRecord) throws {
     var all = try pendingEnrollments()
     all.removeAll {
       $0.gatewayOrigin == record.gatewayOrigin && $0.relayOrigin == record.relayOrigin
@@ -80,7 +80,7 @@ final class BuzzPushEndpointGrantKeychainStore: BuzzPushEndpointGrantStore {
     try replaceValue(all, account: Self.pendingAccount)
   }
 
-  private func pendingEnrollments() throws -> [BuzzPushPendingEnrollmentRecord] {
+  private func pendingEnrollments() throws -> [KuzzPushPendingEnrollmentRecord] {
     var query = baseQuery(account: Self.pendingAccount)
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -91,10 +91,10 @@ final class BuzzPushEndpointGrantKeychainStore: BuzzPushEndpointGrantStore {
       throw keychainError(status, operation: "read pending enrollment")
     }
     do {
-      return try JSONDecoder().decode([BuzzPushPendingEnrollmentRecord].self, from: data)
+      return try JSONDecoder().decode([KuzzPushPendingEnrollmentRecord].self, from: data)
     } catch {
       throw NSError(
-        domain: "BuzzPushEndpointGrantStore",
+        domain: "KuzzPushEndpointGrantStore",
         code: 2,
         userInfo: [NSLocalizedDescriptionKey: "Stored pending enrollments are invalid: \(error)"]
       )
@@ -145,7 +145,7 @@ final class BuzzPushEndpointGrantKeychainStore: BuzzPushEndpointGrantStore {
   }
 }
 
-extension BuzzPushEndpointGrantRecord {
+extension KuzzPushEndpointGrantRecord {
   var flutterArguments: [String: Any] {
     let arguments: [String: Any] = [
       "relayOrigin": relayOrigin,

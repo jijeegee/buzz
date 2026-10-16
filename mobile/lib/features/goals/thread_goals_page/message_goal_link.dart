@@ -33,7 +33,7 @@ Future<void> showMessageGoalLink({
   }
   final linked = tree.forThread(messageId);
   final choice =
-      await showBuzzModalBottomSheet<({String? goalId, GoalRow? createUnder})>(
+      await showKuzzModalBottomSheet<({String? goalId, GoalRow? createUnder})>(
         context: context,
         title: 'Link to goal',
         isScrollControlled: true,

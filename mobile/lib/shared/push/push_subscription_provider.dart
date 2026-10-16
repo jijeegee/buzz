@@ -24,7 +24,7 @@ final pushSubscriptionSyncProvider = Provider<void>((ref) {
     return;
   }
 
-  final subscriptions = desiredBuzzPushSubscriptions(
+  final subscriptions = desiredKuzzPushSubscriptions(
     community: active,
     channels: channels,
     mutedChannelIds: [
@@ -40,14 +40,14 @@ final pushSubscriptionSyncProvider = Provider<void>((ref) {
   );
 });
 
-List<BuzzPushSubscription>? desiredBuzzPushSubscriptions({
+List<KuzzPushSubscription>? desiredKuzzPushSubscriptions({
   required Community community,
   required Iterable<Channel> channels,
   required Iterable<String> mutedChannelIds,
 }) {
   final pubkey = community.pubkey ?? pubkeyFromNsec(community.nsec);
   if (pubkey == null || pubkey.isEmpty) return null;
-  return buildDesiredBuzzPushSubscriptions(
+  return buildDesiredKuzzPushSubscriptions(
     myPubkey: pubkey,
     channelIds: [
       // Activity surfaces channel-wide traffic only for joined DM channels.

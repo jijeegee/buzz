@@ -74,9 +74,9 @@ test.describe("animated avatar", () => {
           () =>
             (
               window as Window & {
-                __BUZZ_E2E_CAMERA_REQUEST_COUNT__?: number;
+                __KUZZ_E2E_CAMERA_REQUEST_COUNT__?: number;
               }
-            ).__BUZZ_E2E_CAMERA_REQUEST_COUNT__ ?? 0,
+            ).__KUZZ_E2E_CAMERA_REQUEST_COUNT__ ?? 0,
         ),
       )
       .toBeGreaterThan(0);
@@ -99,9 +99,9 @@ test.describe("animated avatar", () => {
     await page.evaluate(() => {
       (
         window as Window & {
-          __BUZZ_E2E_RELEASE_CAMERA__?: () => void;
+          __KUZZ_E2E_RELEASE_CAMERA__?: () => void;
         }
-      ).__BUZZ_E2E_RELEASE_CAMERA__?.();
+      ).__KUZZ_E2E_RELEASE_CAMERA__?.();
     });
     await expect(
       page.getByTestId("profile-avatar-animated-record"),
@@ -117,9 +117,9 @@ test.describe("animated avatar", () => {
           () =>
             (
               window as Window & {
-                __BUZZ_E2E_CAMERA_CONSTRAINTS__?: MediaStreamConstraints[];
+                __KUZZ_E2E_CAMERA_CONSTRAINTS__?: MediaStreamConstraints[];
               }
-            ).__BUZZ_E2E_CAMERA_CONSTRAINTS__?.at(-1)?.video,
+            ).__KUZZ_E2E_CAMERA_CONSTRAINTS__?.at(-1)?.video,
         ),
       )
       .toEqual(
@@ -312,8 +312,8 @@ test.describe("animated avatar", () => {
           page.evaluate(
             () =>
               (
-                window as Window & { __BUZZ_E2E_COMMANDS__?: string[] }
-              ).__BUZZ_E2E_COMMANDS__?.filter(
+                window as Window & { __KUZZ_E2E_COMMANDS__?: string[] }
+              ).__KUZZ_E2E_COMMANDS__?.filter(
                 (command) => command === "upload_media_bytes",
               ).length ?? 0,
           ),
@@ -325,8 +325,8 @@ test.describe("animated avatar", () => {
         () =>
           page.evaluate(
             () =>
-              (window as Window & { __BUZZ_E2E_COMMANDS__?: string[] })
-                .__BUZZ_E2E_COMMANDS__ ?? [],
+              (window as Window & { __KUZZ_E2E_COMMANDS__?: string[] })
+                .__KUZZ_E2E_COMMANDS__ ?? [],
           ),
         { timeout: 30_000 },
       )

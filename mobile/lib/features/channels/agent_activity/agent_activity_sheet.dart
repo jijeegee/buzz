@@ -5,7 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/devices/agent_badge_widgets.dart';
 import '../../../shared/theme/theme.dart';
-import '../../../shared/widgets/buzz_loading_indicator.dart';
+import '../../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../../shared/profile/user_cache_provider.dart';
 import '../channel_identity_names_provider.dart';
 import 'observer_models.dart';
@@ -188,7 +188,7 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          BuzzLoadingIndicator(
+          KuzzLoadingIndicator(
             size: 28,
             color: context.colors.onSurfaceVariant,
             semanticLabel: 'Waiting for agent activity',

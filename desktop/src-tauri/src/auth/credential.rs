@@ -51,7 +51,7 @@ impl UserCredential {
                 .sign_with_keys(keys)
                 .map_err(|e| format!("sign failed: {e}")),
             Self::Token { principal, .. } => {
-                buzz_sdk_pkg::signer::draft_event(builder, *principal).map_err(|e| e.to_string())
+                kuzz_sdk_pkg::signer::draft_event(builder, *principal).map_err(|e| e.to_string())
             }
         }
     }
@@ -238,7 +238,7 @@ mod tests {
             .sign(EventBuilder::new(nostr::Kind::Custom(40002), "hi"))
             .unwrap();
         assert_eq!(event.pubkey, principal);
-        assert!(buzz_core_pkg::draft::is_sentinel_sig(event.sig.as_ref()));
+        assert!(kuzz_core_pkg::draft::is_sentinel_sig(event.sig.as_ref()));
         assert_eq!(
             credential
                 .http_auth(&Method::POST, "http://h/query", b"x")

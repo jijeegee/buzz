@@ -187,7 +187,7 @@ test("resolveInheritedRuntimeSubmission yields a null model on the inherit-trans
 });
 
 test("resolveRuntimeProviderCapability classifies provider-capable runtimes as capable", () => {
-  assert.equal(resolveRuntimeProviderCapability("buzz-agent", true), "capable");
+  assert.equal(resolveRuntimeProviderCapability("kuzz-agent", true), "capable");
   assert.equal(resolveRuntimeProviderCapability("goose", true), "capable");
 });
 

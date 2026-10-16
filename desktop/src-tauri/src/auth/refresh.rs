@@ -152,9 +152,9 @@ pub(crate) async fn refresh_once(
         // consumed server-side: presenting it on the next launch would trip
         // reuse detection (`refresh_reused`) and revoke the whole session, so
         // drop it and let the next launch ask for a fresh sign-in instead.
-        eprintln!("buzz-desktop: auth: could not persist refreshed session: {error}");
+        eprintln!("kuzz-desktop: auth: could not persist refreshed session: {error}");
         if let Err(error) = store.delete(origin) {
-            eprintln!("buzz-desktop: auth: could not drop the consumed refresh token: {error}");
+            eprintln!("kuzz-desktop: auth: could not drop the consumed refresh token: {error}");
         }
     }
     let (principal, device_id) = match known {

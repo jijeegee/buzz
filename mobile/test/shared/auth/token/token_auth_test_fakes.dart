@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -48,7 +48,7 @@ class FakeRefreshTokenStore implements RefreshTokenStore {
 class FakeWebAuthLauncher implements WebAuthLauncher {
   FakeWebAuthLauncher(this.respond);
 
-  String installedScheme = buzzMobileCallbackScheme;
+  String installedScheme = kuzzMobileCallbackScheme;
 
   @override
   Future<String> callbackScheme() async => installedScheme;

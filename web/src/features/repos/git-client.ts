@@ -31,7 +31,7 @@ import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 export function getFs(owner: string, repoName: string): LightningFS {
   // v2 deliberately never opens the legacy account-agnostic databases.
   return new LightningFS(
-    `buzz-git-v2-${JSON.stringify([
+    `kuzz-git-v2-${JSON.stringify([
       relayHttpBaseUrl(),
       webSession.getPrincipalCacheKey(),
       owner,

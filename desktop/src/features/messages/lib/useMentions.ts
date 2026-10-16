@@ -454,7 +454,7 @@ export function useMentions(
     mentionSelection;
   const isMentionOpen = mentionQuery !== null && suggestions.length > 0;
   // Untrusted clipboard records only become bindable identities once trusted
-  // Buzz state confirms the pair — see `mentionIdentityTrust`.
+  // Kuzz state confirms the pair — see `mentionIdentityTrust`.
   const verifyMentionIdentities = useVerifyMentionIdentities({
     mentionCandidates,
     profiles,

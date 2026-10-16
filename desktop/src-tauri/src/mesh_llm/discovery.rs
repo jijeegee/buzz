@@ -8,7 +8,7 @@ use super::{dedupe_models, MeshAvailability, MeshModelOption, MeshServeTarget, M
 /// Running-node status notes are refreshed every 45 seconds. Routing ignores
 /// notes older than two minutes so crashed/offline devices stop contributing
 /// compute without a relay-side cleanup job. Admission intentionally does not:
-/// Buzz membership, rather than device liveness, is the trust boundary.
+/// Kuzz membership, rather than device liveness, is the trust boundary.
 pub(super) const STATUS_FRESHNESS_SECS: u64 = 120;
 pub(crate) const MESH_STATUS_PAGE_SIZE: usize = 100;
 

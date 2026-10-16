@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -22,7 +22,7 @@ void main() {
         provider: 'google',
         state: 's' * 32,
         codeChallenge: 'c' * 43,
-        redirectUri: buzzMobileRedirectUri,
+        redirectUri: kuzzMobileRedirectUri,
         deviceName: 'Pixel 9',
         installId: '5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c',
       );
@@ -33,7 +33,7 @@ void main() {
         'code_challenge': 'c' * 43,
         'client': 'mobile',
         'identity_mode': 'token',
-        'redirect_uri': 'xyz.block.buzz://auth/cb',
+        'redirect_uri': 'app.kuzz://auth/cb',
         'device_name': 'Pixel 9',
         'install_id': '5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c',
       });
@@ -165,11 +165,11 @@ void main() {
           random: Random(7),
         );
         expect(grant.refreshToken, 'bzr_login');
-        expect(launcher.schemes.single, 'xyz.block.buzz');
+        expect(launcher.schemes.single, 'app.kuzz');
         final start = launcher.opened.single;
         expect(start.path, '/auth/oidc/google/start');
         expect(start.queryParameters['client'], 'mobile');
-        expect(start.queryParameters['redirect_uri'], buzzMobileRedirectUri);
+        expect(start.queryParameters['redirect_uri'], kuzzMobileRedirectUri);
         final body =
             jsonDecode(server.requests.single.body) as Map<String, dynamic>;
         expect(body['login_code'], 'bzl_code');
@@ -184,7 +184,7 @@ void main() {
       final server = FakeAuthServer();
       final launcher = FakeWebAuthLauncher(
         (_) => Uri.parse(
-          'xyz.block.buzz://auth/cb?code=bzl_evil&state=forged-state-value',
+          'app.kuzz://auth/cb?code=bzl_evil&state=forged-state-value',
         ),
       );
       await expectLater(
@@ -206,7 +206,7 @@ void main() {
     test('provider error callbacks surface their code', () async {
       final server = FakeAuthServer();
       final launcher = FakeWebAuthLauncher(
-        (start) => Uri.parse('xyz.block.buzz://auth/cb').replace(
+        (start) => Uri.parse('app.kuzz://auth/cb').replace(
           queryParameters: {
             'error': 'principal_disabled',
             'state': start.queryParameters['state']!,
@@ -234,7 +234,7 @@ void main() {
       () async {
         final launcher = FakeWebAuthLauncher(
           (_) => Uri.parse(
-            'xyz.block.buzz://auth/cb?error=access_denied&state=forged-state-value',
+            'app.kuzz://auth/cb?error=access_denied&state=forged-state-value',
           ),
         );
         await expectLater(

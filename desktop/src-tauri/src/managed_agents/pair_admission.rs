@@ -18,7 +18,7 @@ use crate::app_state::AppState;
 /// start pairs in the background treat it as a quiet no-op, not a failure.
 pub const RELAY_REMOVED_ERROR: &str = "relay was removed from this device";
 
-/// Admission state per canonical relay URL (`buzz_core::relay::normalize_relay_url`).
+/// Admission state per canonical relay URL (`kuzz_core::relay::normalize_relay_url`).
 #[derive(Default)]
 pub struct RelayAdmissions(HashMap<String, RelayAdmission>);
 
@@ -52,7 +52,7 @@ impl Admitted<'_> {
 pub struct AdmissionSnapshot(HashMap<String, u64>);
 
 fn canonical(relay_url: &str) -> Result<String, String> {
-    buzz_core_pkg::relay::normalize_relay_url(relay_url).map_err(|error| error.to_string())
+    kuzz_core_pkg::relay::normalize_relay_url(relay_url).map_err(|error| error.to_string())
 }
 
 impl RelayAdmissions {

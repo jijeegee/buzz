@@ -96,10 +96,10 @@ const rawCatalog = [
     subscription_provider: "openai",
   }),
   rawRuntime({
-    id: "buzz-agent",
-    label: "Buzz Agent",
-    model_env_var: "BUZZ_AGENT_MODEL",
-    provider_env_var: "BUZZ_AGENT_PROVIDER",
+    id: "kuzz-agent",
+    label: "Kuzz Agent",
+    model_env_var: "KUZZ_AGENT_MODEL",
+    provider_env_var: "KUZZ_AGENT_PROVIDER",
   }),
 ];
 
@@ -260,7 +260,7 @@ function resetConfig() {
     env_vars: { OPENAI_COMPAT_API_KEY: "sk-openai" },
     provider: "anthropic",
     model: "claude-sonnet",
-    preferred_runtime: "buzz-agent",
+    preferred_runtime: "kuzz-agent",
     effort_level: "high",
   };
 }
@@ -300,7 +300,7 @@ test("saving an API key is one set_global_agent_config that leaves model untouch
   );
   assert.equal(sent.model, "claude-sonnet", "model is never written here");
   assert.equal(sent.provider, "anthropic");
-  assert.equal(sent.preferred_runtime, "buzz-agent");
+  assert.equal(sent.preferred_runtime, "kuzz-agent");
   assert.equal(sent.effort_level, "high");
 
   const notice = await waitFor(

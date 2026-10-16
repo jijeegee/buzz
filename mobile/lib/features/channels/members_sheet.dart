@@ -5,7 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
@@ -53,7 +53,7 @@ class MembersSheet extends HookConsumerWidget {
       navigator.pop();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!navigator.mounted) return;
-        showBuzzModalBottomSheet<void>(
+        showKuzzModalBottomSheet<void>(
           context: navigator.context,
           isScrollControlled: true,
           showDragHandle: true,
@@ -143,7 +143,7 @@ class MembersSheet extends HookConsumerWidget {
             ],
           ),
           loading: () => const Center(
-            child: BuzzLoadingIndicator(
+            child: KuzzLoadingIndicator(
               size: 44,
               semanticLabel: 'Loading members',
             ),
@@ -244,7 +244,7 @@ class _MemberTile extends ConsumerWidget {
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                BuzzLoadingIndicator(
+                KuzzLoadingIndicator(
                   size: 14,
                   color: context.appColors.success,
                   semanticLabel: 'Agent working',
@@ -304,7 +304,7 @@ class _MemberTile extends ConsumerWidget {
               .read(channelIdentityNamesProvider(channelId))
               .labelFor(member.pubkey);
     final canChangeRole = showManagementActions && !member.isBot;
-    showBuzzModalBottomSheet<void>(
+    showKuzzModalBottomSheet<void>(
       context: context,
       title: label,
       showDragHandle: true,
@@ -358,7 +358,7 @@ class _MemberTile extends ConsumerWidget {
                 ),
                 onTap: () async {
                   Navigator.of(context).pop();
-                  final confirmed = await showBuzzDialog<bool>(
+                  final confirmed = await showKuzzDialog<bool>(
                     context: context,
                     builder: (context) => AlertDialog(
                       title: const Text('Remove member'),

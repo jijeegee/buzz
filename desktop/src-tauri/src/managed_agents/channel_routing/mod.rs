@@ -44,7 +44,7 @@ const GENERATED_ROUTING_DIR: &str = "routing";
 pub enum ChannelRoutingMode {
     /// Only @mentioned agents answer.
     Off,
-    /// The routing agent runs as a channel dispatcher (`BUZZ_ACP_DISPATCHER`).
+    /// The routing agent runs as a channel dispatcher (`KUZZ_ACP_DISPATCHER`).
     #[default]
     Host,
     /// The routing agent listens to its owner's unmentioned messages through
@@ -161,7 +161,7 @@ pub(crate) fn parse_channel_routing(content: Option<&str>) -> ChannelRoutingMode
         Ok(file) => file.mode,
         Err(error) => {
             eprintln!(
-                "buzz-desktop: unreadable {CHANNEL_ROUTING_FILE} ({error}); using the default Host mode"
+                "kuzz-desktop: unreadable {CHANNEL_ROUTING_FILE} ({error}); using the default Host mode"
             );
             ChannelRoutingMode::default()
         }

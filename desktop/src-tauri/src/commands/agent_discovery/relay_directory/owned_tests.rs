@@ -18,7 +18,7 @@ async fn remote_owned_discovery_and_membership_do_not_require_local_records() {
     let agent_key = agent.public_key().to_hex();
     let owner_key = owner.public_key().to_hex();
     let relay_key = relay.public_key().to_hex();
-    let auth = buzz_sdk_pkg::nip_oa::compute_auth_tag(&owner, &agent.public_key(), "").unwrap();
+    let auth = kuzz_sdk_pkg::nip_oa::compute_auth_tag(&owner, &agent.public_key(), "").unwrap();
     let auth: Vec<String> = serde_json::from_str(&auth).unwrap();
     let profile = EventBuilder::new(Kind::Metadata, r#"{"display_name":"Remote Scout"}"#)
         .tags([Tag::parse(auth).unwrap()])

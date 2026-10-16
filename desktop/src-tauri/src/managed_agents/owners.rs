@@ -36,7 +36,7 @@ fn read_owners(path: &Path) -> BTreeMap<String, String> {
 pub(crate) fn attested_owner_hex(record: &ManagedAgentRecord) -> Option<String> {
     let tag = record.auth_tag.as_deref()?;
     let agent = PublicKey::from_hex(&record.pubkey).ok()?;
-    buzz_sdk_pkg::nip_oa::verify_auth_tag(tag, &agent)
+    kuzz_sdk_pkg::nip_oa::verify_auth_tag(tag, &agent)
         .ok()
         .map(|owner| owner.to_hex())
 }
@@ -174,12 +174,12 @@ pub(crate) fn ensure_owner_signed_in<R: tauri::Runtime>(
     gate_verdict(record, here).inspect_err(|error| {
         if here == OwnerHere::Unlisted {
             eprintln!(
-                "buzz-desktop: agents: owner {} of {} is not an account on this computer",
+                "kuzz-desktop: agents: owner {} of {} is not an account on this computer",
                 &owner_hex[..owner_hex.len().min(8)],
                 record.pubkey
             );
         } else {
-            eprintln!("buzz-desktop: agents: {error}");
+            eprintln!("kuzz-desktop: agents: {error}");
         }
     })
 }
@@ -348,7 +348,7 @@ pub(crate) fn ensure_definition_owners<R: tauri::Runtime>(
     match record_definition_owners(&path, definitions, previous.or(active).as_deref()) {
         Ok(owners) => owners,
         Err(error) => {
-            eprintln!("buzz-desktop: agents: persona owners not recorded: {error}");
+            eprintln!("kuzz-desktop: agents: persona owners not recorded: {error}");
             definition_owners(&read_owners(&path), definitions)
         }
     }
@@ -658,11 +658,11 @@ mod tests {
     }
 
     /// Dry run of the persona-owner migration on a copy of an agent store:
-    /// `BUZZ_OWNERS_DRY_RUN_DIR` = a copied `agents/` directory (written to).
+    /// `KUZZ_OWNERS_DRY_RUN_DIR` = a copied `agents/` directory (written to).
     #[test]
     #[ignore]
     fn dry_run_persona_owner_migration_on_a_store_copy() {
-        let dir = std::path::PathBuf::from(std::env::var("BUZZ_OWNERS_DRY_RUN_DIR").unwrap());
+        let dir = std::path::PathBuf::from(std::env::var("KUZZ_OWNERS_DRY_RUN_DIR").unwrap());
         let store: Vec<ManagedAgentRecord> =
             serde_json::from_slice(&std::fs::read(dir.join("managed-agents.json")).unwrap())
                 .unwrap();
@@ -712,7 +712,7 @@ mod tests {
         let owner_a = nostr::Keys::generate();
         let owner_b = nostr::Keys::generate().public_key();
         let tagged = nostr::Keys::generate().public_key();
-        let tag = buzz_sdk_pkg::nip_oa::compute_auth_tag(&owner_a, &tagged, "kind=9").unwrap();
+        let tag = kuzz_sdk_pkg::nip_oa::compute_auth_tag(&owner_a, &tagged, "kind=9").unwrap();
         let legacy = nostr::Keys::generate().public_key().to_hex();
         let records = vec![record(&tagged.to_hex(), Some(tag)), record(&legacy, None)];
         assert_eq!(

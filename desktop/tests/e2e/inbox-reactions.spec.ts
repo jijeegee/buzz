@@ -12,7 +12,7 @@ const GENERAL_CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 const SHOTS = "test-results/inbox-reactions";
 
 type MockWindow = Window & {
-  __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+  __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
     channelName: string;
     content: string;
     parentEventId?: string | null;
@@ -21,7 +21,7 @@ type MockWindow = Window & {
     /** 64-hex id — required for the message to be a valid reaction target. */
     id?: string;
   }) => RelayEvent;
-  __BUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
+  __KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?: (item: {
     category: "mention" | "needs_action" | "activity" | "agent_activity";
     channel_id: string | null;
     channel_name: string;
@@ -47,8 +47,8 @@ test("inbox reaction on a thread-reply mention persists after refetch", async ({
   await page.waitForFunction(() => {
     const win = window as MockWindow;
     return (
-      typeof win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
-      typeof win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
+      typeof win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function" &&
+      typeof win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__ === "function"
     );
   });
 
@@ -59,8 +59,8 @@ test("inbox reaction on a thread-reply mention persists after refetch", async ({
   const { replyEvent, otherEvent } = await page.evaluate(
     ({ channelId, currentPubkey, senderPubkey }) => {
       const win = window as MockWindow;
-      const emitMessage = win.__BUZZ_E2E_EMIT_MOCK_MESSAGE__;
-      const pushFeedItem = win.__BUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
+      const emitMessage = win.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      const pushFeedItem = win.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__;
       if (!emitMessage || !pushFeedItem) {
         throw new Error("Mock bridge helpers are not installed.");
       }
@@ -130,7 +130,7 @@ test("inbox reaction on a thread-reply mention persists after refetch", async ({
   // Detail renders from history before the paced background consumer is ready.
   // Exercise live delivery only once this channel actually requests kind 7.
   await page.waitForFunction(() =>
-    window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+    window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
       channelName: "general",
       kind: 7,
       exactChannel: true,
@@ -143,12 +143,12 @@ test("inbox reaction on a thread-reply mention persists after refetch", async ({
   await page.evaluate(async (eventId) => {
     const invoke = (
       window as Window & {
-        __BUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
+        __KUZZ_E2E_INVOKE_MOCK_COMMAND__?: (
           command: string,
           payload?: Record<string, unknown>,
         ) => Promise<unknown>;
       }
-    ).__BUZZ_E2E_INVOKE_MOCK_COMMAND__;
+    ).__KUZZ_E2E_INVOKE_MOCK_COMMAND__;
     if (!invoke) throw new Error("Mock Tauri invoke bridge is unavailable.");
     await invoke("add_reaction", { eventId, emoji: "❤️" });
   }, replyEvent.id);

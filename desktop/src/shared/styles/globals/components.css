@@ -8,24 +8,24 @@
     opacity: 0.8;
   }
 
-  .buzz-side-panel-enter {
-    animation: buzz-side-panel-enter 260ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  .kuzz-side-panel-enter {
+    animation: kuzz-side-panel-enter 260ms cubic-bezier(0.32, 0.72, 0, 1) both;
     transform-origin: right center;
     will-change: transform, opacity;
   }
 
-  .buzz-huddle-shell {
-    --buzz-huddle-drawer-height: 5rem;
-    --buzz-huddle-drawer-inset: 8px;
-    --buzz-huddle-drawer-radius: 24px;
-    --buzz-huddle-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
-    --buzz-huddle-drawer-surface: var(--huddle-drawer-surface, 0 0% 0%);
+  .kuzz-huddle-shell {
+    --kuzz-huddle-drawer-height: 5rem;
+    --kuzz-huddle-drawer-inset: 8px;
+    --kuzz-huddle-drawer-radius: 24px;
+    --kuzz-huddle-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --kuzz-huddle-drawer-surface: var(--huddle-drawer-surface, 0 0% 0%);
     /* Keep the drawer surface behind the lifted app so the dark background
      * remains visible through its rounded lower corners. */
-    background: hsl(var(--buzz-huddle-drawer-surface));
+    background: hsl(var(--kuzz-huddle-drawer-surface));
   }
 
-  .buzz-huddle-app-surface {
+  .kuzz-huddle-app-surface {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
     bottom: 0;
@@ -35,16 +35,16 @@
     right: 0;
     top: 0;
     transition:
-      bottom 260ms var(--buzz-huddle-drawer-ease),
-      border-bottom-left-radius 260ms var(--buzz-huddle-drawer-ease),
-      border-bottom-right-radius 260ms var(--buzz-huddle-drawer-ease),
-      box-shadow 260ms var(--buzz-huddle-drawer-ease);
+      bottom 260ms var(--kuzz-huddle-drawer-ease),
+      border-bottom-left-radius 260ms var(--kuzz-huddle-drawer-ease),
+      border-bottom-right-radius 260ms var(--kuzz-huddle-drawer-ease),
+      box-shadow 260ms var(--kuzz-huddle-drawer-ease);
     will-change:
       bottom, border-bottom-left-radius, border-bottom-right-radius, box-shadow;
   }
 
-  .buzz-huddle-app-surface::after {
-    background: hsl(var(--buzz-huddle-drawer-surface));
+  .kuzz-huddle-app-surface::after {
+    background: hsl(var(--kuzz-huddle-drawer-surface));
     bottom: -1px;
     content: "";
     height: 2px;
@@ -53,52 +53,52 @@
     pointer-events: none;
     position: absolute;
     right: 0;
-    transition: opacity 260ms var(--buzz-huddle-drawer-ease);
+    transition: opacity 260ms var(--kuzz-huddle-drawer-ease);
     z-index: 60;
   }
 
-  .buzz-huddle-app-surface-open {
-    border-bottom-left-radius: var(--buzz-huddle-drawer-radius);
-    border-bottom-right-radius: var(--buzz-huddle-drawer-radius);
-    bottom: var(--buzz-huddle-drawer-height);
+  .kuzz-huddle-app-surface-open {
+    border-bottom-left-radius: var(--kuzz-huddle-drawer-radius);
+    border-bottom-right-radius: var(--kuzz-huddle-drawer-radius);
+    bottom: var(--kuzz-huddle-drawer-height);
     box-shadow:
       0 10px 24px -12px rgb(0 0 0 / 62%),
       0 2px 7px -4px rgb(0 0 0 / 42%);
   }
 
-  .buzz-huddle-app-surface-open::after {
+  .kuzz-huddle-app-surface-open::after {
     opacity: 1;
   }
 
-  .buzz-huddle-drawer-backdrop {
-    background: hsl(var(--buzz-huddle-drawer-surface));
+  .kuzz-huddle-drawer-backdrop {
+    background: hsl(var(--kuzz-huddle-drawer-surface));
     bottom: 0;
     height: calc(
-      var(--buzz-huddle-drawer-height) +
-      var(--buzz-huddle-drawer-radius)
+      var(--kuzz-huddle-drawer-height) +
+      var(--kuzz-huddle-drawer-radius)
     );
     left: 0;
     opacity: 0;
     pointer-events: none;
     position: absolute;
     right: 0;
-    transition: opacity 260ms var(--buzz-huddle-drawer-ease);
+    transition: opacity 260ms var(--kuzz-huddle-drawer-ease);
     z-index: 1;
   }
 
-  .buzz-huddle-drawer-backdrop-open {
+  .kuzz-huddle-drawer-backdrop-open {
     opacity: 1;
   }
 
   /* The dedicated companion keeps room for the controls without making the
    * transcript look like a raised card. */
-  .buzz-huddle-app-surface-room-open {
-    bottom: var(--buzz-huddle-drawer-height);
+  .kuzz-huddle-app-surface-room-open {
+    bottom: var(--kuzz-huddle-drawer-height);
   }
 
-  .buzz-huddle-drawer {
-    --buzz-huddle-drawer-surface: var(--huddle-drawer-surface, 0 0% 0%);
-    --background: var(--buzz-huddle-drawer-surface);
+  .kuzz-huddle-drawer {
+    --kuzz-huddle-drawer-surface: var(--huddle-drawer-surface, 0 0% 0%);
+    --background: var(--kuzz-huddle-drawer-surface);
     --foreground: 0 0% 98%;
     --primary: 0 0% 98%;
     --primary-foreground: 0 0% 9%;
@@ -111,7 +111,7 @@
       var(--huddle-control-surface, 0 0% 14.9%)
     );
     --accent-foreground: 0 0% 98%;
-    --popover: var(--buzz-huddle-drawer-surface);
+    --popover: var(--kuzz-huddle-drawer-surface);
     --popover-foreground: 0 0% 98%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
@@ -120,30 +120,30 @@
     --ring: 0 0% 83.1%;
 
     color-scheme: dark;
-    background: hsl(var(--buzz-huddle-drawer-surface));
+    background: hsl(var(--kuzz-huddle-drawer-surface));
     overflow-x: auto;
     overflow-y: hidden;
   }
 
-  .buzz-huddle-drawer::-webkit-scrollbar {
+  .kuzz-huddle-drawer::-webkit-scrollbar {
     display: none;
   }
 
-  .buzz-huddle-popover {
-    --buzz-huddle-popover-surface: var(
+  .kuzz-huddle-popover {
+    --kuzz-huddle-popover-surface: var(
       --huddle-popover-surface,
       var(--huddle-control-chevron-surface, 0 0% 16%)
     );
-    --background: var(--buzz-huddle-popover-surface);
+    --background: var(--kuzz-huddle-popover-surface);
     --foreground: var(--huddle-control-foreground, 0 0% 98%);
-    --popover: var(--buzz-huddle-popover-surface);
+    --popover: var(--kuzz-huddle-popover-surface);
     --popover-foreground: var(--foreground);
     --border: var(
       --huddle-popover-border,
       var(--huddle-control-hover-surface, 0 0% 24%)
     );
 
-    background: hsl(var(--buzz-huddle-popover-surface));
+    background: hsl(var(--kuzz-huddle-popover-surface));
     border-color: hsl(var(--border) / 0.6);
     box-shadow:
       0 6px 18px lch(0% 0 0 / 0.02),
@@ -152,7 +152,7 @@
     color: hsl(var(--foreground));
   }
 
-  .buzz-huddle-headphones-hint {
+  .kuzz-huddle-headphones-hint {
     --background: var(
       --huddle-tooltip-surface,
       var(--huddle-control-surface, var(--secondary))
@@ -172,26 +172,26 @@
     color: hsl(var(--foreground));
   }
 
-  .buzz-huddle-mic-meter-bar {
+  .kuzz-huddle-mic-meter-bar {
     border-radius: 9999px;
-    height: var(--buzz-huddle-meter-height, 0.25rem);
+    height: var(--kuzz-huddle-meter-height, 0.25rem);
     transition: none;
     width: 0.25rem;
   }
 
-  .buzz-huddle-speaking-avatar {
+  .kuzz-huddle-speaking-avatar {
     isolation: isolate;
   }
 
-  .buzz-huddle-speaking-avatar::after {
+  .kuzz-huddle-speaking-avatar::after {
     border: 2px solid hsl(142 71% 45%);
     border-radius: inherit;
     content: "";
     inset: -2px;
-    opacity: var(--buzz-huddle-speaker-opacity, 0);
+    opacity: var(--kuzz-huddle-speaker-opacity, 0);
     pointer-events: none;
     position: absolute;
-    transform: scale(var(--buzz-huddle-speaker-scale, 1.02));
+    transform: scale(var(--kuzz-huddle-speaker-scale, 1.02));
     transition:
       opacity 80ms linear,
       transform 90ms cubic-bezier(0.2, 0, 0, 1);
@@ -199,19 +199,19 @@
     z-index: 1;
   }
 
-  .buzz-huddle-speaking-avatar-agent::after {
+  .kuzz-huddle-speaking-avatar-agent::after {
     content: none;
   }
 
-  .buzz-huddle-speaking-squircle {
-    opacity: var(--buzz-huddle-speaker-opacity, 0);
+  .kuzz-huddle-speaking-squircle {
+    opacity: var(--kuzz-huddle-speaker-opacity, 0);
     transform: scale(1.04);
     transition: opacity 80ms linear;
     will-change: opacity;
     z-index: 1;
   }
 
-  @keyframes buzz-huddle-participant-tile-enter {
+  @keyframes kuzz-huddle-participant-tile-enter {
     from {
       opacity: 0;
       transform: scale(0.95);
@@ -223,66 +223,66 @@
     }
   }
 
-  .buzz-huddle-participant-tile {
-    animation: buzz-huddle-participant-tile-enter 180ms
+  .kuzz-huddle-participant-tile {
+    animation: kuzz-huddle-participant-tile-enter 180ms
       cubic-bezier(0.23, 1, 0.32, 1) both;
     transform-origin: center;
     will-change: opacity, transform;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .buzz-side-panel-enter {
+    .kuzz-side-panel-enter {
       animation: none;
       will-change: auto;
     }
 
-    .buzz-huddle-app-surface {
+    .kuzz-huddle-app-surface {
       transition: none;
     }
 
-    .buzz-huddle-drawer-backdrop {
+    .kuzz-huddle-drawer-backdrop {
       transition: none;
     }
 
-    .buzz-huddle-mic-meter-bar {
+    .kuzz-huddle-mic-meter-bar {
       transition: none;
     }
 
-    .buzz-huddle-speaking-avatar {
+    .kuzz-huddle-speaking-avatar {
       isolation: auto;
     }
 
-    .buzz-huddle-speaking-squircle {
+    .kuzz-huddle-speaking-squircle {
       transition: none;
       will-change: auto;
     }
 
-    .buzz-huddle-participant-tile {
+    .kuzz-huddle-participant-tile {
       animation: none;
       will-change: auto;
     }
   }
 
-  .buzz-startup-shell {
+  .kuzz-startup-shell {
     min-height: 100dvh;
     width: 100%;
   }
 
-  .buzz-onboarding-step-frame {
+  .kuzz-onboarding-step-frame {
     min-height: min(1000px, max(0px, calc(100dvh - 106px - 7rem)));
     max-height: 1000px;
   }
 
-  .buzz-onboarding-step-frame > .buzz-onboarding-slide,
-  .buzz-onboarding-step-frame
-    > .buzz-onboarding-slide
-    > .buzz-onboarding-transition-line {
+  .kuzz-onboarding-step-frame > .kuzz-onboarding-slide,
+  .kuzz-onboarding-step-frame
+    > .kuzz-onboarding-slide
+    > .kuzz-onboarding-transition-line {
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
   }
 
-  .buzz-onboarding-neutral-theme.buzz-startup-shell {
+  .kuzz-onboarding-neutral-theme.kuzz-startup-shell {
     /* Dot grid over the gray→light-blue gradient (dots layer first so
        they sit on top). The welcome page overrides this with dots over a flat
        Kuzz brand-blue fill below. */
@@ -290,19 +290,19 @@
       radial-gradient(circle, rgb(0 0 0 / 0.08) 1px, transparent 1px),
       linear-gradient(
         to bottom,
-        var(--buzz-welcome-chartreuse),
-        var(--buzz-onboarding-shell-bottom)
+        var(--kuzz-welcome-chartreuse),
+        var(--kuzz-onboarding-shell-bottom)
       );
     background-size:
       24px 24px,
       auto;
   }
 
-  .buzz-onboarding-neutral-theme.buzz-startup-shell.buzz-onboarding-welcome {
+  .kuzz-onboarding-neutral-theme.kuzz-startup-shell.kuzz-onboarding-welcome {
     background-color: var(--kuzz-landing-blue);
     /* Landing is a flat brand-blue field, so the docked-footer scrim must match
        it (not the gradient's light-blue bottom) to stay invisible. */
-    --buzz-onboarding-shell-bottom: var(--kuzz-landing-blue);
+    --kuzz-onboarding-shell-bottom: var(--kuzz-landing-blue);
     /* Inverted palette on the deep blue field: light ink, blue surfaces for
        outline buttons, and a white primary pill whose label is the brand
        blue (ONBOARDING_LANDING_CTA_CLASS). */
@@ -322,21 +322,21 @@
     background-size: 24px 24px;
   }
 
-  .buzz-onboarding-neutral-theme {
+  .kuzz-onboarding-neutral-theme {
     /* Onboarding accent (neutral gray in Kuzz): the setup-step gradient top and
        step accents. The variable name is kept from upstream. */
-    --buzz-welcome-chartreuse: #c9ced6;
+    --kuzz-welcome-chartreuse: #c9ced6;
     /* Kuzz brand blue (Taegukgi blue): only the landing (sign-in) page
        background and its CTA label; other screens keep their colors. */
     --kuzz-landing-blue: #0047a0;
     /* Bottom stop of the onboarding shell gradient; also the docked-footer
        scrim color so content scrolling under the CTA fades into the page. */
-    --buzz-onboarding-shell-bottom: #d7e7f6;
+    --kuzz-onboarding-shell-bottom: #d7e7f6;
     /* Label color for the primary onboarding CTA (light blue on the dark pill). */
-    --buzz-onboarding-cta-label: #d7e6f0;
+    --kuzz-onboarding-cta-label: #d7e6f0;
     /* Slate ink for the backup step's private key and its "never share" caption,
        reading against the fuzzy-white key frame. */
-    --buzz-onboarding-backup-ink: #404650;
+    --kuzz-onboarding-backup-ink: #404650;
     --background: 0 0% 100%;
     --foreground: 0 0% 9%;
     --primary: 0 0% 9%;
@@ -350,16 +350,16 @@
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 9%;
-    --buzz-onboarding-emoji-picker-background: 245, 245, 245;
-    --buzz-onboarding-emoji-picker-color: 23, 23, 23;
-    --buzz-onboarding-emoji-picker-input: 255, 255, 255;
-    --buzz-onboarding-avatar-dialog-bg: 255 255 255;
-    --buzz-onboarding-avatar-accent-bg: 236 238 241;
-    --buzz-onboarding-avatar-accent-fg: 64 70 80;
-    --buzz-onboarding-avatar-action-bg: 23 23 23;
-    --buzz-onboarding-avatar-action-fg: 236 238 241;
-    --buzz-onboarding-avatar-control-fg: 64 70 80;
-    --buzz-onboarding-avatar-dialog-shadow: 0 0 0;
+    --kuzz-onboarding-emoji-picker-background: 245, 245, 245;
+    --kuzz-onboarding-emoji-picker-color: 23, 23, 23;
+    --kuzz-onboarding-emoji-picker-input: 255, 255, 255;
+    --kuzz-onboarding-avatar-dialog-bg: 255 255 255;
+    --kuzz-onboarding-avatar-accent-bg: 236 238 241;
+    --kuzz-onboarding-avatar-accent-fg: 64 70 80;
+    --kuzz-onboarding-avatar-action-bg: 23 23 23;
+    --kuzz-onboarding-avatar-action-fg: 236 238 241;
+    --kuzz-onboarding-avatar-control-fg: 64 70 80;
+    --kuzz-onboarding-avatar-dialog-shadow: 0 0 0;
   }
 
   /*
@@ -368,10 +368,10 @@
    * overrides on a reusable class as well as the shell so portaled
    * popovers/dialogs can opt into the same treatment.
    */
-  .buzz-onboarding-security-theme {
+  .kuzz-onboarding-security-theme {
     color-scheme: dark;
-    --buzz-onboarding-shell-bottom: #082b49;
-    --buzz-onboarding-cta-label: #f5f5f5;
+    --kuzz-onboarding-shell-bottom: #082b49;
+    --kuzz-onboarding-cta-label: #f5f5f5;
     --background: 222 45% 4%;
     --foreground: 0 0% 96%;
     --card: 220 14% 11%;
@@ -393,7 +393,7 @@
     --ring: 0 0% 84%;
   }
 
-  .buzz-onboarding-neutral-theme.buzz-startup-shell.buzz-onboarding-security-theme {
+  .kuzz-onboarding-neutral-theme.kuzz-startup-shell.kuzz-onboarding-security-theme {
     background-color: #010103;
     background-image:
       radial-gradient(circle, rgb(143 211 255 / 0.11) 1px, transparent 1px),
@@ -410,17 +410,17 @@
       auto;
   }
 
-  .buzz-onboarding-key-text {
+  .kuzz-onboarding-key-text {
     @apply w-full break-all [overflow-wrap:anywhere] font-mono text-nsec-key;
 
-    color: var(--buzz-onboarding-backup-ink);
+    color: var(--kuzz-onboarding-backup-ink);
   }
 
-  .buzz-onboarding-key-text-v3 {
+  .kuzz-onboarding-key-text-v3 {
     @apply text-left text-nsec-key-card font-medium text-foreground;
   }
 
-  .dark .buzz-onboarding-neutral-theme:not(.buzz-startup-shell) {
+  .dark .kuzz-onboarding-neutral-theme:not(.kuzz-startup-shell) {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
     --primary: 0 0% 98%;
@@ -434,22 +434,22 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
-    --buzz-onboarding-emoji-picker-background: 38, 38, 38;
-    --buzz-onboarding-emoji-picker-color: 250, 250, 250;
-    --buzz-onboarding-emoji-picker-input: 10, 10, 10;
-    --buzz-onboarding-avatar-dialog-bg: 24 24 20;
-    --buzz-onboarding-avatar-accent-bg: 200 204 210;
-    --buzz-onboarding-avatar-accent-fg: 24 24 20;
-    --buzz-onboarding-avatar-action-bg: 64 70 80;
-    --buzz-onboarding-avatar-action-fg: 236 238 241;
-    --buzz-onboarding-avatar-control-fg: 220 223 228;
-    --buzz-onboarding-avatar-dialog-shadow: 0 0 0;
+    --kuzz-onboarding-emoji-picker-background: 38, 38, 38;
+    --kuzz-onboarding-emoji-picker-color: 250, 250, 250;
+    --kuzz-onboarding-emoji-picker-input: 10, 10, 10;
+    --kuzz-onboarding-avatar-dialog-bg: 24 24 20;
+    --kuzz-onboarding-avatar-accent-bg: 200 204 210;
+    --kuzz-onboarding-avatar-accent-fg: 24 24 20;
+    --kuzz-onboarding-avatar-action-bg: 64 70 80;
+    --kuzz-onboarding-avatar-action-fg: 236 238 241;
+    --kuzz-onboarding-avatar-control-fg: 220 223 228;
+    --kuzz-onboarding-avatar-dialog-shadow: 0 0 0;
   }
 
-  .buzz-onboarding-neutral-theme[data-system-color-scheme="light"],
+  .kuzz-onboarding-neutral-theme[data-system-color-scheme="light"],
   .dark
-    .buzz-onboarding-neutral-theme[data-system-color-scheme="light"]:not(
-      .buzz-startup-shell
+    .kuzz-onboarding-neutral-theme[data-system-color-scheme="light"]:not(
+      .kuzz-startup-shell
     ) {
     --background: 0 0% 100%;
     --foreground: 0 0% 9%;
@@ -464,20 +464,20 @@
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 9%;
-    --buzz-onboarding-emoji-picker-background: 245, 245, 245;
-    --buzz-onboarding-emoji-picker-color: 23, 23, 23;
-    --buzz-onboarding-emoji-picker-input: 255, 255, 255;
-    --buzz-onboarding-avatar-dialog-bg: 255 255 255;
-    --buzz-onboarding-avatar-accent-bg: 236 238 241;
-    --buzz-onboarding-avatar-accent-fg: 64 70 80;
-    --buzz-onboarding-avatar-action-bg: 23 23 23;
-    --buzz-onboarding-avatar-action-fg: 236 238 241;
-    --buzz-onboarding-avatar-control-fg: 64 70 80;
-    --buzz-onboarding-avatar-dialog-shadow: 0 0 0;
+    --kuzz-onboarding-emoji-picker-background: 245, 245, 245;
+    --kuzz-onboarding-emoji-picker-color: 23, 23, 23;
+    --kuzz-onboarding-emoji-picker-input: 255, 255, 255;
+    --kuzz-onboarding-avatar-dialog-bg: 255 255 255;
+    --kuzz-onboarding-avatar-accent-bg: 236 238 241;
+    --kuzz-onboarding-avatar-accent-fg: 64 70 80;
+    --kuzz-onboarding-avatar-action-bg: 23 23 23;
+    --kuzz-onboarding-avatar-action-fg: 236 238 241;
+    --kuzz-onboarding-avatar-control-fg: 64 70 80;
+    --kuzz-onboarding-avatar-dialog-shadow: 0 0 0;
   }
 
-  .buzz-onboarding-neutral-theme[data-system-color-scheme="dark"]:not(
-    .buzz-startup-shell
+  .kuzz-onboarding-neutral-theme[data-system-color-scheme="dark"]:not(
+    .kuzz-startup-shell
   ) {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -492,22 +492,22 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
-    --buzz-onboarding-emoji-picker-background: 38, 38, 38;
-    --buzz-onboarding-emoji-picker-color: 250, 250, 250;
-    --buzz-onboarding-emoji-picker-input: 10, 10, 10;
-    --buzz-onboarding-avatar-dialog-bg: 24 24 20;
-    --buzz-onboarding-avatar-accent-bg: 200 204 210;
-    --buzz-onboarding-avatar-accent-fg: 24 24 20;
-    --buzz-onboarding-avatar-action-bg: 64 70 80;
-    --buzz-onboarding-avatar-action-fg: 236 238 241;
-    --buzz-onboarding-avatar-control-fg: 220 223 228;
-    --buzz-onboarding-avatar-dialog-shadow: 0 0 0;
+    --kuzz-onboarding-emoji-picker-background: 38, 38, 38;
+    --kuzz-onboarding-emoji-picker-color: 250, 250, 250;
+    --kuzz-onboarding-emoji-picker-input: 10, 10, 10;
+    --kuzz-onboarding-avatar-dialog-bg: 24 24 20;
+    --kuzz-onboarding-avatar-accent-bg: 200 204 210;
+    --kuzz-onboarding-avatar-accent-fg: 24 24 20;
+    --kuzz-onboarding-avatar-action-bg: 64 70 80;
+    --kuzz-onboarding-avatar-action-fg: 236 238 241;
+    --kuzz-onboarding-avatar-control-fg: 220 223 228;
+    --kuzz-onboarding-avatar-dialog-shadow: 0 0 0;
   }
 
   /* The key-import card is viewport-centered on ordinary windows, independent
      of the top heading and bottom-docked actions. Short windows return it to
      document flow so the shell can grow and scroll instead of overlapping. */
-  .buzz-onboarding-key-import-position {
+  .kuzz-onboarding-key-import-position {
     position: absolute;
     left: 50%;
     top: calc(50dvh - 6.625rem);
@@ -515,49 +515,49 @@
   }
 
   @media (max-height: 44rem) {
-    .buzz-onboarding-key-import-position {
+    .kuzz-onboarding-key-import-position {
       position: static;
       margin-top: 3rem;
       transform: none;
     }
   }
 
-  .buzz-onboarding-transition-content {
-    animation-delay: var(--buzz-onboarding-transition-delay, 0ms);
+  .kuzz-onboarding-transition-content {
+    animation-delay: var(--kuzz-onboarding-transition-delay, 0ms);
   }
 
-  .buzz-onboarding-transition-line[data-onboarding-effect="fade"]
-    > .buzz-onboarding-transition-content {
-    animation: buzz-onboarding-fade-in 300ms ease-out backwards;
-    animation-delay: var(--buzz-onboarding-transition-delay, 0ms);
+  .kuzz-onboarding-transition-line[data-onboarding-effect="fade"]
+    > .kuzz-onboarding-transition-content {
+    animation: kuzz-onboarding-fade-in 300ms ease-out backwards;
+    animation-delay: var(--kuzz-onboarding-transition-delay, 0ms);
   }
 
-  .buzz-onboarding-transition-line[data-onboarding-effect="line-slide"]
-    > .buzz-onboarding-transition-content {
+  .kuzz-onboarding-transition-line[data-onboarding-effect="line-slide"]
+    > .kuzz-onboarding-transition-content {
     animation-duration: 650ms;
     animation-fill-mode: backwards;
     animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .buzz-onboarding-transition-line[data-onboarding-effect="line-slide"][data-onboarding-direction="forward"]
-    > .buzz-onboarding-transition-content {
-    animation-name: buzz-onboarding-line-slide-forward;
+  .kuzz-onboarding-transition-line[data-onboarding-effect="line-slide"][data-onboarding-direction="forward"]
+    > .kuzz-onboarding-transition-content {
+    animation-name: kuzz-onboarding-line-slide-forward;
   }
 
-  .buzz-onboarding-transition-line[data-onboarding-effect="line-slide"][data-onboarding-direction="backward"]
-    > .buzz-onboarding-transition-content {
-    animation-name: buzz-onboarding-line-slide-backward;
+  .kuzz-onboarding-transition-line[data-onboarding-effect="line-slide"][data-onboarding-direction="backward"]
+    > .kuzz-onboarding-transition-content {
+    animation-name: kuzz-onboarding-line-slide-backward;
   }
 
-  .buzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-down"],
-  .buzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-up"] {
+  .kuzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-down"],
+  .kuzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-up"] {
     overflow: visible;
   }
 
-  .buzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-down"]
-    > .buzz-onboarding-transition-content,
-  .buzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-up"]
-    > .buzz-onboarding-transition-content {
+  .kuzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-down"]
+    > .kuzz-onboarding-transition-content,
+  .kuzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-up"]
+    > .kuzz-onboarding-transition-content {
     /* `backwards` (not `both`): the reveal ends on an identity transform, so
        holding it forward is visually a no-op but leaves a lingering transform
        that establishes a containing block and traps `position: fixed`
@@ -566,28 +566,28 @@
     animation-duration: 760ms;
     animation-fill-mode: backwards;
     animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-    animation-delay: var(--buzz-onboarding-transition-delay, 0ms);
+    animation-delay: var(--kuzz-onboarding-transition-delay, 0ms);
     transform-origin: 50% 70%;
   }
 
-  .buzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-down"]
-    > .buzz-onboarding-transition-content {
-    animation-name: buzz-onboarding-mask-reveal-down;
+  .kuzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-down"]
+    > .kuzz-onboarding-transition-content {
+    animation-name: kuzz-onboarding-mask-reveal-down;
   }
 
-  .buzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-up"]
-    > .buzz-onboarding-transition-content {
-    animation-name: buzz-onboarding-mask-reveal-up;
+  .kuzz-onboarding-transition-line[data-onboarding-effect="mask-reveal-up"]
+    > .kuzz-onboarding-transition-content {
+    animation-name: kuzz-onboarding-mask-reveal-up;
   }
 
-  .buzz-onboarding-name-placeholder-caret {
-    animation: buzz-onboarding-caret-blink 1.1s steps(1, end) infinite;
+  .kuzz-onboarding-name-placeholder-caret {
+    animation: kuzz-onboarding-caret-blink 1.1s steps(1, end) infinite;
   }
 
-  .buzz-onboarding-runtime-pill {
-    animation: buzz-onboarding-runtime-pill-in 180ms
+  .kuzz-onboarding-runtime-pill {
+    animation: kuzz-onboarding-runtime-pill-in 180ms
       cubic-bezier(0.22, 1, 0.36, 1) both;
-    font-size: calc(var(--buzz-type-rem) * 0.625);
+    font-size: calc(var(--kuzz-type-rem) * 0.625);
     letter-spacing: 0;
     line-height: 1;
     text-transform: uppercase;
@@ -595,22 +595,22 @@
     will-change: opacity, transform;
   }
 
-  .buzz-onboarding-runtime-setup {
+  .kuzz-onboarding-runtime-setup {
     isolation: isolate;
     position: relative;
   }
 
-  .buzz-onboarding-runtime-setup[data-setup-flash="true"] {
-    animation: buzz-onboarding-runtime-setup-bump 560ms
+  .kuzz-onboarding-runtime-setup[data-setup-flash="true"] {
+    animation: kuzz-onboarding-runtime-setup-bump 560ms
       cubic-bezier(0.22, 1, 0.36, 1) both;
     transform-origin: center;
     will-change: transform;
   }
 
-  .buzz-onboarding-runtime-setup[data-setup-flash="true"]::after {
-    animation: buzz-onboarding-runtime-setup-ring 560ms
+  .kuzz-onboarding-runtime-setup[data-setup-flash="true"]::after {
+    animation: kuzz-onboarding-runtime-setup-ring 560ms
       cubic-bezier(0.22, 1, 0.36, 1) both;
-    border: 1px solid var(--buzz-welcome-chartreuse);
+    border: 1px solid var(--kuzz-welcome-chartreuse);
     border-radius: inherit;
     content: "";
     inset: -0.25rem;
@@ -621,7 +621,7 @@
     will-change: opacity, transform;
   }
 
-  @keyframes buzz-onboarding-runtime-pill-in {
+  @keyframes kuzz-onboarding-runtime-pill-in {
     from {
       opacity: 0;
       transform: translateY(-0.25rem) scale(0.94);
@@ -633,7 +633,7 @@
     }
   }
 
-  @keyframes buzz-onboarding-runtime-setup-bump {
+  @keyframes kuzz-onboarding-runtime-setup-bump {
     0%,
     100% {
       transform: translateZ(0) scale(1);
@@ -648,7 +648,7 @@
     }
   }
 
-  @keyframes buzz-onboarding-runtime-setup-ring {
+  @keyframes kuzz-onboarding-runtime-setup-ring {
     0% {
       opacity: 0;
       transform: scale(0.9);
@@ -665,7 +665,7 @@
     }
   }
 
-  @keyframes buzz-onboarding-caret-blink {
+  @keyframes kuzz-onboarding-caret-blink {
     0%,
     55% {
       opacity: 1;
@@ -677,7 +677,7 @@
     }
   }
 
-  @keyframes buzz-onboarding-fade-in {
+  @keyframes kuzz-onboarding-fade-in {
     from {
       opacity: 0;
     }
@@ -687,7 +687,7 @@
     }
   }
 
-  @keyframes buzz-onboarding-line-slide-forward {
+  @keyframes kuzz-onboarding-line-slide-forward {
     from {
       opacity: 0;
       transform: translateX(48px);
@@ -699,7 +699,7 @@
     }
   }
 
-  @keyframes buzz-onboarding-line-slide-backward {
+  @keyframes kuzz-onboarding-line-slide-backward {
     from {
       opacity: 0;
       transform: translateX(-48px);
@@ -711,7 +711,7 @@
     }
   }
 
-  @keyframes buzz-onboarding-mask-reveal-up {
+  @keyframes kuzz-onboarding-mask-reveal-up {
     from {
       filter: blur(8px);
       opacity: 0;
@@ -730,7 +730,7 @@
     }
   }
 
-  @keyframes buzz-onboarding-mask-reveal-down {
+  @keyframes kuzz-onboarding-mask-reveal-down {
     from {
       filter: blur(8px);
       opacity: 0;
@@ -750,24 +750,24 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .buzz-onboarding-runtime-check,
-    .buzz-onboarding-runtime-checkmark {
+    .kuzz-onboarding-runtime-check,
+    .kuzz-onboarding-runtime-checkmark {
       transition: none;
     }
 
-    .buzz-onboarding-runtime-pill {
+    .kuzz-onboarding-runtime-pill {
       animation: none;
       will-change: auto;
     }
 
-    .buzz-onboarding-runtime-setup[data-setup-flash="true"] {
+    .kuzz-onboarding-runtime-setup[data-setup-flash="true"] {
       animation: none;
-      outline: 2px solid var(--buzz-welcome-chartreuse);
+      outline: 2px solid var(--kuzz-welcome-chartreuse);
       outline-offset: 2px;
       will-change: auto;
     }
 
-    .buzz-onboarding-runtime-setup[data-setup-flash="true"]::after {
+    .kuzz-onboarding-runtime-setup[data-setup-flash="true"]::after {
       animation: none;
       content: none;
       will-change: auto;
@@ -775,7 +775,7 @@
   }
 
   @media (max-width: 640px) {
-    @keyframes buzz-onboarding-line-slide-forward {
+    @keyframes kuzz-onboarding-line-slide-forward {
       from {
         opacity: 0;
         transform: translateX(24px);
@@ -787,7 +787,7 @@
       }
     }
 
-    @keyframes buzz-onboarding-line-slide-backward {
+    @keyframes kuzz-onboarding-line-slide-backward {
       from {
         opacity: 0;
         transform: translateX(-24px);
@@ -801,14 +801,14 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .buzz-onboarding-transition-content {
+    .kuzz-onboarding-transition-content {
       animation: none;
       filter: none;
       opacity: 1;
       transform: none;
     }
 
-    .buzz-onboarding-name-placeholder-caret {
+    .kuzz-onboarding-name-placeholder-caret {
       animation: none;
     }
   }
@@ -821,19 +821,19 @@
  * utility-styled content surface. Closing the panel or opening chat removes
  * the marker and restores the normal framed surface.
  */
-[data-buzz-content-surface]:has([data-project-detail-screen]),
-:root[data-buzz-sidebar]:not(.dark)
-  [data-buzz-content-surface]:has([data-project-detail-screen]),
-:root[data-buzz-sidebar].dark
-  [data-buzz-content-surface]:has([data-project-detail-screen]) {
+[data-kuzz-content-surface]:has([data-project-detail-screen]),
+:root[data-kuzz-sidebar]:not(.dark)
+  [data-kuzz-content-surface]:has([data-project-detail-screen]),
+:root[data-kuzz-sidebar].dark
+  [data-kuzz-content-surface]:has([data-project-detail-screen]) {
   box-shadow: none;
 }
 
-[data-buzz-content-surface]:has([data-project-context-detached="true"]),
-:root[data-buzz-sidebar]:not(.dark)
-  [data-buzz-content-surface]:has([data-project-context-detached="true"]),
-:root[data-buzz-sidebar].dark
-  [data-buzz-content-surface]:has([data-project-context-detached="true"]) {
+[data-kuzz-content-surface]:has([data-project-context-detached="true"]),
+:root[data-kuzz-sidebar]:not(.dark)
+  [data-kuzz-content-surface]:has([data-project-context-detached="true"]),
+:root[data-kuzz-sidebar].dark
+  [data-kuzz-content-surface]:has([data-project-context-detached="true"]) {
   background: transparent;
   border-radius: 0;
   box-shadow: none;

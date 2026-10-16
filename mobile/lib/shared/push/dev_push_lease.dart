@@ -10,15 +10,15 @@ import '../relay/signed_event_relay.dart';
 import 'push_bridge.dart';
 import 'push_subscription.dart';
 
-const buzzPushLeaseKind = 30350;
-const buzzDevPushAppProfile = 'buzz-ios-dogfood';
-const buzzPushTransport = 'apns';
+const kuzzPushLeaseKind = 30350;
+const kuzzDevPushAppProfile = 'buzz-ios-dogfood';
+const kuzzPushTransport = 'apns';
 const _maxSafeJsonInteger = 9007199254740991;
 const _maxLeaseLifetimeSeconds = 2592000;
 const _lowercaseHex64Pattern = r'^[0-9a-f]{64}$';
 const _installationIdPattern = r'^[0-9a-f]{32}$';
 
-class BuzzPushLeaseDescriptor {
+class KuzzPushLeaseDescriptor {
   final String origin;
   final String executorKeyId;
   final String executorPubkey;
@@ -29,7 +29,7 @@ class BuzzPushLeaseDescriptor {
   final int maxEndpointLength;
   final int maxStringLength;
 
-  const BuzzPushLeaseDescriptor({
+  const KuzzPushLeaseDescriptor({
     required this.origin,
     required this.executorKeyId,
     required this.executorPubkey,
@@ -41,7 +41,7 @@ class BuzzPushLeaseDescriptor {
     required this.maxStringLength,
   });
 
-  factory BuzzPushLeaseDescriptor.fromRelayInformation(
+  factory KuzzPushLeaseDescriptor.fromRelayInformation(
     Map<String, dynamic> information,
   ) {
     _requireExactKeys(
@@ -154,18 +154,18 @@ class BuzzPushLeaseDescriptor {
         profile['transport'],
         name: 'app profile transport',
       );
-      if (id == buzzDevPushAppProfile) transport = candidate;
+      if (id == kuzzDevPushAppProfile) transport = candidate;
     }
-    if (transport != buzzPushTransport) {
+    if (transport != kuzzPushTransport) {
       throw const FormatException(
         'NIP-11 does not advertise the dogfood APNs profile',
       );
     }
 
     final pushKinds = _intList(push['push_kinds'], name: 'push_kinds');
-    if (!buzzPushEligibleKinds.every(pushKinds.contains)) {
+    if (!kuzzPushEligibleKinds.every(pushKinds.contains)) {
       throw const FormatException(
-        'NIP-11 does not advertise every Buzz message kind for push',
+        'NIP-11 does not advertise every Kuzz message kind for push',
       );
     }
     final hGrammar = _nonEmptyString(push['h_grammar'], name: 'h_grammar');
@@ -178,7 +178,7 @@ class BuzzPushLeaseDescriptor {
       name: 'class_support',
     );
     final supportedClasses = _stringList(
-      classSupport[buzzPushTransport],
+      classSupport[kuzzPushTransport],
       name: 'class_support.apns',
     );
     const knownClasses = {'default'};
@@ -237,7 +237,7 @@ class BuzzPushLeaseDescriptor {
       throw const FormatException('max_lease_ttl exceeds the NIP-PL v1 limit');
     }
 
-    return BuzzPushLeaseDescriptor(
+    return KuzzPushLeaseDescriptor(
       origin: origin,
       executorKeyId: currentKey['id'] as String,
       executorPubkey: currentKey['pubkey'] as String,
@@ -251,7 +251,7 @@ class BuzzPushLeaseDescriptor {
   }
 }
 
-Future<BuzzPushLeaseDescriptor> fetchBuzzPushLeaseDescriptor(
+Future<KuzzPushLeaseDescriptor> fetchKuzzPushLeaseDescriptor(
   String relayBaseUrl, {
   http.Client? client,
   Duration timeout = const Duration(seconds: 8),
@@ -277,25 +277,25 @@ Future<BuzzPushLeaseDescriptor> fetchBuzzPushLeaseDescriptor(
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('NIP-11 response must be a JSON object');
     }
-    return BuzzPushLeaseDescriptor.fromRelayInformation(decoded);
+    return KuzzPushLeaseDescriptor.fromRelayInformation(decoded);
   } finally {
     if (client == null) ownedClient.close();
   }
 }
 
-class BuzzPushLeasePublication {
+class KuzzPushLeasePublication {
   final String eventId;
   final int expiration;
   final String plaintext;
 
-  const BuzzPushLeasePublication({
+  const KuzzPushLeasePublication({
     required this.eventId,
     required this.expiration,
     required this.plaintext,
   });
 }
 
-typedef BuzzPushLeaseSubmit =
+typedef KuzzPushLeaseSubmit =
     Future<NostrEvent> Function({
       required int kind,
       required String content,
@@ -303,15 +303,15 @@ typedef BuzzPushLeaseSubmit =
       int? createdAt,
     });
 
-Future<BuzzPushLeasePublication> publishBuzzDevPushLease({
-  required BuzzPushEndpointGrant grant,
+Future<KuzzPushLeasePublication> publishKuzzDevPushLease({
+  required KuzzPushEndpointGrant grant,
   String? leaseInstallationId,
   int? leaseGeneration,
-  required BuzzPushLeaseDescriptor descriptor,
+  required KuzzPushLeaseDescriptor descriptor,
   required String nsec,
   required String memberPubkey,
-  required List<BuzzPushSubscription> subscriptions,
-  required BuzzPushLeaseSubmit submit,
+  required List<KuzzPushSubscription> subscriptions,
+  required KuzzPushLeaseSubmit submit,
   DateTime Function() now = DateTime.now,
 }) async {
   _validateGrant(grant, descriptor);
@@ -378,7 +378,7 @@ Future<BuzzPushLeasePublication> publishBuzzDevPushLease({
     );
   }
   final acknowledged = await submit(
-    kind: buzzPushLeaseKind,
+    kind: kuzzPushLeaseKind,
     content: content,
     tags: [
       ['d', effectiveLeaseInstallationId],
@@ -390,24 +390,24 @@ Future<BuzzPushLeasePublication> publishBuzzDevPushLease({
   if (acknowledged.id.isEmpty) {
     throw StateError('Relay returned an empty event id for the push lease');
   }
-  return BuzzPushLeasePublication(
+  return KuzzPushLeasePublication(
     eventId: acknowledged.id,
     expiration: expiration,
     plaintext: plaintext,
   );
 }
 
-Future<BuzzPushLeasePublication> publishBuzzDevPushLeaseThroughRelay({
-  required BuzzPushEndpointGrant grant,
+Future<KuzzPushLeasePublication> publishKuzzDevPushLeaseThroughRelay({
+  required KuzzPushEndpointGrant grant,
   String? leaseInstallationId,
   int? leaseGeneration,
-  required BuzzPushLeaseDescriptor descriptor,
+  required KuzzPushLeaseDescriptor descriptor,
   required String nsec,
   required String memberPubkey,
-  required List<BuzzPushSubscription> subscriptions,
+  required List<KuzzPushSubscription> subscriptions,
   required SignedEventRelay relay,
   DateTime Function() now = DateTime.now,
-}) => publishBuzzDevPushLease(
+}) => publishKuzzDevPushLease(
   grant: grant,
   leaseInstallationId: leaseInstallationId,
   leaseGeneration: leaseGeneration,
@@ -423,13 +423,13 @@ Future<BuzzPushLeasePublication> publishBuzzDevPushLeaseThroughRelay({
 /// community is removed from this device. Gateway delegation is intentionally
 /// untouched because it is scoped to the installation and relay key, not the
 /// community.
-Future<BuzzPushLeasePublication> publishBuzzPushLeaseTombstone({
-  required BuzzPushLeaseDescriptor descriptor,
+Future<KuzzPushLeasePublication> publishKuzzPushLeaseTombstone({
+  required KuzzPushLeaseDescriptor descriptor,
   required String installationId,
   required int generation,
   required String nsec,
   required String memberPubkey,
-  required BuzzPushLeaseSubmit submit,
+  required KuzzPushLeaseSubmit submit,
   DateTime Function() now = DateTime.now,
 }) async {
   if (!RegExp(_installationIdPattern).hasMatch(installationId)) {
@@ -476,7 +476,7 @@ Future<BuzzPushLeasePublication> publishBuzzPushLeaseTombstone({
     );
   }
   final acknowledged = await submit(
-    kind: buzzPushLeaseKind,
+    kind: kuzzPushLeaseKind,
     content: content,
     tags: [
       ['d', installationId],
@@ -488,22 +488,22 @@ Future<BuzzPushLeasePublication> publishBuzzPushLeaseTombstone({
   if (acknowledged.id.isEmpty) {
     throw StateError('Relay returned an empty event id for the push tombstone');
   }
-  return BuzzPushLeasePublication(
+  return KuzzPushLeasePublication(
     eventId: acknowledged.id,
     expiration: expiration,
     plaintext: plaintext,
   );
 }
 
-Future<BuzzPushLeasePublication> publishBuzzPushLeaseTombstoneThroughRelay({
-  required BuzzPushLeaseDescriptor descriptor,
+Future<KuzzPushLeasePublication> publishKuzzPushLeaseTombstoneThroughRelay({
+  required KuzzPushLeaseDescriptor descriptor,
   required String installationId,
   required int generation,
   required String nsec,
   required String memberPubkey,
   required SignedEventRelay relay,
   DateTime Function() now = DateTime.now,
-}) => publishBuzzPushLeaseTombstone(
+}) => publishKuzzPushLeaseTombstone(
   descriptor: descriptor,
   installationId: installationId,
   generation: generation,
@@ -514,8 +514,8 @@ Future<BuzzPushLeasePublication> publishBuzzPushLeaseTombstoneThroughRelay({
 );
 
 void _validateGrant(
-  BuzzPushEndpointGrant grant,
-  BuzzPushLeaseDescriptor descriptor,
+  KuzzPushEndpointGrant grant,
+  KuzzPushLeaseDescriptor descriptor,
 ) {
   if (utf8.encode(grant.installationId).length > 64 ||
       !RegExp(_installationIdPattern).hasMatch(grant.installationId)) {
@@ -528,7 +528,7 @@ void _validateGrant(
       'Stored endpoint grant is delegated to a different relay key',
     );
   }
-  if (grant.appProfile != buzzDevPushAppProfile) {
+  if (grant.appProfile != kuzzDevPushAppProfile) {
     throw const FormatException('Endpoint grant is not for buzz-ios-dogfood');
   }
   if (grant.endpointGrant.isEmpty ||

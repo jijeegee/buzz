@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:buzz/features/profile/presence_cache_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/features/profile/presence_cache_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 
 /// Live-stream behavior alongside the authenticated snapshot backstop.
 void main() {

@@ -46,7 +46,7 @@ async function select(page: Page) {
 }
 async function sent(page: Page) {
   return page.evaluate(() => {
-    const signed = (window.__BUZZ_E2E_SIGNED_EVENTS__ ?? [])
+    const signed = (window.__KUZZ_E2E_SIGNED_EVENTS__ ?? [])
       .filter((event) => event.content === "@RemoteScout hello")
       .map((event) =>
         event.tags.filter((tag) => tag[0] === "p").map((tag) => tag[1]),
@@ -54,7 +54,7 @@ async function sent(page: Page) {
     if (signed.length) return signed;
     // New DMs deliberately use the acknowledged native HTTP command rather
     // than JS sign_event. Assert its exact outgoing recipients, not fake crypto.
-    return (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).flatMap((call) => {
+    return (window.__KUZZ_E2E_COMMAND_LOG__ ?? []).flatMap((call) => {
       const payload = call.payload as {
         content?: string;
         mentionPubkeys?: string[];
@@ -68,7 +68,7 @@ async function sent(page: Page) {
 }
 async function assertNoLocalLifecycle(page: Page) {
   const commands = await page.evaluate(
-    () => window.__BUZZ_E2E_COMMANDS__ ?? [],
+    () => window.__KUZZ_E2E_COMMANDS__ ?? [],
   );
   for (const command of [
     "start_managed_agent",
@@ -85,15 +85,15 @@ for (const role of ["member", "bot"] as const) {
     await install(page);
     await page.evaluate(
       async ({ pubkey, channelId, role }) => {
-        await window.__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("add_channel_members", {
+        await window.__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("add_channel_members", {
           channelId,
           pubkeys: [pubkey],
           role,
         });
-        await window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+        await window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
           queryKey: ["channels"],
         });
-        await window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+        await window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
           queryKey: ["relay-agents"],
         });
       },
@@ -124,7 +124,7 @@ test("owned nonmember uses authorized add before exact publication", async ({
   await waitForAnimations(page);
   await page.screenshot({ path: "test-results/remote-sent.png" });
   const calls = await page.evaluate(
-    () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    () => window.__KUZZ_E2E_COMMAND_LOG__ ?? [],
   );
   expect(calls).toEqual(
     expect.arrayContaining([
@@ -146,8 +146,8 @@ for (const error of [
     await install(page);
     await select(page);
     await page.evaluate((error) => {
-      window.__BUZZ_E2E__.mock ??= {};
-      window.__BUZZ_E2E__.mock.addChannelMembersErrors = [error];
+      window.__KUZZ_E2E__.mock ??= {};
+      window.__KUZZ_E2E__.mock.addChannelMembersErrors = [error];
     }, error);
     await page.getByTestId("send-message").click();
     await page.getByRole("button", { name: "Invite", exact: true }).click();
@@ -170,8 +170,8 @@ test("selected owned agent revoked before add keeps draft and sends nothing", as
   await select(page);
   await page.getByTestId("send-message").click();
   await page.evaluate((pubkey) => {
-    window.__BUZZ_E2E__.mock ??= {};
-    window.__BUZZ_E2E__.mock.relayAgentRevalidationRevokedPubkeys = [pubkey];
+    window.__KUZZ_E2E__.mock ??= {};
+    window.__KUZZ_E2E__.mock.relayAgentRevalidationRevokedPubkeys = [pubkey];
   }, REMOTE);
   await page.getByRole("button", { name: "Invite", exact: true }).click();
   await expect(
@@ -205,13 +205,13 @@ for (const mode of ["existing", "new"] as const) {
       .poll(() => sent(page))
       .toEqual([[REMOTE, TEST_IDENTITIES.bob.pubkey]]);
     const calls = await page.evaluate(
-      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+      () => window.__KUZZ_E2E_COMMAND_LOG__ ?? [],
     );
     const checks = calls.filter(
       (call) => call.command === "revalidate_relay_agents",
     );
     const event = await page.evaluate(() =>
-      (window.__BUZZ_E2E_SIGNED_EVENTS__ ?? []).find(
+      (window.__KUZZ_E2E_SIGNED_EVENTS__ ?? []).find(
         (event) => event.content === "@RemoteScout hello",
       ),
     );
@@ -236,8 +236,8 @@ test("membership revoked at final publish keeps draft and emits no message", asy
   await page.getByTestId("send-message").click();
   // Let preparation succeed, but make the fresh final directory read fail.
   await page.evaluate(() => {
-    window.__BUZZ_E2E__.mock ??= {};
-    window.__BUZZ_E2E__.mock.relayAgentListErrors = [
+    window.__KUZZ_E2E__.mock ??= {};
+    window.__KUZZ_E2E__.mock.relayAgentListErrors = [
       null,
       null,
       "revoked at publication",
@@ -298,7 +298,7 @@ async function waitForInviteGate(page: Page) {
 }
 async function remoteAdds(page: Page) {
   return page.evaluate(() =>
-    (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).filter(
+    (window.__KUZZ_E2E_COMMAND_LOG__ ?? []).filter(
       (call) => call.command === "add_channel_members",
     ),
   );
@@ -329,7 +329,7 @@ test("B1 delayed preparation shows pending; Escape retains draft and cancels add
     .poll(() =>
       page.evaluate(
         () =>
-          (window.__BUZZ_E2E_COMMANDS__ ?? []).filter(
+          (window.__KUZZ_E2E_COMMANDS__ ?? []).filter(
             (command) => command === "revalidate_relay_agents",
           ).length,
       ),
@@ -380,7 +380,7 @@ for (const stage of ["add", "publish"] as const) {
         .poll(() =>
           page.evaluate(
             () =>
-              window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+              window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
                 channelName: "general",
               }) ?? false,
           ),
@@ -389,7 +389,7 @@ for (const stage of ["add", "publish"] as const) {
       const roots = await page.evaluate(() =>
         ["Lifecycle thread A", "Lifecycle thread B"].map(
           (content) =>
-            window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+            window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
               channelName: "general",
               content,
             })?.id,
@@ -468,7 +468,7 @@ for (const incoming of ["unrelated thread B draft", "@RemoteScout hello"]) {
       .poll(() =>
         page.evaluate(
           () =>
-            window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+            window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
               channelName: "general",
             }) ?? false,
         ),
@@ -477,7 +477,7 @@ for (const incoming of ["unrelated thread B draft", "@RemoteScout hello"]) {
     const roots = await page.evaluate(() =>
       ["Lifecycle thread A", "Lifecycle thread B"].map(
         (content) =>
-          window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+          window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
             channelName: "general",
             content,
           })?.id,
@@ -525,7 +525,7 @@ for (const incoming of ["unrelated thread B draft", "@RemoteScout hello"]) {
     const sourceRecord = () =>
       page.evaluate(([root, otherRoot]) => {
         const key = Object.keys(localStorage).find((key) =>
-          key.startsWith("buzz-drafts.v2"),
+          key.startsWith("kuzz-drafts.v2"),
         );
         if (!key) throw new Error("draft storage scope missing");
         const drafts = JSON.parse(localStorage.getItem(key) ?? "{}");
@@ -567,15 +567,15 @@ for (const incoming of ["B preserved"]) {
     await install(page);
     await page.evaluate(
       async ({ pubkey, channelId }) => {
-        await window.__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("add_channel_members", {
+        await window.__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("add_channel_members", {
           channelId,
           pubkeys: [pubkey],
           role: "bot",
         });
-        await window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+        await window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
           queryKey: ["channels"],
         });
-        await window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+        await window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
           queryKey: ["relay-agents"],
         });
       },
@@ -585,7 +585,7 @@ for (const incoming of ["B preserved"]) {
       .poll(() =>
         page.evaluate(
           () =>
-            window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+            window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
               channelName: "general",
             }) ?? false,
         ),
@@ -594,7 +594,7 @@ for (const incoming of ["B preserved"]) {
     const roots = await page.evaluate(() =>
       ["Lifecycle thread A", "Lifecycle thread B"].map(
         (content) =>
-          window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+          window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
             channelName: "general",
             content,
           })?.id,
@@ -649,7 +649,7 @@ for (const incoming of ["B preserved"]) {
     const sourceRecord = () =>
       page.evaluate(([root, otherRoot]) => {
         const key = Object.keys(localStorage).find((key) =>
-          key.startsWith("buzz-drafts.v2"),
+          key.startsWith("kuzz-drafts.v2"),
         );
         if (!key) throw new Error("draft storage scope missing");
         const drafts = JSON.parse(localStorage.getItem(key) ?? "{}");
@@ -674,8 +674,8 @@ for (const incoming of ["B preserved"]) {
 
     await navigate(roots[1]);
     await page.evaluate((pubkey) => {
-      window.__BUZZ_E2E__.mock ??= {};
-      window.__BUZZ_E2E__.mock.relayAgentRevalidationRevokedPubkeys = [pubkey];
+      window.__KUZZ_E2E__.mock ??= {};
+      window.__KUZZ_E2E__.mock.relayAgentRevalidationRevokedPubkeys = [pubkey];
     }, REMOTE);
     await releaseInviteCommand(page);
     await expect(

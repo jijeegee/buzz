@@ -521,13 +521,13 @@ pub async fn confirm_agent_snapshot_import(
             .to_bech32()
             .map_err(|e| format!("failed to encode agent private key: {e}"))?;
 
-        // NIP-OA auth tag: bridge nostr 0.37 → 0.36 (buzz-sdk) via hex round-trip.
+        // NIP-OA auth tag: bridge nostr 0.37 → 0.36 (kuzz-sdk) via hex round-trip.
         let compat_owner = nostr::Keys::parse(&owner_keys.secret_key().to_secret_hex())
             .map_err(|e| format!("failed to bridge owner keys: {e}"))?;
         let compat_agent = nostr::PublicKey::from_hex(&pubkey)
             .map_err(|e| format!("failed to bridge agent pubkey: {e}"))?;
         let auth_tag = Some(
-            buzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
+            kuzz_sdk_pkg::nip_oa::compute_auth_tag(&compat_owner, &compat_agent, "")
                 .map_err(|e| format!("failed to compute NIP-OA auth tag: {e}"))?,
         );
         let owner_pubkey_hex = owner_keys.public_key().to_hex();
@@ -720,19 +720,19 @@ pub async fn confirm_agent_snapshot_import(
         let base_ts = nostr::Timestamp::now().as_secs();
 
         for (idx, entry) in snapshot.memory.entries.iter().enumerate() {
-            let body = if entry.slug == buzz_core_pkg::engram::CORE_SLUG {
-                buzz_core_pkg::engram::Body::Core {
+            let body = if entry.slug == kuzz_core_pkg::engram::CORE_SLUG {
+                kuzz_core_pkg::engram::Body::Core {
                     profile: entry.body.clone(),
                 }
             } else {
-                buzz_core_pkg::engram::Body::Memory {
+                kuzz_core_pkg::engram::Body::Memory {
                     slug: entry.slug.clone(),
                     value: Some(entry.body.clone()),
                 }
             };
 
             let created_at = base_ts + idx as u64;
-            match buzz_core_pkg::engram::build_event(&agent_keys, &owner_pubkey, &body, created_at)
+            match kuzz_core_pkg::engram::build_event(&agent_keys, &owner_pubkey, &body, created_at)
             {
                 Ok(event) => {
                     let event_json = nostr::JsonUtil::as_json(&event).into_bytes();
@@ -777,7 +777,7 @@ fn retain_agent_pending(app: &AppHandle, state: &AppState, record: &ManagedAgent
         persona_events::monotonic_created_at,
         retention::{get_retained_event, open_retention_db, retain_event, RetainedEvent},
     };
-    use buzz_core_pkg::kind::KIND_MANAGED_AGENT;
+    use kuzz_core_pkg::kind::KIND_MANAGED_AGENT;
     use nostr::JsonUtil;
 
     let result = (|| -> Result<(), String> {
@@ -813,7 +813,7 @@ fn retain_agent_pending(app: &AppHandle, state: &AppState, record: &ManagedAgent
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: snapshot-import retain-agent: {e}");
+        eprintln!("kuzz-desktop: snapshot-import retain-agent: {e}");
     }
 }
 

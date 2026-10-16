@@ -6,7 +6,7 @@
 //! `GlobalAgentConfig` field, so changing it never restarts an agent: running
 //! agents read it from their live settings file (`live_settings`) on their
 //! next message. The harness receives the enabled triggers (at launch as
-//! `BUZZ_ACP_TASK_THREADS`, then through that file) only under the thread
+//! `KUZZ_ACP_TASK_THREADS`, then through that file) only under the thread
 //! session policy, where task threads get their own session and report back.
 
 use std::path::{Path, PathBuf};
@@ -17,10 +17,10 @@ use tauri::AppHandle;
 use super::{managed_agents_base_dir, storage::atomic_write_json, AcpSessionPolicy};
 
 const TASK_THREADS_FILE: &str = "task-threads.json";
-pub(crate) const TASK_THREADS_ENV_VAR: &str = "BUZZ_ACP_TASK_THREADS";
+pub(crate) const TASK_THREADS_ENV_VAR: &str = "KUZZ_ACP_TASK_THREADS";
 
 /// A situation in which the agent may open a task thread unasked. The
-/// serialized names are the harness's `BUZZ_ACP_TASK_THREADS` entries.
+/// serialized names are the harness's `KUZZ_ACP_TASK_THREADS` entries.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskThreadTrigger {
@@ -118,7 +118,7 @@ pub(crate) fn parse_task_threads(content: Option<&str>) -> TaskThreadsSetting {
         return TaskThreadsSetting::default();
     };
     serde_json::from_str(content).unwrap_or_else(|error| {
-        eprintln!("buzz-desktop: unreadable {TASK_THREADS_FILE} ({error}); using the default");
+        eprintln!("kuzz-desktop: unreadable {TASK_THREADS_FILE} ({error}); using the default");
         TaskThreadsSetting::default()
     })
 }
@@ -165,7 +165,7 @@ pub(crate) fn save_task_threads_at(
 pub(crate) fn current_task_threads_env<R: tauri::Runtime>(app: &AppHandle<R>) -> String {
     load_task_threads(app)
         .unwrap_or_else(|error| {
-            eprintln!("buzz-desktop: {error}; using the default task threads setting");
+            eprintln!("kuzz-desktop: {error}; using the default task threads setting");
             TaskThreadsSetting::default()
         })
         .env_value()

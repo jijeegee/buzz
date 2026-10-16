@@ -69,7 +69,7 @@ pub(crate) enum CompleteResponse {
     Tokens(LoginTokens),
 }
 
-/// A Google account with no Buzz account yet.
+/// A Google account with no Kuzz account yet.
 #[derive(Deserialize)]
 pub(crate) struct SignupNeeded {
     #[allow(dead_code)]
@@ -173,7 +173,7 @@ async fn error_from(response: reqwest::Response) -> ApiError {
     let status = response.status().as_u16();
     let body: Option<ErrorBody> = response.json().await.ok();
     if body.as_ref().and_then(|b| b.error.as_ref()).is_none() {
-        eprintln!("buzz-desktop: auth API returned {status} without an error message");
+        eprintln!("kuzz-desktop: auth API returned {status} without an error message");
     }
     ApiError {
         status: Some(status),
@@ -203,7 +203,7 @@ pub(super) async fn send_json<T: for<'de> Deserialize<'de>>(
     send(request).await?.json::<T>().await.map_err(|e| {
         // Drop the URL; the decode error never includes the body text.
         eprintln!(
-            "buzz-desktop: auth API returned a malformed response: {}",
+            "kuzz-desktop: auth API returned a malformed response: {}",
             e.without_url()
         );
         ApiError {

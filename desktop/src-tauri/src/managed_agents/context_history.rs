@@ -6,7 +6,7 @@
 //! deliberately not a `GlobalAgentConfig` field, so changing it never restarts
 //! an agent: running agents read it from their live settings file
 //! (`live_settings`) and apply it to their next new session. The harness
-//! receives the budget (at launch as `BUZZ_ACP_CONTEXT_HISTORY`, then through
+//! receives the budget (at launch as `KUZZ_ACP_CONTEXT_HISTORY`, then through
 //! that file); `Recent` (the default) sends nothing, and channel dispatchers
 //! never receive it because a router keeps its own small window.
 
@@ -18,7 +18,7 @@ use tauri::AppHandle;
 use super::{channel_routing::RoutingRole, managed_agents_base_dir, storage::atomic_write_json};
 
 const CONTEXT_HISTORY_FILE: &str = "context-history.json";
-pub(crate) const CONTEXT_HISTORY_ENV_VAR: &str = "BUZZ_ACP_CONTEXT_HISTORY";
+pub(crate) const CONTEXT_HISTORY_ENV_VAR: &str = "KUZZ_ACP_CONTEXT_HISTORY";
 
 /// What a fresh session reads.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -32,7 +32,7 @@ pub enum ContextHistoryMode {
 }
 
 /// Size budget for [`ContextHistoryMode::Budget`]. The serialized names are
-/// the harness's `BUZZ_ACP_CONTEXT_HISTORY` values (about 8k / 20k / 50k
+/// the harness's `KUZZ_ACP_CONTEXT_HISTORY` values (about 8k / 20k / 50k
 /// tokens).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[serde(rename_all = "snake_case")]
@@ -86,7 +86,7 @@ pub(crate) fn parse_context_history(content: Option<&str>) -> ContextHistorySett
         return ContextHistorySetting::default();
     };
     serde_json::from_str(content).unwrap_or_else(|error| {
-        eprintln!("buzz-desktop: unreadable {CONTEXT_HISTORY_FILE} ({error}); using the default");
+        eprintln!("kuzz-desktop: unreadable {CONTEXT_HISTORY_FILE} ({error}); using the default");
         ContextHistorySetting::default()
     })
 }
@@ -135,7 +135,7 @@ pub(crate) fn save_context_history_at(
 pub(crate) fn current_context_history_env<R: tauri::Runtime>(app: &AppHandle<R>) -> String {
     load_context_history(app)
         .unwrap_or_else(|error| {
-            eprintln!("buzz-desktop: {error}; using the default context history setting");
+            eprintln!("kuzz-desktop: {error}; using the default context history setting");
             ContextHistorySetting::default()
         })
         .env_value()

@@ -48,7 +48,7 @@ function headRows(banner) {
   );
 }
 
-const EXPECTED_BUZZ_TERM = [
+const EXPECTED_KUZZ_TERM = [
   "██                                             ██",
   "██▄▄▄     ██  ██    ██████    ██████          █████      ▄███▄    ██ ▄██    ██▄██▄██",
   "██▀▀██    ██  ██       ▄██       ▄██           ██       ██▄▄▄█    ███▀▀     ██ ██ ██",
@@ -56,7 +56,7 @@ const EXPECTED_BUZZ_TERM = [
   "██████    ▀█████    ██████    ██████            ███      ▀███▀    ██        ██ ██ ██",
 ];
 
-test("builds the amended four-layer Buzz Term composite", () => {
+test("builds the amended four-layer Kuzz Term composite", () => {
   const banner = buildTerminalBanner(183, 69, 17 / 8.4);
   assert.ok(banner);
   const seen = layers(banner);
@@ -69,7 +69,7 @@ test("builds the amended four-layer Buzz Term composite", () => {
   const { top, left, bottom, right } = frameBounds(banner);
   assert.equal(banner.cells[top][left].layer, "bevel_hi");
   assert.equal(banner.cells[bottom - 1][right - 1].layer, "bevel_lo");
-  assert.deepEqual(headRows(banner), EXPECTED_BUZZ_TERM);
+  assert.deepEqual(headRows(banner), EXPECTED_KUZZ_TERM);
 });
 
 test("requires every frame emitter independently", () => {

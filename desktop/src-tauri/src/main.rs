@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    if buzz_lib::print_agent_access_owner_only_probe_if_requested() {
+    if kuzz_lib::print_agent_access_owner_only_probe_if_requested() {
         return;
     }
 
@@ -11,10 +11,10 @@ fn main() {
     // single threaded and no GTK object exists yet, which is what makes
     // `std::env::set_var` sound.
     #[cfg(target_os = "linux")]
-    if let Err(diagnostic) = buzz_lib::webkit_rendering::apply() {
-        eprintln!("buzz-desktop: {diagnostic}");
+    if let Err(diagnostic) = kuzz_lib::webkit_rendering::apply() {
+        eprintln!("kuzz-desktop: {diagnostic}");
         std::process::exit(1);
     }
 
-    buzz_lib::run()
+    kuzz_lib::run()
 }

@@ -82,8 +82,8 @@ async function uploadCommandCount(page: Page) {
   return page.evaluate(
     () =>
       (
-        (window as Window & { __BUZZ_E2E_COMMANDS__?: string[] })
-          .__BUZZ_E2E_COMMANDS__ ?? []
+        (window as Window & { __KUZZ_E2E_COMMANDS__?: string[] })
+          .__KUZZ_E2E_COMMANDS__ ?? []
       ).filter((command) => command === "upload_media_bytes_raw").length,
   );
 }
@@ -129,9 +129,9 @@ test("photos upload before Send without a queued spoiler control", async ({
   await page.evaluate(() => {
     const e2e = (
       window as Window & {
-        __BUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
+        __KUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
       }
-    ).__BUZZ_E2E__;
+    ).__KUZZ_E2E__;
     if (e2e?.mock) e2e.mock.uploadDelayMs = 1_000;
   });
   await page.getByTestId("channel-general").click();
@@ -155,8 +155,8 @@ test("photos upload before Send without a queued spoiler control", async ({
     .poll(() =>
       page.evaluate(
         () =>
-          (window as Window & { __BUZZ_E2E_COMMANDS__?: string[] })
-            .__BUZZ_E2E_COMMANDS__ ?? [],
+          (window as Window & { __KUZZ_E2E_COMMANDS__?: string[] })
+            .__KUZZ_E2E_COMMANDS__ ?? [],
       ),
     )
     .toContain("upload_media_bytes_raw");
@@ -254,8 +254,8 @@ test("upload a file and see a FileCard in the timeline", async ({ page }) => {
     .poll(() =>
       page.evaluate(
         () =>
-          (window as Window & { __BUZZ_E2E_COMMANDS__?: string[] })
-            .__BUZZ_E2E_COMMANDS__ ?? [],
+          (window as Window & { __KUZZ_E2E_COMMANDS__?: string[] })
+            .__KUZZ_E2E_COMMANDS__ ?? [],
       ),
     )
     .toContain("download_file");
@@ -268,9 +268,9 @@ test("sends immediately and keeps upload progress across channels", async ({
   await page.evaluate(() => {
     const e2e = (
       window as Window & {
-        __BUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
+        __KUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
       }
-    ).__BUZZ_E2E__;
+    ).__KUZZ_E2E__;
     if (e2e?.mock) e2e.mock.uploadDelayMs = 1_000;
   });
   await page.getByTestId("channel-general").click();
@@ -314,9 +314,9 @@ test("shows upload feedback before transferring a large file", async ({
   await page.evaluate(() => {
     const e2e = (
       window as Window & {
-        __BUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
+        __KUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
       }
-    ).__BUZZ_E2E__;
+    ).__KUZZ_E2E__;
     if (e2e?.mock) e2e.mock.uploadDelayMs = 5_000;
   });
   await page.getByTestId("channel-general").click();
@@ -336,12 +336,12 @@ test("shows upload feedback before transferring a large file", async ({
         () =>
           (
             window as Window & {
-              __BUZZ_E2E_COMMAND_PAYLOADS__?: Array<{
+              __KUZZ_E2E_COMMAND_PAYLOADS__?: Array<{
                 command: string;
                 payload: { rawByteLength?: number } | null;
               }>;
             }
-          ).__BUZZ_E2E_COMMAND_PAYLOADS__ ?? [],
+          ).__KUZZ_E2E_COMMAND_PAYLOADS__ ?? [],
       ),
     )
     .toContainEqual({
@@ -351,7 +351,7 @@ test("shows upload feedback before transferring a large file", async ({
 
   const uploadId = "background-media-upload-0-0";
   await page.evaluate(async (id) => {
-    await window.__BUZZ_E2E_EMIT_MEDIA_UPLOAD_PHASE__?.({
+    await window.__KUZZ_E2E_EMIT_MEDIA_UPLOAD_PHASE__?.({
       id,
       phase: "processing-video",
     });
@@ -374,11 +374,11 @@ test("shows upload feedback before transferring a large file", async ({
   await expect(page.getByTestId("composer-upload-percentage")).toHaveCount(0);
 
   await page.evaluate(async (id) => {
-    await window.__BUZZ_E2E_EMIT_MEDIA_UPLOAD_PHASE__?.({
+    await window.__KUZZ_E2E_EMIT_MEDIA_UPLOAD_PHASE__?.({
       id,
       phase: "uploading",
     });
-    await window.__BUZZ_E2E_EMIT_MEDIA_UPLOAD_PROGRESS__?.({
+    await window.__KUZZ_E2E_EMIT_MEDIA_UPLOAD_PROGRESS__?.({
       id,
       sent: 42,
       total: 100,
@@ -401,9 +401,9 @@ test("canceling a background upload prevents the message from publishing", async
   await page.evaluate(() => {
     const e2e = (
       window as Window & {
-        __BUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
+        __KUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
       }
-    ).__BUZZ_E2E__;
+    ).__KUZZ_E2E__;
     if (e2e?.mock) e2e.mock.uploadDelayMs = 1_000;
   });
   await page.getByTestId("channel-general").click();
@@ -423,9 +423,9 @@ test("upload progress floats above the dock and lifts Jump to latest", async ({
   await page.evaluate(() => {
     const e2e = (
       window as Window & {
-        __BUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
+        __KUZZ_E2E__?: { mock?: { uploadDelayMs?: number } };
       }
-    ).__BUZZ_E2E__;
+    ).__KUZZ_E2E__;
     if (e2e?.mock) e2e.mock.uploadDelayMs = 2_000;
   });
   await page.getByTestId("channel-deep-history").click();
@@ -503,7 +503,7 @@ test("dropping a file on the channel column attaches it to the composer", async 
         '[data-testid="drop-zone-overlay"]',
       );
       const contentSurface = document.querySelector<HTMLElement>(
-        "[data-buzz-content-surface]",
+        "[data-kuzz-content-surface]",
       );
       if (!(overlayElement && contentSurface)) return null;
       const overlayStyle = getComputedStyle(overlayElement);
@@ -544,13 +544,13 @@ test("dropping a file on the channel column attaches it to the composer", async 
   );
 });
 
-for (const theme of ["buzz", "buzz-dark", "github-light", "github-dark"]) {
+for (const theme of ["kuzz", "kuzz-dark", "github-light", "github-dark"]) {
   test(`drop prompt has accessible text contrast in ${theme}`, async ({
     page,
   }) => {
     await page.goto("/");
     await page.evaluate((selectedTheme) => {
-      window.localStorage.setItem("buzz-theme", selectedTheme);
+      window.localStorage.setItem("kuzz-theme", selectedTheme);
     }, theme);
     await page.reload();
     await page.getByTestId("channel-general").click();
@@ -633,8 +633,8 @@ test("forum posts emit a FileCard for generic attachments, not a broken image", 
     .poll(() =>
       page.evaluate(
         () =>
-          (window as Window & { __BUZZ_E2E_COMMANDS__?: string[] })
-            .__BUZZ_E2E_COMMANDS__ ?? [],
+          (window as Window & { __KUZZ_E2E_COMMANDS__?: string[] })
+            .__KUZZ_E2E_COMMANDS__ ?? [],
       ),
     )
     .toContain("download_file");

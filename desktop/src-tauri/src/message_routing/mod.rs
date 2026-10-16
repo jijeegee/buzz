@@ -205,15 +205,15 @@ fn estimate_tokens(text: &str) -> u64 {
     (text.chars().count() as u64).div_ceil(4)
 }
 
-/// Build the `buzz-agent` config for one API-key routing call; `None` for a
+/// Build the `kuzz-agent` config for one API-key routing call; `None` for a
 /// CLI route.
 pub fn router_agent_config(
     resolved: &ResolvedRouterModel,
-) -> Option<buzz_agent_pkg::config::Config> {
+) -> Option<kuzz_agent_pkg::config::Config> {
     let RouterBackend::Api { api_key, base_url } = &resolved.backend else {
         return None;
     };
-    let mut cfg = buzz_agent_pkg::config::Config::for_discovery(
+    let mut cfg = kuzz_agent_pkg::config::Config::for_discovery(
         resolved.provider.agent_provider()?,
         api_key.clone(),
         base_url.clone(),
@@ -259,7 +259,7 @@ where
     let (result, est_output_tokens) = match reply {
         Err(_) => (skipped(RouterSkip::Timeout), 0),
         Ok(Err(error)) => {
-            eprintln!("buzz-desktop: smart routing provider error: {error}");
+            eprintln!("kuzz-desktop: smart routing provider error: {error}");
             (skipped(RouterSkip::ProviderError), 0)
         }
         Ok(Ok(text)) => {

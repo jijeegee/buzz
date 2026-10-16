@@ -14,10 +14,10 @@ fn dispatch() -> Result<(), String> {
         .to_ascii_lowercase();
 
     match cmd.as_str() {
-        "buzz-acp" | "git-credential-nostr" | "git-credential-buzz" | "git-sign-nostr" => {
-            buzz_acp::run().map_err(|e| e.to_string())
+        "kuzz-acp" | "git-credential-nostr" | "git-credential-kuzz" | "git-sign-nostr" => {
+            kuzz_acp::run().map_err(|e| e.to_string())
         }
-        "buzz-agent" => buzz_agent::run().map_err(|e| e.to_string()),
+        "kuzz-agent" => kuzz_agent::run().map_err(|e| e.to_string()),
         "sprig" => match std::env::args().nth(1).as_deref() {
             Some("-V") | Some("--version") => {
                 println!("sprig {}", env!("CARGO_PKG_VERSION"));
@@ -38,17 +38,17 @@ fn dispatch() -> Result<(), String> {
                 ))
             }
         },
-        // buzz-dev-mcp handles its utility multicall names: rg, tree, buzz.
-        _ => buzz_dev_mcp::run().map_err(|e| e.to_string()),
+        // kuzz-dev-mcp handles its utility multicall names: rg, tree, kuzz.
+        _ => kuzz_dev_mcp::run().map_err(|e| e.to_string()),
     }
 }
 
 fn print_usage() {
     println!(
-        "Sprig — all-in-one Buzz ACP harness, agent, and developer MCP\n\n\
+        "Sprig — all-in-one Kuzz ACP harness, agent, and developer MCP\n\n\
 Sprig is a multicall binary. Invoke it through one of the personality names:\n\n\
-  buzz-acp       ACP harness\n  buzz-agent     ACP-compliant agent\n  buzz-dev-mcp   Developer MCP server\n\n\
-Helper names are also supported: rg, tree, buzz, git-credential-nostr, git-credential-buzz, git-sign-nostr.\n\n\
-Installers can create links with:\n  ln -s sprig buzz-acp\n  ln -s sprig buzz-agent\n  ln -s sprig buzz-dev-mcp"
+  kuzz-acp       ACP harness\n  kuzz-agent     ACP-compliant agent\n  kuzz-dev-mcp   Developer MCP server\n\n\
+Helper names are also supported: rg, tree, kuzz, git-credential-nostr, git-credential-kuzz, git-sign-nostr.\n\n\
+Installers can create links with:\n  ln -s sprig kuzz-acp\n  ln -s sprig kuzz-agent\n  ln -s sprig kuzz-dev-mcp"
     );
 }

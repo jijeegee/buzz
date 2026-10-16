@@ -12,7 +12,7 @@ import { projectExternalRefUrl } from "@/features/projects/lib/projectExternalUr
 import type { ProjectRepoUnavailableReason } from "@/features/projects/lib/projectRepoAvailability";
 import { formatLastChangedAt } from "@/features/projects/lib/projectsViewHelpers";
 import { Button } from "@/shared/ui/button";
-import { BuzzLoadingState } from "@/shared/ui/BuzzLoadingState";
+import { KuzzLoadingState } from "@/shared/ui/KuzzLoadingState";
 import { Markdown, SyntaxHighlightedCode } from "@/shared/ui/markdown";
 import { baseName, languageForPath } from "./ProjectRepositoryPanel";
 import {
@@ -173,7 +173,7 @@ export function ReadmePanel({
     return (
       <section className="overflow-hidden">
         {header}
-        <BuzzLoadingState label="Loading repository" />
+        <KuzzLoadingState label="Loading repository" />
       </section>
     );
   }
@@ -256,7 +256,7 @@ export function ReadmePanel({
     return (
       <section className="overflow-hidden">
         {header}
-        <BuzzLoadingState label="Loading README" />
+        <KuzzLoadingState label="Loading README" />
       </section>
     );
   }

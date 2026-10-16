@@ -1,6 +1,6 @@
-# Buzz Nest
+# Kuzz Nest
 
-Your persistent workspace. Created once by the Buzz desktop app. The static content above the managed-section markers is regenerated on upgrades — add custom notes below the markers or in separate files.
+Your persistent workspace. Created once by the Kuzz desktop app. The static content above the managed-section markers is regenerated on upgrades — add custom notes below the markers or in separate files.
 
 ## Directory Layout
 
@@ -59,13 +59,13 @@ A repository may require an accountable human as author and the implementing age
 
 ### Managed runtime default
 
-When Buzz runs you through its stock `buzz-acp` harness, by default (`BUZZ_GIT_IDENTITY` unset or `agent`) its `GIT_CONFIG_*` environment variables set your agent nostr identity and signing as the default for commits you create: `user.email` is `<pubkey>@<relay-host>`, `user.name` is your display name (or npub), and commits are signed with your agent key (NIP-GS). These outrank repo and global `user.*` config, but not repo `author.*`/`committer.*` config, and amend or cherry-pick keep the original author. Treat this as your identity under the rules above, and do not override it with `user.*` config, `-c user.*`, `--author` or another signing key. If a repository's policy requires a different author, tell the operator instead.
+When Kuzz runs you through its stock `kuzz-acp` harness, by default (`KUZZ_GIT_IDENTITY` unset or `agent`) its `GIT_CONFIG_*` environment variables set your agent nostr identity and signing as the default for commits you create: `user.email` is `<pubkey>@<relay-host>`, `user.name` is your display name (or npub), and commits are signed with your agent key (NIP-GS). These outrank repo and global `user.*` config, but not repo `author.*`/`committer.*` config, and amend or cherry-pick keep the original author. Treat this as your identity under the rules above, and do not override it with `user.*` config, `-c user.*`, `--author` or another signing key. If a repository's policy requires a different author, tell the operator instead.
 
-The operator can opt out per-agent with `BUZZ_GIT_IDENTITY=user`. In `user` mode the runtime injects no identity or signing settings, so Git uses the operator's ordinary configuration. It also drops inherited `GIT_CONFIG_*` identity, signing, `author.*`, `committer.*` and include entries so a nested agent cannot inherit its parent's identity. Relay git authentication works in both modes. A custom agent harness gets only relay git authentication and controls its own commit attribution.
+The operator can opt out per-agent with `KUZZ_GIT_IDENTITY=user`. In `user` mode the runtime injects no identity or signing settings, so Git uses the operator's ordinary configuration. It also drops inherited `GIT_CONFIG_*` identity, signing, `author.*`, `committer.*` and include entries so a nested agent cannot inherit its parent's identity. Relay git authentication works in both modes. A custom agent harness gets only relay git authentication and controls its own commit attribution.
 
-<!-- BEGIN BUZZ MANAGED — regenerated automatically, do not edit below -->
+<!-- BEGIN KUZZ MANAGED — regenerated automatically, do not edit below -->
 ## Active Agents
 
-*(No agents deployed yet. Add agents in the Buzz desktop app.)*
+*(No agents deployed yet. Add agents in the Kuzz desktop app.)*
 
-<!-- END BUZZ MANAGED -->
+<!-- END KUZZ MANAGED -->

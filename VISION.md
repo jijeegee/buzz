@@ -49,7 +49,7 @@ Guests (investors, reporters, partners) get a scoped token with membership in sp
 
 ## Communities
 
-A **community** is the tenant boundary: one workspace, one URL, one isolated world of channels, members, profiles, DMs, repos, and search. The single-community deployment most operators run is identical to a Buzz relay today — the community level adds nothing observable at N=1. What changes is that one shared deployment can host many communities at once, so an operator can onboard a new workspace with a DB write and a DNS route instead of provisioning a stack per signup.
+A **community** is the tenant boundary: one workspace, one URL, one isolated world of channels, members, profiles, DMs, repos, and search. The single-community deployment most operators run is identical to a Kuzz relay today — the community level adds nothing observable at N=1. What changes is that one shared deployment can host many communities at once, so an operator can onboard a new workspace with a DB write and a DNS route instead of provisioning a stack per signup.
 
 - **The URL is the community.** `myproject.com` is authoritative — exactly as a relay URL is today, lifted one level up. Every connection binds to its host's community before any request runs; an unknown host is rejected, never defaulted into a neighbor.
 - **Isolation is the boundary, not a filter.** Communities sharing infrastructure cannot see each other — not each other's events, profiles, DMs, search results, audit chains, or error strings. This is proven, not asserted: the [multi-tenant relay spec](docs/multi-tenant-relay.md) mechanizes isolation in TLA+ and authorization in Tamarin, with every guarantee mutation-tested.
@@ -70,11 +70,11 @@ content   JSON payload
 sig       Schnorr signature
 ```
 
-Buzz extends the standard Nostr event format with custom kind numbers for enterprise features.
+Kuzz extends the standard Nostr event format with custom kind numbers for enterprise features.
 
 New message type? New kind integer. Zero breaking changes.
 
-**The conversation is Nostr; Buzz adds accessories around it.** Messages, threads, reactions, and the rest of the conversation are signed Nostr events, and Nostr reads must cover all of that state, so a standards-leaning Buzz client stays possible. Around it, the relay serves accessories that don't fit that shape: Blossom media, git smart HTTP, workflow webhooks, derived unread counts, and namespaced `/buzz/v1/...` endpoints for backend-for-frontend reads (thread catch-up, sync) over the same authoritative store. We start with this rule and refine it as more cases show up.
+**The conversation is Nostr; Kuzz adds accessories around it.** Messages, threads, reactions, and the rest of the conversation are signed Nostr events, and Nostr reads must cover all of that state, so a standards-leaning Kuzz client stays possible. Around it, the relay serves accessories that don't fit that shape: Blossom media, git smart HTTP, workflow webhooks, derived unread counts, and namespaced `/kuzz/v1/...` endpoints for backend-for-frontend reads (thread catch-up, sync) over the same authoritative store. We start with this rule and refine it as more cases show up.
 
 ---
 
@@ -105,7 +105,7 @@ One model. TLS in transit. At-rest encryption delegated to the storage layer (e.
 
 ## Huddles
 
-Real-time voice runs over a WebSocket Opus relay built into `buzz-relay`. Buzz authenticates participants (NIP-42), admits them to a room, and forwards Opus frames between peers — no external SFU.
+Real-time voice runs over a WebSocket Opus relay built into `kuzz-relay`. Kuzz authenticates participants (NIP-42), admits them to a room, and forwards Opus frames between peers — no external SFU.
 
 - Agents join the same audio relay as humans — they bring their own STT/TTS
 - Huddle lifecycle flows as Nostr events: started, joined, left, ended
@@ -114,7 +114,7 @@ Voice, room lifecycle, and lifecycle events are wired. Recording and per-track p
 
 ---
 
-## Buzz Mesh
+## Kuzz Mesh
 
 Relay communities can pool opted-in member hardware into shared AI compute. Existing agents see it as a local OpenAI-compatible provider; the relay gates discovery and trust with the same membership model it already uses for messages, code, and workflows. Models too large for any single machine split across several. See [VISION_MESH.md](VISION_MESH.md) for the full compute-commons vision.
 
@@ -154,7 +154,7 @@ Beyond chat: channels are workspaces.
 
 The relay hosts git repos. Smart HTTP — standard `git clone`, `git push`, nothing special. Your npub signs pushes. Same domain, same auth, same identity as everything else on the relay.
 
-Branches are channels. Create a feature branch, Buzz creates a channel — CI results, review comments, and the merge decision all live there. When the branch merges, the channel archives into a permanent record of why that code exists.
+Branches are channels. Create a feature branch, Kuzz creates a channel — CI results, review comments, and the merge decision all live there. When the branch merges, the channel archives into a permanent record of why that code exists.
 
 See [VISION_PROJECTS.md](VISION_PROJECTS.md) for the full forge vision: the project model, the merge flow, branch protections, and how agents participate as contributors.
 
@@ -162,7 +162,7 @@ See [VISION_PROJECTS.md](VISION_PROJECTS.md) for the full forge vision: the proj
 
 ## Agent CLI
 
-`buzz-cli` is an agent-first CLI that mirrors and extends the MCP surface — same primitives, plus repo, upload, and canvas operations where the CLI is the canonical interface. JSON-only stdout, structured errors on stderr, two-tier auth (NIP-98 keypair → dev pubkey). Agents can script the entire platform without a GUI.
+`kuzz-cli` is an agent-first CLI that mirrors and extends the MCP surface — same primitives, plus repo, upload, and canvas operations where the CLI is the canonical interface. JSON-only stdout, structured errors on stderr, two-tier auth (NIP-98 keypair → dev pubkey). Agents can script the entire platform without a GUI.
 
 ---
 
@@ -211,7 +211,7 @@ Not afterthoughts — ship blockers:
 
 ## Build Model
 
-Greenfield. Agent swarms build in parallel, integrating at the event store boundary. Buzz is being built with AI-assisted development — agents write code, crossfire reviews across multiple models catch blind spots before merge. A complete platform, not a collection of independent microservices.
+Greenfield. Agent swarms build in parallel, integrating at the event store boundary. Kuzz is being built with AI-assisted development — agents write code, crossfire reviews across multiple models catch blind spots before merge. A complete platform, not a collection of independent microservices.
 
 ---
 
@@ -226,11 +226,11 @@ Greenfield. Agent swarms build in parallel, integrating at the event store bound
 | ✅ | Channel features — messaging, threads, reactions, canvases, media uploads, editing, deletion, typing indicators, NIP-29, soft-delete |
 | ✅ | Workflow engine — YAML-as-code, execution traces, message/reaction/schedule/webhook triggers |
 | ✅ | Identity — NIP-05, public profiles, NIP-98 auth, agent protection |
-| ✅ | Agent CLI — `buzz-cli`, mirrors and extends the MCP surface |
+| ✅ | Agent CLI — `kuzz-cli`, mirrors and extends the MCP surface |
 | ✅ | Agent personas and teams — desktop-managed, built-in defaults, operator-defined |
 | 🚧 | Workflow approval gates — infrastructure exists (DB, API, UI); executor doesn't persist/resume (WF-08) |
 | ✅ | Huddles — WebSocket Opus voice relay + lifecycle events (recording/tracks planned) |
-| ✅ | Buzz Mesh — relay-gated shared AI compute (mesh-llm over iroh); members pool GPUs, agents consume via a local OpenAI-compatible endpoint |
+| ✅ | Kuzz Mesh — relay-gated shared AI compute (mesh-llm over iroh); members pool GPUs, agents consume via a local OpenAI-compatible endpoint |
 | 🚧 | Mobile client — Flutter app (channels, forum, search, profile, pairing); in active development |
 | 📋 | Remote agents — provider-based deployment to remote substrates (Kubernetes first); spec in review |
 | 📋 | Developer portal, push notifications, culture features |
@@ -243,4 +243,4 @@ See [README.md](README.md) for setup and [AGENTS.md](AGENTS.md) for connecting A
 
 ---
 
-*Buzz 🐝 — where humans and agents are just colleagues.*
+*Kuzz 🐝 — where humans and agents are just colleagues.*

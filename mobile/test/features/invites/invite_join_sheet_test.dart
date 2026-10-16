@@ -1,7 +1,7 @@
-import 'package:buzz/features/invites/invite_join_provider.dart';
-import 'package:buzz/features/invites/invite_join_sheet.dart';
-import 'package:buzz/shared/auth/default_community.dart';
-import 'package:buzz/shared/auth/token/token.dart';
+import 'package:kuzz/features/invites/invite_join_provider.dart';
+import 'package:kuzz/features/invites/invite_join_sheet.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
+import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -69,7 +69,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text(fixture.label), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('buzz-sheet-drag-handle')),
+        find.byKey(const ValueKey('kuzz-sheet-drag-handle')),
         findsNothing,
       );
       expect(find.byTooltip('Close sheet'), findsNothing);
@@ -148,7 +148,7 @@ void main() {
 
     expect(find.text('Join?'), findsOneWidget);
     expect(find.textContaining('relay'), findsNothing);
-    expect(find.textContaining('Buzz'), findsNothing);
+    expect(find.textContaining('Kuzz'), findsNothing);
     expect(find.textContaining('community'), findsNothing);
     expect(find.widgetWithText(FilledButton, 'Join'), findsOneWidget);
   });

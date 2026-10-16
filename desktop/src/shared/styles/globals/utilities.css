@@ -52,7 +52,7 @@
     contain-intrinsic-size: auto 3.75rem;
   }
 
-  .buzz-huddle-tooltip {
+  .kuzz-huddle-tooltip {
     background: hsl(
       var(--huddle-tooltip-surface, var(--huddle-control-surface, 0 0% 20%))
     );
@@ -73,13 +73,13 @@
     );
   }
 
-  .buzz-huddle-drawer .buzz-huddle-control-button,
-  .buzz-huddle-drawer .buzz-huddle-split-main {
+  .kuzz-huddle-drawer .kuzz-huddle-control-button,
+  .kuzz-huddle-drawer .kuzz-huddle-split-main {
     background: hsl(var(--huddle-control-surface, var(--secondary)));
   }
 
-  .buzz-huddle-drawer .buzz-huddle-control-button:hover,
-  .buzz-huddle-drawer .buzz-huddle-split-main:hover {
+  .kuzz-huddle-drawer .kuzz-huddle-control-button:hover,
+  .kuzz-huddle-drawer .kuzz-huddle-split-main:hover {
     background: hsl(
       var(
         --huddle-control-hover-surface,
@@ -88,20 +88,20 @@
     );
   }
 
-  .buzz-huddle-drawer .buzz-huddle-control-button[aria-pressed="true"] {
+  .kuzz-huddle-drawer .kuzz-huddle-control-button[aria-pressed="true"] {
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
   }
 
-  .buzz-huddle-drawer .buzz-huddle-control-button[aria-pressed="true"]:hover {
+  .kuzz-huddle-drawer .kuzz-huddle-control-button[aria-pressed="true"]:hover {
     background: hsl(var(--primary) / 90%);
   }
 
-  .buzz-huddle-drawer .buzz-huddle-split-chevron {
+  .kuzz-huddle-drawer .kuzz-huddle-split-chevron {
     background: hsl(var(--huddle-control-chevron-surface, var(--secondary)));
   }
 
-  .buzz-huddle-drawer .buzz-huddle-split-chevron:hover {
+  .kuzz-huddle-drawer .kuzz-huddle-split-chevron:hover {
     background: hsl(
       var(
         --huddle-control-chevron-hover-surface,

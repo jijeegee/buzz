@@ -1,0 +1,18 @@
+{{- include "kuzz.validate" . -}}
+{{- if and .Values.podDisruptionBudget.enabled (gt (include "kuzz.minimumReplicas" . | int) 1) -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kuzz.fullname" . }}
+  labels:
+    {{- include "kuzz.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "kuzz.relaySelectorLabels" . | nindent 6 }}
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else if .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+{{- end }}

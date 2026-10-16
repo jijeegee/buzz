@@ -8,8 +8,8 @@ import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
-import '../../shared/widgets/buzz_search_field.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_search_field.dart';
 import '../../shared/widgets/filter_chip_bar.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
@@ -318,7 +318,7 @@ class SearchPage extends HookConsumerWidget {
               // native input connection before the keyboard is shown.
               child: SizedBox(
                 key: const Key('search-field-container'),
-                child: BuzzSearchField(
+                child: KuzzSearchField(
                   controller: textController,
                   focusNode: focusNode,
                   hintText: 'Search messages, channels, and people',
@@ -536,7 +536,7 @@ class _SearchBody extends ConsumerWidget {
           const Padding(
             padding: EdgeInsets.all(Grid.sm),
             child: Center(
-              child: BuzzLoadingIndicator(
+              child: KuzzLoadingIndicator(
                 size: 36,
                 semanticLabel: 'Loading more search results',
               ),

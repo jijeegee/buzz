@@ -9,7 +9,7 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async ({ mode }) => {
   const modeEnv = loadEnv(mode, __dirname, "");
   const protectedFeaturesEnabled =
-    (process.env.VITE_BUZZ_BESTIE ?? modeEnv.VITE_BUZZ_BESTIE) === "1";
+    (process.env.VITE_KUZZ_BESTIE ?? modeEnv.VITE_KUZZ_BESTIE) === "1";
 
   return {
     plugins: [

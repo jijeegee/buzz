@@ -161,7 +161,7 @@ fn default_repos_root_candidates_for(
     candidates.extend(nest.map(|path| path.join("REPOS")));
     if !is_demo_build {
         candidates.extend(
-            home.map(|home| home.join(".buzz").join("REPOS"))
+            home.map(|home| home.join(".kuzz").join("REPOS"))
                 .filter(|path| !candidates.iter().any(|candidate| candidate == path)),
         );
     }
@@ -214,11 +214,11 @@ mod tests {
         let home = PathBuf::from("/Users/example");
         assert_eq!(
             default_repos_root_candidates_for(
-                Some(home.join(".buzz-dev")),
+                Some(home.join(".kuzz-dev")),
                 Some(home.clone()),
                 false,
             ),
-            vec![home.join(".buzz-dev/REPOS"), home.join(".buzz/REPOS")]
+            vec![home.join(".kuzz-dev/REPOS"), home.join(".kuzz/REPOS")]
         );
     }
 
@@ -226,7 +226,7 @@ mod tests {
     fn named_demos_only_search_their_selected_nest() {
         let home = PathBuf::from("/Users/example");
         for slug in ["workstream-board", "second-demo"] {
-            let nest = home.join(format!(".buzz-demo-{slug}"));
+            let nest = home.join(format!(".kuzz-demo-{slug}"));
             assert_eq!(
                 default_repos_root_candidates_for(Some(nest.clone()), Some(home.clone()), true,),
                 vec![nest.join("REPOS")]

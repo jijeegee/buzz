@@ -37,10 +37,10 @@ const KIND_NIP29_GROUP_MEMBERS = 39002;
 
 // Stores for thread-relationship sets. Keyed by pubkey only (no relay/community),
 // so they read correctly from the same origin regardless of which community is active.
-const participationStore = makeRootIdStore("buzz-thread-participation.v1");
-const authoredStore = makeRootIdStore("buzz-thread-authored.v1");
-const mutedRootsStore = makeRootIdStore("buzz-thread-muted.v1");
-const FOLLOWS_STORAGE_KEY_PREFIX = "buzz-thread-follows.v1";
+const participationStore = makeRootIdStore("kuzz-thread-participation.v1");
+const authoredStore = makeRootIdStore("kuzz-thread-authored.v1");
+const mutedRootsStore = makeRootIdStore("kuzz-thread-muted.v1");
+const FOLLOWS_STORAGE_KEY_PREFIX = "kuzz-thread-follows.v1";
 
 export type ThreadRelationships = {
   participatedRootIds: ReadonlySet<string>;

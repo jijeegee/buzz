@@ -6,7 +6,7 @@ import {
 } from "./mentionClipboard";
 
 /**
- * Detect whether clipboard HTML contains Buzz mention / channel-link
+ * Detect whether clipboard HTML contains Kuzz mention / channel-link
  * elements (marked with `data-mention` or `data-channel-link` attributes).
  */
 export function hasMentionClipboardHtml(html: string): boolean {
@@ -109,7 +109,7 @@ export type MentionClipboardContent = {
 };
 
 /**
- * Normalize clipboard HTML that contains Buzz mention / channel-link
+ * Normalize clipboard HTML that contains Kuzz mention / channel-link
  * elements.  Replaces the styled `<span data-mention>` and
  * `<button data-channel-link>` wrappers with unstyled text nodes so
  * TipTap's Bold extension doesn't misinterpret their font-weight as bold.
@@ -151,9 +151,9 @@ export function normalizeMentionClipboardContent(
     const text = el.textContent ?? "";
     // The rendered chip strips its sigil for display, so flattening it
     // verbatim would paste dead text that no composer can re-light. Restore
-    // the sigil unless the source already carries it (Buzz's own copy
+    // the sigil unless the source already carries it (Kuzz's own copy
     // handlers write it back before the HTML reaches the clipboard) —
-    // unless the chip is a fragment. Buzz's copy handlers decline a
+    // unless the chip is a fragment. Kuzz's copy handlers decline a
     // selection whose only chip is partially covered, so the browser's
     // default copy serializes that chip with its full attributes around the
     // covered slice of its text. A sigil there would invent a mention the

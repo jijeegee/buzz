@@ -8,7 +8,7 @@
 > Existing token-mode data is preserved without automatic migration or merging.
 
 상태: v4 (2026-10-04, 리뷰어 READY). v1 리뷰(B1–B4) + 사용자 확정 사항 + v2 리뷰(B5–B8) + v3 선택 항목 반영.
-범위: Buzz 포크를 "중앙 서버 계정(Google 로그인) + 토큰 인증" 모델로 전환하는 설계와 구현 계획.
+범위: Kuzz 포크를 "중앙 서버 계정(Google 로그인) + 토큰 인증" 모델로 전환하는 설계와 구현 계획.
 원칙: 결정되지 않은 부분은 KakaoTalk/Telegram이 하는 방식을 따른다.
 
 목차
@@ -31,10 +31,10 @@
 |---|------|
 | G1 | 아이덴티티 = 서버 계정. `user`와 `bot`이 principal이며 서버가 발급한 32바이트 principal id로 식별된다. 토큰은 자격증명일 뿐 아이덴티티가 아니다. |
 | G2 | 사람: **Google 계정 로그인(OIDC)** → 디바이스별 세션. access token 1h, refresh token 90일 sliding, refresh는 OS keychain 보관. 디바이스 목록과 원격 로그아웃 제공. 비밀번호 없음. Apple 등 provider 추가 가능한 구조. |
-| G3 | Desktop 호스팅 봇: 서버에 `bot id`로 등록(owner = user, host = device). Desktop이 봇 시작 시 1h bot access token을 받아 `BUZZ_BOT_TOKEN` env로 buzz-acp에 주입, 디스크 미기록. acp는 만료 전 "exchange while valid"로 자체 갱신하고 같은 WS 연결에서 재-AUTH한다. |
+| G3 | Desktop 호스팅 봇: 서버에 `bot id`로 등록(owner = user, host = device). Desktop이 봇 시작 시 1h bot access token을 받아 `KUZZ_BOT_TOKEN` env로 kuzz-acp에 주입, 디스크 미기록. acp는 만료 전 "exchange while valid"로 자체 갱신하고 같은 WS 연결에서 재-AUTH한다. |
 | G4 | 헤드리스 봇(헤르홈류): 서버가 발급한 장기 bot token, 회수/교체 가능, 같은 bot id → 히스토리 유지. |
-| G5 | buzz-acp ↔ Desktop 프로세스 관계는 오늘과 동일(자식 프로세스, Desktop 종료 시 함께 종료). acp와 `buzz` CLI는 여전히 서버에 직접 접속하되 서명 대신 토큰을 쓴다. |
-| G6 | 서버가 `pubkey`(= sender principal id)를 스탬프한다. 클라이언트 서명, `BUZZ_PRIVATE_KEY`, `BUZZ_AUTH_TAG`, Nostr 호환은 제거한다. |
+| G5 | kuzz-acp ↔ Desktop 프로세스 관계는 오늘과 동일(자식 프로세스, Desktop 종료 시 함께 종료). acp와 `kuzz` CLI는 여전히 서버에 직접 접속하되 서명 대신 토큰을 쓴다. |
+| G6 | 서버가 `pubkey`(= sender principal id)를 스탬프한다. 클라이언트 서명, `KUZZ_PRIVATE_KEY`, `KUZZ_AUTH_TAG`, Nostr 호환은 제거한다. |
 | G7 | 프로필(이름/아바타)은 Telegram처럼 **계정 전역**이다. 커뮤니티별 프로필 없음. |
 | G8 | 모든 중간 상태가 빌드·테스트 가능해야 한다 (`just ci`, `just test`). |
 
@@ -50,16 +50,16 @@
 
 | 제거 | 현재 위치 | 수용 근거 |
 |------|-----------|-----------|
-| 클라이언트 Schnorr 서명 / `sig` 검증 | `buzz-core/src/verification.rs`, `buzz-relay/src/handlers/ingest.rs:2407` | 서버가 authoritative 저장소. 서버 인증이 sender 보증을 대신한다. |
-| NIP-42 WS 인증 (kind 22242) | `buzz-auth/src/nip42.rs`, `buzz-relay/src/handlers/auth.rs`, `connection.rs:526`, `audio/handler.rs:495-576` | 토큰 AUTH 프레임으로 대체. |
-| NIP-98 HTTP 인증 (kind 27235) | `buzz-auth/src/nip98.rs`, `api/bridge.rs:98-176`, `api/admin/auth.rs:371-434`, `api/git/transport.rs:160-180`, `nip98.rs`, `web/src/shared/lib/nip98.ts` | `Authorization: Bearer`로 대체. |
-| NIP-OA owner attestation (`auth` 태그, `BUZZ_AUTH_TAG`) | `buzz-sdk/src/nip_oa.rs`, `handlers/auth.rs:288`, desktop `runtime.rs:773`, git 크레이트 | 소유 관계가 서버 `bots.owner_principal_id`로 이동. |
-| NIP-FI federated identity | `buzz-auth/src/nip_fi/*`, `buzz-relay/src/nip_fi_*.rs`, `api/nip_fi.rs`, migrations 0041/0042 | 새 계정 모델이 완전히 대체. 세션 만료 타이머 패턴만 재사용. |
-| `api_tokens`, `pubkey_allowlist`, `relay_invites`의 NIP-98 면제 경로 | `schema.sql`, `buzz-db/src/store/{api_token,allowlist}.rs` | 새 `access_tokens`/`sessions`로 대체. |
+| 클라이언트 Schnorr 서명 / `sig` 검증 | `kuzz-core/src/verification.rs`, `kuzz-relay/src/handlers/ingest.rs:2407` | 서버가 authoritative 저장소. 서버 인증이 sender 보증을 대신한다. |
+| NIP-42 WS 인증 (kind 22242) | `kuzz-auth/src/nip42.rs`, `kuzz-relay/src/handlers/auth.rs`, `connection.rs:526`, `audio/handler.rs:495-576` | 토큰 AUTH 프레임으로 대체. |
+| NIP-98 HTTP 인증 (kind 27235) | `kuzz-auth/src/nip98.rs`, `api/bridge.rs:98-176`, `api/admin/auth.rs:371-434`, `api/git/transport.rs:160-180`, `nip98.rs`, `web/src/shared/lib/nip98.ts` | `Authorization: Bearer`로 대체. |
+| NIP-OA owner attestation (`auth` 태그, `KUZZ_AUTH_TAG`) | `kuzz-sdk/src/nip_oa.rs`, `handlers/auth.rs:288`, desktop `runtime.rs:773`, git 크레이트 | 소유 관계가 서버 `bots.owner_principal_id`로 이동. |
+| NIP-FI federated identity | `kuzz-auth/src/nip_fi/*`, `kuzz-relay/src/nip_fi_*.rs`, `api/nip_fi.rs`, migrations 0041/0042 | 새 계정 모델이 완전히 대체. 세션 만료 타이머 패턴만 재사용. |
+| `api_tokens`, `pubkey_allowlist`, `relay_invites`의 NIP-98 면제 경로 | `schema.sql`, `kuzz-db/src/store/{api_token,allowlist}.rs` | 새 `access_tokens`/`sessions`로 대체. |
 | 키 백업·nsec import/export·HPKE 백업 | desktop `commands/identity.rs:242-587`, `key_backup.rs`, `hpke_key_backup.rs` | 계정이 서버(Google)에 있으므로 "키 분실"이라는 개념이 없다. |
 | `git-sign-nostr`, `git-credential-nostr`의 키 로딩 | `crates/git-sign-nostr`, `crates/git-credential-nostr/src/lib.rs:50-105` | push 인증은 토큰. 커밋 서명은 사용자 GPG/SSH. |
 | NIP-17/NIP-44 gift wrap 암호화 레이어 (kind 1059) | `handlers/event.rs:653`, mobile `shared/crypto/{nip44,ecdh,nip_oa}.dart` | **DM 모델은 무변경**(오늘처럼 `h` 스코프 비공개 채널 + kind 30622 가시성). 암호화 레이어만 제거 → 서버 저장 평문(확정 Q4). |
-| NIP-AB 페어링, `buzz-pair-relay`, `buzz-pairing-cli`, mesh 크레이트/데모 | 해당 크레이트, desktop `nostr_bind.rs`, `api/mesh_demo.rs`, `audio/mesh.rs` | 디바이스 추가는 Google 로그인으로 대체(확정 Q8). |
+| NIP-AB 페어링, `kuzz-pair-relay`, `kuzz-pairing-cli`, mesh 크레이트/데모 | 해당 크레이트, desktop `nostr_bind.rs`, `api/mesh_demo.rs`, `audio/mesh.rs` | 디바이스 추가는 Google 로그인으로 대체(확정 Q8). |
 | 커뮤니티별 프로필(`users.display_name` 등 source of truth) | `users` 테이블, kind 0 per community | 전역 프로필(확정 Q2). `users`는 멤버십/권한 projection으로만 남는다. |
 
 ### 1.4 VISION과의 긴장 (명시)
@@ -68,7 +68,7 @@ VISION.md Identity 절은 "사람과 에이전트 모두 secp256k1 키쌍, NIP-0
 
 - 포기: 아이덴티티 이식성, 릴레이 간 연합, 제3자 검증 가능한 감사 체인, 메시 오프라인 동작, 셀프 호스팅 사용자가 Google 없이 가입하는 경로.
 - 유지: 이벤트 모델(kind/tags/`h` 스코핑), 채널/스레드/워크플로우/에이전트 하네스, 서버 authoritative 저장.
-- 결론: VISION.md Identity 절은 Phase 4에서 다시 쓴다. 상류 Buzz와의 머지 가능성은 사라진다는 점을 사용자가 수용했다.
+- 결론: VISION.md Identity 절은 Phase 4에서 다시 쓴다. 상류 Kuzz와의 머지 가능성은 사라진다는 점을 사용자가 수용했다.
 
 ---
 
@@ -82,11 +82,11 @@ VISION.md Identity 절은 "사람과 에이전트 모두 secp256k1 키쌍, NIP-0
 | `bot` | 32바이트 | `owner_principal_id` (user) | `bzb_` (Desktop 호스팅, 1h) 또는 `bzk_` (headless, 장기) |
 | `relay` | 배포당 1개 row | 운영자 | 없음. 오늘의 `relay_keypair.public_key()` 역할(서버 발행 이벤트의 sender). |
 
-**principal id 불변식 (B1 해결).** principal id는 32바이트 "아무 랜덤값"이 아니라 **유효한 secp256k1 x-only 공개키**여야 한다. 코드베이스 전체가 `nostr::PublicKey::from_slice/from_hex`로 파싱한다: `buzz-db/src/store/event.rs:881-914 row_to_stored_event`(실패 시 `Ok(None)`으로 행이 사라짐), `handlers/req.rs`의 `authors` 파싱, `AuthContext.pubkey`, desktop의 `PublicKey::from_hex` 82곳, mobile `NostrEvent`. 랜덤 32바이트의 약 절반은 유효한 x좌표가 아니므로 메시지 절반이 증발한다.
+**principal id 불변식 (B1 해결).** principal id는 32바이트 "아무 랜덤값"이 아니라 **유효한 secp256k1 x-only 공개키**여야 한다. 코드베이스 전체가 `nostr::PublicKey::from_slice/from_hex`로 파싱한다: `kuzz-db/src/store/event.rs:881-914 row_to_stored_event`(실패 시 `Ok(None)`으로 행이 사라짐), `handlers/req.rs`의 `authors` 파싱, `AuthContext.pubkey`, desktop의 `PublicKey::from_hex` 82곳, mobile `NostrEvent`. 랜덤 32바이트의 약 절반은 유효한 x좌표가 아니므로 메시지 절반이 증발한다.
 
-- 생성: `buzz_core::principal::PrincipalId::generate()` = `nostr::Keys::generate().public_key()`에서 공개키만 취하고 비밀키는 즉시 drop. 비밀키는 어디에도 저장·전달되지 않는다(그래서 "키 없음" 모델은 유지된다).
-- 검증: `buzz-db` `create_principal`은 INSERT 전에 `PublicKey::from_slice`를 통과한 값만 받는다(`PrincipalId` newtype이 생성자에서 보장, 임의 바이트에서의 변환은 `TryFrom`으로만). SQL `CHECK(length(id)=32)`는 유지하되 secp 유효성은 SQL로 검사할 수 없으므로 스토어 테스트가 이 seam을 고정한다.
-- 이 불변식은 Phase 4에서 `BuzzEvent`/`PrincipalId` 타입 교체가 끝나 `nostr::PublicKey` 파싱이 사라질 때까지 유지한다(§3.4 참조). 교체 후에도 이미 발급된 id는 그대로 유효하다.
+- 생성: `kuzz_core::principal::PrincipalId::generate()` = `nostr::Keys::generate().public_key()`에서 공개키만 취하고 비밀키는 즉시 drop. 비밀키는 어디에도 저장·전달되지 않는다(그래서 "키 없음" 모델은 유지된다).
+- 검증: `kuzz-db` `create_principal`은 INSERT 전에 `PublicKey::from_slice`를 통과한 값만 받는다(`PrincipalId` newtype이 생성자에서 보장, 임의 바이트에서의 변환은 `TryFrom`으로만). SQL `CHECK(length(id)=32)`는 유지하되 secp 유효성은 SQL로 검사할 수 없으므로 스토어 테스트가 이 seam을 고정한다.
+- 이 불변식은 Phase 4에서 `KuzzEvent`/`PrincipalId` 타입 교체가 끝나 `nostr::PublicKey` 파싱이 사라질 때까지 유지한다(§3.4 참조). 교체 후에도 이미 발급된 id는 그대로 유효하다.
 
 ### 2.2 테이블 (신규, 배포 전역)
 
@@ -180,7 +180,7 @@ CREATE INDEX access_tokens_session   ON access_tokens (session_id)   WHERE revok
 CREATE INDEX access_tokens_bot       ON access_tokens (bot_id)       WHERE revoked_at IS NULL;
 ```
 
-**운영자 테이블은 신설하지 않는다 (B5).** `relay_operators`는 이미 존재한다(`schema.sql:1812`, migration 0035: `pubkey BYTEA PK(32)`, `role IN ('operator','moderator')`, `added_by`, `created_at`; 스토어 `buzz-db/src/store/relay_operators.rs`; `api/admin/auth.rs`의 `AdminRole`이 DB 로스터 + config 우선순위로 해석). `pubkey` 컬럼이 이미 32바이트이므로 principal id를 그대로 담는다. `moderator` 역할(신고 처리)은 유지한다. 0056은 이 테이블에 **ALTER를 하지 않는다**. `added_by`에는 부트스트랩 시 relay principal id를 넣는다(기존 컬럼 의미 "누가 추가했나"와 일치, FK 없음). 운영자 엔드포인트(§3.3)는 기존 스토어와 `AdminRole`을 호출한다.
+**운영자 테이블은 신설하지 않는다 (B5).** `relay_operators`는 이미 존재한다(`schema.sql:1812`, migration 0035: `pubkey BYTEA PK(32)`, `role IN ('operator','moderator')`, `added_by`, `created_at`; 스토어 `kuzz-db/src/store/relay_operators.rs`; `api/admin/auth.rs`의 `AdminRole`이 DB 로스터 + config 우선순위로 해석). `pubkey` 컬럼이 이미 32바이트이므로 principal id를 그대로 담는다. `moderator` 역할(신고 처리)은 유지한다. 0056은 이 테이블에 **ALTER를 하지 않는다**. `added_by`에는 부트스트랩 시 relay principal id를 넣는다(기존 컬럼 의미 "누가 추가했나"와 일치, FK 없음). 운영자 엔드포인트(§3.3)는 기존 스토어와 `AdminRole`을 호출한다.
 
 **purge 순서와 ON DELETE.** 30일 뒤 `purge_after < now()`인 principal을 삭제하는 작업은 한 트랜잭션으로 다음 순서를 지킨다: (1) 소유 봇 각각에 대해 그 봇의 `access_tokens` → `bots` row → 봇 `principals` row(CASCADE) 삭제, (2) 운영자 row는 raw DELETE가 아니라 `relay_operators::remove(actor=relay_principal)`로 제거(감사 행·advisory lock 유지). 마지막 operator였다면 `LastOperator`를 무시하고 강제 제거하되 warn 로그 + 감사 `auth.operator_roster_emptied`를 남긴다(이후 로그인에서 §3.3 부트스트랩이 다시 성립). `added_by = id`는 relay principal id로 UPDATE, (3) `users`/`relay_members`/`channel_members`의 해당 pubkey row는 오늘의 계정 아카이브 경로(`archived_identities`)로 이동, (4) `principals` row 삭제(identities/devices/sessions/refresh_tokens/access_tokens CASCADE). `bots.owner_principal_id`는 의도적으로 `ON DELETE` 없음 — (1)을 건너뛰면 FK 위반으로 실패해 봇을 고아로 남기지 않는다(Rule 1). 이벤트(`events.pubkey`)는 삭제하지 않는다(오늘과 동일).
 
@@ -257,11 +257,11 @@ AGENTS.md는 새 기능을 Nostr 이벤트로 모델링하라고 하지만, 인�
 
 ```
 C: code_verifier(43~128자 랜덤), code_challenge = b64url(sha256(verifier)), state 생성
-C → 브라우저: GET https://<buzz>/auth/oidc/google/start
+C → 브라우저: GET https://<kuzz>/auth/oidc/google/start
         ?state=<client state>&code_challenge=...&client=desktop|mobile|web|cli&redirect_uri=<아래 표>&device_name=...
 S: 클라이언트 state를 그대로 Google `state`로 쓴다. Redis `auth:oidc:pending:{state}` (10분 TTL, 1회)에
    {code_challenge, client, redirect_uri, device} 저장. 이미 존재하는 state → 400
-S → 302 → accounts.google.com/o/oauth2/v2/auth?client_id=<server>&redirect_uri=https://<buzz>/auth/oidc/google/callback
+S → 302 → accounts.google.com/o/oauth2/v2/auth?client_id=<server>&redirect_uri=https://<kuzz>/auth/oidc/google/callback
         &response_type=code&scope=openid email profile&state=<state>&nonce=...
 (사용자 Google 로그인)
 Google → S: GET /auth/oidc/google/callback?code=...&state=<state>
@@ -278,9 +278,9 @@ S → C: {principal_id, access: bzs_, refresh: bzr_, expires_in} (web은 refresh
 
 | 클라이언트 | 브라우저 | `redirect_uri` | 비고 |
 |------------|----------|----------------|------|
-| Desktop (Tauri) | 시스템 브라우저(`tauri-plugin-opener`) | `http://127.0.0.1:<임시포트>/cb` (loopback, RFC 8252 §7.3) | Rust가 로그인 동안만 loopback 리스너를 띄운다. 응답은 "Buzz로 돌아가세요" 정적 HTML. 5분 타임아웃 |
-| Mobile (Flutter) | `flutter_web_auth_2`(iOS `ASWebAuthenticationSession`, Android Custom Tabs) | `xyz.block.buzz://auth/cb` (custom scheme) | PKCE 동일 |
-| CLI (`buzz auth login`) | 시스템 브라우저 | `http://127.0.0.1:<임시포트>/cb` | Desktop과 동일 loopback. `devices.platform='cli'` |
+| Desktop (Tauri) | 시스템 브라우저(`tauri-plugin-opener`) | `http://127.0.0.1:<임시포트>/cb` (loopback, RFC 8252 §7.3) | Rust가 로그인 동안만 loopback 리스너를 띄운다. 응답은 "Kuzz로 돌아가세요" 정적 HTML. 5분 타임아웃 |
+| Mobile (Flutter) | `flutter_web_auth_2`(iOS `ASWebAuthenticationSession`, Android Custom Tabs) | `app.kuzz://auth/cb` (custom scheme) | PKCE 동일 |
+| CLI (`kuzz auth login`) | 시스템 브라우저 | `http://127.0.0.1:<임시포트>/cb` | Desktop과 동일 loopback. `devices.platform='cli'` |
 | Web (`web/`) | 같은 탭 리다이렉트 | `https://<relay-origin>/auth/cb` | 완료 후 refresh는 `Set-Cookie: buzz_refresh=...; HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh`, access는 JS 메모리 |
 
 Web 쿠키 제약: `web/`은 relay가 직접 서빙하므로(`router.rs:406 ServeDir`) same-origin이고 `SameSite=Strict`가 성립한다. web을 별도 origin에 두려면 `SameSite=None` + CORS 허용 목록 + CSRF 토큰이 추가로 필요하며 이 계획 범위 밖이다. web의 `/auth/refresh` 응답 본문은 refresh를 **생략**하고 `Set-Cookie`로만 회전시킨다. `POST /auth/logout`은 `Set-Cookie: buzz_refresh=; Max-Age=0`로 쿠키를 지운다.
@@ -353,7 +353,7 @@ S→C: ["OK", "auth", true, ""]         # 또는 ["OK","auth",false,"auth-requir
 1. `pubkey`가 있으면 `AuthContext.principal`과 비교, 불일치 → 기존 메시지 `"invalid: event pubkey does not match authenticated identity"` 유지. 없으면 스탬프. 예외 없음(봇 프로필은 `PATCH /auth/bots/{id}/profile`로만 변경되고 kind 0은 서버 발행 전용이므로 owner→bot 예외가 필요 없다, §3.7).
 2. `created_at` 없음 → 서버 시각. 서버 시각과 ±5분 초과 → 거절 `["OK", <클라이언트가 계산한 id>, false, "invalid: created_at skew, check device clock"]`(HTTP는 400). 교정하면 id가 바뀌어 클라이언트가 OK를 못 받고 타임아웃 후 재전송 → 중복 (v12).
 3. `id` = NIP-01 직렬화 SHA-256을 서버가 항상 재계산. `verify_id()`와 `events.id` 유니크 제약 그대로.
-4. `sig`: 와이어에서 무시. 내부 `nostr::Event`는 Phase 0–3 동안 64바이트 0 sentinel로 구성. 직렬화 경계(`protocol.rs`, `api/events.rs`)에서 `sig` 제외. Phase 4에서 `buzz_core::event::BuzzEvent`(sig 없음)로 타입 교체. 교체 전까지 §2.1 불변식(유효 x-only 공개키)이 `nostr::Event` 구성의 전제조건이다.
+4. `sig`: 와이어에서 무시. 내부 `nostr::Event`는 Phase 0–3 동안 64바이트 0 sentinel로 구성. 직렬화 경계(`protocol.rs`, `api/events.rs`)에서 `sig` 제외. Phase 4에서 `kuzz_core::event::KuzzEvent`(sig 없음)로 타입 교체. 교체 전까지 §2.1 불변식(유효 x-only 공개키)이 `nostr::Event` 구성의 전제조건이다.
 5. 릴레이 발행 이벤트(워크플로우 sink, 40099 시스템 메시지, side-effect, `bridge.rs:799,2628` synthesize_presence, `audio/handler.rs:2984,3429`)는 `relay` principal로 스탬프. `state.relay_keypair` → `state.relay_principal`.
 
 `OK`는 서버가 계산한 최종 `id`를 돌려준다. CLI의 `{event_id, accepted, message}` 계약은 그대로.
@@ -404,28 +404,28 @@ POST /auth/refresh {refresh=R_n}
 
 ## 4. 컴포넌트별 변경 목록
 
-### 4.1 `buzz-core`
+### 4.1 `kuzz-core`
 - `src/principal.rs`(신규): `PrincipalId` newtype — `generate()`(§2.1), `TryFrom<[u8;32]>`/`from_hex`(x-only 검증), `as_public_key()` 어댑터(전환기). `PrincipalKind`.
-- `src/event.rs`: `StoredEvent.verified` 의미 재문서화. Phase 4: `BuzzEvent`.
+- `src/event.rs`: `StoredEvent.verified` 의미 재문서화. Phase 4: `KuzzEvent`.
 - `src/verification.rs`: 서명 검증 호출 제거(Phase 3), `verify_id` 유지.
 - `src/kind.rs`: `KIND_AUTH`, 27235, 24242, 1059 상수 삭제(Phase 4).
 
-### 4.2 `buzz-auth`
+### 4.2 `kuzz-auth`
 - 신규 `token.rs`: `generate_token(TokenKind) -> (SecretString, [u8;32])`, `parse_prefix`, 상수 시간 비교.
 - 신규 `oidc.rs`: provider 레지스트리(`GoogleProvider` 구현, `OidcProvider` trait), discovery/JWKS 캐시, id_token 검증(iss/aud/nonce/exp), PKCE 검증. NIP-FI의 JWKS 캐시 코드(`nip_fi/jwks.rs` 상당)를 이쪽으로 옮겨 재사용 후 nip_fi 삭제.
 - `lib.rs`: `AuthContext { principal, kind, token_hash, scopes, channel_ids, auth_method: AuthMethod::Token, expires_at, device_id, session_id, bot_id, bot_owner, is_operator }`. `pubkey`/`agent_owner_pubkey`는 Phase 0–2 유지(래핑), Phase 3 삭제.
 - `AuthService::verify_token(hash) -> AuthContext` (trait `TokenStore`로 DB 추상화).
 - 삭제(Phase 3/4): `nip42.rs`, `nip98.rs`, `nip98_replay.rs`, `nip_fi/`.
-- `rate_limit.rs`: trait는 유지. 프로덕션 구현은 **기존 `buzz-pubsub/src/rate_limiter.rs::RedisRateLimiter`**를 사용한다(v1의 "없다"는 오기). 로그인/exchange/토큰 발급 한도 키를 추가.
+- `rate_limit.rs`: trait는 유지. 프로덕션 구현은 **기존 `kuzz-pubsub/src/rate_limiter.rs::RedisRateLimiter`**를 사용한다(v1의 "없다"는 오기). 로그인/exchange/토큰 발급 한도 키를 추가.
 
-### 4.3 `buzz-db`
+### 4.3 `kuzz-db`
 - `store/principal.rs`, `store/identity.rs`, `store/session.rs`(sessions+refresh_tokens), `store/bot.rs`, `store/access_token.rs`(신규). 운영자는 기존 `store/relay_operators.rs` 재사용(B5). 쓰기는 **반드시 기존 함수 경유**: 부트스트랩·`PUT /auth/operators`는 `upsert(pubkey, role, actor=relay_principal 또는 호출자, cfg)`, `DELETE`는 `remove()` — 그래야 `relay_operator_audit` 행과 대상별 advisory lock이 유지된다. 추가하는 것은 `bootstrap_operator(principal)` 하나이며 내부는 한 트랜잭션에서 `acquire_roster_lock()` → operator row count → 0이면 `upsert(..., "operator", relay_principal, cfg)`. `DbError::LastOperator` → HTTP 409. 각 사용자 행동은 단일 트랜잭션(Rule 5). purge 작업 `purge_expired_principals()`는 §2.2 순서.
 - `store/user.rs`: `ensure_user_for_authorization`가 bot이면 `agent_owner_pubkey`를 채우고, `display_name`은 `principals`에서 복사.
 - `store/event.rs:881-914 row_to_stored_event`: 변경 없음(불변식 덕분). 단, 테스트에 "`PrincipalId::generate()` 1000개가 모두 `from_slice` 통과"를 추가해 B1 불변식을 production seam에 고정.
 - 삭제(Phase 4): `store/api_token.rs`, `store/allowlist.rs`.
 - 마이그레이션 0056(§2.2), 0057(`events.sig` nullable), 0058(`_operator_global_tables` 등록), Phase 4 0060대(drop). `schema/schema.sql` 동시 갱신.
 
-### 4.4 `buzz-relay`
+### 4.4 `kuzz-relay`
 - `api/auth.rs`(신규): §3.3 핸들러. `api/oidc.rs`(신규): §3.2. `api/bearer.rs`: Bearer 추출기. `router.rs` 마운트.
 - `api/bridge.rs:98-176 verify_bridge_auth_with_options`: `Bearer` 분기 추가(Phase 0), `Nostr`/`X-Pubkey` 삭제(Phase 3). 반환 `VerifiedBridgeAuth.pubkey = principal`. `:799, :2565-2628 synthesize_presence`의 `relay_keypair` 서명 → `relay_principal` 스탬프(Phase 2). `:1426` 호출자 동반 수정.
 - `api/admin/auth.rs:371-434 authorize_nip98` 옆에 `authorize_bearer` 분기 추가(**Phase 1**, B6: Desktop 관리 콘솔 `commands/admin/client.rs`가 Phase 1부터 키가 없다): `access_tokens` 조회 → principal → 기존 `resolve_admin_principal`/`AdminRole`(DB 로스터, 확정 Q10·B5). 진입점 `authorize()`(`:197-246`)는 `AdminAuth` enum으로 모드를 고르므로, Phase 1–2 공존을 위해 `Authorization: Bearer bz…` 헤더는 **`Nip98` 모드에서도** `authorize_bearer`로 분기한다(또는 `AdminAuth::Token` variant를 추가하고 `Nip98` 모드가 Bearer를 위임). 모드 분기 바깥에서 헤더 스킴으로 먼저 가른다. NIP-98 분기와 `nostr_credential()`(459)는 Phase 3 삭제. 브라우저 origin 검사(467-)는 유지. config 우선순위(`RELAY_OPERATOR_PUBKEYS`/`RELAY_OWNER_PUBKEY`)는 Phase 2에서 제거.
@@ -441,43 +441,43 @@ POST /auth/refresh {refresh=R_n}
 - `nip11.rs`: 42/98 제거, `auth: "bearer"`.
 - 삭제: `nip_fi_*.rs`, `api/nip_fi.rs`, `nip98.rs`, `api/mesh_demo.rs`.
 
-### 4.5 `buzz-pubsub`
-- `presence.rs`: 키 `buzz:{community}:presence:{pubkey_hex}` 그대로. 타입 `&PrincipalId`.
+### 4.5 `kuzz-pubsub`
+- `presence.rs`: 키 `kuzz:{community}:presence:{pubkey_hex}` 그대로. 타입 `&PrincipalId`.
 - `rate_limiter.rs`: 기존 `RedisRateLimiter` 재사용. 키 네임스페이스 `auth:login:{ip}`, `auth:exchange:{bot}`, `auth:bot_token:{user}`.
 - 신규 `auth_revocation.rs`: `buzz:auth:revoked` publish/subscribe. `nip_fi_command_replay.rs`, `nip98_replay.rs` 삭제(Phase 3).
 
-### 4.6 `buzz-audit`
+### 4.6 `kuzz-audit`
 - `entry.rs actor_pubkey` 바이트 의미만 변경. TLV 포맷 불변. 신규 액션 `auth.login`, `auth.logout`, `auth.device_revoked`, `auth.sessions_revoke_others`, `auth.bots_revoke_all`, `auth.bot_created/deleted`, `auth.token_exchanged`, `auth.refresh_reuse_detected`, `auth.account_deleted`, `auth.operator_granted/revoked`.
 
-### 4.7 `buzz-media`
+### 4.7 `kuzz-media`
 - `auth.rs verify_blossom_*` → Bearer principal(Phase 2). 업로드 소유자 = principal.
 
 ### 4.8 git 크레이트
-- `git-credential-nostr` → `git-credential-buzz`(**Phase 1**, B6): 키 로딩 삭제. 토큰 소스 `BUZZ_BOT_TOKEN` → `BUZZ_ACCESS_TOKEN` → `BUZZ_TOKEN_BROKER_URL`+`_SECRET` → `git config buzz.tokenfile`. 출력 `username=token`, `password=<token>`. `buzz-acp/src/git.rs:99-100`이 자식 env에 `BUZZ_PRIVATE_KEY`를 넣던 자리는 브로커 변수로 교체.
-- `git-sign-nostr`: 삭제(Phase 4). `buzz-acp/src/git.rs` 서명 설정 주입 제거.
+- `git-credential-nostr` → `git-credential-kuzz`(**Phase 1**, B6): 키 로딩 삭제. 토큰 소스 `KUZZ_BOT_TOKEN` → `KUZZ_ACCESS_TOKEN` → `KUZZ_TOKEN_BROKER_URL`+`_SECRET` → `git config kuzz.tokenfile`. 출력 `username=token`, `password=<token>`. `kuzz-acp/src/git.rs:99-100`이 자식 env에 `KUZZ_PRIVATE_KEY`를 넣던 자리는 브로커 변수로 교체.
+- `git-sign-nostr`: 삭제(Phase 4). `kuzz-acp/src/git.rs` 서명 설정 주입 제거.
 
-### 4.9 `buzz-ws-client`
+### 4.9 `kuzz-ws-client`
 - `connection.rs`: `connect_with_token(url, &SecretString)`, `reauth(&SecretString)`(같은 연결 재-AUTH, `OK auth` 대기), `publish_draft`. `message.rs::build_auth_event` 삭제.
 
-### 4.10 `buzz-sdk`
+### 4.10 `kuzz-sdk`
 - `builders.rs`: `EventBuilder` → `into_draft()`. `nip_oa.rs` 삭제.
 
-### 4.11 `buzz-acp`
-- `config.rs:251-256`: `--bot-token/BUZZ_BOT_TOKEN`(`hide_env_values`). `BUZZ_ACP_PRIVATE_KEY` alias(1028) 삭제. `Keys::parse` 삭제.
-- 토큰 보관: `SecretString`. 자식(에이전트) 스폰 시 **`Command::env_remove("BUZZ_BOT_TOKEN")`**로 상속 차단. 프로세스 전역 `std::env::remove_var`를 쓰지 않는 이유: 워크스페이스는 edition 2021이라 `unsafe`는 아니지만, acp 자신이 토큰을 다시 읽어야 하는 재연결·exchange 경로와 경합하고 다른 스레드의 env 읽기와 데이터 레이스 위험이 있다. 스폰 단위 제거가 정확하다.
+### 4.11 `kuzz-acp`
+- `config.rs:251-256`: `--bot-token/KUZZ_BOT_TOKEN`(`hide_env_values`). `KUZZ_ACP_PRIVATE_KEY` alias(1028) 삭제. `Keys::parse` 삭제.
+- 토큰 보관: `SecretString`. 자식(에이전트) 스폰 시 **`Command::env_remove("KUZZ_BOT_TOKEN")`**로 상속 차단. 프로세스 전역 `std::env::remove_var`를 쓰지 않는 이유: 워크스페이스는 edition 2021이라 `unsafe`는 아니지만, acp 자신이 토큰을 다시 읽어야 하는 재연결·exchange 경로와 경합하고 다른 스레드의 env 읽기와 데이터 레이스 위험이 있다. 스폰 단위 제거가 정확하다.
 - `relay.rs:3735-3762` AUTH → 토큰 프레임. `sign_with_keys`(464, 1148) → draft. 재연결 시 현재 토큰.
 - 신규 `token_refresh.rs`: 만료 15분 전 exchange → 성공 시 메모리 교체 → **즉시 같은 연결에서 재-AUTH** → `OK auth true` 확인 후 세대 증가(`AtomicU64`; 더 새로운 세대만 채택, Rule 2). 실패 분류: 네트워크/5xx → 기존 `STARTUP_CONNECT_BACKOFFS` 상한 재시도(10초 내 재시도는 서버 replay 캐시가 같은 토큰을 돌려준다, §6.5); HTTP 401 `token_expired|token_revoked|principal_disabled`, **HTTP 409 `token_superseded`**, **또는 WS `OK auth false` 사유가 같은 코드** → exit 78(auth terminal). WS 재연결 시 AUTH 거절도 같은 분류를 거친다(B3 후반).
-- 신규 `token_broker.rs`: 127.0.0.1 임시 포트 HTTP `GET /token`, 스폰당 랜덤 secret `Authorization` 요구, 응답 ≤4KB, 분당 60회. 에이전트 env에 `BUZZ_TOKEN_BROKER_URL`, `BUZZ_TOKEN_BROKER_SECRET`만 전달(확정 Q3).
+- 신규 `token_broker.rs`: 127.0.0.1 임시 포트 HTTP `GET /token`, 스폰당 랜덤 secret `Authorization` 요구, 응답 ≤4KB, 분당 60회. 에이전트 env에 `KUZZ_TOKEN_BROKER_URL`, `KUZZ_TOKEN_BROKER_SECRET`만 전달(확정 Q3).
 - `pool.rs:5573-5793` `sign_with_keys` → draft. `ctx.agent_keys` → `ctx.principal`.
 - `setup_mode.rs`, `run_task.rs`, `tests/stdio_contract.rs` env 계약 갱신.
 
-### 4.12 `buzz-cli`
-- **Phase 1 (B6)**: `client.rs:519-591`에 토큰 모드 추가 — 토큰 소스 `BUZZ_BOT_TOKEN` → `BUZZ_ACCESS_TOKEN` → `BUZZ_TOKEN_BROKER_URL`+`_SECRET`(§4.8 우선순위) → 없으면 기존 `BUZZ_PRIVATE_KEY` 키 모드(Phase 3까지 폴백). 토큰 모드에서 `sign_nip98`/`sign_blossom_*`/`sign_event` → Bearer + draft. 호스팅 에이전트 안의 `buzz messages …`가 Phase 1부터 동작해야 한다.
-- **Phase 2**: 신규 `commands/auth.rs`: `buzz auth login`(§3.2 loopback 플로우, `client=cli`), `logout`, `whoami`, `devices [revoke]`, `bots {create,delete,token,headless-token,revoke,revoke-all}`; `~/.config/buzz/session.json`(access 캐시; refresh는 keyring)을 토큰 소스 마지막 순위에 추가.
+### 4.12 `kuzz-cli`
+- **Phase 1 (B6)**: `client.rs:519-591`에 토큰 모드 추가 — 토큰 소스 `KUZZ_BOT_TOKEN` → `KUZZ_ACCESS_TOKEN` → `KUZZ_TOKEN_BROKER_URL`+`_SECRET`(§4.8 우선순위) → 없으면 기존 `KUZZ_PRIVATE_KEY` 키 모드(Phase 3까지 폴백). 토큰 모드에서 `sign_nip98`/`sign_blossom_*`/`sign_event` → Bearer + draft. 호스팅 에이전트 안의 `kuzz messages …`가 Phase 1부터 동작해야 한다.
+- **Phase 2**: 신규 `commands/auth.rs`: `kuzz auth login`(§3.2 loopback 플로우, `client=cli`), `logout`, `whoami`, `devices [revoke]`, `bots {create,delete,token,headless-token,revoke,revoke-all}`; `~/.config/kuzz/session.json`(access 캐시; refresh는 keyring)을 토큰 소스 마지막 순위에 추가.
 - `error.rs` 종료 코드 계약 불변. 401 terminal → 3.
 
-### 4.13 `buzz-workflow`
-- `executor.rs:994-998`: `BUZZ_API_TOKEN`/`BUZZ_RELAY_PUBKEY`→`X-Pubkey` 폴백 → 워크플로우 sink는 `relay_principal` 내부 경로 또는 `BUZZ_BOT_TOKEN`(워크플로우 전용 headless 봇)만 사용. `X-Pubkey` 삭제(Phase 3).
+### 4.13 `kuzz-workflow`
+- `executor.rs:994-998`: `KUZZ_API_TOKEN`/`KUZZ_RELAY_PUBKEY`→`X-Pubkey` 폴백 → 워크플로우 sink는 `relay_principal` 내부 경로 또는 `KUZZ_BOT_TOKEN`(워크플로우 전용 headless 봇)만 사용. `X-Pubkey` 삭제(Phase 3).
 - `executor.rs:194 npub 필터`: `PublicKey::from_hex` 성공 시 bech32 — Phase 4에서 `principal` 필터(hex 앞 8자)로 교체. 그 전까지는 불변식상 동작.
 
 ### 4.14 Desktop (Rust, `desktop/src-tauri`)
@@ -487,10 +487,10 @@ POST /auth/refresh {refresh=R_n}
 - `relay.rs:120-160` NIP-98 → bearer. `submit_event_with_keys` → `submit_draft`. `sync_managed_agent_profile`(551) → `PATCH /auth/bots/{id}/profile`. `commands/admin/client.rs` 관리 콘솔 호출도 Phase 1에서 Bearer(세션 access)로 전환(B6; 서버 `authorize_bearer`가 같은 Phase).
 - `native_relay_client.rs:430-482` → 토큰 + 재-AUTH.
 - `managed_agents/types.rs:298-324`: `private_key_nsec`, `auth_tag` 삭제. `pubkey` = bot id 유지. 기존 레코드: keyring nsec 삭제, 서버에 `POST /auth/bots` 새로 등록(히스토리 단절 수용, 확정 Q7). 첫 실행 시 1회 안내.
-- `managed_agents/runtime.rs:639` → `POST /auth/bots/{id}/token` 후 `BUZZ_BOT_TOKEN` 주입. `:773-776` `BUZZ_AUTH_TAG` 삭제. `:771` `env_remove` 목록에 `BUZZ_BOT_TOKEN`, `BUZZ_ACCESS_TOKEN`, `BUZZ_TOKEN_BROKER_URL`, `BUZZ_TOKEN_BROKER_SECRET` 추가(사용자 env가 덮지 못하게; 주입은 그 뒤).
+- `managed_agents/runtime.rs:639` → `POST /auth/bots/{id}/token` 후 `KUZZ_BOT_TOKEN` 주입. `:773-776` `KUZZ_AUTH_TAG` 삭제. `:771` `env_remove` 목록에 `KUZZ_BOT_TOKEN`, `KUZZ_ACCESS_TOKEN`, `KUZZ_TOKEN_BROKER_URL`, `KUZZ_TOKEN_BROKER_SECRET` 추가(사용자 env가 덮지 못하게; 주입은 그 뒤).
 - exit 78 처리: 토큰 재발급 → 재시작, **10분 창 3회 상한**. 상한 도달 → 상태 `AuthFailed`로 고정하고 자동 재시작 중단. UI에 사유와 **"다시 시작" 수동 버튼**(카운터 리셋), 세션 자체가 죽은 경우 "다시 로그인" 버튼(Rule 6).
-- `managed_agents/reserved_env_keys.rs:28-96`: 제거 `BUZZ_PRIVATE_KEY`, `BUZZ_AUTH_TAG`, `BUZZ_API_TOKEN`, `BUZZ_ACP_PRIVATE_KEY`, `BUZZ_ACP_API_TOKEN`; 추가 **`BUZZ_BOT_TOKEN`, `BUZZ_ACCESS_TOKEN`, `BUZZ_TOKEN_BROKER_URL`, `BUZZ_TOKEN_BROKER_SECRET`**(명시).
-- `managed_agents/hermes_profile.rs:280-282 is_buzz_owned_env_key`: `BUZZ_*` 전체 strip이라 새 키도 자동 포함. `hermes_profile_tests.rs`에 `BUZZ_BOT_TOKEN=…` strip 케이스 명시(Rule 3).
+- `managed_agents/reserved_env_keys.rs:28-96`: 제거 `KUZZ_PRIVATE_KEY`, `KUZZ_AUTH_TAG`, `KUZZ_API_TOKEN`, `KUZZ_ACP_PRIVATE_KEY`, `KUZZ_ACP_API_TOKEN`; 추가 **`KUZZ_BOT_TOKEN`, `KUZZ_ACCESS_TOKEN`, `KUZZ_TOKEN_BROKER_URL`, `KUZZ_TOKEN_BROKER_SECRET`**(명시).
+- `managed_agents/hermes_profile.rs:280-282 is_kuzz_owned_env_key`: `KUZZ_*` 전체 strip이라 새 키도 자동 포함. `hermes_profile_tests.rs`에 `KUZZ_BOT_TOKEN=…` strip 케이스 명시(Rule 3).
 - `commands/agents.rs`: 생성 `Keys::generate()` → `POST /auth/bots`; 삭제는 서버 `DELETE` 성공 후 로컬/Hermes 프로필 삭제(Rule 1).
 - 삭제(Phase 4): `key_backup.rs`, `hpke_key_backup.rs`, `identity_storage.rs` 키 마이그레이션, `nostr_bind.rs`.
 - 로그 마스킹: `commands/agent_discovery/install_report_redaction_tests.rs` 패턴을 따라 `bz[lsrbk]_[A-Za-z0-9_-]{40,}` redaction + 테스트.
@@ -514,7 +514,7 @@ POST /auth/refresh {refresh=R_n}
 - `shared/lib/nostr-signer.ts:42` 임시 키 생성, `nip98.ts`, `features/repos/git-client.ts:57`, `features/invite/invite-api.ts` → Google 로그인 세션(§3.2 web 행): access는 JS 메모리, refresh는 HttpOnly 쿠키, `Authorization: Bearer`. 리포 브라우저의 git 읽기는 Bearer. 로그인 전 공개 읽기는 오늘과 동일하게 토큰 없이.
 
 ### 4.18 문서
-- `VISION.md` Identity 재작성, `ARCHITECTURE.md` auth, `AGENTS.md`(Agent CLI env: `BUZZ_BOT_TOKEN`/`BUZZ_TOKEN_BROKER_*`; Gotcha 2 유지), `TESTING.md`, `crates/buzz-cli/TESTING.md`, `docs/nips/NIP-OA.md`·`NIP-FI.md` → `docs/spec/auth.md`, `.env.example`(Google client id/secret, `INVITE_SIGNING_SECRET`).
+- `VISION.md` Identity 재작성, `ARCHITECTURE.md` auth, `AGENTS.md`(Agent CLI env: `KUZZ_BOT_TOKEN`/`KUZZ_TOKEN_BROKER_*`; Gotcha 2 유지), `TESTING.md`, `crates/kuzz-cli/TESTING.md`, `docs/nips/NIP-OA.md`·`NIP-FI.md` → `docs/spec/auth.md`, `.env.example`(Google client id/secret, `INVITE_SIGNING_SECRET`).
 
 ---
 
@@ -530,11 +530,11 @@ POST /auth/refresh {refresh=R_n}
 > (c) **플래그와 스키마.** `AUTH_TOKEN_ENABLED=false`는 `/auth/*`, WS 토큰 AUTH, bridge Bearer 분기, 운영자 부트스트랩을 모두 비활성화해야 한다 — 라우터 레벨 테스트로 고정. 0056–0058은 `schema/schema.sql`과 `_operator_global_tables`(`conformance_multitenant.rs`)를 함께 갱신하고, **pgschema 부트스트랩 경로**에서도 검증한다(AGENTS.md Gotcha 7: 부분 유니크 인덱스·CHECK가 `pgschema apply`로 재현되는지 확인, 안 되면 `reconcile-schema-after-pgschema.sql`에 수렴문+assertion).
 
 범위
-- 마이그레이션 0056/0057/0058 + `schema.sql`. `buzz-db` 신규 스토어. `buzz-auth` token/oidc 모듈. `buzz-relay` `/auth/*`(OIDC 포함), Bearer 분기(bridge), WS `["AUTH",{token}]` + 재-AUTH 바인딩 교체, draft 스탬프(토큰 연결만), 만료 타이머, Redis revoke 전파, `ensure_relay_principal`.
+- 마이그레이션 0056/0057/0058 + `schema.sql`. `kuzz-db` 신규 스토어. `kuzz-auth` token/oidc 모듈. `kuzz-relay` `/auth/*`(OIDC 포함), Bearer 분기(bridge), WS `["AUTH",{token}]` + 재-AUTH 바인딩 교체, draft 스탬프(토큰 연결만), 만료 타이머, Redis revoke 전파, `ensure_relay_principal`.
 - 키 인증 경로 그대로. `AUTH_TOKEN_ENABLED=false` 기본.
 
 테스트(프로덕션 seam)
-- `buzz-relay/tests/auth_token_live.rs`(Postgres+Redis): OIDC는 테스트용 가짜 provider(`OidcProvider` trait 구현)로 start→callback→complete 수행 → WS AUTH → draft → OK id → REQ `authors`=principal 확인 → revoke 후 60초 내 close(2 인스턴스 교차).
+- `kuzz-relay/tests/auth_token_live.rs`(Postgres+Redis): OIDC는 테스트용 가짜 provider(`OidcProvider` trait 구현)로 start→callback→complete 수행 → WS AUTH → draft → OK id → REQ `authors`=principal 확인 → revoke 후 60초 내 close(2 인스턴스 교차).
 - **B1**: `PrincipalId::generate()` 1000회 모두 `nostr::PublicKey::from_slice` 통과; `create_principal`에 무효 바이트 → 오류; `row_to_stored_event`가 토큰 스탬프 이벤트를 `Some`으로 반환. relay principal: 두 커넥션이 동시에 `ensure_relay_principal` → 같은 id.
 - **B2**: 프로덕션 `POST /auth/refresh` 핸들러를 R1→R2 정상 → R1 재사용(10초 후) → 401 `refresh_reused` **그리고 `sessions.revoked_at IS NOT NULL`** 단언. not-found(`invalid_token`)와 구분. 10초 내 재전송은 같은 R2 반환 + 세션 유지. `used_at` 가드 제거 시 실패.
 - **B3**: 연결 A가 토큰 T1으로 AUTH → T1 exchange → 같은 연결에서 T2 재-AUTH → 60초 뒤 T1 revoke → **A는 열려 있음**(REQ 응답 확인). 재-AUTH 없이 60초 경과 → A close. 다른 principal 토큰으로 재-AUTH → 거절+close.
@@ -564,26 +564,26 @@ Phase 0은 구현 후 리뷰 2회를 거쳐 **READY** 판정. 브랜치 `feat/ce
 **파일 (크레이트별, 신규 = N, 수정 = M)**
 - `migrations/`: N `0056_principals.sql`(principals·identities·devices·sessions·refresh_tokens·bots·access_tokens), N `0057_events_sig_nullable.sql`, N `0058_identity_operator_global_tables.sql`(`_operator_global_tables` 등록).
 - `schema/schema.sql` M(같은 DDL, `events.sig` nullable); `scripts/reconcile-schema-after-pgschema.sql` M(pgschema가 떨어뜨리는 `access_tokens_kind_shape` CHECK 복원 + 단언); `.env.example` M(`AUTH_*` 변수 블록).
-- buzz-core: N `src/principal.rs`(`PrincipalId`, `PrincipalKind`, `AccessTokenKind`); N `src/draft.rs`(`stamp_draft`, `SENTINEL_SIG`, ±300초 보정); M `src/lib.rs`.
-- buzz-auth: N `src/token.rs`(접두사 `bzl_/bzs_/bzr_/bzb_/bzk_`, SHA-256 해시, PKCE); N `src/oidc.rs`(`OidcProvider` 트레이트, `GoogleProvider` + JWKS); M `src/lib.rs`(`AuthMethod::Token`, `TokenBinding`, `AuthContext.token`); M `Cargo.toml`(`subtle`, `zeroize`).
-- buzz-db: N `src/store/identity/mod.rs`(공용 타입·한도); N `principal.rs`(relay principal, 로그인/가입, 프로필); N `session.rs`(로그인 완료, refresh rotation·재사용 탐지, 디바이스); N `bot.rs`(봇·봇 토큰·exchange); N `access_token.rs`(토큰 조회·검사, 계정 비활성화); N `postgres_tests.rs`; M `src/store/relay_operators.rs`(`bootstrap_operator`); M `src/store/event.rs`, `src/store/reminder.rs`(NULL sig → sentinel 읽기); M `src/runtime/migration.rs`(멀티테넌트 린트 목록, 마이그레이션 58개, 파리티 테스트에 reconcile 실행); M `src/runtime/tests/thread_window_postgres_tests.rs`(버전 58); M `src/lib.rs`, `src/store/mod.rs`.
-- buzz-pubsub: N `src/auth_revocation.rs`(`buzz:auth:revoked` 채널, `not_after` 변형); M `src/lib.rs`(publish/subscribe); M `src/rate_limiter.rs`(`check_key`); M `Cargo.toml`(`hex`).
-- buzz-relay `identity/`: N `mod.rs`(`IdentityRuntime`, `verify_access_token`, revoke 소비자, 테스트용 `FakeOidcProvider`); N `config.rs`(`AuthTokenConfig::from_env`); N `kv.rs`(Redis pending/login code/replay 캐시); N `ws.rs`(WS 토큰 AUTH, 재-AUTH 바인딩 교체, 바인딩 감시 태스크, draft 스탬프).
-- buzz-relay `api/auth/`: N `mod.rs`(라우터, 공용 응답·Bearer·rate limit); N `oidc.rs`; N `session.rs`; N `bots.rs`; N `operators.rs`; N `router_tests.rs`; N `live_tests.rs`.
-- buzz-relay 기존 파일 M: `protocol.rs`(`AuthToken`, `EventDraft`, `ParseMode`); `connection.rs`(토큰 AUTH 분기, draft 스탬프, 종료 시 세션 제거); `rejection.rs`(재-AUTH를 `ws_operations` 버킷에 포함); `handlers/ingest.rs`·`handlers/event.rs`(`IngestAuth::Token`, 서버 스탬프 이벤트는 id만 검증); `api/bridge.rs`(`POST /events|/query|/count` Bearer 분기); `router.rs`(플래그 on일 때만 `/auth/*` 마운트); `config.rs`, `state.rs`, `lib.rs`, `main.rs`(기동 시 relay principal + revoke 소비자); `api/admin/mod.rs`(`is_effective_operator`); `api/mod.rs`; `handlers/count.rs`·`req.rs`·`relay_admin.rs`·`api/bridge/thread_window/postgres_tests/failure_postgres_tests.rs`(테스트 `AuthContext`에 `token: None`).
+- kuzz-core: N `src/principal.rs`(`PrincipalId`, `PrincipalKind`, `AccessTokenKind`); N `src/draft.rs`(`stamp_draft`, `SENTINEL_SIG`, ±300초 보정); M `src/lib.rs`.
+- kuzz-auth: N `src/token.rs`(접두사 `bzl_/bzs_/bzr_/bzb_/bzk_`, SHA-256 해시, PKCE); N `src/oidc.rs`(`OidcProvider` 트레이트, `GoogleProvider` + JWKS); M `src/lib.rs`(`AuthMethod::Token`, `TokenBinding`, `AuthContext.token`); M `Cargo.toml`(`subtle`, `zeroize`).
+- kuzz-db: N `src/store/identity/mod.rs`(공용 타입·한도); N `principal.rs`(relay principal, 로그인/가입, 프로필); N `session.rs`(로그인 완료, refresh rotation·재사용 탐지, 디바이스); N `bot.rs`(봇·봇 토큰·exchange); N `access_token.rs`(토큰 조회·검사, 계정 비활성화); N `postgres_tests.rs`; M `src/store/relay_operators.rs`(`bootstrap_operator`); M `src/store/event.rs`, `src/store/reminder.rs`(NULL sig → sentinel 읽기); M `src/runtime/migration.rs`(멀티테넌트 린트 목록, 마이그레이션 58개, 파리티 테스트에 reconcile 실행); M `src/runtime/tests/thread_window_postgres_tests.rs`(버전 58); M `src/lib.rs`, `src/store/mod.rs`.
+- kuzz-pubsub: N `src/auth_revocation.rs`(`buzz:auth:revoked` 채널, `not_after` 변형); M `src/lib.rs`(publish/subscribe); M `src/rate_limiter.rs`(`check_key`); M `Cargo.toml`(`hex`).
+- kuzz-relay `identity/`: N `mod.rs`(`IdentityRuntime`, `verify_access_token`, revoke 소비자, 테스트용 `FakeOidcProvider`); N `config.rs`(`AuthTokenConfig::from_env`); N `kv.rs`(Redis pending/login code/replay 캐시); N `ws.rs`(WS 토큰 AUTH, 재-AUTH 바인딩 교체, 바인딩 감시 태스크, draft 스탬프).
+- kuzz-relay `api/auth/`: N `mod.rs`(라우터, 공용 응답·Bearer·rate limit); N `oidc.rs`; N `session.rs`; N `bots.rs`; N `operators.rs`; N `router_tests.rs`; N `live_tests.rs`.
+- kuzz-relay 기존 파일 M: `protocol.rs`(`AuthToken`, `EventDraft`, `ParseMode`); `connection.rs`(토큰 AUTH 분기, draft 스탬프, 종료 시 세션 제거); `rejection.rs`(재-AUTH를 `ws_operations` 버킷에 포함); `handlers/ingest.rs`·`handlers/event.rs`(`IngestAuth::Token`, 서버 스탬프 이벤트는 id만 검증); `api/bridge.rs`(`POST /events|/query|/count` Bearer 분기); `router.rs`(플래그 on일 때만 `/auth/*` 마운트); `config.rs`, `state.rs`, `lib.rs`, `main.rs`(기동 시 relay principal + revoke 소비자); `api/admin/mod.rs`(`is_effective_operator`); `api/mod.rs`; `handlers/count.rs`·`req.rs`·`relay_admin.rs`·`api/bridge/thread_window/postgres_tests/failure_postgres_tests.rs`(테스트 `AuthContext`에 `token: None`).
 
-**테스트 실행** (Docker `buzz-postgres` 127.0.0.1:5432, `buzz-redis` 127.0.0.1:6379. `localhost`는 `::1`로 풀려 풀 타임아웃이 나므로 반드시 `127.0.0.1`. Git Bash에서는 `export PATH="$HOME/.cargo/bin:$PATH"` 먼저.)
+**테스트 실행** (Docker `kuzz-postgres` 127.0.0.1:5432, `kuzz-redis` 127.0.0.1:6379. `localhost`는 `::1`로 풀려 풀 타임아웃이 나므로 반드시 `127.0.0.1`. Git Bash에서는 `export PATH="$HOME/.cargo/bin:$PATH"` 먼저.)
 ```
-export BUZZ_TEST_DATABASE_URL=postgres://<user>:<pw>@127.0.0.1:5432/buzz   # 자격증명은 crates/buzz-relay/src/test_support.rs 기본값
-export BUZZ_TEST_REDIS_URL=redis://127.0.0.1:6379
+export KUZZ_TEST_DATABASE_URL=postgres://<user>:<pw>@127.0.0.1:5432/kuzz   # 자격증명은 crates/kuzz-relay/src/test_support.rs 기본값
+export KUZZ_TEST_REDIS_URL=redis://127.0.0.1:6379
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test -p buzz-db identity -- --include-ignored --test-threads=1
-cargo test -p buzz-relay --lib api::auth::live_tests -- --ignored --test-threads=1
-cargo test --no-fail-fast -p buzz-core -p buzz-auth -p buzz-pubsub -p buzz-db -p buzz-relay
+cargo test -p kuzz-db identity -- --include-ignored --test-threads=1
+cargo test -p kuzz-relay --lib api::auth::live_tests -- --ignored --test-threads=1
+cargo test --no-fail-fast -p kuzz-core -p kuzz-auth -p kuzz-pubsub -p kuzz-db -p kuzz-relay
 ```
-- 마지막 결과: live 9/9, buzz-db identity 10/10, 단위 2123 통과 / 6 실패. 6건(observability_source moderation 린트, git `bash_hmac` 2건, `mesh_demo`, `boot_lifecycle` 2건)은 모두 이 브랜치가 수정하지 않은 소스와 테스트 파일에서 나는 환경/기존 실패(boot_lifecycle 등은 HEAD 기준 워크트리에서 재현 확인). `admin_schema_parity_between_desired_state_and_migrations`는 Windows에서 Hermit `bin/pgschema` shim이 실행되지 않아 실패 — Linux 컨테이너(`pgschema-1.7.4-linux-amd64`, `buzz-net`)에서 수동 검증 완료.
-- `bash_hmac` 테스트가 `crates/buzz-relay/.concat` 빈 파일을 남길 수 있다. 커밋 전에 삭제.
+- 마지막 결과: live 9/9, kuzz-db identity 10/10, 단위 2123 통과 / 6 실패. 6건(observability_source moderation 린트, git `bash_hmac` 2건, `mesh_demo`, `boot_lifecycle` 2건)은 모두 이 브랜치가 수정하지 않은 소스와 테스트 파일에서 나는 환경/기존 실패(boot_lifecycle 등은 HEAD 기준 워크트리에서 재현 확인). `admin_schema_parity_between_desired_state_and_migrations`는 Windows에서 Hermit `bin/pgschema` shim이 실행되지 않아 실패 — Linux 컨테이너(`pgschema-1.7.4-linux-amd64`, `kuzz-net`)에서 수동 검증 완료.
+- `bash_hmac` 테스트가 `crates/kuzz-relay/.concat` 빈 파일을 남길 수 있다. 커밋 전에 삭제.
 
 **CRLF/LF 주의**: 저장소 파일은 LF, 이 머신은 `core.autocrlf=true`. Windows에서 Python 텍스트 모드 쓰기나 원인 불명의 작업 트리 변환으로 CRLF가 들어가면 `include_str!` 기반 소스 린트와 마이그레이션 체크섬이 깨진다. 편집 후 `grep -c $'\r' <file>`로 확인하고 `sed -i 's/\r$//'`로 정규화한다.
 
@@ -600,36 +600,36 @@ cargo test --no-fail-fast -p buzz-core -p buzz-auth -p buzz-pubsub -p buzz-db -p
 - ConnectInfo가 있을 때 refresh / bridge Bearer / `/auth/me`에 **실패 시에만 소비하는** per-IP 버킷(성공 트래픽은 세지 않아 프록시 뒤 붕괴 없이 무차별 대입만 제한).
 - 재-AUTH의 DB 일시 오류: 지금은 bind-then-check 실패 시 연결을 닫는다. 기존 바인딩을 유지하고 `OK auth false`만 보내도록 변경(일시 오류와 실제 revoke 구분).
 - 캐시 miss 응답 일관성: refresh `RecentlyRotated` 캐시 miss는 503(재시도), exchange `RecentlyExchanged` 캐시 miss는 409(acp exit 78 → 재발급). 의도된 차이(refresh 재시도는 10초 후 재사용 탐지로 세션 revoke 위험, exchange는 재발급이 안전)이나 클라이언트 구현 시 두 코드를 모두 처리할 것.
-- 기타: 프로필 변경 시 kind 0 재발행 없음, purge 잡 없음, buzz-audit auth 액션 없음, 닫힌 릴레이에서 봇 멤버십 필요, NIP-11 미갱신, admin/git Bearer 없음(§5.2 B6).
+- 기타: 프로필 변경 시 kind 0 재발행 없음, purge 잡 없음, kuzz-audit auth 액션 없음, 닫힌 릴레이에서 봇 멤버십 필요, NIP-11 미갱신, admin/git Bearer 없음(§5.2 B6).
 
 ### 5.2 Phase 1 — Desktop 로그인 + acp 봇 토큰
 
 범위
 - Desktop Rust `auth/`(§4.14), 로그인 UI, keyring refresh, 백그라운드 refresh, `get_ws_auth_frame`, 봇 등록/토큰/프로필 흐름, `runtime.rs` env 교체, exit 78 재시작(상한+수동 버튼).
-- buzz-acp: `BUZZ_BOT_TOKEN`, 토큰 AUTH, draft, `token_refresh.rs`(exchange+재-AUTH), `token_broker.rs`, `Command::env_remove`.
-- buzz-ws-client/buzz-sdk 토큰 API 추가(키 API 유지).
-- **B6 — 호스팅 에이전트가 Phase 1에서 계속 동작하기 위한 선행**: (a) buzz-cli 토큰 모드(§4.12: `BUZZ_BOT_TOKEN` → 브로커 소스, Bearer + draft, 키 모드 폴백 유지); (b) `git-credential-buzz`(§4.8) + acp `git.rs:99-100` 브로커 변수 주입; (c) 서버 `authorize_bearer`(admin, §4.4)와 git `transport.rs` Bearer/Basic 분기, Desktop `commands/admin/client.rs` Bearer 전환.
+- kuzz-acp: `KUZZ_BOT_TOKEN`, 토큰 AUTH, draft, `token_refresh.rs`(exchange+재-AUTH), `token_broker.rs`, `Command::env_remove`.
+- kuzz-ws-client/kuzz-sdk 토큰 API 추가(키 API 유지).
+- **B6 — 호스팅 에이전트가 Phase 1에서 계속 동작하기 위한 선행**: (a) kuzz-cli 토큰 모드(§4.12: `KUZZ_BOT_TOKEN` → 브로커 소스, Bearer + draft, 키 모드 폴백 유지); (b) `git-credential-kuzz`(§4.8) + acp `git.rs:99-100` 브로커 변수 주입; (c) 서버 `authorize_bearer`(admin, §4.4)와 git `transport.rs` Bearer/Basic 분기, Desktop `commands/admin/client.rs` Bearer 전환.
 - **Mobile 선행 1건**: `NostrEvent.sig` optional(§4.16).
 - 기존 managed agent → 새 bot id 재등록 + 1회 안내.
 - **선행(배포 게이트)**: 신뢰 프록시 forwarding 헤더 지원(`X-Forwarded-For` / `Forwarded` 또는 PROXY protocol, 신뢰 CIDR 설정) — TCP 리버스 프록시 뒤에서 `AUTH_TOKEN_ENABLED`를 켜기 전에 반드시 들어가야 한다. 그 전에는 모든 클라이언트가 프록시 IP 하나의 버킷을 공유해 `/auth/oidc/complete`가 배포 전체 10/분으로 붕괴한다(§6.6).
 
 테스트
-- desktop: `reserved_env_keys` 신규 키 4개가 사용자 env를 덮지 못함; `hermes_profile_tests.rs` `BUZZ_BOT_TOKEN` strip; exit 78 → 재발급 → 3회 상한 → `AuthFailed` + 수동 재시작으로 카운터 리셋(상한 제거 시 실패); refresh 태스크 stub 서버로 백오프/터미널 경로; loopback 리스너가 잘못된 `state`/5분 초과를 거절.
-- acp `tests/stdio_contract.rs`: `BUZZ_BOT_TOKEN` 없으면 설정 오류 종료; 자식 env에 `BUZZ_BOT_TOKEN` 부재 + `BUZZ_TOKEN_BROKER_*` 존재. `token_refresh` 단위: exchange 성공 → 재-AUTH 전송 → 세대 증가; WS `OK auth false token_revoked` → exit 78; 네트워크 오류 → 백오프 상한.
+- desktop: `reserved_env_keys` 신규 키 4개가 사용자 env를 덮지 못함; `hermes_profile_tests.rs` `KUZZ_BOT_TOKEN` strip; exit 78 → 재발급 → 3회 상한 → `AuthFailed` + 수동 재시작으로 카운터 리셋(상한 제거 시 실패); refresh 태스크 stub 서버로 백오프/터미널 경로; loopback 리스너가 잘못된 `state`/5분 초과를 거절.
+- acp `tests/stdio_contract.rs`: `KUZZ_BOT_TOKEN` 없으면 설정 오류 종료; 자식 env에 `KUZZ_BOT_TOKEN` 부재 + `KUZZ_TOKEN_BROKER_*` 존재. `token_refresh` 단위: exchange 성공 → 재-AUTH 전송 → 세대 증가; WS `OK auth false token_revoked` → exit 78; 네트워크 오류 → 백오프 상한.
 - `e2e_managed_agent.rs` 토큰 모드 복제. mobile 위젯 테스트: `sig` 없는 JSON 파싱.
-- B6: CLI 토큰 소스 우선순위 테이블(`BUZZ_BOT_TOKEN` > `BUZZ_ACCESS_TOKEN` > 브로커 > 키 폴백); 브로커 1회 재시도 후 exit 3; `git-credential-buzz`가 브로커에서 토큰을 받아 `username=token` 출력; admin `authorize_bearer` 운영자 아닌 Bearer → 403, 운영자 → 200(`AdminRole` 가드 제거 시 실패); git `Basic token:<bzb_>` push 성공, 만료 토큰 401.
+- B6: CLI 토큰 소스 우선순위 테이블(`KUZZ_BOT_TOKEN` > `KUZZ_ACCESS_TOKEN` > 브로커 > 키 폴백); 브로커 1회 재시도 후 exit 3; `git-credential-kuzz`가 브로커에서 토큰을 받아 `username=token` 출력; admin `authorize_bearer` 운영자 아닌 Bearer → 403, 운영자 → 200(`AdminRole` 가드 제거 시 실패); git `Basic token:<bzb_>` push 성공, 만료 토큰 401.
 
-수동 검증(사용자): dev 앱 Google 로그인 → 에이전트 생성 → 멘션 → 응답 → 에이전트가 `buzz --format compact channels list`와 git push를 토큰으로 성공 → Settings›Devices에서 다른 디바이스 로그아웃 → 에이전트 Stop → `access_tokens.revoked_at` 확인 → 관리 콘솔(Desktop) 접근. dev TTL 3분으로 exchange+재-AUTH가 연결을 유지한 채 일어나는지 로그 확인(`OK auth true` 두 번째 수신, 연결 id 동일).
+수동 검증(사용자): dev 앱 Google 로그인 → 에이전트 생성 → 멘션 → 응답 → 에이전트가 `kuzz --format compact channels list`와 git push를 토큰으로 성공 → Settings›Devices에서 다른 디바이스 로그아웃 → 에이전트 Stop → `access_tokens.revoked_at` 확인 → 관리 콘솔(Desktop) 접근. dev TTL 3분으로 exchange+재-AUTH가 연결을 유지한 채 일어나는지 로그 확인(`OK auth true` 두 번째 수신, 연결 id 동일).
 
 ### 5.2.1 Phase 1 상태 / handoff (2026-10-04)
 
 Phase 1 구현 완료, **미커밋**(Phase 0 위 작업 트리). 리뷰 전. 플래그 off(`AUTH_TOKEN_ENABLED=false`)와 클라이언트 키 모드 동작은 그대로다 — 토큰 모드는 relay NIP-11이 `buzz_token_auth`를 광고하고(서버) 토큰/세션이 있을 때(클라이언트)만 켜진다.
 
 **파일 (표면별, N = 신규, M = 수정)**
-- 공용 기반: N `crates/buzz-sdk/src/signer.rs`(`EventSigner {Keys, Principal}` — 토큰 모드는 principal pubkey + sentinel sig draft, 서버 재스탬프 id와 일치); N `crates/buzz-token-broker/`(토큰 소스 우선순위 `BUZZ_BOT_TOKEN > BUZZ_ACCESS_TOKEN > 브로커`, std-only loopback 브로커 클라이언트, 1회 재시도, 4KB 상한, loopback 외 URL 거절); N `crates/git-credential-buzz/`(호스트 일치 시에만 `username=token`/`password=<token>`, 소스 + `git config buzz.tokenfile`); M `buzz-core/src/draft.rs`(`verify_served_event`: relay가 준 이벤트는 id 유효 + (sentinel 또는 유효 서명)); M `buzz-ws-client/src/{connection,lib}.rs`(`connect_with_token`, `authenticate_token`(재-AUTH 겸용), `publish_event_with_token`); M 루트 `Cargo.toml`/`Cargo.lock`.
-- 서버(buzz-relay): N `identity/client_ip.rs`(`AUTH_TRUSTED_PROXY_CIDRS`, XFF 우→좌·`Forwarded` 워크, 손상된 hop은 가장 가까운 신뢰 프록시로, `unix` 리터럴로 UDS 신뢰); M `identity/{config,mod}.rs`; M `api/auth/{mod,oidc}.rs`(rate limit 키에 신뢰 프록시 클라이언트 IP); M `api/admin/auth.rs`(`authorize_bearer`: 모드 분기 전에 헤더 스킴으로 선택, user 토큰만, `resolve_admin_principal` 재사용, 토큰 실패 401·비운영자 403); M `api/git/transport.rs`(`Basic token:<t>`/`Bearer`, 401에 `Nostr`+`Basic realm="buzz"` 챌린지 둘 다, 봇은 owner ban 상속); M `nip11.rs`(`buzz_token_auth {version, bearer, oidc_providers}` 플래그 on일 때만); M `.env.example`.
-- buzz-acp: N `src/identity.rs`(`AgentIdentity`, `/auth/me` 파싱, `EXIT_AUTH_TERMINAL=78`), N `src/token_refresh.rs`(만료 15분 전 exchange, 세대 펜스, 같은 WS 재-AUTH, 실패 분류), N `src/token_broker.rs`(127.0.0.1 `GET /token`, 스폰별 secret, 60/분, 8KB 요청/4KB 응답, 5초, 동시 16), N `src/relay/token_auth_tests.rs`; M `acp.rs`·`config.rs`·`edit_routing.rs`·`engram_fetch.rs`·`git.rs`·`lib.rs`·`pool.rs`·`relay.rs`·`run_task.rs`·`setup_mode.rs`, 테스트 `relay/recovery_*tests.rs`·`tests/stdio_contract.rs`; M `crates/sprig/src/main.rs`(argv0 `git-credential-buzz`).
-- buzz-cli: N `src/client_token_tests.rs`; M `src/client.rs`(signer + Bearer, 401 터미널 코드 → exit 3), `src/lib.rs`(`build_client` 자격증명 선택), `commands/*`(pubkey 접근자 교체, 키 필요 명령은 exit 1 안내), `TESTING.md` §5a.
+- 공용 기반: N `crates/kuzz-sdk/src/signer.rs`(`EventSigner {Keys, Principal}` — 토큰 모드는 principal pubkey + sentinel sig draft, 서버 재스탬프 id와 일치); N `crates/kuzz-token-broker/`(토큰 소스 우선순위 `KUZZ_BOT_TOKEN > KUZZ_ACCESS_TOKEN > 브로커`, std-only loopback 브로커 클라이언트, 1회 재시도, 4KB 상한, loopback 외 URL 거절); N `crates/git-credential-kuzz/`(호스트 일치 시에만 `username=token`/`password=<token>`, 소스 + `git config kuzz.tokenfile`); M `kuzz-core/src/draft.rs`(`verify_served_event`: relay가 준 이벤트는 id 유효 + (sentinel 또는 유효 서명)); M `kuzz-ws-client/src/{connection,lib}.rs`(`connect_with_token`, `authenticate_token`(재-AUTH 겸용), `publish_event_with_token`); M 루트 `Cargo.toml`/`Cargo.lock`.
+- 서버(kuzz-relay): N `identity/client_ip.rs`(`AUTH_TRUSTED_PROXY_CIDRS`, XFF 우→좌·`Forwarded` 워크, 손상된 hop은 가장 가까운 신뢰 프록시로, `unix` 리터럴로 UDS 신뢰); M `identity/{config,mod}.rs`; M `api/auth/{mod,oidc}.rs`(rate limit 키에 신뢰 프록시 클라이언트 IP); M `api/admin/auth.rs`(`authorize_bearer`: 모드 분기 전에 헤더 스킴으로 선택, user 토큰만, `resolve_admin_principal` 재사용, 토큰 실패 401·비운영자 403); M `api/git/transport.rs`(`Basic token:<t>`/`Bearer`, 401에 `Nostr`+`Basic realm="kuzz"` 챌린지 둘 다, 봇은 owner ban 상속); M `nip11.rs`(`buzz_token_auth {version, bearer, oidc_providers}` 플래그 on일 때만); M `.env.example`.
+- kuzz-acp: N `src/identity.rs`(`AgentIdentity`, `/auth/me` 파싱, `EXIT_AUTH_TERMINAL=78`), N `src/token_refresh.rs`(만료 15분 전 exchange, 세대 펜스, 같은 WS 재-AUTH, 실패 분류), N `src/token_broker.rs`(127.0.0.1 `GET /token`, 스폰별 secret, 60/분, 8KB 요청/4KB 응답, 5초, 동시 16), N `src/relay/token_auth_tests.rs`; M `acp.rs`·`config.rs`·`edit_routing.rs`·`engram_fetch.rs`·`git.rs`·`lib.rs`·`pool.rs`·`relay.rs`·`run_task.rs`·`setup_mode.rs`, 테스트 `relay/recovery_*tests.rs`·`tests/stdio_contract.rs`; M `crates/sprig/src/main.rs`(argv0 `git-credential-kuzz`).
+- kuzz-cli: N `src/client_token_tests.rs`; M `src/client.rs`(signer + Bearer, 401 터미널 코드 → exit 3), `src/lib.rs`(`build_client` 자격증명 선택), `commands/*`(pubkey 접근자 교체, 키 필요 명령은 exit 1 안내), `TESTING.md` §5a.
 - Desktop Rust: N `src-tauri/src/auth/`(`api`, `bots`, `commands`, `credential`, `loopback`, `mod`, `pkce`, `redact`, `refresh`, `restore`, `watchdog`); M `app_state*.rs`, `relay.rs`, `relay/submit.rs`, `native_relay_client.rs`, `commands/{admin/*,agents,channels*,dms,identity*,messages*,profile,relay_members,teams/adopt/apply,workflows,workspace}.rs`, `managed_agents/{backend,env_vars/tests,hermes_profile_tests,reserved_env_keys,restore,runtime*,runtime_commands,storage}.rs`, `archive/*`, `persona_catalog.rs`, `team_catalog.rs`, `unread_catch_up.rs`, `lib.rs`.
 - Desktop React: N `shared/api/{relayAuthFrame,tokenAuth}.ts`(+ `relayAuthFrame.test.mjs`), N `features/onboarding/ui/GoogleSignInButton.tsx`, N `features/settings/ui/AccountSettingsCard.tsx`(+ jsdom 테스트); M `relayClientSession.ts`, `readOnlyRelayClient.ts`, `useCommunityInit.ts`, `ProfileStep.tsx`, `SettingsPanels.tsx`.
 - Mobile: M `shared/relay/nostr_models.dart`(`sig` → `String?`, toJson은 있을 때만), `shared/push/push_presentation_cache.dart`, 테스트 `nostr_models_test.dart`.
@@ -638,38 +638,38 @@ Phase 1 구현 완료, **미커밋**(Phase 0 위 작업 트리). 리뷰 전. 플
 ```
 cargo fmt --all -- --check                                   # ok
 cargo clippy --workspace --all-targets -- -D warnings        # ok
-cargo test -p buzz-relay --lib api::auth::live_tests -- --ignored --test-threads=1   # 11/11 (신규 admin Bearer, git Basic/Bearer 포함)
-cargo test -p buzz-db identity -- --include-ignored --test-threads=1                # 10/10
-cargo test --no-fail-fast -p buzz-core -p buzz-auth -p buzz-pubsub -p buzz-db -p buzz-relay   -p buzz-sdk -p buzz-token-broker -p git-credential-buzz -p buzz-ws-client -p buzz-cli -p sprig
+cargo test -p kuzz-relay --lib api::auth::live_tests -- --ignored --test-threads=1   # 11/11 (신규 admin Bearer, git Basic/Bearer 포함)
+cargo test -p kuzz-db identity -- --include-ignored --test-threads=1                # 10/10
+cargo test --no-fail-fast -p kuzz-core -p kuzz-auth -p kuzz-pubsub -p kuzz-db -p kuzz-relay   -p kuzz-sdk -p kuzz-token-broker -p git-credential-kuzz -p kuzz-ws-client -p kuzz-cli -p sprig
                                                              # 2970 통과 / 6 실패 = §5.1.1의 기존 6건과 동일
-cargo test -p buzz-acp                                       # lib 1044 통과 / 32 실패 = HEAD 워크트리에서도 같은 32건(bash 스크립트·타이밍)
+cargo test -p kuzz-acp                                       # lib 1044 통과 / 32 실패 = HEAD 워크트리에서도 같은 32건(bash 스크립트·타이밍)
 cargo test --manifest-path desktop/src-tauri/Cargo.toml      # 3374 통과
 desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 ```
 - admin `authorize_bearer`의 user-only 가드는 뮤테이션(가드 제거 → 테스트 실패)으로 반증 가능성 확인. 테스트는 roster에 봇 id까지 넣어 가드만이 403의 근거가 되게 한다.
-- Desktop `cargo clippy -D warnings`는 Windows에서 수정하지 않은 파일(`buzz-terminal` 등)의 기존 경고로 실패 — 변경 파일에는 경고 없음.
+- Desktop `cargo clippy -D warnings`는 Windows에서 수정하지 않은 파일(`kuzz-terminal` 등)의 기존 경고로 실패 — 변경 파일에는 경고 없음.
 - Mobile 테스트는 이 Windows 머신에 Flutter가 없어 **미실행**(Hermit shim 부트스트랩 실패). macOS에서 `just mobile-check mobile-test` 필요.
 
 **결정 (계획이 열어둔 부분)**
 - 토큰 모드 감지: relay NIP-11 `buzz_token_auth.bearer`(플래그 on에서만 존재). 세션은 커뮤니티(relay origin)별 — relay마다 계정 DB가 다르므로. keyring 키 `auth.refresh.<origin>`, access는 메모리.
 - 공용 `EventSigner`: 클라이언트는 principal pubkey + sentinel sig로 이벤트를 만들고 서버가 재스탬프 — 기존 `nostr::Event` 경로·이벤트 id 계약 유지.
 - relay가 돌려준 이벤트 무결성은 `verify_served_event`(sentinel 허용) — acp/CLI/Desktop의 `event.verify()` 중 relay-served 지점(huddle 지침, canvas, edit routing, workflow owner, archive 등)을 교체. 로컬 서명 검증은 유지.
-- `git-credential-buzz`는 `BUZZ_RELAY_URL`(또는 `git config buzz.host`) 호스트에만 토큰을 준다(다른 원격으로 유출 방지). 서버는 플래그 on에서 401에 `Nostr`와 `Basic` 챌린지를 함께 보낸다.
+- `git-credential-kuzz`는 `KUZZ_RELAY_URL`(또는 `git config kuzz.host`) 호스트에만 토큰을 준다(다른 원격으로 유출 방지). 서버는 플래그 on에서 401에 `Nostr`와 `Basic` 챌린지를 함께 보낸다.
 - acp: exchange의 `invalid_token`·기타 4xx도 터미널(78)로 분류. `/auth/me` 거절도 78. 시크릿 키가 필요한 기능(NIP-44 engram/mem, NIP-AM, 암호화 observer, 커밋 서명)은 토큰 모드에서 로그와 함께 꺼짐.
 - CLI: 키가 필요한 명령(`upload`/`media`, `mem`, `gifs`, NIP-44 draft)은 exit 1 + 사유(토큰 실패와 구분하려고 3이 아님).
-- Desktop: 토큰 모드 등록 시 에이전트 레코드의 `pubkey`를 서버 bot id로 바꾸고 nsec·auth tag를 지운다(`bot_origin` 필드, §4.14). 별칭 맵(`auth-bots.json`)은 삭제. 등록은 (origin, agent) 잠금 + `auth-bot-adoptions.json` 저널로 중복 봇 없이 재개. relay로 가는 호출 지점(채널 추가, DM, 멘션)은 `adopt_named_agents`로 한 번 이동시킨 뒤 bot id를 쓴다. Hermes 프로필 디렉터리는 `buzz-<old>` → `buzz-<new>`로 rename(실패 시 새 프로필). bot 레코드는 자기 커뮤니티에서만 실행. 로그인/로그아웃/계정 삭제, 그리고 복원으로 계정이 바뀌면 창 리로드. UI 소켓은 만료 시 relay가 닫으면 재연결(제자리 재-AUTH는 acp만).
+- Desktop: 토큰 모드 등록 시 에이전트 레코드의 `pubkey`를 서버 bot id로 바꾸고 nsec·auth tag를 지운다(`bot_origin` 필드, §4.14). 별칭 맵(`auth-bots.json`)은 삭제. 등록은 (origin, agent) 잠금 + `auth-bot-adoptions.json` 저널로 중복 봇 없이 재개. relay로 가는 호출 지점(채널 추가, DM, 멘션)은 `adopt_named_agents`로 한 번 이동시킨 뒤 bot id를 쓴다. Hermes 프로필 디렉터리는 `kuzz-<old>` → `kuzz-<new>`로 rename(실패 시 새 프로필). bot 레코드는 자기 커뮤니티에서만 실행. 로그인/로그아웃/계정 삭제, 그리고 복원으로 계정이 바뀌면 창 리로드. UI 소켓은 만료 시 relay가 닫으면 재연결(제자리 재-AUTH는 acp만).
 
 **후속 (Phase 1에서 하지 않음)**
 - 서버가 principal/bot의 kind 0을 아직 발행하지 않음(§3.7) → 토큰 모드에서 이름/아바타 누락, 에이전트 자기 메시지가 bot id로 보임.
-- Media/Blossom(`buzz upload`, Desktop 첨부), huddle, mesh/pairing은 Phase 2까지 토큰 모드 불가(명확한 오류).
+- Media/Blossom(`kuzz upload`, Desktop 첨부), huddle, mesh/pairing은 Phase 2까지 토큰 모드 불가(명확한 오류).
 - git push 실제 왕복 e2e(`e2e_git.rs` 토큰 버전)와 `e2e_managed_agent.rs` 토큰 모드 복제는 미작성 — live 테스트는 git 인증 분기(Basic/Bearer 통과, 잘못된 username·revoke 후 401, 챌린지 2종)까지만.
 - 봇 삭제 시 세션이 메모리에 없는 다른 커뮤니티는 건너뜀. 닫힌 relay에서 봇 멤버십 필요(§5.1.1 그대로).
-- acp 테스트가 `crates/buzz-acp/` 아래 잡파일(망가진 Windows 임시 경로 이름의 `.json`/`.ndjson`)을 다시 만든다 — 커밋 전 확인(`.concat`과 기존 잡파일은 v7에서 삭제).
+- acp 테스트가 `crates/kuzz-acp/` 아래 잡파일(망가진 Windows 임시 경로 이름의 `.json`/`.ndjson`)을 다시 만든다 — 커밋 전 확인(`.concat`과 기존 잡파일은 v7에서 삭제).
 - client_ip: 헤더 선택 스위치(XFF/Forwarded 중 하나만 신뢰)와 v4-mapped CIDR 정규화 재검토.
 - `verify_served_event`의 sentinel 허용을 NIP-11이 토큰 인증을 광고하는 relay로 한정.
 - 로그인 시 keyring 쓰기가 실패하면 origin별 토큰 모드 마커를 따로 영속화.
 - 오프라인 로그아웃: 서버 revoke를 durable 재시도 큐로(지금은 이 기기에서만 잊음, 복원 실패 상태의 Sign out 포함).
-- `buzz-acp run` 토큰 모드에는 refresh 태스크가 없음 → TTL(기본 1h)보다 긴 run은 미지원.
+- `kuzz-acp run` 토큰 모드에는 refresh 태스크가 없음 → TTL(기본 1h)보다 긴 run은 미지원.
 - 토큰 모드 welcome kickoff는 오프너를 보내지 않음(Desktop이 봇 토큰을 발급하면 실행 중 토큰이 revoke되므로 로컬 서명을 거부하고 경고만).
 - Provider 백엔드는 토큰 모드에서도 아직 키 레코드를 만든다.
 - Desktop 전체 `cargo fmt`는 수정하지 않은 `mesh_llm/recovery.rs` 파싱 실패로 중단 — 변경 파일만 개별 포맷.
@@ -681,8 +681,8 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 - B4 위 Desktop 결정 참조. kickoff는 토큰 모드에서 로컬 서명 거부. 삭제는 서버 먼저(404=삭제됨), 실패 시 로컬 유지.
 - B5 acp: 새 연결(세대 증가) 시 대기 중 re-AUTH를 settle, `reauth()`에 AUTH_TIMEOUT.
 - B6 broker: 에이전트 프로세스마다 lease(시크릿 1개), drop 시 해제, 가득 차면 거부(라이브 시크릿 축출 없음). CLI는 broker 429/5xx를 exit 2로.
-- 기타: git-credential-buzz는 https(또는 relay 자체가 ws/http일 때 http)에만 토큰; CLI 명시적 `--private-key`가 토큰 env보다 우선(`--bot-token` CLI 플래그는 원래 없음, 회귀 테스트 추가); `buzz-acp run`이 broker 시작; exchange 타임아웃 8s(<10s replay 창); 봇 등록 잠금; Restoring 중 Sign out 유지; Google 버튼 스피너 aria-hidden; watchdog 재발급 실패·만료 직전 세션은 auth-failed로 park.
-- 테스트: Tauri 3391 통과, acp lib 1054 통과/32 실패(HEAD와 동일 개수), buzz-cli 506, git-credential-buzz 8+5, live auth 12/12, jsdom 164, node 6866. fmt/clippy(workspace -D warnings)/tsc 통과. 각 가드는 뮤테이션 확인.
+- 기타: git-credential-kuzz는 https(또는 relay 자체가 ws/http일 때 http)에만 토큰; CLI 명시적 `--private-key`가 토큰 env보다 우선(`--bot-token` CLI 플래그는 원래 없음, 회귀 테스트 추가); `kuzz-acp run`이 broker 시작; exchange 타임아웃 8s(<10s replay 창); 봇 등록 잠금; Restoring 중 Sign out 유지; Google 버튼 스피너 aria-hidden; watchdog 재발급 실패·만료 직전 세션은 auth-failed로 park.
+- 테스트: Tauri 3391 통과, acp lib 1054 통과/32 실패(HEAD와 동일 개수), kuzz-cli 506, git-credential-kuzz 8+5, live auth 12/12, jsdom 164, node 6866. fmt/clippy(workspace -D warnings)/tsc 통과. 각 가드는 뮤테이션 확인.
 
 **재리뷰 반영 (v8, 2026-10-04)**
 - N1 레코드 이동 후 `agents-data-changed` 발행. 옛 pubkey → bot id 맵(메모리 + 크래시 시 저널)을 `find_managed_agent_mut`와 Start/Stop/Delete/수정 명령이 따라감.
@@ -692,7 +692,7 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 - 삭제: 펜스 → 프로세스 정지 → 서버 삭제 → 로컬 삭제(watchdog 재등록 차단). 순서 테스트 추가.
 - `adopt_named_agents`는 다른 커뮤니티의 bot 레코드를 거부. persona 이름/아바타 동기화는 bot 레코드에 `sync_bot_profile`.
 - 로그인 시 키로 실행 중인 에이전트는 "Restart required"(`sign_in`) 표시 — 자동 재시작 안 함.
-- replay 창 상수를 `buzz-core` `principal.rs` 하나로 공유(relay TTL, acp). acp의 옛 bash 테스트가 크레이트 폴더에 잡파일을 만들던 경로 문제 수정.
+- replay 창 상수를 `kuzz-core` `principal.rs` 하나로 공유(relay TTL, acp). acp의 옛 bash 테스트가 크레이트 폴더에 잡파일을 만들던 경로 문제 수정.
 - 테스트: Tauri 3408 통과/0 실패, acp lib 1054/32(기존과 같은 개수), live auth 12/12. fmt/workspace clippy -D warnings/tsc 통과.
 
 **후속 추가 (v8)**
@@ -709,20 +709,20 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 - `stop_managed_agent_for_delete` pubkey 비교 대소문자 무시.
 - 게이트: Tauri 3410/0, workspace clippy -D warnings 통과, tsc·biome 통과, onboarding node 104/0, acp lib 1054/32(기존과 같은 개수), live auth 12/12.
 - 후속: 키 모드 커뮤니티 간 경합(B에서 키 모드 시작이 A의 이동과 동시에 일어나면 슬롯을 잡지 않음); 다른-커뮤니티 거부·Restart required 호출 지점은 Windows에서 미검증; 기존 bots 테스트의 `build_app_state()`는 Windows 게이트 없음(Windows CI 위험).
-- 커밋 분리: Phase 0 전용 파일 ~48, Phase 1 전용 ~158, 양쪽이 수정한 파일 ~13(`.env.example`, 루트 `Cargo.toml`/`Cargo.lock`, buzz-core `lib.rs`/`draft.rs`/`principal.rs`, relay `identity/mod.rs`·`identity/config.rs`, `api/auth/{mod,oidc,bots,live_tests}.rs`, 이 문서). Phase 0 스냅샷이 없어 겹치는 파일은 hunk 단위 분리가 필요. `CLAUDE.md`는 stage하지 않는다.
+- 커밋 분리: Phase 0 전용 파일 ~48, Phase 1 전용 ~158, 양쪽이 수정한 파일 ~13(`.env.example`, 루트 `Cargo.toml`/`Cargo.lock`, kuzz-core `lib.rs`/`draft.rs`/`principal.rs`, relay `identity/mod.rs`·`identity/config.rs`, `api/auth/{mod,oidc,bots,live_tests}.rs`, 이 문서). Phase 0 스냅샷이 없어 겹치는 파일은 hunk 단위 분리가 필요. `CLAUDE.md`는 stage하지 않는다.
 
 ### 5.3 Phase 2 — CLI 로그인, Mobile, Web, 운영자 관리, 그리고 Phase 3 선행 의존 제거 (B4)
 
 범위
-- buzz-cli `auth` 명령(사람 로그인, 봇 관리). Mobile 로그인/secure storage/Bearer/토큰 AUTH/draft/Account·Devices/pairing 삭제. (CLI 토큰 모드·`git-credential-buzz`·admin Bearer는 Phase 1로 이동, B6.)
+- kuzz-cli `auth` 명령(사람 로그인, 봇 관리). Mobile 로그인/secure storage/Bearer/토큰 AUTH/draft/Account·Devices/pairing 삭제. (CLI 토큰 모드·`git-credential-kuzz`·admin Bearer는 Phase 1로 이동, B6.)
 - **web/** Google 로그인 세션(§4.17).
 - **운영자 관리**: `/auth/operators` 엔드포인트(기존 `relay_operators` 스토어 + `AdminRole`, B5), `RELAY_OPERATOR_PUBKEYS`/`RELAY_OWNER_PUBKEY` config 우선순위 제거(부트스트랩은 Phase 0부터 존재, §3.3 B8).
 - **B4 의존 제거(Phase 3이 컴파일되기 위한 선행)**:
   - `audio/handler.rs:495-576` NIP-42 → 토큰 AUTH 프레임; `:2984,:3429` → `relay_principal` 스탬프.
   - `api/bridge.rs:799,2565-2628,1426` → `relay_principal`.
   - `invite_token.rs:111` → `INVITE_SIGNING_SECRET`.
-  - `buzz-media/auth.rs` Blossom → Bearer.
-  - `buzz-workflow/executor.rs:994-998` → 토큰/내부 경로.
+  - `kuzz-media/auth.rs` Blossom → Bearer.
+  - `kuzz-workflow/executor.rs:994-998` → 토큰/내부 경로.
   - `web/` `nostr-signer.ts`, `nip98.ts`, `git-client.ts:57`, `invite-api.ts`.
   - ~~나머지 `relay_keypair` 서명 사용처 전부 → `relay_principal` 스탬프~~ **(v10에서 취소, §5.3.1)**: relay principal = relay 서명 키이므로 relay 저작 이벤트는 계속 서명된다.
 - Phase 2 이후 `relay_keypair`는 relay 자신의 서버 신원으로 남는다: relay 저작 이벤트 서명(principal과 같은 저자), 외부 S2S 인증(push 게이트웨이 NIP-98, operator listener, push lease, artifact), 그리고 NIP-42 챌린지 검증(이것만 Phase 3 삭제).
@@ -735,22 +735,22 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 - mobile 위젯: Google 로그인 버튼 → 가짜 auth 결과 → 상태 전이; 자동 로그인 성공/실패; Devices 원격 로그아웃 후 목록 갱신.
 - web Playwright: 로그인 리다이렉트 왕복(가짜 provider), 쿠키 refresh.
 
-수동 검증: `buzz auth login`(브라우저 열림) → `buzz --format compact channels list` → 에이전트 내부 `buzz` 호출(브로커). iOS 시뮬레이터 Google 로그인 → 메시지 → 재시작 후 유지. 운영자 콘솔 Bearer 접근. git push 토큰.
+수동 검증: `kuzz auth login`(브라우저 열림) → `kuzz --format compact channels list` → 에이전트 내부 `kuzz` 호출(브로커). iOS 시뮬레이터 Google 로그인 → 메시지 → 재시작 후 유지. 운영자 콘솔 Bearer 접근. git push 토큰.
 
 ### 5.3.1 Phase 2 상태 / handoff (2026-10-04)
 
 Phase 2(모바일 제외) 구현 완료, **미커밋**(909bfce84 위 작업 트리). 리뷰 전. 모든 서버 변경은 `AUTH_TOKEN_ENABLED`에 묶여 있고 플래그 off 동작은 그대로다. 클라이언트(Desktop/CLI/web)는 Phase 1처럼 relay NIP-11 `buzz_token_auth`가 있고 세션/토큰이 있을 때만 토큰 경로를 탄다.
 
 **파일 (표면별, N = 신규, M = 수정)**
-- 서버 프로필(kind 0): N `crates/buzz-relay/src/identity/profile.rs`(principal/봇 kind 0 서버 스탬프 발행, 내용 비교로 멱등, 같은 초 tie-break 회피); M `identity/ws.rs`(토큰 AUTH 성공 후 그 커뮤니티 reconcile 스폰), `api/auth/session.rs`(`PATCH /auth/profile` 후 발행), `api/auth/bots.rs`(봇 생성·`PATCH /auth/bots/{id}/profile` 후 발행); M `buzz-db/src/store/identity/{principal,mod}.rs`(`principal_profile_communities`, `latest_principal_profile_event`, 상한 `MAX_PROFILE_COMMUNITIES=1000`).
-- 서버 relay 아이덴티티: M `buzz-db` `ensure_relay_principal(key)`(relay 서명 키를 relay principal로, 다른 id면 재키잉 + `relay_operators.added_by` 추종, advisory lock); M `identity/mod.rs` `init_relay_principal`(main.rs·live 테스트 공용 기동 경로), `main.rs`.
-- 운영자: M `buzz-relay/src/config.rs` `with_token_mode_operator_policy`(플래그 on이면 `RELAY_OPERATOR_PUBKEYS`/`RELAY_OWNER_PUBKEY` 무시 + 경고, 로스터만).
+- 서버 프로필(kind 0): N `crates/kuzz-relay/src/identity/profile.rs`(principal/봇 kind 0 서버 스탬프 발행, 내용 비교로 멱등, 같은 초 tie-break 회피); M `identity/ws.rs`(토큰 AUTH 성공 후 그 커뮤니티 reconcile 스폰), `api/auth/session.rs`(`PATCH /auth/profile` 후 발행), `api/auth/bots.rs`(봇 생성·`PATCH /auth/bots/{id}/profile` 후 발행); M `kuzz-db/src/store/identity/{principal,mod}.rs`(`principal_profile_communities`, `latest_principal_profile_event`, 상한 `MAX_PROFILE_COMMUNITIES=1000`).
+- 서버 relay 아이덴티티: M `kuzz-db` `ensure_relay_principal(key)`(relay 서명 키를 relay principal로, 다른 id면 재키잉 + `relay_operators.added_by` 추종, advisory lock); M `identity/mod.rs` `init_relay_principal`(main.rs·live 테스트 공용 기동 경로), `main.rs`.
+- 운영자: M `kuzz-relay/src/config.rs` `with_token_mode_operator_policy`(플래그 on이면 `RELAY_OPERATOR_PUBKEYS`/`RELAY_OWNER_PUBKEY` 무시 + 경고, 로스터만).
 - 초대: M `identity/config.rs`(`INVITE_SIGNING_SECRET`, 플래그 on에서 필수, Debug 마스킹), `invite_token.rs`(`derive_invite_key_from_secret`, 별도 라벨), `api/invites.rs`(`invite_key` 선택, mint·claim·accept-policy Bearer 분기 — user 세션만, 봇 403).
 - web 지원: M `router.rs`(플래그 on에서 `/auth/cb`를 web SPA로 서빙).
 - huddle 오디오: N `audio/token_auth.rs`(admit된 소켓의 같은 principal 토큰 교체 `auth_ok`/`auth_error`); M `audio/handler.rs`(`{"type":"auth","token"}` 형식, 공용 admission, 토큰 바인딩·deadline·revoke 레지스트리), `audio/mod.rs`, `identity/ws.rs`(`TokenSession` close 프레임 경로별); Desktop M `huddle/relay_api.rs`(토큰 모드면 세션 access로 AUTH, 30초마다 회전 감지 후 재전송), `huddle/pipeline.rs` + N `pipeline_stt_poster_tests.rs`(STT 전사 게시를 principal+Bearer로).
-- media: N `api/media/token_auth.rs`(Bearer 게이트 = bridge와 동일 조건, 내부 업로드 증명 kind 24242 sentinel), M `api/media.rs`(업로드·GET·HEAD Bearer 우선, 기존 Blossom 경로 그대로); M `buzz-cli/src/client.rs`(+tests, `upload`/`media` Bearer; `MEDIA_REQUIRES_KEY` 삭제); Desktop M `commands/media.rs`(업로드·미디어 프록시·다운로드·persona 카드가 커뮤니티 자격증명으로 Bearer/Blossom 선택). `buzz-media` 크레이트는 무변경.
-- workflow: M `buzz-workflow/src/executor.rs` `relay_auth_header`(`BUZZ_BOT_TOKEN` > `BUZZ_API_TOKEN` Bearer > dev `X-Pubkey`).
-- buzz-cli `auth`: N `src/auth_session.rs`(origin별 `session.json`, OS keyring refresh, 회전), N `src/auth_loopback.rs`(PKCE, state, loopback `/cb`), N `commands/auth.rs` + `auth_tests.rs`; M `lib.rs`(auth 그룹, `build_client_with_session`), `commands/mod.rs`, `Cargo.toml`(`keyring` 4, `webbrowser` 1, `zeroize` — 모두 lock에 이미 존재), `TESTING.md` §5b.
+- media: N `api/media/token_auth.rs`(Bearer 게이트 = bridge와 동일 조건, 내부 업로드 증명 kind 24242 sentinel), M `api/media.rs`(업로드·GET·HEAD Bearer 우선, 기존 Blossom 경로 그대로); M `kuzz-cli/src/client.rs`(+tests, `upload`/`media` Bearer; `MEDIA_REQUIRES_KEY` 삭제); Desktop M `commands/media.rs`(업로드·미디어 프록시·다운로드·persona 카드가 커뮤니티 자격증명으로 Bearer/Blossom 선택). `kuzz-media` 크레이트는 무변경.
+- workflow: M `kuzz-workflow/src/executor.rs` `relay_auth_header`(`KUZZ_BOT_TOKEN` > `KUZZ_API_TOKEN` Bearer > dev `X-Pubkey`).
+- kuzz-cli `auth`: N `src/auth_session.rs`(origin별 `session.json`, OS keyring refresh, 회전), N `src/auth_loopback.rs`(PKCE, state, loopback `/cb`), N `commands/auth.rs` + `auth_tests.rs`; M `lib.rs`(auth 그룹, `build_client_with_session`), `commands/mod.rs`, `Cargo.toml`(`keyring` 4, `webbrowser` 1, `zeroize` — 모두 lock에 이미 존재), `TESTING.md` §5b.
 - web: N `web/src/shared/auth/{pkce,web-session,token-mode,auth-mode,session}.ts` + 테스트 3, N `shared/auth/ui/{AccountControl,AuthCallbackPage}.tsx`, N `app/routes/auth.cb.tsx`; M `routes.ts`, `routeTree.gen.ts`, `routes/root.tsx`, `features/invite/{invite-api.ts,ui/InvitePage.tsx}`, `features/repos/git-client.ts`, `shared/lib/nostr-client.ts`, `package.json`(`test` 스크립트).
 - 테스트 신규: `api/auth/live_tests/{profile,invites,audio}.rs`, `router_tests.rs`(`/auth/cb`), `invites.rs` `invite_key_tests`, `config.rs` 운영자 정책, `identity/config.rs` 시크릿 필수.
 - `.env.example`: `INVITE_SIGNING_SECRET`(플래그 on 필수), 토큰 모드 운영자 정책 설명.
@@ -759,10 +759,10 @@ Phase 2(모바일 제외) 구현 완료, **미커밋**(909bfce84 위 작업 트�
 ```
 cargo fmt --all -- --check                                   # ok
 cargo clippy --workspace --all-targets -- -D warnings        # ok
-cargo test -p buzz-relay --lib api::auth::live_tests -- --ignored --test-threads=1   # 20/20 (신규 profile, invites, audio 5, media 포함)
-cargo test -p buzz-db identity -- --include-ignored --test-threads=1                # 10/10 (relay principal 재키잉 포함)
-cargo test --no-fail-fast -p buzz-core -p buzz-auth -p buzz-pubsub -p buzz-db -p buzz-relay \
-  -p buzz-sdk -p buzz-token-broker -p git-credential-buzz -p buzz-ws-client -p buzz-cli -p sprig -p buzz-workflow -p buzz-media
+cargo test -p kuzz-relay --lib api::auth::live_tests -- --ignored --test-threads=1   # 20/20 (신규 profile, invites, audio 5, media 포함)
+cargo test -p kuzz-db identity -- --include-ignored --test-threads=1                # 10/10 (relay principal 재키잉 포함)
+cargo test --no-fail-fast -p kuzz-core -p kuzz-auth -p kuzz-pubsub -p kuzz-db -p kuzz-relay \
+  -p kuzz-sdk -p kuzz-token-broker -p git-credential-kuzz -p kuzz-ws-client -p kuzz-cli -p sprig -p kuzz-workflow -p kuzz-media
                                                              # 3350 통과 / 6 실패 = §5.1.1 기존 6건과 동일
 cargo test --manifest-path desktop/src-tauri/Cargo.toml      # 3429 통과 / 0 실패
 web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vite build ok, node --test 18/18, file-size·pubkey-truncation ok
@@ -780,7 +780,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 - 초대 mint/claim/accept-policy의 Bearer는 **user 세션만**(Telegram: 봇은 초대 링크로 들어가지 않고 owner가 추가). mint는 기존 owner/admin 역할 검사 그대로.
 - 오디오: 토큰 소켓은 루트 WS와 같은 바인딩 레지스트리·deadline 감시·revoke를 공유, 같은 principal 토큰 교체 지원(1h 만료로 허들이 끊기지 않게). 토큰 모드 에이전트의 TTS 음성은 미지원(Desktop이 봇 토큰을 새로 발급하면 실행 중 토큰이 revoke됨).
 - media: Bearer 게이트는 bridge와 같은 조건(플래그 on + NIP-FI off), 읽기(GET/HEAD)도 Bearer 허용(토큰 모드 Desktop 미디어 프록시가 서명 불가하므로).
-- CLI 자격증명 순서: 명시 토큰 env(`BUZZ_BOT_TOKEN` > `BUZZ_ACCESS_TOKEN` > 브로커) > 개인키(argv/env) > 저장된 세션. 세션을 키보다 아래에 둔 이유는 에이전트에 주어진 신원을 사람 로그인이 덮지 않게(Hermes `.env` 버그 클래스). refresh는 OS keyring(service `buzz-cli`, account `refresh:<origin>`), 없으면 `session.json`(0600) 폴백 + 경고(`gh`와 같음). 회전된 refresh를 저장 못 하면 소비된 사본을 지우고 exit 3. 로그아웃 네트워크 실패는 세션 유지 + exit 2.
+- CLI 자격증명 순서: 명시 토큰 env(`KUZZ_BOT_TOKEN` > `KUZZ_ACCESS_TOKEN` > 브로커) > 개인키(argv/env) > 저장된 세션. 세션을 키보다 아래에 둔 이유는 에이전트에 주어진 신원을 사람 로그인이 덮지 않게(Hermes `.env` 버그 클래스). refresh는 OS keyring(service `kuzz-cli`, account `refresh:<origin>`), 없으면 `session.json`(0600) 폴백 + 경고(`gh`와 같음). 회전된 refresh를 저장 못 하면 소비된 사본을 지우고 exit 3. 로그아웃 네트워크 실패는 세션 유지 + exit 2.
 - web: access는 JS 메모리, 부팅·만료 5분 전 쿠키 refresh(single-flight, 세대 펜스, 400/401 → 로그아웃, 그 외 5s~300s 백오프 후 중단). 로그아웃 서버 호출 실패 시 세션 유지 + 오류 표시. 초대 claim은 토큰 모드에서 세션 필수(임시 키 폴백 없음).
 - workflow `AddReaction`: 헤더만 토큰화. 대상 `/api/messages/{id}/reactions`는 relay에 라우트가 없다(기존 결함) — 후속.
 
@@ -796,21 +796,21 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 - Phase 1 후속 중 persona/team 스냅샷 가져오기의 키 에이전트 생성은 Windows에서 앱 없이 검증이 어려워 미착수.
 
 **리뷰 반영 (v11, 2026-10-05)** — Phase 2 리뷰 블로커 B1–B3 + 선택 항목. 이 절이 위 "결정"·"후속"의 해당 항목보다 우선한다.
-- **B1 운영자 config**: `Config`를 변경하지 않는다(`with_token_mode_operator_policy` 삭제). 대신 `Config::admin_config_operator_pubkeys()`/`admin_owner_fallback_pubkey()`가 플래그 on에서 비어 있고, admin 해석 지점(`admin/auth.rs` `lookup_admin_principal`, `admin/mod.rs` 운영자 목록·`config_operator_exists`·`is_config_backed_pubkey`)만 이를 쓴다. `RELAY_OWNER_PUBKEY`는 그대로 NIP-43 owner 부트스트랩과 `BUZZ_REQUIRE_RELAY_MEMBERSHIP` 기동 검사(`Config::check_relay_membership_owner`, main.rs가 호출)에 쓰인다. `/operator/*` 커뮤니티 프로비저닝(`api/operator.rs`, `handlers/community_provisioning.rs`)은 키 서명 API로 **Phase 3까지 `RELAY_OPERATOR_PUBKEYS` 유지**(토큰 경로 없음 — 후속). 테스트: 실제 `from_env`를 env(플래그 on + 멤버십 필수 + owner + operator)로 로드해 owner/operator 필드 보존, admin 해석은 비어 있음, 플래그 off는 기존대로(가드 제거 시 실패 확인).
+- **B1 운영자 config**: `Config`를 변경하지 않는다(`with_token_mode_operator_policy` 삭제). 대신 `Config::admin_config_operator_pubkeys()`/`admin_owner_fallback_pubkey()`가 플래그 on에서 비어 있고, admin 해석 지점(`admin/auth.rs` `lookup_admin_principal`, `admin/mod.rs` 운영자 목록·`config_operator_exists`·`is_config_backed_pubkey`)만 이를 쓴다. `RELAY_OWNER_PUBKEY`는 그대로 NIP-43 owner 부트스트랩과 `KUZZ_REQUIRE_RELAY_MEMBERSHIP` 기동 검사(`Config::check_relay_membership_owner`, main.rs가 호출)에 쓰인다. `/operator/*` 커뮤니티 프로비저닝(`api/operator.rs`, `handlers/community_provisioning.rs`)은 키 서명 API로 **Phase 3까지 `RELAY_OPERATOR_PUBKEYS` 유지**(토큰 경로 없음 — 후속). 테스트: 실제 `from_env`를 env(플래그 on + 멤버십 필수 + owner + operator)로 로드해 owner/operator 필드 보존, admin 해석은 비어 있음, 플래그 off는 기존대로(가드 제거 시 실패 확인).
 - **B2 kind 0 경합**: 발행은 `Db::lock_principal_profile_publish(community, principal)` — `pg_advisory_xact_lock(sha256(community‖principal) 앞 8바이트)`를 잡은 트랜잭션 안에서 principal row·최신 kind 0·`users` row 유무를 읽고, insert·side effect·dispatch를 마친 뒤 commit(드롭 시 rollback으로 해제). 늦게 도착한 발행자는 항상 최신 프로필을 읽으므로 `max(now, prev+1)`이 낡은 이름을 올리지 않는다. 같은 연결의 토큰 재-AUTH 성공 후에도 reconcile → 실패한 발행이 1시간 안에 수렴(Rule 1). 테스트: 잠금을 쥔 채 발행을 스폰 → 400ms 대기 확인 → principal 이름 변경 → 해제 → **그 발행자가 쓴 이벤트**가 새 이름(잠금 제거 시 실패 확인); 발행 없이 바뀐 이름이 재-AUTH로 수렴(재-AUTH reconcile 제거 시 실패).
 - **B3 flaky**: `profiles()`가 id로 중복 제거(백필/라이브 겹침), `users.display_name`은 기한 내 폴링. 전체 live 스위트 5회 연속 결과는 아래.
-- 선택 반영: PATCH·봇 생성/프로필의 fan-out은 스폰(동시 4, `for_each_concurrent`); **AUTH/재-AUTH reconcile은 `users` row가 있는 커뮤니티만**(읽기만 하는 커뮤니티에 Google 이름 공개 안 함), 대신 **토큰 principal의 첫 accepted 쓰기**(WS EVENT, `POST /events`)에서 그 커뮤니티에 발행(프로세스별 10분/10만 캐시로 중복 억제, 실패 시 캐시 무효화) — 첫 메시지 경로와 CLI 전용 사용자 후속도 이것으로 해결; 봇은 AUTH의 owner 링크가 `users` row를 만들므로 AUTH reconcile로 발행. web `safeReturnTo`: 백슬래시·제어문자 거부, `URL`로 정규화 후 같은 origin·`/auth` 경로 아님만 허용. CLI: acp가 모든 에이전트 자식에 `BUZZ_DISABLE_STORED_SESSION=1`(토큰·키 모드 모두, 다른 env 적용 후) → `buzz`는 저장된 로그인을 쓰지 않고 exit 3, `buzz auth login/logout`은 거부. 계획 문서 §5.3·§5.4 정정.
+- 선택 반영: PATCH·봇 생성/프로필의 fan-out은 스폰(동시 4, `for_each_concurrent`); **AUTH/재-AUTH reconcile은 `users` row가 있는 커뮤니티만**(읽기만 하는 커뮤니티에 Google 이름 공개 안 함), 대신 **토큰 principal의 첫 accepted 쓰기**(WS EVENT, `POST /events`)에서 그 커뮤니티에 발행(프로세스별 10분/10만 캐시로 중복 억제, 실패 시 캐시 무효화) — 첫 메시지 경로와 CLI 전용 사용자 후속도 이것으로 해결; 봇은 AUTH의 owner 링크가 `users` row를 만들므로 AUTH reconcile로 발행. web `safeReturnTo`: 백슬래시·제어문자 거부, `URL`로 정규화 후 같은 origin·`/auth` 경로 아님만 허용. CLI: acp가 모든 에이전트 자식에 `KUZZ_DISABLE_STORED_SESSION=1`(토큰·키 모드 모두, 다른 env 적용 후) → `kuzz`는 저장된 로그인을 쓰지 않고 exit 3, `kuzz auth login/logout`은 거부. 계획 문서 §5.3·§5.4 정정.
 - Rule 3 테스트 추가: `relay_operators.added_by` 재키잉 추종; relay 키가 이미 user/bot이면 사전 거부(`InvalidData`, 기존 사후 비교는 도달 불가라 사전 검사로 교체); 오디오 토큰 ban 게이트 — banned principal 거부, banned owner의 봇 거부 **그리고 owner 링크(`users` row) 미기록**(결과만으로는 뒤의 final admission이 같은 거부를 내므로, 게이트의 고유 효과인 "부수효과 전 거부"로 반증); NIP-FI assertion이 있는 오디오 토큰 프레임 → `auth-required: unsupported auth`; 오디오 재-AUTH single-flight; 발행 결정의 disabled/relay-kind/`users` row 범위(`desired_profile`); `invite_bearer`의 NIP-FI≠Off 게이트. 각 가드 제거 시 실패 확인.
 - 거절한 선택 항목: `profile_reader`의 reader pool 사용. 이 코드베이스의 replica 읽기는 `route_read` 펜스를 거쳐야 하고(원시 replica pool은 테스트 전용), 지연된 replica는 방금 만든 `users` row를 놓쳐 발행 대상에서 빠뜨린다. writer의 `Authentication` 연산으로 유지.
 - 후속 추가: `INVITE_SIGNING_SECRET`은 이전 시크릿 검증 창이 없다 — 회전 즉시 미사용 v1 코드와 정책 receipt가 무효(v2 DB 초대는 무관). 필요 시 `INVITE_SIGNING_SECRET_PREVIOUS`로 검증만 허용하는 창을 추가. `/operator/*` 프로비저닝 토큰 경로(Phase 3 전). 오디오 ban 게이트의 principal 단독 경로는 결과·부수효과 모두 final admission과 같아 개별 반증 불가(owner 연쇄는 반증됨).
-- 테스트 결과(v11): fmt·workspace clippy -D warnings 통과; live auth 스위트 **5회 연속 22/22**; buzz-db identity 10/10; 워크스페이스 13크레이트 3354 통과 / 6 기존 실패 + 간헐 `telemetry::tests::trace_context_lookup_does_not_enable_callsites`(전역 callsite interest 경합 — 909bfce84 워크트리에서도 5회 중 3회 실패, 단독 실행은 통과); buzz-acp lib 1054/32(기존과 동일); Tauri 3429/0; web tsc·biome·vite build·node 18/18·file-size·pubkey 통과.
+- 테스트 결과(v11): fmt·workspace clippy -D warnings 통과; live auth 스위트 **5회 연속 22/22**; kuzz-db identity 10/10; 워크스페이스 13크레이트 3354 통과 / 6 기존 실패 + 간헐 `telemetry::tests::trace_context_lookup_does_not_enable_callsites`(전역 callsite interest 경합 — 909bfce84 워크트리에서도 5회 중 3회 실패, 단독 실행은 통과); kuzz-acp lib 1054/32(기존과 동일); Tauri 3429/0; web tsc·biome·vite build·node 18/18·file-size·pubkey 통과.
 
 
 - **재리뷰 반영 (v11.1)**: kind 0 발행 앞에 프로세스 전역 `tokio::sync::Semaphore`(`PublishSlots`, `max(1, 풀 최대/4)`) — 커넥션보다 먼저 permit을 잡고 잠금 해제까지 보유해, 재접속 폭주 시 발행자들이 잠금 커넥션을 쥔 채 두 번째 커넥션을 기다리며 풀을 고갈시키는 hold-and-wait를 막는다. live 테스트: permit 전부 + advisory lock 보유 상태에서 발행 3개가 커넥션을 잡지 않고 대기(세마포어 제거 시 사용 중 커넥션 1→4로 실패). B1 config 테스트의 env 변경은 기존 `NIP_FI_ENV_LOCK` 아래에서 실행.
 
-**Phase 2b (mobile), deferred** — 이 Windows 머신에 Flutter가 없어 빌드·테스트 불가. macOS에서 별도 구현. 서버는 이미 준비됨(`client=mobile`, `AUTH_MOBILE_REDIRECT_SCHEMES` 기본 `xyz.block.buzz`, refresh 본문 반환, WS 토큰 AUTH, Bearer bridge/media/invite, kind 0 서버 발행).
+**Phase 2b (mobile), deferred** — 이 Windows 머신에 Flutter가 없어 빌드·테스트 불가. macOS에서 별도 구현. 서버는 이미 준비됨(`client=mobile`, `AUTH_MOBILE_REDIRECT_SCHEMES` 기본 `app.kuzz`, refresh 본문 반환, WS 토큰 AUTH, Bearer bridge/media/invite, kind 0 서버 발행).
 - `shared/auth/auth_provider.dart`: nsec 상태 → `{principalId, accessToken, accessExpiresAt}`(Riverpod 메모리), refresh는 `flutter_secure_storage`(origin별 키), 앱 시작 시 refresh 자동 로그인, 만료 5분 전 refresh(single-flight, 세대 펜스, 401 → 로그인 화면; Rule 6 "다시 로그인" 경로 보장). 감지는 NIP-11 `buzz_token_auth.bearer`.
-- 로그인: `flutter_web_auth_2`(iOS `ASWebAuthenticationSession`, Android Custom Tabs) + PKCE S256, `redirect_uri=xyz.block.buzz://auth/cb`, state 검사, `POST /auth/oidc/complete`. iOS `Info.plist`/Android manifest에 scheme 등록. 워크트리별 debug identity(`scripts/mobile-worktree-overrides.sh`)와 scheme 충돌 여부 확인.
+- 로그인: `flutter_web_auth_2`(iOS `ASWebAuthenticationSession`, Android Custom Tabs) + PKCE S256, `redirect_uri=app.kuzz://auth/cb`, state 검사, `POST /auth/oidc/complete`. iOS `Info.plist`/Android manifest에 scheme 등록. 워크트리별 debug identity(`scripts/mobile-worktree-overrides.sh`)와 scheme 충돌 여부 확인.
 - `relay_session_auth.dart` → `Authorization: Bearer`; `relay_session.dart:146-179,500` → `["AUTH",{"token"}]`, 재연결 시 현재 토큰, `OK auth false token_expired` → refresh 후 재연결; `signed_event_relay.dart` → draft(서명 없음, 서버 스탬프). 미디어 업로드는 Bearer(서버 Phase 2 완료). 허들 오디오는 `{"type":"auth","token"}` + 회전 시 같은 소켓에 재전송(`auth_ok`).
 - `features/settings`: Account(전역 프로필 PATCH, 아바타 업로드 → `avatar_url`), Devices(목록·원격 로그아웃·"모든 다른 기기 로그아웃"), "모든 봇 토큰 회수", 계정 삭제. `features/pairing`(NIP-AB) 삭제, `shared/crypto/{nip44,ecdh,nip_oa}.dart`는 Phase 3.
 - 테스트(위젯, `ProviderScope` 오버라이드): 로그인 버튼 → 가짜 auth 결과 → 상태 전이; 자동 로그인 성공/실패; refresh 401 → 로그인 화면; Devices 원격 로그아웃 후 목록 갱신. 게이트 `just mobile-install mobile-check mobile-test`, iOS 시뮬레이터에서 Google 로그인 → 메시지 → 재시작 후 유지 수동 검증.
@@ -821,7 +821,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 
 범위
 - relay: NIP-42/98/OA/FI 분기 삭제, 서명 검증 삭제, AUTH 챌린지 송신 중단, 클라이언트(토큰) 이벤트의 sentinel `sig` 와이어 출력·DB 쓰기 중단(relay 서명 이벤트는 실제 서명이므로 `sig` 유지 — v10), ~~`relay_keypair` 필드 삭제~~(v10: 유지, §5.3.1), 클라이언트 키 관련 config 제거, gift wrap 예외 삭제·기존 1059 `deleted_at`.
-- buzz-auth nip42/nip98/nip_fi 삭제, `AuthContext.pubkey` 삭제. buzz-pubsub replay 모듈 삭제.
+- kuzz-auth nip42/nip98/nip_fi 삭제, `AuthContext.pubkey` 삭제. kuzz-pubsub replay 모듈 삭제.
 - ws-client/sdk/acp/cli/desktop/mobile 키 API 삭제, `Keys` 의존 제거.
 - `docs/nips/NIP-OA.md`, `NIP-FI.md` 삭제.
 
@@ -839,10 +839,10 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 | `handlers/auth.rs` NIP-42 분기, `connection.rs:526 generate_challenge` 송신 | 토큰 AUTH |
 | `handlers/ingest.rs:2402-2420` | id 재계산 |
 | `nip98.rs`, `nip_fi_*.rs`, `api/nip_fi.rs` | 없음(삭제) |
-| `buzz-media/src/auth.rs` kind 24242 | Bearer |
-| `buzz-workflow/src/executor.rs:994-998` | 토큰 |
+| `kuzz-media/src/auth.rs` kind 24242 | Bearer |
+| `kuzz-workflow/src/executor.rs:994-998` | 토큰 |
 | `web/src/shared/lib/{nostr-signer,nip98}.ts`, `git-client.ts:57`, `invite-api.ts` | 세션 |
-| `crates/buzz-test-client/tests/nip42_host_binding_live.rs` | `auth_token_live.rs`의 host 바인딩 케이스로 대체 |
+| `crates/kuzz-test-client/tests/nip42_host_binding_live.rs` | `auth_token_live.rs`의 host 바인딩 케이스로 대체 |
 
 테스트
 - e2e 스위트(`e2e_relay.rs`, `e2e_media.rs`, `e2e_nostr_interop.rs`의 NIP-50/NIP-10 부분, `e2e_git.rs`…)를 토큰 기반으로 재작성. NIP-17 부분 삭제.
@@ -853,8 +853,8 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 ### 5.5 Phase 4 — 정리·문서
 
 - 마이그레이션: `events.sig` drop, `api_tokens`/`pubkey_allowlist`/`join_policy_acceptances`/NIP-FI 테이블 drop, `users.nip05_handle` drop, `_operator_global_tables` 정리.
-- 크레이트 삭제: `git-sign-nostr`, `buzz-pair-relay`, `buzz-pairing-cli`, mesh 관련(`audio/mesh.rs`, `api/mesh_demo.rs`, `buzz-relay-mesh` 등)(확정 Q8).
-- `BuzzEvent` 타입 교체(권고: 한다. `nostr` 의존 축소, §2.1 불변식 해제). 교체 후 `PrincipalId::generate()`는 그대로 두되 x-only 검증은 선택이 된다(기존 id 호환 유지).
+- 크레이트 삭제: `git-sign-nostr`, `kuzz-pair-relay`, `kuzz-pairing-cli`, mesh 관련(`audio/mesh.rs`, `api/mesh_demo.rs`, `kuzz-relay-mesh` 등)(확정 Q8).
+- `KuzzEvent` 타입 교체(권고: 한다. `nostr` 의존 축소, §2.1 불변식 해제). 교체 후 `PrincipalId::generate()`는 그대로 두되 x-only 검증은 선택이 된다(기존 id 호환 유지).
 - `kind.rs` 상수 정리, `kinds.ts`, `nostr_models.dart` 동기. `executor.rs:194` npub 필터 → principal 필터.
 - desktop `key_backup.rs`, `hpke_key_backup.rs`, `identity_storage.rs` 삭제.
 - 문서(§4.18), `.env.example`, `VISION.md`.
@@ -864,7 +864,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 | Phase | 머지 후 상태 | 삭제 | 사용자 가시 변화 |
 |-------|-------------|------|------------------|
 | 0 | 키+토큰 병행, OIDC 엔드포인트 존재, 플래그 off | 없음 | 없음 |
-| 1 | Desktop Google 로그인, 봇 토큰, acp exchange+재-AUTH, CLI 토큰 모드, `git-credential-buzz`, admin/git Bearer 분기 | 없음 | 로그인 화면, 에이전트 재등록 안내 |
+| 1 | Desktop Google 로그인, 봇 토큰, acp exchange+재-AUTH, CLI 토큰 모드, `git-credential-kuzz`, admin/git Bearer 분기 | 없음 | 로그인 화면, 에이전트 재등록 안내 |
 | 2 | CLI 로그인/Mobile/Web/운영자 관리/audio/invite/media/bridge 토큰화, config 운영자 우선순위 제거 | pairing, NIP-98 사용처 | 모바일·웹 Google 로그인, 기존 초대 링크 무효 |
 | 3 | 토큰만 | NIP-42/98/OA/FI, 서명, gift wrap | 구 클라이언트 접속 불가 |
 | 4 | 정리 완료 | 컬럼/테이블/크레이트 | 없음 |
@@ -874,13 +874,13 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 ## 6. 보안 분석
 
 ### 6.1 토큰이 acp env/메모리에 있는 문제
-- `BUZZ_BOT_TOKEN`은 Desktop → acp 한 홉만 env. acp는 `SecretString`(zeroize) 보관, 자식 스폰에 `Command::env_remove`. 자식에는 브로커 URL+스폰별 secret만. 자식이 토큰을 얻어도 1h `bzb_`이며 Stop 시 revoke.
-- 같은 사용자의 다른 프로세스가 env를 읽을 수 있는 OS 특성은 오늘의 `BUZZ_PRIVATE_KEY`(영구 비밀)보다 피해가 작다.
+- `KUZZ_BOT_TOKEN`은 Desktop → acp 한 홉만 env. acp는 `SecretString`(zeroize) 보관, 자식 스폰에 `Command::env_remove`. 자식에는 브로커 URL+스폰별 secret만. 자식이 토큰을 얻어도 1h `bzb_`이며 Stop 시 revoke.
+- 같은 사용자의 다른 프로세스가 env를 읽을 수 있는 OS 특성은 오늘의 `KUZZ_PRIVATE_KEY`(영구 비밀)보다 피해가 작다.
 - 로그 redaction: `bz[lsrbk]_…` 패턴, `install_report_redaction_tests.rs` 패턴을 따르는 테스트.
 
 ### 6.2 Hermes `.env` override 버그 클래스
-- Hermes는 `<HERMES_HOME>/.env`를 override=True로 로드한다. 루트 `.env`에 헤르홈의 `bzk_`가 있으면 Buzz 관리 Hermes 에이전트가 그 토큰으로 붙는 것이 재발 형태.
-- 방어 1: 프로필별 `HERMES_HOME`(47d3f23d2) + `is_buzz_owned_env_key`의 `BUZZ_*` strip, `BUZZ_BOT_TOKEN` 테스트 명시.
+- Hermes는 `<HERMES_HOME>/.env`를 override=True로 로드한다. 루트 `.env`에 헤르홈의 `bzk_`가 있으면 Kuzz 관리 Hermes 에이전트가 그 토큰으로 붙는 것이 재발 형태.
+- 방어 1: 프로필별 `HERMES_HOME`(47d3f23d2) + `is_kuzz_owned_env_key`의 `KUZZ_*` strip, `KUZZ_BOT_TOKEN` 테스트 명시.
 - 방어 2(서버): `bzk_`는 `host_device_id IS NULL`인 봇에만 발급. Desktop 호스팅 봇이 `bzk_`로 AUTH하면 다른 principal이라 "다른 봇"으로 보인다 — 조용한 신원 오염 불가. `host_device_id`가 있는 봇에 `bot_headless` 토큰이 들어오면 거절.
 - 방어 3: `reserved_env_keys.rs` 명시 등록.
 
@@ -950,7 +950,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 | 블로커/항목 | 변경 |
 |-------------|------|
 | B5 `relay_operators` 중복 생성 | 신설 테이블 삭제. 기존 테이블(0035, `pubkey` 32바이트 = principal id, `operator\|moderator`)과 `store/relay_operators.rs`·`AdminRole` 재사용. 0056은 ALTER 없음, `added_by`에 relay principal id. `/auth/operators`는 `PUT {role}`로 기존 스토어 호출. config 우선순위 제거는 Phase 2 (§2.2, §3.3, §4.3, §4.4, §5.3). |
-| B6 Phase 1에서 에이전트 CLI/git/관리 콘솔 단절 | Phase 1로 이동: buzz-cli 토큰 모드(브로커 소스, Bearer+draft, 키 폴백), `git-credential-buzz` + acp `git.rs:99-100` 브로커 변수, 서버 `authorize_bearer`(admin)·git `transport.rs` Bearer/Basic 분기, Desktop `commands/admin/client.rs` Bearer. §5.3에서 제거, §5.2 테스트·수동 검증 추가, §5.6 갱신 (§4.4, §4.8, §4.12, §4.14, §5.2, §5.3, §5.6). |
+| B6 Phase 1에서 에이전트 CLI/git/관리 콘솔 단절 | Phase 1로 이동: kuzz-cli 토큰 모드(브로커 소스, Bearer+draft, 키 폴백), `git-credential-kuzz` + acp `git.rs:99-100` 브로커 변수, 서버 `authorize_bearer`(admin)·git `transport.rs` Bearer/Basic 분기, Desktop `commands/admin/client.rs` Bearer. §5.3에서 제거, §5.2 테스트·수동 검증 추가, §5.6 갱신 (§4.4, §4.8, §4.12, §4.14, §5.2, §5.3, §5.6). |
 | B7 평문 DM이 ingest에서 거절 | DM 모델 무변경(`h` 비공개 채널 + 30622). `requires_h_channel_scope` 유지, 새 p-gate 없음. 암호화 레이어(1059/NIP-44)만 제거. §5.1에 `h` 없는 40002 거절 회귀 가드 (§1.3, §3.8, §7 Q4). |
 | B8 운영자 부트스트랩 잠금/오부여 | 조건 = 매 로그인마다 `email_verified==true` AND 이메일 일치 AND operator row 0개 → 1회 부여 + 감사. 로스터 비어 있지 않으면 무시, 전원 삭제 시 재부트스트랩 가능. 테스트 4건 (§3.2, §3.3, §5.1). |
 | 선택 항목 | §3.6 replay 캐시 조회를 `used_at` 분기 앞으로; Phase 3 체크리스트에 `relay_keypair` 사용 14파일 추가; `/start?state=` 전달·검증 명시; Google 클라이언트 "Web application" 1개; §3.5 owner→bot kind 0 예외 삭제; web 쿠키(relay same-origin, `SameSite=Strict`, refresh 본문 생략, logout 쿠키 삭제, 별도 origin은 범위 밖); `client=cli` 추가; purge 순서와 `ON DELETE` 정의(`bots.owner_principal_id` 의도적 FK 실패); 동시 첫 로그인 PK 충돌 → 재조회 수렴; `AUTH_TOKEN_ENABLED=false`는 `/auth/*` 전체 404; `remove_var` 근거 수정(edition 2021); exchange는 superseded 토큰 불가(`superseded_at` 컬럼) → 공격자 exchange 시나리오 제거; replay 캐시의 refresh 평문 보관 비용 명시. |
@@ -979,7 +979,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 | 항목 | 변경 |
 |------|------|
 | 상태 | Phase 1 구현 완료(미커밋, 리뷰 전). handoff는 §5.2.1. |
-| 추가 결정 | NIP-11 `buzz_token_auth`로 토큰 모드 감지; 커뮤니티별 세션; 공용 `EventSigner`(sentinel draft)와 `verify_served_event`; `buzz-token-broker` 크레이트; `git-credential-buzz` 호스트 고정 + 서버 이중 챌린지; `AUTH_TRUSTED_PROXY_CIDRS`(`unix` 포함). |
+| 추가 결정 | NIP-11 `buzz_token_auth`로 토큰 모드 감지; 커뮤니티별 세션; 공용 `EventSigner`(sentinel draft)와 `verify_served_event`; `kuzz-token-broker` 크레이트; `git-credential-kuzz` 호스트 고정 + 서버 이중 챌린지; `AUTH_TRUSTED_PROXY_CIDRS`(`unix` 포함). |
 
 ### v6 → v7
 
@@ -994,7 +994,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 | 항목 | 변경 |
 |------|------|
 | 상태 | Phase 1 재리뷰 블로커 N1(이동 후 UI 갱신·옛 pubkey 해석), N2(토큰 모드 welcome을 사용자 이름으로) 및 선택 항목 반영(미커밋). §5.2.1 "재리뷰 반영". |
-| 결정 | 로그인 시 키로 실행 중인 에이전트는 자동 재시작 대신 "Restart required". replay 창 상수는 buzz-core 공유. |
+| 결정 | 로그인 시 키로 실행 중인 에이전트는 자동 재시작 대신 "Restart required". replay 창 상수는 kuzz-core 공유. |
 
 ### v8 → v9
 
@@ -1014,7 +1014,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 | 항목 | 변경 |
 |------|------|
 | 상태 | Phase 2 리뷰 블로커 B1–B3 및 선택 항목 반영(미커밋). §5.3.1 "리뷰 반영 (v11)". |
-| 결정 변경 | 운영자 config는 필드를 지우지 않고 admin 해석 지점만 플래그로 게이트(`RELAY_OWNER_PUBKEY`의 NIP-43·멤버십 필수 용도, `/operator/*` 프로비저닝은 유지); kind 0 발행은 (커뮤니티, principal) advisory lock 아래에서 principal 재조회, AUTH/re-AUTH reconcile은 `users` row가 있는 곳만, 첫 쓰기에서 발행; PATCH fan-out은 스폰(동시 4); 에이전트 프로세스는 `BUZZ_DISABLE_STORED_SESSION=1`. |
+| 결정 변경 | 운영자 config는 필드를 지우지 않고 admin 해석 지점만 플래그로 게이트(`RELAY_OWNER_PUBKEY`의 NIP-43·멤버십 필수 용도, `/operator/*` 프로비저닝은 유지); kind 0 발행은 (커뮤니티, principal) advisory lock 아래에서 principal 재조회, AUTH/re-AUTH reconcile은 `users` row가 있는 곳만, 첫 쓰기에서 발행; PATCH fan-out은 스폰(동시 4); 에이전트 프로세스는 `KUZZ_DISABLE_STORED_SESSION=1`. |
 
 ### v11 → v12
 

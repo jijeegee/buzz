@@ -1,0 +1,273 @@
+//! Shared agent capabilities. Intake and scheduling belong to each entry point;
+//! environment, credentials, adapter settings and prompt equipment belong here.
+use crate::{
+    build_mcp_servers, config::Config, current_working_directory, git, observer, pool, relay,
+    resolve_agent_owner, PromptContext,
+};
+use anyhow::Result;
+use std::{collections::HashMap, time::Duration};
+use uuid::Uuid;
+
+pub(crate) enum SessionMode {
+    Conversation,
+    Task,
+}
+
+/// Own shared launch resources until all adapter work has been drained.
+/// Add new runtime capabilities here, not separately to the CLI entry points.
+pub(crate) struct AgentRuntime {
+    config: Config,
+    _git_environment: git::GitEnvironment,
+}
+
+impl AgentRuntime {
+    pub(crate) fn prepare(mut config: Config) -> Result<Self> {
+        let git_environment = git::GitEnvironment::for_config(&mut config)?;
+        Ok(Self {
+            config,
+            _git_environment: git_environment,
+        })
+    }
+
+    pub(crate) fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub(crate) fn startup(&self, observer: Option<observer::ObserverHandle>) -> PoolStartup {
+        PoolStartup::from_config(&self.config, observer)
+    }
+
+    pub(crate) fn prompt_context(
+        &self,
+        rest: relay::RestClient,
+        channels: HashMap<Uuid, relay::ChannelInfo>,
+        mode: SessionMode,
+    ) -> Result<PromptContext> {
+        make_prompt_context(&self.config, rest, channels, mode)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct PoolStartup {
+    pub(crate) agents: u32,
+    pub(crate) command: String,
+    pub(crate) args: Vec<String>,
+    pub(crate) extra_env: Vec<(String, String)>,
+    pub(crate) has_generated_codex_config: bool,
+    pub(crate) model: Option<String>,
+    pub(crate) effort_level: Option<String>,
+    pub(crate) observer: Option<observer::ObserverHandle>,
+}
+
+impl PoolStartup {
+    fn from_config(config: &Config, observer: Option<observer::ObserverHandle>) -> Self {
+        Self {
+            agents: config.agents,
+            command: config.agent_command.clone(),
+            args: config.agent_args.clone(),
+            extra_env: config.persona_env_vars.clone(),
+            has_generated_codex_config: config.has_generated_codex_config,
+            model: config.model.clone(),
+            effort_level: config.effort_level.clone(),
+            observer,
+        }
+    }
+}
+
+/// The standing base for `mode`: task sessions get the task session model;
+/// conversation sessions get the configured policy's model. The self-opened
+/// task thread rules are a live setting, appended per session where
+/// [`task_thread_rules_apply`].
+fn assemble_base_prompt(
+    policy: crate::scope::SessionPolicy,
+    mode: &SessionMode,
+    base: &str,
+) -> String {
+    if matches!(mode, SessionMode::Task) {
+        return format!("{base}\n\n{}", include_str!("session_model_task.md"));
+    }
+    policy.append_session_model(base)
+}
+
+/// Whether sessions get the self-opened task thread rules: conversation
+/// sessions of thread-policy agents that are not route-only dispatchers.
+fn task_thread_rules_apply(
+    policy: crate::scope::SessionPolicy,
+    dispatcher: bool,
+    mode: &SessionMode,
+) -> bool {
+    matches!(mode, SessionMode::Conversation)
+        && policy == crate::scope::SessionPolicy::Thread
+        && !dispatcher
+}
+
+#[cfg(test)]
+mod assemble_base_prompt_tests {
+    use super::*;
+    use crate::scope::SessionPolicy;
+    use crate::task_threads::TaskThreadTrigger;
+
+    const GUIDANCE: &str = "### Opening Task Threads Yourself";
+    const TRIGGERS: &[TaskThreadTrigger] = &[TaskThreadTrigger::LongRunning];
+
+    /// The base a session of this kind starts with, through the same
+    /// per-turn resolution `run_prompt_task` uses.
+    fn session_base(policy: SessionPolicy, dispatcher: bool, mode: SessionMode) -> String {
+        let mut ctx = crate::pool::tests::make_prompt_context_no_owner();
+        ctx.base_prompt = Some(assemble_base_prompt(policy, &mode, "base"));
+        ctx.task_threads = TRIGGERS.to_vec();
+        ctx.task_thread_rules_apply = task_thread_rules_apply(policy, dispatcher, &mode);
+        ctx.live_now().base_prompt.unwrap()
+    }
+
+    #[test]
+    fn thread_policy_conversation_gets_the_guidance() {
+        assert!(
+            session_base(SessionPolicy::Thread, false, SessionMode::Conversation)
+                .contains(GUIDANCE)
+        );
+    }
+
+    #[test]
+    fn channel_policy_dispatchers_and_task_sessions_do_not() {
+        for (policy, dispatcher, mode) in [
+            (SessionPolicy::Channel, false, SessionMode::Conversation),
+            (SessionPolicy::Thread, true, SessionMode::Conversation),
+            (SessionPolicy::Thread, false, SessionMode::Task),
+        ] {
+            assert!(
+                !session_base(policy, dispatcher, mode).contains(GUIDANCE),
+                "{policy} dispatcher={dispatcher}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod base_prompt_trim_tests {
+    use super::*;
+
+    /// The base a new channel session starts with, from launch config through
+    /// the same per-turn resolution `run_prompt_task` uses.
+    fn session_base(code_work: bool, project_home: bool) -> String {
+        let mut config = crate::build_mcp_servers_tests::test_config();
+        config.code_work = code_work;
+        let rest = relay::RestClient {
+            http: reqwest::Client::new(),
+            base_url: "http://127.0.0.1:0".into(),
+            keys: nostr::Keys::generate().into(),
+            auth_tag_json: None,
+        };
+        let ctx = make_prompt_context(&config, rest, HashMap::new(), SessionMode::Conversation)
+            .expect("prompt context");
+        ctx.live_now_in(project_home).base_prompt.expect("base")
+    }
+
+    #[test]
+    fn code_work_setting_controls_engineering_guidance() {
+        assert!(session_base(true, false).contains("## Engineering Discipline"));
+        assert!(session_base(true, false).contains("## Working in the Repo"));
+        assert!(!session_base(false, false).contains("## Engineering Discipline"));
+        assert!(!session_base(false, false).contains("## Working in the Repo"));
+    }
+
+    #[test]
+    fn project_guidance_in_full_only_in_project_home() {
+        assert!(session_base(true, true).contains("kuzz projects add-channel"));
+        assert!(!session_base(true, false).contains("kuzz projects add-channel"));
+        assert!(session_base(true, false).contains("see `kuzz projects --help`"));
+    }
+
+    #[test]
+    fn sessions_still_get_the_session_model() {
+        for (code_work, project_home) in [(true, true), (false, false)] {
+            assert!(session_base(code_work, project_home).contains("## Session Model"));
+        }
+    }
+}
+
+fn make_prompt_context(
+    config: &Config,
+    rest_client: relay::RestClient,
+    channels: HashMap<Uuid, relay::ChannelInfo>,
+    mode: SessionMode,
+) -> Result<PromptContext> {
+    let base_prompt_content = config.base_prompt_content.as_ref();
+    let cwd = current_working_directory()?;
+    Ok(PromptContext {
+        mcp_servers: build_mcp_servers(config),
+        initial_message: config.initial_message.clone(),
+        idle_timeout: Duration::from_secs(config.idle_timeout_secs),
+        max_turn_duration: Duration::from_secs(config.max_turn_duration_secs),
+        turn_liveness_interval: Duration::from_secs(config.turn_liveness_secs),
+        dedup_mode: config.dedup_mode,
+        system_prompt: config.system_prompt.clone(),
+        session_title: config.session_title.clone(),
+        team_instructions: config.team_instructions.clone(),
+        task_threads: config.task_threads.clone(),
+        task_thread_rules_apply: task_thread_rules_apply(
+            config.session_policy,
+            config.dispatcher,
+            &mode,
+        ),
+        live_settings: config.live_settings.clone(),
+        layer0_goals: config.layer0_goals.clone(),
+        goals_enabled: config.goals_enabled,
+        base_prompt: if config.no_base_prompt {
+            None
+        } else {
+            // Build standing context once under the configured policy, before
+            // any session/new. Both modern ACP and legacy first-turn framing
+            // consume this same assembled base (including custom base files).
+            let base = base_prompt_content
+                .map(String::as_str)
+                .unwrap_or(include_str!("base_prompt.md"));
+            let base = crate::base_prompt_trim::for_agent(base, config.code_work);
+            // Goal rules are not part of the base: they ride in each turn's
+            // `<goal-context>`, only where a goal tree exists.
+            Some(assemble_base_prompt(config.session_policy, &mode, &base))
+        },
+        heartbeat_prompt: config.heartbeat_prompt.clone(),
+        cwd,
+        rest_client: rest_client.clone(),
+        channel_info: pool::ChannelInfoResolver::new(channels, rest_client),
+        context_message_limit: config.context_message_limit,
+        context_history: config.context_history,
+        max_turns_per_session: config.max_turns_per_session,
+        permission_mode: config.permission_mode,
+        agent_keys: config.keys.clone(),
+        agent_owner_pubkey: resolve_agent_owner(config)
+            .as_deref()
+            .and_then(|hex| nostr::PublicKey::from_hex(hex).ok()),
+        memory_enabled: config.memory_enabled,
+        harness_name: crate::config::normalize_agent_command_identity(&config.agent_command),
+        relay_url: config.relay_url.clone(),
+        dispatcher: config.dispatcher,
+        channel_roster: config.channel_roster,
+        session_ledger: session_ledger_for(config, mode),
+    })
+}
+
+/// The durable resume ledger, enabled only for conversation sessions under the
+/// thread policy with a configured state directory. Other policies
+/// keep their existing restart-from-relay-context behavior unchanged.
+fn session_ledger_for(
+    config: &Config,
+    mode: SessionMode,
+) -> Option<std::sync::Arc<crate::session_ledger::SessionLedger>> {
+    if !matches!(mode, SessionMode::Conversation)
+        || config.session_policy != crate::scope::SessionPolicy::Thread
+    {
+        return None;
+    }
+    let state_dir = config.state_dir.as_ref()?;
+    let path = crate::session_ledger::ledger_path(
+        state_dir,
+        &config.keys.public_key().to_hex(),
+        &config.relay_url,
+    );
+    tracing::info!(target: "acp::ledger", path = %path.display(), "session resume ledger enabled");
+    Some(std::sync::Arc::new(
+        crate::session_ledger::SessionLedger::open(path),
+    ))
+}

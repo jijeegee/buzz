@@ -79,7 +79,7 @@ pub enum AdminProbeResult {
     /// attempt. Likely: pubkey not in `RELAY_OPERATOR_PUBKEYS`, clock skew, or
     /// relay config mismatch.
     Nip98Denied,
-    /// Auth is disabled (`BUZZ_ADMIN_AUTH=disabled`). No credential needed.
+    /// Auth is disabled (`KUZZ_ADMIN_AUTH=disabled`). No credential needed.
     Disabled,
     /// The origin is reachable but the `/api/admin/v1` prefix is absent or
     /// returns a non-admin response.
@@ -125,7 +125,7 @@ type SignFn = Box<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 ///    signed kind-27235. 200 + valid `ProbeResponse` → `Nip98Authorized`
 ///    carrying the relay-resolved `role`/`source`; non-200 → `Nip98Denied`.
 /// 5. Any other 401 (including a `WWW-Authenticate: Bearer` challenge, which
-///    is no longer a recognized Buzz admin mode) → `NotAdminApi`.
+///    is no longer a recognized Kuzz admin mode) → `NotAdminApi`.
 /// 6. 403/404 or other non-401 → `NotAdminApi`.
 /// 7. Network/redirect/TLS error → `NetworkOrIntercepted`.
 #[tauri::command]
@@ -259,7 +259,7 @@ async fn admin_probe_inner(
         }
 
         // Any other 401 shape (including a Bearer challenge, which is no longer
-        // a recognized Buzz admin mode) is an unrecognized auth challenge.
+        // a recognized Kuzz admin mode) is an unrecognized auth challenge.
         return Ok(AdminProbeResult::NotAdminApi);
     }
 
@@ -794,7 +794,7 @@ fn restrictions_url(
     {
         return Err(RELAY_SCOPE_CHANGED.to_string());
     }
-    let host = buzz_core_pkg::tenant::relay_url_authority(&relay_base);
+    let host = kuzz_core_pkg::tenant::relay_url_authority(&relay_base);
     if host.is_empty() {
         return Err("admin_community_host_unresolved".to_string());
     }
@@ -936,7 +936,7 @@ fn direct_action_request(
             "active identity changed since the action was confirmed; nothing was sent".to_string(),
         );
     }
-    let host = buzz_core_pkg::tenant::validate_community_host(intent.community_host.trim())
+    let host = kuzz_core_pkg::tenant::validate_community_host(intent.community_host.trim())
         .map_err(|e| format!("invalid community host: {e}"))?;
     let target =
         routes::Hex64::parse(&intent.target).map_err(|e| format!("invalid target: {e}"))?;

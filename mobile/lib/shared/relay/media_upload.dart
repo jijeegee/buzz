@@ -23,7 +23,7 @@ part 'media_upload/helpers.dart';
 
 const _mediaUploadPath = '/upload';
 const _legacyMediaUploadPath = '/media/upload';
-const _mediaUploadPlatformChannelName = 'buzz/media_upload';
+const _mediaUploadPlatformChannelName = 'kuzz/media_upload';
 const _sanitizeImageForUploadMethod = 'sanitizeImageForUpload';
 const _transcodeVideoToMp4Method = 'transcodeVideoToMp4';
 const _packageVoiceNoteForUploadMethod = 'packageVoiceNoteForUpload';
@@ -725,7 +725,7 @@ class MediaUploadService {
 
     return nostr.Event.from(
       kind: _uploadAuthKind,
-      content: 'Upload buzz-media',
+      content: 'Upload kuzz-media',
       tags: tags,
       secretKey: privkeyHex,
       verify: false,

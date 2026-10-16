@@ -27,7 +27,7 @@ class AppBrandLogo extends StatelessWidget {
         alignment: Alignment.center,
         padding: EdgeInsets.all(size * 0.2),
         child: Image.asset(
-          'assets/images/buzz-icon.png',
+          'assets/images/kuzz-icon.png',
           fit: BoxFit.contain,
           excludeFromSemantics: true,
         ),

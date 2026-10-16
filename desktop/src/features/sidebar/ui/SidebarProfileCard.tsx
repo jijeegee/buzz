@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { useAccountMenu } from "@/features/accounts/useAccountMenu";
-import { useRememberAccountBuzzName } from "@/features/accounts/useRememberAccountBuzzName";
+import { useRememberAccountKuzzName } from "@/features/accounts/useRememberAccountKuzzName";
 import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
 import {
   anyWatchedUnread,
@@ -84,7 +84,7 @@ export function SidebarProfileCard({
   const activePubkey = useIdentityQuery().data?.pubkey ?? null;
   const watchedUnread = useWatchedUnread();
   const otherAccountUnread = anyWatchedUnread(watchedUnread);
-  useRememberAccountBuzzName(activePubkey, profile?.displayName);
+  useRememberAccountKuzzName(activePubkey, profile?.displayName);
   const toggleProfilePopover = React.useCallback(
     () => setProfilePopoverOpen((prev) => !prev),
     [],
@@ -107,7 +107,7 @@ export function SidebarProfileCard({
   const readonlyCommunityLabel = (
     <span
       className="flex min-w-0 cursor-pointer items-center gap-1 text-xs leading-snug text-sidebar-foreground/70"
-      data-buzz-sidebar-secondary
+      data-kuzz-sidebar-secondary
     >
       <span
         aria-hidden="true"
@@ -262,7 +262,7 @@ export function SidebarProfileCard({
                 <button
                   aria-label={`Open profile menu for ${resolvedDisplayName}`}
                   className="flex w-full min-w-0 items-center truncate rounded-sm text-left text-xs leading-snug text-sidebar-foreground/70 outline-hidden focus:outline-none focus-visible:outline-none"
-                  data-buzz-sidebar-secondary
+                  data-kuzz-sidebar-secondary
                   data-testid="sidebar-profile-user-status"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -288,7 +288,7 @@ export function SidebarProfileCard({
                   "flex w-full min-w-0 items-center truncate rounded-sm text-left text-xs leading-snug text-sidebar-foreground/70 outline-hidden transition-opacity duration-150 focus:outline-none focus-visible:outline-none group-hover/profile-card:opacity-0",
                   profilePopoverOpen && "opacity-100",
                 )}
-                data-buzz-sidebar-secondary
+                data-kuzz-sidebar-secondary
                 data-testid="sidebar-profile-user-status"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -309,7 +309,7 @@ export function SidebarProfileCard({
                   "pointer-events-none absolute inset-0 flex min-w-0 items-center text-xs leading-snug text-sidebar-foreground/70 opacity-0 transition-opacity duration-150 group-hover/profile-card:opacity-100",
                   profilePopoverOpen && "opacity-0",
                 )}
-                data-buzz-sidebar-secondary
+                data-kuzz-sidebar-secondary
               >
                 {readonlyCommunityLabel}
               </div>

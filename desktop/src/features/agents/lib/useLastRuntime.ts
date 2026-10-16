@@ -1,7 +1,7 @@
 import * as React from "react";
 
-const STORAGE_KEY = "buzz:last-runtime";
-const LEGACY_STORAGE_KEY = "buzz:last-runtime-provider";
+const STORAGE_KEY = "kuzz:last-runtime";
+const LEGACY_STORAGE_KEY = "kuzz:last-runtime-provider";
 
 export function useLastRuntime(): {
   lastRuntimeId: string | null;

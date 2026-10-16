@@ -6,7 +6,7 @@ import { installMockBridge } from "../helpers/bridge";
 // loading gate keeps the Kuzz mark up as an overlay above the already
 // mounted app for a minimum visible duration, then fades out. E2E runs skip
 // the hold by default (it would slow every spec's boot and block pointer
-// actionability); this spec opts back in via __BUZZ_E2E__.bootSplashHoldMs.
+// actionability); this spec opts back in via __KUZZ_E2E__.bootSplashHoldMs.
 
 test("boot splash overlay holds with the Kuzz mark, then dismisses", async ({
   page,
@@ -16,10 +16,10 @@ test("boot splash overlay holds with the Kuzz mark, then dismisses", async ({
   // script and can extend the config it assigns.
   await page.addInitScript(() => {
     const testWindow = window as Window & {
-      __BUZZ_E2E__?: { bootSplashHoldMs?: number };
+      __KUZZ_E2E__?: { bootSplashHoldMs?: number };
     };
-    testWindow.__BUZZ_E2E__ = {
-      ...(testWindow.__BUZZ_E2E__ ?? {}),
+    testWindow.__KUZZ_E2E__ = {
+      ...(testWindow.__KUZZ_E2E__ ?? {}),
       bootSplashHoldMs: 1_500,
     };
   });
@@ -29,7 +29,7 @@ test("boot splash overlay holds with the Kuzz mark, then dismisses", async ({
   await expect(overlay).toBeVisible();
 
   // The overlay shows the static Kuzz mark.
-  await expect(overlay.locator(".buzz-mark")).toBeVisible();
+  await expect(overlay.locator(".kuzz-mark")).toBeVisible();
 
   // The app mounts and loads beneath the overlay — boot is not delayed.
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();

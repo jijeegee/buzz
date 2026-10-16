@@ -107,7 +107,7 @@ pub(crate) struct SpawnConfigInputs<'a> {
 /// [`ManagedAgentProcess`]: super::ManagedAgentProcess
 #[derive(Clone, Serialize)]
 pub(crate) struct SpawnConfigSnapshot {
-    /// The ACP harness binary the desktop launches (`buzz-acp`).
+    /// The ACP harness binary the desktop launches (`kuzz-acp`).
     pub acp_command: String,
     /// The effective agent command the harness drives.
     pub command: String,
@@ -120,7 +120,7 @@ pub(crate) struct SpawnConfigSnapshot {
     pub relay_url: String,
     pub model: Option<String>,
     pub provider: Option<String>,
-    /// `None` when a user env override shadows `BUZZ_ACP_SESSION_TITLE`: spawn
+    /// `None` when a user env override shadows `KUZZ_ACP_SESSION_TITLE`: spawn
     /// writes the title BEFORE the user env layer, so the override is what
     /// actually runs and it already reaches this snapshot through `env`.
     /// Capturing the record-derived value under an override would badge a
@@ -129,7 +129,7 @@ pub(crate) struct SpawnConfigSnapshot {
     pub auth_tag: Option<String>,
     pub respond_to: String,
     /// `None` outside allowlist mode — spawn sets
-    /// `BUZZ_ACP_RESPOND_TO_ALLOWLIST` only there, so edits to a dormant list
+    /// `KUZZ_ACP_RESPOND_TO_ALLOWLIST` only there, so edits to a dormant list
     /// must not badge. Normalized (trim/lowercase/dedup) as the env receives
     /// it, so edits that don't survive normalization must not badge either.
     pub respond_to_allowlist: Option<Vec<String>>,
@@ -149,7 +149,7 @@ pub(crate) struct SpawnConfigSnapshot {
     /// `env` as ordinary state and diffs normally.
     pub effort_level: Option<String>,
     /// The effective ACP session policy this launch applies (`channel` or
-    /// `thread`). The harness reads `BUZZ_ACP_SESSION_POLICY` only at launch, so
+    /// `thread`). The harness reads `KUZZ_ACP_SESSION_POLICY` only at launch, so
     /// capturing the resolved policy here lets a toggle flip while an agent runs
     /// raise the restart-required badge instead of silently leaving the running
     /// process on the old policy. Written directly on the spawn `Command` (not
@@ -181,8 +181,8 @@ pub(crate) fn effective_effort(descriptor: &EffectiveHarnessDescriptor) -> Optio
     let dest_key = super::config_bridge::effort::effort_dest_key(runtime);
     // Read case-insensitively (exact-first) so a mixed-case sentinel a custom
     // runtime passed through (the projection uses an EMPTY suppress set, so a
-    // user-set `buzz_acp_effort_level` survives into `descriptor.env` and the
-    // child reads it as `BUZZ_ACP_EFFORT_LEVEL` on Windows) is captured here.
+    // user-set `kuzz_acp_effort_level` survives into `descriptor.env` and the
+    // child reads it as `KUZZ_ACP_EFFORT_LEVEL` on Windows) is captured here.
     // The read must match the snapshot strip, which is also case-insensitive:
     // if the read were exact-case it would miss the mixed-case sentinel, the
     // strip would still remove it, and the value would land in neither

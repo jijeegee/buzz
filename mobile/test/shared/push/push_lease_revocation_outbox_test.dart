@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/push/push_bridge.dart';
-import 'package:buzz/shared/push/push_lease_revocation_outbox.dart';
-import 'package:buzz/shared/push/push_subscription.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
+import 'package:kuzz/shared/push/push_lease_revocation_outbox.dart';
+import 'package:kuzz/shared/push/push_subscription.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
@@ -11,14 +11,14 @@ import '../community/community_storage_test.dart';
 
 void main() {
   late FakeSecureStorage secure;
-  late BuzzPushLeaseRevocationStorage storage;
+  late KuzzPushLeaseRevocationStorage storage;
   late _Clock clock;
   late _WakeScheduler scheduler;
   late nostr.Keys keys;
 
   setUp(() {
     secure = FakeSecureStorage();
-    storage = BuzzPushLeaseRevocationStorage(secure: secure);
+    storage = KuzzPushLeaseRevocationStorage(secure: secure);
     clock = _Clock(1_000_000);
     scheduler = _WakeScheduler();
     keys = nostr.Keys.generate();
@@ -39,7 +39,7 @@ void main() {
         ).copyWith(
           pubkey: keys.public,
           pushNotificationsEnabled: true,
-          pushSubscriptionState: const BuzzPushLeaseSubscriptionState.desired()
+          pushSubscriptionState: const KuzzPushLeaseSubscriptionState.desired()
               .withReservedGeneration(4),
         );
     final grant = _grant(expiresAt: clock.seconds + 3600);
@@ -72,7 +72,7 @@ void main() {
       pubkey: keys.public,
       nsec: keys.nsec,
       pushNotificationsEnabled: true,
-      pushSubscriptionState: const BuzzPushLeaseSubscriptionState.desired()
+      pushSubscriptionState: const KuzzPushLeaseSubscriptionState.desired()
           .withReservedGeneration(4),
       addedAt: DateTime.fromMillisecondsSinceEpoch(0),
     );
@@ -103,7 +103,7 @@ void main() {
       nsec: keys.nsec,
       tokenAuth: true,
       pushNotificationsEnabled: true,
-      pushSubscriptionState: const BuzzPushLeaseSubscriptionState.desired()
+      pushSubscriptionState: const KuzzPushLeaseSubscriptionState.desired()
           .withReservedGeneration(4),
       addedAt: DateTime.fromMillisecondsSinceEpoch(0),
     );
@@ -300,12 +300,12 @@ void main() {
   });
 }
 
-BuzzPushLeaseRevocationOutbox _outbox({
-  required BuzzPushLeaseRevocationStorage storage,
+KuzzPushLeaseRevocationOutbox _outbox({
+  required KuzzPushLeaseRevocationStorage storage,
   required _Clock clock,
   required _WakeScheduler scheduler,
-  required BuzzPushLeaseRevocationPublisher publisher,
-}) => BuzzPushLeaseRevocationOutbox(
+  required KuzzPushLeaseRevocationPublisher publisher,
+}) => KuzzPushLeaseRevocationOutbox(
   storage: storage,
   publisher: publisher,
   now: clock.call,
@@ -314,11 +314,11 @@ BuzzPushLeaseRevocationOutbox _outbox({
   scheduleWake: scheduler.schedule,
 );
 
-BuzzPushLeaseRevocationRecord _record({
+KuzzPushLeaseRevocationRecord _record({
   required nostr.Keys keys,
   required _Clock clock,
   String installationId = '00000000000000000000000000000000',
-}) => BuzzPushLeaseRevocationRecord(
+}) => KuzzPushLeaseRevocationRecord(
   relayUrl: 'https://relay.example',
   relayOrigin: 'wss://relay.example',
   memberPubkey: keys.public,
@@ -330,7 +330,7 @@ BuzzPushLeaseRevocationRecord _record({
   nextAttemptAt: clock.seconds,
 );
 
-BuzzPushEndpointGrant _grant({required int expiresAt}) => BuzzPushEndpointGrant(
+KuzzPushEndpointGrant _grant({required int expiresAt}) => KuzzPushEndpointGrant(
   relayOrigin: 'wss://relay.example',
   relayPubkey: 'a' * 64,
   installationId: '0' * 32,

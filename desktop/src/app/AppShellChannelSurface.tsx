@@ -1,5 +1,5 @@
 import type * as React from "react";
-import * as BuzzTheme from "@/app/BuzzThemeSurfaces";
+import * as KuzzTheme from "@/app/KuzzThemeSurfaces";
 import { HuddleRoomHeader, HuddleStartingView } from "@/features/huddle";
 import { MainInsetProvider } from "@/shared/layout/MainInsetContext";
 import { chromeCssVarDefaults } from "@/shared/layout/chromeLayout";
@@ -38,10 +38,10 @@ export function AppShellChannelSurface({
           isHuddleRoom ? "bg-background" : "bg-sidebar",
           hasCollapsedSidebarGutter && "pl-2",
         )}
-        data-buzz-content-surface={isHuddleRoom ? true : undefined}
-        data-buzz-content-unframed={isHuddleRoom ? true : undefined}
-        data-buzz-glass-inset
-        data-buzz-shadow-viewport
+        data-kuzz-content-surface={isHuddleRoom ? true : undefined}
+        data-kuzz-content-unframed={isHuddleRoom ? true : undefined}
+        data-kuzz-glass-inset
+        data-kuzz-shadow-viewport
         style={chromeCssVarDefaults as React.CSSProperties}
       >
         {hasCollapsedSidebarGutter ? (
@@ -51,9 +51,9 @@ export function AppShellChannelSurface({
           />
         ) : null}
         {isHuddleRoom && !isHuddleRoomStarting ? <HuddleRoomHeader /> : null}
-        <BuzzTheme.ContentSurface terminal={terminal} unframed={isHuddleRoom}>
+        <KuzzTheme.ContentSurface terminal={terminal} unframed={isHuddleRoom}>
           {isHuddleRoomStarting ? <HuddleStartingView /> : children}
-        </BuzzTheme.ContentSurface>
+        </KuzzTheme.ContentSurface>
       </SidebarInset>
     </MainInsetProvider>
   );

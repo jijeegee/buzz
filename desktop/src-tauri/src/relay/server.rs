@@ -11,7 +11,7 @@ pub enum KuzzEnv {
     /// other relay may be applied.
     Prod,
     /// The dev server, unless overridden explicitly by runtime
-    /// `BUZZ_RELAY_URL` or the baked build-time `BUZZ_RELAY_URL`.
+    /// `KUZZ_RELAY_URL` or the baked build-time `KUZZ_RELAY_URL`.
     Dev,
 }
 
@@ -67,10 +67,10 @@ fn relay_overrides() -> RelayOverrides {
             .filter(|value| !value.is_empty())
     };
     RelayOverrides {
-        ws: configured_env_var("BUZZ_RELAY_URL")
-            .or_else(|| baked(option_env!("BUZZ_DESKTOP_BUILD_RELAY_URL"))),
-        http: configured_env_var("BUZZ_RELAY_HTTP")
-            .or_else(|| baked(option_env!("BUZZ_DESKTOP_BUILD_RELAY_HTTP"))),
+        ws: configured_env_var("KUZZ_RELAY_URL")
+            .or_else(|| baked(option_env!("KUZZ_DESKTOP_BUILD_RELAY_URL"))),
+        http: configured_env_var("KUZZ_RELAY_HTTP")
+            .or_else(|| baked(option_env!("KUZZ_DESKTOP_BUILD_RELAY_HTTP"))),
     }
 }
 
@@ -143,7 +143,7 @@ pub fn ensure_relay_allowed(context: &str, relay_url: &str) -> Result<(), String
         let target = relay_endpoint(relay_url)
             .map(|RelayEndpoint { host, port, .. }| format!("{host}:{port}"))
             .unwrap_or_else(|| "an unparseable address".to_string());
-        eprintln!("buzz-desktop: refused {context} for {target}: not the built-in server");
+        eprintln!("kuzz-desktop: refused {context} for {target}: not the built-in server");
     })
 }
 
@@ -252,7 +252,7 @@ mod tests {
         for allowed in [
             "wss://jihobuzz.duckdns.org:8443",
             "wss://jihobuzz.duckdns.org:8443/",
-            "https://JIHOBUZZ.duckdns.org:8443",
+            "https://JIHOKUZZ.duckdns.org:8443",
         ] {
             assert!(
                 check_relay_allowed(KuzzEnv::Prod, &none, allowed).is_ok(),

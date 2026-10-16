@@ -216,7 +216,7 @@ async fn resolve_public_addresses(host: &str) -> Result<Vec<IpAddr>, String> {
     if addresses.is_empty() {
         return Err("link preview DNS resolution returned no addresses".to_string());
     }
-    if addresses.iter().any(buzz_core_pkg::network::is_private_ip) {
+    if addresses.iter().any(kuzz_core_pkg::network::is_private_ip) {
         return Err("link preview host resolved to a private or reserved address".to_string());
     }
 
@@ -263,7 +263,7 @@ async fn send_pinned_request(url: &Url, accept: &str) -> Result<reqwest::Respons
     let request = client
         .get(url.as_str())
         .header(ACCEPT, accept)
-        .header(USER_AGENT, "Buzz Desktop link preview");
+        .header(USER_AGENT, "Kuzz Desktop link preview");
 
     request
         .send()

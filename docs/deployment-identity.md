@@ -5,8 +5,8 @@ attestations:
 
 - SLSA build provenance maps the immutable image digest to the source commit
   and Docker workflow run.
-- The Buzz deployment-eligibility predicate records the successful same-SHA
-  CI run and the exact Buzz Helm chart version from that source commit.
+- The Kuzz deployment-eligibility predicate records the successful same-SHA
+  CI run and the exact Kuzz Helm chart version from that source commit.
 
 The Docker workflow creates tagged multi-architecture manifests only after the
 same full source SHA has a successful `CI` push run on `main` or `release`.
@@ -19,14 +19,14 @@ Verify a canonical eligible digest with:
 ```bash
 gh attestation verify \
   oci://ghcr.io/block/buzz@sha256:<digest> \
-  --repo block/buzz \
-  --signer-workflow block/buzz/.github/workflows/docker.yml \
+  --repo block/kuzz \
+  --signer-workflow block/kuzz/.github/workflows/docker.yml \
   --predicate-type https://buzz.block.xyz/attestations/deployment-eligibility/v1 \
   --source-ref refs/heads/main
 ```
 
 The predicate's `helm_chart.compatible_version` is image-to-chart metadata. It
-does not describe database schema compatibility and does not relax Buzz's rule
+does not describe database schema compatibility and does not relax Kuzz's rule
 that migrations remain backwards compatible.
 
 The manual pre-merge workflow publishes only to
@@ -40,7 +40,7 @@ The relay health listener exposes intrinsic build identity at `/_status`:
 
 ```json
 {
-  "service": "buzz-relay",
+  "service": "kuzz-relay",
   "version": "0.2.1",
   "uptime_seconds": 123,
   "build": {
@@ -70,12 +70,12 @@ so polling it costs nothing. `sample` is always present and reports whether
 that cached verdict is `fresh`, `stale`, or `not_yet_sampled` — before the
 first cycle completes the health fields are absent rather than defaulted.
 `/_readiness` does not consult any of this — see
-[the readiness contract](../deploy/charts/buzz/README.md#readiness-contract) —
+[the readiness contract](../deploy/charts/kuzz/README.md#readiness-contract) —
 so this endpoint must never be wired to a Kubernetes probe.
 
 ## Helm digest pinning
 
-Buzz chart `0.1.8` and newer accept an immutable image digest:
+Kuzz chart `0.1.8` and newer accept an immutable image digest:
 
 ```yaml
 image:

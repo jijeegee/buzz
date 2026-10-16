@@ -1,7 +1,7 @@
 import type { TokenAuthStatus } from "@/shared/api/tokenAuth";
 
 /**
- * Google sign-in is the only user-facing way into Buzz; the signing key behind
+ * Google sign-in is the only user-facing way into Kuzz; the signing key behind
  * it is never shown. The key screens (create/import a key, key backup, raw
  * identity details) stay in the tree only for E2E mock builds
  * (`vite build --mode e2e`), whose mock bridge usually offers no Google
@@ -14,7 +14,7 @@ export function signingKeyUiTestSeam(
 }
 
 /**
- * Whether this device's Buzz account is held by Google: the signing key is
+ * Whether this device's Kuzz account is held by Google: the signing key is
  * backed up with Google, or the community runs a Google token account (any
  * live, restoring or expired session, or a remembered legacy account).
  * Either way, signing in with Google again restores access.

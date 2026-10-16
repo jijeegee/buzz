@@ -124,7 +124,7 @@ pub fn voice_registry(app: &AppHandle) -> Vec<VoiceRegistryEntry> {
         })),
         Err(error) => {
             eprintln!(
-                "buzz-desktop: {error}; imported Pocket voices are unavailable for this session"
+                "kuzz-desktop: {error}; imported Pocket voices are unavailable for this session"
             );
         }
     }
@@ -313,7 +313,7 @@ pub fn load_for_app(app: &AppHandle) -> (TtsSettings, Option<String>) {
     match result {
         Ok(settings) => (settings, None),
         Err(error) => {
-            eprintln!("buzz-desktop: {error}; preserving the file and using Mary for this session");
+            eprintln!("kuzz-desktop: {error}; preserving the file and using Mary for this session");
             (TtsSettings::default(), Some(error))
         }
     }
@@ -455,7 +455,7 @@ async fn apply_tts_settings(
         voice_change_wait = voice_change_ack;
         if active {
             if let Err(error) = super::pipeline::maybe_start_tts_pipeline(state).await {
-                eprintln!("buzz-desktop: could not hot-start text to speech: {error}");
+                eprintln!("kuzz-desktop: could not hot-start text to speech: {error}");
             }
         }
         state.emit_huddle_state_changed();
@@ -485,7 +485,7 @@ async fn finish_voice_change(voice_change: Option<VoiceChangeWait>) -> Result<()
 async fn finish_durable_voice_change(voice_change: Option<VoiceChangeWait>) {
     if let Err(error) = finish_voice_change(voice_change).await {
         eprintln!(
-            "buzz-desktop: tts stage=voice_switch status=delayed reason=ack_timeout error={error}"
+            "kuzz-desktop: tts stage=voice_switch status=delayed reason=ack_timeout error={error}"
         );
     }
 }

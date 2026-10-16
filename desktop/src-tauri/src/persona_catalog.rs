@@ -7,7 +7,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use buzz_core_pkg::kind::KIND_PERSONA;
+use kuzz_core_pkg::kind::KIND_PERSONA;
 use nostr::Event;
 use regex::Regex;
 use serde::Serialize;
@@ -99,7 +99,7 @@ pub(crate) async fn fetch_persona_catalog(
         // async executor (and therefore off Tauri command scheduling).
         let verified = tauri::async_runtime::spawn_blocking(move || {
             page.into_iter()
-                .filter(buzz_core_pkg::draft::verify_served_event)
+                .filter(kuzz_core_pkg::draft::verify_served_event)
                 .collect::<Vec<_>>()
         })
         .await

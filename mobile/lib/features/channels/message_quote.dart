@@ -135,7 +135,7 @@ String quoteExcerpt(String content) {
         RegExp(r'\[([^\]]+)\]\([^)]*\)'),
         (match) => match.group(1)!,
       )
-      .replaceAll(RegExp(r'<?(?:https?|buzz)://\S+>?'), ' ')
+      .replaceAll(RegExp(r'<?(?:https?|kuzz)://\S+>?'), ' ')
       .replaceAll(RegExp(r'[`*_~>#|]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();

@@ -2,7 +2,7 @@
 //! relay reuses the same device (its name, robot and hosted-agent records)
 //! when this install signs in again instead of listing a new one.
 //!
-//! A random UUID kept in the app data dir: one per install, so two Buzz apps
+//! A random UUID kept in the app data dir: one per install, so two Kuzz apps
 //! on one computer are two devices, and no hardware identifier is read.
 
 use std::path::Path;

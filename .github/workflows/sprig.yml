@@ -1,9 +1,9 @@
 name: Sprig
 
 # Builds and publishes Sprig — one deploy-anywhere Linux multicall binary for:
-#   buzz-acp       ACP harness (multicall Git helpers) that bridges Buzz events to the LLM agent
-#   buzz-agent     ACP-compliant agent (spawns MCP, calls LLMs)
-#   buzz-dev-mcp   Developer MCP server (multicall: rg, tree, buzz)
+#   kuzz-acp       ACP harness (multicall Git helpers) that bridges Kuzz events to the LLM agent
+#   kuzz-agent     ACP-compliant agent (spawns MCP, calls LLMs)
+#   kuzz-dev-mcp   Developer MCP server (multicall: rg, tree, kuzz)
 #
 # Targets: x86_64-unknown-linux-musl and aarch64-unknown-linux-musl (static
 # musl so the tarball runs on any modern Linux without libc surprises).
@@ -136,7 +136,7 @@ jobs:
           set -euo pipefail
           TAG="sprig-latest"
           TITLE="Sprig (rolling)"
-          NOTES="Rolling Linux build of Sprig (all-in-one buzz-acp + buzz-agent + buzz-dev-mcp), tracking \`main\` (\`${SHA}\`)."
+          NOTES="Rolling Linux build of Sprig (all-in-one kuzz-acp + kuzz-agent + kuzz-dev-mcp), tracking \`main\` (\`${SHA}\`)."
 
           gh release edit "$TAG" \
             --prerelease \
@@ -179,5 +179,5 @@ jobs:
           set -euo pipefail
           gh release create "$TAG" \
             --title "Sprig v${VERSION}" \
-            --notes "Sprig v${VERSION} — Linux all-in-one builds of buzz-acp + buzz-agent + buzz-dev-mcp." \
+            --notes "Sprig v${VERSION} — Linux all-in-one builds of kuzz-acp + kuzz-agent + kuzz-dev-mcp." \
             dist/*

@@ -1,6 +1,6 @@
 # AGENTS.md — AI Agent Contributor Guide
 
-This guide is for AI agents contributing to the Buzz codebase. It covers
+This guide is for AI agents contributing to the Kuzz codebase. It covers
 agent-specific context and conventions. For general contributor info (setup,
 code style, PR process, architecture), see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -45,7 +45,7 @@ confirmation, not app runs.
    (through the app or `curl`), or by running the changed command. Agent testing
    does not substitute. Agents give the human exact steps and what working looks
    like, then wait for explicit confirmation. Never mark this step done yourself.
-4. **Add `buzz-review-completed` to the PR description** once steps 1–3 hold. It
+4. **Add `kuzz-review-completed` to the PR description** once steps 1–3 hold. It
    attests the checklist, and automated reviewers may skip review because of it.
    If later edits change behavior, remove it and return the PR to draft until the
    affected steps are redone.
@@ -69,19 +69,19 @@ confirmation, not app runs.
 
 ## Ecosystem
 
-Buzz spans five repos. This one (`block/buzz`) is the OSS source for the relay, desktop, mobile, and CLI. The others handle internal builds and deployment:
+Kuzz spans five repos. This one (`block/kuzz`) is the OSS source for the relay, desktop, mobile, and CLI. The others handle internal builds and deployment:
 
 | Repo | Purpose |
 |------|---------|
-| [block/buzz](https://github.com/block/buzz) | OSS source — relay, desktop app, mobile app, CLI, agent harness |
-| [squareup/buzz-releases](https://github.com/squareup/buzz-releases) | Buildkite pipelines producing Block-signed macOS + iOS builds with `-block` desktop version suffix |
+| [block/kuzz](https://github.com/block/buzz) | OSS source — relay, desktop app, mobile app, CLI, agent harness |
+| [squareup/kuzz-releases](https://github.com/squareup/buzz-releases) | Buildkite pipelines producing Block-signed macOS + iOS builds with `-block` desktop version suffix |
 | [squareup/sprout-oss](https://github.com/squareup/sprout-oss) | CI pipeline building the relay Docker image and pushing to internal ECR |
 | [squareup/block-coder-tf-stacks](https://github.com/squareup/block-coder-tf-stacks) | Terraform + ArgoCD deploying the relay to the staging Kubernetes cluster |
 | [squareup/sprout-backend-blox](https://github.com/squareup/sprout-backend-blox) | Desktop backend provider script connecting Blox workstation agents to the relay |
 
 ```
-block/buzz (source)
-  ├─► buzz-releases      (desktop + mobile builds → Artifactory, GitHub, Mobile Releases)
+block/kuzz (source)
+  ├─► kuzz-releases      (desktop + mobile builds → Artifactory, GitHub, Mobile Releases)
   ├─► sprout-oss         (relay Docker image → ECR)
   │     └─► block-coder-tf-stacks  (Helm chart → ArgoCD → staging cluster)
   └─── sprout-backend-blox         (Blox compute provider for Desktop agent launch)
@@ -98,31 +98,31 @@ access information.
 ```
 crates/
   # Relay + core
-  buzz-relay          # WebSocket relay server — main entry point; also hosts git + huddle audio
-  buzz-core           # Core types, event verification, filter matching, kind registry
-  buzz-db             # Postgres event store and data access layer
-  buzz-auth           # Authentication and authorization
-  buzz-pubsub         # Redis pub/sub fan-out, presence, typing indicators
-  buzz-search         # Postgres FTS full-text search
-  buzz-audit          # Hash-chain audit log
-  buzz-media          # Blossom/S3 media storage
+  kuzz-relay          # WebSocket relay server — main entry point; also hosts git + huddle audio
+  kuzz-core           # Core types, event verification, filter matching, kind registry
+  kuzz-db             # Postgres event store and data access layer
+  kuzz-auth           # Authentication and authorization
+  kuzz-pubsub         # Redis pub/sub fan-out, presence, typing indicators
+  kuzz-search         # Postgres FTS full-text search
+  kuzz-audit          # Hash-chain audit log
+  kuzz-media          # Blossom/S3 media storage
   # Agent surface
-  buzz-acp            # ACP harness bridging Buzz events to AI agents
-  buzz-agent          # Minimal ACP-compliant agent (non-streaming, tool-calls-as-output)
-  buzz-dev-mcp        # Developer MCP server — shell + file-edit tools
-  buzz-persona        # Agent persona packs
-  buzz-workflow       # YAML-as-code workflow engine (evalexpr conditions)
+  kuzz-acp            # ACP harness bridging Kuzz events to AI agents
+  kuzz-agent          # Minimal ACP-compliant agent (non-streaming, tool-calls-as-output)
+  kuzz-dev-mcp        # Developer MCP server — shell + file-edit tools
+  kuzz-persona        # Agent persona packs
+  kuzz-workflow       # YAML-as-code workflow engine (evalexpr conditions)
   # Clients + interop
-  buzz-pair-relay     # Ephemeral sidecar relay for NIP-AB device pairing
-  buzz-pairing-cli    # CLI for NIP-AB device pairing interop testing
+  kuzz-pair-relay     # Ephemeral sidecar relay for NIP-AB device pairing
+  kuzz-pairing-cli    # CLI for NIP-AB device pairing interop testing
   git-sign-nostr      # Sign git objects with a Nostr key
   git-credential-nostr # Git credential helper for Nostr-authed push/fetch
   # Tooling + shared
-  buzz-cli            # Agent-first CLI
-  buzz-sdk            # Typed Nostr event builders
-  buzz-admin          # Operator CLI for relay administration
-  buzz-ws-client      # Shared NIP-42 WebSocket client (connect, auth, publish)
-  buzz-test-client    # Integration test client and E2E test suite
+  kuzz-cli            # Agent-first CLI
+  kuzz-sdk            # Typed Nostr event builders
+  kuzz-admin          # Operator CLI for relay administration
+  kuzz-ws-client      # Shared NIP-42 WebSocket client (connect, auth, publish)
+  kuzz-test-client    # Integration test client and E2E test suite
   sprig               # All-in-one harness bundling ACP, agent, and dev MCP
 
 desktop/              # Tauri 2 + React 19 desktop app
@@ -159,8 +159,8 @@ For changes limited to Flutter/Dart code in the mobile app, run
 Native code and build-configuration changes also require the corresponding
 platform checks.
 
-Run `just test` for integration tests if you touched `buzz-relay`,
-`buzz-db`, or `buzz-auth` — these require a running Postgres and Redis.
+Run `just test` for integration tests if you touched `kuzz-relay`,
+`kuzz-db`, or `kuzz-auth` — these require a running Postgres and Redis.
 
 **Pre-commit hooks** are installed automatically by `just setup` and auto-fix
 formatting via `stage_fixed`. Pre-commit runs fix variants in parallel (Rust
@@ -284,18 +284,18 @@ against them; each cites the PRs where reviewers litigated it.
 
 ## Key Patterns
 
-**Nostr-first HTTP surface**: Buzz's primary API is NIP-29 over WebSocket. The relay also exposes a narrow HTTP surface: NIP-11/NIP-05 metadata, `POST /events`, `POST /query`, `POST /count`, workflow webhooks at `/hooks/{id}`, Blossom media, git smart HTTP, git policy hooks, and health probes. These HTTP paths all preserve the same host-derived community boundary.
+**Nostr-first HTTP surface**: Kuzz's primary API is NIP-29 over WebSocket. The relay also exposes a narrow HTTP surface: NIP-11/NIP-05 metadata, `POST /events`, `POST /query`, `POST /count`, workflow webhooks at `/hooks/{id}`, Blossom media, git smart HTTP, git policy hooks, and health probes. These HTTP paths all preserve the same host-derived community boundary.
 
 **Prefer Nostr events over new HTTP endpoints**: For new feature work, model
-the operation as a Nostr event (new kind in `buzz-core/src/kind.rs`, handler
-in `buzz-relay`) rather than adding endpoint-specific JSON APIs. HTTP is
+the operation as a Nostr event (new kind in `kuzz-core/src/kind.rs`, handler
+in `kuzz-relay`) rather than adding endpoint-specific JSON APIs. HTTP is
 reserved for things that genuinely need an HTTP-only surface: media upload/download
 (Blossom), webhooks, git smart HTTP, NIP-11/NIP-05 metadata, health checks,
 and the generic Nostr bridge endpoints:
 
 - `POST /events` — submit any signed event (same path the WebSocket uses).
 - `POST /query` — Nostr REQ filters over HTTP. NIP-50 `search` filters
-  are routed to `buzz-search` (Postgres FTS) automatically.
+  are routed to `kuzz-search` (Postgres FTS) automatically.
 - `POST /count` — Nostr COUNT filters over HTTP.
 
 If you find yourself reaching for a new HTTP endpoint, first check whether
@@ -305,7 +305,7 @@ fan-out, NIP-29 scoping, and the existing auth pipeline for free.
 Reference https://github.com/nostr-protocol/nips
 
 **Event kinds**: All event kind integers are defined in
-`buzz-core/src/kind.rs`. New features get new kind integers — add them here
+`kuzz-core/src/kind.rs`. New features get new kind integers — add them here
 first, then implement handling in the relay.
 
 **Channel scoping**: Channels use `h` tags (NIP-29 group tag), not `e` tags.
@@ -315,9 +315,9 @@ channel carry its id in their `d` tag instead: kind:39000 (metadata),
 kind:39001, kind:39002 (membership). `get_channels` resolves a user's channels
 from the `d` tag of their kind:39002 events, not from `h`.
 
-**Agent-facing operations go in `buzz-cli`**: New agent-facing features belong in `buzz-cli` — add a subcommand there first, then wire the REST/WebSocket call in `client.rs`. `buzz-dev-mcp` (shell + file tools for `buzz-agent`) is separate.
+**Agent-facing operations go in `kuzz-cli`**: New agent-facing features belong in `kuzz-cli` — add a subcommand there first, then wire the REST/WebSocket call in `client.rs`. `kuzz-dev-mcp` (shell + file tools for `kuzz-agent`) is separate.
 
-**Workflow conditions**: `buzz-workflow` uses
+**Workflow conditions**: `kuzz-workflow` uses
 [evalexpr](https://docs.rs/evalexpr) for condition evaluation. Keep expressions
 simple and testable.
 
@@ -327,29 +327,29 @@ check existing reply handlers for the pattern.
 
 ---
 
-## Agent CLI (`buzz-cli`)
+## Agent CLI (`kuzz-cli`)
 
-`buzz` is the agent-first CLI. Auth env vars
-(`BUZZ_RELAY_URL`, `BUZZ_PRIVATE_KEY`, `BUZZ_AUTH_TAG`) are auto-injected
+`kuzz` is the agent-first CLI. Auth env vars
+(`KUZZ_RELAY_URL`, `KUZZ_PRIVATE_KEY`, `KUZZ_AUTH_TAG`) are auto-injected
 by the ACP harness into managed agent subprocesses. In development, set
-`BUZZ_PRIVATE_KEY` and `BUZZ_RELAY_URL` in your environment manually.
+`KUZZ_PRIVATE_KEY` and `KUZZ_RELAY_URL` in your environment manually.
 
 ### Building the CLI
 
 ```bash
-cargo build --release -p buzz-cli
+cargo build --release -p kuzz-cli
 ```
 
-Binary location: `./target/release/buzz`. Add `./target/release` to `PATH`
+Binary location: `./target/release/kuzz`. Add `./target/release` to `PATH`
 or invoke with the full path.
 
 ### Deep Links
 
-`buzz://message?channel=<uuid>&id=<hex>` links reference a specific message
+`kuzz://message?channel=<uuid>&id=<hex>` links reference a specific message
 thread. Pass the link directly to the CLI:
 
 ```bash
-buzz --format compact messages thread --link '<buzz://message?...>'
+kuzz --format compact messages thread --link '<kuzz://message?...>'
 ```
 
 The selected message ID is authoritative: `messages thread` verifies its
@@ -364,9 +364,9 @@ canonical signed Nostr event fields (`id`, `pubkey`, `kind`, `content`,
 0=ok, 1=input error, 2=network/relay, 3=auth, 4=other, 5=write conflict (NIP-33 LWW).
 
 `--format compact` is a **global** flag — it goes before the subcommand:
-`buzz --format compact channels list`, NOT `buzz channels list --format compact`.
+`kuzz --format compact channels list`, NOT `kuzz channels list --format compact`.
 
-See `crates/buzz-cli/TESTING.md` for the full live-testing runbook.
+See `crates/kuzz-cli/TESTING.md` for the full live-testing runbook.
 
 ---
 
@@ -377,7 +377,7 @@ just test-unit    # unit tests, no infrastructure needed
 just test         # full integration suite (requires Postgres + Redis)
 ```
 
-E2E tests live in `crates/buzz-test-client/tests/`:
+E2E tests live in `crates/kuzz-test-client/tests/`:
 - `e2e_relay.rs` — WebSocket relay protocol
 - `e2e_media.rs` — media upload/download (Blossom)
 - `e2e_media_extended.rs` — extended media scenarios
@@ -391,7 +391,7 @@ See [TESTING.md](TESTING.md) for the full multi-agent E2E guide.
 
 ### PR Screenshots
 
-> **Do NOT use `buzz upload`, the relay media endpoint, or any third-party
+> **Do NOT use `kuzz upload`, the relay media endpoint, or any third-party
 > image host for PR screenshots.** Relay media URLs fail through GitHub's camo
 > proxy. Always use `scripts/post-screenshots.sh` for PNGs before linking them
 > from a PR body/comment. If you hand-edit PR markdown, run
@@ -422,7 +422,7 @@ Output is a PNG path on stdout.
 
 Use `--messages` to inject content into a channel before capture. The JSON file
 is an array of objects — `channelName` and `content` are required, all other
-fields are optional and passed through to `__BUZZ_E2E_EMIT_MOCK_MESSAGE__`:
+fields are optional and passed through to `__KUZZ_E2E_EMIT_MOCK_MESSAGE__`:
 
 ```json
 [
@@ -502,9 +502,9 @@ only the current set remains, otherwise reviewers still see the stale images:
 
 ```bash
 # List screenshot comments to find the stale one's id
-gh pr view <pr> --repo block/buzz --json comments \
+gh pr view <pr> --repo block/kuzz --json comments \
   --jq '.comments[] | select(.body | test("pr-<pr>--")) | {id, url}'
-gh api -X DELETE repos/block/buzz/issues/comments/<stale-comment-id>
+gh api -X DELETE repos/block/kuzz/issues/comments/<stale-comment-id>
 ```
 
 Branch cleanup when fully done: `git push origin --delete agent-screenshots/<username>`.
@@ -536,7 +536,7 @@ must run BEFORE `installMockBridge(page)` — React reads state on mount, the
 bridge triggers mount.
 
 **Live messages:** Call `waitForMockLiveSubscription(page, channelName)` before
-`__BUZZ_E2E_EMIT_MOCK_MESSAGE__` — messages are silently dropped without a
+`__KUZZ_E2E_EMIT_MOCK_MESSAGE__` — messages are silently dropped without a
 subscription. Navigate to the channel first (triggers subscription), then away
 (so unread indicators appear), then inject.
 
@@ -594,7 +594,7 @@ description. See [PR #803](https://github.com/block/buzz/pull/803).
 
 ## Common Gotchas
 
-1. **Kind `39000` for channel metadata, not `41`** — kind 41 is NIP-01 (unused). All kinds defined in `buzz-core/src/kind.rs`.
+1. **Kind `39000` for channel metadata, not `41`** — kind 41 is NIP-01 (unused). All kinds defined in `kuzz-core/src/kind.rs`.
 2. **Relay queries must specify `kinds`** — omitting `kinds` triggers the p-gate (403). Always include explicit kind filters.
 3. **`messages search` chooses its own supported kinds** — do not add a `--kinds` option; the current command does not accept one. This differs from raw relay filters, which still need explicit kinds.
 4. **Worktrees: `cd` in the same command** — shell CWD doesn't persist between tool calls. Use `cd /path && cargo build` as one command.
@@ -737,7 +737,7 @@ The mobile app lives in `mobile/` — a Flutter app using Riverpod + Hooks.
 cd mobile
 dart format --output=none --set-exit-if-changed .
 flutter analyze
-flutter test --dart-define=BUZZ_PUSH_GATEWAY_URL=https://push.example
+flutter test --dart-define=KUZZ_PUSH_GATEWAY_URL=https://push.example
 ```
 
 Or from repo root: `just mobile-fmt` (auto-fix), `just mobile-check` (lint + fmt check), `just mobile-test` (tests).

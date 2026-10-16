@@ -1,11 +1,11 @@
-import buzzAppIcon from "@/assets/app-icon@3x.png";
+import kuzzAppIcon from "@/assets/app-icon@3x.png";
 import { claimInviteInBrowser } from "@/features/invite/invite-api";
 import {
-  BUZZ_RELEASES_URL,
-  type BuzzDownloadPlatform,
-  detectBuzzDownloadPlatform,
-  resolveBuzzDownloadUrlForPlatform,
-} from "@/shared/lib/buzz-download";
+  KUZZ_RELEASES_URL,
+  type KuzzDownloadPlatform,
+  detectKuzzDownloadPlatform,
+  resolveKuzzDownloadUrlForPlatform,
+} from "@/shared/lib/kuzz-download";
 import { startGoogleSignIn, useWebSession } from "@/shared/auth/session";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -54,7 +54,7 @@ export function InvitePage({ code }: { code: string }) {
   const [browserJoinError, setBrowserJoinError] = React.useState<string | null>(
     null,
   );
-  const [downloadUrl, setDownloadUrl] = React.useState(BUZZ_RELEASES_URL);
+  const [downloadUrl, setDownloadUrl] = React.useState(KUZZ_RELEASES_URL);
   const [needsMacChoice, setNeedsMacChoice] = React.useState(false);
   const [showMacChoice, setShowMacChoice] = React.useState(false);
   const [choosingMacDownload, setChoosingMacDownload] = React.useState(false);
@@ -63,7 +63,7 @@ export function InvitePage({ code }: { code: string }) {
 
   React.useEffect(() => {
     let active = true;
-    detectBuzzDownloadPlatform(navigator).then(async (platform) => {
+    detectKuzzDownloadPlatform(navigator).then(async (platform) => {
       if (!active) return;
       if (
         platform.operatingSystem === "macos" &&
@@ -72,7 +72,7 @@ export function InvitePage({ code }: { code: string }) {
         setNeedsMacChoice(true);
         return;
       }
-      const url = await resolveBuzzDownloadUrlForPlatform(platform);
+      const url = await resolveKuzzDownloadUrlForPlatform(platform);
       if (active) setDownloadUrl(url);
     });
     return () => {
@@ -111,7 +111,7 @@ export function InvitePage({ code }: { code: string }) {
       const receipt = await acceptPolicy();
       const query = new URLSearchParams({ relay, code });
       if (receipt) query.set("policy_receipt", receipt);
-      window.location.href = `buzz://join?${query.toString()}`;
+      window.location.href = `kuzz://join?${query.toString()}`;
     } finally {
       setOpening(false);
     }
@@ -169,7 +169,7 @@ export function InvitePage({ code }: { code: string }) {
   }, []);
   const chooseMacDownload = async (
     event: React.MouseEvent<HTMLAnchorElement>,
-    platform: BuzzDownloadPlatform,
+    platform: KuzzDownloadPlatform,
   ) => {
     event.preventDefault();
     if (choosingMacDownloadRef.current) return;
@@ -179,7 +179,7 @@ export function InvitePage({ code }: { code: string }) {
     if (downloadWindow) downloadWindow.opener = null;
     setShowMacChoice(false);
     try {
-      const url = await resolveBuzzDownloadUrlForPlatform(platform);
+      const url = await resolveKuzzDownloadUrlForPlatform(platform);
       downloadWindow?.location.replace(url);
     } finally {
       choosingMacDownloadRef.current = false;
@@ -209,7 +209,7 @@ export function InvitePage({ code }: { code: string }) {
             className="h-12 w-12 overflow-hidden bg-black"
             style={{ borderRadius: "22.37%" }}
           >
-            <img alt="Buzz" className="h-full w-full" src={buzzAppIcon} />
+            <img alt="Kuzz" className="h-full w-full" src={kuzzAppIcon} />
           </div>
           <h1 className="mt-4 text-2xl font-semibold tracking-tight text-black">
             You&apos;re invited to
@@ -266,9 +266,9 @@ export function InvitePage({ code }: { code: string }) {
                 }`}
               >
                 <a
-                  href={`buzz://join?relay=${encodeURIComponent(relay)}&code=${encodeURIComponent(code)}`}
+                  href={`kuzz://join?relay=${encodeURIComponent(relay)}&code=${encodeURIComponent(code)}`}
                 >
-                  Accept invite in Buzz
+                  Accept invite in Kuzz
                 </a>
               </Button>
             ) : (
@@ -281,7 +281,7 @@ export function InvitePage({ code }: { code: string }) {
                 disabled={disabled}
                 onClick={openInvite}
               >
-                Accept invite in Buzz
+                Accept invite in Kuzz
               </Button>
             )}
             {browserJoinError ? (
@@ -314,7 +314,7 @@ export function InvitePage({ code }: { code: string }) {
           </span>
           <a
             className="font-medium text-black underline-offset-4 hover:text-black/70 hover:underline focus-visible:underline"
-            href={BUZZ_RELEASES_URL}
+            href={KUZZ_RELEASES_URL}
             rel="noreferrer"
             target="_blank"
           >
@@ -356,7 +356,7 @@ export function InvitePage({ code }: { code: string }) {
               <a
                 aria-disabled={choosingMacDownload}
                 className="rounded-2xl border border-black p-5 text-black no-underline hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                href={BUZZ_RELEASES_URL}
+                href={KUZZ_RELEASES_URL}
                 onClick={(event) =>
                   void chooseMacDownload(event, {
                     operatingSystem: "macos",
@@ -372,7 +372,7 @@ export function InvitePage({ code }: { code: string }) {
               <a
                 aria-disabled={choosingMacDownload}
                 className="rounded-2xl border border-black p-5 text-black no-underline hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                href={BUZZ_RELEASES_URL}
+                href={KUZZ_RELEASES_URL}
                 onClick={(event) =>
                   void chooseMacDownload(event, {
                     operatingSystem: "macos",

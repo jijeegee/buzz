@@ -130,7 +130,7 @@ export function StyledQrCode({
 
       cells.push(
         <circle
-          className={animate ? "buzz-qr-cell-reveal" : undefined}
+          className={animate ? "kuzz-qr-cell-reveal" : undefined}
           cx={column + 0.5}
           cy={row + 0.5}
           data-qr-cell-row={row}
@@ -140,7 +140,7 @@ export function StyledQrCode({
           style={
             animate
               ? ({
-                  "--buzz-qr-reveal-delay": `${Math.round(
+                  "--kuzz-qr-reveal-delay": `${Math.round(
                     (row / Math.max(matrix.size, 1)) * QR_REVEAL_ROW_TRAVEL_MS,
                   )}ms`,
                 } as CSSProperties)

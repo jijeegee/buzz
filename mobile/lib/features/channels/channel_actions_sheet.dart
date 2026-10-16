@@ -13,8 +13,8 @@ import '../../shared/relay/relay_provider.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/buzz_action_tile.dart';
-import '../../shared/widgets/buzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_action_tile.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
@@ -46,7 +46,7 @@ Future<bool?> showChannelActionsSheet({
   required bool isUnread,
   VoidCallback? onMarkRead,
   String? sectionId,
-}) => showBuzzModalBottomSheet<bool>(
+}) => showKuzzModalBottomSheet<bool>(
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
@@ -242,7 +242,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   leading: const Icon(LucideIcons.settings),
                   title: const Text('Manage channel'),
                   onTap: () async {
-                    final shouldClose = await showBuzzModalBottomSheet<bool>(
+                    final shouldClose = await showKuzzModalBottomSheet<bool>(
                       context: context,
                       title: 'Manage channel',
                       isScrollControlled: true,
@@ -311,7 +311,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 if (lifecycleCapabilitiesLoading)
                   const ListTile(
                     enabled: false,
-                    leading: BuzzLoadingIndicator(
+                    leading: KuzzLoadingIndicator(
                       size: 20,
                       semanticLabel: 'Loading channel actions',
                     ),
@@ -503,7 +503,7 @@ Future<void> _confirmAndRun(
   required Future<void> Function() action,
 }) async {
   final pageContext = Navigator.of(sheetContext, rootNavigator: true).context;
-  final confirmed = await showBuzzDialog<bool>(
+  final confirmed = await showKuzzDialog<bool>(
     context: pageContext,
     builder: (dialogContext) => AlertDialog(
       title: Text(title),
@@ -544,7 +544,7 @@ Future<void> _showMoveSectionSheet(
 }) async {
   final sections = [...ref.read(channelSectionsProvider).store.sections]
     ..sort((a, b) => a.order.compareTo(b.order));
-  await showBuzzModalBottomSheet<void>(
+  await showKuzzModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     builder: (sheetContext) => SafeArea(
@@ -618,7 +618,7 @@ Future<void> _showMoveSectionSheet(
 
 Future<String?> _showSectionNameDialog(BuildContext context) async {
   final controller = TextEditingController();
-  final result = await showBuzzDialog<String>(
+  final result = await showKuzzDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: const Text('New Section'),

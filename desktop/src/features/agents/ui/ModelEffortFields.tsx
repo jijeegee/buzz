@@ -24,7 +24,7 @@ export type ModelEffortCompanion = Omit<EffortPickerFieldProps, "disabled">;
  * (no instance or a local one, AND a vocabulary: the running session's
  * `thought_level` option or the runtime catalog's
  * `effortThoughtLevel.fallbackValues`), so a
- * harness without an ACP effort option (Goose, buzz-agent, custom) shows only
+ * harness without an ACP effort option (Goose, kuzz-agent, custom) shows only
  * the model control. `effort: null` means the surface has no model selection
  * to pair with (nothing chosen yet) and renders the children alone.
  */

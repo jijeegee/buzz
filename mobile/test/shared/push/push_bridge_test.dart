@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/deeplink/deep_link.dart';
-import 'package:buzz/shared/push/push_bridge.dart';
-import 'package:buzz/shared/relay/relay_provider.dart';
-import 'package:buzz/shared/relay/app_lifecycle_provider.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/deeplink/deep_link.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
+import 'package:kuzz/shared/relay/relay_provider.dart';
+import 'package:kuzz/shared/relay/app_lifecycle_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
-const _channel = MethodChannel('buzz/push');
+const _channel = MethodChannel('kuzz/push');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -24,7 +24,7 @@ void main() {
     pushEndpointGrantError.value = null;
     pushCommunitySnapshotError.value = null;
     pendingPushNotificationLink.value = null;
-    installBuzzPushMethodHandler();
+    installKuzzPushMethodHandler();
   });
 
   tearDown(() {
@@ -57,7 +57,7 @@ void main() {
             return null;
           });
 
-      await startBuzzPushRegistration();
+      await startKuzzPushRegistration();
     },
   );
 
@@ -67,7 +67,7 @@ void main() {
         .setMockMethodCallHandler(_channel, null);
 
     await expectLater(
-      registerBuzzPushCommunitySnapshotStrict(const [], settleFence: false),
+      registerKuzzPushCommunitySnapshotStrict(const [], settleFence: false),
       throwsA(isA<MissingPluginException>()),
     );
   });
@@ -88,7 +88,7 @@ void main() {
             return null;
           });
 
-      await registerBuzzPushCommunitySnapshotStrict(
+      await registerKuzzPushCommunitySnapshotStrict(
         const [],
         settleFence: true,
       );
@@ -104,7 +104,7 @@ void main() {
           return null;
         });
 
-    await purgeAgeRestrictedBuzzNotifications();
+    await purgeAgeRestrictedKuzzNotifications();
   });
 
   test('reads native notification authorization status', () async {
@@ -116,8 +116,8 @@ void main() {
         });
 
     expect(
-      await readBuzzPushAuthorizationStatus(),
-      BuzzPushAuthorizationStatus.denied,
+      await readKuzzPushAuthorizationStatus(),
+      KuzzPushAuthorizationStatus.denied,
     );
   });
 
@@ -129,18 +129,18 @@ void main() {
           return true;
         });
 
-    expect(await openBuzzPushNotificationSettings(), isTrue);
+    expect(await openKuzzPushNotificationSettings(), isTrue);
   });
 
   test('refreshes not-determined permission to denied on resume', () async {
     final statuses = [
-      BuzzPushAuthorizationStatus.notDetermined,
-      BuzzPushAuthorizationStatus.denied,
+      KuzzPushAuthorizationStatus.notDetermined,
+      KuzzPushAuthorizationStatus.denied,
     ];
     final container = ProviderContainer(
       overrides: [
         appLifecycleProvider.overrideWith(_TestAppLifecycleNotifier.new),
-        buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+        kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
           () async => statuses.removeAt(0),
         ),
       ],
@@ -148,26 +148,26 @@ void main() {
     addTearDown(container.dispose);
 
     expect(
-      await container.read(buzzPushAuthorizationStatusProvider.future),
-      BuzzPushAuthorizationStatus.notDetermined,
+      await container.read(kuzzPushAuthorizationStatusProvider.future),
+      KuzzPushAuthorizationStatus.notDetermined,
     );
     final lifecycle =
         container.read(appLifecycleProvider.notifier)
             as _TestAppLifecycleNotifier;
     lifecycle.setState(AppLifecycleState.paused);
     lifecycle.setState(AppLifecycleState.resumed);
-    await _waitForAuthorization(container, BuzzPushAuthorizationStatus.denied);
+    await _waitForAuthorization(container, KuzzPushAuthorizationStatus.denied);
   });
 
   test('refreshes externally revoked permission on resume', () async {
     final statuses = [
-      BuzzPushAuthorizationStatus.authorized,
-      BuzzPushAuthorizationStatus.denied,
+      KuzzPushAuthorizationStatus.authorized,
+      KuzzPushAuthorizationStatus.denied,
     ];
     final container = ProviderContainer(
       overrides: [
         appLifecycleProvider.overrideWith(_TestAppLifecycleNotifier.new),
-        buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+        kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
           () async => statuses.removeAt(0),
         ),
       ],
@@ -175,15 +175,15 @@ void main() {
     addTearDown(container.dispose);
 
     expect(
-      await container.read(buzzPushAuthorizationStatusProvider.future),
-      BuzzPushAuthorizationStatus.authorized,
+      await container.read(kuzzPushAuthorizationStatusProvider.future),
+      KuzzPushAuthorizationStatus.authorized,
     );
     final lifecycle =
         container.read(appLifecycleProvider.notifier)
             as _TestAppLifecycleNotifier;
     lifecycle.setState(AppLifecycleState.paused);
     lifecycle.setState(AppLifecycleState.resumed);
-    await _waitForAuthorization(container, BuzzPushAuthorizationStatus.denied);
+    await _waitForAuthorization(container, KuzzPushAuthorizationStatus.denied);
   });
 
   test('reads and exposes persisted endpoint grants on iOS', () async {
@@ -196,7 +196,7 @@ void main() {
       return [_grantMap('opaque-grant')];
     });
 
-    final grants = await readBuzzPushEndpointGrants();
+    final grants = await readKuzzPushEndpointGrants();
 
     expect(grants, hasLength(1));
     expect(grants.single.relayOrigin, 'wss://relay.example');
@@ -237,11 +237,11 @@ void main() {
         fail('Unexpected method ${call.method}');
       });
 
-      final firstGrant = await enrollBuzzPush(
+      final firstGrant = await enrollKuzzPush(
         'wss://relay.example/',
         'https://gateway-one.example/',
       );
-      final secondGrant = await enrollBuzzPush(
+      final secondGrant = await enrollKuzzPush(
         'wss://relay.example/',
         'https://gateway-two.example/',
         communitiesForSnapshotRefresh: [
@@ -320,7 +320,7 @@ void main() {
             addedAt: DateTime.fromMillisecondsSinceEpoch(0),
           );
 
-      await registerBuzzPushCommunitySnapshot([
+      await registerKuzzPushCommunitySnapshot([
         community('matching', pubkey: legacy.public),
         // Token community still holding a leftover legacy key.
         community('token', pubkey: 'p' * 64, token: true),
@@ -336,7 +336,7 @@ void main() {
 
   test('development push gateway matches the compiled configuration', () {
     const expectedGateway = String.fromEnvironment(
-      'BUZZ_PUSH_GATEWAY_URL',
+      'KUZZ_PUSH_GATEWAY_URL',
       defaultValue: 'https://push.buzz.xyz',
     );
     expect(Env.pushGatewayUrl, expectedGateway);
@@ -459,7 +459,7 @@ void main() {
           };
         });
 
-    await syncPendingBuzzPushNotificationResponse();
+    await syncPendingKuzzPushNotificationResponse();
 
     expect(
       pendingPushNotificationLink.value,
@@ -481,10 +481,10 @@ class _TestAppLifecycleNotifier extends AppLifecycleNotifier {
 
 Future<void> _waitForAuthorization(
   ProviderContainer container,
-  BuzzPushAuthorizationStatus expected,
+  KuzzPushAuthorizationStatus expected,
 ) async {
   for (var attempt = 0; attempt < 20; attempt++) {
-    if (container.read(buzzPushAuthorizationStatusProvider).value == expected) {
+    if (container.read(kuzzPushAuthorizationStatusProvider).value == expected) {
       return;
     }
     await Future<void>.delayed(Duration.zero);

@@ -22,7 +22,7 @@ pub(super) struct PresetHarness {
     /// `KnownAcpRuntime::effort_thought_level`. `Some` only for Hermes, whose
     /// `hermes-acp` adapter advertises a `thought_level` select
     /// (`reasoning_effort`) and applies it via `session/set_config_option`;
-    /// the other presets advertise no option Buzz can rely on before a session.
+    /// the other presets advertise no option Kuzz can rely on before a session.
     effort_thought_level: Option<&'static AcpThoughtLevelOption>,
     /// State-specific setup guidance for the wrapped vendor CLI.
     underlying_cli_install_hint: Option<&'static str>,
@@ -239,10 +239,10 @@ pub(super) const PRESET_HARNESSES: &[PresetHarness] = &[
         install_hint: "Kuzz talks to OpenClaw through its ACP mode (openclaw acp), which relies on the OpenClaw Gateway daemon. Follow the setup guide to install both.\n\n\
             ⚠️  Execution-locus note: `openclaw acp` runs tools inside the \
             OpenClaw Gateway daemon, not in the Desktop process. \
-            Desktop-injected BUZZ_* env vars are visible to the `openclaw` \
+            Desktop-injected KUZZ_* env vars are visible to the `openclaw` \
             harness process itself, but do NOT automatically reach the \
             Gateway's execution environment. If your tools or agent logic \
-            needs BUZZ_* credentials at execution time, set them on the \
+            needs KUZZ_* credentials at execution time, set them on the \
             Gateway's own environment separately.",
         underlying_cli: None,
         effort_thought_level: None,
@@ -618,7 +618,7 @@ mod tests {
     /// The picker's pre-discovery vocabulary and the adapter's option id are
     /// catalog facts: the ACP `thought_level` harnesses (Claude Code `effort`,
     /// Codex and Hermes `reasoning_effort`) expose the safe common subset;
-    /// Goose (own env knob), buzz-agent (env knob outranks the column), the
+    /// Goose (own env knob), kuzz-agent (env knob outranks the column), the
     /// other presets, and custom harnesses expose none. Pinned through the real
     /// catalog constructors — not the static tables — so a projection that
     /// drops the field fails here.
@@ -654,9 +654,9 @@ mod tests {
         );
         assert_eq!(builtin("goose"), None, "goose effort is its own env knob");
         assert_eq!(
-            builtin("buzz-agent"),
+            builtin("kuzz-agent"),
             None,
-            "buzz-agent's env knob outranks the saved column"
+            "kuzz-agent's env knob outranks the saved column"
         );
 
         let preset = |id: &str| {
@@ -724,7 +724,7 @@ mod tests {
         assert_eq!(builtin("claude"), Some("anthropic".to_string()));
         assert_eq!(builtin("codex"), Some("openai".to_string()));
         assert_eq!(builtin("goose"), None, "goose has no login step");
-        assert_eq!(builtin("buzz-agent"), None, "buzz-agent has no login step");
+        assert_eq!(builtin("kuzz-agent"), None, "kuzz-agent has no login step");
 
         for def in PRESET_HARNESSES {
             assert_eq!(

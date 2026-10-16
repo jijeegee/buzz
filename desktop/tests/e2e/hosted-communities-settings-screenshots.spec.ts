@@ -60,7 +60,7 @@ test.skip("identity: mismatch rows follow pubkey_hex, never the hosted npub or r
   });
 
   await expect(
-    page.getByText("This account is connected to a different Buzz identity"),
+    page.getByText("This account is connected to a different Kuzz identity"),
   ).toBeVisible();
   const settingsView = page.getByTestId("settings-view");
   await expect(
@@ -89,7 +89,7 @@ test.skip("identity: connected row follows pubkey_hex when the hosted npub encod
   });
 
   const connectedNpub = page
-    .getByText("Buzz identity connected")
+    .getByText("Kuzz identity connected")
     .locator("span.font-mono");
   await expect(connectedNpub).toHaveText(npubEncode(DEFAULT_MOCK_PUBKEY));
   await expect(
@@ -108,7 +108,7 @@ test.skip("identity: unusable bound hex renders the neutral label, not the hoste
   });
 
   await expect(
-    page.getByText("This account is connected to a different Buzz identity"),
+    page.getByText("This account is connected to a different Kuzz identity"),
   ).toBeVisible();
   const settingsView = page.getByTestId("settings-view");
   await expect(
@@ -130,7 +130,7 @@ test.skip("identity: consistent hosted identity renders its canonical npub", asy
   });
 
   const connectedNpub = page
-    .getByText("Buzz identity connected")
+    .getByText("Kuzz identity connected")
     .locator("span.font-mono");
   await expect(connectedNpub).toHaveText(npubEncode(DEFAULT_MOCK_PUBKEY));
 });
@@ -144,7 +144,7 @@ test.skip("identity: unlinked account offers linking, never a connected claim", 
       email: "owner@example.com",
       expiresAt: "2099-01-01T00:00:00Z",
     },
-    // No identity object at all: the account has not linked a Buzz key.
+    // No identity object at all: the account has not linked a Kuzz key.
     builderlabIdentity: null,
     builderlabCommunities: [
       {
@@ -158,9 +158,9 @@ test.skip("identity: unlinked account offers linking, never a connected claim", 
   await openSettings(page, "hosted-communities");
 
   await expect(
-    page.getByText("Link this account to your Buzz identity"),
+    page.getByText("Link this account to your Kuzz identity"),
   ).toBeVisible();
-  await expect(page.getByText("Buzz identity connected")).toHaveCount(0);
+  await expect(page.getByText("Kuzz identity connected")).toHaveCount(0);
   // The seeded owned community still lists — every affordance that does
   // not act on the binding stays available — but Connect is an action on
   // the binding and cannot occur without a usable bound key: no row
@@ -190,10 +190,10 @@ test.skip("identity: padded or mixed-case bound hex is the same key, not a misma
   });
 
   await expect(
-    page.getByText("This account is connected to a different Buzz identity"),
+    page.getByText("This account is connected to a different Kuzz identity"),
   ).toHaveCount(0);
   const connectedNpub = page
-    .getByText("Buzz identity connected")
+    .getByText("Kuzz identity connected")
     .locator("span.font-mono");
   await expect(connectedNpub).toHaveText(npubEncode(DEFAULT_MOCK_PUBKEY));
   // A binding that is the same key after normalization keeps its Connect
@@ -231,10 +231,10 @@ for (const [label, payload] of UNUSABLE_BOUND_KEY_PAYLOADS) {
     const settingsView = page.getByTestId("settings-view");
     // No connected claim anywhere on the surface, despite the identity
     // object being present.
-    await expect(page.getByText("Buzz identity connected")).toHaveCount(0);
+    await expect(page.getByText("Kuzz identity connected")).toHaveCount(0);
     // The mismatch recovery block owns the identity panel instead.
     await expect(
-      page.getByText("This account is connected to a different Buzz identity"),
+      page.getByText("This account is connected to a different Kuzz identity"),
     ).toBeVisible();
     await expect(
       page
@@ -291,7 +291,7 @@ test.skip("capture: community icon picker sits beside its hosted community", asy
   await expect
     .poll(() =>
       page.evaluate(() =>
-        window.__BUZZ_E2E_SIGNED_EVENTS__?.some(
+        window.__KUZZ_E2E_SIGNED_EVENTS__?.some(
           (event) =>
             event.kind === 9033 &&
             event.tags.some(

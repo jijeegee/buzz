@@ -376,7 +376,7 @@ fn the_index_round_trips() {
 #[ignore = "requires real OS keychain (run locally)"]
 #[test]
 fn preview_shaped_windows_keyring_migrates_without_growing_the_blob() {
-    let service = "buzz-test-accounts-preview-shape";
+    let service = "kuzz-test-accounts-preview-shape";
     let store = crate::secret_store::SecretStore::keyring(service);
     let _ = store.delete_all_with_legacy_cleanup();
     let origin = "https://jihobuzz.test:8443";
@@ -1112,7 +1112,7 @@ fn watchable_accounts_skip_the_open_account_and_signed_out_ones() {
     profiles.insert(
         other.to_hex(),
         super::super::account_profiles::AccountProfile {
-            buzz_name: Some("Other".into()),
+            kuzz_name: Some("Other".into()),
             ..Default::default()
         },
     );
@@ -1122,7 +1122,7 @@ fn watchable_accounts_skip_the_open_account_and_signed_out_ones() {
     assert_eq!(
         list.iter()
             .find(|a| a.pubkey == other.to_hex())
-            .and_then(|a| a.buzz_name.as_deref()),
+            .and_then(|a| a.kuzz_name.as_deref()),
         Some("Other")
     );
     let pairs: HashSet<(String, String)> = list.into_iter().map(|a| (a.origin, a.pubkey)).collect();

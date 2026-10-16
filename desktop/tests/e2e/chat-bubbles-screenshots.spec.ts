@@ -65,7 +65,7 @@ async function emit(
 ): Promise<string | undefined> {
   return page.evaluate(
     ({ pubkey, content, createdAt, channelName, parentEventId }) =>
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName,
         content,
         createdAt,
@@ -82,9 +82,9 @@ async function emit(
   );
 }
 
-async function seedTheme(page: Page, theme: "buzz" | "buzz-dark") {
+async function seedTheme(page: Page, theme: "kuzz" | "kuzz-dark") {
   await page.addInitScript((value) => {
-    window.localStorage.setItem("buzz-theme", value);
+    window.localStorage.setItem("kuzz-theme", value);
   }, theme);
 }
 
@@ -105,7 +105,7 @@ async function openSeededChannel(page: Page) {
   await page.getByTestId("channel-general").click();
   await expect(page.getByTestId("chat-title")).toHaveText("general");
   await page.waitForFunction(
-    () => typeof window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
   );
 
   const base = Math.floor(Date.now() / 1000) + 5;
@@ -214,7 +214,7 @@ test.describe("chat bubbles", () => {
     expect(summaryBox.x).toBeGreaterThan(timeline.x + timeline.width / 2);
   });
 
-  for (const theme of ["buzz", "buzz-dark"] as const) {
+  for (const theme of ["kuzz", "kuzz-dark"] as const) {
     test(`channel and thread screenshots (${theme})`, async ({ page }) => {
       await seedTheme(page, theme);
       await openSeededChannel(page);

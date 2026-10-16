@@ -77,7 +77,7 @@ fn effort_env_leaf(canonical: &serde_json::Value) -> Option<&serde_json::Value> 
 /// top authority tier for Goose: effort comes from user env_vars, no column).
 /// Pins `runtime = "goose"` so the effective command resolves to Goose and
 /// `GOOSE_THINKING_EFFORT` is the record-*native* key — without it the record
-/// falls back to the default `buzz-agent` runtime, for which that key is a
+/// falls back to the default `kuzz-agent` runtime, for which that key is a
 /// foreign env alias the projection suppresses rather than an authority tier.
 fn record_with_env_effort(value: &str) -> ManagedAgentRecord {
     let mut rec = record();
@@ -115,7 +115,7 @@ fn effective_effort_reads_acp_sentinel_for_keyless_runtime() {
     let descriptor = EffectiveHarnessDescriptor {
         command: "claude-code-acp".into(),
         args: vec![],
-        env: BTreeMap::from([("BUZZ_ACP_EFFORT_LEVEL".to_string(), "low".to_string())]),
+        env: BTreeMap::from([("KUZZ_ACP_EFFORT_LEVEL".to_string(), "low".to_string())]),
     };
     assert_eq!(effective_effort(&descriptor).as_deref(), Some("low"));
 }
@@ -150,16 +150,16 @@ fn snapshot_carries_effort_in_field_not_env() {
 
 #[test]
 fn foreign_transport_sentinel_is_suppressed_for_goose() {
-    // A user-seeded `BUZZ_ACP_EFFORT_LEVEL` is a foreign transport key for a
+    // A user-seeded `KUZZ_ACP_EFFORT_LEVEL` is a foreign transport key for a
     // Goose descriptor: never an authority tier, and stripped from the snapshot
     // env by the suppress set. Editing it low→medium changes nothing.
     let mut low = record();
     low.env_vars
-        .insert("BUZZ_ACP_EFFORT_LEVEL".into(), "low".into());
+        .insert("KUZZ_ACP_EFFORT_LEVEL".into(), "low".into());
     let mut medium = record();
     medium
         .env_vars
-        .insert("BUZZ_ACP_EFFORT_LEVEL".into(), "medium".into());
+        .insert("KUZZ_ACP_EFFORT_LEVEL".into(), "medium".into());
     assert_eq!(
         snap(&low),
         snap(&medium),
@@ -169,7 +169,7 @@ fn foreign_transport_sentinel_is_suppressed_for_goose() {
     assert_eq!(
         canonical
             .get("env")
-            .and_then(|env| env.get("BUZZ_ACP_EFFORT_LEVEL")),
+            .and_then(|env| env.get("KUZZ_ACP_EFFORT_LEVEL")),
         None,
         "the foreign sentinel must be stripped from the snapshot env"
     );
@@ -296,10 +296,10 @@ fn known_runtime_still_strips_native_effort_env_from_snapshot() {
 #[test]
 fn custom_runtime_mixed_case_sentinel_is_captured_not_lost() {
     // Regression (external review, Carl, P2): for an unknown/custom runtime a
-    // user-set mixed-case `buzz_acp_effort_level` (no column) must not vanish.
+    // user-set mixed-case `kuzz_acp_effort_level` (no column) must not vanish.
     // The launch projection now reconciles it — stripping the mixed-case
     // spelling and re-emitting the pass-through value under the canonical
-    // `BUZZ_ACP_EFFORT_LEVEL` (see `effort_tests::
+    // `KUZZ_ACP_EFFORT_LEVEL` (see `effort_tests::
     // unknown_runtime_collapses_mixed_case_sentinel_to_canonical_when_no_column`)
     // — so `descriptor.env` carries exactly one canonical sentinel. The snapshot
     // captures it into `effort_level` and strips it from `env`. Before the r4/r5
@@ -307,7 +307,7 @@ fn custom_runtime_mixed_case_sentinel_is_captured_not_lost() {
     // the value vanished from BOTH fields and an edit produced no restart diff.
     let mut high = custom_command_record();
     high.env_vars
-        .insert("buzz_acp_effort_level".into(), "high".into());
+        .insert("kuzz_acp_effort_level".into(), "high".into());
     let canonical = snap(&high);
     assert_eq!(
         canonical.get("effort_level").and_then(|v| v.as_str()),
@@ -317,7 +317,7 @@ fn custom_runtime_mixed_case_sentinel_is_captured_not_lost() {
     assert_eq!(
         canonical
             .get("env")
-            .and_then(|env| env.get("buzz_acp_effort_level")),
+            .and_then(|env| env.get("kuzz_acp_effort_level")),
         None,
         "the sentinel is the projection's dest key and is stripped from env once represented"
     );
@@ -329,7 +329,7 @@ fn custom_runtime_mixed_case_sentinel_is_captured_not_lost() {
     // this assertion fails.
     let mut low = custom_command_record();
     low.env_vars
-        .insert("buzz_acp_effort_level".into(), "low".into());
+        .insert("kuzz_acp_effort_level".into(), "low".into());
     assert_ne!(
         snap(&low),
         canonical,
@@ -343,7 +343,7 @@ fn custom_runtime_canonical_column_wins_over_mixed_case_sentinel() {
     // SNAPSHOT here and — decisively — at the projection/descriptor seam in
     // `effort_tests::unknown_runtime_column_wins_over_mixed_case_sentinel`. The
     // projection strips every case variant of the sentinel before emitting the
-    // column value, so `descriptor.env` carries exactly `BUZZ_ACP_EFFORT_LEVEL=
+    // column value, so `descriptor.env` carries exactly `KUZZ_ACP_EFFORT_LEVEL=
     // <column>` and the child receives the column value on every platform (no
     // lowercase variant survives for Windows to case-fold over the canonical
     // key). This snapshot therefore reads the same truth the child gets: the
@@ -352,7 +352,7 @@ fn custom_runtime_canonical_column_wins_over_mixed_case_sentinel() {
     high_col.effort_level = Some("high".into());
     high_col
         .env_vars
-        .insert("buzz_acp_effort_level".into(), "low".into());
+        .insert("kuzz_acp_effort_level".into(), "low".into());
     let canonical = snap(&high_col);
     assert_eq!(
         canonical.get("effort_level").and_then(|v| v.as_str()),
@@ -361,12 +361,12 @@ fn custom_runtime_canonical_column_wins_over_mixed_case_sentinel() {
     );
     let env = canonical.get("env").expect("snapshot has an env object");
     assert_eq!(
-        env.get("BUZZ_ACP_EFFORT_LEVEL"),
+        env.get("KUZZ_ACP_EFFORT_LEVEL"),
         None,
         "the projection-emitted canonical sentinel is stripped from env"
     );
     assert_eq!(
-        env.get("buzz_acp_effort_level"),
+        env.get("kuzz_acp_effort_level"),
         None,
         "the user's mixed-case sentinel duplicate is stripped case-insensitively"
     );
@@ -376,7 +376,7 @@ fn custom_runtime_canonical_column_wins_over_mixed_case_sentinel() {
     low_col.effort_level = Some("low".into());
     low_col
         .env_vars
-        .insert("buzz_acp_effort_level".into(), "low".into());
+        .insert("kuzz_acp_effort_level".into(), "low".into());
     assert_ne!(
         snap(&low_col),
         canonical,
@@ -481,7 +481,7 @@ fn moving_the_routing_star_or_mode_while_running_requires_restart() {
 #[test]
 fn toggling_session_policy_while_running_requires_restart() {
     // A definition edit must reach the real config-drift path. The harness
-    // reads BUZZ_ACP_SESSION_POLICY only at launch, so an existing process
+    // reads KUZZ_ACP_SESSION_POLICY only at launch, so an existing process
     // keeps its old policy until the normal restart affordance is used.
     let channel = snapshot_under(AcpSessionPolicy::Channel);
     let thread = snapshot_under(AcpSessionPolicy::Thread);

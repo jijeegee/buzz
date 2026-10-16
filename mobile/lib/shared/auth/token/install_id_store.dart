@@ -13,7 +13,7 @@ class InstallIdStore {
   InstallIdStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
 
-  static const key = 'buzz.device.install-id.v1';
+  static const key = 'kuzz.device.install-id.v1';
 
   static const _iOptions = IOSOptions(
     accessibility: KeychainAccessibility.first_unlock_this_device,

@@ -1,5 +1,5 @@
-import 'package:buzz/shared/profile/user_profile.dart';
-import 'package:buzz/shared/utils/string_utils.dart';
+import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/shared/utils/string_utils.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

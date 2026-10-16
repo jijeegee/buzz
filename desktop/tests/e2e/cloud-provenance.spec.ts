@@ -45,7 +45,7 @@ for (const agentListDelayMs of [0, 6_000]) {
       .poll(
         () =>
           page.evaluate(() => {
-            const client = window.__BUZZ_E2E_QUERY_CLIENT__;
+            const client = window.__KUZZ_E2E_QUERY_CLIENT__;
             return Object.fromEntries(
               ["identity", "managed-agents", "relay-agents"].map((key) => {
                 const state = client?.getQueryState([key]);
@@ -70,15 +70,15 @@ for (const agentListDelayMs of [0, 6_000]) {
     // Fixture setup only: the UI workflow starts with membership and a DM already present.
     const dm = await page.evaluate(
       async ({ pubkey, channelId }) => {
-        await window.__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("add_channel_members", {
+        await window.__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("add_channel_members", {
           channelId,
           pubkeys: [pubkey],
           role: "bot",
         });
-        const dm = (await window.__BUZZ_E2E_INVOKE_MOCK_COMMAND__?.("open_dm", {
+        const dm = (await window.__KUZZ_E2E_INVOKE_MOCK_COMMAND__?.("open_dm", {
           pubkeys: [pubkey],
         })) as { id: string };
-        await window.__BUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
+        await window.__KUZZ_E2E_QUERY_CLIENT__?.invalidateQueries({
           queryKey: ["channels"],
         });
         return dm;
@@ -115,14 +115,14 @@ for (const agentListDelayMs of [0, 6_000]) {
     await expect
       .poll(() =>
         page.evaluate(() =>
-          window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+          window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
             channelName: "general",
           }),
         ),
       )
       .toBe(true);
     await page.evaluate((pubkey) => {
-      window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
         channelName: "general",
         content: "Cloud provenance example: @Remote Scout",
         pubkey,

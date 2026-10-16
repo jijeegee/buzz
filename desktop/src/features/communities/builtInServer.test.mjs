@@ -69,7 +69,7 @@ test("servers compare by host + port over the same kind of scheme", () => {
   assert.equal(serverKey(BUILT_IN), "https://jihobuzz.duckdns.org:8443");
   for (const same of [
     "wss://jihobuzz.duckdns.org:8443/",
-    "wss://JIHOBUZZ.duckdns.org:8443",
+    "wss://JIHOKUZZ.duckdns.org:8443",
     "https://jihobuzz.duckdns.org:8443/invite/abc",
     "jihobuzz.duckdns.org:8443",
   ]) {
@@ -199,7 +199,7 @@ test("pinning persists the choice and never deletes stored communities", () => {
   const other = community("other", "wss://old.example");
   const ours = community("ours", BUILT_IN);
   saveCommunities([other, ours]);
-  globalThis.localStorage.setItem("buzz-active-community-id", "other");
+  globalThis.localStorage.setItem("kuzz-active-community-id", "other");
 
   pinStoredCommunitiesToBuiltInServer(BUILT_IN);
 
@@ -213,7 +213,7 @@ test("pinning persists the choice and never deletes stored communities", () => {
 test("loading resolves once and pins storage", async () => {
   const other = community("other", "wss://old.example");
   saveCommunities([other]);
-  globalThis.localStorage.setItem("buzz-active-community-id", "other");
+  globalThis.localStorage.setItem("kuzz-active-community-id", "other");
   let reads = 0;
   const read = async () => {
     reads += 1;

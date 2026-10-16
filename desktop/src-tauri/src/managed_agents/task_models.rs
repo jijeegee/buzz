@@ -1,5 +1,5 @@
 //! Settings › Models › Task models: which provider/model each app task (AI
-//! work Buzz runs on its own behalf) uses.
+//! work Kuzz runs on its own behalf) uses.
 //!
 //! Stored alone in `<app-data>/agents/task-models.json`, one entry per task:
 //! `{ "message-routing": { "provider": "anthropic", "model": "claude-haiku-4-5" } }`.
@@ -57,7 +57,7 @@ pub(crate) fn parse_task_models(content: &str) -> TaskModels {
     match serde_json::from_str::<TaskModels>(content) {
         Ok(models) => models,
         Err(error) => {
-            eprintln!("buzz-desktop: unreadable {TASK_MODELS_FILE} ({error}); using automatic task models");
+            eprintln!("kuzz-desktop: unreadable {TASK_MODELS_FILE} ({error}); using automatic task models");
             TaskModels::new()
         }
     }

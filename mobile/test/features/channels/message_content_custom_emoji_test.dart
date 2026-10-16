@@ -1,8 +1,8 @@
-import 'package:buzz/features/channels/message_content.dart';
-import 'package:buzz/shared/custom_emoji/custom_emoji.dart';
-import 'package:buzz/shared/custom_emoji/custom_emoji_provider.dart';
-import 'package:buzz/shared/custom_emoji/custom_emoji_render.dart';
-import 'package:buzz/shared/theme/theme.dart';
+import 'package:kuzz/features/channels/message_content.dart';
+import 'package:kuzz/shared/custom_emoji/custom_emoji.dart';
+import 'package:kuzz/shared/custom_emoji/custom_emoji_provider.dart';
+import 'package:kuzz/shared/custom_emoji/custom_emoji_render.dart';
+import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';

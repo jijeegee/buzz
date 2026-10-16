@@ -1,7 +1,7 @@
-import 'package:buzz/shared/community/community.dart';
-import 'package:buzz/shared/community/community_provider.dart';
-import 'package:buzz/shared/push/push_relay_capability_provider.dart';
-import 'package:buzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/community/community.dart';
+import 'package:kuzz/shared/community/community_provider.dart';
+import 'package:kuzz/shared/push/push_relay_capability_provider.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -30,7 +30,7 @@ void main() {
             addedAt: DateTime.utc(2026),
           ),
         ),
-        buzzPushDescriptorFetcherProvider.overrideWithValue((_) async {
+        kuzzPushDescriptorFetcherProvider.overrideWithValue((_) async {
           fetches++;
           throw StateError('must not be fetched');
         }),

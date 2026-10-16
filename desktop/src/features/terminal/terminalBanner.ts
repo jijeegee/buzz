@@ -70,7 +70,7 @@ function trimRight(value: string): string {
 
 function wordmark(gap: number): readonly string[] {
   const rows = Array.from({ length: 5 }, () => "");
-  for (const [index, letter] of [..."buzz term"].entries()) {
+  for (const [index, letter] of [..."kuzz term"].entries()) {
     const glyph = GLYPHS[letter];
     for (let row = 0; row < rows.length; row += 1) {
       rows[row] += glyph[row] + (index < 8 ? " ".repeat(gap) : "");

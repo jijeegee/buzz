@@ -240,7 +240,7 @@ pub fn start_managed_agent_runtime(
     start_managed_agent_runtime_pair_lazy(pubkey, relay_url, &admission, app)
 }
 
-/// Restart a pair after `buzz-acp` exited 78 (bot token unusable). Goes
+/// Restart a pair after `kuzz-acp` exited 78 (bot token unusable). Goes
 /// through the normal start, which reissues the bot token before any lock.
 pub(crate) fn start_pair_after_auth_exit(
     pubkey: String,
@@ -767,7 +767,7 @@ mod tests {
                 "pubkey": "{}",
                 "name": "pin-test",
                 "relay_url": "{relay_url}",
-                "acp_command": "buzz-acp",
+                "acp_command": "kuzz-acp",
                 "agent_command": "goose",
                 "agent_args": [],
                 "mcp_command": "",

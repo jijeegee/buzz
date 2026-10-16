@@ -38,8 +38,8 @@ or privacy feature is claimed from these tests alone.
 ## Real checks
 
 All database checks use newly created disposable local fixtures only:
-`buzz-channel-extension-pg-20261006` on localhost:55467 (tmpfs, 384MB limit),
-`buzz-channel-extension-redis-20261006` on localhost:56467 (96MB limit).
+`kuzz-channel-extension-pg-20261006` on localhost:55467 (tmpfs, 384MB limit),
+`kuzz-channel-extension-redis-20261006` on localhost:56467 (96MB limit).
 Desired schema: `channel_extension_fixture`. Migration path:
 `channel_extension_migration_fixture`, initially empty, applied 0001-0059,
 seeded through real writers, then applied 0060. No existing database reused.
@@ -54,10 +54,10 @@ seeded through real writers, then applied 0060. No existing database reused.
 - Existing channel membership PostgreSQL suite: 20/20 passed, including owner
   safety, role changes, locks, roster publication and same-key tenant scoping.
 - Embedded migration inventory test passed; cargo fmt --all -- --check passed.
-- PostgreSQL discovery checker passes for buzz-db (57 Rust files). The required
+- PostgreSQL discovery checker passes for kuzz-db (57 Rust files). The required
   full scripts/test-postgres-test-discovery.sh ran: its fixture checks passed,
   then it failed on pre-existing auth/live_tests modules outside postgres_tests
-  in buzz-relay. No new test was reported by that failure. Not silently skipped.
+  in kuzz-relay. No new test was reported by that failure. Not silently skipped.
 - Hermit activation was attempted before Git. Git Bash fails resolving
   /pkg/hermit@stable/hermit; WSL bootstrap could not connect to GitHub. Native
   installed tools/caches were reused. core.hooksPath is unset and only sample

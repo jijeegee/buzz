@@ -1,23 +1,23 @@
-import BuzzPushKit
+import KuzzPushKit
 import Foundation
 import Intents
 import Security
 import UserNotifications
 
 final class NotificationService: UNNotificationServiceExtension {
-  private var handoff: BuzzNotificationHandoff<UNNotificationContent>?
+  private var handoff: KuzzNotificationHandoff<UNNotificationContent>?
   private var bestAttemptContent: UNMutableNotificationContent?
   private var restrictedFallbackContent: UNMutableNotificationContent?
-  private lazy var interactionCleanup = BuzzInteractionCleanupRetry(
+  private lazy var interactionCleanup = KuzzInteractionCleanupRetry(
     containerURL: ageRestrictionContainerURL, deletion: interactionDeletionDeadline)
-  private lazy var communicationPresenter = BuzzCommunicationNotificationPresenter(
+  private lazy var communicationPresenter = KuzzCommunicationNotificationPresenter(
     donate: { interaction, completion in interaction.donate(completion: completion) },
     deleteAllInteractions: { [cleanup = interactionCleanup] completion in
       cleanup.request(completion: completion)
     },
     updateContent: { content, intent in try content.updating(from: intent) }
   )
-  private let interactionDeletionDeadline = BuzzInteractionDeletionDeadline(
+  private let interactionDeletionDeadline = KuzzInteractionDeletionDeadline(
     timeout: 5,
     deleteAllInteractions: { completion in
       INInteraction.deleteAll(completion: completion)
@@ -31,14 +31,14 @@ final class NotificationService: UNNotificationServiceExtension {
   )
   private lazy var appGroupIdentifier =
     Bundle.main.object(
-      forInfoDictionaryKey: "BuzzAppGroupIdentifier"
+      forInfoDictionaryKey: "KuzzAppGroupIdentifier"
     ) as? String
-  private lazy var resolver: BuzzPushNotificationResolving = {
+  private lazy var resolver: KuzzPushNotificationResolving = {
     let keychainAccessGroup =
       Bundle.main.object(
-        forInfoDictionaryKey: "BuzzKeychainAccessGroup"
+        forInfoDictionaryKey: "KuzzKeychainAccessGroup"
       ) as? String
-    return BuzzPushNotificationResolver(
+    return KuzzPushNotificationResolver(
       session: .shared,
       loadCommunitiesData: { [self] in
         Self.loadPushSnapshotData(appGroupIdentifier: self.appGroupIdentifier)
@@ -59,7 +59,7 @@ final class NotificationService: UNNotificationServiceExtension {
     _ request: UNNotificationRequest,
     withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
   ) {
-    handoff = BuzzNotificationHandoff(handler: contentHandler)
+    handoff = KuzzNotificationHandoff(handler: contentHandler)
     restrictedFallbackContent = Self.restrictedFallback(from: request.content)
     guard let content = request.content.mutableCopy() as? UNMutableNotificationContent else {
       finish(request.content)
@@ -67,7 +67,7 @@ final class NotificationService: UNNotificationServiceExtension {
     }
     bestAttemptContent = content
     var cleanUserInfo = content.userInfo
-    cleanUserInfo.removeValue(forKey: BuzzPushNavigationTarget.userInfoKey)
+    cleanUserInfo.removeValue(forKey: KuzzPushNavigationTarget.userInfoKey)
     content.userInfo = cleanUserInfo
 
     resolver.resolve { [weak self] resolution in
@@ -83,7 +83,7 @@ final class NotificationService: UNNotificationServiceExtension {
         }
         if let navigationTarget = resolution.navigationTarget {
           var userInfo = content.userInfo
-          userInfo[BuzzPushNavigationTarget.userInfoKey] = navigationTarget.userInfoValue
+          userInfo[KuzzPushNavigationTarget.userInfoKey] = navigationTarget.userInfoValue
           content.userInfo = userInfo
         }
         self.bestAttemptContent = content
@@ -116,7 +116,7 @@ final class NotificationService: UNNotificationServiceExtension {
       content,
       restrictedFallback: restrictedFallbackContent ?? Self.restrictedFallback(from: content),
       handoffIfAllowed: { deliver in
-        BuzzAgeRestrictionSession.handoffIfAllowed(
+        KuzzAgeRestrictionSession.handoffIfAllowed(
           containerURL: ageRestrictionContainerURL, deliver: deliver)
       }
     ) { [self] in
@@ -140,7 +140,7 @@ final class NotificationService: UNNotificationServiceExtension {
   }
 
   private func isAgeRestricted() -> Bool {
-    BuzzAgeRestrictionSession.isRestricted(containerURL: ageRestrictionContainerURL)
+    KuzzAgeRestrictionSession.isRestricted(containerURL: ageRestrictionContainerURL)
   }
 
   private static func restrictedFallback(
@@ -149,12 +149,12 @@ final class NotificationService: UNNotificationServiceExtension {
     let fallback =
       (content.mutableCopy() as? UNMutableNotificationContent)
       ?? UNMutableNotificationContent()
-    fallback.title = "Buzz"
+    fallback.title = "Kuzz"
     fallback.subtitle = ""
-    fallback.body = "Open Buzz to view this message."
+    fallback.body = "Open Kuzz to view this message."
     fallback.threadIdentifier = ""
     var userInfo = fallback.userInfo
-    userInfo.removeValue(forKey: BuzzPushNavigationTarget.userInfoKey)
+    userInfo.removeValue(forKey: KuzzPushNavigationTarget.userInfoKey)
     fallback.userInfo = userInfo
     return fallback
   }
@@ -165,7 +165,7 @@ final class NotificationService: UNNotificationServiceExtension {
   ) -> String? {
     var query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "buzz.push.nse.signing",
+      kSecAttrService as String: "kuzz.push.nse.signing",
       kSecAttrAccount as String: communityID,
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne,
@@ -182,9 +182,9 @@ final class NotificationService: UNNotificationServiceExtension {
 
   private static func loadPushSnapshotData(appGroupIdentifier: String?) -> Data? {
     loadAppGroupData(
-      fileName: BuzzPushPresentationCacheStore.fileName,
+      fileName: KuzzPushPresentationCacheStore.fileName,
       appGroupIdentifier: appGroupIdentifier,
-      maximumBytes: BuzzPushPresentationCacheStore.maximumSnapshotBytes
+      maximumBytes: KuzzPushPresentationCacheStore.maximumSnapshotBytes
     )
   }
 

@@ -33,15 +33,15 @@ globalThis.__tauriGetThreadReplies = async () => ({
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === "@/shared/api/tauri") {
-      return { shortCircuit: true, url: "buzz-thread-stub:tauri" };
+      return { shortCircuit: true, url: "kuzz-thread-stub:tauri" };
     }
-    if (specifier.startsWith("buzz-thread-stub:")) {
+    if (specifier.startsWith("kuzz-thread-stub:")) {
       return { shortCircuit: true, url: specifier };
     }
     return nextResolve(specifier, context);
   },
   load(url, context, nextLoad) {
-    if (url === "buzz-thread-stub:tauri") {
+    if (url === "kuzz-thread-stub:tauri") {
       return {
         format: "module",
         shortCircuit: true,

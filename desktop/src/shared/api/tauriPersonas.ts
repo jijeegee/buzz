@@ -48,7 +48,7 @@ export function fromRawPersona(persona: RawPersona): AgentPersona {
     avatarUrl: persona.avatar_url,
     description: persona.description ?? null,
     systemPrompt: persona.system_prompt,
-    acpCommand: persona.acp_command ?? "buzz-acp",
+    acpCommand: persona.acp_command ?? "kuzz-acp",
     runtime: persona.runtime ?? null,
     model: persona.model ?? null,
     provider: persona.provider ?? null,

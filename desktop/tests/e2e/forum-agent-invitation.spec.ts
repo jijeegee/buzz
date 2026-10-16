@@ -45,7 +45,7 @@ async function select(page: Page) {
 }
 async function sent(page: Page) {
   return page.evaluate(() => {
-    const signed = (window.__BUZZ_E2E_SIGNED_EVENTS__ ?? [])
+    const signed = (window.__KUZZ_E2E_SIGNED_EVENTS__ ?? [])
       .filter((event) => event.content === "@RemoteScout hello")
       .map((event) =>
         event.tags.filter((tag) => tag[0] === "p").map((tag) => tag[1]),
@@ -53,7 +53,7 @@ async function sent(page: Page) {
     if (signed.length) return signed;
     // New DMs deliberately use the acknowledged native HTTP command rather
     // than JS sign_event. Assert its exact outgoing recipients, not fake crypto.
-    return (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).flatMap((call) => {
+    return (window.__KUZZ_E2E_COMMAND_LOG__ ?? []).flatMap((call) => {
       const payload = call.payload as {
         content?: string;
         mentionPubkeys?: string[];
@@ -67,7 +67,7 @@ async function sent(page: Page) {
 }
 async function assertNoLocalLifecycle(page: Page) {
   const commands = await page.evaluate(
-    () => window.__BUZZ_E2E_COMMANDS__ ?? [],
+    () => window.__KUZZ_E2E_COMMANDS__ ?? [],
   );
   for (const command of [
     "start_managed_agent",
@@ -100,7 +100,7 @@ async function openStandaloneForumInvite(page: Page) {
 
 async function forumAdds(page: Page) {
   return page.evaluate(() =>
-    (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).filter(
+    (window.__KUZZ_E2E_COMMAND_LOG__ ?? []).filter(
       (call) => call.command === "add_channel_members",
     ),
   );
@@ -131,7 +131,7 @@ test("standalone forum explicitly invites, refreshes membership, then sends exac
     }),
   ]);
   const calls = await page.evaluate(
-    () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    () => window.__KUZZ_E2E_COMMAND_LOG__ ?? [],
   );
   const addIndex = calls.findIndex(
     (call) => call.command === "add_channel_members",
@@ -194,8 +194,8 @@ for (const error of [
   }) => {
     const dialog = await openStandaloneForumInvite(page);
     await page.evaluate((error) => {
-      window.__BUZZ_E2E__.mock ??= {};
-      window.__BUZZ_E2E__.mock.addChannelMembersErrors = [error];
+      window.__KUZZ_E2E__.mock ??= {};
+      window.__KUZZ_E2E__.mock.addChannelMembersErrors = [error];
     }, error);
     await dialog.getByRole("button", { name: "Invite", exact: true }).click();
     await expect(dialog.getByRole("alert")).toHaveText(error);
@@ -222,8 +222,8 @@ test("standalone forum selected identity revoked before Invite fails visibly wit
 }) => {
   const dialog = await openStandaloneForumInvite(page);
   await page.evaluate((pubkey) => {
-    window.__BUZZ_E2E__.mock ??= {};
-    window.__BUZZ_E2E__.mock.relayAgentRevalidationRevokedPubkeys = [pubkey];
+    window.__KUZZ_E2E__.mock ??= {};
+    window.__KUZZ_E2E__.mock.relayAgentRevalidationRevokedPubkeys = [pubkey];
   }, REMOTE);
   await dialog.getByRole("button", { name: "Invite", exact: true }).click();
   await expect(
@@ -241,15 +241,15 @@ test("standalone forum still requires final authorization after a successful add
 }) => {
   const dialog = await openStandaloneForumInvite(page);
   await page.evaluate(() => {
-    window.__BUZZ_E2E__.mock ??= {};
-    window.__BUZZ_E2E__.mock.addChannelMembersDelayMs = 1_000;
+    window.__KUZZ_E2E__.mock ??= {};
+    window.__KUZZ_E2E__.mock.addChannelMembersDelayMs = 1_000;
   });
   await dialog.getByRole("button", { name: "Invite", exact: true }).click();
   await expect.poll(async () => (await forumAdds(page)).length).toBe(1);
   // Preparation already passed; revoke during the add, before final publish.
   await page.evaluate((pubkey) => {
-    window.__BUZZ_E2E__.mock ??= {};
-    window.__BUZZ_E2E__.mock.relayAgentRevalidationRevokedPubkeys = [pubkey];
+    window.__KUZZ_E2E__.mock ??= {};
+    window.__KUZZ_E2E__.mock.relayAgentRevalidationRevokedPubkeys = [pubkey];
   }, REMOTE);
   await expect(dialog).toHaveCount(0);
   await expect(
@@ -266,8 +266,8 @@ test("navigation during an outstanding forum Invite never publishes to either ch
 }) => {
   const dialog = await openStandaloneForumInvite(page);
   await page.evaluate(() => {
-    window.__BUZZ_E2E__.mock ??= {};
-    window.__BUZZ_E2E__.mock.addChannelMembersDelayMs = 800;
+    window.__KUZZ_E2E__.mock ??= {};
+    window.__KUZZ_E2E__.mock.addChannelMembersDelayMs = 800;
   });
   await dialog.getByRole("button", { name: "Invite", exact: true }).click();
   await expect.poll(async () => (await forumAdds(page)).length).toBe(1);
@@ -363,7 +363,7 @@ for (const stage of ["add", "publish"] as const) {
       await expect
         .poll(() =>
           page.evaluate(() =>
-            window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+            window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
               channelName: "watercooler",
             }),
           ),
@@ -372,7 +372,7 @@ for (const stage of ["add", "publish"] as const) {
       const roots = await page.evaluate(() =>
         ["Source forum A", "Source forum B"].map(
           (content) =>
-            window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+            window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
               channelName: "watercooler",
               content,
               kind: 45001,
@@ -445,7 +445,7 @@ for (const stage of ["add", "publish"] as const) {
       await releaseForumGate(page);
       expect(
         await page.evaluate(() =>
-          (window.__BUZZ_E2E_SIGNED_EVENTS__ ?? []).filter(
+          (window.__KUZZ_E2E_SIGNED_EVENTS__ ?? []).filter(
             (event) => event.kind === 45001 || event.kind === 45003,
           ),
         ),
@@ -533,7 +533,7 @@ for (const replacement of [null, "new A draft", ""] as const) {
     await expect
       .poll(() =>
         page.evaluate(() =>
-          window.__BUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
+          window.__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
             channelName: "watercooler",
           }),
         ),
@@ -542,7 +542,7 @@ for (const replacement of [null, "new A draft", ""] as const) {
     const roots = await page.evaluate(() =>
       ["Transport A", "Transport B"].map(
         (content) =>
-          window.__BUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+          window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
             channelName: "watercooler",
             content,
             kind: 45001,
@@ -620,7 +620,7 @@ for (const replacement of [null, "new A draft", ""] as const) {
     expect(await forumAdds(page)).toHaveLength(1);
     const replies = () =>
       page.evaluate(() =>
-        (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).filter(
+        (window.__KUZZ_E2E_COMMAND_LOG__ ?? []).filter(
           (call) =>
             call.command === "send_channel_message" &&
             (call.payload as { kind?: number })?.kind === 45003,

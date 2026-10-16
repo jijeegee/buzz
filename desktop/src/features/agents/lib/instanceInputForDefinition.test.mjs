@@ -41,11 +41,11 @@ const claudeRuntime = {
   mcpCommand: null,
 };
 
-const buzzAgentRuntime = {
+const kuzzAgentRuntime = {
   ...gooseRuntime,
-  id: "buzz-agent",
-  label: "Buzz Agent",
-  command: "buzz-agent-cmd",
+  id: "kuzz-agent",
+  label: "Kuzz Agent",
+  command: "kuzz-agent-cmd",
   mcpCommand: null,
 };
 
@@ -139,11 +139,11 @@ test("row 3: failed persona avatar upload never substitutes the runtime avatar",
 
 test("mapping carries the runtime and definition fields", async () => {
   const input = await buildInstanceInputForDefinition(
-    persona({ acpCommand: "buzz-janet-acp" }),
+    persona({ acpCommand: "kuzz-janet-acp" }),
     gooseRuntime,
   );
   assert.equal(input.name, "Test Agent");
-  assert.equal(input.acpCommand, "buzz-janet-acp");
+  assert.equal(input.acpCommand, "kuzz-janet-acp");
   assert.equal(input.agentCommand, "goose-cmd");
   // B-5: agentArgs is intentionally empty at create time — spawn reads args
   // live from the definition on every start so definition edits take effect
@@ -171,7 +171,7 @@ test("no backend intent is byte-identical to the pre-intent mapping", async () =
     personaId: "p-1",
     systemPrompt: "prompt",
     avatarUrl: "https://example.com/a.png",
-    acpCommand: "buzz-acp",
+    acpCommand: "kuzz-acp",
     agentCommand: "goose-cmd",
     agentArgs: [],
     mcpCommand: "goose-mcp",
@@ -184,16 +184,16 @@ test("no backend intent is byte-identical to the pre-intent mapping", async () =
   });
 });
 
-test("Buzz shared compute definition carries native provider and auto model", async () => {
+test("Kuzz shared compute definition carries native provider and auto model", async () => {
   const input = await buildInstanceInputForDefinition(
     persona({
-      runtime: "buzz-agent",
+      runtime: "kuzz-agent",
       provider: "relay-mesh",
       model: "auto",
     }),
-    { ...gooseRuntime, id: "buzz-agent", command: "buzz-agent" },
+    { ...gooseRuntime, id: "kuzz-agent", command: "kuzz-agent" },
   );
-  assert.equal(input.agentCommand, "buzz-agent");
+  assert.equal(input.agentCommand, "kuzz-agent");
   assert.equal(input.provider, "relay-mesh");
   assert.equal(input.model, "auto");
   assert.equal(input.spawnAfterCreate, true);
@@ -301,22 +301,22 @@ test("row 6: unfetched query refetches instead of resolving empty", async () => 
   );
 });
 
-// ── item-13 regression: buzz-agent-first default runtime ─────────────────────
+// ── item-13 regression: kuzz-agent-first default runtime ─────────────────────
 //
 // Before this fix, resolveStartRuntimeForDefinition used runtimes[0] (catalog
-// order: goose, claude, codex, buzz-agent), so an installed goose would beat
-// the bundled buzz-agent sidecar as the default for runtime-less personas.
-// The fix applies the preference order: buzz-agent → goose → first available.
+// order: goose, claude, codex, kuzz-agent), so an installed goose would beat
+// the bundled kuzz-agent sidecar as the default for runtime-less personas.
+// The fix applies the preference order: kuzz-agent → goose → first available.
 
-test("item-13: goose+buzz-agent both available — persona with no runtime resolves buzz-agent", () => {
+test("item-13: goose+kuzz-agent both available — persona with no runtime resolves kuzz-agent", () => {
   const { runtime, warnings } = resolveStartRuntimeForDefinition(
     persona({ runtime: undefined }),
-    [gooseRuntime, claudeRuntime, buzzAgentRuntime],
+    [gooseRuntime, claudeRuntime, kuzzAgentRuntime],
   );
   assert.equal(
     runtime.id,
-    "buzz-agent",
-    "buzz-agent must win over catalog-first goose for runtime-less personas",
+    "kuzz-agent",
+    "kuzz-agent must win over catalog-first goose for runtime-less personas",
   );
   assert.deepEqual(warnings, []);
 });

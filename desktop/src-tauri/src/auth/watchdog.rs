@@ -1,4 +1,4 @@
-//! Auth watchdog: restarts managed agents whose `buzz-acp` exited 78.
+//! Auth watchdog: restarts managed agents whose `kuzz-acp` exited 78.
 //!
 //! Exits are observed by the regular process sync (UI poll) and, while any
 //! community is signed in with Google, by this loop's own sync pass, so a
@@ -35,7 +35,7 @@ pub(crate) async fn run(app: AppHandle) {
             {
                 RestartDecision::Capped => {
                     eprintln!(
-                        "buzz-desktop: auth: agent {agent} hit the auth restart cap; waiting for a manual restart"
+                        "kuzz-desktop: auth: agent {agent} hit the auth restart cap; waiting for a manual restart"
                     );
                 }
                 RestartDecision::Restart => {
@@ -61,7 +61,7 @@ pub(crate) async fn run(app: AppHandle) {
 /// silently staying down.
 pub(crate) fn settle_restart(bots: &bots::BotRuntime, agent: &str, result: Result<(), String>) {
     if let Err(error) = result {
-        eprintln!("buzz-desktop: auth: restart of {agent} failed: {error}");
+        eprintln!("kuzz-desktop: auth: restart of {agent} failed: {error}");
         bots.park(
             agent,
             format!("The agent could not be restarted with a new sign-in token: {error}. Press Start to try again."),

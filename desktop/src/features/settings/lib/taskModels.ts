@@ -1,5 +1,5 @@
 /**
- * Registry of the AI tasks Buzz itself performs, each of which gets its own
+ * Registry of the AI tasks Kuzz itself performs, each of which gets its own
  * provider / model under Settings › Models › Task models.
  *
  * Persistence is Rust-owned: `<app-data>/agents/task-models.json`, one task

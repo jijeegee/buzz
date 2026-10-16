@@ -371,7 +371,7 @@ test("closer classification sees replies that arrive during the final beat", asy
   const opener = relayEvent({
     id: "opener",
     pubkey: fizz.pubkey,
-    tags: [["client", "buzz-welcome-kickoff.opener.v1"]],
+    tags: [["client", "kuzz-welcome-kickoff.opener.v1"]],
   });
   const events = [opener];
 
@@ -417,7 +417,7 @@ function introReply(id, pubkey, openerId) {
 const kickoffOpener = relayEvent({
   id: "opener",
   pubkey: fizz.pubkey,
-  tags: [["client", "buzz-welcome-kickoff.opener.v1"]],
+  tags: [["client", "kuzz-welcome-kickoff.opener.v1"]],
 });
 
 // The bug this branch fixes: teammate intros are thread replies, which the
@@ -486,7 +486,7 @@ test("token mode: the opener carries a user-voiced fallback that mentions the le
   // The lead-authored closer cannot be posted in token mode, so the user
   // opener resolves the kickoff itself.
   assert.deepEqual(input.userFallback.additionalMarkers, [
-    "buzz-welcome-kickoff.closer.v1",
+    "kuzz-welcome-kickoff.closer.v1",
   ]);
   // Key mode is unchanged: the agent-voiced opener and markers.
   assert.match(input.content, /I'm Fizz/);
@@ -503,7 +503,7 @@ test("token mode: a degraded opener does not repeat the closer marker", () => {
     input.userFallback.content,
     "@Fizz Hi! I just joined Kuzz. Could you help me get oriented?",
   );
-  assert.deepEqual(input.additionalMarkers, ["buzz-welcome-kickoff.closer.v1"]);
+  assert.deepEqual(input.additionalMarkers, ["kuzz-welcome-kickoff.closer.v1"]);
   assert.deepEqual(input.userFallback.additionalMarkers, []);
 });
 
@@ -511,7 +511,7 @@ test("token mode: the provider notice carries a user-voiced fallback mentioning 
   const input = buildWelcomeKickoffProviderSendInput(fizz, "channel-1");
   assert.equal(input.content, WELCOME_KICKOFF_PROVIDER_MESSAGE);
   assert.equal(input.agentPubkey, fizz.pubkey);
-  assert.equal(input.marker, "buzz-welcome-kickoff.provider-required.v1");
+  assert.equal(input.marker, "kuzz-welcome-kickoff.provider-required.v1");
   assert.match(input.userFallback.content, /^@Fizz /);
   assert.match(input.userFallback.content, /AI provider in Settings/);
 });
@@ -543,7 +543,7 @@ test("token mode: the closer carries a user-voiced fallback so a mid-kickoff sig
     {
       agentSet: { lead: fizz, teammates: [] },
       channelId: "welcome-1",
-      failedNames: ["Buzz"],
+      failedNames: ["Kuzz"],
       delayedNames: [],
       opener: { id: "opener-1" },
     },
@@ -558,11 +558,11 @@ test("token mode: the closer carries a user-voiced fallback so a mid-kickoff sig
   assert.equal(sent.length, 1);
   const [input] = sent;
   assert.equal(input.agentPubkey, fizz.pubkey);
-  assert.equal(input.marker, "buzz-welcome-kickoff.closer.v1");
+  assert.equal(input.marker, "kuzz-welcome-kickoff.closer.v1");
   assert.equal(input.parentEventId, "opener-1");
-  assert.equal(input.content, buildWelcomeKickoffCloser(["Buzz"]));
+  assert.equal(input.content, buildWelcomeKickoffCloser(["Kuzz"]));
   assert.match(input.userFallback.content, /^@Fizz /);
-  assert.match(input.userFallback.content, /Buzz seems to be having trouble/);
+  assert.match(input.userFallback.content, /Kuzz seems to be having trouble/);
 });
 
 test("the closer is not re-posted once its marker exists", async () => {
