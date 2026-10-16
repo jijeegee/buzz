@@ -184,7 +184,10 @@ impl Db {
             observability::acquire_writer(&self.pool, observability::WriterOperation::EventWrite)
                 .await?;
         let mut tx = Transaction::begin(conn, None).await?;
-        let mut results = Vec::with_capacity(items.len());
+        // Resolve every item's room first, then lock and write in a fixed
+        // (room, thread) order so two requests naming the same rooms in a
+        // different order cannot deadlock.
+        let mut resolved = Vec::with_capacity(items.len());
         for (index, item) in items.iter().enumerate() {
             let (channel_id, root) = match &item.target {
                 MarkReadTarget::Channel(channel_id) => (Some(*channel_id), None),
@@ -196,6 +199,12 @@ impl Db {
             let Some(channel_id) = channel_id else {
                 return Ok(Err(ChatStateDenied::NotMember { index }));
             };
+            resolved.push((channel_id, root, index));
+        }
+        resolved.sort();
+        let mut slots: Vec<Option<MarkReadResult>> = vec![None; items.len()];
+        for (channel_id, root, index) in resolved {
+            let item = &items[index];
             if !lock_membership(&mut tx, community_uuid, channel_id, reader).await? {
                 return Ok(Err(ChatStateDenied::NotMember { index }));
             }
@@ -253,7 +262,7 @@ impl Db {
                     .await?
                 }
             };
-            results.push(match row {
+            slots[index] = Some(match row {
                 Some(row) => MarkReadResult {
                     target: item.target.clone(),
                     channel_id,
@@ -271,7 +280,7 @@ impl Db {
             });
         }
         tx.commit().await?;
-        Ok(Ok(results))
+        Ok(Ok(slots.into_iter().flatten().collect()))
     }
 
     /// Set `reader`'s explicit follow state for the thread rooted at `root`
