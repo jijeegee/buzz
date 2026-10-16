@@ -1786,7 +1786,7 @@ pub(crate) mod tests {
             .await
             .expect("bind fake PostgreSQL endpoint");
         let database_url = format!(
-            "postgres://kuzz@{}/buzz",
+            "postgres://kuzz@{}/kuzz",
             fake_database.local_addr().expect("fake database address")
         );
         let pool = sqlx::postgres::PgPoolOptions::new()

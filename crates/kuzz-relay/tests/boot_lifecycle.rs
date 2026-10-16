@@ -450,7 +450,7 @@ fn otlp_build_failure_is_degraded_without_leaking_endpoint_credentials() {
     let endpoint = format!("https://telemetry-user:{secret}@[");
     let fake_database = TcpListener::bind(("127.0.0.1", 0)).expect("bind fake database");
     let database_url = format!(
-        "postgres://kuzz@127.0.0.1:{}/buzz",
+        "postgres://kuzz@127.0.0.1:{}/kuzz",
         fake_database.local_addr().expect("database address").port()
     );
     let reserved = TcpListener::bind(("127.0.0.1", 0)).expect("reserve metrics port");
@@ -484,7 +484,7 @@ fn otlp_build_failure_is_degraded_without_leaking_endpoint_credentials() {
 fn successful_main_emits_complete_lifecycle_without_startup_metrics() {
     let fake_database = TcpListener::bind(("127.0.0.1", 0)).expect("bind fake database");
     let database_url = format!(
-        "postgres://kuzz@127.0.0.1:{}/buzz",
+        "postgres://kuzz@127.0.0.1:{}/kuzz",
         fake_database.local_addr().expect("database address").port()
     );
     let reserved = TcpListener::bind(("127.0.0.1", 0)).expect("reserve metrics port");

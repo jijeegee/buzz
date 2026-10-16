@@ -142,7 +142,7 @@ if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"${RELAY_MAIN}" -sTCP:LISTE
 fi
 log "Starting relay in tmux session '${TMUX_SESSION}' on :${RELAY_MAIN} (health :${RELAY_HEALTH}, metrics :${RELAY_METRICS})..."
 tmux new-session -d -s "${TMUX_SESSION}" "cd '${REPO_ROOT}' && env \
-  DATABASE_URL=postgres://kuzz:kuzz_dev@localhost:${PG_PORT}/buzz \
+  DATABASE_URL=postgres://kuzz:kuzz_dev@localhost:${PG_PORT}/kuzz \
   REDIS_URL=redis://localhost:${REDIS_PORT} \
   RELAY_URL=ws://localhost:${RELAY_MAIN} \
   KUZZ_BIND_ADDR=0.0.0.0:${RELAY_MAIN} \
