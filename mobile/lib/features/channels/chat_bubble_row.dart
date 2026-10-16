@@ -42,7 +42,7 @@ class ChatBubbleColors {
   });
 
   static const _buzzLight = ChatBubbleColors(
-    own: Color(0xFFF3EB9E),
+    own: Color(0xFFDDE3EA),
     other: Color(0xFFFFFFFF),
     otherShadow: [
       BoxShadow(color: Color(0x0D000000), spreadRadius: 1),
@@ -51,7 +51,7 @@ class ChatBubbleColors {
   );
 
   static const _buzzDark = ChatBubbleColors(
-    own: Color(0xFF57511F),
+    own: Color(0xFF3A404A),
     other: Color(0xFF262B33),
   );
 

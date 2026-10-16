@@ -48,17 +48,17 @@
     --sidebar-border: 225 13.56% 76.86%;
     --sidebar-ring: 225 13.56% 76.86%;
     /* Exact Buzz palette tokens; components consume these semantically. */
-    --buzz-gradient-light-top: #e6e6b6;
+    --buzz-gradient-light-top: #eceef0;
     --buzz-gradient-light-bottom: #c4d0da;
-    --buzz-gradient-dark-top: #4a4616;
+    --buzz-gradient-dark-top: #2a2d33;
     --buzz-gradient-dark-bottom: #0a1423;
     --buzz-content-dark: 0 0% 10.1960784314%;
     /* Hosted-community onboarding intentionally keeps this light palette in
        both app themes; semantic tokens keep component code color-agnostic. */
     --buzz-hosted-community-surface-fg: 23 23 23;
-    --buzz-hosted-community-divider-border: 150 150 10;
-    --buzz-hosted-community-action-bg: 240 240 205;
-    --buzz-hosted-community-action-bg-hover: 232 232 188;
+    --buzz-hosted-community-divider-border: 160 166 175;
+    --buzz-hosted-community-action-bg: 236 238 241;
+    --buzz-hosted-community-action-bg-hover: 226 229 233;
     --buzz-hosted-community-input-bg: 255 255 255;
     --buzz-hosted-community-modal-action-fg: 255 255 255;
     --buzz-hosted-community-modal-overlay-bg: 0 0 0;
@@ -209,19 +209,19 @@
 }
 
 :root[data-buzz-sidebar] {
-  --buzz-chat-canvas: #f1f2ea;
+  --buzz-chat-canvas: #f4f5f7;
   --buzz-bubble-other: #ffffff;
   --buzz-bubble-other-shadow:
     0 0 0 1px rgb(0 0 0 / 5%), 0 1px 2px rgb(0 0 0 / 6%);
-  --buzz-bubble-own: #f3eb9e;
-  --buzz-thread-canvas: #f8f9f3;
+  --buzz-bubble-own: #dde3ea;
+  --buzz-thread-canvas: #fafbfc;
 }
 
 :root[data-buzz-sidebar].dark {
   --buzz-chat-canvas: #14181f;
   --buzz-bubble-other: #262b33;
   --buzz-bubble-other-shadow: none;
-  --buzz-bubble-own: #57511f;
+  --buzz-bubble-own: #3a404a;
   --buzz-thread-canvas: #1b2029;
 }
 
