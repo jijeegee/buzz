@@ -684,6 +684,21 @@ async fn thread_follow_sets_user_state_for_members_only() {
         Some(("followed".into(), "user".into()))
     );
     assert!(thread_row(&f.list(&reader, &query(50, &[])).await, &root).is_some());
+    let read_seq: Option<i64> = sqlx::query_scalar(
+        "SELECT read_seq FROM thread_follows \
+         WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(root_id(&root))
+    .bind(pk(&reader))
+    .fetch_one(&f.pool)
+    .await
+    .expect("read position");
+    assert_eq!(
+        read_seq,
+        Some(f.seq(&reply).await),
+        "a new explicit follow starts caught up"
+    );
 
     assert_eq!(
         follow(&reader, root_id(&root), FollowState::Unfollowed).await,

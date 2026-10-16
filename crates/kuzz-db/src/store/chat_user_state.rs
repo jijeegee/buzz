@@ -318,11 +318,16 @@ impl Db {
         if is_reply {
             return Ok(Err(ChatStateDenied::NotThreadRoot));
         }
+        // A new row starts caught up: read up to the thread's latest reply.
+        // An existing row keeps its read position.
         sqlx::query(
             "INSERT INTO thread_follows \
                  (community_id, root_event_id, pubkey, channel_id, follow_state, follow_origin, \
-                  updated_at) \
-             VALUES ($1, $2, $3, $4, $5, 'user', NOW()) \
+                  read_seq, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, 'user', \
+                     (SELECT ts.last_seq FROM thread_state ts \
+                       WHERE ts.community_id = $1 AND ts.root_event_id = $2), \
+                     NOW()) \
              ON CONFLICT (community_id, root_event_id, pubkey) DO UPDATE \
              SET follow_state = EXCLUDED.follow_state, follow_origin = 'user', \
                  updated_at = EXCLUDED.updated_at",

@@ -313,7 +313,9 @@ async fn apply_reply(
     // People mentioned in the reply, the root author, and people mentioned in
     // the root: auto-follow when they have no row. Seeding on every reply (not
     // only the first) keeps this right when a close marker was the first reply.
-    // An existing row (including `unfollowed`) is left as it is.
+    // They have read everything before this reply, so an old thread does not
+    // show its whole history as unread. An existing row (including
+    // `unfollowed`) is left as it is.
     let mut candidates = mentioned_pubkeys(event_tag_vecs(event));
     let root_author: Vec<u8> = root_row.try_get("pubkey")?;
     let root_tags: serde_json::Value = root_row.try_get("tags")?;
@@ -330,8 +332,8 @@ async fn apply_reply(
     sqlx::query(
         "INSERT INTO thread_follows \
              (community_id, root_event_id, pubkey, channel_id, follow_state, follow_origin, \
-              updated_at) \
-         SELECT cm.community_id, $2, cm.pubkey, cm.channel_id, 'auto', 'live', $5 \
+              read_seq, updated_at) \
+         SELECT cm.community_id, $2, cm.pubkey, cm.channel_id, 'auto', 'live', $6, $5 \
            FROM channel_members cm \
           WHERE cm.community_id = $1 AND cm.channel_id = $3 AND cm.pubkey = ANY($4) \
             AND cm.removed_at IS NULL \
@@ -342,6 +344,7 @@ async fn apply_reply(
     .bind(channel_id)
     .bind(&candidates)
     .bind(received_at)
+    .bind(seq - 1)
     .execute(&mut **tx)
     .await?;
     Ok(true)

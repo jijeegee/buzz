@@ -327,7 +327,11 @@ async fn first_reply_follows_author_root_author_and_mentions_of_members_only() {
             .await
             .unwrap_or_else(|| panic!("{who} row"));
         assert_eq!(row.state, "auto", "{who}");
-        assert_eq!(row.read_seq, None, "{who} has not read the reply");
+        assert_eq!(
+            row.read_seq,
+            Some(first_seq - 1),
+            "{who} has read up to, not including, the reply"
+        );
     }
     assert_eq!(
         f.follow(&root, &outsider).await,
@@ -347,11 +351,44 @@ async fn first_reply_follows_author_root_author_and_mentions_of_members_only() {
         .execute(&f.pool)
         .await
         .expect("drop root author row");
-    f.reply(room, &root, &replier, 120, Vec::new()).await;
+    let second = f.reply(room, &root, &replier, 120, Vec::new()).await;
     assert_eq!(
         f.follow(&root, &owner).await.map(|row| row.state),
         Some("auto".into())
     );
+    assert_eq!(
+        f.follow(&root, &owner).await.and_then(|row| row.read_seq),
+        Some(f.seq(&second).await - 1)
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn late_mention_in_an_old_thread_is_unread_from_that_reply_only() {
+    let f = Fixture::new(true).await;
+    let (owner, replier, late) = (Keys::generate(), Keys::generate(), Keys::generate());
+    let room = f.room(&owner, &[&replier, &late]).await;
+    let root = f.post(room, &owner, 100, Vec::new()).await;
+    for ts in 101..105 {
+        f.reply(room, &root, &replier, ts, Vec::new()).await;
+    }
+    // A top-level message moves the channel sequence too.
+    f.post(room, &owner, 106, Vec::new()).await;
+    let mention = f
+        .reply(room, &root, &replier, 107, vec![p_tag(&late)])
+        .await;
+    let mention_seq = f.seq(&mention).await;
+    assert!(mention_seq > 6, "old thread: {mention_seq}");
+
+    let row = f.follow(&root, &late).await.expect("late mention row");
+    assert_eq!(row.state, "auto");
+    assert_eq!(
+        row.read_seq,
+        Some(mention_seq - 1),
+        "earlier replies count as read; the mention itself is unread"
+    );
+    let state = f.thread_state(&root).await.expect("thread state row");
+    assert_eq!(state.last_seq, Some(mention_seq));
 }
 
 #[tokio::test]
