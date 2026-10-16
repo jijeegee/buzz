@@ -11,7 +11,12 @@
 //! - Close marker reply in the thread: `["buzz:thread-closed", <root>]` and a
 //!   NIP-18 `q` tag pointing at the result. A thread whose latest message is a
 //!   close marker reads as closed; any later message reopens it.
-//! - A best-effort `✅` reaction on the thread root.
+//! - Reopen marker reply in the thread: `["buzz:thread-reopened", <root>]`.
+//!   Clients that predate it still read the thread as open, because it is a
+//!   later message than the close marker.
+//!
+//! Closing no longer adds a `✅` reaction to the root: the reaction is an
+//! ordinary reaction with no close meaning.
 
 use kuzz_core::goal_tree::{GoalStatus, GoalTree};
 use clap::Subcommand;
@@ -26,12 +31,11 @@ use crate::validate::{parse_uuid, read_or_stdin, validate_hex64};
 pub const TASK_TAG: &str = "buzz:task";
 pub const PARENT_TAG: &str = "buzz:parent";
 pub const THREAD_CLOSED_TAG: &str = "buzz:thread-closed";
+pub const THREAD_REOPENED_TAG: &str = "buzz:thread-reopened";
 const SENT_FROM_THREAD_TAG: &str = "buzz:sent-from-thread";
 /// Parent scope value for a task thread started from the channel main timeline.
 const PARENT_MAIN: &str = "main";
 const MAX_TITLE_CHARS: usize = 120;
-/// Reaction `close` adds to the thread root.
-const DONE_REACTION: &str = "✅";
 /// Matches Desktop's sent-from-thread excerpt limit.
 const MAX_EXCERPT_CHARS: usize = 64;
 
@@ -82,6 +86,17 @@ pub enum ThreadsCmd {
         #[arg(long, requires = "goal_done")]
         goal_note: Option<String>,
     },
+    /// Reopen a closed thread by posting a reopen marker reply in it
+    #[command(after_help = "Example:
+  kuzz threads reopen --channel <UUID> --thread <ROOT_ID>")]
+    Reopen {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: String,
+    },
 }
 
 pub async fn dispatch(cmd: ThreadsCmd, client: &KuzzClient) -> Result<(), CliError> {
@@ -105,6 +120,7 @@ pub async fn dispatch(cmd: ThreadsCmd, client: &KuzzClient) -> Result<(), CliErr
             let goal_done = goal_done.transpose()?;
             close(client, &channel, &thread, &summary, requester, goal_done).await
         }
+        ThreadsCmd::Reopen { channel, thread } => reopen(client, &channel, &thread).await,
     }
 }
 
@@ -248,28 +264,45 @@ async fn close(
     )
     .await?;
 
-    // Mark the thread root done so the closed task reads at a glance in the
-    // timeline. Best effort: the result and close marker are already posted.
-    let root_reaction = match react_done(client, &root_id).await {
-        Ok(()) => Some(DONE_REACTION),
-        Err(e) => {
-            eprintln!("warning: could not add {DONE_REACTION} to the thread root ({e})");
-            None
-        }
-    };
-
     println!(
         "{}",
         serde_json::json!({
             "thread_root": root_id,
             "result": result,
             "close_marker": marker,
-            "root_reaction": root_reaction,
             "goal": goal.json(),
             "warning": goal.warning(),
         })
     );
     Ok(())
+}
+
+async fn reopen(client: &KuzzClient, channel: &str, thread: &str) -> Result<(), CliError> {
+    let root_id = thread.to_ascii_lowercase();
+    load_top_level_message(client, channel, &root_id).await?;
+    let marker = send_message(client, reopen_marker_params(channel, &root_id)?).await?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "thread_root": root_id,
+            "reopen_marker": marker,
+        })
+    );
+    Ok(())
+}
+
+fn reopen_marker_params(channel: &str, root_id: &str) -> Result<SendMessageParams, CliError> {
+    Ok(SendMessageParams {
+        channel_id: channel.to_string(),
+        content: "Thread reopened.".into(),
+        kind: None,
+        reply_to: Some(root_id.to_string()),
+        quote: None,
+        broadcast: false,
+        files: Vec::new(),
+        mentions: Vec::new(),
+        extra_tags: vec![tag([THREAD_REOPENED_TAG, root_id])?],
+    })
 }
 
 /// What closing a thread does to the goal it is linked to.
@@ -348,16 +381,6 @@ async fn close_goal(
         }
     }
     Ok(goal)
-}
-
-async fn react_done(client: &KuzzClient, root_id: &str) -> Result<(), CliError> {
-    let target = nostr::EventId::parse(root_id)
-        .map_err(|e| CliError::Usage(format!("invalid event ID: {e}")))?;
-    let builder = kuzz_sdk::build_reaction(target, DONE_REACTION)
-        .map_err(|e| CliError::Other(format!("build_reaction failed: {e}")))?;
-    let event = client.sign_event(builder)?;
-    client.submit_event(event).await?;
-    Ok(())
 }
 
 /// Fetch `event_id` and require a top-level message in `channel`.
@@ -576,6 +599,27 @@ mod tests {
             status: GoalStatus::Done,
         };
         assert!(done.warning().is_none());
+    }
+
+    #[test]
+    fn reopen_marker_is_a_thread_reply_with_the_reopen_tag() {
+        let root = "b".repeat(64);
+        let params = reopen_marker_params("chan", &root).unwrap();
+        assert_eq!(params.reply_to.as_deref(), Some(root.as_str()));
+        assert!(!params.broadcast);
+        assert_eq!(params.extra_tags.len(), 1);
+        assert_eq!(
+            params.extra_tags[0].as_slice(),
+            &[THREAD_REOPENED_TAG.to_string(), root]
+        );
+    }
+
+    #[test]
+    fn close_no_longer_reacts_to_the_root() {
+        let source = include_str!("threads.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!production.contains("build_reaction"));
+        assert!(!production.contains("root_reaction"));
     }
 
     #[test]
