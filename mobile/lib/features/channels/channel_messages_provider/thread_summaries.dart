@@ -73,7 +73,7 @@ extension _ThreadSummaryState on ChannelMessagesNotifier {
       _retainedDeepLinkEventIds.contains(root) ||
       (!_usingChannelWindow &&
           (_lastKnownMessages?.any((event) => event.id == root) ?? false)) ||
-      _windowStore.pages.any(
+      _windowStore.allPages.any(
         (page) => page.rows.any((row) => row.event.id == root),
       ) ||
       _windowStore.liveOverlay.any((event) => event.id == root);
@@ -84,7 +84,7 @@ extension _ThreadSummaryState on ChannelMessagesNotifier {
   ChannelWindowThreadSummary? _emptyPageSummary(String root) {
     // A page's implicit zero is no longer the only evidence once replies arrive.
     if (cachedThreadReplyIds(root).isNotEmpty) return null;
-    for (final page in _windowStore.pages) {
+    for (final page in _windowStore.allPages) {
       for (final row in page.rows) {
         if (row.event.id != root) continue;
         if (row.thread != null) return null;
@@ -109,10 +109,7 @@ extension _ThreadSummaryState on ChannelMessagesNotifier {
       final incoming = parseChannelWindowThreadSummary(event);
       // Rejected payloads must not regain authority when a later page clears
       // the query overlay (zero-count page summaries are omitted by the relay).
-      _windowStore = ChannelWindowStore(
-        pages: _windowStore.pages,
-        liveOverlay: _windowStore.liveOverlay,
-        liveAux: _windowStore.liveAux,
+      _windowStore = _windowStore.copyWith(
         liveThreadSummaries: {
           for (final entry in _windowStore.liveThreadSummaries.entries)
             if (entry.key != root) entry.key: entry.value,

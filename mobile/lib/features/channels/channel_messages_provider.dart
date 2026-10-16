@@ -12,7 +12,9 @@ import 'thread_replies_provider.dart';
 import 'thread_summary_refresh_queue.dart';
 import 'thread_reply_ownership.dart';
 import 'timeline_message.dart';
+import 'window_anchor.dart';
 
+part 'channel_messages_provider/open_at.dart';
 part 'channel_messages_provider/thread_summaries.dart';
 
 // Channel history keeps partial reply evidence; full threads stay route-scoped.
@@ -36,6 +38,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool _usingChannelWindow = false;
   bool _initialWindowQueryInFlight = false;
   int _initVersion = 0;
+  Future<void>? _initFuture;
+  int _windowGeneration = 0;
+  int _windowOpVersion = 0;
+  bool _loadingNewer = false;
   bool _headRestoreStarted = false;
   bool _relayHistoryArrived = false;
   Set<String> _cachedHeadIds = const {};
@@ -79,6 +85,14 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool get _summaryMounted => ref.mounted;
   RelaySessionNotifier get _summarySession =>
       ref.read(relaySessionProvider.notifier);
+
+  /// The relay's NIP-11 document; an unreadable one is retried next time
+  /// rather than taken as proof that an extension is missing.
+  Future<RelayInfo?> _readRelayInfo() async {
+    final info = await ref.read(relayInfoProvider.future);
+    if (info == null) ref.invalidate(relayInfoProvider);
+    return info;
+  }
 
   /// Last successfully loaded messages, preserved across reconnections so the
   /// UI can show stale data instead of a blank loading spinner.
@@ -150,22 +164,26 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       return AsyncData(_lastKnownMessages ?? const []);
     }
 
-    _reachedOldest = false;
-    _windowStore = const ChannelWindowStore.empty();
-    // A reconnect window can lag a confirmed thread query and contains only
-    // top-level rows. Keep known replies as summary evidence, including their
-    // deletion markers so a reset cannot resurrect a deleted reply.
-    for (final event in _lastKnownMessages ?? const <NostrEvent>[]) {
-      if (event.threadReference.parentId != null ||
-          event.kind == EventKind.deletion ||
-          event.kind == EventKind.nip29DeleteEvent) {
-        _mergeWindowEventIntoStore(event);
+    // A window opened at a message survives a reconnect: [_init] pages on
+    // from its newest row instead of replacing what the reader is looking at.
+    if (!_usingChannelWindow || !_windowStore.isMiddle) {
+      _reachedOldest = false;
+      _windowStore = const ChannelWindowStore.empty();
+      // A reconnect window can lag a confirmed thread query and contains only
+      // top-level rows. Keep known replies as summary evidence, including
+      // their deletion markers so a reset cannot resurrect a deleted reply.
+      for (final event in _lastKnownMessages ?? const <NostrEvent>[]) {
+        if (event.threadReference.parentId != null ||
+            event.kind == EventKind.deletion ||
+            event.kind == EventKind.nip29DeleteEvent) {
+          _mergeWindowEventIntoStore(event);
+        }
       }
+      _usingChannelWindow = false;
     }
-    _usingChannelWindow = false;
     _initialWindowQueryInFlight = false;
     _liveSummaryRootsDuringInitialWindowQuery.clear();
-    _init();
+    _initFuture = _init();
     if (_lastKnownMessages case final cached? when cached.isNotEmpty) {
       return AsyncData(cached);
     }
@@ -201,6 +219,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         debugPrint(
           '[ChannelMessagesNotifier] live subscription failed for $channelId: $error',
         );
+      }
+
+      if (_usingChannelWindow && _windowStore.isMiddle) {
+        await _refreshMiddleAfterReconnect(session, initVersion);
+        return;
       }
 
       final historyVersion = ++_threadQuerySerial;
@@ -352,26 +375,43 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
   Future<ChannelWindowPage> _fetchWindowPage(
     RelaySessionNotifier session,
-    ChannelPageCursor? cursor,
-  ) async {
-    final events = await session.queryRelay([_channelWindowFilter(cursor)]);
-    return parseChannelWindowResponse(events, channelId, cursor);
+    ChannelPageCursor? cursor, {
+    WindowPageDirection direction = WindowPageDirection.older,
+  }) async {
+    final events = await session.queryRelay([
+      _channelWindowFilter(cursor, direction: direction),
+    ]);
+    return parseChannelWindowResponse(
+      events,
+      channelId,
+      cursor,
+      direction: direction,
+    );
   }
 
-  NostrFilter _channelWindowFilter(ChannelPageCursor? cursor) => NostrFilter(
-    kinds: EventKind.channelTimelineContentKinds,
-    tags: {
-      '#h': [channelId],
-    },
-    limit: 50,
-    until: cursor?.createdAt,
-    extensions: {
-      'top_level': true,
-      'include_summaries': true,
-      'include_aux': true,
-      if (cursor != null) 'before_id': cursor.eventId,
-    },
-  );
+  /// One window page: older pages run back from [cursor] (`until` +
+  /// `before_id`), newer pages forward from it (`since` + `after_id`).
+  NostrFilter _channelWindowFilter(
+    ChannelPageCursor? cursor, {
+    WindowPageDirection direction = WindowPageDirection.older,
+  }) {
+    final newer = direction == WindowPageDirection.newer;
+    return NostrFilter(
+      kinds: EventKind.channelTimelineContentKinds,
+      tags: {
+        '#h': [channelId],
+      },
+      limit: 50,
+      until: newer ? null : cursor?.createdAt,
+      since: newer ? cursor?.createdAt : null,
+      extensions: {
+        'top_level': true,
+        'include_summaries': true,
+        'include_aux': true,
+        if (cursor != null) newer ? 'after_id' : 'before_id': cursor.eventId,
+      },
+    );
+  }
 
   void _handleLiveEvent(
     NostrEvent event, {
@@ -574,8 +614,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     final retained = _boundedReplies(replies).map((event) => event.id).toSet();
     if (retained.length == replies.length) return;
     _reconcileEvictedReplies(replies, retained);
-    _windowStore = ChannelWindowStore(
-      pages: _windowStore.pages,
+    _windowStore = _windowStore.copyWith(
       liveOverlay: _windowStore.liveOverlay
           .where(
             (event) =>
@@ -583,8 +622,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
                 retained.contains(event.id),
           )
           .toList(),
-      liveAux: _windowStore.liveAux,
-      liveThreadSummaries: _windowStore.liveThreadSummaries,
     );
   }
 
@@ -630,7 +667,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       for (final event in [
         ..._windowStore.liveAux,
         if (!_usingChannelWindow) ...?_lastKnownMessages,
-        for (final page in _windowStore.pages) ...page.aux,
+        for (final page in _windowStore.allPages) ...page.aux,
       ])
         if (event.kind == EventKind.deletion ||
             event.kind == EventKind.nip29DeleteEvent)
@@ -702,7 +739,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     _rememberDeletionTargets({
       for (final event in [
         ..._windowStore.liveAux,
-        for (final page in _windowStore.pages) ...page.aux,
+        for (final page in _windowStore.allPages) ...page.aux,
       ])
         if (event.kind == EventKind.deletion ||
             event.kind == EventKind.nip29DeleteEvent)
@@ -710,10 +747,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
             if (tag.length > 1 && tag[0] == 'e') tag[1],
     });
     final roots = {
-      for (final page in _windowStore.pages)
+      for (final page in _windowStore.allPages)
         for (final row in page.rows) row.event.id,
       for (final event in _windowStore.liveOverlay)
         if (event.threadReference.parentId == null) event.id,
+      for (final event in _windowStore.heldLive) event.id,
       ..._retainedDeepLinkEventIds,
     };
     bool keepReply(NostrEvent event) =>
@@ -721,8 +759,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         roots.contains(event.threadReference.rootId);
     final overlay = _windowStore.liveOverlay.where(keepReply).toList();
     final retainedIds = {...roots, ...overlay.map((event) => event.id)};
-    _windowStore = ChannelWindowStore(
-      pages: _windowStore.pages,
+    _windowStore = _windowStore.copyWith(
       liveOverlay: overlay,
       liveAux: _windowStore.liveAux
           .where(
@@ -734,7 +771,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
             ),
           )
           .toList(),
-      liveThreadSummaries: _windowStore.liveThreadSummaries,
     );
     // Keep the currently displayed snapshot intact until the next window
     // publication drops off-window roots and their reply evidence together.
@@ -775,13 +811,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
               !resultIds.contains(event.id),
         )
         .toList();
-    _windowStore = ChannelWindowStore(
-      pages: _windowStore.pages,
+    _windowStore = _windowStore.copyWith(
       liveOverlay: _windowStore.liveOverlay
           .where((event) => !missing.contains(event.id))
           .toList(),
-      liveAux: _windowStore.liveAux,
-      liveThreadSummaries: _windowStore.liveThreadSummaries,
     );
     final current = state.value ?? _lastKnownMessages ?? const <NostrEvent>[];
     final remaining = current
@@ -917,12 +950,15 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     final nextOverlay = _windowStore.liveOverlay
         .where((event) => event.id != eventId)
         .toList();
-    if (nextOverlay.length != _windowStore.liveOverlay.length) {
-      _windowStore = ChannelWindowStore(
-        pages: _windowStore.pages,
+    // A send from a window opened at a message waits with the held rows.
+    final nextHeld = _windowStore.heldLive
+        .where((event) => event.id != eventId)
+        .toList();
+    if (nextOverlay.length != _windowStore.liveOverlay.length ||
+        nextHeld.length != _windowStore.heldLive.length) {
+      _windowStore = _windowStore.copyWith(
         liveOverlay: nextOverlay,
-        liveAux: _windowStore.liveAux,
-        liveThreadSummaries: _windowStore.liveThreadSummaries,
+        heldLive: nextHeld,
       );
     }
 
@@ -950,6 +986,44 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   }
 
   bool get reachedOldest => _reachedOldest;
+
+  /// Whether the window was opened at a message (or read marker) instead of
+  /// the newest row. It stays so until [jumpToLatest], even once its newer
+  /// pages reach the present.
+  bool get isInMiddleWindow => _windowStore.isMiddle;
+
+  /// Whether rows newer than the loaded ones remain to page in with
+  /// [fetchNewer]. Live main-timeline rows wait meanwhile instead of showing
+  /// past the gap; [heldLiveCount] says how many.
+  bool get hasNewer => _windowStore.hasNewer;
+
+  bool get isLoadingNewer => _loadingNewer;
+
+  int get heldLiveCount => _windowStore.heldLive.length;
+
+  /// The message the window was opened at, when [isInMiddleWindow].
+  String? get anchorId => _windowStore.anchorId;
+
+  /// Changes whenever the window is replaced by one that does not continue it
+  /// ([openAt], [jumpToLatest]), so a list can reset its scroll position.
+  int get windowGeneration => _windowGeneration;
+
+  /// Opens the window at a message ([eventId] at [createdAt]) or, without an
+  /// id, after a read marker at [createdAt]: the older page leads with the
+  /// message (or every row at [createdAt]) and the newer page holds the rest
+  /// up to 50 rows. Returns false, leaving the newest window in place, when
+  /// the relay lacks `nip-cw-newer`, the channel uses websocket history, or
+  /// the pages fail.
+  Future<bool> openAt({required int createdAt, String? eventId}) =>
+      _openAt(createdAt: createdAt, eventId: eventId);
+
+  /// Pages a window opened at a message toward the present. Returns whether
+  /// a page was applied.
+  Future<bool> fetchNewer() => _fetchNewer();
+
+  /// Leaves a window opened at a message for the newest page. Returns whether
+  /// the window changed.
+  Future<bool> jumpToLatest() => _jumpToLatest();
 
   /// Loads specific deep-link targets that may fall outside the newest window.
   Future<void> loadEventsById(Iterable<String> eventIds) async {
