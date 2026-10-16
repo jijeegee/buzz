@@ -112,8 +112,10 @@ enum Command {
     ///
     /// Fills room and thread activity, close state, current members' room
     /// read positions, and recent auto thread follows for the configured
-    /// relay's community, one channel per transaction. Idempotent: re-running
-    /// changes nothing new. Does not turn on KUZZ_CHAT_STATE_WRITES.
+    /// relay's community, one channel per transaction. Turn on
+    /// KUZZ_CHAT_STATE_WRITES first (this command does not), then run it to
+    /// fill everything older; state the relay already wrote is kept.
+    /// Re-running is safe and changes nothing new.
     BackfillChatState {
         /// Report what would be written, then roll every channel back.
         #[arg(long)]

@@ -98,6 +98,12 @@ impl Fixture {
         }
     }
 
+    /// Turn the chat-state switch on: later writes go through the live write
+    /// path, as on the relay once `KUZZ_CHAT_STATE_WRITES` is on.
+    fn switch_on(&mut self) {
+        self.db = Db::from_pool(self.pool.clone()).with_chat_state_writes(true);
+    }
+
     async fn room(&self, owner: &Keys, members: &[&Keys]) -> Uuid {
         let id = channel::create_channel(
             &self.pool,
@@ -757,6 +763,203 @@ async fn backfill_follows_members_in_window_and_keeps_existing_rows() {
     );
     assert_eq!(f.follow(&root, &gone).await, None, "removed member");
     assert_eq!(f.follow(&root, &outsider).await, None, "never a member");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn backfill_fills_missing_follow_reads_only() {
+    let f = Fixture::new(false).await;
+    let (owner, alice, bob, carol, erin) = (
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+    );
+    let room = f.room(&owner, &[&alice, &bob, &carol, &erin]).await;
+    let root = sign(&owner, 100, Vec::new());
+    let answer = sign(&alice, 101, vec![p_tag(&bob), p_tag(&carol), p_tag(&erin)]);
+    f.play(room, &[top(&root), reply(&root, &answer)]).await;
+    // Rows that exist before the backfill (e.g. written by the live path or
+    // an explicit follow before read positions were seeded).
+    for (who, state, origin, read_seq, unread_mark) in [
+        (&alice, "auto", "live", None, false),
+        (&owner, "followed", "user", None, true),
+        (&bob, "unfollowed", "user", None, false),
+        (&carol, "followed", "user", Some(1_i64), false),
+    ] {
+        sqlx::query(
+            "INSERT INTO thread_follows (community_id, root_event_id, pubkey, channel_id, \
+                 follow_state, follow_origin, read_seq, unread_mark) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(f.scope.as_uuid())
+        .bind(root.id.as_bytes().as_slice())
+        .bind(pk(who))
+        .bind(room)
+        .bind(state)
+        .bind(origin)
+        .bind(read_seq)
+        .bind(unread_mark)
+        .execute(&f.pool)
+        .await
+        .expect("existing follow row");
+    }
+
+    let counts = f.backfill(now_options()).await;
+    assert_eq!(counts.follows_inserted, 1, "{counts:?}");
+    assert_eq!(counts.follow_reads_filled, 2, "{counts:?}");
+    let last = Some(f.seq(&answer).await);
+    assert_eq!(
+        f.follow(&root, &alice).await,
+        Some(("auto".into(), "live".into(), last)),
+        "missing read position filled, state and origin kept"
+    );
+    assert_eq!(
+        f.follow(&root, &owner).await,
+        Some(("followed".into(), "user".into(), last))
+    );
+    let owner_mark: bool = sqlx::query_scalar(
+        "SELECT unread_mark FROM thread_follows \
+         WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(root.id.as_bytes().as_slice())
+    .bind(pk(&owner))
+    .fetch_one(&f.pool)
+    .await
+    .expect("unread mark");
+    assert!(owner_mark, "unread mark kept");
+    assert_eq!(
+        f.follow(&root, &bob).await,
+        Some(("unfollowed".into(), "user".into(), None)),
+        "an unfollowed row is untouched"
+    );
+    assert_eq!(
+        f.follow(&root, &carol).await,
+        Some(("followed".into(), "user".into(), Some(1))),
+        "a stored read position is never replaced"
+    );
+    assert_eq!(
+        f.follow(&root, &erin).await,
+        Some(("auto".into(), "backfill".into(), last))
+    );
+
+    let snapshot = f.full_snapshot().await;
+    let again = f.backfill(now_options()).await;
+    assert!(again.is_unchanged(), "{again:?}");
+    assert_eq!(f.full_snapshot().await, snapshot);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn backfill_keeps_the_close_state_the_write_path_wrote() {
+    // Switch on first: the live write path writes every row.
+    let f = Fixture::new(true).await;
+    let (owner, alice) = (Keys::generate(), Keys::generate());
+    let room = f.room(&owner, &[&alice]).await;
+    let closed = sign(&owner, 100, Vec::new());
+    let closed1 = sign(&alice, 101, Vec::new());
+    let close_marker = sign(&owner, 102, vec![marker_tag(THREAD_CLOSED_TAG, &closed)]);
+    let open = sign(&owner, 110, Vec::new());
+    let open1 = sign(&alice, 111, Vec::new());
+    let open_marker = sign(&owner, 112, vec![marker_tag(THREAD_CLOSED_TAG, &open)]);
+    let open2 = sign(&alice, 113, Vec::new());
+    f.play(
+        room,
+        &[
+            top(&closed),
+            reply(&closed, &closed1),
+            reply(&closed, &close_marker),
+            top(&open),
+            reply(&open, &open1),
+            reply(&open, &open_marker),
+            reply(&open, &open2),
+        ],
+    )
+    .await;
+    let closed_state = Some((Some(f.seq(&closed1).await), true, Some(pk(&owner))));
+    let open_state = Some((Some(f.seq(&open2).await), false, None));
+    assert_eq!(f.thread(&closed).await, closed_state);
+    assert_eq!(f.thread(&open).await, open_state);
+
+    // History now disagrees with the live state: without the close marker
+    // the first thread reads as open, without the reply after the close the
+    // second reads as closed. The live rows are newer and win.
+    f.delete(&close_marker).await;
+    f.delete(&open2).await;
+    let follows = f.follow_snapshot().await;
+    let first = f.backfill(now_options()).await;
+    assert_eq!(first.thread_state_inserted, 0, "{first:?}");
+    assert_eq!(first.thread_state_updated, 0, "{first:?}");
+    assert_eq!(first.threads_closed, 0, "{first:?}");
+    assert_eq!(first.follows_inserted, 0, "{first:?}");
+    assert_eq!(
+        first.follow_reads_filled, 0,
+        "live follow rows have read positions: {first:?}"
+    );
+    assert_eq!(f.thread(&closed).await, closed_state);
+    assert_eq!(f.thread(&open).await, open_state);
+    assert_eq!(f.follow_snapshot().await, follows);
+
+    let snapshot = f.full_snapshot().await;
+    let again = f.backfill(now_options()).await;
+    assert!(again.is_unchanged(), "{again:?}");
+    assert_eq!(f.full_snapshot().await, snapshot);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn rerun_after_live_writes_changes_nothing() {
+    let cast = Cast::new();
+    let history = History::new(&cast);
+    let mut f = Fixture::new(false).await;
+    let room = scripted_room(&f, &cast, &history).await;
+    f.backfill(now_options()).await;
+
+    // The switch goes on; new activity goes through the live write path.
+    f.switch_on();
+    let h = &history;
+    let b2 = sign(&cast.alice, 200, vec![p_tag(&cast.owner)]);
+    let a_close = sign(&cast.owner, 201, vec![marker_tag(THREAD_CLOSED_TAG, &h.a)]);
+    let c2 = sign(&cast.carol, 202, Vec::new());
+    let n = sign(&cast.owner, 203, Vec::new());
+    let n1 = sign(&cast.bob, 204, vec![p_tag(&cast.alice)]);
+    f.play(
+        room,
+        &[
+            reply(&h.b, &b2),
+            reply(&h.a, &a_close),
+            reply(&h.c, &c2),
+            top(&n),
+            reply(&n, &n1),
+        ],
+    )
+    .await;
+    let live = f.full_snapshot().await;
+
+    let again = f.backfill(now_options()).await;
+    assert!(again.is_unchanged(), "{again:?}");
+    assert_eq!(f.full_snapshot().await, live, "live state intact");
+
+    assert_eq!(
+        f.thread(&h.a).await,
+        Some((Some(f.seq(&h.a2).await), true, Some(pk(&cast.owner))))
+    );
+    assert_eq!(
+        f.thread(&h.c).await,
+        Some((Some(f.seq(&c2).await), false, None))
+    );
+    assert_eq!(
+        f.follow(&h.b, &cast.owner).await,
+        Some(("auto".into(), "live".into(), Some(f.seq(&b2).await - 1))),
+        "mentioned late: unread from the mention on"
+    );
+    assert_eq!(
+        f.follow(&n, &cast.alice).await,
+        Some(("auto".into(), "live".into(), Some(f.seq(&n1).await - 1)))
+    );
+    assert_eq!(f.main_last_seq(room).await, Some(f.seq(&n).await));
 }
 
 #[tokio::test]

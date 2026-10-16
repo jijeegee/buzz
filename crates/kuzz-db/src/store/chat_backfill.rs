@@ -6,15 +6,16 @@
 //! switch is turned on:
 //!
 //! - `channels.main_last_*`: the latest top-level or broadcast message.
-//! - `thread_state`: the latest reply (`last_*`) and the close state, which
-//!   follows the latest reply: a close marker closes, a reopen marker or any
-//!   other reply reopens.
+//! - `thread_state`: the latest reply (`last_*`) and, for threads that have
+//!   no row yet, the close state, which follows the latest reply: a close
+//!   marker closes, a reopen marker or any other reply reopens.
 //! - `channel_members.read_seq`: the room's current sequence for current
 //!   members that have no read position yet (`read_origin = 'backfill'`).
 //! - `thread_follows`: `auto` rows (`follow_origin = 'backfill'`) for current
 //!   members who started, replied in, or were mentioned in (root or reply) a
 //!   thread with a reply inside the follow window; `read_seq` = the thread's
-//!   latest reply.
+//!   latest reply. The same people's existing, not unfollowed rows without a
+//!   read position get that `read_seq` too.
 //!
 //! Rules shared with the write path: only `MESSAGE_KINDS` count; close and
 //! reopen marker replies never move ordering, follows, or read positions; a
@@ -22,12 +23,16 @@
 //! Unlike the write path, which never undoes state on delete, the backfill
 //! reads only live (not deleted) messages.
 //!
-//! Idempotent: a re-run over unchanged history changes nothing. It never
-//! lowers `main_last_seq` or a thread's `last_seq`, never replaces a read
-//! position, and never touches an existing follow row. Each channel is
-//! processed under the same advisory lock the message insert and membership
-//! paths take, so its history cannot move underneath it, and the community
-//! write fence is checked first.
+//! Runs after the chat-state switch (`KUZZ_CHAT_STATE_WRITES`) is on: the
+//! live write path records new activity, the backfill fills in what is
+//! older. Rows the write path (or an earlier run) wrote win: the backfill
+//! never lowers `main_last_seq` or a thread's `last_seq`, never changes an
+//! existing thread's close state, never replaces a read position, and only
+//! fills a missing follow `read_seq` (never state, origin, or unread mark).
+//! So a re-run changes nothing unless new members or follow rows appeared.
+//! Each channel is processed under the same advisory lock the message insert
+//! and membership paths take, so its history cannot move underneath it, and
+//! the community write fence is checked first.
 //!
 //! Read positions and follows are private per-user state: never log them.
 
@@ -90,6 +95,9 @@ pub struct ChatBackfillCounts {
     pub member_reads_filled: u64,
     /// New backfilled `auto` follow rows.
     pub follows_inserted: u64,
+    /// Existing, not unfollowed, follow rows without a read position given
+    /// the thread's latest reply.
+    pub follow_reads_filled: u64,
 }
 
 impl ChatBackfillCounts {
@@ -111,6 +119,7 @@ impl AddAssign for ChatBackfillCounts {
         self.threads_closed += other.threads_closed;
         self.member_reads_filled += other.member_reads_filled;
         self.follows_inserted += other.follows_inserted;
+        self.follow_reads_filled += other.follow_reads_filled;
     }
 }
 
@@ -180,7 +189,9 @@ const MAIN_LAST_SQL: &str = concat!(
       AND (c.main_last_seq IS NULL OR c.main_last_seq < l.seq)"
 );
 
-/// Thread activity and close state from every thread's live replies.
+/// Thread activity and close state from every thread's live replies. An
+/// existing row keeps its close state (the write path's or an earlier run's)
+/// and only moves `last_*` forward.
 const THREAD_STATE_SQL: &str = concat!(
     "WITH r AS (",
     channel_replies!(),
@@ -215,13 +226,10 @@ const THREAD_STATE_SQL: &str = concat!(
     FROM threads t
     ON CONFLICT (community_id, root_event_id) DO UPDATE
     SET last_seq = GREATEST(ts.last_seq, EXCLUDED.last_seq),
-        last_at = GREATEST(ts.last_at, EXCLUDED.last_at),
-        closed_at = EXCLUDED.closed_at,
-        closed_by = EXCLUDED.closed_by
-    WHERE (ts.last_seq, ts.last_at, ts.closed_at, ts.closed_by)
+        last_at = GREATEST(ts.last_at, EXCLUDED.last_at)
+    WHERE (ts.last_seq, ts.last_at)
           IS DISTINCT FROM (GREATEST(ts.last_seq, EXCLUDED.last_seq),
-                            GREATEST(ts.last_at, EXCLUDED.last_at),
-                            EXCLUDED.closed_at, EXCLUDED.closed_by)
+                            GREATEST(ts.last_at, EXCLUDED.last_at))
     RETURNING (xmax = 0) AS inserted, closed_at IS NOT NULL AS closed"
 );
 
@@ -234,7 +242,8 @@ const MEMBER_READS_SQL: &str = "UPDATE channel_members cm
       AND cm.removed_at IS NULL AND cm.read_seq IS NULL
       AND cm.read_origin IS DISTINCT FROM 'user'";
 
-/// Auto follows for current members of threads active since `$6`.
+/// Auto follows for current members of threads active since `$6`. An
+/// existing row only gets a missing read position, unless it is unfollowed.
 const FOLLOWS_SQL: &str = concat!(
     "WITH active AS (
         SELECT ts.root_event_id AS root_id, ts.last_seq
@@ -284,7 +293,10 @@ const FOLLOWS_SQL: &str = concat!(
     JOIN active a ON a.root_id = p.root_id
     JOIN channel_members cm ON cm.community_id = $1 AND cm.channel_id = $2
         AND cm.pubkey = p.pubkey AND cm.removed_at IS NULL
-    ON CONFLICT (community_id, root_event_id, pubkey) DO NOTHING"
+    ON CONFLICT (community_id, root_event_id, pubkey) DO UPDATE
+    SET read_seq = EXCLUDED.read_seq
+    WHERE thread_follows.read_seq IS NULL AND thread_follows.follow_state <> 'unfollowed'
+    RETURNING (xmax = 0) AS inserted"
 );
 
 async fn backfill_channel_tx(
@@ -351,7 +363,7 @@ async fn backfill_channel_tx(
         .await?
         .rows_affected();
 
-    counts.follows_inserted = sqlx::query(FOLLOWS_SQL)
+    let written = sqlx::query(FOLLOWS_SQL)
         .bind(community)
         .bind(channel_id)
         .bind(&MESSAGE_KINDS[..])
@@ -359,9 +371,15 @@ async fn backfill_channel_tx(
         .bind(THREAD_REOPENED_TAG)
         .bind(options.now - options.follow_window)
         .bind(options.now)
-        .execute(&mut **tx)
-        .await?
-        .rows_affected();
+        .fetch_all(&mut **tx)
+        .await?;
+    for row in written {
+        if row.try_get::<bool, _>("inserted")? {
+            counts.follows_inserted += 1;
+        } else {
+            counts.follow_reads_filled += 1;
+        }
+    }
 
     Ok(counts)
 }

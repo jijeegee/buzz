@@ -2,8 +2,13 @@
 //! from message history for the configured relay's community.
 //!
 //! One channel per transaction, channels listed in pages of `--batch-size`
-//! with one JSON progress line per page. Idempotent, so an interrupted run is
-//! simply started again. Never changes `KUZZ_CHAT_STATE_WRITES`.
+//! with one JSON progress line per page.
+//!
+//! Order: turn on `KUZZ_CHAT_STATE_WRITES` first (this command never changes
+//! it), so the relay records all new activity, then run this to fill in
+//! everything older. State the relay already wrote is kept. Re-running is
+//! safe and changes nothing new, so an interrupted run is simply started
+//! again.
 
 use std::time::Instant;
 
@@ -19,6 +24,7 @@ fn counts_json(counts: &ChatBackfillCounts) -> serde_json::Value {
         "threads_closed": counts.threads_closed,
         "member_reads_filled": counts.member_reads_filled,
         "follows_inserted": counts.follows_inserted,
+        "follow_reads_filled": counts.follow_reads_filled,
     })
 }
 
