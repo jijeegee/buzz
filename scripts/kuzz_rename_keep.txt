@@ -99,3 +99,4 @@ buzz:identity-lifecycle-coordinate:v1:principal:
 buzz:identity-lifecycle-coordinate:v1:key:
 purge_soft_deleted_buzz_mesh_status
 trg_events_purge_soft_deleted_buzz_mesh_status
+buzz%3Anostr-identity

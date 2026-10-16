@@ -93,7 +93,7 @@ void main() {
     test('wss/https of the same host:port are the same server', () {
       for (final url in [
         'wss://jihobuzz.duckdns.org:8443',
-        'https://JIHOKUZZ.duckdns.org:8443/path',
+        'https://JIHOBUZZ.duckdns.org:8443/path',
         'https://jihobuzz.duckdns.org:8443',
       ]) {
         expect(isBuiltInServerUrl(url, _builtIn), isTrue, reason: url);

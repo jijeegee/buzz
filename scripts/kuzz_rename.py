@@ -32,7 +32,7 @@ SKIP_CONTENT = [
 # Per-file regexes whose matches are kept verbatim.
 KEEP_IN_FILE = {
     # Redis key prefix shared with the running relay.
-    "crates/buzz-pubsub/src/topic.rs": [r'(?<=PREFIX: &str = )"buzz"'],
+    "crates/kuzz-pubsub/src/topic.rs": [r'(?<=PREFIX: &str = )"buzz"'],
 }
 
 # Lines in lockfiles carrying hashes are left alone.
@@ -50,7 +50,7 @@ KEEP_EXTERNAL = [
     r"buzz-oss\.stage\.blox\.sqprod\.co",
     r"buzz\.mesh\.bb-production\.com",
     r"relay\.buzz\.place",
-    r"jihobuzz",
+    r"(?i:jihobuzz)",
     r"play\.google\.com/store/apps/details\?id=xyz\.block\.buzz[\w.]*",
     r"buzz-pi-acp",
 ]
@@ -157,7 +157,7 @@ def main():
                 for line in text.splitlines(keepends=True)
             )
         else:
-            extra = KEEP_IN_FILE.get(f)
+            extra = KEEP_IN_FILE.get(rename_path(f))
             extra = re.compile("|".join(extra)) if extra else None
             new = rename_text(text, protector, stats, extra)
         if new != text:

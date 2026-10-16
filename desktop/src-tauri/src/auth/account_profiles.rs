@@ -30,7 +30,8 @@ pub(crate) struct AccountProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     /// The account's own Kuzz profile name, last seen while it was active.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    // Files written before the product rename use the old key.
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "buzz_name")] // kuzz-rename: keep
     pub kuzz_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,

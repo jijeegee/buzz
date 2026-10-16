@@ -69,7 +69,7 @@ test("servers compare by host + port over the same kind of scheme", () => {
   assert.equal(serverKey(BUILT_IN), "https://jihobuzz.duckdns.org:8443");
   for (const same of [
     "wss://jihobuzz.duckdns.org:8443/",
-    "wss://JIHOKUZZ.duckdns.org:8443",
+    "wss://JIHOBUZZ.duckdns.org:8443",
     "https://jihobuzz.duckdns.org:8443/invite/abc",
     "jihobuzz.duckdns.org:8443",
   ]) {

@@ -19,6 +19,7 @@ pub const WIRE_VERSION: u8 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AppProfile {
+    #[serde(rename = "buzz-ios-dogfood")] // kuzz-rename: keep (wire value)
     KuzzIosDogfood,
 }
 impl AppProfile {

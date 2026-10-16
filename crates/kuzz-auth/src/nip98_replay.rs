@@ -167,7 +167,7 @@ mod tests {
         let ctx = fixture_ctx("relay-a.example");
         let eid = fixture_event_id();
         let key = nip98_replay_key(&ctx, &eid);
-        let expected_prefix = format!("kuzz:{}:nip98:", ctx.community());
+        let expected_prefix = format!("buzz:{}:nip98:", ctx.community()); // kuzz-rename: keep
         assert!(
             key.starts_with(&expected_prefix),
             "key {key} should start with {expected_prefix}"

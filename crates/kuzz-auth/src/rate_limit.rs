@@ -331,7 +331,7 @@ mod tests {
     fn ip_rate_limit_key_format() {
         // IP fence stays operator-global — no community in the key.
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        assert_eq!(ip_rate_limit_key(&ip), "kuzz:ratelimit:ip:192.168.1.1:conn");
+        assert_eq!(ip_rate_limit_key(&ip), "buzz:ratelimit:ip:192.168.1.1:conn"); // kuzz-rename: keep
     }
 
     #[tokio::test]

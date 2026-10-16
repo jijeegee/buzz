@@ -252,7 +252,7 @@ mod tests {
         for allowed in [
             "wss://jihobuzz.duckdns.org:8443",
             "wss://jihobuzz.duckdns.org:8443/",
-            "https://JIHOKUZZ.duckdns.org:8443",
+            "https://JIHOBUZZ.duckdns.org:8443",
         ] {
             assert!(
                 check_relay_allowed(KuzzEnv::Prod, &none, allowed).is_ok(),

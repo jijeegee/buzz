@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::error::PubSubError;
 
 /// Redis key prefix for Kuzz-scoped pub/sub topics and keys.
-pub const KUZZ_PREFIX: &str = "kuzz";
+pub const KUZZ_PREFIX: &str = "buzz"; // kuzz-rename: keep (Redis keys on the live relay)
 
 /// A tenant-local event routing scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
