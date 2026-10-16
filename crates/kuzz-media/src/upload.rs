@@ -789,8 +789,8 @@ mod minio_tests {
     fn minio_config() -> MediaConfig {
         MediaConfig {
             s3_endpoint: "http://localhost:9000".to_string(),
-            s3_access_key: "buzz_dev".to_string(),
-            s3_secret_key: "buzz_dev_secret".to_string(),
+            s3_access_key: "kuzz_dev".to_string(),
+            s3_secret_key: "kuzz_dev_secret".to_string(),
             s3_bucket: "kuzz-media".to_string(),
             s3_region: "us-east-1".to_string(),
             s3_addressing_style: crate::config::S3AddressingStyle::Path,

@@ -11,7 +11,7 @@ docker compose run --rm --no-deps --pull never minio-init
 docker compose exec -T minio sh -eu -c '
   minio --version
   mc --version
-  mc alias set local http://localhost:9000 buzz_dev buzz_dev_secret
+  mc alias set local http://localhost:9000 kuzz_dev kuzz_dev_secret
   printf "kuzz-minio-smoke\n" > /tmp/expected
   mc cp /tmp/expected local/kuzz-media/smoke-test
   mc cat local/kuzz-media/smoke-test > /tmp/actual

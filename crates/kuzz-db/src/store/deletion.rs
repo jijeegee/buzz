@@ -4342,7 +4342,7 @@ mod postgres_tests {
     async fn store() -> (Db, DeletionStore) {
         let database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1 -- local test-only credentials
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1 -- local test-only credentials
         let db = Db::new(&DbConfig {
             database_url,
             max_connections: 5,
@@ -4637,7 +4637,7 @@ mod postgres_tests {
     async fn contender_db(application_name: &str) -> Db {
         let database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string());
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string());
         let options = PgConnectOptions::from_str(&database_url)
             .expect("parse test database URL")
             .application_name(application_name);
@@ -7520,7 +7520,7 @@ mod postgres_tests {
         // per-database, so the parked migration lock cannot stall them.
         let base_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string());
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string());
         let admin = PgPool::connect(&base_url)
             .await
             .expect("connect admin database");
@@ -7855,7 +7855,7 @@ mod postgres_tests {
     async fn desired_state_schema_bootstrap_progresses_beyond_fencing() {
         let base_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string());
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string());
         let admin = PgPool::connect(&base_url)
             .await
             .expect("connect admin database");

@@ -10,7 +10,7 @@
 #
 #   Topology (reuse this exact tuple for desktop parity runs):
 #     compose project : kuzz-harness
-#     postgres        : localhost:5471  (db=kuzz, user=kuzz, pass=buzz_dev)
+#     postgres        : localhost:5471  (db=kuzz, user=kuzz, pass=kuzz_dev)
 #     redis           : localhost:6471
 #     minio           : localhost:9471 (console 9472)
 #     relay main      : localhost:3030   ← KUZZ_E2E_RELAY_URL=http://localhost:3030
@@ -75,7 +75,7 @@ docker compose -p "${PROJECT}" -f "${COMPOSE_FILE}" up -d
 wait_pg() {
   for _ in $(seq 1 60); do
     if docker compose -p "${PROJECT}" -f "${COMPOSE_FILE}" exec -T postgres \
-         pg_isready -U buzz >/dev/null 2>&1; then
+         pg_isready -U kuzz >/dev/null 2>&1; then
       ok "Postgres ready"; return 0
     fi
     sleep 2
@@ -85,7 +85,7 @@ wait_pg() {
 wait_pg
 
 # ── Schema + partitions ──────────────────────────────────────────────────────
-export PGPASSWORD=buzz_dev
+export PGPASSWORD=kuzz_dev
 psql_h() { docker compose -p "${PROJECT}" -f "${COMPOSE_FILE}" exec -T postgres \
   psql -U kuzz -d kuzz -v ON_ERROR_STOP=1 "$@"; }
 
@@ -95,7 +95,7 @@ log "Resetting isolated database and applying schema..."
 # schema planning or test results.
 psql_h -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 export PGSCHEMA_PLAN_HOST=localhost PGSCHEMA_PLAN_PORT=${PG_PORT}
-export PGSCHEMA_PLAN_DB=kuzz PGSCHEMA_PLAN_USER=kuzz PGSCHEMA_PLAN_PASSWORD=buzz_dev
+export PGSCHEMA_PLAN_DB=kuzz PGSCHEMA_PLAN_USER=kuzz PGSCHEMA_PLAN_PASSWORD=kuzz_dev
 export PGHOST=localhost PGPORT=${PG_PORT} PGUSER=kuzz PGDATABASE=kuzz
 ./bin/pgschema apply --file schema/schema.sql --auto-approve
 psql_h < scripts/reconcile-schema-after-pgschema.sql
@@ -110,7 +110,7 @@ ok "Schema applied"
 log "Seeding community (host=${COMMUNITY_HOST}), channels, and members..."
 KUZZ_COMMUNITY_HOST="${COMMUNITY_HOST}" \
   KUZZ_DB_HOST=localhost KUZZ_DB_PORT=${PG_PORT} KUZZ_DB_USER=kuzz \
-  KUZZ_DB_PASS=buzz_dev KUZZ_DB_NAME=kuzz \
+  KUZZ_DB_PASS=kuzz_dev KUZZ_DB_NAME=kuzz \
   KUZZ_DB_DOCKER_CONTAINER="${PROJECT}-postgres-1" \
   ./scripts/setup-desktop-test-data.sh
 ok "Community + channels + members seeded"
@@ -142,15 +142,15 @@ if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"${RELAY_MAIN}" -sTCP:LISTE
 fi
 log "Starting relay in tmux session '${TMUX_SESSION}' on :${RELAY_MAIN} (health :${RELAY_HEALTH}, metrics :${RELAY_METRICS})..."
 tmux new-session -d -s "${TMUX_SESSION}" "cd '${REPO_ROOT}' && env \
-  DATABASE_URL=postgres://buzz:buzz_dev@localhost:${PG_PORT}/buzz \
+  DATABASE_URL=postgres://kuzz:kuzz_dev@localhost:${PG_PORT}/buzz \
   REDIS_URL=redis://localhost:${REDIS_PORT} \
   RELAY_URL=ws://localhost:${RELAY_MAIN} \
   KUZZ_BIND_ADDR=0.0.0.0:${RELAY_MAIN} \
   KUZZ_HEALTH_PORT=${RELAY_HEALTH} \
   KUZZ_METRICS_PORT=${RELAY_METRICS} \
   KUZZ_S3_ENDPOINT=http://localhost:${MINIO_PORT} \
-  KUZZ_S3_ACCESS_KEY=buzz_dev \
-  KUZZ_S3_SECRET_KEY=buzz_dev_secret \
+  KUZZ_S3_ACCESS_KEY=kuzz_dev \
+  KUZZ_S3_SECRET_KEY=kuzz_dev_secret \
   KUZZ_S3_BUCKET=kuzz-media \
   KUZZ_RELAY_PRIVATE_KEY=${RELAY_PRIVATE_KEY} \
   KUZZ_REQUIRE_AUTH_TOKEN=false \

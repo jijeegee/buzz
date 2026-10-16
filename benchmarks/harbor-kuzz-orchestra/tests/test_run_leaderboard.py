@@ -97,7 +97,7 @@ def test_command_uses_standard_settings_only(args, binaries, agent_binaries):
     kwargs = [command[i + 1] for i, p in enumerate(command) if p == "--agent-kwarg"]
     assert any(k.startswith("kuzz_acp_binary=") for k in kwargs)
     assert any(k.startswith("kuzz_agent_binary=") for k in kwargs)
-    assert any(k.startswith("buzz_dev_mcp_binary=") for k in kwargs)
+    assert any(k.startswith("kuzz_dev_mcp_binary=") for k in kwargs)
 
 
 def test_agent_binaries_must_exist(tmp_path):

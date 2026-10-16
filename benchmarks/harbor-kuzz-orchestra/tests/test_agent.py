@@ -146,14 +146,14 @@ async def test_cli_runtime_construction_from_json(tmp_path, manifest_data):
         endpoint_config=endpoint_path,
         kuzz_acp_binary="/pinned/kuzz-acp",
         kuzz_agent_binary="/pinned/kuzz-agent",
-        buzz_dev_mcp_binary="/pinned/kuzz-dev-mcp",
+        kuzz_dev_mcp_binary="/pinned/kuzz-dev-mcp",
         kuzz_cli_binary="/pinned/kuzz",
     )
     assert agent.runtime.artifact_root == tmp_path
     assert agent.runtime.endpoints["frontier/rev"].provider == "anthropic"
     assert agent.runtime.kuzz_acp_binary == "/pinned/kuzz-acp"
     assert agent.runtime.kuzz_agent_binary == "/pinned/kuzz-agent"
-    assert agent.runtime.buzz_dev_mcp_binary == "/pinned/kuzz-dev-mcp"
+    assert agent.runtime.kuzz_dev_mcp_binary == "/pinned/kuzz-dev-mcp"
     assert agent.runtime.kuzz_cli_binary == "/pinned/kuzz"
 
 

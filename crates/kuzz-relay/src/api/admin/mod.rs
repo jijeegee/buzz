@@ -1586,7 +1586,7 @@ mod postgres_tests {
 
     fn database_url() -> String {
         std::env::var("KUZZ_TEST_DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string() // sadscan:disable np.postgres.1 -- local test-only credentials
+            "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string() // sadscan:disable np.postgres.1 -- local test-only credentials
         })
     }
 

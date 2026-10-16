@@ -1151,7 +1151,7 @@ mod tests {
     async fn unreachable_dependency_state() -> Arc<AppState> {
         let mut config = crate::config::Config::for_test(); // [FI-TRACE-ENV-RACE]
         config.require_relay_membership = false;
-        config.database_url = "postgres://buzz:buzz_dev@127.0.0.1:1/buzz".to_string(); // sadscan:disable np.postgres.1 -- local test-only credentials on a closed port
+        config.database_url = "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz".to_string(); // sadscan:disable np.postgres.1 -- local test-only credentials on a closed port
         config.redis_url = "redis://127.0.0.1:1".to_string();
         let pool = sqlx::PgPool::connect_lazy(&config.database_url).expect("lazy pg pool");
         let db = kuzz_db::Db::from_pool(pool.clone());
@@ -2133,7 +2133,7 @@ mod tests {
         // request that reaches `bind_community` fails the same way (generic
         // 404) regardless of local database contents or host load. sqlx
         // retries refused connects until the acquire timeout, so keep it short.
-        config.database_url = "postgres://buzz:buzz_dev@127.0.0.1:1/buzz".to_string();
+        config.database_url = "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz".to_string();
         let pool = sqlx::postgres::PgPoolOptions::new()
             .acquire_timeout(std::time::Duration::from_millis(100))
             .connect_lazy(&config.database_url)

@@ -1544,7 +1544,7 @@ mod postgres_tests {
     async fn setup_pool() -> PgPool {
         let database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".into()); // sadscan:disable np.postgres.1 -- local test-only credentials
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".into()); // sadscan:disable np.postgres.1 -- local test-only credentials
         let pool = PgPool::connect(&database_url)
             .await
             .expect("connect to test DB");

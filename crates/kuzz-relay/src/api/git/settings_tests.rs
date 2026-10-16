@@ -1181,8 +1181,8 @@ mod external_infra {
             config.media.s3_endpoint = endpoint;
             config.media.s3_bucket =
                 std::env::var("KUZZ_TEST_S3_BUCKET").unwrap_or_else(|_| "kuzz-git".into());
-            config.media.s3_access_key = "buzz_dev".into();
-            config.media.s3_secret_key = "buzz_dev_secret".into();
+            config.media.s3_access_key = "kuzz_dev".into();
+            config.media.s3_secret_key = "kuzz_dev_secret".into();
             let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
             let db = kuzz_db::Db::from_pool(pool.clone());
             // CI provisions schema/schema.sql with pgschema before this suite.

@@ -2544,7 +2544,7 @@ mod track_c_tests {
     }
 
     async fn finalize_test_state() -> (Arc<AppState>, sqlx::PgPool) {
-        const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
+        const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
         let mut config = crate::config::Config::for_test(); // [FI-TRACE-ENV-RACE]
         config.require_relay_membership = false;
         config.redis_url = "redis://127.0.0.1:1".to_string();
@@ -3578,7 +3578,7 @@ mod sec005_postgres_tests {
 
     // ── authorize_git_read matrix (requires Postgres) ────────────────────
 
-    const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
+    const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
 
     async fn setup_db() -> kuzz_db::Db {
         let url = std::env::var("KUZZ_TEST_DATABASE_URL")
@@ -4241,7 +4241,7 @@ mod off_mode_precedence_tests {
                 std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
             config.database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
                 .or_else(|_| std::env::var("DATABASE_URL"))
-                .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+                .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
 
             let pool = sqlx::PgPool::connect(&config.database_url).await.ok()?;
             let db = kuzz_db::Db::from_pool(pool.clone());
@@ -4732,7 +4732,7 @@ mod off_mode_precedence_tests {
                 std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
             config.database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
                 .or_else(|_| std::env::var("DATABASE_URL"))
-                .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+                .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
 
             let pool = match sqlx::PgPool::connect(&config.database_url).await {
                 Ok(p) => p,
@@ -4871,7 +4871,7 @@ mod off_mode_precedence_tests {
                 std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
             config.database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
                 .or_else(|_| std::env::var("DATABASE_URL"))
-                .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+                .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
 
             let pool = match sqlx::PgPool::connect(&config.database_url).await {
                 Ok(p) => p,
