@@ -51,6 +51,7 @@ import 'package:kuzz/features/channels/thread_detail_page.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/features/channels/thread_window.dart';
 import 'package:kuzz/features/channels/timeline_message.dart';
+import 'package:kuzz/features/channels/window_anchor.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/features/channels/unread_badge/observed_unread_event.dart';
@@ -81,9 +82,12 @@ import 'package:kuzz/shared/widgets/masked_avatar_badge.dart';
 import 'package:kuzz/shared/widgets/skeleton.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'window_relay_fixture.dart';
+
 part 'thread_reply_refresh_cases.dart';
 part 'channel_detail_page_test/presence_tests.dart';
 part 'channel_detail_page_test/quote_tests.dart';
+part 'channel_detail_page_test/open_at_tests.dart';
 
 const _channelId = '11111111-2222-4333-8444-555555555555';
 const _huddleChannelId = '8d764100-fd8f-44cf-9c98-6d8fbd739b8c';
@@ -241,6 +245,8 @@ Widget _buildTestable({
   ChannelActions Function(Ref ref)? createChannelActions,
   ReadStateNotifier? readStateNotifier,
   _FakeMessagesNotifier? messagesNotifier,
+  bool realMessages = false,
+  RelayInfo? relayInfo,
   _FakeTypingNotifier? typingNotifier,
   _FakeTypingNotifier? huddleTypingNotifier,
   String? canvasContent,
@@ -279,9 +285,12 @@ Widget _buildTestable({
   return ProviderScope(
     retry: providerRetry ?? (disableRetries ? (_, _) => null : null),
     overrides: [
-      channelMessagesProvider(
-        _channelId,
-      ).overrideWith(() => fakeMessagesNotifier),
+      if (!realMessages)
+        channelMessagesProvider(
+          _channelId,
+        ).overrideWith(() => fakeMessagesNotifier),
+      if (relayInfo != null)
+        relayInfoProvider.overrideWith((ref) async => relayInfo),
       channelTypingProvider(
         _channelId,
       ).overrideWith(() => typingNotifier ?? _FakeTypingNotifier(typing)),
@@ -511,6 +520,7 @@ void main() {
   threadReplyRefreshTests();
   presenceTests();
   quoteTests();
+  openAtTests();
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     _testPrefs = await SharedPreferences.getInstance();
