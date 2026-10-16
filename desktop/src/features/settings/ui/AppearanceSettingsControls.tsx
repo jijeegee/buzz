@@ -283,8 +283,8 @@ function buzzGradientSampleImage(isDark: boolean): string {
   const readToken = (token: string, fallback: string): string =>
     styles?.getPropertyValue(token).trim() || fallback;
   const top = isDark
-    ? readToken("--buzz-gradient-dark-top", "#4a4616")
-    : readToken("--buzz-gradient-light-top", "#e6e6b6");
+    ? readToken("--buzz-gradient-dark-top", "#2a2d33")
+    : readToken("--buzz-gradient-light-top", "#eceef0");
   const bottom = isDark
     ? readToken("--buzz-gradient-dark-bottom", "#0a1423")
     : readToken("--buzz-gradient-light-bottom", "#c4d0da");
@@ -508,8 +508,8 @@ function ThreadLayoutDiagram({ mode }: { mode: ThreadViewMode }) {
   // Inline SVG resolves CSS variables, so the frame gradient references the
   // Buzz gradient tokens directly and follows theme.css automatically.
   const gradientTop = isDark
-    ? "var(--buzz-gradient-dark-top, #4a4616)"
-    : "var(--buzz-gradient-light-top, #e6e6b6)";
+    ? "var(--buzz-gradient-dark-top, #2a2d33)"
+    : "var(--buzz-gradient-light-top, #eceef0)";
   const gradientBottom = isDark
     ? "var(--buzz-gradient-dark-bottom, #0a1423)"
     : "var(--buzz-gradient-light-bottom, #c4d0da)";

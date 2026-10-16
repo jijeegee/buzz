@@ -283,7 +283,7 @@
   }
 
   .buzz-onboarding-neutral-theme.buzz-startup-shell {
-    /* Dot grid over the chartreuse→light-blue gradient (dots layer first so
+    /* Dot grid over the gray→light-blue gradient (dots layer first so
        they sit on top). The welcome page overrides this with dots over a flat
        Kuzz brand-blue fill below. */
     background-image:
@@ -323,8 +323,9 @@
   }
 
   .buzz-onboarding-neutral-theme {
-    /* Onboarding chartreuse: the setup-step gradient top and step accents. */
-    --buzz-welcome-chartreuse: #d7d72e;
+    /* Onboarding accent (neutral gray in Kuzz): the setup-step gradient top and
+       step accents. The variable name is kept from upstream. */
+    --buzz-welcome-chartreuse: #c9ced6;
     /* Kuzz brand blue (Taegukgi blue): only the landing (sign-in) page
        background and its CTA label; other screens keep their colors. */
     --kuzz-landing-blue: #0047a0;
@@ -333,9 +334,9 @@
     --buzz-onboarding-shell-bottom: #d7e7f6;
     /* Label color for the primary onboarding CTA (light blue on the dark pill). */
     --buzz-onboarding-cta-label: #d7e6f0;
-    /* Olive ink for the backup step's private key and its "never share" caption,
+    /* Slate ink for the backup step's private key and its "never share" caption,
        reading against the fuzzy-white key frame. */
-    --buzz-onboarding-backup-ink: #717106;
+    --buzz-onboarding-backup-ink: #404650;
     --background: 0 0% 100%;
     --foreground: 0 0% 9%;
     --primary: 0 0% 9%;
@@ -353,11 +354,11 @@
     --buzz-onboarding-emoji-picker-color: 23, 23, 23;
     --buzz-onboarding-emoji-picker-input: 255, 255, 255;
     --buzz-onboarding-avatar-dialog-bg: 255 255 255;
-    --buzz-onboarding-avatar-accent-bg: 240 240 205;
-    --buzz-onboarding-avatar-accent-fg: 113 113 6;
+    --buzz-onboarding-avatar-accent-bg: 236 238 241;
+    --buzz-onboarding-avatar-accent-fg: 64 70 80;
     --buzz-onboarding-avatar-action-bg: 23 23 23;
-    --buzz-onboarding-avatar-action-fg: 240 240 205;
-    --buzz-onboarding-avatar-control-fg: 113 113 6;
+    --buzz-onboarding-avatar-action-fg: 236 238 241;
+    --buzz-onboarding-avatar-control-fg: 64 70 80;
     --buzz-onboarding-avatar-dialog-shadow: 0 0 0;
   }
 
@@ -437,11 +438,11 @@
     --buzz-onboarding-emoji-picker-color: 250, 250, 250;
     --buzz-onboarding-emoji-picker-input: 10, 10, 10;
     --buzz-onboarding-avatar-dialog-bg: 24 24 20;
-    --buzz-onboarding-avatar-accent-bg: 211 211 163;
+    --buzz-onboarding-avatar-accent-bg: 200 204 210;
     --buzz-onboarding-avatar-accent-fg: 24 24 20;
-    --buzz-onboarding-avatar-action-bg: 113 113 6;
-    --buzz-onboarding-avatar-action-fg: 240 240 205;
-    --buzz-onboarding-avatar-control-fg: 224 224 176;
+    --buzz-onboarding-avatar-action-bg: 64 70 80;
+    --buzz-onboarding-avatar-action-fg: 236 238 241;
+    --buzz-onboarding-avatar-control-fg: 220 223 228;
     --buzz-onboarding-avatar-dialog-shadow: 0 0 0;
   }
 
@@ -467,11 +468,11 @@
     --buzz-onboarding-emoji-picker-color: 23, 23, 23;
     --buzz-onboarding-emoji-picker-input: 255, 255, 255;
     --buzz-onboarding-avatar-dialog-bg: 255 255 255;
-    --buzz-onboarding-avatar-accent-bg: 240 240 205;
-    --buzz-onboarding-avatar-accent-fg: 113 113 6;
+    --buzz-onboarding-avatar-accent-bg: 236 238 241;
+    --buzz-onboarding-avatar-accent-fg: 64 70 80;
     --buzz-onboarding-avatar-action-bg: 23 23 23;
-    --buzz-onboarding-avatar-action-fg: 240 240 205;
-    --buzz-onboarding-avatar-control-fg: 113 113 6;
+    --buzz-onboarding-avatar-action-fg: 236 238 241;
+    --buzz-onboarding-avatar-control-fg: 64 70 80;
     --buzz-onboarding-avatar-dialog-shadow: 0 0 0;
   }
 
@@ -495,11 +496,11 @@
     --buzz-onboarding-emoji-picker-color: 250, 250, 250;
     --buzz-onboarding-emoji-picker-input: 10, 10, 10;
     --buzz-onboarding-avatar-dialog-bg: 24 24 20;
-    --buzz-onboarding-avatar-accent-bg: 211 211 163;
+    --buzz-onboarding-avatar-accent-bg: 200 204 210;
     --buzz-onboarding-avatar-accent-fg: 24 24 20;
-    --buzz-onboarding-avatar-action-bg: 113 113 6;
-    --buzz-onboarding-avatar-action-fg: 240 240 205;
-    --buzz-onboarding-avatar-control-fg: 224 224 176;
+    --buzz-onboarding-avatar-action-bg: 64 70 80;
+    --buzz-onboarding-avatar-action-fg: 236 238 241;
+    --buzz-onboarding-avatar-control-fg: 220 223 228;
     --buzz-onboarding-avatar-dialog-shadow: 0 0 0;
   }
 

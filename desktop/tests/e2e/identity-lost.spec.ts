@@ -36,7 +36,7 @@ test("normal first launch uses the already-persisted identity", async ({
   // Non-landing pages layer the dot grid over the chartreuse→light-blue gradient.
   await expect(gate).toHaveCSS(
     "background-image",
-    /radial-gradient\(.*\), linear-gradient\(.*rgb\(215, 215, 46\).*rgb\(215, 231, 246\)\)/s,
+    /radial-gradient\(.*\), linear-gradient\(.*rgb\(201, 206, 214\).*rgb\(215, 231, 246\)\)/s,
   );
   await expect(gate).toHaveCSS("color", "rgb(23, 23, 23)");
   const commands = await page.evaluate(
