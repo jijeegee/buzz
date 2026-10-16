@@ -104,6 +104,10 @@ CREATE TABLE channels (
     ttl_seconds     INT,
     ttl_deadline    TIMESTAMPTZ,
     goals_enabled   BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Latest main-timeline message (migration 0067).
+    main_last_seq   BIGINT,
+    main_last_at    TIMESTAMPTZ,
+    main_last_event_id BYTEA,
     PRIMARY KEY (community_id, id),
     CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
 );
@@ -157,6 +161,10 @@ CREATE TABLE channel_members (
     removed_at  TIMESTAMPTZ,
     removed_by  BYTEA,
     hidden_at   TIMESTAMPTZ,
+    -- Room read position in channel_sequence space (migration 0067).
+    read_seq    BIGINT,
+    read_origin TEXT CHECK (read_origin IN ('backfill', 'user')),
+    unread_mark BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (community_id, channel_id, pubkey),
     FOREIGN KEY (community_id, channel_id)
         REFERENCES channels (community_id, id) ON DELETE CASCADE
@@ -289,6 +297,10 @@ CREATE INDEX idx_events_search_tsv ON events USING GIN (search_tsv);
 -- e-tag containment (`tags @> '[["e","<hex>"]]'`) for the aux closure and #e
 -- reads. Mirrors migrations/0004; jsonb_path_ops supports exactly @>.
 CREATE INDEX idx_events_tags_gin ON events USING GIN (tags jsonb_path_ops);
+
+-- Unread counts from the channel acceptance sequence (migration 0067).
+CREATE INDEX idx_events_community_channel_sequence
+    ON events (community_id, channel_id, channel_sequence);
 
 -- ── Event mentions ────────────────────────────────────────────────────────────
 -- Conformance: "Channel-less global events and DMs" (#p fan-out). The join to
@@ -551,6 +563,42 @@ CREATE INDEX idx_thread_metadata_event_id ON thread_metadata (community_id, even
 CREATE INDEX idx_thread_metadata_inbox
     ON thread_metadata (community_id, channel_id, last_reply_at DESC, event_id DESC)
     WHERE depth = 0 AND reply_count > 0;
+
+-- ── Thread follows and thread state (migration 0067) ─────────────────────────
+-- Server-side chat state. Rows exist only for channel members. Plain form so
+-- every device of a user sees the same list; purged with the community.
+
+CREATE TABLE thread_follows (
+    community_id   UUID NOT NULL REFERENCES communities(id),
+    root_event_id  BYTEA NOT NULL CHECK (length(root_event_id) = 32),
+    pubkey         BYTEA NOT NULL CHECK (length(pubkey) = 32),
+    channel_id     UUID NOT NULL,
+    follow_state   TEXT NOT NULL CHECK (follow_state IN ('auto', 'followed', 'unfollowed')),
+    follow_origin  TEXT NOT NULL CHECK (follow_origin IN ('backfill', 'live', 'user')),
+    read_seq       BIGINT,
+    unread_mark    BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (community_id, root_event_id, pubkey),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_thread_follows_pubkey ON thread_follows (community_id, pubkey);
+
+-- Separate from thread_metadata because the root's depth-0 row exists only
+-- after the first reply. last_seq/last_at ignore close and reopen markers.
+CREATE TABLE thread_state (
+    community_id   UUID NOT NULL REFERENCES communities(id),
+    root_event_id  BYTEA NOT NULL CHECK (length(root_event_id) = 32),
+    channel_id     UUID NOT NULL,
+    last_seq       BIGINT,
+    last_at        TIMESTAMPTZ,
+    closed_at      TIMESTAMPTZ,
+    closed_by      BYTEA,
+    PRIMARY KEY (community_id, root_event_id),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE
+);
 
 -- ── Reactions ─────────────────────────────────────────────────────────────────
 -- Conformance: reactions filter by community before event/pubkey matching.
@@ -1809,7 +1857,9 @@ SELECT attach_community_write_fence('relay_invites');
 SELECT attach_community_write_fence('relay_members');
 SELECT attach_community_write_fence('scheduled_workflow_fires');
 SELECT attach_community_write_fence('subscriptions');
+SELECT attach_community_write_fence('thread_follows');
 SELECT attach_community_write_fence('thread_metadata');
+SELECT attach_community_write_fence('thread_state');
 SELECT attach_community_write_fence('users');
 SELECT attach_community_write_fence('workflow_approvals');
 SELECT attach_community_write_fence('workflow_runs');
