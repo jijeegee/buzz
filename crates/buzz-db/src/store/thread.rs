@@ -4,6 +4,7 @@
 //! nested threads. The `thread_metadata` table is populated when events are
 //! ingested and updated as replies arrive or are deleted.
 
+use buzz_core::thread_window::Direction;
 use buzz_core::StoredEvent;
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
@@ -550,6 +551,10 @@ pub async fn get_thread_summary(
 /// predicates (deletion, top-level, kinds). The sentinel row is dropped here
 /// and never reaches the wire; callers must not re-derive exhaustion from row
 /// counts (`rows < limit` proves nothing on an exact-multiple final page).
+///
+/// [`Direction::Newer`] mirrors the order (`created_at ASC, id DESC`) and
+/// returns the rows strictly after `cursor`, oldest first; it requires a
+/// cursor. Older and newer pages from one cursor chain without overlap.
 pub async fn get_channel_window(
     pool: &PgPool,
     community_id: CommunityId,
@@ -557,6 +562,7 @@ pub async fn get_channel_window(
     limit: u32,
     cursor: Option<(DateTime<Utc>, Vec<u8>)>,
     kind_filter: Option<&[u32]>,
+    direction: Direction,
 ) -> Result<ChannelWindow> {
     let mut conn = crate::observability::acquire_writer(
         pool,
@@ -570,6 +576,7 @@ pub async fn get_channel_window(
         limit,
         cursor,
         kind_filter,
+        direction,
     )
     .await
 }
@@ -586,7 +593,14 @@ pub(crate) async fn get_channel_window_on(
     limit: u32,
     cursor: Option<(DateTime<Utc>, Vec<u8>)>,
     kind_filter: Option<&[u32]>,
+    direction: Direction,
 ) -> Result<ChannelWindow> {
+    let newer = direction == Direction::Newer;
+    if newer && cursor.is_none() {
+        return Err(crate::error::DbError::InvalidData(
+            "newer channel window requires a cursor".into(),
+        ));
+    }
     let mut param_idx = 3u32; // $1 is community_id, $2 is channel_id
     let mut sql = String::from(
         r#"
@@ -624,9 +638,17 @@ pub(crate) async fn get_channel_window_on(
         // after (ts, id) is created_at < ts OR (created_at = ts AND id > id).
         let ts_idx = param_idx;
         let id_idx = param_idx + 1;
-        sql.push_str(&format!(
-            " AND (e.created_at < ${ts_idx} OR (e.created_at = ${ts_idx} AND e.id > ${id_idx}))"
-        ));
+        if newer {
+            // The mirrored keyset (created_at ASC, id DESC): rows after
+            // (ts, id). The redundant lower bound prunes older partitions.
+            sql.push_str(&format!(
+                " AND e.created_at >= ${ts_idx} AND (e.created_at > ${ts_idx} OR (e.created_at = ${ts_idx} AND e.id < ${id_idx}))"
+            ));
+        } else {
+            sql.push_str(&format!(
+                " AND (e.created_at < ${ts_idx} OR (e.created_at = ${ts_idx} AND e.id > ${id_idx}))"
+            ));
+        }
         param_idx += 2;
     }
 
@@ -641,9 +663,12 @@ pub(crate) async fn get_channel_window_on(
         }
     }
 
-    sql.push_str(&format!(
-        " ORDER BY e.created_at DESC, e.id ASC LIMIT ${param_idx}"
-    ));
+    let order = if newer {
+        "e.created_at ASC, e.id DESC"
+    } else {
+        "e.created_at DESC, e.id ASC"
+    };
+    sql.push_str(&format!(" ORDER BY {order} LIMIT ${param_idx}"));
 
     let mut q = sqlx::query(sqlx::AssertSqlSafe(sql))
         .bind(community_id.as_uuid())
@@ -1082,15 +1107,64 @@ impl Db {
         cursor: Option<(DateTime<Utc>, Vec<u8>)>,
         kind_filter: Option<&[u32]>,
     ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
-        let path: &'static str = if cursor.is_some() {
-            "channel_cursor"
+        self.channel_window_routed(
+            community_id,
+            channel_id,
+            limit,
+            cursor,
+            kind_filter,
+            Direction::Older,
+        )
+        .await
+    }
+
+    /// The channel rows strictly after `cursor`, oldest first, for paging
+    /// toward the present from an anchor. A replica's cursor proof only
+    /// covers rows at or below the cursor, so this routes like a head page.
+    #[datastore_span(name = "get_channel_window_newer", system = "postgresql")]
+    pub async fn get_channel_window_newer_with_session(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        limit: u32,
+        cursor: (DateTime<Utc>, Vec<u8>),
+        kind_filter: Option<&[u32]>,
+    ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
+        self.channel_window_routed(
+            community_id,
+            channel_id,
+            limit,
+            Some(cursor),
+            kind_filter,
+            Direction::Newer,
+        )
+        .await
+    }
+
+    async fn channel_window_routed(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        limit: u32,
+        cursor: Option<(DateTime<Utc>, Vec<u8>)>,
+        kind_filter: Option<&[u32]>,
+        direction: Direction,
+    ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
+        let newer = direction == Direction::Newer;
+        let path: &'static str = match (newer, cursor.is_some()) {
+            (true, _) => "channel_newer",
+            (false, true) => "channel_cursor",
+            (false, false) => "channel_head",
+        };
+        let predicate = if newer {
+            RoutePredicate::Bounded
         } else {
-            "channel_head"
+            RoutePredicate::from_channel_cursor(channel_id, &cursor)
         };
         match self
             .route_read(
                 path,
-                RoutePredicate::from_channel_cursor(channel_id, &cursor),
+                predicate,
                 crate::observability::ReaderOperation::SubscriptionHistory,
             )
             .await
@@ -1103,6 +1177,7 @@ impl Db {
                     limit,
                     cursor.clone(),
                     kind_filter,
+                    direction,
                 )
                 .await
                 {
@@ -1143,6 +1218,7 @@ impl Db {
             limit,
             cursor,
             kind_filter,
+            direction,
         )
         .await?;
         Ok((
@@ -2121,9 +2197,17 @@ mod postgres_tests {
         let quiet_reply = make_stream_event(&author, "quiet reply");
         insert_reply(&pool, community, channel.id, &root, &quiet_reply, false).await;
 
-        let window = get_channel_window(&pool, community, channel.id, 50, None, None)
-            .await
-            .expect("fetch window");
+        let window = get_channel_window(
+            &pool,
+            community,
+            channel.id,
+            50,
+            None,
+            None,
+            Direction::Older,
+        )
+        .await
+        .expect("fetch window");
 
         let ids: Vec<String> = window
             .rows
@@ -2186,9 +2270,17 @@ mod postgres_tests {
         let mut collected: Vec<Vec<u8>> = Vec::new();
         let mut cursor: Option<(DateTime<Utc>, Vec<u8>)> = None;
         loop {
-            let window = get_channel_window(&pool, community, channel.id, 2, cursor, None)
-                .await
-                .expect("fetch window page");
+            let window = get_channel_window(
+                &pool,
+                community,
+                channel.id,
+                2,
+                cursor,
+                None,
+                Direction::Older,
+            )
+            .await
+            .expect("fetch window page");
             for row in &window.rows {
                 collected.push(row.stored_event.event.id.as_bytes().to_vec());
             }
@@ -2206,6 +2298,111 @@ mod postgres_tests {
         let mut expected_sorted = expected_ids.clone();
         expected_sorted.sort();
         assert_eq!(unique, expected_sorted, "paged set != inserted tied set");
+    }
+
+    /// Newer pages mirror older ones: from one anchor, the older pages and
+    /// the newer pages together return every other row exactly once, and the
+    /// newer pages come back oldest first (ties by id descending).
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn channel_window_newer_chains_with_older_from_one_cursor() {
+        use nostr::Timestamp;
+
+        let pool = setup_pool().await;
+        let author = Keys::generate();
+        let (channel, community) = create_test_channel(
+            &pool,
+            &format!("window-newer-{}", Uuid::new_v4()),
+            ChannelType::Stream,
+            ChannelVisibility::Open,
+            None,
+            author.public_key().to_bytes().as_slice(),
+            None,
+        )
+        .await
+        .expect("create channel");
+
+        let base = Timestamp::now().as_secs() - 100;
+        for (i, offset) in [0u64, 1, 1, 1, 2, 3, 3, 4].into_iter().enumerate() {
+            let event = EventBuilder::new(Kind::Custom(9), format!("row-{i}"))
+                .custom_created_at(Timestamp::from(base + offset))
+                .sign_with_keys(&author)
+                .expect("sign event");
+            insert_root(&pool, community, channel.id, &event).await;
+        }
+
+        let page = |cursor: Option<(DateTime<Utc>, Vec<u8>)>, direction| {
+            let pool = pool.clone();
+            async move {
+                get_channel_window(&pool, community, channel.id, 2, cursor, None, direction)
+                    .await
+                    .expect("fetch window page")
+            }
+        };
+        let collect = |start: Option<(DateTime<Utc>, Vec<u8>)>, direction| {
+            let page = &page;
+            async move {
+                let mut rows: Vec<(DateTime<Utc>, Vec<u8>)> = Vec::new();
+                let mut cursor = start;
+                loop {
+                    let window = page(cursor, direction).await;
+                    for row in &window.rows {
+                        rows.push((
+                            DateTime::from_timestamp(
+                                row.stored_event.event.created_at.as_secs() as i64,
+                                0,
+                            )
+                            .unwrap(),
+                            row.stored_event.event.id.as_bytes().to_vec(),
+                        ));
+                    }
+                    if !window.has_more {
+                        assert!(window.next_cursor.is_none());
+                        return rows;
+                    }
+                    cursor = Some(window.next_cursor.expect("has_more implies next_cursor"));
+                }
+            }
+        };
+
+        // Newest first, ties by id ascending.
+        let all = collect(None, Direction::Older).await;
+        assert_eq!(all.len(), 8);
+        for anchor_index in [0usize, 2, 3, 7] {
+            let anchor = all[anchor_index].clone();
+            let older = collect(Some(anchor.clone()), Direction::Older).await;
+            let newer = collect(Some(anchor.clone()), Direction::Newer).await;
+            assert_eq!(
+                older,
+                all[anchor_index + 1..].to_vec(),
+                "older from {anchor_index}"
+            );
+            let mut expected_newer = all[..anchor_index].to_vec();
+            expected_newer.reverse();
+            assert_eq!(newer, expected_newer, "newer from {anchor_index}");
+        }
+
+        // A timestamp-only anchor (a read marker): (ts, ff..ff) takes every
+        // row at or after ts on the newer side and none of them on the older.
+        let ts = DateTime::from_timestamp(base as i64 + 1, 0).unwrap();
+        let marker = (ts, vec![0xff; 32]);
+        let newer = collect(Some(marker.clone()), Direction::Newer).await;
+        assert_eq!(newer.len(), 7);
+        assert!(newer.iter().all(|(created_at, _)| *created_at >= ts));
+        let older = collect(Some(marker), Direction::Older).await;
+        assert_eq!(older.len(), 1);
+
+        let err = get_channel_window(
+            &pool,
+            community,
+            channel.id,
+            2,
+            None,
+            None,
+            Direction::Newer,
+        )
+        .await;
+        assert!(err.is_err(), "newer requires a cursor");
     }
 
     /// The exact-multiple final page: when the channel's row count is an
@@ -2236,16 +2433,32 @@ mod postgres_tests {
             insert_root(&pool, community, channel.id, &event).await;
         }
 
-        let page1 = get_channel_window(&pool, community, channel.id, 2, None, None)
-            .await
-            .expect("fetch page 1");
+        let page1 = get_channel_window(
+            &pool,
+            community,
+            channel.id,
+            2,
+            None,
+            None,
+            Direction::Older,
+        )
+        .await
+        .expect("fetch page 1");
         assert_eq!(page1.rows.len(), 2);
         assert!(page1.has_more, "two more rows exist past page 1");
         let cursor = page1.next_cursor.expect("has_more implies next_cursor");
 
-        let page2 = get_channel_window(&pool, community, channel.id, 2, Some(cursor), None)
-            .await
-            .expect("fetch page 2");
+        let page2 = get_channel_window(
+            &pool,
+            community,
+            channel.id,
+            2,
+            Some(cursor),
+            None,
+            Direction::Older,
+        )
+        .await
+        .expect("fetch page 2");
         assert_eq!(page2.rows.len(), 2, "final page is exactly full");
         assert!(
             !page2.has_more,
@@ -2285,9 +2498,17 @@ mod postgres_tests {
             insert_reply(&pool, community, channel.id, &discussed, &reply, false).await;
         }
 
-        let window = get_channel_window(&pool, community, channel.id, 50, None, None)
-            .await
-            .expect("fetch window");
+        let window = get_channel_window(
+            &pool,
+            community,
+            channel.id,
+            50,
+            None,
+            None,
+            Direction::Older,
+        )
+        .await
+        .expect("fetch window");
 
         let discussed_row = window
             .rows

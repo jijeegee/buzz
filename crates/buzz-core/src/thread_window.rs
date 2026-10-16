@@ -13,6 +13,28 @@ pub const MAX_LIMIT: u32 = 200;
 /// never reply-budget candidates, even if they have thread metadata.
 pub const ROW_KINDS: [u32; 4] = [9, 40002, 45001, 45003];
 
+/// Which way a window pages from its cursor.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Direction {
+    /// Rows before the cursor in `(created_at DESC, id ASC)` order; the
+    /// default, and the only direction without a cursor (newest page).
+    #[default]
+    Older,
+    /// Rows after the cursor in the mirrored `(created_at ASC, id DESC)`
+    /// order, oldest first. Always anchored by a cursor.
+    Newer,
+}
+
+impl Direction {
+    /// The direction name used in bindings and signed bounds content.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Older => "older",
+            Self::Newer => "newer",
+        }
+    }
+}
+
 /// A position in `(created_at DESC, id ASC)` order.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Cursor {
@@ -45,8 +67,11 @@ pub struct Request {
     pub depth: u32,
     /// Sorted, deduplicated conversation row kinds.
     pub kinds: Vec<u32>,
-    /// Request upper bound; absent means newest page.
+    /// Request bound: the upper bound for [`Direction::Older`] (absent means
+    /// newest page), the lower bound for [`Direction::Newer`] (always set).
     pub cursor: Option<Cursor>,
+    /// Paging direction from [`Self::cursor`].
+    pub direction: Direction,
     /// Include root/retained-row edits, reactions and deletion closure.
     pub include_aux: bool,
 }
@@ -77,6 +102,26 @@ fn bounded(raw: &Value, key: &str, default: u32, max: u32) -> Result<u32, String
     }
 }
 
+/// One complete `(timestamp, id)` cursor pair, or none; a lone half is an error.
+fn parse_cursor(raw: &Value, ts_key: &str, id_key: &str) -> Result<Option<Cursor>, String> {
+    match (raw.get(ts_key), raw.get(id_key)) {
+        (None, None) => Ok(None),
+        (Some(ts), Some(id)) => {
+            let cursor = Cursor {
+                created_at: ts.as_i64().filter(|n| *n >= 0).ok_or_else(|| {
+                    format!("thread_window: {ts_key} must be nonnegative integer seconds")
+                })?,
+                id: event_id(id)?,
+            };
+            cursor.timestamp()?;
+            Ok(Some(cursor))
+        }
+        _ => Err(format!(
+            "thread_window requires both {ts_key} and {id_key}, or neither"
+        )),
+    }
+}
+
 impl Request {
     /// Parse only an explicitly opted-in filter. Unsupported filter fields,
     /// including legacy cursors, offsets and other bridge modes, are errors.
@@ -91,6 +136,8 @@ impl Request {
             "depth_limit",
             "until",
             "before_id",
+            "since",
+            "after_id",
             "include_aux",
         ];
         if object.keys().any(|key| !FIELDS.contains(&key.as_str())) {
@@ -123,20 +170,14 @@ impl Request {
             .collect::<Result<Vec<_>, _>>()?;
         kinds.sort_unstable();
         kinds.dedup();
-        let cursor = match (raw.get("until"), raw.get("before_id")) {
-            (None, None) => None,
-            (Some(ts), Some(id)) => {
-                let cursor = Cursor {
-                    created_at: ts
-                        .as_i64()
-                        .filter(|n| *n >= 0)
-                        .ok_or("thread_window: until must be nonnegative integer seconds")?,
-                    id: event_id(id)?,
-                };
-                cursor.timestamp()?;
-                Some(cursor)
+        let older = parse_cursor(raw, "until", "before_id")?;
+        let newer = parse_cursor(raw, "since", "after_id")?;
+        let (cursor, direction) = match (older, newer) {
+            (older, None) => (older, Direction::Older),
+            (None, Some(newer)) => (Some(newer), Direction::Newer),
+            (Some(_), Some(_)) => {
+                return Err("thread_window: until/before_id and since/after_id conflict".into())
             }
-            _ => return Err("thread_window requires both until and before_id, or neither".into()),
         };
         let include_aux = match raw.get("include_aux") {
             None => false,
@@ -151,6 +192,7 @@ impl Request {
             depth,
             kinds,
             cursor,
+            direction,
             include_aux,
         })
     }
@@ -164,7 +206,7 @@ impl Request {
         let canonical = json!([
             "tw",
             1,
-            "older",
+            self.direction.as_str(),
             resolved_host,
             reader_hex,
             self.channel.to_string(),
@@ -205,6 +247,7 @@ mod tests {
             ("offset", json!(0)),
             ("authors", json!([])),
             ("since", json!(1)),
+            ("after_id", json!("ab".repeat(32))),
             ("#p", json!([])),
             ("kinds", json!([7])),
             ("kinds", json!([])),
@@ -264,9 +307,46 @@ mod tests {
         for (host, reader) in [("other.example", "ab"), ("relay.example", "cd")] {
             assert_ne!(expected, request.binding(host, &reader.repeat(32)));
         }
-        let mut changed = f;
+        let mut changed = f.clone();
         changed["until"] = json!(0);
         changed["before_id"] = json!("ab".repeat(32));
         assert_ne!(expected, binding(&changed));
+        let mut newer = f;
+        newer["since"] = json!(0);
+        newer["after_id"] = json!("ab".repeat(32));
+        assert_eq!(Request::parse(&newer).unwrap().direction, Direction::Newer);
+        assert_ne!(
+            binding(&changed),
+            binding(&newer),
+            "direction must affect binding"
+        );
+    }
+    #[test]
+    fn newer_cursor_parses_and_rejects_mixed_pairs() {
+        let mut newer = filter();
+        newer["since"] = json!(7);
+        newer["after_id"] = json!("AB".repeat(32));
+        let request = Request::parse(&newer).unwrap();
+        assert_eq!(request.direction, Direction::Newer);
+        assert_eq!(
+            request.cursor,
+            Some(Cursor {
+                created_at: 7,
+                id: "ab".repeat(32)
+            })
+        );
+        assert_eq!(
+            Request::parse(&filter()).unwrap().direction,
+            Direction::Older
+        );
+        let mut mixed = newer.clone();
+        mixed["until"] = json!(9);
+        mixed["before_id"] = json!("cd".repeat(32));
+        assert!(Request::parse(&mixed).is_err());
+        for ts in [json!(-1), json!(1.5), json!(null)] {
+            let mut bad = newer.clone();
+            bad["since"] = ts;
+            assert!(Request::parse(&bad).is_err());
+        }
     }
 }

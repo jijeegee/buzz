@@ -230,7 +230,12 @@ impl RelayInfo {
             supported_nips.push(NIP_RELAY_MEMBERSHIP);
         }
 
-        let mut supported_extensions = vec!["nip-er".to_string(), "nip-ar".to_string()];
+        let mut supported_extensions = vec![
+            "nip-er".to_string(),
+            "nip-ar".to_string(),
+            // Channel and thread windows page toward newer rows (`since` + `after_id`).
+            "nip-cw-newer".to_string(),
+        ];
         let gif = gif_provider.map(|provider| {
             supported_extensions.push("buzz-gif".to_string());
             GifDescriptor {

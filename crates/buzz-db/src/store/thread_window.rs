@@ -2,7 +2,7 @@
 //! legacy forward threads or the permissive generic event reconstruction path.
 
 use buzz_core::{
-    thread_window::{Cursor, Request, MAX_LIMIT, ROW_KINDS},
+    thread_window::{Cursor, Direction, Request, MAX_LIMIT, ROW_KINDS},
     CommunityId, StoredEvent,
 };
 use chrono::{DateTime, Utc};
@@ -20,7 +20,9 @@ use buzz_datastore_tracing::datastore_span;
 /// authoritative scan bounds.
 #[derive(Debug)]
 pub struct ThreadWindow {
-    /// Reconstructed replies, newest first (id ascending for ties).
+    /// Reconstructed replies in the request's order: newest first (id ascending
+    /// for ties) for [`Direction::Older`], oldest first (id descending for
+    /// ties) for [`Direction::Newer`].
     pub rows: Vec<StoredEvent>,
     /// Another eligible raw reply exists after this page.
     pub has_more: bool,
@@ -116,25 +118,48 @@ async fn select_window(
         .push_bind(request.channel)
         .push(" AND tm.depth BETWEEN 1 AND ")
         .push_bind(request.depth as i32);
+    let newer = request.direction == Direction::Newer;
+    if newer && request.cursor.is_none() {
+        return Err(invalid("newer thread window requires a cursor"));
+    }
     if let Some(cursor) = &request.cursor {
         let (ts, id) = cursor_key(cursor)?;
-        // The redundant upper timestamp bound gives PostgreSQL an index range
-        // start instead of filtering all newer keys at a deep cursor.
-        q.push(" AND tm.event_created_at <= ")
+        // The redundant timestamp bound gives PostgreSQL an index range start
+        // instead of filtering every key on the far side of a deep cursor.
+        // Newer mirrors the order exactly, so the two directions chain.
+        let (bound, strict, tie) = if newer {
+            (
+                " AND tm.event_created_at >= ",
+                " AND (tm.event_created_at > ",
+                " AND tm.event_id < ",
+            )
+        } else {
+            (
+                " AND tm.event_created_at <= ",
+                " AND (tm.event_created_at < ",
+                " AND tm.event_id > ",
+            )
+        };
+        q.push(bound)
             .push_bind(ts)
-            .push(" AND (tm.event_created_at < ")
+            .push(strict)
             .push_bind(ts)
             .push(" OR (tm.event_created_at = ")
             .push_bind(ts)
-            .push(" AND tm.event_id > ")
+            .push(tie)
             .push_bind(id)
             .push("))");
     }
+    let order = if newer {
+        " ORDER BY tm.event_created_at ASC, tm.event_id DESC"
+    } else {
+        " ORDER BY tm.event_created_at DESC, tm.event_id ASC"
+    };
     // Fetch by the event PK before testing visibility, so missing statistics
     // cannot turn a selective live/kind index into a root-wide scan per reply.
     // PK uniqueness makes the inner LIMIT 1 exact. All eligibility predicates
     // still precede the *outer* limit+1 that establishes page bounds.
-    q.push(" ORDER BY tm.event_created_at DESC, tm.event_id ASC OFFSET 0) tm \
+    q.push(order).push(" OFFSET 0) tm \
         JOIN LATERAL (SELECT e.id, e.pubkey, e.created_at, e.kind, e.tags, e.content, e.sig, e.received_at, e.channel_id, e.deleted_at \
         FROM events e WHERE e.community_id = tm.community_id \
         AND e.created_at = tm.event_created_at AND e.id = tm.event_id LIMIT 1) e ON true \
@@ -142,7 +167,9 @@ async fn select_window(
         .push_bind(request.channel)
         .push(" AND e.deleted_at IS NULL AND e.kind = ANY(")
         .push_bind(request.kinds.iter().map(|k| *k as i32).collect::<Vec<_>>())
-        .push(") ORDER BY tm.event_created_at DESC, tm.event_id ASC LIMIT ")
+        .push(")")
+        .push(order)
+        .push(" LIMIT ")
         .push_bind(i64::from(request.limit) + 1);
     // Selectivity varies drastically with root/depth/cursor. A cached generic
     // plan can sort the entire root (and exceeded the SQL deadline in paging
@@ -212,15 +239,23 @@ impl Db {
         budget: &mut ScanBudget,
     ) -> Result<(ThreadWindow, ReadSession)> {
         let cursor = request.cursor.as_ref().map(cursor_key).transpose()?;
-        let path = if cursor.is_some() {
-            "thread_window_cursor"
+        let newer = request.direction == Direction::Newer;
+        let path = match (newer, cursor.is_some()) {
+            (true, _) => "thread_window_newer",
+            (false, true) => "thread_window_cursor",
+            (false, false) => "thread_window_head",
+        };
+        // A replica's cursor proof only covers rows at or below the cursor; a
+        // newer page reads above it, so it routes like a head page.
+        let predicate = if newer {
+            RoutePredicate::Bounded
         } else {
-            "thread_window_head"
+            RoutePredicate::from_channel_cursor(request.channel, &cursor)
         };
         if let RouteDecision::Replica(mut tx, _, reason) = self
             .route_read(
                 path,
-                RoutePredicate::from_channel_cursor(request.channel, &cursor),
+                predicate,
                 crate::observability::ReaderOperation::SubscriptionHistory,
             )
             .await

@@ -569,3 +569,30 @@ async fn thread_reply_byte_budget_stops_before_collecting_page() {
     ));
     assert_eq!(budget.rows, 32);
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn thread_window_newer_mirrors_older_from_one_cursor() {
+    let (db, cid, ch, keys, root) = fixture().await;
+    // 301 replies: same-second groups of 120 plus timestamp boundaries.
+    let expected = replies(&db, cid, ch, &keys, &root, 301).await;
+    for anchor_index in [0usize, 1, 119, 120, 150, 300] {
+        let anchor = &expected[anchor_index];
+        let cursor = Cursor {
+            created_at: anchor.created_at.as_secs() as i64,
+            id: anchor.id.to_hex(),
+        };
+        let mut older = request(ch, &root, 50);
+        older.cursor = Some(cursor.clone());
+        assert_pages(&db, cid, older, &expected[anchor_index + 1..]).await;
+
+        let newer = Request::parse(&serde_json::json!({"thread_window":true,"#h":[ch],
+            "#e":[root.id.to_hex()], "kinds":[9], "limit":50,
+            "since":cursor.created_at, "after_id":cursor.id}))
+        .unwrap();
+        assert_eq!(newer.direction, Direction::Newer);
+        let mut expected_newer = expected[..anchor_index].to_vec();
+        expected_newer.reverse();
+        assert_pages(&db, cid, newer, &expected_newer).await;
+    }
+}
