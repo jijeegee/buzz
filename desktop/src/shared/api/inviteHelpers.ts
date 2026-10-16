@@ -1,3 +1,5 @@
+import { isLegacyAppLinkProtocol } from "@/shared/lib/legacyAppLinks";
+
 export const INVITE_EXPIRED_ERROR = "invite_expired";
 export const INVITE_EXHAUSTED_ERROR = "invite_exhausted";
 
@@ -33,7 +35,7 @@ export function parseInviteInput(input: string): ParsedInvite | null {
 
     // kuzz://join?relay=...&code=...
     // Non-special schemes put the authority in `host`, not `pathname`.
-    if (url.protocol === "kuzz:") {
+    if (url.protocol === "kuzz:" || isLegacyAppLinkProtocol(url.protocol)) {
       if (url.host !== "join") return null;
       const relay = url.searchParams.get("relay");
       const code = url.searchParams.get("code");

@@ -17,6 +17,7 @@ import { renderAudioMessageAttachment } from "@/features/messages/ui/AudioMessag
 import { useChannelNavigation } from "@/shared/context/ChannelNavigationContext";
 import { cn } from "@/shared/lib/cn";
 import { parseEntityLink } from "@/shared/lib/entityLink";
+import { upgradeLegacyAppLinks } from "@/shared/lib/legacyAppLinks";
 import { parseSupportedLinkPreview } from "@/shared/lib/linkPreview";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { useRelayOrigin } from "@/shared/lib/useRelayOrigin";
@@ -1677,7 +1678,7 @@ function MarkdownInner({
   channelNames,
   className,
   configNudgeAuthorPubkey,
-  content,
+  content: rawContent,
   customEmoji,
   hardLineBreaks = true,
   imetaByUrl,
@@ -1696,6 +1697,10 @@ function MarkdownInner({
   snapshotSharedBy,
   videoReviewContext,
 }: MarkdownProps) {
+  const content = React.useMemo(
+    () => upgradeLegacyAppLinks(rawContent),
+    [rawContent],
+  );
   const { channels: rawChannels } = useChannelNavigation();
   const channels = useStableArray(rawChannels);
   const { goChannel, goAgents } = useAppNavigation();

@@ -33,7 +33,8 @@ pub fn parse_message_link(input: &str) -> Result<MessageLink, CliError> {
     let url = url::Url::parse(input.trim())
         .map_err(|_| CliError::Usage("invalid Kuzz message link".into()))?;
 
-    if url.scheme() != "kuzz"
+    // Links sent before the rename use the old scheme.
+    if !matches!(url.scheme(), "kuzz" | "buzz") // kuzz-rename: keep
         || url.host_str() != Some("message")
         || !matches!(url.path(), "" | "/")
         || !url.username().is_empty()
