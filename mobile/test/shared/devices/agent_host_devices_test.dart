@@ -65,6 +65,20 @@ class _FakeUserCache extends UserCacheNotifier {
 }
 
 void main() {
+  group('withoutSignedOutDevices', () {
+    const a = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const b = 'bbbbbbbb-0000-4000-8000-000000000002';
+    final hosts = {'1' * 64: a, '2' * 64: b};
+
+    test('drops agents of devices no longer signed in', () {
+      expect(withoutSignedOutDevices(hosts, [a.toUpperCase()]), {'1' * 64: a});
+    });
+
+    test('an unknown device list drops nothing', () {
+      expect(withoutSignedOutDevices(hosts, const []), hosts);
+    });
+  });
+
   group('agentHostDevicesFromEvents', () {
     test('the newest event listing an agent decides its device', () {
       final map = agentHostDevicesFromEvents([
@@ -110,19 +124,21 @@ void main() {
   group('deviceRobotOverridesFromEvents', () {
     test('newest choice per device wins; bad choices fall back', () {
       final map = deviceRobotOverridesFromEvents([
-        _robotEvent('device-1', {'v': 1, 'shape': 'hex', 'color': 0}),
+        _robotEvent('device-1', {'v': 2, 'shape': 'hex', 'color': 0}),
         _robotEvent('DEVICE-1', {
-          'v': 1,
+          'v': 2,
           'shape': 'dome',
           'color': 7,
         }, createdAt: 200),
-        _robotEvent('device-2', {'v': 1, 'shape': 'blob', 'color': 1}),
-        _robotEvent('device-3', {'v': 1, 'shape': 'tall', 'color': 8}),
-        _robotEvent('device-4', {'v': 1, 'shape': 'boxy', 'color': 2}),
+        _robotEvent('device-2', {'v': 2, 'shape': 'blob', 'color': 1}),
+        _robotEvent('device-3', {'v': 2, 'shape': 'tall', 'color': 9}),
+        _robotEvent('device-4', {'v': 2, 'shape': 'boxy', 'color': 2}),
         // A newer bad choice resets device-4 to its default.
         _robotEvent('device-4', 'nope', createdAt: 200),
+        // Version 1 indexed the previous palette and is ignored.
+        _robotEvent('device-6', {'v': 1, 'shape': 'hex', 'color': 1}),
         _robotEvent('device-5', {
-          'v': 1,
+          'v': 2,
           'shape': 'visor',
           'color': 3,
         }, pubkey: 'b' * 64),
@@ -139,7 +155,7 @@ void main() {
         shapeIndex: 2,
       )!;
       expect(jsonDecode(deviceRobotChoiceContent(robot)), {
-        'v': 1,
+        'v': 2,
         'shape': 'boxy',
         'color': 4,
       });
@@ -175,7 +191,7 @@ void main() {
 
       session.emit(_hostEvent('device-1', [_agentA]));
       session.emit(
-        _robotEvent('device-1', {'v': 1, 'shape': 'tall', 'color': 5}),
+        _robotEvent('device-1', {'v': 2, 'shape': 'tall', 'color': 5}),
       );
       expect(container.read(agentHostDevicesProvider), {_agentA: 'device-1'});
       expect(
@@ -204,12 +220,25 @@ void main() {
         expect(event.tags, [
           ['d', 'device-1'],
         ]);
-        expect(jsonDecode(event.content), {'v': 1, 'shape': 'hex', 'color': 1});
+        expect(jsonDecode(event.content), {'v': 2, 'shape': 'hex', 'color': 1});
         expect(container.read(deviceRobotOverridesProvider), {
           'device-1': robot,
         });
       },
     );
+
+    test('a rejected automatic robot is not retried in the same run', () async {
+      container.listen(deviceRobotOverridesProvider, (_, _) {});
+      await Future<void>.delayed(Duration.zero);
+      session.publishError = Exception('invalid: unsupported content version');
+      final notifier = container.read(ownDeviceEventsProvider.notifier);
+      for (var i = 0; i < 5; i++) {
+        await notifier.assignDeviceRobot('device-1', deviceRobotSlot(0));
+        session.emit(_hostEvent('device-$i', [_agentA]));
+      }
+      expect(session.published, hasLength(1));
+      expect(container.read(deviceRobotOverridesProvider), isEmpty);
+    });
   });
 
   group('agent robot widgets', () {

@@ -1704,6 +1704,7 @@ async fn reply_guard_off_by_default() {
         "guard must be inert when unset, got {} LLM calls",
         captured.len()
     );
+    assert!(!captured[0].to_string().contains("## Buzz reply delivery"));
     h.shutdown().await;
 }
 
@@ -1748,6 +1749,9 @@ async fn reply_guard_nags_twice_then_lets_the_turn_end() {
     assert_eq!(r["result"]["stopReason"], "end_turn");
 
     let captured = llm.captured.lock().await;
+    let system = captured[0]["messages"][0]["content"].as_str().unwrap_or("");
+    assert!(system.contains("## Buzz reply delivery"));
+    assert!(system.contains("CONTENT of that message"));
     assert_eq!(
         captured.len(),
         3,

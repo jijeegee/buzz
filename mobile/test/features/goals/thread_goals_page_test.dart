@@ -95,6 +95,25 @@ void main() {
     expect(find.byKey(const ValueKey('thread-goal-card')), findsOneWidget);
   });
 
+  testWidgets('the linked goal note opens from its note button', (
+    tester,
+  ) async {
+    final tree = _tree().apply(
+      const UpdateGoal(id: 'srv', note: 'Keep writes atomic'),
+      editor: _editor,
+      now: 2,
+    );
+    await _pump(
+      tester,
+      const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
+      tree: tree,
+    );
+    expect(find.text('Keep writes atomic'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('goal-note-toggle-srv')));
+    await tester.pump();
+    expect(find.text('Keep writes atomic'), findsOneWidget);
+  });
+
   testWidgets('thread links open other threads; this thread stays put', (
     tester,
   ) async {
@@ -114,13 +133,21 @@ void main() {
         matching: find.byType(InkWell),
       ),
     );
-    expect(find.text('This thread'), findsOneWidget);
+    expect(find.byTooltip('This thread'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('goal-thread-$_thread')),
+        matching: find.byType(Text),
+      ),
+      findsNothing,
+      reason: 'links are icons only',
+    );
     expect(link(_thread).onTap, isNull);
     // The other branch is read-only and faded, but its thread still opens.
     expect(link(_otherThread).onTap, isNotNull);
   });
 
-  testWidgets('message links read Message; missing ones are disabled', (
+  testWidgets('message links say where they go; missing ones are disabled', (
     tester,
   ) async {
     var tree = _tree();
@@ -146,13 +173,13 @@ void main() {
       find.descendant(of: link(id), matching: find.byType(InkWell)),
     );
     String? label(String id) => tester
-        .widget<Text>(
-          find.descendant(of: link(id), matching: find.byType(Text)),
+        .widget<Tooltip>(
+          find.descendant(of: link(id), matching: find.byType(Tooltip)),
         )
-        .data;
-    expect(label(_otherThread), 'Thread');
-    expect(label(_message), 'Message');
-    expect(label(_gone), 'Message');
+        .message;
+    expect(label(_otherThread), 'Open thread');
+    expect(label(_message), 'Go to message');
+    expect(label(_gone), 'Go to message');
     expect(ink(_message).onTap, isNotNull);
     expect(ink(_gone).onTap, isNull);
   });

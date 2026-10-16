@@ -133,6 +133,7 @@ pub async fn admin_probe(
     origin: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<AdminProbeResult, String> {
+    crate::relay::ensure_relay_allowed("admin_probe", &origin)?;
     // Resolve signing keys before entering the inner probe. Recovery mode
     // (locked/lost keyring) is surfaced here rather than inside the loop.
     let sign: Option<SignFn> = match state.user_credential() {
@@ -456,6 +457,7 @@ pub async fn admin_list_reports(
     query: AdminReportsQuery,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, String> {
+    crate::relay::ensure_relay_allowed("admin_list_reports", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let q = routes::AdminQuery {
         community_id: query.community_id,
@@ -481,6 +483,7 @@ pub async fn admin_get_report(
     id: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, String> {
+    crate::relay::ensure_relay_allowed("admin_get_report", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let id =
         uuid::Uuid::parse_str(&id).map_err(|_| "report id must be a valid UUID".to_string())?;
@@ -498,6 +501,7 @@ pub async fn admin_list_feedback(
     origin: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, String> {
+    crate::relay::ensure_relay_allowed("admin_list_feedback", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let url = origin.route_url(
         &routes::AdminRoute::FeedbackList,
@@ -514,6 +518,7 @@ pub async fn admin_get_feedback(
     id: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, String> {
+    crate::relay::ensure_relay_allowed("admin_get_feedback", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let id =
         uuid::Uuid::parse_str(&id).map_err(|_| "feedback id must be a valid UUID".to_string())?;
@@ -537,6 +542,7 @@ pub async fn admin_resolve_report(
     body: serde_json::Value,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_resolve_report", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let id =
         uuid::Uuid::parse_str(&id).map_err(|_| "report id must be a valid UUID".to_string())?;
@@ -564,6 +570,7 @@ pub async fn admin_reopen_report(
     body: serde_json::Value,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_reopen_report", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let id =
         uuid::Uuid::parse_str(&id).map_err(|_| "report id must be a valid UUID".to_string())?;
@@ -591,6 +598,7 @@ pub async fn admin_cancel_report(
     body: serde_json::Value,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_cancel_report", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let id =
         uuid::Uuid::parse_str(&id).map_err(|_| "report id must be a valid UUID".to_string())?;
@@ -614,6 +622,7 @@ pub async fn admin_patch_feedback(
     body: serde_json::Value,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_patch_feedback", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let id =
         uuid::Uuid::parse_str(&id).map_err(|_| "feedback id must be a valid UUID".to_string())?;
@@ -636,6 +645,7 @@ pub async fn admin_list_operators(
     origin: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, String> {
+    crate::relay::ensure_relay_allowed("admin_list_operators", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let url = origin.route_url(
         &routes::AdminRoute::OperatorsList,
@@ -656,6 +666,7 @@ pub async fn admin_put_operator(
     body: serde_json::Value,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_put_operator", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let pubkey =
         routes::Hex64::parse(&pubkey).map_err(|e| format!("invalid operator pubkey: {e}"))?;
@@ -678,6 +689,7 @@ pub async fn admin_delete_operator(
     pubkey: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_delete_operator", &origin)?;
     let origin = origin::AdminOrigin::parse(&origin)?;
     let pubkey =
         routes::Hex64::parse(&pubkey).map_err(|e| format!("invalid operator pubkey: {e}"))?;
@@ -705,6 +717,7 @@ pub async fn admin_fetch_feedback_attachment(
     expected_size: u64,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<tauri::ipc::Response, String> {
+    crate::relay::ensure_relay_allowed("admin_fetch_feedback_attachment", &origin)?;
     let keys = state.user_credential()?;
     attachment::fetch_feedback_attachment(
         &origin,
@@ -735,6 +748,7 @@ pub async fn admin_save_attachment(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<bool, String> {
+    crate::relay::ensure_relay_allowed("admin_save_attachment", &origin)?;
     let keys = state.user_credential()?;
     attachment::save_feedback_attachment(
         &origin,
@@ -804,6 +818,7 @@ pub async fn admin_list_restrictions(
     expected_relay: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, String> {
+    crate::relay::ensure_relay_allowed("admin_list_restrictions", &origin)?;
     let url = restrictions_url(
         &origin,
         &routes::AdminRoute::MemberRestrictionsList,
@@ -827,6 +842,7 @@ pub async fn admin_lift_ban(
     expected_relay: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<(), AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_lift_ban", &origin)?;
     let pubkey =
         routes::Hex64::parse(&pubkey).map_err(|e| format!("invalid member pubkey: {e}"))?;
     let url = restrictions_url(
@@ -852,6 +868,7 @@ pub async fn admin_lift_timeout(
     expected_relay: String,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<(), AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_lift_timeout", &origin)?;
     let pubkey =
         routes::Hex64::parse(&pubkey).map_err(|e| format!("invalid member pubkey: {e}"))?;
     let url = restrictions_url(
@@ -958,6 +975,8 @@ pub async fn admin_direct_action(
     intent: AdminDirectIntent,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<serde_json::Value, AdminMutationError> {
+    crate::relay::ensure_relay_allowed("admin_direct_action", &intent.origin)
+        .map_err(AdminMutationError::not_sent)?;
     let keys = state
         .user_credential()
         .map_err(AdminMutationError::not_sent)?;
@@ -1120,6 +1139,9 @@ pub fn set_admin_origin(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::app_state::AppState>,
 ) -> Result<Option<String>, String> {
+    if let Some(raw) = raw_origin.as_deref() {
+        crate::relay::ensure_relay_allowed("set_admin_origin", raw)?;
+    }
     // Fail closed: never derive the pubkey from an error fallback.
     let pubkey = validate_pubkey_hex(state.user_credential()?.public_key().to_hex())?;
     if let Some(ref expected) = expected_pubkey {

@@ -46,7 +46,7 @@ import { formatTime } from "@/features/messages/lib/dateFormatters";
 // can exercise the exact same source the renderer uses.
 import { applyEditTagOverlay } from "@/features/messages/lib/applyEditTagOverlay.mjs";
 import { AUTO_ROUTE_MENTION_MARKER } from "@/features/messages/lib/agentAddressMention.mjs";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 
 const HEX_RE = /^[0-9a-f]+$/i;
 
@@ -403,7 +403,7 @@ export function formatTimelineMessages(
         ? "You"
         : profile?.displayName?.trim() ||
           profile?.nip05Handle?.trim() ||
-          truncateNpub(actorPubkey);
+          UNKNOWN_USER_LABEL;
     existing.users.push({
       pubkey: actorPubkey,
       displayName,

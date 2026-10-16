@@ -156,7 +156,11 @@ export function ProvidersSettingsTab() {
             <HarnessRow
               embedded
               resetEpoch={resetEpoch}
-              runtime={subscription}
+              runtime={
+                primary.providerId === "openai"
+                  ? { ...subscription, label: "ChatGPT subscription" }
+                  : subscription
+              }
             />
           </div>
         ) : null}

@@ -199,6 +199,7 @@ export type RawAcpRuntimeCatalogEntry = {
   auth_status: AuthStatus;
   login_hint?: string;
   subscription_provider?: string | null;
+  supports_chatgpt_subscription?: boolean;
   source: "builtin" | "preset" | "custom";
   /** Definition-level env vars for `source: custom` entries; absent for builtin/preset. */
   definition_env?: Record<string, string>;
@@ -698,6 +699,7 @@ export function fromRawAcpRuntimeCatalogEntry(
     authStatus: entry.auth_status,
     loginHint: entry.login_hint ?? null,
     subscriptionProvider: entry.subscription_provider ?? null,
+    supportsChatgptSubscription: entry.supports_chatgpt_subscription ?? false,
     source: entry.source,
     definitionEnv: entry.definition_env ?? {},
     effortCanonicalValues: entry.effort_canonical_values ?? null,

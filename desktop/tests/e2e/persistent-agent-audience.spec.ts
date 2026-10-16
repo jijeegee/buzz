@@ -588,13 +588,13 @@ test("the mention button preserves manual rementions after undo until explicitly
   await expect(page.getByTestId("user-profile-panel")).toHaveCount(0);
   await expect(
     menu.getByRole("button", {
-      name: "Don't automatically mention Morgarita in this thread",
+      name: "Don't automatically mention Morgarita here",
     }),
   ).toHaveAttribute("aria-pressed", "true");
 
   await menu
     .getByRole("button", {
-      name: "Don't automatically mention Morgarita in this thread",
+      name: "Don't automatically mention Morgarita here",
     })
     .click();
   await expect(input).toHaveText("@Morgarita draft text");

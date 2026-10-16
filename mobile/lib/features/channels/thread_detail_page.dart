@@ -46,7 +46,6 @@ import 'jump_to_latest_switcher.dart';
 import 'local_message_send_animation_provider.dart';
 import 'local_message_send_transition.dart';
 import '../profile/user_profile_sheet.dart';
-import '../goals/goals_preferences.dart';
 import '../goals/thread_goal_chip.dart';
 import 'message_actions.dart';
 import 'message_action_backdrop_state.dart';
@@ -57,6 +56,7 @@ import 'message_quote_header.dart';
 import 'reaction_row.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
+import 'room_goals_provider.dart';
 import 'send_message_provider.dart';
 import 'small_avatar.dart';
 import 'sticky_date_header.dart';
@@ -735,7 +735,8 @@ class ThreadDetailPage extends HookConsumerWidget {
     // The root of the entire thread chain. If the current thread head is
     // itself a root message its rootId is null, so fall back to its own id.
     final effectiveRootId = threadHead.rootId ?? threadHead.id;
-    final goalsEnabled = ref.watch(goalsEnabledProvider);
+    // Threads follow their room's goals switch.
+    final goalsEnabled = ref.watch(roomGoalsEnabledProvider(channelId));
 
     void updateComposerDockHeight(double height) {
       listViewport.reportAfterLayout();

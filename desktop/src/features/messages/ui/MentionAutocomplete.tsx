@@ -15,8 +15,6 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { Switch } from "@/shared/ui/switch";
 import { Toggle } from "@/shared/ui/toggle";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
-import { safeNpub } from "@/shared/lib/nostrUtils";
-import { truncateNpub } from "@/shared/lib/pubkey";
 import { getPlatformKeysById } from "@/shared/lib/keyboard-shortcuts";
 
 export type MentionSuggestion = {
@@ -164,9 +162,8 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
     return null;
   }
 
-  // Name collisions are the impersonation vector: a vanity-ground key can
-  // wear any display name. When two suggestions share a name, surface each
-  // one's npub (truncated; full key in the hover tooltip) to tell them apart.
+  // Name collisions: when two suggestions share a name, the owner line of a
+  // provenance-marked agent is suppressed. Keys are never shown to users.
   const nameCounts = new Map<string, number>();
   for (const suggestion of suggestions) {
     const name = suggestion.displayName.toLowerCase();
@@ -214,7 +211,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     Automatically mention agents
                   </span>
                   <span className="text-2xs text-muted-foreground">
-                    Address selected agents in thread replies
+                    Address selected agents in channel and thread replies
                   </span>
                 </label>
                 <Switch
@@ -262,11 +259,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
               hasNameCollision && suggestion.agentProvenance
                 ? null
                 : suggestion.ownerLabel;
-            const collisionNpub =
-              hasNameCollision && suggestion.pubkey
-                ? safeNpub(suggestion.pubkey)
-                : null;
-            const hasMetadataBeforeNpub = Boolean(
+            const hasMetadata = Boolean(
               suggestion.kind === "team" ||
                 suggestion.isAgent ||
                 suggestion.role ||
@@ -332,7 +325,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     >
                       {suggestion.displayName}
                     </span>
-                    {hasMetadataBeforeNpub || collisionNpub ? (
+                    {hasMetadata ? (
                       <span
                         className={cn(
                           "flex min-h-3.5 min-w-0 items-center gap-1.5 text-2xs leading-none",
@@ -393,15 +386,6 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                                 : "not in channel"}
                           </span>
                         ) : null}
-                        {collisionNpub ? (
-                          <span
-                            className="-translate-y-0.5 shrink-0 font-mono leading-none"
-                            data-testid="mention-collision-npub"
-                            title={collisionNpub}
-                          >
-                            {truncateNpub(collisionNpub)}
-                          </span>
-                        ) : null}
                       </span>
                     ) : null}
                   </span>
@@ -411,7 +395,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     <TooltipTrigger asChild>
                       <span className="absolute right-3 top-1/2 inline-flex -translate-y-1/2">
                         <Toggle
-                          aria-label={`${isAlwaysAddressed ? "Don't automatically mention" : "Automatically mention"} ${suggestion.displayName}${isAlwaysAddressed ? " in this thread" : ""}`}
+                          aria-label={`${isAlwaysAddressed ? "Don't automatically mention" : "Automatically mention"} ${suggestion.displayName}${isAlwaysAddressed ? " here" : ""}`}
                           className="h-6 w-6 p-0 data-[state=on]:bg-primary/15 data-[state=on]:text-primary"
                           data-always-address-pubkey={suggestion.pubkey?.toLowerCase()}
                           data-testid={`mention-always-address-${suggestion.pubkey}`}
@@ -442,7 +426,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     >
                       <span>
                         {isAlwaysAddressed
-                          ? "Don't automatically mention in this thread"
+                          ? "Don't automatically mention here"
                           : "Automatically mention"}
                       </span>
                       {alwaysAddressShortcut ? (

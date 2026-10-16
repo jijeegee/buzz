@@ -33,6 +33,8 @@ export type RawChannel = {
   is_member?: boolean;
   ttl_seconds: number | null;
   ttl_deadline: string | null;
+  /** Absent from older backends; treated as enabled. */
+  goals_enabled?: boolean;
 };
 
 /**
@@ -95,6 +97,7 @@ export function fromRawChannel(channel: RawChannel): Channel {
     isMember: channel.is_member ?? true,
     ttlSeconds: channel.ttl_seconds,
     ttlDeadline: channel.ttl_deadline,
+    goalsEnabled: channel.goals_enabled ?? true,
   };
 }
 

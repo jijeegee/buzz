@@ -9,7 +9,6 @@ import { relayClient } from "@/shared/api/relayClient";
 import { getMyRelayMembershipLookup } from "@/shared/api/relayMembers";
 import { isRelayUnreachableError } from "@/shared/lib/relayError";
 import {
-  getIdentity,
   importIdentity,
   persistCurrentIdentity,
 } from "@/shared/api/tauriIdentity";
@@ -21,6 +20,7 @@ import {
   NostrKeyImportForm,
   type NostrKeyImportStage,
 } from "./NostrKeyImportForm";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { CommunityChangeOverlay } from "@/features/communities/ui/CommunityChangeOverlay";
 import {
@@ -159,6 +159,8 @@ export function OnboardingFlow({
 }: OnboardingFlowProps) {
   const { complete, skipForNow } = actions;
   const { activeCommunity } = useCommunities();
+  // One built-in server: no way to change server from onboarding.
+  const singleServer = useBuiltInServer() !== null;
   const queryClient = useQueryClient();
   const savedProfile = resolveSavedProfile(initialProfile);
   const profileUpdateMutation = useUpdateProfileMutation();
@@ -175,7 +177,6 @@ export function OnboardingFlow({
   const [keyImportFormKey, setKeyImportFormKey] = React.useState(0);
   const [profileDraft, setProfileDraft] =
     React.useState<OnboardingProfileValues>(savedProfile);
-  const [deniedPubkey, setDeniedPubkey] = React.useState<string>("");
   const [persistError, setPersistError] = React.useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = React.useState(false);
   const [isProfileAdvancePending, setIsProfileAdvancePending] =
@@ -249,12 +250,6 @@ export function OnboardingFlow({
         setMembershipError(null);
 
         if (membershipStatus === "denied") {
-          try {
-            const identity = await getIdentity();
-            setDeniedPubkey(identity.pubkey);
-          } catch {
-            setDeniedPubkey("");
-          }
           setDeniedFromPage((prev) =>
             currentPage === "membership-denied" ? prev : currentPage,
           );
@@ -264,6 +259,7 @@ export function OnboardingFlow({
         }
 
         if (membershipStatus === "unreachable") {
+          setMembershipRetryPage(nextPage);
           setMembershipError({ kind: "unreachable" });
           return;
         }
@@ -271,7 +267,7 @@ export function OnboardingFlow({
         if (membershipStatus === "error") {
           setMembershipError({
             kind: "error",
-            message: "Server error — try again",
+            message: "Something went wrong. Please try again.",
           });
           return;
         }
@@ -286,12 +282,6 @@ export function OnboardingFlow({
             await profileUpdateMutation.mutateAsync(updatePayload);
           } catch (error) {
             if (isRelayMembershipDeniedError(error)) {
-              try {
-                const identity = await getIdentity();
-                setDeniedPubkey(identity.pubkey);
-              } catch {
-                setDeniedPubkey("");
-              }
               setDeniedFromPage((prev) =>
                 currentPage === "membership-denied" ? prev : currentPage,
               );
@@ -404,7 +394,6 @@ export function OnboardingFlow({
       queryClient.setQueryData(["identity"], identity);
       queryClient.removeQueries({ queryKey: profileQueryKey });
       profileUpdateMutation.reset();
-      setDeniedPubkey("");
       setTransitionDirection("backward");
       setCurrentPage("profile");
     },
@@ -447,13 +436,17 @@ export function OnboardingFlow({
     showProfilePage();
   }, [handleLostModeBack, identityLost, keyImportStage, showProfilePage]);
 
+  // With a built-in server the profile step's Back (which opened the
+  // community editor) has no safe target: Google sign-in already happened
+  // before this flow, so it is hidden.
   const chromeBackAction =
     currentPage === "profile"
       ? {
-          disabled: profileStepState.isSaving,
+          label: "Skip setup",
+          disabled: profileStepState.isSaving || !initialProfileDecisionSettled,
           onClick: () => {
             setMembershipError(null);
-            setIsCommunityChangeOpen(true);
+            skipForNow();
           },
         }
       : currentPage === "key-import"
@@ -484,14 +477,15 @@ export function OnboardingFlow({
             setTransitionDirection("backward");
             setCurrentPage(deniedFromPage);
           }}
-          onChangeCommunity={() => setIsCommunityChangeOpen(true)}
+          onChangeCommunity={
+            singleServer ? undefined : () => setIsCommunityChangeOpen(true)
+          }
           onImportKey={importExistingKey}
           onRetry={() => {
             void saveProfileAndContinue(membershipRetryPage);
           }}
-          pubkey={deniedPubkey}
         />
-        {isCommunityChangeOpen ? (
+        {isCommunityChangeOpen && !singleServer ? (
           <CommunityChangeOverlay
             onClose={() => setIsCommunityChangeOpen(false)}
           />
@@ -518,18 +512,23 @@ export function OnboardingFlow({
               {membershipError.kind === "unreachable" ? (
                 <>
                   <p className="font-medium text-destructive">
-                    Can't reach this relay
+                    Couldn't connect
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    Check your connection or change your community.
+                    Check your internet connection and try again.
                   </p>
                   <Button
                     className="mt-3"
-                    onClick={() => setIsCommunityChangeOpen(true)}
+                    disabled={isProfileAdvancePending}
+                    onClick={() =>
+                      void saveProfileAndContinue(
+                        currentPage === "avatar" ? "complete" : "avatar",
+                      )
+                    }
                     size="sm"
                     variant="outline"
                   >
-                    Change community
+                    Try again
                   </Button>
                 </>
               ) : (
@@ -538,7 +537,7 @@ export function OnboardingFlow({
                     {membershipError.message ?? "Something went wrong"}
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    The relay returned an error. Try again.
+                    Please try again.
                   </p>
                 </>
               )}
@@ -561,6 +560,7 @@ export function OnboardingFlow({
               }}
               direction={transitionDirection}
               state={profileStepState}
+              showAlwaysSkip
               usesExistingIdentity
             />
           ) : currentPage === "key-import" ? (
@@ -632,7 +632,7 @@ export function OnboardingFlow({
           )}
         </div>
       </OnboardingCard>
-      {isCommunityChangeOpen ? (
+      {isCommunityChangeOpen && !singleServer ? (
         <CommunityChangeOverlay
           onClose={() => setIsCommunityChangeOpen(false)}
         />

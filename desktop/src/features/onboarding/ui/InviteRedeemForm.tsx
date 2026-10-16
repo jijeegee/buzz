@@ -12,6 +12,11 @@ import {
   isJoinPolicyDiscoveryCandidate,
   type JoinPolicy,
 } from "@/shared/api/invites";
+import {
+  DIFFERENT_SERVICE_INVITE_MESSAGE,
+  isAllowedServer,
+  useBuiltInServer,
+} from "@/features/communities/builtInServer";
 import { normalizeRelayUrl } from "@/features/communities/relayProbe";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
@@ -44,7 +49,7 @@ function hasInviteRelay(
 
 type InviteRedeemFormProps = {
   /**
-   * Pre-fill and expose a relay URL field for bare-code inputs.
+   * Relay URL used for bare-code inputs (Kuzz never shows it as a field).
    * On MembershipDenied this is the active relay; on WelcomeSetup it is the
    * configured default relay.  Omit to silently reject bare-code inputs
    * (the form stays invalid until a full invite URL is entered).
@@ -73,9 +78,7 @@ export function InviteRedeemForm({
 }: InviteRedeemFormProps) {
   const formId = React.useId();
   const [inviteInput, setInviteInput] = React.useState(initialValue);
-  const [bareCodeRelayUrl, setBareCodeRelayUrl] = React.useState(
-    defaultRelayUrl ?? "",
-  );
+  const [bareCodeRelayUrl] = React.useState(defaultRelayUrl ?? "");
   const [joinPolicy, setJoinPolicy] = React.useState<JoinPolicy | null>(null);
   const [policyTarget, setPolicyTarget] = React.useState<{
     relayWsUrl: string;
@@ -86,6 +89,8 @@ export function InviteRedeemForm({
   const [policyError, setPolicyError] = React.useState<string | null>(null);
   const [isLoadingPolicy, setIsLoadingPolicy] = React.useState(false);
   const shouldReduceMotion = useReducedMotion();
+  // With a built-in server, only invites for that server are followed.
+  const builtInServer = useBuiltInServer();
 
   const parsed = React.useMemo(
     () => parseInviteInput(inviteInput),
@@ -101,7 +106,6 @@ export function InviteRedeemForm({
   );
   const parsedInvite: ParsedInvite | null = normalizedRelayUrl ? null : parsed;
   const isBareCode = parsedInvite !== null && !hasInviteRelay(parsedInvite);
-  const needsRelayField = isBareCode && defaultRelayUrl !== undefined;
 
   React.useEffect(() => {
     const relayWsUrl = normalizedRelayUrl
@@ -112,6 +116,7 @@ export function InviteRedeemForm({
           ? bareCodeRelayUrl.trim()
           : "";
     if (!relayWsUrl || !isJoinPolicyDiscoveryCandidate(relayWsUrl)) return;
+    if (!isAllowedServer(relayWsUrl, builtInServer)) return;
 
     const code = parsedInvite?.code;
     let cancelled = false;
@@ -135,7 +140,7 @@ export function InviteRedeemForm({
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [bareCodeRelayUrl, normalizedRelayUrl, parsedInvite]);
+  }, [bareCodeRelayUrl, builtInServer, normalizedRelayUrl, parsedInvite]);
 
   const canSubmit =
     (parsedInvite !== null &&
@@ -150,6 +155,15 @@ export function InviteRedeemForm({
   const handleSubmit = React.useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
+      const target = normalizedRelayUrl
+        ? normalizedRelayUrl
+        : parsedInvite && hasInviteRelay(parsedInvite)
+          ? parsedInvite.relayWsUrl
+          : null;
+      if (target && !isAllowedServer(target, builtInServer)) {
+        setPolicyError(DIFFERENT_SERVICE_INVITE_MESSAGE);
+        return;
+      }
       if (normalizedRelayUrl) {
         setPolicyError(null);
         setIsLoadingPolicy(true);
@@ -251,6 +265,7 @@ export function InviteRedeemForm({
       ageConfirmed,
       agreementConfirmed,
       bareCodeRelayUrl,
+      builtInServer,
       joinPolicy,
       normalizedRelayUrl,
       onConnect,
@@ -264,17 +279,6 @@ export function InviteRedeemForm({
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     setInviteInput(event.target.value);
-    setJoinPolicy(null);
-    setPolicyTarget(null);
-    setAgeConfirmed(false);
-    setAgreementConfirmed(false);
-    setPolicyError(null);
-  };
-
-  const handleRelayInputChange = (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    setBareCodeRelayUrl(event.target.value);
     setJoinPolicy(null);
     setPolicyTarget(null);
     setAgeConfirmed(false);
@@ -382,7 +386,7 @@ export function InviteRedeemForm({
                   id="invite-input"
                   onChange={handleInviteInputChange}
                   placeholder={
-                    placeholder ?? "https://relay.example.com/invite/abc123"
+                    placeholder ?? "https://community.example.com/invite/abc123"
                   }
                   spellCheck={false}
                   type="text"
@@ -418,7 +422,7 @@ export function InviteRedeemForm({
             placeholder={
               isAddCommunity
                 ? "https://community.example.com or paste an invite link"
-                : "https://relay.example.com/invite/abc123 or paste a code"
+                : "https://community.example.com/invite/abc123 or paste a code"
             }
             spellCheck={false}
             type="text"
@@ -439,31 +443,6 @@ export function InviteRedeemForm({
         >
           Please enter a valid invite link or community URL
         </p>
-      ) : null}
-
-      {needsRelayField ? (
-        <div
-          className={cn(
-            "space-y-1.5 text-left",
-            isOnboardingSpotlight && "w-full max-w-[500px]",
-          )}
-        >
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="invite-relay-url"
-          >
-            Relay URL
-          </label>
-          <Input
-            className="h-10 bg-background"
-            disabled={isRedeeming}
-            id="invite-relay-url"
-            onChange={handleRelayInputChange}
-            placeholder="wss://relay.example.com"
-            type="text"
-            value={bareCodeRelayUrl}
-          />
-        </div>
       ) : null}
 
       {policyError ? (

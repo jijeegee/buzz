@@ -378,7 +378,10 @@ pub(crate) async fn fetch_relay_self_at(
     let doc = response
         .json::<RelayInformationDocument>()
         .await
-        .map_err(|_| "relay returned malformed NIP-11 document".to_string())?;
+        .map_err(|e| {
+            eprintln!("buzz-desktop: relay returned malformed NIP-11 document: {e}");
+            "Something went wrong. Try again.".to_string()
+        })?;
 
     let Some(relay_self) = doc.self_.map(|value| value.to_ascii_lowercase()) else {
         return Ok(None);

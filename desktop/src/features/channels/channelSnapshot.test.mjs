@@ -42,6 +42,7 @@ function makeChannel(overrides = {}) {
     isMember: true,
     ttlSeconds: null,
     ttlDeadline: null,
+    goalsEnabled: true,
     ...overrides,
   };
 }
@@ -53,6 +54,18 @@ const HASH = "channels-hash-v2";
 test.beforeEach(() => {
   removeChannelSnapshotForRelay(RELAY);
   removeChannelSnapshotForRelay("wss://other.example.com");
+});
+
+test("snapshots written before the goals switch read back with goals on", () => {
+  const legacy = makeChannel();
+  delete legacy.goalsEnabled;
+  const off = makeChannel({ id: "chan-off", goalsEnabled: false });
+
+  writeChannelSnapshot(RELAY, OWNER, [legacy, off], HASH);
+
+  const snapshot = readChannelSnapshot(RELAY, OWNER);
+  assert.equal(snapshot.channels[0].goalsEnabled, true);
+  assert.equal(snapshot.channels[1].goalsEnabled, false);
 });
 
 test("channelSnapshotKey: normalizes trailing slash and case", () => {

@@ -321,6 +321,7 @@ export function NumericTuningFields({
 }
 
 export function BuzzAgentModelTuningFields({
+  catalogEfforts,
   disabled = false,
   envVars,
   inheritedEnvVars,
@@ -328,6 +329,11 @@ export function BuzzAgentModelTuningFields({
   onEnvVarChange,
   provider,
 }: {
+  /** The selected model's discovered catalog effort levels, when reported. */
+  catalogEfforts?: {
+    supportedEfforts?: readonly string[];
+    defaultEffort?: string;
+  } | null;
   /** When true, all controls are read-only (e.g. while a Save is in flight). */
   disabled?: boolean;
   envVars: EnvVarsValue;
@@ -338,23 +344,32 @@ export function BuzzAgentModelTuningFields({
   /** Active LLM provider id (optional) — used for effort filtering + default labels. */
   provider?: string;
 }) {
-  const effortConfig = getProviderEffortConfig(provider ?? "", model);
+  const effortConfig = getProviderEffortConfig(
+    provider ?? "",
+    model,
+    catalogEfforts,
+  );
   const { validValues: effortValid, defaultValue: effortDefault } =
     effortConfig;
 
   const currentEffort = envVars[BUZZ_AGENT_THINKING_EFFORT] ?? "";
+  // This field renders as soon as the dialog opens (basic section), before
+  // model discovery reports the model's catalog levels. Clear a saved value
+  // only after the user changes provider/model, so opening the dialog (or a
+  // failed discovery) never deletes a level the static manifest lacks.
+  const openedSelection = React.useRef(`${provider ?? ""}|${model ?? ""}`);
+  const selectionChanged =
+    openedSelection.current !== `${provider ?? ""}|${model ?? ""}`;
   useEffortAutoClear({
     currentEffort,
-    effortValid,
+    effortValid: selectionChanged
+      ? effortValid
+      : BUZZ_AGENT_THINKING_EFFORT_VALUES,
     onClear: () => onEnvVarChange(BUZZ_AGENT_THINKING_EFFORT, ""),
   });
 
   return (
     <div className="space-y-4">
-      <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-        buzz-agent model tuning
-      </p>
-
       <div className="grid gap-4 md:grid-cols-2">
         {/* Thinking / Effort */}
         <div className="space-y-1.5">

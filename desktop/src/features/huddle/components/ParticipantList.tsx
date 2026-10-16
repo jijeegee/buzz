@@ -11,7 +11,7 @@ import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import type { VoiceRegistryEntry } from "@/features/settings/ui/voiceSettingsLogic";
 import { invokeTauri } from "@/shared/api/tauri";
 import { cn } from "@/shared/lib/cn";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { ROUNDED_SQUIRCLE_PATH } from "@/shared/ui/AvatarClipPaths";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
@@ -50,12 +50,7 @@ const MAX_VISIBLE_PARTICIPANTS = 9;
 type ParticipantIdentity = {
   avatarUrl: string | null;
   displayName: string;
-  /**
-   * Label the avatar derives initials from: the authored name when one
-   * exists, otherwise the unprefixed compact key. `displayName` is the
-   * visible "Participant npub1…" fallback, whose word initials would
-   * collapse every unnamed participant onto "PN"/"AN".
-   */
+  /** Label the avatar derives initials from (the visible name). */
   initialsLabel: string;
   isActive: boolean;
   isAgent: boolean;
@@ -119,9 +114,8 @@ function buildParticipantIdentities({
     const isAgent = agentSet.has(normalizedPubkey);
     const agent = agentNames.get(normalizedPubkey);
     const authoredName = profile?.displayName?.trim() || agent?.name?.trim();
-    const keyLabel = truncateNpub(pubkey);
     const displayName =
-      authoredName || `${isAgent ? "Agent" : "Participant"} ${keyLabel}`;
+      authoredName || (isAgent ? "Agent" : UNKNOWN_USER_LABEL);
     const speakerLevel =
       normalizedSpeakerLevels.get(normalizedPubkey) ??
       (activeSpeakerSet.has(normalizedPubkey) ? 0.55 : 0);
@@ -129,7 +123,7 @@ function buildParticipantIdentities({
     return {
       avatarUrl: profile?.avatarUrl ?? agent?.avatarUrl ?? null,
       displayName,
-      initialsLabel: authoredName || keyLabel,
+      initialsLabel: displayName,
       isActive: activeSpeakerSet.has(normalizedPubkey) || speakerLevel > 0.04,
       isAgent,
       pubkey,

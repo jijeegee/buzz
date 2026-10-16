@@ -13,7 +13,7 @@ import { useUserSearchQuery } from "@/features/profile/hooks";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { UserSearchResult } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
-import { normalizePubkey, truncateNpub } from "@/shared/lib/pubkey";
+import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -37,15 +37,13 @@ function labelForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return (
     profile?.displayName?.trim() ||
     profile?.nip05Handle?.trim() ||
-    truncateNpub(pubkey)
+    UNKNOWN_USER_LABEL
   );
 }
 
 function assigneeSearchLabel(user: UserSearchResult) {
   return (
-    user.displayName?.trim() ||
-    user.nip05Handle?.trim() ||
-    truncateNpub(user.pubkey)
+    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
   );
 }
 
@@ -380,10 +378,11 @@ export function IssueAssigneesRow({
                         <span className="block truncate text-sm font-medium text-foreground">
                           {label}
                         </span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {candidate.isAgent ? "Agent · " : ""}
-                          {truncateNpub(candidate.pubkey)}
-                        </span>
+                        {candidate.isAgent ? (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            Agent
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                   );

@@ -15,6 +15,7 @@ enum SystemEventType {
   channelCreated,
   channelArchived,
   channelUnarchived,
+  goalsChanged,
   huddleStarted,
   huddleEnded,
 }
@@ -26,6 +27,9 @@ class SystemEvent {
   final String? targetPubkey;
   final String? topic;
   final String? purpose;
+
+  /// `goals_changed`: the room's goals switch, `on` or `off`.
+  final String? goals;
   final String? ephemeralChannelId;
 
   const SystemEvent({
@@ -34,6 +38,7 @@ class SystemEvent {
     this.targetPubkey,
     this.topic,
     this.purpose,
+    this.goals,
     this.ephemeralChannelId,
   });
 
@@ -60,10 +65,19 @@ class SystemEvent {
       'channel_created' => SystemEventType.channelCreated,
       'channel_archived' => SystemEventType.channelArchived,
       'channel_unarchived' => SystemEventType.channelUnarchived,
+      'goals_changed' => SystemEventType.goalsChanged,
       _ => null,
     };
 
     if (type == null) return null;
+
+    final goals = _readString(json, 'goals');
+    // A goals row can only state "on" or "off".
+    if (type == SystemEventType.goalsChanged &&
+        goals != 'on' &&
+        goals != 'off') {
+      return null;
+    }
 
     return SystemEvent(
       type: type,
@@ -71,6 +85,7 @@ class SystemEvent {
       targetPubkey: _readString(json, 'target'),
       topic: _readString(json, 'topic'),
       purpose: _readString(json, 'purpose'),
+      goals: goals,
     );
   }
 
@@ -124,6 +139,7 @@ class SystemEvent {
       SystemEventType.channelCreated => '$actor created this channel',
       SystemEventType.channelArchived => '$actor archived this channel',
       SystemEventType.channelUnarchived => '$actor unarchived this channel',
+      SystemEventType.goalsChanged => '$actor turned goals $goals',
       SystemEventType.huddleStarted => '$actor started a huddle',
       SystemEventType.huddleEnded => '$actor ended the huddle',
     };

@@ -4,7 +4,6 @@ import {
   KIND_HUDDLE_ENDED,
   KIND_HUDDLE_STARTED,
 } from "../../src/shared/constants/kinds";
-import { truncateNpub } from "../../src/shared/lib/pubkey";
 import { ROUNDED_SQUIRCLE_PATH } from "../../src/shared/ui/AvatarClipPaths";
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
@@ -12,15 +11,6 @@ import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 const HUDDLE_CHANNEL_ID = "11111111-1111-4111-8111-111111111111";
 const HUDDLE_PARENT_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 const HUDDLE_THREAD_ROOT_ID = "mock-general-welcome";
-
-/**
- * Initials a key-fallback avatar shows: the two characters just before the
- * compact npub label's visible tail — the fragment `getInitials` reads from
- * a key label, whose unit suite pins the derivation itself.
- */
-function keyTailInitials(pubkey: string) {
-  return truncateNpub(pubkey).slice(-4, -2).toUpperCase();
-}
 
 async function waitForMockLiveSubscription(
   page: import("@playwright/test").Page,
@@ -1116,10 +1106,9 @@ test("returns to the parent channel when leaving a huddle channel in view", asyn
 test("keeps the huddle avatar strip compact and exposes the full roster", async ({
   page,
 }) => {
-  // One named member plus ten key-only members (hex 01..0a + "a"×62), with
-  // the last as the huddle bot. The generated keys' npub tails are what
-  // key-fallback avatars abbreviate: 01… → npub1qx4…x2tc → X2,
-  // 02… → npub1q24…levs → LE, 0a… → npub1p24…sqjt → SQ.
+  // One named member plus ten unnamed members (hex 01..0a + "a"×62), with
+  // the last as the huddle bot. Unnamed people render "Unknown user" and the
+  // unnamed bot renders "Agent" — never key text.
   const namedMember = "77".repeat(32);
   const unnamedMembers = Array.from({ length: 10 }, (_, index) => ({
     pubkey: `${(index + 1).toString(16).padStart(2, "0")}${"a".repeat(62)}`,
@@ -1151,16 +1140,13 @@ test("keeps the huddle avatar strip compact and exposes the full roster", async 
   await expect(participantTrigger).toContainText("+2");
   await expect(page.getByTestId("profile-huddle-control")).toHaveCount(0);
 
-  // Strip avatars stay distinct: the named member keeps name initials
-  // (AL), and a key-only participant shows its npub's tail (X2), never the
-  // word initials of the "Participant npub1…" label (PN).
+  // The named member keeps name initials (AL); an unnamed participant takes
+  // the initials of its generic "Unknown user" label (UU).
   const stripAvatars = participantStrip.getByTestId(
     "huddle-participant-avatar",
   );
   await expect(stripAvatars.first()).toHaveText("AL");
-  await expect(stripAvatars.nth(1)).toHaveText(
-    keyTailInitials(unnamedMembers[0].pubkey),
-  );
+  await expect(stripAvatars.nth(1)).toHaveText("UU");
 
   await participantTrigger.click();
   const roster = page
@@ -1170,25 +1156,20 @@ test("keeps the huddle avatar strip compact and exposes the full roster", async 
     page.getByRole("heading", { name: "Participants" }),
   ).toBeVisible();
   const rosterRows = roster.getByRole("listitem");
-  // Visible labels keep their generated forms alongside the avatar initials.
+  // Unnamed identities render generic labels, never key text.
   await expect(rosterRows.filter({ hasText: "Ada Lovelace" })).toHaveCount(1);
-  await expect(
-    rosterRows.filter({
-      hasText: `Participant ${truncateNpub(unnamedMembers[0].pubkey)}`,
-    }),
-  ).toHaveCount(1);
+  await expect(rosterRows.filter({ hasText: "Unknown user" })).toHaveCount(9);
   const agentRow = rosterRows.filter({
-    hasText: `Agent ${truncateNpub(unnamedMembers[9].pubkey)}`,
+    has: page.getByText("Agent", { exact: true }),
   });
   await expect(agentRow).toHaveCount(1);
   await expect(
-    page.getByRole("button", { name: /Remove Agent .* from huddle/ }),
+    page.getByRole("button", { name: "Remove Agent from huddle" }),
   ).toHaveCount(1);
-  // The roster's agent avatar abbreviates its key tail (SQ), never the
-  // "Agent" word initials of the prefixed label (AN).
   await expect(agentRow.getByTestId("huddle-participant-avatar")).toHaveText(
-    keyTailInitials(unnamedMembers[9].pubkey),
+    "A",
   );
+  await expect(roster).not.toContainText("npub1");
 });
 
 test("removes an agent from its menu without showing an extra participant control", async ({

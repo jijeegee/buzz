@@ -1,4 +1,5 @@
 import 'package:buzz/features/settings/theme_picker_page.dart';
+import 'package:buzz/shared/auth/default_community.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ Future<SharedPreferences> _pumpPicker(
   Map<String, Object> prefs = const {},
   bool reduceMotion = false,
   CommunityThemeNotifier Function()? themeNotifier,
+  String? builtInOrigin,
 }) async {
   final instance = await _prefs(prefs);
   await tester.pumpWidget(
@@ -28,6 +30,8 @@ Future<SharedPreferences> _pumpPicker(
       ),
       overrides: [
         savedPrefsProvider.overrideWithValue(instance),
+        if (builtInOrigin != null)
+          defaultCommunityOriginProvider.overrideWithValue(builtInOrigin),
         if (themeNotifier != null)
           communityThemeProvider.overrideWith(themeNotifier),
       ],
@@ -290,6 +294,26 @@ void main() {
         find.byKey(const ValueKey('theme-preview-community-name')),
         findsWidgets,
       );
+    });
+
+    testWidgets('with the built-in server previews the Kuzz brand', (
+      tester,
+    ) async {
+      await _pumpPicker(tester, builtInOrigin: 'https://relay.example.com');
+
+      expect(
+        find.byKey(const ValueKey('theme-preview-brand-logo')),
+        findsWidgets,
+      );
+      expect(
+        find.byKey(const ValueKey('theme-preview-community-icon')),
+        findsNothing,
+      );
+      final names = find.byKey(const ValueKey('theme-preview-community-name'));
+      expect(names, findsWidgets);
+      for (final name in tester.widgetList<Text>(names)) {
+        expect(name.data, 'Kuzz');
+      }
     });
 
     testWidgets('keeps the chat header left aligned and accents only Send', (

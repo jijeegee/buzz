@@ -83,6 +83,10 @@ export function getDiscoveredPersonaModelOptions(
       explicitModels.map((model) => ({
         id: model.id,
         label: resolveModelLabel(model.id, model.name, provider),
+        ...(model.supportedEfforts?.length
+          ? { supportedEfforts: model.supportedEfforts }
+          : {}),
+        ...(model.defaultEffort ? { defaultEffort: model.defaultEffort } : {}),
       })),
       provider,
     ),

@@ -247,7 +247,7 @@ fn manifest() -> &'static Manifest {
 fn canonical_provider(provider: &str) -> String {
     let canon = provider.trim().to_ascii_lowercase();
     match canon.as_str() {
-        "openai-compat" => "openai".to_string(),
+        "openai-compat" | "openai-subscription" => "openai".to_string(),
         "databricks-v2" => "databricks_v2".to_string(),
         _ => canon,
     }

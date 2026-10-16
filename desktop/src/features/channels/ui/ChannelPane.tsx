@@ -690,7 +690,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                 emptyDescription={
                   activeChannel?.channelType === "forum"
                     ? "Select a stream or DM to load real message history in this first integration pass."
-                    : "Messages and sub-replies will appear here once the relay has history for this channel."
+                    : "Messages and replies will appear here."
                 }
                 emptyTitle={
                   activeChannel
@@ -791,6 +791,11 @@ export const ChannelPane = React.memo(function ChannelPane({
                     {timeoutActive ? <ComposerTimeoutBanner /> : null}
                     <ComposerDockBackdrop gutterClassName="inset-x-5" />
                     <MessageComposer
+                      audienceContext={
+                        activeChannel && activeChannel.channelType !== "dm"
+                          ? { type: "channel" }
+                          : null
+                      }
                       channelId={activeChannel?.id ?? null}
                       channelName={activeChannel?.name ?? "channel"}
                       channelType={activeChannel?.channelType ?? null}

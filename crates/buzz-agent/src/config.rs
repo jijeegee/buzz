@@ -86,7 +86,7 @@ impl ThinkingEffort {
 ///   the nearest supported level.
 ///
 /// Logs a `warn!` on every substitution.
-fn resolve_openai_effort(
+pub(crate) fn resolve_openai_effort(
     model: &str,
     requested: ThinkingEffort,
     supported: &[ThinkingEffort],
@@ -427,6 +427,8 @@ const DEFAULT_SYSTEM_PROMPT: &str =
 pub enum Provider {
     Anthropic,
     OpenAi,
+    /// OpenAI through the existing local Codex ChatGPT subscription login.
+    OpenAiSubscription,
     /// Databricks model serving. Routes to `{base_url}/serving-endpoints/{model}/invocations`
     /// with a dynamically-acquired bearer (OAuth 2.0 PKCE, or static `DATABRICKS_TOKEN`).
     /// Wire format is OpenAI-chat-compatible — reuses the same body builder and parser.
@@ -680,6 +682,16 @@ impl Config {
                 .ok_or_else(|| "config: OPENAI_COMPAT_MODEL required".to_string())?,
                 env_or("OPENAI_COMPAT_BASE_URL", "https://api.openai.com/v1"),
                 parse_openai_api(env("OPENAI_COMPAT_API").as_deref())?,
+            ),
+            Provider::OpenAiSubscription => (
+                String::new(),
+                resolve_model(
+                    buzz_agent_model.as_deref(),
+                    env("OPENAI_COMPAT_MODEL").as_deref(),
+                )
+                .ok_or_else(|| "config: model required for ChatGPT subscription".to_string())?,
+                "https://chatgpt.com/backend-api/codex".to_string(),
+                OpenAiApi::Responses,
             ),
             Provider::Databricks | Provider::DatabricksV2 => (
                 env("DATABRICKS_TOKEN").unwrap_or_default(),
@@ -943,6 +955,7 @@ fn resolve_provider(
                     "config: ANTHROPIC_API_KEY required".into(),
                 ),
                 "openai" | "openai-compat" if present_nonempty(openai_key) => Ok(Provider::OpenAi),
+                "openai-subscription" => Ok(Provider::OpenAiSubscription),
                 "openai" | "openai-compat" => Err(
                     "config: OPENAI_COMPAT_API_KEY required".into(),
                 ),

@@ -21,7 +21,7 @@ import { useIdentityQuery } from "@/shared/api/hooks";
 import { sendChannelMessage } from "@/shared/api/tauri";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 import { KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
-import { normalizePubkey, truncateNpub } from "@/shared/lib/pubkey";
+import { normalizePubkey } from "@/shared/lib/pubkey";
 
 export type ProfileInteractionAction = "huddle" | "message" | "wave";
 
@@ -207,7 +207,7 @@ export function useProfileInteractionActions({
       const senderName =
         selfProfileQuery.data?.displayName?.trim() ||
         identity.displayName.trim() ||
-        truncateNpub(identity.pubkey);
+        "Someone";
       const content = buildWaveMessageContent(senderName);
       const queryKey = channelMessagesKey(dm.id);
 

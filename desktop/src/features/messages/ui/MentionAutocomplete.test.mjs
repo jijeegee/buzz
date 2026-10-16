@@ -113,7 +113,7 @@ test("agent rows offer automatic mention controls", async () => {
     }),
   );
   const selectedAction = view.getByRole("button", {
-    name: "Don't automatically mention Agent Ada in this thread",
+    name: "Don't automatically mention Agent Ada here",
   });
   assert.equal(selectedAction.getAttribute("aria-pressed"), "true");
   assert.equal(selectedAction.getAttribute("data-state"), "on");
@@ -155,7 +155,9 @@ test("automatic mention setting is visible by default without an options ingress
     name: "Automatically mention agents",
   });
   assert.equal(toggle.getAttribute("data-state"), "checked");
-  assert.ok(view.getByText("Address selected agents in thread replies"));
+  assert.ok(
+    view.getByText("Address selected agents in channel and thread replies"),
+  );
   assert.ok(view.getByRole("button", { name: "Mention Agent Ada" }));
 
   fireEvent.click(toggle);
@@ -258,7 +260,7 @@ test("clicking outside dismisses the tray without intercepting its trigger", asy
   assert.equal(dismissCount, 3);
 });
 
-test("collision npubs sit inline with agent metadata", async () => {
+test("same-name suggestions never show key fragments", async () => {
   const React = await import("react");
   const { render } = await importTestingLibrary();
   const { MentionAutocomplete } = await import("./MentionAutocomplete.tsx");
@@ -285,14 +287,12 @@ test("collision npubs sit inline with agent metadata", async () => {
   );
 
   const agentIcons = view.getAllByTestId("mention-agent-icon");
-  const collisionNpubs = view.getAllByTestId("mention-collision-npub");
-  assert.equal(collisionNpubs.length, 2);
-  for (const [index, npub] of collisionNpubs.entries()) {
-    const agentMetadata = agentIcons[index].closest("span")?.parentElement;
-    assert.equal(npub.parentElement, agentMetadata);
-    assert.match(agentMetadata?.textContent ?? "", /agentmanaged by younpub1/);
-    assert.match(npub.className, /(?:^|\s)-translate-y-0\.5(?:\s|$)/);
-    assert.match(npub.className, /(?:^|\s)leading-none(?:\s|$)/);
+  assert.equal(agentIcons.length, 2);
+  assert.equal(view.queryAllByTestId("mention-collision-npub").length, 0);
+  assert.doesNotMatch(view.container.textContent ?? "", /npub1/);
+  for (const icon of agentIcons) {
+    const agentMetadata = icon.closest("span")?.parentElement;
+    assert.match(agentMetadata?.textContent ?? "", /agentmanaged by you$/);
     assert.match(agentMetadata?.className ?? "", /(?:^|\s)min-h-3\.5(?:\s|$)/);
   }
 });

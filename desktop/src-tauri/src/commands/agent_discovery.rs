@@ -160,6 +160,7 @@ pub async fn save_custom_harness(
         node_required: false,
         auth_status: AuthStatus::NotApplicable,
         login_hint: None,
+        supports_chatgpt_subscription: false,
         subscription_provider: None,
         source: HarnessSource::Custom,
         definition_env: definition.env,

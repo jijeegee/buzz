@@ -15,6 +15,7 @@ import {
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { pubkeyToNpub } from "@/shared/lib/nostrUtils";
+import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -54,7 +55,7 @@ export function WelcomeSetup({
   const npubError = identityQuery.error
     ? identityQuery.error instanceof Error
       ? identityQuery.error.message
-      : "Could not load your public key."
+      : "Couldn't load your account."
     : null;
 
   const showPage = React.useCallback(
@@ -189,7 +190,9 @@ export function WelcomeSetup({
                   placeholder="Invite link or community URL"
                   variant="onboarding-spotlight"
                 />
-                {page === "join" ? (
+                {/* Kuzz never shows the account's public ID; E2E builds keep
+                    the copy block. */}
+                {page === "join" && signingKeyUiTestSeam() ? (
                   <div className="w-full max-w-[560px] text-left">
                     <p className="text-sm font-medium text-foreground">
                       Joining a private community?

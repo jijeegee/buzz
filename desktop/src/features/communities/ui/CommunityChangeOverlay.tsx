@@ -6,11 +6,14 @@ import { CommunityEditForm } from "./CommunityEditForm";
 type CommunityChangeOverlayProps = {
   onClose: () => void;
   onUpdated?: (name: string, relayUrl: string) => void;
+  /** The community can't be reached, so its address may need fixing. */
+  showUrlField?: boolean;
 };
 
 export function CommunityChangeOverlay({
   onClose,
   onUpdated,
+  showUrlField,
 }: CommunityChangeOverlayProps) {
   const { activeCommunity, updateCommunity } = useCommunities();
   const [error, setError] = React.useState<string | null>(null);
@@ -51,7 +54,7 @@ export function CommunityChangeOverlay({
           // If requiresReinit, the tree remounts — overlay unmounts naturally.
           break;
         case "duplicate-relay":
-          setError("Another community already uses this relay URL.");
+          setError("You've already added this community.");
           break;
         case "not-found":
           setError("Community not found.");
@@ -79,7 +82,9 @@ export function CommunityChangeOverlay({
           Change community
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Update your community name or relay URL.
+          {showUrlField
+            ? "Update your community name or address."
+            : "Update your community name."}
         </p>
         <div className="mt-6">
           <CommunityEditForm
@@ -87,6 +92,7 @@ export function CommunityChangeOverlay({
             initialRelayUrl={activeCommunity.relayUrl}
             onCancel={onClose}
             onSubmit={handleSubmit}
+            showUrlField={showUrlField}
             submitLabel="Save changes"
           />
         </div>

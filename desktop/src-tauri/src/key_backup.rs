@@ -124,7 +124,10 @@ pub fn recover_keys_from_input(input: &str, password: Option<&str>) -> Result<Ke
         let password = password.ok_or_else(|| "key backup requires a password".to_string())?;
         decrypt_ncryptsec(trimmed, password)
     } else {
-        Keys::parse(trimmed).map_err(|e| format!("Invalid private key: {e}"))
+        Keys::parse(trimmed).map_err(|_| {
+            eprintln!("buzz-desktop: invalid private key (details withheld: secret input)");
+            "Couldn't restore your account.".to_string()
+        })
     }
 }
 

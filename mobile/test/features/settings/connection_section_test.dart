@@ -1,5 +1,6 @@
 import 'package:buzz/features/settings/settings_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/auth/default_community.dart';
 import 'package:buzz/shared/community/community_membership_provider.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
@@ -94,6 +95,60 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('with the built-in server settings have no community controls', (
+    tester,
+  ) async {
+    PackageInfo.setMockInitialValues(
+      appName: 'Buzz',
+      packageName: 'xyz.block.buzz',
+      version: 'test',
+      buildNumber: '1',
+      buildSignature: '',
+    );
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      WidgetHelpers.testable(
+        overrides: [
+          defaultCommunityOriginProvider.overrideWithValue(
+            'https://relay.test',
+          ),
+          relayConfigProvider.overrideWith(_RelayConfigNotifier.new),
+          relaySessionProvider.overrideWith(_DisconnectedSession.new),
+          authProvider.overrideWith(_AuthNotifier.new),
+          savedPrefsProvider.overrideWithValue(prefs),
+          currentCommunityRoleProvider.overrideWithValue(
+            const AsyncData<CommunityMemberRole?>(CommunityMemberRole.admin),
+          ),
+        ],
+        child: SettingsPage(
+          profileHeader: const SizedBox.shrink(),
+          invitePageBuilder: (_) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Invite people'), findsOneWidget);
+    expect(find.text('Invite to community'), findsNothing);
+    expect(find.text('Community'), findsNothing);
+
+    final signOut = find.byKey(const Key('settings-sign-out'));
+    await tester.scrollUntilVisible(signOut, 200);
+    await tester.pumpAndSettle();
+    expect(find.text('Remove community'), findsNothing);
+    expect(find.byKey(const Key('settings-removal-management')), findsNothing);
+    expect(find.textContaining('communities'), findsNothing);
+
+    await tester.tap(signOut);
+    await tester.pumpAndSettle();
+    expect(find.text('Sign out?'), findsOneWidget);
+    expect(find.textContaining('communit'), findsNothing);
+    await tester.tap(find.byKey(const Key('settings-sign-out-cancel')));
+    await tester.pumpAndSettle();
   });
 }
 

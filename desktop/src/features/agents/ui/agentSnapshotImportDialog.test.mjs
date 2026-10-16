@@ -102,7 +102,7 @@ test("preview_body_discloses_prompt_allowlist_and_full_manifest", () => {
 
   assert.ok(allText.includes(preview.systemPrompt));
   for (const pubkey of preview.sourceAllowlist) {
-    assert.ok(allText.includes(pubkey), `missing allowlist pubkey ${pubkey}`);
+    assert.ok(!allText.includes(pubkey), `raw allowlist key shown: ${pubkey}`);
   }
   assert.ok(allText.includes(preview.manifestJson));
   assert.equal(

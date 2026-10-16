@@ -585,6 +585,13 @@ pub enum AgentError {
     /// Kept distinct so the agent loop can remove the unsupported image from
     /// replayed history and give the model a recoverable tool error.
     UnsupportedImageInput(String),
+    /// The provider rejected the configured reasoning effort for this model
+    /// (e.g. `minimal` sent to a model that only accepts `none|low|…`).
+    /// Typed so `Llm::complete` can retry once with a value the provider
+    /// lists as supported instead of failing the whole turn: effort sets
+    /// change per model and over time, and a stale saved value must not stop
+    /// an agent from answering.
+    LlmUnsupportedEffort(String),
     Mcp(String),
     Cancelled,
 }
@@ -598,6 +605,7 @@ impl std::fmt::Display for AgentError {
             Self::LlmModelNotFound(s) => write!(f, "llm model not found: {s}"),
             Self::LlmContextExceeded(s) => write!(f, "llm context exceeded: {s}"),
             Self::UnsupportedImageInput(s) => write!(f, "llm image input unsupported: {s}"),
+            Self::LlmUnsupportedEffort(s) => write!(f, "llm reasoning effort rejected: {s}"),
             Self::Mcp(s) => write!(f, "mcp: {s}"),
             Self::Cancelled => write!(f, "cancelled"),
         }

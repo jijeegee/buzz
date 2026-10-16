@@ -5,12 +5,16 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/auth_provider.dart';
+import '../../shared/auth/default_community.dart';
 import '../../shared/community/community.dart';
 import '../../shared/community/community_provider.dart';
 import '../../shared/theme/theme.dart';
 import 'token_sign_in_page.dart';
 
 /// Reauthentication only: stored identities never unlock by selecting a row.
+///
+/// With the built-in server, [community] is always that server's entry
+/// (startup pinning) and there is no community chooser.
 ///
 /// Every community resumes through Google. A key-based community that was
 /// never linked links the key it retained at sign-out to the Google account
@@ -45,7 +49,9 @@ class SignedOutPage extends HookConsumerWidget {
       }
     }
 
-    final chooser = cleanupError == null && retained.length > 1
+    final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
+    final chooser =
+        !hasBuiltInServer && cleanupError == null && retained.length > 1
         ? AppBar(
             automaticallyImplyLeading: false,
             title: DropdownButton<String>(

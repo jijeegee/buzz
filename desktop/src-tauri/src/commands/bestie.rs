@@ -45,7 +45,8 @@ fn validate_agent_pubkey(pubkey: &str) -> Result<String, String> {
             .chars()
             .all(|character| character.is_ascii_hexdigit())
     {
-        return Err("Bestie agent pubkey must be 64 hexadecimal characters".to_string());
+        eprintln!("buzz-desktop: Bestie agent pubkey must be 64 hexadecimal characters");
+        return Err("Something went wrong with this agent. Try again.".to_string());
     }
     Ok(normalized)
 }

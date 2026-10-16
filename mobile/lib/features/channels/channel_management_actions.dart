@@ -156,10 +156,12 @@ class ChannelActions {
   }
 
   /// Updates the user-editable channel metadata and refreshes cached details.
+  /// [goalsEnabled] toggles the per-room goals switch and may be sent alone.
   Future<void> updateChannel({
     required String channelId,
     String? name,
     String? description,
+    bool? goalsEnabled,
   }) async {
     _ensureCommunityValid();
     await _signedEventRelay.submit(
@@ -169,6 +171,7 @@ class ChannelActions {
         channelId: channelId,
         name: name,
         description: description,
+        goalsEnabled: goalsEnabled,
       ),
     );
     _ensureCommunityValid();

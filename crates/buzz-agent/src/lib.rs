@@ -488,11 +488,15 @@ async fn session_new(app: &Arc<App>, id: Value, params: Value, wire_tx: &WireSen
             Some(client_prompt) if !client_prompt.trim().is_empty() => client_prompt.to_owned(),
             _ => app.cfg.system_prompt.clone(),
         };
-        let prompt = if hints_text.is_empty() {
+        let mut prompt = if hints_text.is_empty() {
             base
         } else {
             format!("{base}\n\n{hints_text}")
         };
+        if app.cfg.require_reply {
+            prompt.push_str("\n\n");
+            prompt.push_str(agent::REPLY_DELIVERY_INSTRUCTION);
+        }
         // Reject combined prompts exceeding 512KB.
         if prompt.len() > MAX_SYSTEM_PROMPT_BYTES {
             return reject(
@@ -517,6 +521,18 @@ async fn session_new(app: &Arc<App>, id: Value, params: Value, wire_tx: &WireSen
     let available_models: Vec<Value> = {
         use crate::config::Provider;
         match app.cfg.provider {
+            Provider::OpenAiSubscription => {
+                match catalog::discover_subscription_models(None).await {
+                    Ok(models) => models
+                        .iter()
+                        .map(|m| json!({"modelId":m.id,"name":m.name}))
+                        .collect(),
+                    Err(error) => {
+                        tracing::warn!(error = %error, "ChatGPT catalog unavailable; retaining configured model");
+                        vec![json!({"modelId":app.cfg.model,"name":app.cfg.model})]
+                    }
+                }
+            }
             Provider::Databricks | Provider::DatabricksV2 => {
                 let models = match resolve_models_catalog(
                     &app.models_cache,

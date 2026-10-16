@@ -88,7 +88,7 @@ class _LinkedGoalBody extends ConsumerWidget {
                         ),
                         Text(goal.title, style: context.textTheme.titleMedium),
                         if (goal.note.isNotEmpty)
-                          Text(goal.note, style: context.textTheme.bodySmall),
+                          GoalNote(goalId: goal.id, note: goal.note),
                         if (progress.total > 0) ...[
                           const SizedBox(height: Grid.xxs),
                           LinearProgressIndicator(

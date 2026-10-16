@@ -185,6 +185,9 @@ async fn connect(
     on_message: Channel<InvokeResponseBody>,
     _config: Option<serde_json::Value>,
 ) -> Result<Id, String> {
+    // Every webview socket (the main relay session and read-only account
+    // watchers) opens here: only the built-in server may be reached.
+    crate::relay::ensure_relay_allowed("websocket connect", &url)?;
     open_connection(manager.inner(), &url, on_message).await
 }
 
@@ -803,5 +806,20 @@ mod tests {
         .unwrap();
         assert!(healthy_receiver.recv().await.is_some());
         drop(blocked_receiver);
+    }
+
+    #[tokio::test]
+    async fn connect_refuses_another_server_before_dialing() {
+        use tauri::Manager as _;
+        let app = crate::relay::server::refusal_test_app();
+        let error = super::connect(
+            app.state(),
+            "ws://127.0.0.1:9".to_string(),
+            silent_channel(),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, crate::relay::server::REFUSED);
     }
 }

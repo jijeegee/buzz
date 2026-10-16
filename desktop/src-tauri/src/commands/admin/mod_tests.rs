@@ -1390,3 +1390,17 @@ fn restrictions_url_rejects_a_caller_relay_that_no_longer_matches() {
 
 #[path = "direct_action_tests.rs"]
 mod direct_action;
+
+#[tokio::test]
+async fn admin_commands_refuse_another_server() {
+    use tauri::Manager as _;
+    let app = crate::relay::server::refusal_test_app();
+    let error = super::admin_probe("https://other.example".to_string(), app.state())
+        .await
+        .unwrap_err();
+    assert_eq!(error, crate::relay::server::REFUSED);
+    let error = super::admin_list_feedback("https://other.example".to_string(), app.state())
+        .await
+        .unwrap_err();
+    assert_eq!(error, crate::relay::server::REFUSED);
+}

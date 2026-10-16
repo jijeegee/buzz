@@ -637,3 +637,36 @@ test("effort none is invalid for anthropic manual-budget (should trigger auto-cl
     "none must not be in manual-budget set",
   );
 });
+
+// ---------------------------------------------------------------------------
+// getProviderEffortConfig — provider catalog effort levels
+// ---------------------------------------------------------------------------
+
+test("getProviderEffortConfig prefers the model's catalog effort levels", () => {
+  const { validValues, defaultValue } = getProviderEffortConfig(
+    "openai-subscription",
+    "gpt-6-luna",
+    {
+      // Catalog order and harness-only levels (ultra) must not leak through.
+      supportedEfforts: ["max", "low", "medium", "ultra"],
+      defaultEffort: "medium",
+    },
+  );
+  assert.deepEqual([...validValues], ["low", "medium", "max"]);
+  assert.equal(defaultValue, "medium");
+});
+
+test("getProviderEffortConfig falls back to the manifest without catalog levels", () => {
+  const manifest = getProviderEffortConfig("openai-subscription", "gpt-6-luna");
+  for (const catalog of [
+    undefined,
+    null,
+    {},
+    { supportedEfforts: ["ultra"] },
+  ]) {
+    assert.deepEqual(
+      getProviderEffortConfig("openai-subscription", "gpt-6-luna", catalog),
+      manifest,
+    );
+  }
+});

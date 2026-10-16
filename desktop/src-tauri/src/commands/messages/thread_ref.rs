@@ -15,10 +15,14 @@ pub(super) fn provided_thread_ref(
     root_event_id: &str,
     parent_event_id: &str,
 ) -> Result<events::ThreadRef, String> {
-    let root_event_id =
-        EventId::from_hex(root_event_id).map_err(|e| format!("invalid root event ID: {e}"))?;
-    let parent_event_id =
-        EventId::from_hex(parent_event_id).map_err(|e| format!("invalid parent event ID: {e}"))?;
+    let root_event_id = EventId::from_hex(root_event_id).map_err(|e| {
+        eprintln!("buzz-desktop: invalid root event ID: {e}");
+        "Couldn't find this message.".to_string()
+    })?;
+    let parent_event_id = EventId::from_hex(parent_event_id).map_err(|e| {
+        eprintln!("buzz-desktop: invalid parent event ID: {e}");
+        "Couldn't find this message.".to_string()
+    })?;
     Ok(events::ThreadRef {
         root_event_id,
         parent_event_id,
@@ -52,8 +56,10 @@ pub(super) async fn resolve_thread_ref(
     api_base_url: &str,
     keys: Option<&dyn crate::auth::credential::RelaySigner>,
 ) -> Result<events::ThreadRef, String> {
-    let parent_eid =
-        EventId::from_hex(parent_event_id).map_err(|e| format!("invalid parent event ID: {e}"))?;
+    let parent_eid = EventId::from_hex(parent_event_id).map_err(|e| {
+        eprintln!("buzz-desktop: invalid parent event ID: {e}");
+        "Couldn't find this message.".to_string()
+    })?;
 
     let filters = [serde_json::json!({
         "ids": [parent_event_id],
@@ -84,9 +90,10 @@ pub(super) async fn resolve_thread_ref(
     let root_hex = root.or(reply);
 
     let root_eid = match root_hex {
-        Some(hex) if hex != parent_event_id => {
-            EventId::from_hex(&hex).map_err(|e| format!("invalid root event ID: {e}"))?
-        }
+        Some(hex) if hex != parent_event_id => EventId::from_hex(&hex).map_err(|e| {
+            eprintln!("buzz-desktop: invalid root event ID: {e}");
+            "Couldn't find this message.".to_string()
+        })?,
         _ => parent_eid,
     };
 

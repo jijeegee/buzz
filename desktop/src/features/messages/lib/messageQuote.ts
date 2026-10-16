@@ -47,11 +47,11 @@ export function buildQuoteTags(
 ): string[][] {
   const normalizedEventId = normalizeHex(eventId);
   if (!normalizedEventId) {
-    throw new Error("A quoted message needs a valid event ID.");
+    throw new Error("Couldn't quote this message.");
   }
   const normalizedAuthor = normalizeHex(authorPubkey);
   if (!normalizedAuthor) {
-    throw new Error("A quoted message needs a valid author pubkey.");
+    throw new Error("Couldn't quote this message.");
   }
   return [[QUOTE_TAG, normalizedEventId, relayUrl.trim(), normalizedAuthor]];
 }

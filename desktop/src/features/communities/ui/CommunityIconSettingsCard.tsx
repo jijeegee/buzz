@@ -8,7 +8,9 @@ import {
   communityIconQueryKey,
   useActiveCommunityIcon,
 } from "@/features/communities/useCommunityIcons";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunities } from "@/features/communities/useCommunities";
+import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
 import { setCommunityIcon } from "@/shared/api/communityProfile";
 
 /**
@@ -22,6 +24,7 @@ export function CommunityIconSettingsCard({
   compact?: boolean;
 }) {
   const { activeCommunity } = useCommunities();
+  const singleServer = useBuiltInServer() !== null;
   const relayUrl = activeCommunity?.relayUrl;
   const iconQuery = useActiveCommunityIcon(relayUrl);
   const queryClient = useQueryClient();
@@ -107,7 +110,7 @@ export function CommunityIconSettingsCard({
       <AgentCreationPreview
         assetLabel="community icon"
         avatarUrl={draftIcon || null}
-        label={activeCommunity?.name ?? "Community"}
+        label={singleServer ? "Icon" : (activeCommunity?.name ?? "Community")}
         onClearAvatar={clearIconPreview}
         onCommitAvatar={persistIcon}
         onSelectAvatar={previewIcon}
@@ -116,6 +119,51 @@ export function CommunityIconSettingsCard({
         testIdPrefix="community-icon"
         variant={compact ? "compact" : "default"}
       />
+    </div>
+  );
+}
+
+/**
+ * Who may edit the server-wide icon; the same rule Edit Community uses: owners
+ * and admins, or anyone on a relay without membership.
+ */
+export function canEditCommunityIcon(
+  membership:
+    | { membershipRequired?: boolean; membership?: { role?: string } | null }
+    | null
+    | undefined,
+): boolean {
+  const role = membership?.membership?.role;
+  return (
+    membership?.membershipRequired === false ||
+    role === "owner" ||
+    role === "admin"
+  );
+}
+
+/**
+ * Settings › Members: the icon editor that used to live in Edit Community,
+ * shown only with a built-in server (Edit Community is gone there) and only
+ * to members who may edit it.
+ */
+export function MembersIconSettingsSection() {
+  const singleServer = useBuiltInServer() !== null;
+  const membershipQuery = useMyRelayMembershipLookupQuery();
+  if (!singleServer || !canEditCommunityIcon(membershipQuery.data)) {
+    return null;
+  }
+  return (
+    <div
+      className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/20 p-3"
+      data-testid="members-icon-settings"
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-medium">Icon</p>
+        <p className="text-xs text-muted-foreground">
+          Shown to everyone who signs in.
+        </p>
+      </div>
+      <CommunityIconSettingsCard compact />
     </div>
   );
 }

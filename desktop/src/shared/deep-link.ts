@@ -13,6 +13,15 @@ export interface DeepLinkDeps {
     payload: AddCommunityDeepLinkPayload & { requestId: string },
   ) => boolean;
   onAddCommunityAvailable: (listener: () => void) => () => void;
+  /**
+   * Screens a community link before anything is added or switched. `false`
+   * drops it: it is acknowledged and nothing else happens. Omitted = follow
+   * every link.
+   */
+  shouldFollowCommunityLink?: (link: {
+    kind: "connect" | "join" | "add-community";
+    relayUrl: string;
+  }) => boolean;
 }
 
 export type ChannelDeepLinkPayload = { channelId: string };
@@ -73,12 +82,23 @@ type PendingEntityDeepLink = {
   href: string;
 };
 
+function shouldFollow(pending: PendingCommunityDeepLink, deps: DeepLinkDeps) {
+  return (
+    deps.shouldFollowCommunityLink?.({
+      kind: pending.kind,
+      relayUrl: pending.relayUrl,
+    }) ?? true
+  );
+}
+
 function acceptPendingCommunityDeepLink(
   pending: PendingCommunityDeepLink,
   deps: DeepLinkDeps,
+  follow: boolean,
 ) {
-  const accepted =
-    pending.kind === "add-community"
+  const accepted = !follow
+    ? true
+    : pending.kind === "add-community"
       ? deps.openAddCommunity({
           requestId: pending.id,
           relayUrl: pending.relayUrl,
@@ -104,8 +124,9 @@ async function drainPendingCommunityDeepLinks(deps: DeepLinkDeps) {
       "take_pending_community_deep_link",
     );
     if (!pending) return;
-    if (!(await acceptPendingCommunityDeepLink(pending, deps))) return;
-    if (pending.kind === "add-community") return;
+    const follow = shouldFollow(pending, deps);
+    if (!(await acceptPendingCommunityDeepLink(pending, deps, follow))) return;
+    if (follow && pending.kind === "add-community") return;
   }
 }
 

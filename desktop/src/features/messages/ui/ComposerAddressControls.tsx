@@ -229,7 +229,7 @@ export function ComposerMentionButton({
                     <Tooltip disableHoverableContent key={agent.pubkey}>
                       <TooltipTrigger asChild>
                         <motion.button
-                          aria-label={`Don't automatically mention ${agent.displayName} in this thread`}
+                          aria-label={`Don't automatically mention ${agent.displayName} here`}
                           animate={{ opacity: 1, scale: 1 }}
                           className="group/address relative rounded-full focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                           data-testid={`composer-address-lock-remove-${agent.pubkey}`}
@@ -270,8 +270,8 @@ export function ComposerMentionButton({
                         </motion.button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        Don't automatically mention {agent.displayName} in this
-                        thread <AgentManagementMarker pubkey={agent.pubkey} />
+                        Don't automatically mention {agent.displayName} here{" "}
+                        <AgentManagementMarker pubkey={agent.pubkey} />
                       </TooltipContent>
                     </Tooltip>
                   ))}

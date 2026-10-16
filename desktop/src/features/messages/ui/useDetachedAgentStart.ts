@@ -6,6 +6,7 @@ import { matchesDetachedToastScope } from "@/features/messages/lib/detachedToast
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { ManagedAgent } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { toUserFacingErrorDetail } from "@/shared/lib/userFacingError";
 import { getErrorMessage } from "./useMentionSendFlow.helpers";
 
 /**
@@ -63,7 +64,7 @@ function detachedStartFailureDetail(error: unknown): string {
   return message.includes("active community changed") ||
     message.includes("active identity changed")
     ? "You switched community or identity before it could start."
-    : message;
+    : toUserFacingErrorDetail(message);
 }
 
 /**

@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-import { truncateNpub } from "../../src/shared/lib/pubkey";
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge } from "../helpers/bridge";
 
@@ -448,7 +447,7 @@ test("Escape closes a filter picker, restores disclosure focus, then closes its 
       {
         label: "Author",
         picker: "workflow-author-picker",
-        search: "Search authors or paste a public key",
+        search: "Search authors",
       },
       {
         label: "Message",
@@ -566,7 +565,7 @@ test("does not select stale picker results when Enter outruns deferred filtering
 
   await dialog.getByText("Author", { exact: true }).locator("..").click();
   const authorSearch = dialog.getByRole("combobox", {
-    name: "Search authors or paste a public key",
+    name: "Search authors",
   });
   await expect(dialog.getByRole("option").first()).toBeVisible();
   await authorSearch.evaluate((input: HTMLInputElement) => {
@@ -640,15 +639,15 @@ test("round-trips manual author and reaction message IDs through save and reopen
     results.scrollTop = 0;
   });
   const authorSearch = dialog.getByRole("combobox", {
-    name: "Search authors or paste a public key",
+    name: "Search authors",
   });
   await authorSearch.fill(author);
   await expect(
-    dialog.getByRole("option", { name: truncateNpub(author) }),
+    dialog.getByTestId(`workflow-author-option-${author}`),
   ).toBeVisible();
   await authorSearch.press("Enter");
   await expect(
-    dialog.getByRole("option", { name: truncateNpub(author) }),
+    dialog.getByTestId(`workflow-author-option-${author}`),
   ).toHaveAttribute("aria-selected", "true");
   await expect(dialog.getByRole("button", { name: "Create" })).toBeEnabled();
   await dialog.getByRole("tab", { name: "YAML" }).click();
@@ -663,11 +662,11 @@ test("round-trips manual author and reaction message IDs through save and reopen
   await openTriggerInspector(dialog);
   await dialog.getByText("Author", { exact: true }).locator("..").click();
   const correctedAuthorSearch = dialog.getByRole("combobox", {
-    name: "Search authors or paste a public key",
+    name: "Search authors",
   });
   await correctedAuthorSearch.fill(author);
   await expect(
-    dialog.getByRole("option", { name: truncateNpub(author) }),
+    dialog.getByTestId(`workflow-author-option-${author}`),
   ).toBeVisible();
   await correctedAuthorSearch.press("Enter");
   await dialog
@@ -701,7 +700,7 @@ test("round-trips manual author and reaction message IDs through save and reopen
   await openTriggerInspector(reopened);
   await reopened.getByText("Author", { exact: true }).locator("..").click();
   await expect(
-    reopened.getByRole("option", { name: truncateNpub(author) }),
+    reopened.getByTestId(`workflow-author-option-${author}`),
   ).toHaveAttribute("aria-selected", "true");
   await reopened.getByText("Message", { exact: true }).locator("..").click();
   await expect(
@@ -741,9 +740,7 @@ test("toggles selected author and message filters while preserving sibling condi
     .locator("..")
     .locator("..");
   await authorField.getByText("Author", { exact: true }).locator("..").click();
-  const authorOption = dialog.getByRole("option", {
-    name: truncateNpub(author),
-  });
+  const authorOption = dialog.getByTestId(`workflow-author-option-${author}`);
   await expect(authorOption).toHaveAttribute("aria-selected", "true");
   await expect(
     authorField.getByRole("button", { name: "Clear filter" }),
@@ -751,12 +748,12 @@ test("toggles selected author and message filters while preserving sibling condi
   await authorOption.click();
 
   const authorSearch = dialog.getByRole("combobox", {
-    name: "Search authors or paste a public key",
+    name: "Search authors",
   });
   await authorSearch.fill(replacementAuthor);
-  const replacementAuthorOption = dialog.getByRole("option", {
-    name: truncateNpub(replacementAuthor),
-  });
+  const replacementAuthorOption = dialog.getByTestId(
+    `workflow-author-option-${replacementAuthor}`,
+  );
   await expect(replacementAuthorOption).toBeVisible();
   await authorSearch.press("Enter");
   await expect(replacementAuthorOption).toHaveAttribute(

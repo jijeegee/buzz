@@ -1117,12 +1117,18 @@ pub(crate) struct InactiveSessions {
     /// active or not): sign that account out on this computer. Set once at
     /// app start; without it the account is only marked `needs_login`.
     ended: std::sync::OnceLock<SessionEndedHook>,
+    /// What to do when a background session was restored (its device is
+    /// known now). Set once at app start.
+    restored: std::sync::OnceLock<SessionRestoredHook>,
 }
 
 /// Called with (origin, account, code) when the relay ended an account's
 /// session for good ([`super::refresh::ends_sign_in`]). `account` is `None`
 /// for a legacy token account.
 pub(crate) type SessionEndedHook = Arc<dyn Fn(String, Option<PublicKey>, String) + Send + Sync>;
+
+/// Called after a background session was restored.
+pub(crate) type SessionRestoredHook = Arc<dyn Fn() + Send + Sync>;
 
 impl InactiveSessions {
     fn key(origin: &str, pubkey: &PublicKey) -> (String, String) {
@@ -1132,6 +1138,11 @@ impl InactiveSessions {
     /// Install the [`SessionEndedHook`] (first call wins).
     pub(crate) fn set_ended_hook(&self, hook: SessionEndedHook) {
         let _ = self.ended.set(hook);
+    }
+
+    /// Install the [`SessionRestoredHook`] (first call wins).
+    pub(crate) fn set_restored_hook(&self, hook: SessionRestoredHook) {
+        let _ = self.restored.set(hook);
     }
 
     /// The installed [`SessionEndedHook`], if any.
@@ -1163,6 +1174,7 @@ impl InactiveSessions {
         let client = client.clone();
         let origin = origin.to_owned();
         let ended = self.ended_hook();
+        let restored = self.restored.get().cloned();
         tauri::async_runtime::spawn(async move {
             let store = Arc::new(AccountRefreshStore { pubkey });
             if let Some((generation, attempt)) =
@@ -1174,6 +1186,9 @@ impl InactiveSessions {
                     auth.me_profile(&origin, &pubkey),
                 ) {
                     super::account_profiles::learn(dir, &pubkey, name, avatar, None);
+                }
+                if let (true, Some(restored)) = (attempt.is_ok(), restored.as_ref()) {
+                    restored();
                 }
                 if !matches!(attempt, Err(super::refresh::RefreshFailure::Terminal(_))) {
                     super::refresh::run_refresh_loop(
@@ -1203,6 +1218,21 @@ impl InactiveSessions {
                 }
             }
         });
+    }
+
+    /// Every background session on `origin`, by account.
+    pub(crate) fn on_origin(&self, origin: &str) -> Vec<(PublicKey, Arc<super::TokenAuthState>)> {
+        self.sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|((o, _), _)| o == origin)
+            .filter_map(|((_, hex), auth)| {
+                PublicKey::from_hex(hex)
+                    .ok()
+                    .map(|pubkey| (pubkey, Arc::clone(auth)))
+            })
+            .collect()
     }
 
     /// Stop `pubkey`'s background session on `origin`, waiting out a refresh
@@ -1825,13 +1855,14 @@ fn usable_account_keys<R: tauri::Runtime>(
 
 /// NIP-42 AUTH event signed by `account` (not necessarily the active one).
 #[tauri::command]
-pub async fn create_auth_event_as(
-    app: tauri::AppHandle,
+pub async fn create_auth_event_as<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     account: String,
     challenge: String,
     relay_url: String,
 ) -> Result<String, String> {
     use nostr::{EventBuilder, JsonUtil, Kind, Tag};
+    crate::relay::ensure_relay_allowed("create_auth_event_as", &relay_url)?;
     let keys = usable_account_keys(&app, &account, Some(&relay_url))?;
     tauri::async_runtime::spawn_blocking(move || {
         let tags = vec![

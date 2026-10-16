@@ -364,7 +364,7 @@ test("pairing completion updates the final step and resets after leaving", async
 
   await expect(finalStep.getByText("Paired", { exact: true })).toBeVisible();
   await expect(
-    finalStep.getByText("Your mobile app is now connected to this relay."),
+    finalStep.getByText("Your mobile app is now connected."),
   ).toBeVisible();
   await expect(
     finalStep.getByTestId("mobile-pairing-final-step-indicator").locator("svg"),
@@ -377,7 +377,7 @@ test("pairing completion updates the final step and resets after leaving", async
     pairedSurface.getByText("Paired", { exact: true }),
   ).toBeVisible();
   await expect(
-    pairedSurface.getByText("Your mobile app is now connected to this relay."),
+    pairedSurface.getByText("Your mobile app is now connected."),
   ).toHaveCount(0);
 
   await waitForAnimations(page);

@@ -6,6 +6,7 @@ import {
   relayMembersQueryKey,
 } from "@/features/community-members/hooks";
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunities } from "@/features/communities/useCommunities";
 import {
   joinAlertBody,
@@ -153,7 +154,9 @@ export function useCommunityJoinAlerts({ enabled }: { enabled: boolean }) {
   const membershipQuery = useMyRelayMembershipLookupQuery();
 
   const communityId = activeCommunity?.id ?? null;
-  const communityName = activeCommunity?.name ?? null;
+  // One built-in server: notifications never name it.
+  const singleServer = useBuiltInServer() !== null;
+  const communityName = singleServer ? null : (activeCommunity?.name ?? null);
   const normalizedViewer = normalizeJoinPubkey(
     identityQuery.data?.pubkey ?? "",
   );

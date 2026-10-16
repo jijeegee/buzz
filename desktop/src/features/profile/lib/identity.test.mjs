@@ -4,15 +4,17 @@ import test from "node:test";
 import {
   formatOwnerLabel,
   profileLookupsEqual,
+  resolveKnownUserLabel,
   resolveUserLabel,
+  UNKNOWN_USER_LABEL,
 } from "./identity.ts";
 
 const OWNER_PUBKEY =
   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-// npubEncode(OWNER_PUBKEY), pinned so a fallback regression cannot pass by
-// re-deriving the expectation from the code under test.
-const OWNER_NPUB_COMPACT = "npub1hwa…04hu";
+test("UNKNOWN_USER_LABEL is the pinned end-user copy", () => {
+  assert.equal(UNKNOWN_USER_LABEL, "Unknown user");
+});
 
 const summary = (over = {}) => ({
   displayName: "Ada",
@@ -23,9 +25,9 @@ const summary = (over = {}) => ({
   ...over,
 });
 
-test("formatOwnerLabel prefers the owner’s authored labels over the compact npub", () => {
+test("formatOwnerLabel prefers the owner’s authored labels over the unknown-user label", () => {
   // The label ladder: display name first, then a NIP-05 handle, then the
-  // key’s compact npub — never raw hex.
+  // generic unknown-user label — never key text.
   assert.equal(
     formatOwnerLabel(OWNER_PUBKEY, null, {
       [OWNER_PUBKEY]: summary({ displayName: "baxen" }),
@@ -43,7 +45,7 @@ test("formatOwnerLabel prefers the owner’s authored labels over the compact np
   );
   assert.equal(
     formatOwnerLabel(OWNER_PUBKEY, "c".repeat(64), {}),
-    OWNER_NPUB_COMPACT,
+    UNKNOWN_USER_LABEL,
   );
 });
 
@@ -55,12 +57,11 @@ test("formatOwnerLabel returns null when verified ownership is absent", () => {
   assert.equal(formatOwnerLabel(null, OWNER_PUBKEY, {}), null);
 });
 
-test("resolveUserLabel falls back to the key’s compact npub, never raw hex", () => {
-  // No profile, no fallback name: the last resort is the npub compact.
-  assert.equal(
-    resolveUserLabel({ pubkey: OWNER_PUBKEY, profiles: {} }),
-    OWNER_NPUB_COMPACT,
-  );
+test("resolveUserLabel falls back to the unknown-user label, never key text", () => {
+  // No profile, no fallback name: the last resort is the generic label.
+  const label = resolveUserLabel({ pubkey: OWNER_PUBKEY, profiles: {} });
+  assert.equal(label, UNKNOWN_USER_LABEL);
+  assert.doesNotMatch(label, /npub1|[0-9a-f]{8}/);
   // A provided fallback name still wins over the key form.
   assert.equal(
     resolveUserLabel({
@@ -167,4 +168,92 @@ test("stabiliser: a real profile change swaps the reference (re-render fires)", 
   // ...and then re-stabilises around the new value.
   const held = stabilise({ p1: summary({ displayName: "Grace" }) });
   assert.equal(held, changed, "must re-stabilise around the new value");
+});
+
+// Notification sender names (and any other caller that must tell a real name
+// from the generic fallback) rely on `resolveKnownUserLabel` returning null for
+// unnamed identities instead of comparing against a fallback string.
+test("resolveKnownUserLabel returns null only when nothing names the pubkey", () => {
+  assert.equal(
+    resolveKnownUserLabel({ pubkey: OWNER_PUBKEY, profiles: {} }),
+    null,
+  );
+  assert.equal(resolveKnownUserLabel({ pubkey: OWNER_PUBKEY }), null);
+  assert.equal(
+    resolveKnownUserLabel({
+      pubkey: OWNER_PUBKEY,
+      profiles: {
+        [OWNER_PUBKEY]: summary({ displayName: "  ", nip05Handle: null }),
+      },
+    }),
+    null,
+  );
+  assert.equal(
+    resolveKnownUserLabel({
+      pubkey: OWNER_PUBKEY,
+      profiles: { [OWNER_PUBKEY]: summary({ displayName: "baxen" }) },
+    }),
+    "baxen",
+  );
+  assert.equal(
+    resolveKnownUserLabel({
+      pubkey: OWNER_PUBKEY,
+      profiles: {
+        [OWNER_PUBKEY]: summary({ displayName: null, nip05Handle: "b@x" }),
+      },
+    }),
+    "b@x",
+  );
+  assert.equal(
+    resolveKnownUserLabel({
+      pubkey: OWNER_PUBKEY,
+      fallbackName: "legacy relay agent",
+    }),
+    "legacy relay agent",
+  );
+  // Self resolves to "You" unless the caller prefers the resolved name.
+  assert.equal(
+    resolveKnownUserLabel({
+      pubkey: OWNER_PUBKEY,
+      currentPubkey: OWNER_PUBKEY,
+    }),
+    "You",
+  );
+  assert.equal(
+    resolveKnownUserLabel({
+      pubkey: OWNER_PUBKEY,
+      currentPubkey: OWNER_PUBKEY,
+      preferResolvedSelfLabel: true,
+    }),
+    null,
+  );
+});
+
+test("resolveUserLabel is resolveKnownUserLabel with the unknown-user fallback", () => {
+  for (const input of [
+    { pubkey: OWNER_PUBKEY, profiles: {} },
+    {
+      pubkey: OWNER_PUBKEY,
+      profiles: { [OWNER_PUBKEY]: summary({ displayName: "baxen" }) },
+    },
+  ]) {
+    assert.equal(
+      resolveUserLabel(input),
+      resolveKnownUserLabel(input) ?? UNKNOWN_USER_LABEL,
+    );
+  }
+});
+
+// A user literally named like the fallback copy is still a real name: the
+// notification path must not treat it as unresolved.
+test("resolveKnownUserLabel keeps a display name equal to the fallback copy", () => {
+  assert.equal(
+    resolveKnownUserLabel({
+      pubkey: OWNER_PUBKEY,
+      profiles: {
+        [OWNER_PUBKEY]: summary({ displayName: UNKNOWN_USER_LABEL }),
+      },
+    }),
+    UNKNOWN_USER_LABEL,
+  );
 });

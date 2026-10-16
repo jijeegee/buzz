@@ -36,6 +36,26 @@ export function applyAuthDeviceRename(
   notifyAuthDevicesChanged();
 }
 
+/**
+ * The signed-in account's devices in the relay's order (oldest first), shared
+ * by every caller. Empty when not signed in with Google (the list call fails
+ * and is not retried).
+ */
+export function useAuthDevicesQuery(enabled = true) {
+  return useQuery({
+    enabled,
+    queryKey: AUTH_DEVICES_QUERY_KEY,
+    queryFn: async () => {
+      try {
+        return await listAuthDevices();
+      } catch {
+        return [] as AuthDevice[];
+      }
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 /** What an agent's robot tooltip says about one of the account's devices. */
 export type AuthDeviceLabel = {
   name: string;
@@ -53,18 +73,7 @@ export function useAuthDeviceLabels(
   enabled = true,
 ): Map<string, AuthDeviceLabel> {
   const queryClient = useQueryClient();
-  const query = useQuery({
-    enabled,
-    queryKey: AUTH_DEVICES_QUERY_KEY,
-    queryFn: async () => {
-      try {
-        return await listAuthDevices();
-      } catch {
-        return [];
-      }
-    },
-    staleTime: 5 * 60_000,
-  });
+  const query = useAuthDevicesQuery(enabled);
   React.useEffect(() => {
     const refresh = () =>
       void queryClient.invalidateQueries({ queryKey: AUTH_DEVICES_QUERY_KEY });

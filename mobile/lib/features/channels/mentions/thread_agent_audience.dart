@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -27,22 +30,23 @@ class KeepMentionedAgentsPinnedPreference extends Notifier<bool> {
   }
 }
 
-/// Audience scope for one thread composer, matching desktop's
-/// `owner:channel:thread:<headId>` key. Null outside threads.
+/// Audience scope for one composer, matching desktop's keys:
+/// `owner:channel:thread:<headId>` for a thread and `owner:channel:channel`
+/// for the channel main timeline when [channelMain] opts in. Null otherwise.
 String? threadAgentAudienceScope({
   required String? ownerPubkey,
   required String channelId,
   required String? threadHeadId,
+  bool channelMain = false,
 }) {
   final owner = ownerPubkey?.trim().toLowerCase();
-  if (owner == null ||
-      !_hexPubkey.hasMatch(owner) ||
-      channelId.isEmpty ||
-      threadHeadId == null ||
-      threadHeadId.isEmpty) {
+  if (owner == null || !_hexPubkey.hasMatch(owner) || channelId.isEmpty) {
     return null;
   }
-  return '$owner:$channelId:thread:$threadHeadId';
+  if (threadHeadId != null && threadHeadId.isNotEmpty) {
+    return '$owner:$channelId:thread:$threadHeadId';
+  }
+  return channelMain ? '$owner:$channelId:channel' : null;
 }
 
 final _hexPubkey = RegExp(r'^[0-9a-f]{64}$');
@@ -61,9 +65,10 @@ class ThreadAgentAudienceState {
       scope == null ? const [] : audiences[scope] ?? const [];
 }
 
-/// In-memory automatically mentioned agents per thread, like desktop's
-/// `persistentAgentAudience.ts`. Agents the user removes in a thread are
-/// remembered as excluded so the thread root does not add them back.
+/// Automatically mentioned agents per thread/channel, like desktop's
+/// `persistentAgentAudience.ts`. Agents the user removes are remembered as
+/// excluded so the thread root does not add them back. Saved on this device
+/// so choices survive app restarts (fork; upstream keeps them in memory).
 final threadAgentAudienceProvider =
     NotifierProvider<ThreadAgentAudience, ThreadAgentAudienceState>(
       ThreadAgentAudience.new,
@@ -71,11 +76,43 @@ final threadAgentAudienceProvider =
 
 class ThreadAgentAudience extends Notifier<ThreadAgentAudienceState> {
   static const maxScopes = 200;
+  static const storageKey = 'buzz_mobile_agent_audiences_v1';
 
   @override
-  ThreadAgentAudienceState build() => const ThreadAgentAudienceState();
+  ThreadAgentAudienceState build() {
+    try {
+      final raw = ref.read(savedPrefsProvider).getString(storageKey);
+      if (raw == null) return const ThreadAgentAudienceState();
+      final stored = jsonDecode(raw) as Map<String, dynamic>;
+      final audiences = <String, List<String>>{
+        for (final entry
+            in (stored['audiences'] as Map<String, dynamic>? ?? {}).entries)
+          if (entry.value is List)
+            entry.key: List.unmodifiable(
+              _normalize((entry.value as List).map((v) => '$v')),
+            ),
+      };
+      final excluded = <String, Set<String>>{
+        for (final entry
+            in (stored['excluded'] as Map<String, dynamic>? ?? {}).entries)
+          if (audiences.containsKey(entry.key) && entry.value is List)
+            entry.key: Set.unmodifiable(
+              _normalize((entry.value as List).map((v) => '$v')),
+            ),
+      };
+      return ThreadAgentAudienceState(
+        audiences: Map.unmodifiable(audiences),
+        excluded: Map.unmodifiable(excluded),
+      );
+    } catch (_) {
+      return const ThreadAgentAudienceState();
+    }
+  }
 
-  void reset() => state = const ThreadAgentAudienceState();
+  void reset() {
+    state = const ThreadAgentAudienceState();
+    unawaited(ref.read(savedPrefsProvider).remove(storageKey));
+  }
 
   /// Adds the thread root's agents unless already present or excluded.
   void initialize(String scope, Iterable<String> pubkeys) {
@@ -137,6 +174,22 @@ class ThreadAgentAudience extends Notifier<ThreadAgentAudienceState> {
     state = ThreadAgentAudienceState(
       audiences: Map.unmodifiable(audiences),
       excluded: Map.unmodifiable(nextExcluded),
+    );
+    // Best-effort: the live audience still applies if saving fails.
+    unawaited(
+      ref
+          .read(savedPrefsProvider)
+          .setString(
+            storageKey,
+            jsonEncode({
+              'audiences': audiences,
+              'excluded': {
+                for (final entry in nextExcluded.entries)
+                  entry.key: entry.value.toList(),
+              },
+            }),
+          )
+          .catchError((Object _) => false),
     );
   }
 }

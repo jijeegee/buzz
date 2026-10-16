@@ -275,7 +275,9 @@ export function ProjectsPullRequestsList({
           </Button>
         }
         description={
-          error instanceof Error ? error.message : "The relay request failed."
+          error instanceof Error
+            ? error.message
+            : "Something went wrong. Try again."
         }
         error
         panel={false}

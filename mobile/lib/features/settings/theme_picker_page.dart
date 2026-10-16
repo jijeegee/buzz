@@ -7,9 +7,11 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/auth/default_community.dart';
 import '../../shared/community/community_icon_provider.dart';
 import '../../shared/community/community_provider.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/widgets/app_brand_logo.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';

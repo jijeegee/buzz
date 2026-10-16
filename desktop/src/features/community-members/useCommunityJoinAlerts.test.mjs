@@ -206,6 +206,15 @@ globalThis.window.localStorage = globalThis.localStorage;
 // success). Recording the constructor calls is how we count alerts.
 
 const notifications = [];
+
+/**
+ * The joiner a recorded alert announces. Unnamed joiners all read
+ * "Unknown user joined", so identity assertions use the notification's
+ * click target rather than its visible body text.
+ */
+function alertedPubkey(entry) {
+  return entry.options?.extra?.buzzNotificationTarget?.pubkey ?? null;
+}
 /**
  * Optional hook fired synchronously from inside the Notification constructor.
  *
@@ -250,7 +259,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { useCommunityJoinAlerts } from "@/features/community-members/useCommunityJoinAlerts.ts";
 import { joinAlertStorageKey } from "@/features/community-members/lib/joinAlerts.ts";
-import { truncateNpub } from "@/shared/lib/pubkey.ts";
 import { relayClient } from "@/shared/api/relayClient.ts";
 import { CommunitiesProvider } from "@/features/communities/useCommunities.tsx";
 import { useCommunities } from "@/features/communities/useCommunities.tsx";
@@ -1716,7 +1724,7 @@ describe("useCommunityJoinAlerts — mounted subscription behaviour", () => {
       "a frame that predates the demotion must not re-open disclosure",
     );
     assert.ok(
-      !notifications.some((entry) => entry.body?.includes(truncateNpub(BOB))),
+      !notifications.some((entry) => alertedPubkey(entry) === BOB),
       "the demoted viewer must never learn the new member's identity",
     );
     assert.equal(
@@ -1983,11 +1991,11 @@ describe("useCommunityJoinAlerts — mounted subscription behaviour", () => {
       "a community switch clears the latch: the feature recovers without a reload",
     );
     assert.ok(
-      notifications.some((entry) => entry.body?.includes(truncateNpub(BOB))),
+      notifications.some((entry) => alertedPubkey(entry) === BOB),
       "the join suppressed by the latch is re-announced, not lost",
     );
     assert.ok(
-      notifications.some((entry) => entry.body?.includes(truncateNpub(CAROL))),
+      notifications.some((entry) => alertedPubkey(entry) === CAROL),
       "and the new join lands too",
     );
 

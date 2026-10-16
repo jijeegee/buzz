@@ -84,6 +84,7 @@ import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
 import { isJoinedChat } from "@/features/sidebar/lib/chatList";
 import { useCommunities } from "@/features/communities/useCommunities";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import {
   consumePendingCommunityRestore,
   loadCommunityDestination,
@@ -93,6 +94,7 @@ import { useAddCommunityDialogState } from "@/features/communities/addCommunityP
 import { useApplyTemplate } from "@/features/channel-templates/useApplyTemplate";
 import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
 import { joinAgentsAfterCreate } from "@/features/agents/lib/joinAgentsAfterCreate";
+import { useAutoAssignDeviceRobots } from "@/shared/api/useAutoAssignDeviceRobots";
 import { useOwnerDevicesLiveUpdates } from "@/shared/api/useOwnerDevices";
 import { relayClient } from "@/shared/api/relayClient";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -136,7 +138,10 @@ export function AppShell() {
     showHuddleInMainApp,
     viewHuddleChannel,
   } = useHuddlePresentation();
-  const hasCommunityRail = communitiesHook.communities.length > 1;
+  // One built-in server: the rail (switch / add / remove servers) never shows.
+  const singleServer = useBuiltInServer() !== null;
+  const hasCommunityRail =
+    !singleServer && communitiesHook.communities.length > 1;
   const addCommunityDialog = useAddCommunityDialogState();
   const [isChannelManagementOpen, setIsChannelManagementOpen] =
     React.useState(false);
@@ -246,6 +251,7 @@ export function AppShell() {
   useUserStatusSubscription();
   useCommunityEmojiLiveUpdates();
   useOwnerDevicesLiveUpdates(deferredPubkey);
+  useAutoAssignDeviceRobots(deferredPubkey);
   useMembershipNotifications(identityQuery.data?.pubkey);
   const presenceSession = usePresenceSession(deferredPubkey);
   const selfStatusQuery = useUserStatusQuery(

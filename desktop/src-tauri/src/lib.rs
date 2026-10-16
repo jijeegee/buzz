@@ -52,7 +52,7 @@ mod templates;
 mod terminal_runtime;
 #[cfg_attr(not(test), allow(dead_code))]
 mod terminal_transport;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod tray_menu;
 mod unread_catch_up;
 mod util;
@@ -96,7 +96,7 @@ use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use tauri::Listener;
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 use tray_menu::show_main_window;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -125,7 +125,11 @@ pub fn run() {
     }
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            // Focus the existing window when a duplicate instance launches.
+            // Bring back the existing window when a duplicate instance launches;
+            // on Windows it may be hidden in the tray.
+            #[cfg(any(target_os = "macos", windows))]
+            show_main_window(app);
+            #[cfg(not(any(target_os = "macos", windows)))]
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_focus();
             }
@@ -239,11 +243,10 @@ pub fn run() {
         .manage(channel_head_cache::ChannelHeadCacheStore::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
+            #[cfg(any(target_os = "macos", windows))]
+            tray_menu::init(&app_handle)?;
             #[cfg(target_os = "macos")]
-            {
-                tray_menu::init(&app_handle)?;
-                macos_notifications::init(&app_handle)?;
-            }
+            macos_notifications::init(&app_handle)?;
 
             // Initialise the no-redirect admin HTTP client singleton before any
             // admin command can be invoked. Must run before setup completes.
@@ -308,6 +311,7 @@ pub fn run() {
             // The relay ending an account's session for good signs that
             // account out here (and stops its agents), active or not.
             crate::auth::commands::install_session_ended_hook(&app_handle);
+            crate::auth::commands::install_session_restored_hook(&app_handle);
             // Signed-in accounts that are not active stay signed in.
             crate::auth::accounts::start_background_sessions(&app_handle);
 
@@ -630,6 +634,7 @@ pub fn run() {
             get_presence,
             get_os_idle_seconds,
             get_default_relay_url,
+            get_built_in_relay_url,
             auto_connect_default_relay_enabled,
             get_legacy_workspace_storage,
             is_shared_identity,
@@ -666,6 +671,7 @@ pub fn run() {
             auth::accounts::nip44_decrypt_as,
             auth::commands::cancel_google_login,
             auth::commands::logout,
+            auth::commands::logout_on_this_device,
             auth::commands::get_ws_auth_frame,
             auth::commands::list_devices,
             auth::commands::revoke_device,
@@ -947,13 +953,13 @@ pub fn run() {
             archive::sync::stop_archive_sync,
             is_auto_update_supported,
             set_window_vibrancy,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             tray_menu::clear_tray_agent_activity,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             tray_menu::requeue_tray_actions,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             tray_menu::take_tray_actions,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             tray_menu::update_tray_agent_activity,
             // ── Desktop admin surface ────────────────────────────────────────
             admin_probe,
@@ -990,7 +996,7 @@ pub fn run() {
     app.run(move |app_handle, event| match event {
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => show_main_window(app_handle),
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", windows))]
         RunEvent::WindowEvent {
             label,
             event: WindowEvent::CloseRequested { api, .. },

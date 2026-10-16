@@ -91,6 +91,8 @@ pub(super) fn filter_openrouter_models(
         .into_iter()
         .filter(|m| m.supported_parameters.iter().any(|p| p == "tools"))
         .map(|m| AgentModelInfo {
+            supported_efforts: None,
+            default_effort: None,
             id: m.id.clone(),
             name: Some(m.id),
             description: None,

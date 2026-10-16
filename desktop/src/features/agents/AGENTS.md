@@ -283,7 +283,20 @@ with a TypeScript lookup table or an id comparison in a component.
    retained transport key `BUZZ_ACP_EFFORT_LEVEL`. Goose and buzz-agent keep
    their native env knob (`GOOSE_THINKING_EFFORT` / `BUZZ_AGENT_THINKING_EFFORT`)
    and its `EffortSelectField`; the catalog's `effort_thought_level` is `None`
-   for them, so the column picker hides.
+   for them, so the column picker hides. The buzz-agent knob renders in the basic
+   section directly under the model choice in both `AgentInstanceEditDialog`
+   and `AgentDefinitionDialog` (not under Advanced): effort is part of the
+   model choice for every harness. At request time `buzz-agent` answers a
+   provider effort rejection with at most two retries (the nearest level the
+   provider lists, sent verbatim, then effort omitted) and never rewrites the
+   saved value. The picker clears a saved value only after the user changes
+   provider/model in the open dialog, never on open: the static manifest can
+   lack a level (e.g. `max`) that discovery is about to report. Its
+   options come from the static manifest unless model discovery reports the
+   selected model's levels (`AgentModelInfo.supportedEfforts` /
+   `defaultEffort`, filled from the ChatGPT subscription catalog's
+   `supported_reasoning_levels`); then only those levels that buzz-agent
+   parses are offered (`getProviderEffortConfig`'s `catalog` argument).
 
    **Where each write goes.** Create embeds the pick in `create_persona`
    (`CreatePersonaRequest.effort_level`, trimmed, blank = unset) — the
@@ -711,6 +724,21 @@ with a TypeScript lookup table or an id comparison in a component.
     selectable when any route is ready; otherwise it is disabled with the
     missing piece, e.g. "Sign in to Codex or Claude Code, or add an API key ·
     Models".
+
+## Kuzz Agent ChatGPT subscription
+
+`supports_chatgpt_subscription` in the Rust runtime catalog permits Kuzz Agent's
+`openai-subscription` provider. It reuses the existing file-backed Codex login,
+reads authentication on each request, and never writes or refreshes it. The login
+owner handles renewal. Model discovery and readiness use the effective CODEX_HOME.
+No API key is required and subscription failures never fall back to paid API keys.
+The provider selector offers subscription only for capable harnesses; explicit
+harness changes clear an unsupported subscription and its model. Providers keeps
+one OpenAI card and the existing subscription/API-key choices. Choosing subscription
+keeps a selected capable Kuzz runtime; existing Codex selections remain Codex.
+Task-model CLI authentication remains unchanged. Subscription SSE is collected
+before handing a complete response to the existing agent loop; this adds no new
+token-by-token UI streaming behavior.
 
 ## Channel-only runtime controls
 

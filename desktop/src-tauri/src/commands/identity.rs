@@ -82,6 +82,12 @@ pub fn get_default_relay_url() -> String {
     relay::relay_ws_url()
 }
 
+/// The built-in server this build connects to (the only one it accepts).
+#[tauri::command]
+pub fn get_built_in_relay_url() -> String {
+    relay::relay_ws_url()
+}
+
 #[tauri::command]
 pub fn auto_connect_default_relay_enabled() -> bool {
     option_env!("BUZZ_DESKTOP_BUILD_AUTO_CONNECT_DEFAULT_RELAY").is_some()
@@ -225,8 +231,10 @@ pub fn build_observer_control_event(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let keys = state.signing_keys()?;
-    let agent_pubkey = PublicKey::from_hex(agent_pubkey.trim())
-        .map_err(|error| format!("invalid agent pubkey: {error}"))?;
+    let agent_pubkey = PublicKey::from_hex(agent_pubkey.trim()).map_err(|e| {
+        eprintln!("buzz-desktop: invalid agent pubkey: {e}");
+        "Something went wrong with this agent. Try again.".to_string()
+    })?;
     let agent_pubkey_hex = agent_pubkey.to_hex();
     let encrypted =
         buzz_core_pkg::observer::encrypt_observer_payload(&keys, &agent_pubkey, &payload)
@@ -247,9 +255,10 @@ pub fn build_observer_control_event(
 #[tauri::command]
 pub fn get_nsec(state: State<'_, AppState>) -> Result<String, String> {
     let keys = state.signing_keys()?;
-    keys.secret_key()
-        .to_bech32()
-        .map_err(|error| format!("encode nsec: {error}"))
+    keys.secret_key().to_bech32().map_err(|e| {
+        eprintln!("buzz-desktop: encode nsec: {e}");
+        "Couldn't save your account on this device.".to_string()
+    })
 }
 
 /// Generate a passphrase for a new encrypted backup (EFF short wordlist, OS
@@ -704,12 +713,15 @@ pub async fn create_auth_event(
     relay_url: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    relay::ensure_relay_allowed("create_auth_event", &relay_url)?;
     let keys = state.signing_keys()?;
 
     tauri::async_runtime::spawn_blocking(move || {
         let tags = vec![
-            Tag::parse(vec!["relay", &relay_url])
-                .map_err(|error| format!("relay tag failed: {error}"))?,
+            Tag::parse(vec!["relay", &relay_url]).map_err(|e| {
+                eprintln!("buzz-desktop: relay tag failed: {e}");
+                "Something went wrong. Try again.".to_string()
+            })?,
             Tag::parse(vec!["challenge", &challenge])
                 .map_err(|error| format!("challenge tag failed: {error}"))?,
         ];
@@ -915,5 +927,19 @@ mod sign_event_self_tagging_tests {
                 "third-party p-tag must survive with allow_self_tagging={flag}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn create_auth_event_refuses_another_server() {
+        use tauri::Manager as _;
+        let app = crate::relay::server::refusal_test_app();
+        let error = super::create_auth_event(
+            "challenge".into(),
+            "wss://other.example".into(),
+            app.state(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, crate::relay::server::REFUSED);
     }
 }

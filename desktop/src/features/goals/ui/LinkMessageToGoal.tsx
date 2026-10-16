@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { getThreadReference } from "@/features/messages/lib/threading";
 import type { TimelineMessage } from "@/features/messages/types";
-import { useFeatureEnabled } from "@/shared/features";
+import { useChannelReference } from "@/features/channels/openChannelDirectory";
 import {
   Dialog,
   DialogContent,
@@ -17,15 +17,18 @@ import { useApplyGoalOpMutation, useGoalTreeQuery } from "../hooks";
 import type { Apply } from "./GoalRows";
 import { GoalLinkPicker } from "./ThreadGoalPanelView";
 
-/** "Link to goal" in a message's More menu, while goals are enabled. */
+/** "Link to goal" in a message's More menu, while the room has goals on. */
 export function LinkToGoalMenuItem({
+  channelId,
   message,
   onSelect,
 }: {
+  channelId: string;
   message: TimelineMessage;
   onSelect: () => void;
 }) {
-  if (!useFeatureEnabled("goalTree")) return null;
+  const channel = useChannelReference(channelId);
+  if (channel?.goalsEnabled !== true) return null;
   return (
     <DropdownMenuItem
       data-testid={`link-message-to-goal-${message.id}`}

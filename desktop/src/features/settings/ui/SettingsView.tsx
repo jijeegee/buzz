@@ -2,7 +2,9 @@ import * as React from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { AlertCircle, ArrowLeft, LoaderCircle, RefreshCw } from "lucide-react";
 
+import { useAdminConsoleAccessQuery } from "@/features/admin-console/adminConsoleAccess";
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   canManageCommunityMembers,
   shouldWarnMissingMembershipSnapshot,
@@ -74,7 +76,7 @@ export const settingsNavGroups: Array<{
     ],
   },
   {
-    label: "Communities",
+    label: "Members",
     sections: ["hosted-communities", "community-members", "relay-admin"],
   },
   {
@@ -144,6 +146,8 @@ export function SettingsView({
 }: SettingsViewProps) {
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const myMembershipQuery = useMyRelayMembershipLookupQuery();
+  const adminAccessQuery = useAdminConsoleAccessQuery();
+  const identityQuery = useIdentityQuery();
   const featureState = useFeatureSnapshot();
   const visibleSections = React.useMemo(() => {
     return settingsSections.filter((s) => {
@@ -167,16 +171,15 @@ export function SettingsView({
       if (s.value === "community-members") {
         return canManageCommunityMembers(myMembershipQuery.data);
       }
-      // Relay admin surfaces the relay admin console. Always reachable so an
-      // operator can enter a manual origin even when NIP-11 discovery is
-      // absent, invalid, or pending — hiding the entry would lock them out of
-      // the only place to configure one. Auth still gates the panel itself.
+      // Kuzz runs a single relay that advertises its admin API, so the Admin
+      // section is shown only once the server confirms an operator or
+      // moderator; pending, failed and denied checks all hide it.
       if (s.value === "relay-admin") {
-        return true;
+        return adminAccessQuery.data === true;
       }
       return true;
     });
-  }, [myMembershipQuery.data, featureState]);
+  }, [myMembershipQuery.data, featureState, adminAccessQuery.data]);
 
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [appVersion, setAppVersion] = React.useState<string | null>(null);
@@ -190,11 +193,21 @@ export function SettingsView({
     void getVersion().then(setAppVersion);
   }, []);
 
+  // A link or reload into the Admin section waits for the access check
+  // instead of bouncing an operator to another section first.
+  // A disabled query (no identity) stays pending forever, so wait only while
+  // the identity is loading or the check is actually running.
+  const awaitingAdminAccess =
+    section === "relay-admin" &&
+    adminAccessQuery.isPending &&
+    (identityQuery.isPending || adminAccessQuery.fetchStatus === "fetching");
+
   React.useEffect(() => {
+    if (awaitingAdminAccess) return;
     if (!visibleSections.some((entry) => entry.value === section)) {
       onSectionChange(visibleSections[0]?.value ?? "appearance");
     }
-  }, [onSectionChange, section, visibleSections]);
+  }, [awaitingAdminAccess, onSectionChange, section, visibleSections]);
 
   React.useEffect(() => {
     if (!isMobile && !sidebarOpen) {
@@ -304,8 +317,7 @@ export function SettingsView({
               data-testid="community-access-snapshot-missing"
             >
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
-              Invite settings are unavailable. Relay recovery may still be in
-              progress.
+              Invite settings are unavailable right now. Try again shortly.
             </div>
           ) : null}
           {visibleNavGroups.map((group) => (
@@ -370,20 +382,32 @@ export function SettingsView({
               className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4"
               data-testid={`settings-panel-${section}`}
             >
-              {renderSettingsSection(section, {
-                currentPubkey,
-                fallbackDisplayName,
-                isUpdatingDesktopNotifications,
-                notificationErrorMessage,
-                notificationPermission,
-                notificationSettings,
-                onSetDesktopNotificationsEnabled,
-                onSetHomeBadgeEnabled,
-                onSetSlotAlertsEnabled,
-                onSetNotifyWhileViewing,
-                onSetAllSlotAlertsEnabled,
-                onSetSoundForSlot,
-              })}
+              {awaitingAdminAccess ? (
+                <div
+                  className="flex flex-1 items-center justify-center"
+                  data-testid="settings-admin-access-pending"
+                >
+                  <LoaderCircle
+                    aria-label="Loading"
+                    className="h-5 w-5 animate-spin text-muted-foreground"
+                  />
+                </div>
+              ) : (
+                renderSettingsSection(section, {
+                  currentPubkey,
+                  fallbackDisplayName,
+                  isUpdatingDesktopNotifications,
+                  notificationErrorMessage,
+                  notificationPermission,
+                  notificationSettings,
+                  onSetDesktopNotificationsEnabled,
+                  onSetHomeBadgeEnabled,
+                  onSetSlotAlertsEnabled,
+                  onSetNotifyWhileViewing,
+                  onSetAllSlotAlertsEnabled,
+                  onSetSoundForSlot,
+                })
+              )}
             </div>
           </section>
         </div>

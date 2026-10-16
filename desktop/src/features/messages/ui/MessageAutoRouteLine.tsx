@@ -2,7 +2,7 @@ import * as React from "react";
 
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { getAutoRouteMentionPubkeys } from "../lib/agentAddressMention.mjs";
 import { useAutoRouteStatus } from "../lib/autoRouteStatus";
 
@@ -60,7 +60,7 @@ export function MessageAutoRouteLine({
         const label =
           profile?.displayName?.trim() ||
           profile?.name?.trim() ||
-          truncateNpub(pubkey);
+          UNKNOWN_USER_LABEL;
         return (
           <React.Fragment key={pubkey}>
             {index > 0 ? <span>,</span> : null}

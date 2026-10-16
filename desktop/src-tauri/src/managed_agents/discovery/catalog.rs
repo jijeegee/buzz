@@ -47,6 +47,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         max_rounds_env_var: None,
         required_normalized_fields: &["model", "provider"],
         login_hint: None,
+        supports_chatgpt_subscription: false,
         subscription_provider: None,
         auth_probe_args: None,
     },
@@ -84,6 +85,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         max_rounds_env_var: None,
         required_normalized_fields: &[],
         login_hint: Some("Run the Claude CLI to complete authentication."),
+        supports_chatgpt_subscription: false,
         subscription_provider: Some("anthropic"),
         auth_probe_args: Some(&["claude", "auth", "status"]),
     },
@@ -121,6 +123,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         max_rounds_env_var: None,
         required_normalized_fields: &[],
         login_hint: Some("Run `codex login` to authenticate."),
+        supports_chatgpt_subscription: false,
         subscription_provider: Some("openai"),
         // Verified: `codex login status` exits 0 when logged in, non-zero otherwise.
         auth_probe_args: Some(&["codex", "login", "status"]),
@@ -146,7 +149,10 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         model_env_var: Some("BUZZ_AGENT_MODEL"),
         provider_env_var: Some("BUZZ_AGENT_PROVIDER"),
         provider_locked: false,
-        default_env: &[],
+        // Text-only completions remain in Activity. Managed Buzz agents must
+        // be reminded to publish via the existing bounded reply guard.
+        // Explicit layered user settings still override this default.
+        default_env: &[("BUZZ_AGENT_REQUIRE_REPLY", "1")],
         config_file_path: None,
         config_file_format: None,
         supports_acp_native_config: false,
@@ -159,6 +165,7 @@ pub(crate) const KNOWN_ACP_RUNTIMES: &[KnownAcpRuntime] = &[
         max_rounds_env_var: Some("BUZZ_AGENT_MAX_ROUNDS"),
         required_normalized_fields: &["model", "provider"],
         login_hint: None,
+        supports_chatgpt_subscription: true,
         subscription_provider: None,
         auth_probe_args: None,
     },

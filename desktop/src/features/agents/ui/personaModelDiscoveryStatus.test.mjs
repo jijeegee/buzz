@@ -57,8 +57,8 @@ test("Buzz shared compute distinguishes relay lookup failures", () => {
   );
 
   assert.equal(status?.tone, "warning");
-  assert.match(status?.message ?? "", /couldn't check shared compute/);
-  assert.match(status?.message ?? "", /relay connection/);
+  assert.match(status?.message ?? "", /Couldn't check shared computers/);
+  assert.match(status?.message ?? "", /Check your connection/);
 });
 
 test("Buzz shared compute names a missing relay member roster", () => {
@@ -68,9 +68,8 @@ test("Buzz shared compute names a missing relay member roster", () => {
   );
 
   assert.equal(status?.tone, "warning");
-  assert.match(status?.message ?? "", /waiting for the relay's member roster/);
-  assert.match(status?.message ?? "", /membership configuration/);
-  assert.doesNotMatch(status?.message ?? "", /relay connection/);
+  assert.match(status?.message ?? "", /Still loading community members/);
+  assert.doesNotMatch(status?.message ?? "", /Check your connection/);
 });
 
 test("model discovery status stays quiet for missing Databricks defaults", () => {

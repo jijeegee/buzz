@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:nostr/nostr.dart' as nostr;
 
+import '../auth/default_community.dart';
 import 'nostr_models.dart';
 import 'relay_provider.dart';
 import 'relay_session.dart';
@@ -162,6 +163,10 @@ Future<NostrEvent> submitSignedEventOnce({
   int? createdAt,
   Duration timeout = const Duration(seconds: 12),
 }) async {
+  // Refused before anything is signed; [RelaySocket] refuses it as well.
+  if (!allowConnection('signed event publish', wsUrl)) {
+    throw StateError(differentServerMessage);
+  }
   final privateKey = nostr.Nip19.decode(payload: nsec).data;
   if (privateKey.isEmpty) throw const FormatException('Invalid nsec');
   final signed = nostr.Event.from(

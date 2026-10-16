@@ -75,9 +75,7 @@ export async function addProjectChannel(
     )[0];
   const liveHead = await fetchLiveHead();
   if (!liveHead) {
-    throw new Error(
-      "Could not find this project on the relay. Refresh and try again.",
-    );
+    throw new Error("Couldn't find this project. Refresh and try again.");
   }
   if (liveHead.created_at > input.project.createdAt) {
     throw new Error(
@@ -154,9 +152,7 @@ export async function addProjectChannel(
     } catch (error) {
       await removeCreatedChannelAndThrow(
         isUnsupportedProjectKindError(error)
-          ? new Error(
-              "This relay does not support projects yet, so the channel could not be linked.",
-            )
+          ? new Error("Projects aren't available in this community yet.")
           : error instanceof Error
             ? error
             : new Error("Could not link the channel to this project."),

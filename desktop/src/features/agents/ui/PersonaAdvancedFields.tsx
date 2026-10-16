@@ -17,10 +17,7 @@ import {
   AGENT_PARALLELISM_PLACEHOLDER,
   parallelismCapHint,
 } from "../lib/agentParallelism";
-import {
-  BuzzAgentModelTuningFields,
-  NumericTuningFields,
-} from "./buzzAgentModelTuningFields";
+import { NumericTuningFields } from "./buzzAgentModelTuningFields";
 import {
   CARD_MINT_KEY_ANNOTATIONS,
   PERSONA_FIELD_CONTROL_CLASS,
@@ -46,13 +43,11 @@ export function PersonaAdvancedFields({
   envVars,
   afterRespondTo,
   inheritedEnvVars = {},
-  model,
   modelTuningRuntimeId = "",
   namePoolText,
   onBehaviorDraftChange,
   onEnvVarsChange,
   onNamePoolTextChange,
-  provider,
   requiredEnvKeys = [],
   fileSatisfiedEnvKeys = [],
   hiddenEnvKeys = [],
@@ -67,16 +62,12 @@ export function PersonaAdvancedFields({
   /** Env vars to display as inherited defaults in tuning-field placeholders.
    *  For templates, pass `globalConfig.env_vars` (the fallback layer). */
   inheritedEnvVars?: EnvVarsValue;
-  /** Active LLM model — forwarded to BuzzAgentModelTuningFields for effort filtering. */
-  model?: string;
   /** Runtime id for the buzz-agent effort-tuning knob visibility gate. */
   modelTuningRuntimeId?: string;
   namePoolText: string;
   onBehaviorDraftChange: (value: PersonaBehaviorDraft) => void;
   onEnvVarsChange: (value: EnvVarsValue) => void;
   onNamePoolTextChange: (value: string) => void;
-  /** Active LLM provider id — forwarded to BuzzAgentModelTuningFields for effort filtering. */
-  provider?: string;
   requiredEnvKeys?: readonly string[];
   fileSatisfiedEnvKeys?: readonly string[];
   hiddenEnvKeys?: readonly string[];
@@ -311,25 +302,6 @@ export function PersonaAdvancedFields({
             }
             onEnvVarsChange(next);
           }}
-        />
-      ) : null}
-
-      {/* Effort-tuning knob — only shown for buzz-agent. */}
-      {isBuzzAgentRuntime(modelTuningRuntimeId) ? (
-        <BuzzAgentModelTuningFields
-          envVars={envVars}
-          inheritedEnvVars={inheritedEnvVars}
-          model={model}
-          onEnvVarChange={(key, value) => {
-            const next = { ...envVars };
-            if (value === "") {
-              delete next[key];
-            } else {
-              next[key] = value;
-            }
-            onEnvVarsChange(next);
-          }}
-          provider={provider}
         />
       ) : null}
     </div>

@@ -6,9 +6,10 @@
  * rendered text per variant, and that an unencodable identity — including
  * degenerate-length hex and short-payload npubs whose npubEncode outputs
  * carry valid checksums — renders the neutral label with no copy affordance,
- * never a fake npub. The clipboard write behind the copy affordance and the
- * popover the widget opens are real-bridge interactions owned by the E2E
- * regressions: the full variant's copy is pinned by the new-DM recipient
+ * never a fake npub. Outside E2E builds (this suite included) the copy and
+ * expand controls are hidden, so Kuzz users only ever see key text. The
+ * clipboard write behind the copy affordance and the popover the widget opens
+ * are real-bridge interactions owned by the E2E regressions: the full variant's copy is pinned by the new-DM recipient
  * verification flow (tests/e2e/pubkey-display-screenshots.spec.ts) and the
  * compact variant's by the agent-access owner hint
  * (tests/e2e/agent-access-warning.spec.ts); both drive CopyRow through the
@@ -61,11 +62,10 @@ async function renderPubKey(props) {
 }
 
 test("compact PubKey renders the truncated npub, never the hex", async () => {
+  // Without the E2E seam there is no expand control, only text.
   const trigger = await renderPubKey({ pubkey: HEX });
-  assert.equal(
-    trigger.getByRole("button", { name: "Show full public key" }).textContent,
-    COMPACT_NPUB,
-  );
+  assert.equal(trigger.getByText(COMPACT_NPUB).tagName, "SPAN");
+  assert.equal(trigger.queryByRole("button"), null);
   assert.equal(trigger.queryByText(HEX), null);
 
   // A parent row that owns the interaction gets the same text, not a button.
@@ -78,20 +78,14 @@ test("compact PubKey renders the truncated npub, never the hex", async () => {
   // accepts it); the gate must render its canonical compact form, not the
   // neutral label.
   const upper = await renderPubKey({ pubkey: NPUB.toUpperCase() });
-  assert.equal(
-    upper.getByRole("button", { name: "Show full public key" }).textContent,
-    COMPACT_NPUB,
-  );
+  assert.equal(upper.getByText(COMPACT_NPUB).tagName, "SPAN");
   assert.equal(upper.queryByText("Unavailable"), null);
 });
 
-test("full PubKey renders the complete npub with a copy affordance", async () => {
+test("full PubKey renders the complete npub without a copy affordance outside E2E", async () => {
   const view = await renderPubKey({ pubkey: HEX, variant: "full" });
   assert.equal(view.getByText(NPUB).textContent, NPUB);
-  assert.equal(
-    view.getByRole("button", { name: "Copy public key" }).tagName,
-    "BUTTON",
-  );
+  assert.equal(view.queryByRole("button", { name: "Copy public key" }), null);
   assert.equal(view.queryByText(HEX), null);
 });
 

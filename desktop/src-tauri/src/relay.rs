@@ -11,12 +11,10 @@ use crate::app_state::AppState;
 #[allow(unused_imports)] // trait methods used by relay helpers and `relay::submit`
 use crate::auth::credential::RelaySigner;
 
-const DEFAULT_RELAY_WS_URL: &str = "ws://localhost:3000";
-
 // A reached-but-malformed 2xx body is NOT a connectivity failure, so this
 // message must never carry the "relay unreachable:" prefix the frontend
 // classifier keys on. Extracted to a const so a test can pin that contract.
-const MALFORMED_RESPONSE_MESSAGE: &str = "relay returned malformed response: not valid JSON";
+const MALFORMED_RESPONSE_MESSAGE: &str = "Something went wrong. Try again.";
 
 // Per-request deadline for the `POST /query` HTTP bridge, covering both the
 // header exchange and full body consumption. The shared `http_client` sets no
@@ -38,11 +36,8 @@ fn configured_env_var(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-pub fn relay_ws_url() -> String {
-    configured_env_var("BUZZ_RELAY_URL")
-        .or_else(|| option_env!("BUZZ_DESKTOP_BUILD_RELAY_URL").map(str::to_string))
-        .unwrap_or_else(|| DEFAULT_RELAY_WS_URL.to_string())
-}
+pub mod server;
+pub use server::{ensure_relay_allowed, relay_api_base_url, relay_ws_url};
 
 /// Read the workspace relay URL override, if set. Returns `None` when no
 /// override is active or when the mutex is poisoned (best-effort).
@@ -104,18 +99,6 @@ pub use scope::{
     assert_expected_relay_scope, assert_expected_signer, bind_expected_relay_scope,
     ScopedWorkspaceRelay,
 };
-
-pub fn relay_api_base_url() -> String {
-    if let Some(base) = configured_env_var("BUZZ_RELAY_HTTP") {
-        return base.trim_end_matches('/').to_string();
-    }
-
-    if let Some(base) = option_env!("BUZZ_DESKTOP_BUILD_RELAY_HTTP") {
-        return base.trim().trim_end_matches('/').to_string();
-    }
-
-    relay_http_base_url(&relay_ws_url())
-}
 
 // ── NIP-98 HTTP auth ────────────────────────────────────────────────────────
 
@@ -279,7 +262,10 @@ pub(crate) async fn parse_json_response<T: DeserializeOwned>(
     // helper the non-2xx error-body path uses — to preserve the stable
     // "relay unreachable: request timed out" label.
     response.json::<T>().await.map_err(|e| {
-        classify_body_timeout(&e).unwrap_or_else(|| MALFORMED_RESPONSE_MESSAGE.to_string())
+        classify_body_timeout(&e).unwrap_or_else(|| {
+            eprintln!("buzz-desktop: relay returned malformed response: {e}");
+            MALFORMED_RESPONSE_MESSAGE.to_string()
+        })
     })
 }
 
@@ -653,7 +639,11 @@ pub async fn sync_managed_agent_profile(
 
     let result: SubmitEventResponse = parse_json_response(response).await?;
     if !result.accepted {
-        return Err(format!("relay rejected agent profile: {}", result.message));
+        eprintln!(
+            "buzz-desktop: relay rejected agent profile: {}",
+            result.message
+        );
+        return Err("Couldn't save. Try again.".to_string());
     }
     Ok(())
 }

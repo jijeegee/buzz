@@ -1,9 +1,10 @@
 import {
-  resolveUserLabel,
+  resolveKnownUserLabel,
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
-import { formatDmParticipantDisplayName } from "@/features/channels/lib/dmParticipantDisplay";
+import { formatDmParticipantLabels } from "@/features/channels/lib/dmParticipantDisplay";
 import type { Channel } from "@/shared/api/types";
+import { normalizePubkey } from "@/shared/lib/pubkey";
 
 function isGenericDmChannelName(name: string) {
   const normalized = name.trim().toLowerCase();
@@ -35,21 +36,24 @@ export function resolveChannelDisplayLabel(
           participant.pubkey.toLowerCase() !== currentPubkey.toLowerCase(),
       )
     : participants;
-  const resolvedLabels = (
-    otherParticipants.length > 0 ? otherParticipants : participants
-  ).map((participant) =>
-    resolveUserLabel({
-      currentPubkey,
-      fallbackName: participant.fallbackName,
-      profiles,
-      pubkey: participant.pubkey,
-    }),
-  );
-  const uniqueLabels = [...new Set(resolvedLabels)];
+  // Distinct people are distinct pubkeys; two people may share a label.
+  const seenPubkeys = new Set<string>();
+  const labels: (string | null)[] = [];
+  for (const participant of otherParticipants.length > 0
+    ? otherParticipants
+    : participants) {
+    const pubkey = normalizePubkey(participant.pubkey);
+    if (seenPubkeys.has(pubkey)) continue;
+    seenPubkeys.add(pubkey);
+    labels.push(
+      resolveKnownUserLabel({
+        currentPubkey,
+        fallbackName: participant.fallbackName,
+        profiles,
+        pubkey: participant.pubkey,
+      }),
+    );
+  }
 
-  return uniqueLabels.length > 0
-    ? formatDmParticipantDisplayName(
-        uniqueLabels.map((displayName) => ({ displayName })),
-      )
-    : channel.name;
+  return labels.length > 0 ? formatDmParticipantLabels(labels) : channel.name;
 }

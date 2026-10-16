@@ -61,9 +61,9 @@ const CONNECTION_STATE_LABEL: Record<ConnectionState, string> = {
   idle: "Not connected",
   connecting: "Connecting…",
   connected: "Connected",
-  reconnecting: "Reconnecting to relay…",
-  stalled: "Connection lost — relay is not responding",
-  disconnected: "Disconnected from relay",
+  reconnecting: "Reconnecting…",
+  stalled: "Connection lost",
+  disconnected: "Disconnected",
 };
 
 type CommunitySwitcherProps = {
@@ -539,6 +539,7 @@ export function CommunitySwitcher({
         open={editingCommunity !== null}
         community={editingCommunity}
         showIconEditor={editingCommunity?.id === activeCommunity?.id}
+        showUrlField={degraded && editingCommunity?.id === activeCommunity?.id}
       />
 
       <AlertDialog
@@ -551,7 +552,7 @@ export function CommunitySwitcher({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove from this device</AlertDialogTitle>
             <AlertDialogDescription>
-              {`Remove "${removingCommunity?.name ?? ""}" from this device? Kuzz won't contact the relay, so your membership isn't revoked. You can add the community again later.`}
+              {`Remove "${removingCommunity?.name ?? ""}" from this device? You'll stay a member and can add it again later.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

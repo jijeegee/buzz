@@ -80,7 +80,7 @@ export function parseInviteInput(input: string): ParsedInvite | null {
 export function relayHttpFromWs(wsUrl: string): string {
   if (wsUrl.startsWith("wss://")) return `https://${wsUrl.slice(6)}`;
   if (wsUrl.startsWith("ws://")) return `http://${wsUrl.slice(5)}`;
-  throw new Error(`Expected ws:// or wss:// relay URL, got: ${wsUrl}`);
+  throw new Error("This invite link isn't valid.");
 }
 
 export function inviteErrorMessage(error: unknown): string {

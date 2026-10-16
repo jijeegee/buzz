@@ -17,7 +17,7 @@ export function personaSaveNotice(
     case "published":
       return `Updated ${displayName} and published it to the community catalog.`;
     case "queued":
-      return `Updated ${displayName}. Publishing to the community catalog is queued and will appear after the relay accepts the update.`;
+      return `Updated ${displayName}. It will appear in the community catalog shortly.`;
     default:
       return `Updated ${displayName}.`;
   }

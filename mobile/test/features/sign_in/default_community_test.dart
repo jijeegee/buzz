@@ -105,10 +105,8 @@ void main() {
         if (returning) f.server.secret = original.secret;
         await f.show(tester);
         expect(find.byKey(const Key('token-sign-in-relay-url')), findsNothing);
-        expect(
-          find.byKey(const Key('sign-in-custom-community')),
-          findsOneWidget,
-        );
+        // The built-in server has no custom-community path.
+        expect(find.byKey(const Key('sign-in-custom-community')), findsNothing);
         await f.login(tester);
         expect(
           f.launcher.opened.single.queryParameters['identity_mode'],
@@ -186,28 +184,32 @@ void main() {
   });
 
   test(
-    'configured user restarts with original community selection and key',
+    'configured user restarts pinned to the built-in community and key',
     () async {
       final f = _Fixture();
       final key = nostr.Keys.generate();
-      final selected = Community.create(
-        name: 'Custom',
-        relayUrl: 'https://custom.example',
+      final builtIn = Community.create(
+        name: 'Built in',
+        relayUrl: backup.origin,
         nsec: key.nsec,
         pubkey: key.public,
       );
-      await f.storage.save(
-        Community.create(
-          name: 'Other',
-          relayUrl: backup.origin,
-          nsec: nostr.Keys.generate().nsec,
-        ),
+      final custom = Community.create(
+        name: 'Custom',
+        relayUrl: 'https://custom.example',
+        nsec: nostr.Keys.generate().nsec,
       );
-      await f.storage.save(selected);
-      await f.storage.saveActiveId(selected.id);
+      await f.storage.save(builtIn);
+      await f.storage.save(custom);
+      await f.storage.saveActiveId(custom.id);
       final state = await f.container.read(authProvider.future);
-      expect(state.community!.id, selected.id);
+      expect(state.community!.id, builtIn.id);
       expect(state.community!.nsec, key.nsec);
+      // The other server's entry is kept, never deleted.
+      expect(
+        (await f.storage.loadAll()).map((community) => community.id),
+        contains(custom.id),
+      );
       expect(f.launcher.opened, isEmpty);
       expect(f.admissions, isEmpty);
     },
@@ -220,9 +222,10 @@ void main() {
     await f.show(tester);
     await f.login(tester);
     final otherKey = nostr.Keys.generate();
+    // Another account on the built-in server: other servers are refused.
     final other = Community.create(
       name: 'Chosen during sign-in',
-      relayUrl: 'https://other.example',
+      relayUrl: backup.origin,
       nsec: otherKey.nsec,
       pubkey: otherKey.public,
     );

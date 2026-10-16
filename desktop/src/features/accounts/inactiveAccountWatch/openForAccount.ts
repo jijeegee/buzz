@@ -42,6 +42,14 @@ export type OpenForAccountDeps = {
   openHere(target: DesktopNotificationTarget): Promise<void>;
   /** The account cannot be opened (signed out, server gone, switch failed). */
   unavailable(reason: "signed_out" | "no_community" | "failed"): void;
+  /**
+   * Whether the app may move to a server origin. With a built-in server only
+   * that one is allowed; a click for an account elsewhere just focuses the
+   * app. Omitted = every server.
+   */
+  allowsServer?(origin: string): boolean;
+  /** Bring the app forward without opening anything. */
+  focusApp?(): void;
   storage?: PendingStorage;
   now?: () => number;
 };
@@ -138,6 +146,15 @@ async function advance(
     return;
   }
   const next = { ...pending, steps: pending.steps + 1 };
+  if (
+    account.origin !== deps.open.origin &&
+    deps.allowsServer &&
+    !deps.allowsServer(account.origin)
+  ) {
+    clear(deps);
+    deps.focusApp?.();
+    return;
+  }
   if (account.origin !== deps.open.origin) {
     const community = deps.communities.find(
       (candidate) => relayOrigin(candidate.relayUrl) === account.origin,

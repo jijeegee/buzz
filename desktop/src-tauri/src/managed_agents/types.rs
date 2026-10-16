@@ -822,6 +822,9 @@ pub struct AcpRuntimeCatalogEntry {
     /// `None` for harnesses with no login step and for presets/customs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_provider: Option<String>,
+    /// Whether this runtime can directly use the shared OpenAI subscription.
+    #[serde(default)]
+    pub supports_chatgpt_subscription: bool,
     /// Whether this entry came from the compiled-in catalog or a user-supplied
     /// JSON file in `custom_harnesses/`. The UI uses this to decide editability.
     pub source: HarnessSource,
@@ -918,6 +921,14 @@ pub struct AgentModelInfo {
     pub id: String,
     pub name: Option<String>,
     pub description: Option<String>,
+    /// Reasoning-effort levels the provider's own catalog lists for this
+    /// model (ChatGPT subscription today). `None` = not reported; the effort
+    /// picker then falls back to the static capability manifest.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supported_efforts: Option<Vec<String>>,
+    /// The provider catalog's default effort for this model, when reported.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_effort: Option<String>,
 }
 
 pub const DEFAULT_ACP_COMMAND: &str = "buzz-acp";

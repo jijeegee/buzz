@@ -605,8 +605,11 @@ pub async fn mint_agent_card(
             "agentPubkey",
             &record.pubkey,
         )
-        .map_err(|_| {
-            "Agent record has an invalid pubkey (not a canonical x-only key).".to_string()
+        .map_err(|e| {
+            eprintln!(
+                "buzz-desktop: agent record has an invalid pubkey (not a canonical x-only key): {e}"
+            );
+            "Something went wrong with this agent. Try again.".to_string()
         })?;
         if owner_keys.public_key() == agent_pubkey {
             return Err("Cannot lock a card to itself: owner and agent keys match.".to_string());

@@ -52,7 +52,7 @@ import {
 } from "@/shared/ui/dialog";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { useFeedbackToasts } from "@/shared/hooks/useToastEffect";
-import { normalizePubkey, truncateNpub } from "@/shared/lib/pubkey";
+import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import {
   MODAL_SEARCH_INPUT_CLASS,
   MODAL_SEARCH_SHELL_CLASS,
@@ -148,7 +148,7 @@ export function MembersSidebar({
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [inviteSubmissionErrors, setInviteSubmissionErrors] = React.useState<
-    AddChannelMembersResult["errors"]
+    Array<AddChannelMembersResult["errors"][number] & { label: string }>
   >([]);
   const [addingMemberPubkeys, setAddingMemberPubkeys] = React.useState<
     ReadonlySet<string>
@@ -583,6 +583,7 @@ export function MembersSidebar({
             ...prev,
             {
               pubkey: user.pubkey,
+              label: formatAddCandidateName(user),
               error:
                 error instanceof Error ? error.message : "Failed to add agent.",
             },
@@ -595,7 +596,13 @@ export function MembersSidebar({
         pubkeys: [user.pubkey],
         role: user.isAgent ? "bot" : "member",
       });
-      setInviteSubmissionErrors((prev) => [...prev, ...result.errors]);
+      setInviteSubmissionErrors((prev) => [
+        ...prev,
+        ...result.errors.map((entry) => ({
+          ...entry,
+          label: formatAddCandidateName(user),
+        })),
+      ]);
     } finally {
       setAddingMemberPubkeys((prev) => {
         const next = new Set(prev);
@@ -644,7 +651,7 @@ export function MembersSidebar({
         managedAgentRuntime={managedAgentRuntime}
         member={member}
         memberIsBot={memberIsBot}
-        memberAvatarLabel={member.displayName ?? truncateNpub(member.pubkey)}
+        memberAvatarLabel={member.displayName ?? UNKNOWN_USER_LABEL}
         memberLabel={formatMemberName(member, currentPubkey)}
         moderationState={moderationStateByPubkey.get(
           normalizePubkey(member.pubkey),
@@ -889,7 +896,7 @@ export function MembersSidebar({
               <div className="mt-4 space-y-1 text-sm text-destructive">
                 {inviteSubmissionErrors.map((error) => (
                   <p key={`${error.pubkey}-${error.error}`}>
-                    {truncateNpub(error.pubkey)}: {error.error}
+                    {error.label}: {error.error}
                   </p>
                 ))}
               </div>

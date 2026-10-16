@@ -244,7 +244,7 @@ async fn failed_transfer_or_profile_rejection_preserves_previous_picture_and_ret
     assert!(sync(&state, &b, &keys, &new)
         .await
         .unwrap_err()
-        .contains("rejected agent profile"));
+        .contains("Couldn't save. Try again."));
     assert_eq!(picture(&b), old);
     b.state.data.lock().unwrap().reject_profile = false;
     sync(&state, &b, &keys, &new).await.unwrap();

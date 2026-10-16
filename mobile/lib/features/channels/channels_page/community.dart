@@ -473,6 +473,31 @@ class _CommunityHeaderTitle extends ConsumerWidget {
   }
 }
 
+class _BrandHeaderTitle extends StatelessWidget {
+  final TextStyle? style;
+
+  const _BrandHeaderTitle({this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(left: Grid.xxs),
+          child: Text(
+            appBrandName,
+            key: const Key('channels-header-brand-name'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CommunityAvatar extends ConsumerWidget {
   final String? name;
   final String? relayUrl;

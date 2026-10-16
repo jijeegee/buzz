@@ -40,3 +40,10 @@ test("local and relay partitioning only vouches for a matching key and trusted a
     { trusted: [valid], unresolved: [mismatched, forged] },
   );
 });
+
+test("a Kuzz same-name ordinal is trusted only through the pubkey's own base name", () => {
+  const key = "b".repeat(64);
+  assert.equal(isTrustedMentionLabel("Scout (2)", ["Scout"], key), true);
+  assert.equal(isTrustedMentionLabel("Alice (2)", ["Scout"], key), false);
+  assert.equal(isTrustedMentionLabel("Scout (2)", ["Scout"]), false);
+});

@@ -21,6 +21,7 @@ import { CreateAccountDialog } from "@/shared/ui/CreateAccountDialog";
 import type { UserStatusInput } from "@/features/user-status/types";
 import type { LeaveCommunityResult } from "@/features/communities/leaveCommunity";
 import type { Community } from "@/features/communities/types";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { CommunitySwitcher } from "@/features/communities/ui/CommunitySwitcher";
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
@@ -74,6 +75,9 @@ export function SidebarProfileCard({
   const myMembershipQuery = useMyRelayMembershipLookupQuery();
   const activeRole = myMembershipQuery.data?.membership?.role;
   const canInvite = activeRole === "owner" || activeRole === "admin";
+  // One built-in server: no server name, switcher or server actions; the
+  // sidebar connection card still reports connection problems.
+  const singleServer = useBuiltInServer() !== null;
   const [profilePopoverOpen, setProfilePopoverOpen] = React.useState(false);
   const profileCardRef = React.useRef<HTMLDivElement | null>(null);
   const accountMenu = useAccountMenu({ open: profilePopoverOpen });
@@ -206,25 +210,32 @@ export function SidebarProfileCard({
                 }}
               />
             }
+            onInvitePeople={
+              singleServer && canInvite
+                ? () => onOpenSettings("community-members")
+                : undefined
+            }
             communitySwitcherSlot={
-              <CommunitySwitcher
-                activeCommunity={activeCommunity}
-                canInvite={canInvite}
-                onAddCommunity={() => {
-                  setProfilePopoverOpen(false);
-                  onOpenAddCommunity();
-                }}
-                onInvite={() => {
-                  setProfilePopoverOpen(false);
-                  onOpenSettings("community-members");
-                }}
-                onLeaveCommunity={onLeaveCommunity}
-                onRemoveCommunityFromDevice={onRemoveCommunityFromDevice}
-                onSwitchCommunity={onSwitchCommunity}
-                onUpdateCommunity={onUpdateCommunity}
-                variant="profile-menu"
-                communities={communities}
-              />
+              singleServer ? undefined : (
+                <CommunitySwitcher
+                  activeCommunity={activeCommunity}
+                  canInvite={canInvite}
+                  onAddCommunity={() => {
+                    setProfilePopoverOpen(false);
+                    onOpenAddCommunity();
+                  }}
+                  onInvite={() => {
+                    setProfilePopoverOpen(false);
+                    onOpenSettings("community-members");
+                  }}
+                  onLeaveCommunity={onLeaveCommunity}
+                  onRemoveCommunityFromDevice={onRemoveCommunityFromDevice}
+                  onSwitchCommunity={onSwitchCommunity}
+                  onUpdateCommunity={onUpdateCommunity}
+                  variant="profile-menu"
+                  communities={communities}
+                />
+              )
             }
           >
             <button
@@ -245,7 +256,31 @@ export function SidebarProfileCard({
             </button>
           </ProfilePopover>
 
-          {hasStatus ? (
+          {singleServer ? (
+            hasStatus ? (
+              <div className="relative mt-0.5">
+                <button
+                  aria-label={`Open profile menu for ${resolvedDisplayName}`}
+                  className="flex w-full min-w-0 items-center truncate rounded-sm text-left text-xs leading-snug text-sidebar-foreground/70 outline-hidden focus:outline-none focus-visible:outline-none"
+                  data-buzz-sidebar-secondary
+                  data-testid="sidebar-profile-user-status"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleProfilePopover();
+                  }}
+                  type="button"
+                >
+                  {selfUserStatus?.emoji ? (
+                    <StatusEmoji
+                      className="mr-1 w-4 shrink-0 text-xs"
+                      value={selfUserStatus.emoji}
+                    />
+                  ) : null}
+                  <span className="truncate">{selfUserStatus?.text}</span>
+                </button>
+              </div>
+            ) : null
+          ) : hasStatus ? (
             <div className="relative mt-0.5">
               <button
                 aria-label={`Open profile menu for ${resolvedDisplayName}`}

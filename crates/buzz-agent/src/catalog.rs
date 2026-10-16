@@ -24,6 +24,100 @@ use crate::{
     types::AgentError,
 };
 
+/// List the models offered by the existing local ChatGPT subscription login.
+/// The endpoint is fixed; OpenAI-compatible URLs never receive this bearer.
+pub async fn discover_subscription_models(
+    codex_home: Option<std::path::PathBuf>,
+) -> Result<Vec<SubscriptionModelEntry>, AgentError> {
+    let source = crate::auth::codex::CodexTokenSource::with_home(codex_home)?;
+    let bearer = source.bearer_no_browser().await?;
+    let account = crate::auth::codex::account_id(&bearer)?;
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(CATALOG_REQUEST_TIMEOUT)
+        .build()
+        .map_err(|_| AgentError::Llm("ChatGPT model catalog HTTP setup failed".into()))?;
+    let mut response = client
+        .get("https://chatgpt.com/backend-api/codex/models?client_version=0.159.3")
+        .bearer_auth(bearer)
+        .header("ChatGPT-Account-Id", account)
+        .send()
+        .await
+        .map_err(|_| AgentError::Llm("ChatGPT model catalog request failed".into()))?;
+    if !response.status().is_success() {
+        return Err(AgentError::Llm(format!(
+            "ChatGPT model catalog HTTP {}",
+            response.status().as_u16()
+        )));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| AgentError::Llm("ChatGPT model catalog interrupted".into()))?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_CATALOG_RESPONSE_BODY_BYTES {
+            return Err(AgentError::Llm("ChatGPT model catalog too large".into()));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let value: Value = serde_json::from_slice(&body)
+        .map_err(|_| AgentError::Llm("invalid ChatGPT model catalog".into()))?;
+    parse_subscription_catalog(&value)
+}
+
+/// Parse the ChatGPT subscription `/models` body into picker entries.
+fn parse_subscription_catalog(value: &Value) -> Result<Vec<SubscriptionModelEntry>, AgentError> {
+    let entries = value["models"]
+        .as_array()
+        .ok_or_else(|| AgentError::Llm("missing ChatGPT models".into()))?;
+    let mut seen = HashSet::new();
+    Ok(entries
+        .iter()
+        .filter(|item| item["visibility"].as_str() != Some("hide"))
+        .filter_map(|item| {
+            let id = item["slug"].as_str()?.to_owned();
+            if id.is_empty() || !seen.insert(id.clone()) {
+                return None;
+            }
+            let name = item["display_name"].as_str().unwrap_or(&id).to_owned();
+            let supported_efforts = item["supported_reasoning_levels"]
+                .as_array()
+                .map(|levels| {
+                    levels
+                        .iter()
+                        .filter_map(|level| level["effort"].as_str())
+                        .filter(|effort| !effort.is_empty())
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let default_effort = item["default_reasoning_level"]
+                .as_str()
+                .filter(|effort| !effort.is_empty())
+                .map(str::to_owned);
+            Some(SubscriptionModelEntry {
+                id,
+                name,
+                supported_efforts,
+                default_effort,
+            })
+        })
+        .collect())
+}
+
+/// A ChatGPT subscription catalog model. Besides the picker id/label it
+/// carries the reasoning-effort levels the catalog lists for this model
+/// (`supported_reasoning_levels[].effort`) and its default, so the effort
+/// picker offers only levels this model accepts. Empty = not reported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubscriptionModelEntry {
+    pub id: String,
+    pub name: String,
+    pub supported_efforts: Vec<String>,
+    pub default_effort: Option<String>,
+}
+
 /// A discovered model entry: `id` is the picker value (the raw endpoint id or
 /// Unity Catalog model-service FQN, and the wire/config value), `name` is the
 /// display label. Databricks catalog APIs do not provide a consistently useful
@@ -393,6 +487,7 @@ fn catalog_error_kind(error: &AgentError) -> &'static str {
         AgentError::LlmModelNotFound(_) => "model-not-found",
         AgentError::LlmContextExceeded(_) => "context-exceeded",
         AgentError::UnsupportedImageInput(_) => "unsupported-image",
+        AgentError::LlmUnsupportedEffort(_) => "unsupported-effort",
         AgentError::Mcp(_) => "mcp",
         AgentError::Cancelled => "cancelled",
     }
@@ -919,6 +1014,26 @@ mod tests {
     use axum::{extract::Query, http::StatusCode, routing::get, Json, Router};
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn subscription_catalog_carries_per_model_effort_levels() {
+        let body = serde_json::json!({"models": [
+            {"slug": "gpt-6-luna", "display_name": "GPT-6 Luna",
+             "supported_reasoning_levels": [
+                {"effort": "low"}, {"effort": "medium"}, {"effort": "max"}],
+             "default_reasoning_level": "medium", "visibility": "list"},
+            {"slug": "plain", "visibility": "list"},
+            {"slug": "hidden", "visibility": "hide"}
+        ]});
+        let models = parse_subscription_catalog(&body).unwrap();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "gpt-6-luna");
+        assert_eq!(models[0].supported_efforts, ["low", "medium", "max"]);
+        assert_eq!(models[0].default_effort.as_deref(), Some("medium"));
+        assert_eq!(models[1].name, "plain");
+        assert!(models[1].supported_efforts.is_empty());
+        assert_eq!(models[1].default_effort, None);
+    }
 
     const TEST_CATALOG_DESCRIPTOR: CatalogDescriptor<V2Endpoint> = CatalogDescriptor {
         name: "test catalog",

@@ -1,9 +1,13 @@
 import type { Profile, UserProfileSummary } from "@/shared/api/types";
-import { normalizePubkey, truncateNpub } from "@/shared/lib/pubkey";
+import {
+  normalizePubkey,
+  truncateNpub,
+  UNKNOWN_USER_LABEL,
+} from "@/shared/lib/pubkey";
 
 export type UserProfileLookup = Record<string, UserProfileSummary>;
 
-export { truncateNpub };
+export { truncateNpub, UNKNOWN_USER_LABEL };
 
 /**
  * Deep-equal two profile lookups by value. Used to stabilise the merged
@@ -88,13 +92,23 @@ export function mergeCurrentProfileIntoLookup(
   };
 }
 
-export function resolveUserLabel(input: {
+type ResolveUserLabelInput = {
   pubkey: string;
   currentPubkey?: string;
   fallbackName?: string | null;
   profiles?: UserProfileLookup;
   preferResolvedSelfLabel?: boolean;
-}) {
+};
+
+/**
+ * The resolved human label for `pubkey`, or `null` when nothing names it (no
+ * self match, display name, NIP-05 handle, or caller fallback). Use this when
+ * a caller must tell a real name apart from the generic unknown-user label —
+ * never compare `resolveUserLabel` output against a fallback string.
+ */
+export function resolveKnownUserLabel(
+  input: ResolveUserLabelInput,
+): string | null {
   const {
     currentPubkey,
     fallbackName,
@@ -128,7 +142,12 @@ export function resolveUserLabel(input: {
     return safeFallback;
   }
 
-  return truncateNpub(pubkey);
+  return null;
+}
+
+/** Visible label for `pubkey`; unnamed identities render `UNKNOWN_USER_LABEL`. */
+export function resolveUserLabel(input: ResolveUserLabelInput): string {
+  return resolveKnownUserLabel(input) ?? UNKNOWN_USER_LABEL;
 }
 
 /**
@@ -165,7 +184,7 @@ export function resolveUserSecondaryLabel(input: {
 
 /**
  * Label for an agent's owner: "you" when the current user owns it, otherwise
- * the owner's display name, NIP-05 handle, or truncated pubkey.
+ * the owner's display name, NIP-05 handle, or `UNKNOWN_USER_LABEL`.
  */
 export function formatOwnerLabel(
   ownerPubkey: string | null | undefined,
@@ -188,6 +207,6 @@ export function formatOwnerLabel(
   return (
     owner?.displayName?.trim() ||
     owner?.nip05Handle?.trim() ||
-    truncateNpub(ownerPubkey)
+    UNKNOWN_USER_LABEL
   );
 }

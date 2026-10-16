@@ -717,7 +717,7 @@ export function HomeView({
               Home feed unavailable
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              {errorMessage ?? "The relay did not return a feed response."}
+              {errorMessage ?? "Couldn't load your feed."}
             </p>
             <Button className="mt-5" onClick={onRefresh} type="button">
               <RefreshCcw className="h-4 w-4" />

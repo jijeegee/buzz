@@ -18,7 +18,7 @@ import { AnimatedCount } from "@/shared/ui/AnimatedCount";
 import { Markdown } from "@/shared/ui/markdown";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 
 export type NoteCardActions = {
   reply?: (
@@ -67,8 +67,10 @@ function ReplyParentContext({
   const parentDisplayName = parentNote
     ? (cachedProfile?.displayName ??
       fetchedProfile?.displayName ??
-      truncateNpub(parentNote.pubkey))
+      UNKNOWN_USER_LABEL)
     : null;
+  const isParentNameLoading =
+    !cachedProfile && !fetchedProfile && parentProfileQuery.isLoading;
   const parentAvatarUrl =
     cachedProfile?.avatarUrl ?? fetchedProfile?.avatarUrl ?? null;
   const parentIsAgent = cachedProfile?.isAgent === true;
@@ -104,7 +106,15 @@ function ReplyParentContext({
                 className="rounded font-medium text-foreground/80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                 type="button"
               >
-                {parentDisplayName}
+                {isParentNameLoading ? (
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-3 w-16 rounded bg-muted align-middle"
+                    data-testid="note-parent-author-loading"
+                  />
+                ) : (
+                  parentDisplayName
+                )}
               </button>
             </UserProfilePopover>
             : {parentSnippet || "No text"}
@@ -149,7 +159,7 @@ export function NoteCard({
   members = [],
   actions,
 }: NoteCardProps) {
-  const displayName = profile?.displayName ?? truncateNpub(note.pubkey);
+  const displayName = profile?.displayName ?? UNKNOWN_USER_LABEL;
   const avatarUrl = profile?.avatarUrl ?? null;
   const [isReplyComposerOpen, setIsReplyComposerOpen] = React.useState(false);
   const actionButtonClass =

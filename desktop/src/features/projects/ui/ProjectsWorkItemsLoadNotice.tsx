@@ -46,7 +46,7 @@ export function ProjectsWorkItemsLoadNotice({
   const description = error
     ? error instanceof Error
       ? error.message
-      : "The relay request failed."
+      : "Something went wrong. Try again."
     : `Missing ${failedSections
         .map((section) => SECTION_LABELS[section])
         .join(", ")}. The available results are shown below.`;

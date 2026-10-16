@@ -2223,13 +2223,16 @@ fn validate_device_id_d_tag(event: &Event) -> Result<(), &'static str> {
 }
 
 /// Validate a `kind:30181` device robot: a device-id `d` tag and content
-/// `{"v":1,"shape":"<name>","color":<index>}`. Shape names and palette size
+/// `{"v":1|2,"shape":"<name>","color":<index>}`. Shape names and palette size
 /// belong to clients; the relay only bounds them.
 fn validate_device_robot(event: &Event) -> Result<(), &'static str> {
     validate_device_id_d_tag(event)?;
     let content: serde_json::Value =
         serde_json::from_str(&event.content).map_err(|_| "content must be JSON")?;
-    if content.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+    if !matches!(
+        content.get("v").and_then(serde_json::Value::as_u64),
+        Some(1 | 2)
+    ) {
         return Err("unsupported content version");
     }
     let shape_ok = content
@@ -3064,6 +3067,17 @@ async fn ingest_event_inner(
                 if channel.archived_at.is_some() {
                     return Err(IngestError::Rejected("invalid: channel is archived".into()));
                 }
+            }
+        }
+    }
+
+    // A conversation with goals off keeps its tree but takes no new writes.
+    if kind_u32 == KIND_GOAL_TREE {
+        if let Some(channel) = &channel_row {
+            if !channel.goals_enabled {
+                return Err(IngestError::Rejected(
+                    "invalid: goals are turned off for this conversation".into(),
+                ));
             }
         }
     }
@@ -4388,6 +4402,18 @@ mod postgres_tests {
         assert_eq!(
             robot(r#"{"v":1,"shape":"dome","color":3}"#, &[&["d", DEVICE]]),
             Ok(())
+        );
+        assert_eq!(
+            robot(r#"{"v":2,"shape":"dome","color":8}"#, &[&["d", DEVICE]]),
+            Ok(())
+        );
+        assert_eq!(
+            robot(r#"{"v":3,"shape":"dome","color":3}"#, &[&["d", DEVICE]]),
+            Err("unsupported content version")
+        );
+        assert_eq!(
+            robot(r#"{"v":2,"shape":"dome","color":64}"#, &[&["d", DEVICE]]),
+            Err("color must be a palette index")
         );
         assert_eq!(
             robot(r#"{"v":1,"shape":"dome","color":3}"#, &[&["d", "pc"]]),

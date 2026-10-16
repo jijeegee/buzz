@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { getTokenAuthStatus } from "@/shared/api/tokenAuth";
 import { Button } from "@/shared/ui/button";
 import { useCommunityOnboarding } from "../communityOnboarding";
@@ -15,6 +16,11 @@ export function DefaultCommunitySetup({
   const { start } = useCommunityOnboarding();
   const [attempt, retry] = React.useReducer((value: number) => value + 1, 0);
   const [error, setError] = React.useState<string | null>(null);
+  // One built-in server: no manual setup to fall back to.
+  const singleServer = useBuiltInServer() !== null;
+  const fallbackHint = singleServer
+    ? "Check your internet connection and try again."
+    : "Try again or use advanced setup.";
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: an explicit retry starts a new bounded attempt.
   React.useEffect(() => {
@@ -22,9 +28,7 @@ export function DefaultCommunitySetup({
     setError(null);
     const timer = window.setTimeout(() => {
       cancelled = true;
-      setError(
-        "The default community did not respond. Try again or use advanced setup.",
-      );
+      setError(`The default community did not respond. ${fallbackHint}`);
     }, 15_000);
     void getTokenAuthStatus()
       .then(({ origin }) => {
@@ -45,9 +49,7 @@ export function DefaultCommunitySetup({
       })
       .catch(() => {
         if (!cancelled) {
-          setError(
-            "Could not prepare the default community. Try again or use advanced setup.",
-          );
+          setError(`Could not prepare the default community. ${fallbackHint}`);
         }
       })
       .finally(() => window.clearTimeout(timer));
@@ -55,7 +57,7 @@ export function DefaultCommunitySetup({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [attempt, start]);
+  }, [attempt, fallbackHint, start]);
 
   return (
     <OnboardingCard
@@ -69,9 +71,11 @@ export function DefaultCommunitySetup({
       </p>
       <div className="mt-6 flex justify-center gap-3">
         {error ? <Button onClick={retry}>Retry</Button> : null}
-        <Button variant="ghost" onClick={onManualSetup}>
-          Advanced setup
-        </Button>
+        {singleServer ? null : (
+          <Button variant="ghost" onClick={onManualSetup}>
+            Advanced setup
+          </Button>
+        )}
       </div>
     </OnboardingCard>
   );

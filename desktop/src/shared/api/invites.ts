@@ -1,3 +1,4 @@
+import { ensureAllowedServer } from "@/features/communities/builtInServer";
 import { relayHttpFromWs } from "@/shared/api/inviteHelpers";
 import {
   getRelayHttpUrl,
@@ -13,6 +14,10 @@ import {
 // - POST /api/invites/claim  — claim a code, signed by the *joining* key.
 //   This one targets an arbitrary relay (the invite's relay, not necessarily
 //   the active community), so the claim helper takes an explicit ws URL.
+//
+// Every request first checks its target is the built-in server
+// (`ensureAllowedServer`): an invite carries its own address, and the webview
+// must never sign for or send to any other server.
 
 const NIP98_KIND = 27235;
 
@@ -80,6 +85,7 @@ async function invitePost<T>(
   path: string,
   body: string,
 ): Promise<T> {
+  ensureAllowedServer(httpBase);
   const url = `${httpBase.replace(/\/+$/, "")}${path}`;
   const authorization = await nip98PostHeader(url, body);
   const response = await fetch(url, {
@@ -144,6 +150,7 @@ export async function getJoinPolicy(
       relayUrl: relayWsUrl,
     });
   } else {
+    ensureAllowedServer(relayWsUrl);
     const base = relayHttpFromWs(relayWsUrl);
     const response = await fetch(`${base.replace(/\/+$/, "")}/api/join-policy`);
     // Relays predating join-policy support have no configured policy.
@@ -173,6 +180,7 @@ export async function acceptJoinPolicy(
   policyVersion: string,
   ageConfirmed: boolean,
 ): Promise<string> {
+  ensureAllowedServer(relayWsUrl);
   const base = relayHttpFromWs(relayWsUrl);
   const response = await fetch(
     `${base.replace(/\/+$/, "")}/api/invites/accept-policy`,

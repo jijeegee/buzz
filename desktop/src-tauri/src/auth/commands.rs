@@ -416,8 +416,10 @@ async fn finish_sign_in(
     let state = app.state::<AppState>();
     let origin = origin.to_owned();
     verify_login_mode(backup, tokens.identity_mode.as_deref())?;
-    let principal = PublicKey::from_hex(&tokens.principal_id)
-        .map_err(|_| "the relay returned an invalid account id".to_string())?;
+    let principal = PublicKey::from_hex(&tokens.principal_id).map_err(|e| {
+        eprintln!("buzz-desktop: the relay returned an invalid account id: {e}");
+        "Couldn't sign in. Try again.".to_string()
+    })?;
     // Under the refresh lock: an in-flight refresh of an older generation can
     // neither write its token over this one nor revive the old session.
     let _refresh_guard = state.token_auth.refresh_lock(&origin).lock_owned().await;
@@ -668,7 +670,7 @@ fn verify_login_mode(backup: bool, returned_mode: Option<&str>) -> Result<(), St
         matches!(returned_mode, None | Some("token"))
     };
     if !matches {
-        return Err("The relay returned a different account mode. Your existing identity and session were preserved; accounts cannot be merged automatically.".into());
+        return Err("This account can't be added here. Your current account is unchanged.".into());
     }
     Ok(())
 }
@@ -698,7 +700,7 @@ async fn fresh_session(state: &AppState, origin: &str) -> Result<UserSession, St
     )
     .await
     .map_err(|failure| match failure {
-        RefreshFailure::Transient => "could not reach the relay to renew your sign-in".into(),
+        RefreshFailure::Transient => "Couldn't renew your sign-in. Check your connection.".into(),
         RefreshFailure::Terminal(_) => {
             "your sign-in for this community has ended; sign in with Google again".into()
         }
@@ -744,7 +746,9 @@ pub(crate) fn fresh_session_for_spawn(
         .map_err(|e| format!("auth refresh task: {e}"))?
         .map(Some)
         .map_err(|failure| match failure {
-            RefreshFailure::Transient => "could not reach the relay to renew your sign-in".into(),
+            RefreshFailure::Transient => {
+                "Couldn't renew your sign-in. Check your connection.".into()
+            }
             RefreshFailure::Terminal(_) => {
                 "your sign-in for this community has ended; sign in with Google again".into()
             }
@@ -807,6 +811,73 @@ pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuth
     Ok(status)
 }
 
+/// Sign the active account out on this computer only, for the startup error
+/// screens (the server may be unreachable): the same local sign-out as
+/// [`logout`], without waiting on the network. Ending the session on the
+/// server is best effort: it is attempted once in the background, after the
+/// local sign-out, and a failure is only logged.
+#[tauri::command]
+pub async fn logout_on_this_device(app: AppHandle) -> Result<TokenAuthStatus, String> {
+    let state = app.state::<AppState>();
+    let origin = state.current_auth_origin();
+    // Read the session after any in-flight refresh settles, so the token
+    // revoked below is the newest one.
+    drop(state.token_auth.refresh_lock(&origin).lock_owned().await);
+    let pending = pending_revocation(&state, &origin);
+    let signed_out = sign_out_account(&app, &origin, None, false).await?;
+    if let Some(pending) = pending {
+        let client = state.http_client.clone();
+        let revoke_origin = origin.clone();
+        tauri::async_runtime::spawn(async move {
+            let revoke = async {
+                match pending {
+                    PendingRevocation::Session(access) => {
+                        revoke_session(&client, &revoke_origin, &access).await
+                    }
+                    // The stored token is already forgotten here: a rotated
+                    // one is not kept.
+                    PendingRevocation::Stored(refresh) => {
+                        revoke_stored(&client, &revoke_origin, &refresh, |_| Ok(())).await
+                    }
+                }
+            };
+            match tokio::time::timeout(std::time::Duration::from_secs(30), revoke).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    eprintln!("buzz-desktop: auth: device-only sign-out not revoked: {error}")
+                }
+                Err(_) => eprintln!("buzz-desktop: auth: device-only sign-out revoke timed out"),
+            }
+        });
+    }
+    let support = state.token_auth.cached_support(&origin).flatten();
+    let mut status = current_status(&state, &origin, support);
+    status.switched_to = signed_out.switched_to.map(|key| key.to_hex());
+    status.agents_not_stopped = signed_out.agents_not_stopped;
+    Ok(status)
+}
+
+/// What a device-only sign-out still tries to end on the server.
+enum PendingRevocation {
+    /// The live session's access token.
+    Session(String),
+    /// The stored refresh token (restoring or retrying).
+    Stored(String),
+}
+
+fn pending_revocation(state: &AppState, origin: &str) -> Option<PendingRevocation> {
+    match state.token_auth.get(origin) {
+        Some((_, OriginAuth::Active(session))) => Some(PendingRevocation::Session(
+            session.access.as_str().to_owned(),
+        )),
+        _ => KeyringRefreshStore
+            .load(origin)
+            .ok()
+            .flatten()
+            .map(PendingRevocation::Stored),
+    }
+}
+
 /// Sign `account` out of `origin` on this computer: an agent runs while its
 /// owner is signed in here, so this always stops the account's agents.
 /// `revoke` ends the session server-side first (a user sign-out); a session
@@ -818,6 +889,25 @@ pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuth
 /// agents is waited for at most [`SIGN_OUT_STOP_LIMIT`]: a stop that does not
 /// finish is reported, never a reason to leave the sign-out half done.
 pub(crate) async fn sign_out_account(
+    app: &AppHandle,
+    origin: &str,
+    account: Option<PublicKey>,
+    revoke: bool,
+) -> Result<SignedOut, String> {
+    // While the session still works, its device here stops listing agents;
+    // a sign-out that fails leaves the account signed in, so list them again.
+    let state = app.state::<AppState>();
+    let target = account.or_else(|| state.token_auth.signing_pubkey(origin));
+    crate::device_robot::clear_agent_host_devices(&state, origin, target).await;
+    let result = sign_out_account_now(app, origin, account, revoke).await;
+    if result.is_err() {
+        crate::device_robot::spawn_publish_agent_host_devices(app);
+    }
+    result
+}
+
+/// [`sign_out_account`] after its device list was cleared.
+async fn sign_out_account_now(
     app: &AppHandle,
     origin: &str,
     account: Option<PublicKey>,
@@ -1030,6 +1120,18 @@ pub(crate) fn install_session_ended_hook(app: &AppHandle) {
                     emit_changed(&app, &origin);
                 }
             });
+        }));
+}
+
+/// Install the hook that tells each background account's owner which agents
+/// this device hosts for them once its session (and so its device) is known.
+pub(crate) fn install_session_restored_hook(app: &AppHandle) {
+    let hook_app = app.clone();
+    app.state::<AppState>()
+        .token_auth
+        .inactive
+        .set_restored_hook(std::sync::Arc::new(move || {
+            crate::device_robot::spawn_publish_agent_host_devices(&hook_app);
         }));
 }
 

@@ -476,6 +476,7 @@ function MemberPicker({
       <div className="space-y-1" data-testid="direct-member-selected">
         <SelectedRecipientChip
           disabled={disabled}
+          inspectable
           inspectionOpen={inspecting}
           label={memberLabel(member)}
           onInspectionOpenChange={setInspecting}

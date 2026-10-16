@@ -189,7 +189,7 @@ test("the picker shows every shape and colour as real robots", async () => {
   });
   const picker = await view.findByTestId("device-robot-picker");
   const robots = picker.querySelectorAll("[data-testid=device-robot-icon]");
-  assert.equal(robots.length, 6 + 8);
+  assert.equal(robots.length, 6 + 9);
   assert.deepEqual(
     [...robots].slice(0, 6).map((r) => r.getAttribute("data-robot-shape")),
     [...DEVICE_ROBOT_SHAPES],
@@ -223,7 +223,7 @@ test("picking a robot publishes kind 30181 and updates every robot at once", asy
   assert.deepEqual(signed, [
     {
       kind: 30180 + 1,
-      content: JSON.stringify({ v: 1, shape, color: hashed.colorIndex }),
+      content: JSON.stringify({ v: 2, shape, color: hashed.colorIndex }),
       createdAt: 1_700_000_000,
       tags: [["d", DEVICE_ID]],
     },

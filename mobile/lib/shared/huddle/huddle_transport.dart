@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../auth/default_community.dart';
 import '../auth/token/token_session.dart';
 import '../relay/relay_access_tokens.dart';
 import 'huddle_auth.dart';
@@ -306,6 +307,19 @@ final class HuddleTransport implements HuddleTransportClient {
         peers: _state.peers,
       ),
     );
+
+    // Only the built-in server's Huddle relay may be reached.
+    if (!allowConnection(
+      'huddle connection',
+      parameters.audioWebSocketUri.toString(),
+    )) {
+      const failure = HuddleTransportError(
+        code: HuddleTransportErrorCode.connectionFailed,
+        message: differentServerMessage,
+      );
+      _fail(failure, generation);
+      throw failure;
+    }
 
     try {
       final channel = _channelFactory(parameters.audioWebSocketUri);

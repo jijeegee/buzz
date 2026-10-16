@@ -522,11 +522,11 @@ export function usePersonaActions() {
       if (result.publicationStatus === "queued") {
         if (shared) {
           setPersonaNoticeMessage(
-            `Sharing ${persona.displayName} is queued. It will appear after the relay accepts the update.`,
+            `Sharing ${persona.displayName}… It will appear shortly.`,
           );
         } else {
           setPersonaNoticeMessage(
-            `Removing ${persona.displayName} is queued. It may remain discoverable until the relay accepts the update.`,
+            `Removing ${persona.displayName}… It may stay visible for a moment.`,
           );
         }
         if (result.relayMessage) {

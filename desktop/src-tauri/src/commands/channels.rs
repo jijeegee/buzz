@@ -295,6 +295,9 @@ pub struct UpdateChannelInput {
     /// Absent = leave unchanged, `null` = clear (permanent), seconds = set.
     #[serde(default, deserialize_with = "crate::util::double_option")]
     pub ttl_seconds: Option<Option<i32>>,
+    /// Per-room goals switch; absent = leave unchanged.
+    #[serde(default)]
+    pub goals_enabled: Option<bool>,
 }
 
 #[tauri::command]
@@ -309,6 +312,7 @@ pub async fn update_channel(
         input.description.as_deref(),
         input.visibility.as_deref(),
         input.ttl_seconds,
+        input.goals_enabled,
     )?;
     submit_event(builder, &state).await?;
 

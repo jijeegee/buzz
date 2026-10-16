@@ -1,6 +1,7 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
+import '../auth/default_community.dart';
 import '../community/community_provider.dart';
 import 'relay_client.dart';
 
@@ -123,7 +124,10 @@ class RelayConfigNotifier extends Notifier<RelayConfig> {
       return RelayConfig(baseUrl: context.relayUrl!, nsec: context.nsec);
     }
 
-    // Fallback to compile-time env config (dev mode).
+    // No usable community: never fall back to another server than the
+    // built-in one. Without it (test harness) use the compile-time env config.
+    final builtInOrigin = ref.watch(defaultCommunityOriginProvider);
+    if (builtInOrigin != null) return RelayConfig(baseUrl: builtInOrigin);
     return const RelayConfig(baseUrl: Env.relayUrl);
   }
 

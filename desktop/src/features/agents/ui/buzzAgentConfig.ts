@@ -63,11 +63,31 @@ export type ProviderEffortConfig = {
 export function getProviderEffortConfig(
   providerId: string,
   model?: string,
+  catalog?: {
+    supportedEfforts?: readonly string[];
+    defaultEffort?: string;
+  } | null,
 ): ProviderEffortConfig {
   const cap = resolveModelCapabilities(providerId, model ?? "");
+  // A provider catalog that lists this model's effort levels (ChatGPT
+  // subscription) is fresher than the static manifest: offer only those
+  // levels, limited to the values buzz-agent can parse.
+  const listed = catalog?.supportedEfforts ?? [];
+  const catalogValues = THINKING_EFFORT_VALUES.filter((value) =>
+    listed.includes(value),
+  );
+  if (catalogValues.length === 0) {
+    return {
+      validValues: cap.supportedEfforts,
+      defaultValue: cap.defaultEffort,
+    };
+  }
+  const catalogDefault = catalogValues.find(
+    (value) => value === catalog?.defaultEffort,
+  );
   return {
-    validValues: cap.supportedEfforts,
-    defaultValue: cap.defaultEffort,
+    validValues: catalogValues,
+    defaultValue: catalogDefault ?? null,
   };
 }
 

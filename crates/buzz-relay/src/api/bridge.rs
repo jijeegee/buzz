@@ -1921,7 +1921,49 @@ async fn query_events_authed(
         }
     }
 
+    hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut events).await?;
     Ok(Json(Value::Array(events)))
+}
+
+/// Drop goal trees (kind:40110) of conversations that turned goals off, so
+/// agents that predate the setting stop receiving them too.
+async fn hide_goal_trees_of_conversations_with_goals_off(
+    state: &AppState,
+    tenant: &TenantContext,
+    events: &mut Vec<Value>,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    fn kind_and_channel(event: &Value) -> (u32, Option<uuid::Uuid>) {
+        let kind = event
+            .get("kind")
+            .and_then(Value::as_u64)
+            .map_or(0, |kind| kind as u32);
+        let channel = event
+            .get("tags")
+            .and_then(Value::as_array)
+            .and_then(|tags| {
+                tags.iter()
+                    .find_map(|tag| match tag.as_array()?.as_slice() {
+                        [name, value, ..] if name == "h" => value.as_str(),
+                        _ => None,
+                    })
+            })
+            .and_then(|value| uuid::Uuid::parse_str(value).ok());
+        (kind, channel)
+    }
+    let goals_off = crate::handlers::req::channels_with_goals_off(
+        state,
+        tenant.community(),
+        events.iter().map(kind_and_channel),
+    )
+    .await
+    .map_err(|e| db_read_error("goals setting lookup error", &e))?;
+    if !goals_off.is_empty() {
+        events.retain(|event| {
+            let (kind, channel) = kind_and_channel(event);
+            !crate::handlers::req::goal_tree_hidden(&goals_off, kind, channel)
+        });
+    }
+    Ok(())
 }
 
 async fn repair_requested_channel_access(
@@ -2490,6 +2532,7 @@ async fn handle_bridge_search(
         }
     }
 
+    hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut events).await?;
     Ok(Json(Value::Array(events)))
 }
 

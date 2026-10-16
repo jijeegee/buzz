@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
+import '../auth/default_community.dart';
 import '../community/community.dart';
 import '../relay/signed_event_relay.dart';
 import 'dev_push_lease.dart';
@@ -513,6 +514,13 @@ Uri _buzzPushRelayUri(String relayUrl) {
 Future<void> publishBuzzPushLeaseRevocation(
   BuzzPushLeaseRevocationRecord record,
 ) async {
+  // Records for other servers are kept (retried with backoff) but never sent.
+  if (!isServerAllowed(
+    record.relayUrl,
+    builtInOrigin: appBuiltInServerOrigin(),
+  )) {
+    throw StateError(differentServerMessage);
+  }
   final descriptor = await fetchBuzzPushLeaseDescriptor(record.relayUrl);
   if (descriptor.origin != record.relayOrigin) {
     throw StateError('Relay push origin changed while revocation was pending.');

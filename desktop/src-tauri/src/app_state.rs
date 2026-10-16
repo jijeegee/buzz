@@ -689,10 +689,11 @@ fn migrate_identity_file(
             return Ok(None);
         }
     };
-    let nsec = keys
-        .secret_key()
-        .to_bech32()
-        .map_err(|e| format!("encode nsec: {e}"))?;
+    let nsec = keys.secret_key().to_bech32().map_err(|e| {
+        // bech32 encode errors describe length/HRP only, never key bytes.
+        eprintln!("buzz-desktop: encode nsec failed: {e}");
+        "Couldn't save your account on this device.".to_string()
+    })?;
 
     store.store(IDENTITY_KEY_NAME, &nsec)?;
     // Read-back verify before deleting the plaintext file. Uses verify_stored()
@@ -700,10 +701,14 @@ fn migrate_identity_file(
     // backend — proving the OS keyring round-trip, not just the cache.
     let verify_ok = match store.verify_stored(IDENTITY_KEY_NAME, &nsec) {
         Ok(b) => b,
-        Err(e) => return Err(format!("keyring read-back verify failed: {e}")),
+        Err(e) => {
+            eprintln!("buzz-desktop: keyring read-back verify failed: {e}");
+            return Err("Couldn't access secure storage on this device.".to_string());
+        }
     };
     if !verify_ok {
-        return Err("keyring read-back verify failed for identity key".to_string());
+        eprintln!("buzz-desktop: keyring read-back verify failed for identity key");
+        return Err("Couldn't access secure storage on this device.".to_string());
     }
     // Crash-safe ordering: record that the key now lives in the keyring
     // (marker write + fsync) BEFORE deleting the file. A crash between
@@ -741,10 +746,11 @@ fn persist_identity_to_keyring(
     legacy_path: &std::path::Path,
     data_dir: &std::path::Path,
 ) -> Result<(), String> {
-    let nsec = keys
-        .secret_key()
-        .to_bech32()
-        .map_err(|e| format!("encode nsec: {e}"))?;
+    let nsec = keys.secret_key().to_bech32().map_err(|e| {
+        // bech32 encode errors describe length/HRP only, never key bytes.
+        eprintln!("buzz-desktop: encode nsec failed: {e}");
+        "Couldn't save your account on this device.".to_string()
+    })?;
 
     // Will error if the keyring is unavailable — caller falls back to the file.
     store.store(IDENTITY_KEY_NAME, &nsec)?;
@@ -754,8 +760,14 @@ fn persist_identity_to_keyring(
     // backend — proving the OS keyring round-trip, not just the cache.
     match store.verify_stored(IDENTITY_KEY_NAME, &nsec) {
         Ok(true) => {}
-        Ok(false) => return Err("keyring read-back verify failed".to_string()),
-        Err(e) => return Err(format!("keyring read-back verify failed: {e}")),
+        Ok(false) => {
+            eprintln!("buzz-desktop: keyring read-back verify failed (value mismatch or absent)");
+            return Err("Couldn't access secure storage on this device.".to_string());
+        }
+        Err(e) => {
+            eprintln!("buzz-desktop: keyring read-back verify failed: {e}");
+            return Err("Couldn't access secure storage on this device.".to_string());
+        }
     }
 
     // Write marker before deleting the file (crash-safe ordering).
@@ -916,13 +928,17 @@ fn store_key_preferring_keyring(
     keys: &Keys,
     legacy_path: &std::path::Path,
 ) -> Result<IdentityStorage, String> {
-    let nsec = keys
-        .secret_key()
-        .to_bech32()
-        .map_err(|e| format!("encode nsec: {e}"))?;
+    let nsec = keys.secret_key().to_bech32().map_err(|e| {
+        // bech32 encode errors describe length/HRP only, never key bytes.
+        eprintln!("buzz-desktop: encode nsec failed: {e}");
+        "Couldn't save your account on this device.".to_string()
+    })?;
     match store.store_bootstrap(&nsec, &keys.public_key().to_hex()) {
         Ok(()) => Ok(IdentityStorage::SystemKeyring),
         Err(keyring_err) => {
+            // Sanitized secure-storage errors were already logged with their
+            // original cause by `secret_store::storage_error`; other errors
+            // still carry their original text here.
             eprintln!("buzz-desktop: keyring write failed ({keyring_err}), using file fallback");
             save_key_file(legacy_path, keys)?;
             Ok(IdentityStorage::LocalFile)
@@ -1004,10 +1020,11 @@ fn load_key_file(path: &std::path::Path) -> Result<Keys, String> {
 pub(crate) fn save_key_file(path: &std::path::Path, keys: &Keys) -> Result<(), String> {
     use atomic_write_file::AtomicWriteFile;
 
-    let nsec = keys
-        .secret_key()
-        .to_bech32()
-        .map_err(|e| format!("encode nsec: {e}"))?;
+    let nsec = keys.secret_key().to_bech32().map_err(|e| {
+        // bech32 encode errors describe length/HRP only, never key bytes.
+        eprintln!("buzz-desktop: encode nsec failed: {e}");
+        "Couldn't save your account on this device.".to_string()
+    })?;
 
     let mut file = AtomicWriteFile::open(path)
         .map_err(|e| format!("open identity.key for atomic write: {e}"))?;

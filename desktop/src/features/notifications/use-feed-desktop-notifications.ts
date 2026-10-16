@@ -1,8 +1,7 @@
 import * as React from "react";
 
-import { truncateNpub } from "@/shared/lib/pubkey";
 import {
-  resolveUserLabel,
+  resolveKnownUserLabel,
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
 import type { FeedItem, HomeFeedResponse } from "@/shared/api/types";
@@ -195,18 +194,15 @@ export function useFeedDesktopNotifications(
     }
 
     for (const item of newItems) {
-      const resolvedLabel = profiles
-        ? resolveUserLabel({
-            pubkey: item.pubkey,
-            profiles,
-            preferResolvedSelfLabel: true,
-          })
-        : undefined;
-      // Only use real display names, not truncated pubkey fallbacks.
+      // Only use real names, never the generic unknown-user fallback.
       const senderName =
-        resolvedLabel && resolvedLabel !== truncateNpub(item.pubkey)
-          ? resolvedLabel
-          : undefined;
+        (profiles
+          ? resolveKnownUserLabel({
+              pubkey: item.pubkey,
+              profiles,
+              preferResolvedSelfLabel: true,
+            })
+          : null) ?? undefined;
       void deliverFeedNotification(item, senderName);
     }
   }, [

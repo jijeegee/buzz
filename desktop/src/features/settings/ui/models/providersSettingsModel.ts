@@ -42,6 +42,8 @@ export type ProviderRow = {
   label: string;
   /** Harness whose CLI login bills this provider, from the catalog fact; null when none. */
   subscriptionRuntime: AcpRuntimeCatalogEntry | null;
+  /** Existing selected execution runtime that can consume this shared login. */
+  subscriptionExecutionRuntime?: AcpRuntimeCatalogEntry | null;
   /** Secret env var the API-key path reads; null for providers without a typed secret (Databricks: host + OAuth). */
   apiKeyEnvVar: string | null;
   apiKeyLabel: string | null;
@@ -104,6 +106,13 @@ function currentDefaultPath(
   if (row.subscriptionRuntime && preferred === row.subscriptionRuntime.id) {
     return "subscription";
   }
+  if (
+    row.providerId === "openai" &&
+    globalConfig.provider === "openai-subscription"
+  ) {
+    const selected = catalog.find((runtime) => runtime.id === preferred);
+    if (selected?.supportsChatgptSubscription) return "subscription";
+  }
   if (globalConfig.provider !== row.providerId) return null;
   const preferredEntry = preferred
     ? (catalog.find((runtime) => runtime.id === preferred) ?? null)
@@ -136,8 +145,15 @@ export function buildProviderRows(
       null;
     rows.push({
       providerId,
-      label: option.label,
+      label: providerId === "openai" ? "OpenAI" : option.label,
       subscriptionRuntime,
+      subscriptionExecutionRuntime:
+        providerId === "openai" &&
+        apiKeyRuntime?.supportsChatgptSubscription &&
+        (!globalConfig.preferred_runtime ||
+          globalConfig.preferred_runtime === apiKeyRuntime.id)
+          ? apiKeyRuntime
+          : subscriptionRuntime,
       apiKeyEnvVar,
       apiKeyLabel: getProviderApiKeyLabel(providerId),
       apiKeyIsSet:
@@ -187,15 +203,18 @@ export function defaultOptions(rows: readonly ProviderRow[]): DefaultOption[] {
   const options: DefaultOption[] = [];
   for (const row of rows) {
     if (row.subscriptionRuntime) {
-      const runtime = row.subscriptionRuntime;
+      const runtime =
+        row.subscriptionExecutionRuntime ?? row.subscriptionRuntime;
       const available = runtime.availability === "available";
       options.push({
         id: `${row.providerId}:subscription`,
         providerId: row.providerId,
         path: "subscription",
-        label: `${row.label} · Subscription`,
+        label: `${row.label} · ${row.providerId === "openai" ? "ChatGPT subscription" : "Subscription"}`,
         detail: available
-          ? `${runtime.label} sign-in`
+          ? row.providerId === "openai" && runtime.supportsChatgptSubscription
+            ? `${runtime.label} with ChatGPT subscription`
+            : `${runtime.label} sign-in`
           : `${runtime.label} sign-in — not installed`,
         runtime,
         available,
@@ -235,13 +254,26 @@ export function nextGlobalConfigForDefault(
   path: ProviderPath,
 ): GlobalAgentConfig | null {
   const runtime =
-    path === "subscription" ? row.subscriptionRuntime : row.apiKeyRuntime;
+    path === "subscription"
+      ? (row.subscriptionExecutionRuntime ?? row.subscriptionRuntime)
+      : row.apiKeyRuntime;
   if (!runtime) return null;
   const harnessChanged = globalConfig.preferred_runtime !== runtime.id;
   const base = harnessChanged
-    ? resetConfigForHarnessChange(globalConfig, runtime.id)
+    ? resetConfigForHarnessChange(
+        globalConfig,
+        runtime.id,
+        runtime.supportsChatgptSubscription,
+      )
     : globalConfig;
   if (path === "subscription") {
+    if (row.providerId === "openai" && runtime.supportsChatgptSubscription) {
+      return base.provider === "openai-subscription"
+        ? harnessChanged
+          ? base
+          : null
+        : { ...base, provider: "openai-subscription", model: null };
+    }
     return harnessChanged ? base : null;
   }
   if (base.provider === row.providerId) {

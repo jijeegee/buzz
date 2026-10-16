@@ -24,6 +24,8 @@ export type SystemMessagePayload = {
   targets?: string[];
   topic?: string;
   purpose?: string;
+  /** `goals_changed`: the room's goals switch, `"on"` or `"off"`. */
+  goals?: string;
   // Moderation tombstone fields (kind:40099 "message_deleted"). All optional and
   // moderator-authored — present when a moderator removed the message, absent for
   // a plain member self-delete. Reporter identity/evidence never appears here.

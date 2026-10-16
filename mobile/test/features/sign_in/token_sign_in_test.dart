@@ -1,6 +1,8 @@
+import 'package:buzz/features/sign_in/signed_out_page.dart';
 import 'package:buzz/features/sign_in/token_session_gate.dart';
 import 'package:buzz/features/sign_in/token_sign_in_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/auth/default_community.dart';
 import 'package:buzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +33,12 @@ class _RecordingAuthNotifier extends AuthNotifier {
 }
 
 class _Harness {
+  _Harness({this.builtInOrigin, List<Community> communities = const []})
+    : _communities = communities;
+
+  /// Switches the fixed-server rule on with this origin.
+  final String? builtInOrigin;
+  final List<Community> _communities;
   final server = FakeAuthServer();
   final store = FakeRefreshTokenStore();
   final launcher = FakeWebAuthLauncher(FakeWebAuthLauncher.success);
@@ -49,6 +57,12 @@ class _Harness {
       communityStorageProvider.overrideWithValue(
         CommunityStorage(secure: FakeSecureStorage()),
       ),
+      if (builtInOrigin != null)
+        defaultCommunityOriginProvider.overrideWithValue(builtInOrigin),
+      if (_communities.isNotEmpty)
+        communityListProvider.overrideWith(
+          () => _StaticCommunityList(_communities),
+        ),
     ],
   );
 
@@ -72,7 +86,50 @@ Future<void> frames(WidgetTester tester) async {
   }
 }
 
+class _StaticCommunityList extends CommunityListNotifier {
+  _StaticCommunityList(this._communities);
+
+  final List<Community> _communities;
+
+  @override
+  Future<List<Community>> build() async => _communities;
+}
+
 void main() {
+  testWidgets(
+    'with the built-in server sign-in has no address field or custom path',
+    (tester) async {
+      final h = _Harness(builtInOrigin: _origin);
+      await h.pump(tester, const TokenSignInPage());
+
+      expect(find.byKey(const Key('token-sign-in-relay-url')), findsNothing);
+      expect(find.byKey(const Key('token-sign-in-check')), findsNothing);
+      expect(find.byKey(const Key('sign-in-custom-community')), findsNothing);
+      expect(find.textContaining('custom community'), findsNothing);
+      expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
+    },
+  );
+
+  testWidgets('with the built-in server signed-out has no community chooser', (
+    tester,
+  ) async {
+    final accounts = [
+      for (final name in ['First', 'Second'])
+        Community.create(
+          name: name,
+          relayUrl: _origin,
+          pubkey: name * 8,
+          tokenAuth: true,
+        ).copyWith(signedOut: true),
+    ];
+    final h = _Harness(builtInOrigin: _origin, communities: accounts);
+    await h.pump(tester, SignedOutPage(community: accounts.first));
+
+    expect(find.byKey(const Key('signed-out-community')), findsNothing);
+    expect(find.text('Second'), findsNothing);
+    expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
+  });
+
   testWidgets(
     'relay check, Sign in with Google, fake browser: signed in and recorded',
     (tester) async {

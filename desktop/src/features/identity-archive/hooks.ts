@@ -153,7 +153,7 @@ export function useIdentityArchive(
     archiveMutation.mutate(
       { targetPubkey },
       {
-        onSuccess: () => toast.success("Archived on this relay"),
+        onSuccess: () => toast.success("Archived"),
         onError: (error) =>
           toast.error(
             `Archive failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -167,7 +167,7 @@ export function useIdentityArchive(
     unarchiveMutation.mutate(
       { targetPubkey },
       {
-        onSuccess: () => toast.success("Unarchived on this relay"),
+        onSuccess: () => toast.success("Unarchived"),
         onError: (error) =>
           toast.error(
             `Unarchive failed: ${error instanceof Error ? error.message : String(error)}`,

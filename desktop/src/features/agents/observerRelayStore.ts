@@ -633,7 +633,7 @@ export function ensureRelayObserverSubscription() {
           "error",
           error instanceof Error
             ? error.message
-            : "Observer relay subscription failed.",
+            : "Couldn't load agent activity.",
         );
       }
     })

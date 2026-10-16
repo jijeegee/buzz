@@ -51,8 +51,7 @@ export function formatModelDiscoveryErrorStatus(
   if (provider.trim() === "relay-mesh") {
     if (message.includes("waiting for the current member roster")) {
       return {
-        message:
-          "Kuzz is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
+        message: "Still loading community members. Try again shortly.",
         tone: "warning",
       };
     }
@@ -83,7 +82,7 @@ export function formatModelDiscoveryErrorStatus(
 
     return {
       message:
-        "Kuzz couldn't check shared compute through the relay. Check your relay connection and try again.",
+        "Couldn't check shared computers. Check your connection and try again.",
       tone: "warning",
     };
   }

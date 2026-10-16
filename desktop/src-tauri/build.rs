@@ -8,6 +8,7 @@ include!("src/managed_agents/reserved_env_keys.rs");
 use base64::Engine as _;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=KUZZ_ENV");
     println!("cargo:rerun-if-env-changed=BUZZ_RELAY_URL");
     println!("cargo:rerun-if-env-changed=BUZZ_RELAY_HTTP");
     println!("cargo:rerun-if-env-changed=BUZZ_UPDATER_PUBLIC_KEY");
@@ -45,6 +46,15 @@ fn main() {
     // presence-only marker; OSS/custom builds leave agent access configurable.
     if std::env::var("BUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY").is_ok() {
         println!("cargo:rustc-env=BUZZ_DESKTOP_BUILD_AGENT_ACCESS_OWNER_ONLY=1");
+    }
+
+    // Kuzz server environment (see `relay::KuzzEnv`); a typo must not
+    // silently fall back to another server.
+    let kuzz_env = std::env::var("KUZZ_ENV").unwrap_or_default();
+    match kuzz_env.trim() {
+        "" | "prod" => println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_ENV=prod"),
+        "dev" => println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_ENV=dev"),
+        other => panic!("KUZZ_ENV must be `prod` or `dev`, got `{other}`"),
     }
 
     if let Ok(relay_url) = std::env::var("BUZZ_RELAY_URL") {

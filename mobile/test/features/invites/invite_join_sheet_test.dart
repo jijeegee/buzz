@@ -1,5 +1,6 @@
 import 'package:buzz/features/invites/invite_join_provider.dart';
 import 'package:buzz/features/invites/invite_join_sheet.dart';
+import 'package:buzz/shared/auth/default_community.dart';
 import 'package:buzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -120,6 +121,37 @@ void main() {
       expect(find.textContaining('only copy of this identity'), findsNothing);
     });
   }
+
+  testWidgets('with the built-in server the sheet never names the server', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      WidgetHelpers.testable(
+        child: const InviteJoinSheet(),
+        overrides: [
+          defaultCommunityOriginProvider.overrideWithValue(
+            'https://relay.example.com',
+          ),
+          inviteJoinProvider.overrideWith(
+            () => _StaticInviteJoinNotifier(
+              const InviteJoinState(
+                status: InviteJoinStatus.confirming,
+                host: 'relay.example.com',
+                communityName: 'relay',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Join?'), findsOneWidget);
+    expect(find.textContaining('relay'), findsNothing);
+    expect(find.textContaining('Buzz'), findsNothing);
+    expect(find.textContaining('community'), findsNothing);
+    expect(find.widgetWithText(FilledButton, 'Join'), findsOneWidget);
+  });
 }
 
 class _InviteJoinSheetLauncher extends StatelessWidget {

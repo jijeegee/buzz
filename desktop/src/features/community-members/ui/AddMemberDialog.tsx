@@ -13,7 +13,7 @@ import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { SelectedRecipientChip } from "@/features/profile/ui/SelectedRecipientChip";
 import type { RelayMemberRole, UserSearchResult } from "@/shared/api/types";
 import { parsePubkeyInput } from "@/shared/lib/nostrUtils";
-import { truncateNpub } from "@/shared/lib/pubkey";
+import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -48,9 +48,7 @@ const ROLE_OPTIONS: Array<{
 
 function formatSearchUserName(user: UserSearchResult) {
   return (
-    user.displayName?.trim() ||
-    user.nip05Handle?.trim() ||
-    truncateNpub(user.pubkey)
+    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
   );
 }
 
@@ -271,9 +269,7 @@ export function DirectAddMemberForm({
                         }
                       }}
                       placeholder={
-                        selectedUsers.length === 0
-                          ? "Search people or paste an npub"
-                          : ""
+                        selectedUsers.length === 0 ? "Search people" : ""
                       }
                       ref={searchInputRef}
                       role="combobox"
@@ -368,8 +364,7 @@ export function DirectAddMemberForm({
                   </>
                 ) : (
                   <p className="px-3 py-3 text-sm text-muted-foreground">
-                    No people found. Paste a full npub or hex public key to add
-                    someone directly.
+                    No people found.
                   </p>
                 )}
               </div>

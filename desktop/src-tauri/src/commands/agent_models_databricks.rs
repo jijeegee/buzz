@@ -281,6 +281,8 @@ pub(super) fn databricks_models_response(
         models: entries
             .into_iter()
             .map(|entry| AgentModelInfo {
+                supported_efforts: None,
+                default_effort: None,
                 id: entry.id,
                 name: Some(entry.name),
                 description: None,

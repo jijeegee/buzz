@@ -28,7 +28,7 @@ import { useDetachedAgentStart } from "./useDetachedAgentStart";
 import { useEnsureAgentMentionsReady } from "./useEnsureAgentMentionsReady";
 import { syncAgentsToActiveHuddle } from "@/shared/api/tauriChannels";
 import type { AcpRuntime, ManagedAgent } from "@/shared/api/types";
-import { normalizePubkey, truncateNpub } from "@/shared/lib/pubkey";
+import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { buildCustomEmojiTags } from "@/shared/lib/customEmojiTags";
 import {
   dedupeQueuedAgentWakes,
@@ -962,8 +962,7 @@ export function useMentionSendFlow({
   const pendingNonMemberNames = React.useMemo(() => {
     if (!pendingNonMemberSend) return [];
     return pendingNonMemberSend.nonMemberPubkeys.map(
-      (pubkey) =>
-        mentions.getMentionDisplayName(pubkey) ?? truncateNpub(pubkey),
+      (pubkey) => mentions.getMentionDisplayName(pubkey) ?? UNKNOWN_USER_LABEL,
     );
   }, [mentions.getMentionDisplayName, pendingNonMemberSend]);
   const invitation = useNonMemberInvite({

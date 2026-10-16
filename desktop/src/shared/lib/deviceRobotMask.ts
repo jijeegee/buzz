@@ -2,6 +2,7 @@ import type { OwnerDevices } from "@/shared/api/ownerDevices";
 import {
   type DeviceRobotShape,
   type DeviceRobotVariant,
+  deviceRobotPaintCss,
   resolveDeviceRobotVariant,
 } from "@/shared/lib/deviceRobot";
 import {
@@ -51,7 +52,7 @@ export function deviceRobotChipStyle(
 ): Record<string, string> {
   return {
     "--agent-robot-mask": deviceRobotMaskUrl(variant.shape),
-    "--agent-robot-color": variant.color,
+    "--agent-robot-color": deviceRobotPaintCss(variant.paint),
   };
 }
 

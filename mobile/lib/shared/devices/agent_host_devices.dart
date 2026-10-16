@@ -20,9 +20,10 @@ const kindAgentHostDevices = EventKind.agentHostDevices;
 /// Owner-authored robot choice for one relay device.
 ///
 /// Parameterized replaceable, author-only like [kindAgentHostDevices]:
-/// `["d", <device id>]`, content `{"v":1,"shape":<shape>,"color":<index>}`
+/// `["d", <device id>]`, content `{"v":2,"shape":<shape>,"color":<index>}`
 /// with a shape from [deviceRobotShapes] and an index into
-/// [deviceRobotColors].
+/// [deviceRobotPaints]. Version 1 indexed an older palette and is ignored,
+/// so those devices get a fresh assignment.
 const kindDeviceRobot = EventKind.deviceRobot;
 
 final _agentPubkeyPattern = RegExp(r'^[0-9a-f]{64}$');
@@ -72,7 +73,7 @@ bool _isNewer(_HostDevicesEvent a, _HostDevicesEvent b) =>
 
 /// The kind:30181 content choosing [robot].
 String deviceRobotChoiceContent(DeviceRobotVariant robot) =>
-    jsonEncode({'v': 1, 'shape': robot.shape, 'color': robot.colorIndex});
+    jsonEncode({'v': 2, 'shape': robot.shape, 'color': robot.colorIndex});
 
 /// The robot a kind:30181 [content] chooses; `null` when malformed, an
 /// unknown shape or an out-of-range colour.
@@ -83,7 +84,7 @@ DeviceRobotVariant? parseDeviceRobotChoice(String content) {
   } on FormatException {
     return null;
   }
-  if (decoded is! Map<String, dynamic> || decoded['v'] != 1) return null;
+  if (decoded is! Map<String, dynamic> || decoded['v'] != 2) return null;
   final shape = decoded['shape'];
   final color = decoded['color'];
   if (shape is! String || color is! int) return null;
@@ -158,6 +159,12 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
   final Map<String, NostrEvent> _events = {};
   String? _owner;
 
+  /// `owner:device` pairs whose automatic robot was already tried in this
+  /// app run. Assignment is cosmetic: a rejected or failed write is not
+  /// retried until the next launch (or an explicit pick), so it can never
+  /// turn into a publish loop that eats the account's send quota.
+  final Set<String> _attempted = {};
+
   @override
   Map<String, NostrEvent> build() {
     final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
@@ -179,6 +186,7 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
     if (connected) {
       unawaited(() async {
         try {
+          // Completes after the relay's stored events (EOSE).
           final unsub = await ref.read(relaySessionProvider.notifier).subscribe(
             NostrFilter(
               kinds: const [kindAgentHostDevices, kindDeviceRobot],
@@ -194,6 +202,7 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
             unsub();
           } else {
             unsubscribe = unsub;
+            ref.read(ownDeviceEventsLoadedProvider.notifier).set(owner);
           }
         } catch (error) {
           debugPrint('[OwnDeviceEvents] subscription failed: $error');
@@ -206,6 +215,21 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
   void _add(NostrEvent event) {
     _events[event.id] = event;
     state = Map.unmodifiable(_events);
+  }
+
+  /// Store an automatically assigned robot for [deviceId], at most once per
+  /// owner and device in this app run; a failure is logged, not retried.
+  Future<void> assignDeviceRobot(
+    String deviceId,
+    DeviceRobotVariant robot,
+  ) async {
+    final d = deviceId.trim().toLowerCase();
+    if (!_attempted.add('$_owner:$d')) return;
+    try {
+      await publishDeviceRobot(d, robot);
+    } catch (error) {
+      debugPrint('[OwnDeviceEvents] could not store a device robot: $error');
+    }
   }
 
   /// Publish the current user's robot for [deviceId] (kind:30181) and show
@@ -247,16 +271,105 @@ final ownDeviceEventsProvider =
       OwnDeviceEventsNotifier.new,
     );
 
+/// The owner whose stored device events have fully arrived (the first
+/// subscription reached EOSE); `null` while they are still loading, so
+/// "no stored robot yet" is never mistaken for "not loaded yet".
+class OwnDeviceEventsLoadedNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? owner) => state = owner;
+}
+
+final ownDeviceEventsLoadedProvider =
+    NotifierProvider<OwnDeviceEventsLoadedNotifier, String?>(
+      OwnDeviceEventsLoadedNotifier.new,
+    );
+
+/// Gives this phone, when it has no stored robot yet, the next free slot of
+/// the palette ([nextDeviceRobotAssignments]) and stores it as the device's
+/// kind:30181 robot, so its look never changes afterwards. Each app assigns
+/// only its own device, so old sign-ins still listed on the account do not
+/// take the first, most distinct paints.
+/// Waits until both the device list and the stored robots have loaded.
+/// Watch once from the authenticated app root.
+final deviceRobotAutoAssignProvider = Provider<void>((ref) {
+  final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
+  if (owner == null || owner.isEmpty) return;
+  if (ref.watch(ownDeviceEventsLoadedProvider) != owner) return;
+  final origin = ref.watch(activeTokenOriginProvider);
+  if (origin == null) return;
+  final devices = ref.watch(accountDevicesProvider(origin)).value;
+  if (devices == null || devices.isEmpty) return;
+  final assignments = nextDeviceRobotAssignments([
+    for (final device in devices)
+      if (device.current) device.id,
+  ], ref.watch(deviceRobotOverridesProvider));
+  if (assignments.isEmpty) return;
+  final notifier = ref.read(ownDeviceEventsProvider.notifier);
+  for (final (deviceId, robot) in assignments) {
+    unawaited(notifier.assignDeviceRobot(deviceId, robot));
+  }
+});
+
 /// The current user's agents → the relay device each runs on (lowercase
-/// keys and values), from their own kind:30180 events.
+/// keys and values), from their own kind:30180 events. Agents of devices no
+/// longer signed in are left out ([withoutSignedOutDevices]).
 final agentHostDevicesProvider = Provider<Map<String, String>>((ref) {
   final owner = ref.watch(myPubkeyProvider);
   if (owner == null || owner.isEmpty) return const {};
-  return agentHostDevicesFromEvents(
+  final origin = ref.watch(activeTokenOriginProvider);
+  final devices = origin == null
+      ? null
+      : ref.watch(accountDevicesProvider(origin)).value;
+  final hosts = agentHostDevicesFromEvents(
     ref.watch(ownDeviceEventsProvider).values,
     owner: owner,
   );
+  final live = [
+    for (final device in devices ?? const <AccountDevice>[]) device.id,
+  ];
+  // A device listing agents that the device list does not know yet most
+  // likely just signed in: refetch the list once for it, so its agents are
+  // not hidden as if it were signed out.
+  if (origin != null && live.isNotEmpty) {
+    final known = {for (final id in live) id.trim().toLowerCase()};
+    final unknown = hosts.values
+        .where((id) => !known.contains(id) && _refetchedForDevices.add(id))
+        .toList();
+    if (unknown.isNotEmpty) {
+      Future.microtask(() {
+        if (ref.mounted) {
+          ref.invalidate(accountDevicesProvider(origin));
+        } else {
+          // Rebuilt meanwhile: let the next build ask again.
+          _refetchedForDevices.removeAll(unknown);
+        }
+      });
+    }
+  }
+  return withoutSignedOutDevices(hosts, live);
 });
+
+/// Device ids a device-list refetch was already asked for, this app run.
+final Set<String> _refetchedForDevices = {};
+
+/// [hostDevices] without the agents of devices that are no longer signed in
+/// (signed out, or cut from another device): a revoked device's last list
+/// must not keep its agents on it. [liveDeviceIds] is the account's device
+/// list; empty means it is unknown (not loaded, or the call failed, since a
+/// signed-in account always lists its own device), and nothing is dropped.
+Map<String, String> withoutSignedOutDevices(
+  Map<String, String> hostDevices,
+  List<String> liveDeviceIds,
+) {
+  if (liveDeviceIds.isEmpty) return hostDevices;
+  final live = {for (final id in liveDeviceIds) id.trim().toLowerCase()};
+  return {
+    for (final entry in hostDevices.entries)
+      if (live.contains(entry.value)) entry.key: entry.value,
+  };
+}
 
 /// The current user's chosen robot per device id (lowercase), from their own
 /// kind:30181 events. Devices without a valid choice are absent: they use

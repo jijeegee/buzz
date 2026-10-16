@@ -12,6 +12,7 @@ import {
 import * as React from "react";
 import { AgentStatusBadge } from "@/features/agents/ui/AgentStatusBadge";
 import { canonicalNpub, truncateNpub } from "@/shared/lib/pubkey";
+import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import {
   HoverCopyIndicator,
   useCopyFeedback,
@@ -162,8 +163,11 @@ export function buildPublicFields({
   relayAgent: RelayAgent | undefined;
 }): ProfileField[] {
   const fields: ProfileField[] = [];
+  // Kuzz never shows raw identity keys or NIP-05 handles; E2E builds keep
+  // these rows so the key-display specs still run.
+  const showIdentityRows = signingKeyUiTestSeam();
 
-  if (pubkey) {
+  if (pubkey && showIdentityRows) {
     const npub = canonicalNpub(pubkey);
     fields.push({
       // Copy the full canonical npub; an identity that cannot be encoded is
@@ -183,7 +187,7 @@ export function buildPublicFields({
     });
   }
 
-  if (profile?.nip05Handle) {
+  if (profile?.nip05Handle && showIdentityRows) {
     fields.push({
       copyValue: profile.nip05Handle,
       displayValue: profile.nip05Handle,

@@ -186,6 +186,9 @@ pub struct AcpClient {
     observer_thread_root: Option<String>,
     /// Whether the adapter has advertised a `compact` slash command.
     compact_supported: bool,
+    /// ACP session ids with a completed `compaction_update` the pool has not
+    /// taken yet (see [`take_compacted_sessions`](Self::take_compacted_sessions)).
+    compacted_sessions: Vec<String>,
     /// Latest context-window reading per ACP session id, from `usage_update`.
     /// Answers owner `query_context_usage` controls and guards
     /// `compact_session`; the pool prunes it to live sessions on return.
@@ -422,6 +425,12 @@ fn build_client_capabilities() -> serde_json::Value {
         // not hardcode vendor login commands from this capability.
         "auth": {
             "terminal": true
+        },
+        // ACP compaction updates: adapters report every compaction, including
+        // ones the agent starts on its own, as `compaction_update`. Buzz
+        // restates goals a compaction may have summarised away.
+        "session": {
+            "compaction": {}
         },
         // Signal to goose that we handle `_goose/unstable/session/update`
         // notifications. Without this the custom notification is suppressed
@@ -664,6 +673,7 @@ impl AcpClient {
             observer_context: ObserverContext::default(),
             observer_thread_root: None,
             compact_supported: false,
+            compacted_sessions: Vec::new(),
             context_usage: std::collections::HashMap::new(),
             active_run_id: None,
             steering_supported: false,
@@ -696,6 +706,12 @@ impl AcpClient {
     /// Whether the adapter advertised a `compact` slash command.
     pub(crate) fn compact_supported(&self) -> bool {
         self.compact_supported
+    }
+
+    /// Sessions compacted since the last call, whether by `/compact` or by
+    /// the agent on its own.
+    pub(crate) fn take_compacted_sessions(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.compacted_sessions)
     }
 
     #[cfg(test)]
@@ -795,7 +811,8 @@ impl AcpClient {
     /// - `Some(SystemPromptTransport::PiMeta(text))` — `_meta.systemPrompt`
     ///   as a replacement string for the Buzz pi-acp fork.
     /// - `Some(SystemPromptTransport::ClaudeMeta(text))` — `_meta.systemPrompt`
-    ///   as `{"append": text}`, keeping claude-agent-acp's native preset intact.
+    ///   as `{"append": text, "snapshot": false}`, keeping claude-agent-acp's
+    ///   native preset intact.
     ///
     /// `session_title` rides in `_meta.sessionTitle` when `Some`; `_meta` is
     /// omitted entirely otherwise, since adapters may distinguish an absent
@@ -817,23 +834,7 @@ impl AcpClient {
             "cwd": cwd,
             "mcpServers": mcp_servers,
         });
-        match system_prompt {
-            Some(SystemPromptTransport::Field(sp)) => {
-                params["systemPrompt"] = serde_json::Value::String(sp.to_owned());
-            }
-            Some(SystemPromptTransport::PiMeta(sp)) => {
-                params["_meta"]["systemPrompt"] = serde_json::Value::String(sp.to_owned());
-            }
-            Some(SystemPromptTransport::ClaudeMeta(sp)) => {
-                // Merge into _meta so sessionTitle (set below) is not clobbered.
-                params["_meta"]["systemPrompt"] = serde_json::json!({ "append": sp });
-            }
-            None => {}
-        }
-        if let Some(title) = session_title {
-            // Merge — _meta may already carry a system prompt from an adapter extension.
-            params["_meta"]["sessionTitle"] = serde_json::Value::String(title.to_owned());
-        }
+        set_session_prompt_and_title(&mut params, system_prompt, session_title);
         let result = self.send_request("session/new", params).await?;
         let session_id = result["sessionId"]
             .as_str()
@@ -1042,6 +1043,11 @@ impl AcpClient {
         self.steering_supported
     }
 
+    /// Whether this agent advertises `session/resume`.
+    pub fn can_resume_sessions(&self) -> bool {
+        self.resume_session_supported
+    }
+
     /// Whether this agent can reattach to an existing provider session.
     pub fn can_reattach_sessions(&self) -> bool {
         self.resume_session_supported || self.load_session_supported
@@ -1054,11 +1060,18 @@ impl AcpClient {
     /// notifications are read past like any other pre-response traffic. The
     /// response has the same shape as `session/new` (models, config options,
     /// modes), so callers apply models and modes exactly as for a new session.
+    ///
+    /// `system_prompt` and `session_title` ride in `_meta` as on `session/new`.
+    /// claude-agent-acp rebuilds a live session whose `_meta.systemPrompt`
+    /// changed, which is how a Claude session's goals are replaced between
+    /// turns.
     pub async fn session_reattach(
         &mut self,
         session_id: &str,
         cwd: &str,
         mcp_servers: Vec<McpServer>,
+        system_prompt: Option<SystemPromptTransport<'_>>,
+        session_title: Option<&str>,
     ) -> Result<SessionNewResponse, AcpError> {
         let method = if self.resume_session_supported {
             "session/resume"
@@ -1069,11 +1082,21 @@ impl AcpClient {
                 "agent advertises neither session/resume nor session/load".into(),
             ));
         };
-        let params = serde_json::json!({
+        let mut mcp_servers = mcp_servers;
+        // A resume carrying a system prompt (Claude Code) rebuilds the session
+        // from these params, so its MCP servers must match `session/new`'s.
+        if system_prompt.is_some() {
+            crate::token_broker::apply_mcp_credentials(
+                &mut mcp_servers,
+                self.broker_lease.as_ref(),
+            );
+        }
+        let mut params = serde_json::json!({
             "sessionId": session_id,
             "cwd": cwd,
             "mcpServers": mcp_servers,
         });
+        set_session_prompt_and_title(&mut params, system_prompt, session_title);
         let raw = self.send_request(method, params).await?;
         tracing::info!(target: "acp::session", "session reattached via {method}: {session_id}");
         Ok(SessionNewResponse {
@@ -2048,6 +2071,22 @@ impl AcpClient {
                 self.handle_standard_usage_update(msg);
                 false
             }
+            "compaction_update" => {
+                let status = update.get("status").and_then(|v| v.as_str());
+                tracing::info!(
+                    target: "acp::update",
+                    "compaction_update: {}",
+                    status.unwrap_or("?")
+                );
+                if status == Some("completed") {
+                    if let Some(session_id) = msg["params"]["sessionId"].as_str() {
+                        if !self.compacted_sessions.iter().any(|s| s == session_id) {
+                            self.compacted_sessions.push(session_id.to_owned());
+                        }
+                    }
+                }
+                false
+            }
             "keepalive" => false,
             other => {
                 tracing::debug!(target: "acp::update", "session/update: {other}");
@@ -2401,21 +2440,54 @@ pub struct SessionNewResponse {
     pub raw: serde_json::Value,
 }
 
+/// Put the system prompt and session title into `session/new` or
+/// `session/resume` params. Metadata prompt transports and the title are
+/// merged into a single `_meta` object; `_meta` stays absent when neither is
+/// set, since adapters may distinguish an absent member from a null one.
+fn set_session_prompt_and_title(
+    params: &mut serde_json::Value,
+    system_prompt: Option<SystemPromptTransport<'_>>,
+    session_title: Option<&str>,
+) {
+    match system_prompt {
+        Some(SystemPromptTransport::Field(sp)) => {
+            params["systemPrompt"] = serde_json::Value::String(sp.to_owned());
+        }
+        Some(SystemPromptTransport::PiMeta(sp)) => {
+            params["_meta"]["systemPrompt"] = serde_json::Value::String(sp.to_owned());
+        }
+        Some(SystemPromptTransport::ClaudeMeta(sp)) => {
+            // `snapshot: false` makes Claude Code rebuild its system prompt
+            // from these options on every request instead of keeping the one
+            // recorded when the session started, so a replaced `append`
+            // (new goals) takes effect and a resume carries the current one.
+            params["_meta"]["systemPrompt"] = serde_json::json!({
+                "append": sp,
+                "snapshot": false,
+            });
+        }
+        None => {}
+    }
+    if let Some(title) = session_title {
+        params["_meta"]["sessionTitle"] = serde_json::Value::String(title.to_owned());
+    }
+}
+
 /// How to deliver a system prompt on `session/new`.
 ///
 /// - **`Field`** — bare `systemPrompt` field (ACP protocol v2, buzz-agent).
 /// - **`PiMeta`** — `_meta.systemPrompt: text`, used by the Buzz pi-acp fork
 ///   to replace Pi's native system prompt.
-/// - **`ClaudeMeta`** — `_meta.systemPrompt: {"append": text}`, used by
-///   `claude-agent-acp` to append to the adapter's own native system prompt
-///   while keeping its tool-use preset intact.
+/// - **`ClaudeMeta`** — `_meta.systemPrompt: {"append": text, "snapshot":
+///   false}`, used by `claude-agent-acp` to append to the adapter's own native
+///   system prompt while keeping its tool-use preset intact.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SystemPromptTransport<'a> {
     /// Deliver as a bare top-level `systemPrompt` field.
     Field(&'a str),
     /// Deliver as `_meta.systemPrompt: text`.
     PiMeta(&'a str),
-    /// Deliver as `_meta.systemPrompt: {"append": text}`.
+    /// Deliver as `_meta.systemPrompt: {"append": text, "snapshot": false}`.
     ClaudeMeta(&'a str),
 }
 
@@ -2836,6 +2908,40 @@ mod tests {
             Some(true),
             "goose customNotifications capability must be advertised"
         );
+    }
+
+    #[test]
+    fn client_capabilities_ask_for_compaction_updates() {
+        // claude-agent-acp checks for an object; codex-acp for any value.
+        assert!(build_client_capabilities()["session"]["compaction"].is_object());
+    }
+
+    #[tokio::test]
+    async fn completed_compaction_updates_are_taken_once_per_session() {
+        let mut client = spawn_inert_client().await;
+        let update = |session: &str, status: &str| {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session,
+                    "update": {
+                        "sessionUpdate": "compaction_update",
+                        "compactionId": "c1",
+                        "status": status
+                    }
+                }
+            })
+        };
+        let _ = client.handle_session_update(&update("s1", "in_progress"));
+        let _ = client.handle_session_update(&update("s2", "failed"));
+        assert!(client.take_compacted_sessions().is_empty());
+
+        let _ = client.handle_session_update(&update("s1", "completed"));
+        let _ = client.handle_session_update(&update("s1", "completed"));
+        let _ = client.handle_session_update(&update("s2", "completed"));
+        assert_eq!(client.take_compacted_sessions(), vec!["s1", "s2"]);
+        assert!(client.take_compacted_sessions().is_empty());
     }
 
     #[test]

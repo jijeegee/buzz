@@ -78,6 +78,7 @@ pub async fn fetch_workspace_icon(
     relay_url: String,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
+    relay::ensure_relay_allowed("fetch_workspace_icon", &relay_url)?;
     let http_url = relay::relay_http_base_url(&relay_url);
     let Ok(response) = state
         .http_client
@@ -178,6 +179,13 @@ pub async fn readd_community_relay(relay_url: String, app: AppHandle) -> Result<
     .map_err(|e| format!("readd_community_relay task failed: {e}"))?
 }
 
+/// Kuzz connects to its built-in server only; a stored community on any other
+/// relay is never applied. The first step of [`apply_workspace`], before any
+/// state is touched (the command itself needs a real `AppHandle`).
+fn apply_workspace_relay_guard(relay_url: &str) -> Result<(), String> {
+    crate::relay::ensure_relay_allowed("apply_workspace", relay_url)
+}
+
 /// Apply a workspace's configuration to the backend session.
 ///
 /// Called by the frontend on app init (after reload) to configure the
@@ -199,6 +207,7 @@ pub async fn apply_workspace(
     agent_managed_profiles: Option<bool>,
     app: AppHandle,
 ) -> Result<(), String> {
+    apply_workspace_relay_guard(&relay_url)?;
     let state = app.state::<AppState>();
     // Take the generation only after entering the serialized transaction. An
     // apply that is already running remains authoritative until it releases
@@ -221,9 +230,10 @@ pub async fn apply_workspace(
 
         // ── Validate before mutating ──────────────────────────────────────────
         let parsed_keys = match nsec.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-            Some(nsec_trimmed) => {
-                Some(Keys::parse(nsec_trimmed).map_err(|e| format!("invalid nsec: {e}"))?)
-            }
+            Some(nsec_trimmed) => Some(Keys::parse(nsec_trimmed).map_err(|_| {
+                eprintln!("buzz-desktop: invalid nsec (details withheld: secret input)");
+                "Couldn't restore your account.".to_string()
+            })?),
             None => None,
         };
 
@@ -467,5 +477,28 @@ mod tests {
         let queued_ticket = queued.await.unwrap();
         assert!(queued_ticket > running_ticket);
         assert_current_apply_generation(&generation, queued_ticket).unwrap();
+    }
+
+    #[test]
+    fn apply_workspace_refuses_another_server() {
+        let ours = crate::relay::server::relay_endpoints(crate::relay::server::KuzzEnv::Prod).ws;
+        assert!(super::apply_workspace_relay_guard(ours).is_ok());
+        for refused in ["wss://other.example", "ws://jihobuzz.duckdns.org:8443"] {
+            assert_eq!(
+                super::apply_workspace_relay_guard(refused).unwrap_err(),
+                crate::relay::server::REFUSED,
+                "{refused}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_workspace_icon_refuses_another_server() {
+        use tauri::Manager as _;
+        let app = crate::relay::server::refusal_test_app();
+        let error = super::fetch_workspace_icon("wss://other.example".into(), app.state())
+            .await
+            .unwrap_err();
+        assert_eq!(error, crate::relay::server::REFUSED);
     }
 }

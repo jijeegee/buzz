@@ -32,6 +32,7 @@ import 'shared/auth/auth.dart';
 import 'shared/auth/token/token.dart';
 import 'shared/community/add_community_route.dart';
 import 'shared/deeplink/pending_deep_link_provider.dart';
+import 'shared/devices/agent_host_devices.dart';
 import 'shared/emoji/emoji_burst.dart';
 import 'shared/push/push_subscription_provider.dart';
 import 'shared/push/push_relay_capability_provider.dart';
@@ -163,6 +164,7 @@ class App extends HookConsumerWidget {
       ref.listen(observerRelayProvider, (_, _) {});
       ref.watch(appLifecycleProvider);
       ref.watch(userStatusCacheProvider);
+      ref.listen(deviceRobotAutoAssignProvider, (_, _) {});
       if (ref.watch(activeCommunityProvider).value?.pushNotificationsEnabled ==
               true &&
           ref.watch(currentRelayPushDescriptorProvider).value != null) {

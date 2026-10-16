@@ -960,7 +960,10 @@ pub async fn add_reaction(
     emoji_url: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let target_eid = EventId::from_hex(&event_id).map_err(|e| format!("invalid event ID: {e}"))?;
+    let target_eid = EventId::from_hex(&event_id).map_err(|e| {
+        eprintln!("buzz-desktop: invalid event ID: {e}");
+        "Couldn't find this message.".to_string()
+    })?;
     let builder = match emoji_url {
         // Custom-emoji reaction (NIP-30): kind:7 with `:shortcode:` content and
         // an `["emoji", shortcode, url]` tag. Delegates to the SDK builder so
@@ -1036,8 +1039,10 @@ pub async fn edit_message(
 ) -> Result<(), String> {
     let channel_uuid = uuid::Uuid::parse_str(&input.channel_id)
         .map_err(|_| format!("invalid channel UUID: {}", input.channel_id))?;
-    let target_eid =
-        EventId::from_hex(&input.event_id).map_err(|e| format!("invalid event ID: {e}"))?;
+    let target_eid = EventId::from_hex(&input.event_id).map_err(|e| {
+        eprintln!("buzz-desktop: invalid event ID: {e}");
+        "Couldn't find this message.".to_string()
+    })?;
     let trimmed = input.content.trim();
     // Empty text is allowed when the edit still carries imeta attachments
     // (a media-only edit). Reject only when both are empty.
@@ -1070,7 +1075,10 @@ pub async fn delete_message(
 ) -> Result<(), String> {
     let channel_uuid = uuid::Uuid::parse_str(&channel_id)
         .map_err(|_| format!("invalid channel UUID: {channel_id}"))?;
-    let target_eid = EventId::from_hex(&event_id).map_err(|e| format!("invalid event ID: {e}"))?;
+    let target_eid = EventId::from_hex(&event_id).map_err(|e| {
+        eprintln!("buzz-desktop: invalid event ID: {e}");
+        "Couldn't find this message.".to_string()
+    })?;
     let builder = events::build_delete_compat(channel_uuid, target_eid)?;
     submit_event(builder, &state).await?;
     Ok(())

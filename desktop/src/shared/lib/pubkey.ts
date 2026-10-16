@@ -15,6 +15,13 @@ export function normalizePubkey(pubkey: string): string {
 /** Neutral identity label for keys that cannot be encoded for display. */
 export const UNAVAILABLE_KEY_LABEL = "Unavailable";
 
+/**
+ * Visible label for a person or agent with no resolvable name. Kuzz accounts
+ * are Google-backed and always carry a display name, so end users never see
+ * key fragments as identity text; an unnamed identity renders this instead.
+ */
+export const UNKNOWN_USER_LABEL = "Unknown user";
+
 const HEX_64_REGEX = /^[0-9a-f]{64}$/;
 
 /**

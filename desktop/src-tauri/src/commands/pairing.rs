@@ -129,7 +129,7 @@ async fn start_pairing_session(
 
     let ws_url = relay_ws_url_with_override(&state);
     let http_url = relay_api_base_url_with_override(&state);
-    let pairing_relay_url = resolve_pairing_relay_url(&ws_url, probe_pairing_relay(&ws_url).await)?;
+    let pairing_relay_url = allowed_pairing_relay_url(&ws_url).await?;
     let (session, qr_payload) = PairingSession::new_source(pairing_relay_url.clone());
     let mut qr_uri = encode_qr(&qr_payload);
     if mode == PairingMode::RecoverIdentity {
@@ -138,10 +138,10 @@ async fn start_pairing_session(
 
     if mode == PairingMode::SendIdentity {
         let keys = state.signing_keys()?;
-        let nsec = keys
-            .secret_key()
-            .to_bech32()
-            .map_err(|e| format!("encode nsec: {e}"))?;
+        let nsec = keys.secret_key().to_bech32().map_err(|e| {
+            eprintln!("buzz-desktop: encode nsec: {e}");
+            "Couldn't save your account on this device.".to_string()
+        })?;
         let payload_json = serde_json::json!({
             "relayUrl": http_url,
             "pubkey": keys.public_key().to_hex(),
@@ -303,6 +303,7 @@ async fn pairing_ws_task_inner(
     outbound_rx: &mut mpsc::Receiver<String>,
     app: &AppHandle,
 ) -> Result<(), String> {
+    crate::relay::ensure_relay_allowed("pairing connect", relay_url)?;
     let (ws, _) = connect_async(relay_url)
         .await
         .map_err(|e| format!("WebSocket connection failed: {e}"))?;
@@ -590,7 +591,10 @@ where
             let msg = read
                 .next()
                 .await
-                .ok_or_else(|| "relay closed during auth".to_string())?
+                .ok_or_else(|| {
+                    eprintln!("buzz-desktop: pairing: relay closed during auth");
+                    "Connection lost. Try pairing again.".to_string()
+                })?
                 .map_err(|e| format!("WS error during auth: {e}"))?;
             if let Message::Text(text) = msg {
                 if let Some(challenge) = parse_auth_challenge(text.as_str()) {
@@ -607,8 +611,10 @@ where
         Err(_) => return Ok(()),
     };
 
-    let relay_url_parsed =
-        nostr::RelayUrl::parse(relay_url).map_err(|e| format!("invalid relay URL: {e}"))?;
+    let relay_url_parsed = nostr::RelayUrl::parse(relay_url).map_err(|e| {
+        eprintln!("buzz-desktop: pairing: invalid relay URL: {e}");
+        "This link isn't valid.".to_string()
+    })?;
     let auth_json = {
         let guard = session.lock().await;
         let s = guard.as_ref().ok_or("session gone during auth")?;
@@ -628,7 +634,10 @@ where
             let msg = read
                 .next()
                 .await
-                .ok_or_else(|| "relay closed during auth OK".to_string())?
+                .ok_or_else(|| {
+                    eprintln!("buzz-desktop: pairing: relay closed during auth OK");
+                    "Connection lost. Try pairing again.".to_string()
+                })?
                 .map_err(|e| format!("WS error during auth OK: {e}"))?;
             if let Message::Text(text) = msg {
                 if text.contains("\"OK\"") || text.contains("[\"OK\"") {
@@ -706,6 +715,23 @@ async fn probe_pairing_relay(relay_url: &str) -> PairingRelay {
     pairing_relay_from_nip11(&json)
 }
 
+/// The pairing relay for `main_relay_url`, which must be the built-in server
+/// (checked before its NIP-11 document is fetched). A relay the document
+/// advertises on any other server is refused, never dialed.
+async fn allowed_pairing_relay_url(main_relay_url: &str) -> Result<String, String> {
+    crate::relay::ensure_relay_allowed("pairing relay probe", main_relay_url)?;
+    allowed_pairing_relay(main_relay_url, probe_pairing_relay(main_relay_url).await)
+}
+
+fn allowed_pairing_relay(
+    main_relay_url: &str,
+    pairing_relay: PairingRelay,
+) -> Result<String, String> {
+    let url = resolve_pairing_relay_url(main_relay_url, pairing_relay)?;
+    crate::relay::ensure_relay_allowed("pairing relay", &url)?;
+    Ok(url)
+}
+
 fn resolve_pairing_relay_url(
     main_relay_url: &str,
     pairing_relay: PairingRelay,
@@ -713,8 +739,10 @@ fn resolve_pairing_relay_url(
     match pairing_relay {
         PairingRelay::Configured(url) => Ok(url),
         PairingRelay::LegacyPath => {
-            let mut url =
-                url::Url::parse(main_relay_url).map_err(|e| format!("invalid relay URL: {e}"))?;
+            let mut url = url::Url::parse(main_relay_url).map_err(|e| {
+                eprintln!("buzz-desktop: pairing: invalid relay URL: {e}");
+                "This link isn't valid.".to_string()
+            })?;
             let path = url.path().trim_end_matches('/').to_string();
             url.set_path(&format!("{path}/pair"));
             Ok(url.to_string())
@@ -764,7 +792,10 @@ where
             let msg = read
                 .next()
                 .await
-                .ok_or_else(|| "relay closed waiting for EOSE".to_string())?
+                .ok_or_else(|| {
+                    eprintln!("buzz-desktop: pairing: relay closed waiting for EOSE");
+                    "Connection lost. Try pairing again.".to_string()
+                })?
                 .map_err(|e| format!("WS error waiting for EOSE: {e}"))?;
             if let Message::Text(text) = msg {
                 if let Ok(arr) = serde_json::from_str::<serde_json::Value>(text.as_str()) {

@@ -11,10 +11,7 @@ import {
 } from "./agentConfigOptions";
 import type { AcpCommandCandidate } from "@/shared/api/acpCommands";
 import type { AcpRuntimeCatalogEntry, AgentPersona } from "@/shared/api/types";
-import {
-  BuzzAgentModelTuningFields,
-  NumericTuningFields,
-} from "./buzzAgentModelTuningFields";
+import { NumericTuningFields } from "./buzzAgentModelTuningFields";
 import {
   isBuzzAgentRuntime,
   BUZZ_AGENT_THINKING_EFFORT,
@@ -47,10 +44,8 @@ export function EditAgentAdvancedFields({
   inheritedEnvVars,
   inheritHarness,
   linkedPersona,
-  model,
   modelTuningRuntimeId,
   parallelism,
-  provider,
   requiredEnvKeys,
   catalogStatus = "ready",
   selectedRuntime,
@@ -76,8 +71,6 @@ export function EditAgentAdvancedFields({
   inheritedEnvVars: Record<string, string>;
   inheritHarness: boolean;
   linkedPersona: AgentPersona | null;
-  /** Active LLM model — forwarded to BuzzAgentModelTuningFields for effort filtering. */
-  model?: string;
   /**
    * The actual/prospective runtime id used to decide whether to show the
    * buzz-agent effort-tuning field. Uses `prospectiveRuntimeId` from
@@ -85,8 +78,6 @@ export function EditAgentAdvancedFields({
    */
   modelTuningRuntimeId: string;
   parallelism: string;
-  /** Active LLM provider id — forwarded to BuzzAgentModelTuningFields for effort filtering. */
-  provider?: string;
   requiredEnvKeys: readonly string[];
   /**
    * Lifecycle status of the runtime catalog query. Controls the numeric-tuning
@@ -371,26 +362,6 @@ export function EditAgentAdvancedFields({
             }
             onEnvVarsChange(next);
           }}
-        />
-      ) : null}
-
-      {/* Effort-tuning knob — only shown for buzz-agent. */}
-      {isBuzzAgentRuntime(modelTuningRuntimeId) ? (
-        <BuzzAgentModelTuningFields
-          disabled={disabled}
-          envVars={envVars}
-          inheritedEnvVars={inheritedEnvVars}
-          model={model}
-          onEnvVarChange={(key, value) => {
-            const next = { ...envVars };
-            if (value === "") {
-              delete next[key];
-            } else {
-              next[key] = value;
-            }
-            onEnvVarsChange(next);
-          }}
-          provider={provider}
         />
       ) : null}
     </div>
