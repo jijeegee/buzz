@@ -23,7 +23,6 @@ import '../channels/small_avatar.dart';
 import '../channels/message_content.dart';
 import '../channels/date_formatters.dart';
 import '../forum/forum_thread_page.dart';
-import '../profile/profile_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import 'recent_searches_provider.dart';
@@ -107,10 +106,7 @@ class SearchPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final searchState = ref.watch(searchProvider);
-    final currentPubkey = ref
-        .watch(profileProvider)
-        .whenData((value) => value?.pubkey)
-        .value;
+    final currentPubkey = ref.watch(currentPubkeyProvider);
     final activeFilter = useState(_SearchFilter.all);
     final textController = useTextEditingController();
     final focusNode = useFocusNode();
