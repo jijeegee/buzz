@@ -45,6 +45,7 @@ import 'jump_to_latest_button.dart';
 import 'jump_to_latest_switcher.dart';
 import 'local_message_send_animation_provider.dart';
 import 'local_message_send_transition.dart';
+import 'channel_management_provider.dart';
 import '../profile/user_profile_sheet.dart';
 import '../goals/thread_goal_chip.dart';
 import 'message_actions.dart';
@@ -103,6 +104,10 @@ class ThreadDetailPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // The signed-in pubkey comes from the local keys, so own messages are on
+    // the right from the first frame even if the pusher had none.
+    final currentPubkey =
+        this.currentPubkey ?? ref.watch(currentPubkeyProvider);
     final nameKey = (channelId: channelId, headId: threadHead.id);
     final threadName = ref.watch(threadNameProvider(nameKey)).value?.content;
     final appView = View.of(context);
@@ -728,7 +733,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         .where(
           (e) =>
               currentPubkey == null ||
-              e.pubkey.toLowerCase() != currentPubkey?.toLowerCase(),
+              e.pubkey.toLowerCase() != currentPubkey.toLowerCase(),
         )
         .toList();
 

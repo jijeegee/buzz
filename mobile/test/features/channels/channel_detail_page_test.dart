@@ -11784,6 +11784,53 @@ void main() {
       expect(replyQueries, 1);
     });
 
+    testWidgets(
+      'puts own replies on the right when opened before the profile loads',
+      (tester) async {
+        final root = _textMsg(
+          id: 'root',
+          pubkey: 'alice',
+          content: 'Thread root',
+        );
+        final mine = _textMsg(
+          id: 'mine',
+          pubkey: 'self',
+          content: 'My reply',
+          createdAt: 1100,
+          extraTags: const [
+            ['e', 'root', '', 'reply'],
+          ],
+        );
+        final timelineMessages = formatTimeline([root, mine]);
+
+        await tester.pumpWidget(
+          _buildTestable(
+            messages: [root, mine],
+            threadReplies: {
+              'root': [mine],
+            },
+            home: ThreadDetailPage(
+              threadHead: timelineMessages.first,
+              allMessages: timelineMessages,
+              channelId: _testChannel.id,
+              currentPubkey: null,
+              isMember: true,
+              isArchived: false,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final bubble = tester.widget<ChatBubbleRow>(
+          find.ancestor(
+            of: find.text('My reply'),
+            matching: find.byType(ChatBubbleRow),
+          ),
+        );
+        expect(bubble.isOwn, isTrue);
+      },
+    );
+
     testWidgets('opens an initial thread without showing the channel', (
       tester,
     ) async {

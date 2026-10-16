@@ -28,7 +28,6 @@ import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../profile/profile_avatar.dart';
-import '../profile/profile_provider.dart';
 import '../profile/presence_cache_provider.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
@@ -175,10 +174,7 @@ class ChannelsPage extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final channelsAsync = ref.watch(channelsProvider);
     final sessionState = ref.watch(relaySessionProvider);
-    final currentPubkey = ref
-        .watch(profileProvider)
-        .whenData((value) => value?.pubkey)
-        .value;
+    final currentPubkey = ref.watch(currentPubkeyProvider);
     final headerTitleStyle = context.textTheme.titleMedium?.copyWith(
       fontSize: 22,
       fontWeight: FontWeight.w600,
