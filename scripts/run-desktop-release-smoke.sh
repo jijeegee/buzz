@@ -84,11 +84,11 @@ phase services "${phase_start}"
 phase_start="$(date +%s)"
 log "creating isolated database ${DB_NAME}"
 docker exec kuzz-postgres createdb -U kuzz "${DB_NAME}"
-export PGHOST=localhost PGPORT=5432 PGUSER=kuzz PGPASSWORD=kuzz_dev PGDATABASE="${DB_NAME}"
+export PGHOST=localhost PGPORT=5432 PGUSER=kuzz PGPASSWORD=buzz_dev PGDATABASE="${DB_NAME}"
 export PGSCHEMA_PLAN_HOST=localhost PGSCHEMA_PLAN_PORT=5432 PGSCHEMA_PLAN_DB="${DB_NAME}"
-export PGSCHEMA_PLAN_USER=kuzz PGSCHEMA_PLAN_PASSWORD=kuzz_dev
+export PGSCHEMA_PLAN_USER=kuzz PGSCHEMA_PLAN_PASSWORD=buzz_dev
 ./bin/pgschema apply --file schema/schema.sql --auto-approve
-docker exec -i -e PGPASSWORD=kuzz_dev kuzz-postgres \
+docker exec -i -e PGPASSWORD=buzz_dev kuzz-postgres \
   psql -U kuzz -d "${DB_NAME}" -v ON_ERROR_STOP=1 < scripts/reconcile-schema-after-pgschema.sql
 KUZZ_DB_NAME="${DB_NAME}" KUZZ_COMMUNITY_HOST="${COMMUNITY_HOST}" ./scripts/setup-desktop-test-data.sh
 docker exec kuzz-redis redis-cli -n "${REDIS_DB}" FLUSHDB >/dev/null
@@ -105,7 +105,7 @@ fi
 log "starting relay at ${RELAY_HTTP_URL}"
 RELAY_PRIVATE_KEY="$(openssl rand -hex 32)"
 env \
-  DATABASE_URL="postgres://kuzz:kuzz_dev@localhost:5432/${DB_NAME}" \
+  DATABASE_URL="postgres://buzz:buzz_dev@localhost:5432/${DB_NAME}" \
   REDIS_URL="redis://localhost:6379/${REDIS_DB}" \
   RELAY_URL="ws://${COMMUNITY_HOST}" \
   KUZZ_BIND_ADDR="127.0.0.1:${RELAY_PORT}" \

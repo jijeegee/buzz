@@ -166,9 +166,9 @@ impl GitS3Probe {
         let endpoint = std::env::var("KUZZ_S3_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:9000".to_string());
         let access_key =
-            std::env::var("KUZZ_S3_ACCESS_KEY").unwrap_or_else(|_| "kuzz_dev".to_string());
+            std::env::var("KUZZ_S3_ACCESS_KEY").unwrap_or_else(|_| "buzz_dev".to_string());
         let secret_key =
-            std::env::var("KUZZ_S3_SECRET_KEY").unwrap_or_else(|_| "kuzz_dev_secret".to_string());
+            std::env::var("KUZZ_S3_SECRET_KEY").unwrap_or_else(|_| "buzz_dev_secret".to_string());
         let bucket_name =
             std::env::var("KUZZ_S3_BUCKET").unwrap_or_else(|_| "kuzz-media".to_string());
         let region_name =

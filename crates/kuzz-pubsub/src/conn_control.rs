@@ -299,7 +299,7 @@ mod tests {
         let b = ctx(0xbbbb, "b.example");
         assert_eq!(
             conn_control_channel(&a),
-            format!("kuzz:{}:conn-control", a.community())
+            format!("buzz:{}:conn-control", a.community())
         );
         assert_ne!(conn_control_channel(&a), conn_control_channel(&b));
     }
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn parse_rejects_foreign_channels() {
         assert_eq!(
-            parse_conn_control_channel("kuzz:not-a-uuid:conn-control"),
+            parse_conn_control_channel("buzz:not-a-uuid:conn-control"),
             None
         );
         assert_eq!(parse_conn_control_channel("buzz:*:cache-invalidate"), None);

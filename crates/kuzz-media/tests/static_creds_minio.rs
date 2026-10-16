@@ -6,7 +6,7 @@
 //! exists to prove that adding the IRSA/credential-chain fallback did **not**
 //! regress hardcoded credentials.
 //!
-//! Run it against the docker-compose MinIO (creds `kuzz_dev`/`kuzz_dev_secret`,
+//! Run it against the docker-compose MinIO (creds `buzz_dev`/`buzz_dev_secret`,
 //! bucket `kuzz-media`, endpoint `http://localhost:9000`):
 //!
 //! ```bash
@@ -26,9 +26,9 @@ fn minio_config() -> MediaConfig {
         s3_endpoint: std::env::var("KUZZ_S3_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:9000".to_string()),
         s3_access_key: std::env::var("KUZZ_S3_ACCESS_KEY")
-            .unwrap_or_else(|_| "kuzz_dev".to_string()),
+            .unwrap_or_else(|_| "buzz_dev".to_string()),
         s3_secret_key: std::env::var("KUZZ_S3_SECRET_KEY")
-            .unwrap_or_else(|_| "kuzz_dev_secret".to_string()),
+            .unwrap_or_else(|_| "buzz_dev_secret".to_string()),
         s3_bucket: std::env::var("KUZZ_S3_BUCKET").unwrap_or_else(|_| "kuzz-media".to_string()),
         s3_region: std::env::var("KUZZ_S3_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
         s3_addressing_style: std::env::var("KUZZ_S3_ADDRESSING_STYLE")

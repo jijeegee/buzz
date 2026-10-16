@@ -216,7 +216,7 @@ def build_command(
         "endpoint_config": args.endpoint_config,
         "kuzz_acp_binary": agent_binaries["kuzz-acp"],
         "kuzz_agent_binary": agent_binaries["kuzz-agent"],
-        "kuzz_dev_mcp_binary": agent_binaries["kuzz-dev-mcp"],
+        "buzz_dev_mcp_binary": agent_binaries["kuzz-dev-mcp"],
         "kuzz_cli_binary": binaries["kuzz"],
         "run_id": args.job_name,
     }

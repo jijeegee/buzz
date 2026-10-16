@@ -16,7 +16,7 @@ fi
 export PGHOST="${PGHOST:-localhost}"
 export PGPORT="${PGPORT:-5432}"
 export PGUSER="${PGUSER:-kuzz}"
-export PGPASSWORD="${PGPASSWORD:-kuzz_dev}"
+export PGPASSWORD="${PGPASSWORD:-buzz_dev}"
 export PGDATABASE="${PGDATABASE:-kuzz}"
 
 if command -v psql >/dev/null 2>&1; then
@@ -97,7 +97,7 @@ composer_diagnostics_hash="$(fixture_hash "${composer_diagnostics}")"
 workspace_diagnostics_hash="$(fixture_hash "${workspace_diagnostics}")"
 
 if ! docker exec kuzz-minio mc alias set local http://localhost:9000 \
-  "${KUZZ_S3_ACCESS_KEY:-kuzz_dev}" "${KUZZ_S3_SECRET_KEY:-kuzz_dev_secret}" >/dev/null; then
+  "${KUZZ_S3_ACCESS_KEY:-buzz_dev}" "${KUZZ_S3_SECRET_KEY:-buzz_dev_secret}" >/dev/null; then
   echo "error: local MinIO is unavailable; run just setup first" >&2
   exit 1
 fi

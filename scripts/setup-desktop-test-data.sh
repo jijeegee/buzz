@@ -5,7 +5,7 @@ set -euo pipefail
 DB_HOST="${KUZZ_DB_HOST:-127.0.0.1}"
 DB_PORT="${KUZZ_DB_PORT:-5432}"
 DB_USER="${KUZZ_DB_USER:-kuzz}"
-DB_PASS="${KUZZ_DB_PASS:-kuzz_dev}"
+DB_PASS="${KUZZ_DB_PASS:-buzz_dev}"
 DB_NAME="${KUZZ_DB_NAME:-kuzz}"
 DB_DOCKER_CONTAINER="${KUZZ_DB_DOCKER_CONTAINER:-kuzz-postgres}"
 

@@ -3794,7 +3794,7 @@ mod postgres_tests {
     #[ignore = "requires Postgres"]
     async fn check_channel_write_denies_when_channel_lookup_fails() {
         let state = crate::state::tests::test_state_with_database_url(
-            "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
+            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz",
         )
         .await;
         let community = kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil());
@@ -4060,7 +4060,7 @@ mod postgres_tests {
 
         let url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
         let pool = sqlx::PgPool::connect(&url).await.expect("connect test DB");
         let db = kuzz_db::Db::from_pool(pool);
         if std::env::var("KUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
@@ -6276,7 +6276,7 @@ mod postgres_tests {
         // ── Postgres connection ──────────────────────────────────────────────
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
         let pool = sqlx::PgPool::connect(&db_url).await.expect(
             "connect test Postgres — start local Postgres before running ignored ingest tests",
         );
@@ -6690,7 +6690,7 @@ mod postgres_tests {
 
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
         let admin = sqlx::PgPool::connect(&db_url)
             .await
             .expect("connect test Postgres");
@@ -6807,7 +6807,7 @@ mod postgres_tests {
 
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
         let admin = sqlx::PgPool::connect(&db_url)
             .await
             .expect("connect test Postgres");
@@ -6912,7 +6912,7 @@ mod postgres_tests {
 
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
         let pool = sqlx::PgPool::connect(&db_url).await.expect(
             "connect test Postgres — start local Postgres before running ignored ingest tests",
         );
@@ -7117,7 +7117,7 @@ mod postgres_tests {
 
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
         let pool = sqlx::PgPool::connect(&db_url)
             .await
             .expect("connect test Postgres");

@@ -614,7 +614,7 @@ impl Config {
         let bind_addr = parse_bind_addr(&bind_addr_raw)?;
 
         let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
 
         let read_database_url = std::env::var("READ_DATABASE_URL")
             .ok()
@@ -936,9 +936,9 @@ impl Config {
             s3_endpoint: std::env::var("KUZZ_S3_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:9000".to_string()),
             s3_access_key: std::env::var("KUZZ_S3_ACCESS_KEY")
-                .unwrap_or_else(|_| "kuzz_dev".to_string()),
+                .unwrap_or_else(|_| "buzz_dev".to_string()),
             s3_secret_key: std::env::var("KUZZ_S3_SECRET_KEY")
-                .unwrap_or_else(|_| "kuzz_dev_secret".to_string()),
+                .unwrap_or_else(|_| "buzz_dev_secret".to_string()),
             s3_bucket: std::env::var("KUZZ_S3_BUCKET").unwrap_or_else(|_| "kuzz-media".to_string()),
             s3_region: std::env::var("KUZZ_S3_REGION")
                 .or_else(|_| std::env::var("AWS_REGION"))
@@ -2238,7 +2238,7 @@ mod tests {
         std::env::set_var("READ_DATABASE_URL", "   ");
         let blank = Config::from_env().expect("config").read_database_url;
 
-        std::env::set_var("READ_DATABASE_URL", "postgres://kuzz:pw@replica:5432/kuzz"); // sadscan:disable np.postgres.1
+        std::env::set_var("READ_DATABASE_URL", "postgres://buzz:pw@replica:5432/buzz"); // sadscan:disable np.postgres.1
         let set = Config::from_env().expect("config").read_database_url;
 
         if let Some(value) = previous {
@@ -2251,7 +2251,7 @@ mod tests {
         assert_eq!(blank, None, "blank READ_DATABASE_URL must disable routing");
         assert_eq!(
             set.as_deref(),
-            Some("postgres://kuzz:pw@replica:5432/kuzz") // sadscan:disable np.postgres.1
+            Some("postgres://buzz:pw@replica:5432/buzz") // sadscan:disable np.postgres.1
         );
     }
 

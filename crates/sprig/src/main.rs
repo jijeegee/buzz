@@ -39,7 +39,7 @@ fn dispatch() -> Result<(), String> {
             }
         },
         // kuzz-dev-mcp handles its utility multicall names: rg, tree, kuzz.
-        _ => kuzz_dev_mcp::run().map_err(|e| e.to_string()),
+        _ => buzz_dev_mcp::run().map_err(|e| e.to_string()),
     }
 }
 

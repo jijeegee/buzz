@@ -194,7 +194,7 @@ mod postgres_tests {
         path::{Path, PathBuf},
     };
 
-    const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
+    const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
 
     /// Connection parameters parsed out of a PostgreSQL URL so the parity test
     /// can pass them to the `bin/pgschema` binary, which

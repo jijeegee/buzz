@@ -241,7 +241,7 @@ async def test_install_stack_uploads_the_pinned_stack(tmp_path):
         tmp_path,
         kuzz_acp_binary=binaries["kuzz-acp"],
         kuzz_agent_binary=binaries["kuzz-agent"],
-        kuzz_dev_mcp_binary=binaries["kuzz-dev-mcp"],
+        buzz_dev_mcp_binary=binaries["kuzz-dev-mcp"],
     )
     environment = Environment()
     await rt._install_stack(environment)

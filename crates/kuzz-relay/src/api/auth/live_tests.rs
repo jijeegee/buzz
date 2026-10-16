@@ -388,8 +388,8 @@ async fn complete(inst: &Instance, login_code: &str, verifier: &str) -> Login {
 async fn reset_login_limits(inst: &Instance) {
     let mut redis = inst.state.redis_pool.get().await.expect("redis");
     let _: () = redis::cmd("DEL")
-        .arg("kuzz:ratelimit:auth:login:start:127.0.0.1")
-        .arg("kuzz:ratelimit:auth:login:complete:127.0.0.1")
+        .arg("buzz:ratelimit:auth:login:start:127.0.0.1")
+        .arg("buzz:ratelimit:auth:login:complete:127.0.0.1")
         .query_async(&mut redis)
         .await
         .expect("reset login limits");
@@ -665,7 +665,7 @@ async fn refresh_rotation_replay_and_reuse_detection() {
     let r1_hash = kuzz_auth::hash_token(&user.refresh);
     let mut redis = inst.state.redis_pool.get().await.expect("redis");
     let _: () = redis::cmd("DEL")
-        .arg(format!("kuzz:auth:refresh:replay:{}", hex::encode(r1_hash)))
+        .arg(format!("buzz:auth:refresh:replay:{}", hex::encode(r1_hash)))
         .query_async(&mut redis)
         .await
         .expect("drop replay cache");
@@ -757,7 +757,7 @@ async fn exchange_reauth_binding_swap_and_grace_expiry() {
     // failing with 409: drop the entry, retry, and let the "winner" write it
     // back while the retry is polling.
     let replay_key = format!(
-        "kuzz:auth:exchange:replay:{}",
+        "buzz:auth:exchange:replay:{}",
         hex::encode(kuzz_auth::hash_token(&t1))
     );
     let mut redis = inst.state.redis_pool.get().await.expect("redis");
@@ -794,7 +794,7 @@ async fn exchange_reauth_binding_swap_and_grace_expiry() {
     // clear the cache and this bot's exchange budget.
     let _: () = redis::cmd("DEL")
         .arg(&replay_key)
-        .arg(format!("kuzz:ratelimit:auth:exchange:{bot1}"))
+        .arg(format!("buzz:ratelimit:auth:exchange:{bot1}"))
         .query_async(&mut redis)
         .await
         .expect("drop exchange replay and budget");

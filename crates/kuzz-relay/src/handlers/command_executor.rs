@@ -1374,7 +1374,7 @@ mod postgres_tests {
     async fn persistence_test_context() -> (kuzz_db::Db, TenantContext) {
         let url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1 -- local test-only credentials
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1 -- local test-only credentials
         let pool = sqlx::PgPool::connect(&url)
             .await
             .expect("connect workflow persistence test database");

@@ -5,7 +5,7 @@
 //! dual markers, delete exact `(Key, VersionId)` identifiers, retry an already
 //! deleted version, and prove final `ListObjectVersions` emptiness.
 //!
-//! Run it against the docker-compose MinIO (creds `kuzz_dev`/`kuzz_dev_secret`):
+//! Run it against the docker-compose MinIO (creds `buzz_dev`/`buzz_dev_secret`):
 //!
 //! ```bash
 //! docker compose up -d minio minio-init
@@ -28,8 +28,8 @@ fn env_or(name: &str, default: &str) -> String {
 fn minio_config(bucket: String) -> MediaConfig {
     MediaConfig {
         s3_endpoint: env_or("KUZZ_S3_ENDPOINT", "http://localhost:9000"),
-        s3_access_key: env_or("KUZZ_S3_ACCESS_KEY", "kuzz_dev"),
-        s3_secret_key: env_or("KUZZ_S3_SECRET_KEY", "kuzz_dev_secret"),
+        s3_access_key: env_or("KUZZ_S3_ACCESS_KEY", "buzz_dev"),
+        s3_secret_key: env_or("KUZZ_S3_SECRET_KEY", "buzz_dev_secret"),
         s3_bucket: bucket,
         s3_region: env_or("KUZZ_S3_REGION", "us-east-1"),
         s3_addressing_style: env_or("KUZZ_S3_ADDRESSING_STYLE", "path")

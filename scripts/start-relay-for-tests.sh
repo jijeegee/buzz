@@ -92,7 +92,7 @@ log "Applying database schema..."
 export PGHOST=localhost
 export PGPORT=5432
 export PGUSER=kuzz
-export PGPASSWORD=kuzz_dev
+export PGPASSWORD=buzz_dev
 export PGDATABASE=kuzz
 
 # Use the already-running docker postgres for desired-state planning instead of
@@ -101,7 +101,7 @@ export PGSCHEMA_PLAN_HOST=localhost
 export PGSCHEMA_PLAN_PORT=5432
 export PGSCHEMA_PLAN_DB=kuzz
 export PGSCHEMA_PLAN_USER=kuzz
-export PGSCHEMA_PLAN_PASSWORD=kuzz_dev
+export PGSCHEMA_PLAN_PASSWORD=buzz_dev
 
 ./bin/pgschema apply --file schema/schema.sql --auto-approve
 docker exec -i -e PGPASSWORD="${PGPASSWORD}" kuzz-postgres \
@@ -168,7 +168,7 @@ if [[ "${KUZZ_REQUIRE_RELAY_MEMBERSHIP:-}" == "true" ]]; then
 fi
 
 nohup env \
-  DATABASE_URL=postgres://kuzz:kuzz_dev@localhost:5432/kuzz \
+  DATABASE_URL=postgres://buzz:buzz_dev@localhost:5432/buzz \
   REDIS_URL=redis://localhost:6379 \
   RELAY_URL=ws://localhost:3000 \
   KUZZ_BIND_ADDR=0.0.0.0:3000 \

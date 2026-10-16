@@ -2307,34 +2307,34 @@ mod postgres_tests {
     fn deletion_s3_key_pair_trims_static_and_preserves_partial_pairs() {
         assert_eq!(
             s3_key_pair_from(env_of(&[
-                ("KUZZ_S3_ACCESS_KEY", " kuzz_dev "),
-                ("KUZZ_S3_SECRET_KEY", " kuzz_dev_secret "),
+                ("KUZZ_S3_ACCESS_KEY", " buzz_dev "),
+                ("KUZZ_S3_SECRET_KEY", " buzz_dev_secret "),
             ])),
-            ("kuzz_dev".to_string(), "kuzz_dev_secret".to_string())
+            ("buzz_dev".to_string(), "buzz_dev_secret".to_string())
         );
 
         for (env, expected) in [
             (
-                &[("KUZZ_S3_ACCESS_KEY", " kuzz_dev ")][..],
-                ("kuzz_dev".to_string(), String::new()),
+                &[("KUZZ_S3_ACCESS_KEY", " buzz_dev ")][..],
+                ("buzz_dev".to_string(), String::new()),
             ),
             (
-                &[("KUZZ_S3_SECRET_KEY", " kuzz_dev_secret ")][..],
-                (String::new(), "kuzz_dev_secret".to_string()),
+                &[("KUZZ_S3_SECRET_KEY", " buzz_dev_secret ")][..],
+                (String::new(), "buzz_dev_secret".to_string()),
             ),
             (
                 &[
-                    ("KUZZ_S3_ACCESS_KEY", " kuzz_dev "),
+                    ("KUZZ_S3_ACCESS_KEY", " buzz_dev "),
                     ("KUZZ_S3_SECRET_KEY", "   "),
                 ][..],
-                ("kuzz_dev".to_string(), String::new()),
+                ("buzz_dev".to_string(), String::new()),
             ),
             (
                 &[
                     ("KUZZ_S3_ACCESS_KEY", "   "),
-                    ("KUZZ_S3_SECRET_KEY", " kuzz_dev_secret "),
+                    ("KUZZ_S3_SECRET_KEY", " buzz_dev_secret "),
                 ][..],
-                (String::new(), "kuzz_dev_secret".to_string()),
+                (String::new(), "buzz_dev_secret".to_string()),
             ),
         ] {
             assert_eq!(s3_key_pair_from(env_of(env)), expected);
@@ -2687,7 +2687,7 @@ mod postgres_tests {
         assert!(!scan_proves_absence(&[(9, Vec::new())]));
         assert!(!scan_proves_absence(&[
             (9, Vec::new()),
-            (0, vec!["kuzz:tenant:late".to_string()]),
+            (0, vec!["buzz:tenant:late".to_string()]),
         ]));
         assert!(scan_proves_absence(&[(9, Vec::new()), (0, Vec::new())]));
     }

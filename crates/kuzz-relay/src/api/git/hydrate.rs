@@ -590,8 +590,8 @@ mod tests {
     fn store() -> GitStore {
         GitStore::new(
             "http://localhost:9000",
-            "kuzz_dev",
-            "kuzz_dev_secret",
+            "buzz_dev",
+            "buzz_dev_secret",
             "kuzz-git",
             "us-east-1",
             kuzz_media::config::S3AddressingStyle::Path,

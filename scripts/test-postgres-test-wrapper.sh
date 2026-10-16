@@ -40,7 +40,7 @@ run_case() {
     NEXTEST_BINARY_ID=postgres_fixture \
     NEXTEST_TEST_NAME="$test_name" \
     NEXTEST_ATTEMPT_ID=1 \
-    KUZZ_POSTGRES_ADMIN_URL=postgres://kuzz@localhost/postgres \
+    KUZZ_POSTGRES_ADMIN_URL=postgres://buzz@localhost/postgres \
     KUZZ_POSTGRES_DESIRED_TEMPLATE=desired_template \
     KUZZ_CREATEDB_LOG="$createdb_log" \
     KUZZ_SCHEMA_MODE_LOG="$mode_log" \

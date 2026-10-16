@@ -292,7 +292,7 @@ mod tests {
             ),
             (
                 "DATABASE_URL".into(),
-                "postgres://kuzz:test@localhost/kuzz".into(), // sadscan:disable np.postgres.1
+                "postgres://buzz:test@localhost/kuzz".into(), // sadscan:disable np.postgres.1
             ),
             (
                 "KUZZ_PUSH_DOGFOOD_APP_ATTEST_APP_ID".into(),

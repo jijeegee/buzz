@@ -347,7 +347,7 @@ function classifyDeveloperToolName(value: string | null | undefined) {
   if (base === "todo") return "todo";
   if (base === "stop") return "stop_hook";
   if (base === "postcompact") return "post_compact_hook";
-  if (DEVELOPER_TOOL_BASES.has(base) || normalized.includes("kuzz_dev_mcp")) {
+  if (DEVELOPER_TOOL_BASES.has(base) || normalized.includes("buzz_dev_mcp")) {
     return "dev_mcp";
   }
   return null;

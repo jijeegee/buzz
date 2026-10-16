@@ -1893,7 +1893,7 @@ steps:
             .or_else(|_| std::env::var("DATABASE_URL"))
             // Local-only test default; this is not a production credential.
             .unwrap_or_else(|_| {
-                let local_test_database = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
+                let local_test_database = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
                 local_test_database.to_owned()
             });
         kuzz_db::Db::new(&kuzz_db::DbConfig {

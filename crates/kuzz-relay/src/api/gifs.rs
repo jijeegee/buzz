@@ -412,7 +412,7 @@ mod tests {
         config.redis_url = "redis://127.0.0.1:1".to_string();
 
         let pool = sqlx::postgres::PgPoolOptions::new()
-            .connect_lazy("postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz") // sadscan:disable np.postgres.1
+            .connect_lazy("postgres://buzz:buzz_dev@127.0.0.1:1/buzz") // sadscan:disable np.postgres.1
             .expect("lazy test database pool");
         let db = kuzz_db::Db::from_pool(pool.clone());
         let redis_pool = deadpool_redis::Config::from_url(&config.redis_url)

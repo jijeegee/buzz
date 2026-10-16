@@ -27,6 +27,8 @@ SKIP_CONTENT = [
     re.compile(r"(^|/)Podfile\.lock$"),
     re.compile(r"^schema/schema\.sql$"),
     re.compile(r"app_attest_transcripts\.json$"),
+    # Signed App Attest fixtures: app id and challenge are inside the signature.
+    re.compile(r"(^|/)tests/fixtures/app-attest-[^/]+\.json$"),
 ]
 
 # Per-file regexes whose matches are kept verbatim.
@@ -41,6 +43,12 @@ LOCK_HASH_LINE = re.compile(r"(integrity|checksum|sha256|sha512|hash)\b", re.I)
 
 # Third-party or externally registered names (regex, matched case-sensitively).
 KEEP_EXTERNAL = [
+    # Local/test Postgres credentials, DB names and dev volumes stay `buzz`.
+    r"postgres(?:ql)?://buzz[:@][^\s\"'`]*",
+    r"buzz_dev(?:_secret)?",
+    r"(?<=POSTGRES_USER: )buzz",
+    r"(?<=POSTGRES_DB: )buzz",
+    r"(?<=pg_isready -U )buzz",
     r"github\.com/(?:block|salman1993|squareup|attacker)/buzz[\w.-]*",
     r"api\.github\.com/repos/block/buzz[\w.-]*",
     r"jijeegee/buzz\b",

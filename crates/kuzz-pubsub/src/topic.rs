@@ -151,7 +151,7 @@ mod tests {
     fn parses_channel_topic() {
         let community_id = CommunityId::from_uuid(Uuid::from_u128(0xaaaa));
         let channel_id = Uuid::from_u128(0xbbbb);
-        let raw = format!("kuzz:{community_id}:channel:{channel_id}");
+        let raw = format!("buzz:{community_id}:channel:{channel_id}");
 
         assert_eq!(
             EventTopicKey::parse_redis_channel(&raw).unwrap(),
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn parses_global_topic() {
         let community_id = CommunityId::from_uuid(Uuid::from_u128(0xaaaa));
-        let raw = format!("kuzz:{community_id}:global");
+        let raw = format!("buzz:{community_id}:global");
 
         assert_eq!(
             EventTopicKey::parse_redis_channel(&raw).unwrap(),
@@ -181,12 +181,12 @@ mod tests {
         for raw in [
             "",
             "not-kuzz:00000000-0000-0000-0000-00000000aaaa:global",
-            "kuzz:not-a-uuid:global",
-            "kuzz:00000000-0000-0000-0000-00000000aaaa",
-            "kuzz:00000000-0000-0000-0000-00000000aaaa:global:extra",
-            "kuzz:00000000-0000-0000-0000-00000000aaaa:channel",
-            "kuzz:00000000-0000-0000-0000-00000000aaaa:channel:not-a-uuid",
-            "kuzz:00000000-0000-0000-0000-00000000aaaa:presence:abc",
+            "buzz:not-a-uuid:global",
+            "buzz:00000000-0000-0000-0000-00000000aaaa",
+            "buzz:00000000-0000-0000-0000-00000000aaaa:global:extra",
+            "buzz:00000000-0000-0000-0000-00000000aaaa:channel",
+            "buzz:00000000-0000-0000-0000-00000000aaaa:channel:not-a-uuid",
+            "buzz:00000000-0000-0000-0000-00000000aaaa:presence:abc",
         ] {
             assert!(
                 EventTopicKey::parse_redis_channel(raw).is_err(),

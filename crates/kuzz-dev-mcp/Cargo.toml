@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [lib]
-name = "kuzz_dev_mcp"
+name = "buzz_dev_mcp"
 path = "src/lib.rs"
 
 [[bin]]

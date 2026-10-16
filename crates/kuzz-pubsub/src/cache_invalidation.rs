@@ -190,7 +190,7 @@ mod tests {
 
         assert_eq!(
             cache_invalidation_channel(&community_a),
-            format!("kuzz:{}:cache-invalidate", community_a.community())
+            format!("buzz:{}:cache-invalidate", community_a.community())
         );
         assert_ne!(
             cache_invalidation_channel(&community_a),
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn parses_cache_invalidation_channel() {
         let community_id = CommunityId::from_uuid(Uuid::from_u128(0xaaaa));
-        let raw = format!("kuzz:{community_id}:cache-invalidate");
+        let raw = format!("buzz:{community_id}:cache-invalidate");
 
         assert_eq!(parse_cache_invalidation_channel(&raw), Some(community_id));
     }
@@ -209,11 +209,11 @@ mod tests {
     #[test]
     fn rejects_bad_cache_invalidation_channels() {
         for raw in [
-            "kuzz:cache-invalidate",
-            "kuzz:not-a-uuid:cache-invalidate",
+            "buzz:cache-invalidate",
+            "buzz:not-a-uuid:cache-invalidate",
             "not-kuzz:00000000-0000-0000-0000-00000000aaaa:cache-invalidate",
-            "kuzz:00000000-0000-0000-0000-00000000aaaa:cache-invalidate:extra",
-            "kuzz:00000000-0000-0000-0000-00000000aaaa:channel:00000000-0000-0000-0000-00000000bbbb",
+            "buzz:00000000-0000-0000-0000-00000000aaaa:cache-invalidate:extra",
+            "buzz:00000000-0000-0000-0000-00000000aaaa:channel:00000000-0000-0000-0000-00000000bbbb",
         ] {
             assert_eq!(parse_cache_invalidation_channel(raw), None);
         }

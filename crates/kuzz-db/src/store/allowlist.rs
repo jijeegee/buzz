@@ -143,7 +143,7 @@ mod postgres_tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1 -- local test-only credentials
+    const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1 -- local test-only credentials
 
     async fn setup_db() -> Db {
         let database_url =

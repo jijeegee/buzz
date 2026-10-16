@@ -713,7 +713,7 @@ mod postgres_tests {
     // explicitly in CI's Backend Integration job; requires local Postgres
     // (and hard-fails rather than skipping when it is unreachable).
 
-    const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
+    const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
 
     /// Build a real `AppState` + tenant for a fresh community on `host`, with
     /// `require_relay_membership` set as given. Mirrors
