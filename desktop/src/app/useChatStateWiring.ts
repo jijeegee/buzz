@@ -27,6 +27,7 @@ import {
   type ChatStateWritten,
 } from "@/features/chats/chatStateWrites";
 import { mutedStore } from "@/features/channels/unreadMembership";
+import { ThreadUnreadGuard } from "@/features/chats/threadUnreadGuard";
 import { readThreadFollowRootIds } from "@/features/messages/lib/useThreadFollows";
 import {
   THREAD_PINS_LANE,
@@ -126,6 +127,8 @@ export function useChatStateWiring({
 }): {
   markChannelUnread: (channelId: string, source?: ForcedUnreadSource) => void;
   markThreadUnread: (rootId: string) => boolean;
+  /** Before an explicit thread Mark as read: let its read through. */
+  clearThreadUnreadGuard: (rootId: string) => void;
   mirrorFollow: (rootId: string, state: ChatFollowState) => void;
   pinThread: (rootId: string) => void;
   serverChats: ServerChats | undefined;
@@ -147,6 +150,7 @@ export function useChatStateWiring({
     () => getChatStateCapability(capabilityKey),
   );
   const writerRef = React.useRef<ChatStateWriter | null>(null);
+  const [threadUnreadGuard] = React.useState(() => new ThreadUnreadGuard());
   const channelsRef = React.useRef(channels);
   React.useEffect(() => {
     channelsRef.current = channels;
@@ -171,9 +175,11 @@ export function useChatStateWiring({
         isKnownNonMemberRoom(channelsRef.current, item.id),
     });
     writerRef.current = writer;
-    setReadStateServerMirror((contextId, at) =>
-      writer.queueRead(contextId, at),
-    );
+    setReadStateServerMirror((contextId, at) => {
+      if (threadUnreadGuard.allowRead(contextId, at)) {
+        writer.queueRead(contextId, at);
+      }
+    });
     // Hiding or closing the app (same account) sends what is queued.
     const flushWhenHidden = () => {
       if (document.visibilityState === "hidden") void writer.flush();
@@ -185,12 +191,20 @@ export function useChatStateWiring({
       document.removeEventListener("visibilitychange", flushWhenHidden);
       window.removeEventListener("pagehide", flushNow);
       setReadStateServerMirror(null);
+      threadUnreadGuard.reset();
       // Account, community or relay switch, or teardown: what is still
       // queued belongs to the old account and is dropped, never sent later.
       writer.dispose();
       if (writerRef.current === writer) writerRef.current = null;
     };
-  }, [capabilityKey, pubkey, queryClient, relayUrl, setReadStateServerMirror]);
+  }, [
+    capabilityKey,
+    pubkey,
+    queryClient,
+    relayUrl,
+    setReadStateServerMirror,
+    threadUnreadGuard,
+  ]);
 
   React.useEffect(() => {
     void capability;
@@ -252,13 +266,18 @@ export function useChatStateWiring({
       if (!writer || getChatStateCapability(capabilityKey) !== "on") {
         return false;
       }
+      threadUnreadGuard.mark(rootId, Date.now() / 1_000);
       writer.queueUnread(`thread:${rootId}`);
       patchChatLists(queryClient, (state) =>
         applyUnreadMarkToChatList(state, { thread: rootId }),
       );
       return true;
     },
-    [capabilityKey, queryClient],
+    [capabilityKey, queryClient, threadUnreadGuard],
+  );
+  const clearThreadUnreadGuard = React.useCallback(
+    (rootId: string) => threadUnreadGuard.clear(rootId),
+    [threadUnreadGuard],
   );
 
   const on = capability === "on";
@@ -300,6 +319,7 @@ export function useChatStateWiring({
   return {
     markChannelUnread: markChannelUnreadMirrored,
     markThreadUnread,
+    clearThreadUnreadGuard,
     mirrorFollow,
     pinThread: threadPins.add,
     serverChats,

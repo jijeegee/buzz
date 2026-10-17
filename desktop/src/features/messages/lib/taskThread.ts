@@ -22,6 +22,15 @@ export function hasThreadClosedTag(
   );
 }
 
+function hasThreadReopenedTag(
+  tags: readonly (readonly string[])[] | null | undefined,
+): boolean {
+  return (
+    tags?.some((tag) => tag[0] === THREAD_REOPENED_TAG && Boolean(tag[1])) ??
+    false
+  );
+}
+
 /**
  * A task thread is closed while its latest reply is a close marker. Any later
  * message reopens it, so no separate state event is needed.
@@ -45,14 +54,17 @@ export type ThreadCloseState<T extends ThreadMessageLike = ThreadMessageLike> =
 export function threadCloseState<T extends ThreadMessageLike>(
   replies: readonly T[],
 ): ThreadCloseState<T> {
-  // Within one second (an Undo right after Close), any other message wins:
-  // a thread reads as open unless a close marker is strictly the latest.
+  // Within one second the later reply in list order wins (the relay's
+  // order: a final reply and `kuzz threads close` in one second read as
+  // closed), except that a close marker never beats a reopen marker from the
+  // same second, so an Undo right after Close reads as open in any order.
   let latest: T | null = null;
   for (const reply of replies) {
     if (
       !latest ||
       reply.createdAt > latest.createdAt ||
-      (reply.createdAt === latest.createdAt && !hasThreadClosedTag(reply.tags))
+      (reply.createdAt === latest.createdAt &&
+        !(hasThreadReopenedTag(latest.tags) && hasThreadClosedTag(reply.tags)))
     ) {
       latest = reply;
     }

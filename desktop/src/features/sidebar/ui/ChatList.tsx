@@ -129,6 +129,18 @@ function buildServerChatRows(
       ),
     };
   };
+  const grouping = byChannel
+    ? groupChatRowsByChannel(listed, {
+        expandedChannelIds: byChannel.expandedChannelIds,
+        isPinnedRoom,
+        isPinnedThread,
+        unreadOf,
+      })
+    : null;
+  // A group whose main row is not on a loaded page starts with the local row.
+  for (const entry of grouping?.entries ?? []) {
+    if (entry.kind === "channel") shown.add(entry.channelId);
+  }
   const localPinned: SidebarSectionRow[] = [];
   const localRest: SidebarSectionRow[] = [];
   for (const channel of localItems) {
@@ -139,15 +151,16 @@ function buildServerChatRows(
     });
   }
   let rows: SidebarSectionRow[];
-  if (byChannel) {
-    const { entries, pinnedEntries } = groupChatRowsByChannel(listed, {
-      expandedChannelIds: byChannel.expandedChannelIds,
-      isPinnedRoom,
-      isPinnedThread,
-      unreadOf,
-    });
+  if (byChannel && grouping) {
+    const { entries, pinnedEntries } = grouping;
     const grouped = entries.map((entry): SidebarSectionRow => {
       if (entry.kind === "row") return toSectionRow(entry.row);
+      if (entry.kind === "channel") {
+        return {
+          kind: "channel",
+          channel: channelById.get(entry.channelId) as Channel,
+        };
+      }
       return {
         kind: "custom",
         key: `more:${entry.channelId}`,

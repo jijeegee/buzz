@@ -346,7 +346,7 @@ test("By channel groups threads under their channel and expands in place", async
     ),
     serverRow({ channel_id: "room-a", at: 100 }),
   ];
-  const tree = (view) =>
+  const tree = (view, rows = serverRows) =>
     React.createElement(
       QueryClientProvider,
       { client },
@@ -361,7 +361,7 @@ test("By channel groups threads under their channel and expands in place", async
           unreadChannelCounts: new Map(),
           onSelectChannel: () => {},
           serverChats: {
-            rows: serverRows,
+            rows,
             getReadAt: () => null,
             onOpenThread: () => {},
             readStateVersion: 0,
@@ -412,6 +412,24 @@ test("By channel groups threads under their channel and expands in place", async
     fireEvent.click(view.getByTestId("chat-more-threads-room-a"));
     assert.equal(order(view).length, 6);
     // All chats: every row by activity, no grouping.
+    // room-a's main row is not on a loaded page: the local row heads the
+    // group, once.
+    view.rerender(
+      tree(
+        "by-channel",
+        serverRows.filter(
+          (row) => !(row.type === "room" && row.channel_id === "room-a"),
+        ),
+      ),
+    );
+    assert.deepEqual(order(view), [
+      "room-b",
+      "room-a",
+      "1",
+      "2",
+      "3",
+      "+ 2 more threads@ 1 unread mention4 unread messages",
+    ]);
     view.rerender(tree("all"));
     assert.deepEqual(order(view), [
       "room-b",

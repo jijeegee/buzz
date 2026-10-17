@@ -44,7 +44,9 @@ function shape({ entries }) {
   return entries.map((entry) =>
     entry.kind === "row"
       ? entry.row.key
-      : `more:${entry.channelId}:${entry.count}:${entry.expanded ? "open" : "shut"}:${entry.unread}:${entry.mentions}`,
+      : entry.kind === "channel"
+        ? `channel:${entry.channelId}`
+        : `more:${entry.channelId}:${entry.count}:${entry.expanded ? "open" : "shut"}:${entry.unread}:${entry.mentions}`,
   );
 }
 
@@ -136,14 +138,19 @@ test("a pinned thread pins its group to the top and leads inside it", () => {
   assert.equal(entries.pinnedEntries, 5);
 });
 
-test("a group without its main row still lists its threads", () => {
-  const entries = groupChatRowsByChannel([thread("c9", "t", 5)], {
-    expandedChannelIds: new Set(),
-    isPinnedRoom: none,
-    isPinnedThread: none,
-    unreadOf,
-  });
-  assert.deepEqual(shape(entries), ["t"]);
+test("a group whose main row is not loaded starts with the channel heading", () => {
+  const entries = groupChatRowsByChannel(
+    [room("c1", 9), thread("c9", "t", 5)],
+    {
+      expandedChannelIds: new Set(),
+      isPinnedRoom: (id) => id === "c9",
+      isPinnedThread: none,
+      unreadOf,
+    },
+  );
+  // c9 is pinned locally, so its group leads even without its main row.
+  assert.deepEqual(shape(entries), ["channel:c9", "t", "c1"]);
+  assert.equal(entries.pinnedEntries, 2);
 });
 
 test("the view choice is stored per device and defaults to All chats", () => {

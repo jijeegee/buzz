@@ -11,8 +11,9 @@ import { ThreadHeaderActions } from "./ThreadHeaderActions";
 /**
  * The thread header bar's buttons and the closed line under the replies.
  * Close/Reopen writes the marker replies old apps already read, so it does
- * not wait for the relay's chat state; Mark as unread uses the chat state
- * while it is on and otherwise marks unread as the message menu does today.
+ * not wait for the relay's chat state; Mark as unread marks unread as the
+ * message menu does and, while chat state is on, also sets the relay's
+ * thread mark (held against the open panel's reads by ThreadUnreadGuard).
  */
 export function useThreadHeaderBar({
   channelId,
@@ -97,7 +98,10 @@ export function useThreadHeaderBar({
         onMarkUnread={
           onMarkUnread
             ? () => {
-                if (!markThreadUnread(rootId)) onMarkUnread(threadHead);
+                // The same local marking as the message menu, plus the
+                // relay's thread mark while chat state is on.
+                markThreadUnread(rootId);
+                onMarkUnread(threadHead);
               }
             : undefined
         }

@@ -61,3 +61,10 @@ test("an Undo in the same second as Close reads as open in any order", () => {
   assert.equal(threadCloseState([closed(2), reopen]).closed, false);
   assert.equal(threadCloseState([reopen, closed(2)]).closed, false);
 });
+
+test("a plain reply and a close marker in one second: the later in order wins", () => {
+  const reply = { createdAt: 2, tags: [] };
+  // Agent's final reply, then `kuzz threads close` in the same second.
+  assert.equal(threadCloseState([reply, closed(2)]).closed, true);
+  assert.equal(threadCloseState([closed(2), reply]).closed, false);
+});

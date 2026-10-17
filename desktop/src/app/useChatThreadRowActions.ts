@@ -12,6 +12,7 @@ import type { ChatThreadRowActions } from "@/features/sidebar/ui/ChatThreadRowMe
  * it; each one is the same action the thread header or message menu runs.
  */
 export function useChatThreadRowActions({
+  clearThreadUnreadGuard,
   markThreadRead,
   markThreadUnread,
   pinThread,
@@ -19,6 +20,7 @@ export function useChatThreadRowActions({
   unfollowThread,
   unpinThread,
 }: {
+  clearThreadUnreadGuard: (rootId: string) => void;
   markThreadRead: (rootId: string, timestamp: number) => void;
   markThreadUnread: (rootId: string) => boolean;
   pinThread: (rootId: string) => void;
@@ -32,7 +34,10 @@ export function useChatThreadRowActions({
     () => ({
       pin: pinThread,
       unpin: unpinThread,
-      markRead: markThreadRead,
+      markRead: (rootId, at) => {
+        clearThreadUnreadGuard(rootId);
+        markThreadRead(rootId, at);
+      },
       markUnread: (rootId) => void markThreadUnread(rootId),
       unfollow: unfollowThread,
       setClosed: (channelId, rootId, closed) =>
@@ -48,6 +53,7 @@ export function useChatThreadRowActions({
         }),
     }),
     [
+      clearThreadUnreadGuard,
       markThreadRead,
       markThreadUnread,
       pinThread,

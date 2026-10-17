@@ -35,6 +35,8 @@ export function writeChatsViewMode(
 
 export type ChatGroupEntry =
   | { kind: "row"; row: ChatListRow }
+  /** The channel's heading when the relay has not sent its main row yet. */
+  | { kind: "channel"; channelId: string }
   | {
       kind: "more";
       channelId: string;
@@ -85,7 +87,8 @@ export function groupChatRowsByChannel(
     if (!group) {
       group = {
         channelId: row.channel_id,
-        pinned: false,
+        // A pinned room pins its group even before its main row loads.
+        pinned: isPinnedRoom(row.channel_id),
         room: null,
         threads: [],
       };
@@ -93,7 +96,6 @@ export function groupChatRowsByChannel(
     }
     if (row.type === "room") {
       group.room ??= row;
-      group.pinned ||= isPinnedRoom(row.channel_id);
     } else if (row.root_id) {
       group.threads.push(row);
       group.pinned ||= isPinnedThread(row.root_id);
@@ -133,7 +135,11 @@ function appendGroup(
     visibleThreads: number;
   },
 ) {
-  if (group.room) entries.push({ kind: "row", row: group.room });
+  entries.push(
+    group.room
+      ? { kind: "row", row: group.room }
+      : { kind: "channel", channelId: group.channelId },
+  );
   const pinnedThreads = group.threads.filter((row) =>
     isPinnedThread(row.root_id ?? ""),
   );
