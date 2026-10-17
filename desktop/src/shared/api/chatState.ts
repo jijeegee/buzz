@@ -128,3 +128,50 @@ export function chatThreadFollow(
     root,
   });
 }
+
+/** One device-local read position for `chat_import` (unix seconds). */
+export type ChatImportRead = {
+  kind: "channel" | "thread";
+  id: string;
+  at: number;
+};
+
+/** One device-local follow choice for `chat_import`. */
+export type ChatImportFollow = { root: string; state: ChatFollowState };
+
+/** Why an imported item was skipped (`null` when it applied). */
+export type ChatImportSkipReason =
+  | "not_member"
+  | "unknown_thread"
+  | "not_thread_root"
+  | "not_followed"
+  | "already_set";
+
+export type ChatImportItemResult = {
+  applied: boolean;
+  reason: ChatImportSkipReason | null;
+  channel_id: string | null;
+  read_seq?: number | null;
+};
+
+export type ChatImportResponse = {
+  chat_import: 1;
+  reads: ChatImportItemResult[];
+  follows: ChatImportItemResult[];
+};
+
+/**
+ * First-run upload of this device's read positions and follows (1..=500
+ * items). The relay applies each only over its backfilled state.
+ */
+export function chatImport(
+  binding: ChatStateBinding,
+  reads: readonly ChatImportRead[],
+  follows: readonly ChatImportFollow[],
+) {
+  return invokeTauri<ChatImportResponse>("chat_import", {
+    binding,
+    follows,
+    reads,
+  });
+}

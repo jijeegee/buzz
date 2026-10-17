@@ -737,6 +737,7 @@ pub fn run() {
             get_chat_list,
             chat_mark_read,
             chat_thread_follow,
+            chat_import,
             get_channel_messages_before,
             edit_message,
             delete_message,

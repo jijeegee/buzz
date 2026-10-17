@@ -34,6 +34,11 @@ function readFromStorage(pubkey: string): ThreadFollowEntry[] {
   }
 }
 
+/** The followed thread roots stored on this device for `pubkey`. */
+export function readThreadFollowRootIds(pubkey: string): Set<string> {
+  return new Set(readFromStorage(pubkey).map((entry) => entry.rootId));
+}
+
 function writeToStorage(pubkey: string, entries: ThreadFollowEntry[]): boolean {
   try {
     window.localStorage.setItem(storageKey(pubkey), JSON.stringify(entries));

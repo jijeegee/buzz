@@ -15772,6 +15772,7 @@ export function maybeInstallE2eTauriMocks() {
       case "get_chat_list":
       case "chat_mark_read":
       case "chat_thread_follow":
+      case "chat_import":
         throw new Error("chat_state_unavailable");
       default: {
         const goals = handleGoalsMockCommand(command, payload);

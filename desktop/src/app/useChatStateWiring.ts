@@ -18,16 +18,40 @@ import {
   subscribeChatStateCapability,
 } from "@/features/chats/chatStateCapability";
 import {
+  ChatStateImporter,
+  type ChatImportSources,
+} from "@/features/chats/chatStateImport";
+import {
   ChatStateWriter,
   type ChatStateWritten,
 } from "@/features/chats/chatStateWrites";
+import { mutedStore } from "@/features/channels/unreadMembership";
+import { readThreadFollowRootIds } from "@/features/messages/lib/useThreadFollows";
 import type { ServerChats } from "@/features/sidebar/ui/ChatList";
 import {
+  chatImport,
   chatMarkRead,
   chatThreadFollow,
   type ChatFollowState,
 } from "@/shared/api/chatState";
 import type { Channel } from "@/shared/api/types";
+
+/** This device's stored reads, follows and mutes for `pubkey`, read now. */
+function collectImportSources(
+  pubkey: string,
+  getReadContexts: () => Record<string, number>,
+): ChatImportSources {
+  const lower = pubkey.toLowerCase();
+  return {
+    contexts: getReadContexts(),
+    followedRootIds: readThreadFollowRootIds(pubkey),
+    // Mutes are written under the lowercased pubkey.
+    mutedRootIds: new Set([
+      ...mutedStore.read(pubkey),
+      ...mutedStore.read(lower),
+    ]),
+  };
+}
 
 /** A room this device knows the user has not joined (DMs are always joined). */
 function isKnownNonMemberRoom(channels: readonly Channel[], id: string) {
@@ -71,6 +95,8 @@ export function useChatStateWiring({
   channels,
   forcedUnreadChannelIds,
   getOwnReadAt,
+  getReadContexts,
+  isReadStateInitialized,
   markChannelUnread,
   mutedRootIds,
   openThread,
@@ -82,6 +108,9 @@ export function useChatStateWiring({
   channels: readonly Channel[];
   forcedUnreadChannelIds: ReadonlySet<string>;
   getOwnReadAt: (contextId: string) => number | null;
+  /** Local channel and thread read markers, for the first-run upload. */
+  getReadContexts: () => Record<string, number>;
+  isReadStateInitialized: () => boolean;
   markChannelUnread: (channelId: string, source?: ForcedUnreadSource) => void;
   mutedRootIds: ReadonlySet<string>;
   openThread: (channelId: string, rootId: string) => void;
@@ -151,6 +180,39 @@ export function useChatStateWiring({
     void capability;
     writerRef.current?.capabilityChanged();
   }, [capability]);
+
+  // S4b: upload this device's reads and follows once per account, after the
+  // local markers are complete (readStateVersion bumps when they are).
+  const [importer] = React.useState(
+    () =>
+      new ChatStateImporter({
+        send: (binding, chunk) =>
+          chatImport(binding, chunk.reads, chunk.follows),
+        onUnavailable: (key) => setChatStateCapability(key, "off"),
+        onImported: () =>
+          void queryClient.invalidateQueries({ queryKey: CHAT_LIST_QUERY_KEY }),
+      }),
+  );
+  React.useEffect(() => {
+    void readStateVersion;
+    void importer.update({
+      key: capabilityKey,
+      binding: pubkey && relayUrl ? { pubkey, relayUrl } : null,
+      capability,
+      readStateInitialized: isReadStateInitialized(),
+      collect: () => collectImportSources(pubkey ?? "", getReadContexts),
+    });
+  }, [
+    capability,
+    capabilityKey,
+    getReadContexts,
+    importer,
+    isReadStateInitialized,
+    pubkey,
+    readStateVersion,
+    relayUrl,
+  ]);
+  React.useEffect(() => () => importer.stop(), [importer]);
 
   const mirrorFollow = React.useCallback(
     (rootId: string, state: ChatFollowState) =>

@@ -152,6 +152,7 @@ export function useUnreadChannels(
     readStateVersion,
     getOwnTimestamp,
     getChannelAndThreadContexts,
+    isInitialized: isReadStateInitialized,
     setServerMirror: setReadStateServerMirror,
   } = useReadState(pubkey, relayClient);
 
@@ -991,6 +992,8 @@ export function useUnreadChannels(
     getChannelAndThreadContexts,
     readStateVersion,
     setContextParentResolver,
+    /** Local read markers are complete (every relay slot merged). */
+    isReadStateInitialized,
     /** Mirror the user's own reads to the relay's chat state (Chats S4). */
     setReadStateServerMirror,
     participatedRootIds,

@@ -1,5 +1,5 @@
-//! Chats server state (`chat_list`, `mark_read`, `thread_follow`) over the
-//! relay's `/query` bridge.
+//! Chats server state (`chat_list`, `mark_read`, `thread_follow`,
+//! `chat_import`) over the relay's `/query` bridge.
 //!
 //! A relay with the chat-state switch off answers
 //! `404 {"error": "chat_state_disabled"}`; a relay without the envelopes
@@ -36,6 +36,8 @@ const MAX_CHAT_LIST_LIMIT: u32 = 200;
 const MAX_MARK_READ_ITEMS: usize = 100;
 /// Most pinned thread ids one `chat_list` request may name.
 const MAX_PINNED_THREADS: usize = 200;
+/// Most reads plus follows one `chat_import` request may carry.
+const MAX_CHAT_IMPORT_ITEMS: usize = 500;
 
 /// The account a chat-state request belongs to: the community relay and the
 /// user pubkey the caller captured when it queued the request.
@@ -77,6 +79,23 @@ pub enum ChatMarkReadKind {
 pub enum ChatFollowState {
     Followed,
     Unfollowed,
+}
+
+/// One device-local read position uploaded by `chat_import`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatImportRead {
+    kind: ChatMarkReadKind,
+    id: String,
+    at: u64,
+}
+
+/// One device-local follow choice uploaded by `chat_import`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatImportFollow {
+    root: String,
+    state: ChatFollowState,
 }
 
 impl ChatFollowState {
@@ -162,6 +181,35 @@ fn build_thread_follow_filter(root: &str, state: ChatFollowState) -> serde_json:
         "root": root,
         "state": state.as_str(),
     })
+}
+
+/// `{"chat_import": 1, "reads": [{"channel"|"thread": id, "at": secs}],
+/// "follows": [{"root": id, "state": ..}]}`, 1..=500 items in total.
+fn build_chat_import_filter(
+    reads: &[ChatImportRead],
+    follows: &[ChatImportFollow],
+) -> Result<serde_json::Value, String> {
+    let total = reads.len() + follows.len();
+    if total == 0 || total > MAX_CHAT_IMPORT_ITEMS {
+        return Err(format!(
+            "chat_import takes 1..={MAX_CHAT_IMPORT_ITEMS} reads and follows"
+        ));
+    }
+    let reads: Vec<serde_json::Value> = reads
+        .iter()
+        .map(|read| {
+            let target = match read.kind {
+                ChatMarkReadKind::Channel => "channel",
+                ChatMarkReadKind::Thread => "thread",
+            };
+            serde_json::json!({ target: read.id, "at": read.at })
+        })
+        .collect();
+    let follows: Vec<serde_json::Value> = follows
+        .iter()
+        .map(|follow| serde_json::json!({ "root": follow.root, "state": follow.state.as_str() }))
+        .collect();
+    Ok(serde_json::json!({ "chat_import": 1, "reads": reads, "follows": follows }))
 }
 
 /// `404 chat_state_disabled` means the switch is off: no chat state here.
@@ -250,6 +298,19 @@ pub async fn chat_thread_follow(
 ) -> Result<serde_json::Value, String> {
     let filter = build_thread_follow_filter(&root, follow_state);
     query_envelope(&state, &binding, filter, "thread_follow", None).await
+}
+
+/// First-run upload of this device's read positions and follows. The relay
+/// applies each item only over its backfilled state and answers per item.
+#[tauri::command]
+pub async fn chat_import(
+    binding: ChatStateBinding,
+    reads: Vec<ChatImportRead>,
+    follows: Vec<ChatImportFollow>,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let filter = build_chat_import_filter(&reads, &follows)?;
+    query_envelope(&state, &binding, filter, "chat_import", Some("reads")).await
 }
 
 #[cfg(test)]
@@ -405,6 +466,42 @@ mod tests {
                 "unread_mark": true,
             })
         );
+    }
+
+    #[test]
+    fn chat_import_filter_carries_reads_and_follows_up_to_the_cap() {
+        let reads: Vec<ChatImportRead> = serde_json::from_value(serde_json::json!([
+            {"kind": "channel", "id": "11111111-1111-4111-8111-111111111111", "at": 7},
+            {"kind": "thread", "id": "ab".repeat(32), "at": 8},
+        ]))
+        .expect("camelCase reads");
+        let follows: Vec<ChatImportFollow> = serde_json::from_value(serde_json::json!([
+            {"root": "ab".repeat(32), "state": "unfollowed"},
+        ]))
+        .expect("follows");
+        assert_eq!(
+            build_chat_import_filter(&reads, &follows).expect("valid"),
+            serde_json::json!({
+                "chat_import": 1,
+                "reads": [
+                    {"channel": "11111111-1111-4111-8111-111111111111", "at": 7},
+                    {"thread": "ab".repeat(32), "at": 8},
+                ],
+                "follows": [{"root": "ab".repeat(32), "state": "unfollowed"}],
+            })
+        );
+        assert!(build_chat_import_filter(&[], &[]).is_err());
+        let follow = |n: usize| ChatImportFollow {
+            root: format!("{n:064x}"),
+            state: ChatFollowState::Followed,
+        };
+        let at_cap: Vec<ChatImportFollow> = (0..MAX_CHAT_IMPORT_ITEMS).map(follow).collect();
+        assert!(build_chat_import_filter(&[], &at_cap).is_ok());
+        assert!(build_chat_import_filter(&reads, &at_cap).is_err());
+        let missing_at = serde_json::from_value::<ChatImportRead>(
+            serde_json::json!({"kind": "channel", "id": "x"}),
+        );
+        assert!(missing_at.is_err(), "an import read always has a time");
     }
 
     #[test]

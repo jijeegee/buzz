@@ -11,6 +11,7 @@ const noopMarkRead = () => {};
 const noopDrainAdvances = (): ReadonlySet<string> => new Set<string>();
 const noopSetResolver = () => {};
 const noopGetContexts = (): Record<string, number> => ({});
+const noopIsInitialized = () => false;
 
 /**
  * React hook that creates and manages a ReadStateManager instance.
@@ -104,6 +105,12 @@ export function useReadState(
     [],
   );
 
+  /** Every relay slot is merged: the local markers are complete. */
+  const isInitialized = React.useCallback(
+    (): boolean => managerRef.current?.isInitialized() ?? false,
+    [],
+  );
+
   const setServerMirror = React.useCallback(
     (mirror: ReadStateServerMirror | null): void => {
       serverMirrorRef.current = mirror;
@@ -127,6 +134,7 @@ export function useReadState(
       readStateVersion: 0,
       getOwnTimestamp: noopGetTimestamp,
       getChannelAndThreadContexts: noopGetContexts,
+      isInitialized: noopIsInitialized,
       setServerMirror,
     };
   }
@@ -141,6 +149,7 @@ export function useReadState(
     readStateVersion,
     getOwnTimestamp,
     getChannelAndThreadContexts,
+    isInitialized,
     setServerMirror,
   };
 }
