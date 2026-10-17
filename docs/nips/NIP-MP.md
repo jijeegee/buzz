@@ -78,8 +78,8 @@ Both external registries are advisory, not authoritative allocators: neither res
     ["description", "Relay, desktop, and mobile for the platform team."],
     ["a", "30617:<owner-a-pubkey-hex>:kuzz"],
     ["a", "30617:<owner-b-pubkey-hex>:kuzz-infra"],
-    ["buzz-channel", "<channel-uuid>"],
-    ["buzz-visibility", "listed"]
+    ["kuzz-channel", "<channel-uuid>"],
+    ["kuzz-visibility", "listed"]
   ]
 }
 ```
@@ -90,8 +90,8 @@ Both external registries are advisory, not authoritative allocators: neither res
 | `name` | 0 or 1 | Human-readable display name. Clients fall back to `d` when absent. |
 | `description` | 0 or 1 | Free text describing the project. |
 | `a` | 0 to 64 | One member repository coordinate each. Order is not significant. |
-| `buzz-channel` | 0 or 1 | UUID of the channel this project's discussion lives in. Metadata only — see [Authority](#authority). At most 256 bytes. |
-| `buzz-visibility` | 0 or 1 | `listed` (default) or `unlisted`. Feeds [listing eligibility](#listing-eligibility). At most 256 bytes. |
+| `kuzz-channel` | 0 or 1 | UUID of the channel this project's discussion lives in. Metadata only — see [Authority](#authority). At most 256 bytes. |
+| `kuzz-visibility` | 0 or 1 | `listed` (default) or `unlisted`. Feeds [listing eligibility](#listing-eligibility). At most 256 bytes. |
 
 `content` carries no meaning. Writers SHOULD emit the empty string. Readers and relays MUST ignore whatever it holds: a non-empty `content` is not a rejection cause, and no consumer may parse semantics from it. Reserving it costs nothing and keeps a future writer that fills it from invalidating its events for today's readers.
 
@@ -99,11 +99,11 @@ Unrecognized tags MUST be ignored rather than rejected, so a newer writer can ad
 
 ### Metadata interpretation
 
-Ingest bounds metadata cardinality and length; it interprets no metadata value. `buzz-channel` and `buzz-visibility` are opaque strings to a relay, exactly as they are on `kind:30617`. Interpretation is a client concern, and every client MUST resolve it the same way:
+Ingest bounds metadata cardinality and length; it interprets no metadata value. `kuzz-channel` and `kuzz-visibility` are opaque strings to a relay, exactly as they are on `kind:30617`. Interpretation is a client concern, and every client MUST resolve it the same way:
 
 - `name` absent → clients display the `d` value.
-- `buzz-visibility` absent or holding any value other than `listed` or `unlisted` → treated as `listed`. An unrecognized token MUST NOT hide a project: a typo in a metadata field is not a privacy signal, and treating it as one would make a project vanish for reasons its author cannot see.
-- `buzz-channel` absent, or naming a channel the viewer cannot resolve or read → the project renders without a channel link. It MUST NOT be dropped from the collection, and the unresolvable value MUST NOT be surfaced as a broken link.
+- `kuzz-visibility` absent or holding any value other than `listed` or `unlisted` → treated as `listed`. An unrecognized token MUST NOT hide a project: a typo in a metadata field is not a privacy signal, and treating it as one would make a project vanish for reasons its author cannot see.
+- `kuzz-channel` absent, or naming a channel the viewer cannot resolve or read → the project renders without a channel link. It MUST NOT be dropped from the collection, and the unresolvable value MUST NOT be surfaced as a broken link.
 
 ### Member coordinates
 
@@ -136,7 +136,7 @@ The project signer's authority begins and ends at the container.
 
 Clients MUST preserve each member repository's own owner provenance in the UI. A repository rendered inside a project must not appear to be owned or governed by the project signer.
 
-`buzz-channel` on a project is **metadata only**. Git push policy reads the `buzz-channel` of the repository's own `kind:30617` (`crates/kuzz-relay/src/api/git/policy.rs`); a project neither overrides that binding nor supplies one to a member that lacks it. A project's channel binding therefore cannot widen or narrow push access to anything.
+`kuzz-channel` on a project is **metadata only**. Git push policy reads the `kuzz-channel` of the repository's own `kind:30617` (`crates/kuzz-relay/src/api/git/policy.rs`); a project neither overrides that binding nor supplies one to a member that lacks it. A project's channel binding therefore cannot widen or narrow push access to anything.
 
 ### Editing model
 
@@ -176,8 +176,8 @@ A relay accepting `kind:30621` MUST validate the envelope at ingest. The rule na
 4. **`member-tag-arity`** — every member `a` tag has exactly two or three elements, per NIP-01's `a` tag grammar. A one-element tag names no coordinate; a fourth element has no defined meaning, and ignoring it would let a writer park unbounded unvalidated data in a position no consumer reads. This is a separate rule from the next one because the failure is different: the tag's shape is wrong, not the coordinate it holds.
 5. **`member-coordinate-malformed`** — every member `a` tag's coordinate (element 1) parses per [Member coordinates](#member-coordinates). The relay hint in element 3 is not parsed and MUST NOT be a rejection cause by its content.
 6. **`member-duplicate`** — no two member `a` tags hold the same coordinate, compared as exact strings on the canonical form. Comparison is on the coordinate alone, so two tags naming one coordinate with different relay hints are duplicates.
-7. **`metadata-cardinality`** — at most one each of `name`, `description`, `buzz-channel`, `buzz-visibility`. Duplicates would make the effective value reader-dependent.
-8. **`metadata-length`** — `name` at most 256 bytes; `description` at most 2048 bytes; `buzz-channel` at most 256 bytes; `buzz-visibility` at most 256 bytes. The two `kuzz-` bounds are generous by design: neither value has a semantic length, and the bound exists only so an unbounded string cannot ride into storage on a tag ingest does not interpret.
+7. **`metadata-cardinality`** — at most one each of `name`, `description`, `kuzz-channel`, `kuzz-visibility`. Duplicates would make the effective value reader-dependent.
+8. **`metadata-length`** — `name` at most 256 bytes; `description` at most 2048 bytes; `kuzz-channel` at most 256 bytes; `kuzz-visibility` at most 256 bytes. The two `kuzz-` bounds are generous by design: neither value has a semantic length, and the bound exists only so an unbounded string cannot ride into storage on a tag ingest does not interpret.
 
 Rules 3 through 6 are evaluated in that order, so an oversized tag list is refused on count before any per-tag parse or set proportional to it is built.
 
@@ -187,7 +187,7 @@ The Kuzz validator enforces all eight rules. The shared fixtures in [`NIP-MP.fix
 
 **No membership authorization.** The relay MUST NOT check whether the signer owns, maintains, or has any relationship to a member repository. Referencing another owner's repository is legal and is the point of the kind. Because membership grants nothing ([Authority](#authority)), there is nothing to authorize.
 
-**Routing.** `kind:30621` is global-only, like every other NIP-34 kind in Kuzz: it is addressed by `(pubkey, kind, d)` and is never channel-scoped. A stray `h` tag MUST NOT scope it to a channel — the `buzz-channel` tag is a metadata reference, not a routing directive.
+**Routing.** `kind:30621` is global-only, like every other NIP-34 kind in Kuzz: it is addressed by `(pubkey, kind, d)` and is never channel-scoped. A stray `h` tag MUST NOT scope it to a channel — the `kuzz-channel` tag is a metadata reference, not a routing directive.
 
 **Scope.** Writes require the `repos:write` scope, matching `kind:30617` and `kind:30618`. A project is repository metadata; a client authorized to announce repositories is authorized to group them.
 
@@ -204,7 +204,7 @@ The Kuzz validator enforces all eight rules. The shared fixtures in [`NIP-MP.fix
 
 A project is **listing eligible** for a client when that client is currently rendering it in its project collection. A project is not listing eligible when:
 
-- its `buzz-visibility` is `unlisted`, or
+- its `kuzz-visibility` is `unlisted`, or
 - the viewer has hidden it locally, or
 - it has been deleted, or its latest head is otherwise not being rendered.
 
@@ -326,6 +326,6 @@ Its cases are **semantic, not signed envelopes**. A repository or project is nam
 - **NIP-34**: Supplies the member repositories. Members are `kind:30617` announcements referenced by coordinate; a NIP-34 client that does not know `kind:30621` still discovers and renders each repository normally.
 - **NIP-01**: Supplies the addressable-event class, the `a` tag grammar, addressing, replacement, and the owner-only editing model. Owner-only editing is not enforcement code in Kuzz — it is what NIP-01 replacement already means.
 - **NIP-09**: Supplies container deletion, which deletes the container only. Kuzz extends it in two ways that are not project-specific: an agent's registered NIP-OA owner may also delete, and a tombstone applies only at or before its own `created_at` ([Deletion](#deletion)).
-- **NIP-29**: Supplies the channel a project's `buzz-channel` names. The reference is metadata; project state is never channel-scoped.
+- **NIP-29**: Supplies the channel a project's `kuzz-channel` names. The reference is metadata; project state is never channel-scoped.
 - **NIP-51**: The closest existing precedent — a signed, addressable list referencing content the author need not own. Not reused because a project is a shared named forge container with its own channel binding and visibility, not a user's private-or-public bookmark set.
 - **NIP-OA**: Consulted for container deletion only — an agent's registered owner may delete the agent's project ([Deletion](#deletion)). Push access is unaffected: agents inherit repository push access from their owner through the repository's own protections, and a project is never consulted.

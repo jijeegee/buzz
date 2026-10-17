@@ -137,7 +137,7 @@ async fn project_filter_survives_artifact_query_hook() {
     let project = EventBuilder::new(Kind::Custom(30621), "")
         .tags([
             Tag::parse(["d", "review-project"]).unwrap(),
-            Tag::parse(["buzz-channel", &f.home.to_string()]).unwrap(),
+            Tag::parse(["kuzz-channel", &f.home.to_string()]).unwrap(),
         ])
         .sign_with_keys(&f.owner)
         .unwrap();
@@ -146,7 +146,7 @@ async fn project_filter_survives_artifact_query_hook() {
         .insert_event(f.community, &project, None)
         .await
         .unwrap();
-    let filter = json!([{"kinds":[30621],"#buzz-channel":[f.home]}]);
+    let filter = json!([{"kinds":[30621],"#kuzz-channel":[f.home]}]);
     let (status, body) = f.request("/query", filter.clone()).await;
     assert!(status.is_success(), "{status}: {body}");
     assert_eq!(body.as_array().unwrap().len(), 1);

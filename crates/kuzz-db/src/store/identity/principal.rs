@@ -1,7 +1,7 @@
 //! Principals, external identities, the relay principal and global profiles.
 
-use kuzz_datastore_tracing::datastore_span;
 use chrono::{DateTime, Utc};
+use kuzz_datastore_tracing::datastore_span;
 use sqlx::{PgPool, Row as _};
 
 use kuzz_core::principal::{PrincipalId, PrincipalKind};
@@ -78,7 +78,7 @@ pub(super) async fn ensure_relay_principal(
     key: &PrincipalId,
 ) -> Result<PrincipalId> {
     let mut tx = begin(pool).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('buzz:relay_principal'))")
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('kuzz:relay_principal'))")
         .execute(&mut *tx)
         .await?;
     let current: Option<Vec<u8>> =
@@ -423,7 +423,7 @@ impl ProfilePublishLock {
 fn profile_lock_key(community: kuzz_core::CommunityId, id: &PrincipalId) -> i64 {
     use sha2::{Digest as _, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(b"buzz:profile-publish:");
+    hasher.update(b"kuzz:profile-publish:");
     hasher.update(community.as_uuid().as_bytes());
     hasher.update(id.as_bytes());
     let digest = hasher.finalize();

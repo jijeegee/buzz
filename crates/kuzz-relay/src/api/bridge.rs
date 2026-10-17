@@ -517,7 +517,7 @@ fn resolve_read_route(raw: &Value) -> Result<ReadRoute, ()> {
 }
 
 fn extract_kuzz_channel(raw: &Value) -> Option<&str> {
-    raw.get("#buzz-channel")
+    raw.get("#kuzz-channel")
         .and_then(Value::as_array)
         .filter(|values| values.len() == 1)
         .and_then(|values| values.first())
@@ -1897,7 +1897,7 @@ async fn query_events_authed(
             &accessible_channels,
         );
         if let Some(channel) = extract_kuzz_channel(raw) {
-            query.custom_tag = Some(("buzz-channel".into(), channel.into()));
+            query.custom_tag = Some(("kuzz-channel".into(), channel.into()));
         }
         // Shared-gated visibility pushdown: must mirror WS REQ so that a page of
         // newer private events does not starve older shared ones off the page.
@@ -4037,15 +4037,15 @@ mod postgres_tests {
     #[test]
     fn extract_kuzz_channel_requires_one_string_value() {
         assert_eq!(
-            extract_kuzz_channel(&serde_json::json!({"#buzz-channel": ["channel-a"]})),
+            extract_kuzz_channel(&serde_json::json!({"#kuzz-channel": ["channel-a"]})),
             Some("channel-a")
         );
         assert_eq!(
-            extract_kuzz_channel(&serde_json::json!({"#buzz-channel": ["channel-a", "channel-b"]})),
+            extract_kuzz_channel(&serde_json::json!({"#kuzz-channel": ["channel-a", "channel-b"]})),
             None
         );
         assert_eq!(
-            extract_kuzz_channel(&serde_json::json!({"#buzz-channel": [42]})),
+            extract_kuzz_channel(&serde_json::json!({"#kuzz-channel": [42]})),
             None
         );
     }
@@ -5340,11 +5340,11 @@ mod postgres_tests {
     /// was reached, not just deny-all).  Same key material as used in the
     /// cardinality test and the `signed_assertion_for_pubkey` helper below.
     async fn nip_fi_enforce_test_state_with_verifier() -> Option<Arc<crate::state::AppState>> {
+        use jsonwebtoken::{jwk::JwkSet, Algorithm};
         use kuzz_auth::{
             AssertionKeySet, FederatedAssertionVerifier, FreshnessClass, IssuerPolicy,
             IssuerRegistry, StaticIssuerKeySource, TokenClass, VerifyAssertion,
         };
-        use jsonwebtoken::{jwk::JwkSet, Algorithm};
 
         let mut state = (*nip_fi_enforce_test_state().await?).clone();
 
@@ -6747,11 +6747,11 @@ mod postgres_tests {
     #[test]
     #[ignore = "requires Postgres"]
     fn nip_fi_guard_rejects_crypto_invalid_assertion_before_handler_fires() {
+        use jsonwebtoken::{jwk::JwkSet, Algorithm};
         use kuzz_auth::{
             AssertionKeySet, FederatedAssertionVerifier, FreshnessClass, IssuerPolicy,
             IssuerRegistry, StaticIssuerKeySource, TokenClass, VerifyAssertion,
         };
-        use jsonwebtoken::{jwk::JwkSet, Algorithm};
 
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -6995,11 +6995,11 @@ mod postgres_tests {
     #[test]
     #[ignore = "requires Postgres and Redis"]
     fn r3_cardinality_actual_caller_query_off_passes_enforce_denies() {
+        use jsonwebtoken::{jwk::JwkSet, Algorithm};
         use kuzz_auth::{
             AssertionKeySet, FederatedAssertionVerifier, FreshnessClass, IssuerPolicy,
             IssuerRegistry, StaticIssuerKeySource, TokenClass, VerifyAssertion,
         };
-        use jsonwebtoken::{jwk::JwkSet, Algorithm};
 
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()

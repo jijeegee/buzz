@@ -218,7 +218,7 @@ fn bearer(access: &str) -> String {
     format!("Bearer {access}")
 }
 
-/// NIP-11 `buzz_token_auth` descriptor: `Some(providers)` when the relay
+/// NIP-11 `kuzz_token_auth` descriptor: `Some(providers)` when the relay
 /// advertises bearer token auth, `None` otherwise.
 pub(crate) async fn fetch_token_auth_support(
     client: &reqwest::Client,
@@ -231,7 +231,7 @@ pub(crate) async fn fetch_token_auth_support(
     )
     .await?;
     let backup = value
-        .get("buzz_key_backup")
+        .get("kuzz_key_backup")
         .and_then(|v| v.get("version"))
         .and_then(serde_json::Value::as_u64)
         == Some(1);
@@ -241,7 +241,7 @@ pub(crate) async fn fetch_token_auth_support(
 /// Parse the NIP-11 descriptor. Pure, for tests.
 pub(crate) fn parse_token_auth_descriptor(nip11: &serde_json::Value) -> Option<Vec<String>> {
     if let Some(providers) = nip11
-        .get("buzz_key_backup")
+        .get("kuzz_key_backup")
         .filter(|value| value.get("version").and_then(serde_json::Value::as_u64) == Some(1))
         .and_then(|value| value.get("providers"))
         .and_then(serde_json::Value::as_array)
@@ -253,7 +253,7 @@ pub(crate) fn parse_token_auth_descriptor(nip11: &serde_json::Value) -> Option<V
                 .collect(),
         );
     }
-    let descriptor = nip11.get("buzz_token_auth")?;
+    let descriptor = nip11.get("kuzz_token_auth")?;
     if descriptor
         .get("bearer")
         .and_then(serde_json::Value::as_bool)
@@ -601,12 +601,12 @@ mod tests {
 
     #[test]
     fn descriptor_requires_bearer_true() {
-        let on = serde_json::json!({"buzz_token_auth": {"version": 1, "bearer": true, "oidc_providers": ["google"]}});
+        let on = serde_json::json!({"kuzz_token_auth": {"version": 1, "bearer": true, "oidc_providers": ["google"]}});
         assert_eq!(
             parse_token_auth_descriptor(&on),
             Some(vec!["google".to_string()])
         );
-        let off = serde_json::json!({"buzz_token_auth": {"bearer": false}});
+        let off = serde_json::json!({"kuzz_token_auth": {"bearer": false}});
         assert_eq!(parse_token_auth_descriptor(&off), None);
         assert_eq!(parse_token_auth_descriptor(&serde_json::json!({})), None);
     }

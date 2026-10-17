@@ -108,7 +108,7 @@ export function projectRepoUnavailableReason(
  * alone cannot distinguish "never initialized" from "you have no access".
  * The announcement events ARE visible to every relay member though, so the
  * client can re-classify a `missing` result using the repository's
- * `buzz-channel` binding and the viewer's own channel memberships:
+ * `kuzz-channel` binding and the viewer's own channel memberships:
  *
  * - no binding at all → `unbound` (the relay refuses access for everyone
  *   until the owner binds a channel)

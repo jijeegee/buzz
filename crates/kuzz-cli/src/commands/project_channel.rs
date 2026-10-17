@@ -2,7 +2,7 @@
 //!
 //! Channel-first projects bind a default `kind:30617` at create time. Creating
 //! a task in that channel still has to land on *this* project, so the CLI finds
-//! (or creates) a `kind:30617` bound to the same `buzz-channel` rather than
+//! (or creates) a `kind:30617` bound to the same `kuzz-channel` rather than
 //! asking the caller to invent a second project.
 
 use kuzz_core::kind::KIND_GIT_REPO_ANNOUNCEMENT;
@@ -59,7 +59,7 @@ pub async fn resolve_or_ensure_repo_for_channel(
 
 fn project_is_unlisted(event: &Event) -> bool {
     event.tags.iter().any(|tag| {
-        matches!(tag.as_slice(), [name, value, ..] if name == "buzz-visibility" && value == "unlisted")
+        matches!(tag.as_slice(), [name, value, ..] if name == "kuzz-visibility" && value == "unlisted")
     })
 }
 
@@ -99,7 +99,7 @@ fn repo_authorizes_project(repo: &Event, project: &Event) -> bool {
 fn repo_from_announcement(event: &Event, channel: &str) -> Option<ChannelProjectRepo> {
     if event.kind.as_u16() != KIND_GIT_REPO_ANNOUNCEMENT as u16
         || repo_is_unlisted(event)
-        || first_tag_value(event, "buzz-channel") != Some(channel)
+        || first_tag_value(event, "kuzz-channel") != Some(channel)
     {
         return None;
     }
@@ -155,7 +155,7 @@ fn repo_is_unlisted(event: &Event) -> bool {
     event.tags.iter().any(|tag| {
         matches!(
             tag.as_slice(),
-            [name, value, ..] if name == "buzz-visibility" && value == "unlisted"
+            [name, value, ..] if name == "kuzz-visibility" && value == "unlisted"
         )
     })
 }
@@ -163,7 +163,7 @@ fn repo_is_unlisted(event: &Event) -> bool {
 async fn fetch_channel_repos(client: &KuzzClient, channel: &str) -> Result<Vec<Event>, CliError> {
     let filter = serde_json::json!({
         "kinds": [KIND_GIT_REPO_ANNOUNCEMENT],
-        "#buzz-channel": [channel],
+        "#kuzz-channel": [channel],
     });
     client
         .query_all_bounded(filter, PROJECT_QUERY_EVENT_BOUND)
@@ -178,7 +178,7 @@ async fn fetch_channel_repos(client: &KuzzClient, channel: &str) -> Result<Vec<E
 }
 
 pub(crate) fn require_repo_channel_binding(event: &Event, channel: &str) -> Result<(), CliError> {
-    match first_tag_value(event, "buzz-channel") {
+    match first_tag_value(event, "kuzz-channel") {
         Some(bound) if bound == channel => Ok(()),
         Some(bound) => Err(CliError::Conflict(format!(
             "repository {:?} is already bound to channel {bound}; pass --repo-owner and --repo-id",
@@ -322,14 +322,14 @@ mod tests {
         let repo = signed_event(
             &owner,
             30617,
-            vec![tag(&["d", "game"]), tag(&["buzz-channel", channel])],
+            vec![tag(&["d", "game"]), tag(&["kuzz-channel", channel])],
         );
         let hostile = signed_event(
             &attacker,
             30621,
             vec![
                 tag(&["d", "spoof"]),
-                tag(&["buzz-channel", channel]),
+                tag(&["kuzz-channel", channel]),
                 tag(&["a", &repo_coord]),
             ],
         );
@@ -347,14 +347,14 @@ mod tests {
         let repo = signed_event(
             &owner,
             30617,
-            vec![tag(&["d", "game"]), tag(&["buzz-channel", channel])],
+            vec![tag(&["d", "game"]), tag(&["kuzz-channel", channel])],
         );
         let project = signed_event(
             &owner,
             30621,
             vec![
                 tag(&["d", "game"]),
-                tag(&["buzz-channel", channel]),
+                tag(&["kuzz-channel", channel]),
                 tag(&["a", &repo_coord]),
             ],
         );
@@ -374,7 +374,7 @@ mod tests {
         let repo = signed_event(
             &owner,
             30617,
-            vec![tag(&["d", "game"]), tag(&["buzz-channel", channel])],
+            vec![tag(&["d", "game"]), tag(&["kuzz-channel", channel])],
         );
         let projects = ["one", "two"].map(|slug| {
             signed_event(
@@ -382,7 +382,7 @@ mod tests {
                 30621,
                 vec![
                     tag(&["d", slug]),
-                    tag(&["buzz-channel", channel]),
+                    tag(&["kuzz-channel", channel]),
                     tag(&["a", &repo_coord]),
                 ],
             )
@@ -401,14 +401,14 @@ mod tests {
         let matching = signed_event(
             &owner,
             30617,
-            vec![tag(&["d", "game"]), tag(&["buzz-channel", requested])],
+            vec![tag(&["d", "game"]), tag(&["kuzz-channel", requested])],
         );
         assert!(require_repo_channel_binding(&matching, requested).is_ok());
 
         let foreign = signed_event(
             &owner,
             30617,
-            vec![tag(&["d", "game"]), tag(&["buzz-channel", other])],
+            vec![tag(&["d", "game"]), tag(&["kuzz-channel", other])],
         );
         assert!(matches!(
             require_repo_channel_binding(&foreign, requested),
@@ -434,7 +434,7 @@ mod tests {
         let project = signed_event(
             &keys,
             kuzz_core::kind::KIND_PROJECT as u16,
-            vec![tag(&["d", "game"]), tag(&["buzz-channel", requested])],
+            vec![tag(&["d", "game"]), tag(&["kuzz-channel", requested])],
         );
         let winner = crate::commands::repos::build_create_announcement(
             "game",
@@ -501,7 +501,7 @@ mod tests {
             30617,
             vec![
                 tag(&["d", "game"]),
-                tag(&["buzz-channel", channel]),
+                tag(&["kuzz-channel", channel]),
                 tag(&["maintainers", &unrelated, &maintainer_hex]),
             ],
         );
@@ -510,7 +510,7 @@ mod tests {
             30621,
             vec![
                 tag(&["d", "suite"]),
-                tag(&["buzz-channel", channel]),
+                tag(&["kuzz-channel", channel]),
                 tag(&["a", &repo_coord]),
             ],
         );

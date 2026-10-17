@@ -677,7 +677,7 @@ with a TypeScript lookup table or an id comparison in a component.
     same-body kind:40003 edit that newly `p`-tags its group's agents plus
     `["mention", pk, "auto-route"]` (kuzz-acp wakes an agent on an edit that
     newly mentions it, so no harness change). A follow-up's edit also
-    carries `["buzz:route", relation, of, thread_root, note]`: kuzz-acp
+    carries `["kuzz:route", relation, of, thread_root, note]`: kuzz-acp
     (`queue::route_follow_up`, resolved edits only, so the owner's) anchors
     the reply in `thread_root` and adds a `<follow-up>` line ("supplement or
     fix, don't redo", or "stop"); `note` says the same in the prompt's Tags. `messages/lib/autoRouteLedger.ts`

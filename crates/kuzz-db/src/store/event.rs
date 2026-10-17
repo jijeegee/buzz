@@ -2931,7 +2931,7 @@ mod postgres_tests {
         // TTL transition holds the per-channel advisory key EXCLUSIVE, which
         // is what the event trigger's shared acquisition now waits on.
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-            .bind(format!("buzz_channel_ttl:{community_uuid}:{racing}"))
+            .bind(format!("kuzz_channel_ttl:{community_uuid}:{racing}"))
             .execute(&mut *activation)
             .await
             .expect("acquire exclusive channel TTL key");

@@ -72,7 +72,7 @@ void main() {
     expect(jsonDecode(plaintext), {
       'v': 1,
       'origin': 'wss://tenant.example:8443',
-      'app_profile': 'buzz-ios-dogfood',
+      'app_profile': 'kuzz-ios-dogfood',
       'transport': 'apns',
       'endpoint': 'opaque-grant',
       'generation': 7,
@@ -400,7 +400,7 @@ Map<String, dynamic> _descriptorJson(String relayPubkey) => {
       {'id': 'relay-v1', 'pubkey': relayPubkey, 'current': true},
     ],
     'app_profiles': [
-      {'id': 'buzz-ios-dogfood', 'transport': 'apns'},
+      {'id': 'kuzz-ios-dogfood', 'transport': 'apns'},
     ],
     'push_kinds': [9, 40002, 45001, 45003],
     'h_grammar': 'uuid-v4-lowercase',
@@ -430,7 +430,7 @@ KuzzPushEndpointGrant _grant(String relayPubkey) => KuzzPushEndpointGrant(
   installationId: 'c' * 32,
   endpointGrant: 'opaque-grant',
   endpointHash: 'd' * 64,
-  appProfile: 'buzz-ios-dogfood',
+  appProfile: 'kuzz-ios-dogfood',
   endpointEpoch: 1,
   generation: 1,
   expiresAt: 1756212000,

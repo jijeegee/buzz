@@ -163,7 +163,7 @@ export function autoRouteTargets(
   return [...new Set([...outcome.pubkeys, ...unjudged])];
 }
 
-/** The `buzz:route` note for a follow-up group, else none. */
+/** The `kuzz:route` note for a follow-up group, else none. */
 export function autoRouteNote(group: RouteGroup): RouteNote | undefined {
   if (group.relation === "new" || !group.of) return undefined;
   return {

@@ -429,7 +429,7 @@ export type RepositoryAccessInput = {
 
 /**
  * Whether the viewer can actually read a repository's git data. The relay
- * gates git reads on membership in the repository's bound `buzz-channel`,
+ * gates git reads on membership in the repository's bound `kuzz-channel`,
  * so a repository is considered accessible when the viewer owns it (owners
  * can repair a missing binding), has a local checkout, the code is hosted
  * externally (no relay ACL applies), or the viewer is a member of the bound

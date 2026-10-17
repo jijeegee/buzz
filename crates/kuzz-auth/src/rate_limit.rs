@@ -211,18 +211,18 @@ pub trait RateLimiter: Send + Sync {
 /// keys, so quotas don't bleed across the tenancy fence.
 pub fn rate_limit_key(ctx: &TenantContext, pubkey: &PublicKey, limit_type: &LimitType) -> String {
     format!(
-        "buzz:{}:ratelimit:{}:{}",
+        "kuzz:{}:ratelimit:{}:{}",
         ctx.community(),
         pubkey.to_hex(),
         limit_type.key_suffix()
     )
 }
 
-/// Redis key for IP-based rate limit: `buzz:ratelimit:ip:{ip}:conn`.
+/// Redis key for IP-based rate limit: `kuzz:ratelimit:ip:{ip}:conn`.
 ///
 /// Operator-global by design — see [`RateLimiter`] docs.
 pub fn ip_rate_limit_key(ip: &IpAddr) -> String {
-    format!("buzz:ratelimit:ip:{}:conn", ip)
+    format!("kuzz:ratelimit:ip:{}:conn", ip)
 }
 
 /// Always-allow rate limiter for unit tests.
@@ -275,7 +275,7 @@ mod tests {
         let ctx = fixture_ctx("relay-a.example");
         let keys = Keys::generate();
         let key = rate_limit_key(&ctx, &keys.public_key(), &LimitType::Messages);
-        let expected_prefix = format!("buzz:{}:ratelimit:", ctx.community());
+        let expected_prefix = format!("kuzz:{}:ratelimit:", ctx.community());
         assert!(
             key.starts_with(&expected_prefix),
             "key {key} should start with {expected_prefix}"
@@ -331,7 +331,7 @@ mod tests {
     fn ip_rate_limit_key_format() {
         // IP fence stays operator-global — no community in the key.
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        assert_eq!(ip_rate_limit_key(&ip), "buzz:ratelimit:ip:192.168.1.1:conn"); // kuzz-rename: keep
+        assert_eq!(ip_rate_limit_key(&ip), "kuzz:ratelimit:ip:192.168.1.1:conn");
     }
 
     #[tokio::test]

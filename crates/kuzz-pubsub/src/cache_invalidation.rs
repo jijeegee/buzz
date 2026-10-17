@@ -11,8 +11,8 @@
 //! universal delivery-enforcement point, so dropping the stale key is
 //! sufficient: the next read re-fetches authoritative state from the DB.
 
-use kuzz_core::{CommunityId, TenantContext};
 use futures_util::StreamExt;
+use kuzz_core::{CommunityId, TenantContext};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -24,7 +24,7 @@ pub const CACHE_INVALIDATION_SUFFIX: &str = "cache-invalidate";
 
 /// Pattern used by the subscriber to receive cache invalidations for all
 /// communities this pod may have cached locally.
-pub const CACHE_INVALIDATION_PATTERN: &str = "buzz:*:cache-invalidate";
+pub const CACHE_INVALIDATION_PATTERN: &str = "kuzz:*:cache-invalidate";
 
 /// Redis pub/sub channel for cache-invalidation messages under `ctx`.
 pub fn cache_invalidation_channel(ctx: &TenantContext) -> String {
@@ -92,7 +92,7 @@ const BACKOFF_INITIAL_SECS: u64 = 1;
 /// Maximum reconnect backoff (30 seconds).
 const BACKOFF_MAX_SECS: u64 = 30;
 
-/// Subscribes to `buzz:*:cache-invalidate` and forwards scoped drops to the broadcast.
+/// Subscribes to `kuzz:*:cache-invalidate` and forwards scoped drops to the broadcast.
 ///
 /// Mirrors `subscriber::run_subscriber`: a reconnect loop with exponential
 /// backoff (1s → 2s → 4s → … → 30s max). Never returns — runs for the lifetime
@@ -190,7 +190,7 @@ mod tests {
 
         assert_eq!(
             cache_invalidation_channel(&community_a),
-            format!("buzz:{}:cache-invalidate", community_a.community())
+            format!("kuzz:{}:cache-invalidate", community_a.community())
         );
         assert_ne!(
             cache_invalidation_channel(&community_a),
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn parses_cache_invalidation_channel() {
         let community_id = CommunityId::from_uuid(Uuid::from_u128(0xaaaa));
-        let raw = format!("buzz:{community_id}:cache-invalidate");
+        let raw = format!("kuzz:{community_id}:cache-invalidate");
 
         assert_eq!(parse_cache_invalidation_channel(&raw), Some(community_id));
     }
@@ -209,11 +209,11 @@ mod tests {
     #[test]
     fn rejects_bad_cache_invalidation_channels() {
         for raw in [
-            "buzz:cache-invalidate",
-            "buzz:not-a-uuid:cache-invalidate",
+            "kuzz:cache-invalidate",
+            "kuzz:not-a-uuid:cache-invalidate",
             "not-kuzz:00000000-0000-0000-0000-00000000aaaa:cache-invalidate",
-            "buzz:00000000-0000-0000-0000-00000000aaaa:cache-invalidate:extra",
-            "buzz:00000000-0000-0000-0000-00000000aaaa:channel:00000000-0000-0000-0000-00000000bbbb",
+            "kuzz:00000000-0000-0000-0000-00000000aaaa:cache-invalidate:extra",
+            "kuzz:00000000-0000-0000-0000-00000000aaaa:channel:00000000-0000-0000-0000-00000000bbbb",
         ] {
             assert_eq!(parse_cache_invalidation_channel(raw), None);
         }

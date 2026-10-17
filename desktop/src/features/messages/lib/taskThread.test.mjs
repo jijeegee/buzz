@@ -4,7 +4,7 @@ import { hasThreadClosedTag, isTaskThreadClosed } from "./taskThread.ts";
 
 const closed = (createdAt) => ({
   createdAt,
-  tags: [["buzz:thread-closed", "a".repeat(64)]],
+  tags: [["kuzz:thread-closed", "a".repeat(64)]],
 });
 const reply = (createdAt) => ({ createdAt, tags: [["e", "a".repeat(64)]] });
 
@@ -21,6 +21,6 @@ test("a later message reopens a closed thread", () => {
 test("threads without replies or markers are open", () => {
   assert.equal(isTaskThreadClosed([]), false);
   assert.equal(isTaskThreadClosed([reply(1)]), false);
-  assert.equal(hasThreadClosedTag([["buzz:thread-closed"]]), false);
+  assert.equal(hasThreadClosedTag([["kuzz:thread-closed"]]), false);
   assert.equal(hasThreadClosedTag(undefined), false);
 });

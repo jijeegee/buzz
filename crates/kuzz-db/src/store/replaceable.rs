@@ -1,8 +1,8 @@
 //! Replaceable-event persistence and coordinate locking.
 
+use chrono::{DateTime, Utc};
 use kuzz_core::{CommunityId, StoredEvent};
 use kuzz_datastore_tracing::datastore_span;
-use chrono::{DateTime, Utc};
 use sqlx::{Acquire, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -159,10 +159,10 @@ async fn replace_parameterized_event_in_transaction_impl(
         })
         && read_state_t_tag_count == 1;
     let is_kuzz_mesh_status = kind_i32 == kuzz_core::kind::KIND_BOOKMARK_SET as i32
-        && d_tag.starts_with("buzz-mesh-member-status:")
+        && d_tag.starts_with("kuzz-mesh-member-status:")
         && event.tags.iter().any(|tag| {
             let parts = tag.as_slice();
-            parts.len() == 2 && parts[0] == "k" && parts[1] == "buzz-mesh-status"
+            parts.len() == 2 && parts[0] == "k" && parts[1] == "kuzz-mesh-status"
         });
     let hard_delete_superseded = is_nip_rs || is_kuzz_mesh_status;
 
@@ -255,7 +255,7 @@ async fn replace_parameterized_event_in_transaction_impl(
     if existing.is_some() {
         let previous_nip_rs_hard_delete: Option<String> = if is_nip_rs {
             sqlx::query_scalar(
-                "SELECT NULLIF(current_setting('buzz.nip_rs_hard_delete', true), '')",
+                "SELECT NULLIF(current_setting('kuzz.nip_rs_hard_delete', true), '')",
             )
             .fetch_one(&mut *savepoint)
             .await?
@@ -263,7 +263,7 @@ async fn replace_parameterized_event_in_transaction_impl(
             None
         };
         if is_nip_rs {
-            sqlx::query("SELECT set_config('buzz.nip_rs_hard_delete', 'on', true)")
+            sqlx::query("SELECT set_config('kuzz.nip_rs_hard_delete', 'on', true)")
                 .execute(&mut *savepoint)
                 .await?;
         }
@@ -284,7 +284,7 @@ async fn replace_parameterized_event_in_transaction_impl(
 
         if is_nip_rs {
             let previous_value = previous_nip_rs_hard_delete.as_deref().unwrap_or_default();
-            sqlx::query("SELECT set_config('buzz.nip_rs_hard_delete', $1, true)")
+            sqlx::query("SELECT set_config('kuzz.nip_rs_hard_delete', $1, true)")
                 .bind(previous_value)
                 .execute(&mut *savepoint)
                 .await?;
@@ -1059,7 +1059,7 @@ mod postgres_tests {
         );
 
         let leaked: Option<String> = sqlx::query_scalar(
-            "SELECT NULLIF(current_setting('buzz.nip_rs_hard_delete', true), '')",
+            "SELECT NULLIF(current_setting('kuzz.nip_rs_hard_delete', true), '')",
         )
         .fetch_one(&mut *tx)
         .await
@@ -1458,10 +1458,10 @@ mod postgres_tests {
         let db = setup_db().await;
         let community = CommunityId::from_uuid(make_community(&db.pool).await);
         let keys = Keys::generate();
-        let d_tag = "buzz-mesh-member-status:owner-test";
+        let d_tag = "kuzz-mesh-member-status:owner-test";
         let tags = vec![
             Tag::parse(["d", d_tag]).expect("d tag"),
-            Tag::parse(["k", "buzz-mesh-status"]).expect("k tag"),
+            Tag::parse(["k", "kuzz-mesh-status"]).expect("k tag"),
         ];
         let base = Timestamp::now().as_secs();
         for (offset, content) in [(0, "running"), (1, "running-again"), (2, "stopped")] {
@@ -1740,7 +1740,7 @@ mod postgres_tests {
         for commit in [true, false] {
             let mut tx = conn.begin().await.expect("begin GUC transaction");
             let value: String =
-                sqlx::query_scalar("SELECT set_config('buzz.nip_rs_hard_delete', 'on', true)")
+                sqlx::query_scalar("SELECT set_config('kuzz.nip_rs_hard_delete', 'on', true)")
                     .fetch_one(&mut *tx)
                     .await
                     .expect("set transaction-local GUC");
@@ -1751,7 +1751,7 @@ mod postgres_tests {
                 tx.rollback().await.expect("rollback GUC transaction");
             }
             let leaked: Option<String> = sqlx::query_scalar(
-                "SELECT NULLIF(current_setting('buzz.nip_rs_hard_delete', true), '')",
+                "SELECT NULLIF(current_setting('kuzz.nip_rs_hard_delete', true), '')",
             )
             .fetch_one(&mut *conn)
             .await

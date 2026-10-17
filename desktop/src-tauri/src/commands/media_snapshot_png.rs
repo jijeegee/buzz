@@ -2,7 +2,7 @@
 //!
 //! Split out of `media.rs` to keep that file under the desktop line-size
 //! limit. Agent/team sharing embeds a manifest in a PNG `tEXt` chunk
-//! (`buzz_agent_snapshot` / `buzz_team_snapshot`); the sanitizer's re-encode
+//! (`kuzz_agent_snapshot` / `kuzz_team_snapshot`); the sanitizer's re-encode
 //! would destroy it and the relay would previously reject it. These helpers
 //! extract the chunk before the re-encode and re-inject it afterwards. The
 //! relay allowlists exactly these keywords in `kuzz-media::validation` — the
@@ -11,7 +11,7 @@
 /// tEXt keywords that carry Kuzz snapshot manifests (`.agent.png` /
 /// `.team.png`). These chunks are the product payload of agent/team sharing —
 /// they must survive the metadata strip.
-const PNG_SNAPSHOT_KEYWORDS: [&[u8]; 2] = [b"buzz_agent_snapshot", b"buzz_team_snapshot"];
+const PNG_SNAPSHOT_KEYWORDS: [&[u8]; 2] = [b"kuzz_agent_snapshot", b"kuzz_team_snapshot"];
 
 /// Extract the raw bytes of the first Kuzz snapshot tEXt chunk (length + type
 /// + payload + CRC) from a PNG, or `None` when absent/not a PNG.
@@ -87,7 +87,7 @@ mod tests {
     fn test_sanitizer_preserves_agent_snapshot_text_chunk() {
         // Build a real 2×2 PNG carrying an agent-snapshot manifest chunk plus
         // a mundane metadata chunk that must NOT survive.
-        for keyword in ["buzz_agent_snapshot", "buzz_team_snapshot"] {
+        for keyword in ["kuzz_agent_snapshot", "kuzz_team_snapshot"] {
             let manifest = "eyJmb3JtYXQiOiJidXp6LWFnZW50LXNuYXBzaG90In0=";
             let mut source = Vec::new();
             {
@@ -154,7 +154,7 @@ mod tests {
         };
 
         let snapshot = AgentSnapshot {
-            format: "buzz-agent-snapshot".to_string(),
+            format: "kuzz-agent-snapshot".to_string(),
             version: 1,
             definition: AgentSnapshotDefinition {
                 session_policy: Default::default(),

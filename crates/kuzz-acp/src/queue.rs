@@ -1191,7 +1191,7 @@ pub(crate) fn reaction_target_id(event: &Event) -> String {
 }
 
 /// Desktop Smart routing's follow-up delivery: a resolved kind:40003 edit
-/// tagged `["buzz:route", relation, of, thread_root, …]` hands the agent a
+/// tagged `["kuzz:route", relation, of, thread_root, …]` hands the agent a
 /// message that continues, amends, or cancels earlier message `of`, whose
 /// work lives in `thread_root`. Only resolved edits count: the relay accepts
 /// an edit only from the original's author, so the note is the owner's.
@@ -1206,7 +1206,7 @@ pub(crate) fn route_follow_up(event: &Event, edit: Option<&ResolvedEdit>) -> Opt
     edit?;
     event.tags.iter().find_map(|tag| {
         let parts = tag.as_slice();
-        if parts.first().map(String::as_str) != Some("buzz:route") {
+        if parts.first().map(String::as_str) != Some("kuzz:route") {
             return None;
         }
         let relation = match parts.get(1)?.as_str() {
@@ -6751,7 +6751,7 @@ mod tests {
         let of = "34".repeat(32);
         let root = "56".repeat(32);
         for (relation, action) in [("amend", "don't redo it"), ("cancel", "stop that work")] {
-            let edit = route_edit(&original, &["buzz:route", relation, &of, &root, "note"]);
+            let edit = route_edit(&original, &["kuzz:route", relation, &of, &root, "note"]);
             let batch = one_event_batch(edit, top_level_edit(&original));
             let prompt = format_prompt(&batch, &FormatPromptArgs::default()).join("\n");
             assert!(
@@ -6774,20 +6774,20 @@ mod tests {
         let cases = [
             // Unresolved edit: the original (and its author) is unverified.
             (
-                route_edit(&original, &["buzz:route", "amend", &of, &root]),
+                route_edit(&original, &["kuzz:route", "amend", &of, &root]),
                 None,
             ),
             // `new`, an unknown relation, or a malformed id.
             (
-                route_edit(&original, &["buzz:route", "new", &of, &root]),
+                route_edit(&original, &["kuzz:route", "new", &of, &root]),
                 top_level_edit(&original),
             ),
             (
-                route_edit(&original, &["buzz:route", "redo", &of, &root]),
+                route_edit(&original, &["kuzz:route", "redo", &of, &root]),
                 top_level_edit(&original),
             ),
             (
-                route_edit(&original, &["buzz:route", "amend", &of, "not-hex"]),
+                route_edit(&original, &["kuzz:route", "amend", &of, "not-hex"]),
                 top_level_edit(&original),
             ),
         ];

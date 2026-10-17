@@ -529,7 +529,7 @@ async fn dispatch_persistent_event_inner(
             .event
             .tags
             .iter()
-            .any(|t| t.as_slice().first().map(|s| s.as_str()) == Some("buzz:workflow"));
+            .any(|t| t.as_slice().first().map(|s| s.as_str()) == Some("kuzz:workflow"));
 
     if !kuzz_core::kind::is_workflow_execution_kind(kind_u32)
         && !kuzz_core::kind::is_command_kind(kind_u32)
@@ -2446,7 +2446,7 @@ mod tests {
                 .expect("seed community");
             let tenant = TenantContext::resolved(CommunityId::from_uuid(community_uuid), host);
 
-            // Relay-signed event tagged buzz:workflow so workflow triggering is
+            // Relay-signed event tagged kuzz:workflow so workflow triggering is
             // skipped; the signer is the RELAY key, distinct from the actor.
             let signer = &state.relay_keypair;
             let actor = Keys::generate();
@@ -2457,7 +2457,7 @@ mod tests {
                 "test precondition: relay signer must differ from actor"
             );
             let event = EventBuilder::new(Kind::from(KIND_PRESENCE_UPDATE as u16), "online")
-                .tags([nostr::Tag::parse(["buzz:workflow", "true"]).expect("workflow tag")])
+                .tags([nostr::Tag::parse(["kuzz:workflow", "true"]).expect("workflow tag")])
                 .sign_with_keys(signer)
                 .expect("sign relay event");
             let event_id_hex = event.id.to_hex();

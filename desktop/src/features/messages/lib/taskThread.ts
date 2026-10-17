@@ -1,5 +1,5 @@
 /** Close marker written by `kuzz threads close`, in the thread and on its result. */
-export const THREAD_CLOSED_TAG = "buzz:thread-closed";
+export const THREAD_CLOSED_TAG = "kuzz:thread-closed";
 
 type ThreadMessageLike = {
   createdAt: number;

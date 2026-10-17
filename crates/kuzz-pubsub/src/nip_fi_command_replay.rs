@@ -10,7 +10,7 @@ use kuzz_auth::{
 
 /// Redis-backed NIP-FI command replay seen-set.
 ///
-/// `try_claim` issues `SET buzz:nip-fi:command:{hash} 1 NX EX <ttl>`; `OK`
+/// `try_claim` issues `SET kuzz:nip-fi:command:{hash} 1 NX EX <ttl>`; `OK`
 /// is a first claim and `nil` is a replay.
 pub struct RedisCommandReplayGuard {
     pool: deadpool_redis::Pool,

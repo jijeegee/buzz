@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 /// Global Redis pub/sub channel for token revocations.
-pub const AUTH_REVOKED_CHANNEL: &str = "buzz:auth:revoked";
+pub const AUTH_REVOKED_CHANNEL: &str = "kuzz:auth:revoked";
 
 /// Maximum hashes per published message; larger sets are chunked.
 pub const MAX_HASHES_PER_MESSAGE: usize = 256;
