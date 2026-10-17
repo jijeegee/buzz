@@ -395,6 +395,12 @@ async fn handle_dm_open(
         let silent = opener_blockers(tenant, state, &self_bytes).await;
         for participant in &all_bytes {
             if silent.skips(participant) {
+                // Their membership starts hidden. Refresh their hidden-DM
+                // snapshot so their clients drop the DM that the channel's
+                // member list (kind:39002) would otherwise surface.
+                if let Err(e) = publish_dm_visibility_snapshot(tenant, state, participant).await {
+                    warn!("DM open: blocker visibility snapshot failed: {e}");
+                }
                 continue;
             }
             if let Err(e) = emit_membership_notification(
@@ -433,9 +439,10 @@ async fn handle_dm_open(
 }
 
 /// Participants who blocked a DM's opener: their membership starts hidden
-/// (see `kuzz_db::dm::create_dm`) and they get no "added" notification, so the
-/// opener cannot tell. A failed lookup skips every other participant's
-/// notification (fail closed); they still see the DM via the chats list.
+/// (see `kuzz_db::dm::create_dm`), they get no "added" notification and their
+/// hidden-DM snapshot is republished, so the opener cannot tell. A failed
+/// lookup treats every other participant this way (fail closed); anyone not
+/// actually hidden still sees the DM via the chats list.
 enum OpenerBlockers {
     Known(crate::blocks::PubkeySet, Vec<u8>),
     Unknown(Vec<u8>),
@@ -578,6 +585,14 @@ async fn handle_dm_add_member(
         let silent = opener_blockers(tenant, state, &self_bytes).await;
         for participant_bytes in &all_bytes {
             if silent.skips(participant_bytes) {
+                // Their membership starts hidden. Refresh their hidden-DM
+                // snapshot so their clients drop the DM that the channel's
+                // member list (kind:39002) would otherwise surface.
+                if let Err(e) =
+                    publish_dm_visibility_snapshot(tenant, state, participant_bytes).await
+                {
+                    warn!("DM add_member: blocker visibility snapshot failed: {e}");
+                }
                 continue;
             }
             if let Err(e) = emit_membership_notification(

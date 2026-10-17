@@ -451,3 +451,72 @@ async fn contact_lists_are_readable_only_by_their_author() {
     let by_id = req_eose(&mut bob_ws, "byid", json!({"ids": [ok[1]]})).await;
     assert!(by_id.is_empty(), "id lookup must not leak it either");
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn dm_opened_by_a_blocked_person_stays_hidden_for_the_blocker() {
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let inst = instance(&community(&pool).await).await;
+    let alice = new_user(&inst).await;
+    let bob = new_user(&inst).await;
+    assert_eq!(put_block(&inst, &alice, &bob.principal).await, 204);
+
+    // Bob opens a new DM with Alice and gets a normal response.
+    let mut bob_ws = inst.ws().await;
+    assert_eq!(auth_ws(&mut bob_ws, &bob.access).await[2], true);
+    send(
+        &mut bob_ws,
+        json!(["EVENT", {"kind": 41010, "content": "", "tags": [["p", alice.principal]]}]),
+    )
+    .await;
+    let ok = next_ok(&mut bob_ws).await;
+    assert_eq!(ok[2], true, "{ok}");
+    let response: Value =
+        serde_json::from_str(ok[3].as_str().unwrap().strip_prefix("response:").unwrap()).unwrap();
+    assert_eq!(response["created"], true);
+    let dm = response["channel_id"].as_str().unwrap().to_owned();
+    let bob_added = req_eose(
+        &mut bob_ws,
+        "added",
+        json!({"kinds": [44100], "#p": [bob.principal]}),
+    )
+    .await;
+    assert!(bob_added
+        .iter()
+        .any(|e| e["tags"].to_string().contains(&dm)));
+
+    // Alice gets no "added" notification, and her hidden-DM snapshot already
+    // lists the DM, so her clients drop it even though the member list
+    // (kind:39002) names her.
+    let mut alice_ws = inst.ws().await;
+    assert_eq!(auth_ws(&mut alice_ws, &alice.access).await[2], true);
+    let alice_added = req_eose(
+        &mut alice_ws,
+        "added",
+        json!({"kinds": [44100], "#p": [alice.principal]}),
+    )
+    .await;
+    assert!(
+        !alice_added
+            .iter()
+            .any(|e| e["tags"].to_string().contains(&dm)),
+        "the blocker must not be told about the DM"
+    );
+    let snapshot = req_eose(
+        &mut alice_ws,
+        "hidden",
+        json!({"kinds": [30622], "#p": [alice.principal]}),
+    )
+    .await;
+    assert_eq!(snapshot.len(), 1, "{snapshot:?}");
+    assert!(
+        snapshot[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tag| tag[0] == "h" && tag[1] == dm.as_str()),
+        "{snapshot:?}"
+    );
+}
