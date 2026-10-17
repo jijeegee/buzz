@@ -13,6 +13,9 @@ abstract final class EventKind {
   static const deletion = 5;
   static const reaction = 7;
 
+  /// Kind:1984 NIP-56 report, filed to the moderators' queue only.
+  static const report = 1984;
+
   /// Kind:9030 event requesting that the relay add a community member.
   static const relayAdminAddMember = 9030;
 

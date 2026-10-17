@@ -47,6 +47,15 @@ class FakeAccountServer {
     },
   ];
 
+  /// Blocked pubkeys with their RFC 3339 `created_at`, in block order.
+  final Map<String, String> blocks = {};
+
+  /// Discoverable people by exact (lowercase) Kuzz ID or email.
+  final Map<String, Map<String, Object?>> directory = {};
+
+  /// People sharing a channel with me, filtered by display-name prefix.
+  List<Map<String, Object?>> sharedPeople = [];
+
   /// When set, the next account request with this path answers with it.
   final Map<String, http.Response Function(http.Request)> failures = {};
 
@@ -64,7 +73,9 @@ class FakeAccountServer {
         path.startsWith('/auth/devices') ||
         path == '/auth/sessions/revoke-others' ||
         path == '/auth/bots/revoke-all' ||
-        path == '/auth/account';
+        path == '/auth/account' ||
+        path.startsWith('/auth/blocks') ||
+        path.startsWith('/auth/people/');
     if (!isAccount) {
       final copy = http.Request(request.method, request.url)
         ..headers.addAll(request.headers)
@@ -91,6 +102,7 @@ class FakeAccountServer {
           'display_name': profile['display_name'],
           'avatar_url': profile['avatar_url'],
           'username': profile['username'],
+          'discoverable': profile['discoverable'] ?? true,
         });
       case ('GET', '/auth/devices'):
         return jsonResponse(devices);
@@ -100,9 +112,55 @@ class FakeAccountServer {
             if (device['current'] == true) device,
         ];
         return http.Response('', 204);
+      case ('GET', '/auth/blocks'):
+        return jsonResponse({
+          'blocked': [
+            for (final entry in blocks.entries)
+              {'pubkey': entry.key, 'created_at': entry.value},
+          ],
+        });
+      case ('GET', '/auth/people/lookup'):
+        final q = (request.url.queryParameters['q'] ?? '').trim();
+        final key = q.contains('@')
+            ? q.toLowerCase()
+            : q.replaceFirst(RegExp('^@'), '').toLowerCase();
+        final person = directory[key];
+        if (person == null) {
+          return jsonResponse({'error': 'not found'}, status: 404);
+        }
+        return jsonResponse(person);
+      case ('GET', '/auth/people/shared'):
+        final q = (request.url.queryParameters['q'] ?? '').trim();
+        if (q.isEmpty) return jsonResponse({'error': 'q'}, status: 400);
+        return jsonResponse({
+          'people': [
+            for (final person in sharedPeople)
+              if ('${person['display_name']}'.toLowerCase().startsWith(
+                q.toLowerCase(),
+              ))
+                person,
+          ],
+        });
       case ('POST', '/auth/bots/revoke-all'):
       case ('DELETE', '/auth/account'):
         return http.Response('', 204);
+    }
+    if (path.startsWith('/auth/blocks/')) {
+      final pubkey = path.substring('/auth/blocks/'.length);
+      if (pubkey == profile['principal_id']) {
+        return jsonResponse({'error': 'cannot block yourself'}, status: 400);
+      }
+      if (request.method == 'PUT') {
+        blocks.putIfAbsent(
+          pubkey,
+          () => '2026-10-18T12:00:0${blocks.length % 10}Z',
+        );
+        return http.Response('', 204);
+      }
+      if (request.method == 'DELETE') {
+        blocks.remove(pubkey);
+        return http.Response('', 204);
+      }
     }
     if (request.method == 'PATCH' && path.startsWith('/auth/devices/')) {
       final id = path.substring('/auth/devices/'.length);

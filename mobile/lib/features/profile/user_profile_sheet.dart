@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/misc.dart' show ProviderListenable;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/animated_avatar.dart';
+import '../../shared/auth/account/account_api.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/agent_badge_widgets.dart';
 import '../../shared/devices/device_robot_icon.dart';
@@ -24,6 +25,8 @@ import '../channels/channel.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/message_content.dart';
+import '../people/blocked_users_provider.dart';
+import '../people/person_actions.dart';
 import 'presence_cache_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import 'user_status_cache_provider.dart';
@@ -107,6 +110,10 @@ class UserProfileSheet extends HookConsumerWidget {
     }, [pk]);
     final copied = useState(false);
     final isOpeningDirectMessage = useState(false);
+    final isBlocked = ref.watch(
+      blockedPubkeysProvider.select((ids) => ids.contains(pk)),
+    );
+    final canBlock = ref.watch(accountOriginProvider) != null;
 
     // Canonical npub for the copy action; null when [pubkey] is not a valid
     // identity, in which case the copy tile is disabled — an invalid key is
@@ -315,6 +322,52 @@ class UserProfileSheet extends HookConsumerWidget {
                         ),
                       ],
                     ),
+                    if (pk != currentPubkey) ...[
+                      const SizedBox(height: Grid.twelve),
+                      Row(
+                        children: [
+                          if (canBlock) ...[
+                            Expanded(
+                              child: KuzzActionTile(
+                                key: const Key('profile-sheet-block'),
+                                icon: LucideIcons.ban,
+                                label: isBlocked ? 'Unblock' : 'Block',
+                                onTap: () => unawaited(
+                                  isBlocked
+                                      ? unblockWithFeedback(
+                                          context,
+                                          ref,
+                                          pubkey: pk,
+                                          name: displayName,
+                                        )
+                                      : confirmAndBlock(
+                                          context,
+                                          ref,
+                                          pubkey: pk,
+                                          name: displayName,
+                                        ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: Grid.twelve),
+                          ],
+                          Expanded(
+                            child: KuzzActionTile(
+                              key: const Key('profile-sheet-report'),
+                              icon: LucideIcons.flag,
+                              label: 'Report',
+                              onTap: () => unawaited(
+                                showReportSheet(
+                                  context,
+                                  pubkey: pk,
+                                  name: displayName,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: Grid.xs),
 
                     // About / bio section

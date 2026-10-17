@@ -443,6 +443,20 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     );
   }
 
+  if (_canReportMessage(message, currentPubkey)) {
+    actions.add(
+      _PopoverMessageAction(
+        id: 'report',
+        title: 'Report message',
+        icon: LucideIcons.flag,
+        group: _PopoverMessageActionGroup.destructive,
+        destructive: true,
+        onSelected: () =>
+            _reportMessage(context: context, ref: ref, message: message),
+      ),
+    );
+  }
+
   const actionOrder = {
     'reply': 0,
     'quote': 1,
@@ -455,7 +469,8 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     'remind': 7,
     'followThread': 8,
     'unfollowThread': 8,
-    'delete': 9,
+    'report': 9,
+    'delete': 10,
   };
   actions.sort(
     (left, right) => actionOrder[left.id]!.compareTo(actionOrder[right.id]!),
@@ -494,6 +509,7 @@ class _PopoverMessageAction {
     'followThread' => 'bell',
     'unfollowThread' => 'bell.slash',
     'delete' => 'trash',
+    'report' => 'flag',
     _ => 'ellipsis',
   };
 
