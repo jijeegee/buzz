@@ -1,5 +1,4 @@
 import type { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
-import { Button } from "./button";
 import { CreateAccountDialog } from "./CreateAccountDialog";
 
 /** Recovery actions shared by onboarding and account settings. */
@@ -17,17 +16,8 @@ export function GoogleLoginProgress({
             ? "Finishing sign-in in Kuzz…"
             : login.phase === "opening"
               ? "Opening your browser…"
-              : "Finish signing in in your browser. If you closed it, cancel and try again."}
+              : "Finish signing in in your browser."}
         </p>
-      ) : null}
-      {login.phase === "waiting" ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => void login.cancel()}
-        >
-          Cancel sign-in
-        </Button>
       ) : null}
       {login.error ? (
         <p className="text-sm text-destructive" role="alert">
