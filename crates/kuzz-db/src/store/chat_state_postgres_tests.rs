@@ -555,6 +555,52 @@ async fn close_marker_on_a_thread_without_replies_creates_state() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn marker_replies_are_not_counted_as_replies() {
+    // The switch is off: reply counts are kept either way.
+    let f = Fixture::new(false).await;
+    let owner = Keys::generate();
+    let room = f.room(&owner, &[]).await;
+    let root = f.post(room, &owner, 100, Vec::new()).await;
+    f.reply(room, &root, &owner, 110, Vec::new()).await;
+    let close = f.marker(room, &root, &owner, 120, THREAD_CLOSED_TAG).await;
+    f.marker(room, &root, &owner, 130, THREAD_REOPENED_TAG)
+        .await;
+    let counts = |pool: PgPool, scope: CommunityId, id: Vec<u8>| async move {
+        let row = sqlx::query(
+            "SELECT reply_count, descendant_count FROM thread_metadata \
+             WHERE community_id = $1 AND event_id = $2",
+        )
+        .bind(scope.as_uuid())
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .expect("root metadata");
+        (
+            row.get::<i32, _>("reply_count"),
+            row.get::<i32, _>("descendant_count"),
+        )
+    };
+    let root_id = root.id.as_bytes().to_vec();
+    assert_eq!(
+        counts(f.pool.clone(), f.scope, root_id.clone()).await,
+        (1, 1)
+    );
+
+    let deleted =
+        f.db.soft_delete_event_and_update_thread(
+            f.scope,
+            close.id.as_bytes(),
+            Some(root.id.as_bytes()),
+            Some(root.id.as_bytes()),
+        )
+        .await
+        .expect("delete marker");
+    assert!(deleted);
+    assert_eq!(counts(f.pool.clone(), f.scope, root_id).await, (1, 1));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn only_applied_markers_report_a_close_change() {
     let f = Fixture::new(true).await;
     let owner = Keys::generate();

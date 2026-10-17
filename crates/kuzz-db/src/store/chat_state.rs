@@ -28,6 +28,17 @@ pub const THREAD_CLOSED_TAG: &str = "kuzz:thread-closed";
 /// Tag on a reply that reopens its thread: `["kuzz:thread-reopened", <root>]`.
 pub const THREAD_REOPENED_TAG: &str = "kuzz:thread-reopened";
 
+/// True when a reply's tags carry a close or reopen marker. Marker replies
+/// are shown as a system line and are not counted as replies (spec 4.2); the
+/// rule matches the desktop's `isThreadMarkerReply`.
+pub fn is_thread_marker_tags<'a>(tags: impl IntoIterator<Item = &'a [String]>) -> bool {
+    tags.into_iter().any(|tag| {
+        tag.len() >= 2
+            && !tag[1].is_empty()
+            && (tag[0] == THREAD_CLOSED_TAG || tag[0] == THREAD_REOPENED_TAG)
+    })
+}
+
 /// What a chat-state write changed that the caller must announce after commit.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ChatStateWriteOutcome {

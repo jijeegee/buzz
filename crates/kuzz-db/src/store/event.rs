@@ -1211,8 +1211,8 @@ pub(crate) async fn soft_delete_event_and_update_thread_in_tx(
 
     // Derive the target event's kind and channel_id inside the transaction so
     // that the serialization decision cannot be bypassed by any caller.
-    let target: Option<(i32, Option<Uuid>)> = sqlx::query_as(
-        "SELECT kind, channel_id FROM events \
+    let target: Option<(i32, Option<Uuid>, serde_json::Value)> = sqlx::query_as(
+        "SELECT kind, channel_id, tags FROM events \
          WHERE community_id = $1 AND id = $2",
     )
     .bind(community_id.as_uuid())
@@ -1221,13 +1221,14 @@ pub(crate) async fn soft_delete_event_and_update_thread_in_tx(
     .await?;
 
     // Relay-signed move removals are the source channel's only replay record.
-    if target.is_some_and(|(kind, _)| kind == 45011) {
+    if target.as_ref().is_some_and(|(kind, _, _)| *kind == 45011) {
         return Err(DbError::InvalidData(
             "artifact removal markers cannot be deleted".into(),
         ));
     }
 
-    if let Some((kind, Some(channel_id))) = target {
+    if let Some((kind, Some(channel_id), _)) = target.as_ref() {
+        let (kind, channel_id) = (*kind, *channel_id);
         if is_channel_head_kind(kind as u32) {
             let lock_key = event_replacement_lock_key(
                 community_id,
@@ -1251,8 +1252,15 @@ pub(crate) async fn soft_delete_event_and_update_thread_in_tx(
     .await?;
 
     let deleted = result.rows_affected() > 0;
+    // Marker replies were never counted (see the insert path), so deleting
+    // one leaves the counters alone.
+    let counted_reply = !target.as_ref().is_some_and(|(_, _, tags)| {
+        serde_json::from_value::<Vec<Vec<String>>>(tags.clone()).is_ok_and(|tags| {
+            crate::chat_state::is_thread_marker_tags(tags.iter().map(Vec::as_slice))
+        })
+    });
 
-    if deleted {
+    if deleted && counted_reply {
         if let Some(pid) = parent_event_id {
             sqlx::query(
                 "UPDATE thread_metadata \
@@ -1690,19 +1698,25 @@ pub(crate) async fn insert_event_with_thread_metadata_tx(
                         }
                     }
 
+                    // A close/reopen marker reply still moves last_reply_at
+                    // but is not counted as a reply.
+                    let counts_as_reply = !crate::chat_state::is_thread_marker_tags(
+                        event.tags.iter().map(|tag| tag.as_slice()),
+                    );
                     sqlx::query(
                         r#"
                         UPDATE thread_metadata
-                        SET reply_count = reply_count + 1, last_reply_at = NOW()
+                        SET reply_count = reply_count + $3, last_reply_at = NOW()
                         WHERE community_id = $1 AND event_id = $2
                         "#,
                     )
                     .bind(community_id.as_uuid())
                     .bind(pid)
+                    .bind(i32::from(counts_as_reply))
                     .execute(&mut **tx)
                     .await?;
 
-                    if let Some(root_id) = meta.root_event_id {
+                    if let (true, Some(root_id)) = (counts_as_reply, meta.root_event_id) {
                         sqlx::query(
                             r#"
                             UPDATE thread_metadata
