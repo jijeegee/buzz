@@ -140,7 +140,51 @@ pub(crate) struct MeInfo {
     /// The Google email of the session's account, from relays that send it.
     #[serde(default)]
     pub email: Option<String>,
+    /// The account's Kuzz ID (`principals.username`), when set.
+    #[serde(default)]
+    pub username: Option<String>,
+    /// Whether others may find this account by Kuzz ID or email. Relays
+    /// without the setting omit it; their accounts are findable.
+    #[serde(default)]
+    pub discoverable: Option<bool>,
 }
+
+/// One person from `GET /auth/people/lookup` or `/auth/people/shared`.
+/// Never carries an email.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub(crate) struct PersonInfo {
+    pub pubkey: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SharedPeople {
+    people: Vec<PersonInfo>,
+}
+
+/// One row of `GET /auth/blocks`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub(crate) struct BlockedPerson {
+    pub pubkey: String,
+    /// RFC 3339.
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BlockedList {
+    blocked: Vec<BlockedPerson>,
+}
+
+/// Most people `GET /auth/people/shared` returns in one call.
+pub(crate) const SHARED_PEOPLE_MAX: u32 = 50;
 
 /// A bot access token (`POST /auth/bots/{id}/token`).
 #[derive(Deserialize)]
@@ -502,6 +546,101 @@ pub(crate) async fn update_profile(
     .await
 }
 
+/// A person's pubkey as the path segment of `/auth/blocks/{pubkey}`:
+/// 64 hex characters, lowercased.
+pub(crate) fn person_pubkey(pubkey: &str) -> Result<String, ApiError> {
+    if pubkey.len() != 64 || !pubkey.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(ApiError {
+            status: None,
+            code: None,
+            message: "invalid person".into(),
+        });
+    }
+    Ok(pubkey.to_ascii_lowercase())
+}
+
+/// `GET /auth/blocks`: the people this account blocked.
+pub(crate) async fn list_blocks(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<Vec<BlockedPerson>, ApiError> {
+    let list: BlockedList = send_json(
+        client
+            .get(format!("{origin}/auth/blocks"))
+            .header("Authorization", bearer(access)),
+    )
+    .await?;
+    Ok(list.blocked)
+}
+
+/// `PUT /auth/blocks/{pubkey}` (`blocked`) or `DELETE` (unblock). Both are
+/// idempotent.
+pub(crate) async fn set_block(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    pubkey: &str,
+    blocked: bool,
+) -> Result<(), ApiError> {
+    let pubkey = person_pubkey(pubkey)?;
+    let method = if blocked {
+        reqwest::Method::PUT
+    } else {
+        reqwest::Method::DELETE
+    };
+    call(
+        client,
+        method,
+        format!("{origin}/auth/blocks/{pubkey}"),
+        access,
+        None,
+    )
+    .await
+}
+
+/// `GET /auth/people/lookup?q=`: the one person whose Kuzz ID or email is
+/// exactly `query`, or `None` (404: no such person, or not findable).
+pub(crate) async fn lookup_person(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    query: &str,
+) -> Result<Option<PersonInfo>, ApiError> {
+    let result = send_json(
+        client
+            .get(format!("{origin}/auth/people/lookup"))
+            .query(&[("q", query)])
+            .header("Authorization", bearer(access)),
+    )
+    .await;
+    match result {
+        Ok(person) => Ok(Some(person)),
+        Err(error) if error.status == Some(404) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// `GET /auth/people/shared?q=&limit=`: people in my channels whose name
+/// starts with `query`.
+pub(crate) async fn shared_people(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<PersonInfo>, ApiError> {
+    let limit = limit.clamp(1, SHARED_PEOPLE_MAX).to_string();
+    let found: SharedPeople = send_json(
+        client
+            .get(format!("{origin}/auth/people/shared"))
+            .query(&[("q", query), ("limit", limit.as_str())])
+            .header("Authorization", bearer(access)),
+    )
+    .await?;
+    Ok(found.people)
+}
+
 /// `POST /auth/bots` (hosted on this device).
 pub(crate) async fn create_bot(
     client: &reqwest::Client,
@@ -655,6 +794,44 @@ mod tests {
         assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A5555%2Fcb"));
         assert!(url.contains("device_name=My+Mac"));
         assert!(url.contains("install_id=5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c"));
+    }
+
+    #[test]
+    fn me_reads_kuzz_id_and_findability() {
+        let me: MeInfo = serde_json::from_value(serde_json::json!({
+            "principal_id": "ab", "username": "jiho_1", "discoverable": false,
+        }))
+        .unwrap();
+        assert_eq!(me.username.as_deref(), Some("jiho_1"));
+        assert_eq!(me.discoverable, Some(false));
+        let older: MeInfo =
+            serde_json::from_value(serde_json::json!({ "principal_id": "ab" })).unwrap();
+        assert_eq!((older.username, older.discoverable), (None, None));
+    }
+
+    #[test]
+    fn people_and_blocks_parse_the_contract_shapes() {
+        let key = "a".repeat(64);
+        let shared: SharedPeople = serde_json::from_value(serde_json::json!({
+            "people": [{ "pubkey": key, "display_name": "Ann", "avatar_url": null, "username": "ann" }],
+        }))
+        .unwrap();
+        assert_eq!(shared.people[0].display_name.as_deref(), Some("Ann"));
+        let ui = serde_json::to_value(&shared.people[0]).unwrap();
+        assert_eq!(ui["displayName"], "Ann");
+        assert!(ui.get("email").is_none());
+        let blocks: BlockedList = serde_json::from_value(serde_json::json!({
+            "blocked": [{ "pubkey": key, "created_at": "2026-10-18T00:00:00Z" }],
+        }))
+        .unwrap();
+        assert_eq!(blocks.blocked[0].pubkey, key);
+    }
+
+    #[test]
+    fn block_paths_take_only_a_hex_pubkey() {
+        assert_eq!(person_pubkey(&"AB".repeat(32)).unwrap(), "ab".repeat(32));
+        assert!(person_pubkey("../me").is_err());
+        assert!(person_pubkey(&"g".repeat(64)).is_err());
     }
 
     #[test]
