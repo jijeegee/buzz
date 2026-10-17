@@ -562,7 +562,7 @@ export function AppShell() {
     },
     [unfollowThread, muteThread, mirrorFollow],
   );
-  const serverChats = useChatThreadRowActions({
+  const chatThreadRowChats = useChatThreadRowActions({
     beforeExplicitThreadRead: chatState.beforeExplicitThreadRead,
     markThreadRead,
     markThreadUnread: chatState.markThreadUnread,
@@ -571,6 +571,21 @@ export function AppShell() {
     unfollowThread: handleUnfollowThread,
     unpinThread: chatState.unpinThread,
   });
+  const openThreadRootId =
+    selectedView === "channel"
+      ? ((location.search as { thread?: unknown }).thread ?? null)
+      : null;
+  const serverChats = React.useMemo(
+    () =>
+      chatThreadRowChats
+        ? {
+            ...chatThreadRowChats,
+            openRootId:
+              typeof openThreadRootId === "string" ? openThreadRootId : null,
+          }
+        : chatThreadRowChats,
+    [chatThreadRowChats, openThreadRootId],
+  );
 
   const createChannelMutation = useCreateChannelMutation(),
     createForumMutation = useCreateChannelMutation();

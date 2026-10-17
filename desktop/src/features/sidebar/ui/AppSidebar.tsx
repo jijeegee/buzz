@@ -26,7 +26,6 @@ import {
   preferredUnreadTarget,
 } from "@/features/sidebar/ui/MoreUnreadButton";
 import { useChatsViewMode } from "@/features/chats/useChatsViewMode";
-import { useLatestAuthorProfiles } from "@/features/chats/useLatestAuthorProfiles";
 import { ChatList } from "@/features/sidebar/ui/ChatList";
 import {
   ChatsColumnTitle,
@@ -246,7 +245,6 @@ export function AppSidebar({
   );
 
   const [chatsView, setChatsView] = useChatsViewMode();
-  const latestAuthorProfiles = useLatestAuthorProfiles(serverChats?.rows);
   // People swaps the list column for the people list (Chats stays mounted).
   const showPeople = selectedView === "people";
   const { requestLeaveChannel, dialog: leaveChannelDialog } =
@@ -478,8 +476,6 @@ export function AppSidebar({
                 {!isLoading ? (
                   <>
                     <ChatList
-                      currentPubkey={currentPubkey}
-                      latestAuthorProfiles={latestAuthorProfiles}
                       hideHeader
                       dmParticipantsByChannelId={dmParticipantsByChannelId}
                       isActiveChannel={selectedView === "channel"}

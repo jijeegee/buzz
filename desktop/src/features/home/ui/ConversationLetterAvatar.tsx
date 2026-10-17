@@ -8,23 +8,55 @@ function conversationHue(channelId: string) {
   return hash % 360;
 }
 
+function initialOf(label: string) {
+  return Array.from(label)[0]?.toUpperCase() ?? "#";
+}
+
 /**
  * A channel's picture: its first letter on a color picked from its id. A
- * thread adds a small speech-bubble badge. Shared by Inbox and Chats rows.
+ * thread adds a small speech-bubble badge, or, given `thread`, a second
+ * circle with the thread's own letter in front of a smaller channel circle,
+ * so threads of one channel look different. Shared by Inbox and Chats rows.
  */
 export function ConversationLetterAvatar({
   channelId,
   channelLabel,
   isThread,
   testId = "home-inbox-conversation-avatar",
+  thread,
 }: {
   channelId: string;
   channelLabel: string;
   isThread: boolean;
   testId?: string;
+  thread?: { id: string; label: string };
 }) {
-  const initial = Array.from(channelLabel)[0]?.toUpperCase() ?? "#";
+  const initial = initialOf(channelLabel);
   const hue = conversationHue(channelId || channelLabel);
+  if (isThread && thread) {
+    return (
+      <span
+        aria-hidden="true"
+        className="relative h-9 w-9 shrink-0"
+        data-testid={testId}
+      >
+        <span
+          className="absolute left-0 top-0 flex h-[1.625rem] w-[1.625rem] items-start justify-start rounded-full pl-1.5 pt-0.5 text-[0.625rem] font-semibold text-white"
+          style={{ backgroundColor: `hsl(${hue} 55% 48%)` }}
+        >
+          {initial}
+        </span>
+        <span
+          className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full text-2xs font-semibold text-white ring-2 ring-background"
+          style={{
+            backgroundColor: `hsl(${conversationHue(thread.id || thread.label)} 55% 48%)`,
+          }}
+        >
+          {initialOf(thread.label)}
+        </span>
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden="true"

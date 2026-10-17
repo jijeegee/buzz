@@ -37,7 +37,10 @@ import { useAppShell } from "@/app/AppShellContext";
 import { UserNameIndicators } from "@/features/user-status/ui/UserNameIndicators";
 import type { ChatRowPreview } from "@/features/chats/chatRowPreview";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
-import { ChatRowLines } from "@/features/sidebar/ui/ChatRowLines";
+import {
+  CHAT_ROW_BUTTON_CLASS,
+  ChatRowLines,
+} from "@/features/sidebar/ui/ChatRowLines";
 
 const SECTION_LABEL_BUTTON_CLASS =
   "group/section-label flex w-fit max-w-[calc(100%-3rem)] cursor-pointer appearance-none items-center gap-1 text-left transition-colors hover:text-sidebar-foreground focus-visible:text-sidebar-foreground";
@@ -333,7 +336,7 @@ export function ChannelMenuButton({
   const button = preview ? (
     <SidebarMenuButton
       className={cn(
-        "gap-2.5 data-[active=true]:font-normal",
+        CHAT_ROW_BUTTON_CLASS,
         isActive
           ? "group-hover/menu-item:bg-sidebar-active group-hover/menu-item:text-sidebar-active-foreground"
           : "group-hover/menu-item:bg-sidebar-accent group-hover/menu-item:text-sidebar-foreground",
@@ -407,14 +410,16 @@ export function ChannelMenuButton({
                 className="h-3 w-3 shrink-0 text-sidebar-foreground/40"
               />
             ) : null}
-            {activeWorking ? (
-              <ChannelWorkingBadge
-                channelName={channel.name}
-                isActive={isActive}
-                summary={activeWorking}
-              />
-            ) : null}
           </>
+        }
+        working={
+          activeWorking ? (
+            <ChannelWorkingBadge
+              channelName={channel.name}
+              isActive={isActive}
+              summary={activeWorking}
+            />
+          ) : null
         }
       />
     </SidebarMenuButton>

@@ -16,7 +16,7 @@ import {
 import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurnsStore";
-import { ChatRowLines } from "./ChatRowLines";
+import { CHAT_ROW_BUTTON_CLASS, ChatRowLines } from "./ChatRowLines";
 import { ChannelWorkingBadge } from "./SidebarSection";
 import {
   ChatThreadRowMenuItems,
@@ -31,6 +31,8 @@ import {
 export function ChatThreadRow({
   actions,
   channelLabel,
+  indent = false,
+  isActive = false,
   isDm,
   isMuted,
   isPinned,
@@ -42,6 +44,10 @@ export function ChatThreadRow({
 }: {
   actions?: ChatThreadRowActions;
   channelLabel: string;
+  /** Set in By channel, where the thread sits under its channel. */
+  indent?: boolean;
+  /** This thread is the one open now. */
+  isActive?: boolean;
   isDm: boolean;
   isMuted: boolean;
   isPinned: boolean;
@@ -111,9 +117,16 @@ export function ChatThreadRow({
   const item = (
     <SidebarMenuItem className="group/menu-item">
       <SidebarMenuButton
-        className="gap-2.5 data-[active=true]:font-normal group-hover/menu-item:bg-sidebar-accent group-hover/menu-item:text-sidebar-foreground"
+        className={cn(
+          CHAT_ROW_BUTTON_CLASS,
+          indent && "pl-8",
+          isActive
+            ? "group-hover/menu-item:bg-sidebar-active group-hover/menu-item:text-sidebar-active-foreground"
+            : "group-hover/menu-item:bg-sidebar-accent group-hover/menu-item:text-sidebar-foreground",
+        )}
         data-chat-thread-id={rootId}
         data-testid={`chat-thread-${rootId}`}
+        isActive={isActive}
         onClick={() => onOpenThread(row.channel_id, rootId)}
         size="lg"
         tooltip={`${place} › ${title}`}
@@ -124,6 +137,7 @@ export function ChatThreadRow({
           channelLabel={channelLabel}
           isThread
           testId={`chat-thread-avatar-${rootId}`}
+          thread={{ id: rootId, label: title }}
         />
         <ChatRowLines
           badges={badges}
@@ -153,14 +167,16 @@ export function ChatThreadRow({
                   <span className="sr-only">Pinned for you</span>
                 </span>
               ) : null}
-              {working ? (
-                <ChannelWorkingBadge
-                  channelName={`thread-${rootId}`}
-                  isActive={false}
-                  summary={working}
-                />
-              ) : null}
             </>
+          }
+          working={
+            working ? (
+              <ChannelWorkingBadge
+                channelName={`thread-${rootId}`}
+                isActive={isActive}
+                summary={working}
+              />
+            ) : null
           }
         />
       </SidebarMenuButton>
