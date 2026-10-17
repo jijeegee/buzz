@@ -1,6 +1,30 @@
 import * as React from "react";
 
 import { setInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
+import { hasPendingWelcomeChannel } from "@/features/onboarding/welcome";
+
+/**
+ * The app was started without a route (no hash), as on a fresh launch. A
+ * reload keeps its hash, so it returns to the screen it was on.
+ */
+const STARTED_WITHOUT_ROUTE =
+  typeof window === "undefined" ||
+  window.location.hash === "" ||
+  window.location.hash === "#";
+let landingDone = false;
+
+/** Whether a fresh start should land on Chats instead of Activity. */
+export function shouldLandOnChats({
+  startedWithoutRoute,
+  selectedView,
+  pendingWelcome,
+}: {
+  startedWithoutRoute: boolean;
+  selectedView: string;
+  pendingWelcome: boolean;
+}): boolean {
+  return startedWithoutRoute && selectedView === "home" && !pendingWelcome;
+}
 
 /**
  * Where the rail's Chats item goes: the room last open in this session, else
@@ -18,16 +42,40 @@ export function resolveChatsRailTarget(
 }
 
 export function useChatsRailNavigation({
+  channelsLoaded,
   goChannel,
   selectedChannelId,
   selectedView,
   sidebarChannels,
 }: {
-  goChannel: (channelId: string) => unknown;
+  /** The channel list has loaded once, so an empty list really is empty. */
+  channelsLoaded: boolean;
+  goChannel: (channelId: string, options?: { replace?: boolean }) => unknown;
   selectedChannelId: string | null;
   selectedView: string;
   sidebarChannels: readonly { id: string }[];
 }): () => void {
+  // A fresh start lands on Chats (the first sidebar chat), once per launch.
+  React.useEffect(() => {
+    if (landingDone || !channelsLoaded) return;
+    landingDone = true;
+    if (
+      !shouldLandOnChats({
+        startedWithoutRoute: STARTED_WITHOUT_ROUTE,
+        selectedView,
+        pendingWelcome: hasPendingWelcomeChannel(),
+      })
+    ) {
+      return;
+    }
+    const target = resolveChatsRailTarget(
+      null,
+      sidebarChannels.map((channel) => channel.id),
+    );
+    if (!target) return;
+    setInboxPanelOpen(false);
+    void goChannel(target, { replace: true });
+  }, [channelsLoaded, goChannel, selectedView, sidebarChannels]);
   const lastChannelIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (selectedView === "channel" && selectedChannelId) {

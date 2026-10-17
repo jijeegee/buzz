@@ -356,6 +356,7 @@ export function AppShell() {
     sidebarChannels,
   ]);
   const handleSelectChats = useChatsRailNavigation({
+    channelsLoaded: channelsQuery.isSuccess && channelsQuery.dataUpdatedAt > 0,
     goChannel,
     selectedChannelId,
     selectedView,
