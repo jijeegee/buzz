@@ -309,9 +309,7 @@ void openAtTests() {
       await tester.pump(roomPositionSaveDelay);
       final saved = store.read(_channelId);
       expect(saved, isNotNull);
-      final reading = findRichText(
-        'row ${int.parse(saved!.id, radix: 16)}',
-      );
+      final reading = findRichText('row ${int.parse(saved!.id, radix: 16)}');
       final before = tester.getRect(reading);
 
       await tester.pumpWidget(const SizedBox());
@@ -379,11 +377,7 @@ void openAtTests() {
       final store = await positionStore(tester);
       store.record(
         _channelId,
-        const RoomPositionReading.at(
-          id: 'f00d',
-          createdAt: 1150,
-          edge: 0.5,
-        ),
+        const RoomPositionReading.at(id: 'f00d', createdAt: 1150, edge: 0.5),
       );
       await tester.pumpWidget(testable(_WindowRelaySession(rows)));
       await tester.pumpAndSettle();

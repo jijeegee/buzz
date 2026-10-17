@@ -34,10 +34,9 @@ void main() {
     expect(restored?.id, 'm1');
     expect(restored?.createdAt, 42);
     expect(restored?.edge, 0.25);
-    expect(
-      prefs.getKeys(),
-      {'kuzz-room-position.v1:https://relay.example:alice'},
-    );
+    expect(prefs.getKeys(), {
+      'kuzz-room-position.v1:https://relay.example:alice',
+    });
   });
 
   test('a later save replaces the room position', () {

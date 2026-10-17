@@ -144,7 +144,8 @@ class RoomPositionStore {
       _prefs.setString(
         prefsKey,
         jsonEncode({
-          for (final entry in positions.entries) entry.key: entry.value.toJson(),
+          for (final entry in positions.entries)
+            entry.key: entry.value.toJson(),
         }),
       ),
     );

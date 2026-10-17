@@ -9,6 +9,13 @@ class _ThreadMessageList extends StatelessWidget {
   final ObjectRef<ScrollPosition?> activeScrollPosition;
   final ItemScrollController itemScrollController;
   final ItemPositionsListener itemPositionsListener;
+
+  /// Where the list is drawn from its first frame; a new epoch draws a new
+  /// list there.
+  final _ThreadListPlacement placement;
+
+  /// The reply the "New messages" divider goes above, by list index.
+  final int? newRepliesIndex;
   final double bottomInset;
   final List<TimelineMessage> replies;
   final AsyncValue<List<NostrEvent>> relayReplyState;
@@ -45,6 +52,8 @@ class _ThreadMessageList extends StatelessWidget {
     required this.activeScrollPosition,
     required this.itemScrollController,
     required this.itemPositionsListener,
+    required this.placement,
+    this.newRepliesIndex,
     required this.bottomInset,
     required this.replies,
     required this.relayReplyState,
@@ -91,9 +100,12 @@ class _ThreadMessageList extends StatelessWidget {
     return LaidOutViewportReporter(
       viewport: viewport,
       child: KeyboardDismissOnDrag(
+        key: ValueKey(placement.epoch),
         onUserScrollStart: onUserScrollStart,
         child: ScrollablePositionedList.builder(
           key: const ValueKey('thread-message-list'),
+          initialScrollIndex: placement.index,
+          initialAlignment: placement.alignment,
           itemScrollController: itemScrollController,
           itemPositionsListener: itemPositionsListener,
           // Bottom-anchored like the channel timeline: item 0 is the newest
@@ -249,6 +261,10 @@ class _ThreadMessageList extends StatelessWidget {
                 label: formatDayHeading(reply.createdAt),
                 dayTimestamp: reply.createdAt,
                 stickyDayTimestamp: stickyDayTimestamp,
+              ),
+            if (index == newRepliesIndex)
+              const NewMessagesDivider(
+                key: ValueKey('thread-new-messages-divider'),
               ),
             _ThreadMessage(
               message: reply,

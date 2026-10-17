@@ -123,8 +123,7 @@ class _MessageList extends HookConsumerWidget {
         index: targetIndex ?? 0,
         alignment: targetIndex == null || targetIndex == 0
             ? 0
-            : openedAt!.edge ??
-                  (openedAt!.isUnread ? topLine - 0.15 : 0.35),
+            : openedAt!.edge ?? (openedAt!.isUnread ? topLine - 0.15 : 0.35),
       );
       holdsNewerRows.value = false;
       awaitingPlacementLayout.value = true;
