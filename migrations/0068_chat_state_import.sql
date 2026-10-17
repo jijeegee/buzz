@@ -7,11 +7,11 @@
 --   'backfill' set by the one-off backfill; one upload may raise or lower it.
 --   'user'     set by the reader (a read, an upload, or their own reply).
 --   NULL       set by the server for someone else's activity (a mention).
--- Additive and nullable: no table rewrite.
+--
+-- Deploys together with 0067, before the chat-state switch is turned on and
+-- the backfill runs, so thread_follows is still empty here: no existing rows
+-- to mark, and the inline CHECK (the convention of every migration in this
+-- repo) validates nothing. A row with NULL read_origin and follow_origin
+-- 'backfill' is still read as backfill by `chat_import`.
 ALTER TABLE thread_follows ADD COLUMN read_origin TEXT
     CHECK (read_origin IN ('backfill', 'user'));
-
--- Rows the backfill wrote before this column existed hold backfilled read
--- positions.
-UPDATE thread_follows SET read_origin = 'backfill'
-WHERE follow_origin = 'backfill' AND read_origin IS NULL;

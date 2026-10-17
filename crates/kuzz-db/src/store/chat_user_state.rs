@@ -27,10 +27,11 @@ pub enum ReadPosition {
     Seq(i64),
     /// A message the reader has seen (32-byte id); its channel sequence is used.
     Event(Vec<u8>),
-    /// A time the reader has read up to (whole seconds, as clients store it):
-    /// the highest sequence of a live message created at or before it, among
-    /// the room's messages or the thread's root and replies. Nothing that
-    /// old means sequence 0.
+    /// A time the reader has read up to (whole seconds, as clients store it),
+    /// compared with each message's `created_at` (the signer's time, not the
+    /// relay's receive time): the highest sequence of a live message created
+    /// at or before it, among the room's messages or the thread's root and
+    /// replies. Nothing that old means sequence 0.
     At(DateTime<Utc>),
 }
 
@@ -106,7 +107,7 @@ impl FollowState {
 }
 
 /// The room a thread lives in, from the root event.
-pub(crate) async fn thread_channel(
+async fn thread_channel(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
     root: &[u8],
@@ -121,6 +122,57 @@ pub(crate) async fn thread_channel(
     .fetch_optional(&mut **tx)
     .await?
     .flatten())
+}
+
+/// What an id given as a thread root names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ThreadRoot {
+    /// No live message with that id in a room of this community (missing,
+    /// deleted, or not a message kind).
+    Unknown,
+    /// A live reply in this room, not a root.
+    Reply(Uuid),
+    /// A live message in this room that is not a reply.
+    Root(Uuid),
+}
+
+impl ThreadRoot {
+    /// The room, when the id names a live message.
+    pub(crate) fn channel(self) -> Option<Uuid> {
+        match self {
+            Self::Unknown => None,
+            Self::Reply(channel) | Self::Root(channel) => Some(channel),
+        }
+    }
+}
+
+/// Look up `root` as a thread root: a live message of a chat-list kind
+/// (`MESSAGE_KINDS`) in a room, and whether it is itself a reply. Callers
+/// check membership before telling a reply apart from a root.
+pub(crate) async fn thread_root(
+    tx: &mut Transaction<'_, Postgres>,
+    community: Uuid,
+    root: &[u8],
+) -> Result<ThreadRoot> {
+    let row: Option<(Uuid, bool)> = sqlx::query_as(
+        "SELECT e.channel_id, EXISTS ( \
+                SELECT 1 FROM thread_metadata r \
+                 WHERE r.community_id = $1 AND r.event_id = e.id AND r.depth > 0) \
+         FROM events e \
+         WHERE e.community_id = $1 AND e.id = $2 AND e.channel_id IS NOT NULL \
+           AND e.deleted_at IS NULL AND e.kind = ANY($3) \
+         ORDER BY e.created_at DESC LIMIT 1",
+    )
+    .bind(community)
+    .bind(root)
+    .bind(&MESSAGE_KINDS[..])
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(match row {
+        None => ThreadRoot::Unknown,
+        Some((channel, true)) => ThreadRoot::Reply(channel),
+        Some((channel, false)) => ThreadRoot::Root(channel),
+    })
 }
 
 /// Lock the reader's current membership row; `false` when not a member.
@@ -169,13 +221,23 @@ async fn event_seq(
     .await?)
 }
 
-/// Read position for "read up to time `at`": the highest channel sequence of
-/// a live message created at or before `at` in the room (`thread_root` none)
-/// or among the thread's root and replies, clamped to the channel's accepted
-/// sequence; 0 when there is none.
+/// How many of the room's newest messages at or before `at` (by `created_at`)
+/// [`seq_at`] considers.
+const SEQ_AT_ROOM_WINDOW: i64 = 64;
+
+/// Read position for "read up to time `at`", where time is the message's
+/// `created_at`: the time its signer put on it, not when the relay received
+/// it. The highest channel sequence of a live message created at or before
+/// `at`, in the room (`thread_root` none) or among the thread's root and
+/// replies, clamped to the channel's accepted sequence; 0 when there is none.
 ///
-/// The room scan walks the channel sequence index down from the newest
-/// message, so its cost is the number of messages after `at`.
+/// A room is resolved through the `(community_id, channel_id, created_at)`
+/// events index: the newest [`SEQ_AT_ROOM_WINDOW`] messages at or before
+/// `at`, highest sequence among them. The cost is bounded however old `at`
+/// is (an `at` before the first message finds nothing and gives 0). Exact
+/// unless a message signed further back than that window arrived later than
+/// all of it; such a message then counts as unread. A thread scans only its
+/// own root and replies.
 pub(crate) async fn seq_at(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -186,16 +248,19 @@ pub(crate) async fn seq_at(
     let seq: Option<i64> = match thread_root {
         None => {
             sqlx::query_scalar(
-                "SELECT e.channel_sequence FROM events e \
-                 WHERE e.community_id = $1 AND e.channel_id = $2 AND e.channel_sequence > 0 \
-                   AND e.created_at <= $3 AND e.kind = ANY($4) AND e.deleted_at IS NULL \
-                 ORDER BY e.channel_sequence DESC LIMIT 1",
+                "SELECT max(w.seq) FROM ( \
+                     SELECT e.channel_sequence AS seq FROM events e \
+                      WHERE e.community_id = $1 AND e.channel_id = $2 \
+                        AND e.created_at <= $3 AND e.channel_sequence > 0 \
+                        AND e.kind = ANY($4) AND e.deleted_at IS NULL \
+                      ORDER BY e.created_at DESC LIMIT $5) w",
             )
             .bind(community)
             .bind(channel_id)
             .bind(at)
             .bind(&MESSAGE_KINDS[..])
-            .fetch_optional(&mut **tx)
+            .bind(SEQ_AT_ROOM_WINDOW)
+            .fetch_one(&mut **tx)
             .await?
         }
         Some(root) => {
@@ -364,7 +429,8 @@ impl Db {
 
     /// Set `reader`'s explicit follow state for the thread rooted at `root`
     /// (`follow_origin = 'user'`). The reader must be a current member of the
-    /// root's room; `root` must not be a reply.
+    /// root's room; `root` must be a live message of a chat-list kind and not
+    /// a reply.
     #[datastore_span(name = "chat_thread_follow", system = "postgresql")]
     pub async fn chat_thread_follow(
         &self,
@@ -380,21 +446,14 @@ impl Db {
             observability::acquire_writer(&self.pool, observability::WriterOperation::EventWrite)
                 .await?;
         let mut tx = Transaction::begin(conn, None).await?;
-        let Some(channel_id) = thread_channel(&mut tx, community_uuid, root).await? else {
+        let found = thread_root(&mut tx, community_uuid, root).await?;
+        let Some(channel_id) = found.channel() else {
             return Ok(Err(ChatStateDenied::NotMember { index: 0 }));
         };
         if !lock_membership(&mut tx, community_uuid, channel_id, reader).await? {
             return Ok(Err(ChatStateDenied::NotMember { index: 0 }));
         }
-        let is_reply: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM thread_metadata \
-                            WHERE community_id = $1 AND event_id = $2 AND depth > 0)",
-        )
-        .bind(community_uuid)
-        .bind(root)
-        .fetch_one(&mut *tx)
-        .await?;
-        if is_reply {
+        if matches!(found, ThreadRoot::Reply(_)) {
             return Ok(Err(ChatStateDenied::NotThreadRoot));
         }
         // A new row starts caught up: read up to the thread's latest reply.

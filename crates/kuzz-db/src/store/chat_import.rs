@@ -12,8 +12,13 @@
 //!   row for gets one, caught up to the thread's latest reply, or to the same
 //!   request's read position for it.
 //!
-//! Items that cannot apply (not a member, unknown thread, already the reader's
-//! own state) are skipped one by one with a reason; the rest still apply, in
+//! A read time is matched against each message's `created_at`, the time its
+//! signer put on it (not when the relay received it).
+//!
+//! A thread root must be a live message of a chat-list kind in a room; a
+//! reply id is `not_thread_root`. Items that cannot apply (not a member,
+//! unknown thread, already the reader's own state) are skipped one by one
+//! with a reason, before any read time is resolved; the rest still apply, in
 //! one transaction.
 //!
 //! Read positions and follows are private per-user state: never log them.
@@ -27,7 +32,7 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::chat_user_state::{
-    lock_membership, seq_at, thread_channel, FollowState, MarkReadTarget,
+    lock_membership, seq_at, thread_root, FollowState, MarkReadTarget, ThreadRoot,
 };
 use crate::{observability, Db, Result};
 
@@ -59,7 +64,8 @@ pub enum ImportSkip {
     /// The reader is not a current member of the item's room in this
     /// community.
     NotMember,
-    /// No thread root with that id in this community.
+    /// No live message of a chat-list kind with that id in a room of this
+    /// community.
     UnknownThread,
     /// The id names a reply, not a thread root.
     NotThreadRoot,
@@ -183,24 +189,36 @@ impl Db {
         }
         let mut thread_at: HashMap<Vec<u8>, DateTime<Utc>> = HashMap::new();
 
-        let mut steps: Vec<(Uuid, Option<Vec<u8>>, Step)> = Vec::new();
+        // (room, thread root, step, the id is a reply). Unknown roots keep the
+        // default `unknown_thread` result.
+        let mut steps: Vec<(Uuid, Option<Vec<u8>>, Step, bool)> = Vec::new();
         for (index, read) in reads.iter().enumerate() {
             match &read.target {
-                MarkReadTarget::Channel(channel) => steps.push((*channel, None, Step::Read(index))),
+                MarkReadTarget::Channel(channel) => {
+                    steps.push((*channel, None, Step::Read(index), false))
+                }
                 MarkReadTarget::Thread(root) => {
-                    // Unknown roots keep the default `unknown_thread` result.
-                    if let Some(channel) = thread_channel(&mut tx, community, root).await? {
+                    let found = thread_root(&mut tx, community, root).await?;
+                    if let Some(channel) = found.channel() {
                         let at = room_at.get(&channel).map_or(read.at, |r| (*r).max(read.at));
                         let entry = thread_at.entry(root.clone()).or_insert(at);
                         *entry = (*entry).max(at);
-                        steps.push((channel, Some(root.clone()), Step::Read(index)));
+                        let is_reply = matches!(found, ThreadRoot::Reply(_));
+                        steps.push((channel, Some(root.clone()), Step::Read(index), is_reply));
                     }
                 }
             }
         }
         for (index, follow) in follows.iter().enumerate() {
-            if let Some(channel) = thread_channel(&mut tx, community, &follow.root).await? {
-                steps.push((channel, Some(follow.root.clone()), Step::Follow(index)));
+            let found = thread_root(&mut tx, community, &follow.root).await?;
+            if let Some(channel) = found.channel() {
+                let is_reply = matches!(found, ThreadRoot::Reply(_));
+                steps.push((
+                    channel,
+                    Some(follow.root.clone()),
+                    Step::Follow(index),
+                    is_reply,
+                ));
             }
         }
         steps.sort();
@@ -208,7 +226,7 @@ impl Db {
         let mut members: HashMap<Uuid, bool> = HashMap::new();
         let mut inserted: Inserted = HashMap::new();
         let mut followed_roots: HashSet<Vec<u8>> = HashSet::new();
-        for (channel, root, step) in steps {
+        for (channel, root, step, is_reply) in steps {
             let member = match members.get(&channel) {
                 Some(member) => *member,
                 None => {
@@ -217,8 +235,11 @@ impl Db {
                     member
                 }
             };
+            // Membership first: a non-member learns nothing about the id.
             let result = if !member {
                 ImportItemResult::skip(Some(channel), ImportSkip::NotMember)
+            } else if is_reply {
+                ImportItemResult::skip(Some(channel), ImportSkip::NotThreadRoot)
             } else {
                 match (step, root.as_deref()) {
                     (Step::Read(index), None) => {
@@ -262,7 +283,9 @@ impl Db {
 }
 
 /// A room read applies while the reader has no read of their own there: the
-/// backfill's position, or none yet.
+/// backfill's position, or none yet. The origin is checked (on the row the
+/// membership lock already holds) before the time is resolved, so a skipped
+/// item costs one row read.
 async fn import_room_read(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -270,28 +293,63 @@ async fn import_room_read(
     reader: &[u8],
     at: DateTime<Utc>,
 ) -> Result<ImportItemResult> {
+    let origin: Option<String> = sqlx::query_scalar(
+        "SELECT read_origin FROM channel_members \
+         WHERE community_id = $1 AND channel_id = $2 AND pubkey = $3",
+    )
+    .bind(community)
+    .bind(channel)
+    .bind(reader)
+    .fetch_one(&mut **tx)
+    .await?;
+    if origin.as_deref() == Some("user") {
+        return Ok(ImportItemResult::skip(
+            Some(channel),
+            ImportSkip::AlreadySet,
+        ));
+    }
     let seq = seq_at(tx, community, channel, None, at).await?;
-    let stored: Option<Option<i64>> = sqlx::query_scalar(
+    let read_seq: Option<i64> = sqlx::query_scalar(
         "UPDATE channel_members SET read_seq = $4, read_origin = 'user' \
          WHERE community_id = $1 AND channel_id = $2 AND pubkey = $3 \
-           AND read_origin IS DISTINCT FROM 'user' \
          RETURNING read_seq",
     )
     .bind(community)
     .bind(channel)
     .bind(reader)
     .bind(seq)
-    .fetch_optional(&mut **tx)
+    .fetch_one(&mut **tx)
     .await?;
-    Ok(match stored {
-        Some(read_seq) => ImportItemResult::applied(channel, read_seq),
-        None => ImportItemResult::skip(Some(channel), ImportSkip::AlreadySet),
-    })
+    Ok(ImportItemResult::applied(channel, read_seq))
+}
+
+/// The reader's follow row for `root`, locked: (follow origin, whether its
+/// read position is still the backfill's). A NULL read origin on a
+/// backfilled follow counts as backfill.
+async fn lock_follow_row(
+    tx: &mut Transaction<'_, Postgres>,
+    community: Uuid,
+    reader: &[u8],
+    root: &[u8],
+) -> Result<Option<(String, bool)>> {
+    Ok(sqlx::query_as(
+        "SELECT follow_origin, \
+                COALESCE(read_origin, \
+                         CASE WHEN follow_origin = 'backfill' THEN 'backfill' END) \
+                    IS NOT DISTINCT FROM 'backfill' \
+         FROM thread_follows \
+         WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3 \
+         FOR UPDATE",
+    )
+    .bind(community)
+    .bind(root)
+    .bind(reader)
+    .fetch_optional(&mut **tx)
+    .await?)
 }
 
 /// A thread read applies to a row whose read position is still the
-/// backfill's. Rows the backfill wrote before `read_origin` existed count as
-/// backfill too.
+/// backfill's. The row is checked before the time is resolved.
 async fn import_thread_read(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -305,41 +363,38 @@ async fn import_thread_read(
         // This request's follow created the row at this read position.
         return Ok(ImportItemResult::applied(channel, *read_seq));
     }
+    match lock_follow_row(tx, community, reader, root).await? {
+        None => {
+            return Ok(ImportItemResult::skip(
+                Some(channel),
+                ImportSkip::NotFollowed,
+            ))
+        }
+        Some((_, false)) => {
+            return Ok(ImportItemResult::skip(
+                Some(channel),
+                ImportSkip::AlreadySet,
+            ))
+        }
+        Some((_, true)) => {}
+    }
     let seq = seq_at(tx, community, channel, Some(root), at).await?;
-    let stored: Option<Option<i64>> = sqlx::query_scalar(
+    let read_seq: Option<i64> = sqlx::query_scalar(
         "UPDATE thread_follows SET read_seq = $4, read_origin = 'user', updated_at = NOW() \
          WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3 \
-           AND COALESCE(read_origin, \
-                        CASE WHEN follow_origin = 'backfill' THEN 'backfill' END) = 'backfill' \
          RETURNING read_seq",
     )
     .bind(community)
     .bind(root)
     .bind(reader)
     .bind(seq)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if let Some(read_seq) = stored {
-        return Ok(ImportItemResult::applied(channel, read_seq));
-    }
-    let has_row: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM thread_follows \
-                        WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3)",
-    )
-    .bind(community)
-    .bind(root)
-    .bind(reader)
     .fetch_one(&mut **tx)
     .await?;
-    let reason = if has_row {
-        ImportSkip::AlreadySet
-    } else {
-        ImportSkip::NotFollowed
-    };
-    Ok(ImportItemResult::skip(Some(channel), reason))
+    Ok(ImportItemResult::applied(channel, read_seq))
 }
 
 /// A follow overwrites only a backfilled row; with no row it inserts one.
+/// The row is checked before any read time is resolved.
 #[allow(clippy::too_many_arguments)]
 async fn import_follow(
     tx: &mut Transaction<'_, Postgres>,
@@ -351,38 +406,31 @@ async fn import_follow(
     read_at: Option<DateTime<Utc>>,
     inserted: &mut Inserted,
 ) -> Result<ImportItemResult> {
-    let is_reply: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM thread_metadata \
-                        WHERE community_id = $1 AND event_id = $2 AND depth > 0)",
-    )
-    .bind(community)
-    .bind(root)
-    .fetch_one(&mut **tx)
-    .await?;
-    if is_reply {
-        return Ok(ImportItemResult::skip(
-            Some(channel),
-            ImportSkip::NotThreadRoot,
-        ));
-    }
-    // The read position stays backfill, so the same upload's read (or a
-    // later one) may still correct it.
-    let updated = sqlx::query(
-        "UPDATE thread_follows \
-         SET follow_state = $4, follow_origin = 'user', \
-             read_origin = COALESCE(read_origin, 'backfill'), updated_at = NOW() \
-         WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3 \
-           AND follow_origin = 'backfill'",
-    )
-    .bind(community)
-    .bind(root)
-    .bind(reader)
-    .bind(state.as_str())
-    .execute(&mut **tx)
-    .await?
-    .rows_affected();
-    if updated > 0 {
-        return Ok(ImportItemResult::applied(channel, None));
+    match lock_follow_row(tx, community, reader, root).await? {
+        Some((origin, _)) if origin == "backfill" => {
+            // The read position stays backfill, so the same upload's read
+            // (or a later one) may still correct it.
+            sqlx::query(
+                "UPDATE thread_follows \
+                 SET follow_state = $4, follow_origin = 'user', \
+                     read_origin = COALESCE(read_origin, 'backfill'), updated_at = NOW() \
+                 WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3",
+            )
+            .bind(community)
+            .bind(root)
+            .bind(reader)
+            .bind(state.as_str())
+            .execute(&mut **tx)
+            .await?;
+            return Ok(ImportItemResult::applied(channel, None));
+        }
+        Some(_) => {
+            return Ok(ImportItemResult::skip(
+                Some(channel),
+                ImportSkip::AlreadySet,
+            ))
+        }
+        None => {}
     }
     let read_seq = match read_at {
         Some(at) => Some(seq_at(tx, community, channel, Some(root), at).await?),

@@ -582,6 +582,22 @@ async fn items_that_cannot_apply_are_skipped_one_by_one() {
     let reply = f.reply(room, &root, &other, 101, Vec::new()).await;
     let hidden = f.post(closed_room, &other, 102).await;
     let foreign_root = other_tenant.post(theirs, &other, 103).await;
+    // A deleted message and a non-message kind are not thread roots.
+    let deleted = f.post(room, &other, 104).await;
+    sqlx::query("UPDATE events SET deleted_at = NOW() WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(id(&deleted))
+        .execute(&f.pool)
+        .await
+        .expect("delete root");
+    let reaction = EventBuilder::new(Kind::Custom(7), "+")
+        .tags([Tag::parse(["h", &room.to_string()]).expect("h tag")])
+        .custom_created_at(Timestamp::from(105))
+        .sign_with_keys(&other)
+        .expect("signature");
+    f.db.insert_event_with_thread_metadata_and_chat_state(f.scope, &reaction, Some(room), None)
+        .await
+        .expect("reaction write");
 
     let outcome = f
         .import(
@@ -591,6 +607,8 @@ async fn items_that_cannot_apply_are_skipped_one_by_one() {
                 room_read(theirs, 200),
                 thread_read(&foreign_root, 200),
                 thread_read(&root, 200),
+                thread_read(&reply, 200),
+                thread_read(&deleted, 200),
                 room_read(room, 200),
             ],
             &[
@@ -598,6 +616,8 @@ async fn items_that_cannot_apply_are_skipped_one_by_one() {
                 follow(&id(&foreign_root), FollowState::Followed),
                 follow(&id(&reply), FollowState::Followed),
                 follow(&[9; 32], FollowState::Followed),
+                follow(&id(&deleted), FollowState::Followed),
+                follow(&id(&reaction), FollowState::Followed),
             ],
         )
         .await;
@@ -608,6 +628,8 @@ async fn items_that_cannot_apply_are_skipped_one_by_one() {
             Some(ImportSkip::NotMember),
             Some(ImportSkip::UnknownThread),
             Some(ImportSkip::NotFollowed),
+            Some(ImportSkip::NotThreadRoot),
+            Some(ImportSkip::UnknownThread),
             None,
         ]
     );
@@ -618,8 +640,24 @@ async fn items_that_cannot_apply_are_skipped_one_by_one() {
             Some(ImportSkip::UnknownThread),
             Some(ImportSkip::NotThreadRoot),
             Some(ImportSkip::UnknownThread),
+            Some(ImportSkip::UnknownThread),
+            Some(ImportSkip::UnknownThread),
         ]
     );
+    // The explicit follow request uses the same root rule.
+    for gone in [&deleted, &reaction] {
+        assert_eq!(
+            f.db.chat_thread_follow(
+                f.scope,
+                &reader.public_key(),
+                &id(gone),
+                FollowState::Followed
+            )
+            .await
+            .expect("follow"),
+            Err(crate::chat_user_state::ChatStateDenied::NotMember { index: 0 })
+        );
+    }
     assert_eq!(outcome.follows[0].channel_id, Some(closed_room));
     assert!(f.follow_row(&reader, &hidden).await.is_none());
     assert_eq!(
@@ -682,6 +720,21 @@ async fn a_reply_ends_backfill_for_its_thread() {
         vec![Some(ImportSkip::AlreadySet)]
     );
     assert_eq!(f.follow_row(&reader, &root).await.expect("row").0, "auto");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_room_time_matches_signer_time_including_late_arrivals() {
+    let f = Fixture::new().await;
+    let (reader, other) = (Keys::generate(), Keys::generate());
+    let room = f.room(&other, &[&reader]).await;
+    for ts in 100..104 {
+        f.post(room, &other, ts).await;
+    }
+    // Signed at 101 but received last: the highest sequence at or before 101.
+    let late = f.post(room, &other, 101).await;
+    let outcome = f.import(&reader, &[room_read(room, 101)], &[]).await;
+    assert_eq!(outcome.reads[0].read_seq, Some(f.seq(&late).await));
 }
 
 #[tokio::test]
