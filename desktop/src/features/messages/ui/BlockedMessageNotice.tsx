@@ -1,6 +1,8 @@
 import { EyeOff } from "lucide-react";
 
-export const BLOCKED_MESSAGE_LABEL = "Message from a blocked user";
+import { BLOCKED_MESSAGE_LABEL } from "../lib/blockedMessage";
+
+export { BLOCKED_MESSAGE_LABEL };
 
 /**
  * Stands in for a message whose author I blocked (shared channels still

@@ -14,6 +14,7 @@ import { ChatListLiveSync } from "@/features/chats/chatListSync";
 import { dmVisibilityQueryKey } from "@/features/channels/useHiddenDmIds";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
 import { mergeTimelineCacheMessages } from "@/features/messages/hooks";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
 import {
   getChannelIdFromTags,
@@ -166,6 +167,7 @@ export function useLiveChannelUpdates(
   options: UseLiveChannelUpdatesOptions = {},
 ) {
   const queryClient = useQueryClient();
+  const { isBlocked } = useBlockedPeople();
   const normalizedCurrentPubkey =
     options.currentPubkey?.trim().toLowerCase() ?? "";
   const seenMentionEventIdsRef = React.useRef(new Set<string>());
@@ -313,9 +315,13 @@ export function useLiveChannelUpdates(
     }
 
     const isDmChannel = dmChannelMap.has(channelId);
+    // Someone I blocked: the message still lands in the timeline (folded
+    // there), but never in the chat list, the inbox, a badge or an alert.
+    const fromBlocked = isBlocked(event.pubkey);
     // Mention kinds are already in the channel stream. Keep Home's narrower
     // kind/recipient policy without opening a second REQ for every channel.
     if (
+      !fromBlocked &&
       options.onLiveMention &&
       HOME_MENTION_EVENT_KINDS.some((kind) => kind === event.kind) &&
       isExternalMentionEvent(event, normalizedCurrentPubkey) &&
@@ -336,23 +342,25 @@ export function useLiveChannelUpdates(
       updateChannelLastMessageAt(queryClient, channelId, event.created_at);
     }
     // The chat list changes only the row this message belongs to.
-    queryClient.setQueryData<InboxSummaryState>(
-      INBOX_SUMMARY_QUERY_KEY,
-      (current) =>
-        current &&
-        applyLiveEventToInboxSummary(
-          current,
-          event,
-          { id: channelId, channelType: isDmChannel ? "dm" : "stream" },
-          normalizedCurrentPubkey,
-        ),
-    );
-    chatListSyncRef.current?.onMessage(
-      event,
-      channelId,
-      normalizedCurrentPubkey,
-      hasMentionForEvent(event, normalizedCurrentPubkey),
-    );
+    if (!fromBlocked) {
+      queryClient.setQueryData<InboxSummaryState>(
+        INBOX_SUMMARY_QUERY_KEY,
+        (current) =>
+          current &&
+          applyLiveEventToInboxSummary(
+            current,
+            event,
+            { id: channelId, channelType: isDmChannel ? "dm" : "stream" },
+            normalizedCurrentPubkey,
+          ),
+      );
+      chatListSyncRef.current?.onMessage(
+        event,
+        channelId,
+        normalizedCurrentPubkey,
+        hasMentionForEvent(event, normalizedCurrentPubkey),
+      );
+    }
 
     // Let the caller observe self-authored trigger events (e.g. to track
     // thread participation) before the author-exclusion guard filters them.
@@ -369,6 +377,7 @@ export function useLiveChannelUpdates(
     // own outgoing messages should never make a channel unread, and
     // reactions / edits / system messages aren't "new content".
     const isExternalTriggerEvent =
+      !fromBlocked &&
       isUnreadTriggerKind &&
       (normalizedCurrentPubkey.length === 0 ||
         event.pubkey.toLowerCase() !== normalizedCurrentPubkey);
@@ -384,7 +393,7 @@ export function useLiveChannelUpdates(
     // DM alerts and every other notification side effect share this delivery
     // decision, preventing a replayed event from escaping through a second
     // callback path.
-    handleDmEvent(event, isFirstNotificationDelivery);
+    if (!fromBlocked) handleDmEvent(event, isFirstNotificationDelivery);
 
     if (isExternalTriggerEvent && isFirstNotificationDelivery) {
       const shouldNotify = shouldNotifyForEvent(
