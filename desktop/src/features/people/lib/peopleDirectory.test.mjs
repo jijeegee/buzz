@@ -31,7 +31,7 @@ const base = {
 };
 
 test("Friends are only people I added, A-Z, never me or any agent", () => {
-  const { favorites, friends, others } = buildPeopleDirectory({
+  const { favorites, friends, inChannels } = buildPeopleDirectory({
     ...base,
     friendIds: new Set(["cc", "aa", "me", "bot2"]),
   });
@@ -40,25 +40,65 @@ test("Friends are only people I added, A-Z, never me or any agent", () => {
     ["aa", "cc"],
   );
   assert.deepEqual(favorites, []);
-  assert.deepEqual(others, []);
+  assert.deepEqual(inChannels, []);
 });
 
-test("typing a name also finds people who are not friends yet", () => {
-  const { friends, others } = buildPeopleDirectory({
+test("the search box filters only friends; others come only from my channels", () => {
+  // The whole directory is known locally, yet a non-friend never shows
+  // unless the server returned them as sharing a channel with me.
+  const { friends, inChannels } = buildPeopleDirectory({
     ...base,
-    filter: "b",
-    friendIds: new Set(["bb"]),
+    filter: "a",
+    friendIds: new Set(["cc"]),
   });
   assert.deepEqual(
     friends.map((u) => u.pubkey),
-    ["bb"],
+    ["cc"],
   );
-  // bob is already a friend; agents named "Bot" never show.
-  assert.deepEqual(others, []);
-  const all = buildPeopleDirectory({ ...base, filter: "a" });
+  assert.deepEqual(inChannels, []);
+  const shared = buildPeopleDirectory({
+    ...base,
+    filter: "a",
+    friendIds: new Set(["cc"]),
+    sharedPeople: [
+      user("DD", "dana"),
+      user("cc", "carol"),
+      user("aa", "Alice"),
+      user("me", "Me"),
+      user("bot3", "A Bot", { isAgent: true }),
+      user("dd", "dana"),
+    ],
+  });
+  // carol is already a friend; me, agents and duplicates never show.
   assert.deepEqual(
-    all.others.map((u) => u.pubkey),
-    ["aa", "cc"],
+    shared.inChannels.map((u) => u.pubkey),
+    ["aa", "dd"],
+  );
+  const idle = buildPeopleDirectory({
+    ...base,
+    sharedPeople: [user("dd", "dana")],
+  });
+  assert.deepEqual(idle.inChannels, []);
+});
+
+test("blocked people never show in any section", () => {
+  const isBlocked = (pubkey) => pubkey === "aa" || pubkey === "dd";
+  const { favorites, friends, inChannels } = buildPeopleDirectory({
+    ...base,
+    favoriteIds: new Set(["aa"]),
+    filter: "a",
+    friendIds: new Set(["aa", "cc"]),
+    isBlocked,
+    sharedPeople: [user("dd", "dana"), user("ee", "eva")],
+  });
+  assert.deepEqual(favorites, []);
+  assert.deepEqual(
+    friends.map((u) => u.pubkey),
+    ["cc"],
+  );
+  assert.deepEqual(
+    inChannels.map((u) => u.pubkey),
+    ["ee"],
   );
 });
 
@@ -115,5 +155,5 @@ test("favorites and friends also come from batch profiles and obey the filter", 
     filtered.favorites.map((u) => u.pubkey),
     ["zz"],
   );
-  assert.deepEqual(filtered.others, []);
+  assert.deepEqual(filtered.inChannels, []);
 });
