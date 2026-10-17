@@ -145,9 +145,11 @@ pub const KIND_DEVICE_ROBOT: u32 = 30181;
 /// Shared across the ingest write path (NIP-ER `not_before` validation) and the
 /// read path (REQ/COUNT/subscription author-only filtering).
 ///
-/// Currently a tiny linear set. If this grows past ~4 kinds, convert to a
+/// Currently a tiny linear set. If this grows much further, convert to a
 /// compile-time bitset or sorted array with binary search for hot-path use.
 pub const AUTHOR_ONLY_KINDS: &[u32] = &[
+    // Friends list: private to its owner (Kuzz friends/block plan).
+    KIND_CONTACT_LIST,
     KIND_EVENT_REMINDER,
     KIND_PUSH_LEASE,
     KIND_PRIVATE_MANAGED_AGENT,
