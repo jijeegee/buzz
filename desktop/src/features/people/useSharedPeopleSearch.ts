@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { useIdentityQuery } from "@/shared/api/hooks";
 import { personToSearchResult, searchSharedPeople } from "@/shared/api/people";
 import type { UserSearchResult } from "@/shared/api/types";
 
@@ -8,6 +9,9 @@ import type { UserSearchResult } from "@/shared/api/types";
 export const SHARED_PEOPLE_DEBOUNCE_MS = 250;
 const SHARED_PEOPLE_LIMIT = 50;
 const NO_PEOPLE: UserSearchResult[] = [];
+
+/** Every account's channel-people searches (invalidated on block changes). */
+export const SHARED_PEOPLE_ROOT = ["people-shared"] as const;
 
 /** `value`, once it has stopped changing for `delayMs`. */
 export function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -32,10 +36,12 @@ export function useSharedPeopleSearch(
     query.trim().toLowerCase(),
     SHARED_PEOPLE_DEBOUNCE_MS,
   );
-  const active = enabled && needle.length > 0;
+  // Results depend on the account (its channels, its blocks).
+  const account = useIdentityQuery().data?.pubkey?.toLowerCase();
+  const active = enabled && Boolean(account) && needle.length > 0;
   const result = useQuery({
     enabled: active,
-    queryKey: ["people-shared", needle],
+    queryKey: [...SHARED_PEOPLE_ROOT, account ?? "", needle],
     queryFn: async () =>
       (await searchSharedPeople(needle, SHARED_PEOPLE_LIMIT)).map(
         personToSearchResult,

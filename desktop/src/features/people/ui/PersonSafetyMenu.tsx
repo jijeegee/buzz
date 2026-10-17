@@ -51,7 +51,7 @@ export function PersonSafetyMenu({
   const { isBlocked } = useBlockedPeople();
   const identityQuery = useIdentityQuery();
   const blockPerson = useBlockPersonMutation(identityQuery.data?.pubkey);
-  const unblockPerson = useUnblockPersonMutation();
+  const unblockPerson = useUnblockPersonMutation(identityQuery.data?.pubkey);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [reportOpen, setReportOpen] = React.useState(false);
   const blocked = isBlocked(pubkey);

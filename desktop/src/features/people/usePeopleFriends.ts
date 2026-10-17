@@ -97,7 +97,7 @@ export function dmPeople({
  */
 export function useSeedFriendsFromDms(currentPubkey: string | undefined) {
   const queryClient = useQueryClient();
-  const { isBlocked } = useBlockedPeople();
+  const { isBlocked, ready: blockedReady } = useBlockedPeople();
   const channelsQuery = useChannelsQuery();
   const alreadySeeded =
     !currentPubkey || localStorage.getItem(seededKey(currentPubkey)) === "1";
@@ -117,6 +117,9 @@ export function useSeedFriendsFromDms(currentPubkey: string | undefined) {
   const started = React.useRef(false);
   React.useEffect(() => {
     if (alreadySeeded || started.current || !currentPubkey) return;
+    // Never seed before the block list loaded: blocked people would come
+    // back as friends. If it fails to load, seeding waits for next time.
+    if (!blockedReady) return;
     if (!channelsQuery.data) return;
     if (participants.length > 0 && !profilesQuery.data) return;
     started.current = true;
@@ -149,6 +152,7 @@ export function useSeedFriendsFromDms(currentPubkey: string | undefined) {
     })();
   }, [
     alreadySeeded,
+    blockedReady,
     channelsQuery.data,
     currentPubkey,
     isBlocked,

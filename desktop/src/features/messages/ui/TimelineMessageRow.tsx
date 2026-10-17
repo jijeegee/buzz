@@ -191,16 +191,19 @@ export function MessageRowItem({
             videoReviewContext={videoReviewContext}
           />
         )}
-        <MessageThreadSummaryRow
-          alignEnd={message.accent === true}
-          depth={message.depth}
-          message={message}
-          onOpenThread={onOpenThread}
-          showDepthGuides={false}
-          summary={summary}
-          summaryIndentOffsetRem={-THREAD_REPLY_ROW_MARGIN_INLINE_REM}
-          unreadCount={threadUnreadCounts?.get(message.id)}
-        />
+        {/* A folded message hides its thread summary too. */}
+        {folded ? null : (
+          <MessageThreadSummaryRow
+            alignEnd={message.accent === true}
+            depth={message.depth}
+            message={message}
+            onOpenThread={onOpenThread}
+            showDepthGuides={false}
+            summary={summary}
+            summaryIndentOffsetRem={-THREAD_REPLY_ROW_MARGIN_INLINE_REM}
+            unreadCount={threadUnreadCounts?.get(message.id)}
+          />
+        )}
         {footer}
       </div>
     );

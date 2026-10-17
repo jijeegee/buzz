@@ -3,7 +3,10 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { useSubmitReportMutation } from "@/features/moderation/hooks";
-import { useBlockPersonMutation } from "@/features/people/BlockedPeopleContext";
+import {
+  BLOCKED_BUT_STILL_FRIEND,
+  useBlockPersonMutation,
+} from "@/features/people/BlockedPeopleContext";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { ReportType } from "@/features/moderation/hooks";
 import { Button } from "@/shared/ui/button";
@@ -52,6 +55,17 @@ export function reportDoneMessage(blocked: boolean): string {
   return blocked
     ? "Report sent to moderators and the person is blocked"
     : "Report submitted to community moderators";
+}
+
+/**
+ * Toast text when the report went through but "Also block" did not finish.
+ * A block that worked but left them a friend is still a block.
+ */
+export function reportBlockFailureMessage(error: unknown): string {
+  if (error instanceof Error && error.message === BLOCKED_BUT_STILL_FRIEND) {
+    return "Report sent and the person is blocked. Couldn't remove them from your friends; remove them in People.";
+  }
+  return "Report sent, but blocking didn't work. Try blocking them again.";
 }
 
 /**
@@ -109,10 +123,7 @@ export function ReportMessageDialog({
           }
           blockPerson.mutate(authorPubkey, {
             onSuccess: () => toast.success(reportDoneMessage(true)),
-            onError: (error) =>
-              toast.error(
-                `Report sent, but blocking failed: ${reportErrorMessage(error)}`,
-              ),
+            onError: (error) => toast.warning(reportBlockFailureMessage(error)),
             onSettled: () => onOpenChange(false),
           });
         },

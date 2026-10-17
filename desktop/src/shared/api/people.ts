@@ -6,6 +6,17 @@ import type { UserSearchResult } from "@/shared/api/types";
  * on the active community's server.
  */
 
+/**
+ * The error every people command returns when this community has no Google
+ * sign-in. Must match `NOT_SIGNED_IN` in `src-tauri/src/auth/people.rs`.
+ */
+export const NOT_SIGNED_IN = "Sign in with Google to use this.";
+
+/** Whether a people command failed only because nobody is signed in. */
+export function isNotSignedIn(error: unknown): boolean {
+  return error instanceof Error && error.message === NOT_SIGNED_IN;
+}
+
 /** One person found by Kuzz ID/email or in my channels. Never an email. */
 export type PersonInfo = {
   pubkey: string;

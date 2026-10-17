@@ -13,6 +13,7 @@ import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   getPeopleSettings,
+  isNotSignedIn,
   type PeopleSettings,
   setDiscoverable,
   setKuzzId,
@@ -126,7 +127,10 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
     if (problem || normalizeKuzzId(draft) === savedId) return;
     saveId.mutate(normalizeKuzzId(draft));
   };
-  const unavailable = settingsQuery.isError;
+  // Only a missing sign-in asks to sign in; anything else can be retried.
+  const notSignedIn =
+    settingsQuery.isError && isNotSignedIn(settingsQuery.error);
+  const loadFailed = settingsQuery.isError && !notSignedIn;
 
   return (
     <SettingsOptionGroup
@@ -185,10 +189,24 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
             role={idError ? "alert" : undefined}
           >
             {idError ??
-              (unavailable
+              (notSignedIn
                 ? "Sign in with Google to set your Kuzz ID."
-                : "3 to 32 lowercase letters, numbers or _.")}
+                : loadFailed
+                  ? "Couldn't load your Kuzz ID."
+                  : "3 to 32 lowercase letters, numbers or _.")}
           </p>
+          {loadFailed ? (
+            <Button
+              data-testid="settings-people-retry"
+              disabled={settingsQuery.isFetching}
+              onClick={() => void settingsQuery.refetch()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Try again
+            </Button>
+          ) : null}
         </form>
       </SettingsOptionRow>
       <SettingsOptionRow>
@@ -220,7 +238,7 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
 
 function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
   const blockedQuery = useBlockedPeopleQuery(pubkey);
-  const unblock = useUnblockPersonMutation();
+  const unblock = useUnblockPersonMutation(pubkey);
   const pubkeys = React.useMemo(
     () =>
       (blockedQuery.data ?? []).map((person) => person.pubkey.toLowerCase()),
