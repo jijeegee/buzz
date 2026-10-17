@@ -2,6 +2,7 @@ import { createRootRoute } from "@tanstack/react-router";
 
 import { AppShell } from "@/app/AppShell";
 import { HuddlePresenceProvider } from "@/features/huddle/HuddlePresenceContext";
+import { BlockedPeopleProvider } from "@/features/people/BlockedPeopleContext";
 import { ScopedPeopleFavoritesProvider } from "@/features/people/PeopleFavoritesContext";
 import { UserStatusLookupProvider } from "@/features/user-status/UserStatusLookupContext";
 
@@ -10,7 +11,9 @@ function RootRoute() {
     <HuddlePresenceProvider>
       <UserStatusLookupProvider>
         <ScopedPeopleFavoritesProvider>
-          <AppShell />
+          <BlockedPeopleProvider>
+            <AppShell />
+          </BlockedPeopleProvider>
         </ScopedPeopleFavoritesProvider>
       </UserStatusLookupProvider>
     </HuddlePresenceProvider>

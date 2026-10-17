@@ -56,12 +56,15 @@ function useInvalidateModerationReads() {
     });
 }
 
-/** Submit a NIP-56 report. Does not touch the mod-gated read caches. */
+/**
+ * Submit a NIP-56 report about a message (`eventId`) or, without one, a
+ * person. Does not touch the mod-gated read caches.
+ */
 export function useSubmitReportMutation() {
   return useMutation({
     mutationFn: (input: {
       authorPubkey: string;
-      eventId: string;
+      eventId?: string;
       reportType: ReportType;
       note?: string;
     }) => submitReport(input),

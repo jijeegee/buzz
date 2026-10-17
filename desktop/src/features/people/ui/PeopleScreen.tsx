@@ -2,6 +2,7 @@ import * as React from "react";
 import { MessageSquare, Star, UserMinus, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { usePeopleFavorites } from "@/features/people/PeopleFavoritesContext";
 import { useMessagePerson } from "@/features/people/useMessagePerson";
 import { usePeopleFriends } from "@/features/people/usePeopleFriends";
@@ -11,6 +12,7 @@ import { useIdentityQuery } from "@/shared/api/hooks";
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
+import { PersonSafetyMenu } from "./PersonSafetyMenu";
 
 const PEOPLE_PANEL_SEARCH_KEYS = ["profile"] as const;
 
@@ -53,6 +55,7 @@ function PersonProfile({
   const profileQuery = useUserProfileQuery(pubkey);
   const favorites = usePeopleFavorites();
   const friends = usePeopleFriends(currentPubkey);
+  const { isBlocked } = useBlockedPeople();
   const onMessage = useMessagePerson();
   const [pending, setPending] = React.useState(false);
   const profile = profileQuery.data;
@@ -61,6 +64,7 @@ function PersonProfile({
   const isFavorite = favorites?.isFavorite(pubkey) ?? false;
   const isFriend = friends.isFriend(pubkey);
   const isSelf = currentPubkey?.toLowerCase() === pubkey;
+  const blocked = isBlocked(pubkey);
 
   const toggleFriend = () => {
     setPending(true);
@@ -128,7 +132,7 @@ function PersonProfile({
           </Button>
           <Button
             data-testid="people-profile-friend"
-            disabled={pending || friends.isLoading}
+            disabled={pending || friends.isLoading || (blocked && !isFriend)}
             onClick={toggleFriend}
             variant={isFriend ? "ghost" : "outline"}
           >
@@ -139,7 +143,16 @@ function PersonProfile({
             )}
             {isFriend ? "Remove friend" : "Add friend"}
           </Button>
+          <PersonSafetyMenu name={name} pubkey={pubkey} />
         </div>
+      ) : null}
+      {!isSelf && blocked ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="people-profile-blocked"
+        >
+          You blocked this person.
+        </p>
       ) : null}
     </div>
   );
