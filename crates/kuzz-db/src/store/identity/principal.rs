@@ -26,6 +26,8 @@ pub struct PrincipalRecord {
     pub disabled_at: Option<DateTime<Utc>>,
     /// Scheduled purge time after self-deletion.
     pub purge_after: Option<DateTime<Utc>>,
+    /// Whether others may find this account by exact username or email.
+    pub discoverable: bool,
 }
 
 /// Result of resolving an OIDC identity to a principal at login.
@@ -48,6 +50,8 @@ pub struct ProfileUpdate {
     pub avatar_url: Option<Option<String>>,
     /// New `@username` (`Some(None)` clears it).
     pub username: Option<Option<String>>,
+    /// New "find me by ID or email" setting.
+    pub discoverable: Option<bool>,
 }
 
 fn record_from_row(row: &sqlx::postgres::PgRow) -> Result<PrincipalRecord> {
@@ -61,6 +65,7 @@ fn record_from_row(row: &sqlx::postgres::PgRow) -> Result<PrincipalRecord> {
         username: row.try_get("username")?,
         disabled_at: row.try_get("disabled_at")?,
         purge_after: row.try_get("purge_after")?,
+        discoverable: row.try_get("discoverable")?,
     })
 }
 
@@ -277,7 +282,7 @@ pub(super) async fn get_principal(
 ) -> Result<Option<PrincipalRecord>> {
     let mut tx = begin(pool).await?;
     let row = sqlx::query(
-        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after          FROM principals WHERE id = $1",
+        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable          FROM principals WHERE id = $1",
     )
     .bind(id.as_bytes().as_slice())
     .fetch_optional(&mut *tx)
@@ -309,9 +314,10 @@ pub(super) async fn update_profile(
         "UPDATE principals SET \
            display_name = COALESCE($2, display_name), \
            avatar_url = CASE WHEN $3 THEN $4 ELSE avatar_url END, \
-           username = CASE WHEN $5 THEN $6 ELSE username END \
+           username = CASE WHEN $5 THEN $6 ELSE username END, \
+           discoverable = COALESCE($7, discoverable) \
          WHERE id = $1 AND disabled_at IS NULL \
-         RETURNING id, kind, display_name, avatar_url, username, disabled_at, purge_after",
+         RETURNING id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable",
     )
     .bind(id.as_bytes().as_slice())
     .bind(update.display_name.as_deref())
@@ -319,6 +325,7 @@ pub(super) async fn update_profile(
     .bind(update.avatar_url.clone().flatten())
     .bind(update.username.is_some())
     .bind(update.username.clone().flatten())
+    .bind(update.discoverable)
     .fetch_optional(&mut *tx)
     .await;
     let row = match result {
@@ -454,7 +461,7 @@ async fn lock_profile_publish(
         .execute(&mut *tx)
         .await?;
     let record = sqlx::query(
-        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after \
+        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable \
          FROM principals WHERE id = $1",
     )
     .bind(id.as_bytes().as_slice())

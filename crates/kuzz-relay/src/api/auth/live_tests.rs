@@ -21,6 +21,7 @@ use crate::identity::AuthTokenConfig;
 use crate::state::AppState;
 
 mod audio;
+mod friends;
 mod invites;
 mod key_backup;
 mod operators;

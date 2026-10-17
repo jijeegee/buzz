@@ -18,6 +18,7 @@ mod bots;
 mod key_backup;
 mod oidc;
 mod operators;
+mod people;
 mod session;
 
 #[cfg(test)]
@@ -68,7 +69,17 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         )
         .route("/auth/sessions/revoke-others", post(session::revoke_others))
         .route("/auth/me", get(session::me))
-        .route("/auth/profile", patch(session::update_profile))
+        .route(
+            "/auth/profile",
+            patch(session::update_profile).post(session::update_profile),
+        )
+        .route("/auth/blocks", get(people::list_blocks))
+        .route(
+            "/auth/blocks/{pubkey}",
+            put(people::put_block).delete(people::delete_block),
+        )
+        .route("/auth/people/lookup", get(people::lookup))
+        .route("/auth/people/shared", get(people::shared))
         .route("/auth/account", delete(session::delete_account))
         .route("/auth/bots", post(bots::create))
         .route("/auth/bots/revoke-all", post(bots::revoke_all))

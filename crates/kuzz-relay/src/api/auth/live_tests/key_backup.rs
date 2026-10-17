@@ -853,3 +853,102 @@ async fn confirmed_signup_is_only_for_key_backup_logins() {
         .unwrap();
     assert_eq!(response.status(), 400);
 }
+
+/// Key-backup accounts (Kuzz's main account type) use the friends/block
+/// endpoints under their messaging key, and may set only account-level
+/// profile fields over the session.
+#[tokio::test]
+#[ignore = "requires isolated Postgres + Redis with current migrations"]
+async fn key_accounts_block_and_are_found_by_their_messaging_key() {
+    let inst = custody_instance().await;
+    let first = key_login(&inst, &uuid::Uuid::new_v4().to_string()).await;
+    let key = nostr::Keys::generate();
+    let signed = proof(&inst, &first, &key).await;
+    assert_eq!(initialize(&inst, &first, &key, &signed).await.status(), 200);
+    let other = key_login(&inst, &uuid::Uuid::new_v4().to_string()).await;
+    let other_key = nostr::Keys::generate();
+    let signed = proof(&inst, &other, &other_key).await;
+    assert_eq!(
+        initialize(&inst, &other, &other_key, &signed)
+            .await
+            .status(),
+        200
+    );
+
+    let name = format!("key_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
+    let response = inst
+        .patch("/auth/profile")
+        .bearer_auth(&first.access)
+        .json(&json!({"username": name, "discoverable": true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let response = inst
+        .patch("/auth/profile")
+        .bearer_auth(&first.access)
+        .json(&json!({"display_name": "Server Side"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        403,
+        "signed profile owns the display name"
+    );
+
+    let found: Value = inst
+        .get_with("/auth/people/lookup", &[("q", &format!("@{name}"))])
+        .bearer_auth(&other.access)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(found["pubkey"], key.public_key().to_hex());
+
+    let target = other_key.public_key().to_hex();
+    let response = inst
+        .http
+        .put(inst.url(&format!("/auth/blocks/{target}")))
+        .header("host", &inst.host)
+        .bearer_auth(&first.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 204);
+    let list: Value = inst
+        .get("/auth/blocks")
+        .bearer_auth(&first.access)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list["blocked"][0]["pubkey"], target.as_str());
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let blocker: Vec<u8> = sqlx::query_scalar(
+        "SELECT ub.blocker FROM user_blocks ub JOIN communities c ON c.id = ub.community_id \
+         WHERE c.host = $1",
+    )
+    .bind(&inst.host)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(blocker, key.public_key().to_bytes().to_vec());
+    // Blocking yourself by messaging key is refused.
+    let me = key.public_key().to_hex();
+    let response = inst
+        .http
+        .put(inst.url(&format!("/auth/blocks/{me}")))
+        .header("host", &inst.host)
+        .bearer_auth(&first.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400);
+}

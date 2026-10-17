@@ -162,6 +162,16 @@ macro_rules! mentions_reader {
     };
 }
 
+/// Not a DM message from someone the reader blocked (silent block). `m` is
+/// the reader's membership row for the same room.
+macro_rules! not_blocked_dm {
+    () => {
+        "NOT (m.channel_type = 'dm' AND EXISTS (
+            SELECT 1 FROM user_blocks ub
+            WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))"
+    };
+}
+
 /// Room unread candidates for page row `p`.
 macro_rules! room_unread_from {
     () => {
@@ -171,7 +181,9 @@ macro_rules! room_unread_from {
               AND e.channel_sequence > COALESCE(p.read_seq, 0)
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
               AND ",
-            main_timeline!()
+            main_timeline!(),
+            " AND ",
+            not_blocked_dm!()
         )
     };
 }
@@ -187,7 +199,9 @@ macro_rules! thread_unread_from {
               AND e.channel_sequence > COALESCE(p.read_seq, 0)
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
               AND ",
-            not_marker!()
+            not_marker!(),
+            " AND ",
+            not_blocked_dm!()
         )
     };
 }
@@ -272,6 +286,8 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
         WHERE e.community_id = $1 AND e.channel_id = p.channel_id
           AND e.kind = ANY($3) AND e.deleted_at IS NULL AND "#,
     main_timeline!(),
+    " AND ",
+    not_blocked_dm!(),
     r#"
         ORDER BY e.channel_sequence DESC LIMIT 1
     ) ELSE (
@@ -283,6 +299,8 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
         WHERE r.community_id = $1 AND r.root_event_id = p.root_id AND r.depth > 0
           AND e.kind = ANY($3) AND e.deleted_at IS NULL AND "#,
     not_marker!(),
+    " AND ",
+    not_blocked_dm!(),
     r#"
         ORDER BY e.channel_sequence DESC LIMIT 1
     ) END AS latest,
