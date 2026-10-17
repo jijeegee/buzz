@@ -392,7 +392,17 @@ async fn handle_dm_open(
             warn!(channel = %channel.id, "DM open: discovery emission failed: {e}");
         }
 
+        let silent = opener_blockers(tenant, state, &self_bytes).await;
         for participant in &all_bytes {
+            if silent.skips(participant) {
+                // Their membership starts hidden. Refresh their hidden-DM
+                // snapshot so their clients drop the DM that the channel's
+                // member list (kind:39002) would otherwise surface.
+                if let Err(e) = publish_dm_visibility_snapshot(tenant, state, participant).await {
+                    warn!("DM open: blocker visibility snapshot failed: {e}");
+                }
+                continue;
+            }
             if let Err(e) = emit_membership_notification(
                 tenant,
                 state,
@@ -426,6 +436,42 @@ async fn handle_dm_open(
             })
         ),
     })
+}
+
+/// Participants who blocked a DM's opener: their membership starts hidden
+/// (see `kuzz_db::dm::create_dm`), they get no "added" notification and their
+/// hidden-DM snapshot is republished, so the opener cannot tell. A failed
+/// lookup treats every other participant this way (fail closed); anyone not
+/// actually hidden still sees the DM via the chats list.
+enum OpenerBlockers {
+    Known(crate::blocks::PubkeySet, Vec<u8>),
+    Unknown(Vec<u8>),
+}
+
+impl OpenerBlockers {
+    fn skips(&self, participant: &[u8]) -> bool {
+        match self {
+            Self::Known(blockers, opener) => {
+                participant != opener.as_slice()
+                    && <[u8; 32]>::try_from(participant).is_ok_and(|pk| blockers.contains(&pk))
+            }
+            Self::Unknown(opener) => participant != opener.as_slice(),
+        }
+    }
+}
+
+async fn opener_blockers(
+    tenant: &TenantContext,
+    state: &AppState,
+    opener: &[u8],
+) -> OpenerBlockers {
+    match state.blockers_of_cached(tenant.community(), opener).await {
+        Ok(blockers) => OpenerBlockers::Known(blockers, opener.to_vec()),
+        Err(e) => {
+            warn!("DM open: block list lookup failed; skipping notifications: {e}");
+            OpenerBlockers::Unknown(opener.to_vec())
+        }
+    }
 }
 
 async fn handle_dm_add_member(
@@ -536,7 +582,19 @@ async fn handle_dm_add_member(
             warn!(channel = %new_channel.id, "DM add_member: discovery emission failed: {e}");
         }
 
+        let silent = opener_blockers(tenant, state, &self_bytes).await;
         for participant_bytes in &all_bytes {
+            if silent.skips(participant_bytes) {
+                // Their membership starts hidden. Refresh their hidden-DM
+                // snapshot so their clients drop the DM that the channel's
+                // member list (kind:39002) would otherwise surface.
+                if let Err(e) =
+                    publish_dm_visibility_snapshot(tenant, state, participant_bytes).await
+                {
+                    warn!("DM add_member: blocker visibility snapshot failed: {e}");
+                }
+                continue;
+            }
             if let Err(e) = emit_membership_notification(
                 tenant,
                 state,

@@ -42,6 +42,7 @@ import {
   ProfilePersonaPrimaryActions,
   ProfilePrimaryActions,
 } from "@/features/profile/ui/UserProfilePrimaryActions";
+import { PersonSafetyMenu } from "@/features/people/ui/PersonSafetyMenu";
 import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import { BotIdenticon } from "@/features/messages/ui/BotIdenticon";
 import type { ManagedAgent, RelayAgent } from "@/shared/api/types";
@@ -469,6 +470,15 @@ export function ProfileSummaryView({
           unfollowMutation={unfollowMutation}
           wavePending={isWavePending}
         />
+      ) : null}
+
+      {!isSelf && !isBot && pubkey ? (
+        <div
+          className="-mt-4 flex justify-end"
+          data-testid="user-profile-safety-actions"
+        >
+          <PersonSafetyMenu name={displayName} pubkey={pubkey} />
+        </div>
       ) : null}
 
       {/* Tab-independent restart badge — visible on every tab so the user

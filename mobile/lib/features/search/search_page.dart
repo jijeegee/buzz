@@ -26,6 +26,7 @@ import '../forum/forum_thread_page.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import 'recent_searches_provider.dart';
+import '../people/blocked_users_provider.dart';
 import 'search_provider.dart';
 
 enum _SearchFilter { all, messages, channels, people }
@@ -478,9 +479,14 @@ class _SearchBody extends ConsumerWidget {
     final showMessages =
         filter == _SearchFilter.all || filter == _SearchFilter.messages;
 
+    final blockedPubkeys = ref.watch(blockedPubkeysProvider);
+    final userResults = [
+      for (final user in state.userResults)
+        if (!blockedPubkeys.contains(user.pubkey.toLowerCase())) user,
+    ];
     final hasAnyResults =
         state.channelResults.isNotEmpty ||
-        state.userResults.isNotEmpty ||
+        userResults.isNotEmpty ||
         state.messageResults.isNotEmpty;
     void recordResultSelection() =>
         ref.read(recentSearchesProvider.notifier).record(state.query);
@@ -516,9 +522,9 @@ class _SearchBody extends ConsumerWidget {
             channels: state.channelResults,
             onResultSelected: recordResultSelection,
           ),
-        if (showPeople && state.userResults.isNotEmpty)
+        if (showPeople && userResults.isNotEmpty)
           _PeopleSection(
-            users: state.userResults,
+            users: userResults,
             onResultSelected: recordResultSelection,
           ),
         if (showMessages && state.messageResults.isNotEmpty)

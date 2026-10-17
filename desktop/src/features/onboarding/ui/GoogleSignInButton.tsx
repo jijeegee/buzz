@@ -10,6 +10,7 @@ import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
+import { TermsAgreementLine } from "./TermsAgreementLine";
 
 /**
  * Secondary Google sign-in for accounts created by an earlier Kuzz version
@@ -99,6 +100,7 @@ export function GoogleSignInButton({
         {pending ? "Signing in…" : "Sign in with Google"}
       </Button>
       <GoogleLoginProgress login={login} />
+      <TermsAgreementLine />
       {status.keyBackupSupported &&
       !status.keyBackup &&
       !status.legacyTokenAccount &&

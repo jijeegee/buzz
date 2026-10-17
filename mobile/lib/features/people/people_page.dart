@@ -1,126 +1,124 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../shared/mentions/agent_identity_provider.dart';
+import '../../shared/auth/account/account_api.dart';
 import '../../shared/profile/user_cache_provider.dart';
-import '../../shared/relay/relay.dart';
+import '../../shared/profile/user_profile.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
-import '../../shared/widgets/modal_presentation.dart';
+import '../../shared/widgets/kuzz_search_field.dart';
 import '../channels/channel_management_provider.dart';
-import '../profile/user_profile_sheet.dart';
-import '../pulse/pulse_actions.dart';
-import '../pulse/pulse_models.dart';
 import '../pulse/pulse_provider.dart';
+import 'add_friend_sheet.dart';
+import 'blocked_users_provider.dart';
+import 'friends_provider.dart';
+import 'people_agents.dart';
+import 'people_favorites.dart';
+import 'person_page.dart';
 import 'person_row.dart';
 
-/// The People tab, as desktop's: Friends (people I added, my follow list)
-/// A–Z, narrowed by name. Typing a name also finds others so they can be
-/// added. People only; agents live in the Agents tab. Tapping someone opens
-/// their profile, which has Message.
-class PeoplePage extends HookConsumerWidget {
-  const PeoplePage({this.tabReselection, super.key});
+/// How long typing must pause before "In your channels" asks the server.
+const peopleSearchDebounce = Duration(milliseconds: 300);
 
-  /// Notifies this page when its already-selected tab is tapped again.
-  final ValueListenable<int>? tabReselection;
+/// People who share a channel with me and match [query] (server side). Empty
+/// without an account or for an empty query. Never retried: a failure shows
+/// as such and the next keystroke asks again.
+final sharedPeopleProvider = FutureProvider.autoDispose
+    .family<List<PersonSummary>, String>((ref, query) async {
+      final q = query.trim();
+      final origin = ref.watch(accountOriginProvider);
+      if (q.isEmpty || origin == null) return const [];
+      return ref.watch(accountApiProvider(origin)).sharedPeople(q);
+    }, retry: (_, _) => null);
+
+bool _matches(String query, UserProfile? profile, String name) {
+  final q = query.toLowerCase();
+  if (name.toLowerCase().contains(q)) return true;
+  final handle = profile?.nip05Handle?.toLowerCase();
+  return handle != null && handle.contains(q);
+}
+
+/// The People tab: favorites and friends, a search over both plus the
+/// people I share channels with, and "Add friend" by exact ID or email.
+class PeoplePage extends HookConsumerWidget {
+  const PeoplePage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final me = ref.watch(myPubkeyProvider)?.toLowerCase() ?? '';
-    final contactsAsync = ref.watch(contactListProvider(me));
-    final agents = ref.watch(knownAgentPubkeysProvider);
-    final filterController = useTextEditingController();
-    final filter = useState('');
-    final debounced = useState('');
+    final controller = useTextEditingController();
+    final focusNode = useFocusNode();
+    final query = useState('');
+    final debouncedQuery = useState('');
+    final isEditing = useState(false);
+
     useEffect(() {
-      final timer = Timer(const Duration(milliseconds: 250), () {
-        debounced.value = filter.value.trim().toLowerCase();
+      final q = query.value.trim();
+      if (q.isEmpty) {
+        debouncedQuery.value = '';
+        return null;
+      }
+      final timer = Timer(peopleSearchDebounce, () {
+        debouncedQuery.value = q;
       });
       return timer.cancel;
-    }, [filter.value]);
-    final busy = useState(<String>{});
+    }, [query.value]);
 
-    final friendIds = [
-      for (final entry in contactsAsync.value ?? const <ContactEntry>[])
-        if (entry.pubkey.toLowerCase() != me &&
-            !agents.contains(entry.pubkey.toLowerCase()))
-          entry.pubkey.toLowerCase(),
-    ];
     useEffect(() {
-      if (friendIds.isEmpty) return null;
-      Future.microtask(
-        () => ref.read(userCacheProvider.notifier).preload(friendIds),
-      );
-      return null;
-    }, [friendIds.join(',')]);
-    final profiles = ref.watch(userCacheProvider);
-    String labelOf(String pubkey) {
-      final name = profiles[pubkey]?.displayName?.trim();
-      if (name != null && name.isNotEmpty) return name;
-      return pubkey.length > 8 ? pubkey.substring(0, 8) : pubkey;
-    }
+      void onFocus() => isEditing.value = focusNode.hasFocus;
+      focusNode.addListener(onFocus);
+      return () => focusNode.removeListener(onFocus);
+    }, [focusNode]);
 
-    final needle = debounced.value;
-    final friends =
-        [
-          for (final pubkey in friendIds)
-            if (profiles[pubkey]?.isAgent != true &&
-                (needle.isEmpty ||
-                    labelOf(pubkey).toLowerCase().contains(needle)))
-              pubkey,
-        ]..sort(
-          (a, b) =>
-              labelOf(a).toLowerCase().compareTo(labelOf(b).toLowerCase()),
-        );
-    final friendSet = friendIds.toSet();
-    final othersAsync = needle.isEmpty
-        ? null
-        : ref.watch(relayDirectorySearchProvider(needle));
-    final others = [
-      for (final user in othersAsync?.value ?? const <DirectoryUser>[])
-        if (!user.isAgent &&
-            !agents.contains(user.pubkey.toLowerCase()) &&
-            user.pubkey.toLowerCase() != me &&
-            !friendSet.contains(user.pubkey.toLowerCase()))
-          user,
-    ];
+    final me = ref.watch(currentPubkeyProvider)?.toLowerCase();
+    final blocked = ref.watch(blockedPubkeysProvider);
+    final agents = ref.watch(peopleAgentPubkeysProvider);
+    final favorites = ref.watch(peopleFavoritesProvider);
+    final friendsAsync = ref.watch(friendIdsProvider);
+    final cache = ref.watch(userCacheProvider);
 
-    Future<void> setFriend(String pubkey, bool add) async {
-      busy.value = {...busy.value, pubkey};
-      try {
-        add ? await followUser(ref, pubkey) : await unfollowUser(ref, pubkey);
-      } catch (error) {
-        if (context.mounted) {
-          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            SnackBar(
-              content: Text(
-                add ? 'Could not add friend' : 'Could not remove friend',
-              ),
-            ),
-          );
-        }
-      } finally {
-        busy.value = {...busy.value}..remove(pubkey);
+    bool visible(String pk) {
+      if (pk == me || blocked.contains(pk) || agents.contains(pk)) {
+        return false;
       }
+      return !(cache[pk]?.isAgent ?? false);
     }
 
-    void showFriendActions(String pubkey) {
-      showKuzzModalBottomSheet<void>(
-        context: context,
-        builder: (sheetContext) => SafeArea(
-          child: ListTile(
-            leading: const Icon(Icons.person_remove_outlined),
-            title: const Text('Remove friend'),
-            onTap: () {
-              Navigator.of(sheetContext).pop();
-              unawaited(setFriend(pubkey, false));
-            },
+    final friendIds = (friendsAsync.value ?? const <String>{})
+        .where(visible)
+        .toList();
+    final favoriteIds = favorites.where(visible).toList();
+
+    useEffect(
+      () {
+        final ids = {...friendIds, ...favoriteIds};
+        if (ids.isNotEmpty) {
+          ref.read(userCacheProvider.notifier).preload(ids.toList());
+        }
+        return null;
+      },
+      [
+        Object.hashAllUnordered(friendIds),
+        Object.hashAllUnordered(favoriteIds),
+      ],
+    );
+
+    String nameOf(String pk) => personName(cache[pk]);
+    int byName(String a, String b) =>
+        nameOf(a).toLowerCase().compareTo(nameOf(b).toLowerCase());
+    friendIds.sort(byName);
+    favoriteIds.sort(byName);
+
+    void openPerson(String pk, [PersonSummary? summary]) {
+      unawaited(
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PersonPage(pubkey: pk, summary: summary),
           ),
         ),
       );
@@ -131,13 +129,141 @@ class PeoplePage extends HookConsumerWidget {
       fontWeight: FontWeight.w600,
       color: navigationPrimaryForeground(context),
     );
-    final topSectionHeight = frostedAppBarHeight(
+    final topHeight = frostedAppBarHeight(
       context,
       titleStyle: headerTitleStyle,
       bottomHeight: Grid.xxs,
     );
 
-    final loading = contactsAsync.isLoading && !contactsAsync.hasValue;
+    final searching = query.value.trim().isNotEmpty;
+    final children = <Widget>[
+      Padding(
+        padding: const EdgeInsets.fromLTRB(
+          Grid.gutter,
+          Grid.xxs,
+          Grid.gutter,
+          Grid.xxs,
+        ),
+        child: SizedBox(
+          height: kuzzSearchIdleFieldHeight,
+          child: KuzzSearchField(
+            fieldKey: const Key('people-search'),
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Search friends',
+            iconColor: navigationPrimaryForeground(context),
+            inputColor: navigationPrimaryForeground(context),
+            placeholderColor: navigationSecondaryForeground(context),
+            surfaceColor: navigationSearchSurface(context),
+            isEditing: isEditing.value,
+            reduceMotion: MediaQuery.disableAnimationsOf(context),
+            motionDuration: const Duration(milliseconds: 160),
+            autocorrect: false,
+            enableSuggestions: false,
+            onTap: focusNode.requestFocus,
+            onChanged: (value) => query.value = value,
+            onSubmitted: (_) {},
+          ),
+        ),
+      ),
+    ];
+
+    if (searching) {
+      final q = query.value.trim();
+      final local =
+          {
+              ...favoriteIds,
+              ...friendIds,
+            }.where((pk) => _matches(q, cache[pk], nameOf(pk))).toList()
+            ..sort(byName);
+      children
+        ..add(_SectionHeader(title: 'Friends'))
+        ..addAll(
+          local.isEmpty
+              ? [const _EmptyLine(text: 'No friends match')]
+              : [
+                  for (final pk in local)
+                    PersonRow(
+                      key: ValueKey('people-friend-$pk'),
+                      pubkey: pk,
+                      isFavorite: favorites.contains(pk),
+                      onTap: () => openPerson(pk),
+                    ),
+                ],
+        )
+        ..add(
+          _SharedResults(
+            query: debouncedQuery.value,
+            pending: debouncedQuery.value != q,
+            exclude: {...local},
+            visible: visible,
+            favorites: favorites,
+            onOpen: openPerson,
+          ),
+        );
+    } else {
+      if (favoriteIds.isNotEmpty) {
+        children
+          ..add(const _SectionHeader(title: 'Favorites'))
+          ..addAll([
+            for (final pk in favoriteIds)
+              PersonRow(
+                key: ValueKey('people-favorite-$pk'),
+                pubkey: pk,
+                isFavorite: true,
+                onTap: () => openPerson(pk),
+              ),
+          ]);
+      }
+      children.add(
+        _SectionHeader(
+          title: friendsAsync.hasValue
+              ? 'Friends · ${friendIds.length}'
+              : 'Friends',
+        ),
+      );
+      if (friendsAsync.isLoading && !friendsAsync.hasValue) {
+        children.add(
+          const Padding(
+            padding: EdgeInsets.all(Grid.sm),
+            child: Center(
+              child: KuzzLoadingIndicator(
+                size: 24,
+                semanticLabel: 'Loading friends',
+              ),
+            ),
+          ),
+        );
+      } else if (friendsAsync.hasError && !friendsAsync.hasValue) {
+        children.add(
+          _EmptyLine(
+            text: 'Couldn’t load your friends',
+            action: TextButton(
+              onPressed: () => ref.invalidate(contactListProvider),
+              child: const Text('Retry'),
+            ),
+          ),
+        );
+      } else if (friendIds.isEmpty) {
+        children.add(
+          const _EmptyLine(
+            key: Key('people-friends-empty'),
+            text: 'No friends yet. Tap Add friend to find someone.',
+          ),
+        );
+      } else {
+        children.addAll([
+          for (final pk in friendIds)
+            PersonRow(
+              key: ValueKey('people-friend-$pk'),
+              pubkey: pk,
+              isFavorite: favorites.contains(pk),
+              onTap: () => openPerson(pk),
+            ),
+        ]);
+      }
+    }
+
     return FrostedScaffold(
       backgroundColor: context.colors.surface,
       appBar: FrostedAppBar(
@@ -147,97 +273,171 @@ class PeoplePage extends HookConsumerWidget {
         bottomDividerOpacity: 0.07,
         title: Text('People', style: headerTitleStyle),
         titleStyle: headerTitleStyle,
+        actions: [
+          IconButton(
+            key: const Key('people-add-friend'),
+            tooltip: 'Add friend',
+            color: navigationPrimaryForeground(context),
+            icon: const Icon(LucideIcons.userPlus),
+            onPressed: () => unawaited(showAddFriendSheet(context)),
+          ),
+        ],
         bottomHeight: Grid.xxs,
         bottom: const SizedBox.expand(),
       ),
-      body: ListView(
-        key: const ValueKey('people-list'),
-        padding: EdgeInsets.only(
-          top: topSectionHeight,
-          bottom: MediaQuery.paddingOf(context).bottom + Grid.xs,
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: ListView(
+          key: const Key('people-list'),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.only(top: topHeight, bottom: Grid.lg),
+          children: children,
         ),
-        children: [
-          PeopleFilterField(
-            controller: filterController,
-            hint: 'Find people',
-            onChanged: (value) => filter.value = value,
-          ),
-          PeopleSectionTitle('Friends · ${friends.length}'),
-          if (loading)
-            const Padding(
-              padding: EdgeInsets.all(Grid.sm),
-              child: Center(child: KuzzLoadingIndicator()),
-            )
-          else if (friends.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: Grid.gutter,
-                vertical: Grid.xs,
-              ),
-              child: Text(
-                needle.isEmpty
-                    ? 'No friends yet. Type a name to find people and add them.'
-                    : 'No friends match that name.',
-                style: context.textTheme.bodySmall?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
-            )
-          else
-            for (final pubkey in friends)
-              PersonRow(
-                key: ValueKey('people-friend-$pubkey'),
-                pubkey: pubkey,
-                name: labelOf(pubkey),
-                subtitle: 'Friend',
-                onTap: () => showUserProfileSheet(context, pubkey),
-                onLongPress: () => showFriendActions(pubkey),
-              ),
-          if (needle.isNotEmpty) ...[
-            const PeopleSectionTitle('Others'),
-            if (othersAsync?.isLoading == true && others.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(Grid.sm),
-                child: Center(child: KuzzLoadingIndicator()),
-              )
-            else if (others.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Grid.gutter,
-                  vertical: Grid.xs,
-                ),
-                child: Text(
-                  'No one else matches that name.',
-                  style: context.textTheme.bodySmall?.copyWith(
-                    color: context.colors.onSurfaceVariant,
-                  ),
-                ),
-              )
-            else
-              for (final user in others)
-                PersonRow(
-                  key: ValueKey('people-other-${user.pubkey}'),
-                  pubkey: user.pubkey.toLowerCase(),
-                  name: user.label,
-                  subtitle: 'Member',
-                  onTap: () =>
-                      showUserProfileSheet(context, user.pubkey.toLowerCase()),
-                  trailing: OutlinedButton(
-                    key: ValueKey('people-add-${user.pubkey}'),
-                    onPressed: busy.value.contains(user.pubkey.toLowerCase())
-                        ? null
-                        : () => unawaited(
-                            setFriend(user.pubkey.toLowerCase(), true),
-                          ),
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    child: const Text('Add'),
-                  ),
-                ),
-          ],
-        ],
       ),
     );
   }
+}
+
+/// "In your channels": server matches not already shown as friends.
+class _SharedResults extends ConsumerWidget {
+  const _SharedResults({
+    required this.query,
+    required this.pending,
+    required this.exclude,
+    required this.visible,
+    required this.favorites,
+    required this.onOpen,
+  });
+
+  final String query;
+  final bool pending;
+  final Set<String> exclude;
+  final bool Function(String) visible;
+  final Set<String> favorites;
+  final void Function(String, [PersonSummary?]) onOpen;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(accountOriginProvider) == null) {
+      return const SizedBox.shrink();
+    }
+    final header = const _SectionHeader(title: 'In your channels');
+    if (pending || query.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [header, const _Searching()],
+      );
+    }
+    final result = ref.watch(sharedPeopleProvider(query));
+    final List<Widget> body;
+    if (result.isLoading && !result.hasValue) {
+      body = [const _Searching()];
+    } else if (result.hasError && !result.hasValue) {
+      final error = result.error;
+      body = [
+        _EmptyLine(
+          key: const Key('people-shared-error'),
+          text: error is AccountApiException && error.statusCode == 429
+              ? 'Too many searches. Wait a minute and try again.'
+              : 'Couldn’t search your channels',
+          action: TextButton(
+            onPressed: () => ref.invalidate(sharedPeopleProvider(query)),
+            child: const Text('Retry'),
+          ),
+        ),
+      ];
+    } else {
+      final people = [
+        for (final person in result.value ?? const <PersonSummary>[])
+          if (!exclude.contains(person.pubkey) && visible(person.pubkey))
+            person,
+      ];
+      body = people.isEmpty
+          ? [const _EmptyLine(text: 'No one else matches')]
+          : [
+              for (final person in people)
+                PersonRow(
+                  key: ValueKey('people-shared-${person.pubkey}'),
+                  pubkey: person.pubkey,
+                  summary: person,
+                  isFavorite: favorites.contains(person.pubkey),
+                  subtitle: person.username == null
+                      ? null
+                      : '@${person.username}',
+                  onTap: () => onOpen(person.pubkey, person),
+                ),
+            ];
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [header, ...body],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Grid.gutter,
+        Grid.xs,
+        Grid.gutter,
+        Grid.half,
+      ),
+      child: Text(
+        title,
+        style: context.textTheme.labelLarge?.copyWith(
+          color: navigationSectionForeground(context),
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ),
+  );
+}
+
+class _EmptyLine extends StatelessWidget {
+  const _EmptyLine({super.key, required this.text, this.action});
+
+  final String text;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(
+      horizontal: Grid.gutter,
+      vertical: Grid.xxs,
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            text,
+            style: context.textTheme.bodyMedium?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+        ?action,
+      ],
+    ),
+  );
+}
+
+class _Searching extends StatelessWidget {
+  const _Searching();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.all(Grid.xs),
+    child: Center(
+      child: KuzzLoadingIndicator(size: 20, semanticLabel: 'Searching'),
+    ),
+  );
 }

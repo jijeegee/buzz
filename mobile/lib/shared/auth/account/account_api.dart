@@ -6,7 +6,8 @@ import 'package:http/http.dart' as http;
 import '../token/token.dart';
 
 /// A failed account request (`/auth/me`, `/auth/profile`, `/auth/devices`,
-/// `/auth/sessions/*`, `/auth/bots/*`, `/auth/account`).
+/// `/auth/sessions/*`, `/auth/bots/*`, `/auth/account`, `/auth/blocks`,
+/// `/auth/people/*`).
 class AccountApiException implements Exception {
   const AccountApiException(this.message, {this.statusCode, this.code});
 
@@ -32,6 +33,7 @@ class AccountProfile {
     this.avatarUrl,
     this.username,
     this.email,
+    this.discoverable = true,
   });
 
   factory AccountProfile.fromJson(Map<String, Object?> json) {
@@ -45,12 +47,15 @@ class AccountProfile {
     final avatar = json['avatar_url'];
     final username = json['username'];
     final email = json['email'];
+    final discoverable = json['discoverable'];
     return AccountProfile(
       principalId: principal,
       displayName: name is String ? name : '',
       avatarUrl: avatar is String && avatar.isNotEmpty ? avatar : null,
       username: username is String && username.isNotEmpty ? username : null,
       email: email is String && email.isNotEmpty ? email : null,
+      // Relays before people lookup send none; the account default is on.
+      discoverable: discoverable is bool ? discoverable : true,
     );
   }
 
@@ -62,6 +67,65 @@ class AccountProfile {
   /// The Google email of this session's account; relays before it was
   /// added to `/auth/me` send none.
   final String? email;
+
+  /// Whether other people can find this account by its exact Kuzz ID or
+  /// email (`GET /auth/people/lookup`).
+  final bool discoverable;
+}
+
+/// Another person as the people endpoints return them
+/// (`/auth/people/lookup`, `/auth/people/shared`). Never carries an email.
+class PersonSummary {
+  const PersonSummary({
+    required this.pubkey,
+    this.displayName,
+    this.avatarUrl,
+    this.username,
+  });
+
+  factory PersonSummary.fromJson(Map<String, Object?> json) {
+    final pubkey = json['pubkey'];
+    if (pubkey is! String || !_hexPubkey.hasMatch(pubkey.toLowerCase())) {
+      throw const AccountApiException('Malformed relay response: pubkey');
+    }
+    final name = json['display_name'];
+    final avatar = json['avatar_url'];
+    final username = json['username'];
+    return PersonSummary(
+      pubkey: pubkey.toLowerCase(),
+      displayName: name is String && name.trim().isNotEmpty ? name : null,
+      avatarUrl: avatar is String && avatar.isNotEmpty ? avatar : null,
+      username: username is String && username.isNotEmpty ? username : null,
+    );
+  }
+
+  /// Lowercase hex public key.
+  final String pubkey;
+  final String? displayName;
+  final String? avatarUrl;
+
+  /// The person's Kuzz ID, when they set one.
+  final String? username;
+}
+
+/// One person this account blocked (`GET /auth/blocks`).
+class BlockedPerson {
+  const BlockedPerson({required this.pubkey, this.createdAt});
+
+  final String pubkey;
+  final DateTime? createdAt;
+}
+
+final _hexPubkey = RegExp(r'^[0-9a-f]{64}$');
+
+/// Lowercase [pubkey]; throws [ArgumentError] unless it is 64 hex
+/// characters, so a malformed key never reaches a request path.
+String _pathPubkey(String pubkey) {
+  final normalized = pubkey.trim().toLowerCase();
+  if (!_hexPubkey.hasMatch(normalized)) {
+    throw ArgumentError.value(pubkey, 'pubkey', 'not a hex public key');
+  }
+  return normalized;
 }
 
 /// One signed-in device (`GET /auth/devices`).
@@ -142,6 +206,100 @@ class AccountApi {
     return AccountProfile.fromJson(_object(response));
   }
 
+  /// Set or clear (`null`) the Kuzz ID alone; other profile fields keep
+  /// their value. A taken ID fails with code `username_taken` (409).
+  Future<AccountProfile> setUsername(String? username) async {
+    final response = await _send(
+      'PATCH',
+      '/auth/profile',
+      body: {'username': username},
+    );
+    return AccountProfile.fromJson(_object(response));
+  }
+
+  /// Whether people can find this account by exact Kuzz ID or email.
+  Future<void> setDiscoverable(bool discoverable) =>
+      _send('PATCH', '/auth/profile', body: {'discoverable': discoverable});
+
+  /// The people this account blocked; only the account itself can read it.
+  Future<List<BlockedPerson>> listBlocks() async {
+    final response = await _send('GET', '/auth/blocks');
+    final blocked = _object(response)['blocked'];
+    if (blocked is! List) {
+      throw const AccountApiException('Malformed relay response: blocked');
+    }
+    final result = <BlockedPerson>[];
+    for (final item in blocked) {
+      if (item is! Map<String, Object?>) continue;
+      final pubkey = item['pubkey'];
+      if (pubkey is! String || !_hexPubkey.hasMatch(pubkey.toLowerCase())) {
+        continue;
+      }
+      final createdAt = item['created_at'];
+      result.add(
+        BlockedPerson(
+          pubkey: pubkey.toLowerCase(),
+          createdAt: createdAt is String ? DateTime.tryParse(createdAt) : null,
+        ),
+      );
+    }
+    return result;
+  }
+
+  /// Block [pubkey] (idempotent).
+  Future<void> block(String pubkey) =>
+      _send('PUT', '/auth/blocks/${_pathPubkey(pubkey)}');
+
+  /// Unblock [pubkey] (idempotent).
+  Future<void> unblock(String pubkey) =>
+      _send('DELETE', '/auth/blocks/${_pathPubkey(pubkey)}');
+
+  /// The one discoverable person whose Kuzz ID or email is exactly [query],
+  /// or `null` when there is none (404). Too many lookups fail with 429.
+  /// A leading `@` on an ID ("@ada") is dropped: the relay reads any `@` as
+  /// an email address.
+  Future<PersonSummary?> lookupPerson(String query) async {
+    var q = query.trim();
+    if (q.startsWith('@') && !q.substring(1).contains('@')) {
+      q = q.substring(1);
+    }
+    final http.Response response;
+    try {
+      response = await _send('GET', '/auth/people/lookup', query: {'q': q});
+    } on AccountApiException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
+    return PersonSummary.fromJson(_object(response));
+  }
+
+  /// People in this account's channels whose name or Kuzz ID starts with
+  /// [query]; at most [limit], which the relay caps at 50.
+  Future<List<PersonSummary>> sharedPeople(
+    String query, {
+    int limit = 50,
+  }) async {
+    final response = await _send(
+      'GET',
+      '/auth/people/shared',
+      query: {'q': query.trim(), 'limit': '${limit.clamp(1, 50)}'},
+    );
+    final people = _object(response)['people'];
+    if (people is! List) {
+      throw const AccountApiException('Malformed relay response: people');
+    }
+    final result = <PersonSummary>[];
+    for (final item in people) {
+      if (item is! Map<String, Object?>) continue;
+      try {
+        result.add(PersonSummary.fromJson(item));
+      } on AccountApiException {
+        continue;
+      }
+    }
+    return result;
+  }
+
   Future<List<AccountDevice>> listDevices() async {
     final response = await _send('GET', '/auth/devices');
     final decoded = _decode(response.body);
@@ -182,6 +340,7 @@ class AccountApi {
     String method,
     String path, {
     Map<String, Object?>? body,
+    Map<String, String>? query,
   }) async {
     // A session nobody has restored yet (the gate normally does) has no
     // refresh token in memory: restore it rather than report signed out.
@@ -190,11 +349,11 @@ class AccountApi {
     }
     var token = await _session.ensureFreshAccessToken();
     if (token == null) throw _signedOut();
-    var response = await _request(method, path, token, body);
+    var response = await _request(method, path, token, body, query);
     if (response.statusCode == 401 && _code(response) == 'token_expired') {
       token = await _session.refreshAfterTokenExpired(token);
       if (token == null) throw _signedOut();
-      response = await _request(method, path, token, body);
+      response = await _request(method, path, token, body, query);
     }
     final status = response.statusCode;
     if (status >= 200 && status < 300) return response;
@@ -220,9 +379,13 @@ class AccountApi {
     String path,
     String token,
     Map<String, Object?>? body,
+    Map<String, String>? query,
   ) async {
-    final request = http.Request(method, Uri.parse('$origin$path'))
-      ..headers['Authorization'] = 'Bearer $token';
+    final uri = Uri.parse('$origin$path');
+    final request = http.Request(
+      method,
+      query == null ? uri : uri.replace(queryParameters: query),
+    )..headers['Authorization'] = 'Bearer $token';
     if (body != null) {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode(body);
@@ -284,6 +447,15 @@ final accountProfileProvider = FutureProvider.autoDispose
       (ref, origin) => ref.watch(accountApiProvider(origin)).me(),
       retry: _noRetry,
     );
+
+/// The account origin of the active community: its token relay, or the
+/// relay holding its Google key backup. `null` when the community has no
+/// account (an older key-only community), which hides account features.
+final accountOriginProvider = Provider<String?>(
+  (ref) =>
+      ref.watch(activeTokenOriginProvider) ??
+      ref.watch(activeGoogleKeyOriginProvider),
+);
 
 /// This account's signed-in devices. Invalidate to reload.
 final accountDevicesProvider = FutureProvider.autoDispose

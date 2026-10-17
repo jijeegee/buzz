@@ -202,9 +202,11 @@ Future<List<NostrEvent>> _filterDeletedReactions(
   ];
 }
 
+/// The newest follow list among [events] (kind 3 is replaceable).
 List<ContactEntry> contactsFromEvents(List<NostrEvent> events) {
   if (events.isEmpty) return const [];
-  return _contactsFromTags(events.first.tags);
+  final newest = events.reduce((a, b) => b.createdAt > a.createdAt ? b : a);
+  return _contactsFromTags(newest.tags);
 }
 
 void preloadPulseProfiles(WidgetRef ref, List<UserNote> notes) {

@@ -42,6 +42,30 @@ test("submitReport asks the signer to keep a self p tag", async () => {
   assert.deepEqual(signCalls[0].tags[0], ["p", author]);
 });
 
+test("a person report carries only the p tag, with the report type on it", async () => {
+  signCalls.length = 0;
+  const person = "EF".repeat(32);
+  await submitReport({ authorPubkey: person, reportType: "impersonation" });
+  assert.equal(signCalls.length, 1);
+  assert.equal(signCalls[0].kind, 1984);
+  assert.deepEqual(signCalls[0].tags, [
+    ["p", "ef".repeat(32), "impersonation"],
+  ]);
+});
+
+test("a message report keeps the type on the e tag", async () => {
+  signCalls.length = 0;
+  await submitReport({
+    authorPubkey: author,
+    eventId: "cd".repeat(32),
+    reportType: "spam",
+  });
+  assert.deepEqual(signCalls[0].tags, [
+    ["p", author],
+    ["e", "cd".repeat(32), "spam"],
+  ]);
+});
+
 test("other moderation events keep the signer's self-tag stripping default", async () => {
   signCalls.length = 0;
   await banMember({ pubkey: author });

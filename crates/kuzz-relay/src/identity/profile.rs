@@ -304,6 +304,7 @@ mod tests {
             username: None,
             disabled_at: None,
             purge_after: None,
+            discoverable: true,
         }
     }
 

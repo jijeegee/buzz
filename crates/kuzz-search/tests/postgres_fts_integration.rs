@@ -1254,7 +1254,8 @@ async fn excluded_kinds_are_storage_level_unsearchable() {
 }
 
 /// Tripwire: every Rust-side author-only kind MUST be excluded from
-/// `search_tsv` at the storage layer.
+/// `search_tsv` at the storage layer (kind:3, whose content is normally
+/// empty, is excluded by the search query instead to avoid a heap rewrite).
 ///
 /// The schema generated column hard-codes the privacy skip-set, while
 /// `AUTHOR_ONLY_KINDS` is a Rust const. If a future author-only kind is added
@@ -1323,7 +1324,7 @@ async fn author_only_kinds_are_storage_level_unsearchable() {
         assert!(
             !kinds.contains(&(kind as i32)),
             "AUTHOR_ONLY kind:{kind} MUST NOT be searchable — \
-             schema skip-set is missing this kind. AUTHOR_ONLY_KINDS={AUTHOR_ONLY_KINDS:?}, \
+             schema skip-set (or query exclusion) is missing this kind. AUTHOR_ONLY_KINDS={AUTHOR_ONLY_KINDS:?}, \
              hits={kinds:?}",
         );
     }

@@ -100,20 +100,23 @@ async function publishModerationEvent(
 }
 
 /**
- * Submit a NIP-56 report (kind:1984). Member-facing report entry always targets
- * a message, so both the author `p` tag and the `e` (event) tag are carried; the
- * report type rides the `e` tag's third element per report.rs `parse_report`.
+ * Submit a NIP-56 report (kind:1984). A message report carries the author `p`
+ * tag and the `e` (event) tag, with the report type on the `e` tag; a person
+ * report carries only the `p` tag, with the report type on it (report.rs
+ * `parse_report`).
  */
 export async function submitReport(input: {
   authorPubkey: string;
-  eventId: string;
+  eventId?: string;
   reportType: ReportType;
   note?: string;
 }): Promise<void> {
-  const tags: string[][] = [
-    ["p", normalizePubkey(input.authorPubkey)],
-    ["e", input.eventId, input.reportType],
-  ];
+  const tags: string[][] = input.eventId
+    ? [
+        ["p", normalizePubkey(input.authorPubkey)],
+        ["e", input.eventId, input.reportType],
+      ]
+    : [["p", normalizePubkey(input.authorPubkey), input.reportType]];
   const event = await signRelayEvent({
     kind: KIND_REPORT,
     content: input.note?.trim() ? input.note.trim() : "",

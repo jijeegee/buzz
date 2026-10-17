@@ -11,9 +11,9 @@ import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
-import '../people/person_row.dart';
 import '../profile/user_profile_sheet.dart';
 import '../settings/agents_settings.dart';
+import 'agent_row.dart';
 
 /// The Agents tab: my agents, then the community's other agents, and the
 /// agent settings. Agents run on a computer; this tab lists them and opens
@@ -79,7 +79,7 @@ class AgentsPage extends HookConsumerWidget {
       return 'Agent · ${name == null || name.isEmpty ? shortPubkey(owner) : name}';
     }
 
-    Widget agentRow(AgentDirectoryEntry agent, String subtitle) => PersonRow(
+    Widget agentRow(AgentDirectoryEntry agent, String subtitle) => AgentRow(
       key: ValueKey('agents-row-${agent.pubkey}'),
       pubkey: agent.pubkey,
       name: nameOf(agent),
@@ -129,7 +129,7 @@ class AgentsPage extends HookConsumerWidget {
           bottom: MediaQuery.paddingOf(context).bottom + Grid.xs,
         ),
         children: [
-          PeopleFilterField(
+          AgentsFilterField(
             controller: filterController,
             hint: 'Find agents',
             onChanged: (value) => filter.value = value,
@@ -140,7 +140,7 @@ class AgentsPage extends HookConsumerWidget {
               child: Center(child: KuzzLoadingIndicator()),
             )
           else ...[
-            const PeopleSectionTitle('My agents'),
+            const AgentsSectionTitle('My agents'),
             if (mine.isEmpty)
               note(
                 needle.isEmpty
@@ -150,11 +150,11 @@ class AgentsPage extends HookConsumerWidget {
             else
               for (final agent in mine) agentRow(agent, 'Agent'),
             if (others.isNotEmpty) ...[
-              const PeopleSectionTitle('Other agents'),
+              const AgentsSectionTitle('Other agents'),
               for (final agent in others) agentRow(agent, ownerLabel(agent)),
             ],
           ],
-          const PeopleSectionTitle('Settings'),
+          const AgentsSectionTitle('Settings'),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: Grid.gutter),
             child: AgentsSettings(),

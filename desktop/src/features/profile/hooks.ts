@@ -18,6 +18,7 @@ import {
   getUsersBatch,
   updateProfile,
 } from "@/shared/api/tauriProfiles";
+import { editContactList } from "@/features/people/lib/contactListEdit";
 import { getContactList, setContactList } from "@/shared/api/social";
 import type { ContactListResponse } from "@/shared/api/socialTypes";
 import type {
@@ -219,10 +220,12 @@ export function useContactListQuery(pubkey?: string) {
   });
 }
 
+const CONTACT_LIST_IO = { read: getContactList, write: setContactList };
+
 /**
- * Follow mutation re-fetches the contact list inside the mutationFn to prevent
- * race conditions when clicking Follow on multiple users quickly. The kind:3
- * contact list is a full-snapshot replaceable event — stale reads cause data loss.
+ * Follow (add a friend). The kind:3 contact list is a full-snapshot
+ * replaceable event, so `editContactList` re-reads the latest list right
+ * before writing and applies only this one add — one change at a time.
  */
 export function useFollowMutation(currentPubkey?: string) {
   const queryClient = useQueryClient();
@@ -230,12 +233,11 @@ export function useFollowMutation(currentPubkey?: string) {
   return useMutation({
     mutationFn: async (targetPubkey: string) => {
       if (!currentPubkey) throw new Error("No identity");
-      const current = await getContactList(currentPubkey);
-      if (current.contacts.some((c) => c.pubkey === targetPubkey)) {
-        return;
-      }
-      const updated = [...current.contacts, { pubkey: targetPubkey }];
-      return setContactList(updated);
+      return editContactList(
+        currentPubkey,
+        { type: "add", pubkeys: [targetPubkey] },
+        CONTACT_LIST_IO,
+      );
     },
     onSuccess: () => {
       if (currentPubkey) {
@@ -256,9 +258,11 @@ export function useUnfollowMutation(currentPubkey?: string) {
   return useMutation({
     mutationFn: async (targetPubkey: string) => {
       if (!currentPubkey) throw new Error("No identity");
-      const current = await getContactList(currentPubkey);
-      const updated = current.contacts.filter((c) => c.pubkey !== targetPubkey);
-      return setContactList(updated);
+      return editContactList(
+        currentPubkey,
+        { type: "remove", pubkey: targetPubkey },
+        CONTACT_LIST_IO,
+      );
     },
     onSuccess: () => {
       if (currentPubkey) {

@@ -1,8 +1,10 @@
 import * as React from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { usePeopleFavorites } from "@/features/people/PeopleFavoritesContext";
 import { buildPeopleDirectory } from "@/features/people/lib/peopleDirectory";
 import { useMessagePerson } from "@/features/people/useMessagePerson";
@@ -10,26 +12,26 @@ import {
   usePeopleFriends,
   useSeedFriendsFromDms,
 } from "@/features/people/usePeopleFriends";
-import {
-  useFlattenedUserSearchResults,
-  useInfiniteUserSearchQuery,
-  useUsersBatchQuery,
-} from "@/features/profile/hooks";
+import { useSharedPeopleSearch } from "@/features/people/useSharedPeopleSearch";
+import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { UserSearchResult } from "@/shared/api/types";
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
+import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
+import { AddFriendDialog } from "./AddFriendDialog";
 import { PersonRow } from "./PersonRow";
 
-const DIRECTORY_PAGE_SIZE = 500;
 const PROFILE_KEYS = ["profile", "profileTab", "profileView"] as const;
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 /**
  * The People tab's list, in the left column: Favorites, then Friends (people
- * I added). Typing a name also finds others so they can be added. People
- * only; agents live in the Agents tab. Picking someone shows their profile on
- * the right.
+ * I added). Typing a name filters them and also asks the server for people
+ * in my channels ("In your channels") so they can be added; anyone else is
+ * added by exact Kuzz ID or email (Add friend). People only; agents live in
+ * the Agents tab, blocked people nowhere. Picking someone shows their profile
+ * on the right.
  */
 export function PeopleSidebarList({
   currentPubkey,
@@ -37,8 +39,10 @@ export function PeopleSidebarList({
   currentPubkey: string | undefined;
 }) {
   const [filter, setFilter] = React.useState("");
+  const [addFriendOpen, setAddFriendOpen] = React.useState(false);
   const favorites = usePeopleFavorites();
   const friends = usePeopleFriends(currentPubkey);
+  const { isBlocked } = useBlockedPeople();
   useSeedFriendsFromDms(currentPubkey);
   const onMessage = useMessagePerson();
   const navigate = useNavigate();
@@ -53,16 +57,7 @@ export function PeopleSidebarList({
     [navigate],
   );
 
-  const usersQuery = useInfiniteUserSearchQuery("", {
-    allowEmpty: true,
-    limit: DIRECTORY_PAGE_SIZE,
-  });
-  const { fetchNextPage, hasNextPage, isFetchingNextPage } = usersQuery;
-  // Filtered and sorted on this device, so load every page.
-  React.useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
-  const users = useFlattenedUserSearchResults(usersQuery.data);
+  const shared = useSharedPeopleSearch(filter);
   const isArchived = useIsArchivedPredicate();
   const favoriteIds = favorites?.favoriteIds ?? EMPTY_IDS;
   const listedIds = React.useMemo(
@@ -81,7 +76,8 @@ export function PeopleSidebarList({
         filter,
         friendIds: friends.friendIds,
         isArchived,
-        users,
+        isBlocked,
+        sharedPeople: shared.people,
       }),
     [
       currentPubkey,
@@ -90,7 +86,8 @@ export function PeopleSidebarList({
       filter,
       friends.friendIds,
       isArchived,
-      users,
+      isBlocked,
+      shared.people,
     ],
   );
 
@@ -127,14 +124,27 @@ export function PeopleSidebarList({
     />
   );
   const searching = filter.trim().length > 0;
-  const loading = friends.isLoading || usersQuery.isLoading;
+  const loading =
+    friends.isLoading || (listedIds.length > 0 && extraProfilesQuery.isLoading);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="people-list">
       <div className="space-y-2 px-2 pb-2 pt-1">
-        <h2 className="px-1 text-base font-semibold text-sidebar-foreground">
-          People
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="px-1 text-base font-semibold text-sidebar-foreground">
+            People
+          </h2>
+          <Button
+            className="h-7 px-2 text-xs"
+            data-testid="people-add-friend"
+            onClick={() => setAddFriendOpen(true)}
+            size="sm"
+            variant="ghost"
+          >
+            <UserPlus className="h-4 w-4" />
+            Add friend
+          </Button>
+        </div>
         <Input
           aria-label="Find people by name"
           className="h-8 bg-background"
@@ -162,22 +172,34 @@ export function PeopleSidebarList({
             <p className="px-2 py-3 text-xs text-sidebar-foreground/60">
               {searching
                 ? "No friends match that name."
-                : "No friends yet. Find someone by name above and add them."}
+                : "No friends yet. Use Add friend to find someone by Kuzz ID or email."}
             </p>
           )}
         </Section>
         {searching ? (
-          <Section testId="people-others" title="Others">
-            {directory.others.length > 0 ? (
-              directory.others.map((user) => renderRow(user, "other"))
+          <Section testId="people-in-channels" title="In your channels">
+            {directory.inChannels.length > 0 ? (
+              directory.inChannels.map((user) => renderRow(user, "channel"))
+            ) : shared.isLoading ? (
+              <PeopleSkeleton />
             ) : (
               <p className="px-2 py-3 text-xs text-sidebar-foreground/60">
-                No one else matches that name.
+                {shared.error
+                  ? shared.error.message
+                  : "No one in your channels matches that name. Use Add friend to find someone by Kuzz ID or email."}
               </p>
             )}
           </Section>
         ) : null}
       </div>
+      <AddFriendDialog
+        currentPubkey={currentPubkey}
+        isBlocked={isBlocked}
+        isFriend={friends.isFriend}
+        onAddFriend={friends.addFriend}
+        onOpenChange={setAddFriendOpen}
+        open={addFriendOpen}
+      />
     </div>
   );
 }

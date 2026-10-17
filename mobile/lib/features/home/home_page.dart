@@ -111,7 +111,7 @@ class HomePage extends HookConsumerWidget {
         visitedTabs.value.contains(index) ? build() : const SizedBox.shrink();
     final pages = [
       ChatsPage(tabReselection: reselections[0]),
-      lazy(1, () => PeoplePage(tabReselection: reselections[1])),
+      lazy(1, () => const PeoplePage()),
       lazy(2, () => ActivityPage(tabReselection: reselections[2])),
       lazy(3, () => AgentsPage(tabReselection: reselections[3])),
       lazy(

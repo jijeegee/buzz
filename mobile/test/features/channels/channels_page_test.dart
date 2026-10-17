@@ -37,6 +37,12 @@ import 'package:kuzz/shared/widgets/kuzz_loading_indicator.dart';
 import 'package:kuzz/shared/widgets/frosted_app_bar.dart';
 import 'package:kuzz/shared/widgets/masked_avatar_badge.dart';
 import 'package:kuzz/shared/widgets/skeleton.dart';
+import 'package:kuzz/features/people/blocked_users_provider.dart';
+import 'package:kuzz/features/people/friends_provider.dart';
+import 'package:kuzz/features/people/people_agents.dart';
+import 'package:kuzz/features/people/people_page.dart'
+    show sharedPeopleProvider;
+import 'package:kuzz/shared/auth/account/account_api.dart' show PersonSummary;
 
 part 'channels_page_test/presence_tests.dart';
 part 'channels_page_test/chats_parity_tests.dart';
@@ -45,6 +51,7 @@ void main() {
   Widget buildTestable({
     required List<Override> overrides,
     bool previewDirectory = false,
+    Set<String> agentPubkeys = const {},
     double keyboardInset = 0,
     bool disableAnimations = false,
     double bottomPadding = 0,
@@ -67,6 +74,7 @@ void main() {
           onCommunityIconLoad?.call(relayUrl);
           return communityIcons[relayUrl];
         }),
+        peopleAgentPubkeysProvider.overrideWithValue(agentPubkeys),
         dmDirectoryPreviewEnabledProvider.overrideWith(
           (ref) => previewDirectory,
         ),
@@ -1932,6 +1940,9 @@ void main() {
       buildTestable(
         overrides: [
           channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+          friendIdsProvider.overrideWithValue(
+            AsyncValue.data({for (final user in directoryUsers) user.pubkey}),
+          ),
           relayDirectoryUsersProvider.overrideWith(
             (ref) async => directoryUsers,
           ),
@@ -2078,6 +2089,75 @@ void main() {
     expect(searchField.onSubmitted, isNotNull);
   });
 
+  testWidgets(
+    'new message sheet offers friends, shared people and agents only',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const directoryUsers = [
+        DirectoryUser(pubkey: 'alice', displayName: 'Alice'),
+        DirectoryUser(pubkey: 'bob', displayName: 'Bob'),
+        DirectoryUser(pubkey: 'charlie', displayName: 'Charlie'),
+        DirectoryUser(pubkey: 'helper', displayName: 'Helper', isAgent: true),
+        DirectoryUser(pubkey: 'mybot', displayName: 'My bot'),
+      ];
+      await tester.pumpWidget(
+        buildTestable(
+          agentPubkeys: const {'mybot'},
+          overrides: [
+            channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+            friendIdsProvider.overrideWithValue(
+              const AsyncValue.data({'alice', 'charlie', 'mybot'}),
+            ),
+            blockedPubkeysProvider.overrideWithValue(const {'charlie'}),
+            relayDirectoryUsersProvider.overrideWith(
+              (ref) async => directoryUsers,
+            ),
+            relayDirectorySearchProvider.overrideWith((ref, query) async {
+              return directoryUsers
+                  .where((user) => user.label.toLowerCase().contains(query))
+                  .toList();
+            }),
+            sharedPeopleProvider.overrideWith(
+              (ref, query) async => const [
+                PersonSummary(pubkey: 'bob', displayName: 'Bob'),
+                PersonSummary(pubkey: 'charlie', displayName: 'Charlie'),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Create or start conversation'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New direct message'));
+      await tester.pumpAndSettle();
+
+      // No query: friends and agents; never the whole directory.
+      expect(find.byKey(const Key('new-dm-section-friends')), findsOneWidget);
+      expect(find.byKey(const Key('new-dm-person-alice')), findsOneWidget);
+      expect(find.byKey(const Key('new-dm-person-bob')), findsNothing);
+      expect(find.byKey(const Key('new-dm-person-charlie')), findsNothing);
+      expect(find.byKey(const Key('new-dm-section-agents')), findsOneWidget);
+      expect(find.byKey(const Key('new-dm-person-helper')), findsOneWidget);
+      expect(find.byKey(const Key('new-dm-person-mybot')), findsOneWidget);
+      expect(find.byKey(const Key('new-dm-section-shared')), findsNothing);
+
+      // A query adds people I share channels with; blocked people stay out.
+      await tester.enterText(find.byKey(const Key('new-dm-search')), 'b');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('new-dm-section-shared')), findsOneWidget);
+      expect(find.byKey(const Key('new-dm-person-bob')), findsOneWidget);
+      expect(find.byKey(const Key('new-dm-person-charlie')), findsNothing);
+      expect(find.byKey(const Key('new-dm-person-alice')), findsNothing);
+      expect(find.byKey(const Key('new-dm-person-mybot')), findsOneWidget);
+    },
+  );
+
   testWidgets('wraps many recipients without overflowing above the keyboard', (
     tester,
   ) async {
@@ -2099,6 +2179,9 @@ void main() {
         keyboardInset: 300,
         overrides: [
           channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+          friendIdsProvider.overrideWithValue(
+            AsyncValue.data({for (final user in directoryUsers) user.pubkey}),
+          ),
           relayDirectoryUsersProvider.overrideWith(
             (ref) async => directoryUsers,
           ),
@@ -2155,7 +2238,7 @@ void main() {
     await tester.tap(find.text('New direct message'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Could not load people from this relay.'), findsNothing);
+    expect(find.text('Couldn’t load people. Try again.'), findsNothing);
     expect(find.text('Maya Chen'), findsOneWidget);
     expect(find.text('Jordan Brooks'), findsOneWidget);
     expect(find.text('Priya Shah'), findsOneWidget);

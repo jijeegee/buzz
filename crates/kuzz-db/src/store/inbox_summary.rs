@@ -121,6 +121,8 @@ rooms AS (
               SELECT 1 FROM thread_metadata r
               WHERE r.community_id = $1 AND r.event_id = e.id
                 AND r.depth > 0 AND NOT r.broadcast)
+          AND NOT (m.channel_type = 'dm' AND EXISTS (SELECT 1 FROM user_blocks ub
+                  WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))
         ORDER BY e.created_at DESC, e.id DESC LIMIT 1
     ) l ON true
 ),
@@ -168,6 +170,8 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             AND e.created_at = r.event_created_at AND e.id = r.event_id
         WHERE r.community_id = $1 AND r.root_event_id = p.root_id AND r.depth > 0
           AND e.kind = ANY($3) AND e.deleted_at IS NULL
+          AND NOT (p.channel_type = 'dm' AND EXISTS (SELECT 1 FROM user_blocks ub
+                  WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))
         ORDER BY r.event_created_at DESC, r.event_id DESC LIMIT 1
     ) END AS latest,
     CASE WHEN p.row_kind = 'thread' THEN (
@@ -183,6 +187,8 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             WHERE e.community_id = $1 AND e.channel_id = p.channel_id
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
               AND e.created_at > cm.read_at
+              AND NOT (p.channel_type = 'dm' AND EXISTS (SELECT 1 FROM user_blocks ub
+                  WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))
               AND NOT EXISTS (
                   SELECT 1 FROM thread_metadata r
                   WHERE r.community_id = $1 AND r.event_id = e.id
@@ -197,6 +203,8 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             WHERE r.community_id = $1 AND r.root_event_id = p.root_id AND r.depth > 0
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
               AND e.created_at > GREATEST(tm.read_at, cm.read_at)
+              AND NOT (p.channel_type = 'dm' AND EXISTS (SELECT 1 FROM user_blocks ub
+                  WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))
             LIMIT $11
         ) n WHERE COALESCE(tm.read_at, cm.read_at) IS NOT NULL
     ) END AS unread,

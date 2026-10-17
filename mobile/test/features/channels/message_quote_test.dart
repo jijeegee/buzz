@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:kuzz/features/channels/channel_identity_names_provider.dart';
+import 'package:kuzz/features/people/blocked_users_provider.dart';
 import 'package:kuzz/features/channels/composer_quote_chip.dart';
 import 'package:kuzz/features/channels/composer_quote_provider.dart';
 import 'package:kuzz/features/channels/message_quote.dart';
@@ -261,7 +262,11 @@ void main() {
       await uriLinks.close();
     });
 
-    List<Override> overrides({QuotedMessage? fetched}) => [
+    List<Override> overrides({
+      QuotedMessage? fetched,
+      Set<String> blocked = const {},
+    }) => [
+      blockedPubkeysProvider.overrideWithValue(blocked),
       userCacheProvider.overrideWith(
         () => _FixedUserCacheNotifier({
           _alice: UserProfile(pubkey: _alice, displayName: 'Alice'),
@@ -281,6 +286,7 @@ void main() {
       QuotedMessage? fetched,
       List<List<String>>? tags,
       QuoteJumpScope Function(Widget child)? wrap,
+      Set<String> blocked = const {},
     }) async {
       final header = MessageQuoteHeader(
         channelId: _channelId,
@@ -294,7 +300,7 @@ void main() {
       );
       await tester.pumpWidget(
         WidgetHelpers.testable(
-          overrides: overrides(fetched: fetched),
+          overrides: overrides(fetched: fetched, blocked: blocked),
           child: wrap?.call(header) ?? header,
         ),
       );
@@ -345,6 +351,19 @@ void main() {
           threadRootId: _rootId,
         ),
       );
+    });
+
+    testWidgets('folds a quote of a blocked author', (tester) async {
+      await pumpHeader(
+        tester,
+        blocked: {_alice.toLowerCase()},
+        loadedMessages: [
+          _message(id: _quotedId, pubkey: _alice, content: 'Secret text'),
+        ],
+      );
+      expect(find.text('Message from a blocked user'), findsOneWidget);
+      expect(find.text('Secret text'), findsNothing);
+      expect(find.text('Alice'), findsNothing);
     });
 
     testWidgets('scrolls in place when the enclosing list shows it', (

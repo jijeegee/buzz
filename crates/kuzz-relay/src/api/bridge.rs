@@ -1569,7 +1569,7 @@ async fn query_events_authed(
                 "thread_window cannot mix with other query modes",
             ));
         }
-        return tokio::time::timeout(
+        let mut events = tokio::time::timeout(
             thread_window::DEADLINE,
             thread_window::query_batch(state, tenant, &pubkey, thread_windows.iter().flatten()),
         )
@@ -1579,8 +1579,9 @@ async fn query_events_authed(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "thread window deadline exceeded",
             )
-        })?
-        .map(|events| Json(Value::Array(events)));
+        })??;
+        hide_blocked_dm_authors(state, tenant, &pubkey_bytes, &mut events).await?;
+        return Ok(Json(Value::Array(events)));
     }
     if read_state_snapshot::requested(&raw_filters) {
         return read_state_snapshot::query(state, tenant, &pubkey, &raw_filters).await;
@@ -1999,7 +2000,26 @@ async fn query_events_authed(
     }
 
     hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut events).await?;
+    hide_blocked_dm_authors(state, tenant, &pubkey_bytes, &mut events).await?;
     Ok(Json(Value::Array(events)))
+}
+
+/// Silent block: drop DM events whose author the reader blocked.
+pub(crate) async fn hide_blocked_dm_authors(
+    state: &AppState,
+    tenant: &TenantContext,
+    reader: &[u8],
+    events: &mut Vec<Value>,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    state
+        .retain_unblocked_for_reader(
+            tenant.community(),
+            reader,
+            events,
+            crate::blocks::json_event_author_channel,
+        )
+        .await
+        .map_err(|e| db_read_error("block list lookup error", &e))
 }
 
 /// Drop goal trees (kind:40110) of conversations that turned goals off, so
@@ -2610,6 +2630,7 @@ async fn handle_bridge_search(
     }
 
     hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut events).await?;
+    hide_blocked_dm_authors(state, tenant, pubkey_bytes, &mut events).await?;
     Ok(Json(Value::Array(events)))
 }
 

@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../shared/auth/auth.dart';
 import '../../shared/auth/google_key_backup.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
+import '../../shared/kuzz_links.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
@@ -383,6 +385,8 @@ class TokenSignInPage extends HookConsumerWidget {
                       : 'Sign in with Google',
                 ),
               ),
+            if (restoredPrincipal == null && origin.value != null)
+              const _TermsLine(),
             if (dualMode.value && origin.value != null && !fixedOrigin)
               TextButton(
                 key: const Key('token-sign-in-existing-account'),
@@ -434,6 +438,41 @@ class TokenSignInPage extends HookConsumerWidget {
               const CommunityRecoveryActions(),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "By continuing you agree to the Terms of Service", opening the terms.
+class _TermsLine extends StatelessWidget {
+  const _TermsLine();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.colors.onSurfaceVariant;
+    return Semantics(
+      link: true,
+      child: TextButton(
+        key: const Key('token-sign-in-terms'),
+        onPressed: () => unawaited(
+          launchUrl(
+            Uri.parse(kuzzTermsUrl),
+            mode: LaunchMode.externalApplication,
+          ).catchError((Object _) => false),
+        ),
+        child: Text.rich(
+          TextSpan(
+            text: 'By continuing you agree to the ',
+            children: [
+              TextSpan(
+                text: 'Terms of Service',
+                style: const TextStyle(decoration: TextDecoration.underline),
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
+          style: context.textTheme.bodySmall?.copyWith(color: color),
         ),
       ),
     );

@@ -40,4 +40,8 @@ export type ContactListResponse = {
   pubkey: string;
   createdAt: number;
   contacts: ContactEntry[];
+  /** The list's content, kept as-is when the list is edited. */
+  content?: string;
+  /** The list's tags other than `p`, kept as-is when the list is edited. */
+  otherTags?: string[][];
 };

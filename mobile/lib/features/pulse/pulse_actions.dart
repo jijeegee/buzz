@@ -4,6 +4,7 @@ import '../../shared/relay/relay.dart';
 import '../channels/channel_management_provider.dart';
 import '../../shared/custom_emoji/custom_emoji.dart';
 import '../../shared/custom_emoji/custom_emoji_provider.dart';
+import '../people/friends_provider.dart';
 import 'pulse_models.dart';
 import 'pulse_provider.dart';
 
@@ -73,33 +74,14 @@ Future<void> setContactList(WidgetRef ref, List<ContactEntry> contacts) async {
   ref.invalidate(contactListProvider(currentPubkey));
 }
 
+/// Follow (add as a friend) one person; see [FriendsController].
 Future<void> followUser(WidgetRef ref, String pubkey) async {
-  final currentPubkey = ref.read(myPubkeyProvider);
-  if (currentPubkey == null) return;
-  final contacts = await _fetchFreshContacts(ref, currentPubkey);
-  final normalized = pubkey.toLowerCase();
-  if (contacts.any((entry) => entry.pubkey == normalized)) return;
-  await setContactList(ref, [...contacts, ContactEntry(pubkey: normalized)]);
+  if (ref.read(myPubkeyProvider) == null) return;
+  await ref.read(friendsControllerProvider).add(pubkey);
 }
 
+/// Unfollow (remove from friends) one person; see [FriendsController].
 Future<void> unfollowUser(WidgetRef ref, String pubkey) async {
-  final currentPubkey = ref.read(myPubkeyProvider);
-  if (currentPubkey == null) return;
-  final normalized = pubkey.toLowerCase();
-  final contacts = await _fetchFreshContacts(ref, currentPubkey);
-  await setContactList(
-    ref,
-    contacts.where((entry) => entry.pubkey != normalized).toList(),
-  );
-}
-
-Future<List<ContactEntry>> _fetchFreshContacts(
-  WidgetRef ref,
-  String currentPubkey,
-) async {
-  final session = ref.read(relaySessionProvider.notifier);
-  final events = await session.fetchHistory(
-    NostrFilters.contactList(currentPubkey),
-  );
-  return contactsFromEvents(events);
+  if (ref.read(myPubkeyProvider) == null) return;
+  await ref.read(friendsControllerProvider).remove(pubkey);
 }

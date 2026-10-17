@@ -104,6 +104,7 @@ pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
     "thread_follows",
     "thread_metadata",
     "thread_state",
+    "user_blocks",
     "users",
     "workflow_approvals",
     "workflow_runs",
@@ -142,6 +143,7 @@ pub const PURGE_SCOPED_TABLES: &[&str] = &[
     "community_bans",
     "pubkey_allowlist",
     "relay_members",
+    "user_blocks",
     "users",
     "channels",
 ];

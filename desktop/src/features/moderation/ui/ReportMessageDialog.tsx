@@ -3,8 +3,14 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { useSubmitReportMutation } from "@/features/moderation/hooks";
+import {
+  BLOCKED_BUT_STILL_FRIEND,
+  useBlockPersonMutation,
+} from "@/features/people/BlockedPeopleContext";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import type { ReportType } from "@/features/moderation/hooks";
 import { Button } from "@/shared/ui/button";
+import { Checkbox } from "@/shared/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +50,29 @@ export function reportErrorMessage(error: unknown): string {
   return "Failed to submit report";
 }
 
+/** Toast text after a report, with or without the block that came with it. */
+export function reportDoneMessage(blocked: boolean): string {
+  return blocked
+    ? "Report sent to moderators and the person is blocked"
+    : "Report submitted to community moderators";
+}
+
+/**
+ * Toast text when the report went through but "Also block" did not finish.
+ * A block that worked but left them a friend is still a block.
+ */
+export function reportBlockFailureMessage(error: unknown): string {
+  if (error instanceof Error && error.message === BLOCKED_BUT_STILL_FRIEND) {
+    return "Report sent and the person is blocked. Couldn't remove them from your friends; remove them in People.";
+  }
+  return "Report sent, but blocking didn't work. Try blocking them again.";
+}
+
+/**
+ * Report a message (`eventId`) or, without one, a person. "Also block" is on
+ * by default: the report goes first, then the block (which also removes them
+ * from friends).
+ */
 export function ReportMessageDialog({
   open,
   onOpenChange,
@@ -52,14 +81,19 @@ export function ReportMessageDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Display author of the reported message (the `p` tag target). */
+  /** The reported person, or the reported message's author (`p` tag). */
   authorPubkey: string;
-  /** Reported message event id (the `e` tag target). */
-  eventId: string;
+  /** Reported message event id (the `e` tag target); none for a person. */
+  eventId?: string;
 }) {
   const submitReport = useSubmitReportMutation();
+  const identityQuery = useIdentityQuery();
+  const blockPerson = useBlockPersonMutation(identityQuery.data?.pubkey);
   const [category, setCategory] = React.useState<ReportType | null>(null);
   const [note, setNote] = React.useState("");
+  const [alsoBlock, setAlsoBlock] = React.useState(true);
+  const isPerson = !eventId;
+  const pending = submitReport.isPending || blockPerson.isPending;
 
   // Reset the form each time the dialog opens so a prior report's selection
   // never leaks into the next one.
@@ -67,11 +101,12 @@ export function ReportMessageDialog({
     if (open) {
       setCategory(null);
       setNote("");
+      setAlsoBlock(true);
     }
   }, [open]);
 
   const submit = () => {
-    if (!category || submitReport.isPending) return;
+    if (!category || pending) return;
     submitReport.mutate(
       {
         authorPubkey,
@@ -81,8 +116,16 @@ export function ReportMessageDialog({
       },
       {
         onSuccess: () => {
-          toast.success("Report submitted to community moderators");
-          onOpenChange(false);
+          if (!alsoBlock) {
+            toast.success(reportDoneMessage(false));
+            onOpenChange(false);
+            return;
+          }
+          blockPerson.mutate(authorPubkey, {
+            onSuccess: () => toast.success(reportDoneMessage(true)),
+            onError: (error) => toast.warning(reportBlockFailureMessage(error)),
+            onSettled: () => onOpenChange(false),
+          });
         },
         onError: (error) => toast.error(reportErrorMessage(error)),
       },
@@ -95,11 +138,12 @@ export function ReportMessageDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Flag className="h-4 w-4" />
-            Report message
+            {isPerson ? "Report person" : "Report message"}
           </DialogTitle>
           <DialogDescription>
-            Reports go to this community's moderators for review. The author is
-            not notified of who reported them.
+            {isPerson
+              ? "Reports go to this community's moderators for review. The person is not told who reported them."
+              : "Reports go to this community's moderators for review. The author is not notified of who reported them."}
           </DialogDescription>
         </DialogHeader>
 
@@ -109,7 +153,7 @@ export function ReportMessageDialog({
               key={item.value}
               variant={category === item.value ? "default" : "outline"}
               className="justify-start"
-              disabled={submitReport.isPending}
+              disabled={pending}
               onClick={() => setCategory(item.value)}
             >
               {item.label}
@@ -134,18 +178,33 @@ export function ReportMessageDialog({
           />
         </div>
 
+        <label
+          className="flex items-center gap-2 text-sm"
+          htmlFor="report-also-block"
+        >
+          <Checkbox
+            checked={alsoBlock}
+            data-testid="report-also-block"
+            disabled={pending}
+            id="report-also-block"
+            onCheckedChange={(checked) => setAlsoBlock(checked === true)}
+          />
+          Also block
+        </label>
+
         <DialogFooter>
           <Button
             variant="ghost"
             onClick={() => onOpenChange(false)}
-            disabled={submitReport.isPending}
+            disabled={pending}
           >
             Cancel
           </Button>
           <Button
+            data-testid="report-submit"
             variant="default"
             onClick={submit}
-            disabled={!category || submitReport.isPending}
+            disabled={!category || pending}
           >
             Submit report
           </Button>

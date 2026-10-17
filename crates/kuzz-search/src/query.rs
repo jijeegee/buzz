@@ -252,6 +252,11 @@ pub async fn search(pool: &PgPool, query: &SearchQuery) -> Result<SearchResult, 
     qb.push_bind(*query.community.as_uuid());
     qb.push(" AND deleted_at IS NULL AND search_tsv @@ search_query.query");
 
+    // Contact lists (kind:3) are author-only. Their content is normally empty,
+    // so they are excluded here rather than by rewriting `search_tsv` (which
+    // would rewrite the whole events heap).
+    qb.push(" AND events.kind <> 3");
+
     // Search is a current-state surface; old artifact snapshots cannot match.
     qb.push(" AND (events.kind <> 45010 OR EXISTS (SELECT 1 FROM artifact_heads ah WHERE ah.community_id=events.community_id AND ah.event_id=events.id AND NOT ah.deleted))");
 

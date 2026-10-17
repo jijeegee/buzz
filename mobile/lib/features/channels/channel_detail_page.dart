@@ -87,6 +87,7 @@ import 'reaction_row.dart';
 import 'recent_emoji_provider.dart';
 import 'room_position_store.dart';
 import 'send_message_provider.dart';
+import '../people/blocked_message_gate.dart';
 import '../profile/user_profile_sheet.dart';
 import 'small_avatar.dart';
 import 'sticky_date_header.dart';

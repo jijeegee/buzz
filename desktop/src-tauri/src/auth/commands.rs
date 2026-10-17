@@ -677,7 +677,7 @@ fn verify_login_mode(backup: bool, returned_mode: Option<&str>) -> Result<(), St
 
 /// The current community's live session, refreshed first when it is about to
 /// expire. Errors when the community is not signed in.
-async fn fresh_session(state: &AppState, origin: &str) -> Result<UserSession, String> {
+pub(super) async fn fresh_session(state: &AppState, origin: &str) -> Result<UserSession, String> {
     let (generation, session) = match state.token_auth.get(origin) {
         Some((generation, OriginAuth::Active(session))) => (generation, session),
         _ => {

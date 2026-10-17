@@ -412,6 +412,7 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         "display_name": principal.display_name,
         "avatar_url": principal.avatar_url,
         "username": principal.username,
+        "discoverable": principal.discoverable,
         "email": email,
         "device_id": binding.device_id,
         "bot": bot,
@@ -431,7 +432,8 @@ fn validate_username(username: &str) -> Result<(), Response> {
     Ok(())
 }
 
-/// Parse and validate a profile update body.
+/// Parse and validate a profile update body. `allow_username` also gates
+/// `discoverable` (person accounts only; bots have neither).
 pub(super) fn parse_profile_update(
     body: &Bytes,
     allow_username: bool,
@@ -460,10 +462,19 @@ pub(super) fn parse_profile_update(
     } else {
         None
     };
+    let discoverable = match body.get("discoverable") {
+        None => None,
+        Some(_) if !allow_username => {
+            return Err(bad_request("discoverable cannot be set here"));
+        }
+        Some(serde_json::Value::Bool(value)) => Some(*value),
+        Some(_) => return Err(bad_request("discoverable must be a boolean")),
+    };
     Ok(ProfileUpdate {
         display_name,
         avatar_url,
         username,
+        discoverable,
     })
 }
 
@@ -473,18 +484,23 @@ fn profile_json(record: &kuzz_db::identity::PrincipalRecord) -> Response {
         "display_name": record.display_name,
         "avatar_url": record.avatar_url,
         "username": record.username,
+        "discoverable": record.discoverable,
     }))
     .into_response()
 }
 
-/// `PATCH /auth/profile` — global profile (projected into every community's
-/// `users` row in the same transaction).
+/// `PATCH|POST /auth/profile` — global profile (projected into every
+/// community's `users` row in the same transaction).
+///
+/// Key-backup accounts sign their own kind:0, so their session may set only
+/// account-level fields (`username`, `discoverable`); display name and avatar
+/// stay with the client-signed profile.
 pub(super) async fn update_profile(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let binding = match authenticate_user(&state, &headers).await {
+    let binding = match authenticate_user_session(&state, &headers).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -492,13 +508,24 @@ pub(super) async fn update_profile(
         Ok(update) => update,
         Err(response) => return response,
     };
+    let key_mode = match state.db.account_key_mode(&binding.principal).await {
+        Ok(mode) => mode,
+        Err(_) => return unavailable(),
+    };
+    if key_mode && (update.display_name.is_some() || update.avatar_url.is_some()) {
+        return super::forbidden(
+            "display_name and avatar_url are set by the signed profile for this account",
+        );
+    }
     match state
         .db
         .update_principal_profile(&binding.principal, &update)
         .await
     {
         Ok(Some(record)) => {
-            crate::identity::profile::spawn_publish_everywhere(&state, record.id);
+            if !key_mode {
+                crate::identity::profile::spawn_publish_everywhere(&state, record.id);
+            }
             profile_json(&record)
         }
         Ok(None) => not_found("principal not found"),

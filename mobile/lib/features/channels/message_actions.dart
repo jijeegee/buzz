@@ -16,6 +16,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../shared/clipboard_utils.dart';
+import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
@@ -28,6 +29,8 @@ import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/reminders/remind_me_later_sheet.dart';
 import '../../shared/reminders/reminder_service.dart';
 import '../goals/thread_goals_page.dart';
+import '../people/person_actions.dart';
+import '../people/person_row.dart';
 import 'channel_management_provider.dart';
 import 'pending_local_messages_provider.dart';
 import 'emoji_picker.dart';
@@ -204,6 +207,29 @@ void showMessageActions({
                         // Copy to clipboard
                         final data = ClipboardData(text: message.content);
                         Clipboard.setData(data);
+                      },
+                    ),
+                  ],
+                  if (_canReportMessage(message, currentPubkey)) ...[
+                    const SheetDivider(),
+                    ListTile(
+                      key: const Key('message-action-report'),
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        LucideIcons.flag,
+                        color: sheetContext.colors.error,
+                      ),
+                      title: Text(
+                        'Report message',
+                        style: TextStyle(color: sheetContext.colors.error),
+                      ),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        _reportMessage(
+                          context: context,
+                          ref: ref,
+                          message: message,
+                        );
                       },
                     ),
                   ],
@@ -948,6 +974,31 @@ void _confirmDelete({
           child: const Text('Delete'),
         ),
       ],
+    ),
+  );
+}
+
+/// Someone else's real message can be reported; my own and system events
+/// cannot.
+bool _canReportMessage(TimelineMessage message, String? currentPubkey) =>
+    !message.isSystem &&
+    currentPubkey != null &&
+    message.pubkey.toLowerCase() != currentPubkey.toLowerCase();
+
+void _reportMessage({
+  required BuildContext context,
+  required WidgetRef ref,
+  required TimelineMessage message,
+}) {
+  if (!context.mounted) return;
+  final author = message.pubkey.toLowerCase();
+  final name = personName(ref.read(userCacheProvider)[author]);
+  unawaited(
+    showReportSheet(
+      context,
+      pubkey: author,
+      name: name == 'Unknown' ? 'this person' : name,
+      eventId: message.id,
     ),
   );
 }

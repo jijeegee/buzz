@@ -9,6 +9,7 @@ import '../../shared/relay/relay.dart';
 import '../channels/channel.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
+import '../people/blocked_users_provider.dart';
 import 'dm_resurface.dart';
 import 'feed_item.dart';
 import 'inbox_item.dart';
@@ -666,8 +667,21 @@ final inboxItemsProvider = Provider<List<InboxItem>>((ref) {
         in ref.watch(channelsProvider).asData?.value ?? const <Channel>[])
       if (channel.isDm) channel.id,
   };
-  return buildInboxItems(feed.all, isDmChannel: dmChannelIds.contains);
+  final blocked = ref.watch(blockedPubkeysProvider);
+  return buildInboxItems(
+    withoutBlockedAuthors(feed.all, blocked),
+    isDmChannel: dmChannelIds.contains,
+  );
 });
+
+/// [items] minus those written by someone in [blocked]: a blocked person's
+/// messages never surface or count in Activity.
+Iterable<FeedItem> withoutBlockedAuthors(
+  Iterable<FeedItem> items,
+  Set<String> blocked,
+) => blocked.isEmpty
+    ? items
+    : items.where((item) => !blocked.contains(item.pubkey.toLowerCase()));
 
 /// Recent main-timeline and thread traffic across joined channels. Loaded only
 /// while the Channels + Threads view is open, so the default inbox and the
@@ -809,7 +823,10 @@ final conversationInboxItemsProvider = Provider.autoDispose<List<InboxItem>>((
       if (channel.isDm) channel.id,
   };
   final rows = collapseChannelMainRows(
-    buildInboxItems(byId.values, isDmChannel: dmChannelIds.contains),
+    buildInboxItems(
+      withoutBlockedAuthors(byId.values, ref.watch(blockedPubkeysProvider)),
+      isDmChannel: dmChannelIds.contains,
+    ),
   );
   return summaryRows == null
       ? rows

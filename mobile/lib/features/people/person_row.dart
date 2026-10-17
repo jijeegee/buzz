@@ -1,178 +1,119 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import '../../shared/mentions/agent_identity_provider.dart';
+import '../../shared/auth/account/account_api.dart';
 import '../../shared/profile/user_cache_provider.dart';
+import '../../shared/profile/user_profile.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/avatar_image.dart';
+import '../../shared/widgets/lucide_star_icon.dart';
 
-/// A person or agent's name: their profile name, else [fallback], else the
-/// short key.
-String personLabel(WidgetRef ref, String pubkey, {String? fallback}) {
-  final label = ref.watch(
-    userCacheProvider.select((cache) => cache[pubkey]?.displayName?.trim()),
-  );
-  if (label != null && label.isNotEmpty) return label;
-  final trimmed = fallback?.trim();
-  if (trimmed != null && trimmed.isNotEmpty) return trimmed;
-  return shortPubkey(pubkey);
+/// A person's name for People surfaces: display name, then handle, then
+/// "Unknown" — never a key.
+String personName(UserProfile? profile, [PersonSummary? summary]) {
+  final name = profile?.displayName?.trim();
+  if (name != null && name.isNotEmpty) return name;
+  final fromServer = summary?.displayName?.trim();
+  if (fromServer != null && fromServer.isNotEmpty) return fromServer;
+  final handle = profile?.nip05Handle?.trim();
+  if (handle != null && handle.isNotEmpty) return handle;
+  final username = summary?.username;
+  if (username != null && username.isNotEmpty) return '@$username';
+  return 'Unknown';
 }
 
-/// One People / Agents row: avatar, name, a short second line, and an
-/// optional trailing action.
-class PersonRow extends ConsumerWidget {
-  const PersonRow({
+/// The cached profile of [pubkey], watched alone.
+UserProfile? watchPersonProfile(WidgetRef ref, String pubkey) =>
+    ref.watch(userCacheProvider.select((cache) => cache[pubkey]));
+
+class PersonAvatar extends StatelessWidget {
+  const PersonAvatar({
     super.key,
-    required this.pubkey,
     required this.name,
-    required this.subtitle,
-    required this.onTap,
-    this.onLongPress,
-    this.trailing,
+    required this.avatarUrl,
+    this.radius = 20,
   });
 
-  final String pubkey;
   final String name;
-  final String subtitle;
-  final VoidCallback onTap;
-  final VoidCallback? onLongPress;
-  final Widget? trailing;
+  final String? avatarUrl;
+  final double radius;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(
-      userCacheProvider.select((cache) => cache[pubkey]),
-    );
-    final isAgent =
-        ref.watch(knownAgentPubkeysProvider).contains(pubkey) ||
-        profile?.isAgent == true;
-    final initial = name.trim().isNotEmpty
-        ? String.fromCharCode(name.trim().runes.first).toUpperCase()
-        : '?';
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Grid.gutter,
-          vertical: Grid.xs,
-        ),
-        child: Row(
-          children: [
-            AvatarImage(
-              imageUrl: profile?.avatarUrl,
-              radius: activityAvatarSize / 2,
-              backgroundColor: context.colors.primaryContainer,
-              fallback: Text(
-                initial,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: context.colors.onPrimaryContainer,
-                ),
-              ),
-              isAgent: isAgent,
-            ),
-            const SizedBox(width: messageAvatarContentGap),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: activityUsernameTextStyle.copyWith(
-                      color: context.colors.onSurface,
-                    ),
+  Widget build(BuildContext context) {
+    final initial = name.isEmpty || name == 'Unknown'
+        ? '?'
+        : name.characters.first.toUpperCase();
+    return ExcludeSemantics(
+      child: AvatarImage(
+        imageUrl: avatarUrl,
+        radius: radius,
+        backgroundColor: context.colors.primaryContainer,
+        fallback: Text(
+          initial,
+          style:
+              (radius > 30
+                      ? context.textTheme.headlineMedium
+                      : context.textTheme.labelLarge)
+                  ?.copyWith(
+                    color: context.colors.onPrimaryContainer,
+                    fontWeight: FontWeight.w600,
                   ),
-                  if (subtitle.isNotEmpty)
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: activityTimestampTextStyle.copyWith(
-                        color: context.colors.onSurfaceVariant,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            if (trailing != null) ...[
-              const SizedBox(width: Grid.xxs),
-              trailing!,
-            ],
-          ],
         ),
       ),
     );
   }
 }
 
-/// A small upper-case section title.
-class PeopleSectionTitle extends StatelessWidget {
-  const PeopleSectionTitle(this.title, {super.key});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(
-      Grid.gutter,
-      Grid.sm,
-      Grid.gutter,
-      Grid.half,
-    ),
-    child: Text(
-      title.toUpperCase(),
-      style: context.textTheme.labelSmall?.copyWith(
-        color: context.colors.onSurfaceVariant,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.5,
-      ),
-    ),
-  );
-}
-
-/// The filter field at the top of People and Agents.
-class PeopleFilterField extends StatelessWidget {
-  const PeopleFilterField({
+/// One person in a People list. The whole row is a single button.
+class PersonRow extends ConsumerWidget {
+  const PersonRow({
     super.key,
-    required this.controller,
-    required this.hint,
-    required this.onChanged,
+    required this.pubkey,
+    required this.onTap,
+    this.summary,
+    this.isFavorite = false,
+    this.subtitle,
   });
 
-  final TextEditingController controller;
-  final String hint;
-  final ValueChanged<String> onChanged;
+  final String pubkey;
+  final PersonSummary? summary;
+  final bool isFavorite;
+  final String? subtitle;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(
-      Grid.gutter,
-      Grid.xxs,
-      Grid.gutter,
-      Grid.xxs,
-    ),
-    child: TextField(
-      controller: controller,
-      onChanged: onChanged,
-      textInputAction: TextInputAction.search,
-      decoration: InputDecoration(
-        hintText: hint,
-        isDense: true,
-        prefixIcon: const Icon(Icons.search, size: 18),
-        filled: true,
-        fillColor: context.colors.surfaceContainerHighest.withValues(
-          alpha: 0.6,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = watchPersonProfile(ref, pubkey);
+    final name = personName(profile, summary);
+    final avatarUrl = profile?.avatarUrl ?? summary?.avatarUrl;
+    return Semantics(
+      button: true,
+      label: isFavorite ? '$name, favorite' : name,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: ListTile(
+        onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
+        leading: PersonAvatar(name: name, avatarUrl: avatarUrl),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            if (isFavorite) ...[
+              const SizedBox(width: Grid.half),
+              LucideStarIcon(
+                color: context.colors.primary,
+                filled: true,
+                size: 14,
+              ),
+            ],
+          ],
         ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(Grid.xs),
-          borderSide: BorderSide.none,
-        ),
+        subtitle: subtitle == null
+            ? null
+            : Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
-    ),
-  );
+    );
+  }
 }

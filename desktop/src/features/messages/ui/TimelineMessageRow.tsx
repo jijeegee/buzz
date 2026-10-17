@@ -5,8 +5,10 @@ import { THREAD_REPLY_ROW_MARGIN_INLINE_REM } from "@/features/messages/lib/thre
 import type { buildVideoReviewContextForMessage } from "@/features/messages/lib/videoReviewContext";
 import { canManageMessageForCurrentUser } from "@/features/messages/lib/canManageMessage";
 import type { TimelineMessage } from "@/features/messages/types";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { cn } from "@/shared/lib/cn";
+import { BlockedMessageNotice } from "./BlockedMessageNotice";
 import { MessageRow } from "./MessageRow";
 import { MessageThreadSummaryRow } from "./MessageThreadSummaryRow";
 import { SystemMessageRow } from "./SystemMessageRow";
@@ -123,6 +125,11 @@ export function MessageRowItem({
   videoReviewContext,
 }: MessageRowItemProps) {
   const { message, summary } = entry;
+  const { isBlocked } = useBlockedPeople();
+  const [revealed, setRevealed] = React.useState(false);
+  // A blocked author's message folds to one line until I choose to see it.
+  const folded = !revealed && isBlocked(message.pubkey);
+  const notice = <BlockedMessageNotice onShow={() => setRevealed(true)} />;
   const canManage = canManageMessageForCurrentUser(
     message,
     currentPubkey,
@@ -142,21 +149,93 @@ export function MessageRowItem({
             "-mx-4 px-4 before:absolute before:-inset-y-1.5 before:inset-x-0 before:animate-[route-target-highlight-fade_2s_ease-out_forwards] before:bg-primary/10 before:content-[''] motion-reduce:before:animate-none sm:-mx-6 sm:px-6",
         )}
       >
+        {folded ? (
+          notice
+        ) : (
+          <MessageRow
+            channelId={channelId}
+            highlighted={false}
+            hoverBackground={false}
+            huddleMemberPubkeys={huddleMemberPubkeys}
+            huddleMemberPubkeysPending={huddleMemberPubkeysPending}
+            hideAgentAccessBadge={hideAgentAccessBadges}
+            isFollowingThread={
+              !message.pending && isFollowingThreadById
+                ? isFollowingThreadById(effectiveThreadRootId)
+                : undefined
+            }
+            isUnread={isUnread}
+            isContinuation={isContinuation}
+            showTimestamp={!isFollowedByContinuation}
+            playEntrance={playEntrance}
+            onEntranceComplete={onEntranceComplete}
+            message={message}
+            onDelete={canDelete}
+            onEdit={canEdit}
+            onFollowThread={
+              !message.pending && followThreadById
+                ? () => followThreadById(effectiveThreadRootId)
+                : undefined
+            }
+            onMarkRead={onMarkRead}
+            onMarkUnread={onMarkUnread}
+            onToggleReaction={onToggleReaction}
+            onReply={onReply}
+            onUnfollowThread={
+              !message.pending && unfollowThreadById
+                ? () => unfollowThreadById(effectiveThreadRootId)
+                : undefined
+            }
+            profiles={profiles}
+            showDepthGuides={false}
+            videoReviewContext={videoReviewContext}
+          />
+        )}
+        {/* A folded message hides its thread summary too. */}
+        {folded ? null : (
+          <MessageThreadSummaryRow
+            alignEnd={message.accent === true}
+            depth={message.depth}
+            message={message}
+            onOpenThread={onOpenThread}
+            showDepthGuides={false}
+            summary={summary}
+            summaryIndentOffsetRem={-THREAD_REPLY_ROW_MARGIN_INLINE_REM}
+            unreadCount={threadUnreadCounts?.get(message.id)}
+          />
+        )}
+        {footer}
+      </div>
+    );
+  }
+
+  const isSearchMatch = searchMatchingMessageIds?.has(message.id) ?? false;
+  const isSearchActive = message.id === searchActiveMessageId;
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-1",
+        isFollowedByContinuation ? "pb-0" : "pb-2.5",
+      )}
+    >
+      {folded ? (
+        notice
+      ) : (
         <MessageRow
           channelId={channelId}
-          highlighted={false}
-          hoverBackground={false}
+          highlighted={message.id === highlightedMessageId || isSearchActive}
           huddleMemberPubkeys={huddleMemberPubkeys}
           huddleMemberPubkeysPending={huddleMemberPubkeysPending}
           hideAgentAccessBadge={hideAgentAccessBadges}
+          isContinuation={isContinuation}
+          showTimestamp={!isFollowedByContinuation}
           isFollowingThread={
             !message.pending && isFollowingThreadById
               ? isFollowingThreadById(effectiveThreadRootId)
               : undefined
           }
           isUnread={isUnread}
-          isContinuation={isContinuation}
-          showTimestamp={!isFollowedByContinuation}
           playEntrance={playEntrance}
           onEntranceComplete={onEntranceComplete}
           message={message}
@@ -177,72 +256,11 @@ export function MessageRowItem({
               : undefined
           }
           profiles={profiles}
+          searchQuery={isSearchMatch ? searchQuery : undefined}
           showDepthGuides={false}
           videoReviewContext={videoReviewContext}
         />
-        <MessageThreadSummaryRow
-          alignEnd={message.accent === true}
-          depth={message.depth}
-          message={message}
-          onOpenThread={onOpenThread}
-          showDepthGuides={false}
-          summary={summary}
-          summaryIndentOffsetRem={-THREAD_REPLY_ROW_MARGIN_INLINE_REM}
-          unreadCount={threadUnreadCounts?.get(message.id)}
-        />
-        {footer}
-      </div>
-    );
-  }
-
-  const isSearchMatch = searchMatchingMessageIds?.has(message.id) ?? false;
-  const isSearchActive = message.id === searchActiveMessageId;
-
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-1",
-        isFollowedByContinuation ? "pb-0" : "pb-2.5",
       )}
-    >
-      <MessageRow
-        channelId={channelId}
-        highlighted={message.id === highlightedMessageId || isSearchActive}
-        huddleMemberPubkeys={huddleMemberPubkeys}
-        huddleMemberPubkeysPending={huddleMemberPubkeysPending}
-        hideAgentAccessBadge={hideAgentAccessBadges}
-        isContinuation={isContinuation}
-        showTimestamp={!isFollowedByContinuation}
-        isFollowingThread={
-          !message.pending && isFollowingThreadById
-            ? isFollowingThreadById(effectiveThreadRootId)
-            : undefined
-        }
-        isUnread={isUnread}
-        playEntrance={playEntrance}
-        onEntranceComplete={onEntranceComplete}
-        message={message}
-        onDelete={canDelete}
-        onEdit={canEdit}
-        onFollowThread={
-          !message.pending && followThreadById
-            ? () => followThreadById(effectiveThreadRootId)
-            : undefined
-        }
-        onMarkRead={onMarkRead}
-        onMarkUnread={onMarkUnread}
-        onToggleReaction={onToggleReaction}
-        onReply={onReply}
-        onUnfollowThread={
-          !message.pending && unfollowThreadById
-            ? () => unfollowThreadById(effectiveThreadRootId)
-            : undefined
-        }
-        profiles={profiles}
-        searchQuery={isSearchMatch ? searchQuery : undefined}
-        showDepthGuides={false}
-        videoReviewContext={videoReviewContext}
-      />
       {footer}
     </div>
   );

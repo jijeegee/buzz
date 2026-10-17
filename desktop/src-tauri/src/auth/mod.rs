@@ -29,6 +29,7 @@ pub(crate) mod install_id;
 pub(crate) mod key_recovery;
 pub(crate) mod login_attempt;
 pub(crate) mod loopback;
+pub(crate) mod people;
 pub(crate) mod pkce;
 pub(crate) mod redact;
 pub(crate) mod refresh;

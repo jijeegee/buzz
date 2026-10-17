@@ -1,0 +1,193 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+import '../../shared/auth/account/account_api.dart';
+import '../../shared/theme/theme.dart';
+import '../../shared/widgets/kuzz_loading_indicator.dart';
+import '../../shared/widgets/modal_presentation.dart';
+import '../channels/channel_management_provider.dart';
+import 'blocked_users_provider.dart';
+import 'friends_provider.dart';
+import 'people_agents.dart';
+import 'people_errors.dart';
+import 'person_row.dart';
+
+/// "Add friend": type someone's exact Kuzz ID or email, find that one
+/// person, add them. No partial search, so nobody's email can be guessed.
+Future<void> showAddFriendSheet(BuildContext context) =>
+    showKuzzModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      title: 'Add friend',
+      builder: (_) => const AddFriendSheet(),
+    );
+
+class AddFriendSheet extends HookConsumerWidget {
+  const AddFriendSheet({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final controller = useTextEditingController();
+    final searching = useState(false);
+    final adding = useState(false);
+    final found = useState<PersonSummary?>(null);
+    final message = useState<String?>(null);
+    final generation = useRef(0);
+    final origin = ref.watch(accountOriginProvider);
+    final me = ref.watch(currentPubkeyProvider)?.toLowerCase();
+    final friends = ref.watch(friendIdsProvider).value ?? const <String>{};
+    final blocked = ref.watch(blockedPubkeysProvider);
+    final agents = ref.watch(peopleAgentPubkeysProvider);
+
+    Future<void> find() async {
+      final query = controller.text.trim();
+      if (query.isEmpty || origin == null) return;
+      final mine = ++generation.value;
+      searching.value = true;
+      found.value = null;
+      message.value = null;
+      String? failure;
+      PersonSummary? person;
+      final api = ref.read(accountApiProvider(origin));
+      try {
+        person = await api.lookupPerson(query);
+      } catch (error) {
+        failure = error is AccountApiException && error.statusCode == 429
+            ? 'Too many searches. Wait a minute and try again.'
+            : friendlyError(error, fallback: 'Couldn’t search. Try again.');
+      }
+      // A newer search owns the result.
+      if (!context.mounted || mine != generation.value) return;
+      searching.value = false;
+      if (failure != null) {
+        message.value = failure;
+      } else if (person == null ||
+          person.pubkey == me ||
+          blocked.contains(person.pubkey) ||
+          agents.contains(person.pubkey)) {
+        message.value = 'No one found with that ID or email';
+      } else {
+        found.value = person;
+      }
+    }
+
+    Future<void> add(PersonSummary person) async {
+      if (adding.value) return;
+      adding.value = true;
+      try {
+        await ref.read(friendsControllerProvider).add(person.pubkey);
+      } catch (error) {
+        if (context.mounted) {
+          adding.value = false;
+          message.value = friendlyError(
+            error,
+            fallback: 'Couldn’t add friend. Try again.',
+          );
+        }
+        return;
+      }
+      if (context.mounted) adding.value = false;
+    }
+
+    final person = found.value;
+    final isFriend = person != null && friends.contains(person.pubkey);
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          Grid.gutter,
+          0,
+          Grid.gutter,
+          Grid.xs + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: const Key('add-friend-query'),
+              controller: controller,
+              autofocus: true,
+              autocorrect: false,
+              enableSuggestions: false,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.search,
+              onChanged: (_) {
+                if (found.value != null || message.value != null) {
+                  found.value = null;
+                  message.value = null;
+                }
+              },
+              onSubmitted: (_) => unawaited(find()),
+              decoration: const InputDecoration(
+                labelText: 'Kuzz ID or email',
+                helperText: 'Enter it exactly as they gave it to you',
+              ),
+            ),
+            const SizedBox(height: Grid.xs),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (context, value, _) => FilledButton(
+                key: const Key('add-friend-find'),
+                onPressed:
+                    searching.value ||
+                        value.text.trim().isEmpty ||
+                        origin == null
+                    ? null
+                    : () => unawaited(find()),
+                child: searching.value
+                    ? const KuzzLoadingIndicator(
+                        size: 20,
+                        semanticLabel: 'Searching',
+                      )
+                    : const Text('Find'),
+              ),
+            ),
+            if (message.value case final text?) ...[
+              const SizedBox(height: Grid.xs),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  text,
+                  key: const Key('add-friend-message'),
+                  textAlign: TextAlign.center,
+                  style: context.textTheme.bodyMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+            if (person != null) ...[
+              const SizedBox(height: Grid.xs),
+              ListTile(
+                key: const Key('add-friend-result'),
+                contentPadding: EdgeInsets.zero,
+                leading: PersonAvatar(
+                  name: personName(null, person),
+                  avatarUrl: person.avatarUrl,
+                ),
+                title: Text(personName(null, person)),
+                subtitle: person.username == null
+                    ? null
+                    : Text('@${person.username}'),
+                trailing: isFriend
+                    ? const Text('Friend')
+                    : FilledButton.tonal(
+                        key: const Key('add-friend-add'),
+                        onPressed: adding.value
+                            ? null
+                            : () => unawaited(add(person)),
+                        child: const Text('Add'),
+                      ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

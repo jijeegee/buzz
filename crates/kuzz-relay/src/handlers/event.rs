@@ -95,6 +95,53 @@ where
     drop_count
 }
 
+/// Silent block (live delivery): in a DM, drop the connections of everyone
+/// who blocked the event's author. The author is never told. Only called for
+/// private channels. `None` means a lookup failed and the event must not be
+/// delivered (fail closed, like the membership check).
+async fn drop_dm_blockers(
+    state: &AppState,
+    community_id: CommunityId,
+    stored_event: &StoredEvent,
+    channel_id: uuid::Uuid,
+    matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
+) -> Option<Vec<(crate::subscription::ConnId, crate::subscription::SubId)>> {
+    if matches.is_empty() {
+        return Some(matches);
+    }
+    match state.dm_channels_cached(community_id, [channel_id]).await {
+        Ok(dms) if dms.contains(&channel_id) => {}
+        Ok(_) => return Some(matches),
+        Err(e) => {
+            warn!(%channel_id, "fan-out block filter: channel type lookup failed: {e}");
+            return None;
+        }
+    }
+    let author = stored_event.event.pubkey.to_bytes();
+    let blockers = match state.blockers_of_cached(community_id, &author).await {
+        Ok(blockers) => blockers,
+        Err(e) => {
+            warn!(%channel_id, "fan-out block filter: blockers lookup failed: {e}");
+            return None;
+        }
+    };
+    if blockers.is_empty() {
+        return Some(matches);
+    }
+    Some(
+        matches
+            .into_iter()
+            .filter(|(conn_id, _)| {
+                state
+                    .conn_manager
+                    .pubkey_for_conn(*conn_id)
+                    .and_then(|pk| <[u8; 32]>::try_from(pk.as_slice()).ok())
+                    .is_none_or(|pk| !blockers.contains(&pk))
+            })
+            .collect(),
+    )
+}
+
 /// Drop recipients without access before fan-out on a private channel.
 ///
 /// Open and channel-less events skip membership filtering (open channel-scoped
@@ -225,6 +272,12 @@ pub async fn filter_fanout_by_access(
             return Vec::new();
         }
     }
+    // DMs are always private, so open channels never pay for the block check.
+    let matches =
+        match drop_dm_blockers(state, community_id, stored_event, channel_id, matches).await {
+            Some(matches) => matches,
+            None => return Vec::new(),
+        };
 
     let mut allowed = Vec::with_capacity(matches.len());
     for (conn_id, sub_id) in matches {
@@ -3033,6 +3086,55 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn dm_event_skips_members_who_blocked_the_author() {
+            let state = test_state().await;
+            let channel_id = Uuid::new_v4();
+            let community_id = kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil());
+            state
+                .channel_visibility_cache
+                .insert((community_id, channel_id), "private".to_string());
+            state.blocks.seed_dm(community_id, channel_id, true);
+
+            let event = channel_event(Some(channel_id));
+            let author = event.event.pubkey.to_bytes();
+            let blocker_pk = [3u8; 32];
+            let other_pk = [4u8; 32];
+            state
+                .blocks
+                .seed_blockers(community_id, author, [blocker_pk]);
+            for pk in [blocker_pk, other_pk] {
+                state
+                    .membership_cache
+                    .insert((community_id, channel_id, pk.to_vec()), true);
+            }
+            let blocker = register_conn(&state, Some(blocker_pk.to_vec()));
+            let other = register_conn(&state, Some(other_pk.to_vec()));
+            let matches = vec![(blocker, "s".to_string()), (other, "s".to_string())];
+
+            let out = filter_fanout_by_access(&state, community_id, &event, matches, None).await;
+            assert_eq!(out, vec![(other, "s".to_string())]);
+
+            // In a non-DM private channel the blocker still gets the event.
+            let room = Uuid::new_v4();
+            state
+                .channel_visibility_cache
+                .insert((community_id, room), "private".to_string());
+            state.blocks.seed_dm(community_id, room, false);
+            state
+                .membership_cache
+                .insert((community_id, room, blocker_pk.to_vec()), true);
+            let out = filter_fanout_by_access(
+                &state,
+                community_id,
+                &channel_event(Some(room)),
+                vec![(blocker, "s".to_string())],
+                None,
+            )
+            .await;
+            assert_eq!(out, vec![(blocker, "s".to_string())]);
+        }
+
+        #[tokio::test]
         async fn private_channel_keeps_member_drops_non_member_and_unknown() {
             let state = test_state().await;
             let channel_id = Uuid::new_v4();
@@ -3040,6 +3142,7 @@ mod tests {
             state
                 .channel_visibility_cache
                 .insert((community_id, channel_id), "private".to_string());
+            state.blocks.seed_dm(community_id, channel_id, false);
 
             let member_pk = vec![1u8; 32];
             let non_member_pk = vec![2u8; 32];
@@ -3159,6 +3262,7 @@ mod tests {
             let state = test_state().await;
             let channel_id = Uuid::new_v4();
             let community_id = kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil());
+            state.blocks.seed_dm(community_id, channel_id, false);
 
             let member_pk = vec![1u8; 32];
             let non_member_pk = vec![2u8; 32];

@@ -124,6 +124,10 @@ pub struct EventQuery {
     /// SQL pushdown is sound.  Keeping `event_visible_to_reader` as post-filter
     /// defense-in-depth catches any residual mismatch.
     pub shared_gated_reader: Option<Vec<u8>>,
+    /// Silent-block reader: when set, exclude DM-channel events whose author
+    /// this reader blocked (`user_blocks`), before ORDER/LIMIT so history
+    /// pages and counts never include them.
+    pub blocked_dm_reader: Option<Vec<u8>>,
 }
 
 impl EventQuery {
@@ -156,6 +160,7 @@ impl EventQuery {
             channel_ids_include_global: true,
             max_limit: None,
             shared_gated_reader: None,
+            blocked_dm_reader: None,
         }
     }
 }
@@ -584,6 +589,28 @@ pub(crate) async fn query_events_on(
     Ok(out)
 }
 
+/// Silent-block pushdown: hide DM events authored by people the reader
+/// blocked. Channel-less events and non-DM channels are untouched.
+fn push_blocked_dm_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {
+    let Some(ref reader) = q.blocked_dm_reader else {
+        return;
+    };
+    qb.push(format!(
+        " AND NOT ({col_prefix}channel_id IS NOT NULL \
+         AND {col_prefix}pubkey IN (SELECT ub.blocked FROM user_blocks ub \
+         WHERE ub.community_id = "
+    ));
+    qb.push_bind(q.community_id.as_uuid());
+    qb.push(" AND ub.blocker = ");
+    qb.push_bind(reader.clone());
+    qb.push(format!(
+        ") AND {col_prefix}channel_id IN (SELECT c.id FROM channels c \
+         WHERE c.channel_type = 'dm' AND c.community_id = "
+    ));
+    qb.push_bind(q.community_id.as_uuid());
+    qb.push("))");
+}
+
 /// SQL for [`query_events_on`], after its match-nothing early returns.
 fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
     let clamp = q.max_limit.unwrap_or(DEFAULT_MAX_PAGE_LIMIT);
@@ -682,6 +709,8 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
         }
         qb.push(")");
     }
+
+    push_blocked_dm_clause(&mut qb, q, col_prefix);
 
     if let Some(ref pk) = q.pubkey {
         qb.push(format!(" AND {col_prefix}pubkey = "))
@@ -1022,6 +1051,8 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
         }
         qb.push(")");
     }
+
+    push_blocked_dm_clause(&mut qb, q, col_prefix);
 
     if let Some(ref pk) = q.pubkey {
         qb.push(format!(" AND {col_prefix}pubkey = "))
