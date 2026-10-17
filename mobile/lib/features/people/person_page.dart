@@ -14,6 +14,7 @@ import '../channels/channel_management_provider.dart';
 import 'blocked_users_provider.dart';
 import 'friends_provider.dart';
 import 'people_favorites.dart';
+import 'people_errors.dart';
 import 'person_actions.dart';
 import 'person_row.dart';
 
@@ -74,7 +75,12 @@ class PersonPage extends HookConsumerWidget {
           ),
         );
       } catch (error) {
-        showError('Couldn’t open the conversation: $error');
+        showError(
+          friendlyError(
+            error,
+            fallback: 'Couldn’t open the conversation. Try again.',
+          ),
+        );
       } finally {
         if (context.mounted) opening.value = false;
       }
@@ -88,9 +94,12 @@ class PersonPage extends HookConsumerWidget {
         await (isFriend ? controller.remove(pk) : controller.add(pk));
       } catch (error) {
         showError(
-          isFriend
-              ? 'Couldn’t remove friend: $error'
-              : 'Couldn’t add friend: $error',
+          friendlyError(
+            error,
+            fallback: isFriend
+                ? 'Couldn’t remove friend. Try again.'
+                : 'Couldn’t add friend. Try again.',
+          ),
         );
       } finally {
         if (context.mounted) busy.value = false;

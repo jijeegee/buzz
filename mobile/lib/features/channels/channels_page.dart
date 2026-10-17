@@ -47,6 +47,11 @@ import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
 import 'unread_badge/observed_unread_event.dart';
 import '../people/blocked_users_provider.dart';
+import '../people/friends_provider.dart';
+import '../people/people_agents.dart';
+import '../people/people_errors.dart';
+import '../people/people_page.dart' show sharedPeopleProvider;
+import '../../shared/auth/account/account_api.dart' show PersonSummary;
 
 part 'channels_page/body.dart';
 part 'channels_page/browse_channels_sheet.dart';

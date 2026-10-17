@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/misc.dart' show Override;
 import 'package:kuzz/features/people/people_favorites.dart';
@@ -58,21 +59,40 @@ class PeopleSession extends RelaySessionNotifier {
   }
 
   /// Stores a kind 3 list following [pubkeys].
-  void follow(String author, List<String> pubkeys, {int createdAt = 100}) {
+  void follow(
+    String author,
+    List<String> pubkeys, {
+    int createdAt = 100,
+    List<List<String>>? tags,
+    String content = '',
+  }) {
     contacts.add(
       NostrEvent(
         id: 'k$createdAt'.padRight(64, '0'),
         pubkey: author,
         createdAt: createdAt,
         kind: EventKind.contactList,
-        tags: [
-          for (final pk in pubkeys) ['p', pk],
-        ],
-        content: '',
+        tags:
+            tags ??
+            [
+              for (final pk in pubkeys) ['p', pk],
+            ],
+        content: content,
         sig: 'sig',
       ),
     );
   }
+
+  /// Simulates the relay dropping and coming back.
+  void setStatus(SessionStatus status) => state = SessionState(status: status);
+}
+
+/// An app lifecycle that tests move by hand (no platform listeners).
+class ManualLifecycle extends AppLifecycleNotifier {
+  @override
+  AppLifecycleState build() => AppLifecycleState.resumed;
+
+  void set(AppLifecycleState next) => state = next;
 }
 
 class FixedConfig extends RelayConfigNotifier {
@@ -91,6 +111,9 @@ class FakePeopleApi extends Fake implements AccountApi {
   List<PersonSummary> shared = [];
   final List<String> calls = [];
   Object? blockError;
+
+  /// How many of the next list reads fail.
+  int listFailures = 0;
   Object? lookupError;
   Completer<void>? holdLookup;
   AccountProfile profile = const AccountProfile(
@@ -109,6 +132,10 @@ class FakePeopleApi extends Fake implements AccountApi {
   @override
   Future<List<BlockedPerson>> listBlocks() async {
     calls.add('list');
+    if (listFailures > 0) {
+      listFailures--;
+      throw const AccountApiException('offline');
+    }
     return [for (final pk in blocked) BlockedPerson(pubkey: pk)];
   }
 
@@ -215,6 +242,7 @@ List<Override> peopleOverrides({
     ),
   ),
   relaySessionProvider.overrideWith(() => session),
+  appLifecycleProvider.overrideWith(ManualLifecycle.new),
   accountOriginProvider.overrideWithValue(api == null ? null : peopleOrigin),
   if (api != null) accountApiProvider.overrideWith((ref, _) => api),
   peopleFavoritesProvider.overrideWith(() => MemoryFavorites(favorites)),

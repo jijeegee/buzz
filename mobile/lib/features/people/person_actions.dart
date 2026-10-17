@@ -10,6 +10,7 @@ import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import 'blocked_users_provider.dart';
 import 'friends_provider.dart';
+import 'people_errors.dart';
 import 'report.dart';
 
 /// Blocking succeeded but the person is still in my friends list.
@@ -19,22 +20,30 @@ class FriendRemovalFailed implements Exception {
   final Object cause;
 
   @override
-  String toString() => 'Couldn’t remove them from your friends: $cause';
+  String toString() => 'Blocked, but couldn’t remove them from your friends.';
 }
 
-/// Blocks [pubkey], then removes them from my friends. Throws the server's
+/// Blocks a person, then removes them from my friends. Throws the server's
 /// error when the block fails, or [FriendRemovalFailed] when only the friend
 /// removal does (the block itself stands).
-Future<void> blockPerson(WidgetRef ref, String pubkey) async {
-  final normalized = pubkey.toLowerCase();
-  await ref.read(blockedUsersProvider.notifier).block(normalized);
+typedef PersonBlocker = Future<void> Function(String pubkey);
+
+/// A [PersonBlocker] bound to what [ref] provides now, so it keeps working
+/// after awaits even if the widget that made it is gone.
+PersonBlocker personBlocker(WidgetRef ref) {
+  final blocked = ref.read(blockedUsersProvider.notifier);
+  final friendsController = ref.read(friendsControllerProvider);
   final friends = ref.read(friendIdsProvider).value;
-  if (friends != null && !friends.contains(normalized)) return;
-  try {
-    await ref.read(friendsControllerProvider).remove(normalized);
-  } catch (error) {
-    throw FriendRemovalFailed(error);
-  }
+  return (pubkey) async {
+    final normalized = pubkey.toLowerCase();
+    await blocked.block(normalized);
+    if (friends != null && !friends.contains(normalized)) return;
+    try {
+      await friendsController.remove(normalized);
+    } catch (error) {
+      throw FriendRemovalFailed(error);
+    }
+  };
 }
 
 /// Asks before blocking [name]. True when confirmed.
@@ -76,15 +85,20 @@ Future<bool> confirmAndBlock(
   required String name,
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final block = personBlocker(ref);
   if (!await confirmBlock(context, name)) return false;
   try {
-    await blockPerson(ref, pubkey);
+    await block(pubkey);
   } on FriendRemovalFailed catch (error) {
-    messenger?.showSnackBar(SnackBar(content: Text('Blocked $name. $error')));
+    messenger?.showSnackBar(SnackBar(content: Text('$error')));
     return true;
   } catch (error) {
     messenger?.showSnackBar(
-      SnackBar(content: Text('Couldn’t block $name: $error')),
+      SnackBar(
+        content: Text(
+          friendlyError(error, fallback: 'Couldn’t block $name. Try again.'),
+        ),
+      ),
     );
     return false;
   }
@@ -100,11 +114,16 @@ Future<void> unblockWithFeedback(
   required String name,
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final blocked = ref.read(blockedUsersProvider.notifier);
   try {
-    await ref.read(blockedUsersProvider.notifier).unblock(pubkey);
+    await blocked.unblock(pubkey);
   } catch (error) {
     messenger?.showSnackBar(
-      SnackBar(content: Text('Couldn’t unblock $name: $error')),
+      SnackBar(
+        content: Text(
+          friendlyError(error, fallback: 'Couldn’t unblock $name. Try again.'),
+        ),
+      ),
     );
     return;
   }
@@ -160,27 +179,33 @@ class ReportSheet extends HookConsumerWidget {
     Future<void> send() async {
       final chosen = reason.value;
       if (chosen == null || sending.value) return;
+      final reports = ref.read(reportServiceProvider);
+      final block = alsoBlock.value && canBlock ? personBlocker(ref) : null;
       sending.value = true;
       error.value = null;
       try {
-        await ref
-            .read(reportServiceProvider)
-            .submit(pubkey: pubkey, reason: chosen, eventId: eventId);
+        await reports.submit(pubkey: pubkey, reason: chosen, eventId: eventId);
       } catch (failure) {
         if (!context.mounted) return;
         sending.value = false;
-        error.value = 'Couldn’t send the report: $failure';
+        error.value = friendlyError(
+          failure,
+          fallback: 'Couldn’t send the report. Try again.',
+        );
         return;
       }
       var outcome = 'Report sent to the moderators';
-      if (alsoBlock.value && canBlock) {
+      if (block != null) {
         try {
-          await blockPerson(ref, pubkey);
+          await block(pubkey);
           outcome = 'Report sent. $name is blocked.';
-        } on FriendRemovalFailed catch (failure) {
-          outcome = 'Report sent. $name is blocked. $failure';
+        } on FriendRemovalFailed {
+          outcome =
+              'Report sent. $name is blocked, but is still in your friends.';
         } catch (failure) {
-          outcome = 'Report sent, but couldn’t block $name: $failure';
+          outcome =
+              'Report sent, but couldn’t block $name. '
+              '${friendlyError(failure, fallback: 'Try again from their profile.')}';
         }
       }
       if (context.mounted) Navigator.of(context).pop(outcome);

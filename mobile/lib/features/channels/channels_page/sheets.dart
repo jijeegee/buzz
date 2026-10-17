@@ -472,22 +472,115 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
         .map((user) => user.pubkey.toLowerCase())
         .toSet();
     final blockedPubkeys = ref.watch(blockedPubkeysProvider);
-    final availableResults =
-        directoryAsync.asData?.value.where((user) {
-          final normalizedPubkey = user.pubkey.toLowerCase();
-          if (selectedPubkeys.contains(normalizedPubkey) ||
-              blockedPubkeys.contains(normalizedPubkey) ||
-              normalizedPubkey == currentPubkey?.toLowerCase()) {
-            return false;
-          }
-          if (normalizedQuery.isEmpty) {
-            return true;
-          }
-          return user.label.toLowerCase().contains(normalizedQuery) ||
-              user.secondaryLabel.toLowerCase().contains(normalizedQuery) ||
-              normalizedPubkey.contains(normalizedQuery);
-        }).toList() ??
-        const <DirectoryUser>[];
+    final knownAgents = ref.watch(peopleAgentPubkeysProvider);
+    final friendIds = previewDirectoryActive
+        ? const <String>{}
+        : ref.watch(friendIdsProvider).value ?? const <String>{};
+    final cache = ref.watch(userCacheProvider);
+    final me = currentPubkey?.toLowerCase();
+
+    useEffect(() {
+      if (friendIds.isNotEmpty) {
+        unawaited(
+          ref.read(userCacheProvider.notifier).preload(friendIds.toList()),
+        );
+      }
+      return null;
+    }, [Object.hashAllUnordered(friendIds)]);
+
+    bool eligible(String pubkey) {
+      final pk = pubkey.toLowerCase();
+      return !selectedPubkeys.contains(pk) &&
+          !blockedPubkeys.contains(pk) &&
+          pk != me;
+    }
+
+    bool matches(DirectoryUser user) {
+      if (normalizedQuery.isEmpty) return true;
+      return user.label.toLowerCase().contains(normalizedQuery) ||
+          (user.nip05Handle?.toLowerCase().contains(normalizedQuery) ?? false);
+    }
+
+    final directoryUsers =
+        directoryAsync.asData?.value ?? const <DirectoryUser>[];
+    final directoryByPubkey = {
+      for (final user in directoryUsers) user.pubkey.toLowerCase(): user,
+    };
+    bool isAgent(DirectoryUser user) =>
+        user.isAgent || knownAgents.contains(user.pubkey.toLowerCase());
+
+    // Only friends, people I share a channel with, and agents can be found
+    // here; the whole member directory is never listed.
+    final List<DirectoryUser> friendResults;
+    final List<DirectoryUser> agentResults;
+    if (previewDirectoryActive) {
+      friendResults = [
+        for (final user in directoryUsers)
+          if (eligible(user.pubkey) && matches(user)) user,
+      ];
+      agentResults = const [];
+    } else {
+      friendResults =
+          [
+            for (final pk in friendIds)
+              if (eligible(pk) &&
+                  !knownAgents.contains(pk) &&
+                  !(directoryByPubkey[pk]?.isAgent ?? false) &&
+                  !(cache[pk]?.isAgent ?? false))
+                directoryByPubkey[pk] ??
+                    DirectoryUser(
+                      pubkey: pk,
+                      displayName: cache[pk]?.displayName,
+                      avatarUrl: cache[pk]?.avatarUrl,
+                      nip05Handle: cache[pk]?.nip05Handle,
+                    ),
+          ].where(matches).toList()..sort(
+            (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
+          );
+      agentResults = [
+        for (final user in directoryUsers)
+          if (isAgent(user) && eligible(user.pubkey) && matches(user))
+            DirectoryUser(
+              pubkey: user.pubkey,
+              displayName: user.displayName,
+              avatarUrl: user.avatarUrl,
+              nip05Handle: user.nip05Handle,
+              isAgent: true,
+            ),
+      ];
+    }
+    final shown = {
+      for (final user in [...friendResults, ...agentResults])
+        user.pubkey.toLowerCase(),
+    };
+    final sharedAsync = previewDirectoryActive || normalizedQuery.isEmpty
+        ? const AsyncValue<List<PersonSummary>>.data([])
+        : ref.watch(sharedPeopleProvider(normalizedQuery));
+    final sharedResults = [
+      for (final person in sharedAsync.value ?? const <PersonSummary>[])
+        if (eligible(person.pubkey) &&
+            !shown.contains(person.pubkey) &&
+            !knownAgents.contains(person.pubkey))
+          DirectoryUser(
+            pubkey: person.pubkey,
+            displayName: person.displayName,
+            avatarUrl: person.avatarUrl,
+            nip05Handle: person.username == null ? null : '@${person.username}',
+          ),
+    ];
+    final sharedPending =
+        normalizedQuery.isNotEmpty &&
+        sharedAsync.isLoading &&
+        !sharedAsync.hasValue;
+    final sharedFailed =
+        normalizedQuery.isNotEmpty &&
+        sharedAsync.hasError &&
+        !sharedAsync.hasValue;
+    final availableResults = [
+      ...friendResults,
+      ...sharedResults,
+      ...agentResults,
+    ];
     // Eligible recipients shown or chosen here are the comparison context.
     final recipients = [...availableResults, ...selectedUsers.value];
     final names = watchIdentityNames(
@@ -522,10 +615,59 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
           Navigator.of(context).pop(channel);
         }
       } catch (error) {
-        submitError.value = error.toString();
+        submitError.value = friendlyError(
+          error,
+          fallback: 'Couldn’t start the conversation. Try again.',
+        );
       } finally {
         isSubmitting.value = false;
       }
+    }
+
+    Widget tileFor(DirectoryUser user) {
+      final subtitle = user.isAgent
+          ? user.secondaryLabel
+          : (user.nip05Handle?.trim() ?? '');
+      return ListTile(
+        key: Key('new-dm-person-${user.pubkey}'),
+        contentPadding: const EdgeInsets.symmetric(horizontal: Grid.half),
+        leading: AvatarImage(
+          imageUrl: user.avatarUrl,
+          radius: 20,
+          backgroundColor: context.colors.primaryContainer,
+          fallback: Text(
+            user.initial,
+            style: context.textTheme.labelLarge?.copyWith(
+              color: context.colors.onPrimaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          isAgent: user.isAgent,
+        ),
+        title: Text(
+          names.labelFor(user.pubkey),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: subtitle.isEmpty || subtitle == user.label
+            ? null
+            : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: Icon(
+          LucideIcons.plus,
+          size: 18,
+          color: context.colors.onSurfaceVariant,
+        ),
+        onTap: isSubmitting.value
+            ? null
+            : () {
+                selectedUsers.value = [...selectedUsers.value, user];
+                queryController.clear();
+                query.value = '';
+                debouncedQuery.value = '';
+                submitError.value = null;
+                queryFocusNode.requestFocus();
+              },
+      );
     }
 
     return Padding(
@@ -700,9 +842,7 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text(
-                              'Could not load people from this relay.',
-                            ),
+                            const Text('Couldn’t load people. Try again.'),
                             const SizedBox(height: Grid.half),
                             TextButton(
                               onPressed: () {
@@ -723,74 +863,74 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                       ),
                     );
                   }
-                  if (availableResults.isEmpty) {
+                  if (availableResults.isEmpty &&
+                      !sharedPending &&
+                      !sharedFailed) {
                     return SizedBox(
                       height: 280,
                       child: Center(
                         child: Text(
                           normalizedQuery.isEmpty
-                              ? 'No people or agents available to message.'
-                              : 'No matching users.',
+                              ? 'Add friends in People to message them here.'
+                              : 'No matching people.',
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     );
                   }
-                  return ListView.separated(
-                    physics: const NeverScrollableScrollPhysics(),
-                    shrinkWrap: true,
-                    itemCount: availableResults.length,
-                    separatorBuilder: (_, _) =>
-                        const Divider(height: 1, indent: 56),
-                    itemBuilder: (context, index) {
-                      final user = availableResults[index];
-                      return ListTile(
-                        key: Key('new-dm-person-${user.pubkey}'),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: Grid.half,
-                        ),
-                        leading: AvatarImage(
-                          imageUrl: user.avatarUrl,
-                          radius: 20,
-                          backgroundColor: context.colors.primaryContainer,
-                          fallback: Text(
-                            user.initial,
-                            style: context.textTheme.labelLarge?.copyWith(
-                              color: context.colors.onPrimaryContainer,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          isAgent: user.isAgent,
-                        ),
-                        title: Text(
-                          names.labelFor(user.pubkey),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          user.secondaryLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: Icon(
-                          LucideIcons.plus,
-                          size: 18,
-                          color: context.colors.onSurfaceVariant,
-                        ),
-                        onTap: isSubmitting.value
-                            ? null
-                            : () {
-                                selectedUsers.value = [
-                                  ...selectedUsers.value,
-                                  user,
-                                ];
-                                queryController.clear();
-                                query.value = '';
-                                debouncedQuery.value = '';
-                                submitError.value = null;
-                                queryFocusNode.requestFocus();
-                              },
-                      );
-                    },
+                  Widget header(String key, String title) => Padding(
+                    key: Key('new-dm-section-$key'),
+                    padding: const EdgeInsets.fromLTRB(
+                      Grid.half,
+                      Grid.xs,
+                      Grid.half,
+                      Grid.half,
+                    ),
+                    child: Text(
+                      title,
+                      style: context.textTheme.labelLarge?.copyWith(
+                        color: context.colors.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                  Widget note(String key, String text) => Padding(
+                    key: Key('new-dm-$key'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Grid.half,
+                      vertical: Grid.xxs,
+                    ),
+                    child: Text(
+                      text,
+                      style: context.textTheme.bodyMedium?.copyWith(
+                        color: context.colors.onSurfaceVariant,
+                      ),
+                    ),
+                  );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (friendResults.isNotEmpty) ...[
+                        if (!previewDirectoryActive)
+                          header('friends', 'Friends'),
+                        for (final user in friendResults) tileFor(user),
+                      ],
+                      if (sharedResults.isNotEmpty ||
+                          sharedPending ||
+                          sharedFailed) ...[
+                        header('shared', 'In your channels'),
+                        if (sharedPending)
+                          note('shared-loading', 'Searching…')
+                        else if (sharedFailed)
+                          note('shared-error', 'Couldn’t search your channels')
+                        else
+                          for (final user in sharedResults) tileFor(user),
+                      ],
+                      if (agentResults.isNotEmpty) ...[
+                        header('agents', 'Agents'),
+                        for (final user in agentResults) tileFor(user),
+                      ],
+                    ],
                   );
                 },
               ),

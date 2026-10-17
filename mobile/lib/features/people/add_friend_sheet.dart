@@ -11,6 +11,8 @@ import '../../shared/widgets/modal_presentation.dart';
 import '../channels/channel_management_provider.dart';
 import 'blocked_users_provider.dart';
 import 'friends_provider.dart';
+import 'people_agents.dart';
+import 'people_errors.dart';
 import 'person_row.dart';
 
 /// "Add friend": type someone's exact Kuzz ID or email, find that one
@@ -38,6 +40,7 @@ class AddFriendSheet extends HookConsumerWidget {
     final me = ref.watch(currentPubkeyProvider)?.toLowerCase();
     final friends = ref.watch(friendIdsProvider).value ?? const <String>{};
     final blocked = ref.watch(blockedPubkeysProvider);
+    final agents = ref.watch(peopleAgentPubkeysProvider);
 
     Future<void> find() async {
       final query = controller.text.trim();
@@ -48,12 +51,13 @@ class AddFriendSheet extends HookConsumerWidget {
       message.value = null;
       String? failure;
       PersonSummary? person;
+      final api = ref.read(accountApiProvider(origin));
       try {
-        person = await ref.read(accountApiProvider(origin)).lookupPerson(query);
-      } on AccountApiException catch (error) {
-        failure = error.statusCode == 429
+        person = await api.lookupPerson(query);
+      } catch (error) {
+        failure = error is AccountApiException && error.statusCode == 429
             ? 'Too many searches. Wait a minute and try again.'
-            : 'Couldn’t search: ${error.message}';
+            : friendlyError(error, fallback: 'Couldn’t search. Try again.');
       }
       // A newer search owns the result.
       if (!context.mounted || mine != generation.value) return;
@@ -62,7 +66,8 @@ class AddFriendSheet extends HookConsumerWidget {
         message.value = failure;
       } else if (person == null ||
           person.pubkey == me ||
-          blocked.contains(person.pubkey)) {
+          blocked.contains(person.pubkey) ||
+          agents.contains(person.pubkey)) {
         message.value = 'No one found with that ID or email';
       } else {
         found.value = person;
@@ -77,7 +82,10 @@ class AddFriendSheet extends HookConsumerWidget {
       } catch (error) {
         if (context.mounted) {
           adding.value = false;
-          message.value = 'Couldn’t add friend: $error';
+          message.value = friendlyError(
+            error,
+            fallback: 'Couldn’t add friend. Try again.',
+          );
         }
         return;
       }

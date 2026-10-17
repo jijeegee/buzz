@@ -12,6 +12,7 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import 'blocked_users_page.dart';
+import '../people/people_errors.dart';
 import 'kuzz_id_page.dart';
 
 /// Settings → "Friends & privacy": my Kuzz ID, whether people can find me
@@ -32,14 +33,23 @@ class PeopleSettings extends HookConsumerWidget {
 
     Future<void> setDiscoverable(bool value) async {
       final messenger = ScaffoldMessenger.maybeOf(context);
+      final container = ProviderScope.containerOf(context, listen: false);
+      final api = ref.read(accountApiProvider(origin));
       pending.value = value;
       try {
-        await ref.read(accountApiProvider(origin)).setDiscoverable(value);
-        ref.invalidate(accountProfileProvider(origin));
-        await ref.read(accountProfileProvider(origin).future);
+        await api.setDiscoverable(value);
+        container.invalidate(accountProfileProvider(origin));
+        await container.read(accountProfileProvider(origin).future);
       } catch (error) {
         messenger?.showSnackBar(
-          SnackBar(content: Text('Couldn’t change this setting: $error')),
+          SnackBar(
+            content: Text(
+              friendlyError(
+                error,
+                fallback: 'Couldn’t change this setting. Try again.',
+              ),
+            ),
+          ),
         );
       } finally {
         if (context.mounted) pending.value = null;

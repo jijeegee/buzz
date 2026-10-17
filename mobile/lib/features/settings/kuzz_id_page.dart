@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/auth/account/account_api.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
+import '../people/people_errors.dart';
 
 /// A Kuzz ID: 3 to 32 lowercase letters, digits or underscores.
 final kuzzIdPattern = RegExp(r'^[a-z0-9_]{3,32}$');
@@ -56,15 +57,16 @@ class KuzzIdPage extends HookConsumerWidget {
       error.value = null;
       saving.value = true;
       final container = ProviderScope.containerOf(context, listen: false);
+      final api = ref.read(accountApiProvider(origin));
       try {
-        await ref.read(accountApiProvider(origin)).setUsername(value);
-      } on AccountApiException catch (failure) {
+        await api.setUsername(value);
+      } catch (failure) {
         if (!context.mounted) return;
         saving.value = false;
-        error.value =
-            failure.code == 'username_taken' || failure.statusCode == 409
-            ? 'That ID is taken'
-            : 'Couldn’t save your ID: ${failure.message}';
+        error.value = friendlyError(
+          failure,
+          fallback: 'Couldn’t save your ID. Try again.',
+        );
         return;
       }
       container.invalidate(accountProfileProvider(origin));

@@ -18,6 +18,7 @@ import '../pulse/pulse_provider.dart';
 import 'add_friend_sheet.dart';
 import 'blocked_users_provider.dart';
 import 'friends_provider.dart';
+import 'people_agents.dart';
 import 'people_favorites.dart';
 import 'person_page.dart';
 import 'person_row.dart';
@@ -35,12 +36,6 @@ final sharedPeopleProvider = FutureProvider.autoDispose
       if (q.isEmpty || origin == null) return const [];
       return ref.watch(accountApiProvider(origin)).sharedPeople(q);
     }, retry: (_, _) => null);
-
-/// Pubkeys that are agents, as far as is known right now.
-Set<String> _knownAgents(WidgetRef ref) {
-  final agents = ref.watch(agentPubkeysProvider).value ?? const <String>[];
-  return {for (final pk in agents) pk.toLowerCase()};
-}
 
 bool _matches(String query, UserProfile? profile, String name) {
   final q = query.toLowerCase();
@@ -82,7 +77,7 @@ class PeoplePage extends HookConsumerWidget {
 
     final me = ref.watch(currentPubkeyProvider)?.toLowerCase();
     final blocked = ref.watch(blockedPubkeysProvider);
-    final agents = _knownAgents(ref);
+    final agents = ref.watch(peopleAgentPubkeysProvider);
     final favorites = ref.watch(peopleFavoritesProvider);
     final friendsAsync = ref.watch(friendIdsProvider);
     final cache = ref.watch(userCacheProvider);
