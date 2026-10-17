@@ -1,11 +1,11 @@
 /**
  * Token-auth detection (plan §5.2.1): a relay with `AUTH_TOKEN_ENABLED`
- * advertises `buzz_token_auth: {version, bearer, oidc_providers}` in its
+ * advertises `kuzz_token_auth: {version, bearer, oidc_providers}` in its
  * NIP-11 document. Without it (flag off, older relay, or an unreachable
  * document) the web client keeps today's key/NIP-98 behavior.
  */
 
-/** Parsed `buzz_token_auth` descriptor. */
+/** Parsed `kuzz_token_auth` descriptor. */
 export type TokenAuthDescriptor = {
   bearer: boolean;
   oidcProviders: string[];
@@ -16,7 +16,7 @@ export function parseTokenAuthDescriptor(
   nip11: unknown,
 ): TokenAuthDescriptor | null {
   if (!nip11 || typeof nip11 !== "object") return null;
-  const raw = (nip11 as Record<string, unknown>).buzz_token_auth;
+  const raw = (nip11 as Record<string, unknown>).kuzz_token_auth;
   if (!raw || typeof raw !== "object") return null;
   const descriptor = raw as Record<string, unknown>;
   if (descriptor.bearer !== true) return null;

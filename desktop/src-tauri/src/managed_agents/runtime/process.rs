@@ -21,7 +21,7 @@ pub(crate) const KNOWN_AGENT_BINARIES: &[&str] = &[
     // git-credential-nostr, git-sign-nostr) are short-lived per-tool-call
     // invocations — not listed here.
     "kuzz-dev-mcp",
-    "buzz_dev_mcp",
+    "kuzz_dev_mcp",
 ];
 
 /// Script interpreters that may host managed agent wrappers (e.g. npm shims).

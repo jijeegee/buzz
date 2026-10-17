@@ -31,7 +31,10 @@ use crate::error::{DbError, Result};
 
 pub use access_token::{AccessTokenRecord, AccessTokenRejection};
 pub use bot::{BotRecord, ExchangeOutcome};
-pub use key_backup::{InitializeKeyBackup, KeyBackupRecord};
+pub use key_backup::{
+    InitializeKeyBackup, KeyBackupRecord, KeyBackupReencryption, KEY_BACKUP_VERSION,
+    LEGACY_KEY_BACKUP_VERSION,
+};
 pub use principal::{
     LoginPrincipal, PrincipalRecord, ProfileCommunity, ProfileEventState, ProfilePublishLock,
     ProfilePublishSnapshot, ProfileUpdate, MAX_PROFILE_COMMUNITIES,

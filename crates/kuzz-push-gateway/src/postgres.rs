@@ -72,7 +72,7 @@ fn ts(v: DateTime<Utc>) -> i64 {
 }
 fn profile(v: &str) -> Result<AppProfile, AuthorityError> {
     match v {
-        "buzz-ios-dogfood" => Ok(AppProfile::KuzzIosDogfood),
+        "kuzz-ios-dogfood" => Ok(AppProfile::KuzzIosDogfood),
         _ => Err(AuthorityError::Unavailable),
     }
 }
@@ -571,7 +571,7 @@ mod postgres_tests {
     use super::*;
     use sqlx::{postgres::PgPoolOptions, AssertSqlSafe};
 
-    const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1 -- fixed localhost-only test credential
+    const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1 -- fixed localhost-only test credential
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL with CREATEDB/CREATEROLE"]
@@ -910,7 +910,7 @@ mod postgres_tests {
         let now = Utc::now();
         sqlx::query(
             "INSERT INTO push_gateway_installations(id,app_attest_key_id,app_attest_public_key,assertion_counter,app_profile,token_ciphertext,token_fingerprint,endpoint_epoch,expires_at)
-             VALUES ($1,$2,$3,0,'buzz-ios-dogfood',$4,$5,1,$6)",
+             VALUES ($1,$2,$3,0,'kuzz-ios-dogfood',$4,$5,1,$6)",
         )
         .bind(Uuid::from_u128(1))
         .bind(vec![1u8])

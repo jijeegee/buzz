@@ -273,7 +273,7 @@ test("authoritative edit snapshots exclude old p-tags and annotated tray metadat
       ["p", ALICE],
       ["mention", ALICE, "agent-address"],
       ["mention", BOB],
-      ["buzz:mention-snapshot"],
+      ["kuzz:mention-snapshot"],
     ],
     { [ALICE]: { displayName: "Alice" }, [BOB]: { displayName: "Bob" } },
     () => false,

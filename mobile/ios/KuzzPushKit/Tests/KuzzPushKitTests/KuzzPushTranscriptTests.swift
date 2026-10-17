@@ -46,7 +46,7 @@ final class KuzzPushTranscriptTests: XCTestCase {
     static let installationHandle = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
     static let challenge = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
     static let keyId = "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
-    static let appProfile = "buzz-ios-dogfood"
+    static let appProfile = "kuzz-ios-dogfood"
     static let endpoint = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
     static let relayPubkey = String(repeating: "a", count: 64)
     static let notBefore: Int64 = 1_752_620_000

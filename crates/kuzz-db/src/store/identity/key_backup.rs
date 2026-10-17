@@ -22,6 +22,20 @@ pub struct KeyBackupRecord {
     pub ciphertext: Vec<u8>,
 }
 
+/// Envelope version new backups must carry (kuzz AAD domain).
+pub const KEY_BACKUP_VERSION: u16 = 2;
+/// Pre-rename envelope version, rewritten by `kuzz-admin reencrypt-key-backups`.
+pub const LEGACY_KEY_BACKUP_VERSION: u16 = 1;
+
+/// Counts reported by [`Db::reencrypt_legacy_key_backups`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct KeyBackupReencryption {
+    /// Version 1 rows rewritten as the current version.
+    pub rewritten: u64,
+    /// Rows already at the current version, left untouched.
+    pub already_current: u64,
+}
+
 /// Atomic initialization result; no outcome overwrites an existing binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitializeKeyBackup {
@@ -156,21 +170,85 @@ impl Db {
             "SELECT pubkey, version, key_id, nonce, ciphertext FROM account_key_backups WHERE account_id = $1"
         ).bind(account.as_bytes().as_slice()).fetch_optional(&mut *tx).await?;
         tx.commit().await?;
-        row.map(|row| {
-            let bytes: Vec<u8> = row.try_get("pubkey")?;
-            let version: i16 = row.try_get("version")?;
-            Ok(KeyBackupRecord {
-                pubkey: bytes
-                    .try_into()
-                    .map_err(|_| DbError::InvalidData("invalid backup pubkey".into()))?,
-                version: u16::try_from(version)
-                    .map_err(|_| DbError::InvalidData("invalid backup version".into()))?,
-                key_id: row.try_get("key_id")?,
-                nonce: row.try_get("nonce")?,
-                ciphertext: row.try_get("ciphertext")?,
-            })
+        row.as_ref().map(decode_record).transpose()
+    }
+
+    /// Rewrite every version 1 backup through `reencrypt` in one transaction.
+    ///
+    /// `reencrypt` receives the account id and the stored envelope and must
+    /// return the replacement envelope; it may not change the public key or
+    /// master-key label. Rows already at [`KEY_BACKUP_VERSION`] are skipped, so
+    /// running this again is a no-op. Any failure rolls back every row.
+    pub async fn reencrypt_legacy_key_backups<F>(
+        &self,
+        mut reencrypt: F,
+    ) -> Result<KeyBackupReencryption>
+    where
+        F: FnMut(&[u8; 32], &KeyBackupRecord) -> std::result::Result<KeyBackupRecord, String>,
+    {
+        let mut tx = begin(&self.pool).await?;
+        let rows = sqlx::query(
+            "SELECT account_id, pubkey, version, key_id, nonce, ciphertext \
+             FROM account_key_backups WHERE version = $1 ORDER BY account_id FOR UPDATE",
+        )
+        .bind(LEGACY_KEY_BACKUP_VERSION as i16)
+        .fetch_all(&mut *tx)
+        .await?;
+        let already_current: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM account_key_backups WHERE version = $1")
+                .bind(KEY_BACKUP_VERSION as i16)
+                .fetch_one(&mut *tx)
+                .await?;
+        let mut rewritten = 0u64;
+        for row in &rows {
+            let account_bytes: Vec<u8> = row.try_get("account_id")?;
+            let account: [u8; 32] = account_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| DbError::InvalidData("invalid backup account id".into()))?;
+            let current = decode_record(row)?;
+            let replacement = reencrypt(&account, &current).map_err(|err| {
+                DbError::InvalidData(format!(
+                    "key backup for account {} could not be re-encrypted: {err}",
+                    hex::encode(account)
+                ))
+            })?;
+            if replacement.version != KEY_BACKUP_VERSION
+                || replacement.pubkey != current.pubkey
+                || replacement.key_id != current.key_id
+                || replacement.nonce.len() != 12
+                || replacement.ciphertext.len() != 48
+            {
+                return Err(DbError::InvalidData(format!(
+                    "re-encrypted key backup for account {} is not a valid version {KEY_BACKUP_VERSION} envelope",
+                    hex::encode(account)
+                )));
+            }
+            let updated = sqlx::query(
+                "UPDATE account_key_backups SET version = $2, nonce = $3, ciphertext = $4 \
+                 WHERE account_id = $1 AND version = $5",
+            )
+            .bind(account.as_slice())
+            .bind(replacement.version as i16)
+            .bind(&replacement.nonce)
+            .bind(&replacement.ciphertext)
+            .bind(LEGACY_KEY_BACKUP_VERSION as i16)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+            if updated != 1 {
+                return Err(DbError::InvalidData(format!(
+                    "key backup for account {} changed during re-encryption",
+                    hex::encode(account)
+                )));
+            }
+            rewritten += 1;
+        }
+        tx.commit().await?;
+        Ok(KeyBackupReencryption {
+            rewritten,
+            already_current: u64::try_from(already_current).unwrap_or_default(),
         })
-        .transpose()
     }
 
     /// Commit one new immutable binding. Account locks and unique constraints
@@ -182,7 +260,7 @@ impl Db {
         session: Uuid,
         backup: &KeyBackupRecord,
     ) -> Result<InitializeKeyBackup> {
-        if backup.version != 1
+        if backup.version != KEY_BACKUP_VERSION
             || backup.nonce.len() != 12
             || backup.ciphertext.len() != 48
             || backup.key_id.is_empty()
@@ -233,4 +311,19 @@ impl Db {
             InitializeKeyBackup::PubkeyInUse
         })
     }
+}
+
+fn decode_record(row: &sqlx::postgres::PgRow) -> Result<KeyBackupRecord> {
+    let bytes: Vec<u8> = row.try_get("pubkey")?;
+    let version: i16 = row.try_get("version")?;
+    Ok(KeyBackupRecord {
+        pubkey: bytes
+            .try_into()
+            .map_err(|_| DbError::InvalidData("invalid backup pubkey".into()))?,
+        version: u16::try_from(version)
+            .map_err(|_| DbError::InvalidData("invalid backup version".into()))?,
+        key_id: row.try_get("key_id")?,
+        nonce: row.try_get("nonce")?,
+        ciphertext: row.try_get("ciphertext")?,
+    })
 }

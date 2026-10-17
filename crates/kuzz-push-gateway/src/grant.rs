@@ -10,7 +10,7 @@ use aes_gcm::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use thiserror::Error;
 
-const AAD_PREFIX: &[u8] = b"buzz-stateful-delivery-capability-v1:";
+const AAD_PREFIX: &[u8] = b"kuzz-stateful-delivery-capability-v1:";
 const MAX_KEY_ID_BYTES: usize = 32;
 
 #[derive(Clone)]

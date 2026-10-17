@@ -867,7 +867,7 @@ mod tests {
         // Fix 5: use Config::for_test() which holds NIP_FI_ENV_LOCK internally. [FI-TRACE-ENV-RACE]
         let mut config = crate::config::Config::for_test();
         config.require_relay_membership = false;
-        config.database_url = "postgres://buzz:buzz_dev@127.0.0.1:1/buzz".to_string();
+        config.database_url = "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz".to_string();
         config.redis_url = "redis://127.0.0.1:1".to_string();
         // 100ms acquire timeout: a request that falls through to the stub
         // pool still waits, but for 100ms instead of sqlx's 30s default.
@@ -3313,7 +3313,7 @@ mod tests {
         let snapshotter = recorder.snapshotter();
         let _recorder_guard = metrics::set_default_local_recorder(&recorder);
         let state = crate::state::tests::test_state_with_database_url(
-            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz",
+            "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
         )
         .await;
 

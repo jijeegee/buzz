@@ -291,7 +291,7 @@ Steps 10–11 are fire-and-forget: audit and workflow triggers are spawned as in
 
 Step 9 (fan-out) explicitly **excludes** global subscriptions (no `channel_id` constraint) from channel-scoped events — global subscriptions do NOT receive events from private channels, regardless of filter match. This is a deliberate security boundary: only subscriptions scoped to an accessible `channel_id` receive those events.
 
-Workflow loop prevention: workflow execution kinds (46001–46012), relay-signed messages with `buzz:workflow` tag, and `KIND_GIFT_WRAP` are excluded from triggering workflows. All other stored events (including kind 9 stream messages) trigger workflow evaluation.
+Workflow loop prevention: workflow execution kinds (46001–46012), relay-signed messages with `kuzz:workflow` tag, and `KIND_GIFT_WRAP` are excluded from triggering workflows. All other stored events (including kind 9 stream messages) trigger workflow evaluation.
 
 ### Ephemeral Sub-Pipeline (kinds 20000–29999)
 

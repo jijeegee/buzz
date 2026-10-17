@@ -40,7 +40,7 @@ export function getSendToChannelSemantics(
   );
   const hasMentionSnapshot = Boolean(
     message.edited &&
-      message.tags?.some((tag) => tag[0] === "buzz:mention-snapshot"),
+      message.tags?.some((tag) => tag[0] === "kuzz:mention-snapshot"),
   );
   const notifiedPubkeys = new Set(
     (message.tags ?? [])

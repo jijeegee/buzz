@@ -811,7 +811,7 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_GIT_STATUS_CLOSED
             | KIND_GIT_STATUS_DRAFT
             // NIP-MP: projects are addressed by (pubkey, kind, d_tag). The
-            // `buzz-channel` tag is a metadata reference, not a routing directive,
+            // `kuzz-channel` tag is a metadata reference, not a routing directive,
             // so a project's state is never channel-scoped.
             | KIND_PROJECT
             // Community moderation commands (9040–9044): community-global
@@ -1732,7 +1732,7 @@ const PROJECT_NAME_MAX_LEN: usize = 256;
 /// Maximum byte length of a project `description` tag value.
 const PROJECT_DESCRIPTION_MAX_LEN: usize = 2048;
 
-/// Maximum byte length of `buzz-channel` and `buzz-visibility` tag values.
+/// Maximum byte length of `kuzz-channel` and `kuzz-visibility` tag values.
 ///
 /// Both are opaque strings at the relay layer; the bound exists only so an
 /// unbounded value cannot ride into storage on a tag ingest does not interpret.
@@ -1743,7 +1743,7 @@ const PROJECT_METADATA_TAG_MAX_LEN: usize = 256;
 /// Duplicates would make the effective value reader-dependent — one client
 /// taking the first, another the last.
 const PROJECT_SINGLETON_METADATA_TAGS: [&str; 4] =
-    ["name", "description", "buzz-channel", "buzz-visibility"];
+    ["name", "description", "kuzz-channel", "kuzz-visibility"];
 
 /// The kind segment every project member coordinate must carry: a project groups
 /// repository *announcements*, so a coordinate naming any other kind (notably
@@ -1830,8 +1830,8 @@ fn validate_project_envelope(event: &Event) -> Result<(), ProjectRejection> {
                     match tag_name {
                         "name" => name = Some(value),
                         "description" => description = Some(value),
-                        "buzz-channel" => kuzz_channel = Some(value),
-                        "buzz-visibility" => kuzz_visibility = Some(value),
+                        "kuzz-channel" => kuzz_channel = Some(value),
+                        "kuzz-visibility" => kuzz_visibility = Some(value),
                         _ => {}
                     }
                 }
@@ -1936,7 +1936,7 @@ fn validate_project_envelope(event: &Event) -> Result<(), ProjectRejection> {
             return Err(ProjectRejection::new(
                 "metadata-length",
                 format!(
-                    "project event `buzz-channel` tag too long ({} bytes, max {PROJECT_METADATA_TAG_MAX_LEN})",
+                    "project event `kuzz-channel` tag too long ({} bytes, max {PROJECT_METADATA_TAG_MAX_LEN})",
                     kuzz_channel.len()
                 ),
             ));
@@ -1947,7 +1947,7 @@ fn validate_project_envelope(event: &Event) -> Result<(), ProjectRejection> {
             return Err(ProjectRejection::new(
                 "metadata-length",
                 format!(
-                    "project event `buzz-visibility` tag too long ({} bytes, max {PROJECT_METADATA_TAG_MAX_LEN})",
+                    "project event `kuzz-visibility` tag too long ({} bytes, max {PROJECT_METADATA_TAG_MAX_LEN})",
                     kuzz_visibility.len()
                 ),
             ));
@@ -3794,7 +3794,7 @@ mod postgres_tests {
     #[ignore = "requires Postgres"]
     async fn check_channel_write_denies_when_channel_lookup_fails() {
         let state = crate::state::tests::test_state_with_database_url(
-            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz",
+            "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
         )
         .await;
         let community = kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil());
@@ -4060,7 +4060,7 @@ mod postgres_tests {
 
         let url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
         let pool = sqlx::PgPool::connect(&url).await.expect("connect test DB");
         let db = kuzz_db::Db::from_pool(pool);
         if std::env::var("KUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
@@ -5640,8 +5640,8 @@ mod postgres_tests {
             &["description", "Relay, desktop, and mobile."],
             &["a", &a],
             &["a", &b],
-            &["buzz-channel", "3580ca9b-47b4-4af9-b22a-1068778f26c6"],
-            &["buzz-visibility", "listed"],
+            &["kuzz-channel", "3580ca9b-47b4-4af9-b22a-1068778f26c6"],
+            &["kuzz-visibility", "listed"],
         ]);
         assert!(validate_project_envelope(&ev).is_ok());
     }
@@ -5930,7 +5930,7 @@ mod postgres_tests {
 
     #[test]
     fn project_is_global_only() {
-        // `buzz-channel` is a metadata reference, not a routing directive.
+        // `kuzz-channel` is a metadata reference, not a routing directive.
         assert!(is_global_only_kind(KIND_PROJECT));
         assert!(!requires_h_channel_scope(KIND_PROJECT));
     }
@@ -6276,7 +6276,7 @@ mod postgres_tests {
         // ── Postgres connection ──────────────────────────────────────────────
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
         let pool = sqlx::PgPool::connect(&db_url).await.expect(
             "connect test Postgres — start local Postgres before running ignored ingest tests",
         );
@@ -6690,7 +6690,7 @@ mod postgres_tests {
 
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
         let admin = sqlx::PgPool::connect(&db_url)
             .await
             .expect("connect test Postgres");
@@ -6807,7 +6807,7 @@ mod postgres_tests {
 
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
         let admin = sqlx::PgPool::connect(&db_url)
             .await
             .expect("connect test Postgres");
@@ -6912,7 +6912,7 @@ mod postgres_tests {
 
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
         let pool = sqlx::PgPool::connect(&db_url).await.expect(
             "connect test Postgres — start local Postgres before running ignored ingest tests",
         );
@@ -7117,7 +7117,7 @@ mod postgres_tests {
 
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
         let pool = sqlx::PgPool::connect(&db_url)
             .await
             .expect("connect test Postgres");

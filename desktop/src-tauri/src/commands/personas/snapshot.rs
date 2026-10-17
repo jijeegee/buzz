@@ -361,7 +361,7 @@ fn resolve_png_body_avatar_bytes(
         .or(store_avatar_bytes)
 }
 
-/// Export an agent definition as a `buzz-agent-snapshot v1` file.
+/// Export an agent definition as a `kuzz-agent-snapshot v1` file.
 ///
 /// `id` is a definition slug or a keyed-instance pubkey.
 /// `memory_source_pubkey` is required when `memory_level != "none"` — it must
@@ -428,7 +428,7 @@ pub struct EncodedSnapshotPayload {
     pub file_name: String,
 }
 
-/// Encode a `buzz-agent-snapshot v1` payload in memory and return the raw
+/// Encode a `kuzz-agent-snapshot v1` payload in memory and return the raw
 /// bytes to the frontend for the native-send path.
 ///
 /// Performs identical resolution, validation, and encoding as

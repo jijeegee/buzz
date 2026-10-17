@@ -5,7 +5,7 @@ import { extractConfigNudge, stripConfigNudgeSentinel } from "./configNudge.ts";
 
 // Helper: build a fenced sentinel body containing the given payload.
 function withSentinel(prose, payload) {
-  return `${prose}\n\n\`\`\`buzz:config-nudge\n${JSON.stringify(payload)}\n\`\`\``;
+  return `${prose}\n\n\`\`\`kuzz:config-nudge\n${JSON.stringify(payload)}\n\`\`\``;
 }
 
 const FIZZ_PUBKEY = "aabbccddeeff0011";
@@ -37,7 +37,7 @@ test("extractConfigNudge parses env_key requirement", () => {
     "",
     "Open Edit Agent in the Kuzz app to set these.",
     "",
-    "```buzz:config-nudge",
+    "```kuzz:config-nudge",
     JSON.stringify(payload),
     "```",
   ].join("\n");
@@ -143,7 +143,7 @@ test("extractConfigNudge parses multiple requirements of mixed types", () => {
 });
 
 test("extractConfigNudge returns null for malformed JSON", () => {
-  const content = "prose\n\n```buzz:config-nudge\nnot{valid}json\n```";
+  const content = "prose\n\n```kuzz:config-nudge\nnot{valid}json\n```";
   assert.equal(extractConfigNudge(content), null);
 });
 
@@ -211,12 +211,12 @@ test("stripConfigNudgeSentinel strips the sentinel block", () => {
   };
   const content = withSentinel(prose, payload);
   const stripped = stripConfigNudgeSentinel(content);
-  assert.ok(!stripped.includes("buzz:config-nudge"), "sentinel must be gone");
+  assert.ok(!stripped.includes("kuzz:config-nudge"), "sentinel must be gone");
   assert.ok(stripped.includes("needs configuration"), "prose must survive");
 });
 
 test("stripConfigNudgeSentinel removes preceding blank line", () => {
-  const content = "prose\n\n```buzz:config-nudge\n{}\n```";
+  const content = "prose\n\n```kuzz:config-nudge\n{}\n```";
   const stripped = stripConfigNudgeSentinel(content);
   // Should not end with multiple newlines — the blank line separator was eaten.
   assert.ok(!stripped.endsWith("\n\n"), "trailing blank line must be trimmed");
@@ -260,7 +260,7 @@ function makeNudgeBody(agentPubkey) {
     agent_pubkey: agentPubkey,
     requirements: [{ surface: "env_key", key: "ANTHROPIC_API_KEY" }],
   };
-  return `**Fizz** needs configuration.\n\n\`\`\`buzz:config-nudge\n${JSON.stringify(payload)}\n\`\`\``;
+  return `**Fizz** needs configuration.\n\n\`\`\`kuzz:config-nudge\n${JSON.stringify(payload)}\n\`\`\``;
 }
 
 test("authGuard_noAuthorPubkey_returnsNull", () => {
@@ -294,7 +294,7 @@ test("authGuard_mismatchedAuthor_returnsNull", () => {
   // Fence text must still be in the raw body (not stripped) — stripping only
   // happens when configNudge !== null.
   assert.ok(
-    body.includes("buzz:config-nudge"),
+    body.includes("kuzz:config-nudge"),
     "fence must remain in body when auth guard returns null",
   );
 });
@@ -354,7 +354,7 @@ test("authGuard_signerIsHuman_tagAttributedToAgent_returnsNull", () => {
   );
   // Fence must remain — not stripped — when auth fails.
   assert.ok(
-    body.includes("buzz:config-nudge"),
+    body.includes("kuzz:config-nudge"),
     "fence must remain in body when signer auth fails",
   );
 });
@@ -396,7 +396,7 @@ test("nudgePresent_extractNonNull_and_stripRemovesSentinel", () => {
   //    must NOT contain the sentinel open-fence marker.
   const stripped = stripConfigNudgeSentinel(body);
   assert.ok(
-    !stripped.includes("buzz:config-nudge"),
+    !stripped.includes("kuzz:config-nudge"),
     "stripped content must not contain the fence marker",
   );
 

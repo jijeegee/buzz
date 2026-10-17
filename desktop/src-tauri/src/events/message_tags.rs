@@ -3,7 +3,7 @@ use nostr::{EventId, Tag};
 use super::check_pubkey;
 
 const MAX_THREAD_ROOT_EXCERPT_CHARS: usize = 64;
-const SENT_FROM_THREAD_TAG: &str = "buzz:sent-from-thread";
+const SENT_FROM_THREAD_TAG: &str = "kuzz:sent-from-thread";
 const QUOTE_TAG: &str = "q";
 const MAX_QUOTE_RELAY_HINT_BYTES: usize = 2048;
 const AGENT_ADDRESS_MENTION_MARKER: &str = "agent-address";
@@ -52,7 +52,7 @@ pub(super) fn mention_reference_tags(
     Ok(())
 }
 
-/// Smart routing's follow-up note on a delivery edit: `["buzz:route",
+/// Smart routing's follow-up note on a delivery edit: `["kuzz:route",
 /// relation, of, thread_root, note]`. `of` is the earlier delivered message
 /// and `thread_root` the thread that agent answered in. kuzz-acp anchors the
 /// reply in `thread_root` and adds a follow-up line to the prompt
@@ -80,7 +80,7 @@ pub(super) fn route_note_tag(relation: &str, of: &str, thread_root: &str) -> Res
         _ => return Err(format!("unknown route relation {relation:?}")),
     };
     Tag::parse([
-        "buzz:route",
+        "kuzz:route",
         relation,
         of.as_str(),
         root.as_str(),

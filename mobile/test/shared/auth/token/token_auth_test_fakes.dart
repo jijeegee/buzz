@@ -110,7 +110,7 @@ class FakeAuthServer {
   /// NIP-11 document at `/`; defaults to a token relay offering Google.
   http.Response Function(http.Request) nip11 = (_) => jsonResponse({
     'name': 'Test relay',
-    'buzz_token_auth': {
+    'kuzz_token_auth': {
       'version': 1,
       'bearer': true,
       'oidc_providers': ['google'],

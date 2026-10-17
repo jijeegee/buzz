@@ -160,8 +160,8 @@ release actually needs isolation from `main`.
 
 `mobile/pubspec.yaml` keeps `0.0.0+1` only as a valid, visibly non-release
 fallback for local development and validation builds. Release jobs always
-inject both version fields. `mobile/CHANGELOG.md` is retained as historical
-release data. It is not a release ledger for this flow.
+inject both version fields. Kuzz changes are recorded in the root
+`CHANGELOG.md`; it is not a release ledger for this flow.
 
 ---
 

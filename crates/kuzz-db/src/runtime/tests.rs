@@ -5,7 +5,7 @@ use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshotter};
 use sqlx::{Connection, PgPool};
 use uuid::Uuid;
 
-const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1 -- local test-only credentials
+const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1 -- local test-only credentials
 
 type ConnectionCounters = std::collections::BTreeMap<(String, String, Option<String>), u64>;
 
@@ -725,12 +725,15 @@ async fn push_gateway_profile_migration_converges_brownfield_authority() {
     let (pool, name) = create_scratch_db_through(&admin, "push_profile", Some(42)).await;
     let installation_id = Uuid::new_v4();
     let now = chrono::Utc::now();
+    // Rows written before migration 0043 carry the profile names that the
+    // frozen migrations 0015..0042 accept.
+    const PRE_RENAME_PRODUCTION_PROFILE: &str = "buzz-ios-production"; // kuzz-rename: keep
 
     sqlx::query(
         "INSERT INTO push_gateway_installations(\
          id, app_attest_key_id, app_attest_public_key, assertion_counter, app_profile, \
          token_ciphertext, token_fingerprint, endpoint_epoch, expires_at) \
-         VALUES($1, $2, $3, 0, 'buzz-ios-production', $4, $5, 1, $6)",
+         VALUES($1, $2, $3, 0, $7, $4, $5, 1, $6)",
     )
     .bind(installation_id)
     .bind(vec![1_u8])
@@ -738,6 +741,7 @@ async fn push_gateway_profile_migration_converges_brownfield_authority() {
     .bind(vec![3_u8])
     .bind(vec![4_u8; 32])
     .bind(now + chrono::Duration::days(1))
+    .bind(PRE_RENAME_PRODUCTION_PROFILE)
     .execute(&pool)
     .await
     .expect("insert legacy production installation");
@@ -776,7 +780,7 @@ async fn push_gateway_profile_migration_converges_brownfield_authority() {
         "INSERT INTO push_gateway_installations(\
          id, app_attest_key_id, app_attest_public_key, assertion_counter, app_profile, \
          token_ciphertext, token_fingerprint, endpoint_epoch, expires_at) \
-         VALUES($1, $2, $3, 0, 'buzz-ios-dogfood', $4, $5, 1, $6)",
+         VALUES($1, $2, $3, 0, 'kuzz-ios-dogfood', $4, $5, 1, $6)",
     )
     .bind(Uuid::new_v4())
     .bind(vec![6_u8])
@@ -792,7 +796,7 @@ async fn push_gateway_profile_migration_converges_brownfield_authority() {
         "INSERT INTO push_gateway_installations(\
          id, app_attest_key_id, app_attest_public_key, assertion_counter, app_profile, \
          token_ciphertext, token_fingerprint, endpoint_epoch, expires_at) \
-         VALUES($1, $2, $3, 0, 'buzz-ios-sandbox', $4, $5, 1, $6)",
+         VALUES($1, $2, $3, 0, 'kuzz-ios-sandbox', $4, $5, 1, $6)",
     )
     .bind(Uuid::new_v4())
     .bind(vec![10_u8])
@@ -2212,7 +2216,7 @@ async fn lazy_reader_pool_still_spawns_fence_probe() {
         format!("{}/{}", &base[..idx], wname)
     };
     // `Db::new` (not `from_pools`) so the WRITER pool arms the
-    // `buzz.created_at_floor` GUC — `spawn_fence_probe` verifies the
+    // `kuzz.created_at_floor` GUC — `spawn_fence_probe` verifies the
     // floor guard on a writer connection, and `create_scratch_db`'s
     // plain `PgPool::connect` never arms it. The reader is still the
     // lazy `connect_read_pool` pool this test is about.
@@ -2546,7 +2550,7 @@ async fn created_at_floor_guard_aborts_old_channel_rows_at_commit() {
             let mut tx = pool.begin().await.expect("begin");
             // Arm the guard for this transaction only (the relay's
             // writer pool arms it per connection; tests are explicit).
-            sqlx::query("SELECT set_config('buzz.created_at_floor', $1, true)")
+            sqlx::query("SELECT set_config('kuzz.created_at_floor', $1, true)")
                 .bind(crate::replica_fence::CREATED_AT_FLOOR_SECS.to_string())
                 .execute(&mut *tx)
                 .await
@@ -2628,7 +2632,7 @@ fn writer_pool_safety_hook_is_single_and_composed() {
         1,
         "SQLx replaces after_connect hooks; writer safety must use exactly one"
     );
-    assert!(connect_pool.contains("buzz.created_at_floor"));
+    assert!(connect_pool.contains("kuzz.created_at_floor"));
     assert!(connect_pool.contains("SHOW transaction_isolation"));
     assert!(connect_pool.contains("'lock_timeout'"));
     assert!(connect_pool.contains("'idle_in_transaction_session_timeout'"));
@@ -3073,7 +3077,7 @@ async fn armed_pool_rejects_old_channel_inserts_through_public_api() {
     let cid = CommunityId::from_uuid(community);
 
     // Perci nit: assert the effective session value, not the intent.
-    let effective: String = sqlx::query_scalar("SHOW buzz.created_at_floor")
+    let effective: String = sqlx::query_scalar("SHOW kuzz.created_at_floor")
         .fetch_one(&db.pool)
         .await
         .expect("SHOW guard GUC");
@@ -3291,7 +3295,7 @@ async fn floor_guard_blocks_updates_that_move_rows_below_the_fence() {
         let pool = pool.clone();
         async move {
             let mut tx = pool.begin().await.expect("begin");
-            sqlx::query("SELECT set_config('buzz.created_at_floor', $1, true)")
+            sqlx::query("SELECT set_config('kuzz.created_at_floor', $1, true)")
                 .bind(crate::replica_fence::CREATED_AT_FLOOR_SECS.to_string())
                 .execute(&mut *tx)
                 .await

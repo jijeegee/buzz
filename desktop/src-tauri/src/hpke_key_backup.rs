@@ -27,7 +27,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 /// HPKE `info` bytes for every v1 nsec-backup context.
-pub const HPKE_INFO_V1: &[u8] = b"buzz/nsec-backup/v1";
+pub const HPKE_INFO_V1: &[u8] = b"kuzz/nsec-backup/v1";
 
 /// Version of the envelope and associated-data contract.
 pub const ENVELOPE_VERSION_V1: u8 = 1;
@@ -47,7 +47,7 @@ pub const P256_PUBLIC_KEY_LEN: usize = 65;
 /// Encoded length of a v1 ciphertext: 32 secret bytes plus a 16-byte GCM tag.
 pub const CIPHERTEXT_LEN: usize = 48;
 
-const AAD_DOMAIN_V1: &[u8] = b"buzz/nsec-backup/aad/v1";
+const AAD_DOMAIN_V1: &[u8] = b"kuzz/nsec-backup/aad/v1";
 const MAX_CONTEXT_FIELD_LEN: usize = 255;
 const P256_PUBLIC_KEY_BASE64URL_LEN: usize = 87;
 const CIPHERTEXT_BASE64URL_LEN: usize = 64;

@@ -183,24 +183,3 @@ fn reconcile_legacy_team_persona_runtime_files_rewrites_persona_md() {
     let updated = std::fs::read_to_string(persona_path).unwrap();
     assert!(updated.contains("runtime: kuzz-agent\n"));
 }
-
-#[test]
-fn reconcile_legacy_command_names_rewrites_pre_kuzz_sidecars() {
-    let dir = tempfile::tempdir().unwrap();
-    write_agents_json(
-        dir.path(),
-        &serde_json::json!([{
-            "name": "Brain",
-            "acp_command": "buzz-acp", // kuzz-rename: keep
-            "agent_command": "buzz-agent", // kuzz-rename: keep
-            "mcp_command": "buzz-dev-mcp" // kuzz-rename: keep
-        }]),
-    );
-
-    reconcile_legacy_command_names_in_file(&dir.path().join("agents/managed-agents.json"));
-
-    let records = read_agents_json(dir.path());
-    assert_eq!(records[0]["acp_command"], "kuzz-acp");
-    assert_eq!(records[0]["agent_command"], "kuzz-agent");
-    assert_eq!(records[0]["mcp_command"], "kuzz-dev-mcp");
-}

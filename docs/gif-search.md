@@ -6,7 +6,7 @@ the relay's secret store. When present, the relay advertises this NIP-11 shape:
 
 ```json
 {
-  "supported_extensions": ["buzz-gif"],
+  "supported_extensions": ["kuzz-gif"],
   "gif": {
     "provider": "klipy",
     "search": "/gifs/search",
@@ -16,7 +16,7 @@ the relay's secret store. When present, the relay advertises this NIP-11 shape:
 ```
 
 The descriptor is provider-agnostic so a relay can advertise another provider
-or paths later. Clients must require `buzz-gif`, recognize the provider, and use
+or paths later. Clients must require `kuzz-gif`, recognize the provider, and use
 only safe relay-relative search and share paths.
 
 `POST /gifs/search` requires NIP-98 authentication and relay membership. Its
@@ -38,4 +38,4 @@ Because Kuzz's imeta validator permits only hash-verified local `/media/` paths,
 external GIFs are deliberately content-only and carry no imeta tag. Kuzz does
 not download, cache, or store the GIF bytes. Existing image URL rendering
 handles the message, including pasted GIF URLs on relays that do not advertise
-`buzz-gif`. Only the picker is capability-gated.
+`kuzz-gif`. Only the picker is capability-gated.

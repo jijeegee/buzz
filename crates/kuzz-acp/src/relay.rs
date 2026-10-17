@@ -116,11 +116,11 @@ const GATED_OBSERVER_QUEUE_CAP: usize = 256;
 
 use std::time::Instant;
 
+use futures_util::{SinkExt, StreamExt};
 use kuzz_core::kind::{
     KIND_AGENT_OBSERVER_FRAME, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
     KIND_TYPING_INDICATOR,
 };
-use futures_util::{SinkExt, StreamExt};
 use nostr::{Event, EventBuilder, Kind, RelayUrl, Tag};
 
 use crate::identity::{AgentIdentity, BotToken};
@@ -593,7 +593,7 @@ impl RestClient {
     /// Query events via `POST /query` with a raw NIP-01 filter document.
     ///
     /// `nostr::Filter` only encodes single-letter generic tags. Project home
-    /// lookup needs `#buzz-channel`, which this path serializes verbatim.
+    /// lookup needs `#kuzz-channel`, which this path serializes verbatim.
     pub async fn query_raw(&self, filters: &[Value]) -> Result<Value, RelayError> {
         let body_bytes = serde_json::to_vec(filters)
             .map_err(|e| RelayError::Http(format!("filter serialize error: {e}")))?;

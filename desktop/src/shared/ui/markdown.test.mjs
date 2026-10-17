@@ -944,7 +944,7 @@ function nudgeBody(agentPubkey) {
     "",
     "Open Edit Agent in the Kuzz app to set these.",
     "",
-    "```buzz:config-nudge",
+    "```kuzz:config-nudge",
     JSON.stringify({
       agent_name: "Fizz",
       agent_pubkey: agentPubkey,

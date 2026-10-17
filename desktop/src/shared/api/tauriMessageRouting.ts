@@ -80,7 +80,7 @@ export type RouteMessageResult =
   | { decision: "skipped"; reason: RouterSkipReason };
 
 /**
- * A follow-up delivery's `buzz:route` note: the agent sees which earlier
+ * A follow-up delivery's `kuzz:route` note: the agent sees which earlier
  * message it relates to and the thread to answer in.
  */
 export type RouteNote = {

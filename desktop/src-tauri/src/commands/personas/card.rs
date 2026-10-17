@@ -2,7 +2,7 @@
 //!
 //! Mints a collectible trading-card PNG for an agent via one OpenAI Responses
 //! API call (designer model + native `image_generation` tool), then embeds the
-//! agent's `buzz_agent_snapshot` manifest through the existing snapshot
+//! agent's `kuzz_agent_snapshot` manifest through the existing snapshot
 //! encoder so the card IS an importable `.agent.png`.
 //!
 //! Boundary rules (agreed with Wren, kuzz-agent-trading-cards thread):

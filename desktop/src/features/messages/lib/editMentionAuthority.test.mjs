@@ -40,7 +40,7 @@ const edit = (content, tags = [], created_at = 101, pubkey = AUTHOR) => ({
   sig: "fixture",
 });
 const snapshot = (...keys) => [
-  ["buzz:mention-snapshot"],
+  ["kuzz:mention-snapshot"],
   ...keys.map((key) => ["mention", key]),
 ];
 // These are accepted-event-shape semantic tests, not relay signature tests.

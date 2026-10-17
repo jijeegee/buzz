@@ -19,7 +19,7 @@ use crate::{MeshError, RuntimeId};
 pub const READY_KEY_PREFIX: &str = "mesh:ready:";
 pub const DEFAULT_REGISTRY_REFRESH: Duration = Duration::from_secs(15);
 pub const REGISTRY_EXPIRY_MULTIPLIER: u64 = 3;
-pub const ATTESTATION_CONTEXT: &str = "buzz-relay-mesh-ready-v1";
+pub const ATTESTATION_CONTEXT: &str = "kuzz-relay-mesh-ready-v1";
 
 /// Relay-key-signed binding for a boot-unique runtime endpoint pubkey.
 ///

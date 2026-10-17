@@ -2,20 +2,20 @@
 //! that asked for it, that reports its result back and then closes.
 //!
 //! Wire format (kind 9 only, no new relay kinds):
-//! - Kickoff reply in the thread: `["buzz:task", <title>]`,
-//!   `["buzz:parent", "main"]`, a `p` tag for the requester, and a `p` tag for
+//! - Kickoff reply in the thread: `["kuzz:task", <title>]`,
+//!   `["kuzz:parent", "main"]`, a `p` tag for the requester, and a `p` tag for
 //!   the opening agent itself so its harness starts the thread's session.
-//! - Result on the channel main timeline: `["buzz:sent-from-thread", <root>,
-//!   <excerpt>]`, `["buzz:thread-closed", <root>]`, a `p` tag for the
+//! - Result on the channel main timeline: `["kuzz:sent-from-thread", <root>,
+//!   <excerpt>]`, `["kuzz:thread-closed", <root>]`, a `p` tag for the
 //!   requester, and a `p` tag for the closing agent itself so its harness can
 //!   relay the result to its main-timeline session.
-//! - Close marker reply in the thread: `["buzz:thread-closed", <root>]` and a
+//! - Close marker reply in the thread: `["kuzz:thread-closed", <root>]` and a
 //!   NIP-18 `q` tag pointing at the result. A thread whose latest message is a
 //!   close marker reads as closed; any later message reopens it.
 //! - A best-effort `✅` reaction on the thread root.
 
-use kuzz_core::goal_tree::{GoalStatus, GoalTree};
 use clap::Subcommand;
+use kuzz_core::goal_tree::{GoalStatus, GoalTree};
 
 use crate::client::KuzzClient;
 use crate::commands::messages::{
@@ -24,10 +24,10 @@ use crate::commands::messages::{
 use crate::error::CliError;
 use crate::validate::{parse_uuid, read_or_stdin, validate_hex64};
 
-pub const TASK_TAG: &str = "buzz:task";
-pub const PARENT_TAG: &str = "buzz:parent";
-pub const THREAD_CLOSED_TAG: &str = "buzz:thread-closed";
-const SENT_FROM_THREAD_TAG: &str = "buzz:sent-from-thread";
+pub const TASK_TAG: &str = "kuzz:task";
+pub const PARENT_TAG: &str = "kuzz:parent";
+pub const THREAD_CLOSED_TAG: &str = "kuzz:thread-closed";
+const SENT_FROM_THREAD_TAG: &str = "kuzz:sent-from-thread";
 /// Parent scope value for a task thread started from the channel main timeline.
 const PARENT_MAIN: &str = "main";
 const MAX_TITLE_CHARS: usize = 120;
@@ -498,7 +498,7 @@ struct TaskInfo {
     requester: Option<String>,
 }
 
-/// The earliest kickoff (`buzz:task`) among the thread's replies.
+/// The earliest kickoff (`kuzz:task`) among the thread's replies.
 fn find_task(replies: &[serde_json::Value]) -> Option<TaskInfo> {
     replies
         .iter()

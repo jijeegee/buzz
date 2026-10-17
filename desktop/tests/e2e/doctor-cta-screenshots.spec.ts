@@ -65,7 +65,7 @@ async function invokeMockCommand(
 }
 
 /**
- * Build a `buzz:config-nudge` sentinel body from a requirements array.
+ * Build a `kuzz:config-nudge` sentinel body from a requirements array.
  * Mirrors the format nudge_body() in setup_mode.rs produces.
  */
 function makeNudgeSentinel(
@@ -78,7 +78,7 @@ function makeNudgeSentinel(
     agent_pubkey: agentPubkey,
     requirements,
   });
-  return `**${agentName}** needs configuration before it can respond.\n\n\`\`\`buzz:config-nudge\n${payload}\n\`\`\``;
+  return `**${agentName}** needs configuration before it can respond.\n\n\`\`\`kuzz:config-nudge\n${payload}\n\`\`\``;
 }
 
 /**

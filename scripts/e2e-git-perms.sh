@@ -404,7 +404,7 @@ log "  Add bot2: $ADD_BOT2"
 
 log "Creating repo: $REPO_NAME..."
 CREATE_REPO=$(send_event "$OWNER_PRIVKEY" "$KIND_CREATE_REPO" "" \
-    "[\"d\", \"$REPO_NAME\"], [\"buzz-channel\", \"$CHANNEL_ID\"]")
+    "[\"d\", \"$REPO_NAME\"], [\"kuzz-channel\", \"$CHANNEL_ID\"]")
 log "  Create repo: $CREATE_REPO"
 
 # Wait for repo creation side effect (bare repo on disk)

@@ -81,7 +81,7 @@ export function relayKlipyCapability(
   const searchPath = info.gif?.search;
   const sharePath = info.gif?.share;
   if (
-    info.supported_extensions?.includes("buzz-gif") === true &&
+    info.supported_extensions?.includes("kuzz-gif") === true &&
     info.gif?.provider === "klipy" &&
     safeRelayPath(searchPath) &&
     safeRelayPath(sharePath)

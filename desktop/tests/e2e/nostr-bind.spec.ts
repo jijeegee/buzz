@@ -17,12 +17,12 @@ type NostrBindPayload = {
 
 const VALID_REQUEST: NostrBindPayload = {
   action: "bind_nostr_identity",
-  audience: "buzz:nostr-identity",
+  audience: "kuzz:nostr-identity",
   challengeId: "550e8400-e29b-41d4-a716-446655440000",
   expiresAt: "2099-01-01T00:00:00Z",
   nonce: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567",
   origin: "https://admin.example.com",
-  protocol: "buzz-nostr-identity",
+  protocol: "kuzz-nostr-identity",
   returnMode: "clipboard",
   verificationCode: "123456",
   version: "1",
@@ -410,8 +410,8 @@ test("returns a signed response in the callback fragment after consent", async (
   expect(callbackUrl.origin).toBe("https://admin.example.com");
   expect(callbackUrl.pathname).toBe("/kuzz");
   expect(callbackUrl.search).toBe("?source=bind");
-  expect(callbackUrl.searchParams.has("buzz_bind")).toBe(false);
-  expect(callbackUrl.hash).toMatch(/^#buzz_bind=v1\.[A-Za-z0-9_-]+$/);
+  expect(callbackUrl.searchParams.has("kuzz_bind")).toBe(false);
+  expect(callbackUrl.hash).toMatch(/^#kuzz_bind=v1\.[A-Za-z0-9_-]+$/);
 });
 
 test("opens the manual fallback when returning to the browser fails", async ({

@@ -98,7 +98,7 @@ function FreeSharePathRow({
  * composer activity rail shows live status, and the finished card opens in
  * the global `AgentCardViewerDialog` (preview, reroll, save, share).
  *
- * The saved PNG carries the agent's `buzz_agent_snapshot` chunk, so sharing
+ * The saved PNG carries the agent's `kuzz_agent_snapshot` chunk, so sharing
  * the card shares an importable agent (fresh identity, never secrets; memory
  * only when the owner opts in below — plaintext unless the card is locked).
  * All snapshot construction and verification happens in Rust.

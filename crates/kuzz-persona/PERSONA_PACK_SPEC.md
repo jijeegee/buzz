@@ -914,7 +914,7 @@ The Kuzz desktop app's **Agents** page does not import persona-pack `.zip` archi
 from an agent or team that already exists inside the app:
 
 - **Agents section → Import**: Accepts `.agent.json` or `.agent.png` (an agent snapshot).
-- **Agent teams section → Import**: Accepts `.team.json` or `.team.png` (a `buzz-team-snapshot
+- **Agent teams section → Import**: Accepts `.team.json` or `.team.png` (a `kuzz-team-snapshot
   v1`). A persona-pack `.zip` is rejected outright with an error directing you to export a team
   snapshot instead.
 
