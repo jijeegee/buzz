@@ -143,7 +143,7 @@ fn inbound_catalog_head_retains_arrival_witness_through_the_production_reconcile
     }
 
     assert!(
-        refresh.is_none(),
+        refresh.runtime_refresh.is_none() && refresh.profile_syncs.is_empty(),
         "a catalog head carries no local record — reconcile must return no runtime refresh"
     );
 
