@@ -10,12 +10,25 @@ use tauri::{AppHandle, Manager};
 
 use super::api::{self, ApiError};
 use super::commands::fresh_session;
+use super::{OriginAuth, UserSession};
 use crate::app_state::AppState;
+
+// Every error these commands return is one of the fixed sentences below;
+// server text never reaches the screen.
 
 /// Shown when the server rate-limits lookups or searches.
 const TOO_MANY_TRIES: &str = "Too many tries. Wait a minute and try again.";
 /// Shown when the chosen Kuzz ID belongs to someone else.
 const ID_TAKEN: &str = "That ID is taken";
+/// Shown when the block list is full.
+const BLOCK_LIMIT: &str = "You've blocked the most people you can.";
+/// Shown when this community has no Google sign-in. The frontend matches this
+/// exact text (`NOT_SIGNED_IN` in `src/shared/api/people.ts`).
+const NOT_SIGNED_IN: &str = "Sign in with Google to use this.";
+/// Shown when the server could not be reached.
+const NO_CONNECTION: &str = "Couldn't reach Kuzz. Check your connection and try again.";
+/// Everything else.
+const TRY_AGAIN: &str = "Something went wrong. Try again.";
 /// Shown when a Kuzz ID does not fit the rules.
 const ID_RULES: &str = "Use 3 to 32 lowercase letters, numbers or _";
 
@@ -27,14 +40,31 @@ pub struct PeopleSettings {
     pub discoverable: bool,
 }
 
-/// Plain-words error for the people endpoints.
+/// Plain-words error for the people endpoints, chosen by status and the
+/// server's error code (never its message).
 fn people_error(error: ApiError) -> String {
-    match error.status {
-        Some(429) => TOO_MANY_TRIES.to_owned(),
-        // Only the Kuzz ID can conflict.
-        Some(409) => ID_TAKEN.to_owned(),
-        _ => error.message,
-    }
+    let text = match (error.status, error.code.as_deref()) {
+        (Some(429), _) => TOO_MANY_TRIES,
+        (Some(409), Some("username_taken")) => ID_TAKEN,
+        (Some(409), Some("block_limit")) => BLOCK_LIMIT,
+        (Some(401), _) => NOT_SIGNED_IN,
+        (None, _) => NO_CONNECTION,
+        _ => TRY_AGAIN,
+    };
+    text.to_owned()
+}
+
+/// The current community's session. A missing or ended sign-in reads as
+/// `NOT_SIGNED_IN`; a renewal that failed while still signed in reads as a
+/// connection problem.
+async fn signed_in_session(state: &AppState, origin: &str) -> Result<UserSession, String> {
+    fresh_session(state, origin).await.map_err(|_| {
+        let active = matches!(
+            state.token_auth.get(origin),
+            Some((_, OriginAuth::Active(_)))
+        );
+        if active { NO_CONNECTION } else { NOT_SIGNED_IN }.to_owned()
+    })
 }
 
 /// A typed Kuzz ID, normalised: trimmed, without a leading `@`, lowercased.
@@ -61,7 +91,7 @@ pub(crate) fn normalize_kuzz_id(input: &str) -> Result<Option<String>, String> {
 pub async fn get_people_settings(app: AppHandle) -> Result<PeopleSettings, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let session = fresh_session(&state, &origin).await?;
+    let session = signed_in_session(&state, &origin).await?;
     let me = api::me(&state.http_client, &origin, &session.access)
         .await
         .map_err(people_error)?;
@@ -88,7 +118,7 @@ pub async fn set_discoverable(app: AppHandle, discoverable: bool) -> Result<(), 
 async fn patch_profile(app: &AppHandle, body: serde_json::Value) -> Result<(), String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let session = fresh_session(&state, &origin).await?;
+    let session = signed_in_session(&state, &origin).await?;
     api::update_profile(&state.http_client, &origin, &session.access, body)
         .await
         .map_err(people_error)
@@ -99,7 +129,7 @@ async fn patch_profile(app: &AppHandle, body: serde_json::Value) -> Result<(), S
 pub async fn list_blocked_people(app: AppHandle) -> Result<Vec<api::BlockedPerson>, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let session = fresh_session(&state, &origin).await?;
+    let session = signed_in_session(&state, &origin).await?;
     api::list_blocks(&state.http_client, &origin, &session.access)
         .await
         .map_err(people_error)
@@ -114,7 +144,7 @@ pub async fn set_person_blocked(
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let session = fresh_session(&state, &origin).await?;
+    let session = signed_in_session(&state, &origin).await?;
     api::set_block(
         &state.http_client,
         &origin,
@@ -138,7 +168,7 @@ pub async fn lookup_person(
     }
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let session = fresh_session(&state, &origin).await?;
+    let session = signed_in_session(&state, &origin).await?;
     api::lookup_person(&state.http_client, &origin, &session.access, query)
         .await
         .map_err(people_error)
@@ -157,7 +187,7 @@ pub async fn search_shared_people(
     }
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let session = fresh_session(&state, &origin).await?;
+    let session = signed_in_session(&state, &origin).await?;
     api::shared_people(
         &state.http_client,
         &origin,
@@ -195,6 +225,19 @@ mod tests {
         };
         assert_eq!(people_error(error(429, None)), TOO_MANY_TRIES);
         assert_eq!(people_error(error(409, Some("username_taken"))), ID_TAKEN);
-        assert_eq!(people_error(error(400, None)), "relay text");
+        assert_eq!(people_error(error(409, Some("block_limit"))), BLOCK_LIMIT);
+        assert_eq!(people_error(error(409, Some("other"))), TRY_AGAIN);
+        assert_eq!(
+            people_error(error(401, Some("unauthorized"))),
+            NOT_SIGNED_IN
+        );
+        assert_eq!(people_error(error(400, Some("invalid_request"))), TRY_AGAIN);
+        assert_eq!(people_error(error(500, Some("internal"))), TRY_AGAIN);
+        let offline = ApiError {
+            status: None,
+            code: None,
+            message: "error sending request".into(),
+        };
+        assert_eq!(people_error(offline), NO_CONNECTION);
     }
 }
