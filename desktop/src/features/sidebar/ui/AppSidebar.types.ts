@@ -28,13 +28,11 @@ export type AppSidebarProps = {
   channels: Channel[];
   currentPubkey?: string;
   fallbackDisplayName?: string;
-  homeBadgeCount: number;
   isAddCommunityOpen?: boolean;
   isLoading: boolean;
   isCreatingChannel: boolean;
   isCreatingForum: boolean;
   profile?: Profile;
-  projectsOverviewActive: boolean;
   relayConnectionCard: ReturnType<typeof useSidebarRelayConnectionCard>;
   selfPresenceStatus: PresenceStatus;
   errorMessage?: string;
@@ -89,19 +87,7 @@ export type AppSidebarProps = {
   onLeaveCommunity: (id: string) => Promise<LeaveCommunityResult | undefined>;
   onRemoveCommunityFromDevice: (id: string) => Promise<void>;
   onCreateAgent: () => void;
-  onSelectAgents: () => void;
-  /** Chats rail item: back to the conversation pane. */
-  onSelectChats?: () => void;
-  /** People rail item. */
-  onSelectPeople?: () => void;
-  onSelectProjects: () => void;
-  onSelectPulse: () => void;
-  onSelectWorkflows: () => void;
   onSelectHome: () => void;
-  /** Inbox button; on a channel it toggles the inbox panel beside the room. */
-  onSelectInbox?: () => void;
-  /** The inbox panel is pulled out beside the current channel. */
-  inboxPanelOpen?: boolean;
   onSelectChannel: (channelId: string) => void;
   onOpenSearchResult: (hit: SearchHit, query: string) => void;
   /** Full channel set for global search, including channels outside the joined sidebar list. */

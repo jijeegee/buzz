@@ -19,10 +19,7 @@ import {
   useDeleteChannelDialog,
   useLeaveChannelDialog,
 } from "@/features/sidebar/ui/ChannelSectionDialogs";
-import {
-  AppSidebarPinnedHeader,
-  AppSidebarPrimaryMenu,
-} from "@/features/sidebar/ui/AppSidebarPinnedHeader";
+import { AppSidebarPinnedHeader } from "@/features/sidebar/ui/AppSidebarPinnedHeader";
 import {
   canPreviewUnreadDm,
   MoreUnreadButton,
@@ -70,14 +67,12 @@ export function AppSidebar({
   channels,
   currentPubkey,
   fallbackDisplayName,
-  homeBadgeCount,
   onBackgroundClick,
   isAddCommunityOpen,
   isLoading,
   isCreatingChannel,
   isCreatingForum,
   profile,
-  projectsOverviewActive,
   relayConnectionCard,
   selfPresenceStatus,
   errorMessage,
@@ -104,15 +99,7 @@ export function AppSidebar({
   onLeaveCommunity,
   onRemoveCommunityFromDevice,
   onCreateAgent,
-  onSelectAgents,
-  onSelectChats,
-  onSelectPeople,
-  onSelectProjects,
-  onSelectPulse,
-  onSelectWorkflows,
   onSelectHome,
-  onSelectInbox,
-  inboxPanelOpen = false,
   onSelectChannel,
   onOpenSearchResult,
   searchChannels,
@@ -444,20 +431,6 @@ export function AppSidebar({
               data-sidebar-background
               data-testid="sidebar-scroll-content"
             >
-              <AppSidebarPrimaryMenu
-                homeBadgeCount={homeBadgeCount}
-                onSelectAgents={onSelectAgents}
-                onSelectChats={onSelectChats}
-                onSelectPeople={onSelectPeople}
-                inboxActive={inboxPanelOpen}
-                onSelectHome={onSelectInbox ?? onSelectHome}
-                onSelectProjects={onSelectProjects}
-                onSelectPulse={onSelectPulse}
-                onSelectWorkflows={onSelectWorkflows}
-                projectsOverviewActive={projectsOverviewActive}
-                selectedView={selectedView}
-              />
-
               {isLoading ? (
                 <SidebarLoadingContent shape={sidebarLoadingShape} />
               ) : null}
