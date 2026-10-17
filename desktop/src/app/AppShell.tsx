@@ -165,6 +165,7 @@ export function AppShell() {
     goChannel,
     goHome,
     goNewMessage,
+    goPeople,
     goProjects,
     goPulse,
     goSettings,
@@ -957,6 +958,7 @@ export function AppShell() {
                           }}
                           onSelectAgents={() => void goAgents()}
                           onSelectChats={handleSelectChats}
+                          onSelectPeople={() => void goPeople()}
                           onSelectChannel={handleSidebarChannelSelect}
                           onOpenSearchResult={handleOpenSearchResult}
                           searchChannels={channels}

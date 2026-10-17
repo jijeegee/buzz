@@ -7,6 +7,7 @@ import {
   Play,
   RefreshCw,
   Square,
+  Star,
   UserMinus,
   UserPlus,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import type {
   useFollowMutation,
   useUnfollowMutation,
 } from "@/features/profile/hooks";
+import { usePeopleFavorites } from "@/features/people/PeopleFavoritesContext";
 import { useFeatureEnabled } from "@/shared/features";
 import { cn } from "@/shared/lib/cn";
 import { Spinner } from "@/shared/ui/spinner";
@@ -30,6 +32,7 @@ export function ProfilePrimaryActions({
   agentActionLive,
   className,
   concealed = false,
+  favoriteHidden = false,
   followMutation,
   huddlePending,
   isFollowing,
@@ -50,6 +53,8 @@ export function ProfilePrimaryActions({
   agentActionLive?: boolean;
   className?: string;
   concealed?: boolean;
+  /** No Favorite tile (my own agents: Agents has its own tab). */
+  favoriteHidden?: boolean;
   followMutation: ReturnType<typeof useFollowMutation>;
   huddlePending?: boolean;
   isFollowing: boolean;
@@ -64,6 +69,9 @@ export function ProfilePrimaryActions({
   wavePending?: boolean;
 }) {
   const showFollowAction = useFeatureEnabled("pulse");
+  const favorites = usePeopleFavorites();
+  const showFavoriteAction = favorites !== null && !favoriteHidden;
+  const isFavorite = favorites?.isFavorite(pubkey) ?? false;
   const followToggleMutation = isFollowing ? unfollowMutation : followMutation;
 
   const handleFollowClick = () => {
@@ -77,6 +85,7 @@ export function ProfilePrimaryActions({
 
   const hasActions =
     showFollowAction ||
+    showFavoriteAction ||
     onWave !== undefined ||
     onMessage !== undefined ||
     onHuddle !== undefined ||
@@ -141,6 +150,19 @@ export function ProfilePrimaryActions({
           label="Wave"
           onClick={onWave}
           testId="user-profile-wave"
+        />
+      ) : null}
+      {showFavoriteAction ? (
+        <ProfileActionTile
+          active={isFavorite}
+          icon={Star}
+          label={isFavorite ? "Unfavorite" : "Favorite"}
+          onClick={() =>
+            isFavorite
+              ? favorites?.removeFavorite(pubkey)
+              : favorites?.addFavorite(pubkey)
+          }
+          testId="user-profile-favorite"
         />
       ) : null}
       {showFollowAction ? (

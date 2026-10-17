@@ -426,6 +426,7 @@ export function ProfileSummaryView({
           actionGroupRef={setPrimaryActionsElement}
           className={primaryActionsMotionClassName}
           concealed={primaryActionsConcealed}
+          favoriteHidden={isOwner === true}
           followMutation={followMutation}
           agentActionDisabled={isAgentActionPending}
           agentStartBlockReason={
