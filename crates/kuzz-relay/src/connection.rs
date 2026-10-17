@@ -1786,7 +1786,7 @@ pub(crate) mod tests {
             .await
             .expect("bind fake PostgreSQL endpoint");
         let database_url = format!(
-            "postgres://buzz@{}/buzz",
+            "postgres://kuzz@{}/kuzz",
             fake_database.local_addr().expect("fake database address")
         );
         let pool = sqlx::postgres::PgPoolOptions::new()
@@ -1979,7 +1979,7 @@ pub(crate) mod tests {
 
     async fn state_with_token_auth(enabled: bool) -> Arc<AppState> {
         let mut state = crate::state::tests::test_state_with_database_url(
-            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz", // sadscan:disable np.postgres.1 -- closed port
+            "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz", // sadscan:disable np.postgres.1 -- closed port
         )
         .await;
         let mut config = crate::identity::AuthTokenConfig::disabled("ws://localhost:3000");

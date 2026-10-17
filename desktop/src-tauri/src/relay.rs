@@ -384,6 +384,31 @@ pub async fn query_relay_value(
     .await
 }
 
+/// [`query_relay_value`] for a relay base and credential the caller already
+/// read and checked against the account a request belongs to: that exact pair
+/// signs and receives it, with no second read across the admission wait.
+pub(crate) async fn query_relay_value_as(
+    state: &AppState,
+    api_base_url: &str,
+    credential: &crate::auth::credential::UserCredential,
+    filters: &[serde_json::Value],
+) -> Result<serde_json::Value, String> {
+    crate::relay_admission::wait_for_rate_limit().await;
+    let url = format!("{}/query", api_base_url.trim_end_matches('/'));
+    let body_bytes =
+        serde_json::to_vec(filters).map_err(|e| format!("filter serialization failed: {e}"))?;
+    let auth = credential.relay_http_auth(&Method::POST, &url, &body_bytes)?;
+    send_query_request_as(
+        &state.http_client,
+        &url,
+        &auth,
+        None,
+        body_bytes,
+        QUERY_REQUEST_TIMEOUT,
+    )
+    .await
+}
+
 /// Like [`query_relay`] but targets an explicit HTTP API base URL instead of
 /// the workspace override. Used when a query must hit a specific relay (e.g.
 /// reconciling an agent's profile on the relay where it was published).

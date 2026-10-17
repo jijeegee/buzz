@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 /// Serve explicit artifact queries; `None` leaves the request to the generic
-/// path (including existing extensions such as `#buzz-channel`).
+/// path (including existing extensions such as `#kuzz-channel`).
 pub(super) async fn query(
     state: &Arc<AppState>,
     tenant: &TenantContext,

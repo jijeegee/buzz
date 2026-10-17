@@ -23,6 +23,7 @@ export function MessageThreadPanelHeader({
   headerLeading,
   headerActions,
   headerTitle = "Thread",
+  headerTitleAccessory,
   headerTitleAriaLabel,
   isFocusMode,
   isSinglePanelView,
@@ -33,6 +34,8 @@ export function MessageThreadPanelHeader({
   headerLeading?: React.ReactNode;
   headerActions?: React.ReactNode;
   headerTitle?: string;
+  /** Rendered right after the title (the thread name pencil). */
+  headerTitleAccessory?: React.ReactNode;
   headerTitleAriaLabel?: string;
   isFocusMode: boolean;
   isSinglePanelView: boolean;
@@ -69,7 +72,17 @@ export function MessageThreadPanelHeader({
             : undefined
         }
       >
-        <AuxiliaryPanelTitle>{title}</AuxiliaryPanelTitle>
+        {headerTitleAccessory ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {/* Sized to the title so the accessory sits right after it. */}
+            <div className="flex min-w-0">
+              <AuxiliaryPanelTitle>{title}</AuxiliaryPanelTitle>
+            </div>
+            {headerTitleAccessory}
+          </div>
+        ) : (
+          <AuxiliaryPanelTitle>{title}</AuxiliaryPanelTitle>
+        )}
       </AuxiliaryPanelHeaderGroup>
       {headerActions ? (
         <AuxiliaryPanelHeaderActions>

@@ -51,6 +51,14 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     }
   }
 
+  Future<bool> _canOpenAt() async {
+    while (_initInFlight) {
+      await _initFuture;
+    }
+    if (!_summaryMounted || !_usingChannelWindow) return false;
+    return _relaySupportsNewerWindows();
+  }
+
   Future<bool> _fetchNewer() async {
     if (_initInFlight || !_usingChannelWindow) return false;
     return _appendNewerPage(_summarySession, _initVersion);

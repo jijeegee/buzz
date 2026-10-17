@@ -1,6 +1,6 @@
 //! Locked (encrypted) agent-card envelope — NIP-44 v2 over the snapshot manifest.
 //!
-//! A locked card carries the same `buzz_agent_snapshot` tEXt chunk as a plain
+//! A locked card carries the same `kuzz_agent_snapshot` tEXt chunk as a plain
 //! card, but the chunk JSON is a typed outer envelope whose ciphertext
 //! decrypts to the ordinary manifest. The NIP-44 v2 conversation key is
 //! symmetric over the (owner, agent) pair, so BOTH the owner's and the
@@ -33,8 +33,8 @@ use super::agent_snapshot::{
 use super::types::ManagedAgentRecord;
 
 /// Discriminator for the locked envelope. Distinct from the plain manifest's
-/// `buzz-agent-snapshot` so detection never guesses.
-pub const LOCKED_FORMAT: &str = "buzz-agent-snapshot-encrypted";
+/// `kuzz-agent-snapshot` so detection never guesses.
+pub const LOCKED_FORMAT: &str = "kuzz-agent-snapshot-encrypted";
 /// Envelope schema version this module produces and accepts.
 pub const LOCKED_VERSION: u32 = 1;
 /// Encryption scheme identifier this module produces and accepts.
@@ -55,7 +55,7 @@ pub const LOCKED_CARD_REFUSAL: &str =
 
 // ── Envelope types ────────────────────────────────────────────────────────────
 
-/// Typed outer envelope stored (base64 JSON) in the `buzz_agent_snapshot`
+/// Typed outer envelope stored (base64 JSON) in the `kuzz_agent_snapshot`
 /// chunk of a locked card.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -167,8 +167,8 @@ pub fn validate_envelope(
 /// Parse a raw chunk payload (JSON bytes from `extract_chunk_payload_png` or
 /// an `.agent.json` file) and dispatch on the exact `format` discriminator.
 ///
-/// - `buzz-agent-snapshot` → full plain-manifest decode + validation.
-/// - `buzz-agent-snapshot-encrypted` → size caps, typed envelope parse,
+/// - `kuzz-agent-snapshot` → full plain-manifest decode + validation.
+/// - `kuzz-agent-snapshot-encrypted` → size caps, typed envelope parse,
 ///   structural validation. No decryption happens here.
 /// - anything else (including missing `format`) → error, never a fall-through.
 pub fn parse_chunk_payload(json_bytes: &[u8]) -> Result<ChunkPayload, String> {

@@ -24,7 +24,7 @@ const FRAME_MIN_REMAINING_SECS: i64 = 60;
 pub struct TokenAuthStatus {
     /// Relay HTTP origin the status describes.
     pub origin: String,
-    /// Whether the relay advertises token auth (NIP-11 `buzz_token_auth`).
+    /// Whether the relay advertises token auth (NIP-11 `kuzz_token_auth`).
     pub supported: bool,
     /// Sign-in providers the relay offers.
     pub providers: Vec<String>,

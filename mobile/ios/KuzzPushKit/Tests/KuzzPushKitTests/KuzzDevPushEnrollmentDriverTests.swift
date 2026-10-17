@@ -82,7 +82,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
         XCTAssertEqual(body["challenge"] as? String, Self.challenge)
         XCTAssertEqual(body["key_id"] as? String, Self.keyId)
         XCTAssertEqual(body["attestation"] as? String, Self.attestation)
-        XCTAssertEqual(body["app_profile"] as? String, "buzz-ios-dogfood")
+        XCTAssertEqual(body["app_profile"] as? String, "kuzz-ios-dogfood")
         return Self.response(
           request,
           status: 201,
@@ -156,7 +156,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
         installationId: Self.installationId,
         endpointGrant: "opaque-grant",
         endpointHash: Self.hex(SHA256.hash(data: Data((1...32).map(UInt8.init)))),
-        appProfile: "buzz-ios-dogfood",
+        appProfile: "kuzz-ios-dogfood",
         endpointEpoch: 1,
         generation: 1,
         expiresAt: Self.expiresAt
@@ -452,7 +452,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
 
   func testLegacyGrantWithoutGatewayOriginIsRejected() throws {
     let data = Data(
-      #"{"relayOrigin":"wss://relay.example","relayPubkey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","installationId":"000102030405060708090a0b0c0d0e0f","endpointGrant":"opaque","endpointHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","appProfile":"buzz-ios-dogfood","endpointEpoch":1,"generation":1,"expiresAt":1752624000}"#
+      #"{"relayOrigin":"wss://relay.example","relayPubkey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","installationId":"000102030405060708090a0b0c0d0e0f","endpointGrant":"opaque","endpointHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","appProfile":"kuzz-ios-dogfood","endpointEpoch":1,"generation":1,"expiresAt":1752624000}"#
         .utf8
     )
 
@@ -461,7 +461,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
 
   func testGrantWithoutAppAttestKeyIsRejected() throws {
     let data = Data(
-      #"{"gatewayOrigin":"https://push.example","relayOrigin":"wss://relay.example","relayPubkey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","installationId":"000102030405060708090a0b0c0d0e0f","endpointGrant":"opaque","endpointHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","appProfile":"buzz-ios-dogfood","endpointEpoch":1,"generation":1,"expiresAt":1752624000}"#
+      #"{"gatewayOrigin":"https://push.example","relayOrigin":"wss://relay.example","relayPubkey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","installationId":"000102030405060708090a0b0c0d0e0f","endpointGrant":"opaque","endpointHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","appProfile":"kuzz-ios-dogfood","endpointEpoch":1,"generation":1,"expiresAt":1752624000}"#
         .utf8
     )
 
@@ -477,7 +477,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
       installationId: Self.installationId,
       endpointGrant: "other-gateway-grant",
       endpointHash: Self.hex(SHA256.hash(data: Data((1...32).map(UInt8.init)))),
-      appProfile: "buzz-ios-dogfood",
+      appProfile: "kuzz-ios-dogfood",
       endpointEpoch: 1,
       generation: 1,
       expiresAt: Self.expiresAt
@@ -751,7 +751,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
       installationId: String(repeating: "f", count: 32),
       endpointGrant: "existing-grant",
       endpointHash: Self.hex(SHA256.hash(data: Data((1...32).map(UInt8.init)))),
-      appProfile: "buzz-ios-dogfood",
+      appProfile: "kuzz-ios-dogfood",
       endpointEpoch: 1,
       generation: 4,
       expiresAt: Self.expiresAt
@@ -798,7 +798,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
       installationId: String(repeating: "f", count: 32),
       endpointGrant: "first-relay-grant",
       endpointHash: Self.hex(SHA256.hash(data: Data((1...32).map(UInt8.init)))),
-      appProfile: "buzz-ios-dogfood",
+      appProfile: "kuzz-ios-dogfood",
       endpointEpoch: 1,
       generation: 7,
       expiresAt: Self.expiresAt
@@ -870,7 +870,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
       installationId: Self.installationId,
       endpointGrant: "existing-grant",
       endpointHash: Self.hex(SHA256.hash(data: Data((1...32).map(UInt8.init)))),
-      appProfile: "buzz-ios-dogfood",
+      appProfile: "kuzz-ios-dogfood",
       endpointEpoch: 1,
       generation: 7,
       expiresAt: Self.now + 300
@@ -976,7 +976,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
       installationId: Self.installationId,
       endpointGrant: "existing-grant",
       endpointHash: Self.hex(SHA256.hash(data: deviceToken)),
-      appProfile: "buzz-ios-dogfood",
+      appProfile: "kuzz-ios-dogfood",
       endpointEpoch: 1,
       generation: 1,
       expiresAt: Self.expiresAt
@@ -1019,7 +1019,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
       installationId: Self.installationId,
       endpointGrant: "existing-grant",
       endpointHash: Self.hex(SHA256.hash(data: deviceToken)),
-      appProfile: "buzz-ios-dogfood",
+      appProfile: "kuzz-ios-dogfood",
       endpointEpoch: 1,
       generation: 1,
       expiresAt: Self.expiresAt
@@ -1058,7 +1058,7 @@ final class KuzzDevPushEnrollmentDriverTests: XCTestCase {
       installationId: Self.installationId,
       endpointGrant: "existing-grant",
       endpointHash: Self.hex(SHA256.hash(data: deviceToken)),
-      appProfile: "buzz-ios-dogfood",
+      appProfile: "kuzz-ios-dogfood",
       endpointEpoch: 1,
       generation: 1,
       expiresAt: Self.expiresAt

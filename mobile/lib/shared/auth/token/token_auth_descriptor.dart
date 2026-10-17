@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-/// The relay's `buzz_token_auth` NIP-11 descriptor (plan §3.2).
+/// The relay's `kuzz_token_auth` NIP-11 descriptor (plan §3.2).
 ///
 /// Present only on relays with centralized token auth enabled; such relays
 /// accept `Authorization: Bearer` and `["AUTH", {"token": ...}]` and offer
@@ -30,11 +30,11 @@ class TokenAuthDescriptor {
 /// Parse the descriptor from a decoded NIP-11 document.
 ///
 /// Returns `null` when the relay does not advertise bearer token auth
-/// (`buzz_token_auth.bearer` must be exactly `true`, matching web).
+/// (`kuzz_token_auth.bearer` must be exactly `true`, matching web).
 TokenAuthDescriptor? parseTokenAuthDescriptor(Object? nip11) {
   if (nip11 is! Map) return null;
-  final raw = nip11['buzz_token_auth'];
-  final backup = nip11['buzz_key_backup'];
+  final raw = nip11['kuzz_token_auth'];
+  final backup = nip11['kuzz_key_backup'];
   if (backup is Map && backup['version'] == 1) {
     final providers = backup['providers'];
     return TokenAuthDescriptor(

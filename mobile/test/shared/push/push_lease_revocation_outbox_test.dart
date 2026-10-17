@@ -336,7 +336,7 @@ KuzzPushEndpointGrant _grant({required int expiresAt}) => KuzzPushEndpointGrant(
   installationId: '0' * 32,
   endpointGrant: 'opaque',
   endpointHash: 'b' * 64,
-  appProfile: 'buzz-ios-dogfood',
+  appProfile: 'kuzz-ios-dogfood',
   endpointEpoch: 1,
   generation: 1,
   expiresAt: expiresAt,

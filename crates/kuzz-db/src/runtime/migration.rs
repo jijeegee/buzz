@@ -188,13 +188,22 @@ async fn reject_legacy_nip_rs_cardinality_ambiguity(conn: &mut PgConnection) -> 
 #[cfg(test)]
 mod postgres_tests {
     use super::*;
+
+    /// Applied migrations are checksummed by sqlx and keep the names they were
+    /// written with; 0067 moved the live objects to the kuzz names. Tests that
+    /// read a frozen migration's own text spell the expected name through this.
+    fn frozen(kuzz_spelling: &str) -> String {
+        kuzz_spelling.replace("kuzz", PRE_RENAME_NAME)
+    }
+
+    const PRE_RENAME_NAME: &str = "buzz"; // kuzz-rename: keep
     use std::{
         collections::BTreeSet,
         fs,
         path::{Path, PathBuf},
     };
 
-    const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
+    const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
 
     /// Connection parameters parsed out of a PostgreSQL URL so the parity test
     /// can pass them to the `bin/pgschema` binary, which
@@ -713,7 +722,27 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 66);
+        assert_eq!(migrations.len(), 70);
+        assert_eq!(migrations[69].version, 70);
+        assert!(migrations[69]
+            .sql
+            .as_str()
+            .contains("CREATE TEMP TABLE marker_replies"));
+        assert_eq!(migrations[68].version, 69);
+        assert!(migrations[68]
+            .sql
+            .as_str()
+            .contains("ADD COLUMN read_origin"));
+        assert_eq!(migrations[67].version, 68);
+        assert!(migrations[67]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE thread_follows"));
+        assert_eq!(migrations[66].version, 67);
+        assert!(migrations[66]
+            .sql
+            .as_str()
+            .contains("CREATE OR REPLACE FUNCTION purge_soft_deleted_kuzz_mesh_status"));
         assert_eq!(migrations[65].version, 66);
         assert!(migrations[65]
             .sql
@@ -1048,14 +1077,25 @@ mod postgres_tests {
         // writers during rolling deploys without changing kind:30003 broadly.
         assert_eq!(migrations[18].version, 19);
         let mesh_retention = migrations[18].sql.as_str();
-        assert!(mesh_retention.contains("buzz-mesh-member-status:%"));
-        assert!(mesh_retention.contains("buzz-mesh-status"));
-        assert!(mesh_retention
-            .contains("CREATE TRIGGER trg_events_purge_soft_deleted_buzz_mesh_status"));
+        // 0019 is applied and checksummed, so it keeps its pre-rename names;
+        // 0067 replaces the trigger with the kuzz-named one.
+        assert!(mesh_retention.contains(&frozen("kuzz-mesh-member-status:%")));
+        assert!(mesh_retention.contains(&frozen("kuzz-mesh-status")));
+        let old_mesh_trigger =
+            frozen("CREATE TRIGGER trg_events_purge_soft_deleted_kuzz_mesh_status");
+        assert!(mesh_retention.contains(&old_mesh_trigger));
         assert!(!migrations[0]
             .sql
             .as_str()
-            .contains("purge_soft_deleted_buzz_mesh_status"));
+            .contains("purge_soft_deleted_kuzz_mesh_status"));
+        let protocol_rename = migrations[66].sql.as_str();
+        let drop_old_mesh_trigger = frozen(
+            "DROP TRIGGER IF EXISTS trg_events_purge_soft_deleted_kuzz_mesh_status ON events;",
+        );
+        assert!(protocol_rename.contains(&drop_old_mesh_trigger));
+        assert!(protocol_rename
+            .contains("CREATE TRIGGER trg_events_purge_soft_deleted_kuzz_mesh_status"));
+        assert!(protocol_rename.contains("NEW.d_tag LIKE 'kuzz-mesh-member-status:%'"));
 
         // Join policy acceptances landed concurrently with mesh status retention;
         // keep both additive migrations in a single, unambiguous sequence.
@@ -1093,7 +1133,7 @@ mod postgres_tests {
         let push_gate = migrations[22].sql.as_str();
         assert!(push_gate.contains("CREATE OR REPLACE FUNCTION enqueue_push_match_job"));
         assert!(push_gate.contains("pg_advisory_xact_lock_shared"));
-        assert!(push_gate.contains("'buzz_push_gate:' || NEW.community_id::text"));
+        assert!(push_gate.contains(&frozen("'kuzz_push_gate:' || NEW.community_id::text")));
         assert!(push_gate.contains("endpoint_enabled"));
 
         // T1a repair: the TTL refresh trigger synchronizes on a shared
@@ -1104,7 +1144,7 @@ mod postgres_tests {
         assert!(ttl_shared
             .contains("CREATE OR REPLACE FUNCTION refresh_channel_ttl_after_event_insert"));
         assert!(ttl_shared.contains("pg_advisory_xact_lock_shared"));
-        assert!(ttl_shared.contains("'buzz_channel_ttl:' || NEW.community_id::text"));
+        assert!(ttl_shared.contains(&frozen("'kuzz_channel_ttl:' || NEW.community_id::text")));
         // The row read must be a bare SELECT (comments describe the removed
         // FOR UPDATE; the executable body must not reintroduce it).
         assert!(ttl_shared.contains("SELECT ttl_seconds INTO channel_ttl"));
@@ -1212,7 +1252,7 @@ mod postgres_tests {
         let roster_fence = migrations[31].sql.as_str();
         assert!(roster_fence.contains("CREATE TRIGGER trg_events_guard_channel_roster_snapshot"));
         assert!(roster_fence.contains("NEW.kind <> 39002"));
-        assert!(roster_fence.contains("'buzz_channel_membership:'"));
+        assert!(roster_fence.contains(&frozen("'kuzz_channel_membership:'")));
         assert!(roster_fence.contains("cm.removed_at IS NULL"));
         assert!(roster_fence.contains("cm.role::text"));
         assert!(roster_fence.contains("jsonb_array_length(roster_tag.tag_json) <> 4"));
@@ -1221,19 +1261,23 @@ mod postgres_tests {
         assert!(roster_fence.contains("ERRCODE = '23514'"));
 
         // Fresh desired-state bootstrap must install the identical executable
-        // fence as migration 0032. CI and isolated relay startup use schema.sql
-        // without running migrations, so drift reopens rolling-deploy races.
-        fn extract_roster_fence(sql: &str) -> &str {
-            let fence_start = "CREATE OR REPLACE FUNCTION guard_channel_roster_snapshot()";
-            let fence_end = "    FOR EACH ROW EXECUTE FUNCTION guard_channel_roster_snapshot();";
-            let start = sql.find(fence_start).expect("roster fence function");
-            let relative_end = sql[start..].find(fence_end).expect("roster fence trigger");
-            &sql[start..start + relative_end + fence_end.len()]
+        // fence as the migrations (0032, function body last replaced by
+        // 0067). CI and isolated relay startup use schema.sql without running
+        // migrations, so drift reopens rolling-deploy races.
+        fn extract_between<'a>(sql: &'a str, start: &str, end: &str) -> &'a str {
+            let from = sql.find(start).expect("fence start");
+            let relative_end = sql[from..].find(end).expect("fence end");
+            &sql[from..from + relative_end + end.len()]
         }
-        assert_eq!(
-            extract_roster_fence(roster_fence),
-            extract_roster_fence(desired_schema)
-        );
+        let fence_start = "CREATE OR REPLACE FUNCTION guard_channel_roster_snapshot()";
+        let function_end = "$$ LANGUAGE plpgsql;";
+        let fence_end = "    FOR EACH ROW EXECUTE FUNCTION guard_channel_roster_snapshot();";
+        let renamed_function =
+            extract_between(migrations[66].sql.as_str(), fence_start, function_end);
+        let desired_fence = extract_between(desired_schema, fence_start, fence_end);
+        assert!(desired_fence.starts_with(renamed_function));
+        let migrated_trigger = extract_between(roster_fence, function_end, fence_end);
+        assert!(desired_fence.ends_with(migrated_trigger));
 
         // The single-row heartbeat table is updated continuously. Prevent
         // autovacuum from truncating its heap so standby queries are not
@@ -1343,8 +1387,14 @@ mod postgres_tests {
         assert!(dogfood_profile.contains("DELETE FROM push_gateway_installations"));
         assert!(dogfood_profile
             .contains("DROP CONSTRAINT push_gateway_installations_app_profile_check"));
-        assert!(dogfood_profile.contains("CHECK (app_profile = 'buzz-ios-dogfood')"));
-        assert!(desired_schema.contains("CHECK (app_profile = 'buzz-ios-dogfood')"));
+        assert!(dogfood_profile.contains(&frozen("CHECK (app_profile = 'kuzz-ios-dogfood')")));
+        assert!(desired_schema.contains("CHECK (app_profile = 'kuzz-ios-dogfood')"));
+        // 0067 renames the profile and re-pins the constraint.
+        let protocol_rename = migrations[66].sql.as_str();
+        assert!(protocol_rename.contains("SET app_profile = 'kuzz-ios-dogfood'"));
+        assert!(protocol_rename.contains("CHECK (app_profile = 'kuzz-ios-dogfood')"));
+        assert!(protocol_rename.contains("CHECK (version IN (1, 2))"));
+        assert!(desired_schema.contains("version SMALLINT NOT NULL CHECK (version IN (1, 2))"));
 
         // Drop the Phase-A NIP-FI relay-side authority ledger (0041 + 0042).
         // OSS Kuzz is stateless for identity (spec v2, PR #7214); the durable
@@ -1973,7 +2023,22 @@ mod postgres_tests {
         let schema_sql = std::fs::read_to_string(workspace_root.join("schema/schema.sql"))
             .expect("read schema/schema.sql");
 
-        let migration = surface(migration_0029);
+        let migration_0067: &str = MIGRATOR
+            .iter()
+            .find(|migration| migration.version == 67)
+            .expect("embedded migration 0067")
+            .sql
+            .as_ref();
+
+        // 0067 redefines some 0029 functions with CREATE OR REPLACE (protocol
+        // rename); compare the latest body, in the CREATE FUNCTION spelling
+        // schema.sql uses.
+        let mut migration = surface(migration_0029);
+        for (function, definition) in surface(migration_0067).functions {
+            if let Some(slot) = migration.functions.get_mut(&function) {
+                *slot = definition.replacen("create or replace function", "create function", 1);
+            }
+        }
         let owner_admission_migration = surface(migration_0051);
         let schema = surface(&schema_sql);
 
@@ -2045,7 +2110,7 @@ mod postgres_tests {
             {
                 assert_eq!(
                     in_schema, definition,
-                    "schema.sql definition of {function}() drifted from migration 0029"
+                    "schema.sql definition of {function}() drifted from migration 0029/0067"
                 );
             }
         }
@@ -2101,7 +2166,15 @@ mod postgres_tests {
         let mut expected_fences = migration.fence_attachments.clone();
         expected_fences.remove("product_feedback");
         expected_fences.remove("rate_limit_violations");
-        expected_fences.extend(["artifact_heads", "artifact_revisions"].map(str::to_owned));
+        expected_fences.extend(
+            [
+                "artifact_heads",
+                "artifact_revisions",
+                "thread_follows",
+                "thread_state",
+            ]
+            .map(str::to_owned),
+        );
         assert_eq!(
             expected_fences, schema.fence_attachments,
             "write-fence attachment targets differ after recovery policy"
@@ -2957,8 +3030,8 @@ mod postgres_tests {
             .await
             .expect("begin direct fence");
         sqlx::query(
-            "SELECT set_config('buzz.deletion_executor_community', $1, true), \
-                    set_config('buzz.deletion_fence_generation', '1', true)",
+            "SELECT set_config('kuzz.deletion_executor_community', $1, true), \
+                    set_config('kuzz.deletion_fence_generation', '1', true)",
         )
         .bind(to_fence.to_string())
         .execute(&mut *fence_connection)

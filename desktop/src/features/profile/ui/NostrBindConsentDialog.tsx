@@ -34,9 +34,9 @@ const NOSTR_BIND_PREVIEW_PAYLOAD: NostrBindDeepLinkPayload = {
   challengeId: "550e8400-e29b-41d4-a716-446655440000",
   nonce: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567",
   verificationCode: "123456",
-  audience: "buzz:nostr-identity",
+  audience: "kuzz:nostr-identity",
   action: "bind_nostr_identity",
-  protocol: "buzz-nostr-identity",
+  protocol: "kuzz-nostr-identity",
   version: "1",
   origin: "https://example.com",
   expiresAt: "2099-01-01T00:00:00Z",
@@ -114,7 +114,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 function appendCallbackStatus(callbackUrl: string): string {
   const url = new URL(callbackUrl);
-  url.searchParams.set("buzz_bind", "signed");
+  url.searchParams.set("kuzz_bind", "signed");
   return url.toString();
 }
 

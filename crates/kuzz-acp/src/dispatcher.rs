@@ -431,7 +431,7 @@ fn is_plain_stream_message(event: &nostr::Event, author: &str, relay_self: Optio
     !event
         .tags
         .iter()
-        .any(|tag| tag.as_slice().first().map(String::as_str) == Some("buzz:workflow"))
+        .any(|tag| tag.as_slice().first().map(String::as_str) == Some("kuzz:workflow"))
 }
 
 /// Lowercase 64-hex pubkeys from the event's `p` tags, in order, deduplicated.
@@ -1492,7 +1492,7 @@ mod tests {
         let relay = Keys::generate();
         let relay_hex = relay.public_key().to_hex();
         let workflow = EventBuilder::new(Kind::Custom(KIND_STREAM_MESSAGE as u16), "scheduled")
-            .tags([Tag::parse(["buzz:workflow", "true"]).unwrap()])
+            .tags([Tag::parse(["kuzz:workflow", "true"]).unwrap()])
             .sign_with_keys(&relay)
             .unwrap();
         assert_eq!(

@@ -1,8 +1,17 @@
-import { Activity, Bot, Folders, Inbox, Zap } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Ellipsis,
+  Folders,
+  Inbox,
+  MessagesSquare,
+  Users,
+  Zap,
+} from "lucide-react";
 
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
 import { SidebarProjectsSection } from "@/features/sidebar/ui/SidebarProjectsSection";
-import { FeatureGate } from "@/shared/features";
+import { useFeatureEnabled } from "@/shared/features";
 import type { Channel, SearchHit } from "@/shared/api/types";
 import {
   SidebarHeader,
@@ -11,6 +20,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/shared/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import { SidebarMenuLabel } from "@/shared/ui/sidebar-menu-label";
 import { ProtectedBestieSidebarEntry } from "@protected-feature-components";
 
@@ -21,7 +36,8 @@ type SidebarSelectedView =
   | "agents"
   | "workflows"
   | "pulse"
-  | "projects";
+  | "projects"
+  | "people";
 
 type AppSidebarPinnedHeaderProps = {
   channelLabels: Record<string, string>;
@@ -43,7 +59,9 @@ type AppSidebarPrimaryMenuProps = {
   homeBadgeCount: number;
   inboxActive?: boolean;
   onSelectAgents: () => void;
+  onSelectChats?: () => void;
   onSelectHome: () => void;
+  onSelectPeople?: () => void;
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
@@ -94,13 +112,16 @@ export function AppSidebarPrimaryMenu({
   homeBadgeCount,
   inboxActive = false,
   onSelectAgents,
+  onSelectChats,
   onSelectHome,
+  onSelectPeople,
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
   projectsOverviewActive,
   selectedView,
 }: AppSidebarPrimaryMenuProps) {
+  const activityActive = selectedView === "home" || inboxActive;
   return (
     <>
       <SidebarHeader
@@ -109,16 +130,47 @@ export function AppSidebarPrimaryMenu({
         data-testid="sidebar-primary-menu"
       >
         <SidebarMenu className="sidebar-primary-menu pb-2">
+          {onSelectChats ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="data-[active=true]:font-normal"
+                data-testid="open-chats-view"
+                isActive={selectedView === "channel" && !inboxActive}
+                onClick={onSelectChats}
+                tooltip="Chats"
+                type="button"
+              >
+                <MessagesSquare className="h-4 w-4" />
+                <SidebarMenuLabel>Chats</SidebarMenuLabel>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
+          {onSelectPeople ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="data-[active=true]:font-normal"
+                data-testid="open-people-view"
+                isActive={selectedView === "people"}
+                onClick={onSelectPeople}
+                tooltip="People"
+                type="button"
+              >
+                <Users className="h-4 w-4" />
+                <SidebarMenuLabel>People</SidebarMenuLabel>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[active=true]:font-normal"
-              isActive={selectedView === "home" || inboxActive}
+              data-testid="open-activity-view"
+              isActive={activityActive}
               onClick={onSelectHome}
-              tooltip="Inbox"
+              tooltip="Activity"
               type="button"
             >
               <Inbox className="h-4 w-4" />
-              <SidebarMenuLabel>Inbox</SidebarMenuLabel>
+              <SidebarMenuLabel>Activity</SidebarMenuLabel>
             </SidebarMenuButton>
             {homeBadgeCount > 0 ? (
               <SidebarMenuBadge
@@ -129,34 +181,6 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuBadge>
             ) : null}
           </SidebarMenuItem>
-          <FeatureGate feature="pulse">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                data-testid="open-pulse-view"
-                isActive={selectedView === "pulse"}
-                onClick={onSelectPulse}
-                tooltip="Pulse"
-                type="button"
-              >
-                <Activity className="h-4 w-4" />
-                <SidebarMenuLabel>Pulse</SidebarMenuLabel>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </FeatureGate>
-          <FeatureGate feature="projects">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                data-testid="open-projects-view"
-                isActive={selectedView === "projects" && projectsOverviewActive}
-                onClick={onSelectProjects}
-                tooltip="Projects"
-                type="button"
-              >
-                <Folders className="h-4 w-4" />
-                <SidebarMenuLabel>Projects</SidebarMenuLabel>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </FeatureGate>
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[active=true]:font-normal"
@@ -171,23 +195,90 @@ export function AppSidebarPrimaryMenu({
             </SidebarMenuButton>
           </SidebarMenuItem>
           <ProtectedBestieSidebarEntry />
-          <FeatureGate feature="workflows">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                data-testid="open-workflows-view"
-                isActive={selectedView === "workflows"}
-                onClick={onSelectWorkflows}
-                tooltip="Workflows"
-                type="button"
-              >
-                <Zap className="h-4 w-4" />
-                <SidebarMenuLabel>Workflows</SidebarMenuLabel>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </FeatureGate>
+          <AppSidebarMoreMenu
+            onSelectProjects={onSelectProjects}
+            onSelectPulse={onSelectPulse}
+            onSelectWorkflows={onSelectWorkflows}
+            projectsOverviewActive={projectsOverviewActive}
+            selectedView={selectedView}
+          />
         </SidebarMenu>
       </SidebarHeader>
       <SidebarProjectsSection />
     </>
+  );
+}
+
+/** Pulse, Projects and Workflows live behind one "More" rail item. */
+function AppSidebarMoreMenu({
+  onSelectProjects,
+  onSelectPulse,
+  onSelectWorkflows,
+  projectsOverviewActive,
+  selectedView,
+}: Pick<
+  AppSidebarPrimaryMenuProps,
+  | "onSelectProjects"
+  | "onSelectPulse"
+  | "onSelectWorkflows"
+  | "projectsOverviewActive"
+  | "selectedView"
+>) {
+  const pulseEnabled = useFeatureEnabled("pulse");
+  const projectsEnabled = useFeatureEnabled("projects");
+  const workflowsEnabled = useFeatureEnabled("workflows");
+  if (!pulseEnabled && !projectsEnabled && !workflowsEnabled) {
+    return null;
+  }
+  const moreActive =
+    selectedView === "pulse" ||
+    selectedView === "workflows" ||
+    (selectedView === "projects" && projectsOverviewActive);
+  return (
+    <SidebarMenuItem>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <SidebarMenuButton
+            className="data-[active=true]:font-normal"
+            data-testid="open-more-menu"
+            isActive={moreActive}
+            tooltip="More"
+            type="button"
+          >
+            <Ellipsis className="h-4 w-4" />
+            <SidebarMenuLabel>More</SidebarMenuLabel>
+          </SidebarMenuButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" side="right">
+          {pulseEnabled ? (
+            <DropdownMenuItem
+              data-testid="open-pulse-view"
+              onSelect={onSelectPulse}
+            >
+              <Activity className="h-4 w-4" />
+              <span>Pulse</span>
+            </DropdownMenuItem>
+          ) : null}
+          {projectsEnabled ? (
+            <DropdownMenuItem
+              data-testid="open-projects-view"
+              onSelect={onSelectProjects}
+            >
+              <Folders className="h-4 w-4" />
+              <span>Projects</span>
+            </DropdownMenuItem>
+          ) : null}
+          {workflowsEnabled ? (
+            <DropdownMenuItem
+              data-testid="open-workflows-view"
+              onSelect={onSelectWorkflows}
+            >
+              <Zap className="h-4 w-4" />
+              <span>Workflows</span>
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </SidebarMenuItem>
   );
 }

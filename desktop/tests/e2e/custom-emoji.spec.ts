@@ -13,7 +13,7 @@ import { waitForAnimations } from "../helpers/animations";
 // same shortcode as `img[data-custom-emoji]` via remarkCustomEmoji.
 //
 // The `:kuzz:` shortcode lives in a member-authored kind:30030 set
-// (d=`buzz:custom-emoji`) served by the mock bridge from two distinct
+// (d=`kuzz:custom-emoji`) served by the mock bridge from two distinct
 // pubkeys. `listCustomEmoji` reads every member's set over the relay WS and
 // unions them (deduped by shortcode+url) into the community palette — which is
 // live even in mock-bridge mode (the mock only intercepts Tauri commands), so

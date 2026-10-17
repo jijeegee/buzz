@@ -9,8 +9,8 @@ use std::fmt;
 use std::str::FromStr;
 use std::time::Duration;
 
-use kuzz_core::CommunityId;
 use chrono::{DateTime, Utc};
+use kuzz_core::CommunityId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, PgConnection, PgPool, Postgres, Row, Transaction};
@@ -101,7 +101,9 @@ pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
     "relay_members",
     "scheduled_workflow_fires",
     "subscriptions",
+    "thread_follows",
     "thread_metadata",
+    "thread_state",
     "users",
     "workflow_approvals",
     "workflow_runs",
@@ -119,6 +121,8 @@ pub const PURGE_SCOPED_TABLES: &[&str] = &[
     "subscriptions",
     "api_tokens",
     "channel_members",
+    "thread_follows",
+    "thread_state",
     "thread_metadata",
     "moderation_actions",
     "workflows",
@@ -906,7 +910,7 @@ impl DeletionStore {
         let mut tx = self.pool.begin().await?;
 
         sqlx::query(
-            "SELECT pg_advisory_xact_lock(hashtextextended('buzz-owner-deletion-intent:' || $1::text, 0))",
+            "SELECT pg_advisory_xact_lock(hashtextextended('kuzz-owner-deletion-intent:' || $1::text, 0))",
         )
         .bind(request_id)
         .execute(&mut *tx)
@@ -2252,7 +2256,7 @@ impl DeletionStore {
         // Migration 0011 fences hard deletion of NIP-RS rows against legacy
         // writers. Whole-community deletion is an intentional hard-delete path,
         // and the transaction is already bound to an approved, fenced tenant.
-        sqlx::query("SELECT set_config('buzz.nip_rs_hard_delete', 'on', true)")
+        sqlx::query("SELECT set_config('kuzz.nip_rs_hard_delete', 'on', true)")
             .execute(&mut *tx)
             .await?;
 
@@ -3007,11 +3011,11 @@ impl DeletionStore {
             )));
         }
         sqlx::query(
-            "SELECT set_config('buzz.serving_write_community', $1, true), \
-                    set_config('buzz.serving_write_lease_id', $2, true), \
-                    set_config('buzz.serving_write_owner', $3, true), \
-                    set_config('buzz.serving_write_generation', $4, true), \
-                    set_config('buzz.serving_write_fence_generation', $5, true)",
+            "SELECT set_config('kuzz.serving_write_community', $1, true), \
+                    set_config('kuzz.serving_write_lease_id', $2, true), \
+                    set_config('kuzz.serving_write_owner', $3, true), \
+                    set_config('kuzz.serving_write_generation', $4, true), \
+                    set_config('kuzz.serving_write_fence_generation', $5, true)",
         )
         .bind(lease.community_id.to_string())
         .bind(lease.id.to_string())
@@ -3698,8 +3702,8 @@ async fn set_executor_gucs(
     generation: i64,
 ) -> Result<()> {
     sqlx::query(
-        "SELECT set_config('buzz.deletion_executor_community', $1, true), \
-                set_config('buzz.deletion_fence_generation', $2, true)",
+        "SELECT set_config('kuzz.deletion_executor_community', $1, true), \
+                set_config('kuzz.deletion_fence_generation', $2, true)",
     )
     .bind(community.to_string())
     .bind(generation.to_string())
@@ -4342,7 +4346,7 @@ mod postgres_tests {
     async fn store() -> (Db, DeletionStore) {
         let database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1 -- local test-only credentials
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1 -- local test-only credentials
         let db = Db::new(&DbConfig {
             database_url,
             max_connections: 5,
@@ -4637,7 +4641,7 @@ mod postgres_tests {
     async fn contender_db(application_name: &str) -> Db {
         let database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string());
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string());
         let options = PgConnectOptions::from_str(&database_url)
             .expect("parse test database URL")
             .application_name(application_name);
@@ -5936,12 +5940,12 @@ mod postgres_tests {
             OwnerPreparationAuthorityDrift::InactiveDeletionState
             | OwnerPreparationAuthorityDrift::DeletedAtSet => {
                 let mut tx = db.pool.begin().await.expect("open fixture transaction");
-                sqlx::query("SELECT set_config('buzz.deletion_executor_community', $1, true)")
+                sqlx::query("SELECT set_config('kuzz.deletion_executor_community', $1, true)")
                     .bind(community.as_uuid().to_string())
                     .execute(&mut *tx)
                     .await
                     .expect("scope fixture to this community");
-                sqlx::query("SELECT set_config('buzz.deletion_fence_generation', '0', true)")
+                sqlx::query("SELECT set_config('kuzz.deletion_fence_generation', '0', true)")
                     .execute(&mut *tx)
                     .await
                     .expect("scope fixture generation");
@@ -6881,8 +6885,8 @@ mod postgres_tests {
             .await
             .expect("set transaction isolation");
             sqlx::query(
-                "SELECT set_config('buzz.deletion_executor_community', $1, true), \
-                        set_config('buzz.deletion_fence_generation', '0', true)",
+                "SELECT set_config('kuzz.deletion_executor_community', $1, true), \
+                        set_config('kuzz.deletion_fence_generation', '0', true)",
             )
             .bind(community.to_string())
             .execute(&mut *tx)
@@ -7154,8 +7158,8 @@ mod postgres_tests {
         }
         let mut lifecycle = db.pool.begin().await.expect("begin target lifecycle");
         sqlx::query(
-            "SELECT set_config('buzz.deletion_executor_community', $1, true), \
-                    set_config('buzz.deletion_fence_generation', '1', true)",
+            "SELECT set_config('kuzz.deletion_executor_community', $1, true), \
+                    set_config('kuzz.deletion_fence_generation', '1', true)",
         )
         .bind(target.to_string())
         .execute(&mut *lifecycle)
@@ -7520,7 +7524,7 @@ mod postgres_tests {
         // per-database, so the parked migration lock cannot stall them.
         let base_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string());
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string());
         let admin = PgPool::connect(&base_url)
             .await
             .expect("connect admin database");
@@ -7855,7 +7859,7 @@ mod postgres_tests {
     async fn desired_state_schema_bootstrap_progresses_beyond_fencing() {
         let base_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string());
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string());
         let admin = PgPool::connect(&base_url)
             .await
             .expect("connect admin database");

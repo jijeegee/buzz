@@ -418,6 +418,7 @@ pub async fn send_channel_message(
     kind: Option<u32>,
     expected_relay_url: Option<String>,
     expected_signer_pubkey: Option<String>,
+    thread_marker: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<SendChannelMessageResponse, String> {
     let channel_uuid = uuid::Uuid::parse_str(&channel_id)
@@ -459,6 +460,11 @@ pub async fn send_channel_message(
     }
     if root_event_id.is_some() && parent_event_id.is_none() {
         return Err("root_event_id requires parent_event_id".into());
+    }
+    if thread_marker.is_some()
+        && (kind_num != kuzz_core_pkg::kind::KIND_STREAM_MESSAGE || parent_event_id.is_none())
+    {
+        return Err("thread markers require a stream reply in a thread".into());
     }
 
     let mut resolved_root: Option<String> = None;
@@ -523,6 +529,15 @@ pub async fn send_channel_message(
                 &relay_base,
             )?
         }
+    };
+    // Close/Reopen toggle from the thread header or a Chats row.
+    let builder = match (thread_marker.as_deref(), resolved_root.as_deref()) {
+        (Some(marker), Some(root)) => {
+            let root = EventId::from_hex(root).map_err(|e| format!("invalid thread root: {e}"))?;
+            builder.tag(events::thread_marker_tag(marker, &root)?)
+        }
+        (Some(_), None) => return Err("thread marker requires a thread root".into()),
+        (None, _) => builder,
     };
 
     // `created_at` is the signed event's own second, not a post-publication

@@ -11,6 +11,17 @@ class _MessageList extends HookConsumerWidget {
   final String? initialOldestOrdinaryUnreadMessageId;
   final Set<String> initialForcedUnreadMessageIds;
   final bool hasInitialUnread;
+
+  /// The message the window was opened at, if it was not the newest row.
+  final _OpenedAt? openedAt;
+
+  /// Whether the list is settling its first position at [openedAt] while
+  /// still out of sight; [onPositioned] reports when it has.
+  final bool isPositioning;
+  final VoidCallback? onPositioned;
+
+  /// Where this room's reading position is kept; null keeps none.
+  final RoomPositionStore? roomPositions;
   final String channelId;
   final String? currentPubkey;
   final bool isMember;
@@ -34,6 +45,10 @@ class _MessageList extends HookConsumerWidget {
     required this.initialOldestOrdinaryUnreadMessageId,
     required this.initialForcedUnreadMessageIds,
     required this.hasInitialUnread,
+    this.openedAt,
+    this.isPositioning = false,
+    this.onPositioned,
+    this.roomPositions,
     required this.channelId,
     required this.currentPubkey,
     required this.isMember,
@@ -51,7 +66,6 @@ class _MessageList extends HookConsumerWidget {
     final localSendAnimations = ref.watch(
       localMessageSendAnimationProvider(channelId),
     );
-    final displayEntries = groupMembershipTimelineEntries(entries);
     final itemScrollController = useMemoized(ItemScrollController.new);
     final itemPositionsListener = useMemoized(ItemPositionsListener.create);
     final stickyDateHeaderState = useValueNotifier(
@@ -71,9 +85,94 @@ class _MessageList extends HookConsumerWidget {
     final distanceFromLatest = useRef(0.0);
     final hasUnseenLatestEntry = useRef(false);
     final followsLatest = useState(
-      initialMessageId == null && initialThreadRootId == null,
+      openedAt == null &&
+          initialMessageId == null &&
+          initialThreadRootId == null,
     );
     final isAutoScrolling = useRef(false);
+    final isUserScrolling = useRef(false);
+    final notifier = ref.read(channelMessagesProvider(channelId).notifier);
+    final windowGeneration = notifier.windowGeneration;
+    final placement = useRef<_ListPlacement?>(null);
+    final renderedEntries = useRef<List<MainTimelineEntry>?>(null);
+    final holdsNewerRows = useRef(false);
+    final awaitingPlacementLayout = useRef(false);
+    final heldRowsRelease = useState(0);
+    final previousPlacement = placement.value;
+    final replacedWindow =
+        previousPlacement != null &&
+        previousPlacement.generation != windowGeneration;
+    var entries = this.entries;
+    var displayEntries = groupMembershipTimelineEntries(entries);
+    if (previousPlacement == null || replacedWindow) {
+      // A new window (opened at a message, or back at the newest rows) gets a
+      // new list drawn at its place from the first frame.
+      final targetIndex = isPositioning && openedAt != null
+          ? _openedAtIndex(displayEntries, openedAt!)
+          : null;
+      final topLine =
+          1 -
+          frostedAppBarHeight(
+                context,
+                titleContentHeight: appBarTitleContentHeight,
+              ) /
+              timelineViewportHeight.value;
+      placement.value = _ListPlacement(
+        generation: windowGeneration,
+        epoch: (previousPlacement?.epoch ?? -1) + 1,
+        index: targetIndex ?? 0,
+        alignment: targetIndex == null || targetIndex == 0
+            ? 0
+            : openedAt!.edge ?? (openedAt!.isUnread ? topLine - 0.15 : 0.35),
+      );
+      holdsNewerRows.value = false;
+      awaitingPlacementLayout.value = true;
+    } else if (notifier.isInMiddleWindow && renderedEntries.value != null) {
+      // Rows paged in (or arriving) below a window opened at a message would
+      // move every visible row. Redraw the list around the row the reader is
+      // looking at instead, once nothing is scrolling.
+      final rendered = groupMembershipTimelineEntries(renderedEntries.value!);
+      final previousNewestIndex = rendered.isEmpty
+          ? null
+          : _reversedGroupIndex(displayEntries, rendered.last.first.message.id);
+      final followsTail = followsLatest.value && !hasUserScrolled.value;
+      if (previousNewestIndex != null &&
+          previousNewestIndex > 0 &&
+          !followsTail) {
+        if (isPositioning ||
+            isUserScrolling.value ||
+            isAutoScrolling.value ||
+            awaitingPlacementLayout.value) {
+          holdsNewerRows.value = true;
+          entries = renderedEntries.value!;
+          displayEntries = rendered;
+        } else {
+          holdsNewerRows.value = false;
+          final reanchored = _reanchoredPlacement(
+            placement.value!,
+            itemPositionsListener.itemPositions.value,
+            rendered,
+            displayEntries,
+            viewportHeight: timelineViewportHeight.value,
+          );
+          if (reanchored != null) {
+            placement.value = reanchored;
+            awaitingPlacementLayout.value = true;
+          }
+        }
+      }
+    }
+    renderedEntries.value = entries;
+    final displayEntriesRef = useRef(displayEntries)..value = displayEntries;
+    final isPositioningRef = useRef(isPositioning)..value = isPositioning;
+    final isLoadingNewer = useRef(false);
+    final isJumpingToLatestWindow = useRef(false);
+    final heldLocalSendIds = useRef(<String>{});
+    final latestEffectGeneration = useRef(windowGeneration);
+    // The "New messages" divider goes above the first unread message.
+    final newMessagesIndex = openedAt?.isUnread == true
+        ? _reversedGroupIndex(displayEntries, openedAt!.messageId)
+        : null;
     final latestNavigationRequest = useState(0);
     final latestNavigationTargetId = useRef<String?>(null);
     final latestRealignmentQueued = useRef(false);
@@ -98,7 +197,6 @@ class _MessageList extends HookConsumerWidget {
     final unreadBoundaryFetchCount = useRef(0);
     final hasUnreadDeepLink =
         initialMessageId != null || initialThreadRootId != null;
-    final notifier = ref.read(channelMessagesProvider(channelId).notifier);
     final dayTimestampByReversedIndex = <int, int>{};
     final dayStartByReversedIndex = <int, int>{};
     final dayHeaderTimestampByReversedIndex = <int, int>{};
@@ -355,6 +453,50 @@ class _MessageList extends HookConsumerWidget {
       );
     }
 
+    bool latestIsAtBoundary() {
+      // Rows newer than the loaded ones are still on the relay.
+      if (notifier.hasNewer) return false;
+      // In this reversed list, item 0's leading edge is the visible bottom
+      // boundary above the composer. Being merely visible is not enough: a
+      // user who has pulled a tall newest row away from that boundary must not
+      // snap back on live updates.
+      final boundary = latestAlignment();
+      return itemPositionsListener.itemPositions.value.any(
+        (position) =>
+            position.index == 0 &&
+            (position.itemLeadingEdge - boundary).abs() < 0.01,
+      );
+    }
+
+    // At the newest row, a list drawn around an older row is redrawn around
+    // the newest one (no visible change), so rows arriving below it follow.
+    void anchorAtLatestRow() {
+      if (notifier.isInMiddleWindow &&
+          itemScrollController.isAttached &&
+          latestIsAtBoundary()) {
+        itemScrollController.jumpTo(index: 0);
+      }
+    }
+
+    // Rows held back while the list moved come in once it rests.
+    void releaseHeldRows() {
+      if (!holdsNewerRows.value) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted && holdsNewerRows.value) {
+          heldRowsRelease.value += 1;
+        }
+      });
+    }
+
+    // A window opened at a message reaches the newest rows by replacing it.
+    void jumpToLatestWindow() {
+      if (isJumpingToLatestWindow.value) return;
+      isJumpingToLatestWindow.value = true;
+      notifier.jumpToLatest().whenComplete(
+        () => isJumpingToLatestWindow.value = false,
+      );
+    }
+
     Future<void> performLatestNavigation() async {
       if (!context.mounted || !itemScrollController.isAttached) {
         isAutoScrolling.value = false;
@@ -372,9 +514,11 @@ class _MessageList extends HookConsumerWidget {
         if (context.mounted && !hasUserScrolled.value) {
           isAtLatest.value = targetIndex == 0;
           isJumpToLatestVisible.value = false;
+          if (targetIndex == 0) anchorAtLatestRow();
         }
       } finally {
         isAutoScrolling.value = false;
+        releaseHeldRows();
       }
     }
 
@@ -412,6 +556,7 @@ class _MessageList extends HookConsumerWidget {
         );
       } finally {
         isAutoScrolling.value = false;
+        releaseHeldRows();
       }
     }
 
@@ -435,19 +580,6 @@ class _MessageList extends HookConsumerWidget {
       }
       if (!isAutoScrolling.value) unawaited(scrollToOlderEntry(targetIndex));
       return true;
-    }
-
-    bool latestIsAtBoundary() {
-      // In this reversed list, item 0's leading edge is the visible bottom
-      // boundary above the composer. Being merely visible is not enough: a
-      // user who has pulled a tall newest row away from that boundary must not
-      // snap back on live updates.
-      final boundary = latestAlignment();
-      return itemPositionsListener.itemPositions.value.any(
-        (position) =>
-            position.index == 0 &&
-            (position.itemLeadingEdge - boundary).abs() < 0.01,
-      );
     }
 
     void updateJumpToLatestVisibility(
@@ -515,6 +647,10 @@ class _MessageList extends HookConsumerWidget {
         void onPositionsChanged() {
           final positions = itemPositionsListener.itemPositions.value;
           if (positions.isEmpty) return;
+          if (awaitingPlacementLayout.value) {
+            awaitingPlacementLayout.value = false;
+            releaseHeldRows();
+          }
           updateStickyDateHeader(positions);
           updateJumpToLatestVisibility(positions);
           final nextIsAtLatest = latestIsAtBoundary();
@@ -533,6 +669,20 @@ class _MessageList extends HookConsumerWidget {
             isAtLatest.value = false;
           }
 
+          if (notifier.hasNewer &&
+              !isLoadingNewer.value &&
+              !isPositioningRef.value) {
+            final newestVisible = positions
+                .map((position) => position.index)
+                .reduce(min);
+            if (newestVisible <= 2) {
+              isLoadingNewer.value = true;
+              notifier.fetchNewer().whenComplete(
+                () => isLoadingNewer.value = false,
+              );
+            }
+          }
+
           final oldestVisible = positions
               .map((position) => position.index)
               .reduce((a, b) => a > b ? a : b);
@@ -541,9 +691,6 @@ class _MessageList extends HookConsumerWidget {
               isLoadingOlder.value) {
             return;
           }
-          final notifier = ref.read(
-            channelMessagesProvider(channelId).notifier,
-          );
           if (notifier.reachedOldest) return;
           isLoadingOlder.value = true;
           notifier.fetchOlder().whenComplete(
@@ -577,6 +724,110 @@ class _MessageList extends HookConsumerWidget {
       stickyDayTimestamp.value = null;
       return null;
     }, [channelId]);
+
+    // A replaced window is drawn afresh, at its newest row unless more rows
+    // remain below it.
+    final seenWindowGeneration = useRef(windowGeneration);
+    useEffect(() {
+      if (seenWindowGeneration.value == windowGeneration) return null;
+      seenWindowGeneration.value = windowGeneration;
+      final atNewest = !notifier.hasNewer;
+      hasUserScrolled.value = false;
+      followsLatest.value = atNewest;
+      isAtLatest.value = atNewest;
+      hasUnseenLatestEntry.value = false;
+      isJumpToLatestVisible.value = false;
+      return null;
+    }, [windowGeneration]);
+
+    // While out of sight, settle the window opened at a message so it fills
+    // the viewport: the newest row is not lifted off the composer, the oldest
+    // not pulled under the app bar, and the first unread sits at the top.
+    useEffect(() {
+      if (!isPositioning) return null;
+      final target = openedAt;
+      var done = false;
+      var steps = 0;
+      var index = placement.value?.index ?? 0;
+      var alignment = placement.value?.alignment ?? 0.0;
+      Timer? fallback;
+
+      void finish() {
+        if (done) return;
+        done = true;
+        fallback?.cancel();
+        final atNewest = index == 0 && !notifier.hasNewer;
+        followsLatest.value = atNewest;
+        isAtLatest.value = atNewest;
+        hasUserScrolled.value = false;
+        if (target != null && !target.isUnread && highlightInitialMessage) {
+          landingHighlightId.value = initialMessageId;
+        }
+        onPositioned?.call();
+      }
+
+      void jump(int nextIndex, double nextAlignment) {
+        index = nextIndex;
+        alignment = nextAlignment;
+        itemScrollController.jumpTo(index: nextIndex, alignment: nextAlignment);
+      }
+
+      void step() {
+        if (done || !context.mounted) return;
+        final count = displayEntriesRef.value.length;
+        if (count == 0) return finish();
+        final positions = itemPositionsListener.itemPositions.value
+            .where((position) => position.index < count)
+            .toList();
+        if (positions.isEmpty || !itemScrollController.isAttached) return;
+        if (index == 0 || steps >= 4) return finish();
+        steps += 1;
+        final viewportHeight = timelineViewportHeight.value;
+        if (viewportHeight <= 0) return finish();
+        final tolerance = 1.5 / viewportHeight;
+        final topLine =
+            1 -
+            frostedAppBarHeight(
+                  context,
+                  titleContentHeight: appBarTitleContentHeight,
+                ) /
+                viewportHeight;
+        ItemPosition? positionOf(int itemIndex) => positions
+            .where((position) => position.index == itemIndex)
+            .firstOrNull;
+
+        final newest = positionOf(0);
+        if (newest != null &&
+            newest.itemLeadingEdge > latestAlignment() + tolerance) {
+          return jump(0, 0);
+        }
+        final anchor = positionOf(index);
+        if (target != null && target.isUnread && anchor != null) {
+          final shift = topLine - anchor.itemTrailingEdge;
+          if (shift.abs() > tolerance) return jump(index, alignment + shift);
+        }
+        final oldest = positionOf(count - 1);
+        if (oldest != null && oldest.itemTrailingEdge < topLine - tolerance) {
+          return jump(index, alignment + topLine - oldest.itemTrailingEdge);
+        }
+        finish();
+      }
+
+      void onPositionsChanged() => scheduleMicrotask(step);
+
+      itemPositionsListener.itemPositions.addListener(onPositionsChanged);
+      if (displayEntriesRef.value.isEmpty) {
+        scheduleMicrotask(finish);
+      } else {
+        // The list never reports a position when nothing lays out.
+        fallback = Timer(const Duration(seconds: 1), finish);
+      }
+      return () {
+        done = true;
+        fallback?.cancel();
+        itemPositionsListener.itemPositions.removeListener(onPositionsChanged);
+      };
+    }, [isPositioning]);
 
     // Composer size changes and keyboard metrics changes arrive in separate
     // layout passes. Preserve the latest-message anchor for both, but only
@@ -644,7 +895,8 @@ class _MessageList extends HookConsumerWidget {
 
     useEffect(() {
       final targetIndex = reversedIndexOf(initialMessageId);
-      if (initialThreadRootId != null ||
+      if (openedAt != null ||
+          initialThreadRootId != null ||
           targetIndex == null ||
           didJumpToInitialMessage.value) {
         return null;
@@ -661,7 +913,7 @@ class _MessageList extends HookConsumerWidget {
         }
       });
       return null;
-    }, [initialMessageId, initialThreadRootId, entries.length]);
+    }, [initialMessageId, initialThreadRootId, entries.length, openedAt]);
 
     useEffect(() {
       final previous = previousLatestEntryId.value;
@@ -677,6 +929,24 @@ class _MessageList extends HookConsumerWidget {
       observedLocalSendIds.value
         ..removeWhere((eventId) => !localSendAnimations.containsKey(eventId))
         ..addAll(newlyInsertedLocalSendIds);
+      final windowReplaced = latestEffectGeneration.value != windowGeneration;
+      latestEffectGeneration.value = windowGeneration;
+      // A replaced window is already drawn at its place.
+      if (windowReplaced) return null;
+      heldLocalSendIds.value.removeWhere(
+        (eventId) => !localSendAnimations.containsKey(eventId),
+      );
+      if (notifier.hasNewer) {
+        // A message sent here waits below rows not loaded yet; go to it.
+        final heldSend = localSendAnimations.keys.any(
+          (eventId) =>
+              !observedLocalSendIds.value.contains(eventId) &&
+              !entryIds.contains(eventId) &&
+              heldLocalSendIds.value.add(eventId),
+        );
+        if (heldSend) jumpToLatestWindow();
+        return null;
+      }
       final localSendId = newlyInsertedLocalSendIds.firstOrNull;
       final latestEntryChanged =
           previous != null &&
@@ -707,7 +977,23 @@ class _MessageList extends HookConsumerWidget {
         }
       });
       return null;
-    }, [latestEntryId, localSendAnimations]);
+    }, [latestEntryId, localSendAnimations, windowGeneration]);
+
+    final saveRoomPosition = useRoomPositionSaving(
+      store: roomPositions,
+      roomKey: channelId,
+      read: () {
+        if (isPositioningRef.value) return null;
+        final positions = itemPositionsListener.itemPositions.value;
+        if (positions.isEmpty || displayEntriesRef.value.isEmpty) return null;
+        if (latestIsAtBoundary()) return const RoomPositionReading.atLatest();
+        return _readingPosition(
+          positions,
+          displayEntriesRef.value,
+          bottom: latestAlignment(),
+        );
+      },
+    );
 
     if (entries.isEmpty) {
       return Center(
@@ -768,6 +1054,13 @@ class _MessageList extends HookConsumerWidget {
                 return false;
               }
               if (notification is! ScrollNotification) return false;
+              if (notification is ScrollStartNotification) {
+                isUserScrolling.value = true;
+              } else if (notification is ScrollEndNotification) {
+                isUserScrolling.value = false;
+                releaseHeldRows();
+                saveRoomPosition();
+              }
               timelineViewportHeight.value =
                   notification.metrics.viewportDimension;
               distanceFromLatest.value = max(
@@ -793,13 +1086,18 @@ class _MessageList extends HookConsumerWidget {
                   hasUserScrolled.value = false;
                   followsLatest.value = true;
                   if (!isAtLatest.value) isAtLatest.value = true;
+                  anchorAtLatestRow();
                 });
               }
               return false;
             },
             child: KeyboardDismissOnDrag(
+              // A new placement draws a new list where it belongs.
+              key: ValueKey(placement.value!.epoch),
               child: ScrollablePositionedList.builder(
                 key: const ValueKey('channel-message-list'),
+                initialScrollIndex: placement.value!.index,
+                initialAlignment: placement.value!.alignment,
                 itemScrollController: itemScrollController,
                 itemPositionsListener: itemPositionsListener,
                 reverse: true,
@@ -887,6 +1185,10 @@ class _MessageList extends HookConsumerWidget {
                               label: formatDayHeading(message.createdAt),
                               dayTimestamp: message.createdAt,
                               stickyDayTimestamp: stickyDayTimestamp,
+                            ),
+                          if (index == newMessagesIndex)
+                            const NewMessagesDivider(
+                              key: ValueKey('channel-new-messages-divider'),
                             ),
                           if (message.isSystem)
                             _SystemMessageRow(
@@ -990,8 +1292,10 @@ class _MessageList extends HookConsumerWidget {
               child: Center(
                 child: JumpToLatestSwitcher(
                   id: 'channel',
-                  visible: isJumpToLatestVisible.value,
-                  onPressed: scrollToLatest,
+                  visible: isJumpToLatestVisible.value || notifier.hasNewer,
+                  onPressed: notifier.hasNewer
+                      ? jumpToLatestWindow
+                      : scrollToLatest,
                 ),
               ),
             ),
@@ -1031,4 +1335,112 @@ class _LandingHighlight extends StatelessWidget {
       child: child,
     );
   }
+}
+
+/// The list a window is drawn in: a new [epoch] draws a new list at [index]
+/// and [alignment] from its first frame.
+class _ListPlacement {
+  const _ListPlacement({
+    required this.generation,
+    required this.epoch,
+    required this.index,
+    required this.alignment,
+  });
+
+  final int generation;
+  final int epoch;
+  final int index;
+  final double alignment;
+}
+
+/// The reversed list index of the group holding [messageId].
+int? _reversedGroupIndex(
+  List<List<MainTimelineEntry>> groups,
+  String? messageId,
+) {
+  if (messageId == null) return null;
+  final chronologicalIndex = groups.indexWhere(
+    (group) => group.any((entry) => entry.message.id == messageId),
+  );
+  return chronologicalIndex < 0 ? null : groups.length - 1 - chronologicalIndex;
+}
+
+/// The reversed list index the window was opened at: its message, or the
+/// oldest row not older than it.
+int _openedAtIndex(List<List<MainTimelineEntry>> groups, _OpenedAt openedAt) {
+  final byId = _reversedGroupIndex(groups, openedAt.messageId);
+  if (byId != null) return byId;
+  final chronologicalIndex = groups.indexWhere(
+    (group) => group.first.message.createdAt >= openedAt.createdAt,
+  );
+  return chronologicalIndex < 0 ? 0 : groups.length - 1 - chronologicalIndex;
+}
+
+/// A placement that keeps the row being read where it is on screen after
+/// rows were added below [rendered], now [groups].
+_ListPlacement? _reanchoredPlacement(
+  _ListPlacement placement,
+  Iterable<ItemPosition> positions,
+  List<List<MainTimelineEntry>> rendered,
+  List<List<MainTimelineEntry>> groups, {
+  required double viewportHeight,
+}) {
+  final visible = positions
+      .where(
+        (position) =>
+            position.index < rendered.length &&
+            position.itemLeadingEdge < 1 &&
+            position.itemTrailingEdge > 0,
+      )
+      .toList();
+  if (visible.isEmpty || viewportHeight <= 0) return null;
+  // The newest row changes as rows join it (time label, bottom padding), so
+  // the reference is the next one up when it is on screen.
+  final above = visible.where((position) => position.index > 0).toList();
+  final reference = above.isEmpty
+      ? visible.first
+      : above.reduce((a, b) => a.index < b.index ? a : b);
+  final index = _reversedGroupIndex(
+    groups,
+    rendered[rendered.length - 1 - reference.index].first.message.id,
+  );
+  if (index == null) return null;
+  return _ListPlacement(
+    generation: placement.generation,
+    epoch: placement.epoch + 1,
+    index: index,
+    alignment:
+        reference.itemLeadingEdge +
+        (reference.index == 0 && index > 0 ? Grid.xs / viewportHeight : 0),
+  );
+}
+
+/// The row a reader is on: the lowest one wholly above the timeline's
+/// [bottom] boundary, or the lowest one in sight.
+RoomPositionReading? _readingPosition(
+  Iterable<ItemPosition> positions,
+  List<List<MainTimelineEntry>> groups, {
+  required double bottom,
+}) {
+  final visible = positions
+      .where(
+        (position) =>
+            position.index < groups.length &&
+            position.itemLeadingEdge < 1 &&
+            position.itemTrailingEdge > 0,
+      )
+      .toList();
+  if (visible.isEmpty) return null;
+  final above = visible
+      .where((position) => position.itemLeadingEdge >= bottom - 0.01)
+      .toList();
+  final reading = (above.isEmpty ? visible : above).reduce(
+    (a, b) => a.index < b.index ? a : b,
+  );
+  final message = groups[groups.length - 1 - reading.index].first.message;
+  return RoomPositionReading.at(
+    id: message.id,
+    createdAt: message.createdAt,
+    edge: reading.itemLeadingEdge,
+  );
 }

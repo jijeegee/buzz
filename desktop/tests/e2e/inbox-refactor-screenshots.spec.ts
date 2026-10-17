@@ -243,7 +243,7 @@ test.describe("inbox refactor screenshots", () => {
     // The sidebar must be in frame — the label is the point of this shot.
     const inboxButton = page
       .getByTestId("sidebar-primary-menu")
-      .getByRole("button", { name: "Inbox", exact: true });
+      .getByRole("button", { name: "Activity", exact: true });
     await expect(inboxButton).toBeVisible();
     // Inbox is a destination, not a notification tray, so it carries the inbox
     // glyph rather than a bell. Asserted because nothing else pins the icon.

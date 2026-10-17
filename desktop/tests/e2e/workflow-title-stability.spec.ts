@@ -11,6 +11,7 @@ const GENERATED_NAME = /^[a-z]+-[a-z]+-[a-z]+$/;
 
 async function navigateToWorkflows(page: Page) {
   await page.goto("/");
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-workflows-view").click();
   await expect(page.getByTestId("workflows-view")).toBeVisible();
 }

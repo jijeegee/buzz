@@ -4320,7 +4320,7 @@ test("home channel settings keeps agent lifecycle actions scoped to the active c
     "stop_managed_agent",
   );
 
-  await page.getByRole("button", { exact: true, name: "Inbox" }).click();
+  await page.getByRole("button", { exact: true, name: "Activity" }).click();
   await seedHomeInboxMention(
     page,
     "mock-feed-home-agent-lifecycle",

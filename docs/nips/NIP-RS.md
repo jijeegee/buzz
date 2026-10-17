@@ -431,7 +431,7 @@ sees the replacement. This guarantee covers retained current state, not purged
 history, uncommitted writes, or future commits.
 
 `snapshot_id` is SHA-256 of the concatenation of UTF-8
-`buzz-read-state-snapshot-v1` plus a zero byte, the 16 raw community UUID bytes,
+`kuzz-read-state-snapshot-v1` plus a zero byte, the 16 raw community UUID bytes,
 the 32 author bytes, and each 32-byte event id in `created_at DESC, id ASC` order.
 It is a content identifier, **not** a monotone write revision, CAS precondition,
 or live-delivery cursor. An unchanged view may have the same identifier.

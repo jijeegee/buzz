@@ -1,7 +1,7 @@
 //! Short-lived Redis state for the `/auth/*` flows: OIDC pending logins,
 //! one-time login codes, and the 10-second refresh/exchange replay caches.
 //!
-//! All keys live under `buzz:auth:` with a TTL; every read that consumes a
+//! All keys live under `kuzz:auth:` with a TTL; every read that consumes a
 //! one-time value uses `GETDEL` so two requests can never both redeem it.
 
 use deadpool_redis::Pool;
@@ -12,7 +12,7 @@ use deadpool_redis::Pool;
 pub(crate) struct KvError(String);
 
 fn key(namespace: &str, id: &str) -> String {
-    format!("buzz:auth:{namespace}:{id}")
+    format!("kuzz:auth:{namespace}:{id}")
 }
 
 /// `SET key value NX EX ttl`; `false` when the key already existed.

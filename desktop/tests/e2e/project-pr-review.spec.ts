@@ -53,6 +53,7 @@ async function waitForMockLiveSubscription(
 
 async function openKuzzProject(page: import("@playwright/test").Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   const projectEntry = page
@@ -910,6 +911,7 @@ test("project pull requests preserve partial results from batched queries", asyn
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Reviews", exact: true }).click();
 
@@ -963,6 +965,7 @@ test("project pull request author rollover stays identity-only", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Reviews", exact: true }).click();
   await page.getByRole("button", { name: "List layout" }).click();
@@ -996,6 +999,7 @@ test("project issue author rollover matches pull requests", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "List layout" }).click();
@@ -1032,6 +1036,7 @@ test("project pull requests report aggregate root query failures", async ({
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Reviews", exact: true }).click();
 
@@ -1058,6 +1063,7 @@ test("project issues preserve partial results from aggregate queries", async ({
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
 
@@ -1090,6 +1096,7 @@ test("project overview reports aggregate work-item failures", async ({
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   await expect(
@@ -1112,6 +1119,7 @@ test("projects breadcrumb is centered in the window chrome", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   const breadcrumbMetrics = await page
@@ -1138,8 +1146,14 @@ test("sidebar distinguishes the Projects overview from an open project", async (
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  const projectsOverview = page.getByTestId("open-projects-view");
-  await projectsOverview.click();
+  // Projects lives in the rail's More menu; the More item shows it active.
+  const projectsOverview = page.getByTestId("open-more-menu");
+  const openProjectsOverview = async () => {
+    await projectsOverview.click();
+    await page.getByTestId("open-more-menu").click();
+    await page.getByTestId("open-projects-view").click();
+  };
+  await openProjectsOverview();
   await expect(projectsOverview).toHaveAttribute("data-active", "true");
 
   await addProjectToSidebar(page, "kuzz");
@@ -1151,7 +1165,7 @@ test("sidebar distinguishes the Projects overview from an open project", async (
     "rgba(0, 0, 0, 0)",
   );
 
-  await projectsOverview.click();
+  await openProjectsOverview();
   await expect(projectsOverview).toHaveAttribute("data-active", "true");
   await expect(sidebarProject).toHaveAttribute("data-active", "false");
   await expect(sidebarProject.getByTestId("project-channel-icon")).toHaveCSS(
@@ -1174,6 +1188,7 @@ test("collapsed sidebar leaves a balanced Projects surface gutter", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   const layout = page.getByTestId("projects-overview-layout");
@@ -1188,6 +1203,7 @@ test("project channels are grouped by project", async ({ page }) => {
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await expect(page.getByTestId("projects-section-all")).toBeVisible();
   expect(
@@ -1301,6 +1317,7 @@ test("overview tasks and reviews are grouped and selectable by project", async (
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   for (const section of [
@@ -1380,6 +1397,7 @@ test("project section icons lead their titles", async ({ page }) => {
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-issues").click();
   await expectIconBeforeTitle("projects-page-header");
@@ -1538,6 +1556,8 @@ test("channels tab opens the latest matching conversation without leaving the pr
     },
   );
 
+  await page.getByTestId("open-more-menu").click();
+
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   const projectEntry = page
@@ -1680,6 +1700,7 @@ test("overview list titles share a row with controls and task groups align", asy
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   const rowSelectors = {
@@ -1809,6 +1830,7 @@ test("project overview presents collapsible context beside grouped activity", as
     ],
   });
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   await expect(page.getByTestId("projects-overview-panel")).toHaveCSS(
@@ -2111,6 +2133,7 @@ test("project overview chrome toggles a detached resizable agent chat", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-prs").click();
   await page.getByRole("button", { name: "List layout" }).click();
@@ -2256,6 +2279,7 @@ test("project overview drawer control animates the context rail", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   const toggle = page.getByTestId("projects-overview-context-toggle");
@@ -2312,6 +2336,7 @@ test("Projects search replaces and restores the section tabs", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
 
@@ -2348,6 +2373,7 @@ test("selecting overview list rows switches the context pod to the cluster", asy
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "List layout" }).click();
@@ -2442,6 +2468,7 @@ test("selection restores a previously collapsed Projects context drawer", async 
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "List layout" }).click();
@@ -2541,6 +2568,7 @@ test("overview lists position identifying and generic icons consistently", async
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   await page.getByTestId("projects-section-projects").click();
@@ -2720,6 +2748,7 @@ test("selecting repository workspace rows switches the context pod to the cluste
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   await page
@@ -2908,6 +2937,7 @@ test("repository rows identify their git host", async ({ page }) => {
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Repositories", exact: true }).click();
   await page.getByRole("button", { name: "List layout" }).click();
@@ -2932,6 +2962,7 @@ test("project subsections do not paint backgrounds behind list or grid items", a
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   for (const section of ["Repositories", "Reviews", "Tasks"] as const) {
@@ -2976,6 +3007,7 @@ test("all project grid cards cap body copy at two lines", async ({ page }) => {
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   for (const section of [
@@ -3558,6 +3590,7 @@ test("narrow layouts keep section context reachable through a sheet", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   // Below the detached breakpoint the retained docked rail stays collapsed,

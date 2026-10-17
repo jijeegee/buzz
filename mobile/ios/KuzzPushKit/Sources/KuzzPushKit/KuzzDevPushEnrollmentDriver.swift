@@ -331,7 +331,7 @@ struct KuzzDCAppAttestProvider: KuzzDevAppAttesting {
 
 /// Enrollment and delegation driver for real App Attest and the gated debug bypass.
 public final class KuzzDevPushEnrollmentDriver {
-  public static let appProfile = "buzz-ios-dogfood"
+  public static let appProfile = "kuzz-ios-dogfood"
   public static let endpointEpoch: Int64 = 1
 
   private let gatewayBaseURL: URL

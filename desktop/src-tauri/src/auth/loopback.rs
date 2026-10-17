@@ -13,7 +13,7 @@ use tokio::net::{TcpListener, TcpStream};
 use zeroize::Zeroizing;
 
 /// How long the user has to finish signing in.
-pub(crate) const LOGIN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+pub(crate) const LOGIN_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 /// Per-connection read deadline.
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// Bound on a request head.

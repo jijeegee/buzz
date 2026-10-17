@@ -44,8 +44,8 @@ pub struct MemberRecord {
 /// on the channel row: membership is its own contention domain and must not
 /// serialize against unrelated channel metadata writers (`update_channel`,
 /// `set_topic`, the TTL transition). Distinct key domain from
-/// `buzz_channel_ttl:`.
-const CHANNEL_MEMBERSHIP_LOCK_NAMESPACE: &str = "buzz_channel_membership:";
+/// `kuzz_channel_ttl:`.
+const CHANNEL_MEMBERSHIP_LOCK_NAMESPACE: &str = "kuzz_channel_membership:";
 
 /// Verify that migration 0032's roster fence is active on the partitioned
 /// `events` parent and every attached partition.

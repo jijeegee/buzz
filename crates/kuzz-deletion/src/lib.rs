@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use clap::Subcommand;
 use kuzz_db::deletion::{
     ClaimedDeletion, DeletionRequest, DeletionStage, DeletionStore, FrozenInventory,
     KeyStreamDigest, LeaseToken, PrefixManifest, StorageManifest, StorageManifestEntry,
@@ -19,7 +20,6 @@ use kuzz_media::{
     is_tenant_owned_key, tenant_prefixes, BulkDeleteOutcome, MediaStorage, ObjectVersionKind,
     ObjectVersionRef,
 };
-use clap::Subcommand;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -1670,7 +1670,7 @@ async fn publish_disconnect_community(
     community: kuzz_core::CommunityId,
 ) -> Result<()> {
     let mut connection = pool.get().await?;
-    let channel = format!("buzz:{community}:conn-control");
+    let channel = format!("kuzz:{community}:conn-control");
     let _: u64 = redis::cmd("PUBLISH")
         .arg(channel)
         .arg(r#"{"op":"DisconnectCommunity"}"#)
@@ -1684,7 +1684,7 @@ async fn purge_redis_namespace(
     community: kuzz_core::CommunityId,
 ) -> Result<u64> {
     let mut connection = pool.get().await?;
-    let pattern = format!("buzz:{community}:*");
+    let pattern = format!("kuzz:{community}:*");
     let mut cursor = 0u64;
     let mut deleted = 0u64;
     loop {
@@ -1744,7 +1744,7 @@ async fn verify_redis_absence(
     community: kuzz_core::CommunityId,
 ) -> Result<()> {
     let mut connection = pool.get().await?;
-    let pattern = format!("buzz:{community}:*");
+    let pattern = format!("kuzz:{community}:*");
     // SCAN is weakly consistent. Two complete empty passes ensure a cursor
     // rollover or concurrent expiry cannot make one sparse pass look absent.
     let first = scan_redis_namespace(&mut connection, &pattern).await?;
@@ -2307,34 +2307,34 @@ mod postgres_tests {
     fn deletion_s3_key_pair_trims_static_and_preserves_partial_pairs() {
         assert_eq!(
             s3_key_pair_from(env_of(&[
-                ("KUZZ_S3_ACCESS_KEY", " buzz_dev "),
-                ("KUZZ_S3_SECRET_KEY", " buzz_dev_secret "),
+                ("KUZZ_S3_ACCESS_KEY", " kuzz_dev "),
+                ("KUZZ_S3_SECRET_KEY", " kuzz_dev_secret "),
             ])),
-            ("buzz_dev".to_string(), "buzz_dev_secret".to_string())
+            ("kuzz_dev".to_string(), "kuzz_dev_secret".to_string())
         );
 
         for (env, expected) in [
             (
-                &[("KUZZ_S3_ACCESS_KEY", " buzz_dev ")][..],
-                ("buzz_dev".to_string(), String::new()),
+                &[("KUZZ_S3_ACCESS_KEY", " kuzz_dev ")][..],
+                ("kuzz_dev".to_string(), String::new()),
             ),
             (
-                &[("KUZZ_S3_SECRET_KEY", " buzz_dev_secret ")][..],
-                (String::new(), "buzz_dev_secret".to_string()),
+                &[("KUZZ_S3_SECRET_KEY", " kuzz_dev_secret ")][..],
+                (String::new(), "kuzz_dev_secret".to_string()),
             ),
             (
                 &[
-                    ("KUZZ_S3_ACCESS_KEY", " buzz_dev "),
+                    ("KUZZ_S3_ACCESS_KEY", " kuzz_dev "),
                     ("KUZZ_S3_SECRET_KEY", "   "),
                 ][..],
-                ("buzz_dev".to_string(), String::new()),
+                ("kuzz_dev".to_string(), String::new()),
             ),
             (
                 &[
                     ("KUZZ_S3_ACCESS_KEY", "   "),
-                    ("KUZZ_S3_SECRET_KEY", " buzz_dev_secret "),
+                    ("KUZZ_S3_SECRET_KEY", " kuzz_dev_secret "),
                 ][..],
-                (String::new(), "buzz_dev_secret".to_string()),
+                (String::new(), "kuzz_dev_secret".to_string()),
             ),
         ] {
             assert_eq!(s3_key_pair_from(env_of(env)), expected);
@@ -2687,7 +2687,7 @@ mod postgres_tests {
         assert!(!scan_proves_absence(&[(9, Vec::new())]));
         assert!(!scan_proves_absence(&[
             (9, Vec::new()),
-            (0, vec!["buzz:tenant:late".to_string()]),
+            (0, vec!["kuzz:tenant:late".to_string()]),
         ]));
         assert!(scan_proves_absence(&[(9, Vec::new()), (0, Vec::new())]));
     }

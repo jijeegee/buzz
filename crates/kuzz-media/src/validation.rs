@@ -592,7 +592,7 @@ fn validate_jpeg_metadata_free(bytes: &[u8]) -> Result<(), MediaError> {
 /// embeds a manifest in a single tEXt chunk — so they are exempt from the
 /// metadata ban. Exactly one snapshot chunk is permitted per file; every
 /// other textual/metadata chunk remains forbidden.
-const PNG_SNAPSHOT_KEYWORDS: [&[u8]; 2] = [b"buzz_agent_snapshot", b"buzz_team_snapshot"];
+const PNG_SNAPSHOT_KEYWORDS: [&[u8]; 2] = [b"kuzz_agent_snapshot", b"kuzz_team_snapshot"];
 
 /// Returns true when a raw tEXt chunk payload is a Kuzz snapshot manifest:
 /// the payload must start with an allowlisted keyword followed by the
@@ -1384,7 +1384,7 @@ mod tests {
         // Agent/team snapshot manifests ride in an allowlisted tEXt chunk;
         // the relay must accept exactly one such chunk per file.
         let config = test_config();
-        for keyword in [b"buzz_agent_snapshot".as_slice(), b"buzz_team_snapshot"] {
+        for keyword in [b"kuzz_agent_snapshot".as_slice(), b"kuzz_team_snapshot"] {
             let mut payload = keyword.to_vec();
             payload.push(0);
             payload.extend_from_slice(b"eyJmb3JtYXQiOiJidXp6In0=");
@@ -1406,7 +1406,7 @@ mod tests {
         let config = test_config();
 
         // Two snapshot chunks: the second is a covert channel.
-        let mut payload = b"buzz_agent_snapshot".to_vec();
+        let mut payload = b"kuzz_agent_snapshot".to_vec();
         payload.push(0);
         payload.extend_from_slice(b"data");
         let mut png = TINY_PNG[..TINY_PNG.len() - 12].to_vec();
@@ -1423,7 +1423,7 @@ mod tests {
         for payload in [
             b"kuzz_agent_snapshotX\0data".as_slice(),
             b"kuzz_agent_snapshot_extra\0data",
-            b"buzz_agent_snapshot", // no separator at all
+            b"kuzz_agent_snapshot", // no separator at all
             b"Comment\0GPS=37.7,-122.4",
         ] {
             let mut png = TINY_PNG[..TINY_PNG.len() - 12].to_vec();

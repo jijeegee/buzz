@@ -137,7 +137,7 @@ impl TransportContractId {
     /// changes this constant; request data does not.
     pub fn core_client_attached() -> Self {
         let mut hasher = Sha256::new();
-        hasher.update(b"buzz:nip-fi:transport-contract:v1\0");
+        hasher.update(b"kuzz:nip-fi:transport-contract:v1\0");
         // Explicit contract version: bump on any change to the parsing,
         // attachment, no-fallback, or context-preservation semantics below so
         // prepared evidence bound to an older transport contract is invalidated.
@@ -678,7 +678,7 @@ fn derive_assertion_policy_id(policy: &IssuerPolicy) -> AssertionPolicyId {
         id: _,
     } = policy;
     let mut hasher = Sha256::new();
-    hasher.update(b"buzz:nip-fi:assertion-policy:v1\0");
+    hasher.update(b"kuzz:nip-fi:assertion-policy:v1\0");
     // Compiled-verifier-behavior fingerprint: covers duplicate-member
     // rejection, exact-byte identity handling, the key-source contract, claim
     // capture, and time arithmetic — the normative semantics not otherwise

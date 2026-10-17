@@ -36,7 +36,7 @@ pub enum ManifestError {
 #[serde(rename_all = "snake_case")]
 pub struct Engines {
     /// Semver range the Kuzz runtime must satisfy (e.g. `">=0.9.0"`).
-    #[serde(skip_serializing_if = "Option::is_none", alias = "buzz")] // kuzz-rename: keep (older manifests)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kuzz: Option<String>,
 }
 

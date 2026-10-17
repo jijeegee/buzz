@@ -162,6 +162,64 @@ test("advanceContext burst coalesces local persistence into one write", () => {
   }
 });
 
+test("server mirror sees the user's own reads only, and initialization is reported", async () => {
+  const storage = makeLocalStorage();
+  globalThis.window.localStorage = storage;
+  const { timers, restore } = withFakeTimers();
+  const manager = new ReadStateManager("2".repeat(64), makeFakeRelay());
+  const mirrored = [];
+  try {
+    manager.setServerMirror((contextId, at) => mirrored.push([contextId, at]));
+    assert.equal(manager.isInitialized(), false);
+    manager.markContextRead("channel-1", 100);
+    manager.markContextRead(threadKey, 110);
+    // Seeds and remote merges are not the user's reads.
+    manager.seedContextRead("channel-2", 120);
+    assert.deepEqual(mirrored, [
+      ["channel-1", 100],
+      [threadKey, 110],
+    ]);
+    // Local read state is unchanged by the mirror.
+    assert.equal(manager.getOwnTimestamp("channel-1"), 100);
+    manager.setServerMirror(null);
+    manager.markContextRead("channel-1", 130);
+    assert.equal(mirrored.length, 2);
+
+    await manager.initialize();
+    assert.equal(manager.isInitialized(), true);
+    assert.equal(manager.hasMergedRelayState(), true);
+    manager.setServerMirror((contextId, at) => mirrored.push([contextId, at]));
+    manager.destroy();
+    manager.markContextRead("channel-1", 140);
+    assert.equal(mirrored.length, 2, "a destroyed manager mirrors nothing");
+  } finally {
+    manager.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
+test("a failed relay fetch initializes from local markers but not merged relay state", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const relay = {
+    ...makeFakeRelay(),
+    fetchEvents: async () => {
+      throw new Error("timeout");
+    },
+  };
+  const manager = new ReadStateManager("5".repeat(64), relay);
+  try {
+    await manager.initialize();
+    assert.equal(manager.isInitialized(), true);
+    assert.equal(manager.hasMergedRelayState(), false);
+  } finally {
+    manager.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
 test("sustained advances persist within each one-second window", () => {
   const storage = makeLocalStorage();
   globalThis.window.localStorage = storage;

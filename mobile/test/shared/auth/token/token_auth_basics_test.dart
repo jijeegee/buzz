@@ -58,19 +58,19 @@ void main() {
       expect(parseTokenAuthDescriptor({'name': 'legacy'}), isNull);
       expect(
         parseTokenAuthDescriptor({
-          'buzz_token_auth': {'bearer': 'true'},
+          'kuzz_token_auth': {'bearer': 'true'},
         }),
         isNull,
       );
       expect(
         parseTokenAuthDescriptor({
-          'buzz_token_auth': {'bearer': false},
+          'kuzz_token_auth': {'bearer': false},
         }),
         isNull,
       );
       expect(parseTokenAuthDescriptor('not a map'), isNull);
       final descriptor = parseTokenAuthDescriptor({
-        'buzz_token_auth': {
+        'kuzz_token_auth': {
           'version': 1,
           'bearer': true,
           'oidc_providers': ['google', 7],
@@ -88,7 +88,7 @@ void main() {
         final tokenRelay = MockClient((request) async {
           seen = request;
           return jsonResponse({
-            'buzz_token_auth': {
+            'kuzz_token_auth': {
               'version': 1,
               'bearer': true,
               'oidc_providers': ['google'],

@@ -334,26 +334,26 @@ test("configured users keep their chosen community", async ({ page }) => {
   ).toBeNull();
 });
 
-test("closed login browser can be cancelled and retried without restarting onboarding", async ({
+test("closed login browser is dropped on return and retried without restarting onboarding", async ({
   page,
 }) => {
   await installDefaultCommunity(page, { holdLogin: true });
   await page.goto("/");
   const signIn = page.getByTestId("onboarding-google-sign-in");
   await signIn.click();
+  await expect(signIn).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Cancel sign-in", exact: true }),
-  ).toBeVisible();
-  await expect(signIn).toBeDisabled();
-  await page
-    .getByRole("button", { name: "Cancel sign-in", exact: true })
-    .click();
-  await expect(signIn).toBeEnabled();
+  ).toHaveCount(0);
+  // Leaving for the browser and coming back drops the unfinished sign-in.
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  await expect(signIn).toBeEnabled({ timeout: 8_000 });
   await expect(page.getByRole("alert")).toHaveCount(0);
   await signIn.click();
-  await expect(
-    page.getByRole("button", { name: "Cancel sign-in", exact: true }),
-  ).toBeVisible();
+  await expect(signIn).toBeDisabled();
   expect(
     await page.evaluate(
       () =>

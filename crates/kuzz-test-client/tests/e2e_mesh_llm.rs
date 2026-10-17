@@ -44,8 +44,8 @@ use nostr::{Alphabet, Filter, Keys, Kind, SingleLetterTag};
 
 /// NIP-51 bookmark set used for client-owned Mesh discovery notes.
 const KIND_KUZZ_MESH_MEMBER_STATUS: u16 = 30003;
-const MESH_STATUS_D_TAG_PREFIX: &str = "buzz-mesh-member-status:";
-const MESH_STATUS_TYPE: &str = "buzz-mesh-status";
+const MESH_STATUS_D_TAG_PREFIX: &str = "kuzz-mesh-member-status:";
+const MESH_STATUS_TYPE: &str = "kuzz-mesh-status";
 
 fn relay_url() -> String {
     std::env::var("RELAY_URL").unwrap_or_else(|_| "ws://localhost:3000".to_string())

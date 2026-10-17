@@ -38,7 +38,7 @@ pub trait CommandReplayGuard: Send + Sync {
 }
 
 /// Redis key for a command replay claim:
-/// `buzz:nip-fi:command:{sha256(len(iss) || iss || len(jti) || jti)}`.
+/// `kuzz:nip-fi:command:{sha256(len(iss) || iss || len(jti) || jti)}`.
 ///
 /// `iss` is an arbitrary URI and `jti` is up to 512 bytes, so the pair is
 /// hashed with big-endian `u64` length prefixes: the key is fixed-length and
@@ -52,7 +52,7 @@ pub fn command_replay_key(issuer: &str, jti: &str) -> String {
         hasher.update((part.len() as u64).to_be_bytes());
         hasher.update(part.as_bytes());
     }
-    format!("buzz:nip-fi:command:{}", hex::encode(hasher.finalize()))
+    format!("kuzz:nip-fi:command:{}", hex::encode(hasher.finalize()))
 }
 
 /// Process-local seen-set for tests.  Instances shared via `Arc` model pods
@@ -83,7 +83,7 @@ mod tests {
         // Concatenation-ambiguous pairs must map to distinct keys.
         assert_ne!(command_replay_key("ab", "c"), command_replay_key("a", "bc"));
         let long = command_replay_key("https://issuer.example", &"j".repeat(512));
-        assert_eq!(long.len(), "buzz:nip-fi:command:".len() + 64);
+        assert_eq!(long.len(), "kuzz:nip-fi:command:".len() + 64);
         assert!(!long.contains(":nip98:"));
     }
 }

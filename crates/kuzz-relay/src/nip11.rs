@@ -80,11 +80,11 @@ pub struct RelayInfo {
     /// (`{"version": 1, "bearer": true, "oidc_providers": [...]}`).
     /// Present only when `AUTH_TOKEN_ENABLED`; clients use it to offer
     /// "Sign in with Google" and switch to bearer/token AUTH.
-    #[serde(rename = "buzz_token_auth", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "kuzz_token_auth", skip_serializing_if = "Option::is_none")]
     pub token_auth: Option<serde_json::Value>,
     /// Optional Google account onboarding/backup for client-held Nostr keys.
     /// This never advertises token messaging or replaces the signing identity.
-    #[serde(rename = "buzz_key_backup", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "kuzz_key_backup", skip_serializing_if = "Option::is_none")]
     pub key_backup: Option<serde_json::Value>,
 }
 
@@ -204,7 +204,7 @@ impl RelayInfo {
     /// config by the caller (see [`nip11_document`]).
     ///
     /// `gif_provider` is a config-derived provider identifier. When present,
-    /// `build` advertises the provider-agnostic `buzz-gif` extension and the
+    /// `build` advertises the provider-agnostic `kuzz-gif` extension and the
     /// relay-relative metadata search endpoint. It must never contain a
     /// provider credential.
     pub(crate) fn build(
@@ -237,7 +237,7 @@ impl RelayInfo {
             "nip-cw-newer".to_string(),
         ];
         let gif = gif_provider.map(|provider| {
-            supported_extensions.push("buzz-gif".to_string());
+            supported_extensions.push("kuzz-gif".to_string());
             GifDescriptor {
                 provider: provider.to_string(),
                 search: crate::api::gifs::SEARCH_PATH.to_string(),
@@ -330,7 +330,7 @@ fn push_descriptor(
             "pubkey": relay_keypair.public_key().to_hex(),
             "current": true
         }],
-        "app_profiles": [{"id": "buzz-ios-dogfood", "transport": "apns"}],
+        "app_profiles": [{"id": "kuzz-ios-dogfood", "transport": "apns"}],
         "push_kinds": crate::handlers::push_lease::PUSH_KINDS,
         "h_grammar": "uuid-v4-lowercase",
         "class_support": {"apns": ["default"]},
@@ -408,7 +408,7 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
     info
 }
 
-/// The `buzz_token_auth` NIP-11 descriptor, present only when token auth is on.
+/// The `kuzz_token_auth` NIP-11 descriptor, present only when token auth is on.
 pub(crate) fn token_auth_descriptor(
     identity: &crate::identity::IdentityRuntime,
 ) -> Option<serde_json::Value> {
@@ -626,7 +626,7 @@ mod tests {
         assert!(json["supported_extensions"]
             .as_array()
             .expect("extensions")
-            .contains(&serde_json::json!("buzz-gif")));
+            .contains(&serde_json::json!("kuzz-gif")));
         assert!(!json.to_string().contains("api_key"));
 
         let unconfigured = RelayInfo::build(
@@ -642,7 +642,7 @@ mod tests {
         assert!(!unconfigured
             .supported_extensions
             .expect("extensions")
-            .contains(&"buzz-gif".to_string()));
+            .contains(&"kuzz-gif".to_string()));
     }
 
     /// NIP-WP → NIP-11 mirror: a set workspace icon is served in the standard
@@ -703,7 +703,7 @@ mod tests {
             None,
         );
         let json = serde_json::to_value(&info).expect("serialize");
-        assert!(json.get("buzz_token_auth").is_none(), "absent when off");
+        assert!(json.get("kuzz_token_auth").is_none(), "absent when off");
 
         config.enabled = true;
         config.fake_oidc = true;

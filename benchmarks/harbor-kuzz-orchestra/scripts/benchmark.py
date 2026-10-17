@@ -416,7 +416,7 @@ def write_env_file(state: dict[str, str]) -> Path:
 
 def postgres_dsn(state: dict[str, str]) -> str:
     return (
-        f"postgresql://buzz:{state['postgres_password']}@127.0.0.1:{PG_HOST_PORT}/buzz"
+        f"postgresql://kuzz:{state['postgres_password']}@127.0.0.1:{PG_HOST_PORT}/kuzz"
     )
 
 

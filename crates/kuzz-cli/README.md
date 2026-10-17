@@ -54,7 +54,7 @@ kuzz channels topic --channel <uuid> --topic "New topic"
 kuzz reactions add --event <event-id> --emoji "👍"
 kuzz reactions get --event <event-id>
 
-# GIFs (requires relay to advertise buzz-gif / KLIPY)
+# GIFs (requires relay to advertise kuzz-gif / KLIPY)
 kuzz gifs search                              # trending GIFs
 kuzz gifs search --query "celebration"        # search GIFs
 kuzz gifs share --slug <slug>                 # report selection to provider Recents
@@ -148,7 +148,7 @@ The table below mirrors that tree for readers who are not at a terminal.
 | `reactions` | `add` | React to a message |
 | | `remove` | Remove a reaction |
 | | `get` | List reactions |
-| `gifs` | `search` | Search or browse trending GIFs (requires relay buzz-gif support) |
+| `gifs` | `search` | Search or browse trending GIFs (requires relay kuzz-gif support) |
 | | `share` | Report a selected GIF to the provider's Recents |
 | `dms` | `list` | List DM conversations |
 | | `open` | Open a DM (1–8 pubkeys) |

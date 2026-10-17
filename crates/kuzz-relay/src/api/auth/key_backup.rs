@@ -49,6 +49,11 @@ fn deserialize_secret<'de, D: serde::Deserializer<'de>>(
     String::deserialize(deserializer).map(Zeroizing::new)
 }
 
+/// Version of this HTTP contract (field names and meaning). It is separate
+/// from the at-rest envelope version in `kuzz_auth::key_backup`, which only
+/// the server reads.
+const KEY_BACKUP_API_VERSION: u16 = 1;
+
 #[derive(Serialize)]
 struct RestoredKey<'a> {
     secret_key: &'a str,
@@ -133,7 +138,7 @@ pub(super) async fn status(State(state): State<Arc<AppState>>, headers: HeaderMa
             "state": if backup.is_some() { "ready" } else { "absent" },
             "account_id": binding.principal.to_hex(),
             "pubkey": backup.map(|b| hex::encode(b.pubkey)),
-            "version": 1,
+            "version": KEY_BACKUP_API_VERSION,
         }))
         .into_response(),
         Err(_) => unavailable(),
@@ -262,7 +267,8 @@ pub(super) async fn initialize(
         .await
     {
         Ok(InitializeKeyBackup::Created) => {
-            axum::Json(json!({"pubkey": record.pubkey, "version": 1})).into_response()
+            axum::Json(json!({"pubkey": record.pubkey, "version": KEY_BACKUP_API_VERSION}))
+                .into_response()
         }
         Ok(InitializeKeyBackup::BackupExists) => auth_error(
             StatusCode::CONFLICT,
@@ -335,7 +341,7 @@ pub(super) async fn restore(
     axum::Json(RestoredKey {
         secret_key: secret.as_str(),
         pubkey: hex::encode(envelope.pubkey),
-        version: envelope.version,
+        version: KEY_BACKUP_API_VERSION,
     })
     .into_response()
 }

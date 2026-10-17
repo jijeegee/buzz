@@ -2,6 +2,7 @@ import * as React from "react";
 import {
   ReadStateManager,
   type ContextParentResolver,
+  type ReadStateServerMirror,
 } from "@/features/channels/readState/readStateManager";
 import type { RelayClient } from "@/shared/api/relayClientSession";
 
@@ -10,6 +11,7 @@ const noopMarkRead = () => {};
 const noopDrainAdvances = (): ReadonlySet<string> => new Set<string>();
 const noopSetResolver = () => {};
 const noopGetContexts = (): Record<string, number> => ({});
+const noopIsInitialized = () => false;
 
 /**
  * React hook that creates and manages a ReadStateManager instance.
@@ -27,6 +29,8 @@ export function useReadState(
     string | null
   >(null);
   const managerRef = React.useRef<ReadStateManager | null>(null);
+  // Outlives manager re-creation so a mirror set once follows the identity.
+  const serverMirrorRef = React.useRef<ReadStateServerMirror | null>(null);
 
   // Create/destroy manager when pubkey becomes available/changes
   React.useEffect(() => {
@@ -35,6 +39,7 @@ export function useReadState(
 
     let isCancelled = false;
     const manager = new ReadStateManager(pubkey, relayClient);
+    manager.setServerMirror(serverMirrorRef.current);
     managerRef.current = manager;
 
     const unsubscribe = manager.subscribe(() => {
@@ -100,6 +105,20 @@ export function useReadState(
     [],
   );
 
+  /** The relay's read markers were fetched and merged: local ones are complete. */
+  const isInitialized = React.useCallback(
+    (): boolean => managerRef.current?.hasMergedRelayState() ?? false,
+    [],
+  );
+
+  const setServerMirror = React.useCallback(
+    (mirror: ReadStateServerMirror | null): void => {
+      serverMirrorRef.current = mirror;
+      managerRef.current?.setServerMirror(mirror);
+    },
+    [],
+  );
+
   const isReady = Boolean(
     pubkey && relayClient && initializedPubkey === pubkey,
   );
@@ -115,6 +134,8 @@ export function useReadState(
       readStateVersion: 0,
       getOwnTimestamp: noopGetTimestamp,
       getChannelAndThreadContexts: noopGetContexts,
+      isInitialized: noopIsInitialized,
+      setServerMirror,
     };
   }
 
@@ -128,5 +149,7 @@ export function useReadState(
     readStateVersion,
     getOwnTimestamp,
     getChannelAndThreadContexts,
+    isInitialized,
+    setServerMirror,
   };
 }

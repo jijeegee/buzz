@@ -117,7 +117,7 @@ pub fn nip98_replay_key(ctx: &TenantContext, event_id: &EventId) -> String {
 
 /// Redis key for a NIP-98 replay marker in an explicit trusted scope.
 pub fn nip98_replay_key_for_scope(scope: &str, event_id: &EventId) -> String {
-    format!("buzz:{scope}:nip98:{}", event_id.to_hex())
+    format!("kuzz:{scope}:nip98:{}", event_id.to_hex())
 }
 
 /// Always-fresh seen-set for unit tests — every `try_mark` returns `Ok(true)`.
@@ -167,7 +167,7 @@ mod tests {
         let ctx = fixture_ctx("relay-a.example");
         let eid = fixture_event_id();
         let key = nip98_replay_key(&ctx, &eid);
-        let expected_prefix = format!("buzz:{}:nip98:", ctx.community()); // kuzz-rename: keep
+        let expected_prefix = format!("kuzz:{}:nip98:", ctx.community());
         assert!(
             key.starts_with(&expected_prefix),
             "key {key} should start with {expected_prefix}"

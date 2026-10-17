@@ -1,5 +1,4 @@
 fn main() {
-    kuzz_core::legacy_env::adopt_legacy_env();
     async_main();
 }
 

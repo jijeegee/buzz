@@ -178,7 +178,7 @@ async fn in_flight_event_holds_membership_order_until_commit() {
     // transaction ends. Removing the event trigger makes this assertion fail.
     let acquired: bool =
         sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0))")
-            .bind(format!("buzz_channel_membership:{}:{}", f.scope, f.channel))
+            .bind(format!("kuzz_channel_membership:{}:{}", f.scope, f.channel))
             .fetch_one(&f.pool)
             .await
             .expect("independent lock probe");

@@ -35,11 +35,11 @@ public enum KuzzPushTranscriptError: Error, Equatable {
 public enum KuzzPushTranscript {
     // MARK: Domains
 
-    public static let enrollDomain = "buzz.push.enroll.v1"
-    public static let delegateDomain = "buzz.push.delegate.v1"
-    public static let rotateEndpointDomain = "buzz.push.rotate-endpoint.v1"
-    public static let revokeDelegationDomain = "buzz.push.revoke-delegation.v1"
-    public static let revokeInstallationDomain = "buzz.push.revoke-installation.v1"
+    public static let enrollDomain = "kuzz.push.enroll.v1"
+    public static let delegateDomain = "kuzz.push.delegate.v1"
+    public static let rotateEndpointDomain = "kuzz.push.rotate-endpoint.v1"
+    public static let revokeDelegationDomain = "kuzz.push.revoke-delegation.v1"
+    public static let revokeInstallationDomain = "kuzz.push.revoke-installation.v1"
 
     /// Wire version pinned by NIP-PL. Every transcript carries `"v":1`.
     public static let wireVersion: Int64 = 1
@@ -49,7 +49,7 @@ public enum KuzzPushTranscript {
 
     // MARK: Transcripts
 
-    /// `buzz.push.enroll.v1` — these exact bytes are the App Attest
+    /// `kuzz.push.enroll.v1` — these exact bytes are the App Attest
     /// `clientData` supplied to attestation verification.
     public static func enroll(
         gatewayOrigin: URL,
@@ -74,7 +74,7 @@ public enum KuzzPushTranscript {
         return encode(domain: enrollDomain, object: o)
     }
 
-    /// `buzz.push.delegate.v1` — `SHA-256(bytes)` is the assertion
+    /// `kuzz.push.delegate.v1` — `SHA-256(bytes)` is the assertion
     /// `clientDataHash`.
     public static func delegate(
         gatewayOrigin: URL,
@@ -101,7 +101,7 @@ public enum KuzzPushTranscript {
         return encode(domain: delegateDomain, object: o)
     }
 
-    /// `buzz.push.rotate-endpoint.v1` — `SHA-256(bytes)` is the assertion
+    /// `kuzz.push.rotate-endpoint.v1` — `SHA-256(bytes)` is the assertion
     /// `clientDataHash`.
     public static func rotateEndpoint(
         gatewayOrigin: URL,
@@ -127,7 +127,7 @@ public enum KuzzPushTranscript {
         return encode(domain: rotateEndpointDomain, object: o)
     }
 
-    /// `buzz.push.revoke-delegation.v1` — `SHA-256(bytes)` is the assertion
+    /// `kuzz.push.revoke-delegation.v1` — `SHA-256(bytes)` is the assertion
     /// `clientDataHash`.
     public static func revokeDelegation(
         gatewayOrigin: URL,
@@ -151,7 +151,7 @@ public enum KuzzPushTranscript {
         return encode(domain: revokeDelegationDomain, object: o)
     }
 
-    /// `buzz.push.revoke-installation.v1` — `SHA-256(bytes)` is the assertion
+    /// `kuzz.push.revoke-installation.v1` — `SHA-256(bytes)` is the assertion
     /// `clientDataHash`.
     public static func revokeInstallation(
         gatewayOrigin: URL,

@@ -34,7 +34,7 @@ export type Project = {
   projectChannelId: string | null;
   /**
    * Extra streams linked to this project via repeatable
-   * `buzz-related-channel` tags. Client convention: NIP-MP treats the tag as
+   * `kuzz-related-channel` tags. Client convention: NIP-MP treats the tag as
    * unrecognized metadata, so older readers ignore it.
    */
   relatedChannelIds: string[];
@@ -126,8 +126,8 @@ export function isValidProjectChannelId(value: string): boolean {
   );
 }
 
-/** Repeatable project tag naming an extra stream besides `buzz-channel`. */
-export const PROJECT_RELATED_CHANNEL_TAG = "buzz-related-channel";
+/** Repeatable project tag naming an extra stream besides `kuzz-channel`. */
+export const PROJECT_RELATED_CHANNEL_TAG = "kuzz-related-channel";
 
 /** Cap extra project streams so a tag list cannot grow without bound. */
 export const MAX_PROJECT_RELATED_CHANNELS = 64;
@@ -135,15 +135,15 @@ export const MAX_PROJECT_RELATED_CHANNELS = 64;
 const SINGLETON_METADATA_TAGS = [
   "name",
   "description",
-  "buzz-channel",
-  "buzz-visibility",
+  "kuzz-channel",
+  "kuzz-visibility",
 ] as const;
 
 const MAX_METADATA_TAG_BYTES: Record<string, number> = {
   name: 256,
   description: 2_048,
-  "buzz-channel": 256,
-  "buzz-visibility": 256,
+  "kuzz-channel": 256,
+  "kuzz-visibility": 256,
 };
 
 /**
@@ -281,7 +281,7 @@ export function eventToRepository(
 
   const owner = event.pubkey.toLowerCase();
   const setupUsers = getAllTags(event, "auth");
-  const channel = getTag(event, "buzz-channel");
+  const channel = getTag(event, "kuzz-channel");
   return {
     id: `${owner}:${dtag}`,
     dtag,
@@ -358,10 +358,10 @@ export function eventToExplicitProject(
   const owner = event.pubkey.toLowerCase();
   const projectAddress = `${KIND_PROJECT_ANNOUNCEMENT}:${owner}:${dtag}`;
 
-  const rawVisibility = getTag(event, "buzz-visibility");
+  const rawVisibility = getTag(event, "kuzz-visibility");
   const visibility =
     rawVisibility === "unlisted" ? ("unlisted" as const) : ("listed" as const);
-  const channel = getTag(event, "buzz-channel");
+  const channel = getTag(event, "kuzz-channel");
   const projectChannelId =
     channel && isValidProjectChannelId(channel) ? channel : null;
   const relatedChannelIds = [

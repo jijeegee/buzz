@@ -19,6 +19,7 @@ test("Kuzz Git pull request renders and stays actionable in Inbox", async ({
   await page.setViewportSize({ width: 1024, height: 720 });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByRole("button", { name: "Repositories", exact: true }).click();
   const repositoryCardBody = page
@@ -46,7 +47,7 @@ test("Kuzz Git pull request renders and stays actionable in Inbox", async ({
   );
   expect(pullRequestId).toBeTruthy();
 
-  await page.getByRole("button", { name: "Inbox", exact: true }).click();
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
   await page.evaluate(
     ({ author, id, repoAddress, viewer }) => {
       window.__KUZZ_E2E_PUSH_MOCK_FEED_ITEM__?.({

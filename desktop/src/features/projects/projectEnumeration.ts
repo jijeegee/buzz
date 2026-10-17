@@ -18,7 +18,7 @@ const TOMBSTONE_COORDINATE_CHUNK_SIZE = 100;
 /** Additional server-side scoping merged into every enumeration page. */
 export type ProjectEventExtraFilter = {
   "#a"?: string[];
-  "#buzz-channel"?: string[];
+  "#kuzz-channel"?: string[];
 };
 
 type ProjectEventFilter = ProjectEventExtraFilter & {
@@ -233,7 +233,7 @@ export async function buildProjectHomeFromFetcher(
         kinds,
         kinds.includes(KIND_DELETION)
           ? extraFilter
-          : { ...extraFilter, "#buzz-channel": [channelId] },
+          : { ...extraFilter, "#kuzz-channel": [channelId] },
       ),
     options,
   );

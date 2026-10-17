@@ -92,6 +92,7 @@ import {
   type ReadingPosition,
   readingPositionStore,
 } from "@/features/channels/readingPositionStore";
+import { useThreadOpenServerRead } from "./useThreadOpenServerRead";
 import { useChannelUnreadState } from "./useChannelUnreadState";
 import type { ChannelScreenProps } from "./ChannelScreen.types";
 import { GuardedChannelPane } from "./GuardedChannelPane"; import { useNavigationGuard } from "./useNavigationGuard"; import * as searchForwarding from "./searchTargetForwarding";
@@ -730,6 +731,7 @@ export function ChannelScreen({
   const displayedThreadAllMessages = threadPanelData.messages;
   const displayedThreadMessages = threadPanelData.visibleReplies;
   const displayedThreadReplyTargetMessage = threadPanelData.replyTargetMessage;
+  useThreadOpenServerRead(displayedThreadHeadMessage, displayedThreadMessages);
   const displayedThreadFirstUnreadReplyId = displayedThreadHeadMessage
     ? threadFirstUnreadReplyId
     : null;

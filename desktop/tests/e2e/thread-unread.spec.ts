@@ -111,6 +111,11 @@ async function expandReply(
     .getByTestId("message-thread-replies")
     .getByTestId("message-row");
   const before = await replies.count();
+  // The thread stacks from the bottom, so the previous expansion pushed the
+  // rows above it upward under the resting cursor. Park the cursor first so a
+  // stale hover action bar does not cover the summary, as a user's pointer
+  // travelling to it would not.
+  await page.mouse.move(0, 0);
   await page.locator(`[data-thread-head-id="${replyId}"]`).click();
   await expect.poll(() => replies.count()).toBeGreaterThan(before);
 }

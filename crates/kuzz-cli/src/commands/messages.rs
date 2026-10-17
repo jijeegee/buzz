@@ -1225,7 +1225,7 @@ mod tests {
         event_mention_pubkeys, find_root_from_tags, format_events, match_profiles_by_name,
         merge_message_mentions, missing_members, normalize_explicit_mentions, parse_member_pubkeys,
         resolve_names_to_pubkeys, resolve_thread_target, thread_depth_from_tags,
-        thread_ref_from_event, thread_ref_from_parent_tags, KuzzClient, CliError, Uuid,
+        thread_ref_from_event, thread_ref_from_parent_tags, CliError, KuzzClient, Uuid,
         MAX_THREAD_DEPTH,
     };
     use kuzz_sdk::mentions::{
@@ -1835,7 +1835,7 @@ mod tests {
         serde_json::json!([{
             "created_at": 100,
             "tags": [
-                ["d", "buzz:custom-emoji"],
+                ["d", "kuzz:custom-emoji"],
                 ["emoji", "wave", "https://cdn.example.com/wave.png"],
                 ["emoji", "sweatblob", "https://cdn.example.com/sweatblob.gif"]
             ]

@@ -111,10 +111,10 @@ fn parse_events(json: &str) -> Result<Vec<Event>, CliError> {
         .map_err(|e| CliError::Other(format!("failed to parse relay response: {e}")))
 }
 
-/// Fetch listed kind:30621 heads whose `buzz-channel` is `channel`.
+/// Fetch listed kind:30621 heads whose `kuzz-channel` is `channel`.
 fn project_tags_match_channel<'a>(tags: impl IntoIterator<Item = &'a Tag>, channel: &str) -> bool {
     tags.into_iter()
-        .any(|tag| tag_name(tag) == Some("buzz-channel") && tag_value(tag) == Some(channel))
+        .any(|tag| tag_name(tag) == Some("kuzz-channel") && tag_value(tag) == Some(channel))
 }
 
 pub(crate) const PROJECT_QUERY_EVENT_BOUND: u32 = 10_000;
@@ -133,7 +133,7 @@ async fn fetch_projects_for_channel_bounded(
 ) -> Result<Vec<Event>, CliError> {
     let filter = serde_json::json!({
         "kinds": [KIND_PROJECT],
-        "#buzz-channel": [channel],
+        "#kuzz-channel": [channel],
     });
     let events: Vec<Event> = client
         .query_all_bounded(filter, max_events)
@@ -154,7 +154,7 @@ fn project_is_unlisted(event: &Event) -> bool {
     event.tags.iter().any(|tag| {
         matches!(
             tag.as_slice(),
-            [name, value, ..] if name == "buzz-visibility" && value == "unlisted"
+            [name, value, ..] if name == "kuzz-visibility" && value == "unlisted"
         )
     })
 }
@@ -636,7 +636,7 @@ pub async fn cmd_update(
     //   - clear flag set: drop the tag
     //   - neither: keep existing
     // Non-singleton / non-metadata tags (d, a, unknown) are preserved as-is.
-    let singleton_fields = ["name", "description", "buzz-channel", "buzz-visibility"];
+    let singleton_fields = ["name", "description", "kuzz-channel", "kuzz-visibility"];
     let mut tags: Vec<Tag> = head
         .tags
         .iter()
@@ -650,8 +650,8 @@ pub async fn cmd_update(
                     let clear = match field {
                         "name" => clear_name || name.is_some(),
                         "description" => clear_description || description.is_some(),
-                        "buzz-channel" => clear_channel || channel.is_some(),
-                        "buzz-visibility" => clear_visibility || visibility.is_some(),
+                        "kuzz-channel" => clear_channel || channel.is_some(),
+                        "kuzz-visibility" => clear_visibility || visibility.is_some(),
                         _ => false,
                     };
                     return !clear;
@@ -670,10 +670,10 @@ pub async fn cmd_update(
         tags.push(make_tag(&["description", d])?);
     }
     if let Some(ch) = channel {
-        tags.push(make_tag(&["buzz-channel", ch])?);
+        tags.push(make_tag(&["kuzz-channel", ch])?);
     }
     if let Some(vis) = visibility {
-        tags.push(make_tag(&["buzz-visibility", vis])?);
+        tags.push(make_tag(&["kuzz-visibility", vis])?);
     }
 
     let builder = build_project_with_tags(&head.content, tags)
@@ -786,7 +786,7 @@ fn validate_project_slug(slug: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Validate a `buzz-visibility` value at the writer level.
+/// Validate a `kuzz-visibility` value at the writer level.
 fn validate_visibility(vis: &str) -> Result<(), CliError> {
     if vis != "listed" && vis != "unlisted" {
         return Err(CliError::Usage(format!(
@@ -1037,7 +1037,7 @@ mod tests {
         server.await.unwrap();
         let body: serde_json::Value =
             serde_json::from_str(request_body.lock().unwrap().as_deref().unwrap()).unwrap();
-        assert_eq!(body[0]["#buzz-channel"], serde_json::json!([channel]));
+        assert_eq!(body[0]["#kuzz-channel"], serde_json::json!([channel]));
         assert_eq!(body[0]["kinds"], serde_json::json!([KIND_PROJECT]));
     }
 
@@ -1066,7 +1066,7 @@ mod tests {
             let request = String::from_utf8_lossy(&buf[..read]);
             let body = request.split("\r\n\r\n").nth(1).unwrap();
             let filter: serde_json::Value = serde_json::from_str(body).unwrap();
-            let response_body = if filter[0]["#buzz-channel"] == serde_json::json!([channel]) {
+            let response_body = if filter[0]["#kuzz-channel"] == serde_json::json!([channel]) {
                 serde_json::to_string(&[target]).unwrap()
             } else {
                 serde_json::to_string(&decoys).unwrap()
@@ -1092,12 +1092,12 @@ mod tests {
     fn project_channel_matching_ignores_unrelated_claims() {
         let expected = "11111111-1111-4111-8111-111111111111";
         let tags = make_head_tags(&[
-            make_test_tag(&["buzz-channel", "22222222-2222-4222-8222-222222222222"]),
+            make_test_tag(&["kuzz-channel", "22222222-2222-4222-8222-222222222222"]),
             make_test_tag(&["name", "Unrelated"]),
         ]);
         assert!(!project_tags_match_channel(tags.iter(), expected));
 
-        let tags = make_head_tags(&[make_test_tag(&["buzz-channel", expected])]);
+        let tags = make_head_tags(&[make_test_tag(&["kuzz-channel", expected])]);
         assert!(project_tags_match_channel(tags.iter(), expected));
     }
 
@@ -1316,7 +1316,7 @@ mod tests {
         clear_visibility: bool,
     ) -> Vec<Tag> {
         // Replicate the tag-mutation logic from cmd_update (sans relay I/O).
-        let singleton_fields = ["name", "description", "buzz-channel", "buzz-visibility"];
+        let singleton_fields = ["name", "description", "kuzz-channel", "kuzz-visibility"];
         let mut tags: Vec<Tag> = head_tags
             .iter()
             .filter(|t| {
@@ -1328,8 +1328,8 @@ mod tests {
                         let clear = match field {
                             "name" => clear_name || name.is_some(),
                             "description" => clear_description || description.is_some(),
-                            "buzz-channel" => clear_channel || channel.is_some(),
-                            "buzz-visibility" => clear_visibility || visibility.is_some(),
+                            "kuzz-channel" => clear_channel || channel.is_some(),
+                            "kuzz-visibility" => clear_visibility || visibility.is_some(),
                             _ => false,
                         };
                         return !clear;
@@ -1346,10 +1346,10 @@ mod tests {
             tags.push(make_test_tag(&["description", d]));
         }
         if let Some(ch) = channel {
-            tags.push(make_test_tag(&["buzz-channel", ch]));
+            tags.push(make_test_tag(&["kuzz-channel", ch]));
         }
         if let Some(vis) = visibility {
-            tags.push(make_test_tag(&["buzz-visibility", vis]));
+            tags.push(make_test_tag(&["kuzz-visibility", vis]));
         }
         tags
     }
@@ -1388,19 +1388,19 @@ mod tests {
 
     #[test]
     fn update_clear_visibility_drops_tag() {
-        let head = make_head_tags(&[make_test_tag(&["buzz-visibility", "unlisted"])]);
+        let head = make_head_tags(&[make_test_tag(&["kuzz-visibility", "unlisted"])]);
         let result = apply_update_tags(head, None, false, None, false, None, false, None, true);
         assert!(!result
             .iter()
-            .any(|t| tag_name(t) == Some("buzz-visibility")));
+            .any(|t| tag_name(t) == Some("kuzz-visibility")));
     }
 
     #[test]
     fn update_exactly_one_singleton_after_replace() {
-        // Start with a buzz-channel; replace with a new one; must have exactly one.
+        // Start with a kuzz-channel; replace with a new one; must have exactly one.
         let uuid1 = "3580ca9b-47b4-4af9-b22a-1068778f26c6";
         let uuid2 = "00000000-0000-0000-0000-000000000000";
-        let head = make_head_tags(&[make_test_tag(&["buzz-channel", uuid1])]);
+        let head = make_head_tags(&[make_test_tag(&["kuzz-channel", uuid1])]);
         let result = apply_update_tags(
             head,
             None,
@@ -1414,7 +1414,7 @@ mod tests {
         );
         let channels: Vec<_> = result
             .iter()
-            .filter(|t| tag_name(t) == Some("buzz-channel"))
+            .filter(|t| tag_name(t) == Some("kuzz-channel"))
             .collect();
         assert_eq!(channels.len(), 1);
         assert_eq!(tag_value(channels[0]), Some(uuid2));
