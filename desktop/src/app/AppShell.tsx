@@ -114,6 +114,7 @@ import { AppWorkflowEditorOverlayProvider } from "@/app/AppWorkflowEditorOverlay
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { ChatStateSync } from "@/app/ChatStateSync";
 import { useChatStateWiring } from "@/app/useChatStateWiring";
+import { useChatsRailNavigation } from "@/app/useChatsRailNavigation";
 import {
   toggleInboxPanel,
   useInboxPanelOpen,
@@ -352,6 +353,12 @@ export function AppShell() {
     selectedView,
     sidebarChannels,
   ]);
+  const handleSelectChats = useChatsRailNavigation({
+    goChannel,
+    selectedChannelId,
+    selectedView,
+    sidebarChannels,
+  });
   const [terminalContextOverride, setTerminalContextOverride] =
     React.useState<TerminalContextOverride | null>(null);
   const { activeChannel, terminalContext } = useTerminalContext({
@@ -949,6 +956,7 @@ export function AppShell() {
                             await goChannel(directMessage.id);
                           }}
                           onSelectAgents={() => void goAgents()}
+                          onSelectChats={handleSelectChats}
                           onSelectChannel={handleSidebarChannelSelect}
                           onOpenSearchResult={handleOpenSearchResult}
                           searchChannels={channels}

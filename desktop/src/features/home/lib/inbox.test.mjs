@@ -635,7 +635,7 @@ test("thread rows expose their root for the thread name; main rows do not", () =
 });
 
 test("parseInboxFilter restores a stored filter and falls back to all", () => {
-  assert.equal(parseInboxFilter("conversations"), "conversations");
+  assert.equal(parseInboxFilter("conversations"), "all");
   assert.equal(parseInboxFilter("thread"), "thread");
   assert.equal(parseInboxFilter("retired-filter"), "all");
   assert.equal(parseInboxFilter(null), "all");

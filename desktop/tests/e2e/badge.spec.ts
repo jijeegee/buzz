@@ -118,7 +118,7 @@ test("selected Inbox and Agents rows keep their highlight without bold text", as
 
   const inbox = page
     .getByTestId("sidebar-primary-menu")
-    .getByRole("button", { name: "Inbox", exact: true });
+    .getByRole("button", { name: "Activity", exact: true });
   await expect(inbox).toHaveAttribute("data-active", "true");
   await expect(inbox).toHaveCSS("font-weight", "400");
 
@@ -136,7 +136,7 @@ test("primary navigation rows share the same inactive emphasis", async ({
 
   const primaryMenu = page.getByTestId("sidebar-primary-menu");
   const inactiveRows = [
-    primaryMenu.getByRole("button", { name: "Inbox", exact: true }),
+    primaryMenu.getByRole("button", { name: "Activity", exact: true }),
     page.getByTestId("open-pulse-view"),
     page.getByTestId("open-projects-view"),
     page.getByTestId("open-agents-view"),
@@ -214,7 +214,7 @@ test("light mode reserves full opacity for unread text and avatars", async ({
 
   const inbox = page
     .getByTestId("sidebar-primary-menu")
-    .getByRole("button", { name: "Inbox", exact: true });
+    .getByRole("button", { name: "Activity", exact: true });
   await expect(inbox).toHaveCSS("opacity", "1");
   await expect(inbox.locator("[data-sidebar=menu-label]")).toHaveCSS(
     "opacity",
@@ -254,7 +254,7 @@ test("dark mode keeps selected labels regular and channel-level unread labels bo
   await expect(page.locator("html")).toHaveClass(/dark/);
   const inbox = page
     .getByTestId("sidebar-primary-menu")
-    .getByRole("button", { name: "Inbox", exact: true });
+    .getByRole("button", { name: "Activity", exact: true });
   await expect(inbox).toHaveAttribute("data-active", "true");
   await expect(inbox).toHaveCSS("font-weight", "400");
   await expect(page.getByTestId("open-agents-view")).toHaveCSS("opacity", "1");
