@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import type { ReadingPosition } from "@/features/channels/readingPositionStore";
 import {
   isDeferredTimelineSnapshotStale,
   isRenderedTimelineBehindHistoryPrepend,
@@ -128,6 +129,10 @@ type MessageTimelineProps = {
    * decided once per visit before the list first shows.
    */
   initialAnchorMessageId?: string | null;
+  /** Where the anchor's row sits when reopening a remembered position. */
+  initialAnchorTopPx?: number | null;
+  /** Reports where the reader is (null at the newest message). */
+  onReadingPositionChange?: (position: ReadingPosition | null) => void;
   /** Count of unread top-level messages at channel open. */
   unreadCount?: number;
   /** Per-thread unread counts keyed by thread root id. */
@@ -219,6 +224,8 @@ const MessageTimelineBase = React.forwardRef<
     splitThreadPanelOpen = false,
     firstUnreadMessageId = null,
     initialAnchorMessageId = null,
+    initialAnchorTopPx = null,
+    onReadingPositionChange,
     unreadCount = 0,
     threadUnreadCounts,
   }: MessageTimelineProps,
@@ -678,6 +685,8 @@ const MessageTimelineBase = React.forwardRef<
       currentPubkey={currentPubkey}
       firstUnreadMessageId={firstUnreadMessageId}
       initialAnchorMessageId={initialAnchorMessageId}
+      initialAnchorTopPx={initialAnchorTopPx}
+      onReadingPositionChange={onReadingPositionChange}
       followThreadById={followThreadById}
       highlightedMessageId={highlightedMessageId}
       huddleMemberPubkeys={huddleMemberPubkeys}

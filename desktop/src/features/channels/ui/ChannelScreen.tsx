@@ -88,6 +88,10 @@ import { useChannelTargetReset } from "./useChannelTargetReset";
 import { useChannelRouteTarget } from "./useChannelRouteTarget";
 import { useChannelOpenReadState } from "./useChannelOpenReadState";
 import { useChannelOpenAnchor } from "./useChannelOpenAnchor";
+import {
+  type ReadingPosition,
+  readingPositionStore,
+} from "@/features/channels/readingPositionStore";
 import { useThreadOpenServerRead } from "./useThreadOpenServerRead";
 import { useChannelUnreadState } from "./useChannelUnreadState";
 import type { ChannelScreenProps } from "./ChannelScreen.types";
@@ -635,6 +639,7 @@ export function ChannelScreen({
     });
   const openAnchor = useChannelOpenAnchor({
     channelId: activeChannelId,
+    pubkey: currentPubkey,
     messages: messagesQuery.data,
     frontierSeconds: openFrontierSeconds,
     firstUnreadMessageId,
@@ -643,6 +648,13 @@ export function ChannelScreen({
     fetchOlder,
     opensElsewhere: Boolean(targetMessageId) || isHuddleTranscript,
   });
+  const handleReadingPositionChange = React.useCallback(
+    (position: ReadingPosition | null) => {
+      if (!currentPubkey || !activeChannelId) return;
+      readingPositionStore.set(currentPubkey, activeChannelId, position);
+    },
+    [activeChannelId, currentPubkey],
+  );
   const settledChannelIdRef = React.useRef<string | null>(null);
   const { settledChannelId, isLoading: isTimelineQueryLoading } =
     resolveTimelineQueryLoadingState(
@@ -1030,6 +1042,8 @@ export function ChannelScreen({
                   ownerProfiles={messageOwnerProfiles}
                   firstUnreadMessageId={firstUnreadMessageId}
                   initialAnchorMessageId={openAnchor.anchorMessageId}
+                  initialAnchorTopPx={openAnchor.anchorTopPx}
+                  onReadingPositionChange={handleReadingPositionChange}
                   unreadCount={unreadCount}
                   targetMessageId={mainTimelineTargetMessageId}
                   threadAllMessages={displayedThreadAllMessages}
