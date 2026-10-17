@@ -37,7 +37,9 @@ export type ChatImportSources = {
  * (the relay refuses times in the future); a context named twice keeps its
  * newest time. A muted root is unfollowed even when it is also followed. A
  * thread's read and follow always share a chunk, so a thread the server has
- * no row for gets one from the same request.
+ * no row for gets one from the same request. Every chunk with threads repeats
+ * all room reads: the relay raises a thread read to its room's read only from
+ * the same request (a repeated room read is skipped, but still raises).
  */
 export function buildChatImportChunks(
   sources: ChatImportSources,
@@ -65,28 +67,42 @@ export function buildChatImportChunks(
   addFollows(sources.followedRootIds, "followed");
   addFollows(sources.mutedRootIds, "unfollowed");
 
-  const units: ChatImportChunk[] = [...channelReads.values()].map((read) => ({
-    reads: [read],
-    follows: [],
-  }));
+  const roomReads = [...channelReads.values()];
+  const threadUnits: ChatImportChunk[] = [];
   const roots = new Set([...threadReads.keys(), ...follows.keys()]);
   for (const root of roots) {
     const read = threadReads.get(root);
     const state = follows.get(root);
-    units.push({
+    threadUnits.push({
       reads: read ? [read] : [],
       follows: state ? [{ root, state }] : [],
     });
   }
 
+  // A thread unit is at most two items; room reads go into every chunk when
+  // they leave room for one, otherwise they get chunks of their own first.
+  const repeatRooms =
+    threadUnits.length > 0 && roomReads.length + 2 <= maxItems;
+  const units: ChatImportChunk[] = repeatRooms
+    ? threadUnits
+    : [
+        ...roomReads.map((read) => ({ reads: [read], follows: [] })),
+        ...threadUnits,
+      ];
+  const base = repeatRooms ? roomReads.length : 0;
+  const fresh = (): ChatImportChunk => ({
+    reads: repeatRooms ? [...roomReads] : [],
+    follows: [],
+  });
+
   const chunks: ChatImportChunk[] = [];
-  let current: ChatImportChunk = { reads: [], follows: [] };
+  let current = fresh();
   const size = (chunk: ChatImportChunk) =>
     chunk.reads.length + chunk.follows.length;
   for (const unit of units) {
-    if (size(current) > 0 && size(current) + size(unit) > maxItems) {
+    if (size(current) > base && size(current) + size(unit) > maxItems) {
       chunks.push(current);
-      current = { reads: [], follows: [] };
+      current = fresh();
     }
     current.reads.push(...unit.reads);
     current.follows.push(...unit.follows);
@@ -123,7 +139,7 @@ export type ChatStateImportInput = {
   key: string | null;
   binding: ChatStateBinding | null;
   capability: "unknown" | "on" | "off";
-  /** ReadStateManager.isInitialized(): every relay slot merged. */
+  /** ReadStateManager.hasMergedRelayState(): the relay markers are merged. */
   readStateInitialized: boolean;
   /** Read at start time only, after the checks above passed. */
   collect: () => ChatImportSources;

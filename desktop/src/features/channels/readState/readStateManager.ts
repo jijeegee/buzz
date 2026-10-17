@@ -287,6 +287,8 @@ export class ReadStateManager {
   private listeners = new Set<() => void>();
   private unsubscribeLive: (() => void) | null = null;
   private initialized = false;
+  /** The initial relay fetch succeeded and was merged (not local-only). */
+  private relayStateMerged = false;
   private maxFetchedCreatedAt = 0;
   private contextSourceCreatedAt = new Map<string, number>();
   private pendingSyncedAdvances = new Set<string>();
@@ -340,6 +342,14 @@ export class ReadStateManager {
   /** Initial fetch and live subscription are done; local markers are complete. */
   isInitialized(): boolean {
     return this.initialized;
+  }
+
+  /**
+   * Initialized from a successful relay fetch. `isInitialized` is also true
+   * after a failed fetch, when only this device's stored markers are known.
+   */
+  hasMergedRelayState(): boolean {
+    return this.initialized && this.relayStateMerged;
   }
 
   /**
@@ -483,6 +493,8 @@ export class ReadStateManager {
     }
 
     await this.mergeEvents(events);
+    if (this.destroyed) return;
+    this.relayStateMerged = true;
     this.persistLocalState();
     this.notifyListeners();
   }

@@ -130,6 +130,44 @@ test("chunks hold at most 500 items, deduped, a thread's read and follow togethe
   );
 });
 
+test("every chunk with threads repeats the room reads, so threads get raised", () => {
+  const contexts = { [roomId(1)]: NOW - 1, [roomId(2)]: NOW - 2 };
+  for (let n = 1; n <= 6; n += 1) contexts[`thread:${rootId(n)}`] = NOW - 9;
+  const chunks = buildChatImportChunks(
+    { contexts, followedRootIds: [rootId(1)], mutedRootIds: [] },
+    NOW,
+    5,
+  );
+  const rooms = [
+    { kind: "channel", id: roomId(1), at: NOW - 1 },
+    { kind: "channel", id: roomId(2), at: NOW - 2 },
+  ];
+  // Thread 1 is a read plus a follow (two items), the rest one read each.
+  assert.deepEqual(
+    chunks.map((c) => [c.reads.length, c.follows.length]),
+    [
+      [4, 1],
+      [5, 0],
+      [3, 0],
+    ],
+  );
+  for (const chunk of chunks) {
+    assert.deepEqual(chunk.reads.slice(0, 2), rooms);
+    assert.ok(chunk.reads.length + chunk.follows.length <= 5);
+  }
+  const threads = chunks.flatMap((c) => c.reads.slice(2).map((r) => r.id));
+  assert.deepEqual(threads, [1, 2, 3, 4, 5, 6].map(rootId));
+  // Room reads alone are never repeated.
+  assert.deepEqual(
+    buildChatImportChunks(
+      { contexts: { [roomId(1)]: NOW }, followedRootIds: [], mutedRootIds: [] },
+      NOW,
+      5,
+    ).map((c) => c.reads.length),
+    [1],
+  );
+});
+
 test("waits until the local read markers are complete", async () => {
   const { instance, sent } = importer();
   assert.equal(instance.update(input({ readStateInitialized: false })), null);

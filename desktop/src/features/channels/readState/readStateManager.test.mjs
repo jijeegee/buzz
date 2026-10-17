@@ -187,10 +187,32 @@ test("server mirror sees the user's own reads only, and initialization is report
 
     await manager.initialize();
     assert.equal(manager.isInitialized(), true);
+    assert.equal(manager.hasMergedRelayState(), true);
     manager.setServerMirror((contextId, at) => mirrored.push([contextId, at]));
     manager.destroy();
     manager.markContextRead("channel-1", 140);
     assert.equal(mirrored.length, 2, "a destroyed manager mirrors nothing");
+  } finally {
+    manager.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
+test("a failed relay fetch initializes from local markers but not merged relay state", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const relay = {
+    ...makeFakeRelay(),
+    fetchEvents: async () => {
+      throw new Error("timeout");
+    },
+  };
+  const manager = new ReadStateManager("5".repeat(64), relay);
+  try {
+    await manager.initialize();
+    assert.equal(manager.isInitialized(), true);
+    assert.equal(manager.hasMergedRelayState(), false);
   } finally {
     manager.destroy();
     timers.runAll();

@@ -105,9 +105,9 @@ export function useReadState(
     [],
   );
 
-  /** Every relay slot is merged: the local markers are complete. */
+  /** The relay's read markers were fetched and merged: local ones are complete. */
   const isInitialized = React.useCallback(
-    (): boolean => managerRef.current?.isInitialized() ?? false,
+    (): boolean => managerRef.current?.hasMergedRelayState() ?? false,
     [],
   );
 
