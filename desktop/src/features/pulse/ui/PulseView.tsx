@@ -23,9 +23,9 @@ import { usePulseNoteActions } from "@/features/pulse/lib/useNoteActions";
 import { AgentActivityCard } from "@/features/pulse/ui/AgentActivityCard";
 import { ForumComposer } from "@/features/forum/ui/ForumComposer";
 import { NoteCard } from "@/features/pulse/ui/NoteCard";
-import { PulseTabBar } from "@/features/pulse/ui/PulseTabBar";
 import type { UserNote } from "@/shared/api/socialTypes";
 import type { ChannelMember, UserProfileSummary } from "@/shared/api/types";
+import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
 import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -39,8 +39,26 @@ export type PulseTab =
   | "agents"
   | "mine";
 
+/** Pulse feeds in list order, with their names. */
+export const PULSE_TAB_LABELS: Readonly<Record<PulseTab, string>> = {
+  everyone: "Everyone",
+  people: "Following",
+  liked: "Liked",
+  agents: "Agents",
+  mine: "Mine",
+  search: "Search",
+};
+const PULSE_TABS = Object.keys(PULSE_TAB_LABELS) as PulseTab[];
+
+/** The `tab` search param as a Pulse feed; Everyone when absent or unknown. */
+export function parsePulseTab(value: unknown): PulseTab {
+  return PULSE_TABS.includes(value as PulseTab)
+    ? (value as PulseTab)
+    : "everyone";
+}
+
+const PULSE_TAB_KEYS = ["tab"] as const;
 const pulsePanelId = (tab: PulseTab) => `pulse-panel-${tab}`;
-const pulseTabId = (tab: PulseTab) => `pulse-tab-${tab}`;
 
 type PulseViewProps = {
   currentPubkey?: string;
@@ -72,7 +90,9 @@ function TimelineSkeleton() {
 }
 
 export function PulseView({ currentPubkey }: PulseViewProps) {
-  const [activeTab, setActiveTab] = React.useState<PulseTab>("everyone");
+  // Picked in the left column's Pulse list.
+  const { values: tabValues } = useHistorySearchState(PULSE_TAB_KEYS);
+  const activeTab = parsePulseTab(tabValues.tab);
   const [searchQuery, setSearchQuery] = React.useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const contactListQuery = useContactListQuery(currentPubkey);
@@ -326,19 +346,11 @@ export function PulseView({ currentPubkey }: PulseViewProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <PulseTabBar
-        activeTab={activeTab}
-        getPanelId={pulsePanelId}
-        getTabId={pulseTabId}
-        onTabChange={setActiveTab}
-        relayAgents={relayAgents}
-      />
-
       <div className="mt-0 min-h-0 flex-1 overflow-y-auto" ref={scrollRef}>
         <div
-          aria-labelledby={pulseTabId(activeTab)}
+          aria-label={PULSE_TAB_LABELS[activeTab]}
           className={`mx-auto flex w-full max-w-2xl flex-col px-4 pb-10 sm:px-6 ${
-            activeTab !== "search" && activeTab !== "agents" ? "pt-0" : "pt-7"
+            activeTab !== "search" && activeTab !== "agents" ? "pt-4" : "pt-7"
           }`}
           id={pulsePanelId(activeTab)}
           role="tabpanel"

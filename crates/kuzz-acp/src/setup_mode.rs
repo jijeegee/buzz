@@ -243,7 +243,7 @@ impl SetupPayload {
     ///
     /// The body contains two parts separated by a blank line:
     /// 1. Human-readable markdown (unchanged; used by CLI and non-card clients).
-    /// 2. A fenced `buzz:config-nudge` sentinel block containing the structured
+    /// 2. A fenced `kuzz:config-nudge` sentinel block containing the structured
     ///    payload as JSON. The desktop client parses this block to render a
     ///    `ConfigNudgeCard`; clients that don't understand it see a code block.
     fn nudge_body(&self) -> String {
@@ -305,7 +305,7 @@ impl SetupPayload {
         let sentinel_json =
             serde_json::to_string(self).expect("SetupPayload must be serializable to JSON");
 
-        format!("{}\n\n```buzz:config-nudge\n{}\n```", prose, sentinel_json)
+        format!("{}\n\n```kuzz:config-nudge\n{}\n```", prose, sentinel_json)
     }
 }
 
@@ -1278,7 +1278,7 @@ mod tests {
 
     #[test]
     fn nudge_body_contains_sentinel_block() {
-        // The body must end with a ```buzz:config-nudge fence so the desktop
+        // The body must end with a ```kuzz:config-nudge fence so the desktop
         // can detect and strip it before rendering the ConfigNudgeCard.
         let payload = SetupPayload {
             agent_name: "Fizz".to_string(),
@@ -1289,7 +1289,7 @@ mod tests {
         };
         let body = payload.nudge_body();
         assert!(
-            body.contains("```buzz:config-nudge\n"),
+            body.contains("```kuzz:config-nudge\n"),
             "body must open the sentinel fence; got: {body:?}"
         );
         assert!(
@@ -1322,7 +1322,7 @@ mod tests {
         let body = payload.nudge_body();
 
         // Extract the JSON between the fence markers.
-        let fence_open = "```buzz:config-nudge\n";
+        let fence_open = "```kuzz:config-nudge\n";
         let fence_close = "\n```";
         let start = body
             .rfind(fence_open)
@@ -1366,7 +1366,7 @@ mod tests {
         assert!(body.contains("Fizz"), "prose must name the agent");
         // Sentinel is also present.
         assert!(
-            body.contains("```buzz:config-nudge"),
+            body.contains("```kuzz:config-nudge"),
             "sentinel must follow"
         );
     }
@@ -1426,7 +1426,7 @@ mod tests {
     // deserialization and the desktop card never rendered.
 
     fn extract_sentinel_json(body: &str) -> String {
-        let fence_open = "```buzz:config-nudge\n";
+        let fence_open = "```kuzz:config-nudge\n";
         let fence_close = "\n```";
         let start = body
             .rfind(fence_open)

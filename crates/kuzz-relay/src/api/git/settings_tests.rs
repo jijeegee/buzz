@@ -222,11 +222,11 @@ mod postgres_tests {
     /// Build an Enforce-mode state with a real `FederatedAssertionVerifier`
     /// seeded with the static test key.  Used for key-pairing tests.
     async fn enforce_state_with_verifier() -> Option<Arc<AppState>> {
+        use jsonwebtoken::{jwk::JwkSet, Algorithm};
         use kuzz_auth::{
             FederatedAssertionVerifier, FreshnessClass, IssuerPolicy, IssuerRegistry,
             StaticIssuerKeySource, TokenClass, VerifyAssertion,
         };
-        use jsonwebtoken::{jwk::JwkSet, Algorithm};
 
         let mut config = crate::config::Config::for_test();
         config.database_url = crate::test_support::database_url();
@@ -1181,8 +1181,8 @@ mod external_infra {
             config.media.s3_endpoint = endpoint;
             config.media.s3_bucket =
                 std::env::var("KUZZ_TEST_S3_BUCKET").unwrap_or_else(|_| "kuzz-git".into());
-            config.media.s3_access_key = "buzz_dev".into();
-            config.media.s3_secret_key = "buzz_dev_secret".into();
+            config.media.s3_access_key = "kuzz_dev".into();
+            config.media.s3_secret_key = "kuzz_dev_secret".into();
             let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
             let db = kuzz_db::Db::from_pool(pool.clone());
             // CI provisions schema/schema.sql with pgschema before this suite.
@@ -1276,7 +1276,7 @@ mod external_infra {
             let announcement = EventBuilder::new(Kind::Custom(30617), "")
                 .tags([
                     Tag::parse(["d", &repo]).unwrap(),
-                    Tag::parse(["buzz-channel", &channel.to_string()]).unwrap(),
+                    Tag::parse(["kuzz-channel", &channel.to_string()]).unwrap(),
                     Tag::parse(["maintainers", &maintainer.public_key().to_hex()]).unwrap(),
                 ])
                 .sign_with_keys(&owner)
@@ -2002,7 +2002,7 @@ mod external_infra {
         // Enter the deletion executor's transaction scope in this disposable
         // fixture; the DB correctly rejects unfenced ad-hoc state changes.
         let mut tx = f.pool.begin().await.unwrap();
-        sqlx::query("SELECT set_config('buzz.deletion_executor_community', $1, true), set_config('buzz.deletion_fence_generation', '0', true)")
+        sqlx::query("SELECT set_config('kuzz.deletion_executor_community', $1, true), set_config('kuzz.deletion_fence_generation', '0', true)")
             .bind(f.tenant.community().to_string())
             .execute(&mut *tx).await.unwrap();
         sqlx::query("UPDATE communities SET deletion_state = 'quiescing' WHERE id = $1")
@@ -2043,11 +2043,11 @@ mod external_infra {
     #[tokio::test]
     #[ignore = "requires isolated Postgres, Redis and MinIO"]
     async fn nip_fi_denied_assertion_does_not_advance_snapshot_digest() {
+        use jsonwebtoken::{jwk::JwkSet, Algorithm, EncodingKey, Header};
         use kuzz_auth::{
             AssertionKeySet, FederatedAssertionVerifier, FreshnessClass, IssuerPolicy,
             IssuerRegistry, StaticIssuerKeySource, TokenClass, VerifyAssertion,
         };
-        use jsonwebtoken::{jwk::JwkSet, Algorithm, EncodingKey, Header};
 
         let f = Fixture::new().await;
         let snapshot_before = f.snapshot().await;

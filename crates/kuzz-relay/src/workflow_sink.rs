@@ -8,10 +8,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 
+use chrono::Utc;
 use kuzz_core::kind::KIND_STREAM_MESSAGE;
 use kuzz_core::tenant::CommunityId;
 use kuzz_workflow::action_sink::{ActionSink, ActionSinkError};
-use chrono::Utc;
 use nostr::{EventBuilder, Kind, Tag};
 use tracing::info;
 use uuid::Uuid;
@@ -172,7 +172,7 @@ fn append_workflow_mention_tags(
         }
         if authored_mentions.contains(&mentioned) {
             tags.push(
-                Tag::parse(["buzz:workflow-mention", &mentioned]).map_err(|e| {
+                Tag::parse(["kuzz:workflow-mention", &mentioned]).map_err(|e| {
                     ActionSinkError::EventBuild(format!("workflow mention tag: {e}"))
                 })?,
             );
@@ -291,12 +291,12 @@ impl ActionSink for RelayActionSink {
             //    - Signed by relay keypair (event.pubkey = relay pubkey)
             //    - `p` tag attributes the message to the workflow owner
             //    - `h` tag scopes to the channel (NIP-29, canonical UUID)
-            //    - `buzz:workflow` tag prevents recursive workflow triggering
-            //    - `buzz:workflow-owner` lets harnesses apply the owner's
+            //    - `kuzz:workflow` tag prevents recursive workflow triggering
+            //    - `kuzz:workflow-owner` lets harnesses apply the owner's
             //      inbound-author policy after verifying the relay signature
             //    - one `p` tag for every resolved mention in the rendered output,
             //      preserving legacy wake/feed behavior
-            //    - one `buzz:workflow-mention` tag only when the same target was
+            //    - one `kuzz:workflow-mention` tag only when the same target was
             //      named in the workflow owner's stored step template. This is the
             //      authority-bearing provenance used by ACP; trigger-controlled
             //      template substitutions cannot create it.
@@ -305,9 +305,9 @@ impl ActionSink for RelayActionSink {
                     .map_err(|e| ActionSinkError::EventBuild(format!("p tag: {e}")))?,
                 Tag::parse(["h", &channel_id_canonical])
                     .map_err(|e| ActionSinkError::EventBuild(format!("h tag: {e}")))?,
-                Tag::parse(["buzz:workflow", "true"])
+                Tag::parse(["kuzz:workflow", "true"])
                     .map_err(|e| ActionSinkError::EventBuild(format!("workflow tag: {e}")))?,
-                Tag::parse(["buzz:workflow-owner", &author_pubkey_hex])
+                Tag::parse(["kuzz:workflow-owner", &author_pubkey_hex])
                     .map_err(|e| ActionSinkError::EventBuild(format!("workflow owner tag: {e}")))?,
             ];
 
@@ -694,7 +694,7 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            values("buzz:workflow-mention"),
+            values("kuzz:workflow-mention"),
             vec![first.as_str(), second.as_str()]
         );
         assert_eq!(
@@ -726,7 +726,7 @@ mod tests {
         );
         assert!(
             tags.iter()
-                .all(|tag| tag.as_slice() != ["buzz:workflow-mention", agent.as_str()]),
+                .all(|tag| tag.as_slice() != ["kuzz:workflow-mention", agent.as_str()]),
             "trigger-controlled substitutions must not borrow workflow-owner authority"
         );
     }
@@ -752,7 +752,7 @@ mod tests {
             .count();
         let owner_workflow_mentions = tags
             .iter()
-            .filter(|tag| tag.as_slice() == ["buzz:workflow-mention", owner.as_str()])
+            .filter(|tag| tag.as_slice() == ["kuzz:workflow-mention", owner.as_str()])
             .count();
         assert_eq!(owner_p_tags, 1);
         assert_eq!(owner_workflow_mentions, 1);
@@ -1023,12 +1023,12 @@ mod postgres_tests {
             "mentioned member {agent_hex} must be p-tagged so it wakes; got {p_tag_targets:?}"
         );
         assert_eq!(
-            tag_values(&explicit, "buzz:workflow-owner"),
+            tag_values(&explicit, "kuzz:workflow-owner"),
             vec![author_hex.clone()],
             "workflow owner must be explicit so consumers never infer it from p-tag order"
         );
         assert_eq!(
-            tag_values(&explicit, "buzz:workflow-mention"),
+            tag_values(&explicit, "kuzz:workflow-mention"),
             vec![agent_hex.clone()],
             "relay-authenticated workflow mention must identify the explicitly named member"
         );
@@ -1043,7 +1043,7 @@ mod postgres_tests {
             "trigger-rendered mention must preserve legacy mention/feed routing; got {injected_p_tags:?}"
         );
         assert!(
-            tag_values(&injected, "buzz:workflow-mention").is_empty(),
+            tag_values(&injected, "kuzz:workflow-mention").is_empty(),
             "a mention introduced solely by trigger data must not receive owner-delegated authority"
         );
     }

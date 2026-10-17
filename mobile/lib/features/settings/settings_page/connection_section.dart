@@ -1,40 +1,55 @@
 part of '../settings_page.dart';
 
-class _ConnectionSection extends ConsumerWidget {
-  const _ConnectionSection();
+/// An older account whose key Google does not hold yet (made before Google
+/// sign-in): the one place it is asked to continue with Google, worded like
+/// desktop. Accounts signed in with Google use [_AccountSection].
+class _ProtectAccountSection extends ConsumerWidget {
+  const _ProtectAccountSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(relayConfigProvider);
     final nsec = config.nsec;
-    // A token community's account lives on the relay (see _AccountSection).
     // The signing key itself is never surfaced: users only see Google.
     if (config.tokenAuth || nsec == null || nsec.isEmpty) {
       return const SizedBox.shrink();
     }
+    if (ref.watch(authProvider).value?.community?.googleBackupAccountId !=
+        null) {
+      return const SizedBox.shrink();
+    }
     return AppListCard(
-      label: 'Account',
+      label: 'Protect your account',
       verticalPadding: Grid.twelve,
       children: [
         AppListRow(
-          key: const Key('settings-google-key-backup'),
+          key: const Key('settings-protect-account'),
           icon: LucideIcons.shield,
-          title: 'Connect Google account',
-          subtitle: 'Use Google to sign in on other devices',
+          title: 'Continue with Google',
+          subtitle:
+              'Sign in on your other devices, and get your account back '
+              'if this phone is lost',
           trailing: const _RowChevron(),
-          onTap: () => unawaited(
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => TokenSignInPage(
-                  backupOrigin: normalizeRelayOrigin(config.baseUrl),
-                ),
-              ),
-            ),
-          ),
+          onTap: () => unawaited(_connectGoogle(context, config.baseUrl)),
         ),
       ],
     );
   }
+}
+
+Future<void> _connectGoogle(BuildContext context, String baseUrl) async {
+  final connected = await Navigator.of(context).push<bool>(
+    MaterialPageRoute<bool>(
+      builder: (_) => TokenSignInPage(
+        backupOrigin: normalizeRelayOrigin(baseUrl),
+        connectGoogle: true,
+      ),
+    ),
+  );
+  if (connected != true || !context.mounted) return;
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(const SnackBar(content: Text('Signed in with Google')));
 }
 
 class _SignOutSection extends HookConsumerWidget {

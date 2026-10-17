@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CircleDot,
   Copy,
+  EyeOff,
   LogOut,
   LoaderCircle,
   Plus,
@@ -157,6 +158,7 @@ export function ChannelContextMenuItems({
   onCreateSectionForChannel,
   onDeleteChannel,
   onLeaveChannel,
+  onHideDm,
 }: {
   channel: Channel;
   hasUnread: boolean;
@@ -178,6 +180,8 @@ export function ChannelContextMenuItems({
   onCreateSectionForChannel?: (channelId: string) => void;
   onDeleteChannel?: (channel: Channel) => void;
   onLeaveChannel?: (channel: Channel) => void;
+  /** A 1:1 DM's way out: hide it until the next message. */
+  onHideDm?: (channelId: string) => void;
 }) {
   const {
     feedItemState,
@@ -215,6 +219,7 @@ export function ChannelContextMenuItems({
     canLoadOwnerActions && (membersQuery.isLoading || isCapabilityLoading);
   const showChannelActions = Boolean(
     onLeaveChannel ||
+      onHideDm ||
       ownerActionsLoading ||
       ownerActionsError ||
       canManageChannel ||
@@ -272,7 +277,7 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <CircleDot className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Mark unread</span>
+          <span>Mark as unread</span>
         </ContextMenuItem>
       ) : null}
       {showMuteToggle || showStar ? <ContextMenuSeparator /> : null}
@@ -331,7 +336,22 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <LogOut className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Leave channel</span>
+          <span>
+            {channel.channelType === "dm"
+              ? "Leave conversation"
+              : "Leave channel"}
+          </span>
+        </ContextMenuItem>
+      ) : null}
+      {onHideDm ? (
+        <ContextMenuItem
+          data-testid={`hide-dm-menu-${channel.name}`}
+          onSelect={() => deferMenuAction(() => onHideDm(channel.id))}
+        >
+          <ContextMenuIconSlot>
+            <EyeOff className="h-4 w-4" />
+          </ContextMenuIconSlot>
+          <span>Hide conversation</span>
         </ContextMenuItem>
       ) : null}
       {ownerActionsLoading ? (

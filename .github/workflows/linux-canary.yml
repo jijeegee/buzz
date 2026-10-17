@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # The server the app connects to; release builds fail without it.
+  KUZZ_RELAY_URL: ${{ vars.KUZZ_RELAY_URL }}
+
 jobs:
   build:
     name: Build Linux canary

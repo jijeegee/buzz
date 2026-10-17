@@ -11,8 +11,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use kuzz_auth::oidc::{OidcError, OidcIdentity, OidcProvider};
 use futures_util::{SinkExt as _, StreamExt as _};
+use kuzz_auth::oidc::{OidcError, OidcIdentity, OidcProvider};
 use serde_json::{json, Value};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use tokio_tungstenite::tungstenite::Message;
@@ -388,8 +388,8 @@ async fn complete(inst: &Instance, login_code: &str, verifier: &str) -> Login {
 async fn reset_login_limits(inst: &Instance) {
     let mut redis = inst.state.redis_pool.get().await.expect("redis");
     let _: () = redis::cmd("DEL")
-        .arg("buzz:ratelimit:auth:login:start:127.0.0.1")
-        .arg("buzz:ratelimit:auth:login:complete:127.0.0.1")
+        .arg("kuzz:ratelimit:auth:login:start:127.0.0.1")
+        .arg("kuzz:ratelimit:auth:login:complete:127.0.0.1")
         .query_async(&mut redis)
         .await
         .expect("reset login limits");
@@ -665,7 +665,7 @@ async fn refresh_rotation_replay_and_reuse_detection() {
     let r1_hash = kuzz_auth::hash_token(&user.refresh);
     let mut redis = inst.state.redis_pool.get().await.expect("redis");
     let _: () = redis::cmd("DEL")
-        .arg(format!("buzz:auth:refresh:replay:{}", hex::encode(r1_hash)))
+        .arg(format!("kuzz:auth:refresh:replay:{}", hex::encode(r1_hash)))
         .query_async(&mut redis)
         .await
         .expect("drop replay cache");
@@ -757,7 +757,7 @@ async fn exchange_reauth_binding_swap_and_grace_expiry() {
     // failing with 409: drop the entry, retry, and let the "winner" write it
     // back while the retry is polling.
     let replay_key = format!(
-        "buzz:auth:exchange:replay:{}",
+        "kuzz:auth:exchange:replay:{}",
         hex::encode(kuzz_auth::hash_token(&t1))
     );
     let mut redis = inst.state.redis_pool.get().await.expect("redis");
@@ -794,7 +794,7 @@ async fn exchange_reauth_binding_swap_and_grace_expiry() {
     // clear the cache and this bot's exchange budget.
     let _: () = redis::cmd("DEL")
         .arg(&replay_key)
-        .arg(format!("buzz:ratelimit:auth:exchange:{bot1}"))
+        .arg(format!("kuzz:ratelimit:auth:exchange:{bot1}"))
         .query_async(&mut redis)
         .await
         .expect("drop exchange replay and budget");
@@ -1215,6 +1215,33 @@ async fn concurrent_first_callbacks_create_one_principal() {
     .await
     .unwrap();
     assert_eq!(identities, 1);
+}
+
+/// `/auth/me` names the Google email of a person's session, so a client
+/// that only holds tokens can show which account it is; bot tokens get none.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn me_returns_google_email_for_people_only() {
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .expect("pg");
+    let host = community(&pool).await;
+    let inst = instance(&host).await;
+    let subject = uuid::Uuid::new_v4().to_string();
+    let email = format!("{subject}@example.com");
+    let user = login(&inst, &subject, &email, true).await;
+    let (status, body) = me_status(&inst, &user.access).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["email"], email.as_str());
+
+    let bot = create_bot(&inst, &user, "headless").await;
+    let token = bot_token_or_headless(&inst, &user, &bot).await;
+    let (status, body) = me_status(&inst, &token).await;
+    assert_eq!(status, 200);
+    assert!(body["email"].is_null(), "{body}");
+
+    let anonymous = new_user(&inst).await;
+    assert!(me_status(&inst, &anonymous.access).await.1["email"].is_null());
 }
 
 /// The bridge Bearer branch exists only with the flag on: with it off, a

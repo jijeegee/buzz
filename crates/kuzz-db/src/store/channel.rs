@@ -601,7 +601,7 @@ pub async fn update_channel(
         let mut tx = begin_event_write_transaction(pool).await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
             .bind(format!(
-                "buzz_channel_ttl:{}:{}",
+                "kuzz_channel_ttl:{}:{}",
                 community_id.as_uuid(),
                 channel_id
             ))

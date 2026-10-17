@@ -54,7 +54,7 @@ impl OwnerIdentity {
 
 pub fn member_binding_bytes(member_pubkey: &str) -> Vec<u8> {
     format!(
-        "buzz-mesh-owner-binding-v1:{}",
+        "kuzz-mesh-owner-binding-v1:{}",
         member_pubkey.trim().to_ascii_lowercase()
     )
     .into_bytes()
@@ -77,7 +77,7 @@ pub fn member_endpoint_binding_bytes(member_pubkey: &str, endpoint_tokens: &[Str
         digest.update(endpoint.as_bytes());
     }
     format!(
-        "buzz-mesh-owner-endpoint-binding-v1:{}:{}",
+        "kuzz-mesh-owner-endpoint-binding-v1:{}:{}",
         member_pubkey.trim().to_ascii_lowercase(),
         hex::encode(digest.finalize())
     )

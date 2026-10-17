@@ -19,7 +19,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  KUZZ_TEST_POSTGRES_PASSWORD: buzz_dev
+  KUZZ_TEST_POSTGRES_PASSWORD: kuzz_dev
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
 jobs:
@@ -140,7 +140,7 @@ jobs:
       - name: Build complete unsigned iOS release
         run: |
           /bin/bash scripts/test-mobile-gateway-recipes.sh
-          cd mobile && flutter build ios --release --no-codesign --no-pub
+          cd mobile && flutter build ios --release --no-codesign --no-pub --dart-define=KUZZ_RELAY_URL=wss://relay.ci.invalid
 
   results:
     name: Results

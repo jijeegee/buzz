@@ -31,7 +31,7 @@ environment. No client request or relay grant can supply or override an APNs
 topic.
 
 This MVP has exactly one compiled-in application profile,
-`buzz-ios-dogfood`. The chart value
+`kuzz-ios-dogfood`. The chart value
 `profiles.dogfood.appAttestAppId` is rendered as
 `KUZZ_PUSH_DOGFOOD_APP_ATTEST_APP_ID`; the gateway rejects startup when it is
 missing or empty. The exact `TEAMID.bundle-id` is environment-owned,
@@ -59,7 +59,7 @@ credential ID, and counter. This is not a simulator or attestation bypass.
 Set `KUZZ_PUSH_DOGFOOD_APP_ATTEST_APP_ID` to the personal `TEAMID.bundle-id`,
 `KUZZ_PUSH_DOGFOOD_APNS_TOPIC` to that same bundle ID,
 `KUZZ_PUSH_DOGFOOD_APNS_ENVIRONMENT=sandbox`, and supply its APNs certificate.
-This isolated stack reuses the single `buzz-ios-dogfood` wire profile for its
+This isolated stack reuses the single `kuzz-ios-dogfood` wire profile for its
 server-owned personal identity; it does not add a production application profile.
 Do not point distributed dogfood clients at this personal gateway.
 

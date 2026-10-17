@@ -41,7 +41,7 @@ final inviteClaimAccessTokensProvider =
     );
 
 /// Detects whether an invite's relay uses token auth (NIP-11
-/// `buzz_token_auth`): a descriptor, `null` for a legacy relay, or a throw
+/// `kuzz_token_auth`): a descriptor, `null` for a legacy relay, or a throw
 /// ([TokenAuthDetectionException]) when the relay cannot be asked.
 final inviteTokenAuthDetectorProvider =
     Provider<Future<TokenAuthDescriptor?> Function(String origin)>(
@@ -106,7 +106,7 @@ class InviteJoinState {
   final String? focusChannelId;
 
   /// Canonical origin when the invite's relay uses token auth (NIP-11
-  /// `buzz_token_auth`): joining requires signing in, never a new key.
+  /// `kuzz_token_auth`): joining requires signing in, never a new key.
   final String? tokenRelayOrigin;
 
   /// Whether [tokenRelayOrigin] reflects a completed detection. A detection

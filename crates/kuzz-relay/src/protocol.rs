@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn non_artifact_extensions_keep_existing_ws_behavior() {
         for command in ["REQ", "COUNT"] {
-            let request = serde_json::json!([command, "projects", {"kinds":[30621],"#buzz-channel":["channel"]}]);
+            let request = serde_json::json!([command, "projects", {"kinds":[30621],"#kuzz-channel":["channel"]}]);
             assert!(super::ClientMessage::parse(&request.to_string()).is_ok());
         }
     }

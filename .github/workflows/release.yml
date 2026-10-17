@@ -9,6 +9,10 @@ on:
     tags:
       - 'desktop-v[0-9]*'
 
+env:
+  # The server the app connects to; release builds fail without it.
+  KUZZ_RELAY_URL: ${{ vars.KUZZ_RELAY_URL }}
+
 jobs:
   # Shared setup: verify the immutable release tag, determine the version, and
   # create the release objects all four platform jobs upload into.

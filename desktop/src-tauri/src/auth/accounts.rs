@@ -1180,12 +1180,18 @@ impl InactiveSessions {
             if let Some((generation, attempt)) =
                 super::refresh::restore_session(&auth, &client, &origin, store.as_ref()).await
             {
-                if let (true, Some(dir), Some((name, avatar))) = (
+                if let (true, Some(dir), Some(me)) = (
                     attempt.is_ok(),
                     data_dir.as_deref(),
                     auth.me_profile(&origin, &pubkey),
                 ) {
-                    super::account_profiles::learn(dir, &pubkey, name, avatar, None);
+                    super::account_profiles::learn(
+                        dir,
+                        &pubkey,
+                        me.display_name,
+                        me.avatar_url,
+                        me.email,
+                    );
                 }
                 if let (true, Some(restored)) = (attempt.is_ok(), restored.as_ref()) {
                     restored();

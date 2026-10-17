@@ -175,8 +175,11 @@ pub(crate) async fn refresh_once(
                 auth.record_me_profile(
                     origin,
                     pubkey,
-                    me.display_name.clone(),
-                    me.avatar_url.clone(),
+                    super::MeProfile {
+                        display_name: me.display_name.clone(),
+                        avatar_url: me.avatar_url.clone(),
+                        email: me.email.clone(),
+                    },
                 );
             } else if auth.signing_pubkey(origin).is_some() {
                 return Err(RefreshFailure::Terminal("account_mode_conflict".into()));

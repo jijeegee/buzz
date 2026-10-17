@@ -133,6 +133,28 @@ final keyBackupSessionProvider =
       (origin) => TokenSessionNotifier(origin, keyBackup: true),
     );
 
+/// Canonical origin of the active community when Google holds its key
+/// (signed in with Google on this device), otherwise `null`. Its account
+/// endpoints are called with the Google session that signed it in.
+final activeGoogleKeyOriginProvider = Provider<String?>((ref) {
+  final community = ref.watch(
+    activeCommunityProvider.select((value) {
+      final active = value.value;
+      return active == null ||
+              active.tokenAuth ||
+              active.googleBackupAccountId == null
+          ? null
+          : active.relayUrl;
+    }),
+  );
+  if (community == null) return null;
+  try {
+    return normalizeRelayOrigin(community);
+  } on FormatException {
+    return null;
+  }
+});
+
 /// Canonical origin of the active community when it uses token auth,
 /// otherwise `null` (legacy nsec community or none).
 final activeTokenOriginProvider = Provider<String?>((ref) {

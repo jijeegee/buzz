@@ -281,6 +281,8 @@ export type LeaveChannelAlertDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   channelName: string;
+  /** A group DM: no name to quote and no way back in on your own. */
+  isConversation?: boolean;
   onConfirm: () => void;
 };
 
@@ -288,15 +290,20 @@ export function LeaveChannelAlertDialog({
   open,
   onOpenChange,
   channelName,
+  isConversation = false,
   onConfirm,
 }: LeaveChannelAlertDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Leave channel</AlertDialogTitle>
+          <AlertDialogTitle>
+            {isConversation ? "Leave conversation" : "Leave channel"}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            {`Leave "${channelName}"? You'll stop receiving its messages and can rejoin later.`}
+            {isConversation
+              ? "Leave this conversation? You'll stop receiving its messages."
+              : `Leave "${channelName}"? You'll stop receiving its messages and can rejoin later.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -328,6 +335,7 @@ export function useLeaveChannelDialog() {
         if (!open) setTarget(null);
       }}
       channelName={target?.name ?? ""}
+      isConversation={target?.channelType === "dm"}
       onConfirm={() => {
         if (target) {
           leaveChannel.mutate();

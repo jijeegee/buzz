@@ -8,7 +8,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
-const AAD_PREFIX: &[u8] = b"buzz-apns-token-v1:";
+const AAD_PREFIX: &[u8] = b"kuzz-apns-token-v1:";
 const MAX_KEY_ID_BYTES: usize = 32;
 const MAX_CIPHERTEXT_BYTES: usize = 2048;
 

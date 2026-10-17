@@ -227,7 +227,7 @@ CREATE INDEX access_tokens_bot       ON access_tokens (bot_id)       WHERE revok
 | 계정 삭제 (`DELETE /auth/account`) | `principals.disabled_at`, `purge_after = now()+30d`, 모든 세션·봇 토큰 revoke(`account_disabled`) | 전부 |
 | 운영자 계정 비활성화 | `principals.disabled_at`, 모든 토큰 revoke | 전부 |
 
-WS close 전파: 토큰 revoke 트랜잭션 커밋 후 Redis `buzz:auth:revoked` 채널에 `{token_hash?, session_id?, bot_id?, principal_id?, reason}` publish. 각 relay 인스턴스는 자기 연결 중 **현재 바인딩된** `token_hash`/`session_id`/`bot_id`가 일치하는 것을 닫는다. `reason=exchanged`는 publish하지 않는다(해당 token_hash에 바인딩된 연결은 이미 재-AUTH로 떠났고, 떠나지 않았다면 60초 뒤 자체 만료 타이머가 닫는다).
+WS close 전파: 토큰 revoke 트랜잭션 커밋 후 Redis `kuzz:auth:revoked` 채널에 `{token_hash?, session_id?, bot_id?, principal_id?, reason}` publish. 각 relay 인스턴스는 자기 연결 중 **현재 바인딩된** `token_hash`/`session_id`/`bot_id`가 일치하는 것을 닫는다. `reason=exchanged`는 publish하지 않는다(해당 token_hash에 바인딩된 연결은 이미 재-AUTH로 떠났고, 떠나지 않았다면 60초 뒤 자체 만료 타이머가 닫는다).
 
 ### 2.5 계정 보안 이벤트 (비밀번호 없는 모델, 확정 Q9)
 
@@ -436,7 +436,7 @@ POST /auth/refresh {refresh=R_n}
 - `handlers/event.rs:629-660`: draft 스탬프, kind 0 직접 발행 차단, gift wrap 예외 삭제(Phase 3). `requires_h_channel_scope`(ingest.rs:769)는 그대로(B7).
 - `handlers/ingest.rs:2402-2420`: 서명 검증 → id 재계산.
 - `connection.rs`: `AuthState::Authenticated`에 바인딩 필드, 만료 타이머, 재-AUTH. `ConnectionManager::close_by_binding(BindingKey)`.
-- `state.rs`: `relay_keypair` → `relay_principal`(기동 시 `ensure_relay_principal`). Redis `buzz:auth:revoked` 구독. OIDC provider 레지스트리.
+- `state.rs`: `relay_keypair` → `relay_principal`(기동 시 `ensure_relay_principal`). Redis `kuzz:auth:revoked` 구독. OIDC provider 레지스트리.
 - `config.rs`: 제거 — `relay_owner_pubkey`, `relay_operator_pubkeys`(Phase 2, 로스터만 남김); `relay_private_key`, `allow_nip_oa_auth`, `pubkey_allowlist_enabled`, `require_auth_token`(Phase 3/4). 추가 — `auth.access_ttl/refresh_ttl/bot_ttl`, `auth.oidc.google.{client_id,client_secret}`, `auth.redirect_allowlist`, `invite_signing_secret`, `relay_operator_bootstrap_email`(§3.3 B8 조건).
 - `nip11.rs`: 42/98 제거, `auth: "bearer"`.
 - 삭제: `nip_fi_*.rs`, `api/nip_fi.rs`, `nip98.rs`, `api/mesh_demo.rs`.
@@ -444,7 +444,7 @@ POST /auth/refresh {refresh=R_n}
 ### 4.5 `kuzz-pubsub`
 - `presence.rs`: 키 `kuzz:{community}:presence:{pubkey_hex}` 그대로. 타입 `&PrincipalId`.
 - `rate_limiter.rs`: 기존 `RedisRateLimiter` 재사용. 키 네임스페이스 `auth:login:{ip}`, `auth:exchange:{bot}`, `auth:bot_token:{user}`.
-- 신규 `auth_revocation.rs`: `buzz:auth:revoked` publish/subscribe. `nip_fi_command_replay.rs`, `nip98_replay.rs` 삭제(Phase 3).
+- 신규 `auth_revocation.rs`: `kuzz:auth:revoked` publish/subscribe. `nip_fi_command_replay.rs`, `nip98_replay.rs` 삭제(Phase 3).
 
 ### 4.6 `kuzz-audit`
 - `entry.rs actor_pubkey` 바이트 의미만 변경. TLV 포맷 불변. 신규 액션 `auth.login`, `auth.logout`, `auth.device_revoked`, `auth.sessions_revoke_others`, `auth.bots_revoke_all`, `auth.bot_created/deleted`, `auth.token_exchanged`, `auth.refresh_reuse_detected`, `auth.account_deleted`, `auth.operator_granted/revoked`.
@@ -567,7 +567,7 @@ Phase 0은 구현 후 리뷰 2회를 거쳐 **READY** 판정. 브랜치 `feat/ce
 - kuzz-core: N `src/principal.rs`(`PrincipalId`, `PrincipalKind`, `AccessTokenKind`); N `src/draft.rs`(`stamp_draft`, `SENTINEL_SIG`, ±300초 보정); M `src/lib.rs`.
 - kuzz-auth: N `src/token.rs`(접두사 `bzl_/bzs_/bzr_/bzb_/bzk_`, SHA-256 해시, PKCE); N `src/oidc.rs`(`OidcProvider` 트레이트, `GoogleProvider` + JWKS); M `src/lib.rs`(`AuthMethod::Token`, `TokenBinding`, `AuthContext.token`); M `Cargo.toml`(`subtle`, `zeroize`).
 - kuzz-db: N `src/store/identity/mod.rs`(공용 타입·한도); N `principal.rs`(relay principal, 로그인/가입, 프로필); N `session.rs`(로그인 완료, refresh rotation·재사용 탐지, 디바이스); N `bot.rs`(봇·봇 토큰·exchange); N `access_token.rs`(토큰 조회·검사, 계정 비활성화); N `postgres_tests.rs`; M `src/store/relay_operators.rs`(`bootstrap_operator`); M `src/store/event.rs`, `src/store/reminder.rs`(NULL sig → sentinel 읽기); M `src/runtime/migration.rs`(멀티테넌트 린트 목록, 마이그레이션 58개, 파리티 테스트에 reconcile 실행); M `src/runtime/tests/thread_window_postgres_tests.rs`(버전 58); M `src/lib.rs`, `src/store/mod.rs`.
-- kuzz-pubsub: N `src/auth_revocation.rs`(`buzz:auth:revoked` 채널, `not_after` 변형); M `src/lib.rs`(publish/subscribe); M `src/rate_limiter.rs`(`check_key`); M `Cargo.toml`(`hex`).
+- kuzz-pubsub: N `src/auth_revocation.rs`(`kuzz:auth:revoked` 채널, `not_after` 변형); M `src/lib.rs`(publish/subscribe); M `src/rate_limiter.rs`(`check_key`); M `Cargo.toml`(`hex`).
 - kuzz-relay `identity/`: N `mod.rs`(`IdentityRuntime`, `verify_access_token`, revoke 소비자, 테스트용 `FakeOidcProvider`); N `config.rs`(`AuthTokenConfig::from_env`); N `kv.rs`(Redis pending/login code/replay 캐시); N `ws.rs`(WS 토큰 AUTH, 재-AUTH 바인딩 교체, 바인딩 감시 태스크, draft 스탬프).
 - kuzz-relay `api/auth/`: N `mod.rs`(라우터, 공용 응답·Bearer·rate limit); N `oidc.rs`; N `session.rs`; N `bots.rs`; N `operators.rs`; N `router_tests.rs`; N `live_tests.rs`.
 - kuzz-relay 기존 파일 M: `protocol.rs`(`AuthToken`, `EventDraft`, `ParseMode`); `connection.rs`(토큰 AUTH 분기, draft 스탬프, 종료 시 세션 제거); `rejection.rs`(재-AUTH를 `ws_operations` 버킷에 포함); `handlers/ingest.rs`·`handlers/event.rs`(`IngestAuth::Token`, 서버 스탬프 이벤트는 id만 검증); `api/bridge.rs`(`POST /events|/query|/count` Bearer 분기); `router.rs`(플래그 on일 때만 `/auth/*` 마운트); `config.rs`, `state.rs`, `lib.rs`, `main.rs`(기동 시 relay principal + revoke 소비자); `api/admin/mod.rs`(`is_effective_operator`); `api/mod.rs`; `handlers/count.rs`·`req.rs`·`relay_admin.rs`·`api/bridge/thread_window/postgres_tests/failure_postgres_tests.rs`(테스트 `AuthContext`에 `token: None`).
@@ -623,11 +623,11 @@ cargo test --no-fail-fast -p kuzz-core -p kuzz-auth -p kuzz-pubsub -p kuzz-db -p
 
 ### 5.2.1 Phase 1 상태 / handoff (2026-10-04)
 
-Phase 1 구현 완료, **미커밋**(Phase 0 위 작업 트리). 리뷰 전. 플래그 off(`AUTH_TOKEN_ENABLED=false`)와 클라이언트 키 모드 동작은 그대로다 — 토큰 모드는 relay NIP-11이 `buzz_token_auth`를 광고하고(서버) 토큰/세션이 있을 때(클라이언트)만 켜진다.
+Phase 1 구현 완료, **미커밋**(Phase 0 위 작업 트리). 리뷰 전. 플래그 off(`AUTH_TOKEN_ENABLED=false`)와 클라이언트 키 모드 동작은 그대로다 — 토큰 모드는 relay NIP-11이 `kuzz_token_auth`를 광고하고(서버) 토큰/세션이 있을 때(클라이언트)만 켜진다.
 
 **파일 (표면별, N = 신규, M = 수정)**
 - 공용 기반: N `crates/kuzz-sdk/src/signer.rs`(`EventSigner {Keys, Principal}` — 토큰 모드는 principal pubkey + sentinel sig draft, 서버 재스탬프 id와 일치); N `crates/kuzz-token-broker/`(토큰 소스 우선순위 `KUZZ_BOT_TOKEN > KUZZ_ACCESS_TOKEN > 브로커`, std-only loopback 브로커 클라이언트, 1회 재시도, 4KB 상한, loopback 외 URL 거절); N `crates/git-credential-kuzz/`(호스트 일치 시에만 `username=token`/`password=<token>`, 소스 + `git config kuzz.tokenfile`); M `kuzz-core/src/draft.rs`(`verify_served_event`: relay가 준 이벤트는 id 유효 + (sentinel 또는 유효 서명)); M `kuzz-ws-client/src/{connection,lib}.rs`(`connect_with_token`, `authenticate_token`(재-AUTH 겸용), `publish_event_with_token`); M 루트 `Cargo.toml`/`Cargo.lock`.
-- 서버(kuzz-relay): N `identity/client_ip.rs`(`AUTH_TRUSTED_PROXY_CIDRS`, XFF 우→좌·`Forwarded` 워크, 손상된 hop은 가장 가까운 신뢰 프록시로, `unix` 리터럴로 UDS 신뢰); M `identity/{config,mod}.rs`; M `api/auth/{mod,oidc}.rs`(rate limit 키에 신뢰 프록시 클라이언트 IP); M `api/admin/auth.rs`(`authorize_bearer`: 모드 분기 전에 헤더 스킴으로 선택, user 토큰만, `resolve_admin_principal` 재사용, 토큰 실패 401·비운영자 403); M `api/git/transport.rs`(`Basic token:<t>`/`Bearer`, 401에 `Nostr`+`Basic realm="kuzz"` 챌린지 둘 다, 봇은 owner ban 상속); M `nip11.rs`(`buzz_token_auth {version, bearer, oidc_providers}` 플래그 on일 때만); M `.env.example`.
+- 서버(kuzz-relay): N `identity/client_ip.rs`(`AUTH_TRUSTED_PROXY_CIDRS`, XFF 우→좌·`Forwarded` 워크, 손상된 hop은 가장 가까운 신뢰 프록시로, `unix` 리터럴로 UDS 신뢰); M `identity/{config,mod}.rs`; M `api/auth/{mod,oidc}.rs`(rate limit 키에 신뢰 프록시 클라이언트 IP); M `api/admin/auth.rs`(`authorize_bearer`: 모드 분기 전에 헤더 스킴으로 선택, user 토큰만, `resolve_admin_principal` 재사용, 토큰 실패 401·비운영자 403); M `api/git/transport.rs`(`Basic token:<t>`/`Bearer`, 401에 `Nostr`+`Basic realm="kuzz"` 챌린지 둘 다, 봇은 owner ban 상속); M `nip11.rs`(`kuzz_token_auth {version, bearer, oidc_providers}` 플래그 on일 때만); M `.env.example`.
 - kuzz-acp: N `src/identity.rs`(`AgentIdentity`, `/auth/me` 파싱, `EXIT_AUTH_TERMINAL=78`), N `src/token_refresh.rs`(만료 15분 전 exchange, 세대 펜스, 같은 WS 재-AUTH, 실패 분류), N `src/token_broker.rs`(127.0.0.1 `GET /token`, 스폰별 secret, 60/분, 8KB 요청/4KB 응답, 5초, 동시 16), N `src/relay/token_auth_tests.rs`; M `acp.rs`·`config.rs`·`edit_routing.rs`·`engram_fetch.rs`·`git.rs`·`lib.rs`·`pool.rs`·`relay.rs`·`run_task.rs`·`setup_mode.rs`, 테스트 `relay/recovery_*tests.rs`·`tests/stdio_contract.rs`; M `crates/sprig/src/main.rs`(argv0 `git-credential-kuzz`).
 - kuzz-cli: N `src/client_token_tests.rs`; M `src/client.rs`(signer + Bearer, 401 터미널 코드 → exit 3), `src/lib.rs`(`build_client` 자격증명 선택), `commands/*`(pubkey 접근자 교체, 키 필요 명령은 exit 1 안내), `TESTING.md` §5a.
 - Desktop Rust: N `src-tauri/src/auth/`(`api`, `bots`, `commands`, `credential`, `loopback`, `mod`, `pkce`, `redact`, `refresh`, `restore`, `watchdog`); M `app_state*.rs`, `relay.rs`, `relay/submit.rs`, `native_relay_client.rs`, `commands/{admin/*,agents,channels*,dms,identity*,messages*,profile,relay_members,teams/adopt/apply,workflows,workspace}.rs`, `managed_agents/{backend,env_vars/tests,hermes_profile_tests,reserved_env_keys,restore,runtime*,runtime_commands,storage}.rs`, `archive/*`, `persona_catalog.rs`, `team_catalog.rs`, `unread_catch_up.rs`, `lib.rs`.
@@ -651,7 +651,7 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 - Mobile 테스트는 이 Windows 머신에 Flutter가 없어 **미실행**(Hermit shim 부트스트랩 실패). macOS에서 `just mobile-check mobile-test` 필요.
 
 **결정 (계획이 열어둔 부분)**
-- 토큰 모드 감지: relay NIP-11 `buzz_token_auth.bearer`(플래그 on에서만 존재). 세션은 커뮤니티(relay origin)별 — relay마다 계정 DB가 다르므로. keyring 키 `auth.refresh.<origin>`, access는 메모리.
+- 토큰 모드 감지: relay NIP-11 `kuzz_token_auth.bearer`(플래그 on에서만 존재). 세션은 커뮤니티(relay origin)별 — relay마다 계정 DB가 다르므로. keyring 키 `auth.refresh.<origin>`, access는 메모리.
 - 공용 `EventSigner`: 클라이언트는 principal pubkey + sentinel sig로 이벤트를 만들고 서버가 재스탬프 — 기존 `nostr::Event` 경로·이벤트 id 계약 유지.
 - relay가 돌려준 이벤트 무결성은 `verify_served_event`(sentinel 허용) — acp/CLI/Desktop의 `event.verify()` 중 relay-served 지점(huddle 지침, canvas, edit routing, workflow owner, archive 등)을 교체. 로컬 서명 검증은 유지.
 - `git-credential-kuzz`는 `KUZZ_RELAY_URL`(또는 `git config kuzz.host`) 호스트에만 토큰을 준다(다른 원격으로 유출 방지). 서버는 플래그 on에서 401에 `Nostr`와 `Basic` 챌린지를 함께 보낸다.
@@ -739,7 +739,7 @@ desktop: tsc --noEmit ok, biome(변경 파일) ok, vitest/jsdom 163 통과
 
 ### 5.3.1 Phase 2 상태 / handoff (2026-10-04)
 
-Phase 2(모바일 제외) 구현 완료, **미커밋**(909bfce84 위 작업 트리). 리뷰 전. 모든 서버 변경은 `AUTH_TOKEN_ENABLED`에 묶여 있고 플래그 off 동작은 그대로다. 클라이언트(Desktop/CLI/web)는 Phase 1처럼 relay NIP-11 `buzz_token_auth`가 있고 세션/토큰이 있을 때만 토큰 경로를 탄다.
+Phase 2(모바일 제외) 구현 완료, **미커밋**(909bfce84 위 작업 트리). 리뷰 전. 모든 서버 변경은 `AUTH_TOKEN_ENABLED`에 묶여 있고 플래그 off 동작은 그대로다. 클라이언트(Desktop/CLI/web)는 Phase 1처럼 relay NIP-11 `kuzz_token_auth`가 있고 세션/토큰이 있을 때만 토큰 경로를 탄다.
 
 **파일 (표면별, N = 신규, M = 수정)**
 - 서버 프로필(kind 0): N `crates/kuzz-relay/src/identity/profile.rs`(principal/봇 kind 0 서버 스탬프 발행, 내용 비교로 멱등, 같은 초 tie-break 회피); M `identity/ws.rs`(토큰 AUTH 성공 후 그 커뮤니티 reconcile 스폰), `api/auth/session.rs`(`PATCH /auth/profile` 후 발행), `api/auth/bots.rs`(봇 생성·`PATCH /auth/bots/{id}/profile` 후 발행); M `kuzz-db/src/store/identity/{principal,mod}.rs`(`principal_profile_communities`, `latest_principal_profile_event`, 상한 `MAX_PROFILE_COMMUNITIES=1000`).
@@ -776,7 +776,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 - **계획 편차 — `relay_keypair` 일괄 전환(B4 마지막 항목)을 하지 않음.** relay 키는 클라이언트 신원이 아니라 서버 자신의 신원이며 외부 S2S 인증(push 게이트웨이 NIP-98, operator listener, push lease, artifact)에 계속 필요하다. relay principal이 그 키와 같으므로 relay 저작 이벤트는 계속 서명된다(키 모드 클라이언트도 검증 통과). 따라서 **Phase 3은 `RELAY_PRIVATE_KEY`/`relay_keypair`를 삭제하지 않는다**(§5.4 체크리스트의 해당 행은 무효). Phase 3이 지우는 것은 클라이언트 키 경로(NIP-42/98/OA/FI)다.
 - **kind 0**: 서버 스탬프(pubkey = principal, sentinel sig), principal의 `users` row가 있는 활성 커뮤니티마다 `replace_addressable_event` → 기존 kind 0 side effect(users projection) → `dispatch_persistent_event`. 내용이 같으면 발행하지 않음. 트리거는 프로필 쓰기(인라인)와 토큰 WS AUTH 성공(스폰, AUTH 지연 없음). 실패는 다음 AUTH의 reconcile이 수렴시킨다(principals row가 원본). 봇은 `"bot": true`. 계정 생성 시점에는 users row가 없으므로 첫 AUTH에서 발행된다.
 - 운영자 config 우선순위 제거는 플래그 on에서만(config 로드 단일 지점). 플래그 off는 그대로.
-- `INVITE_SIGNING_SECRET`은 플래그 on에서만 필수(없으면 기동 실패). 키는 `sha256(secret || "buzz-invite-secret-v1")` — 시크릿 키와 relay 키 파생이 서로의 코드를 검증하지 않는다. v2(DB) 초대 코드는 키와 무관해서 계속 유효; v1 코드와 정책 receipt만 무효.
+- `INVITE_SIGNING_SECRET`은 플래그 on에서만 필수(없으면 기동 실패). 키는 `sha256(secret || "kuzz-invite-secret-v1")` — 시크릿 키와 relay 키 파생이 서로의 코드를 검증하지 않는다. v2(DB) 초대 코드는 키와 무관해서 계속 유효; v1 코드와 정책 receipt만 무효.
 - 초대 mint/claim/accept-policy의 Bearer는 **user 세션만**(Telegram: 봇은 초대 링크로 들어가지 않고 owner가 추가). mint는 기존 owner/admin 역할 검사 그대로.
 - 오디오: 토큰 소켓은 루트 WS와 같은 바인딩 레지스트리·deadline 감시·revoke를 공유, 같은 principal 토큰 교체 지원(1h 만료로 허들이 끊기지 않게). 토큰 모드 에이전트의 TTS 음성은 미지원(Desktop이 봇 토큰을 새로 발급하면 실행 중 토큰이 revoke됨).
 - media: Bearer 게이트는 bridge와 같은 조건(플래그 on + NIP-FI off), 읽기(GET/HEAD)도 Bearer 허용(토큰 모드 Desktop 미디어 프록시가 서명 불가하므로).
@@ -809,7 +809,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 - **재리뷰 반영 (v11.1)**: kind 0 발행 앞에 프로세스 전역 `tokio::sync::Semaphore`(`PublishSlots`, `max(1, 풀 최대/4)`) — 커넥션보다 먼저 permit을 잡고 잠금 해제까지 보유해, 재접속 폭주 시 발행자들이 잠금 커넥션을 쥔 채 두 번째 커넥션을 기다리며 풀을 고갈시키는 hold-and-wait를 막는다. live 테스트: permit 전부 + advisory lock 보유 상태에서 발행 3개가 커넥션을 잡지 않고 대기(세마포어 제거 시 사용 중 커넥션 1→4로 실패). B1 config 테스트의 env 변경은 기존 `NIP_FI_ENV_LOCK` 아래에서 실행.
 
 **Phase 2b (mobile), deferred** — 이 Windows 머신에 Flutter가 없어 빌드·테스트 불가. macOS에서 별도 구현. 서버는 이미 준비됨(`client=mobile`, `AUTH_MOBILE_REDIRECT_SCHEMES` 기본 `app.kuzz`, refresh 본문 반환, WS 토큰 AUTH, Bearer bridge/media/invite, kind 0 서버 발행).
-- `shared/auth/auth_provider.dart`: nsec 상태 → `{principalId, accessToken, accessExpiresAt}`(Riverpod 메모리), refresh는 `flutter_secure_storage`(origin별 키), 앱 시작 시 refresh 자동 로그인, 만료 5분 전 refresh(single-flight, 세대 펜스, 401 → 로그인 화면; Rule 6 "다시 로그인" 경로 보장). 감지는 NIP-11 `buzz_token_auth.bearer`.
+- `shared/auth/auth_provider.dart`: nsec 상태 → `{principalId, accessToken, accessExpiresAt}`(Riverpod 메모리), refresh는 `flutter_secure_storage`(origin별 키), 앱 시작 시 refresh 자동 로그인, 만료 5분 전 refresh(single-flight, 세대 펜스, 401 → 로그인 화면; Rule 6 "다시 로그인" 경로 보장). 감지는 NIP-11 `kuzz_token_auth.bearer`.
 - 로그인: `flutter_web_auth_2`(iOS `ASWebAuthenticationSession`, Android Custom Tabs) + PKCE S256, `redirect_uri=app.kuzz://auth/cb`, state 검사, `POST /auth/oidc/complete`. iOS `Info.plist`/Android manifest에 scheme 등록. 워크트리별 debug identity(`scripts/mobile-worktree-overrides.sh`)와 scheme 충돌 여부 확인.
 - `relay_session_auth.dart` → `Authorization: Bearer`; `relay_session.dart:146-179,500` → `["AUTH",{"token"}]`, 재연결 시 현재 토큰, `OK auth false token_expired` → refresh 후 재연결; `signed_event_relay.dart` → draft(서명 없음, 서버 스탬프). 미디어 업로드는 Bearer(서버 Phase 2 완료). 허들 오디오는 `{"type":"auth","token"}` + 회전 시 같은 소켓에 재전송(`auth_ok`).
 - `features/settings`: Account(전역 프로필 PATCH, 아바타 업로드 → `avatar_url`), Devices(목록·원격 로그아웃·"모든 다른 기기 로그아웃"), "모든 봇 토큰 회수", 계정 삭제. `features/pairing`(NIP-AB) 삭제, `shared/crypto/{nip44,ecdh,nip_oa}.dart`는 Phase 3.
@@ -979,7 +979,7 @@ web: tsc --noEmit ok, biome(변경 파일, 루트 node_modules의 biome) ok, vit
 | 항목 | 변경 |
 |------|------|
 | 상태 | Phase 1 구현 완료(미커밋, 리뷰 전). handoff는 §5.2.1. |
-| 추가 결정 | NIP-11 `buzz_token_auth`로 토큰 모드 감지; 커뮤니티별 세션; 공용 `EventSigner`(sentinel draft)와 `verify_served_event`; `kuzz-token-broker` 크레이트; `git-credential-kuzz` 호스트 고정 + 서버 이중 챌린지; `AUTH_TRUSTED_PROXY_CIDRS`(`unix` 포함). |
+| 추가 결정 | NIP-11 `kuzz_token_auth`로 토큰 모드 감지; 커뮤니티별 세션; 공용 `EventSigner`(sentinel draft)와 `verify_served_event`; `kuzz-token-broker` 크레이트; `git-credential-kuzz` 호스트 고정 + 서버 이중 챌린지; `AUTH_TRUSTED_PROXY_CIDRS`(`unix` 포함). |
 
 ### v6 → v7
 

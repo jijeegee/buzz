@@ -6,7 +6,6 @@ import {
   ExternalLink,
   LoaderCircle,
   MailOpen,
-  MessagesSquare,
 } from "lucide-react";
 import * as React from "react";
 
@@ -26,6 +25,7 @@ import { buildInboxListRows } from "@/features/home/lib/inboxListRows";
 import { hasRenderedVideoAttachment } from "@/features/messages/lib/videoReviewContext";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { useThreadNameLabel } from "@/features/messages/lib/useThreadName";
+import { ConversationRowFrame } from "@/features/home/ui/ConversationRowFrame";
 import { InboxFilterMenu } from "@/features/home/ui/InboxFilterMenu";
 import {
   DraftsPanel,
@@ -59,6 +59,7 @@ import { Separator } from "@/shared/ui/separator";
 import { Switch } from "@/shared/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { ConversationLetterAvatar } from "./ConversationLetterAvatar";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 
 const INBOX_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
@@ -137,14 +138,6 @@ function InboxLabel({
 }
 
 /** Stable per-channel hue so each room keeps the same avatar color. */
-function conversationHue(channelId: string) {
-  let hash = 0;
-  for (const char of channelId) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return hash % 360;
-}
-
 function ConversationRoomAvatar({
   room,
   testId,
@@ -184,22 +177,12 @@ function ConversationRoomAvatar({
 
   // Channel and thread rooms share the channel's letter and color; a thread
   // adds a badge.
-  const initial = Array.from(room.channelLabel)[0]?.toUpperCase() ?? "#";
-  const hue = conversationHue(room.channelId || room.channelLabel);
   return (
-    <span
-      aria-hidden="true"
-      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
-      data-testid="home-inbox-conversation-avatar"
-      style={{ backgroundColor: `hsl(${hue} 55% 48%)` }}
-    >
-      {initial}
-      {room.kind === "thread" ? (
-        <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border">
-          <MessagesSquare className="h-2.5 w-2.5" />
-        </span>
-      ) : null}
-    </span>
+    <ConversationLetterAvatar
+      channelId={room.channelId}
+      channelLabel={room.channelLabel}
+      isThread={room.kind === "thread"}
+    />
   );
 }
 
@@ -443,9 +426,6 @@ export function InboxListPane({
             agentPubkeys?.has(normalizePubkey(pubkey)) === true,
         })
       : null;
-    const rowHighlightColor = isSelected
-      ? "color-mix(in srgb, hsl(var(--background)) 70%, hsl(var(--muted)) 30%)"
-      : "color-mix(in srgb, hsl(var(--background)) 75%, hsl(var(--muted)) 25%)";
     const handleRowContentClick = (event: React.MouseEvent<HTMLElement>) => {
       const target = event.target;
       if (
@@ -457,233 +437,202 @@ export function InboxListPane({
       onSelect(item.id);
     };
     const row = (
-      <div
-        aria-current={isSelected ? "true" : undefined}
-        className="group/inbox-item relative"
+      <ConversationRowFrame
+        ariaLabel={`Open inbox item from ${item.senderLabel}`}
+        avatar={
+          conversationRoom ? (
+            <ConversationRoomAvatar
+              room={conversationRoom}
+              testId={`home-inbox-avatar-${item.id}`}
+            />
+          ) : (
+            <div
+              className="relative shrink-0"
+              data-inbox-profile-trigger="true"
+            >
+              <UserProfilePopover
+                botIdenticonValue={item.senderLabel}
+                pubkey={item.item.pubkey}
+                role={profileRole}
+                triggerClassName={cn(
+                  "shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                  isSenderAgent ? "rounded-[30%]" : "rounded-full",
+                )}
+                triggerElement="span"
+                triggerTestId={`home-inbox-avatar-${item.id}`}
+              >
+                <span className="inline-flex shrink-0">
+                  <UserAvatar
+                    avatarUrl={item.avatarUrl}
+                    className="h-9 w-9"
+                    displayName={item.senderLabel}
+                    shape={isSenderAgent ? "squircle" : "circle"}
+                    size="md"
+                  />
+                </span>
+              </UserProfilePopover>
+            </div>
+          )
+        }
         data-testid={`home-inbox-item-${item.id}`}
-        style={
-          {
-            "--inbox-row-highlight-bg": rowHighlightColor,
-          } as React.CSSProperties
+        hideMetaOnHover
+        hoverActions={
+          <>
+            {isDone ? (
+              <InboxRowActionButton
+                label="Mark unread"
+                onClick={() => onMarkUnread(item.id)}
+              >
+                <MailOpen className="!h-4 !w-4" />
+              </InboxRowActionButton>
+            ) : (
+              <InboxRowActionButton
+                label="Mark as read"
+                onClick={() => onMarkRead(item.id)}
+              >
+                <MailOpen className="!h-4 !w-4" />
+              </InboxRowActionButton>
+            )}
+            <InboxRowActionButton
+              disabled={!canOpen}
+              label={openLabel}
+              onClick={() => onOpenDirect(item)}
+            >
+              <ExternalLink className="!h-4 !w-4" />
+            </InboxRowActionButton>
+            <InboxRowActionButton
+              active={hasActiveReminder}
+              disabled={!hasChannelTarget}
+              label={
+                hasChannelTarget
+                  ? hasActiveReminder
+                    ? "Reminder set"
+                    : "Remind me later"
+                  : "Cannot remind without a channel"
+              }
+              onClick={() => onRemindLater(item)}
+            >
+              <Clock className="!h-4 !w-4" />
+            </InboxRowActionButton>
+          </>
+        }
+        isSelected={isSelected}
+        meta={
+          <>
+            {!isDone ? (
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 rounded-full bg-primary"
+              />
+            ) : null}
+            {item.unreadCount > 1 ? (
+              <span data-testid="home-inbox-unread-count">
+                {item.unreadCount} unread
+              </span>
+            ) : null}
+            {item.timestampLabel}
+          </>
+        }
+        metaClassName={isDone ? "font-normal" : "font-medium"}
+        onContentClick={handleRowContentClick}
+        onSelect={() => onSelect(item.id)}
+        title={
+          conversationRoom ? (
+            <ConversationRoomTitle room={conversationRoom} />
+          ) : (
+            <span
+              className="flex min-w-0 flex-1 items-start leading-4"
+              data-inbox-profile-trigger="true"
+            >
+              <UserProfilePopover
+                botIdenticonValue={item.senderLabel}
+                pubkey={item.item.pubkey}
+                role={profileRole}
+                triggerElement="span"
+              >
+                <span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
+                  {item.senderLabel}
+                </span>
+              </UserProfilePopover>
+            </span>
+          )
         }
       >
-        <button
-          aria-label={`Open inbox item from ${item.senderLabel}`}
-          className="absolute inset-0 z-0 block w-full border-l border-l-transparent text-left"
-          onClick={() => onSelect(item.id)}
-          type="button"
-        >
-          <span
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 right-0 transition-colors",
-              isSelected
-                ? "bg-[var(--inbox-row-highlight-bg)]"
-                : "group-hover/inbox-item:bg-[var(--inbox-row-highlight-bg)] group-focus-within/inbox-item:bg-[var(--inbox-row-highlight-bg)] group-active/inbox-item:bg-muted/40",
-            )}
+        {conversationRoom ? null : (
+          <InboxLabel
+            channelId={item.item.channelId}
+            isActionRequired={item.isActionRequired}
+            isDone={isDone}
+            label={typeLabel}
+            threadId={threadRootId}
           />
-        </button>
-
-        {/* biome-ignore lint/a11y: The sibling full-row button provides keyboard/screen-reader row activation; this wrapper delegates pointer selection while allowing nested profile triggers. */}
-        <div
-          className="relative z-10 block w-full cursor-pointer px-3 py-4 text-left"
-          onClick={handleRowContentClick}
-        >
-          <div className="flex min-w-0 items-start gap-2.5">
-            {conversationRoom ? (
-              <ConversationRoomAvatar
-                room={conversationRoom}
-                testId={`home-inbox-avatar-${item.id}`}
-              />
-            ) : (
-              <div
-                className="relative shrink-0"
-                data-inbox-profile-trigger="true"
-              >
-                <UserProfilePopover
-                  botIdenticonValue={item.senderLabel}
-                  pubkey={item.item.pubkey}
-                  role={profileRole}
-                  triggerClassName={cn(
-                    "shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                    isSenderAgent ? "rounded-[30%]" : "rounded-full",
-                  )}
-                  triggerElement="span"
-                  triggerTestId={`home-inbox-avatar-${item.id}`}
-                >
-                  <span className="inline-flex shrink-0">
-                    <UserAvatar
-                      avatarUrl={item.avatarUrl}
-                      className="h-9 w-9"
-                      displayName={item.senderLabel}
-                      shape={isSenderAgent ? "squircle" : "circle"}
-                      size="md"
-                    />
-                  </span>
-                </UserProfilePopover>
-              </div>
-            )}
-
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-start gap-2">
-                {conversationRoom ? (
-                  <ConversationRoomTitle room={conversationRoom} />
-                ) : (
-                  <span
-                    className="flex min-w-0 flex-1 items-start leading-4"
-                    data-inbox-profile-trigger="true"
-                  >
-                    <UserProfilePopover
-                      botIdenticonValue={item.senderLabel}
-                      pubkey={item.item.pubkey}
-                      role={profileRole}
-                      triggerElement="span"
-                    >
-                      <span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
-                        {item.senderLabel}
-                      </span>
-                    </UserProfilePopover>
-                  </span>
-                )}
-                <span
-                  className={cn(
-                    "flex shrink-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground/70 transition-opacity group-hover/inbox-item:opacity-0 group-focus-within/inbox-item:opacity-0",
-                    isDone ? "font-normal" : "font-medium",
-                  )}
-                >
-                  {!isDone ? (
-                    <span
-                      aria-hidden="true"
-                      className="h-1.5 w-1.5 rounded-full bg-primary"
-                    />
-                  ) : null}
-                  {item.unreadCount > 1 ? (
-                    <span data-testid="home-inbox-unread-count">
-                      {item.unreadCount} unread
-                    </span>
-                  ) : null}
-                  {item.timestampLabel}
-                </span>
-              </div>
-              {conversationRoom ? null : (
-                <InboxLabel
-                  channelId={item.item.channelId}
-                  isActionRequired={item.isActionRequired}
-                  isDone={isDone}
-                  label={typeLabel}
-                  threadId={threadRootId}
-                />
-              )}
-              {dueReminder ? (
-                <div
-                  className="mt-1 flex items-center gap-1 text-2xs font-medium text-amber-600/80 dark:text-amber-300/80"
-                  data-testid="home-inbox-reminder-due"
-                >
-                  <Bell className="h-3 w-3" />
-                  Reminder due
-                </div>
-              ) : null}
-
-              {isReopening || hasReopenError ? (
-                <div
-                  aria-live="polite"
-                  className={cn(
-                    "mt-1 flex items-center gap-1 text-2xs font-medium",
-                    hasReopenError
-                      ? "text-destructive"
-                      : "text-muted-foreground",
-                  )}
-                  data-testid={`home-inbox-reopen-status-${item.id}`}
-                  role="status"
-                >
-                  {isReopening ? (
-                    <>
-                      <LoaderCircle className="h-3 w-3 shrink-0 animate-spin" />
-                      Reopening…
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="h-3 w-3 shrink-0" />
-                      Couldn’t reopen
-                      {canOpen ? (
-                        <button
-                          className="ml-0.5 rounded font-semibold underline underline-offset-2 hover:no-underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-                          data-testid={`home-inbox-reopen-retry-${item.id}`}
-                          onClick={(event) => {
-                            // The row wrapper selects on click; stop it so
-                            // Retry only re-issues the reopen for this row.
-                            event.stopPropagation();
-                            onOpenDirect(item);
-                          }}
-                          type="button"
-                        >
-                          Retry
-                        </button>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              ) : null}
-
-              <div
-                className={cn(
-                  "mt-1.5 text-message [&_a]:font-medium [&_a]:text-current",
-                  isDone
-                    ? "font-normal text-muted-foreground"
-                    : "font-semibold text-foreground",
-                )}
-              >
-                <VideoReviewCommentMarkdown
-                  className="inbox-preview-markdown text-inherit"
-                  content={item.preview}
-                  interactive={false}
-                  mentionNames={item.mentionNames}
-                  videoReviewCommentRootId={videoReviewCommentRootId}
-                />
-              </div>
-            </div>
+        )}
+        {dueReminder ? (
+          <div
+            className="mt-1 flex items-center gap-1 text-2xs font-medium text-amber-600/80 dark:text-amber-300/80"
+            data-testid="home-inbox-reminder-due"
+          >
+            <Bell className="h-3 w-3" />
+            Reminder due
           </div>
-        </div>
+        ) : null}
 
-        <div className="pointer-events-none absolute right-3 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--inbox-row-highlight-bg)] p-1 opacity-0 transition-opacity duration-150 ease-out group-hover/inbox-item:pointer-events-auto group-hover/inbox-item:opacity-100 group-focus-within/inbox-item:pointer-events-auto group-focus-within/inbox-item:opacity-100">
-          {isDone ? (
-            <InboxRowActionButton
-              label="Mark unread"
-              onClick={() => onMarkUnread(item.id)}
-            >
-              <MailOpen className="!h-4 !w-4" />
-            </InboxRowActionButton>
-          ) : (
-            <InboxRowActionButton
-              label="Mark as read"
-              onClick={() => onMarkRead(item.id)}
-            >
-              <MailOpen className="!h-4 !w-4" />
-            </InboxRowActionButton>
+        {isReopening || hasReopenError ? (
+          <div
+            aria-live="polite"
+            className={cn(
+              "mt-1 flex items-center gap-1 text-2xs font-medium",
+              hasReopenError ? "text-destructive" : "text-muted-foreground",
+            )}
+            data-testid={`home-inbox-reopen-status-${item.id}`}
+            role="status"
+          >
+            {isReopening ? (
+              <>
+                <LoaderCircle className="h-3 w-3 shrink-0 animate-spin" />
+                Reopening…
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-3 w-3 shrink-0" />
+                Couldn’t reopen
+                {canOpen ? (
+                  <button
+                    className="ml-0.5 rounded font-semibold underline underline-offset-2 hover:no-underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                    data-testid={`home-inbox-reopen-retry-${item.id}`}
+                    onClick={(event) => {
+                      // The row wrapper selects on click; stop it so
+                      // Retry only re-issues the reopen for this row.
+                      event.stopPropagation();
+                      onOpenDirect(item);
+                    }}
+                    type="button"
+                  >
+                    Retry
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : null}
+
+        <div
+          className={cn(
+            "mt-1.5 text-message [&_a]:font-medium [&_a]:text-current",
+            isDone
+              ? "font-normal text-muted-foreground"
+              : "font-semibold text-foreground",
           )}
-          <InboxRowActionButton
-            disabled={!canOpen}
-            label={openLabel}
-            onClick={() => onOpenDirect(item)}
-          >
-            <ExternalLink className="!h-4 !w-4" />
-          </InboxRowActionButton>
-          <InboxRowActionButton
-            active={hasActiveReminder}
-            disabled={!hasChannelTarget}
-            label={
-              hasChannelTarget
-                ? hasActiveReminder
-                  ? "Reminder set"
-                  : "Remind me later"
-                : "Cannot remind without a channel"
-            }
-            onClick={() => onRemindLater(item)}
-          >
-            <Clock className="!h-4 !w-4" />
-          </InboxRowActionButton>
+        >
+          <VideoReviewCommentMarkdown
+            className="inbox-preview-markdown text-inherit"
+            content={item.preview}
+            interactive={false}
+            mentionNames={item.mentionNames}
+            videoReviewCommentRootId={videoReviewCommentRootId}
+          />
         </div>
-      </div>
+      </ConversationRowFrame>
     );
 
     return (

@@ -1,4 +1,4 @@
-const DEFAULT_DATABASE_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1 -- local test-only credentials
+const DEFAULT_DATABASE_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1 -- local test-only credentials
 
 /// Resolve the database URL shared by PostgreSQL-backed relay tests.
 pub(crate) fn database_url() -> String {

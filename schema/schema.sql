@@ -1,4 +1,4 @@
--- Buzz initial Postgres schema — multi-tenant.
+-- Kuzz initial Postgres schema — multi-tenant.
 --
 -- Source of truth for fresh database setup. This is a clean, from-scratch
 -- schema in which `community_id` is a first-class, server-resolved key on
@@ -47,7 +47,7 @@ CREATE TYPE channel_add_policy AS ENUM ('anyone', 'owner_only', 'nobody');
 -- ASCII-lowercased, trailing dot stripped, default port omitted. The UNIQUE is
 -- on `lower(host)` belt-and-suspenders so `Relay.Example` and `relay.example`
 -- can never become two tenants even if a writer forgets to normalize.
--- `resolve_host()` (buzz-core) applies the identical normalization before
+-- `resolve_host()` (kuzz-core) applies the identical normalization before
 -- lookup, so resolution and storage agree by construction.
 
 CREATE TABLE communities (
@@ -104,6 +104,10 @@ CREATE TABLE channels (
     ttl_seconds     INT,
     ttl_deadline    TIMESTAMPTZ,
     goals_enabled   BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Latest main-timeline message (migration 0068).
+    main_last_seq   BIGINT,
+    main_last_at    TIMESTAMPTZ,
+    main_last_event_id BYTEA,
     PRIMARY KEY (community_id, id),
     CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
 );
@@ -157,6 +161,10 @@ CREATE TABLE channel_members (
     removed_at  TIMESTAMPTZ,
     removed_by  BYTEA,
     hidden_at   TIMESTAMPTZ,
+    -- Room read position in channel_sequence space (migration 0068).
+    read_seq    BIGINT,
+    read_origin TEXT CHECK (read_origin IN ('backfill', 'user')),
+    unread_mark BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (community_id, channel_id, pubkey),
     FOREIGN KEY (community_id, channel_id)
         REFERENCES channels (community_id, id) ON DELETE CASCADE
@@ -289,6 +297,10 @@ CREATE INDEX idx_events_search_tsv ON events USING GIN (search_tsv);
 -- e-tag containment (`tags @> '[["e","<hex>"]]'`) for the aux closure and #e
 -- reads. Mirrors migrations/0004; jsonb_path_ops supports exactly @>.
 CREATE INDEX idx_events_tags_gin ON events USING GIN (tags jsonb_path_ops);
+
+-- Unread counts from the channel acceptance sequence (migration 0068).
+CREATE INDEX idx_events_community_channel_sequence
+    ON events (community_id, channel_id, channel_sequence);
 
 -- ── Event mentions ────────────────────────────────────────────────────────────
 -- Conformance: "Channel-less global events and DMs" (#p fan-out). The join to
@@ -551,6 +563,44 @@ CREATE INDEX idx_thread_metadata_event_id ON thread_metadata (community_id, even
 CREATE INDEX idx_thread_metadata_inbox
     ON thread_metadata (community_id, channel_id, last_reply_at DESC, event_id DESC)
     WHERE depth = 0 AND reply_count > 0;
+
+-- ── Thread follows and thread state (migration 0068) ─────────────────────────
+-- Server-side chat state. Rows exist only for channel members. Plain form so
+-- every device of a user sees the same list; purged with the community.
+
+CREATE TABLE thread_follows (
+    community_id   UUID NOT NULL REFERENCES communities(id),
+    root_event_id  BYTEA NOT NULL CHECK (length(root_event_id) = 32),
+    pubkey         BYTEA NOT NULL CHECK (length(pubkey) = 32),
+    channel_id     UUID NOT NULL,
+    follow_state   TEXT NOT NULL CHECK (follow_state IN ('auto', 'followed', 'unfollowed')),
+    follow_origin  TEXT NOT NULL CHECK (follow_origin IN ('backfill', 'live', 'user')),
+    read_seq       BIGINT,
+    unread_mark    BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Where read_seq came from (migration 0069): 'backfill', 'user', or NULL.
+    read_origin    TEXT CHECK (read_origin IN ('backfill', 'user')),
+    PRIMARY KEY (community_id, root_event_id, pubkey),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_thread_follows_pubkey ON thread_follows (community_id, pubkey);
+
+-- Separate from thread_metadata because the root's depth-0 row exists only
+-- after the first reply. last_seq/last_at ignore close and reopen markers.
+CREATE TABLE thread_state (
+    community_id   UUID NOT NULL REFERENCES communities(id),
+    root_event_id  BYTEA NOT NULL CHECK (length(root_event_id) = 32),
+    channel_id     UUID NOT NULL,
+    last_seq       BIGINT,
+    last_at        TIMESTAMPTZ,
+    closed_at      TIMESTAMPTZ,
+    closed_by      BYTEA,
+    PRIMARY KEY (community_id, root_event_id),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE
+);
 
 -- ── Reactions ─────────────────────────────────────────────────────────────────
 -- Conformance: reactions filter by community before event/pubkey matching.
@@ -938,7 +988,7 @@ CREATE INDEX push_match_queue_recovery
 -- T1b push gate (keep in sync with migrations/0023). Enqueue only when the
 -- community has an active, endpoint-enabled, unexpired lease; the shared
 -- advisory lock pairs with the exclusive lock taken by lease activations
--- (crates/buzz-db/src/push.rs) to close the lost-wake race.
+-- (crates/kuzz-db/src/push.rs) to close the lost-wake race.
 CREATE FUNCTION enqueue_push_match_job() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -947,7 +997,7 @@ BEGIN
     -- including internal paths that bypass live dispatch.
     IF NEW.kind IN (9, 40002, 45001, 45003) THEN
         PERFORM pg_advisory_xact_lock_shared(
-            hashtextextended('buzz_push_gate:' || NEW.community_id::text, 0));
+            hashtextextended('kuzz_push_gate:' || NEW.community_id::text, 0));
         IF EXISTS (
             SELECT 1 FROM push_leases
             WHERE community_id = NEW.community_id
@@ -973,7 +1023,7 @@ FOR EACH ROW EXECUTE FUNCTION enqueue_push_match_job();
 -- transition committed while ingest was in flight is never missed. The
 -- per-channel advisory lock is SHARED here — permanent-channel commits admit
 -- each other — and taken EXCLUSIVE by TTL transitions (update_channel in
--- crates/buzz-db/src/channel.rs), which forces the same total order the
+-- crates/kuzz-db/src/channel.rs), which forces the same total order the
 -- 0022 row lock provided without serializing the hot path.
 CREATE FUNCTION refresh_channel_ttl_after_event_insert() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -984,7 +1034,7 @@ BEGIN
     IF NEW.channel_id IS NOT NULL AND NEW.kind <> 9007 THEN
         BEGIN
             PERFORM pg_advisory_xact_lock_shared(hashtextextended(
-                'buzz_channel_ttl:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
+                'kuzz_channel_ttl:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
 
             SELECT ttl_seconds INTO channel_ttl
             FROM channels
@@ -1036,7 +1086,7 @@ BEGIN
     END IF;
 
     PERFORM pg_advisory_xact_lock(hashtextextended(
-        'buzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text,
+        'kuzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text,
         0
     ));
 
@@ -1096,7 +1146,7 @@ CREATE TRIGGER trg_events_guard_channel_roster_snapshot
 
 -- Replica-fence floor guard (keep in sync with migrations/0021). A deferred
 -- constraint trigger re-checks, inside COMMIT processing, that channel-bearing
--- event rows are no older than `buzz.created_at_floor` seconds before commit
+-- event rows are no older than `kuzz.created_at_floor` seconds before commit
 -- time (clock_timestamp(), NOT the transaction-frozen now()). This turns the
 -- relay's ingest-time created_at envelope into a commit-time storage
 -- invariant, which is what lets keyset-cursor pages below the replica fence
@@ -1108,7 +1158,7 @@ CREATE TRIGGER trg_events_guard_channel_roster_snapshot
 CREATE FUNCTION events_created_at_floor_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
-    floor_secs numeric := nullif(current_setting('buzz.created_at_floor', true), '')::numeric;
+    floor_secs numeric := nullif(current_setting('kuzz.created_at_floor', true), '')::numeric;
 BEGIN
     IF floor_secs IS NOT NULL
        AND floor_secs > 0
@@ -1152,7 +1202,7 @@ CREATE TABLE push_gateway_installations (
     app_attest_key_id BYTEA NOT NULL CHECK (octet_length(app_attest_key_id) BETWEEN 1 AND 128),
     app_attest_public_key BYTEA NOT NULL CHECK (octet_length(app_attest_public_key) BETWEEN 33 AND 256),
     assertion_counter BIGINT NOT NULL CHECK (assertion_counter BETWEEN 0 AND 4294967295),
-    app_profile TEXT NOT NULL CHECK (app_profile = 'buzz-ios-dogfood'),
+    app_profile TEXT NOT NULL CHECK (app_profile = 'kuzz-ios-dogfood'),
     token_ciphertext BYTEA NOT NULL CHECK (octet_length(token_ciphertext) BETWEEN 1 AND 2048),
     token_fingerprint BYTEA NOT NULL CHECK (length(token_fingerprint) = 32),
     endpoint_epoch BIGINT NOT NULL CHECK (endpoint_epoch > 0),
@@ -1216,7 +1266,7 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
 
 -- ── Replica heartbeat (read-replica freshness fence) ─────────────────────────
 -- Portable read-side freshness observation for the replica fence (see
--- crates/buzz-db/src/replica_fence.rs and migrations/0026). Exactly one row;
+-- crates/kuzz-db/src/replica_fence.rs and migrations/0026). Exactly one row;
 -- the single-row token UPDATE is the serialization point that makes tokens
 -- globally commit-ordered across relay pods. `epoch` detects token resets
 -- (restore/re-seed) so a stale retained token can never masquerade as fresh
@@ -1538,7 +1588,7 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
 
 CREATE FUNCTION community_deletion_lock_key(target UUID) RETURNS BIGINT
 LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE AS $$
-    SELECT hashtextextended('buzz-community-deletion:' || target::text, 0)
+    SELECT hashtextextended('kuzz-community-deletion:' || target::text, 0)
 $$;
 -- Keep the deletion control plane writable while its target tenant is fenced.
 -- This predicate is the single SQL source of truth used by attachment and live
@@ -1615,8 +1665,8 @@ BEGIN
     END IF;
 
     -- Authorization is evaluated independently for every community checked.
-    executor_community := current_setting('buzz.deletion_executor_community', true);
-    executor_generation := current_setting('buzz.deletion_fence_generation', true);
+    executor_community := current_setting('kuzz.deletion_executor_community', true);
+    executor_generation := current_setting('kuzz.deletion_fence_generation', true);
     IF executor_community = target::TEXT
        AND executor_generation ~ '^[0-9]+$'
        AND executor_generation::BIGINT = generation THEN
@@ -1625,11 +1675,11 @@ BEGIN
 
     -- A serving mutation admitted before quiescing may finish only while its
     -- exact durable lease remains current and bound to this fence generation.
-    serving_community := current_setting('buzz.serving_write_community', true);
-    serving_lease_id := current_setting('buzz.serving_write_lease_id', true);
-    serving_owner := current_setting('buzz.serving_write_owner', true);
-    serving_generation := current_setting('buzz.serving_write_generation', true);
-    serving_fence_generation := current_setting('buzz.serving_write_fence_generation', true);
+    serving_community := current_setting('kuzz.serving_write_community', true);
+    serving_lease_id := current_setting('kuzz.serving_write_lease_id', true);
+    serving_owner := current_setting('kuzz.serving_write_owner', true);
+    serving_generation := current_setting('kuzz.serving_write_generation', true);
+    serving_fence_generation := current_setting('kuzz.serving_write_fence_generation', true);
     IF lifecycle IN ('active', 'quiescing')
        AND serving_community = target::TEXT
        AND serving_lease_id ~ '^[0-9a-fA-F-]{36}$'
@@ -1685,8 +1735,8 @@ $$;
 CREATE FUNCTION enforce_community_tombstone() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 DECLARE
-    executor_community TEXT := current_setting('buzz.deletion_executor_community', true);
-    executor_generation TEXT := current_setting('buzz.deletion_fence_generation', true);
+    executor_community TEXT := current_setting('kuzz.deletion_executor_community', true);
+    executor_generation TEXT := current_setting('kuzz.deletion_fence_generation', true);
     expected_generation BIGINT;
 BEGIN
     IF TG_OP = 'DELETE' THEN
@@ -1809,7 +1859,9 @@ SELECT attach_community_write_fence('relay_invites');
 SELECT attach_community_write_fence('relay_members');
 SELECT attach_community_write_fence('scheduled_workflow_fires');
 SELECT attach_community_write_fence('subscriptions');
+SELECT attach_community_write_fence('thread_follows');
 SELECT attach_community_write_fence('thread_metadata');
+SELECT attach_community_write_fence('thread_state');
 SELECT attach_community_write_fence('users');
 SELECT attach_community_write_fence('workflow_approvals');
 SELECT attach_community_write_fence('workflow_runs');
@@ -1944,7 +1996,7 @@ CREATE INDEX access_tokens_bot ON access_tokens (bot_id) WHERE revoked_at IS NUL
 CREATE TABLE account_key_backups (
     account_id BYTEA PRIMARY KEY REFERENCES principals(id),
     pubkey BYTEA NOT NULL UNIQUE CHECK (length(pubkey) = 32),
-    version SMALLINT NOT NULL CHECK (version = 1),
+    version SMALLINT NOT NULL CHECK (version IN (1, 2)),
     key_id TEXT NOT NULL CHECK (key_id ~ '^[A-Za-z0-9_-]{1,64}$'),
     nonce BYTEA NOT NULL CHECK (length(nonce) = 12),
     ciphertext BYTEA NOT NULL CHECK (length(ciphertext) = 48),
@@ -2210,7 +2262,7 @@ BEGIN
         RETURN NEW;
     END IF;
     PERFORM pg_advisory_xact_lock(hashtextextended(
-        'buzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
+        'kuzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
     UPDATE channels SET accepted_sequence = accepted_sequence + 1
     WHERE community_id = NEW.community_id AND id = NEW.channel_id
     RETURNING accepted_sequence INTO NEW.channel_sequence;
@@ -2244,7 +2296,7 @@ BEGIN
         END IF;
     END IF;
     PERFORM pg_advisory_xact_lock(hashtextextended(
-        'buzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
+        'kuzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
     SELECT accepted_sequence INTO STRICT NEW.join_sequence FROM channels
     WHERE community_id = NEW.community_id AND id = NEW.channel_id;
     NEW.joined_at := clock_timestamp();

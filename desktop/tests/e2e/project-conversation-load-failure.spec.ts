@@ -139,6 +139,7 @@ test.describe("project conversation load failure", () => {
     expect(rootId).toBeTruthy();
 
     // Navigate to the project's Channels tab and open the general conversation.
+    await page.getByTestId("open-more-menu").click();
     await page.getByTestId("open-projects-view").click();
     await page.getByTestId("projects-section-projects").click();
     const projectEntry = page

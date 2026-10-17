@@ -69,7 +69,7 @@ test("edited messages preserve snapshotted mention recipients without profiles",
       body: "Now pinging @Renamed",
       edited: true,
       pubkey: SOURCE,
-      tags: [["p", MENTION], ["mention", MENTION], ["buzz:mention-snapshot"]],
+      tags: [["p", MENTION], ["mention", MENTION], ["kuzz:mention-snapshot"]],
     }),
     {
       mentionPubkeys: [MENTION],
@@ -84,7 +84,7 @@ test("an empty edited mention snapshot drops stale original recipients", () => {
       body: "No longer pinging anyone",
       edited: true,
       pubkey: SOURCE,
-      tags: [["p", MENTION], ["buzz:mention-snapshot"]],
+      tags: [["p", MENTION], ["kuzz:mention-snapshot"]],
     }),
     { mentionPubkeys: [], semanticTags: [] },
   );
@@ -119,7 +119,7 @@ test("latest edit reference snapshot retains recipients added by an earlier edit
       tags: [
         ["p", "d".repeat(64)],
         ["mention", MENTION],
-        ["buzz:mention-snapshot"],
+        ["kuzz:mention-snapshot"],
       ],
     }),
     { mentionPubkeys: [MENTION], semanticTags: [["mention", MENTION]] },
@@ -135,7 +135,7 @@ test("snapshot forwarding preserves delivered automatic addresses but never prom
       body: "edited",
       edited: true,
       pubkey: SOURCE,
-      tags: [["p", MENTION], address, unnotified, ["buzz:mention-snapshot"]],
+      tags: [["p", MENTION], address, unnotified, ["kuzz:mention-snapshot"]],
     }),
     { mentionPubkeys: [MENTION], semanticTags: [address, unnotified] },
   );

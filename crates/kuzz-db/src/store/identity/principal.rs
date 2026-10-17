@@ -1,7 +1,7 @@
 //! Principals, external identities, the relay principal and global profiles.
 
-use kuzz_datastore_tracing::datastore_span;
 use chrono::{DateTime, Utc};
+use kuzz_datastore_tracing::datastore_span;
 use sqlx::{PgPool, Row as _};
 
 use kuzz_core::principal::{PrincipalId, PrincipalKind};
@@ -78,7 +78,7 @@ pub(super) async fn ensure_relay_principal(
     key: &PrincipalId,
 ) -> Result<PrincipalId> {
     let mut tx = begin(pool).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('buzz:relay_principal'))")
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('kuzz:relay_principal'))")
         .execute(&mut *tx)
         .await?;
     let current: Option<Vec<u8>> =
@@ -286,6 +286,17 @@ pub(super) async fn get_principal(
     row.as_ref().map(record_from_row).transpose()
 }
 
+/// The Google email of the identity a principal last signed in with.
+pub(super) async fn principal_email(pool: &PgPool, id: &PrincipalId) -> Result<Option<String>> {
+    let email: Option<String> = sqlx::query_scalar(
+        "SELECT email FROM identities WHERE principal_id = $1 AND email IS NOT NULL          ORDER BY last_login_at DESC NULLS LAST, linked_at DESC LIMIT 1",
+    )
+    .bind(id.as_bytes().as_slice())
+    .fetch_optional(pool)
+    .await?;
+    Ok(email)
+}
+
 /// Apply a global profile update and project it into every active
 /// community's `users` row in the same transaction.
 pub(super) async fn update_profile(
@@ -423,7 +434,7 @@ impl ProfilePublishLock {
 fn profile_lock_key(community: kuzz_core::CommunityId, id: &PrincipalId) -> i64 {
     use sha2::{Digest as _, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(b"buzz:profile-publish:");
+    hasher.update(b"kuzz:profile-publish:");
     hasher.update(community.as_uuid().as_bytes());
     hasher.update(id.as_bytes());
     let digest = hasher.finalize();
@@ -521,6 +532,12 @@ impl crate::Db {
     #[datastore_span(name = "get_principal", system = "postgresql")]
     pub async fn get_principal(&self, id: &PrincipalId) -> Result<Option<PrincipalRecord>> {
         get_principal(&self.pool, id).await
+    }
+
+    /// The email of a principal's most recently used sign-in identity.
+    #[datastore_span(name = "principal_email", system = "postgresql")]
+    pub async fn principal_email(&self, id: &PrincipalId) -> Result<Option<String>> {
+        principal_email(&self.pool, id).await
     }
 
     /// Update a principal's global profile and its `users` projection.

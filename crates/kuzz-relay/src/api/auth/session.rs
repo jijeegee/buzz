@@ -384,6 +384,15 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
     } else {
         None
     };
+    // The Google email of a person's session; bot tokens have none.
+    let email = if binding.bot_id.is_none() {
+        match state.db.principal_email(&binding.principal).await {
+            Ok(email) => email,
+            Err(_) => return unavailable(),
+        }
+    } else {
+        None
+    };
     let bot = match binding.bot_id {
         Some(bot_id) => match state.db.get_bot(&bot_id).await {
             Ok(Some(bot)) => Some(json!({
@@ -403,6 +412,7 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         "display_name": principal.display_name,
         "avatar_url": principal.avatar_url,
         "username": principal.username,
+        "email": email,
         "device_id": binding.device_id,
         "bot": bot,
         "operator": binding.is_operator,

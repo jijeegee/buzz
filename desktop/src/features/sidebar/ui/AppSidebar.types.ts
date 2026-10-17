@@ -3,6 +3,7 @@ import type { LeaveCommunityResult } from "@/features/communities/leaveCommunity
 import type { Community } from "@/features/communities/types";
 import type { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
+import type { ServerChats } from "@/features/sidebar/ui/ChatList";
 import type { UserStatusInput } from "@/features/user-status/types";
 import type {
   Channel,
@@ -27,13 +28,11 @@ export type AppSidebarProps = {
   channels: Channel[];
   currentPubkey?: string;
   fallbackDisplayName?: string;
-  homeBadgeCount: number;
   isAddCommunityOpen?: boolean;
   isLoading: boolean;
   isCreatingChannel: boolean;
   isCreatingForum: boolean;
   profile?: Profile;
-  projectsOverviewActive: boolean;
   relayConnectionCard: ReturnType<typeof useSidebarRelayConnectionCard>;
   selfPresenceStatus: PresenceStatus;
   errorMessage?: string;
@@ -45,7 +44,8 @@ export type AppSidebarProps = {
     | "agents"
     | "workflows"
     | "pulse"
-    | "projects";
+    | "projects"
+    | "people";
   unreadChannelCounts: ReadonlyMap<string, number>;
   unreadChannelIds: ReadonlySet<string>;
   highPriorityUnreadChannelIds: ReadonlySet<string>;
@@ -87,15 +87,7 @@ export type AppSidebarProps = {
   onLeaveCommunity: (id: string) => Promise<LeaveCommunityResult | undefined>;
   onRemoveCommunityFromDevice: (id: string) => Promise<void>;
   onCreateAgent: () => void;
-  onSelectAgents: () => void;
-  onSelectProjects: () => void;
-  onSelectPulse: () => void;
-  onSelectWorkflows: () => void;
   onSelectHome: () => void;
-  /** Inbox button; on a channel it toggles the inbox panel beside the room. */
-  onSelectInbox?: () => void;
-  /** The inbox panel is pulled out beside the current channel. */
-  inboxPanelOpen?: boolean;
   onSelectChannel: (channelId: string) => void;
   onOpenSearchResult: (hit: SearchHit, query: string) => void;
   /** Full channel set for global search, including channels outside the joined sidebar list. */
@@ -120,4 +112,6 @@ export type AppSidebarProps = {
   starredChannelIds?: ReadonlySet<string>;
   onStarChannel?: (channelId: string) => void;
   onUnstarChannel?: (channelId: string) => void;
+  /** The relay's chats list; undefined keeps today's device-local list. */
+  serverChats?: ServerChats;
 };

@@ -725,7 +725,7 @@ mod postgres_tests {
         }
     }
 
-    const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
+    const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
 
     fn claim_cache(
         capacity: u64,
@@ -2209,7 +2209,7 @@ mod invite_key_tests {
 
     async fn state(enabled: bool) -> Arc<crate::state::AppState> {
         let mut state = crate::state::tests::test_state_with_database_url(
-            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz",
+            "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
         ) // sadscan:disable np.postgres.1 -- closed port, never connects
         .await;
         let mut config = AuthTokenConfig::disabled("ws://localhost:3000");

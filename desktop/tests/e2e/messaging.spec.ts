@@ -1978,7 +1978,7 @@ test("relay GIF search selects content-only media and reports the share", async 
           search: "/gifs/search",
           share: "/gifs/share",
         },
-        supported_extensions: ["buzz-gif"],
+        supported_extensions: ["kuzz-gif"],
       }),
       contentType: "application/nostr+json",
     }),
@@ -2115,7 +2115,7 @@ async function routeGifMocks(page: import("@playwright/test").Page) {
           search: "/gifs/search",
           share: "/gifs/share",
         },
-        supported_extensions: ["buzz-gif"],
+        supported_extensions: ["kuzz-gif"],
       }),
       contentType: "application/nostr+json",
     }),
@@ -2211,7 +2211,7 @@ test("reduced-motion GIF grid falls back to a named static placeholder", async (
           search: "/gifs/search",
           share: "/gifs/share",
         },
-        supported_extensions: ["buzz-gif"],
+        supported_extensions: ["kuzz-gif"],
       }),
       contentType: "application/nostr+json",
     }),
@@ -2673,7 +2673,7 @@ test("sends a thread message to its parent channel with a root-thread link", asy
     mentionPubkeys: [TEST_IDENTITIES.alice.pubkey],
     mentionTags: [mentionTag],
     parentEventId: null,
-    sentFromThreadTag: ["buzz:sent-from-thread", rootId, rootContent],
+    sentFromThreadTag: ["kuzz:sent-from-thread", rootId, rootContent],
   });
 
   await page.getByTestId("auxiliary-panel-close").click();
@@ -4235,7 +4235,7 @@ test("a refused sent-from-thread link preserves the edit and retries after cance
       emit({
         channelName: "general",
         content: sharedMessage,
-        extraTags: [["buzz:sent-from-thread", destination.id, destinationRoot]],
+        extraTags: [["kuzz:sent-from-thread", destination.id, destinationRoot]],
       });
       return { destinationRootId: destination.id, sourceRootId: source.id };
     },

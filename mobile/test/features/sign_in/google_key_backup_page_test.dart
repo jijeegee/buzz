@@ -63,7 +63,7 @@ Future<ProviderContainer> _pumpSignedOut(
 }) async {
   final authServer = FakeAuthServer();
   authServer.nip11 = (_) => jsonResponse({
-    'buzz_key_backup': {
+    'kuzz_key_backup': {
       'version': 1,
       'providers': ['google'],
     },
@@ -262,7 +262,7 @@ void main() {
       await storage.saveActiveId(retained.id);
       final authServer = FakeAuthServer();
       authServer.nip11 = (_) => jsonResponse({
-        'buzz_key_backup': {
+        'kuzz_key_backup': {
           'version': 1,
           'providers': ['google'],
         },
@@ -346,11 +346,11 @@ void main() {
       (tester) async {
         final server = FakeAuthServer();
         server.nip11 = (_) => jsonResponse({
-          'buzz_key_backup': {
+          'kuzz_key_backup': {
             'version': 1,
             'providers': ['google'],
           },
-          'buzz_token_auth': {
+          'kuzz_token_auth': {
             'bearer': true,
             'oidc_providers': ['google'],
           },
@@ -443,11 +443,11 @@ void main() {
     (tester) async {
       final authServer = FakeAuthServer();
       authServer.nip11 = (_) => jsonResponse({
-        'buzz_key_backup': {
+        'kuzz_key_backup': {
           'version': 1,
           'providers': ['google'],
         },
-        'buzz_token_auth': {
+        'kuzz_token_auth': {
           'bearer': true,
           'oidc_providers': ['google'],
         },
@@ -518,7 +518,7 @@ void main() {
       await tester.tap(find.byKey(const Key('token-sign-in-check')));
       await frames(tester);
       expect(
-        find.textContaining('operator or anyone controlling'),
+        find.textContaining('Kuzz keeps a protected copy'),
         findsOneWidget,
         reason: tester
             .widgetList<Text>(find.byType(Text))

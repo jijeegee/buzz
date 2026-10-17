@@ -4,7 +4,7 @@
 //! they post. The model groups the batch, names each group's agents, and
 //! relates it to earlier deliveries (`new`, `continue`, `amend`, `cancel`).
 //! Each message is delivered with a same-body edit that newly `p`-tags its
-//! agents (+ an `auto-route` mention and, for a follow-up, a `buzz:route`
+//! agents (+ an `auto-route` mention and, for a follow-up, a `kuzz:route`
 //! note the agent sees). No extra message is posted.
 //!
 //! - [`model`] resolves the route: an API key (Providers tab) or a

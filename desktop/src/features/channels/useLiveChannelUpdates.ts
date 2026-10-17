@@ -10,6 +10,8 @@ import {
   inboxSummaryShowsAny,
   type InboxSummaryState,
 } from "@/features/home/lib/inboxSummary";
+import { ChatListLiveSync } from "@/features/chats/chatListSync";
+import { dmVisibilityQueryKey } from "@/features/channels/useHiddenDmIds";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
 import { mergeTimelineCacheMessages } from "@/features/messages/hooks";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
@@ -186,6 +188,28 @@ export function useLiveChannelUpdates(
   const invalidateChannelsDebounced = React.useCallback(() => {
     channelsInvalidateRef.current?.trigger();
   }, []);
+  // Server chats list (Chats S4): live patches, and throttled refetches for
+  // rows only the relay can place. Hidden DMs and archived rooms are skipped.
+  const chatListSyncRef = React.useRef<ChatListLiveSync | null>(null);
+  if (chatListSyncRef.current === null) {
+    chatListSyncRef.current = new ChatListLiveSync(queryClient, {
+      isRoomHidden: (channelId) =>
+        queryClient
+          .getQueriesData<unknown>({ queryKey: dmVisibilityQueryKey })
+          .some(([, ids]) => ids instanceof Set && ids.has(channelId)) ||
+        queryClient
+          .getQueriesData<unknown>({ queryKey: channelsQueryKey })
+          .some(
+            ([, list]) =>
+              Array.isArray(list) &&
+              list.some(
+                (channel: Channel) =>
+                  channel.id === channelId && !!channel.archivedAt,
+              ),
+          ),
+    });
+  }
+  React.useEffect(() => () => chatListSyncRef.current?.dispose(), []);
   const liveChannelIds = React.useMemo(
     () => new Set(channels.map((channel) => channel.id)),
     [channels],
@@ -276,11 +300,14 @@ export function useLiveChannelUpdates(
           queryKey: INBOX_SUMMARY_QUERY_KEY,
         });
       }
+      chatListSyncRef.current?.onDeletion(deletedEventIds(event));
     }
 
     if (!liveChannelIds.has(channelId)) {
       if (channelId !== activeChannelId) {
         invalidateChannelsDebounced();
+        // A room new to this device (e.g. a first DM) is new to the list too.
+        chatListSyncRef.current?.refetchForMissingRow(channelId);
       }
       return;
     }
@@ -319,6 +346,12 @@ export function useLiveChannelUpdates(
           { id: channelId, channelType: isDmChannel ? "dm" : "stream" },
           normalizedCurrentPubkey,
         ),
+    );
+    chatListSyncRef.current?.onMessage(
+      event,
+      channelId,
+      normalizedCurrentPubkey,
+      hasMentionForEvent(event, normalizedCurrentPubkey),
     );
 
     // Let the caller observe self-authored trigger events (e.g. to track
@@ -409,6 +442,7 @@ export function useLiveChannelUpdates(
       void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
       // Messages missed while disconnected never reached the row patcher.
       void queryClient.invalidateQueries({ queryKey: INBOX_SUMMARY_QUERY_KEY });
+      chatListSyncRef.current?.refetchNow();
 
       // Update the subscription timestamp so replayed backlog events
       // (which have created_at in the past) are naturally suppressed.

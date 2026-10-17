@@ -15,6 +15,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use deadpool_redis;
 use kuzz_audit::AuditService;
 use kuzz_auth::{AuthService, CommandReplayGuard, Nip98ReplayGuard};
 use kuzz_core::tenant::TenantContext;
@@ -27,7 +28,6 @@ use kuzz_pubsub::rate_limiter::RedisRateLimiter;
 use kuzz_pubsub::{PubSubManager, RedisCommandReplayGuard, RedisNip98ReplayGuard};
 use kuzz_search::SearchService;
 use kuzz_workflow::WorkflowEngine;
-use deadpool_redis;
 
 use crate::audio::AudioRoomManager;
 use crate::config::Config;
@@ -2700,7 +2700,7 @@ pub(crate) mod tests {
         };
 
         // Mirrors kuzz_audit::service::AUDIT_LOCK_NAMESPACE.
-        let lock_key = format!("buzz_audit:{community_id}");
+        let lock_key = format!("kuzz_audit:{community_id}");
         let mut holder = observer.acquire().await.expect("acquire lock holder");
         sqlx::query("SELECT pg_advisory_lock(hashtextextended($1, 0))")
             .bind(&lock_key)

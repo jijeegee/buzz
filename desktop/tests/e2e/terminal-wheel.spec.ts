@@ -176,6 +176,7 @@ test("project terminal button opens Kuzz Term for the repository", async ({
   await installTerminalBackend(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   const projectEntry = page

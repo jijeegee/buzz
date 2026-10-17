@@ -80,6 +80,7 @@ import { useDueReminderBadgeCount } from "@/features/reminders/hooks";
 import { useReminderNotifications } from "@/features/reminders/useReminderNotifications";
 import { AppSidebar } from "@/features/sidebar/ui/AppSidebar";
 import { requestFocusedThreadClose } from "@/features/channels/focusedThreadCloseRequest";
+import { AppNavRail } from "@/features/sidebar/ui/AppNavRail";
 import { CommunityRail } from "@/features/sidebar/ui/CommunityRail";
 import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
@@ -113,10 +114,15 @@ import { AppShellTrayMenu } from "@/app/useAppShellTrayMenu";
 import { AppProfilePanelProvider } from "@/app/AppProfilePanelProvider";
 import { AppWorkflowEditorOverlayProvider } from "@/app/AppWorkflowEditorOverlayProvider";
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
+import { ChatStateSync } from "@/app/ChatStateSync";
+import { useChatStateWiring } from "@/app/useChatStateWiring";
+import { useChatThreadRowActions } from "@/app/useChatThreadRowActions";
+import { useChatsRailNavigation } from "@/app/useChatsRailNavigation";
 import {
-  toggleInboxPanel,
-  useInboxPanelOpen,
-} from "@/features/home/lib/inboxPanelPreference";
+  listTabForView,
+  setSidebarListTab,
+  useSidebarListTab,
+} from "@/features/sidebar/lib/sidebarListTab";
 const EMPTY_CHANNELS: Channel[] = [];
 export function AppShell() {
   useWebviewZoomShortcuts();
@@ -143,6 +149,9 @@ export function AppShell() {
   const singleServer = useBuiltInServer() !== null;
   const hasCommunityRail =
     !singleServer && communitiesHook.communities.length > 1;
+  // The main tabs rail sits left of the sidebar outside a huddle room; the
+  // chrome and overlays clear it like the community rail.
+  const hasLeftRail = hasCommunityRail || !isHuddleRoom;
   const addCommunityDialog = useAddCommunityDialogState();
   const [isChannelManagementOpen, setIsChannelManagementOpen] =
     React.useState(false);
@@ -159,12 +168,9 @@ export function AppShell() {
   const queryClient = useQueryClient();
   useManagedAgentRuntimeReconciliation(communitiesHook.communities); // sync storage snapshot
   const {
-    goAgents,
     goChannel,
     goHome,
     goNewMessage,
-    goProjects,
-    goPulse,
     goSettings,
     goWorkflows,
     closeSettings,
@@ -172,7 +178,6 @@ export function AppShell() {
   } = useAppNavigation();
   const { canGoBack, canGoForward, goBack, goForward } =
     useBackForwardControls();
-  const inboxPanelOpen = useInboxPanelOpen();
   const { selectedChannelId, selectedView } = React.useMemo(
     () => deriveShellRoute(location.pathname),
     [location.pathname],
@@ -355,6 +360,25 @@ export function AppShell() {
     selectedView,
     sidebarChannels,
   ]);
+  const locationThread = (location.search as { thread?: unknown }).thread;
+  const selectedThreadRootId =
+    selectedView === "channel" && typeof locationThread === "string"
+      ? locationThread
+      : null;
+  const handleSelectChats = useChatsRailNavigation({
+    channelsLoaded: channelsQuery.isSuccess && channelsQuery.dataUpdatedAt > 0,
+    goChannel,
+    selectedChannelId,
+    selectedThreadRootId,
+    selectedView,
+    sidebarChannels,
+  });
+  const sidebarListTab = useSidebarListTab();
+  // A screen opened by route (a link, search, back) shows its own list.
+  React.useEffect(() => {
+    const tab = listTabForView(selectedView);
+    if (tab) setSidebarListTab(tab);
+  }, [selectedView]);
   const [terminalContextOverride, setTerminalContextOverride] =
     React.useState<TerminalContextOverride | null>(null);
   const { activeChannel, terminalContext } = useTerminalContext({
@@ -401,9 +425,10 @@ export function AppShell() {
   const {
     markAllChannelsRead: markAllChannelReadMarkers,
     markChannelRead,
-    markChannelUnread,
+    markChannelUnread: markChannelUnreadLocally,
     clearChannelUnreadSource,
     unreadChannelIds,
+    forcedUnreadChannelIds,
     topLevelUnreadChannelIds,
     unreadChannelCounts,
     highPriorityUnreadChannelIds,
@@ -411,8 +436,10 @@ export function AppShell() {
     getEffectiveTimestamp: getChannelReadAt,
     getOwnTimestamp: getOwnReadAt,
     getChannelAndThreadContexts: getReadContexts,
+    isReadStateInitialized,
     readStateVersion,
     setContextParentResolver,
+    setReadStateServerMirror,
     participatedRootIds,
     authoredRootIds,
     recordThreadInteraction,
@@ -511,20 +538,61 @@ export function AppShell() {
     [followedRootIds, mutedRootIds, participatedRootIds, authoredRootIds],
   );
 
+  const openChatThread = React.useCallback(
+    (channelId: string, rootId: string) =>
+      void goChannel(channelId, { thread: rootId }),
+    [goChannel],
+  );
+  const chatState = useChatStateWiring({
+    channels,
+    forcedUnreadChannelIds,
+    getOwnReadAt,
+    getReadContexts,
+    isReadStateInitialized,
+    markChannelUnread: markChannelUnreadLocally,
+    mutedRootIds,
+    openThread: openChatThread,
+    pubkey: identityQuery.data?.pubkey,
+    readStateVersion,
+    relayUrl: communitiesHook.activeCommunity?.relayUrl,
+    setReadStateServerMirror,
+  });
+  const { markChannelUnread, mirrorFollow } = chatState;
   const handleFollowThread = React.useCallback(
     (rootId: string) => {
       followThread(rootId);
       unmuteThread(rootId);
+      mirrorFollow(rootId, "followed");
     },
-    [followThread, unmuteThread],
+    [followThread, unmuteThread, mirrorFollow],
   );
 
   const handleUnfollowThread = React.useCallback(
     (rootId: string) => {
       unfollowThread(rootId);
       muteThread(rootId);
+      mirrorFollow(rootId, "unfollowed");
     },
-    [unfollowThread, muteThread],
+    [unfollowThread, muteThread, mirrorFollow],
+  );
+  const chatThreadRowChats = useChatThreadRowActions({
+    beforeExplicitThreadRead: chatState.beforeExplicitThreadRead,
+    markThreadRead,
+    markThreadUnread: chatState.markThreadUnread,
+    pinThread: chatState.pinThread,
+    serverChats: chatState.serverChats,
+    unfollowThread: handleUnfollowThread,
+    unpinThread: chatState.unpinThread,
+  });
+  const serverChats = React.useMemo(
+    () =>
+      chatThreadRowChats
+        ? {
+            ...chatThreadRowChats,
+            openRootId: selectedThreadRootId,
+          }
+        : chatThreadRowChats,
+    [chatThreadRowChats, selectedThreadRootId],
   );
 
   const createChannelMutation = useCreateChannelMutation(),
@@ -750,6 +818,7 @@ export function AppShell() {
           openCreateChannel={handleOpenCreateChannel}
         />
       ) : null}
+      <ChatStateSync {...chatState.syncProps} />
       <ChannelNavigationProvider channels={channels}>
         <AppShellProvider
           value={{
@@ -768,6 +837,8 @@ export function AppShell() {
             getChannelReadAt,
             getThreadReadAt,
             markThreadRead,
+            markThreadUnread: chatState.markThreadUnread,
+            mirrorThreadRead: chatState.mirrorThreadRead,
             getMessageReadAt,
             getChannelActivityItemReadAt,
             markMessageRead,
@@ -813,6 +884,22 @@ export function AppShell() {
                 communities={communitiesHook.communities}
               />
             ) : null}
+            {!isHuddleRoom ? (
+              <AppNavRail
+                homeBadgeCount={homeBadgeCount + dueReminderBadge}
+                listTab={sidebarListTab}
+                // Rail tabs switch only the left list; the main pane keeps
+                // what it shows until an item in that list is opened.
+                onSelectAgents={() => setSidebarListTab("agents")}
+                onSelectChats={handleSelectChats}
+                onSelectHome={() => setSidebarListTab("activity")}
+                onSelectPeople={() => setSidebarListTab("people")}
+                onSelectProjects={() => setSidebarListTab("projects")}
+                onSelectPulse={() => setSidebarListTab("pulse")}
+                onSelectWorkflows={() => void goWorkflows()}
+                selectedView={selectedView}
+              />
+            ) : null}
             <SidebarProvider
               className="relative z-10 min-h-0 min-w-0 flex-1 flex-col overflow-visible"
               data-testid="app-sidebar-layer"
@@ -823,7 +910,7 @@ export function AppShell() {
                     <AppTopChrome
                       canGoBack={canGoBack}
                       canGoForward={canGoForward}
-                      hasCommunityRail={hasCommunityRail}
+                      hasCommunityRail={hasLeftRail}
                       onGoBack={goBack}
                       onGoForward={goForward}
                     />
@@ -877,7 +964,6 @@ export function AppShell() {
                           currentPubkey={identityQuery.data?.pubkey}
                           errorMessage={channelsErrorMessage}
                           fallbackDisplayName={identityQuery.data?.displayName}
-                          homeBadgeCount={homeBadgeCount + dueReminderBadge}
                           addCommunityPrefill={addCommunityDialog.prefill}
                           isAddCommunityOpen={addCommunityDialog.open}
                           relayConnectionCard={relayConnectionCard}
@@ -925,7 +1011,6 @@ export function AppShell() {
                               });
                             await goChannel(directMessage.id);
                           }}
-                          onSelectAgents={() => void goAgents()}
                           onSelectChannel={handleSidebarChannelSelect}
                           onOpenSearchResult={handleOpenSearchResult}
                           searchChannels={channels}
@@ -934,22 +1019,7 @@ export function AppShell() {
                             scopeSearchFocusRequest,
                           ]}
                           onSelectHome={() => void goHome()}
-                          inboxPanelOpen={
-                            selectedView === "channel" && inboxPanelOpen
-                          }
-                          onSelectInbox={() => {
-                            // Inbox and Chats are one screen: on a channel the
-                            // Inbox button pulls the list out beside the room.
-                            if (selectedView === "channel") {
-                              toggleInboxPanel();
-                              return;
-                            }
-                            void goHome();
-                          }}
-                          onSelectProjects={() => void goProjects()}
-                          onSelectPulse={() => void goPulse()}
                           onSelectSettings={handleOpenSettings}
-                          onSelectWorkflows={() => void goWorkflows()}
                           onSetPresenceStatus={(status) =>
                             presenceSession.setStatus(status)
                           }
@@ -961,9 +1031,6 @@ export function AppShell() {
                             })
                           }
                           profile={profileQuery.data}
-                          projectsOverviewActive={
-                            location.pathname === "/projects"
-                          }
                           selfUserStatus={
                             deferredPubkey
                               ? (visibleUserStatus(
@@ -985,13 +1052,14 @@ export function AppShell() {
                           starredChannelIds={starredChannelIds}
                           onStarChannel={starChannel}
                           onUnstarChannel={unstarChannel}
+                          serverChats={serverChats}
                         />
                       ) : null}
                       <TerminalContextOverrideProvider
                         onChange={setTerminalContextOverride}
                       >
                         <AppShellChannelSurface
-                          hasCommunityRail={hasCommunityRail}
+                          hasCommunityRail={hasLeftRail}
                           isHuddleRoom={isHuddleRoom}
                           isHuddleRoomStarting={isHuddleRoomStarting}
                           mainInsetRef={mainInsetRef}
@@ -1006,7 +1074,7 @@ export function AppShell() {
                         <RelayConnectionOverlay
                           card={relayConnectionCard}
                           errorMessage={channelsErrorMessage}
-                          hasCommunityRail={hasCommunityRail}
+                          hasCommunityRail={hasLeftRail}
                           isHuddleDrawerOpen={isHuddleDrawerOpen}
                         />
                       ) : null}

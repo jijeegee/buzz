@@ -7,11 +7,11 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use kuzz_core::kind::{
-    event_kind_u32, is_parameterized_replaceable, KIND_AGENT_PROFILE, KIND_DM_VISIBILITY,
-    KIND_GIT_REPO_ANNOUNCEMENT, KIND_IA_ARCHIVED, KIND_IA_ARCHIVED_LIST, KIND_IA_UNARCHIVED,
-    KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION, KIND_NIP29_GROUP_ADMINS,
-    KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA, KIND_NIP43_MEMBERSHIP_LIST, KIND_REACTION,
-    KIND_THREAD_SUMMARY,
+    event_kind_u32, is_parameterized_replaceable, KIND_AGENT_PROFILE, KIND_CHAT_STATE_PING,
+    KIND_DM_VISIBILITY, KIND_GIT_REPO_ANNOUNCEMENT, KIND_IA_ARCHIVED, KIND_IA_ARCHIVED_LIST,
+    KIND_IA_UNARCHIVED, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
+    KIND_NIP29_GROUP_ADMINS, KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
+    KIND_NIP43_MEMBERSHIP_LIST, KIND_REACTION, KIND_THREAD_SUMMARY,
 };
 use kuzz_core::StoredEvent;
 use kuzz_db::channel::{MemberRecord, MemberRole};
@@ -3641,6 +3641,50 @@ pub async fn publish_nipia_archival_list(
     anyhow::bail!(
         "failed to publish kind:{KIND_IA_ARCHIVED_LIST} after {MAX_REPLACEMENT_ATTEMPTS} concurrent replacements"
     )
+}
+
+/// Tell `user`'s own devices that their chat state changed (kind:24210).
+///
+/// Relay-signed and ephemeral: published on the global topic for other relay
+/// nodes and fanned out locally. The owner-only fan-out gate delivers it only
+/// to connections authenticated as `user`. It carries no state — clients
+/// refetch their chats list — and a random nonce so two pings in one second
+/// are distinct events. Best effort: a Redis failure is logged and local
+/// delivery still runs; clients also refetch on start, foreground, and
+/// reconnect.
+pub async fn publish_chat_state_ping(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    user: &[u8],
+) -> anyhow::Result<()> {
+    let user_hex = hex::encode(user);
+    let event = EventBuilder::new(Kind::Custom(KIND_CHAT_STATE_PING as u16), "")
+        .tags([
+            Tag::parse(["p", &user_hex])
+                .map_err(|e| anyhow::anyhow!("failed to build p tag: {e}"))?,
+            Tag::parse(["nonce", &Uuid::new_v4().simple().to_string()])
+                .map_err(|e| anyhow::anyhow!("failed to build nonce tag: {e}"))?,
+        ])
+        .sign_with_keys(&state.relay_keypair)
+        .map_err(|e| anyhow::anyhow!("failed to sign kind:{KIND_CHAT_STATE_PING}: {e}"))?;
+    state.mark_local_event(tenant.community(), &event.id);
+    if let Err(e) = state
+        .pubsub
+        .publish_event(tenant, EventTopic::Global, &event)
+        .await
+    {
+        state
+            .local_event_ids
+            .invalidate(&(tenant.community(), event.id.to_bytes()));
+        warn!("chat-state ping Redis publish failed: {e}");
+    }
+    super::event::fan_out_event_to_local_subscribers(
+        state,
+        tenant.community(),
+        &StoredEvent::new(event, None),
+    )
+    .await;
+    Ok(())
 }
 
 /// NIP-DV: publish the relay-signed, per-viewer DM visibility snapshot for

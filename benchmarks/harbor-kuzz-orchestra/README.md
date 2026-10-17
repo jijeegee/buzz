@@ -43,10 +43,10 @@ one task (`-p`), a directory of tasks, or replace `-p` with Harbor's dataset and
 task selectors:
 
 ```bash
-uv run --project benchmarks/harbor-kuzz-orchestra/testbed harbor run --yes -p <TASK_OR_DIRECTORY> --agent harbor_kuzz_orchestra:KuzzOrchestraAgent --agent-kwarg manifest=<CONDITION.yaml> --agent-kwarg provisioner_factory=harbor_kuzz_testbed:provisioner_from_dict --agent-kwarg provisioner_config=<PROVISIONER.json> --agent-kwarg endpoint_config=<ENDPOINTS.json> --agent-kwarg artifact_root=benchmarks/harbor-kuzz-orchestra --agent-kwarg kuzz_acp_binary=<LINUX_BIN>/kuzz-acp --agent-kwarg kuzz_agent_binary=<LINUX_BIN>/kuzz-agent --agent-kwarg buzz_dev_mcp_binary=<LINUX_BIN>/kuzz-dev-mcp --agent-kwarg kuzz_cli_binary=target/debug/kuzz --agent-kwarg run_id="bench-$(date -u +%Y%m%dT%H%M%SZ)" --agent-timeout-multiplier 15 --n-concurrent 1
+uv run --project benchmarks/harbor-kuzz-orchestra/testbed harbor run --yes -p <TASK_OR_DIRECTORY> --agent harbor_kuzz_orchestra:KuzzOrchestraAgent --agent-kwarg manifest=<CONDITION.yaml> --agent-kwarg provisioner_factory=harbor_kuzz_testbed:provisioner_from_dict --agent-kwarg provisioner_config=<PROVISIONER.json> --agent-kwarg endpoint_config=<ENDPOINTS.json> --agent-kwarg artifact_root=benchmarks/harbor-kuzz-orchestra --agent-kwarg kuzz_acp_binary=<LINUX_BIN>/kuzz-acp --agent-kwarg kuzz_agent_binary=<LINUX_BIN>/kuzz-agent --agent-kwarg kuzz_dev_mcp_binary=<LINUX_BIN>/kuzz-dev-mcp --agent-kwarg kuzz_cli_binary=target/debug/kuzz --agent-kwarg run_id="bench-$(date -u +%Y%m%dT%H%M%SZ)" --agent-timeout-multiplier 15 --n-concurrent 1
 ```
 
-`kuzz_acp_binary`/`kuzz_agent_binary`/`buzz_dev_mcp_binary` must be **Linux**
+`kuzz_acp_binary`/`kuzz_agent_binary`/`kuzz_dev_mcp_binary` must be **Linux**
 builds matching the task image architecture — they are uploaded into each task
 container (`just benchmark` cross-builds them automatically; musl-static, so
 any Linux base image works). `kuzz_cli_binary` is the **host** CLI the harness

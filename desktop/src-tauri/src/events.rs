@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 mod message_tags;
 
+pub use message_tags::thread_marker_tag;
 use message_tags::{
     append_client_tags, append_quote_tag, append_sent_from_thread_tag, emoji_tags, imeta_tags,
     mention_reference_tags, route_note_tag,
@@ -377,7 +378,7 @@ pub struct MessageEditTags<'a> {
 }
 
 /// How a Smart routing delivery relates to an earlier one (`continue`,
-/// `amend`, or `cancel`), rendered as a `buzz:route` note for the agent.
+/// `amend`, or `cancel`), rendered as a `kuzz:route` note for the agent.
 #[derive(serde::Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteNote {
@@ -405,7 +406,7 @@ pub fn build_message_edit(
     emoji_tags(edit_tags.custom_emoji, &mut tags)?;
     if let Some(mention_refs) = edit_tags.mention_refs {
         mention_reference_tags(mention_refs, &mut tags)?;
-        tags.push(tag(vec!["buzz:mention-snapshot"])?);
+        tags.push(tag(vec!["kuzz:mention-snapshot"])?);
     }
     if let Some(route) = edit_tags.route {
         tags.push(route_note_tag(
@@ -1057,7 +1058,7 @@ mod tests {
         let tags = edit_tags_with_route(&[], None, Some(&note("amend")));
         let route = tags
             .iter()
-            .find(|tag| tag.first().map(String::as_str) == Some("buzz:route"))
+            .find(|tag| tag.first().map(String::as_str) == Some("kuzz:route"))
             .expect("route note tag");
         assert_eq!(
             route[1..4],
@@ -1079,7 +1080,7 @@ mod tests {
         }
         assert!(!edit_tags(&[])
             .iter()
-            .any(|tag| tag.first().map(String::as_str) == Some("buzz:route")));
+            .any(|tag| tag.first().map(String::as_str) == Some("kuzz:route")));
     }
 
     #[test]
@@ -1090,7 +1091,7 @@ mod tests {
             "stable mention reference must be present: {tags:?}"
         );
         assert!(
-            tags.iter().any(|tag| tag == &["buzz:mention-snapshot"]),
+            tags.iter().any(|tag| tag == &["kuzz:mention-snapshot"]),
             "snapshot marker must be present: {tags:?}"
         );
     }
@@ -1099,7 +1100,7 @@ mod tests {
     fn empty_edit_mention_snapshot_is_explicit() {
         let tags = edit_tags_with_refs(&[], Some(&[]));
         assert!(
-            tags.iter().any(|tag| tag == &["buzz:mention-snapshot"]),
+            tags.iter().any(|tag| tag == &["kuzz:mention-snapshot"]),
             "empty snapshot must still clear stale references: {tags:?}"
         );
         assert!(!tags
@@ -1115,7 +1116,7 @@ mod tests {
             .any(|tag| tag.first().map(String::as_str) == Some("mention")));
         assert!(!tags
             .iter()
-            .any(|tag| tag.first().map(String::as_str) == Some("buzz:mention-snapshot")));
+            .any(|tag| tag.first().map(String::as_str) == Some("kuzz:mention-snapshot")));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowDown, CircleCheck, LocateFixed } from "lucide-react";
+import { ArrowDown, LocateFixed } from "lucide-react";
 import { ThreadNameEditor } from "./ThreadNameEditor";
 
 import { HuddleTranscriptIntro } from "@/features/huddle/components/HuddleTranscriptIntro";
@@ -16,6 +16,7 @@ import {
 import type { MessageComposerEditTarget } from "@/features/messages/ui/MessageComposer.types";
 import { canManageMessageForCurrentUser } from "@/features/messages/lib/canManageMessage";
 import { canReplyInThread } from "@/features/messages/lib/threadDepth";
+import { isThreadMarkerReply } from "@/features/messages/lib/taskThread";
 import { handleTimelineMentionCopy } from "@/features/messages/lib/timelineMentionCopy";
 import type { TimelineMessage } from "@/features/messages/types";
 import type { VideoReviewPresentation } from "@/features/messages/lib/videoReviewContext";
@@ -60,7 +61,8 @@ import {
 import { ThreadGoalHeaderChip } from "@/features/goals/ui/GoalChips";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
-import { isTaskThreadClosed } from "@/features/messages/lib/taskThread";
+import { ThreadMarkerLine } from "./ThreadMarkerLine";
+import { useThreadHeaderBar } from "./useThreadHeaderBar";
 
 type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   channel: Channel | null;
@@ -73,6 +75,11 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   huddleMemberPubkeysPending?: boolean;
   /** Present the huddle's parent-channel thread as a dedicated live chat. */
   isHuddleTranscript?: boolean;
+  /**
+   * The Chats thread header bar (Follow, Copy link, Close/Reopen, ⋯). Off
+   * for Projects conversations, which keep their own header.
+   */
+  threadHeaderActions?: boolean;
   editTarget?: MessageComposerEditTarget | null;
   isSending: boolean;
   onCancelEdit?: () => void;
@@ -178,6 +185,7 @@ export function MessageThreadPanel({
   huddleMemberPubkeys,
   huddleMemberPubkeysPending = false,
   isHuddleTranscript = false,
+  threadHeaderActions = true,
   layout = "standalone",
   editTarget,
   enterMotion,
@@ -372,19 +380,55 @@ export function MessageThreadPanel({
   // rule when there is actually conversation under it — the "no replies yet"
   // card and the streaming-in `pending` state would both leave a rule hanging
   // over an empty region or a placeholder.
+  const isRepliesLoading =
+    threadRepliesPending || repliesRenderState === "pending";
+  // Older-replies state for the rows actually on screen. The live flag can
+  // flip with a page the deferred list has not committed yet; reading it
+  // directly would paint the thread start before the rows beneath it.
+  const renderedHasOlderRepliesRef = React.useRef(hasOlderReplies);
+  if (!isRepliesPending) {
+    renderedHasOlderRepliesRef.current = hasOlderReplies;
+  }
+  const renderedHasOlderReplies = renderedHasOlderRepliesRef.current;
+  // The list is anchored at the bottom: newest reply above the composer, older
+  // replies growing upward. The thread start (head, or the huddle intro) is the
+  // top end of that list, so it only paints once every older reply is loaded,
+  // and never while replies are still loading (painting it first and removing
+  // it when a long thread turns out to have older pages would move the view).
+  // A collapsed thread and a head-targeted jump still need the head.
+  const showThreadStart =
+    !isRepliesLoading &&
+    (!renderedHasOlderReplies ||
+      isThreadHeadRepliesCollapsed ||
+      (scrollTargetId !== null && scrollTargetId === threadHeadId));
   const showThreadHeadDivider =
     !isHuddleTranscript &&
     isFocusMode &&
-    (threadRepliesPending || repliesRenderState === "list");
+    showThreadStart &&
+    repliesRenderState === "list";
 
   const threadMessages = React.useMemo(
     () => deferredThreadReplies.map((entry) => entry.message),
     [deferredThreadReplies],
   );
-  const isClosedTaskThread = React.useMemo(
-    () => !isHuddleTranscript && isTaskThreadClosed(threadMessages),
-    [isHuddleTranscript, threadMessages],
-  );
+  const {
+    closedLine,
+    closedMarkerId,
+    isClosed: isClosedTaskThread,
+    renderHeaderActions,
+  } = useThreadHeaderBar({
+    channelId,
+    currentPubkey,
+    disabled,
+    isFollowingThread,
+    isHuddleTranscript,
+    threadHeaderActions,
+    onFollowThread,
+    onMarkUnread,
+    onUnfollowThread,
+    threadHead,
+    threadMessages,
+  });
   const shouldShowThreadBranchGuides = React.useMemo(
     () => hasNestedThreadBranches(deferredThreadReplies),
     [deferredThreadReplies],
@@ -516,7 +560,7 @@ export function MessageThreadPanel({
   } = useAnchoredScroll({
     channelId: threadHeadId,
     contentRef: threadContentRef,
-    isLoading: threadRepliesPending || repliesRenderState === "pending",
+    isLoading: isRepliesLoading,
     messages: threadMessages,
     highlightTargetMessage: scrollTargetHighlights,
     onTargetReached: onScrollTargetResolved,
@@ -528,7 +572,7 @@ export function MessageThreadPanel({
   useLoadOlderOnScroll({
     fetchOlder: onFetchOlderReplies,
     hasOlderMessages: hasOlderReplies,
-    isLoading: threadRepliesPending || repliesRenderState === "pending",
+    isLoading: isRepliesLoading,
     scrollContainerRef: threadBodyRef,
     sentinelRef: olderRepliesSentinelRef,
   });
@@ -573,17 +617,11 @@ export function MessageThreadPanel({
       <TooltipContent>Show in channel</TooltipContent>
     </Tooltip>
   ) : null;
-  const goalHeaderChip =
-    goalChip || showInChannelButton ? (
-      <>
-        {showInChannelButton}
-        {goalChip}
-      </>
-    ) : null;
+  const goalHeaderChip = renderHeaderActions(goalChip, showInChannelButton);
 
   const threadScrollRegion = (
     <AuxiliaryPanelBody
-      className="overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--kuzz-thread-canvas)] pb-24"
+      className="flex flex-col overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--kuzz-thread-canvas)] pb-24"
       data-kuzz-conversation-scroll
       data-testid="message-thread-body"
       mode={isHuddleTranscript ? "panel" : undefined}
@@ -595,15 +633,21 @@ export function MessageThreadPanel({
       {/* The gallery is intentionally DOM-scoped: only media currently rendered
           in this open thread participates. Collapsed or unloaded descendants
           join only after the thread UI renders them. */}
+      {/* `mt-auto` in the column-flex scroller stacks a short thread at the
+          bottom, just above the composer, like the room timeline. A long
+          thread overflows normally; no reversed layout is involved. */}
       <div
-        className={cn(hasConstrainedColumn && THREAD_PANEL_COLUMN_CLASS)}
+        className={cn(
+          "mt-auto w-full shrink-0",
+          hasConstrainedColumn && THREAD_PANEL_COLUMN_CLASS,
+        )}
         data-image-gallery-scope="thread"
         ref={threadContentRef}
         style={
           hasConstrainedColumn ? { maxWidth: columnMaxWidthPx } : undefined
         }
       >
-        {isHuddleTranscript ? (
+        {!showThreadStart ? null : isHuddleTranscript ? (
           <div className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-2 pt-4")}>
             <HuddleTranscriptIntro />
           </div>
@@ -680,7 +724,7 @@ export function MessageThreadPanel({
           className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-3 pt-0")}
           data-testid="message-thread-replies"
         >
-          {hasOlderReplies ? (
+          {renderedHasOlderReplies ? (
             <div
               className="flex justify-center pb-2"
               data-testid="message-thread-older-replies"
@@ -745,6 +789,20 @@ export function MessageThreadPanel({
                       index,
                       isContinuation,
                     } = item;
+                    if (
+                      threadHeaderActions &&
+                      !isHuddleTranscript &&
+                      isThreadMarkerReply(entry.message)
+                    ) {
+                      // The closed line below stands for the current close.
+                      return entry.message.id === closedMarkerId ? null : (
+                        <ThreadMarkerLine
+                          currentPubkey={currentPubkey}
+                          key={entry.message.renderKey ?? entry.message.id}
+                          message={entry.message}
+                        />
+                      );
+                    }
                     const showUnreadDivider =
                       index > 0 && entry.message.id === firstUnreadReplyId;
                     const highlight = selectThreadRowHighlight({
@@ -891,7 +949,7 @@ export function MessageThreadPanel({
               )
             }
           />
-          {isClosedTaskThread ? <TaskThreadClosedBanner /> : null}
+          {closedLine}
         </div>
       </div>
     </AuxiliaryPanelBody>
@@ -965,7 +1023,9 @@ export function MessageThreadPanel({
                 isHuddleTranscript
                   ? "Message the huddle"
                   : isClosedTaskThread
-                    ? "Task closed. Start new work in the channel, or reply to reopen"
+                    ? threadHeaderActions
+                      ? "Sending will reopen this thread"
+                      : "Task closed. Start new work in the channel, or reply to reopen"
                     : `Reply in thread to ${threadHead.author}`
               }
               profiles={profiles}
@@ -1058,21 +1118,5 @@ export function MessageThreadPanel({
         {threadScrollRegion}
       </AuxiliaryPanel>
     </VideoReviewNavigationProvider>
-  );
-}
-
-function TaskThreadClosedBanner() {
-  return (
-    <section
-      aria-label="Task closed"
-      className="mt-3 flex items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
-      data-testid="task-thread-closed-banner"
-    >
-      <CircleCheck aria-hidden className="size-4 shrink-0 text-primary" />
-      <span>
-        Task closed. The result was reported in the channel. Start new work
-        there; replying here reopens this thread.
-      </span>
-    </section>
   );
 }

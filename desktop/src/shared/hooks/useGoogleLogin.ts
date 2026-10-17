@@ -8,6 +8,7 @@ import {
   type SignupPrompt,
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
+import { useReturnedToApp } from "./useReturnedToApp";
 
 type Phase = "opening" | "waiting" | "completing" | "signup" | null;
 
@@ -141,6 +142,10 @@ export function useGoogleLogin() {
       }
     }
   }
+
+  // The browser tab can't be watched: back in Kuzz with the browser step
+  // unfinished means it was dropped. Completion that already began still wins.
+  useReturnedToApp(phase === "waiting", () => void cancel());
 
   /** Answer the "Create your Kuzz account" screen. */
   function answerSignup(choice: SignupChoice) {

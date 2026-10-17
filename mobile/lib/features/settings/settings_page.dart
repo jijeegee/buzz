@@ -81,6 +81,7 @@ class SettingsPage extends HookConsumerWidget {
     );
 
     final tokenOrigin = ref.watch(activeTokenOriginProvider);
+    final googleKeyOrigin = ref.watch(activeGoogleKeyOriginProvider);
 
     Future<void> showEditProfileSheet() async {
       // A token account has one global profile; the relay rejects client
@@ -235,8 +236,10 @@ class SettingsPage extends HookConsumerWidget {
                 const ExperimentsSettings(),
                 if (tokenOrigin != null)
                   _AccountSection(origin: tokenOrigin)
+                else if (googleKeyOrigin != null)
+                  _AccountSection(origin: googleKeyOrigin, googleKey: true)
                 else
-                  const _ConnectionSection(),
+                  const _ProtectAccountSection(),
                 const _SignOutSection(),
                 // The built-in server cannot be removed from the device.
                 if (!hasBuiltInServer) const _RemoveCommunitySection(),

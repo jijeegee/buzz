@@ -102,7 +102,7 @@ fn union_custom_emoji(events: &[serde_json::Value]) -> Vec<EmojiEntry> {
 }
 
 /// List the workspace custom emoji palette: the union of every member's
-/// own kind:30030 set (d=`buzz:custom-emoji`).
+/// own kind:30030 set (d=`kuzz:custom-emoji`).
 async fn cmd_list(client: &KuzzClient) -> Result<(), CliError> {
     let filter = serde_json::json!({
         "kinds": [kuzz_sdk::kind::KIND_EMOJI_SET],
@@ -450,7 +450,7 @@ mod tests {
             serde_json::json!({
                 "created_at": 100,
                 "tags": [
-                    ["d", "buzz:custom-emoji"],
+                    ["d", "kuzz:custom-emoji"],
                     ["emoji", "zort", "https://example.com/zort.png"],
                     ["emoji", "narf", "https://example.com/narf.png"]
                 ]
@@ -458,7 +458,7 @@ mod tests {
             serde_json::json!({
                 "created_at": 200,
                 "tags": [
-                    ["d", "buzz:custom-emoji"],
+                    ["d", "kuzz:custom-emoji"],
                     // newer set claims zort with a different url — newer wins
                     ["emoji", "zort", "https://example.com/zort2.png"]
                 ]
@@ -669,7 +669,7 @@ mod tests {
         serde_json::json!([{
             "created_at": 100,
             "tags": [
-                ["d", "buzz:custom-emoji"],
+                ["d", "kuzz:custom-emoji"],
                 ["emoji", "wave", "https://cdn.example.com/wave.png"],
                 ["emoji", "sweatblob", "https://cdn.example.com/sweatblob.gif"]
             ]
@@ -785,7 +785,7 @@ mod tests {
         let non_canonical_palette = serde_json::json!([{
             "created_at": 100,
             "tags": [
-                ["d", "buzz:custom-emoji"],
+                ["d", "kuzz:custom-emoji"],
                 // Relay-valid but non-canonical: whitespace + surrounding colons + uppercase.
                 ["emoji", "  :WAVE:  ", "https://cdn.example.com/wave.png"],
             ]

@@ -1,5 +1,5 @@
-//! Which server the backend talks to: the build-time Kuzz environment table
-//! and the rule that refuses every other relay.
+//! Which server the backend talks to: the build-time server address and the
+//! rule that refuses every other relay.
 
 use super::{configured_env_var, relay_http_base_url};
 
@@ -7,36 +7,50 @@ use super::{configured_env_var, relay_http_base_url};
 /// (default `prod`). Debug vs release does not matter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KuzzEnv {
-    /// Always the prod server; every env/baked override is ignored and no
-    /// other relay may be applied.
+    /// Always the built-in server; runtime overrides are ignored and no other
+    /// relay may be applied.
     Prod,
-    /// The dev server, unless overridden explicitly by runtime
-    /// `KUZZ_RELAY_URL` or the baked build-time `KUZZ_RELAY_URL`.
+    /// The built-in server, unless overridden explicitly by the runtime
+    /// `KUZZ_RELAY_URL` / `KUZZ_RELAY_HTTP`.
     Dev,
 }
 
 /// One server's WebSocket and HTTP addresses.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelayEndpoints {
-    pub ws: &'static str,
-    pub http: &'static str,
+    pub ws: String,
+    pub http: String,
 }
 
-/// The server table: the only place the addresses live. Server-pushed
-/// address changes are a later feature.
-pub const fn relay_endpoints(env: KuzzEnv) -> RelayEndpoints {
-    match env {
-        KuzzEnv::Prod => RelayEndpoints {
-            ws: "wss://jihobuzz.duckdns.org:8443",
-            http: "https://jihobuzz.duckdns.org:8443",
-        },
-        // Same server for now. When dev and prod are split, change only this
-        // dev entry (e.g. to the developer PC's address); prod stays as is.
-        KuzzEnv::Dev => RelayEndpoints {
-            ws: "wss://jihobuzz.duckdns.org:8443",
-            http: "https://jihobuzz.duckdns.org:8443",
-        },
-    }
+/// Stand-in address for builds made without `KUZZ_RELAY_URL` (debug builds and
+/// tests only: `build.rs` fails release builds without it). It never resolves,
+/// so such a build visibly connects nowhere instead of to a guessed server.
+const UNSET_RELAY_WS: &str = "wss://kuzz-relay-url-not-set.invalid";
+
+/// Endpoints from a build's baked `KUZZ_RELAY_URL` (WebSocket) and optional
+/// `KUZZ_RELAY_HTTP`; the HTTP base defaults to the WebSocket URL's.
+fn built_in_endpoints(ws: Option<&str>, http: Option<&str>) -> RelayEndpoints {
+    let present = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    let ws = present(ws).unwrap_or_else(|| UNSET_RELAY_WS.to_string());
+    let http = present(http)
+        .map(|http| http.trim_end_matches('/').to_string())
+        .unwrap_or_else(|| relay_http_base_url(&ws));
+    RelayEndpoints { ws, http }
+}
+
+/// This build's server, baked from the build environment's `KUZZ_RELAY_URL`
+/// (and optional `KUZZ_RELAY_HTTP`). Server-pushed address changes are a
+/// later feature.
+pub fn relay_endpoints() -> RelayEndpoints {
+    built_in_endpoints(
+        option_env!("KUZZ_DESKTOP_BUILD_RELAY_URL"),
+        option_env!("KUZZ_DESKTOP_BUILD_RELAY_HTTP"),
+    )
 }
 
 /// Parse the baked `KUZZ_DESKTOP_BUILD_ENV`; anything but `dev` is prod.
@@ -52,8 +66,7 @@ pub fn kuzz_env() -> KuzzEnv {
     parse_kuzz_env(option_env!("KUZZ_DESKTOP_BUILD_ENV"))
 }
 
-/// Explicit relay overrides (runtime env first, then the baked build value).
-/// Only the dev environment honours them.
+/// Explicit runtime relay overrides. Only the dev environment honours them.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RelayOverrides {
     pub ws: Option<String>,
@@ -61,24 +74,21 @@ pub struct RelayOverrides {
 }
 
 fn relay_overrides() -> RelayOverrides {
-    let baked = |value: Option<&str>| {
-        value
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-    };
     RelayOverrides {
-        ws: configured_env_var("KUZZ_RELAY_URL")
-            .or_else(|| baked(option_env!("KUZZ_DESKTOP_BUILD_RELAY_URL"))),
-        http: configured_env_var("KUZZ_RELAY_HTTP")
-            .or_else(|| baked(option_env!("KUZZ_DESKTOP_BUILD_RELAY_HTTP"))),
+        ws: configured_env_var("KUZZ_RELAY_URL"),
+        http: configured_env_var("KUZZ_RELAY_HTTP"),
     }
 }
 
-/// Pure relay choice: `(WebSocket URL, HTTP base URL)` for `env`.
-pub fn choose_relay_urls(env: KuzzEnv, overrides: &RelayOverrides) -> (String, String) {
-    let table = relay_endpoints(env);
+/// Pure relay choice: `(WebSocket URL, HTTP base URL)` for `env`, given the
+/// build's `built_in` server.
+pub fn choose_relay_urls(
+    env: KuzzEnv,
+    built_in: &RelayEndpoints,
+    overrides: &RelayOverrides,
+) -> (String, String) {
     if env == KuzzEnv::Prod {
-        return (table.ws.to_string(), table.http.to_string());
+        return (built_in.ws.clone(), built_in.http.clone());
     }
     match overrides.ws.as_deref() {
         Some(ws) => {
@@ -90,7 +100,7 @@ pub fn choose_relay_urls(env: KuzzEnv, overrides: &RelayOverrides) -> (String, S
                 .unwrap_or_else(|| relay_http_base_url(&ws));
             (ws, http)
         }
-        None => (table.ws.to_string(), table.http.to_string()),
+        None => (built_in.ws.clone(), built_in.http.clone()),
     }
 }
 
@@ -121,14 +131,16 @@ fn relay_endpoint(url: &str) -> Option<RelayEndpoint> {
 
 /// Pure check: may the backend be pointed at `relay_url`? Only the server
 /// [`choose_relay_urls`] picks for `env` is allowed, over the same kind of
-/// scheme: the table servers are `wss`, so prod never allows `ws`/`http`.
+/// scheme: prod builds bake a `wss` server (enforced by `build.rs`), so prod
+/// never allows `ws`/`http`.
 /// Only a dev build's explicit unencrypted override allows `ws`/`http`.
 pub fn check_relay_allowed(
     env: KuzzEnv,
+    built_in: &RelayEndpoints,
     overrides: &RelayOverrides,
     relay_url: &str,
 ) -> Result<(), String> {
-    let (allowed, _) = choose_relay_urls(env, overrides);
+    let (allowed, _) = choose_relay_urls(env, built_in, overrides);
     match (relay_endpoint(relay_url), relay_endpoint(&allowed)) {
         (Some(actual), Some(wanted)) if actual == wanted => Ok(()),
         _ => Err("Kuzz only connects to its own server.".to_string()),
@@ -139,7 +151,13 @@ pub fn check_relay_allowed(
 /// built-in one. `context` names the command for the log line; the refused
 /// host:port is logged, never credentials or paths.
 pub fn ensure_relay_allowed(context: &str, relay_url: &str) -> Result<(), String> {
-    check_relay_allowed(kuzz_env(), &relay_overrides(), relay_url).inspect_err(|_| {
+    check_relay_allowed(
+        kuzz_env(),
+        &relay_endpoints(),
+        &relay_overrides(),
+        relay_url,
+    )
+    .inspect_err(|_| {
         let target = relay_endpoint(relay_url)
             .map(|RelayEndpoint { host, port, .. }| format!("{host}:{port}"))
             .unwrap_or_else(|| "an unparseable address".to_string());
@@ -149,11 +167,11 @@ pub fn ensure_relay_allowed(context: &str, relay_url: &str) -> Result<(), String
 
 /// The built-in server's WebSocket URL for this build.
 pub fn relay_ws_url() -> String {
-    choose_relay_urls(kuzz_env(), &relay_overrides()).0
+    choose_relay_urls(kuzz_env(), &relay_endpoints(), &relay_overrides()).0
 }
 
 pub fn relay_api_base_url() -> String {
-    choose_relay_urls(kuzz_env(), &relay_overrides()).1
+    choose_relay_urls(kuzz_env(), &relay_endpoints(), &relay_overrides()).1
 }
 
 /// The refusal every guarded command returns, for command-level tests.
@@ -176,8 +194,8 @@ pub(crate) fn refusal_test_app() -> tauri::App<tauri::test::MockRuntime> {
 #[cfg(test)]
 mod tests {
     use super::{
-        check_relay_allowed, choose_relay_urls, parse_kuzz_env, relay_endpoints, KuzzEnv,
-        RelayOverrides,
+        built_in_endpoints, check_relay_allowed, choose_relay_urls, parse_kuzz_env,
+        relay_endpoints, KuzzEnv, RelayEndpoints, RelayOverrides, UNSET_RELAY_WS,
     };
 
     fn overrides(ws: Option<&str>, http: Option<&str>) -> RelayOverrides {
@@ -187,9 +205,13 @@ mod tests {
         }
     }
 
-    fn table(env: KuzzEnv) -> (String, String) {
-        let endpoints = relay_endpoints(env);
-        (endpoints.ws.to_string(), endpoints.http.to_string())
+    /// A build baked with `KUZZ_RELAY_URL=wss://kuzz.example:8443`.
+    fn ours() -> RelayEndpoints {
+        built_in_endpoints(Some("wss://kuzz.example:8443"), None)
+    }
+
+    fn pair(endpoints: &RelayEndpoints) -> (String, String) {
+        (endpoints.ws.clone(), endpoints.http.clone())
     }
 
     #[test]
@@ -197,39 +219,61 @@ mod tests {
         assert_eq!(parse_kuzz_env(None), KuzzEnv::Prod);
         assert_eq!(parse_kuzz_env(Some("prod")), KuzzEnv::Prod);
         assert_eq!(parse_kuzz_env(Some("dev")), KuzzEnv::Dev);
-        assert_eq!(
-            relay_endpoints(KuzzEnv::Prod).ws,
-            "wss://jihobuzz.duckdns.org:8443"
-        );
-        assert_eq!(
-            relay_endpoints(KuzzEnv::Prod).http,
-            "https://jihobuzz.duckdns.org:8443"
-        );
     }
 
     #[test]
-    fn prod_always_uses_its_table_url() {
+    fn built_in_server_comes_from_the_baked_address() {
         assert_eq!(
-            choose_relay_urls(KuzzEnv::Prod, &overrides(None, None)),
-            table(KuzzEnv::Prod)
+            pair(&ours()),
+            (
+                "wss://kuzz.example:8443".to_string(),
+                "https://kuzz.example:8443".to_string()
+            )
+        );
+        assert_eq!(
+            built_in_endpoints(
+                Some(" wss://kuzz.example:8443 "),
+                Some("https://api.kuzz.example/")
+            ),
+            RelayEndpoints {
+                ws: "wss://kuzz.example:8443".to_string(),
+                http: "https://api.kuzz.example".to_string(),
+            }
+        );
+        // Builds without the address (debug builds and tests only) point
+        // nowhere real.
+        assert_eq!(built_in_endpoints(None, None).ws, UNSET_RELAY_WS);
+        assert_eq!(built_in_endpoints(Some("  "), None).ws, UNSET_RELAY_WS);
+    }
+
+    #[test]
+    fn prod_always_uses_the_built_in_server() {
+        assert_eq!(
+            choose_relay_urls(KuzzEnv::Prod, &ours(), &overrides(None, None)),
+            pair(&ours())
         );
         assert_eq!(
             choose_relay_urls(
                 KuzzEnv::Prod,
+                &ours(),
                 &overrides(Some("ws://localhost:3000"), Some("http://localhost:3000"))
             ),
-            table(KuzzEnv::Prod)
+            pair(&ours())
         );
     }
 
     #[test]
-    fn dev_uses_its_table_url_unless_overridden() {
+    fn dev_uses_the_built_in_server_unless_overridden() {
         assert_eq!(
-            choose_relay_urls(KuzzEnv::Dev, &overrides(None, None)),
-            table(KuzzEnv::Dev)
+            choose_relay_urls(KuzzEnv::Dev, &ours(), &overrides(None, None)),
+            pair(&ours())
         );
         assert_eq!(
-            choose_relay_urls(KuzzEnv::Dev, &overrides(Some("ws://localhost:3000"), None)),
+            choose_relay_urls(
+                KuzzEnv::Dev,
+                &ours(),
+                &overrides(Some("ws://localhost:3000"), None)
+            ),
             (
                 "ws://localhost:3000".to_string(),
                 "http://localhost:3000".to_string()
@@ -238,6 +282,7 @@ mod tests {
         assert_eq!(
             choose_relay_urls(
                 KuzzEnv::Dev,
+                &ours(),
                 &overrides(Some("wss://dev.example"), Some("https://api.dev.example/"))
             )
             .1,
@@ -250,35 +295,35 @@ mod tests {
         let none = overrides(None, None);
         let local = overrides(Some("ws://localhost:3000"), None);
         for allowed in [
-            "wss://jihobuzz.duckdns.org:8443",
-            "wss://jihobuzz.duckdns.org:8443/",
-            "https://JIHOBUZZ.duckdns.org:8443",
+            "wss://kuzz.example:8443",
+            "wss://kuzz.example:8443/",
+            "https://KUZZ.example:8443",
         ] {
             assert!(
-                check_relay_allowed(KuzzEnv::Prod, &none, allowed).is_ok(),
+                check_relay_allowed(KuzzEnv::Prod, &ours(), &none, allowed).is_ok(),
                 "{allowed}"
             );
             assert!(
-                check_relay_allowed(KuzzEnv::Prod, &local, allowed).is_ok(),
+                check_relay_allowed(KuzzEnv::Prod, &ours(), &local, allowed).is_ok(),
                 "{allowed}"
             );
         }
         for refused in [
             "ws://localhost:3000",
-            "wss://jihobuzz.duckdns.org",
-            "wss://jihobuzz.duckdns.org:9443",
+            "wss://kuzz.example",
+            "wss://kuzz.example:9443",
             "wss://other.example:8443",
             // Unencrypted schemes are never allowed in prod, even to our host.
-            "ws://jihobuzz.duckdns.org:8443",
-            "http://jihobuzz.duckdns.org:8443",
+            "ws://kuzz.example:8443",
+            "http://kuzz.example:8443",
             "not a url",
         ] {
             assert!(
-                check_relay_allowed(KuzzEnv::Prod, &none, refused).is_err(),
+                check_relay_allowed(KuzzEnv::Prod, &ours(), &none, refused).is_err(),
                 "{refused}"
             );
             assert!(
-                check_relay_allowed(KuzzEnv::Prod, &local, refused).is_err(),
+                check_relay_allowed(KuzzEnv::Prod, &ours(), &local, refused).is_err(),
                 "{refused}"
             );
         }
@@ -286,40 +331,50 @@ mod tests {
 
     #[test]
     fn dev_allows_only_the_chosen_server() {
+        let built_in = ours();
         let none = overrides(None, None);
-        let dev_table = relay_endpoints(KuzzEnv::Dev).ws;
-        assert!(check_relay_allowed(KuzzEnv::Dev, &none, dev_table).is_ok());
-        assert!(check_relay_allowed(KuzzEnv::Dev, &none, "ws://localhost:3000").is_err());
-        let local = overrides(Some("ws://localhost:3000"), None);
-        assert!(check_relay_allowed(KuzzEnv::Dev, &local, "ws://localhost:3000/").is_ok());
-        assert!(check_relay_allowed(KuzzEnv::Dev, &local, dev_table).is_err());
-        // The dev table server is encrypted too: no downgrade without an
-        // explicit unencrypted override.
+        assert!(check_relay_allowed(KuzzEnv::Dev, &built_in, &none, &built_in.ws).is_ok());
         assert!(
-            check_relay_allowed(KuzzEnv::Dev, &none, "ws://jihobuzz.duckdns.org:8443").is_err()
+            check_relay_allowed(KuzzEnv::Dev, &built_in, &none, "ws://localhost:3000").is_err()
+        );
+        let local = overrides(Some("ws://localhost:3000"), None);
+        assert!(
+            check_relay_allowed(KuzzEnv::Dev, &built_in, &local, "ws://localhost:3000/").is_ok()
+        );
+        assert!(check_relay_allowed(KuzzEnv::Dev, &built_in, &local, &built_in.ws).is_err());
+        // The built-in server is encrypted: no downgrade without an explicit
+        // unencrypted override.
+        assert!(
+            check_relay_allowed(KuzzEnv::Dev, &built_in, &none, "ws://kuzz.example:8443").is_err()
         );
         assert!(
-            check_relay_allowed(KuzzEnv::Dev, &none, "http://jihobuzz.duckdns.org:8443").is_err()
+            check_relay_allowed(KuzzEnv::Dev, &built_in, &none, "http://kuzz.example:8443")
+                .is_err()
         );
         // The explicit override's own scheme kind is allowed (ws and http alike).
-        assert!(check_relay_allowed(KuzzEnv::Dev, &local, "http://localhost:3000").is_ok());
+        assert!(
+            check_relay_allowed(KuzzEnv::Dev, &built_in, &local, "http://localhost:3000").is_ok()
+        );
         let secure = overrides(Some("wss://dev.example"), None);
-        assert!(check_relay_allowed(KuzzEnv::Dev, &secure, "wss://dev.example").is_ok());
-        assert!(check_relay_allowed(KuzzEnv::Dev, &secure, "ws://dev.example:443").is_err());
+        assert!(check_relay_allowed(KuzzEnv::Dev, &built_in, &secure, "wss://dev.example").is_ok());
+        assert!(
+            check_relay_allowed(KuzzEnv::Dev, &built_in, &secure, "ws://dev.example:443").is_err()
+        );
     }
 
     #[test]
     fn ensure_relay_allowed_refuses_other_servers_for_this_build() {
         // Unit tests build the default `prod` environment.
         assert_eq!(super::kuzz_env(), KuzzEnv::Prod);
-        let ours = relay_endpoints(KuzzEnv::Prod);
-        assert!(super::ensure_relay_allowed("test", ours.ws).is_ok());
-        assert!(super::ensure_relay_allowed("test", ours.http).is_ok());
+        let ours = relay_endpoints();
+        assert!(super::ensure_relay_allowed("test", &ours.ws).is_ok());
+        assert!(super::ensure_relay_allowed("test", &ours.http).is_ok());
         assert_eq!(
             super::ensure_relay_allowed("test", "wss://other.example").unwrap_err(),
             "Kuzz only connects to its own server."
         );
         assert!(super::ensure_relay_allowed("test", "ws://localhost:3000").is_err());
-        assert!(super::ensure_relay_allowed("test", "ws://jihobuzz.duckdns.org:8443").is_err());
+        let downgraded = ours.ws.replacen("wss://", "ws://", 1);
+        assert!(super::ensure_relay_allowed("test", &downgraded).is_err());
     }
 }

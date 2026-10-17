@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:kuzz/features/channels/thread_window.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 /// A 64-hex event id that sorts by [n].
@@ -39,6 +40,58 @@ List<NostrEvent> serveChannelWindow(
   Iterable<NostrEvent> rows,
   NostrFilter filter,
 ) {
+  final window = _keysetWindow(rows, filter);
+  return [
+    ...window.page,
+    NostrEvent(
+      id: 'bounds-${window.suffix}',
+      pubkey: 'relay',
+      createdAt: 0,
+      kind: EventKind.channelWindowBounds,
+      tags: [
+        ['d', '${channelId.toLowerCase()}:${window.suffix}'],
+        ['h', channelId],
+      ],
+      content: _boundsContent(window),
+      sig: '',
+    ),
+  ];
+}
+
+/// Serves one NIP-CW thread window of [rootId] over its reply [rows], the
+/// same keyset pages as [serveChannelWindow], closed by the thread bounds.
+List<NostrEvent> serveThreadWindow(
+  String channelId,
+  String rootId,
+  Iterable<NostrEvent> rows,
+  NostrFilter filter,
+) {
+  final window = _keysetWindow(rows, filter);
+  return [
+    ...window.page,
+    NostrEvent(
+      id: 'thread-bounds-${window.suffix}',
+      pubkey: 'relay',
+      createdAt: 0,
+      kind: threadWindowBoundsKind,
+      tags: [
+        ['h', channelId],
+        ['e', rootId],
+      ],
+      content: _boundsContent(window),
+      sig: '',
+    ),
+  ];
+}
+
+typedef _KeysetWindow = ({
+  List<NostrEvent> page,
+  bool hasMore,
+  bool newer,
+  String suffix,
+});
+
+_KeysetWindow _keysetWindow(Iterable<NostrEvent> rows, NostrFilter filter) {
   final afterId = filter.extensions['after_id'] as String?;
   final beforeId = filter.extensions['before_id'] as String?;
   final newer = afterId != null;
@@ -72,27 +125,18 @@ List<NostrEvent> serveChannelWindow(
     candidates = rows.toList()..sort(compareRelayOrder);
     suffix = 'head';
   }
-  final page = candidates.take(filter.limit).toList();
-  final hasMore = candidates.length > filter.limit;
-  return [
-    ...page,
-    NostrEvent(
-      id: 'bounds-$suffix',
-      pubkey: 'relay',
-      createdAt: 0,
-      kind: EventKind.channelWindowBounds,
-      tags: [
-        ['d', '${channelId.toLowerCase()}:$suffix'],
-        ['h', channelId],
-      ],
-      content: jsonEncode({
-        if (newer) 'direction': 'newer',
-        'has_more': hasMore,
-        'next_cursor': hasMore
-            ? {'created_at': page.last.createdAt, 'id': page.last.id}
-            : null,
-      }),
-      sig: '',
-    ),
-  ];
+  return (
+    page: candidates.take(filter.limit).toList(),
+    hasMore: candidates.length > filter.limit,
+    newer: newer,
+    suffix: suffix,
+  );
 }
+
+String _boundsContent(_KeysetWindow window) => jsonEncode({
+  if (window.newer) 'direction': 'newer',
+  'has_more': window.hasMore,
+  'next_cursor': window.hasMore
+      ? {'created_at': window.page.last.createdAt, 'id': window.page.last.id}
+      : null,
+});

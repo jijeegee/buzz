@@ -492,7 +492,7 @@ pub async fn accept(
         expected_origin: &origin,
         author_hex: &author_hex,
         app_profiles: &[AppProfile {
-            id: "buzz-ios-dogfood",
+            id: "kuzz-ios-dogfood",
             transport: "apns",
         }],
         supported_classes: &["default"],

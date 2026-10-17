@@ -75,6 +75,7 @@ test("top-level project lists show metadata and overflow actions", async ({
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await expect(
     page.getByRole("heading", { level: 2, name: "Projects Activity" }),
@@ -260,6 +261,7 @@ test("creating a project opens its channel conversation", async ({ page }) => {
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await openCreateProjectDialog(page);
   await page.getByTestId("create-project-name").fill("multi-repo-demo");
@@ -464,7 +466,7 @@ test("creating a project opens its channel conversation", async ({ page }) => {
   expect(projectEvent?.content).toBe("");
   expect(projectEvent?.tags.some((tag) => tag[0] === "a")).toBe(true);
   expect(
-    projectEvent?.tags.find((tag) => tag[0] === "buzz-channel")?.[1],
+    projectEvent?.tags.find((tag) => tag[0] === "kuzz-channel")?.[1],
   ).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
   );
@@ -503,6 +505,7 @@ test("unsupported relays cannot create a channel-first project", async ({
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await openCreateProjectDialog(page);
   await page.getByTestId("create-project-name").fill("legacy-fallback");
@@ -535,6 +538,7 @@ test("project creation can retry after its repository publication fails", async 
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await openCreateProjectDialog(page);
   await page.getByTestId("create-project-name").fill("retry-project");
@@ -560,6 +564,7 @@ test("project creation is idempotent after a lost publish acknowledgement", asyn
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await openCreateProjectDialog(page);
   await page.getByTestId("create-project-name").fill("lost-ack-project");
@@ -706,7 +711,7 @@ test("project sidebar rows open the home channel and nest extra channels", async
   expect(addedEvents.map((event) => event.kind)).toEqual([30621, 30617]);
   expect(
     addedEvents.find((event) => event.kind === 30617)?.tags,
-  ).toContainEqual(["buzz-channel", "cf63feec-21bb-5bf0-a2f8-0e4c3de8ec73"]);
+  ).toContainEqual(["kuzz-channel", "cf63feec-21bb-5bf0-a2f8-0e4c3de8ec73"]);
 
   await page.getByTestId("add-project-repository").click();
   await page.getByTestId("attach-project-repository").click();
@@ -742,6 +747,7 @@ test("latest files commit opens its detail without a divider", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   const projectEntry = page
@@ -787,6 +793,7 @@ test("project workspace sheet stays independent from an open thread", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await openCreateProjectDialog(page);
   await page.getByTestId("create-project-name").fill("sheet-motion-demo");
@@ -980,6 +987,7 @@ test("commit detail opens from the commits feed with a diff", async ({
   // The preview server is a static file server without SPA fallback, so
   // enter at "/" and navigate via the sidebar.
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   // The overview no longer lists repository cards — switch to the
@@ -1194,6 +1202,7 @@ test("project home task sheet expands into the repository Tasks view", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   const projectEntry = page
@@ -1260,6 +1269,8 @@ test("project discussion row opens its channel thread in context", async ({
     },
   );
 
+  await page.getByTestId("open-more-menu").click();
+
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   await page
@@ -1295,6 +1306,7 @@ test("pull request and issue feeds use compact work item rows", async ({
   await enableProjectsFeature(page);
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   // The overview no longer lists repository cards — switch to the
@@ -1527,6 +1539,7 @@ test("adding a repository blocks when a standalone 30617 already exists at that 
   );
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   await page

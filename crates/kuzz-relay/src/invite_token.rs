@@ -20,7 +20,7 @@
 //! ## Key derivation
 //!
 //! The HMAC key is derived from the relay's signing secret key:
-//! `key = sha256(relay_secret_key_bytes || "buzz-invite-v1")`. Rotating the
+//! `key = sha256(relay_secret_key_bytes || "kuzz-invite-v1")`. Rotating the
 //! relay keypair therefore invalidates all outstanding invites, which is the
 //! intended blast-radius control for a leaked link.
 //!
@@ -59,7 +59,7 @@ pub use kuzz_core::invite::MAX_INVITE_TTL_SECS;
 const MAX_CODE_LEN: usize = 1024;
 
 /// Domain-separation label mixed into the HMAC key derivation.
-const KEY_DERIVATION_LABEL: &[u8] = b"buzz-invite-v1";
+const KEY_DERIVATION_LABEL: &[u8] = b"kuzz-invite-v1";
 
 /// The signed payload carried inside an invite code.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -105,7 +105,7 @@ impl std::fmt::Display for InviteError {
 }
 
 /// Domain-separation label for keys derived from `INVITE_SIGNING_SECRET`.
-const SECRET_KEY_DERIVATION_LABEL: &[u8] = b"buzz-invite-secret-v1";
+const SECRET_KEY_DERIVATION_LABEL: &[u8] = b"kuzz-invite-secret-v1";
 
 /// Derive the invite HMAC key from `INVITE_SIGNING_SECRET` (token mode).
 ///

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type * as React from "react";
 import { BellOff, ChevronDown, CircleDot, Pin, X } from "lucide-react";
 
@@ -8,6 +9,7 @@ import {
 } from "@/shared/ui/context-menu";
 
 import { AgentManagementMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
+import { roomExitAction } from "@/features/sidebar/lib/chatRowMenu";
 import { ChannelContextMenuItems } from "@/features/sidebar/ui/ChannelContextMenu";
 import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurnsStore";
 import { formatElapsed } from "@/features/agents/ui/agentSessionUtils";
@@ -33,6 +35,9 @@ import {
 import { ChannelActivityPopover } from "@/features/sidebar/ui/ChannelActivityPopover";
 import { useAppShell } from "@/app/AppShellContext";
 import { UserNameIndicators } from "@/features/user-status/ui/UserNameIndicators";
+import type { ChatRowPreview } from "@/features/chats/chatRowPreview";
+import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
+import { ChatConversationRow } from "@/features/sidebar/ui/ChatRowLines";
 
 const SECTION_LABEL_BUTTON_CLASS =
   "group/section-label flex w-fit max-w-[calc(100%-3rem)] cursor-pointer appearance-none items-center gap-1 text-left transition-colors hover:text-sidebar-foreground focus-visible:text-sidebar-foreground";
@@ -50,6 +55,11 @@ const DM_AVATAR_SIZE = 24;
 const DM_AVATAR_STATUS_GEOMETRY = scaleProfileAvatarStatusGeometry(
   DEFAULT_HOVER_PROFILE_STATUS_GEOMETRY,
   DM_AVATAR_SIZE,
+);
+const DM_AVATAR_SIZE_LARGE = 36;
+const DM_AVATAR_STATUS_GEOMETRY_LARGE = scaleProfileAvatarStatusGeometry(
+  DEFAULT_HOVER_PROFILE_STATUS_GEOMETRY,
+  DM_AVATAR_SIZE_LARGE,
 );
 
 function formatUnreadCount(count: number): string {
@@ -120,7 +130,7 @@ export function formatWorkingTooltip(
   return `${leadName} and ${formatAgentCount(remainingAgentCount)} working`;
 }
 
-function ChannelWorkingBadge({
+export function ChannelWorkingBadge({
   channelName,
   isActive,
   summary,
@@ -162,11 +172,14 @@ export type SidebarDmParticipant = {
 function DmChannelIcon({
   channelName,
   isPair,
+  large = false,
   participants,
   presenceStatus,
 }: {
   channelName: string;
   isPair: boolean;
+  /** Two-line Chats rows use a 36px avatar. */
+  large?: boolean;
   participants?: SidebarDmParticipant[];
   presenceStatus?: PresenceStatus;
 }) {
@@ -180,7 +193,10 @@ function DmChannelIcon({
     return (
       <span
         aria-hidden="true"
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sidebar-accent/80 text-2xs font-semibold leading-none text-sidebar-foreground shadow-none"
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-full bg-sidebar-accent/80 font-semibold leading-none text-sidebar-foreground shadow-none",
+          large ? "h-9 w-9 text-xs" : "h-6 w-6 text-2xs",
+        )}
         data-testid={`channel-dm-count-${channelName}`}
       >
         <span className="translate-x-px leading-none">
@@ -192,16 +208,26 @@ function DmChannelIcon({
 
   if (isPair || !participants || participants.length <= 1) {
     return (
-      <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+      <span
+        className={cn(
+          "relative flex shrink-0 items-center justify-center",
+          large ? "h-9 w-9" : "h-6 w-6",
+        )}
+      >
         <ProfileAvatarWithStatus
-          avatarClassName="bg-sidebar-accent/80 text-2xs text-sidebar-foreground shadow-none"
+          avatarClassName={cn(
+            "bg-sidebar-accent/80 text-sidebar-foreground shadow-none",
+            large ? "text-xs" : "text-2xs",
+          )}
           avatarUrl={primaryParticipant.avatarUrl}
-          className="h-6 w-6"
-          geometry={DM_AVATAR_STATUS_GEOMETRY}
-          iconClassName="h-3.5 w-3.5"
+          className={large ? "h-9 w-9" : "h-6 w-6"}
+          geometry={
+            large ? DM_AVATAR_STATUS_GEOMETRY_LARGE : DM_AVATAR_STATUS_GEOMETRY
+          }
+          iconClassName={large ? "h-5 w-5" : "h-3.5 w-3.5"}
           label={primaryParticipant.label}
           shape={primaryParticipant.isAgent ? "squircle" : "circle"}
-          size={DM_AVATAR_SIZE}
+          size={large ? DM_AVATAR_SIZE_LARGE : DM_AVATAR_SIZE}
           status={presenceStatus}
           statusTestId={`channel-presence-${channelName}`}
           testId={`channel-avatar-${channelName}`}
@@ -217,11 +243,13 @@ function SidebarChannelIcon({
   channel,
   className,
   dmParticipants,
+  large = false,
   presenceStatus,
 }: {
   channel: Channel;
   className?: string;
   dmParticipants?: SidebarDmParticipant[];
+  large?: boolean;
   presenceStatus?: PresenceStatus;
 }) {
   if (channel.channelType === "dm") {
@@ -229,6 +257,7 @@ function SidebarChannelIcon({
       <DmChannelIcon
         channelName={channel.name}
         isPair={channel.participantPubkeys.length === 2}
+        large={large}
         participants={dmParticipants}
         presenceStatus={
           dmParticipants?.length === 1 ||
@@ -240,6 +269,16 @@ function SidebarChannelIcon({
     );
   }
 
+  if (large) {
+    return (
+      <ConversationLetterAvatar
+        channelId={channel.id}
+        channelLabel={channel.name}
+        isThread={false}
+        testId={`chat-row-avatar-${channel.id}`}
+      />
+    );
+  }
   return <ChannelGlyph channel={channel} className={className} />;
 }
 
@@ -253,6 +292,8 @@ export function ChannelMenuButton({
   isPinned,
   dmParticipants,
   presenceStatus,
+  preview,
+  unreadCount = 0,
   onSelectChannel,
 }: {
   channel: Channel;
@@ -264,6 +305,10 @@ export function ChannelMenuButton({
   isPinned?: boolean;
   dmParticipants?: SidebarDmParticipant[];
   presenceStatus?: PresenceStatus;
+  /** With a preview the row is a two-line Chats row (avatar, name, time, latest message). */
+  preview?: ChatRowPreview;
+  /** Unread count shown on a two-line row. */
+  unreadCount?: number;
   onSelectChannel: (channelId: string) => void;
 }) {
   const resolvedLabel = label ?? channel.name;
@@ -285,7 +330,86 @@ export function ChannelMenuButton({
       "sidebar-muted-content opacity-50 dark:opacity-45",
   );
 
-  const button = (
+  const button = preview ? (
+    <ChatConversationRow
+      ariaLabel={resolvedLabel}
+      avatar={
+        <SidebarChannelIcon
+          channel={channel}
+          dmParticipants={dmParticipants}
+          large
+          presenceStatus={presenceStatus}
+        />
+      }
+      data-channel-id={channel.id}
+      data-testid={`channel-${channel.name}`}
+      isActive={isActive}
+      onSelect={() => onSelectChannel(channel.id)}
+      preview={preview}
+      badges={
+        hasUnread && !isActive ? (
+          unreadCount > 0 ? (
+            <UnreadCountBadge
+              channelName={channel.name}
+              className={cn(
+                isMuted && "bg-sidebar-foreground/20 text-sidebar-foreground",
+              )}
+              count={unreadCount}
+            />
+          ) : (
+            <UnreadDotBadge channelName={channel.name} />
+          )
+        ) : hasThreadUnread ? (
+          <UnreadDotBadge channelName={channel.name} />
+        ) : null
+      }
+      bold={hasUnread}
+      dimmed={!isActive && Boolean(isMuted) && !hasUnread}
+      title={
+        <>
+          <span className="min-w-0 truncate">
+            {channel.channelType === "dm" ? resolvedLabel : `#${resolvedLabel}`}
+          </span>
+          {channel.channelType === "dm" &&
+          (channel.participantPubkeys.length === 2 ||
+            dmParticipants?.length === 1) ? (
+            <UserNameIndicators
+              pubkey={dmParticipants?.[0]?.pubkey}
+              size="dm"
+            />
+          ) : null}
+        </>
+      }
+      titleExtras={
+        <>
+          {isPinned ? (
+            <span
+              className="shrink-0"
+              data-testid={`chat-pinned-${channel.id}`}
+            >
+              <Pin aria-hidden="true" className="h-3 w-3" />
+              <span className="sr-only">Pinned for you</span>
+            </span>
+          ) : null}
+          {isMuted ? (
+            <BellOff
+              aria-label="Muted"
+              className="h-3 w-3 shrink-0 text-sidebar-foreground/40"
+            />
+          ) : null}
+        </>
+      }
+      working={
+        activeWorking ? (
+          <ChannelWorkingBadge
+            channelName={channel.name}
+            isActive={isActive}
+            summary={activeWorking}
+          />
+        ) : null
+      }
+    />
+  ) : (
     <SidebarMenuButton
       className={cn(
         "data-[active=true]:font-normal",
@@ -381,13 +505,24 @@ export function ChannelMenuButton({
   );
 }
 
+/** A row of a section that mixes channel rows with other rows (Chats threads). */
+export type SidebarSectionRow =
+  | { kind: "channel"; channel: Channel; preview?: ChatRowPreview }
+  | { kind: "custom"; key: string; node: React.ReactNode };
+
+function channelRow(channel: Channel): SidebarSectionRow {
+  return { kind: "channel", channel };
+}
+
 export function SidebarSection({
   action,
   activeWorkingByChannelId,
   dmParticipantsByChannelId,
   emptyState,
   items,
+  rows,
   channelLabels,
+  hideHeader = false,
   isCollapsed,
   isActiveChannel,
   presenceByChannelId,
@@ -416,7 +551,11 @@ export function SidebarSection({
   dmParticipantsByChannelId?: Record<string, SidebarDmParticipant[]>;
   emptyState?: React.ReactNode;
   items: Channel[];
+  /** Render these rows in this order instead of `items` (channel rows still use `items`' props). */
+  rows?: readonly SidebarSectionRow[];
   channelLabels?: Record<string, string>;
+  /** The column draws its own title (Chats); skip the section label. */
+  hideHeader?: boolean;
   isCollapsed?: boolean;
   isActiveChannel: boolean;
   presenceByChannelId?: Record<string, PresenceStatus>;
@@ -443,7 +582,8 @@ export function SidebarSection({
   onDeleteChannel?: (channel: Channel) => void;
   onLeaveChannel?: (channel: Channel) => void;
 }) {
-  if (items.length === 0 && !action && !emptyState) {
+  const sectionRows = rows ?? items.map(channelRow);
+  if (sectionRows.length === 0 && !action && !emptyState) {
     return null;
   }
 
@@ -455,7 +595,7 @@ export function SidebarSection({
       className="group/sidebar-section select-none"
       data-section-actions-open={sectionActionsOpen || undefined}
     >
-      <div className="relative">
+      <div className={cn("relative", hideHeader && "hidden")}>
         <SidebarGroupLabel asChild={canToggle}>
           {canToggle ? (
             <button
@@ -484,9 +624,18 @@ export function SidebarSection({
       </div>
       {!isCollapsed ? (
         <SidebarGroupContent id={contentId}>
-          {items.length > 0 ? (
+          {sectionRows.length > 0 ? (
             <SidebarMenu data-testid={testId}>
-              {items.map((channel) => {
+              {sectionRows.map((row) => {
+                if (row.kind === "custom") {
+                  return <Fragment key={row.key}>{row.node}</Fragment>;
+                }
+                const { channel } = row;
+                const exitAction = roomExitAction(
+                  channel.channelType,
+                  dmParticipantsByChannelId?.[channel.id]?.length ??
+                    Math.max(channel.participantPubkeys.length - 1, 0),
+                );
                 const menuItem = (
                   <SidebarMenuItem
                     key={onMarkChannelUnread ? undefined : channel.id}
@@ -504,9 +653,12 @@ export function SidebarSection({
                       }
                       label={channelLabels?.[channel.id] ?? channel.name}
                       presenceStatus={presenceByChannelId?.[channel.id]}
+                      preview={row.preview}
+                      unreadCount={unreadChannelCounts.get(channel.id) ?? 0}
                       onSelectChannel={onSelectChannel}
                     />
-                    {channel.channelType === "dm" &&
+                    {!row.preview &&
+                    channel.channelType === "dm" &&
                     unreadChannelIds.has(channel.id) &&
                     !(isActiveChannel && selectedChannelId === channel.id) ? (
                       <UnreadCountBadge
@@ -521,7 +673,9 @@ export function SidebarSection({
                         )}
                       />
                     ) : null}
-                    {channel.channelType === "dm" && onHideDm ? (
+                    {!row.preview &&
+                    channel.channelType === "dm" &&
+                    onHideDm ? (
                       <button
                         aria-label="Close direct message"
                         className={cn(
@@ -566,10 +720,9 @@ export function SidebarSection({
                             : onDeleteChannel
                         }
                         onLeaveChannel={
-                          channel.channelType === "dm"
-                            ? undefined
-                            : onLeaveChannel
+                          exitAction === "leave" ? onLeaveChannel : undefined
                         }
+                        onHideDm={exitAction === "hide" ? onHideDm : undefined}
                       />
                     </ContextMenuContent>
                   </ContextMenu>

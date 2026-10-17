@@ -10,15 +10,11 @@ import 'token/relay_origin.dart';
 /// Build-time environment, chosen with `--dart-define=KUZZ_ENV=prod|dev`.
 enum KuzzEnvironment { prod, dev }
 
-/// The server each environment connects to. This table is the one place the
-/// address lives; server-pushed address changes are a separate, later
-/// feature.
-const kuzzServerOrigins = <KuzzEnvironment, String>{
-  KuzzEnvironment.prod: 'https://jihobuzz.duckdns.org:8443',
-  // Same server for now. When dev and prod are split, change only this dev
-  // entry (e.g. to the developer PC's address); prod stays as is.
-  KuzzEnvironment.dev: 'https://jihobuzz.duckdns.org:8443',
-};
+/// Stand-in origin for builds made without `KUZZ_RELAY_URL` (debug builds
+/// and tests only: release and profile builds fail without it, see
+/// [_KuzzRelayUrlDefine]). It never resolves, so such a build visibly
+/// connects nowhere instead of to a guessed server.
+const unsetServerOrigin = 'https://kuzz-relay-url-not-set.invalid';
 
 /// `KUZZ_ENV` value to environment: unset or `prod` is
 /// [KuzzEnvironment.prod], `dev` is [KuzzEnvironment.dev]. Any other value
@@ -50,6 +46,24 @@ class _KuzzEnvDefine {
 
 const _kuzzEnv = _KuzzEnvDefine(String.fromEnvironment('KUZZ_ENV'));
 
+/// This build's server address, `--dart-define=KUZZ_RELAY_URL=wss://...`
+/// (or `config/prod.json`). Release and profile builds fail to compile
+/// without it, like desktop's `build.rs`.
+class _KuzzRelayUrlDefine {
+  const _KuzzRelayUrlDefine(this.value)
+    : assert(
+        !(kReleaseMode || kProfileMode) || value != '',
+        'KUZZ_RELAY_URL must be set for release and profile builds '
+        '(the server this app connects to, e.g. wss://relay.example.com).',
+      );
+
+  final String value;
+}
+
+const _kuzzRelayUrl = _KuzzRelayUrlDefine(
+  String.fromEnvironment('KUZZ_RELAY_URL'),
+);
+
 /// Copy shown when an invite targets any other server.
 const differentServiceInviteMessage = 'This invite is for a different service.';
 
@@ -65,11 +79,12 @@ bool debugUnrestrictedServerForTests = false;
 
 /// Pure rule `(environment, overrides) -> origin` for the built-in server:
 ///
-/// - [KuzzEnvironment.prod]: its table origin; the dart-define overrides are
+/// - [KuzzEnvironment.prod]: the build's [relayUrlDefine] (`KUZZ_RELAY_URL`),
+///   which must be secure (`wss`/`https`); [keyBackupOriginDefine] is
 ///   ignored;
 /// - [KuzzEnvironment.dev]: an explicit [keyBackupOriginDefine]
-///   (`KUZZ_KEY_BACKUP_ORIGIN`), else [relayUrlDefine] (`KUZZ_RELAY_URL`),
-///   else its table origin;
+///   (`KUZZ_KEY_BACKUP_ORIGIN`), else [relayUrlDefine];
+/// - with neither set (debug builds and tests only), [unsetServerOrigin];
 /// - the test harness ([unrestrictedForTests]) gets `null`, which keeps the
 ///   multi-server upstream behaviour for suites using fake relay hosts.
 ///
@@ -82,12 +97,22 @@ String? builtInServerOrigin(
   bool unrestrictedForTests = false,
 }) {
   if (unrestrictedForTests) return null;
-  if (environment == KuzzEnvironment.dev) {
-    for (final define in [keyBackupOriginDefine, relayUrlDefine]) {
-      if (define.trim().isNotEmpty) return normalizeRelayOrigin(define);
+  final defines = environment == KuzzEnvironment.dev
+      ? [keyBackupOriginDefine, relayUrlDefine]
+      : [relayUrlDefine];
+  for (final define in defines) {
+    if (define.trim().isEmpty) continue;
+    final origin = normalizeRelayOrigin(define);
+    if (environment == KuzzEnvironment.prod && !origin.startsWith('https://')) {
+      throw ArgumentError.value(
+        define,
+        'KUZZ_RELAY_URL',
+        'must be wss:// or https:// for prod builds',
+      );
     }
+    return origin;
   }
-  return normalizeRelayOrigin(kuzzServerOrigins[environment]!);
+  return unsetServerOrigin;
 }
 
 /// [normalizeRelayOrigin] of [url], or `null` when it is not a relay URL.
@@ -101,10 +126,9 @@ String? _relayOrigin(String url) {
 
 /// Whether [url] is the built-in server [builtInOrigin]: same host, port and
 /// security. `wss` and `https` (or `ws` and `http`) of one host:port are the
-/// same server, but a secure origin never matches `ws`/`http`. The prod and
-/// dev table origins are `https`, so only `wss`/`https` reach them; an
-/// insecure origin exists only as an explicit dev override (see
-/// [builtInServerOrigin]).
+/// same server, but a secure origin never matches `ws`/`http`. Prod origins
+/// are always `https`, so only `wss`/`https` reach them; an insecure origin
+/// exists only as an explicit dev override (see [builtInServerOrigin]).
 bool isBuiltInServerUrl(String url, String builtInOrigin) {
   final candidate = _relayOrigin(url);
   return candidate != null && candidate == _relayOrigin(builtInOrigin);
@@ -120,7 +144,7 @@ bool isServerAllowed(String url, {required String? builtInOrigin}) =>
 String? appBuiltInServerOrigin() => builtInServerOrigin(
   parseKuzzEnvironment(_kuzzEnv.value),
   keyBackupOriginDefine: const String.fromEnvironment('KUZZ_KEY_BACKUP_ORIGIN'),
-  relayUrlDefine: const String.fromEnvironment('KUZZ_RELAY_URL'),
+  relayUrlDefine: _kuzzRelayUrl.value,
   unrestrictedForTests: debugUnrestrictedServerForTests,
 );
 

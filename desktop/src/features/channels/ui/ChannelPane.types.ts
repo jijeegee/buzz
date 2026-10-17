@@ -1,4 +1,5 @@
 import type * as React from "react";
+import type { ReadingPosition } from "@/features/channels/readingPositionStore";
 import type { BotActivityAgent } from "@/features/channels/ui/BotActivityBar";
 import type { ChannelAgentSessionAgent } from "@/features/channels/ui/useChannelAgentSessions";
 import type { MessageComposerEditTarget } from "@/features/messages/ui/MessageComposer.types";
@@ -84,6 +85,12 @@ export type ChannelPaneProps = {
   huddleThreadRepliesError?: boolean;
   onRetryHuddleThreadReplies?: () => void;
   firstUnreadMessageId?: string | null;
+  /** Message the main timeline opens at instead of the bottom. */
+  initialAnchorMessageId?: string | null;
+  /** Where the anchor's row sits when reopening a remembered position. */
+  initialAnchorTopPx?: number | null;
+  /** Reports where the reader is in the main timeline (null at the newest). */
+  onReadingPositionChange?: (position: ReadingPosition | null) => void;
   unreadCount?: number;
   canResetThreadPanelWidth: boolean;
   onCancelEdit?: () => void;

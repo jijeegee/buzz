@@ -259,6 +259,11 @@ function readPendingWelcomeChannel(): PendingWelcomeChannel | null {
   );
 }
 
+/** A new account's welcome room is waiting to be opened. */
+export function hasPendingWelcomeChannel(): boolean {
+  return readPendingWelcomeChannel() !== null;
+}
+
 function readPendingWelcomeChannelFromStorage(
   storageKey: string,
 ): PendingWelcomeChannel | null {

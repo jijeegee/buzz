@@ -101,12 +101,17 @@ pub(crate) fn remember_profile<R: tauri::Runtime>(
     let Some(account) = account.or_else(|| auth.signing_pubkey(origin)) else {
         return;
     };
-    let (Some((display_name, avatar_url)), Ok(data_dir)) =
-        (auth.me_profile(origin, &account), app.path().app_data_dir())
+    let (Some(me), Ok(data_dir)) = (auth.me_profile(origin, &account), app.path().app_data_dir())
     else {
         return;
     };
-    super::account_profiles::learn(&data_dir, &account, display_name, avatar_url, None);
+    super::account_profiles::learn(
+        &data_dir,
+        &account,
+        me.display_name,
+        me.avatar_url,
+        me.email,
+    );
 }
 
 fn finish<R: tauri::Runtime>(

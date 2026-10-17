@@ -35,6 +35,11 @@ type AppShellContextValue = {
   getThreadReadAt: (rootId: string, channelId?: string | null) => number | null;
   // Advance the thread read frontier to the given unix-seconds timestamp.
   markThreadRead: (rootId: string, timestamp: number) => void;
+  // Mark a thread unread in the relay's chat state; false while it is off.
+  markThreadUnread: (rootId: string) => boolean;
+  // Send an open thread's read to the relay's chat state only (no local
+  // marker); a no-op while it is off.
+  mirrorThreadRead: (rootId: string, timestamp: number) => void;
   // Per-message read frontier as unix-seconds timestamp, or null when never
   // read. Uses `msg:<id>` context keys folded through the active channel by the
   // parent resolver (LP4 v3 per-message badge model).
@@ -96,6 +101,8 @@ const AppShellContext = React.createContext<AppShellContextValue>({
   getChannelReadAt: () => null,
   getThreadReadAt: () => null,
   markThreadRead: () => {},
+  markThreadUnread: () => false,
+  mirrorThreadRead: () => {},
   getMessageReadAt: () => null,
   getChannelActivityItemReadAt: () => null,
   markMessageRead: () => {},

@@ -17,9 +17,9 @@ pub struct PromptProjectInfo {
 
 /// Resolve one listed project whose member repository authoritatively binds the channel.
 ///
-/// A project's own `buzz-channel` is presentation metadata and cannot establish
+/// A project's own `kuzz-channel` is presentation metadata and cannot establish
 /// authority. A candidate is accepted only when one of its `a` members resolves
-/// to a live `kind:30617` whose first `buzz-channel` is `channel_id` and whose
+/// to a live `kind:30617` whose first `kuzz-channel` is `channel_id` and whose
 /// owner (or `maintainers`) authorizes the project signer. Ambiguity fails closed.
 pub fn pick_authoritative_project_home(
     project_events: &[Value],
@@ -28,7 +28,7 @@ pub fn pick_authoritative_project_home(
 ) -> Option<PromptProjectInfo> {
     let repos = authoritative_channel_repos(repo_events, channel_id);
     let mut matches = project_events.iter().filter_map(|event| {
-        if event_is_unlisted(event) || !event_has_tag_value(event, "buzz-channel", channel_id) {
+        if event_is_unlisted(event) || !event_has_tag_value(event, "kuzz-channel", channel_id) {
             return None;
         }
         let mut project = parse_prompt_project(event)?;
@@ -66,7 +66,7 @@ fn authoritative_channel_repos(
         .filter_map(|event| {
             if event.get("kind").and_then(Value::as_u64) != Some(30617)
                 || event_is_unlisted(event)
-                || first_tag_value(event, "buzz-channel") != Some(channel_id)
+                || first_tag_value(event, "kuzz-channel") != Some(channel_id)
             {
                 return None;
             }
@@ -117,7 +117,7 @@ fn event_has_tag_value(event: &Value, name: &'static str, value: &str) -> bool {
 }
 
 fn event_is_unlisted(event: &Value) -> bool {
-    event_has_tag_value(event, "buzz-visibility", "unlisted")
+    event_has_tag_value(event, "kuzz-visibility", "unlisted")
 }
 
 fn parse_prompt_project(event: &Value) -> Option<PromptProjectInfo> {
@@ -167,12 +167,12 @@ mod tests {
 
     fn project(owner: &str, slug: &str, repo: &str) -> Value {
         json!({"pubkey": owner, "kind": 30621, "tags": [
-            ["d", slug], ["name", slug], ["buzz-channel", CHANNEL_ID], ["a", repo]
+            ["d", slug], ["name", slug], ["kuzz-channel", CHANNEL_ID], ["a", repo]
         ]})
     }
 
     fn repo(owner: &str, id: &str, channel: &str, extra: Vec<Value>) -> Value {
-        let mut tags = vec![json!(["d", id]), json!(["buzz-channel", channel])];
+        let mut tags = vec![json!(["d", id]), json!(["kuzz-channel", channel])];
         tags.extend(extra);
         json!({"pubkey": owner, "kind": 30617, "tags": tags})
     }
@@ -253,7 +253,7 @@ mod tests {
         announcement["tags"]
             .as_array_mut()
             .unwrap()
-            .push(json!(["buzz-channel", CHANNEL_ID]));
+            .push(json!(["kuzz-channel", CHANNEL_ID]));
         assert!(pick_authoritative_project_home(
             &[project(&owner, "game", &coord)],
             &[announcement],

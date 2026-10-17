@@ -14,7 +14,7 @@ export function getMentionTagPubkey(tag: string[]): string | null {
 /** An edit snapshot supersedes historical notification p-tags for body identity. */
 export function mentionIdentityTags(tags: string[][] | undefined): string[][] {
   const source = tags ?? [];
-  return source.some((tag) => tag[0] === "buzz:mention-snapshot")
+  return source.some((tag) => tag[0] === "kuzz:mention-snapshot")
     ? // Annotated references (e.g. immutable agent-address metadata) are not
       // authored body bindings and must not leak into a fresh edit snapshot.
       source.filter(

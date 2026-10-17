@@ -14,7 +14,10 @@ import 'token_settings_harness.dart';
 
 late FakeOwnDeviceSession _session;
 
-Future<TokenSettingsHarness> _pumpDevices(WidgetTester tester) async {
+Future<TokenSettingsHarness> _pumpDevices(
+  WidgetTester tester, {
+  bool botTokens = true,
+}) async {
   final h = TokenSettingsHarness();
   h.server.refreshResponses.add(
     (_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'),
@@ -22,7 +25,7 @@ Future<TokenSettingsHarness> _pumpDevices(WidgetTester tester) async {
   _session = FakeOwnDeviceSession();
   await h.pump(
     tester,
-    const DevicesPage(origin: tokenOrigin),
+    DevicesPage(origin: tokenOrigin, botTokens: botTokens),
     overrides: [relaySessionProvider.overrideWith(() => _session)],
   );
   return h;
@@ -62,6 +65,14 @@ void main() {
     await frames(tester);
     expect(h.account.calls('DELETE', '/auth/account'), isEmpty);
     expect(await h.storage.loadAll(), hasLength(1));
+  });
+
+  testWidgets('bot token revocation can be left out', (tester) async {
+    await _pumpDevices(tester, botTokens: false);
+
+    expect(find.text('Test phone'), findsOneWidget);
+    expect(find.byKey(const Key('devices-sign-out-others')), findsOneWidget);
+    expect(find.byKey(const Key('devices-revoke-bots')), findsNothing);
   });
 
   testWidgets('lists devices and marks this one', (tester) async {

@@ -751,14 +751,16 @@ export function HomeView({
     isSinglePanelDraftDetailView,
     isSinglePanelReminderDetailView,
     showDetailPane,
-    showListPane,
+    showListPane: layoutShowsList,
   } = getHomePaneLayout({
     hasAuxiliaryPane,
     homeWidthPx: homeInboxWidthPx,
     inboxListWidthPx,
     isDrafts: detailMode === "drafts",
     isMessagesMode: detailMode === "messages",
-    isNarrow: isNarrowHomeViewport,
+    // The page is the detail only: its list is the left column's Activity
+    // list (the panel variant), so the detail always has the full width.
+    isNarrow: isPanel ? isNarrowHomeViewport : false,
     isReminders: detailMode === "reminders",
     isSinglePanelAuxiliaryView,
     selectedDraft: selectedDraftItem !== null,
@@ -766,6 +768,7 @@ export function HomeView({
     selectedReminder: selectedReminder !== null,
     threadPanelWidthPx,
   });
+  const showListPane = isPanel && layoutShowsList;
 
   const inboxListPane = (
     <InboxListPane
@@ -869,9 +872,8 @@ export function HomeView({
     return (
       <ProfilePanelProvider onOpenProfilePanel={handleOpenProfilePanel}>
         <div
-          className="relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden"
+          className="relative flex h-full min-h-0 w-full flex-col overflow-hidden"
           data-testid="inbox-panel"
-          style={{ width: `${inboxListWidthPx}px` }}
         >
           <div
             aria-hidden="true"

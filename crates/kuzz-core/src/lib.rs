@@ -26,8 +26,6 @@ pub mod git_perms;
 pub mod goal_tree;
 /// Shared invite-link contract constants.
 pub mod invite;
-/// Former `KUZZ_*` environment variable names.
-pub mod legacy_env;
 /// Kuzz kind number registry — custom event type constants.
 pub mod kind;
 /// Network utilities — SSRF-safe IP classification.

@@ -1,11 +1,16 @@
 part of '../settings_page.dart';
 
-/// The token account of the active community: its global profile, devices
-/// and principal id. Replaces the nsec identity row in token mode.
+/// The signed-in account of the active community: who is signed in, then
+/// its devices. A token account also edits its global profile here and shows
+/// its principal id.
 class _AccountSection extends ConsumerWidget {
-  const _AccountSection({required this.origin});
+  const _AccountSection({required this.origin, this.googleKey = false});
 
   final String origin;
+
+  /// Signed in with Google holding the account key. Its profile is edited
+  /// from the profile header, so the identity row is a label, not a button.
+  final bool googleKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -13,18 +18,34 @@ class _AccountSection extends ConsumerWidget {
     final principal = ref.watch(activeCommunityProvider).value?.pubkey;
     final name = profile?.displayName;
     final username = profile?.username;
+    final email = profile?.email;
+    final hasName = name != null && name.isNotEmpty;
     return AppListCard(
       label: 'Account',
       verticalPadding: Grid.twelve,
       children: [
-        AppListRow(
-          key: const Key('settings-account-row'),
-          icon: LucideIcons.user,
-          title: name == null || name.isEmpty ? 'Profile' : name,
-          subtitle: username == null ? null : '@$username',
-          trailing: const _RowChevron(),
-          onTap: () => unawaited(_openAccountPage(context, origin)),
-        ),
+        if (googleKey)
+          AppListRow(
+            key: const Key('settings-google-account-row'),
+            icon: LucideIcons.user,
+            // Name over email, like desktop; the email alone when the
+            // account has no name, and a plain label before either loads.
+            title: hasName ? name : email ?? 'Signed in with Google',
+            subtitle: hasName
+                ? email ?? 'Signed in with Google'
+                : email == null
+                ? null
+                : 'Signed in with Google',
+          )
+        else
+          AppListRow(
+            key: const Key('settings-account-row'),
+            icon: LucideIcons.user,
+            title: name == null || name.isEmpty ? 'Profile' : name,
+            subtitle: username == null ? null : '@$username',
+            trailing: const _RowChevron(),
+            onTap: () => unawaited(_openAccountPage(context, origin)),
+          ),
         AppListRow(
           key: const Key('settings-devices-row'),
           icon: LucideIcons.monitorSmartphone,
@@ -33,14 +54,15 @@ class _AccountSection extends ConsumerWidget {
           onTap: () => unawaited(
             Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => DevicesPage(origin: origin),
+                builder: (_) =>
+                    DevicesPage(origin: origin, botTokens: !googleKey),
               ),
             ),
           ),
         ),
         // The principal is the account's public key; the full npub is the
         // canonical copy form, and an unreadable one is never copied.
-        if (principal != null && principal.isNotEmpty)
+        if (!googleKey && principal != null && principal.isNotEmpty)
           _AccountIdRow(principal: principal),
       ],
     );

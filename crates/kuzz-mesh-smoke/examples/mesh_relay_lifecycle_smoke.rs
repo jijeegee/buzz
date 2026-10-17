@@ -58,8 +58,8 @@ use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use kuzz_test_client::KuzzTestClient;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use kuzz_test_client::KuzzTestClient;
 use mesh_llm_host_runtime::crypto::{load_keystore, save_keystore, OwnerKeypair};
 use mesh_llm_sdk::{client, serve, MeshDiscoveryMode, TrustPolicy};
 use nostr::{Alphabet, Event, EventBuilder, Filter, Keys, Kind, SingleLetterTag, Tag};
@@ -70,8 +70,8 @@ use sha2::{Digest, Sha256};
 const KIND_MESH_STATUS: u16 = 30_003;
 /// NIP-43 membership roster snapshot.
 const KIND_MEMBERSHIP: u16 = 13_534;
-const STATUS_D_TAG_PREFIX: &str = "buzz-mesh-member-status";
-const STATUS_K_TAG: &str = "buzz-mesh-status";
+const STATUS_D_TAG_PREFIX: &str = "kuzz-mesh-member-status";
+const STATUS_K_TAG: &str = "kuzz-mesh-status";
 
 /// Small, real instruct model; same ref the sibling mesh examples use.
 const DEFAULT_MODEL: &str = "jc-builds/SmolLM2-135M-Instruct-Q4_K_M-GGUF:Q4_K_M";
@@ -170,7 +170,7 @@ async fn init_native_runtime() -> anyhow::Result<()> {
 
 fn member_binding_bytes(member_pubkey: &str) -> Vec<u8> {
     format!(
-        "buzz-mesh-owner-binding-v1:{}",
+        "kuzz-mesh-owner-binding-v1:{}",
         member_pubkey.trim().to_ascii_lowercase()
     )
     .into_bytes()
@@ -191,7 +191,7 @@ fn member_endpoint_binding_bytes(member_pubkey: &str, endpoint_tokens: &[String]
         digest.update(endpoint.as_bytes());
     }
     format!(
-        "buzz-mesh-owner-endpoint-binding-v1:{}:{}",
+        "kuzz-mesh-owner-endpoint-binding-v1:{}:{}",
         member_pubkey.trim().to_ascii_lowercase(),
         hex::encode(digest.finalize())
     )

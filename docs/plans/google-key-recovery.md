@@ -42,8 +42,8 @@ token messaging, token bot creation/adoption, token profiles or token account
 deletion. Session status/logout/device management remain usable. Session refresh
 never changes the local signing identity, switches transport, or restarts agents.
 
-NIP-11 adds `buzz_key_backup: {version:1, providers:["google"]}` separately from
-`buzz_token_auth`. Updated desktop/mobile prefer this new capability for Google
+NIP-11 adds `kuzz_key_backup: {version:1, providers:["google"]}` separately from
+`kuzz_token_auth`. Updated desktop/mobile prefer this new capability for Google
 onboarding and retain key-based community configuration. Legacy key auth stays
 enabled; existing token-mode records continue to use the existing mode.
 
