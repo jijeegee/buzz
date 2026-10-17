@@ -11,8 +11,10 @@ const ANCHOR_MAX_FRAMES = 30;
 /**
  * Opens the list at a row instead of the bottom without a visible move: the
  * list stays hidden while Virtua measures the rows around the anchor and is
- * re-aimed every frame, then shown once the anchor holds still. Reports the
- * real bottom state when shown, since a short unread run clamps to the floor.
+ * re-aimed every frame, then shown once the anchor holds still. The row goes
+ * just under the top chrome, or `topPx` from the scroller top when reopening
+ * a remembered position. Reports the real bottom state when shown, since a
+ * short unread run clamps to the floor.
  */
 export function useVirtualizedAnchorLanding(
   hostRef: React.RefObject<HTMLDivElement | null>,
@@ -32,7 +34,7 @@ export function useVirtualizedAnchorLanding(
   }, [hostRef]);
 
   const land = React.useCallback(
-    (index: number) => {
+    (index: number, topPx: number | null = null) => {
       const host = hostRef.current;
       const list = listRef.current;
       const scroller = host?.firstElementChild;
@@ -40,10 +42,12 @@ export function useVirtualizedAnchorLanding(
       // Virtua's start alignment already clears the scroller's top padding
       // (the space under the top chrome).
       const aim = () =>
-        list.scrollToIndex(index, {
-          align: "start",
-          offset: -ANCHOR_TOP_GAP_PX,
-        });
+        topPx === null
+          ? list.scrollToIndex(index, {
+              align: "start",
+              offset: -ANCHOR_TOP_GAP_PX,
+            })
+          : list.scrollTo(list.getItemOffset(index) - topPx);
       host.style.visibility = "hidden";
       aim();
       let frame = 0;

@@ -1,6 +1,10 @@
 import * as React from "react";
 
 import { hasPendingLandAtLatest } from "@/features/channels/lib/landAtLatest";
+import {
+  type ReadingPosition,
+  readingPositionStore,
+} from "@/features/channels/readingPositionStore";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import type { RelayEvent } from "@/shared/api/types";
 
@@ -14,7 +18,11 @@ type OpenPlan = {
   channelId: string;
   decided: boolean;
   anchorMessageId: string | null;
+  /** Where the anchor's row sits when it is a remembered position. */
+  anchorTopPx: number | null;
   pagesFetched: number;
+  /** Where the reader left this channel last time, read once per visit. */
+  remembered: ReadingPosition | null;
   /**
    * The visit was asked to land at the newest message. Read on the visit's
    * first render, before the landing hook consumes the request.
@@ -24,6 +32,8 @@ type OpenPlan = {
 
 type UseChannelOpenAnchorOptions = {
   channelId: string | null;
+  /** Account whose remembered reading positions apply. */
+  pubkey: string | undefined;
   /** Raw channel events, oldest first; undefined until the first window. */
   messages: RelayEvent[] | undefined;
   /** Read frontier captured when the channel was opened. */
@@ -39,13 +49,15 @@ type UseChannelOpenAnchorOptions = {
 
 /**
  * Decides once per channel visit where the main timeline opens: at the first
- * unread message when there is one, otherwise at the newest message. When
- * every loaded row is unread the first unread may be older, so older pages
- * are fetched first (up to MAX_UNREAD_SEEK_PAGES) while the timeline keeps
- * its loading state; the list then mounts directly at its final position.
+ * unread message when there is one, otherwise where the reader left the
+ * channel, otherwise at the newest message. When the row to open at may be
+ * older than the loaded ones, older pages are fetched first (up to
+ * MAX_UNREAD_SEEK_PAGES) while the timeline keeps its loading state; the list
+ * then mounts directly at its final position.
  */
 export function useChannelOpenAnchor({
   channelId,
+  pubkey,
   messages,
   frontierSeconds,
   firstUnreadMessageId,
@@ -62,7 +74,9 @@ export function useChannelOpenAnchor({
       channelId,
       decided: false,
       anchorMessageId: null,
+      anchorTopPx: null,
       pagesFetched: 0,
+      remembered: pubkey ? readingPositionStore.get(pubkey, channelId) : null,
       landsAtLatest: hasPendingLandAtLatest(channelId),
     };
   }
@@ -70,17 +84,30 @@ export function useChannelOpenAnchor({
 
   let needsOlder = false;
   if (plan && !plan.decided && messages !== undefined) {
-    const decide = (anchorMessageId: string | null) => {
+    const decide = (
+      anchorMessageId: string | null,
+      anchorTopPx: number | null = null,
+    ) => {
       plan.decided = true;
       plan.anchorMessageId = anchorMessageId;
+      plan.anchorTopPx = anchorMessageId === null ? null : anchorTopPx;
     };
-    if (
-      opensElsewhere ||
-      frontierSeconds === null ||
-      firstUnreadMessageId === null ||
-      plan.landsAtLatest
-    ) {
+    const canSeekOlder =
+      hasOlderMessages && plan.pagesFetched < MAX_UNREAD_SEEK_PAGES;
+    if (opensElsewhere || plan.landsAtLatest) {
       decide(null);
+    } else if (frontierSeconds === null || firstUnreadMessageId === null) {
+      // Nothing unread: go back to where the reader left, if it is close.
+      const remembered = plan.remembered;
+      if (remembered === null) {
+        decide(null);
+      } else if (messages.some((event) => event.id === remembered.messageId)) {
+        decide(remembered.messageId, remembered.topPx);
+      } else if (canSeekOlder) {
+        needsOlder = true;
+      } else {
+        decide(null);
+      }
     } else {
       const oldestTopLevel = messages.find(
         (event) => getThreadReference(event.tags).parentId === null,
@@ -90,7 +117,7 @@ export function useChannelOpenAnchor({
         oldestTopLevel.created_at > frontierSeconds;
       if (!everyLoadedRowUnread || !hasOlderMessages) {
         decide(firstUnreadMessageId);
-      } else if (plan.pagesFetched >= MAX_UNREAD_SEEK_PAGES) {
+      } else if (!canSeekOlder) {
         // Unread for too long: the start is too far back to open at.
         decide(null);
       } else {
@@ -98,6 +125,18 @@ export function useChannelOpenAnchor({
       }
     }
   }
+
+  // A visit that opens anywhere but the remembered row starts the reader
+  // somewhere new, so the old spot must not come back on the next visit.
+  const staleRemembered =
+    plan?.decided === true &&
+    plan.remembered !== null &&
+    plan.anchorMessageId !== plan.remembered.messageId;
+  React.useEffect(() => {
+    if (!staleRemembered || !plan || !pubkey) return;
+    plan.remembered = null;
+    readingPositionStore.set(pubkey, plan.channelId, null);
+  }, [plan, pubkey, staleRemembered]);
 
   React.useEffect(() => {
     if (!needsOlder || isFetchingOlder || !plan) return;
@@ -107,6 +146,7 @@ export function useChannelOpenAnchor({
 
   return {
     anchorMessageId: plan?.decided ? plan.anchorMessageId : null,
+    anchorTopPx: plan?.decided ? plan.anchorTopPx : null,
     isResolving: plan !== null && !plan.decided && messages !== undefined,
   };
 }
