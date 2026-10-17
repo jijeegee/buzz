@@ -32,6 +32,7 @@ import { TimelineRowShell } from "./TimelineRowShell";
 import { UnreadDivider } from "./UnreadDivider";
 import { useTimelineRetention } from "./useTimelineRetention";
 import { useUpwardPaginationWheel } from "./useUpwardPaginationWheel";
+import { useVirtualizedAnchorLanding } from "./useVirtualizedAnchorLanding";
 import { useVirtualizedBottomSettle } from "./useVirtualizedBottomSettle";
 
 export type TimelineVirtualizerApi = {
@@ -53,6 +54,12 @@ type TimelineMessageListProps = {
   huddleMemberPubkeysPending?: boolean;
   /** Event id of the oldest unread top-level message; renders a "New" divider above it. */
   firstUnreadMessageId?: string | null;
+  /**
+   * Message the virtualized list opens at instead of the bottom. Its "New"
+   * divider (or the row itself) is placed under the top chrome before the
+   * list is first shown.
+   */
+  initialAnchorMessageId?: string | null;
   followThreadById?: (rootId: string) => void;
   highlightedMessageId?: string | null;
   isFollowingThreadById?: (rootId: string) => boolean;
@@ -130,6 +137,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
   channelType,
   currentPubkey,
   firstUnreadMessageId = null,
+  initialAnchorMessageId = null,
   followThreadById,
   highlightedMessageId = null,
   huddleMemberPubkeys,
@@ -332,6 +340,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
         dayGroups={dayGroups}
         historyExhausted={historyExhausted}
         hideDayDividers={hideDayDividers}
+        initialAnchorMessageId={initialAnchorMessageId}
         leadingContent={leadingContent}
         onAtBottomStateChange={onAtBottomStateChange}
         onStartReached={onStartReached}
@@ -387,10 +396,32 @@ function timelineItemMessageIds(item: TimelineNonDayItem): string[] {
     : [];
 }
 
+/**
+ * Index of the row a list opened at `messageId` puts at the top: its "New"
+ * divider when one renders directly above it, otherwise the row itself.
+ */
+function findAnchorItemIndex(
+  items: readonly VirtualizedTimelineItem[],
+  messageId: string,
+) {
+  const index = items.findIndex(
+    (item) =>
+      item.kind === "timeline-item" &&
+      timelineItemMessageIds(item.item).includes(messageId),
+  );
+  if (index < 0) return -1;
+  const previous = items[index - 1];
+  return previous?.kind === "timeline-item" &&
+    previous.item.kind === "unread-divider"
+    ? index - 1
+    : index;
+}
+
 type VirtualizedTimelineRowsProps = {
   dayGroups: TimelineDayGroup[];
   historyExhausted: boolean;
   hideDayDividers: boolean;
+  initialAnchorMessageId?: string | null;
   leadingContent?: React.ReactNode;
   onAtBottomStateChange?: (atBottom: boolean) => void;
   onStartReached?: () => boolean;
@@ -431,6 +462,7 @@ function VirtualizedTimelineRows({
   dayGroups,
   historyExhausted,
   hideDayDividers,
+  initialAnchorMessageId = null,
   leadingContent,
   onAtBottomStateChange,
   onStartReached,
@@ -499,6 +531,10 @@ function VirtualizedTimelineRows({
     hostRef,
     cancelBottomSettle,
   );
+  const onAtBottomStateChangeRef = React.useRef(onAtBottomStateChange);
+  onAtBottomStateChangeRef.current = onAtBottomStateChange;
+  const { land: landAtAnchor, cancel: cancelAnchorLanding } =
+    useVirtualizedAnchorLanding(hostRef, listRef, onAtBottomStateChangeRef);
 
   const updatePinnedDayLabel = React.useCallback(
     (offset: number) => {
@@ -625,8 +661,9 @@ function VirtualizedTimelineRows({
   React.useEffect(
     () => () => {
       cancelBottomSettle();
+      cancelAnchorLanding();
     },
-    [cancelBottomSettle],
+    [cancelAnchorLanding, cancelBottomSettle],
   );
 
   const isPrepend = React.useMemo(() => {
@@ -634,6 +671,9 @@ function VirtualizedTimelineRows({
     return didPrependVirtualizedTimeline(previousKeysRef.current, keys);
   }, [keys, prependShiftEpoch]);
 
+  // The anchor is read once, on the first placement; later anchor or item
+  // identity changes must not re-run it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: first placement reads the anchor once
   React.useLayoutEffect(() => {
     previousKeysRef.current = keys;
     if (isPrepend) {
@@ -641,7 +681,10 @@ function VirtualizedTimelineRows({
     }
     if (!hasInitialPositionedRef.current && items.length > 0) {
       hasInitialPositionedRef.current = true;
-      settleAtBottom();
+      const anchorIndex = initialAnchorMessageId
+        ? findAnchorItemIndex(items, initialAnchorMessageId)
+        : -1;
+      if (anchorIndex < 0 || !landAtAnchor(anchorIndex)) settleAtBottom();
     }
   }, [isPrepend, items.length, keys, settleAtBottom]);
 
@@ -685,6 +728,7 @@ function VirtualizedTimelineRows({
       settleAtBottom,
       scrollToMessage(messageId) {
         cancelBottomSettle();
+        cancelAnchorLanding();
         const index = messageItemIndexByIdRef.current.get(messageId);
         if (index === undefined) return false;
         listRef.current?.scrollToIndex(index, { align: "center" });
@@ -693,7 +737,12 @@ function VirtualizedTimelineRows({
     };
     onVirtualizerApiChange(api);
     return () => onVirtualizerApiChange(null);
-  }, [cancelBottomSettle, onVirtualizerApiChange, settleAtBottom]);
+  }, [
+    cancelAnchorLanding,
+    cancelBottomSettle,
+    onVirtualizerApiChange,
+    settleAtBottom,
+  ]);
 
   React.useLayoutEffect(() => {
     const host = hostRef.current;

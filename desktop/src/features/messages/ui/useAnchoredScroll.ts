@@ -40,6 +40,12 @@ type UseAnchoredScrollOptions = {
 
   /** When set, scroll to this message on mount and on change. */
   targetMessageId?: string | null;
+  /**
+   * Message the virtualized list opens at instead of the bottom (the first
+   * unread). The list places it before the first paint, so the mount pin to
+   * the bottom is skipped.
+   */
+  initialAnchorMessageId?: string | null;
   /** Whether a targeted message should pulse after scrolling to it. */
   highlightTargetMessage?: boolean;
   /** Keeps a targeted message centered until the user deliberately scrolls. */
@@ -176,6 +182,7 @@ export function useAnchoredScroll({
   splitPanelOpen = false,
 
   targetMessageId = null,
+  initialAnchorMessageId = null,
   highlightTargetMessage = true,
   pinTargetCentered = false,
   onTargetReached,
@@ -683,6 +690,16 @@ export function useAnchoredScroll({
         } else {
           pinToBottomOnMount();
         }
+      } else if (initialAnchorMessageId && virtualizerOwnsPrependAnchoring) {
+        // The list lands on the anchor itself and reports the real bottom
+        // state once it has settled; until then nothing may pull it down.
+        anchorRef.current = {
+          kind: "message",
+          messageId: initialAnchorMessageId,
+          topOffset: 0,
+        };
+        virtualizerAtBottomRef.current = false;
+        setIsAtBottom(false);
       } else {
         pinToBottomOnMount();
       }
@@ -803,6 +820,7 @@ export function useAnchoredScroll({
     prevMessagesRef.current = messages;
   }, [
     highlightTargetMessage,
+    initialAnchorMessageId,
     isLoading,
     messages,
     onTargetReached,

@@ -505,6 +505,7 @@ export function useChannelUnreadState({
     handleMarkUnread,
     isMessageUnread,
     markRevealedRepliesRead,
+    openFrontierSeconds,
     openThreadHeadMessage,
     threadFirstUnreadReplyId,
     threadMessages,
