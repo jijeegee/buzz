@@ -208,7 +208,6 @@ class SearchPage extends HookConsumerWidget {
       // above the keyboard.
       resizeToAvoidBottomInset: false,
       appBar: FrostedAppBar(
-        automaticallyImplyLeading: false,
         horizontalInset: Grid.twelve,
         showBottomDivider: true,
         bottomDividerOpacity: 0.07,

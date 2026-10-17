@@ -11,8 +11,12 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/directional_transition_scope.dart';
 import '../../shared/widgets/mobile_tab_footer_backdrop.dart';
 import '../activity/activity_page.dart';
+import '../agents/agents_page.dart';
 import '../channels/channels_page.dart';
-import '../search/search_page.dart';
+import '../chats/chat_state_writer.dart';
+import '../chats/chats_page.dart';
+import '../more/more_page.dart';
+import '../people/people_page.dart';
 
 class HomePage extends HookConsumerWidget {
   const HomePage({
@@ -43,11 +47,19 @@ class HomePage extends HookConsumerWidget {
   static const Curve _tabContentTransitionCurve = Cubic(0.22, 1, 0.36, 1);
   static const double _tabContentTransitionDistance = 24;
 
+  static const _chatsTab = 0;
+  static const _activityTab = 2;
+
   static const _destinations = [
     _HomeDestination(
-      icon: LucideIcons.house300,
-      selectedIcon: LucideIcons.house500,
-      label: 'Home',
+      icon: LucideIcons.messageCircle300,
+      selectedIcon: LucideIcons.messageCircle500,
+      label: 'Chats',
+    ),
+    _HomeDestination(
+      icon: LucideIcons.users300,
+      selectedIcon: LucideIcons.users500,
+      label: 'People',
     ),
     _HomeDestination(
       icon: LucideIcons.inbox300,
@@ -55,9 +67,14 @@ class HomePage extends HookConsumerWidget {
       label: 'Activity',
     ),
     _HomeDestination(
-      icon: LucideIcons.search300,
-      selectedIcon: LucideIcons.search500,
-      label: 'Search',
+      icon: LucideIcons.bot300,
+      selectedIcon: LucideIcons.bot500,
+      label: 'Agents',
+    ),
+    _HomeDestination(
+      icon: LucideIcons.ellipsis300,
+      selectedIcon: LucideIcons.ellipsis500,
+      label: 'More',
     ),
   ];
 
@@ -73,9 +90,12 @@ class HomePage extends HookConsumerWidget {
     final tabContentTransitionValue = useAnimation(
       tabContentTransitionController,
     );
-    final homeReselection = useValueNotifier(0);
-    final activityReselection = useValueNotifier(0);
-    final searchReselection = useValueNotifier(0);
+    // Mirrors this device's reads to the relay while the app is open.
+    ref.watch(chatStateWriterProvider);
+    final hasUnreadChats = ref.watch(chatsHaveUnreadProvider);
+    final reselections = [
+      for (var i = 0; i < _destinations.length; i++) useValueNotifier(0),
+    ];
     final settingsTransitionProgress = useValueNotifier(0.0);
     final reducedMotion = MediaQuery.of(context).disableAnimations;
     final tabContentTransitionProgress = reducedMotion
@@ -87,29 +107,28 @@ class HomePage extends HookConsumerWidget {
       _destinations.length,
     );
 
+    Widget lazy(int index, Widget Function() build) =>
+        visitedTabs.value.contains(index) ? build() : const SizedBox.shrink();
     final pages = [
-      ChannelsPage(
-        settingsPageBuilder: settingsPageBuilder,
-        tabReselection: homeReselection,
-        onSettingsTransitionProgress: (progress) {
-          if (settingsTransitionProgress.value != progress) {
-            settingsTransitionProgress.value = progress;
-          }
-        },
+      ChatsPage(tabReselection: reselections[0]),
+      lazy(1, () => PeoplePage(tabReselection: reselections[1])),
+      lazy(2, () => ActivityPage(tabReselection: reselections[2])),
+      lazy(3, () => AgentsPage(tabReselection: reselections[3])),
+      lazy(
+        4,
+        () => MorePage(
+          settingsPageBuilder: settingsPageBuilder,
+          onSettingsTransitionProgress: (progress) {
+            if (settingsTransitionProgress.value != progress) {
+              settingsTransitionProgress.value = progress;
+            }
+          },
+          tabReselection: reselections[4],
+        ),
       ),
-      if (visitedTabs.value.contains(1))
-        ActivityPage(tabReselection: activityReselection)
-      else
-        const SizedBox.shrink(),
-      if (visitedTabs.value.contains(2))
-        SearchPage(tabReselection: searchReselection)
-      else
-        const SizedBox.shrink(),
     ];
 
-    final settingsTransitionGradient = tabIndex.value == 0
-        ? context.appColors.topSectionGradient
-        : null;
+    const Gradient? settingsTransitionGradient = null;
 
     return Stack(
       fit: StackFit.expand,
@@ -176,7 +195,7 @@ class HomePage extends HookConsumerWidget {
                   ),
                   Positioned.fill(
                     child: ChannelQuickActionsLauncher(
-                      visible: tabIndex.value == 0,
+                      visible: tabIndex.value == _chatsTab,
                       navigationBarHeight: HomePage._tabBarHeight,
                       navigationBarBottomGap: HomePage._tabBarBottomGap,
                       navigationBarWidth: navigationBarWidth,
@@ -189,17 +208,13 @@ class HomePage extends HookConsumerWidget {
             ),
             bottomNavigationBar: _FloatingTabBar(
               selectedIndex: tabIndex.value,
-              hasUnreadInbox: hasUnreadInbox,
+              unreadTabs: {
+                if (hasUnreadChats) _chatsTab,
+                if (hasUnreadInbox) _activityTab,
+              },
               onDestinationSelected: (i) {
                 if (i == tabIndex.value) {
-                  switch (i) {
-                    case 0:
-                      homeReselection.value++;
-                    case 1:
-                      activityReselection.value++;
-                    case 2:
-                      searchReselection.value++;
-                  }
+                  reselections[i].value++;
                   return;
                 }
                 tabContentTransitionDirection.value = i > tabIndex.value
@@ -289,13 +304,13 @@ class _HomeDestination {
 
 class _FloatingTabBar extends StatelessWidget {
   final int selectedIndex;
-  final bool hasUnreadInbox;
+  final Set<int> unreadTabs;
   final ValueChanged<int> onDestinationSelected;
   final List<_HomeDestination> destinations;
 
   const _FloatingTabBar({
     required this.selectedIndex,
-    required this.hasUnreadInbox,
+    required this.unreadTabs,
     required this.onDestinationSelected,
     required this.destinations,
   });
@@ -397,7 +412,7 @@ class _FloatingTabBar extends StatelessWidget {
                                 child: _FloatingTabDestination(
                                   destination: destinations[i],
                                   selected: i == safeSelectedIndex,
-                                  showUnreadBadge: i == 1 && hasUnreadInbox,
+                                  showUnreadBadge: unreadTabs.contains(i),
                                   onTap: () => onDestinationSelected(i),
                                 ),
                               ),
@@ -492,7 +507,9 @@ class _FloatingTabDestination extends StatelessWidget {
                         top: 0,
                         right: 0,
                         child: AnimatedScale(
-                          key: const ValueKey('activity-tab-unread-dot-scale'),
+                          key: ValueKey(
+                            '${destination.label.toLowerCase()}-tab-unread-dot-scale',
+                          ),
                           scale: selected ? 0 : 1,
                           alignment: const Alignment(-0.5, 0.5),
                           duration: reducedMotion
@@ -500,7 +517,9 @@ class _FloatingTabDestination extends StatelessWidget {
                               : HomePage._tabUnreadBadgeDuration,
                           curve: Curves.easeOutCubic,
                           child: Container(
-                            key: const ValueKey('activity-tab-unread-dot'),
+                            key: ValueKey(
+                              '${destination.label.toLowerCase()}-tab-unread-dot',
+                            ),
                             width: 12,
                             height: 12,
                             padding: const EdgeInsets.all(2),

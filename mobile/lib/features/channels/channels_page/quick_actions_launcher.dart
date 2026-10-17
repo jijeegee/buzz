@@ -193,3 +193,27 @@ BoxConstraints _quickActionSheetConstraints(BuildContext context) {
     maxHeight: mediaQuery.size.height - mediaQuery.viewPadding.top - Grid.sm,
   );
 }
+
+/// Opens Browse channels, as the quick action does.
+Future<void> showBrowseChannelsSheet(BuildContext context) =>
+    showKuzzModalBottomSheet<void>(
+      context: context,
+      title: 'Browse channels',
+      constraints: _quickActionSheetConstraints(context),
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _BrowseChannelsSheet(),
+    );
+
+/// Opens New message and returns the DM it opened, if any.
+Future<Channel?> showNewMessageSheet(
+  BuildContext context, {
+  required String? currentPubkey,
+}) => showKuzzModalBottomSheet<Channel>(
+  context: context,
+  title: 'New message',
+  constraints: _quickActionSheetConstraints(context),
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (_) => _NewDirectMessageSheet(currentPubkey: currentPubkey),
+);
