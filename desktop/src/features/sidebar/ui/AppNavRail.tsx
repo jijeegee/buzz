@@ -195,7 +195,10 @@ function RailMoreMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="right">
         {pulseEnabled ? (
-          <DropdownMenuItem data-testid="open-pulse-view" onSelect={onSelectPulse}>
+          <DropdownMenuItem
+            data-testid="open-pulse-view"
+            onSelect={onSelectPulse}
+          >
             <Activity className="h-4 w-4" />
             <span>Pulse</span>
           </DropdownMenuItem>

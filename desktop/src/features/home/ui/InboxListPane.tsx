@@ -6,7 +6,6 @@ import {
   ExternalLink,
   LoaderCircle,
   MailOpen,
-  MessagesSquare,
 } from "lucide-react";
 import * as React from "react";
 
@@ -59,6 +58,7 @@ import { Separator } from "@/shared/ui/separator";
 import { Switch } from "@/shared/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { ConversationLetterAvatar } from "./ConversationLetterAvatar";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 
 const INBOX_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
@@ -137,14 +137,6 @@ function InboxLabel({
 }
 
 /** Stable per-channel hue so each room keeps the same avatar color. */
-function conversationHue(channelId: string) {
-  let hash = 0;
-  for (const char of channelId) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return hash % 360;
-}
-
 function ConversationRoomAvatar({
   room,
   testId,
@@ -184,22 +176,12 @@ function ConversationRoomAvatar({
 
   // Channel and thread rooms share the channel's letter and color; a thread
   // adds a badge.
-  const initial = Array.from(room.channelLabel)[0]?.toUpperCase() ?? "#";
-  const hue = conversationHue(room.channelId || room.channelLabel);
   return (
-    <span
-      aria-hidden="true"
-      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
-      data-testid="home-inbox-conversation-avatar"
-      style={{ backgroundColor: `hsl(${hue} 55% 48%)` }}
-    >
-      {initial}
-      {room.kind === "thread" ? (
-        <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border">
-          <MessagesSquare className="h-2.5 w-2.5" />
-        </span>
-      ) : null}
-    </span>
+    <ConversationLetterAvatar
+      channelId={room.channelId}
+      channelLabel={room.channelLabel}
+      isThread={room.kind === "thread"}
+    />
   );
 }
 

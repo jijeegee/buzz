@@ -26,6 +26,7 @@ import {
   preferredUnreadTarget,
 } from "@/features/sidebar/ui/MoreUnreadButton";
 import { useChatsViewMode } from "@/features/chats/useChatsViewMode";
+import { useLatestAuthorProfiles } from "@/features/chats/useLatestAuthorProfiles";
 import { ChatList } from "@/features/sidebar/ui/ChatList";
 import {
   ChannelGroupSection,
@@ -241,6 +242,7 @@ export function AppSidebar({
   );
 
   const [chatsView, setChatsView] = useChatsViewMode();
+  const latestAuthorProfiles = useLatestAuthorProfiles(serverChats?.rows);
   const { requestLeaveChannel, dialog: leaveChannelDialog } =
     useLeaveChannelDialog();
   const { requestDeleteChannel, dialog: deleteChannelDialog } =
@@ -438,6 +440,8 @@ export function AppSidebar({
               {!isLoading ? (
                 <>
                   <ChatList
+                    currentPubkey={currentPubkey}
+                    latestAuthorProfiles={latestAuthorProfiles}
                     action={
                       <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5">
                         <SectionQuickAction
