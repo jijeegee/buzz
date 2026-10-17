@@ -140,7 +140,7 @@ jobs:
       - name: Build complete unsigned iOS release
         run: |
           /bin/bash scripts/test-mobile-gateway-recipes.sh
-          cd mobile && flutter build ios --release --no-codesign --no-pub
+          cd mobile && flutter build ios --release --no-codesign --no-pub --dart-define=KUZZ_RELAY_URL=wss://relay.ci.invalid
 
   results:
     name: Results

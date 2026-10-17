@@ -481,8 +481,8 @@ mod tests {
 
     #[test]
     fn apply_workspace_refuses_another_server() {
-        let ours = crate::relay::server::relay_endpoints(crate::relay::server::KuzzEnv::Prod).ws;
-        assert!(super::apply_workspace_relay_guard(ours).is_ok());
+        let ours = crate::relay::server::relay_endpoints().ws;
+        assert!(super::apply_workspace_relay_guard(&ours).is_ok());
         for refused in ["wss://other.example", "ws://jihobuzz.duckdns.org:8443"] {
             assert_eq!(
                 super::apply_workspace_relay_guard(refused).unwrap_err(),

@@ -17,6 +17,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # CI-only stand-in; release builds need a server address.
+  KUZZ_RELAY_URL: wss://relay.ci.invalid
   KUZZ_TEST_POSTGRES_PASSWORD: kuzz_dev
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 

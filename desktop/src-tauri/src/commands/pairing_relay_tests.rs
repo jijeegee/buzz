@@ -2,7 +2,7 @@ use super::{
     allowed_pairing_relay, allowed_pairing_relay_url, pairing_relay_from_nip11,
     probe_pairing_relay, resolve_pairing_relay_url, PairingRelay,
 };
-use crate::relay::server::{relay_endpoints, KuzzEnv, REFUSED};
+use crate::relay::server::{relay_endpoints, REFUSED};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test]
@@ -119,25 +119,26 @@ async fn pairing_refuses_another_main_server_before_probing_it() {
 
 #[test]
 fn pairing_refuses_an_advertised_relay_on_another_server() {
-    let ours = relay_endpoints(KuzzEnv::Prod).ws;
+    let ours = relay_endpoints().ws;
+    let downgraded = format!("{}/pair", ours.replacen("wss://", "ws://", 1));
     for advertised in [
         "wss://pairing.buzz.xyz",
         "ws://127.0.0.1:5000",
-        "ws://jihobuzz.duckdns.org:8443/pair",
+        downgraded.as_str(),
     ] {
         assert_eq!(
-            allowed_pairing_relay(ours, PairingRelay::Configured(advertised.to_string()))
+            allowed_pairing_relay(&ours, PairingRelay::Configured(advertised.to_string()))
                 .unwrap_err(),
             REFUSED,
             "{advertised}"
         );
     }
     assert_eq!(
-        allowed_pairing_relay(ours, PairingRelay::LegacyPath).unwrap(),
+        allowed_pairing_relay(&ours, PairingRelay::LegacyPath).unwrap(),
         format!("{ours}/pair")
     );
     assert_eq!(
-        allowed_pairing_relay(ours, PairingRelay::MainRelay).unwrap(),
+        allowed_pairing_relay(&ours, PairingRelay::MainRelay).unwrap(),
         ours
     );
 }

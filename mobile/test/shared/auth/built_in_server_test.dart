@@ -14,7 +14,7 @@ import 'package:kuzz/shared/relay/relay_provider.dart';
 
 import '../community/community_storage_test.dart';
 
-const _builtIn = 'https://jihobuzz.duckdns.org:8443';
+const _builtIn = 'https://kuzz.example:8443';
 
 Community _token(String name, String relayUrl) => Community.create(
   name: name,
@@ -25,20 +25,51 @@ Community _token(String name, String relayUrl) => Community.create(
 
 void main() {
   group('builtInServerOrigin (environment, overrides) -> origin', () {
-    test('prod always uses its table origin and ignores dart-defines', () {
-      expect(builtInServerOrigin(KuzzEnvironment.prod), _builtIn);
+    test('prod uses the build\'s KUZZ_RELAY_URL and nothing else', () {
+      expect(
+        builtInServerOrigin(
+          KuzzEnvironment.prod,
+          relayUrlDefine: 'wss://kuzz.example:8443',
+        ),
+        _builtIn,
+      );
       expect(
         builtInServerOrigin(
           KuzzEnvironment.prod,
           keyBackupOriginDefine: 'http://localhost:3000',
-          relayUrlDefine: 'wss://other.example.com',
+          relayUrlDefine: ' wss://KUZZ.example:8443/ ',
         ),
         _builtIn,
       );
     });
 
-    test('dev uses its table origin unless a dart-define overrides it', () {
-      expect(builtInServerOrigin(KuzzEnvironment.dev), _builtIn);
+    test('prod refuses an insecure KUZZ_RELAY_URL', () {
+      for (final url in ['ws://kuzz.example:8443', 'http://kuzz.example']) {
+        expect(
+          () => builtInServerOrigin(KuzzEnvironment.prod, relayUrlDefine: url),
+          throwsArgumentError,
+          reason: url,
+        );
+      }
+    });
+
+    test('without KUZZ_RELAY_URL the origin points nowhere real', () {
+      expect(builtInServerOrigin(KuzzEnvironment.prod), unsetServerOrigin);
+      expect(builtInServerOrigin(KuzzEnvironment.dev), unsetServerOrigin);
+      expect(
+        builtInServerOrigin(KuzzEnvironment.prod, relayUrlDefine: '  '),
+        unsetServerOrigin,
+      );
+    });
+
+    test('dev uses KUZZ_KEY_BACKUP_ORIGIN, else KUZZ_RELAY_URL', () {
+      expect(
+        builtInServerOrigin(
+          KuzzEnvironment.dev,
+          relayUrlDefine: 'wss://kuzz.example:8443',
+        ),
+        _builtIn,
+      );
       expect(
         builtInServerOrigin(
           KuzzEnvironment.dev,
@@ -92,21 +123,23 @@ void main() {
   group('isBuiltInServerUrl compares security, host and port', () {
     test('wss/https of the same host:port are the same server', () {
       for (final url in [
-        'wss://jihobuzz.duckdns.org:8443',
-        'https://JIHOBUZZ.duckdns.org:8443/path',
-        'https://jihobuzz.duckdns.org:8443',
+        'wss://kuzz.example:8443',
+        'https://KUZZ.example:8443/path',
+        'https://kuzz.example:8443',
       ]) {
         expect(isBuiltInServerUrl(url, _builtIn), isTrue, reason: url);
       }
     });
 
     test('prod never allows ws/http, even to the built-in host', () {
-      final prod = builtInServerOrigin(KuzzEnvironment.prod)!;
+      final prod = builtInServerOrigin(
+        KuzzEnvironment.prod,
+        relayUrlDefine: 'wss://kuzz.example:8443',
+      )!;
       expect(prod, startsWith('https://'));
-      expect(builtInServerOrigin(KuzzEnvironment.dev), startsWith('https://'));
       for (final url in [
-        'ws://jihobuzz.duckdns.org:8443',
-        'http://jihobuzz.duckdns.org:8443',
+        'ws://kuzz.example:8443',
+        'http://kuzz.example:8443',
       ]) {
         expect(isBuiltInServerUrl(url, prod), isFalse, reason: url);
         expect(isServerAllowed(url, builtInOrigin: prod), isFalse);
@@ -126,6 +159,7 @@ void main() {
         builtInServerOrigin(
           KuzzEnvironment.prod,
           keyBackupOriginDefine: 'http://localhost:3000',
+          relayUrlDefine: 'wss://kuzz.example:8443',
         ),
         _builtIn,
       );
@@ -133,11 +167,11 @@ void main() {
 
     test('another host, another port or a malformed URL is not', () {
       for (final url in [
-        'wss://jihobuzz.duckdns.org',
-        'wss://jihobuzz.duckdns.org:9443',
+        'wss://kuzz.example',
+        'wss://kuzz.example:9443',
         'wss://evil.example.com:8443',
         'http://localhost:3000',
-        'ftp://jihobuzz.duckdns.org:8443',
+        'ftp://kuzz.example:8443',
       ]) {
         expect(isBuiltInServerUrl(url, _builtIn), isFalse, reason: url);
       }
@@ -154,8 +188,8 @@ void main() {
 
   group('startup pinning', () {
     final foreign = _token('Old', 'wss://old.example.com');
-    final kuzzA = _token('Kuzz A', 'wss://jihobuzz.duckdns.org:8443');
-    final kuzzB = _token('Kuzz B', 'https://jihobuzz.duckdns.org:8443');
+    final kuzzA = _token('Kuzz A', 'wss://kuzz.example:8443');
+    final kuzzB = _token('Kuzz B', 'https://kuzz.example:8443');
 
     test('selectActiveCommunity prefers the built-in server', () {
       final all = [foreign, kuzzA, kuzzB];
@@ -276,7 +310,7 @@ void main() {
     test('an insecure entry for the built-in host is not the built-in entry; '
         'signing in starts a fresh one without its identity', () async {
       final storage = CommunityStorage(secure: FakeSecureStorage());
-      final insecure = _token('Insecure', 'ws://jihobuzz.duckdns.org:8443');
+      final insecure = _token('Insecure', 'ws://kuzz.example:8443');
       await storage.save(insecure);
       await storage.saveActiveId(insecure.id);
       final container = ProviderContainer(
@@ -339,7 +373,7 @@ void main() {
 
     test('an invite for another service adds and switches nothing', () async {
       final storage = CommunityStorage(secure: FakeSecureStorage());
-      final kuzz = _token('Kuzz', 'wss://jihobuzz.duckdns.org:8443');
+      final kuzz = _token('Kuzz', 'wss://kuzz.example:8443');
       await storage.save(kuzz);
       await storage.saveActiveId(kuzz.id);
       var requests = 0;
@@ -370,7 +404,7 @@ void main() {
           .read(inviteJoinProvider.notifier)
           .prepare(
             const InviteDeepLink(
-              relayUrl: 'wss://jihobuzz.duckdns.org:8443',
+              relayUrl: 'wss://kuzz.example:8443',
               code: 'x',
             ),
           );
@@ -383,7 +417,7 @@ void main() {
       PendingDeepLinkNotifier.debugUriStreamOverride = const Stream.empty();
       addTearDown(() => PendingDeepLinkNotifier.debugUriStreamOverride = null);
       final storage = CommunityStorage(secure: FakeSecureStorage());
-      final kuzz = _token('Kuzz', 'wss://jihobuzz.duckdns.org:8443');
+      final kuzz = _token('Kuzz', 'wss://kuzz.example:8443');
       final foreign = _token('Old', 'wss://old.example.com');
       await storage.save(kuzz);
       await storage.save(foreign);
