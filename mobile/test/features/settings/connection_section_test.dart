@@ -1,4 +1,5 @@
 import 'package:kuzz/features/settings/settings_page.dart';
+import 'package:kuzz/shared/auth/account/account_api.dart';
 import 'package:kuzz/shared/auth/auth.dart';
 import 'package:kuzz/shared/auth/default_community.dart';
 import 'package:kuzz/shared/community/community_membership_provider.dart';
@@ -16,7 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../helpers/widget_helpers.dart';
 
 void main() {
-  testWidgets('account card hides the signing key and offers Google', (
+  testWidgets('an account Google does not hold yet is asked to protect it', (
     tester,
   ) async {
     PackageInfo.setMockInitialValues(
@@ -47,21 +48,18 @@ void main() {
       ),
     );
     await tester.pump();
-    final google = find.byKey(const Key('settings-google-key-backup'));
+    final google = find.byKey(const Key('settings-protect-account'));
     await tester.scrollUntilVisible(google, 200);
     await tester.pumpAndSettle();
 
     final npub = fullNpub(nostr.Keys(_RelayConfigNotifier.privHex).public);
-    expect(find.text('Account'), findsOneWidget);
+    expect(find.text('Protect your account'), findsOneWidget);
     expect(find.text('Connection'), findsNothing);
     expect(
-      find.descendant(
-        of: google,
-        matching: find.text('Connect Google account'),
-      ),
+      find.descendant(of: google, matching: find.text('Continue with Google')),
       findsOneWidget,
     );
-    expect(find.text('Use Google to sign in on other devices'), findsOneWidget);
+    expect(find.textContaining('Connect'), findsNothing);
     // The signing key is never surfaced in any form: no row, copy action,
     // or assistive value.
     expect(find.text('Identity (pubkey)'), findsNothing);
@@ -98,7 +96,7 @@ void main() {
   });
 
   testWidgets(
-    'an account already connected to Google is not offered to connect',
+    'an account signed in with Google shows who is signed in and devices',
     (tester) async {
       PackageInfo.setMockInitialValues(
         appName: 'Kuzz',
@@ -116,6 +114,15 @@ void main() {
             relayConfigProvider.overrideWith(_RelayConfigNotifier.new),
             relaySessionProvider.overrideWith(_DisconnectedSession.new),
             authProvider.overrideWith(_GoogleConnectedAuthNotifier.new),
+            activeCommunityProvider.overrideWith(
+              (ref) async => _GoogleConnectedAuthNotifier.community,
+            ),
+            accountProfileProvider('https://relay.test').overrideWith(
+              (ref) async => const AccountProfile(
+                principalId: 'google-account',
+                displayName: 'Ji Ho',
+              ),
+            ),
             savedPrefsProvider.overrideWithValue(prefs),
             currentCommunityRoleProvider.overrideWithValue(
               const AsyncData<CommunityMemberRole?>(CommunityMemberRole.member),
@@ -128,24 +135,31 @@ void main() {
         ),
       );
       await tester.pump();
-      final connected = find.byKey(const Key('settings-google-connected'));
-      await tester.scrollUntilVisible(connected, 200);
+      final account = find.byKey(const Key('settings-google-account-row'));
+      await tester.scrollUntilVisible(account, 200);
       await tester.pumpAndSettle();
 
+      expect(find.text('Account'), findsOneWidget);
+      expect(
+        find.descendant(of: account, matching: find.text('Ji Ho')),
+        findsOneWidget,
+      );
       expect(
         find.descendant(
-          of: connected,
+          of: account,
           matching: find.text('Signed in with Google'),
         ),
         findsOneWidget,
       );
-      expect(find.byKey(const Key('settings-google-key-backup')), findsNothing);
-      expect(find.text('Connect Google account'), findsNothing);
-      // A status row, not a button: tapping it opens nothing.
-      await tester.tap(connected);
+      expect(find.byKey(const Key('settings-devices-row')), findsOneWidget);
+      expect(find.byKey(const Key('settings-protect-account')), findsNothing);
+      expect(find.byKey(const Key('settings-account-id-row')), findsNothing);
+      expect(find.textContaining('Connect'), findsNothing);
+      expect(find.text('Continue with Google'), findsNothing);
+      // A label, not a button: tapping it opens nothing.
+      await tester.tap(account);
       await tester.pumpAndSettle();
       expect(find.byType(SettingsPage), findsOneWidget);
-      expect(find.text('Continue with Google'), findsNothing);
     },
   );
 
@@ -219,18 +233,18 @@ class _AuthNotifier extends AuthNotifier {
 }
 
 class _GoogleConnectedAuthNotifier extends AuthNotifier {
-  @override
-  Future<AuthState> build() async => AuthState(
-    status: AuthStatus.authenticated,
-    community: Community(
-      id: 'community',
-      name: 'Test',
-      relayUrl: 'https://relay.test',
-      nsec: _RelayConfigNotifier.nsec,
-      googleBackupAccountId: 'google-account',
-      addedAt: DateTime.utc(2026),
-    ),
+  static final community = Community(
+    id: 'community',
+    name: 'Test',
+    relayUrl: 'https://relay.test',
+    nsec: _RelayConfigNotifier.nsec,
+    googleBackupAccountId: 'google-account',
+    addedAt: DateTime.utc(2026),
   );
+
+  @override
+  Future<AuthState> build() async =>
+      AuthState(status: AuthStatus.authenticated, community: community);
 }
 
 class _DisconnectedSession extends RelaySessionNotifier {

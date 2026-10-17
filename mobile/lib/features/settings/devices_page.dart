@@ -20,10 +20,14 @@ import '../../shared/widgets/modal_presentation.dart';
 /// sign-out, sign out everywhere else, bot token revocation and account
 /// deletion.
 class DevicesPage extends HookConsumerWidget {
-  const DevicesPage({super.key, required this.origin});
+  const DevicesPage({super.key, required this.origin, this.botTokens = true});
 
   /// Canonical origin of the token relay.
   final String origin;
+
+  /// Offer "Revoke all bot tokens". Off for an account signed in with
+  /// Google holding its key, whose desktop Account page has no such action.
+  final bool botTokens;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -286,12 +290,13 @@ class DevicesPage extends HookConsumerWidget {
                   title: 'Sign out all other devices',
                   onTap: busy.value ? null : () => unawaited(signOutOthers()),
                 ),
-                AppListRow(
-                  key: const Key('devices-revoke-bots'),
-                  icon: LucideIcons.bot,
-                  title: 'Revoke all bot tokens',
-                  onTap: busy.value ? null : () => unawaited(revokeBots()),
-                ),
+                if (botTokens)
+                  AppListRow(
+                    key: const Key('devices-revoke-bots'),
+                    icon: LucideIcons.bot,
+                    title: 'Revoke all bot tokens',
+                    onTap: busy.value ? null : () => unawaited(revokeBots()),
+                  ),
               ],
             ),
             if (!accountDeleted.value)

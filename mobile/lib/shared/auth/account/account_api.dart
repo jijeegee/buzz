@@ -255,10 +255,15 @@ class AccountApi {
 
 /// Account endpoints for the token relay at `origin`.
 final accountApiProvider = Provider.family<AccountApi, String>((ref, origin) {
+  final googleKey = ref.watch(activeGoogleKeyOriginProvider) == origin;
   return AccountApi(
     origin: origin,
     client: ref.watch(authHttpClientProvider),
-    session: ref.watch(tokenSessionControllerProvider(origin)),
+    session: ref.watch(
+      googleKey
+          ? keyBackupSessionControllerProvider(origin)
+          : tokenSessionControllerProvider(origin),
+    ),
   );
 });
 

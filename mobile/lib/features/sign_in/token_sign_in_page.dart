@@ -291,7 +291,7 @@ class TokenSignInPage extends HookConsumerWidget {
               resumeSignedOut
                   ? 'Sign in again'
                   : connectGoogle
-                  ? 'Connect Google account'
+                  ? 'Protect your account'
                   : keyBackup.value
                   ? 'Welcome to Kuzz'
                   : dualMode.value

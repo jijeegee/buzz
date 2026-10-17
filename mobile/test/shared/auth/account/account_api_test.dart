@@ -46,6 +46,43 @@ void main() {
     return container.read(accountApiProvider(_origin));
   }
 
+  test('a Google key account calls with its Google session', () async {
+    final keyStore = FakeRefreshTokenStore()
+      ..data[_origin] = StoredTokenSession(
+        refreshToken: 'bzr_key',
+        principalId: 'p' * 64,
+        identityMode: 'key_backup',
+      );
+    final clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
+    final google = ProviderContainer(
+      overrides: [
+        authHttpClientProvider.overrideWithValue(server.client),
+        refreshTokenStoreProvider.overrideWithValue(store),
+        keyBackupRefreshTokenStoreProvider.overrideWithValue(keyStore),
+        webAuthLauncherProvider.overrideWithValue(
+          FakeWebAuthLauncher(FakeWebAuthLauncher.success),
+        ),
+        sessionClockProvider.overrideWithValue(clock.call),
+        sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
+        authDeviceNameProvider.overrideWithValue('Test phone'),
+        activeGoogleKeyOriginProvider.overrideWithValue(_origin),
+      ],
+    );
+    addTearDown(google.dispose);
+    server.auth.refreshResponses.add(
+      (_) => FakeAuthServer.rotated('bzs_key', 'bzr_key2'),
+    );
+
+    await google.read(accountApiProvider(_origin)).me();
+
+    expect(
+      server.calls('GET', '/auth/me').single.headers['Authorization'],
+      'Bearer bzs_key',
+    );
+    expect(keyStore.data[_origin]?.refreshToken, 'bzr_key2');
+    expect(store.data, isEmpty);
+  });
+
   test('me() reads the profile with the session Bearer token', () async {
     final api = await signedIn();
     final profile = await api.me();
