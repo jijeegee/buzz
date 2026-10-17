@@ -28,6 +28,7 @@ import {
 import { useChatsViewMode } from "@/features/chats/useChatsViewMode";
 import { useLatestAuthorProfiles } from "@/features/chats/useLatestAuthorProfiles";
 import { ChatList } from "@/features/sidebar/ui/ChatList";
+import { PeopleSidebarList } from "@/features/people/ui/PeopleSidebarList";
 import {
   ChannelGroupSection,
   SectionActionsMenu,
@@ -243,6 +244,8 @@ export function AppSidebar({
 
   const [chatsView, setChatsView] = useChatsViewMode();
   const latestAuthorProfiles = useLatestAuthorProfiles(serverChats?.rows);
+  // People swaps the list column for the people list (Chats stays mounted).
+  const showPeople = selectedView === "people";
   const { requestLeaveChannel, dialog: leaveChannelDialog } =
     useLeaveChannelDialog();
   const { requestDeleteChannel, dialog: deleteChannelDialog } =
@@ -389,159 +392,168 @@ export function AppSidebar({
         data-sidebar-background
         data-testid="app-sidebar-scroll-anchor"
       >
-        <AppSidebarPinnedHeader
-          channelLabels={dmChannelLabels}
-          currentPubkey={currentPubkey}
-          currentChannelId={
-            selectedView === "channel" ? selectedChannelId : null
-          }
-          onBrowseChannels={onBrowseChannels}
-          onCreateAgent={onCreateAgent}
-          onCreateChannel={handleOpenCreateChannel}
-          onOpenDm={onOpenDm}
-          onOpenSearchResult={onOpenSearchResult}
-          onSelectChannel={onSelectChannel}
-          searchChannels={searchChannels}
-          searchFocusRequest={searchFocusRequests[0]}
-          scopeSearchFocusRequest={searchFocusRequests[1]}
-          suggestionChannels={channels}
-        />
-
+        {showPeople ? (
+          <PeopleSidebarList currentPubkey={currentPubkey} />
+        ) : null}
         <div
-          className="relative flex min-h-0 flex-1 flex-col"
-          data-sidebar-background
-          data-testid="sidebar-channel-content"
+          className={showPeople ? "hidden" : "contents"}
+          data-testid="sidebar-chats-column"
         >
-          {unreadAboveCount > 0 ? (
-            <MoreUnreadButton
-              count={unreadAboveCount}
-              emphasis={hasHighPriorityAbove ? "primary" : "default"}
-              label={sidebarOverflowUnreadLabel(unreadAboveCount)}
-              onClick={scrollToNextAbove}
-              position="top"
-              testId="sidebar-more-unread-above"
-            />
-          ) : null}
+          <AppSidebarPinnedHeader
+            channelLabels={dmChannelLabels}
+            currentPubkey={currentPubkey}
+            currentChannelId={
+              selectedView === "channel" ? selectedChannelId : null
+            }
+            onBrowseChannels={onBrowseChannels}
+            onCreateAgent={onCreateAgent}
+            onCreateChannel={handleOpenCreateChannel}
+            onOpenDm={onOpenDm}
+            onOpenSearchResult={onOpenSearchResult}
+            onSelectChannel={onSelectChannel}
+            searchChannels={searchChannels}
+            searchFocusRequest={searchFocusRequests[0]}
+            scopeSearchFocusRequest={searchFocusRequests[1]}
+            suggestionChannels={channels}
+          />
 
-          <SidebarContent
-            className="kuzz-sidebar-scrollbar overscroll-none [overflow-anchor:none]"
+          <div
+            className="relative flex min-h-0 flex-1 flex-col"
             data-sidebar-background
-            ref={scrollRef}
+            data-testid="sidebar-channel-content"
           >
-            <div
-              className="flex w-full flex-col gap-2 px-[3px]"
-              data-sidebar-background
-              data-testid="sidebar-scroll-content"
-            >
-              {isLoading ? (
-                <SidebarLoadingContent shape={sidebarLoadingShape} />
-              ) : null}
+            {unreadAboveCount > 0 ? (
+              <MoreUnreadButton
+                count={unreadAboveCount}
+                emphasis={hasHighPriorityAbove ? "primary" : "default"}
+                label={sidebarOverflowUnreadLabel(unreadAboveCount)}
+                onClick={scrollToNextAbove}
+                position="top"
+                testId="sidebar-more-unread-above"
+              />
+            ) : null}
 
-              {!isLoading ? (
-                <>
-                  <ChatList
-                    currentPubkey={currentPubkey}
-                    latestAuthorProfiles={latestAuthorProfiles}
-                    action={
-                      <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5">
-                        <SectionQuickAction
-                          label="New message"
-                          onClick={onNewMessage}
-                          testId="section-actions-chats-quick-create"
-                        />
-                        <SectionActionsMenu
-                          sectionLabel="chats"
-                          testId="section-actions-chats"
-                          onOpenChange={setChatActionsMenuOpen}
-                          onNewMessage={onNewMessage}
-                          hasUnread={chatChannels.some((channel) =>
-                            unreadChannelIds.has(channel.id),
-                          )}
-                          onMarkAllRead={() => {
-                            for (const channel of chatChannels)
-                              onMarkChannelRead(
-                                channel.id,
-                                channel.lastMessageAt,
-                              );
-                          }}
-                          onBrowse={() => onBrowseChannels?.()}
-                          onCreate={handleOpenCreateChannel}
-                          chatsView={serverChats ? chatsView : undefined}
-                          onChatsViewChange={setChatsView}
-                        />
-                      </div>
-                    }
-                    dmParticipantsByChannelId={dmParticipantsByChannelId}
-                    isCollapsed={collapsedGroups.channels}
-                    isActiveChannel={selectedView === "channel"}
-                    activeWorkingByChannelId={activeWorkingByChannelId}
-                    items={chatChannels}
-                    channelLabels={dmChannelLabels}
-                    onHideDm={onHideDm}
-                    onMarkChannelRead={onMarkChannelRead}
-                    onMarkChannelUnread={onMarkChannelUnread}
-                    onSelectChannel={onSelectChannel}
-                    serverChats={serverChats}
-                    view={chatsView}
-                    onToggleCollapsed={() => toggleCollapsedGroup("channels")}
-                    presenceByChannelId={dmPresenceByChannelId}
-                    selectedChannelId={selectedChannelId}
-                    sectionActionsOpen={chatActionsMenuOpen}
-                    unreadChannelCounts={unreadChannelCounts}
-                    unreadChannelIds={unreadChannelIds}
-                    mutedChannelIds={mutedChannelIds}
-                    onMuteChannel={onMuteChannel}
-                    onUnmuteChannel={onUnmuteChannel}
-                    starredChannelIds={starredChannelIds}
-                    onStarChannel={onStarChannel}
-                    onUnstarChannel={onUnstarChannel}
-                    onDeleteChannel={requestDeleteChannel}
-                    onLeaveChannel={requestLeaveChannel}
-                    emptyState="No chats yet. Start a message or browse channels."
-                  />
-                  <FeatureGate feature="forum">
-                    <ChannelGroupSection
-                      createLabel="New forum"
-                      hasUnread={unreadChannelIds.size > 0}
-                      isCollapsed={collapsedGroups.forums}
+            <SidebarContent
+              className="kuzz-sidebar-scrollbar overscroll-none [overflow-anchor:none]"
+              data-sidebar-background
+              ref={scrollRef}
+            >
+              <div
+                className="flex w-full flex-col gap-2 px-[3px]"
+                data-sidebar-background
+                data-testid="sidebar-scroll-content"
+              >
+                {isLoading ? (
+                  <SidebarLoadingContent shape={sidebarLoadingShape} />
+                ) : null}
+
+                {!isLoading ? (
+                  <>
+                    <ChatList
+                      currentPubkey={currentPubkey}
+                      latestAuthorProfiles={latestAuthorProfiles}
+                      action={
+                        <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5">
+                          <SectionQuickAction
+                            label="New message"
+                            onClick={onNewMessage}
+                            testId="section-actions-chats-quick-create"
+                          />
+                          <SectionActionsMenu
+                            sectionLabel="chats"
+                            testId="section-actions-chats"
+                            onOpenChange={setChatActionsMenuOpen}
+                            onNewMessage={onNewMessage}
+                            hasUnread={chatChannels.some((channel) =>
+                              unreadChannelIds.has(channel.id),
+                            )}
+                            onMarkAllRead={() => {
+                              for (const channel of chatChannels)
+                                onMarkChannelRead(
+                                  channel.id,
+                                  channel.lastMessageAt,
+                                );
+                            }}
+                            onBrowse={() => onBrowseChannels?.()}
+                            onCreate={handleOpenCreateChannel}
+                            chatsView={serverChats ? chatsView : undefined}
+                            onChatsViewChange={setChatsView}
+                          />
+                        </div>
+                      }
+                      dmParticipantsByChannelId={dmParticipantsByChannelId}
+                      isCollapsed={collapsedGroups.channels}
                       isActiveChannel={selectedView === "channel"}
                       activeWorkingByChannelId={activeWorkingByChannelId}
-                      items={forumChannels}
-                      sortMode={sortModeFor("forums")}
-                      onSortModeChange={(mode) =>
-                        setSortModeFor("forums", mode)
-                      }
-                      actionsTestId="section-actions-forums"
-                      listTestId="forum-list"
-                      onCreateClick={() => openCreateDialog("forum")}
-                      onMarkAllRead={onMarkAllChannelsRead}
+                      items={chatChannels}
+                      channelLabels={dmChannelLabels}
+                      onHideDm={onHideDm}
                       onMarkChannelRead={onMarkChannelRead}
                       onMarkChannelUnread={onMarkChannelUnread}
                       onSelectChannel={onSelectChannel}
-                      onToggleCollapsed={() => toggleCollapsedGroup("forums")}
+                      serverChats={serverChats}
+                      view={chatsView}
+                      onToggleCollapsed={() => toggleCollapsedGroup("channels")}
+                      presenceByChannelId={dmPresenceByChannelId}
                       selectedChannelId={selectedChannelId}
-                      title="Forums"
+                      sectionActionsOpen={chatActionsMenuOpen}
+                      unreadChannelCounts={unreadChannelCounts}
                       unreadChannelIds={unreadChannelIds}
                       mutedChannelIds={mutedChannelIds}
                       onMuteChannel={onMuteChannel}
                       onUnmuteChannel={onUnmuteChannel}
+                      starredChannelIds={starredChannelIds}
+                      onStarChannel={onStarChannel}
+                      onUnstarChannel={onUnstarChannel}
                       onDeleteChannel={requestDeleteChannel}
+                      onLeaveChannel={requestLeaveChannel}
+                      emptyState="No chats yet. Start a message or browse channels."
                     />
-                  </FeatureGate>
-                </>
-              ) : null}
+                    <FeatureGate feature="forum">
+                      <ChannelGroupSection
+                        createLabel="New forum"
+                        hasUnread={unreadChannelIds.size > 0}
+                        isCollapsed={collapsedGroups.forums}
+                        isActiveChannel={selectedView === "channel"}
+                        activeWorkingByChannelId={activeWorkingByChannelId}
+                        items={forumChannels}
+                        sortMode={sortModeFor("forums")}
+                        onSortModeChange={(mode) =>
+                          setSortModeFor("forums", mode)
+                        }
+                        actionsTestId="section-actions-forums"
+                        listTestId="forum-list"
+                        onCreateClick={() => openCreateDialog("forum")}
+                        onMarkAllRead={onMarkAllChannelsRead}
+                        onMarkChannelRead={onMarkChannelRead}
+                        onMarkChannelUnread={onMarkChannelUnread}
+                        onSelectChannel={onSelectChannel}
+                        onToggleCollapsed={() => toggleCollapsedGroup("forums")}
+                        selectedChannelId={selectedChannelId}
+                        title="Forums"
+                        unreadChannelIds={unreadChannelIds}
+                        mutedChannelIds={mutedChannelIds}
+                        onMuteChannel={onMuteChannel}
+                        onUnmuteChannel={onUnmuteChannel}
+                        onDeleteChannel={requestDeleteChannel}
+                      />
+                    </FeatureGate>
+                  </>
+                ) : null}
 
-              {errorMessage && !relayConnectionCard.hasRelayUnreachableError ? (
-                <div className="px-3 py-2 text-sm text-destructive">
-                  {errorMessage}
-                </div>
-              ) : null}
-            </div>
-          </SidebarContent>
+                {errorMessage &&
+                !relayConnectionCard.hasRelayUnreachableError ? (
+                  <div className="px-3 py-2 text-sm text-destructive">
+                    {errorMessage}
+                  </div>
+                ) : null}
+              </div>
+            </SidebarContent>
+          </div>
         </div>
 
         <div className="relative z-30 shrink-0" data-kuzz-glass-footer-wrap>
-          {unreadBelowCount > 0 ? (
+          {unreadBelowCount > 0 && !showPeople ? (
             <MoreUnreadButton
               bottomClassName="bottom-full"
               count={unreadBelowCount}

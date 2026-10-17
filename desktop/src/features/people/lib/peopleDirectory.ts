@@ -2,7 +2,10 @@ import type { UserProfileSummary, UserSearchResult } from "@/shared/api/types";
 
 export type PeopleDirectory = {
   favorites: UserSearchResult[];
-  everyone: UserSearchResult[];
+  /** People I added as friends (my follow list), A–Z. */
+  friends: UserSearchResult[];
+  /** Everyone else matching the filter; empty while the filter is empty. */
+  others: UserSearchResult[];
 };
 
 const UNKNOWN_PERSON = "Unknown";
@@ -17,38 +20,33 @@ const byName = (left: UserSearchResult, right: UserSearchResult) =>
   }) || (left.pubkey < right.pubkey ? -1 : left.pubkey > right.pubkey ? 1 : 0);
 
 /**
- * The People screen lists: Favorites (people I starred) and Everyone in the
- * community, both A–Z and narrowed by the name filter. Me and my own agents
- * are left out (Agents has its own tab); other people's agents stay and are
- * shown with a bot badge. A favorite not in the loaded directory still shows
- * from its batch-fetched profile.
+ * The People list: Favorites (people I starred) and Friends (people I added),
+ * both A–Z and narrowed by the name filter. Typing a name also finds others
+ * in the community so they can be added. People only: me, archived people
+ * and every agent are left out (agents have their own tab). A favorite or
+ * friend not in the loaded directory still shows from its batch profile.
  */
 export function buildPeopleDirectory({
   currentPubkey,
   favoriteIds,
-  favoriteProfiles,
+  friendIds,
+  extraProfiles,
   filter,
   isArchived,
-  myAgentPubkeys,
   users,
 }: {
   currentPubkey: string | undefined;
   favoriteIds: ReadonlySet<string>;
-  favoriteProfiles?: Readonly<Record<string, UserProfileSummary>>;
+  friendIds: ReadonlySet<string>;
+  extraProfiles?: Readonly<Record<string, UserProfileSummary>>;
   filter: string;
   isArchived?: (pubkey: string) => boolean;
-  myAgentPubkeys: ReadonlySet<string>;
   users: readonly UserSearchResult[];
 }): PeopleDirectory {
   const self = currentPubkey?.toLowerCase() ?? null;
   const excluded = (user: UserSearchResult) => {
     const pubkey = user.pubkey.toLowerCase();
-    return (
-      pubkey === self ||
-      myAgentPubkeys.has(pubkey) ||
-      (self !== null && user.ownerPubkey?.toLowerCase() === self) ||
-      (isArchived?.(pubkey) ?? false)
-    );
+    return pubkey === self || user.isAgent || (isArchived?.(pubkey) ?? false);
   };
   const needle = filter.trim().toLowerCase();
   const matches = (user: UserSearchResult) =>
@@ -61,31 +59,41 @@ export function buildPeopleDirectory({
     const pubkey = user.pubkey.toLowerCase();
     if (!byPubkey.has(pubkey)) byPubkey.set(pubkey, { ...user, pubkey });
   }
-  const everyone = [...byPubkey.values()].filter(
-    (user) => !excluded(user) && matches(user),
-  );
-
-  const favorites: UserSearchResult[] = [];
-  for (const id of favoriteIds) {
-    const pubkey = id.toLowerCase();
-    const profile = favoriteProfiles?.[pubkey];
-    const user =
-      byPubkey.get(pubkey) ??
-      (profile
-        ? {
-            pubkey,
-            displayName: profile.displayName,
-            avatarUrl: profile.avatarUrl,
-            nip05Handle: profile.nip05Handle,
-            ownerPubkey: profile.ownerPubkey,
-            isAgent: profile.isAgent ?? false,
-          }
-        : null);
-    if (user && !excluded(user) && matches(user)) favorites.push(user);
-  }
+  const listed = (ids: ReadonlySet<string>) => {
+    const list: UserSearchResult[] = [];
+    for (const id of ids) {
+      const pubkey = id.toLowerCase();
+      const profile = extraProfiles?.[pubkey];
+      const user =
+        byPubkey.get(pubkey) ??
+        (profile
+          ? {
+              pubkey,
+              displayName: profile.displayName,
+              avatarUrl: profile.avatarUrl,
+              nip05Handle: profile.nip05Handle,
+              ownerPubkey: profile.ownerPubkey,
+              isAgent: profile.isAgent ?? false,
+            }
+          : null);
+      if (user && !excluded(user) && matches(user)) list.push(user);
+    }
+    return list.sort(byName);
+  };
+  const friendSet = new Set([...friendIds].map((id) => id.toLowerCase()));
+  const others =
+    needle.length === 0
+      ? []
+      : [...byPubkey.values()]
+          .filter(
+            (user) =>
+              !friendSet.has(user.pubkey) && !excluded(user) && matches(user),
+          )
+          .sort(byName);
 
   return {
-    favorites: favorites.sort(byName),
-    everyone: everyone.sort(byName),
+    favorites: listed(favoriteIds),
+    friends: listed(friendSet),
+    others,
   };
 }
