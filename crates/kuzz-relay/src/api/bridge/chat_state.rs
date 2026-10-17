@@ -10,17 +10,20 @@
 //! - `{"mark_read": 1, "items": [{"channel": "<uuid>", "seq": 12},
 //!   {"thread": "<root-hex>", "event": "<event-hex>"}, ..], "unread_mark": false}`
 //!   → `{"mark_read": 1, "items": [..]}`. Each item names a `channel` or a
-//!   `thread` and optionally a position: a `seq` from `chat_list`, or the id
-//!   of the newest `event` the reader has seen. Without a position only the
-//!   unread mark changes. All items apply or none do.
+//!   `thread` and optionally one position: a `seq` from `chat_list`, the id
+//!   of the newest `event` the reader has seen, or `at`, whole Unix seconds
+//!   the reader has read up to. Without a position only the unread mark
+//!   changes. All items apply or none do.
 //! - `{"thread_follow": 1, "root": "<root-hex>", "state": "followed" |
 //!   "unfollowed"}` → `{"thread_follow": 1, "root": .., "channel_id": ..,
 //!   "state": ..}`.
+//! - `{"chat_import": 1, "reads": [..], "follows": [..]}`: a new app's
+//!   first-run upload of device-local state; see the `import` module.
 //!
 //! After a change, the reader's own devices get a kind:24210 chat-state ping.
 //!
 //! Off switch: while `KUZZ_CHAT_STATE_WRITES` is off the server keeps no chat
-//! state, so all three return `404 {"error": "chat_state_disabled"}` before
+//! state, so all of them return `404 {"error": "chat_state_disabled"}` before
 //! parsing or touching the database. Clients treat that as "use today's
 //! device-local behavior"; nothing else on `/query` changes.
 
@@ -43,6 +46,8 @@ use uuid::Uuid;
 use super::{api_error, internal_error};
 use crate::state::AppState;
 
+mod import;
+
 type QueryError = (StatusCode, Json<Value>);
 
 /// Error body while the chat-state switch is off.
@@ -58,16 +63,23 @@ pub(super) enum Envelope {
     ChatList,
     MarkRead,
     ThreadFollow,
+    ChatImport,
 }
 
 impl Envelope {
-    const ALL: [Self; 3] = [Self::ChatList, Self::MarkRead, Self::ThreadFollow];
+    const ALL: [Self; 4] = [
+        Self::ChatList,
+        Self::MarkRead,
+        Self::ThreadFollow,
+        Self::ChatImport,
+    ];
 
     fn key(self) -> &'static str {
         match self {
             Self::ChatList => "chat_list",
             Self::MarkRead => "mark_read",
             Self::ThreadFollow => "thread_follow",
+            Self::ChatImport => "chat_import",
         }
     }
 }
@@ -202,11 +214,30 @@ fn parse_mark_read_item(item: &Value) -> Result<MarkReadItem, &'static str> {
     let object = item.as_object().ok_or("must be an object")?;
     if object
         .keys()
-        .any(|key| !matches!(key.as_str(), "channel" | "thread" | "seq" | "event"))
+        .any(|key| !matches!(key.as_str(), "channel" | "thread" | "seq" | "event" | "at"))
     {
-        return Err("accepts only channel, thread, seq, event");
+        return Err("accepts only channel, thread, seq, event, at");
     }
-    let target = match (object.get("channel"), object.get("thread")) {
+    let target = read_target(object)?;
+    let position = match (object.get("seq"), object.get("event"), object.get("at")) {
+        (None, None, None) => None,
+        (Some(seq), None, None) => Some(ReadPosition::Seq(
+            seq.as_u64()
+                .and_then(|n| i64::try_from(n).ok())
+                .ok_or("seq must be a non-negative integer")?,
+        )),
+        (None, Some(event), None) => Some(ReadPosition::Event(
+            event_id(event).ok_or("event must be a 64-hex event id")?,
+        )),
+        (None, None, Some(at)) => Some(ReadPosition::At(unix_seconds(at)?)),
+        _ => return Err("takes one of seq, event, at"),
+    };
+    Ok(MarkReadItem { target, position })
+}
+
+/// The item's `channel` (UUID) or `thread` (root id), exactly one.
+fn read_target(object: &Map<String, Value>) -> Result<MarkReadTarget, &'static str> {
+    Ok(match (object.get("channel"), object.get("thread")) {
         (Some(channel), None) => MarkReadTarget::Channel(
             channel
                 .as_str()
@@ -217,20 +248,16 @@ fn parse_mark_read_item(item: &Value) -> Result<MarkReadItem, &'static str> {
             MarkReadTarget::Thread(event_id(thread).ok_or("thread must be a 64-hex event id")?)
         }
         _ => return Err("needs exactly one of channel or thread"),
-    };
-    let position = match (object.get("seq"), object.get("event")) {
-        (None, None) => None,
-        (Some(seq), None) => Some(ReadPosition::Seq(
-            seq.as_u64()
-                .and_then(|n| i64::try_from(n).ok())
-                .ok_or("seq must be a non-negative integer")?,
-        )),
-        (None, Some(event)) => Some(ReadPosition::Event(
-            event_id(event).ok_or("event must be a 64-hex event id")?,
-        )),
-        (Some(_), Some(_)) => return Err("takes seq or event, not both"),
-    };
-    Ok(MarkReadItem { target, position })
+    })
+}
+
+/// A non-negative whole number of Unix seconds.
+fn unix_seconds(value: &Value) -> Result<DateTime<Utc>, &'static str> {
+    value
+        .as_u64()
+        .and_then(|secs| i64::try_from(secs).ok())
+        .and_then(|secs| DateTime::from_timestamp(secs, 0))
+        .ok_or("at must be non-negative whole Unix seconds")
 }
 
 fn parse_thread_follow(filters: &[Value]) -> Result<(Vec<u8>, FollowState), QueryError> {
@@ -372,6 +399,18 @@ pub(super) async fn query(
                 "state": follow.as_str(),
             })))
         }
+        Envelope::ChatImport => {
+            let request = import::parse(filters)?;
+            let outcome = state
+                .db
+                .chat_import(tenant.community(), reader, &request.reads, &request.follows)
+                .await
+                .map_err(|e| internal_error(&format!("chat_import: {e}")))?;
+            if outcome.any_applied() {
+                ping(state, tenant, reader).await;
+            }
+            Ok(Json(import::response(&request, &outcome)))
+        }
     }
 }
 
@@ -429,6 +468,10 @@ mod tests {
             requested(&[json!({"kinds": [9]}), json!({"thread_follow": 1})]),
             Some(Envelope::ThreadFollow)
         );
+        assert_eq!(
+            requested(&[json!({"chat_import": 1})]),
+            Some(Envelope::ChatImport)
+        );
         assert_eq!(requested(&[json!({"kinds": [9]})]), None);
     }
 
@@ -484,12 +527,19 @@ mod tests {
             "items": [
                 {"channel": channel, "seq": 7},
                 {"thread": root, "event": root},
-                {"channel": channel}
+                {"channel": channel},
+                {"thread": root, "at": 1_760_000_000}
             ]
         })])
         .expect("valid");
         assert!(unread_mark);
-        assert_eq!(items.len(), 3);
+        assert_eq!(items.len(), 4);
+        assert_eq!(
+            items[3].position,
+            Some(ReadPosition::At(
+                DateTime::from_timestamp(1_760_000_000, 0).expect("time")
+            ))
+        );
         assert_eq!(items[0].position, Some(ReadPosition::Seq(7)));
         assert_eq!(items[1].target, MarkReadTarget::Thread(vec![0xcd; 32]));
         assert_eq!(items[1].position, Some(ReadPosition::Event(vec![0xcd; 32])));
@@ -507,6 +557,10 @@ mod tests {
             json!({"thread": "abcd"}),
             json!({"channel": channel, "seq": -1}),
             json!({"channel": channel, "seq": 1, "event": root}),
+            json!({"channel": channel, "seq": 1, "at": 1}),
+            json!({"channel": channel, "event": root, "at": 1}),
+            json!({"channel": channel, "at": -1}),
+            json!({"channel": channel, "at": 1.5}),
             json!({"channel": channel, "extra": 1}),
         ] {
             assert!(
@@ -740,6 +794,7 @@ mod postgres_tests {
             json!({"chat_list": 1}),
             json!({"mark_read": 1, "items": [{"channel": room}]}),
             json!({"thread_follow": 1, "root": "ab".repeat(32), "state": "followed"}),
+            json!({"chat_import": 1, "reads": [{"channel": room, "at": 1}]}),
             // Even malformed requests: the switch is checked first.
             json!({"mark_read": 1}),
         ] {
@@ -991,5 +1046,68 @@ mod postgres_tests {
         assert_eq!(value["rows"][0]["channel_id"], room.to_string(), "{value}");
         let (status, _) = post(vec![("authorization", auth)]).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "replayed proof");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn chat_import_applies_once_and_skips_per_item() {
+        let f = Fixture::new(true).await;
+        let (reader, other) = (Keys::generate(), Keys::generate());
+        let room = f.room(&other, &[&reader]).await;
+        let foreign = f.room(&other, &[]).await;
+        let (mut phone, mut others) = (f.device(&reader), f.device(&other));
+        let first = f.sign(room, &other, 100, Vec::new());
+        f.publish(&first, &other).await;
+        for ts in 101..104 {
+            f.publish(&f.sign(room, &other, ts, Vec::new()), &other)
+                .await;
+        }
+        f.state
+            .db
+            .backfill_chat_state_channel(
+                f.community,
+                room,
+                &kuzz_db::chat_backfill::ChatBackfillOptions::from_now(false),
+            )
+            .await
+            .expect("backfill");
+        let (_, list) = f.query(&reader, json!({"chat_list": 1})).await;
+        assert_eq!(row(&list, &room.to_string()).expect("room")["unread"], 0);
+
+        // Read up to the first message: the three after it are unread again.
+        let request = json!({
+            "chat_import": 1,
+            "reads": [
+                {"channel": room, "at": first.created_at.as_secs()},
+                {"channel": foreign, "at": first.created_at.as_secs()},
+                {"thread": "ab".repeat(32), "at": 1}
+            ],
+            "follows": [{"root": first.id.to_hex(), "state": "followed"}]
+        });
+        let (status, body) = f.query(&reader, request.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["chat_import"], 1);
+        assert_eq!(body["reads"][0]["applied"], true, "{body}");
+        assert_eq!(body["reads"][0]["channel_id"], room.to_string());
+        assert_eq!(body["reads"][1]["reason"], "not_member");
+        assert_eq!(body["reads"][2]["reason"], "unknown_thread");
+        assert_eq!(body["follows"][0]["applied"], true, "{body}");
+        assert_eq!(body["follows"][0]["state"], "followed");
+        assert_eq!(pings(&mut phone), 1);
+        assert_eq!(pings(&mut others), 0);
+        let (_, list) = f.query(&reader, json!({"chat_list": 1})).await;
+        assert_eq!(row(&list, &room.to_string()).expect("room")["unread"], 3);
+
+        // The upload applies once: a repeat changes nothing and pings no one.
+        let (status, body) = f.query(&reader, request).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["reads"][0]["reason"], "already_set");
+        assert_eq!(body["follows"][0]["reason"], "already_set");
+        assert_eq!(pings(&mut phone), 0);
+
+        let (status, _) = f
+            .query(&reader, json!({"chat_import": 1, "reads": []}))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }
