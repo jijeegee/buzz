@@ -12,6 +12,7 @@ import '../../shared/widgets/directional_transition_scope.dart';
 import '../../shared/widgets/mobile_tab_footer_backdrop.dart';
 import '../activity/activity_page.dart';
 import '../channels/channels_page.dart';
+import '../people/people_page.dart';
 import '../search/search_page.dart';
 
 class HomePage extends HookConsumerWidget {
@@ -48,6 +49,11 @@ class HomePage extends HookConsumerWidget {
       icon: LucideIcons.house300,
       selectedIcon: LucideIcons.house500,
       label: 'Home',
+    ),
+    _HomeDestination(
+      icon: LucideIcons.users300,
+      selectedIcon: LucideIcons.users500,
+      label: 'People',
     ),
     _HomeDestination(
       icon: LucideIcons.inbox300,
@@ -98,10 +104,14 @@ class HomePage extends HookConsumerWidget {
         },
       ),
       if (visitedTabs.value.contains(1))
-        ActivityPage(tabReselection: activityReselection)
+        const PeoplePage()
       else
         const SizedBox.shrink(),
       if (visitedTabs.value.contains(2))
+        ActivityPage(tabReselection: activityReselection)
+      else
+        const SizedBox.shrink(),
+      if (visitedTabs.value.contains(3))
         SearchPage(tabReselection: searchReselection)
       else
         const SizedBox.shrink(),
@@ -195,9 +205,9 @@ class HomePage extends HookConsumerWidget {
                   switch (i) {
                     case 0:
                       homeReselection.value++;
-                    case 1:
-                      activityReselection.value++;
                     case 2:
+                      activityReselection.value++;
+                    case 3:
                       searchReselection.value++;
                   }
                   return;
@@ -397,7 +407,7 @@ class _FloatingTabBar extends StatelessWidget {
                                 child: _FloatingTabDestination(
                                   destination: destinations[i],
                                   selected: i == safeSelectedIndex,
-                                  showUnreadBadge: i == 1 && hasUnreadInbox,
+                                  showUnreadBadge: i == 2 && hasUnreadInbox,
                                   onTap: () => onDestinationSelected(i),
                                 ),
                               ),
