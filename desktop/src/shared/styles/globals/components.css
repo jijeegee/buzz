@@ -839,3 +839,15 @@
   box-shadow: none;
   margin: 0;
 }
+
+/*
+ * Chats rows share the Inbox row look (ConversationRowFrame): edge to edge
+ * with no gaps between rows. Unlayered so it beats the sidebar utilities.
+ */
+[data-sidebar="group"]:has([data-conversation-row]) {
+  padding-inline: 0;
+}
+
+[data-sidebar="menu"]:has(> li > [data-conversation-row]) {
+  gap: 0;
+}

@@ -288,7 +288,8 @@ test("with server chats on, rows, threads and counts come from the relay; off ke
     assert.ok(view.getByTestId(`chat-thread-closed-${PINNED_ROOT}`));
     // Server count for the DM, not the local one.
     assert.match(view.getByTestId("channel-unread-dm-b").textContent, /^4/);
-    fireEvent.click(thread);
+    // The row's full-width button opens it.
+    fireEvent.click(thread.querySelector("button"));
     assert.deepEqual(opened, [["room-a", ROOT]]);
 
     // This device read the DM past its latest message: the count goes away
@@ -300,11 +301,13 @@ test("with server chats on, rows, threads and counts come from the relay; off ke
     // Marked unread on this device: unread on top of the server row.
     const dmRow = () =>
       view.getByTestId("chat-list").querySelector('[data-channel-id="dm-b"]');
-    assert.doesNotMatch(dmRow().className, /font-bold/);
+    // Unread shows as a bold latest message, as in the Inbox.
+    const dmPreview = () => dmRow().querySelector("p").className;
+    assert.match(dmPreview(), /font-normal/);
     view.rerender(
       tree({ ...server(2), forcedUnreadChannelIds: new Set(["dm-b"]) }),
     );
-    assert.match(dmRow().className, /font-bold/);
+    assert.match(dmPreview(), /font-semibold/);
 
     // A thread muted (unfollowed) on this device stays out of the list.
     view.rerender(tree({ ...server(3), mutedRootIds: new Set([ROOT]) }));

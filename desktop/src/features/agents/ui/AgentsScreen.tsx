@@ -123,13 +123,19 @@ export function AgentsScreen() {
     >
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
-          <React.Suspense fallback={<ViewLoadingFallback kind="agents" />}>
-            <AgentsView />
-          </React.Suspense>
+          {/* The list is in the left column: a picked agent fills this
+              area; with none picked it shows the agents library. */}
+          {profilePanelTarget ? null : (
+            <React.Suspense fallback={<ViewLoadingFallback kind="agents" />}>
+              <AgentsView />
+            </React.Suspense>
+          )}
           {profilePanelTarget ? (
             <UserProfilePanel
               canResetWidth={threadPanelWidth.canReset}
               currentPubkey={identityQuery.data?.pubkey}
+              isSinglePanelView
+              layout="split"
               onClose={handleCloseProfilePanel}
               onOpenDm={handleOpenDm}
               onOpenProfile={handleOpenProfilePanel}

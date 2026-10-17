@@ -1,5 +1,13 @@
 import { useCallback, useMemo, useState, type ComponentProps } from "react";
 import {
+  type ChatWorking,
+  splitChatWorking,
+} from "@/features/chats/chatWorking";
+import {
+  chatRowPreviewLine,
+  type ChatRowPreview,
+} from "@/features/chats/chatRowPreview";
+import {
   chatRowContextId,
   chatRowUnread,
   orderChatRows,
@@ -22,6 +30,8 @@ export type ServerChats = {
   /** This device's own read position for a read-state context. */
   getReadAt: (contextId: string) => number | null;
   onOpenThread: (channelId: string, rootId: string) => void;
+  /** The thread open in the main pane, if any; only its row is selected. */
+  openRootId?: string | null;
   /** Changes whenever local read positions change. */
   readStateVersion: number;
   pinnedThreadIds?: ReadonlySet<string>;
@@ -66,7 +76,13 @@ function buildServerChatRows(
   localItems: readonly Channel[],
   props: ChatListProps,
   byChannel: ByChannel | null,
+  workingByRootId: ChatWorking["threads"],
 ) {
+  const previewOf = (row: ChatListRow): ChatRowPreview => {
+    const event = row.latest;
+    if (!event) return { line: null, at: row.at > 0 ? row.at : null };
+    return { at: row.at, line: chatRowPreviewLine(event) };
+  };
   const channelById = new Map(
     localItems.map((channel) => [channel.id, channel]),
   );
@@ -110,7 +126,9 @@ function buildServerChatRows(
   const toSectionRow = (row: ChatListRow): SidebarSectionRow => {
     // Every listed row's channel is in channelById.
     const channel = channelById.get(row.channel_id) as Channel;
-    if (row.type === "room") return { kind: "channel", channel };
+    if (row.type === "room") {
+      return { kind: "channel", channel, preview: previewOf(row) };
+    }
     const rootId = row.root_id ?? row.key;
     return {
       kind: "custom",
@@ -119,12 +137,20 @@ function buildServerChatRows(
         <ChatThreadRow
           actions={server.threadActions}
           channelLabel={props.channelLabels?.[channel.id] ?? channel.name}
+          indent={byChannel !== null}
+          isActive={
+            props.isActiveChannel === true &&
+            props.selectedChannelId === channel.id &&
+            server.openRootId === rootId
+          }
           isDm={channel.channelType === "dm"}
           isMuted={props.mutedChannelIds?.has(channel.id) ?? false}
           isPinned={isPinnedThread(rootId)}
           onOpenThread={server.onOpenThread}
+          preview={previewOf(row)}
           row={row}
           unread={unreadOf(row)}
+          working={workingByRootId.get(rootId)}
         />
       ),
     };
@@ -148,6 +174,7 @@ function buildServerChatRows(
     (isPinnedRoom(channel.id) ? localPinned : localRest).push({
       kind: "channel",
       channel,
+      preview: localPreview(channel),
     });
   }
   let rows: SidebarSectionRow[];
@@ -156,10 +183,8 @@ function buildServerChatRows(
     const grouped = entries.map((entry): SidebarSectionRow => {
       if (entry.kind === "row") return toSectionRow(entry.row);
       if (entry.kind === "channel") {
-        return {
-          kind: "channel",
-          channel: channelById.get(entry.channelId) as Channel,
-        };
+        const channel = channelById.get(entry.channelId) as Channel;
+        return { kind: "channel", channel, preview: localPreview(channel) };
       }
       return {
         kind: "custom",
@@ -200,6 +225,12 @@ function buildServerChatRows(
   return { counts, rows, unreadIds };
 }
 
+/** A room the relay did not send: its time only, no message line. */
+function localPreview(channel: Channel): ChatRowPreview {
+  const at = channel.lastMessageAt ? Date.parse(channel.lastMessageAt) : NaN;
+  return { line: null, at: Number.isFinite(at) ? Math.floor(at / 1000) : null };
+}
+
 /**
  * The selected community's joined channels and visible DMs in one chat list.
  * With `serverChats` (the relay keeps chat state) rows, followed threads and
@@ -231,14 +262,28 @@ export function ChatList({
       view === "by-channel" ? { expandedChannelIds, onToggleExpanded } : null,
     [expandedChannelIds, onToggleExpanded, view],
   );
+  const working = useMemo(
+    () =>
+      splitChatWorking(props.activeWorkingByChannelId, serverChats?.rows ?? []),
+    [props.activeWorkingByChannelId, serverChats?.rows],
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion signals that local read positions moved
   const server = useMemo(
     () =>
       serverChats
-        ? buildServerChatRows(serverChats, items, props, byChannel)
+        ? buildServerChatRows(
+            serverChats,
+            items,
+            props,
+            byChannel,
+            working.threads,
+          )
         : null,
     [
       byChannel,
+      working.threads,
+      props.isActiveChannel,
+      props.selectedChannelId,
       serverChats,
       serverChats?.readStateVersion,
       items,
@@ -260,6 +305,11 @@ export function ChatList({
   return (
     <SidebarSection
       {...props}
+      activeWorkingByChannelId={working.rooms}
+      // With a thread open, its row is the selected one, not its channel's.
+      selectedChannelId={
+        serverChats?.openRootId ? null : props.selectedChannelId
+      }
       items={items}
       rows={server.rows}
       title="Chats"

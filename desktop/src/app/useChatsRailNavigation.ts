@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { setInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
+import { setSidebarListTab } from "@/features/sidebar/lib/sidebarListTab";
 import { hasPendingWelcomeChannel } from "@/features/onboarding/welcome";
 
 /**
@@ -27,9 +28,9 @@ export function shouldLandOnChats({
 }
 
 /**
- * Where the rail's Chats item goes: the room last open in this session, else
- * the first sidebar chat. On a channel it only hides the Activity panel, so
- * the list beside the room is the sidebar's chat list again.
+ * Where the rail's Chats item goes: the room (and thread) last open in this
+ * session, else the first sidebar chat. On a channel it only switches the
+ * left list back to Chats.
  */
 export function resolveChatsRailTarget(
   lastChannelId: string | null,
@@ -45,13 +46,19 @@ export function useChatsRailNavigation({
   channelsLoaded,
   goChannel,
   selectedChannelId,
+  selectedThreadRootId,
   selectedView,
   sidebarChannels,
 }: {
   /** The channel list has loaded once, so an empty list really is empty. */
   channelsLoaded: boolean;
-  goChannel: (channelId: string, options?: { replace?: boolean }) => unknown;
+  goChannel: (
+    channelId: string,
+    options?: { replace?: boolean; thread?: string },
+  ) => unknown;
   selectedChannelId: string | null;
+  /** The thread open beside the room, if any. */
+  selectedThreadRootId: string | null;
   selectedView: string;
   sidebarChannels: readonly { id: string }[];
 }): () => void {
@@ -76,19 +83,30 @@ export function useChatsRailNavigation({
     setInboxPanelOpen(false);
     void goChannel(target, { replace: true });
   }, [channelsLoaded, goChannel, selectedView, sidebarChannels]);
-  const lastChannelIdRef = React.useRef<string | null>(null);
+  const lastRef = React.useRef<{
+    channelId: string;
+    threadRootId: string | null;
+  } | null>(null);
   React.useEffect(() => {
     if (selectedView === "channel" && selectedChannelId) {
-      lastChannelIdRef.current = selectedChannelId;
+      lastRef.current = {
+        channelId: selectedChannelId,
+        threadRootId: selectedThreadRootId,
+      };
     }
-  }, [selectedChannelId, selectedView]);
+  }, [selectedChannelId, selectedThreadRootId, selectedView]);
   return React.useCallback(() => {
-    setInboxPanelOpen(false);
+    setSidebarListTab("chats");
     if (selectedView === "channel") return;
+    const last = lastRef.current;
     const target = resolveChatsRailTarget(
-      lastChannelIdRef.current,
+      last?.channelId ?? null,
       sidebarChannels.map((channel) => channel.id),
     );
-    if (target) void goChannel(target);
+    if (!target) return;
+    // Back to the thread that was open there, not just its channel.
+    const thread =
+      last?.channelId === target ? (last.threadRootId ?? undefined) : undefined;
+    void goChannel(target, thread ? { thread } : undefined);
   }, [goChannel, selectedView, sidebarChannels]);
 }
