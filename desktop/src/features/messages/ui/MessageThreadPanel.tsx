@@ -372,10 +372,32 @@ export function MessageThreadPanel({
   // rule when there is actually conversation under it — the "no replies yet"
   // card and the streaming-in `pending` state would both leave a rule hanging
   // over an empty region or a placeholder.
+  const isRepliesLoading =
+    threadRepliesPending || repliesRenderState === "pending";
+  // Older-replies state for the rows actually on screen. The live flag can
+  // flip with a page the deferred list has not committed yet; reading it
+  // directly would paint the thread start before the rows beneath it.
+  const renderedHasOlderRepliesRef = React.useRef(hasOlderReplies);
+  if (!isRepliesPending) {
+    renderedHasOlderRepliesRef.current = hasOlderReplies;
+  }
+  const renderedHasOlderReplies = renderedHasOlderRepliesRef.current;
+  // The list is anchored at the bottom: newest reply above the composer, older
+  // replies growing upward. The thread start (head, or the huddle intro) is the
+  // top end of that list, so it only paints once every older reply is loaded,
+  // and never while replies are still loading (painting it first and removing
+  // it when a long thread turns out to have older pages would move the view).
+  // A collapsed thread and a head-targeted jump still need the head.
+  const showThreadStart =
+    !isRepliesLoading &&
+    (!renderedHasOlderReplies ||
+      isThreadHeadRepliesCollapsed ||
+      (scrollTargetId !== null && scrollTargetId === threadHeadId));
   const showThreadHeadDivider =
     !isHuddleTranscript &&
     isFocusMode &&
-    (threadRepliesPending || repliesRenderState === "list");
+    showThreadStart &&
+    repliesRenderState === "list";
 
   const threadMessages = React.useMemo(
     () => deferredThreadReplies.map((entry) => entry.message),
@@ -516,7 +538,7 @@ export function MessageThreadPanel({
   } = useAnchoredScroll({
     channelId: threadHeadId,
     contentRef: threadContentRef,
-    isLoading: threadRepliesPending || repliesRenderState === "pending",
+    isLoading: isRepliesLoading,
     messages: threadMessages,
     highlightTargetMessage: scrollTargetHighlights,
     onTargetReached: onScrollTargetResolved,
@@ -528,7 +550,7 @@ export function MessageThreadPanel({
   useLoadOlderOnScroll({
     fetchOlder: onFetchOlderReplies,
     hasOlderMessages: hasOlderReplies,
-    isLoading: threadRepliesPending || repliesRenderState === "pending",
+    isLoading: isRepliesLoading,
     scrollContainerRef: threadBodyRef,
     sentinelRef: olderRepliesSentinelRef,
   });
@@ -583,7 +605,7 @@ export function MessageThreadPanel({
 
   const threadScrollRegion = (
     <AuxiliaryPanelBody
-      className="overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--kuzz-thread-canvas)] pb-24"
+      className="flex flex-col overflow-y-auto overflow-x-hidden overscroll-contain bg-[var(--kuzz-thread-canvas)] pb-24"
       data-kuzz-conversation-scroll
       data-testid="message-thread-body"
       mode={isHuddleTranscript ? "panel" : undefined}
@@ -595,15 +617,21 @@ export function MessageThreadPanel({
       {/* The gallery is intentionally DOM-scoped: only media currently rendered
           in this open thread participates. Collapsed or unloaded descendants
           join only after the thread UI renders them. */}
+      {/* `mt-auto` in the column-flex scroller stacks a short thread at the
+          bottom, just above the composer, like the room timeline. A long
+          thread overflows normally; no reversed layout is involved. */}
       <div
-        className={cn(hasConstrainedColumn && THREAD_PANEL_COLUMN_CLASS)}
+        className={cn(
+          "mt-auto w-full shrink-0",
+          hasConstrainedColumn && THREAD_PANEL_COLUMN_CLASS,
+        )}
         data-image-gallery-scope="thread"
         ref={threadContentRef}
         style={
           hasConstrainedColumn ? { maxWidth: columnMaxWidthPx } : undefined
         }
       >
-        {isHuddleTranscript ? (
+        {!showThreadStart ? null : isHuddleTranscript ? (
           <div className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-2 pt-4")}>
             <HuddleTranscriptIntro />
           </div>
@@ -680,7 +708,7 @@ export function MessageThreadPanel({
           className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-3 pt-0")}
           data-testid="message-thread-replies"
         >
-          {hasOlderReplies ? (
+          {renderedHasOlderReplies ? (
             <div
               className="flex justify-center pb-2"
               data-testid="message-thread-older-replies"
