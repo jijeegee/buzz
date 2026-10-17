@@ -13,6 +13,7 @@ import {
   orderChatRows,
   type ChatListRow,
 } from "@/features/chats/chatListState";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { isJoinedChat, sortChatList } from "@/features/sidebar/lib/chatList";
 import type { Channel } from "@/shared/api/types";
 import {
@@ -77,11 +78,12 @@ function buildServerChatRows(
   props: ChatListProps,
   byChannel: ByChannel | null,
   workingByRootId: ChatWorking["threads"],
+  isBlocked: (pubkey: string) => boolean,
 ) {
   const previewOf = (row: ChatListRow): ChatRowPreview => {
     const event = row.latest;
     if (!event) return { line: null, at: row.at > 0 ? row.at : null };
-    return { at: row.at, line: chatRowPreviewLine(event) };
+    return { at: row.at, line: chatRowPreviewLine(event, isBlocked) };
   };
   const channelById = new Map(
     localItems.map((channel) => [channel.id, channel]),
@@ -241,6 +243,7 @@ export function ChatList({
   view = "all",
   ...props
 }: ChatListProps) {
+  const { isBlocked } = useBlockedPeople();
   const items = useMemo(
     () =>
       sortChatList(props.items.filter(isListedChat), props.starredChannelIds),
@@ -277,10 +280,12 @@ export function ChatList({
             props,
             byChannel,
             working.threads,
+            isBlocked,
           )
         : null,
     [
       byChannel,
+      isBlocked,
       working.threads,
       props.isActiveChannel,
       props.selectedChannelId,

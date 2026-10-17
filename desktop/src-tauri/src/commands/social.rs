@@ -108,6 +108,8 @@ pub async fn get_contact_list(
 #[tauri::command]
 pub async fn set_contact_list(
     contacts: Vec<ContactEntry>,
+    content: Option<String>,
+    other_tags: Option<Vec<Vec<String>>>,
     state: State<'_, AppState>,
 ) -> Result<SubmitEventResponse, String> {
     let tuples: Vec<(&str, Option<&str>, Option<&str>)> = contacts
@@ -121,7 +123,11 @@ pub async fn set_contact_list(
         })
         .collect();
 
-    let builder = events::build_contact_list(&tuples)?;
+    let builder = events::build_contact_list(
+        &tuples,
+        content.as_deref().unwrap_or(""),
+        other_tags.as_deref().unwrap_or(&[]),
+    )?;
     submit_event(builder, &state).await
 }
 

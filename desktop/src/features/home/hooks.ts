@@ -18,6 +18,9 @@ import { getInboxSummaryPage } from "@/shared/api/inboxSummary";
 import { relayClient } from "@/shared/api/relayClient";
 import { buildChannelAuxDeletionFilter } from "@/shared/api/relayChannelFilters";
 import { getHomeFeed } from "@/shared/api/tauri";
+import type { HomeFeedResponse } from "@/shared/api/types";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
+import { withoutBlockedFeedItems } from "./lib/blockedFeed";
 import type { Channel, FeedItem } from "@/shared/api/types";
 import {
   KIND_STREAM_MESSAGE,
@@ -43,9 +46,18 @@ export function useHomeFeedQuery() {
   const refetchInterval = useFocusedRefetchInterval(
     connected ? HOME_FEED_REFETCH_INTERVAL_MS : false,
   );
+  // Read-time filter: the cached feed stays whole, so blocking or unblocking
+  // someone takes effect without a refetch.
+  const { blockedIds, isBlocked } = useBlockedPeople();
+  const select = React.useCallback(
+    (data: HomeFeedResponse) =>
+      blockedIds.size === 0 ? data : withoutBlockedFeedItems(data, isBlocked),
+    [blockedIds, isBlocked],
+  );
 
   return useQuery({
     queryKey: ["home-feed"],
+    select,
     queryFn: () =>
       getHomeFeed({
         limit: 50,

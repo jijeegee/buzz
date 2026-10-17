@@ -9,7 +9,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { reportErrorMessage } from "./ReportMessageDialog.tsx";
+import { BLOCKED_BUT_STILL_FRIEND } from "../../people/BlockedPeopleContext.tsx";
+import {
+  reportBlockFailureMessage,
+  reportErrorMessage,
+} from "./ReportMessageDialog.tsx";
 
 test("surfaces-relay-message: returns relay error text stripped of status prefix", () => {
   // A relay rejection arrives as "400: you cannot report your own message".
@@ -49,4 +53,13 @@ test("preserves-non-status-numeric-prefix: only 4xx/5xx prefixes strip, others s
   assert.equal(reportErrorMessage(new Error("1234: rule id")), "1234: rule id");
   // "200: ok" is a numeric prefix but not a 4xx/5xx rejection — keep it intact.
   assert.equal(reportErrorMessage(new Error("200: ok")), "200: ok");
+});
+
+test("a block that left them a friend still reads as blocked", () => {
+  const partly = reportBlockFailureMessage(new Error(BLOCKED_BUT_STILL_FRIEND));
+  assert.match(partly, /is blocked/);
+  assert.doesNotMatch(partly, /didn't work|failed/);
+  const failed = reportBlockFailureMessage(new Error("server text"));
+  assert.match(failed, /blocking didn't work/);
+  assert.doesNotMatch(failed, /server text/);
 });

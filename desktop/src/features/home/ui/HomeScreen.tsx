@@ -17,6 +17,7 @@ import {
   withoutUnavailableRoomItems,
 } from "@/features/home/lib/inboxDeletions";
 import { HomeView } from "@/features/home/ui/HomeView";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import type { HomeFeedResponse } from "@/shared/api/types";
 import {
   isRelayUnreachableError,
@@ -66,6 +67,7 @@ export function HomeScreen({
   const conversationActivity = inboxSummary.failed
     ? legacyRoomActivity
     : inboxSummary.feedItems;
+  const { isBlocked } = useBlockedPeople();
   const augmentedFeed = React.useMemo((): HomeFeedResponse | undefined => {
     if (!homeFeedQuery.data) return undefined;
     const extraActivity = [
@@ -84,6 +86,7 @@ export function HomeScreen({
     const seen = new Set<string>();
     const newActivity = extraActivity.filter((item) => {
       if (feedIds.has(item.id) || seen.has(item.id)) return false;
+      if (isBlocked(item.pubkey)) return false;
       seen.add(item.id);
       return true;
     });
@@ -102,6 +105,7 @@ export function HomeScreen({
     conversationActivity,
     hiddenDmIds,
     homeFeedQuery.data,
+    isBlocked,
     isConversationView,
     threadActivityFeedItems,
   ]);

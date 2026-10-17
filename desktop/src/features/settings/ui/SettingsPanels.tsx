@@ -80,6 +80,7 @@ import {
   SettingsOptionRow,
 } from "./SettingsOptionGroup";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
+import { PeoplePrivacySettingsCard } from "./PeoplePrivacySettingsCard";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
 import { UpdateChecker } from "../UpdateChecker";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
@@ -828,6 +829,7 @@ export function renderSettingsSection(
             currentPubkey={props.currentPubkey}
             fallbackDisplayName={props.fallbackDisplayName}
           />
+          <PeoplePrivacySettingsCard />
           <div className="mt-6">
             <Layer0GoalCard agentPubkey={null} />
           </div>

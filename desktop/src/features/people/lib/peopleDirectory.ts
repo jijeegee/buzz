@@ -4,8 +4,11 @@ export type PeopleDirectory = {
   favorites: UserSearchResult[];
   /** People I added as friends (my follow list), A–Z. */
   friends: UserSearchResult[];
-  /** Everyone else matching the filter; empty while the filter is empty. */
-  others: UserSearchResult[];
+  /**
+   * People in my channels whose name matches the search (from the server),
+   * minus my friends; empty while the filter is empty.
+   */
+  inChannels: UserSearchResult[];
 };
 
 const UNKNOWN_PERSON = "Unknown";
@@ -21,10 +24,12 @@ const byName = (left: UserSearchResult, right: UserSearchResult) =>
 
 /**
  * The People list: Favorites (people I starred) and Friends (people I added),
- * both A–Z and narrowed by the name filter. Typing a name also finds others
- * in the community so they can be added. People only: me, archived people
- * and every agent are left out (agents have their own tab). A favorite or
- * friend not in the loaded directory still shows from its batch profile.
+ * both A–Z and narrowed by the name filter, which searches only them. While
+ * searching, "In your channels" adds people I share a channel with (the
+ * server's `sharedPeople`) so they can be added. People only: me, archived
+ * and blocked people and every agent are left out (agents have their own
+ * tab). Favorites and friends show from their batch profiles (`extraProfiles`)
+ * or any other known profile (`users`).
  */
 export function buildPeopleDirectory({
   currentPubkey,
@@ -33,7 +38,9 @@ export function buildPeopleDirectory({
   extraProfiles,
   filter,
   isArchived,
-  users,
+  isBlocked,
+  sharedPeople = [],
+  users = [],
 }: {
   currentPubkey: string | undefined;
   favoriteIds: ReadonlySet<string>;
@@ -41,12 +48,19 @@ export function buildPeopleDirectory({
   extraProfiles?: Readonly<Record<string, UserProfileSummary>>;
   filter: string;
   isArchived?: (pubkey: string) => boolean;
-  users: readonly UserSearchResult[];
+  isBlocked?: (pubkey: string) => boolean;
+  sharedPeople?: readonly UserSearchResult[];
+  users?: readonly UserSearchResult[];
 }): PeopleDirectory {
   const self = currentPubkey?.toLowerCase() ?? null;
   const excluded = (user: UserSearchResult) => {
     const pubkey = user.pubkey.toLowerCase();
-    return pubkey === self || user.isAgent || (isArchived?.(pubkey) ?? false);
+    return (
+      pubkey === self ||
+      user.isAgent ||
+      (isArchived?.(pubkey) ?? false) ||
+      (isBlocked?.(pubkey) ?? false)
+    );
   };
   const needle = filter.trim().toLowerCase();
   const matches = (user: UserSearchResult) =>
@@ -55,7 +69,7 @@ export function buildPeopleDirectory({
     (user.nip05Handle?.toLowerCase().includes(needle) ?? false);
 
   const byPubkey = new Map<string, UserSearchResult>();
-  for (const user of users) {
+  for (const user of [...users, ...sharedPeople]) {
     const pubkey = user.pubkey.toLowerCase();
     if (!byPubkey.has(pubkey)) byPubkey.set(pubkey, { ...user, pubkey });
   }
@@ -64,36 +78,37 @@ export function buildPeopleDirectory({
     for (const id of ids) {
       const pubkey = id.toLowerCase();
       const profile = extraProfiles?.[pubkey];
-      const user =
-        byPubkey.get(pubkey) ??
-        (profile
-          ? {
-              pubkey,
-              displayName: profile.displayName,
-              avatarUrl: profile.avatarUrl,
-              nip05Handle: profile.nip05Handle,
-              ownerPubkey: profile.ownerPubkey,
-              isAgent: profile.isAgent ?? false,
-            }
-          : null);
+      const user: UserSearchResult | null = profile
+        ? {
+            pubkey,
+            displayName: profile.displayName,
+            avatarUrl: profile.avatarUrl,
+            nip05Handle: profile.nip05Handle,
+            ownerPubkey: profile.ownerPubkey,
+            isAgent: profile.isAgent ?? false,
+          }
+        : (byPubkey.get(pubkey) ?? null);
       if (user && !excluded(user) && matches(user)) list.push(user);
     }
     return list.sort(byName);
   };
   const friendSet = new Set([...friendIds].map((id) => id.toLowerCase()));
-  const others =
+  const seen = new Set<string>();
+  const inChannels =
     needle.length === 0
       ? []
-      : [...byPubkey.values()]
-          .filter(
-            (user) =>
-              !friendSet.has(user.pubkey) && !excluded(user) && matches(user),
-          )
+      : sharedPeople
+          .map((user) => ({ ...user, pubkey: user.pubkey.toLowerCase() }))
+          .filter((user) => {
+            if (seen.has(user.pubkey)) return false;
+            seen.add(user.pubkey);
+            return !friendSet.has(user.pubkey) && !excluded(user);
+          })
           .sort(byName);
 
   return {
     favorites: listed(favoriteIds),
     friends: listed(friendSet),
-    others,
+    inChannels,
   };
 }

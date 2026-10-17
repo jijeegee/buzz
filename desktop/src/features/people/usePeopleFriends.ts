@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useChannelsQuery } from "@/features/channels/hooks";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import {
   contactListQueryKey,
   useContactListQuery,
@@ -9,6 +10,7 @@ import {
   useUnfollowMutation,
   useUsersBatchQuery,
 } from "@/features/profile/hooks";
+import { editContactList } from "@/features/people/lib/contactListEdit";
 import { getContactList, setContactList } from "@/shared/api/social";
 
 export type PeopleFriends = {
@@ -61,10 +63,12 @@ const seededKey = (pubkey: string) =>
 export function dmPeople({
   channels,
   currentPubkey,
+  isBlocked,
   profiles,
 }: {
   channels: readonly { channelType: string; participantPubkeys: string[] }[];
   currentPubkey: string;
+  isBlocked?: (pubkey: string) => boolean;
   profiles: Readonly<Record<string, { isAgent?: boolean }>>;
 }): string[] {
   const self = currentPubkey.toLowerCase();
@@ -75,7 +79,13 @@ export function dmPeople({
       const pubkey = raw.toLowerCase();
       const profile = profiles[pubkey];
       // Unknown profiles are skipped: they may be agents.
-      if (pubkey !== self && profile && !profile.isAgent) people.add(pubkey);
+      if (
+        pubkey !== self &&
+        profile &&
+        !profile.isAgent &&
+        !(isBlocked?.(pubkey) ?? false)
+      )
+        people.add(pubkey);
     }
   }
   return [...people];
@@ -87,6 +97,7 @@ export function dmPeople({
  */
 export function useSeedFriendsFromDms(currentPubkey: string | undefined) {
   const queryClient = useQueryClient();
+  const { isBlocked, ready: blockedReady } = useBlockedPeople();
   const channelsQuery = useChannelsQuery();
   const alreadySeeded =
     !currentPubkey || localStorage.getItem(seededKey(currentPubkey)) === "1";
@@ -106,32 +117,32 @@ export function useSeedFriendsFromDms(currentPubkey: string | undefined) {
   const started = React.useRef(false);
   React.useEffect(() => {
     if (alreadySeeded || started.current || !currentPubkey) return;
+    // Never seed before the block list loaded: blocked people would come
+    // back as friends. If it fails to load, seeding waits for next time.
+    if (!blockedReady) return;
     if (!channelsQuery.data) return;
     if (participants.length > 0 && !profilesQuery.data) return;
     started.current = true;
     const people = dmPeople({
       channels: channelsQuery.data,
       currentPubkey,
+      isBlocked,
       profiles: profilesQuery.data?.profiles ?? {},
     });
     void (async () => {
       try {
-        if (people.length > 0) {
-          // Re-read right before writing: the list is replaced as a whole.
-          const current = await getContactList(currentPubkey);
-          const have = new Set(
-            current.contacts.map((c) => c.pubkey.toLowerCase()),
-          );
-          const added = people.filter((pubkey) => !have.has(pubkey));
-          if (added.length > 0) {
-            await setContactList([
-              ...current.contacts,
-              ...added.map((pubkey) => ({ pubkey })),
-            ]);
-            await queryClient.invalidateQueries({
-              queryKey: contactListQueryKey(currentPubkey),
-            });
-          }
+        // Only adds, merged into the latest list: never drops anyone.
+        const wrote =
+          people.length > 0 &&
+          (await editContactList(
+            currentPubkey,
+            { type: "add", pubkeys: people },
+            { read: getContactList, write: setContactList },
+          ));
+        if (wrote) {
+          await queryClient.invalidateQueries({
+            queryKey: contactListQueryKey(currentPubkey),
+          });
         }
         localStorage.setItem(seededKey(currentPubkey), "1");
       } catch {
@@ -141,8 +152,10 @@ export function useSeedFriendsFromDms(currentPubkey: string | undefined) {
     })();
   }, [
     alreadySeeded,
+    blockedReady,
     channelsQuery.data,
     currentPubkey,
+    isBlocked,
     participants.length,
     profilesQuery.data,
     queryClient,

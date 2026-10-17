@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { useHomeFeedQuery } from "@/features/home/hooks";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { Channel, FeedItem, HomeFeedResponse } from "@/shared/api/types";
@@ -430,9 +431,15 @@ export function useHomeFeedNotificationState(
   const [seenFeedIds, setSeenFeedIds] = React.useState<string[]>(() =>
     readStoredSeenFeedIds(normalizedPubkey),
   );
+  const { isBlocked } = useBlockedPeople();
   const currentFeedItems = React.useMemo(() => {
-    return buildHomeBadgeFeedItems(feed, extraInboxItems, localUnreadFeedIds);
-  }, [extraInboxItems, feed, localUnreadFeedIds]);
+    // Nothing from someone I blocked counts toward the Home badge.
+    return buildHomeBadgeFeedItems(
+      feed,
+      extraInboxItems,
+      localUnreadFeedIds,
+    ).filter((item) => !isBlocked(item.pubkey));
+  }, [extraInboxItems, feed, isBlocked, localUnreadFeedIds]);
   const currentFeedIds = React.useMemo(
     () => currentFeedItems.map((item) => item.id),
     [currentFeedItems],

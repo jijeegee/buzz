@@ -11,15 +11,19 @@ import {
 } from "@/features/agents/lib/agentAutocompleteEligibility";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
+import { useSharedPeopleSearch } from "@/features/people/useSharedPeopleSearch";
 import {
-  useFlattenedUserSearchResults,
-  useInfiniteUserSearchQuery,
-  useUserSearchFetchMoreOnScroll,
+  useContactListQuery,
   useUsersBatchQuery,
 } from "@/features/profile/hooks";
 import { rankUserCandidatesBySearch } from "@/features/profile/lib/userCandidateSearch";
 import { useIdentityQuery } from "@/shared/api/hooks";
-import type { ManagedAgent, UserSearchResult } from "@/shared/api/types";
+import type {
+  ManagedAgent,
+  UserProfileSummary,
+  UserSearchResult,
+} from "@/shared/api/types";
 import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 
 /** Maximum recipients (excluding the current user) a DM can address. */
@@ -39,6 +43,33 @@ export function formatRecipientName(user: UserSearchResult) {
   );
 }
 
+/**
+ * My friends as picker candidates, from their batch profiles. A friend whose
+ * profile has not loaded yet is left out until it does.
+ */
+export function friendCandidates(
+  friendIds: readonly string[],
+  profiles: Readonly<Record<string, UserProfileSummary>> | undefined,
+): UserSearchResult[] {
+  const users: UserSearchResult[] = [];
+  for (const id of friendIds) {
+    const pubkey = normalizePubkey(id);
+    const profile = profiles?.[pubkey];
+    if (!profile) continue;
+    users.push({
+      pubkey,
+      displayName: profile.displayName,
+      avatarUrl: profile.avatarUrl,
+      nip05Handle: profile.nip05Handle,
+      ownerPubkey: profile.ownerPubkey,
+      isAgent: profile.isAgent ?? false,
+    });
+  }
+  return users;
+}
+
+const noDirectoryPaging = () => {};
+
 function candidateWithAgentMetadata(
   candidate: UserSearchResult,
   managedAgentsByPubkey: ReadonlyMap<string, ManagedAgent>,
@@ -53,8 +84,10 @@ function candidateWithAgentMetadata(
 
 /**
  * Shared recipient-picker state for the new-message compose surface: search
- * query, selected recipients (chips), the ranked candidate directory, and the
- * paging/owner-profile helpers the row UI needs. Extracted from the former
+ * query, selected recipients (chips), the ranked candidates, and the
+ * owner-profile helpers the row UI needs. Candidates are my friends, people
+ * in my channels matching the search (server-side), and agents; never the
+ * whole user directory, never blocked people. Extracted from the former
  * NewDirectMessageDialog so the compose page (and any future surface) share a
  * single, tested selection model.
  */
@@ -87,14 +120,30 @@ export function useNewMessageRecipients({
   const managedAgentsQuery = useManagedAgentsQuery({ enabled: active });
   const relayAgentsQuery = useRelayAgentsQuery({ enabled: active });
   const channelsQuery = useChannelsQuery({ enabled: active });
-  const userSearchQuery = useInfiniteUserSearchQuery(deferredSearchQuery, {
-    allowEmpty: true,
-    enabled:
-      active && (!hasReachedRecipientLimit || deferredSearchQuery.length > 0),
-    limit: DIRECTORY_PAGE_SIZE,
+  const ownPubkey = currentPubkey ?? identityQuery.data?.pubkey;
+  const contactsQuery = useContactListQuery(active ? ownPubkey : undefined);
+  const friendIds = React.useMemo(
+    () =>
+      (contactsQuery.data?.contacts ?? []).map((contact) =>
+        normalizePubkey(contact.pubkey),
+      ),
+    [contactsQuery.data],
+  );
+  const friendProfilesQuery = useUsersBatchQuery(friendIds, {
+    enabled: active && friendIds.length > 0,
   });
-  const userSearchResults = useFlattenedUserSearchResults(userSearchQuery.data);
+  const shared = useSharedPeopleSearch(deferredSearchQuery, {
+    enabled: active,
+  });
+  const userSearchResults = React.useMemo(
+    () => [
+      ...friendCandidates(friendIds, friendProfilesQuery.data?.profiles),
+      ...shared.people,
+    ],
+    [friendIds, friendProfilesQuery.data?.profiles, shared.people],
+  );
   const isArchivedDiscovery = useIsArchivedPredicate();
+  const { isBlocked } = useBlockedPeople();
 
   const searchResults = React.useMemo(() => {
     const candidatesByPubkey = new Map<string, NewMessageRecipientCandidate>();
@@ -127,6 +176,7 @@ export function useNewMessageRecipients({
         pubkey === currentPubkeyNormalized ||
         (!options.includeSelected && selectedPubkeys.has(pubkey)) ||
         isArchivedDiscovery(pubkey) ||
+        isBlocked(pubkey) ||
         (candidate.isAgent && !eligibleAgentPubkeys.has(pubkey))
       ) {
         return;
@@ -219,6 +269,7 @@ export function useNewMessageRecipients({
     currentPubkey,
     deferredSearchQuery,
     isArchivedDiscovery,
+    isBlocked,
     managedAgentsQuery.data,
     relayAgentsQuery.data,
     selectedPubkeys,
@@ -226,7 +277,9 @@ export function useNewMessageRecipients({
   ]);
 
   const isDirectoryLoading =
-    userSearchQuery.isLoading ||
+    contactsQuery.isLoading ||
+    (friendIds.length > 0 && friendProfilesQuery.isLoading) ||
+    shared.isLoading ||
     managedAgentsQuery.isLoading ||
     relayAgentsQuery.isLoading ||
     channelsQuery.isLoading;
@@ -239,10 +292,8 @@ export function useNewMessageRecipients({
   }, [deferredSearchQuery, isDirectoryLoading]);
   const isDirectorySettling =
     isDirectoryLoading || directoryIdentityQuery !== deferredSearchQuery;
-  const handleDirectoryScroll = useUserSearchFetchMoreOnScroll(
-    userSearchQuery,
-    !hasReachedRecipientLimit || deferredSearchQuery.length > 0,
-  );
+  // Friends and channel matches arrive whole: nothing pages on scroll.
+  const handleDirectoryScroll = noDirectoryPaging;
 
   const searchOwnerPubkeys = React.useMemo(
     () => [
@@ -317,8 +368,7 @@ export function useNewMessageRecipients({
     ownerProfiles: ownerProfilesQuery.data?.profiles,
     removeUser,
     reset,
-    searchError:
-      userSearchQuery.error instanceof Error ? userSearchQuery.error : null,
+    searchError: shared.error,
     searchQuery,
     searchResults,
     selectUser,
