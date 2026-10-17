@@ -28,7 +28,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  KUZZ_TEST_POSTGRES_PASSWORD: buzz_dev
+  KUZZ_TEST_POSTGRES_PASSWORD: kuzz_dev
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
 jobs:
@@ -142,13 +142,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: buzz
+          POSTGRES_USER: kuzz
           POSTGRES_PASSWORD: ${{ env.KUZZ_TEST_POSTGRES_PASSWORD }}
           POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U buzz -d postgres"
+          --health-cmd "pg_isready -U kuzz -d postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
@@ -170,7 +170,7 @@ jobs:
       PGSCHEMA_PLAN_HOST: localhost
       PGSCHEMA_PLAN_PORT: "5432"
       PGSCHEMA_PLAN_USER: kuzz
-      PGSCHEMA_PLAN_PASSWORD: buzz_dev
+      PGSCHEMA_PLAN_PASSWORD: kuzz_dev
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
@@ -202,7 +202,7 @@ jobs:
         run: chmod +x ./target/ci/kuzz-relay
       - name: PostgreSQL-backed tests
         env:
-          KUZZ_POSTGRES_ADMIN_URL: postgres://buzz:${{ env.KUZZ_TEST_POSTGRES_PASSWORD }}@localhost:5432/postgres
+          KUZZ_POSTGRES_ADMIN_URL: postgres://kuzz:${{ env.KUZZ_TEST_POSTGRES_PASSWORD }}@localhost:5432/postgres
           PGPASSWORD: ${{ env.KUZZ_TEST_POSTGRES_PASSWORD }}
         run: |
           scripts/postgres-test-run.sh \
@@ -309,7 +309,7 @@ jobs:
           PGHOST: localhost
           PGPORT: "5432"
           PGUSER: kuzz
-          PGPASSWORD: buzz_dev
+          PGPASSWORD: kuzz_dev
           PGDATABASE: kuzz
           # Use the already-running docker postgres for desired-state planning instead of
           # downloading an embedded Postgres from Maven Central (transient-fetch flake source).
@@ -317,12 +317,12 @@ jobs:
           PGSCHEMA_PLAN_PORT: "5432"
           PGSCHEMA_PLAN_DB: kuzz
           PGSCHEMA_PLAN_USER: kuzz
-          PGSCHEMA_PLAN_PASSWORD: buzz_dev
+          PGSCHEMA_PLAN_PASSWORD: kuzz_dev
         run: |
           ./bin/pgschema apply --file schema/schema.sql --auto-approve
-          docker exec -i -e PGPASSWORD=buzz_dev kuzz-postgres \
+          docker exec -i -e PGPASSWORD=kuzz_dev kuzz-postgres \
             psql -U kuzz -d kuzz -v ON_ERROR_STOP=1 < scripts/reconcile-schema-after-pgschema.sql
-          docker exec -e PGPASSWORD=buzz_dev kuzz-postgres \
+          docker exec -e PGPASSWORD=kuzz_dev kuzz-postgres \
             psql -U kuzz -d kuzz -qtA -c "
           INSERT INTO communities (id, host)
           VALUES ('00000000-0000-4000-8000-00000000c0de', 'localhost:3000')
@@ -332,7 +332,7 @@ jobs:
         run: |
           chmod +x ./target/ci/kuzz-relay
           nohup env \
-            DATABASE_URL="postgres://buzz:${KUZZ_TEST_POSTGRES_PASSWORD}@localhost:5432/buzz" \
+            DATABASE_URL="postgres://kuzz:${KUZZ_TEST_POSTGRES_PASSWORD}@localhost:5432/kuzz" \
             REDIS_URL=redis://localhost:6379 \
             RELAY_URL=ws://localhost:3000 \
             KUZZ_BIND_ADDR=0.0.0.0:3000 \
@@ -471,7 +471,7 @@ jobs:
           PGHOST: localhost
           PGPORT: "5432"
           PGUSER: kuzz
-          PGPASSWORD: buzz_dev
+          PGPASSWORD: kuzz_dev
           PGDATABASE: kuzz
           # Use the already-running docker postgres for desired-state planning instead of
           # downloading an embedded Postgres from Maven Central (transient-fetch flake source).
@@ -479,12 +479,12 @@ jobs:
           PGSCHEMA_PLAN_PORT: "5432"
           PGSCHEMA_PLAN_DB: kuzz
           PGSCHEMA_PLAN_USER: kuzz
-          PGSCHEMA_PLAN_PASSWORD: buzz_dev
+          PGSCHEMA_PLAN_PASSWORD: kuzz_dev
         run: |
           ./bin/pgschema apply --file schema/schema.sql --auto-approve
-          docker exec -i -e PGPASSWORD=buzz_dev kuzz-postgres \
+          docker exec -i -e PGPASSWORD=kuzz_dev kuzz-postgres \
             psql -U kuzz -d kuzz -v ON_ERROR_STOP=1 < scripts/reconcile-schema-after-pgschema.sql
-          docker exec -e PGPASSWORD=buzz_dev kuzz-postgres \
+          docker exec -e PGPASSWORD=kuzz_dev kuzz-postgres \
             psql -U kuzz -d kuzz -qtA -c "
           INSERT INTO communities (id, host)
           VALUES ('00000000-0000-4000-8000-00000000c0de', 'localhost:3000')
@@ -494,7 +494,7 @@ jobs:
         env:
           # The preceding step already applied and reconciled schema/schema.sql.
           KUZZ_TEST_SCHEMA_MODE: desired
-          KUZZ_TEST_DATABASE_URL: postgres://buzz:${{ env.KUZZ_TEST_POSTGRES_PASSWORD }}@localhost:5432/buzz
+          KUZZ_TEST_DATABASE_URL: postgres://kuzz:${{ env.KUZZ_TEST_POSTGRES_PASSWORD }}@localhost:5432/kuzz
           KUZZ_TEST_REDIS_URL: redis://localhost:6379
           KUZZ_TEST_S3_ENDPOINT: http://localhost:9000
           KUZZ_TEST_S3_BUCKET: kuzz-media
@@ -531,7 +531,7 @@ jobs:
         run: |
           chmod +x ./target/ci/kuzz-relay
           nohup env \
-            DATABASE_URL="postgres://buzz:${KUZZ_TEST_POSTGRES_PASSWORD}@localhost:5432/buzz" \
+            DATABASE_URL="postgres://kuzz:${KUZZ_TEST_POSTGRES_PASSWORD}@localhost:5432/kuzz" \
             REDIS_URL=redis://localhost:6379 \
             RELAY_URL=ws://localhost:3000 \
             KUZZ_BIND_ADDR=0.0.0.0:3000 \

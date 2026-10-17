@@ -3881,7 +3881,7 @@ mod tests {
         // Fix 5: use Config::for_test() which holds NIP_FI_ENV_LOCK internally. [FI-TRACE-ENV-RACE]
         let mut config = crate::config::Config::for_test();
         config.require_relay_membership = require_relay_membership;
-        config.database_url = "postgres://buzz:buzz_dev@127.0.0.1:1/buzz".to_string();
+        config.database_url = "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz".to_string();
         config.redis_url = "redis://127.0.0.1:1".to_string();
         let mut pool_options = sqlx::postgres::PgPoolOptions::new();
         if let Some(timeout) = acquire_timeout {
@@ -5386,7 +5386,7 @@ mod tests {
     async fn audio_test_state_real_db() -> Option<std::sync::Arc<crate::state::AppState>> {
         use std::sync::Arc;
         let db_url = std::env::var("KUZZ_TEST_DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string() // sadscan:disable np.postgres.1 -- local test-only credentials
+            "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string() // sadscan:disable np.postgres.1 -- local test-only credentials
         });
         if sqlx::PgPool::connect(&db_url).await.is_err() {
             return None;

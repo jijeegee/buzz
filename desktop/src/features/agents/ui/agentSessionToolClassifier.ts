@@ -347,7 +347,11 @@ function classifyDeveloperToolName(value: string | null | undefined) {
   if (base === "todo") return "todo";
   if (base === "stop") return "stop_hook";
   if (base === "postcompact") return "post_compact_hook";
-  if (DEVELOPER_TOOL_BASES.has(base) || normalized.includes("buzz_dev_mcp")) {
+  // Older transcripts name the dev MCP server buzz_dev_mcp. kuzz-rename: keep
+  if (
+    DEVELOPER_TOOL_BASES.has(base) ||
+    /(?:kuzz|buzz)_dev_mcp/.test(normalized) // kuzz-rename: keep
+  ) {
     return "dev_mcp";
   }
   return null;

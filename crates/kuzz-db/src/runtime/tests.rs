@@ -5,7 +5,7 @@ use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshotter};
 use sqlx::{Connection, PgPool};
 use uuid::Uuid;
 
-const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1 -- local test-only credentials
+const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1 -- local test-only credentials
 
 type ConnectionCounters = std::collections::BTreeMap<(String, String, Option<String>), u64>;
 

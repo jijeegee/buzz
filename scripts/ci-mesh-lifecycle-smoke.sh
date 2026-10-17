@@ -105,7 +105,7 @@ trap cleanup EXIT
 
 log "Running relay-driven mesh lifecycle smoke..."
 RELAY_URL=ws://localhost:3000 \
-DATABASE_URL=postgres://buzz:buzz_dev@localhost:5432/buzz \
+DATABASE_URL=postgres://kuzz:kuzz_dev@localhost:5432/kuzz \
 REDIS_URL=redis://localhost:6379 \
 KUZZ_ADMIN_BIN="${ADMIN_BIN}" \
   "${HARNESS_BIN}"

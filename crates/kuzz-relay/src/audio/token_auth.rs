@@ -213,7 +213,7 @@ mod tests {
     #[tokio::test]
     async fn reauth_is_single_flight() {
         let state = crate::state::tests::test_state_with_database_url(
-            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz",
+            "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
         ) // sadscan:disable np.postgres.1 -- closed port, never connects
         .await;
         let (ctrl_tx, mut ctrl_rx) = mpsc::channel(8);
