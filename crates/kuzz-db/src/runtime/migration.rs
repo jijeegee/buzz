@@ -722,7 +722,12 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 69);
+        assert_eq!(migrations.len(), 70);
+        assert_eq!(migrations[69].version, 70);
+        assert!(migrations[69]
+            .sql
+            .as_str()
+            .contains("CREATE TEMP TABLE marker_replies"));
         assert_eq!(migrations[68].version, 69);
         assert!(migrations[68]
             .sql
