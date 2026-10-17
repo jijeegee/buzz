@@ -22,6 +22,7 @@ async function openCreateWorkflow(
   name: string,
 ) {
   await page.goto("/");
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-workflows-view").click();
   await page.getByRole("button", { name: "Create Workflow" }).click();
   const dialog = page.getByRole("dialog", { name: "Create workflow" });
@@ -518,6 +519,8 @@ test("workflow grid batches card author and message presentation reads", async (
     };
   });
 
+  await page.getByTestId("open-more-menu").click();
+
   await page.getByTestId("open-workflows-view").click();
   await expect(
     page.locator('[data-testid^="workflow-card-mock-wf-"]'),
@@ -551,6 +554,7 @@ test("does not select stale picker results when Enter outruns deferred filtering
       id: "d".repeat(64),
     });
   });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-workflows-view").click();
   await page.getByRole("button", { name: "Create Workflow" }).click();
   const dialog = page.getByRole("dialog", { name: "Create workflow" });

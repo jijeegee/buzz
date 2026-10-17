@@ -3,7 +3,7 @@ export const THREAD_CLOSED_TAG = "buzz:thread-closed";
 /** Reopen marker written by `kuzz threads reopen` and the Reopen button. */
 export const THREAD_REOPENED_TAG = "buzz:thread-reopened";
 
-/** Marker reply text, the same as `kuzz threads close` / `reopen` write. */
+/** Marker reply text for the Close toggle; reopen matches `kuzz threads reopen`. */
 export const THREAD_CLOSED_CONTENT = "✅ Thread closed.";
 export const THREAD_REOPENED_CONTENT = "Thread reopened.";
 
