@@ -8,11 +8,13 @@
 //!
 //! Read positions and follows are private per-user state: never log them.
 
+use chrono::{DateTime, Utc};
 use kuzz_core::CommunityId;
 use kuzz_datastore_tracing::datastore_span;
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
+use crate::inbox_summary::MESSAGE_KINDS;
 use crate::{observability, Db, Result};
 
 /// Most items one `mark_read` request may carry.
@@ -25,10 +27,15 @@ pub enum ReadPosition {
     Seq(i64),
     /// A message the reader has seen (32-byte id); its channel sequence is used.
     Event(Vec<u8>),
+    /// A time the reader has read up to (whole seconds, as clients store it):
+    /// the highest sequence of a live message created at or before it, among
+    /// the room's messages or the thread's root and replies. Nothing that
+    /// old means sequence 0.
+    At(DateTime<Utc>),
 }
 
 /// What one `mark_read` item names.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MarkReadTarget {
     /// A room's main timeline.
     Channel(Uuid),
@@ -99,7 +106,7 @@ impl FollowState {
 }
 
 /// The room a thread lives in, from the root event.
-async fn thread_channel(
+pub(crate) async fn thread_channel(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
     root: &[u8],
@@ -117,7 +124,7 @@ async fn thread_channel(
 }
 
 /// Lock the reader's current membership row; `false` when not a member.
-async fn lock_membership(
+pub(crate) async fn lock_membership(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
     channel_id: Uuid,
@@ -160,6 +167,73 @@ async fn event_seq(
     .bind(thread_root)
     .fetch_optional(&mut **tx)
     .await?)
+}
+
+/// Read position for "read up to time `at`": the highest channel sequence of
+/// a live message created at or before `at` in the room (`thread_root` none)
+/// or among the thread's root and replies, clamped to the channel's accepted
+/// sequence; 0 when there is none.
+///
+/// The room scan walks the channel sequence index down from the newest
+/// message, so its cost is the number of messages after `at`.
+pub(crate) async fn seq_at(
+    tx: &mut Transaction<'_, Postgres>,
+    community: Uuid,
+    channel_id: Uuid,
+    thread_root: Option<&[u8]>,
+    at: DateTime<Utc>,
+) -> Result<i64> {
+    let seq: Option<i64> = match thread_root {
+        None => {
+            sqlx::query_scalar(
+                "SELECT e.channel_sequence FROM events e \
+                 WHERE e.community_id = $1 AND e.channel_id = $2 AND e.channel_sequence > 0 \
+                   AND e.created_at <= $3 AND e.kind = ANY($4) AND e.deleted_at IS NULL \
+                 ORDER BY e.channel_sequence DESC LIMIT 1",
+            )
+            .bind(community)
+            .bind(channel_id)
+            .bind(at)
+            .bind(&MESSAGE_KINDS[..])
+            .fetch_optional(&mut **tx)
+            .await?
+        }
+        Some(root) => {
+            sqlx::query_scalar(
+                "SELECT max(s.seq) FROM ( \
+                     SELECT e.channel_sequence AS seq FROM events e \
+                      WHERE e.community_id = $1 AND e.id = $5 AND e.channel_id = $2 \
+                        AND e.channel_sequence > 0 AND e.created_at <= $3 \
+                        AND e.kind = ANY($4) AND e.deleted_at IS NULL \
+                     UNION ALL \
+                     SELECT e.channel_sequence FROM thread_metadata r \
+                       JOIN events e ON e.community_id = r.community_id \
+                        AND e.created_at = r.event_created_at AND e.id = r.event_id \
+                      WHERE r.community_id = $1 AND r.root_event_id = $5 AND r.depth > 0 \
+                        AND e.channel_id = $2 AND e.channel_sequence > 0 \
+                        AND e.created_at <= $3 AND e.kind = ANY($4) \
+                        AND e.deleted_at IS NULL) s",
+            )
+            .bind(community)
+            .bind(channel_id)
+            .bind(at)
+            .bind(&MESSAGE_KINDS[..])
+            .bind(root)
+            .fetch_one(&mut **tx)
+            .await?
+        }
+    };
+    let Some(seq) = seq else {
+        return Ok(0);
+    };
+    let accepted: Option<i64> = sqlx::query_scalar(
+        "SELECT accepted_sequence FROM channels WHERE community_id = $1 AND id = $2",
+    )
+    .bind(community)
+    .bind(channel_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(accepted.map_or(seq, |accepted| seq.min(accepted)))
 }
 
 impl Db {
@@ -217,6 +291,9 @@ impl Db {
                         None => return Ok(Err(ChatStateDenied::UnknownEvent { index })),
                     }
                 }
+                Some(ReadPosition::At(at)) => {
+                    Some(seq_at(&mut tx, community_uuid, channel_id, root, *at).await?)
+                }
             };
             let row = match root {
                 None => {
@@ -247,6 +324,8 @@ impl Db {
                          SET read_seq = CASE WHEN $4::bigint IS NULL THEN tf.read_seq \
                                  ELSE GREATEST(COALESCE(tf.read_seq, 0), \
                                                LEAST($4, c.accepted_sequence)) END, \
+                             read_origin = CASE WHEN $4::bigint IS NULL THEN tf.read_origin \
+                                 ELSE 'user' END, \
                              unread_mark = $5, updated_at = NOW() \
                          FROM channels c \
                          WHERE c.community_id = tf.community_id AND c.id = tf.channel_id \
@@ -319,7 +398,9 @@ impl Db {
             return Ok(Err(ChatStateDenied::NotThreadRoot));
         }
         // A new row starts caught up: read up to the thread's latest reply.
-        // An existing row keeps its read position.
+        // An existing row keeps its read position and where it came from (a
+        // backfilled position stays backfill, so a first-run upload may still
+        // move it).
         sqlx::query(
             "INSERT INTO thread_follows \
                  (community_id, root_event_id, pubkey, channel_id, follow_state, follow_origin, \
@@ -330,6 +411,8 @@ impl Db {
                      NOW()) \
              ON CONFLICT (community_id, root_event_id, pubkey) DO UPDATE \
              SET follow_state = EXCLUDED.follow_state, follow_origin = 'user', \
+                 read_origin = COALESCE(thread_follows.read_origin, \
+                     CASE WHEN thread_follows.follow_origin = 'backfill' THEN 'backfill' END), \
                  updated_at = EXCLUDED.updated_at",
         )
         .bind(community_uuid)
