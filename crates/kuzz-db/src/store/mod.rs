@@ -8,6 +8,8 @@ pub mod allowlist;
 pub mod api_token;
 /// Relay-scoped archived identity persistence (NIP-IA).
 pub mod archived_identities;
+/// Silent user blocks.
+pub mod blocks;
 /// Channel lifecycle and metadata persistence.
 pub mod channel;
 /// Channel membership and roster persistence.
@@ -45,6 +47,8 @@ pub mod moderation;
 pub mod operator_listener;
 /// Monthly table partition management.
 pub mod partition;
+/// Exact person lookup and shared-channel people search.
+pub mod people;
 /// Kuzz product-feedback sidecar persistence.
 pub mod product_feedback;
 /// Community-scoped push lease and durable wake-outbox persistence.

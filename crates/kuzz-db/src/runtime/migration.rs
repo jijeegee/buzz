@@ -722,7 +722,12 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 70);
+        assert_eq!(migrations.len(), 71);
+        assert_eq!(migrations[70].version, 71);
+        assert!(migrations[70]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE user_blocks"));
         assert_eq!(migrations[69].version, 70);
         assert!(migrations[69]
             .sql
@@ -2172,6 +2177,7 @@ mod postgres_tests {
                 "artifact_revisions",
                 "thread_follows",
                 "thread_state",
+                "user_blocks",
             ]
             .map(str::to_owned),
         );

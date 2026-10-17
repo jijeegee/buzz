@@ -602,6 +602,20 @@ CREATE TABLE thread_state (
         REFERENCES channels (community_id, id) ON DELETE CASCADE
 );
 
+-- ── Blocks ────────────────────────────────────────────────────────────────────
+-- Silent blocks (migration 0071): `blocker` no longer receives `blocked`'s DM
+-- events (live, history, unread, push). Private to the blocker.
+
+CREATE TABLE user_blocks (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    blocker      BYTEA NOT NULL CHECK (length(blocker) = 32),
+    blocked      BYTEA NOT NULL CHECK (length(blocked) = 32),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, blocker, blocked),
+    CONSTRAINT user_blocks_not_self CHECK (blocker <> blocked)
+);
+CREATE INDEX idx_user_blocks_blocked ON user_blocks (community_id, blocked);
+
 -- ── Reactions ─────────────────────────────────────────────────────────────────
 -- Conformance: reactions filter by community before event/pubkey matching.
 
@@ -1862,6 +1876,7 @@ SELECT attach_community_write_fence('subscriptions');
 SELECT attach_community_write_fence('thread_follows');
 SELECT attach_community_write_fence('thread_metadata');
 SELECT attach_community_write_fence('thread_state');
+SELECT attach_community_write_fence('user_blocks');
 SELECT attach_community_write_fence('users');
 SELECT attach_community_write_fence('workflow_approvals');
 SELECT attach_community_write_fence('workflow_runs');
@@ -1897,7 +1912,8 @@ CREATE TABLE principals (
     username      TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     disabled_at   TIMESTAMPTZ,
-    purge_after   TIMESTAMPTZ
+    purge_after   TIMESTAMPTZ,
+    discoverable  BOOLEAN NOT NULL DEFAULT true
 );
 CREATE UNIQUE INDEX principals_username_lower
     ON principals (lower(username)) WHERE username IS NOT NULL;
@@ -1916,6 +1932,7 @@ CREATE TABLE identities (
     PRIMARY KEY (provider, subject)
 );
 CREATE INDEX identities_principal ON identities (principal_id);
+CREATE INDEX identities_email_lower ON identities (lower(email)) WHERE email IS NOT NULL;
 
 CREATE TABLE devices (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
