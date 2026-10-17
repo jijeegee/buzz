@@ -3586,6 +3586,12 @@ async fn ingest_event_inner(
     };
 
     let workflow_deletion = crate::handlers::side_effects::is_workflow_deletion(&event);
+    // DM members whose hidden DM this message brought back (chat-state switch
+    // on only); their visibility snapshot is republished after commit.
+    let mut unhidden_dm_members: Vec<Vec<u8>> = Vec::new();
+    // The message closed or reopened its thread (chat-state switch on only);
+    // the author's other devices get a chat-state ping after commit.
+    let mut thread_close_changed = false;
     let (stored_event, was_inserted) = if workflow_deletion {
         // A single commit owns public acceptance, domain mutation, and dispatch.
         // Failure rolls everything back; identical concurrent requests cannot
@@ -3657,7 +3663,7 @@ async fn ingest_event_inner(
         let thread_params = thread_meta.as_ref().map(|m| m.as_params());
         match state
             .db
-            .insert_event_with_thread_metadata(
+            .insert_event_with_thread_metadata_and_chat_state(
                 tenant.community(),
                 &event,
                 channel_id,
@@ -3665,7 +3671,11 @@ async fn ingest_event_inner(
             )
             .await
         {
-            Ok(result) => result,
+            Ok((stored_event, was_inserted, chat_state)) => {
+                unhidden_dm_members = chat_state.unhidden_dm_members;
+                thread_close_changed = chat_state.thread_close_changed;
+                (stored_event, was_inserted)
+            }
             Err(e) => {
                 // Compensate: if we pre-created a channel for kind:9007,
                 // soft-delete it so no orphaned channel row remains.
@@ -3708,6 +3718,28 @@ async fn ingest_event_inner(
             // RUST_LOG=error, so warn! made these failures invisible during
             // the #3527 triage.
             error!(event_id = %event_id_hex, kind = kind_u32, "Side effect failed: {e}");
+        }
+    }
+
+    // The message already brought these hidden DMs back in the database;
+    // republish each recipient's visibility snapshot so their clients show it.
+    for viewer in &unhidden_dm_members {
+        if let Err(e) =
+            crate::handlers::side_effects::publish_dm_visibility_snapshot(tenant, state, viewer)
+                .await
+        {
+            warn!(event_id = %event_id_hex, "DM visibility snapshot after unhide failed: {e}");
+        }
+    }
+    if thread_close_changed {
+        if let Err(e) = crate::handlers::side_effects::publish_chat_state_ping(
+            tenant,
+            state,
+            &event.pubkey.to_bytes(),
+        )
+        .await
+        {
+            warn!(event_id = %event_id_hex, "chat-state ping after thread close failed: {e}");
         }
     }
 

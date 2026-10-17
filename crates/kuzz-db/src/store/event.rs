@@ -1535,7 +1535,7 @@ pub(crate) async fn get_events_by_ids_on(
 }
 
 /// Parameters for [`insert_event_with_thread_metadata`].
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ThreadMetadataParams<'a> {
     /// The Nostr event ID of this message.
     pub event_id: &'a [u8],
@@ -1749,6 +1749,51 @@ pub async fn insert_event_with_thread_metadata(
     channel_id: Option<Uuid>,
     thread_meta: Option<ThreadMetadataParams<'_>>,
 ) -> Result<(StoredEvent, bool)> {
+    let (stored_event, was_inserted, _) = insert_event_with_thread_metadata_on_pool(
+        pool,
+        community_id,
+        event,
+        channel_id,
+        thread_meta,
+        false,
+    )
+    .await?;
+    Ok((stored_event, was_inserted))
+}
+
+/// [`insert_event_with_thread_metadata`] plus the server-side chat state
+/// (`crate::chat_state`) and the event's mention rows, all committed in the
+/// same transaction as the event.
+///
+/// Used only while the relay's chat-state switch is on. Returns
+/// `(StoredEvent, was_inserted, outcome)`; the outcome lists what the caller
+/// must announce after commit.
+pub async fn insert_event_with_chat_state(
+    pool: &PgPool,
+    community_id: CommunityId,
+    event: &Event,
+    channel_id: Option<Uuid>,
+    thread_meta: Option<ThreadMetadataParams<'_>>,
+) -> Result<(StoredEvent, bool, crate::chat_state::ChatStateWriteOutcome)> {
+    insert_event_with_thread_metadata_on_pool(
+        pool,
+        community_id,
+        event,
+        channel_id,
+        thread_meta,
+        true,
+    )
+    .await
+}
+
+async fn insert_event_with_thread_metadata_on_pool(
+    pool: &PgPool,
+    community_id: CommunityId,
+    event: &Event,
+    channel_id: Option<Uuid>,
+    thread_meta: Option<ThreadMetadataParams<'_>>,
+    chat_state: bool,
+) -> Result<(StoredEvent, bool, crate::chat_state::ChatStateWriteOutcome)> {
     use crate::store::replaceable::event_replacement_lock_key;
 
     let connection = crate::observability::acquire_writer(
@@ -1773,11 +1818,24 @@ pub async fn insert_event_with_thread_metadata(
         }
     }
 
-    let result =
+    let (stored_event, was_inserted) =
         insert_event_with_thread_metadata_tx(&mut tx, community_id, event, channel_id, thread_meta)
             .await?;
+    let mut outcome = crate::chat_state::ChatStateWriteOutcome::default();
+    if chat_state && was_inserted {
+        outcome = crate::chat_state::apply_message_write(
+            &mut tx,
+            community_id,
+            event,
+            channel_id,
+            thread_meta,
+            stored_event.received_at,
+        )
+        .await?;
+        crate::insert_mentions_in_transaction(&mut tx, community_id, event, channel_id).await?;
+    }
     tx.commit().await?;
-    Ok(result)
+    Ok((stored_event, was_inserted, outcome))
 }
 
 /// Outcome of a channel-head conditional canvas write.
@@ -2463,7 +2521,10 @@ impl Db {
     }
 
     /// Atomically insert an event AND its thread metadata in a single transaction.
-    #[datastore_span(name = "insert_event_with_thread_metadata", system = "postgresql")]
+    ///
+    /// While the chat-state switch is on ([`Db::with_chat_state_writes`]) the
+    /// same transaction also writes chat state and mention rows; see
+    /// [`Db::insert_event_with_thread_metadata_and_chat_state`].
     pub async fn insert_event_with_thread_metadata(
         &self,
         community_id: CommunityId,
@@ -2471,6 +2532,42 @@ impl Db {
         channel_id: Option<Uuid>,
         thread_meta: Option<crate::event::ThreadMetadataParams<'_>>,
     ) -> Result<(StoredEvent, bool)> {
+        let (stored_event, was_inserted, _) = self
+            .insert_event_with_thread_metadata_and_chat_state(
+                community_id,
+                event,
+                channel_id,
+                thread_meta,
+            )
+            .await?;
+        Ok((stored_event, was_inserted))
+    }
+
+    /// [`Db::insert_event_with_thread_metadata`], also returning what the
+    /// chat-state write changed (always empty while the switch is off).
+    ///
+    /// Switch off: event and thread metadata commit together; mention rows
+    /// follow in a second transaction whose failure is only logged (the
+    /// long-standing behavior). Switch on: event, thread metadata, chat
+    /// state, and mention rows commit or roll back as one transaction.
+    #[datastore_span(name = "insert_event_with_thread_metadata", system = "postgresql")]
+    pub async fn insert_event_with_thread_metadata_and_chat_state(
+        &self,
+        community_id: CommunityId,
+        event: &nostr::Event,
+        channel_id: Option<Uuid>,
+        thread_meta: Option<crate::event::ThreadMetadataParams<'_>>,
+    ) -> Result<(StoredEvent, bool, crate::chat_state::ChatStateWriteOutcome)> {
+        if self.chat_state_writes {
+            return crate::event::insert_event_with_chat_state(
+                &self.pool,
+                community_id,
+                event,
+                channel_id,
+                thread_meta,
+            )
+            .await;
+        }
         let result = crate::event::insert_event_with_thread_metadata(
             &self.pool,
             community_id,
@@ -2486,7 +2583,11 @@ impl Db {
                 tracing::warn!(event_id = %event.id, "Failed to insert mentions: {e}");
             }
         }
-        Ok(result)
+        Ok((
+            result.0,
+            result.1,
+            crate::chat_state::ChatStateWriteOutcome::default(),
+        ))
     }
 
     /// Backfill `d_tag` for existing NIP-33 events (kind 30000–39999) that have `d_tag IS NULL`.

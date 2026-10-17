@@ -32,6 +32,7 @@ test.describe("list virtualization", () => {
   }) => {
     await installMockBridge(page);
     await page.goto("/");
+    await page.getByTestId("open-more-menu").click();
     await page.getByTestId("open-pulse-view").click();
 
     // The seeded feed overflows the viewport (30 notes), so the windowed list

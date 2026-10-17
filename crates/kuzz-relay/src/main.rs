@@ -305,10 +305,17 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         ..DbConfig::default()
     }
     .with_session_timeouts_from_env();
-    let db = Db::new(&db_config).await.map_err(|e| {
-        error!("Failed to connect to Postgres: {e}");
-        anyhow::anyhow!("DB connection failed: {e}")
-    })?;
+    let db = Db::new(&db_config)
+        .await
+        .map_err(|e| {
+            error!("Failed to connect to Postgres: {e}");
+            anyhow::anyhow!("DB connection failed: {e}")
+        })?
+        .with_chat_state_writes(config.chat_state_writes);
+    info!(
+        chat_state_writes = config.chat_state_writes,
+        "Chats server-state writes configured"
+    );
     if db.has_read_pool() {
         info!("Postgres connected (writer + lazy read replica pool)");
         // Reader-down at boot must not crash or block the relay; this warn-only

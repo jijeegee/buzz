@@ -19,7 +19,6 @@ const INBOX_FILTER_OPTIONS: Array<{
   { value: "project", label: "Projects" },
   { value: "mention", label: "Mentions" },
   { value: "thread", label: "Threads" },
-  { value: "conversations", label: "Channels + Threads" },
   { value: "needs_action", label: "Needs action" },
   { value: "agent_activity", label: "Agents" },
   { value: "reminders", label: "Reminders" },

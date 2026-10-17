@@ -722,7 +722,17 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 67);
+        assert_eq!(migrations.len(), 69);
+        assert_eq!(migrations[68].version, 69);
+        assert!(migrations[68]
+            .sql
+            .as_str()
+            .contains("ADD COLUMN read_origin"));
+        assert_eq!(migrations[67].version, 68);
+        assert!(migrations[67]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE thread_follows"));
         assert_eq!(migrations[66].version, 67);
         assert!(migrations[66]
             .sql
@@ -2151,7 +2161,15 @@ mod postgres_tests {
         let mut expected_fences = migration.fence_attachments.clone();
         expected_fences.remove("product_feedback");
         expected_fences.remove("rate_limit_violations");
-        expected_fences.extend(["artifact_heads", "artifact_revisions"].map(str::to_owned));
+        expected_fences.extend(
+            [
+                "artifact_heads",
+                "artifact_revisions",
+                "thread_follows",
+                "thread_state",
+            ]
+            .map(str::to_owned),
+        );
         assert_eq!(
             expected_fences, schema.fence_attachments,
             "write-fence attachment targets differ after recovery policy"

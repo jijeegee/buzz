@@ -3,6 +3,7 @@
 //! These endpoints provide HTTP access to the relay's Nostr protocol,
 //! authenticated via NIP-98 signed events.
 
+mod chat_state;
 mod inbox_summary;
 mod read_state_snapshot;
 
@@ -1526,6 +1527,9 @@ async fn query_events_authed(
     }
     if inbox_summary::requested(&raw_filters) {
         return inbox_summary::query(state, tenant, &pubkey, &raw_filters).await;
+    }
+    if let Some(envelope) = chat_state::requested(&raw_filters) {
+        return chat_state::query(state, tenant, &pubkey, &raw_filters, envelope).await;
     }
     let thread_windows = thread_window::parse(&raw_filters)?;
     let filters: Vec<nostr::Filter> = raw_filters
