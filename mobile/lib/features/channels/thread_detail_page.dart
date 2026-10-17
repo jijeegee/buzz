@@ -1202,6 +1202,13 @@ class ThreadDetailPage extends HookConsumerWidget {
               .read(readStateProvider.notifier)
               .markContextRead(msgContextKey(event.id), event.createdAt);
         }
+        // The thread as a whole, for the Chats list and other devices.
+        ref
+            .read(readStateProvider.notifier)
+            .markContextRead(
+              threadContextKey(threadHead.id),
+              replies.map((reply) => reply.createdAt).reduce(math.max),
+            );
       });
       return null;
     }, [threadHead.id, readState.isReady, visibleReplyReadKey]);

@@ -164,10 +164,14 @@ class ChannelsPage extends HookConsumerWidget {
     required this.settingsPageBuilder,
     required this.onSettingsTransitionProgress,
     this.tabReselection,
+    this.showBackButton = false,
     super.key,
   });
 
   final WidgetBuilder settingsPageBuilder;
+
+  /// Pushed from More: a back button replaces the brand logo.
+  final bool showBackButton;
 
   /// Reports Settings route progress so its foreground and Home's background
   /// render from the same timeline.
@@ -335,7 +339,14 @@ class ChannelsPage extends HookConsumerWidget {
         showBottomDivider: false,
         // With the built-in server the header is the app's own brand and
         // has no tap action: there is no server to switch to.
-        leading: hasBuiltInServer
+        leading: showBackButton
+            ? IconButton(
+                key: const Key('channels-header-back'),
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(LucideIcons.chevronLeft),
+                tooltip: 'Back',
+              )
+            : hasBuiltInServer
             ? const AppBrandLogo(
                 key: Key('channels-header-brand-logo'),
                 size: _kTopSectionCommunityAvatarSize,
@@ -359,7 +370,7 @@ class ChannelsPage extends HookConsumerWidget {
                 showPresence: false,
                 onTap: () {
                   unawaited(HapticFeedback.lightImpact());
-                  final route = _SettingsPageRoute(
+                  final route = SettingsPageRoute(
                     builder: settingsPageBuilder,
                     onTransitionProgress: onSettingsTransitionProgress,
                   );
@@ -392,8 +403,8 @@ class ChannelsPage extends HookConsumerWidget {
 /// A custom route deliberately avoids [MaterialPageRoute]'s platform exit
 /// transition on Home. Settings has a centered scale-and-fade transition, not
 /// a lateral page push.
-class _SettingsPageRoute extends PageRouteBuilder<void> {
-  _SettingsPageRoute({
+class SettingsPageRoute extends PageRouteBuilder<void> {
+  SettingsPageRoute({
     required WidgetBuilder builder,
     required this.onTransitionProgress,
   }) : super(

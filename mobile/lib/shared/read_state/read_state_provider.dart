@@ -66,6 +66,15 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
   ReadStateManager? _manager;
   bool _isInitialized = false;
   final Map<String, String> _forcedUnreadContexts = {};
+  final _localReads =
+      StreamController<({String contextId, int unixTimestamp})>.broadcast(
+        sync: true,
+      );
+
+  /// Reads made on this device ([markContextRead]), not seeds or positions
+  /// synced from other devices. The Chats read mirror listens here.
+  Stream<({String contextId, int unixTimestamp})> get localReads =>
+      _localReads.stream;
 
   @override
   ReadStateState build() {
@@ -182,7 +191,11 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
       );
       removed = removed || _forcedUnreadContexts.length != before;
     }
-    _manager?.markContextRead(contextId, unixTimestamp);
+    final manager = _manager;
+    manager?.markContextRead(contextId, unixTimestamp);
+    if (manager != null) {
+      _localReads.add((contextId: contextId, unixTimestamp: unixTimestamp));
+    }
     if (removed) {
       _refreshForcedState();
     }

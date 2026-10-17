@@ -34,18 +34,24 @@ void main() {
     );
   }
 
+  Future<void> openSettingsFromMore(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProfileAvatar), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('more-profile')));
+  }
+
   testWidgets('shows icon-only navigation and an aligned quick action', (
     tester,
   ) async {
     await tester.pumpWidget(await buildHome());
     await tester.pump();
 
-    expect(find.text('Home'), findsNothing);
-    expect(find.text('Activity'), findsNothing);
-    expect(find.text('Search'), findsNothing);
-    expect(find.bySemanticsLabel('Home'), findsOneWidget);
-    expect(find.bySemanticsLabel('Activity'), findsOneWidget);
-    expect(find.bySemanticsLabel('Search'), findsOneWidget);
+    for (final label in ['People', 'Activity', 'Agents', 'More']) {
+      expect(find.text(label), findsNothing);
+      expect(find.bySemanticsLabel(label), findsOneWidget);
+    }
+    expect(find.byTooltip('Chats'), findsOneWidget);
 
     final quickAction = find.byTooltip('Create or start conversation');
     expect(quickAction, findsOneWidget);
@@ -65,14 +71,14 @@ void main() {
     expect(quickActionRect.top, greaterThanOrEqualTo(0));
     expect(quickActionRect.right, lessThanOrEqualTo(800));
     expect(quickActionRect.bottom, lessThanOrEqualTo(600));
-    final homeDestinationRect = tester.getRect(find.bySemanticsLabel('Home'));
+    final homeDestinationRect = tester.getRect(find.byTooltip('Chats'));
     expect(
       quickActionRect.center.dy,
       closeTo(homeDestinationRect.center.dy, 0.01),
     );
   });
 
-  testWidgets('keeps the Kuzz backdrop behind the scalable Home screen', (
+  testWidgets('keeps a plain backdrop behind the scalable Home screen', (
     tester,
   ) async {
     const gradient = LinearGradient(
@@ -88,7 +94,8 @@ void main() {
     );
     final decoration =
         tester.widget<DecoratedBox>(backdrop).decoration as BoxDecoration;
-    expect(decoration.gradient, gradient);
+    // Chats has a plain header, so the channel list's gradient is not shown.
+    expect(decoration.gradient, isNull);
     expect(
       find.byKey(const ValueKey('home-settings-transition-scale')),
       findsOneWidget,
@@ -118,7 +125,7 @@ void main() {
     await tester.pumpWidget(await buildHome());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(ProfileAvatar));
+    await openSettingsFromMore(tester);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 95));
 
@@ -158,7 +165,7 @@ void main() {
         .transform
         .storage[0];
 
-    await tester.tap(find.byType(ProfileAvatar));
+    await openSettingsFromMore(tester);
     await tester.pump();
 
     final settingsTransition = find.byKey(
@@ -215,7 +222,7 @@ void main() {
     await tester.pumpWidget(await buildHome());
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Home'));
+    await tester.tap(find.byTooltip('Chats'));
     await tester.pump();
     expect(hapticCalls, isEmpty);
 
@@ -228,7 +235,7 @@ void main() {
     await tester.pump();
     expect(hapticCalls, hasLength(1));
 
-    await tester.tap(find.byTooltip('Search'));
+    await tester.tap(find.byTooltip('People'));
     await tester.pump();
     expect(hapticCalls, hasLength(2));
   });
@@ -259,7 +266,7 @@ void main() {
     expect(hapticCalls.single.arguments, 'HapticFeedbackType.lightImpact');
   });
 
-  testWidgets('badges the Inbox tab when it has unread rows', (tester) async {
+  testWidgets('badges the Activity tab when it has unread rows', (tester) async {
     await tester.pumpWidget(await buildHome(unreadInboxCount: 1));
     await tester.pump();
 
@@ -290,7 +297,7 @@ void main() {
     expect(unreadDotScale().scale, 0);
     expect(find.bySemanticsLabel('Activity, unread'), findsNothing);
 
-    await tester.tap(find.byTooltip('Home'));
+    await tester.tap(find.byTooltip('Chats'));
     await tester.pump();
 
     expect(unreadDotScale().scale, 1);
@@ -349,7 +356,7 @@ void main() {
     expect(appBarOpacity().opacity, inExclusiveRange(0, 1));
 
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Home'));
+    await tester.tap(find.byTooltip('Chats'));
     await tester.pump();
 
     expect(bodyOffset(), closeTo(-24, 0.001));
@@ -422,7 +429,7 @@ void main() {
     expect(scale(), closeTo(0.8, 0.001));
     expect(opacity(), closeTo(0, 0.001));
 
-    await tester.tap(find.byTooltip('Home'));
+    await tester.tap(find.byTooltip('Chats'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 110));
 
