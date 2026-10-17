@@ -25,6 +25,7 @@ export function useThreadHeaderBar({
   onMarkUnread,
   onUnfollowThread,
   threadHead,
+  threadHeaderActions = true,
   threadMessages,
 }: {
   channelId: string | null;
@@ -36,6 +37,8 @@ export function useThreadHeaderBar({
   onMarkUnread?: (message: TimelineMessage) => void;
   onUnfollowThread?: () => void;
   threadHead: TimelineMessage | null;
+  /** Off: the panel's previous header (Show in channel, Goals) and no toggle. */
+  threadHeaderActions?: boolean;
   threadMessages: readonly TimelineMessage[];
 }): {
   closedLine: React.ReactNode;
@@ -64,7 +67,10 @@ export function useThreadHeaderBar({
   }
   const rootId = threadGoalRootId(threadHead);
   const canToggle =
-    !isHuddleTranscript && Boolean(channelId) && !threadHead.pending;
+    threadHeaderActions &&
+    !isHuddleTranscript &&
+    Boolean(channelId) &&
+    !threadHead.pending;
   const toggleClosed =
     canToggle && channelId && !disabled
       ? (closed: boolean) => setThreadClosed({ channelId, rootId, closed })
@@ -80,11 +86,11 @@ export function useThreadHeaderBar({
     goalChip: React.ReactNode,
     showInChannelButton: React.ReactNode,
   ) =>
-    isHuddleTranscript ? (
+    isHuddleTranscript || !threadHeaderActions ? (
       goalChip || showInChannelButton ? (
         <>
-          {goalChip}
           {showInChannelButton}
+          {goalChip}
         </>
       ) : null
     ) : (
@@ -119,6 +125,7 @@ export function useThreadHeaderBar({
       closerName={closerName}
       onReopen={toggleClosed ? () => toggleClosed(false) : undefined}
       reopenPending={pending}
+      taskBanner={!threadHeaderActions}
     />
   ) : null;
 

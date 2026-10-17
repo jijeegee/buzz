@@ -73,6 +73,11 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   huddleMemberPubkeysPending?: boolean;
   /** Present the huddle's parent-channel thread as a dedicated live chat. */
   isHuddleTranscript?: boolean;
+  /**
+   * The Chats thread header bar (Follow, Copy link, Close/Reopen, ⋯). Off
+   * for Projects conversations, which keep their own header.
+   */
+  threadHeaderActions?: boolean;
   editTarget?: MessageComposerEditTarget | null;
   isSending: boolean;
   onCancelEdit?: () => void;
@@ -178,6 +183,7 @@ export function MessageThreadPanel({
   huddleMemberPubkeys,
   huddleMemberPubkeysPending = false,
   isHuddleTranscript = false,
+  threadHeaderActions = true,
   layout = "standalone",
   editTarget,
   enterMotion,
@@ -391,6 +397,7 @@ export function MessageThreadPanel({
     disabled,
     isFollowingThread,
     isHuddleTranscript,
+    threadHeaderActions,
     onFollowThread,
     onMarkUnread,
     onUnfollowThread,
@@ -971,7 +978,9 @@ export function MessageThreadPanel({
                 isHuddleTranscript
                   ? "Message the huddle"
                   : isClosedTaskThread
-                    ? "Sending will reopen this thread"
+                    ? threadHeaderActions
+                      ? "Sending will reopen this thread"
+                      : "Task closed. Start new work in the channel, or reply to reopen"
                     : `Reply in thread to ${threadHead.author}`
               }
               profiles={profiles}
