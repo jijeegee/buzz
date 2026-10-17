@@ -162,6 +162,42 @@ test("advanceContext burst coalesces local persistence into one write", () => {
   }
 });
 
+test("server mirror sees the user's own reads only, and initialization is reported", async () => {
+  const storage = makeLocalStorage();
+  globalThis.window.localStorage = storage;
+  const { timers, restore } = withFakeTimers();
+  const manager = new ReadStateManager("2".repeat(64), makeFakeRelay());
+  const mirrored = [];
+  try {
+    manager.setServerMirror((contextId, at) => mirrored.push([contextId, at]));
+    assert.equal(manager.isInitialized(), false);
+    manager.markContextRead("channel-1", 100);
+    manager.markContextRead(threadKey, 110);
+    // Seeds and remote merges are not the user's reads.
+    manager.seedContextRead("channel-2", 120);
+    assert.deepEqual(mirrored, [
+      ["channel-1", 100],
+      [threadKey, 110],
+    ]);
+    // Local read state is unchanged by the mirror.
+    assert.equal(manager.getOwnTimestamp("channel-1"), 100);
+    manager.setServerMirror(null);
+    manager.markContextRead("channel-1", 130);
+    assert.equal(mirrored.length, 2);
+
+    await manager.initialize();
+    assert.equal(manager.isInitialized(), true);
+    manager.setServerMirror((contextId, at) => mirrored.push([contextId, at]));
+    manager.destroy();
+    manager.markContextRead("channel-1", 140);
+    assert.equal(mirrored.length, 2, "a destroyed manager mirrors nothing");
+  } finally {
+    manager.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
 test("sustained advances persist within each one-second window", () => {
   const storage = makeLocalStorage();
   globalThis.window.localStorage = storage;

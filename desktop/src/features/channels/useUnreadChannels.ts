@@ -152,6 +152,7 @@ export function useUnreadChannels(
     readStateVersion,
     getOwnTimestamp,
     getChannelAndThreadContexts,
+    setServerMirror: setReadStateServerMirror,
   } = useReadState(pubkey, relayClient);
 
   // Per-channel latest observed external trigger timestamp (unix seconds) and
@@ -982,6 +983,8 @@ export function useUnreadChannels(
     getChannelAndThreadContexts,
     readStateVersion,
     setContextParentResolver,
+    /** Mirror the user's own reads to the relay's chat state (Chats S4). */
+    setReadStateServerMirror,
     participatedRootIds,
     authoredRootIds,
     mentionedRootIds,
