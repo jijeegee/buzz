@@ -321,3 +321,109 @@ test("with server chats on, rows, threads and counts come from the relay; off ke
     client.clear();
   }
 });
+
+test("By channel groups threads under their channel and expands in place", async () => {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { enabled: false, retry: false, gcTime: Infinity },
+    },
+  });
+  client.setQueryData(["identity"], { pubkey: "owner" });
+  const items = [channel("room-a"), channel("room-b")];
+  const roots = ["1", "2", "3", "4", "5"].map((n) => n.repeat(64));
+  const serverRows = [
+    serverRow({ channel_id: "room-b", at: 900 }),
+    ...roots.map((root, index) =>
+      serverRow({
+        type: "thread",
+        channel_id: "room-a",
+        root_id: root,
+        thread_name: `T${index + 1}`,
+        at: 800 - index * 10,
+        unread: index >= 3 ? 2 : 0,
+        unread_mentions: index === 4 ? 1 : 0,
+      }),
+    ),
+    serverRow({ channel_id: "room-a", at: 100 }),
+  ];
+  const tree = (view) =>
+    React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(
+        SidebarProvider,
+        null,
+        React.createElement(ChatList, {
+          isActiveChannel: false,
+          selectedChannelId: null,
+          items,
+          unreadChannelIds: new Set(),
+          unreadChannelCounts: new Map(),
+          onSelectChannel: () => {},
+          serverChats: {
+            rows: serverRows,
+            getReadAt: () => null,
+            onOpenThread: () => {},
+            readStateVersion: 0,
+          },
+          view,
+        }),
+      ),
+    );
+  const order = (view) =>
+    [
+      ...view
+        .getByTestId("chat-list")
+        .querySelectorAll(
+          "[data-channel-id],[data-chat-thread-id],[data-testid^='chat-more-threads-room']",
+        ),
+    ].map((row) =>
+      row.dataset.channelId
+        ? row.dataset.channelId
+        : row.dataset.chatThreadId
+          ? row.dataset.chatThreadId[0]
+          : row.textContent,
+    );
+  let view;
+  try {
+    await act(async () => {
+      view = render(tree("by-channel"));
+    });
+    // room-b's main row is newer than any of room-a's rows.
+    assert.deepEqual(order(view), [
+      "room-b",
+      "room-a",
+      "1",
+      "2",
+      "3",
+      "+ 2 more threads@ 1 unread mention4 unread messages",
+    ]);
+    fireEvent.click(view.getByTestId("chat-more-threads-room-a"));
+    assert.deepEqual(order(view), [
+      "room-b",
+      "room-a",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "Show less",
+    ]);
+    fireEvent.click(view.getByTestId("chat-more-threads-room-a"));
+    assert.equal(order(view).length, 6);
+    // All chats: every row by activity, no grouping.
+    view.rerender(tree("all"));
+    assert.deepEqual(order(view), [
+      "room-b",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "room-a",
+    ]);
+  } finally {
+    cleanup();
+    client.clear();
+  }
+});

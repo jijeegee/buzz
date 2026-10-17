@@ -1,4 +1,4 @@
-import { useMemo, type ComponentProps } from "react";
+import { useCallback, useMemo, useState, type ComponentProps } from "react";
 import {
   chatRowContextId,
   chatRowUnread,
@@ -7,6 +7,11 @@ import {
 } from "@/features/chats/chatListState";
 import { isJoinedChat, sortChatList } from "@/features/sidebar/lib/chatList";
 import type { Channel } from "@/shared/api/types";
+import {
+  groupChatRowsByChannel,
+  type ChatsViewMode,
+} from "@/features/chats/chatListGroups";
+import { ChatMoreThreadsRow } from "./ChatMoreThreadsRow";
 import { ChatThreadRow } from "./ChatThreadRow";
 import type { ChatThreadRowActions } from "./ChatThreadRowMenu";
 import { SidebarSection, type SidebarSectionRow } from "./SidebarSection";
@@ -31,7 +36,11 @@ export type ServerChats = {
 type ChatListProps = Omit<
   ComponentProps<typeof SidebarSection>,
   "title" | "testId" | "rows"
-> & { serverChats?: ServerChats };
+> & {
+  serverChats?: ServerChats;
+  /** All chats (default) or By channel; used only with `serverChats`. */
+  view?: ChatsViewMode;
+};
 
 function isListedChat(channel: Channel) {
   return (
@@ -41,24 +50,32 @@ function isListedChat(channel: Channel) {
   );
 }
 
+type ByChannel = {
+  expandedChannelIds: ReadonlySet<string>;
+  onToggleExpanded: (channelId: string) => void;
+};
+
 /**
  * Server rows in chats-list order with counts from the relay. Rooms the
  * relay did not send (beyond the loaded pages) follow in today's order, so
- * no room ever drops out of the list.
+ * no room ever drops out of the list. With `byChannel`, rows are grouped
+ * under their channel (View B).
  */
 function buildServerChatRows(
   server: ServerChats,
   localItems: readonly Channel[],
   props: ChatListProps,
+  byChannel: ByChannel | null,
 ) {
   const channelById = new Map(
     localItems.map((channel) => [channel.id, channel]),
   );
   const unreadIds = new Set<string>();
   const counts = new Map<string, number>();
-  const pinned: SidebarSectionRow[] = [];
-  const rest: SidebarSectionRow[] = [];
   const shown = new Set<string>();
+  const listed: ChatListRow[] = [];
+  const unreadOf = (row: ChatListRow) =>
+    chatRowUnread(row, server.getReadAt(chatRowContextId(row)));
   for (const row of orderChatRows(
     server.rows,
     props.starredChannelIds,
@@ -66,11 +83,11 @@ function buildServerChatRows(
   )) {
     const channel = channelById.get(row.channel_id);
     if (!channel) continue;
-    const unread = chatRowUnread(row, server.getReadAt(chatRowContextId(row)));
-    const isMuted = props.mutedChannelIds?.has(channel.id) ?? false;
     if (row.type === "room") {
       if (shown.has(channel.id)) continue;
       shown.add(channel.id);
+      const unread = unreadOf(row);
+      const isMuted = props.mutedChannelIds?.has(channel.id) ?? false;
       const forced = server.forcedUnreadChannelIds?.has(channel.id) ?? false;
       if (
         forced ||
@@ -80,35 +97,93 @@ function buildServerChatRows(
         unreadIds.add(channel.id);
         counts.set(channel.id, unread.count);
       }
-      const target = props.starredChannelIds?.has(channel.id) ? pinned : rest;
-      target.push({ kind: "channel", channel });
+      listed.push(row);
       continue;
     }
     if (!row.root_id || server.mutedRootIds?.has(row.root_id)) continue;
-    const isPinned = server.pinnedThreadIds?.has(row.root_id) ?? false;
-    (isPinned ? pinned : rest).push({
+    listed.push(row);
+  }
+  const isPinnedRoom = (channelId: string) =>
+    props.starredChannelIds?.has(channelId) ?? false;
+  const isPinnedThread = (rootId: string) =>
+    server.pinnedThreadIds?.has(rootId) ?? false;
+  const toSectionRow = (row: ChatListRow): SidebarSectionRow => {
+    // Every listed row's channel is in channelById.
+    const channel = channelById.get(row.channel_id) as Channel;
+    if (row.type === "room") return { kind: "channel", channel };
+    const rootId = row.root_id ?? row.key;
+    return {
       kind: "custom",
-      key: `thread:${row.root_id}`,
+      key: `thread:${rootId}`,
       node: (
         <ChatThreadRow
+          actions={server.threadActions}
           channelLabel={props.channelLabels?.[channel.id] ?? channel.name}
           isDm={channel.channelType === "dm"}
-          isMuted={isMuted}
-          isPinned={isPinned}
-          actions={server.threadActions}
+          isMuted={props.mutedChannelIds?.has(channel.id) ?? false}
+          isPinned={isPinnedThread(rootId)}
           onOpenThread={server.onOpenThread}
           row={row}
-          unread={unread}
+          unread={unreadOf(row)}
         />
       ),
-    });
-  }
+    };
+  };
+  const localPinned: SidebarSectionRow[] = [];
+  const localRest: SidebarSectionRow[] = [];
   for (const channel of localItems) {
     if (shown.has(channel.id)) continue;
-    const target = props.starredChannelIds?.has(channel.id) ? pinned : rest;
-    target.push({ kind: "channel", channel });
+    (isPinnedRoom(channel.id) ? localPinned : localRest).push({
+      kind: "channel",
+      channel,
+    });
   }
-  return { counts, rows: [...pinned, ...rest], unreadIds };
+  let rows: SidebarSectionRow[];
+  if (byChannel) {
+    const { entries, pinnedEntries } = groupChatRowsByChannel(listed, {
+      expandedChannelIds: byChannel.expandedChannelIds,
+      isPinnedRoom,
+      isPinnedThread,
+      unreadOf,
+    });
+    const grouped = entries.map((entry): SidebarSectionRow => {
+      if (entry.kind === "row") return toSectionRow(entry.row);
+      return {
+        kind: "custom",
+        key: `more:${entry.channelId}`,
+        node: (
+          <ChatMoreThreadsRow
+            channelId={entry.channelId}
+            count={entry.count}
+            expanded={entry.expanded}
+            isMuted={props.mutedChannelIds?.has(entry.channelId) ?? false}
+            mentions={entry.mentions}
+            onToggle={byChannel.onToggleExpanded}
+            unread={entry.unread}
+            unreadOverflow={entry.unreadOverflow}
+          />
+        ),
+      };
+    });
+    rows = [
+      ...grouped.slice(0, pinnedEntries),
+      ...localPinned,
+      ...grouped.slice(pinnedEntries),
+      ...localRest,
+    ];
+  } else {
+    const isPinnedRow = (row: ChatListRow) =>
+      row.type === "room"
+        ? isPinnedRoom(row.channel_id)
+        : isPinnedThread(row.root_id ?? "");
+    rows = [
+      ...listed.filter(isPinnedRow).map(toSectionRow),
+      ...localPinned,
+      ...listed.filter((row) => !isPinnedRow(row)).map(toSectionRow),
+      ...localRest,
+    ];
+  }
+  return { counts, rows, unreadIds };
 }
 
 /**
@@ -116,16 +191,40 @@ function buildServerChatRows(
  * With `serverChats` (the relay keeps chat state) rows, followed threads and
  * unread counts come from the relay; without it, this is today's list.
  */
-export function ChatList({ serverChats, ...props }: ChatListProps) {
+export function ChatList({
+  serverChats,
+  view = "all",
+  ...props
+}: ChatListProps) {
   const items = useMemo(
     () =>
       sortChatList(props.items.filter(isListedChat), props.starredChannelIds),
     [props.items, props.starredChannelIds],
   );
+  // Expanded "+ N more threads" groups, for this session only.
+  const [expandedChannelIds, setExpandedChannelIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const onToggleExpanded = useCallback((channelId: string) => {
+    setExpandedChannelIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(channelId)) next.add(channelId);
+      return next;
+    });
+  }, []);
+  const byChannel = useMemo(
+    () =>
+      view === "by-channel" ? { expandedChannelIds, onToggleExpanded } : null,
+    [expandedChannelIds, onToggleExpanded, view],
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion signals that local read positions moved
   const server = useMemo(
-    () => (serverChats ? buildServerChatRows(serverChats, items, props) : null),
+    () =>
+      serverChats
+        ? buildServerChatRows(serverChats, items, props, byChannel)
+        : null,
     [
+      byChannel,
       serverChats,
       serverChats?.readStateVersion,
       items,

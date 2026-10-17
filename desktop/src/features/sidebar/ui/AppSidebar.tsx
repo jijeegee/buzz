@@ -28,6 +28,7 @@ import {
   MoreUnreadButton,
   preferredUnreadTarget,
 } from "@/features/sidebar/ui/MoreUnreadButton";
+import { useChatsViewMode } from "@/features/chats/useChatsViewMode";
 import { ChatList } from "@/features/sidebar/ui/ChatList";
 import {
   ChannelGroupSection,
@@ -252,6 +253,7 @@ export function AppSidebar({
     activeCommunity?.relayUrl,
   );
 
+  const [chatsView, setChatsView] = useChatsViewMode();
   const { requestLeaveChannel, dialog: leaveChannelDialog } =
     useLeaveChannelDialog();
   const { requestDeleteChannel, dialog: deleteChannelDialog } =
@@ -487,6 +489,8 @@ export function AppSidebar({
                           }}
                           onBrowse={() => onBrowseChannels?.()}
                           onCreate={handleOpenCreateChannel}
+                          chatsView={serverChats ? chatsView : undefined}
+                          onChatsViewChange={setChatsView}
                         />
                       </div>
                     }
@@ -501,6 +505,7 @@ export function AppSidebar({
                     onMarkChannelUnread={onMarkChannelUnread}
                     onSelectChannel={onSelectChannel}
                     serverChats={serverChats}
+                    view={chatsView}
                     onToggleCollapsed={() => toggleCollapsedGroup("channels")}
                     presenceByChannelId={dmPresenceByChannelId}
                     selectedChannelId={selectedChannelId}
