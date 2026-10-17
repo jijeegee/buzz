@@ -427,7 +427,7 @@ const DEFAULT_SYSTEM_PROMPT: &str =
 pub enum Provider {
     Anthropic,
     OpenAi,
-    /// OpenAI through the existing local Codex ChatGPT subscription login.
+    /// OpenAI through Kuzz's own "Sign in with ChatGPT" plan login.
     OpenAiSubscription,
     /// Databricks model serving. Routes to `{base_url}/serving-endpoints/{model}/invocations`
     /// with a dynamically-acquired bearer (OAuth 2.0 PKCE, or static `DATABRICKS_TOKEN`).
@@ -690,7 +690,7 @@ impl Config {
                     env("OPENAI_COMPAT_MODEL").as_deref(),
                 )
                 .ok_or_else(|| "config: model required for ChatGPT subscription".to_string())?,
-                "https://chatgpt.com/backend-api/codex".to_string(),
+                crate::auth::chatgpt::API_BASE.to_string(),
                 OpenAiApi::Responses,
             ),
             Provider::Databricks | Provider::DatabricksV2 => (

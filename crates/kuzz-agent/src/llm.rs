@@ -2334,9 +2334,7 @@ pub(crate) fn databricks_pkce_config(
 ///   flow; subsequent requests use the cache + refresh transparently.
 pub(crate) fn build_token_source(cfg: &Config) -> Result<Arc<dyn TokenSource>, AgentError> {
     match cfg.provider {
-        Provider::OpenAiSubscription => {
-            Ok(Arc::new(crate::auth::codex::CodexTokenSource::from_env()?))
-        }
+        Provider::OpenAiSubscription => Ok(crate::auth::chatgpt::ChatGptLogin::new(None)?),
         Provider::Anthropic | Provider::OpenAi | Provider::OpenRouter => {
             Ok(Arc::new(StaticTokenSource::new(cfg.api_key.clone())))
         }

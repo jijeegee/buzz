@@ -6,6 +6,7 @@ import {
   useBakedBuildEnvKeysQuery,
   useSetGlobalAgentConfigMutation,
 } from "@/features/agents/hooks";
+import { ChatGptPlanSettingsRow } from "@/features/agents/ui/ChatGptPlanControls";
 import { BLOCK_BUILD_HIDDEN_PROVIDER_IDS } from "@/features/agents/ui/agentConfigOptions";
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
 import type { GlobalAgentConfig } from "@/shared/api/types";
@@ -146,21 +147,27 @@ export function ProvidersSettingsTab() {
         key={primary.providerId}
         title={primary.label}
       >
+        {primary.providerId === "openai" ? (
+          <div>
+            <p className="px-4 pt-3 text-xs font-medium text-muted-foreground/70">
+              ChatGPT plan · used by Kuzz Agent
+            </p>
+            <ChatGptPlanSettingsRow />
+          </div>
+        ) : null}
         {subscription ? (
           <div
             data-testid={`settings-models-${primary.providerId}-subscription`}
           >
             <p className="px-4 pt-3 text-xs font-medium text-muted-foreground/70">
-              Subscription
+              {primary.providerId === "openai"
+                ? "Codex CLI · used by Codex agents"
+                : "Subscription"}
             </p>
             <HarnessRow
               embedded
               resetEpoch={resetEpoch}
-              runtime={
-                primary.providerId === "openai"
-                  ? { ...subscription, label: "ChatGPT subscription" }
-                  : subscription
-              }
+              runtime={subscription}
             />
           </div>
         ) : null}

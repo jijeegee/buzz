@@ -29,7 +29,7 @@
 
 A client sends `session/prompt`. The agent loops: call the LLM → get tool calls → run them via MCP → feed results back → repeat. The loop terminates when the LLM stops asking for tools, the round cap is hit, or the client cancels.
 
-The agent's **output is its tool calls**. Generated text is forwarded to the client as `agent_message_chunk` updates, but the real work happens in the tools. Each LLM round returns one complete response; the ChatGPT subscription route collects SSE before returning, without token-level UI streaming.
+The agent's **output is its tool calls**. Generated text is forwarded to the client as `agent_message_chunk` updates, but the real work happens in the tools. Each LLM round returns one complete response; the ChatGPT plan route collects SSE before returning, without token-level UI streaming.
 
 ## Quick Start
 
@@ -65,16 +65,17 @@ DATABRICKS_MODEL=goose-claude-4-6-sonnet \
 
 That's the whole setup. The agent reads JSON-RPC frames from stdin, writes them to stdout, and logs to stderr.
 
-### Existing ChatGPT subscription login
+### ChatGPT plan ("Sign in with ChatGPT")
 
 Use `KUZZ_AGENT_PROVIDER=openai-subscription` and `KUZZ_AGENT_MODEL=<model-id>`
-to reuse an existing file-backed Codex ChatGPT login (`CODEX_HOME/auth.json`,
-default `~/.codex/auth.json`). No API key is required. Kuzz reads the current
-access token for each request and never refreshes or writes authentication;
-the existing login owner handles renewal. Missing, expired, or rejected logins
-report an authentication error. Credentials go only to the fixed subscription
-endpoints, with no redirects or API-key fallback. OS-keyring-only logins are not
-supported by this file-backed route.
+to bill requests to the user's ChatGPT plan. Kuzz signs in itself through
+OpenAI's open-source "Sign in with ChatGPT" flow (Desktop: Settings › Models ›
+Providers › OpenAI › Continue with ChatGPT); it never reads another app's
+login. Credentials live in `<config>/kuzz-agent/chatgpt/credentials.json`
+(`KUZZ_AGENT_CONFIG_DIR` or `~/.config`), shared by the desktop and every
+agent process. Agents refresh the rotating token under a cross-process lock.
+Requests go only to `https://api.openai.com/v1/responses` and `/v1/models`,
+with `store: false`, `stream: true`, no redirects and no API-key fallback.
 
 ## ACP Transcript
 
