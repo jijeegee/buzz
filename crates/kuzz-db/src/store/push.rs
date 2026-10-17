@@ -3,8 +3,8 @@
 //! Every operation requires a server-resolved [`CommunityId`]. Client-provided
 //! origins never select rows in this module.
 
-use kuzz_core::CommunityId;
 use chrono::{DateTime, Utc};
+use kuzz_core::CommunityId;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 use sqlx::{PgPool, Row as _};
@@ -36,7 +36,7 @@ async fn begin_operation_transaction(
 /// a concurrent event insert either sees the committed lease or strictly
 /// precedes the activation (in which case no wake was owed). Distinct key
 /// domain from the audit lock and the lease address/author locks.
-const PUSH_GATE_LOCK_NAMESPACE: &str = "buzz_push_gate:";
+const PUSH_GATE_LOCK_NAMESPACE: &str = "kuzz_push_gate:";
 
 async fn acquire_push_gate_lock(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -1544,7 +1544,7 @@ mod postgres_tests {
     async fn setup_pool() -> PgPool {
         let database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".into()); // sadscan:disable np.postgres.1 -- local test-only credentials
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".into()); // sadscan:disable np.postgres.1 -- local test-only credentials
         let pool = PgPool::connect(&database_url)
             .await
             .expect("connect to test DB");
@@ -2556,8 +2556,8 @@ mod postgres_tests {
     async fn quiesce_test_community(pool: &PgPool, community: CommunityId) {
         let mut lifecycle = pool.begin().await.expect("begin lifecycle fixture");
         sqlx::query(
-            "SELECT set_config('buzz.deletion_executor_community', $1, true), \
-                    set_config('buzz.deletion_fence_generation', '0', true)",
+            "SELECT set_config('kuzz.deletion_executor_community', $1, true), \
+                    set_config('kuzz.deletion_fence_generation', '0', true)",
         )
         .bind(community.to_string())
         .execute(&mut *lifecycle)

@@ -104,6 +104,17 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goPeople = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation(
+        {
+          to: "/people",
+        },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
   const goProfile = React.useCallback(
     (pubkey: string, behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -475,6 +486,7 @@ export function useAppNavigation() {
     goProject,
     goProjects,
     goPulse,
+    goPeople,
     goProfile,
     goSettings,
     goWorkflow,

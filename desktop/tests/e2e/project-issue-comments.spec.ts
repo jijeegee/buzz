@@ -12,6 +12,7 @@ const DEFAULT_MOCK_PUBKEY = "deadbeef".repeat(8);
 
 async function openKuzzProject(page: import("@playwright/test").Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   const projectEntry = page

@@ -385,7 +385,7 @@ Paths are relative to `mobile/`.
 - Needs from 2B:
   - A new-community invite join on a token relay still claims with a
     generated NIP-98 keypair. Onboarding should detect NIP-11
-    `buzz_token_auth`, sign in first, then claim with the Bearer.
+    `kuzz_token_auth`, sign in first, then claim with the Bearer.
   - In token mode, read state, reminders, theme sync, push and cross-device
     settings sync are unavailable or local-only. The UI may want to say so.
   - `submitSignedEventOnce` caller in `community_provider.dart`: see slice 2.
@@ -600,7 +600,7 @@ then went green.
     reconnected explicitly.
   - Test: `invite_join_token_test.dart`.
 - **B4, new-community invite on a token relay.**
-  - `prepare` detects NIP-11 `buzz_token_auth` (`inviteTokenAuthDetectorProvider`).
+  - `prepare` detects NIP-11 `kuzz_token_auth` (`inviteTokenAuthDetectorProvider`).
   - `confirmJoin` re-detects if a detection outage left it unchecked; it
     never falls back to keygen.
   - The flow is: restore or sign in (system browser), THEN the Bearer claim,

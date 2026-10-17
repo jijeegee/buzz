@@ -252,6 +252,7 @@ export function ProjectConversationPanel({
       <MessageThreadPanel
         {...layoutProps}
         activityAccessoryVisible={false}
+        threadHeaderActions={false}
         channel={activeChannel}
         channelId={activeChannel.id}
         channelName={activeChannel.name}

@@ -82,7 +82,7 @@ async fn run_rate_limit(
 ///
 /// Pubkey keys are community-scoped via `&TenantContext`:
 /// `kuzz:{community}:ratelimit:{pubkey_hex}:{suffix}`. IP keys remain
-/// operator-global: `buzz:ratelimit:ip:{ip}:conn`. The counter and its TTL are
+/// operator-global: `kuzz:ratelimit:ip:{ip}:conn`. The counter and its TTL are
 /// managed atomically via a Lua script to prevent keys from persisting without
 /// expiry.
 pub struct RedisRateLimiter {
@@ -96,7 +96,7 @@ impl RedisRateLimiter {
     }
 
     /// Fixed-window limit on an arbitrary deployment-global key, namespaced as
-    /// `buzz:ratelimit:{key}` (e.g. `auth:login:{ip}`, `auth:exchange:{bot}`).
+    /// `kuzz:ratelimit:{key}` (e.g. `auth:login:{ip}`, `auth:exchange:{bot}`).
     /// Used by the centralized-identity `/auth/*` surface, whose subjects are
     /// IPs, sessions and bots rather than community-scoped pubkeys.
     pub async fn check_key(
@@ -107,7 +107,7 @@ impl RedisRateLimiter {
     ) -> Result<RateLimitResult, AuthError> {
         run_rate_limit(
             &self.pool,
-            &format!("buzz:ratelimit:{key}"),
+            &format!("kuzz:ratelimit:{key}"),
             window_secs,
             limit,
         )

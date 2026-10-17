@@ -1,6 +1,7 @@
 import type { TimelineMessage } from "@/features/messages/types";
 import type { ChannelWindowThreadSummary } from "@/features/messages/lib/channelWindowStore";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
+import { isThreadMarkerReply } from "@/features/messages/lib/taskThread";
 import { isBroadcastReply } from "@/features/messages/lib/threading";
 import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { KIND_HUDDLE_STARTED } from "@/shared/constants/kinds";
@@ -34,6 +35,8 @@ export type MainTimelineEntry = {
 export type ThreadDescendantStats = {
   descendantCount: number;
   unreadDescendantCount: number;
+  /** Close/Reopen marker replies below, which are not counted. */
+  markerDescendantCount: number;
   lastReplyAt: number | null;
   recentParticipantsNewestFirst: TimelineThreadSummaryParticipant[];
 };
@@ -131,6 +134,7 @@ export function buildDescendantStatsByMessageId(
       {
         descendantCount: 0,
         unreadDescendantCount: 0,
+        markerDescendantCount: 0,
         lastReplyAt: null,
         recentParticipantsNewestFirst: [],
       },
@@ -163,11 +167,18 @@ export function buildDescendantStatsByMessageId(
     let hops = 0;
     const maxHops = messages.length + 1;
     const isUnread = unreadReplyIds.has(message.id);
+    const isMarker = isThreadMarkerReply(message);
 
     while (ancestorId && hops < maxHops) {
       const ancestorStats = descendantStatsByMessageId.get(ancestorId);
       if (!ancestorStats) {
         break;
+      }
+      if (isMarker) {
+        ancestorStats.markerDescendantCount += 1;
+        ancestorId = messageById.get(ancestorId)?.parentId ?? null;
+        hops += 1;
+        continue;
       }
 
       ancestorStats.descendantCount += 1;
@@ -264,6 +275,7 @@ export function buildThreadSummaryFromVisibleEntries(
   };
 
   for (const entry of entries) {
+    if (isThreadMarkerReply(entry.message)) continue;
     replyCount += 1;
     lastReplyAt = Math.max(lastReplyAt ?? 0, entry.message.createdAt);
     addParticipantCandidate(
@@ -463,6 +475,11 @@ export function buildMainTimelineEntries(
     )
     .map((message) => {
       const relaySummary = relaySummaries.get(message.id);
+      // The relay counts marker replies; drop the ones loaded here.
+      const relayCount =
+        (relaySummary?.descendantCount ?? 0) -
+        (descendantStatsByMessageId.get(message.id)?.markerDescendantCount ??
+          0);
       return {
         message,
         summary:
@@ -473,8 +490,12 @@ export function buildMainTimelineEntries(
                   message.id,
                   descendantStatsByMessageId,
                 ),
-                relaySummary
-                  ? buildRelayThreadSummary(message.id, relaySummary, profiles)
+                relaySummary && relayCount > 0
+                  ? buildRelayThreadSummary(
+                      message.id,
+                      { ...relaySummary, descendantCount: relayCount },
+                      profiles,
+                    )
                   : null,
               ),
       };

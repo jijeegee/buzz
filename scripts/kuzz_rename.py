@@ -2,10 +2,13 @@
 """Case-preserving buzz -> kuzz rename over the tracked tree.
 
 buzz -> kuzz, Buzz -> Kuzz, BUZZ -> KUZZ in file contents and paths.
-Strings that are stored on the server, sent to already-installed clients,
-or point at third-party hosts are protected (see KEEP_* below) and left as-is.
-A line containing the marker `kuzz-rename: keep` is never changed, so legacy
-compatibility code written after the rename survives a re-run.
+Protocol, storage and crypto names are renamed too: the server and every
+client ship together and old data is not read back. Only third-party
+addresses, applied SQL migrations, lockfile hashes, signed/known-answer test
+vectors and the changelog are left as they are (see KEEP_* below).
+A line containing the marker `kuzz-rename: keep` is never changed; the
+marker is reserved for the few fixed external vectors that must keep the
+old bytes (each carries a comment saying why).
 
 Usage: python scripts/kuzz_rename.py [--dry-run] [--report PATH]
 Run from the repository root on a clean tree. Re-running is a no-op.
@@ -22,20 +25,19 @@ KEEP_MARKER = "kuzz-rename: keep"
 
 # Files whose contents are never rewritten (paths may still move).
 SKIP_CONTENT = [
+    # Applied migrations are checksummed by sqlx; new migrations carry the rename.
     re.compile(r"(^|/)migrations/[^/]+\.sql$"),
+    # Kotlin interop known-answer vector for the desktop nsec backup.
     re.compile(r"(^|/)desktop/src-tauri/src/testdata/hpke_nsec_backup_v1\.json$"),
     re.compile(r"(^|/)Podfile\.lock$"),
-    re.compile(r"^schema/schema\.sql$"),
-    re.compile(r"app_attest_transcripts\.json$"),
     # Signed App Attest fixtures: app id and challenge are inside the signature.
     re.compile(r"(^|/)tests/fixtures/app-attest-[^/]+\.json$"),
+    # Release history.
+    re.compile(r"(^|/)CHANGELOG\.md$"),
 ]
 
 # Per-file regexes whose matches are kept verbatim.
-KEEP_IN_FILE = {
-    # Redis key prefix shared with the running relay.
-    "crates/kuzz-pubsub/src/topic.rs": [r'(?<=PREFIX: &str = )"buzz"'],
-}
+KEEP_IN_FILE: dict[str, list[str]] = {}
 
 # Lines in lockfiles carrying hashes are left alone.
 LOCK_FILE = re.compile(r"(\.lock|lock\.yaml)$")
@@ -43,14 +45,9 @@ LOCK_HASH_LINE = re.compile(r"(integrity|checksum|sha256|sha512|hash)\b", re.I)
 
 # Third-party or externally registered names (regex, matched case-sensitively).
 KEEP_EXTERNAL = [
-    # Local/test Postgres credentials, DB names and dev volumes stay `buzz`.
-    r"postgres(?:ql)?://buzz[:@][^\s\"'`]*",
-    r"buzz_dev(?:_secret)?",
-    r"(?<=POSTGRES_USER: )buzz",
-    r"(?<=POSTGRES_DB: )buzz",
-    r"(?<=pg_isready -U )buzz",
-    r"github\.com/(?:block|salman1993|squareup|attacker)/buzz[\w.-]*",
-    r"api\.github\.com/repos/block/buzz[\w.-]*",
+    r"github\.com/[\w.-]+/buzz[\w.-]*",
+    r"api\.github\.com/repos/[\w.-]+/buzz[\w.-]*",
+    r"raw\.githubusercontent\.com/[\w.-]+/buzz[\w.-]*",
     r"jijeegee/buzz\b",
     r"ghcr\.io/block/buzz[\w.-]*",
     r"[\w.-]*\.?buzz\.xyz",
@@ -63,9 +60,7 @@ KEEP_EXTERNAL = [
     r"buzz-pi-acp",
 ]
 
-# Wire / stored / crypto tokens (exact strings). Filled from the protocol audit.
 KEEP_TOKENS: list[str] = []
-KEEP_TOKENS_FILE = os.path.join(os.path.dirname(__file__), "kuzz_rename_keep.txt")
 
 # Reverse-DNS app identity: xyz.block.buzz(.x) -> app.kuzz(.x)
 IDENTITY_SUBS = [
@@ -79,14 +74,7 @@ CASE = {"buzz": "kuzz", "Buzz": "Kuzz", "BUZZ": "KUZZ"}
 
 
 def load_keep_tokens():
-    toks = list(KEEP_TOKENS)
-    if os.path.exists(KEEP_TOKENS_FILE):
-        with open(KEEP_TOKENS_FILE, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    toks.append(line)
-    return toks
+    return list(KEEP_TOKENS)
 
 
 def build_protector(tokens):
@@ -146,7 +134,7 @@ def main():
     stats = Counter()
     changed = 0
     for f in files:
-        if f in (SELF, "scripts/kuzz_rename_keep.txt"):
+        if f == SELF:
             continue
         if any(rx.search(f) for rx in SKIP_CONTENT):
             continue

@@ -67,7 +67,9 @@ All replies and delegations — including task assignments to other agents — g
 
 ### Task Threads
 
-When a human asks for separate work in its own thread, open it with `kuzz threads start --channel <UUID> --from <top-level-message-id> --title "…" --brief -`. Work and post progress in that thread. When done, run `kuzz threads close --channel <UUID> --thread <thread-root> --summary -` (start the summary with the requester's `@Name`): it posts the result on the main timeline linked to the thread, notifies the requester, and closes the thread. In a closed thread (it ends with "Task closed"), answer a new, unrelated request briefly and suggest starting it as a new task from the main timeline.
+When a human asks for separate work in its own thread, open it with `kuzz threads start --channel <UUID> --from <top-level-message-id> --title "…" --brief -`. A new session of you starts in that thread with the brief and does the work, so the brief must hold everything it needs: the request, what you already found, and paths or ids. After `threads start`, end your main-timeline turn without working on the task or posting about it.
+
+A `<kuzz-event type="thread-kickoff">` is the brief your main-timeline session just posted in a task thread it opened; you are that thread's session. Do the work and post progress in the thread. When done, run `kuzz threads close --channel <UUID> --thread <thread-root> --summary -` (start the summary with the requester's `@Name`): it posts the result on the main timeline linked to the thread, notifies the requester, and closes the thread. In a closed thread (it ends with "Task closed"), answer a new, unrelated request briefly and suggest starting it as a new task from the main timeline.
 
 A `<kuzz-event type="thread-result">` on the main timeline is a result your own task thread just posted. If the requester asked for follow-up once it finished (e.g. "deploy it when it's done"), do it now; otherwise end the turn without publishing, since the result is already on the timeline.
 

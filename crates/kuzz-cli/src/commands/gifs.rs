@@ -11,7 +11,7 @@ use crate::client::KuzzClient;
 use crate::error::CliError;
 
 /// Gate: `supported_extensions` must contain this value.
-const REQUIRED_EXTENSION: &str = "buzz-gif";
+const REQUIRED_EXTENSION: &str = "kuzz-gif";
 /// Gate: `gif.provider` must be this value.
 const REQUIRED_PROVIDER: &str = "klipy";
 
@@ -103,7 +103,7 @@ fn default_locale() -> String {
 pub(crate) fn parse_gif_descriptor_info(
     info: &serde_json::Value,
 ) -> Result<(String, String), CliError> {
-    // Gate 1: `supported_extensions` must contain `"buzz-gif"`.
+    // Gate 1: `supported_extensions` must contain `"kuzz-gif"`.
     let extensions = info
         .get("supported_extensions")
         .and_then(|v| v.as_array())
@@ -117,7 +117,7 @@ pub(crate) fn parse_gif_descriptor_info(
 
     // Gate 2: `gif.provider` must be `"klipy"`.
     let gif = info.get("gif").ok_or_else(|| {
-        CliError::Other("relay advertises buzz-gif but has no \"gif\" descriptor".to_string())
+        CliError::Other("relay advertises kuzz-gif but has no \"gif\" descriptor".to_string())
     })?;
     let provider = gif.get("provider").and_then(|v| v.as_str()).unwrap_or("");
     if provider != REQUIRED_PROVIDER {
@@ -156,7 +156,7 @@ pub(crate) fn parse_gif_descriptor_info(
 ///
 /// Returns `(search_path, share_path)` as validated relay-relative strings.
 /// Fails with a clear `CliError` if:
-/// - the relay does not advertise `buzz-gif`
+/// - the relay does not advertise `kuzz-gif`
 /// - the provider is not `klipy`
 /// - either path is absent or fails the `safe_relay_path` check
 pub(crate) async fn resolve_gif_descriptor(
@@ -502,15 +502,15 @@ mod tests {
         });
         let err = parse_gif_descriptor_info(&info).unwrap_err();
         assert!(
-            err.to_string().contains("buzz-gif"),
-            "error must mention buzz-gif, got: {err}"
+            err.to_string().contains("kuzz-gif"),
+            "error must mention kuzz-gif, got: {err}"
         );
     }
 
     #[test]
     fn descriptor_wrong_provider_is_rejected() {
         let info = serde_json::json!({
-            "supported_extensions": ["buzz-gif"],
+            "supported_extensions": ["kuzz-gif"],
             "gif": { "provider": "tenor", "search": "/gifs/search", "share": "/gifs/share" }
         });
         let err = parse_gif_descriptor_info(&info).unwrap_err();
@@ -523,7 +523,7 @@ mod tests {
     #[test]
     fn descriptor_unsafe_search_path_is_rejected() {
         let info = serde_json::json!({
-            "supported_extensions": ["buzz-gif"],
+            "supported_extensions": ["kuzz-gif"],
             "gif": { "provider": "klipy", "search": "//attacker.example/x", "share": "/gifs/share" }
         });
         let err = parse_gif_descriptor_info(&info).unwrap_err();
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     fn descriptor_unsafe_share_path_is_rejected() {
         let info = serde_json::json!({
-            "supported_extensions": ["buzz-gif"],
+            "supported_extensions": ["kuzz-gif"],
             "gif": { "provider": "klipy", "search": "/gifs/search", "share": "/gifs/../admin" }
         });
         let err = parse_gif_descriptor_info(&info).unwrap_err();
@@ -549,7 +549,7 @@ mod tests {
     #[test]
     fn descriptor_valid_passes() {
         let info = serde_json::json!({
-            "supported_extensions": ["buzz-gif"],
+            "supported_extensions": ["kuzz-gif"],
             "gif": { "provider": "klipy", "search": "/gifs/search", "share": "/gifs/share" }
         });
         let (search, share) = parse_gif_descriptor_info(&info).unwrap();
@@ -694,7 +694,7 @@ mod tests {
 
     fn alt_nip11() -> &'static str {
         // Embedded as a literal so there is no run-time allocation in the const.
-        r#"{"supported_extensions":["buzz-gif"],"gif":{"provider":"klipy","search":"/x/search-alt","share":"/x/share-alt"}}"#
+        r#"{"supported_extensions":["kuzz-gif"],"gif":{"provider":"klipy","search":"/x/search-alt","share":"/x/share-alt"}}"#
     }
 
     /// A simple fake relay: serves NIP-11 at `/info` advertising non-default
@@ -1015,7 +1015,7 @@ mod tests {
 
     #[tokio::test]
     async fn search_rejects_missing_extension_in_nip11() {
-        // Serve NIP-11 without buzz-gif.
+        // Serve NIP-11 without kuzz-gif.
         let app = Router::new().route(
             "/info",
             axum::routing::get(|| async {
@@ -1034,8 +1034,8 @@ mod tests {
 
         let err = cmd_search(&client, "test", None).await.unwrap_err();
         assert!(
-            err.to_string().contains("buzz-gif"),
-            "error must mention buzz-gif, got: {err}"
+            err.to_string().contains("kuzz-gif"),
+            "error must mention kuzz-gif, got: {err}"
         );
     }
 }

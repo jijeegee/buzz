@@ -41,7 +41,7 @@ pub fn compute_hash(entry: &AuditEntry) -> Result<[u8; 32], AuditError> {
 }
 
 fn compute_tlv_hash(entry: &AuditEntry) -> Result<[u8; 32], AuditError> {
-    let mut encoded = b"buzz:audit:v2\0".to_vec();
+    let mut encoded = b"kuzz:audit:v2\0".to_vec();
     append_tlv(&mut encoded, 1, entry.community_id.as_bytes());
     append_tlv(&mut encoded, 2, &entry.seq.to_be_bytes());
     append_tlv(
@@ -196,7 +196,7 @@ mod tests {
         let mut entry = sample_entry();
         assert_eq!(
             hex::encode(compute_hash(&entry).unwrap()),
-            "e12c899d941af9794679602ae83ef2ab1c8f029fe380349263a046a93374d580"
+            "80d3e3c71d8a17288e66129fe20e5c4650ba388f4bca08d781cd5211a9f79483"
         );
         entry.hash_version = 1;
         assert_eq!(

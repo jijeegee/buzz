@@ -1,6 +1,6 @@
 //! Repo → channel binding resolution, shared by the read gate and push policy.
 //!
-//! The `buzz-channel` tag on a kind:30617 announcement IS the git ACL: the
+//! The `kuzz-channel` tag on a kind:30617 announcement IS the git ACL: the
 //! read gate (SEC-005, `transport::authorize_git_read`) and the push policy
 //! endpoint (`policy::hook_callback`) both authorize against membership in
 //! the bound channel. Before this module they each parsed the tag with their
@@ -9,12 +9,12 @@
 //!
 //! # First-tag, fail-closed semantics
 //!
-//! Only the *first* `buzz-channel` tag is considered, and it must carry a
+//! Only the *first* `kuzz-channel` tag is considered, and it must carry a
 //! valid UUID. A malformed first binding resolves to [`RepoBinding::Broken`]
 //! even if a later duplicate tag is valid — an ambiguous announcement must
 //! fail closed, not silently resolve to whichever duplicate happens to
 //! parse. If this ever became "find the first *parseable* tag", an author
-//! who can append a second `buzz-channel` tag would pick the channel.
+//! who can append a second `kuzz-channel` tag would pick the channel.
 //!
 //! # What this deliberately does NOT do
 //!
@@ -32,13 +32,13 @@ use uuid::Uuid;
 /// How a kind:30617 announcement binds (or fails to bind) a channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepoBinding {
-    /// No `buzz-channel` tag at all. The announcement author (the only
+    /// No `kuzz-channel` tag at all. The announcement author (the only
     /// identity that can rebind — 30617 is keyed by `(author, d)`) may be
     /// offered remediation; everyone else gets the generic denial.
     NotBound,
-    /// First `buzz-channel` tag carries a valid UUID.
+    /// First `kuzz-channel` tag carries a valid UUID.
     Bound(Uuid),
-    /// First `buzz-channel` tag exists but its value is not a UUID.
+    /// First `kuzz-channel` tag exists but its value is not a UUID.
     /// Fail closed with the generic denial — never remediation, which
     /// would leak that the repo exists.
     Broken,
@@ -49,7 +49,7 @@ pub fn resolve_repo_binding(event: &nostr::Event) -> RepoBinding {
     let Some(first) = event
         .tags
         .iter()
-        .find(|t| t.as_slice().first().map(String::as_str) == Some("buzz-channel"))
+        .find(|t| t.as_slice().first().map(String::as_str) == Some("kuzz-channel"))
     else {
         return RepoBinding::NotBound;
     };
@@ -77,7 +77,7 @@ mod tests {
         let ch = uuid::Uuid::new_v4();
         let event = announcement(vec![
             Tag::parse(["d", "repo"]).unwrap(),
-            Tag::parse(["buzz-channel", &ch.to_string()]).unwrap(),
+            Tag::parse(["kuzz-channel", &ch.to_string()]).unwrap(),
         ]);
         assert_eq!(resolve_repo_binding(&event), RepoBinding::Bound(ch));
     }
@@ -92,13 +92,13 @@ mod tests {
     fn malformed_and_empty_values_are_broken_not_absent() {
         let malformed = announcement(vec![
             Tag::parse(["d", "repo"]).unwrap(),
-            Tag::parse(["buzz-channel", "not-a-uuid"]).unwrap(),
+            Tag::parse(["kuzz-channel", "not-a-uuid"]).unwrap(),
         ]);
         assert_eq!(resolve_repo_binding(&malformed), RepoBinding::Broken);
 
         let empty = announcement(vec![
             Tag::parse(["d", "repo"]).unwrap(),
-            Tag::parse(["buzz-channel"]).unwrap(),
+            Tag::parse(["kuzz-channel"]).unwrap(),
         ]);
         assert_eq!(resolve_repo_binding(&empty), RepoBinding::Broken);
     }
@@ -112,16 +112,16 @@ mod tests {
         // duplicate must NOT win, or the duplicate picks the channel.
         let malformed_first = announcement(vec![
             Tag::parse(["d", "repo"]).unwrap(),
-            Tag::parse(["buzz-channel", "not-a-uuid"]).unwrap(),
-            Tag::parse(["buzz-channel", &ch.to_string()]).unwrap(),
+            Tag::parse(["kuzz-channel", "not-a-uuid"]).unwrap(),
+            Tag::parse(["kuzz-channel", &ch.to_string()]).unwrap(),
         ]);
         assert_eq!(resolve_repo_binding(&malformed_first), RepoBinding::Broken);
 
         // Valid first + different second: first wins deterministically.
         let valid_first = announcement(vec![
             Tag::parse(["d", "repo"]).unwrap(),
-            Tag::parse(["buzz-channel", &ch.to_string()]).unwrap(),
-            Tag::parse(["buzz-channel", &other.to_string()]).unwrap(),
+            Tag::parse(["kuzz-channel", &ch.to_string()]).unwrap(),
+            Tag::parse(["kuzz-channel", &other.to_string()]).unwrap(),
         ]);
         assert_eq!(resolve_repo_binding(&valid_first), RepoBinding::Bound(ch));
     }

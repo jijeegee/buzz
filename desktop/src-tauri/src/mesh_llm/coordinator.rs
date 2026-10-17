@@ -18,7 +18,7 @@ use crate::app_state::AppState;
 /// and store it through their generic user-state path. The relay needs no mesh
 /// handler or kind-registry change.
 pub const KIND_KUZZ_MESH_MEMBER_STATUS: u16 = kuzz_core_pkg::kind::KIND_BOOKMARK_SET as u16;
-const STATUS_D_TAG_PREFIX: &str = "buzz-mesh-member-status";
+const STATUS_D_TAG_PREFIX: &str = "kuzz-mesh-member-status";
 const ROSTER_POLL_INTERVAL: Duration = Duration::from_secs(60);
 const STATUS_PUBLISH_INTERVAL: Duration = Duration::from_secs(45);
 const STATUS_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -469,7 +469,7 @@ pub(crate) fn build_status_report_event(
         .ok_or_else(|| "mesh discovery status is missing ownerId".to_string())?;
     let d_tag = format!("{STATUS_D_TAG_PREFIX}:{owner_id}");
     let d = Tag::parse(["d", d_tag.as_str()]).map_err(|error| error.to_string())?;
-    let k = Tag::parse(["k", "buzz-mesh-status"]).map_err(|error| error.to_string())?;
+    let k = Tag::parse(["k", "kuzz-mesh-status"]).map_err(|error| error.to_string())?;
     Ok(nostr::EventBuilder::new(
         nostr::Kind::Custom(KIND_KUZZ_MESH_MEMBER_STATUS),
         payload.to_string(),

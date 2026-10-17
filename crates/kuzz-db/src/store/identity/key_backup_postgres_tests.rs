@@ -34,7 +34,7 @@ async fn session(db: &Db, account: &PrincipalId) -> LoginSession {
 fn envelope(pubkey: [u8; 32]) -> KeyBackupRecord {
     KeyBackupRecord {
         pubkey,
-        version: 1,
+        version: KEY_BACKUP_VERSION,
         key_id: "test".into(),
         nonce: vec![3; 12],
         ciphertext: vec![4; 48],
@@ -192,4 +192,98 @@ async fn key_backup_refresh_keeps_identity_but_does_not_renew_export_freshness()
             .unwrap(),
         InitializeKeyBackup::SessionNotFresh
     );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn legacy_key_backups_are_rewritten_once_in_a_transaction() {
+    let db = database().await;
+    let a = account(&db, &uuid::Uuid::new_v4().to_string()).await;
+    let pubkey = nostr::Keys::generate().public_key().to_bytes();
+    sqlx::query(
+        "INSERT INTO account_key_backups (account_id, pubkey, version, key_id, nonce, ciphertext) \
+         VALUES ($1, $2, $3, 'test', $4, $5)",
+    )
+    .bind(a.as_bytes().as_slice())
+    .bind(pubkey.as_slice())
+    .bind(LEGACY_KEY_BACKUP_VERSION as i16)
+    .bind(vec![3u8; 12])
+    .bind(vec![4u8; 48])
+    .execute(&db.pool)
+    .await
+    .unwrap();
+
+    // A failing rewrite rolls back and leaves the legacy row in place.
+    let err = db
+        .reencrypt_legacy_key_backups(|_, _| Err("boom".into()))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("boom"));
+    assert_eq!(
+        db.get_key_backup(&a).await.unwrap().unwrap().version,
+        LEGACY_KEY_BACKUP_VERSION
+    );
+
+    let mut seen = Vec::new();
+    let first = db
+        .reencrypt_legacy_key_backups(|account, record| {
+            seen.push(*account);
+            Ok(KeyBackupRecord {
+                version: KEY_BACKUP_VERSION,
+                nonce: vec![5; 12],
+                ciphertext: vec![6; 48],
+                ..record.clone()
+            })
+        })
+        .await
+        .unwrap();
+    assert!(first.rewritten >= 1);
+    assert!(seen.contains(a.as_bytes()));
+    let stored = db.get_key_backup(&a).await.unwrap().unwrap();
+    assert_eq!(stored.version, KEY_BACKUP_VERSION);
+    assert_eq!(stored.pubkey, pubkey);
+    assert_eq!(stored.nonce, vec![5; 12]);
+    assert_eq!(stored.ciphertext, vec![6; 48]);
+
+    // Idempotent: current rows are counted, never handed to the callback.
+    let second = db
+        .reencrypt_legacy_key_backups(|account, _| {
+            panic!("version 2 row {} offered for rewrite", hex::encode(account))
+        })
+        .await
+        .unwrap();
+    assert_eq!(second.rewritten, 0);
+    assert!(second.already_current >= 1);
+
+    // A replacement that changes the bound public key is refused.
+    let b = account(&db, &uuid::Uuid::new_v4().to_string()).await;
+    sqlx::query(
+        "INSERT INTO account_key_backups (account_id, pubkey, version, key_id, nonce, ciphertext) \
+         VALUES ($1, $2, $3, 'test', $4, $5)",
+    )
+    .bind(b.as_bytes().as_slice())
+    .bind(nostr::Keys::generate().public_key().to_bytes().as_slice())
+    .bind(LEGACY_KEY_BACKUP_VERSION as i16)
+    .bind(vec![3u8; 12])
+    .bind(vec![4u8; 48])
+    .execute(&db.pool)
+    .await
+    .unwrap();
+    assert!(db
+        .reencrypt_legacy_key_backups(|_, record| Ok(KeyBackupRecord {
+            version: KEY_BACKUP_VERSION,
+            pubkey: [9; 32],
+            ..record.clone()
+        }))
+        .await
+        .is_err());
+    assert_eq!(
+        db.get_key_backup(&b).await.unwrap().unwrap().version,
+        LEGACY_KEY_BACKUP_VERSION
+    );
+    sqlx::query("DELETE FROM account_key_backups WHERE account_id = $1")
+        .bind(b.as_bytes().as_slice())
+        .execute(&db.pool)
+        .await
+        .unwrap();
 }

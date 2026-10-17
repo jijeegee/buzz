@@ -1,5 +1,3 @@
-// Must stay first: copies pre-rename storage before any module reads it.
-import "@/app/preRenameStorage";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "@/app/App";

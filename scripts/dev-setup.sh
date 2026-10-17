@@ -54,17 +54,17 @@ load_env() {
   # untouched.
   if [[ "${DATABASE_URL:-}" == "postgres://sprout:sprout_dev@localhost:5432/sprout" ]]; then
     warn "Migrating legacy default DATABASE_URL from sprout to kuzz for this setup run"
-    DATABASE_URL="postgres://buzz:buzz_dev@localhost:5432/buzz"
+    DATABASE_URL="postgres://kuzz:kuzz_dev@localhost:5432/kuzz"
   fi
   if [[ "${PGUSER:-}" == "sprout" ]]; then PGUSER="kuzz"; fi
-  if [[ "${PGPASSWORD:-}" == "sprout_dev" ]]; then PGPASSWORD="buzz_dev"; fi
+  if [[ "${PGPASSWORD:-}" == "sprout_dev" ]]; then PGPASSWORD="kuzz_dev"; fi
   if [[ "${PGDATABASE:-}" == "sprout" ]]; then PGDATABASE="kuzz"; fi
 
-  export DATABASE_URL="${DATABASE_URL:-postgres://buzz:buzz_dev@localhost:5432/buzz}"
+  export DATABASE_URL="${DATABASE_URL:-postgres://kuzz:kuzz_dev@localhost:5432/kuzz}"
   export PGHOST="${PGHOST:-localhost}"
   export PGPORT="${PGPORT:-5432}"
   export PGUSER="${PGUSER:-kuzz}"
-  export PGPASSWORD="${PGPASSWORD:-buzz_dev}"
+  export PGPASSWORD="${PGPASSWORD:-kuzz_dev}"
   export PGDATABASE="${PGDATABASE:-kuzz}"
   export REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
 }

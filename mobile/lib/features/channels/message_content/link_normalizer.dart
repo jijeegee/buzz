@@ -13,7 +13,6 @@ final _backtickRunPattern = RegExp(r'`+');
 /// links while leaving inline and fenced code untouched. Punctuation peeling
 /// is limited to Kuzz URLs so existing HTTP(S) destinations stay unchanged.
 String normalizeBareLinks(String content) {
-  content = upgradeLegacyAppLinks(content);
   final buffer = StringBuffer();
   var offset = 0;
   var proseStart = 0;
@@ -186,13 +185,4 @@ bool _hasUnclosedMarkdownDelimiter(String prefix, String delimiter) {
     if (open || canOpen) open = !open;
     offset = afterIndex;
   }
-}
-
-// Messages written before the product rename carry old-scheme app links.
-final _legacyAppLink = RegExp(r'(^|[^\w.+/-])buzz://'); // kuzz-rename: keep
-
-/// Rewrites old-scheme app links to `kuzz://` so every parser opens them.
-String upgradeLegacyAppLinks(String text) {
-  if (!text.contains('buzz://')) return text; // kuzz-rename: keep
-  return text.replaceAllMapped(_legacyAppLink, (m) => '${m[1]}kuzz://');
 }

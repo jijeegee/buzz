@@ -20,7 +20,9 @@
 //! newest timestamp and collide on the bumped second. run.sh serialization is
 //! the guard against parallel adds (e.g. `xargs -P`).
 
+mod chat_backfill;
 mod deletions;
+mod key_backups;
 mod storage_snapshot_startup;
 
 use std::future::Future;
@@ -29,12 +31,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
+use clap::{Parser, Subcommand};
 use kuzz_core::kind::KIND_NIP43_MEMBERSHIP_LIST;
 use kuzz_core::tenant::{relay_url_authority, TenantContext};
 use kuzz_db::{partition::PartitionAuditReport, Db, DbConfig};
 use kuzz_media::{BucketSnapshot, MediaConfig, MediaStorage, S3AddressingStyle, SweepError};
 use kuzz_pubsub::{EventTopic, PubSubManager};
-use clap::{Parser, Subcommand};
 use nostr::{EventBuilder, Keys, Kind, Tag};
 use serde::Serialize;
 use sqlx::Row;
@@ -107,6 +109,23 @@ enum Command {
         #[command(subcommand)]
         command: deletions::DeletionsCommand,
     },
+    /// Backfill server-side chat state (Chats stage S3) from message history.
+    ///
+    /// Fills room and thread activity, close state, current members' room
+    /// read positions, and recent auto thread follows for the configured
+    /// relay's community, one channel per transaction. Turn on
+    /// KUZZ_CHAT_STATE_WRITES first (this command does not), then run it to
+    /// fill everything older; state the relay already wrote is kept.
+    /// Re-running is safe and changes nothing new.
+    BackfillChatState {
+        /// Report what would be written, then roll every channel back.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Channels per page; one JSON progress line is printed per page.
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..=10_000))]
+        batch_size: u32,
+    },
     /// Emit missing kind:39000/39001/39002 channel discovery events, or
     /// republish only a targeted channel's kind:39002 roster.
     ///
@@ -124,6 +143,12 @@ enum Command {
         #[arg(long)]
         relay_key: Option<String>,
     },
+    /// Rewrite custodial key backups stored before the protocol rename
+    /// (version 1) as the current version, using the relay's
+    /// AUTH_KEY_BACKUP_MASTER_KEY / AUTH_KEY_BACKUP_KEY_ID. Runs in one
+    /// transaction, skips rows that are already current and prints counts as
+    /// JSON. Run once after migration 0067, before users log in.
+    ReencryptKeyBackups,
 }
 
 #[derive(Subcommand)]
@@ -137,7 +162,6 @@ enum ProductFeedbackCommand {
 }
 
 fn main() {
-    kuzz_core::legacy_env::adopt_legacy_env();
     async_main();
 }
 
@@ -187,10 +211,15 @@ async fn run(cli: Cli) -> Result<i32> {
             command: ProductFeedbackCommand::List { limit },
         } => cmd_list_product_feedback(limit).await,
         Command::Deletions { command } => deletions::run(command).await,
+        Command::BackfillChatState {
+            dry_run,
+            batch_size,
+        } => chat_backfill::run(dry_run, batch_size).await,
         Command::ReconcileChannels { channel, relay_key } => {
             reconcile_channels(channel, relay_key).await?;
             Ok(0)
         }
+        Command::ReencryptKeyBackups => key_backups::run().await,
     }
 }
 
@@ -915,5 +944,44 @@ mod tests {
             cli.command,
             Command::PartitionAudit { months_ahead: 6 }
         ));
+    }
+
+    #[test]
+    fn parses_reencrypt_key_backups() {
+        let cli = Cli::try_parse_from(["kuzz-admin", "reencrypt-key-backups"])
+            .expect("parse reencrypt-key-backups command");
+        assert!(matches!(cli.command, Command::ReencryptKeyBackups));
+    }
+
+    #[test]
+    fn parses_chat_backfill_options() {
+        let cli = Cli::try_parse_from(["kuzz-admin", "backfill-chat-state"])
+            .expect("parse backfill-chat-state command");
+        assert!(matches!(
+            cli.command,
+            Command::BackfillChatState {
+                dry_run: false,
+                batch_size: 100
+            }
+        ));
+        let cli = Cli::try_parse_from([
+            "kuzz-admin",
+            "backfill-chat-state",
+            "--dry-run",
+            "--batch-size",
+            "25",
+        ])
+        .expect("parse backfill-chat-state options");
+        assert!(matches!(
+            cli.command,
+            Command::BackfillChatState {
+                dry_run: true,
+                batch_size: 25
+            }
+        ));
+        assert!(
+            Cli::try_parse_from(["kuzz-admin", "backfill-chat-state", "--batch-size", "0"])
+                .is_err()
+        );
     }
 }

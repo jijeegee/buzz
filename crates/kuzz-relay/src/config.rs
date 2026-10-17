@@ -311,6 +311,16 @@ pub struct Config {
     /// Set `KUZZ_AUDIT_ENABLED=false` for deployments that do not require it.
     pub audit_enabled: bool,
 
+    /// Chats server-state writes (`KUZZ_CHAT_STATE_WRITES`, default off).
+    ///
+    /// On: each new message also records read positions, thread follows, and
+    /// thread close state, and indexes its mentions in the same transaction,
+    /// and the `chat_list` / `mark_read` / `thread_follow` `/query` requests
+    /// are served. Off: the message write path is unchanged and those
+    /// requests answer `404 chat_state_disabled`. Turning it off is the
+    /// rollback for migration 0068.
+    pub chat_state_writes: bool,
+
     /// Optional override for ephemeral channel TTL (in seconds).
     /// When set, any channel created with a TTL tag will use this value instead
     /// of the client-provided one. Useful for testing ephemeral expiry quickly.
@@ -614,7 +624,7 @@ impl Config {
         let bind_addr = parse_bind_addr(&bind_addr_raw)?;
 
         let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
 
         let read_database_url = std::env::var("READ_DATABASE_URL")
             .ok()
@@ -936,9 +946,9 @@ impl Config {
             s3_endpoint: std::env::var("KUZZ_S3_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:9000".to_string()),
             s3_access_key: std::env::var("KUZZ_S3_ACCESS_KEY")
-                .unwrap_or_else(|_| "buzz_dev".to_string()),
+                .unwrap_or_else(|_| "kuzz_dev".to_string()),
             s3_secret_key: std::env::var("KUZZ_S3_SECRET_KEY")
-                .unwrap_or_else(|_| "buzz_dev_secret".to_string()),
+                .unwrap_or_else(|_| "kuzz_dev_secret".to_string()),
             s3_bucket: std::env::var("KUZZ_S3_BUCKET").unwrap_or_else(|_| "kuzz-media".to_string()),
             s3_region: std::env::var("KUZZ_S3_REGION")
                 .or_else(|_| std::env::var("AWS_REGION"))
@@ -1150,6 +1160,7 @@ impl Config {
         let privacy_markdown = read_policy_markdown("KUZZ_PRIVACY_POLICY_MARKDOWN")?;
         let age_attestation_required = parse_optional_bool("KUZZ_AGE_ATTESTATION_REQUIRED")?;
         let audit_enabled = parse_bool("KUZZ_AUDIT_ENABLED", true)?;
+        let chat_state_writes = parse_bool("KUZZ_CHAT_STATE_WRITES", false)?;
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -1378,6 +1389,7 @@ impl Config {
             media_max_concurrent_uploads_per_pubkey,
             media_uploads_per_minute,
             audit_enabled,
+            chat_state_writes,
             ephemeral_ttl_override,
             git_repo_path,
             git_pack_cache_path,
@@ -1618,6 +1630,10 @@ mod tests {
         assert_eq!(config.max_frame_bytes, DEFAULT_MAX_FRAME_BYTES);
         assert_eq!(config.partition_audit_interval, Duration::from_secs(900));
         assert!(config.partition_manager_create_enabled);
+        assert!(
+            !config.chat_state_writes,
+            "chat-state writes must default to off"
+        );
         assert!(config.slow_client_grace_limit > 0);
         assert!(
             !config.pubkey_allowlist_enabled,
@@ -2067,6 +2083,29 @@ mod tests {
     }
 
     #[test]
+    fn chat_state_writes_switch_parses_on_and_rejects_garbage() {
+        let _guards = env_guards();
+        let previous = std::env::var_os("KUZZ_CHAT_STATE_WRITES");
+
+        std::env::set_var("KUZZ_CHAT_STATE_WRITES", "true");
+        let on = Config::from_env().expect("on");
+        std::env::set_var("KUZZ_CHAT_STATE_WRITES", "off");
+        let off = Config::from_env().expect("off");
+        std::env::set_var("KUZZ_CHAT_STATE_WRITES", "maybe");
+        let invalid = Config::from_env();
+
+        if let Some(value) = previous {
+            std::env::set_var("KUZZ_CHAT_STATE_WRITES", value);
+        } else {
+            std::env::remove_var("KUZZ_CHAT_STATE_WRITES");
+        }
+
+        assert!(on.chat_state_writes);
+        assert!(!off.chat_state_writes);
+        assert!(invalid.is_err(), "unrecognized value must fail startup");
+    }
+
+    #[test]
     fn partition_manager_create_kill_switch_parses_false_values_strictly() {
         let _guard = ENV_MUTEX.lock().unwrap();
         let previous = std::env::var_os("KUZZ_PARTITION_MANAGER_CREATE_ENABLED");
@@ -2238,7 +2277,7 @@ mod tests {
         std::env::set_var("READ_DATABASE_URL", "   ");
         let blank = Config::from_env().expect("config").read_database_url;
 
-        std::env::set_var("READ_DATABASE_URL", "postgres://buzz:pw@replica:5432/buzz"); // sadscan:disable np.postgres.1
+        std::env::set_var("READ_DATABASE_URL", "postgres://kuzz:pw@replica:5432/kuzz"); // sadscan:disable np.postgres.1
         let set = Config::from_env().expect("config").read_database_url;
 
         if let Some(value) = previous {
@@ -2251,7 +2290,7 @@ mod tests {
         assert_eq!(blank, None, "blank READ_DATABASE_URL must disable routing");
         assert_eq!(
             set.as_deref(),
-            Some("postgres://buzz:pw@replica:5432/buzz") // sadscan:disable np.postgres.1
+            Some("postgres://kuzz:pw@replica:5432/kuzz") // sadscan:disable np.postgres.1
         );
     }
 

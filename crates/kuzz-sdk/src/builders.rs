@@ -529,12 +529,12 @@ pub fn build_remove_reaction(reaction_event_id: nostr::EventId) -> Result<EventB
 /// d-tag for a member's own custom emoji set. Each member publishes one
 /// user-signed kind:30030 under this d-tag; the workspace palette is the
 /// client-side union of every member's set.
-pub const CUSTOM_EMOJI_SET_D_TAG: &str = "buzz:custom-emoji";
+pub const CUSTOM_EMOJI_SET_D_TAG: &str = "kuzz:custom-emoji";
 
 /// Build a member's own custom emoji set event (kind:30030, NIP-30/NIP-51).
 ///
 /// User-signed and parameterized-replaceable, keyed by `(pubkey, 30030,
-/// "buzz:custom-emoji")`. Replaces the caller's prior set. The workspace
+/// "kuzz:custom-emoji")`. Replaces the caller's prior set. The workspace
 /// palette shown in clients is the union of every member's set, deduped by
 /// `(shortcode, url)` on read. Add/remove is read-own-set → mutate → rebuild.
 pub fn build_custom_emoji_set(emojis: &[CustomEmoji]) -> Result<EventBuilder, SdkError> {
@@ -2230,9 +2230,9 @@ pub const PROJECT_D_MAX_LEN: usize = 1024;
 pub const PROJECT_NAME_MAX: usize = 256;
 /// Maximum byte length of a project `description` tag value.
 pub const PROJECT_DESCRIPTION_MAX: usize = 2048;
-/// Maximum byte length of a project `buzz-channel` tag value.
+/// Maximum byte length of a project `kuzz-channel` tag value.
 pub const PROJECT_CHANNEL_MAX: usize = 256;
-/// Maximum byte length of a project `buzz-visibility` tag value.
+/// Maximum byte length of a project `kuzz-visibility` tag value.
 pub const PROJECT_VISIBILITY_MAX: usize = 256;
 /// Maximum number of `a` member tags per project event (checked before dedup).
 pub const PROJECT_MEMBER_CAP: usize = 64;
@@ -2333,10 +2333,10 @@ impl ProjectMemberCoord {
 ///    owner lowercase 64-hex; repo-d non-empty verbatim.
 /// 6. Member deduplication: coordinate equality only (hint ignored); any
 ///    coordinate that appears more than once is a duplicate.
-/// 7. Singleton metadata: each of `name`, `description`, `buzz-channel`,
-///    `buzz-visibility` appears at most once.
+/// 7. Singleton metadata: each of `name`, `description`, `kuzz-channel`,
+///    `kuzz-visibility` appears at most once.
 /// 8. Metadata byte lengths: `name` ≤256, `description` ≤2048,
-///    `buzz-channel` ≤256, `buzz-visibility` ≤256.
+///    `kuzz-channel` ≤256, `kuzz-visibility` ≤256.
 pub fn validate_project_envelope(tags: &[Tag], _content: &str) -> Result<(), SdkError> {
     // --- Rule 1 & 2: d tag ---
     let d_tags: Vec<&Tag> = tags.iter().filter(|t| tag_name(t) == Some("d")).collect();
@@ -2414,13 +2414,13 @@ pub fn validate_project_envelope(tags: &[Tag], _content: &str) -> Result<(), Sdk
             "metadata-length",
         ),
         (
-            "buzz-channel",
+            "kuzz-channel",
             PROJECT_CHANNEL_MAX,
             "metadata-cardinality",
             "metadata-length",
         ),
         (
-            "buzz-visibility",
+            "kuzz-visibility",
             PROJECT_VISIBILITY_MAX,
             "metadata-cardinality",
             "metadata-length",
@@ -2503,7 +2503,7 @@ pub fn build_project(
     // Channel UUID validation
     if let Some(ch) = channel {
         uuid::Uuid::parse_str(ch).map_err(|_| {
-            SdkError::InvalidInput(format!("buzz-channel must be a valid UUID (got {ch:?})"))
+            SdkError::InvalidInput(format!("kuzz-channel must be a valid UUID (got {ch:?})"))
         })?;
     }
 
@@ -2511,7 +2511,7 @@ pub fn build_project(
     if let Some(vis) = visibility {
         if vis != "listed" && vis != "unlisted" {
             return Err(SdkError::InvalidInput(format!(
-                "buzz-visibility must be 'listed' or 'unlisted' (got {vis:?})"
+                "kuzz-visibility must be 'listed' or 'unlisted' (got {vis:?})"
             )));
         }
     }
@@ -2534,10 +2534,10 @@ pub fn build_project(
         );
     }
     if let Some(ch) = channel {
-        tags.push(tag(&["buzz-channel", ch])?);
+        tags.push(tag(&["kuzz-channel", ch])?);
     }
     if let Some(vis) = visibility {
-        tags.push(tag(&["buzz-visibility", vis])?);
+        tags.push(tag(&["kuzz-visibility", vis])?);
     }
 
     build_project_with_tags("", tags)
@@ -3986,7 +3986,7 @@ mod tests {
         let tags = vec![
             Tag::parse(["d", "wrong-repo"]).unwrap(),
             Tag::parse(["name", "Protected Repo"]).unwrap(),
-            Tag::parse(["buzz-channel", "channel-id"]).unwrap(),
+            Tag::parse(["kuzz-channel", "channel-id"]).unwrap(),
             Tag::parse(["future-metadata", "preserve-me"]).unwrap(),
         ];
 
@@ -4005,7 +4005,7 @@ mod tests {
             1
         );
         assert!(has_tag(&ev, "d", "protected-repo"));
-        assert!(has_tag(&ev, "buzz-channel", "channel-id"));
+        assert!(has_tag(&ev, "kuzz-channel", "channel-id"));
         assert!(has_tag(&ev, "future-metadata", "preserve-me"));
     }
 
@@ -5238,7 +5238,7 @@ mod tests {
         assert_eq!(d_tags.len(), 1);
         assert_eq!(d_tags[0][1], "my-proj");
 
-        // name, description, buzz-channel, buzz-visibility present.
+        // name, description, kuzz-channel, kuzz-visibility present.
         let name_tags: Vec<_> = all_tags.iter().filter(|t| t[0] == "name").collect();
         assert_eq!(name_tags.len(), 1);
         assert_eq!(name_tags[0][1], "My Project");
@@ -5247,13 +5247,13 @@ mod tests {
         assert_eq!(desc_tags.len(), 1);
         assert_eq!(desc_tags[0][1], "A description");
 
-        let ch_tags: Vec<_> = all_tags.iter().filter(|t| t[0] == "buzz-channel").collect();
+        let ch_tags: Vec<_> = all_tags.iter().filter(|t| t[0] == "kuzz-channel").collect();
         assert_eq!(ch_tags.len(), 1);
         assert_eq!(ch_tags[0][1], VALID_UUID);
 
         let vis_tags: Vec<_> = all_tags
             .iter()
-            .filter(|t| t[0] == "buzz-visibility")
+            .filter(|t| t[0] == "kuzz-visibility")
             .collect();
         assert_eq!(vis_tags.len(), 1);
         assert_eq!(vis_tags[0][1], "listed");

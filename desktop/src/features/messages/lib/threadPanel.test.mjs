@@ -708,3 +708,74 @@ test("buildMainTimelineEntries merges local knowledge over the relay floor", () 
     ["relay", "local"],
   );
 });
+
+test("Close and Reopen marker replies are not counted as replies", () => {
+  const root = message({ id: "root" });
+  const reply = (id, createdAt, tags = []) =>
+    message({
+      id,
+      createdAt,
+      parentId: "root",
+      rootId: "root",
+      depth: 1,
+      tags,
+    });
+  const messages = [
+    root,
+    reply("r1", 2),
+    reply("close", 3, [["kuzz:thread-closed", "root"]]),
+    reply("reopen", 4, [["kuzz:thread-reopened", "root"]]),
+  ];
+  const stats = buildDescendantStatsByMessageId(messages).get("root");
+  assert.equal(stats.descendantCount, 1);
+  assert.equal(stats.markerDescendantCount, 2);
+  assert.equal(stats.lastReplyAt, 2);
+
+  // The relay counts the markers too; the ones loaded here are dropped.
+  const relay = new Map([
+    [
+      "root",
+      {
+        replyCount: 4,
+        descendantCount: 4,
+        lastReplyAt: 4,
+        participantPubkeys: [],
+      },
+    ],
+  ]);
+  const [entry] = buildMainTimelineEntries(messages, new Set(), relay);
+  assert.equal(entry.summary.replyCount, 2);
+
+  const visible = buildThreadSummaryFromVisibleEntries(
+    "root",
+    messages.slice(1).map((m) => ({ message: m, summary: null })),
+  );
+  assert.equal(visible.replyCount, 1);
+});
+
+test("a thread with only marker replies shows no reply summary", () => {
+  const messages = [
+    message({ id: "root" }),
+    message({
+      id: "close",
+      createdAt: 3,
+      parentId: "root",
+      rootId: "root",
+      depth: 1,
+      tags: [["kuzz:thread-closed", "root"]],
+    }),
+  ];
+  const relay = new Map([
+    [
+      "root",
+      {
+        replyCount: 1,
+        descendantCount: 1,
+        lastReplyAt: 3,
+        participantPubkeys: [],
+      },
+    ],
+  ]);
+  const [entry] = buildMainTimelineEntries(messages, new Set(), relay);
+  assert.equal(entry.summary, null);
+});

@@ -28,6 +28,7 @@ import {
   MoreUnreadButton,
   preferredUnreadTarget,
 } from "@/features/sidebar/ui/MoreUnreadButton";
+import { useChatsViewMode } from "@/features/chats/useChatsViewMode";
 import { ChatList } from "@/features/sidebar/ui/ChatList";
 import {
   ChannelGroupSection,
@@ -104,6 +105,8 @@ export function AppSidebar({
   onRemoveCommunityFromDevice,
   onCreateAgent,
   onSelectAgents,
+  onSelectChats,
+  onSelectPeople,
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
@@ -132,6 +135,7 @@ export function AppSidebar({
   starredChannelIds,
   onStarChannel,
   onUnstarChannel,
+  serverChats,
 }: AppSidebarProps) {
   const activeWorkingByChannelId = useActiveWorkingChannelsById();
   const { status: updateStatus } = useUpdaterContext();
@@ -249,6 +253,7 @@ export function AppSidebar({
     activeCommunity?.relayUrl,
   );
 
+  const [chatsView, setChatsView] = useChatsViewMode();
   const { requestLeaveChannel, dialog: leaveChannelDialog } =
     useLeaveChannelDialog();
   const { requestDeleteChannel, dialog: deleteChannelDialog } =
@@ -442,6 +447,8 @@ export function AppSidebar({
               <AppSidebarPrimaryMenu
                 homeBadgeCount={homeBadgeCount}
                 onSelectAgents={onSelectAgents}
+                onSelectChats={onSelectChats}
+                onSelectPeople={onSelectPeople}
                 inboxActive={inboxPanelOpen}
                 onSelectHome={onSelectInbox ?? onSelectHome}
                 onSelectProjects={onSelectProjects}
@@ -482,6 +489,8 @@ export function AppSidebar({
                           }}
                           onBrowse={() => onBrowseChannels?.()}
                           onCreate={handleOpenCreateChannel}
+                          chatsView={serverChats ? chatsView : undefined}
+                          onChatsViewChange={setChatsView}
                         />
                       </div>
                     }
@@ -495,6 +504,8 @@ export function AppSidebar({
                     onMarkChannelRead={onMarkChannelRead}
                     onMarkChannelUnread={onMarkChannelUnread}
                     onSelectChannel={onSelectChannel}
+                    serverChats={serverChats}
+                    view={chatsView}
                     onToggleCollapsed={() => toggleCollapsedGroup("channels")}
                     presenceByChannelId={dmPresenceByChannelId}
                     selectedChannelId={selectedChannelId}

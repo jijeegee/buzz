@@ -221,7 +221,7 @@ mod tests {
     fn filter_routes_and_views() {
         use serde_json::json;
         assert_eq!(
-            route_filter(&json!({"kinds":[30621],"#buzz-channel":["c"]})),
+            route_filter(&json!({"kinds":[30621],"#kuzz-channel":["c"]})),
             FilterRoute::Generic
         );
         assert_eq!(

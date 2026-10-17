@@ -882,7 +882,7 @@ test("keeps emoji available but blocks GIFs beside a queued voice note", async (
           search: "/gifs/search",
           share: "/gifs/share",
         },
-        supported_extensions: ["buzz-gif"],
+        supported_extensions: ["kuzz-gif"],
       }),
       contentType: "application/nostr+json",
     }),

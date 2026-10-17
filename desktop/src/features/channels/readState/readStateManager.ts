@@ -38,6 +38,11 @@ const PUBLISHED_ID_MEMORY = 64;
 export type ApplyRemoteContextResult = "unchanged" | "advanced";
 
 export type ContextParentResolver = (contextId: string) => string | null;
+/** Receives every local markContextRead call (context id, unix seconds). */
+export type ReadStateServerMirror = (
+  contextId: string,
+  unixTimestamp: number,
+) => void;
 
 /**
  * NIP-RS Hierarchical Frontier Rule (NIP-RS.md:141-167):
@@ -282,11 +287,14 @@ export class ReadStateManager {
   private listeners = new Set<() => void>();
   private unsubscribeLive: (() => void) | null = null;
   private initialized = false;
+  /** The initial relay fetch succeeded and was merged (not local-only). */
+  private relayStateMerged = false;
   private maxFetchedCreatedAt = 0;
   private contextSourceCreatedAt = new Map<string, number>();
   private pendingSyncedAdvances = new Set<string>();
   private destroyed = false;
   private parentResolver: ContextParentResolver | null = null;
+  private serverMirror: ReadStateServerMirror | null = null;
   /** Event ids we published ourselves; used to skip decrypting their echoes. */
   private recentlyPublishedIds = new Set<string>();
 
@@ -331,8 +339,30 @@ export class ReadStateManager {
     this.notifyListeners();
   }
 
+  /** Initial fetch and live subscription are done; local markers are complete. */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Initialized from a successful relay fetch. `isInitialized` is also true
+   * after a failed fetch, when only this device's stored markers are known.
+   */
+  hasMergedRelayState(): boolean {
+    return this.initialized && this.relayStateMerged;
+  }
+
+  /**
+   * Also send the user's own reads (markContextRead only, never remote merges
+   * or seeds) to the relay's chat state. Local 30078 writes are unchanged.
+   */
+  setServerMirror(mirror: ReadStateServerMirror | null): void {
+    this.serverMirror = mirror;
+  }
+
   markContextRead(contextId: string, unixTimestamp: number): void {
     this.advanceContext(contextId, unixTimestamp, { publishable: true });
+    if (!this.destroyed) this.serverMirror?.(contextId, unixTimestamp);
     this.contextSourceCreatedAt.set(
       contextId,
       Math.max(Math.floor(Date.now() / 1_000), this.maxFetchedCreatedAt + 1),
@@ -463,6 +493,8 @@ export class ReadStateManager {
     }
 
     await this.mergeEvents(events);
+    if (this.destroyed) return;
+    this.relayStateMerged = true;
     this.persistLocalState();
     this.notifyListeners();
   }

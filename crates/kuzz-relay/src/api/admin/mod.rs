@@ -1586,7 +1586,7 @@ mod postgres_tests {
 
     fn database_url() -> String {
         std::env::var("KUZZ_TEST_DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string() // sadscan:disable np.postgres.1 -- local test-only credentials
+            "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string() // sadscan:disable np.postgres.1 -- local test-only credentials
         })
     }
 
@@ -8820,7 +8820,7 @@ mod postgres_tests {
         // The failure is induced AFTER tenant resolution, inside `emit_system_message`'s
         // `insert_event` call, by:
         //  1. Building a dedicated test pool whose `after_connect` sets the
-        //     `buzz.created_at_floor` GUC session-locally (not database-globally).
+        //     `kuzz.created_at_floor` GUC session-locally (not database-globally).
         //     Every connection from that pool inherits the floor; no other pool or
         //     test is affected, and there is no cleanup race on panic.
         //  2. Backdating the outbox row's `created_at` beyond that floor.
@@ -8943,7 +8943,7 @@ mod postgres_tests {
         .await
         .expect("backdate outbox created_at");
 
-        // Build a dedicated pool whose after_connect sets buzz.created_at_floor = 5
+        // Build a dedicated pool whose after_connect sets kuzz.created_at_floor = 5
         // session-locally on each connection (set_config 3rd arg false = session scope).
         // A floor of 5 s means any event with created_at > 5 s ago is rejected.
         // Our outbox row's created_at is ~10 s ago → trigger fires on insert_event.
@@ -8954,7 +8954,7 @@ mod postgres_tests {
             .max_connections(4)
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
-                    sqlx::query("SELECT set_config('buzz.created_at_floor', '5', false)")
+                    sqlx::query("SELECT set_config('kuzz.created_at_floor', '5', false)")
                         .execute(conn)
                         .await?;
                     Ok(())

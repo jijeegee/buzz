@@ -19,13 +19,13 @@ pub const WIRE_VERSION: u8 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AppProfile {
-    #[serde(rename = "buzz-ios-dogfood")] // kuzz-rename: keep (wire value)
+    #[serde(rename = "kuzz-ios-dogfood")]
     KuzzIosDogfood,
 }
 impl AppProfile {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::KuzzIosDogfood => "buzz-ios-dogfood",
+            Self::KuzzIosDogfood => "kuzz-ios-dogfood",
         }
     }
 }

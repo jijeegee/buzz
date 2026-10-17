@@ -11,7 +11,7 @@ import 'push_bridge.dart';
 import 'push_subscription.dart';
 
 const kuzzPushLeaseKind = 30350;
-const kuzzDevPushAppProfile = 'buzz-ios-dogfood';
+const kuzzDevPushAppProfile = 'kuzz-ios-dogfood';
 const kuzzPushTransport = 'apns';
 const _maxSafeJsonInteger = 9007199254740991;
 const _maxLeaseLifetimeSeconds = 2592000;
@@ -529,7 +529,7 @@ void _validateGrant(
     );
   }
   if (grant.appProfile != kuzzDevPushAppProfile) {
-    throw const FormatException('Endpoint grant is not for buzz-ios-dogfood');
+    throw const FormatException('Endpoint grant is not for kuzz-ios-dogfood');
   }
   if (grant.endpointGrant.isEmpty ||
       utf8.encode(grant.endpointGrant).length > descriptor.maxEndpointLength) {

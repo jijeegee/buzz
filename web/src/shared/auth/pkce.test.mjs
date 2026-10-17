@@ -101,13 +101,13 @@ test("token mode is detected only from an advertised bearer descriptor", () => {
   assert.equal(parseTokenAuthDescriptor(null), null);
   assert.equal(
     parseTokenAuthDescriptor({
-      buzz_token_auth: { version: 1, bearer: false },
+      kuzz_token_auth: { version: 1, bearer: false },
     }),
     null,
   );
   assert.deepEqual(
     parseTokenAuthDescriptor({
-      buzz_token_auth: {
+      kuzz_token_auth: {
         version: 1,
         bearer: true,
         oidc_providers: ["google", 7],

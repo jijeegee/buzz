@@ -95,7 +95,7 @@ class KuzzContainerRuntime:
         endpoints: dict[str, EndpointLaunchConfig],
         kuzz_acp_binary: str = "kuzz-acp",
         kuzz_agent_binary: str = "kuzz-agent",
-        buzz_dev_mcp_binary: str = "kuzz-dev-mcp",
+        kuzz_dev_mcp_binary: str = "kuzz-dev-mcp",
         kuzz_cli_binary: str = "kuzz",
         relay_gateway: str = "",
         forwarder_binary: str = "relay-forwarder",
@@ -113,7 +113,7 @@ class KuzzContainerRuntime:
         # Linux builds uploaded into the task container:
         self.kuzz_acp_binary = kuzz_acp_binary
         self.kuzz_agent_binary = kuzz_agent_binary
-        self.buzz_dev_mcp_binary = buzz_dev_mcp_binary
+        self.kuzz_dev_mcp_binary = kuzz_dev_mcp_binary
         # Host build used for user/provisioning operations only:
         self.kuzz_cli_binary = kuzz_cli_binary
         # Where the relay actually lives, as seen from inside the task
@@ -272,7 +272,7 @@ class KuzzContainerRuntime:
         uploads = {
             f"{REMOTE_BIN}/kuzz-acp": self.kuzz_acp_binary,
             f"{REMOTE_BIN}/kuzz-agent": self.kuzz_agent_binary,
-            f"{REMOTE_BIN}/kuzz-dev-mcp": self.buzz_dev_mcp_binary,
+            f"{REMOTE_BIN}/kuzz-dev-mcp": self.kuzz_dev_mcp_binary,
         }
         if self.relay_gateway:
             uploads[FORWARDER] = self.forwarder_binary

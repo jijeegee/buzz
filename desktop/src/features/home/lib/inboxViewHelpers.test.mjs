@@ -428,7 +428,7 @@ test("isInboxThreadContextEvent keeps selected thread root, parent, selected eve
 // toInboxContextMessage and InboxMessageRow's toTimelineMessage. An earlier
 // version of the HomeView mapping dropped both fields, structurally
 // disabling the config-nudge card on the inbox surface (the raw
-// ```buzz:config-nudge fence rendered instead). These tests run a real event
+// ```kuzz:config-nudge fence rendered instead). These tests run a real event
 // through formatTimelineMessages and both mappings, then assert against the
 // same gate helper InboxMessageRow calls.
 
@@ -444,7 +444,7 @@ function makeNudgeEvent(overrides = {}) {
     pubkey: NUDGE_AGENT_SIGNER,
     kind: 9,
     created_at: 1_700_000_000,
-    content: "**Fizz** needs configuration.\n\n```buzz:config-nudge\n{}\n```",
+    content: "**Fizz** needs configuration.\n\n```kuzz:config-nudge\n{}\n```",
     tags: [["h", NUDGE_CHANNEL_ID]],
     sig: "sig",
     ...overrides,

@@ -1,7 +1,7 @@
 //! Bot registrations and bot tokens (desktop-hosted `bzb_`, headless `bzk_`).
 
-use kuzz_datastore_tracing::datastore_span;
 use chrono::{DateTime, Utc};
+use kuzz_datastore_tracing::datastore_span;
 use sqlx::{PgPool, Row as _};
 use uuid::Uuid;
 

@@ -7,7 +7,7 @@ import { invokeTauri } from "@/shared/api/tauri";
  * Google account bridge for the current community.
  *
  * Key-backup accounts keep their local Nostr signer through login and renewal.
- * Legacy token mode is per community: a relay that advertises `buzz_token_auth` in
+ * Legacy token mode is per community: a relay that advertises `kuzz_token_auth` in
  * NIP-11 offers "Sign in with Google"; once signed in, the Rust side signs
  * and authenticates as the account principal (bearer tokens, server-stamped
  * drafts) instead of the local key. Every call acts on the active community.

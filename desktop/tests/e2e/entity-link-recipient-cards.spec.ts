@@ -556,7 +556,7 @@ test("reopening the same entity link reapplies its workspace state", async ({
   );
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("open-projects-view")).toBeVisible();
+  await expect(page.getByTestId("open-more-menu")).toBeVisible();
   const repoLink = `kuzz://repo?owner=${DEFAULT_MOCK_PUBKEY}&d=kuzz&tab=prs`;
   const prLink = `kuzz://pr?id=${PR_ID}&owner=${DEFAULT_MOCK_PUBKEY}&d=kuzz`;
   const issueLink = `kuzz://issue?id=${ISSUE_ID}&owner=${DEFAULT_MOCK_PUBKEY}&d=kuzz`;

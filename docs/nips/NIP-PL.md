@@ -264,7 +264,7 @@ This section registers the public last-hop profile served at `https://push.buzz.
 
 ### Registered values and lease mapping
 
-The registered `app_profile` value is `buzz-ios-dogfood`. It identifies the
+The registered `app_profile` value is `kuzz-ios-dogfood`. It identifies the
 closed Kuzz dogfood application identity, not an APNs transport environment.
 The canonical gateway owns its exact App Attest application identifier, APNs
 topic, certificate-backed connection pool, and APNs environment. Enrollment
@@ -312,10 +312,10 @@ The challenge is single-use. Invalid input is `400 invalid_request`; deployment-
 Request members, in any request order:
 
 ```json
-{"v":1,"challenge_id":"<uuid>","challenge":"<challenge>","key_id":"<standard-base64>","attestation":"<standard-base64 CBOR>","app_profile":"buzz-ios-dogfood","endpoint":"<lowercase APNs-token hex>","endpoint_epoch":1,"expires_at":<unix-seconds>}
+{"v":1,"challenge_id":"<uuid>","challenge":"<challenge>","key_id":"<standard-base64>","attestation":"<standard-base64 CBOR>","app_profile":"kuzz-ios-dogfood","endpoint":"<lowercase APNs-token hex>","endpoint_epoch":1,"expires_at":<unix-seconds>}
 ```
 
-`expires_at` MUST satisfy `now < expires_at <= now + configured_max_installation_lifetime`; the selected profile MUST be enabled. The exact transcript is domain `buzz.push.enroll.v1` followed by this ordered object:
+`expires_at` MUST satisfy `now < expires_at <= now + configured_max_installation_lifetime`; the selected profile MUST be enabled. The exact transcript is domain `kuzz.push.enroll.v1` followed by this ordered object:
 
 ```json
 {"v":1,"audience":"https://push.buzz.xyz/v1/installations","challenge_id":"<uuid>","challenge":"<challenge>","key_id":"<standard-base64>","app_profile":"<registered-profile>","endpoint":"<lowercase-hex>","endpoint_epoch":1,"expires_at":<unix-seconds>}
@@ -339,7 +339,7 @@ Invalid attestation is `401 invalid_attestation`; a consumed or expired challeng
 {"v":1,"challenge_id":"<uuid>","challenge":"<challenge>","installation_handle":"<uuid>","endpoint_epoch":<positive-integer>,"generation":<positive-integer>,"relay_pubkey":"<64-lowercase-hex>","not_before":<unix-seconds>,"expires_at":<unix-seconds>,"assertion":"<standard-base64 CBOR>"}
 ```
 
-`not_before <= now + 300`, `not_before < expires_at`, and `expires_at <= now + configured_max_grant_lifetime`. The endpoint epoch MUST equal the current installation epoch. For each `(installation_handle, relay_pubkey)`, generation MUST strictly increase. A successful delegation atomically extends the authenticated installation lifetime through at least the delegation's `expires_at`, allowing renewal without duplicate token enrollment. Transcript domain `buzz.push.delegate.v1`; ordered object:
+`not_before <= now + 300`, `not_before < expires_at`, and `expires_at <= now + configured_max_grant_lifetime`. The endpoint epoch MUST equal the current installation epoch. For each `(installation_handle, relay_pubkey)`, generation MUST strictly increase. A successful delegation atomically extends the authenticated installation lifetime through at least the delegation's `expires_at`, allowing renewal without duplicate token enrollment. Transcript domain `kuzz.push.delegate.v1`; ordered object:
 
 ```json
 {"v":1,"audience":"https://push.buzz.xyz/v1/delegations","challenge_id":"<uuid>","challenge":"<challenge>","installation_handle":"<uuid>","endpoint_epoch":<integer>,"generation":<integer>,"relay_pubkey":"<hex>","not_before":<integer>,"expires_at":<integer>}
@@ -355,7 +355,7 @@ Success `201`: `{"endpoint_grant":"<opaque-capability>"}`. The sealed grant cont
 {"v":1,"challenge_id":"<uuid>","challenge":"<challenge>","installation_handle":"<uuid>","endpoint_epoch":<positive-integer>,"new_endpoint_epoch":<integer>,"endpoint":"<lowercase APNs-token hex>","assertion":"<standard-base64 CBOR>"}
 ```
 
-`new_endpoint_epoch` MUST equal `endpoint_epoch + 1` without overflow. Transcript domain `buzz.push.rotate-endpoint.v1`; ordered object:
+`new_endpoint_epoch` MUST equal `endpoint_epoch + 1` without overflow. Transcript domain `kuzz.push.rotate-endpoint.v1`; ordered object:
 
 ```json
 {"v":1,"audience":"https://push.buzz.xyz/v1/installations/endpoint","challenge_id":"<uuid>","challenge":"<challenge>","installation_handle":"<uuid>","endpoint_epoch":<integer>,"new_endpoint_epoch":<integer>,"endpoint":"<lowercase-hex>"}
@@ -371,7 +371,7 @@ A successful atomic rotation invalidates every grant sealed to the old epoch and
 {"v":1,"challenge_id":"<uuid>","challenge":"<challenge>","installation_handle":"<uuid>","relay_pubkey":"<64-lowercase-hex>","generation":<positive-integer>,"assertion":"<standard-base64 CBOR>"}
 ```
 
-Transcript domain `buzz.push.revoke-delegation.v1`; ordered object:
+Transcript domain `kuzz.push.revoke-delegation.v1`; ordered object:
 
 ```json
 {"v":1,"audience":"https://push.buzz.xyz/v1/delegations/revoke","challenge_id":"<uuid>","challenge":"<challenge>","installation_handle":"<uuid>","relay_pubkey":"<hex>","generation":<integer>}
@@ -385,7 +385,7 @@ The generation identifies the current delegation generation. Success is `200 {"s
 {"v":1,"challenge_id":"<uuid>","challenge":"<challenge>","installation_handle":"<uuid>","endpoint_epoch":<positive-integer>,"new_endpoint_epoch":<integer>,"assertion":"<standard-base64 CBOR>"}
 ```
 
-`new_endpoint_epoch` MUST equal `endpoint_epoch + 1` without overflow. Transcript domain `buzz.push.revoke-installation.v1`; ordered object:
+`new_endpoint_epoch` MUST equal `endpoint_epoch + 1` without overflow. Transcript domain `kuzz.push.revoke-installation.v1`; ordered object:
 
 ```json
 {"v":1,"audience":"https://push.buzz.xyz/v1/installations/revoke","challenge_id":"<uuid>","challenge":"<challenge>","installation_handle":"<uuid>","endpoint_epoch":<integer>,"new_endpoint_epoch":<integer>}
@@ -449,4 +449,4 @@ Zombie leases (e.g. `#h` after leaving a channel) are neutralized by match-time 
 - NIP-11 `supported_extensions`: contains `"nip-pl"` pre-numbering; descriptor object `push` as specified in Executor Discovery
 - Classes: `silent`, `default`, `time_sensitive`, `urgent`
 - `h_grammar` values: `"uuid-v4-lowercase"` (initial entry; origins may register additional grammars with this NIP)
-- Public APNs gateway profile: base URL `https://push.buzz.xyz`; app profile `buzz-ios-dogfood`; wire version `1`
+- Public APNs gateway profile: base URL `https://push.buzz.xyz`; app profile `kuzz-ios-dogfood`; wire version `1`

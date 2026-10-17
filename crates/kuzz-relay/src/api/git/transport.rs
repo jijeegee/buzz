@@ -721,12 +721,12 @@ fn hydrate_error_to_response(owner: &str, repo: &str, err: HydrateError) -> Resp
 /// 1. current live kind:30617 by `(community, owner pubkey from the URL,
 ///    d = canonical repo name)` — soft-deleted/replaced announcements do not
 ///    resolve;
-/// 2. its `buzz-channel` tag → channel UUID;
+/// 2. its `kuzz-channel` tag → channel UUID;
 /// 3. [`kuzz_db::Db::get_member_role`] for the caller — a read is allowed
 ///    only on `Ok(Some(role))` with a role the relay recognizes.
 ///
 /// Fail-closed: missing/deleted announcement, invalid owner, missing or
-/// malformed `buzz-channel` binding, non-member, unknown role, and every DB
+/// malformed `kuzz-channel` binding, non-member, unknown role, and every DB
 /// error all deny. There is deliberately **no repo-owner bypass**: an owner
 /// removed from the bound channel loses read access, which is the exact
 /// exploit shape this gate closes. Every denial is the same generic 404 as a
@@ -734,7 +734,7 @@ fn hydrate_error_to_response(owner: &str, repo: &str, err: HydrateError) -> Resp
 /// — with exactly one carve-out: a **never-bound** repo read by its own
 /// **announcement author** returns a 404 whose body tells the author how to
 /// bind it (issue #3527: a vanilla NIP-34 client can announce without a
-/// `buzz-channel` tag, and the repo then 404s forever with no explanation
+/// `kuzz-channel` tag, and the repo then 404s forever with no explanation
 /// for anyone). The author already knows the repo exists — they announced it
 /// — so the remediation body leaks nothing, and only the author can rebind
 /// (kind:30617 is keyed by `(author, d)`). A *broken* binding stays generic
@@ -795,11 +795,11 @@ pub(super) async fn authorize_git_read(
                 )
                     .into_response());
             }
-            warn!(repo = %repo_name, "git read gate: missing buzz-channel binding (deny)");
+            warn!(repo = %repo_name, "git read gate: missing kuzz-channel binding (deny)");
             return Err(denied());
         }
         RepoBinding::Broken => {
-            warn!(repo = %repo_name, "git read gate: malformed buzz-channel binding (deny)");
+            warn!(repo = %repo_name, "git read gate: malformed kuzz-channel binding (deny)");
             return Err(denied());
         }
     };
@@ -2544,7 +2544,7 @@ mod track_c_tests {
     }
 
     async fn finalize_test_state() -> (Arc<AppState>, sqlx::PgPool) {
-        const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
+        const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
         let mut config = crate::config::Config::for_test(); // [FI-TRACE-ENV-RACE]
         config.require_relay_membership = false;
         config.redis_url = "redis://127.0.0.1:1".to_string();
@@ -3578,7 +3578,7 @@ mod sec005_postgres_tests {
 
     // ── authorize_git_read matrix (requires Postgres) ────────────────────
 
-    const TEST_DB_URL: &str = "postgres://buzz:buzz_dev@localhost:5432/buzz"; // sadscan:disable np.postgres.1
+    const TEST_DB_URL: &str = "postgres://kuzz:kuzz_dev@localhost:5432/kuzz"; // sadscan:disable np.postgres.1
 
     async fn setup_db() -> kuzz_db::Db {
         let url = std::env::var("KUZZ_TEST_DATABASE_URL")
@@ -3590,13 +3590,13 @@ mod sec005_postgres_tests {
 
     /// How the fixture's kind:30617 binds (or fails to bind) a channel.
     enum Binding {
-        /// `buzz-channel` tag carrying the fixture channel's UUID.
+        /// `kuzz-channel` tag carrying the fixture channel's UUID.
         Channel,
-        /// No `buzz-channel` tag at all.
+        /// No `kuzz-channel` tag at all.
         Missing,
-        /// `buzz-channel` tag whose value is not a UUID.
+        /// `kuzz-channel` tag whose value is not a UUID.
         Malformed,
-        /// `buzz-channel` tag carrying a well-formed UUID that names no
+        /// `kuzz-channel` tag carrying a well-formed UUID that names no
         /// channel. The resolver reports `Bound`; the membership lookup
         /// (whose SQL joins `channels … deleted_at IS NULL`) then returns
         /// no role — the deliberate phase-1 posture for dead bindings.
@@ -3660,14 +3660,14 @@ mod sec005_postgres_tests {
         let mut tags = vec![Tag::parse(["d", &repo]).unwrap()];
         match binding {
             Binding::Channel => {
-                tags.push(Tag::parse(["buzz-channel", &channel.to_string()]).unwrap());
+                tags.push(Tag::parse(["kuzz-channel", &channel.to_string()]).unwrap());
             }
             Binding::Missing => {}
             Binding::Malformed => {
-                tags.push(Tag::parse(["buzz-channel", "not-a-uuid"]).unwrap());
+                tags.push(Tag::parse(["kuzz-channel", "not-a-uuid"]).unwrap());
             }
             Binding::UnknownChannel => {
-                tags.push(Tag::parse(["buzz-channel", &uuid::Uuid::new_v4().to_string()]).unwrap());
+                tags.push(Tag::parse(["kuzz-channel", &uuid::Uuid::new_v4().to_string()]).unwrap());
             }
         }
         let event = announcement(&owner_keys, tags);
@@ -3736,7 +3736,7 @@ mod sec005_postgres_tests {
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn read_gate_denies_missing_or_malformed_binding_and_absent_repo() {
-        // Missing buzz-channel tag → deny even for a channel member, with
+        // Missing kuzz-channel tag → deny even for a channel member, with
         // the generic body: the remediation carve-out is author-only.
         let f = setup_repo(Binding::Missing).await;
         let member = f.member_keys.public_key();
@@ -3751,7 +3751,7 @@ mod sec005_postgres_tests {
              remediation for anyone but the announcement author leaks repo existence"
         );
 
-        // Malformed buzz-channel tag → deny with the generic body EVEN FOR
+        // Malformed kuzz-channel tag → deny with the generic body EVEN FOR
         // THE AUTHOR. This is the assertion that pins the carve-out to
         // NotBound: if it ever fires on Broken, this fails on bytes, not
         // on Ok/Err (which cannot see the difference).
@@ -4241,7 +4241,7 @@ mod off_mode_precedence_tests {
                 std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
             config.database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
                 .or_else(|_| std::env::var("DATABASE_URL"))
-                .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+                .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
 
             let pool = sqlx::PgPool::connect(&config.database_url).await.ok()?;
             let db = kuzz_db::Db::from_pool(pool.clone());
@@ -4732,7 +4732,7 @@ mod off_mode_precedence_tests {
                 std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
             config.database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
                 .or_else(|_| std::env::var("DATABASE_URL"))
-                .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+                .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
 
             let pool = match sqlx::PgPool::connect(&config.database_url).await {
                 Ok(p) => p,
@@ -4871,7 +4871,7 @@ mod off_mode_precedence_tests {
                 std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
             config.database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
                 .or_else(|_| std::env::var("DATABASE_URL"))
-                .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+                .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".to_string()); // sadscan:disable np.postgres.1
 
             let pool = match sqlx::PgPool::connect(&config.database_url).await {
                 Ok(p) => p,
@@ -4916,11 +4916,11 @@ mod off_mode_precedence_tests {
             // check in `nip_fi_core::evaluate_attached_assertion` → 503, not 403.
             // [FI-TRACE-DENIAL-ORACLE: verifier required for all crypto cases]
             let state = {
+                use jsonwebtoken::{jwk::JwkSet, Algorithm, EncodingKey};
                 use kuzz_auth::{
                     AssertionKeySet, FederatedAssertionVerifier, FreshnessClass, IssuerPolicy,
                     IssuerRegistry, StaticIssuerKeySource, TokenClass, VerifyAssertion,
                 };
-                use jsonwebtoken::{jwk::JwkSet, Algorithm, EncodingKey};
 
                 const GIT_TEST_ISSUER: &str = "https://git-pack-test.issuer.invalid";
                 const GIT_TEST_AUDIENCE: &str = "https://git-pack-test.relay.invalid";

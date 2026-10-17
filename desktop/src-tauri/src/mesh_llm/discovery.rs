@@ -286,7 +286,7 @@ pub fn availability_from_events(events: Vec<nostr::Event>) -> MeshAvailability {
 pub fn mesh_status_filter() -> serde_json::Value {
     serde_json::json!({
         "kinds": [MESH_STATUS_KIND],
-        "#k": ["buzz-mesh-status"],
+        "#k": ["kuzz-mesh-status"],
         "limit": MESH_STATUS_PAGE_SIZE
     })
 }

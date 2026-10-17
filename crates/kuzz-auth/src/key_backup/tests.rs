@@ -126,3 +126,69 @@ fn key_backup_link_proof_binds_account_action_key_url_time_and_signature() {
         .unwrap();
     assert!(validate_link_proof(&extra, &account, &pubkey, &challenge, url, 1000).is_err());
 }
+
+/// Version 1 envelope as the relay wrote it before the protocol rename.
+fn legacy_v1(account: &[u8; 32], key: &Keys) -> EncryptedKeyBackup {
+    let raw = key.secret_key().to_secret_bytes();
+    master()
+        .seal(
+            account,
+            key.public_key().to_bytes(),
+            &raw,
+            LEGACY_V1_BACKUP_VERSION,
+            LEGACY_V1_AAD_DOMAIN,
+        )
+        .unwrap()
+}
+
+#[test]
+fn legacy_v1_backup_reencrypts_to_current_version_with_same_key() {
+    let key = Keys::generate();
+    let account = [7; 32];
+    let v1 = legacy_v1(&account, &key);
+    assert_eq!(v1.version, 1);
+    // The current reader does not accept version 1 envelopes.
+    assert_eq!(
+        master().decrypt(&account, &v1).unwrap_err(),
+        BackupError::Decryption
+    );
+
+    let v2 = master().reencrypt_legacy_v1(&account, &v1).unwrap();
+    assert_eq!(v2.version, BACKUP_VERSION);
+    assert_eq!(v2.version, 2);
+    assert_eq!(v2.pubkey, v1.pubkey);
+    assert_eq!(v2.key_id, v1.key_id);
+    assert_ne!(v2.nonce, v1.nonce);
+    assert_eq!(v2.ciphertext.len(), 48);
+    let secret = master().decrypt(&account, &v2).unwrap();
+    assert_eq!(secret.as_str(), key.secret_key().to_secret_hex());
+
+    // Already-current envelopes, wrong accounts and tampered v1 rows are
+    // refused rather than rewritten.
+    assert!(master().reencrypt_legacy_v1(&account, &v2).is_err());
+    assert!(master().reencrypt_legacy_v1(&[8; 32], &v1).is_err());
+    let mut tampered = v1.clone();
+    tampered.ciphertext[0] ^= 1;
+    assert!(master().reencrypt_legacy_v1(&account, &tampered).is_err());
+    let wrong = BackupMasterKey::from_hex("test-v1", &"29".repeat(32)).unwrap();
+    assert!(wrong.reencrypt_legacy_v1(&account, &v1).is_err());
+}
+
+#[test]
+fn legacy_v1_envelope_is_bound_to_the_pre_rename_domain() {
+    // A v1 envelope sealed under the current domain must not authenticate as
+    // legacy data: the rewrite only accepts genuine pre-rename ciphertexts.
+    let key = Keys::generate();
+    let account = [7; 32];
+    let raw = key.secret_key().to_secret_bytes();
+    let forged = master()
+        .seal(
+            &account,
+            key.public_key().to_bytes(),
+            &raw,
+            LEGACY_V1_BACKUP_VERSION,
+            AAD_DOMAIN,
+        )
+        .unwrap();
+    assert!(master().reencrypt_legacy_v1(&account, &forged).is_err());
+}

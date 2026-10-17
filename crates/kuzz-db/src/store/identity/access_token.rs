@@ -1,7 +1,7 @@
 //! Access-token lookup (the token → principal seam) and account disabling.
 
-use kuzz_datastore_tracing::datastore_span;
 use chrono::{DateTime, Duration, Utc};
+use kuzz_datastore_tracing::datastore_span;
 use sqlx::{PgPool, Row as _};
 use uuid::Uuid;
 

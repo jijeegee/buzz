@@ -2177,7 +2177,7 @@ test("renders settings in the app shell with a back button", async ({
 
   const inboxNavButton = page
     .getByTestId("app-sidebar")
-    .getByRole("button", { name: "Inbox" });
+    .getByRole("button", { name: "Activity" });
   await expect(inboxNavButton).toBeVisible();
 
   await openSettings(page);
@@ -2352,7 +2352,7 @@ test("notification settings drive the Inbox badge and desktop alerts", async ({
 
   await page
     .getByTestId("app-sidebar")
-    .getByRole("button", { name: "Inbox" })
+    .getByRole("button", { name: "Activity" })
     .click();
   await expectHomeView(page);
   await expect(page.getByTestId("sidebar-home-count")).toHaveCount(0);

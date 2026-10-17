@@ -27,7 +27,7 @@ fn log_timestamp() -> DateTime<Utc> {
 /// so two communities never serialize each other's audit writes (which would be
 /// both a throughput bottleneck and a cross-tenant timing oracle). The lock is
 /// taken with `pg_advisory_lock(hashtextextended(...))` — see [`AuditService::log`].
-const AUDIT_LOCK_NAMESPACE: &str = "buzz_audit:";
+const AUDIT_LOCK_NAMESPACE: &str = "kuzz_audit:";
 
 /// Append-only, per-community hash-chain audit log backed by Postgres.
 ///
@@ -290,7 +290,7 @@ mod postgres_tests {
 
     async fn test_pool() -> Option<PgPool> {
         let url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".into()); // sadscan:disable np.postgres.1 -- local test fixture
+            .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@localhost:5432/kuzz".into()); // sadscan:disable np.postgres.1 -- local test fixture
         PgPool::connect(&url).await.ok()
     }
 

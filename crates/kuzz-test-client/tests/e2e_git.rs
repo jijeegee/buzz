@@ -65,7 +65,7 @@ async fn post_event(event: &nostr::Event) {
 /// Create a channel (kind:9007) owned by `keys` and return its UUID.
 ///
 /// The git read gate (SEC-005) authorizes against membership in the channel
-/// named by the announcement's `buzz-channel` tag, so every repo these tests
+/// named by the announcement's `kuzz-channel` tag, so every repo these tests
 /// announce must be bound to a channel its owner belongs to — creating the
 /// channel makes the creator its owner-member.
 async fn create_test_channel(keys: &Keys) -> String {
@@ -166,9 +166,9 @@ impl GitS3Probe {
         let endpoint = std::env::var("KUZZ_S3_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:9000".to_string());
         let access_key =
-            std::env::var("KUZZ_S3_ACCESS_KEY").unwrap_or_else(|_| "buzz_dev".to_string());
+            std::env::var("KUZZ_S3_ACCESS_KEY").unwrap_or_else(|_| "kuzz_dev".to_string());
         let secret_key =
-            std::env::var("KUZZ_S3_SECRET_KEY").unwrap_or_else(|_| "buzz_dev_secret".to_string());
+            std::env::var("KUZZ_S3_SECRET_KEY").unwrap_or_else(|_| "kuzz_dev_secret".to_string());
         let bucket_name =
             std::env::var("KUZZ_S3_BUCKET").unwrap_or_else(|_| "kuzz-media".to_string());
         let region_name =
@@ -277,7 +277,7 @@ async fn git_clone_push_fetch_force_roundtrip() {
     let s3 = GitS3Probe::from_env();
 
     // Announce the repo (kind:30617) so the relay creates the bare repo + hook.
-    // The `buzz-channel` binding is the repo's ACL: without it the read gate
+    // The `kuzz-channel` binding is the repo's ACL: without it the read gate
     // 404s even for the owner (issue #3527), so bind to a channel the owner
     // just created (and therefore belongs to).
     let channel = create_test_channel(&owner).await;
@@ -285,7 +285,7 @@ async fn git_clone_push_fetch_force_roundtrip() {
         .tags(vec![
             Tag::parse(["d", &repo]).unwrap(),
             Tag::parse(["name", "e2e git repo"]).unwrap(),
-            Tag::parse(["buzz-channel", &channel]).unwrap(),
+            Tag::parse(["kuzz-channel", &channel]).unwrap(),
         ])
         .sign_with_keys(&owner)
         .unwrap();
@@ -424,7 +424,7 @@ async fn git_concurrent_push_one_wins_and_repo_recovers() {
         .tags(vec![
             Tag::parse(["d", &repo]).unwrap(),
             Tag::parse(["name", "e2e concurrent git repo"]).unwrap(),
-            Tag::parse(["buzz-channel", &channel]).unwrap(),
+            Tag::parse(["kuzz-channel", &channel]).unwrap(),
         ])
         .sign_with_keys(&owner)
         .unwrap();
