@@ -15,7 +15,9 @@
 //!   members who started, replied in, or were mentioned in (root or reply) a
 //!   thread with a reply inside the follow window; `read_seq` = the thread's
 //!   latest reply. The same people's existing, not unfollowed rows without a
-//!   read position get that `read_seq` too.
+//!   read position get that `read_seq` too. Both carry `read_origin =
+//!   'backfill'`, so one first-run client upload (`chat_import`) may still
+//!   move them.
 //!
 //! Rules shared with the write path: only `MESSAGE_KINDS` count; close and
 //! reopen marker replies never move ordering, follows, or read positions; a
@@ -287,14 +289,14 @@ const FOLLOWS_SQL: &str = concat!(
     )
     INSERT INTO thread_follows
         (community_id, root_event_id, pubkey, channel_id, follow_state, follow_origin,
-         read_seq, unread_mark, updated_at)
-    SELECT $1, p.root_id, cm.pubkey, $2, 'auto', 'backfill', a.last_seq, FALSE, $7
+         read_seq, read_origin, unread_mark, updated_at)
+    SELECT $1, p.root_id, cm.pubkey, $2, 'auto', 'backfill', a.last_seq, 'backfill', FALSE, $7
     FROM people p
     JOIN active a ON a.root_id = p.root_id
     JOIN channel_members cm ON cm.community_id = $1 AND cm.channel_id = $2
         AND cm.pubkey = p.pubkey AND cm.removed_at IS NULL
     ON CONFLICT (community_id, root_event_id, pubkey) DO UPDATE
-    SET read_seq = EXCLUDED.read_seq
+    SET read_seq = EXCLUDED.read_seq, read_origin = 'backfill'
     WHERE thread_follows.read_seq IS NULL AND thread_follows.follow_state <> 'unfollowed'
     RETURNING (xmax = 0) AS inserted"
 );

@@ -578,6 +578,8 @@ CREATE TABLE thread_follows (
     read_seq       BIGINT,
     unread_mark    BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Where read_seq came from (migration 0068): 'backfill', 'user', or NULL.
+    read_origin    TEXT CHECK (read_origin IN ('backfill', 'user')),
     PRIMARY KEY (community_id, root_event_id, pubkey),
     FOREIGN KEY (community_id, channel_id)
         REFERENCES channels (community_id, id) ON DELETE CASCADE

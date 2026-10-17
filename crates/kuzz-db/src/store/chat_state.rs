@@ -163,10 +163,12 @@ pub(crate) async fn apply_message_write(
             .execute(&mut **tx)
             .await?;
 
-            // The author has read the room up to their own message.
+            // The author has read the room up to their own message. That is
+            // the reader's own read: a later first-run upload must not move it.
             sqlx::query(
                 "UPDATE channel_members \
-                 SET read_seq = GREATEST(COALESCE(read_seq, 0), $4), unread_mark = FALSE \
+                 SET read_seq = GREATEST(COALESCE(read_seq, 0), $4), read_origin = 'user', \
+                     unread_mark = FALSE \
                  WHERE community_id = $1 AND channel_id = $2 AND pubkey = $3 \
                    AND removed_at IS NULL",
             )
@@ -283,12 +285,15 @@ async fn apply_reply(
     .await?;
 
     // Reply author: follows (again, if they had unfollowed) and has read the
-    // thread up to this reply. Members only.
+    // thread up to this reply. Members only. Replying is the reader's own
+    // act, so a backfilled row stops being backfill: a later first-run upload
+    // changes neither its follow state nor its read position.
     sqlx::query(
         "INSERT INTO thread_follows \
              (community_id, root_event_id, pubkey, channel_id, follow_state, follow_origin, \
-              read_seq, unread_mark, updated_at) \
-         SELECT cm.community_id, $2, cm.pubkey, cm.channel_id, 'auto', 'live', $5, FALSE, $6 \
+              read_seq, read_origin, unread_mark, updated_at) \
+         SELECT cm.community_id, $2, cm.pubkey, cm.channel_id, 'auto', 'live', $5, 'user', \
+                FALSE, $6 \
            FROM channel_members cm \
           WHERE cm.community_id = $1 AND cm.channel_id = $3 AND cm.pubkey = $4 \
             AND cm.removed_at IS NULL \
@@ -296,8 +301,10 @@ async fn apply_reply(
          SET follow_state = CASE WHEN thread_follows.follow_state = 'unfollowed' \
                                  THEN 'followed' ELSE thread_follows.follow_state END, \
              follow_origin = CASE WHEN thread_follows.follow_state = 'unfollowed' \
+                                       OR thread_follows.follow_origin = 'backfill' \
                                   THEN 'live' ELSE thread_follows.follow_origin END, \
              read_seq = GREATEST(COALESCE(thread_follows.read_seq, 0), EXCLUDED.read_seq), \
+             read_origin = 'user', \
              unread_mark = FALSE, \
              updated_at = EXCLUDED.updated_at",
     )
