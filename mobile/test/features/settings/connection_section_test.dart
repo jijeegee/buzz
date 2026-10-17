@@ -95,73 +95,80 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
-  testWidgets(
-    'an account signed in with Google shows who is signed in and devices',
-    (tester) async {
-      PackageInfo.setMockInitialValues(
-        appName: 'Kuzz',
-        packageName: 'app.kuzz',
-        version: 'test',
-        buildNumber: '1',
-        buildSignature: '',
-      );
-      SharedPreferences.setMockInitialValues({});
-      final prefs = await SharedPreferences.getInstance();
+  // Relays before `/auth/me` carried the email send none.
+  for (final email in <String?>[null, 'jiho@example.com']) {
+    testWidgets(
+      'an account signed in with Google shows who is signed in and devices '
+      '(email: $email)',
+      (tester) async {
+        PackageInfo.setMockInitialValues(
+          appName: 'Kuzz',
+          packageName: 'app.kuzz',
+          version: 'test',
+          buildNumber: '1',
+          buildSignature: '',
+        );
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
 
-      await tester.pumpWidget(
-        WidgetHelpers.testable(
-          overrides: [
-            relayConfigProvider.overrideWith(_RelayConfigNotifier.new),
-            relaySessionProvider.overrideWith(_DisconnectedSession.new),
-            authProvider.overrideWith(_GoogleConnectedAuthNotifier.new),
-            activeCommunityProvider.overrideWith(
-              (ref) async => _GoogleConnectedAuthNotifier.community,
-            ),
-            accountProfileProvider('https://relay.test').overrideWith(
-              (ref) async => const AccountProfile(
-                principalId: 'google-account',
-                displayName: 'Ji Ho',
+        await tester.pumpWidget(
+          WidgetHelpers.testable(
+            overrides: [
+              relayConfigProvider.overrideWith(_RelayConfigNotifier.new),
+              relaySessionProvider.overrideWith(_DisconnectedSession.new),
+              authProvider.overrideWith(_GoogleConnectedAuthNotifier.new),
+              activeCommunityProvider.overrideWith(
+                (ref) async => _GoogleConnectedAuthNotifier.community,
               ),
+              accountProfileProvider('https://relay.test').overrideWith(
+                (ref) async => AccountProfile(
+                  principalId: 'google-account',
+                  displayName: 'Ji Ho',
+                  email: email,
+                ),
+              ),
+              savedPrefsProvider.overrideWithValue(prefs),
+              currentCommunityRoleProvider.overrideWithValue(
+                const AsyncData<CommunityMemberRole?>(
+                  CommunityMemberRole.member,
+                ),
+              ),
+            ],
+            child: SettingsPage(
+              profileHeader: const SizedBox.shrink(),
+              invitePageBuilder: (_) => const SizedBox.shrink(),
             ),
-            savedPrefsProvider.overrideWithValue(prefs),
-            currentCommunityRoleProvider.overrideWithValue(
-              const AsyncData<CommunityMemberRole?>(CommunityMemberRole.member),
-            ),
-          ],
-          child: SettingsPage(
-            profileHeader: const SizedBox.shrink(),
-            invitePageBuilder: (_) => const SizedBox.shrink(),
           ),
-        ),
-      );
-      await tester.pump();
-      final account = find.byKey(const Key('settings-google-account-row'));
-      await tester.scrollUntilVisible(account, 200);
-      await tester.pumpAndSettle();
+        );
+        await tester.pump();
+        final account = find.byKey(const Key('settings-google-account-row'));
+        await tester.scrollUntilVisible(account, 200);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Account'), findsOneWidget);
-      expect(
-        find.descendant(of: account, matching: find.text('Ji Ho')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: account,
-          matching: find.text('Signed in with Google'),
-        ),
-        findsOneWidget,
-      );
-      expect(find.byKey(const Key('settings-devices-row')), findsOneWidget);
-      expect(find.byKey(const Key('settings-protect-account')), findsNothing);
-      expect(find.byKey(const Key('settings-account-id-row')), findsNothing);
-      expect(find.textContaining('Connect'), findsNothing);
-      expect(find.text('Continue with Google'), findsNothing);
-      // A label, not a button: tapping it opens nothing.
-      await tester.tap(account);
-      await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
-    },
-  );
+        expect(find.text('Account'), findsOneWidget);
+        expect(
+          find.descendant(of: account, matching: find.text('Ji Ho')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: account,
+            matching: find.text(email ?? 'Signed in with Google'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('settings-devices-row')), findsOneWidget);
+        expect(find.byKey(const Key('settings-protect-account')), findsNothing);
+        expect(find.byKey(const Key('settings-account-id-row')), findsNothing);
+        expect(find.textContaining('Connect'), findsNothing);
+        expect(find.text('Continue with Google'), findsNothing);
+        // A label, not a button: tapping it opens nothing.
+        await tester.tap(account);
+        await tester.pumpAndSettle();
+        expect(find.byType(SettingsPage), findsOneWidget);
+      },
+    );
+  }
 
   testWidgets('with the built-in server settings have no community controls', (
     tester,

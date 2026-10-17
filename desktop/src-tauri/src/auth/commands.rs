@@ -541,7 +541,7 @@ fn remember_signed_in_profile(
                 &account,
                 me.display_name,
                 me.avatar_url,
-                None,
+                me.email,
             ),
             Err(error) => eprintln!("kuzz-desktop: accounts: profile not fetched: {error}"),
         }

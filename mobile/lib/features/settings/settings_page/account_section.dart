@@ -18,6 +18,8 @@ class _AccountSection extends ConsumerWidget {
     final principal = ref.watch(activeCommunityProvider).value?.pubkey;
     final name = profile?.displayName;
     final username = profile?.username;
+    final email = profile?.email;
+    final hasName = name != null && name.isNotEmpty;
     return AppListCard(
       label: 'Account',
       verticalPadding: Grid.twelve,
@@ -26,10 +28,12 @@ class _AccountSection extends ConsumerWidget {
           AppListRow(
             key: const Key('settings-google-account-row'),
             icon: LucideIcons.user,
-            title: name == null || name.isEmpty
-                ? 'Signed in with Google'
-                : name,
-            subtitle: name == null || name.isEmpty
+            // Name over email, like desktop; the email alone when the
+            // account has no name, and a plain label before either loads.
+            title: hasName ? name : email ?? 'Signed in with Google',
+            subtitle: hasName
+                ? email ?? 'Signed in with Google'
+                : email == null
                 ? null
                 : 'Signed in with Google',
           )

@@ -137,6 +137,9 @@ pub(crate) struct MeInfo {
     pub display_name: Option<String>,
     #[serde(default)]
     pub avatar_url: Option<String>,
+    /// The Google email of the session's account, from relays that send it.
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 /// A bot access token (`POST /auth/bots/{id}/token`).

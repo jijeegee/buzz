@@ -31,6 +31,7 @@ class AccountProfile {
     required this.displayName,
     this.avatarUrl,
     this.username,
+    this.email,
   });
 
   factory AccountProfile.fromJson(Map<String, Object?> json) {
@@ -43,11 +44,13 @@ class AccountProfile {
     final name = json['display_name'];
     final avatar = json['avatar_url'];
     final username = json['username'];
+    final email = json['email'];
     return AccountProfile(
       principalId: principal,
       displayName: name is String ? name : '',
       avatarUrl: avatar is String && avatar.isNotEmpty ? avatar : null,
       username: username is String && username.isNotEmpty ? username : null,
+      email: email is String && email.isNotEmpty ? email : null,
     );
   }
 
@@ -55,6 +58,10 @@ class AccountProfile {
   final String displayName;
   final String? avatarUrl;
   final String? username;
+
+  /// The Google email of this session's account; relays before it was
+  /// added to `/auth/me` send none.
+  final String? email;
 }
 
 /// One signed-in device (`GET /auth/devices`).
