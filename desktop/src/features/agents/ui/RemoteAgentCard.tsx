@@ -1,15 +1,19 @@
 import * as React from "react";
-import { CopyPlus, EllipsisVertical, Pencil, Square } from "lucide-react";
+import { CopyPlus, EllipsisVertical, Pencil, Play, Square } from "lucide-react";
 import { toast } from "sonner";
 
 import { useRelayAgentsQuery } from "@/features/agents/hooks";
-import { stopRemoteOwnedAgent } from "@/features/agents/lib/managedAgentControlActions";
+import {
+  type ManagedAgentActionResult,
+  startRemoteOwnedAgent,
+  stopRemoteOwnedAgent,
+} from "@/features/agents/lib/managedAgentControlActions";
 import type { AgentAvailabilityReader } from "@/features/agents/lib/useAgentAvailability";
 import type { RemoteOwnedAgentHere } from "@/features/agents/useRemoteOwnedAgents";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import { agentHostDeviceLabel } from "@/features/profile/ui/AgentBadgeIcon";
-import type { AgentPersona } from "@/shared/api/types";
+import type { AgentPersona, Channel, RelayAgent } from "@/shared/api/types";
 import { useAuthDeviceLabels } from "@/shared/api/useAuthDeviceNames";
 import { deviceRobotTag } from "@/shared/lib/deviceRobot";
 import {
@@ -25,9 +29,9 @@ import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
 /**
  * One of the owner's agents that runs on another of their computers. It is
  * the same agent everywhere, so this computer shows it with that computer's
- * name and availability and offers no Start (it has no key for it). Stop asks
- * the agent itself to exit; edits to its persona reach the hosting computer
- * through persona sync.
+ * name and availability. It has no key for the agent, so Start asks the
+ * hosting computer's app to start it and Stop asks the agent itself to exit;
+ * edits to its persona reach the hosting computer through persona sync.
  */
 export function RemoteAgentCard({
   agent,
@@ -49,9 +53,8 @@ export function RemoteAgentCard({
 }) {
   const profile = useUserProfileQuery(agent.pubkey).data;
   const deviceLabels = useAuthDeviceLabels();
-  const hostLabel = agentHostDeviceLabel(
-    deviceLabels.get(deviceRobotTag(agent.deviceId) ?? ""),
-  );
+  const hostDevice = deviceLabels.get(deviceRobotTag(agent.deviceId) ?? "");
+  const hostLabel = agentHostDeviceLabel(hostDevice);
   const title =
     persona?.displayName.trim() ||
     agent.name?.trim() ||
@@ -60,19 +63,24 @@ export function RemoteAgentCard({
   const avatarUrl =
     profile?.avatarUrl?.trim() || persona?.avatarUrl?.trim() || null;
   const availability = getAvailability(agent.pubkey);
-  const stop = useStopRemoteAgent();
+  const stop = useRemoteAgentCommand(stopRemoteOwnedAgent, "stop");
+  const start = useRemoteAgentCommand(startRemoteOwnedAgent, "start");
 
   return (
     <AgentIdentityCard
       actions={
         <RemoteAgentActionsMenu
+          canStart={availability === "offline"}
           canStop={availability !== "offline"}
-          isPending={isPending || stop.isPending}
+          isPending={isPending || stop.isPending || start.isPending}
           label={title}
           persona={persona}
           onDuplicatePersona={onDuplicatePersona}
           onEditPersona={onEditPersona}
-          onStop={() => stop.run(agent.pubkey)}
+          onStart={() =>
+            start.run({ pubkey: agent.pubkey, hostName: hostDevice?.name })
+          }
+          onStop={() => stop.run({ pubkey: agent.pubkey })}
         />
       }
       ariaLabel={`${title} agent profile`}
@@ -99,20 +107,24 @@ export function RemoteAgentCard({
 }
 
 function RemoteAgentActionsMenu({
+  canStart,
   canStop,
   isPending,
   label,
   persona,
   onDuplicatePersona,
   onEditPersona,
+  onStart,
   onStop,
 }: {
+  canStart: boolean;
   canStop: boolean;
   isPending: boolean;
   label: string;
   persona: AgentPersona | null;
   onDuplicatePersona: (persona: AgentPersona) => void;
   onEditPersona: (persona: AgentPersona) => void;
+  onStart: () => void;
   onStop: () => void;
 }) {
   const canEdit = persona !== null && !persona.sourceTeam;
@@ -131,6 +143,10 @@ function RemoteAgentActionsMenu({
         align="end"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
+        <DropdownMenuItem disabled={isPending || !canStart} onClick={onStart}>
+          <Play className="h-4 w-4" />
+          Start
+        </DropdownMenuItem>
         <DropdownMenuItem disabled={isPending || !canStop} onClick={onStop}>
           <Square className="h-4 w-4" />
           Stop
@@ -161,29 +177,41 @@ function RemoteAgentActionsMenu({
   );
 }
 
-function useStopRemoteAgent() {
+type RemoteAgentCommandInput = { pubkey: string; hostName?: string | null };
+
+function useRemoteAgentCommand(
+  command: (
+    input: RemoteAgentCommandInput & {
+      channels: Channel[];
+      relayAgents: RelayAgent[];
+    },
+  ) => Promise<ManagedAgentActionResult>,
+  verb: "start" | "stop",
+) {
   const channelsQuery = useChannelsQuery();
   const relayAgentsQuery = useRelayAgentsQuery();
   const [isPending, setIsPending] = React.useState(false);
   const run = React.useCallback(
-    async (pubkey: string) => {
+    async (input: RemoteAgentCommandInput) => {
       setIsPending(true);
       try {
-        const result = await stopRemoteOwnedAgent({
-          pubkey,
+        const result = await command({
+          ...input,
           channels: channelsQuery.data ?? [],
           relayAgents: relayAgentsQuery.data ?? [],
         });
         if (result.noticeMessage) toast.success(result.noticeMessage);
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Could not stop the agent.",
+          error instanceof Error
+            ? error.message
+            : `Could not ${verb} the agent.`,
         );
       } finally {
         setIsPending(false);
       }
     },
-    [channelsQuery.data, relayAgentsQuery.data],
+    [channelsQuery.data, command, relayAgentsQuery.data, verb],
   );
   return { isPending, run };
 }

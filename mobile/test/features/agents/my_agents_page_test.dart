@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:kuzz/features/agents/agent_settings_page.dart';
 import 'package:kuzz/features/agents/my_agents.dart';
 import 'package:kuzz/features/agents/my_agents_page.dart';
 import 'package:kuzz/features/channels/channel.dart';
@@ -11,6 +14,7 @@ import 'package:kuzz/shared/devices/device_robot.dart';
 import 'package:kuzz/shared/mentions/agent_identity_provider.dart';
 import 'package:kuzz/shared/profile/user_cache_provider.dart';
 import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 
 final _fizz = '1' * 64;
@@ -104,6 +108,8 @@ void main() {
               const <String, DeviceRobotVariant>{},
             ),
             sendMessageProvider.overrideWithValue(send),
+            // Signed out for settings: the page opens read-only, no relay.
+            myPubkeyProvider.overrideWithValue(null),
           ],
           child: MaterialApp(
             theme: AppTheme.light(),
@@ -135,8 +141,9 @@ void main() {
       expect(find.text('Running on another device'), findsOneWidget);
       expect(find.text('Online'), findsOneWidget);
       expect(find.text('Stopped'), findsOneWidget);
-      // A stopped agent offers no Stop (and no Start: it starts on its PC).
+      // A stopped agent offers no Stop, and no Start without a channel.
       expect(find.byKey(ValueKey('my-agent-stop-$_honey')), findsNothing);
+      expect(find.byKey(ValueKey('my-agent-start-$_honey')), findsNothing);
     });
 
     testWidgets('Stop sends the owner command after confirming', (
@@ -156,6 +163,75 @@ void main() {
       await tester.pumpAndSettle();
       expect(send.calls, [('c1', '!shutdown', _fizz)]);
       expect(find.textContaining('Stop requested'), findsOneWidget);
+    });
+
+    testWidgets('Start sends the owner command for a stopped agent', (
+      tester,
+    ) async {
+      final send = await pump(
+        tester,
+        agents: [
+          MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
+        ],
+        presence: {_fizz: 'offline'},
+      );
+      expect(find.byKey(ValueKey('my-agent-stop-$_fizz')), findsNothing);
+      await tester.tap(find.byKey(ValueKey('my-agent-start-$_fizz')));
+      await tester.pumpAndSettle();
+      expect(send.calls, [('c1', '!start', _fizz)]);
+      expect(
+        find.text(
+          'Start requested. Fizz starts on Office PC when that computer’s '
+          'Kuzz app is open.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('shows Starting… while the command is sent', (tester) async {
+      final send = await pump(
+        tester,
+        agents: [
+          MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
+        ],
+        presence: {_fizz: 'offline'},
+      );
+      send.gate = Completer<void>();
+      await tester.tap(find.byKey(ValueKey('my-agent-start-$_fizz')));
+      await tester.pump();
+      expect(find.text('Starting…'), findsOneWidget);
+      final button = tester.widget<TextButton>(
+        find.byKey(ValueKey('my-agent-start-$_fizz')),
+      );
+      expect(button.onPressed, isNull);
+      send.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Start'), findsOneWidget);
+    });
+
+    testWidgets('a status still loading offers neither button', (tester) async {
+      await pump(
+        tester,
+        agents: [
+          MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
+        ],
+        presence: const {},
+      );
+      expect(find.byKey(ValueKey('my-agent-start-$_fizz')), findsNothing);
+      expect(find.byKey(ValueKey('my-agent-stop-$_fizz')), findsNothing);
+    });
+
+    testWidgets('tapping an agent opens its settings', (tester) async {
+      await pump(
+        tester,
+        agents: [
+          MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
+        ],
+        presence: {_fizz: 'online'},
+      );
+      await tester.tap(find.text('Fizz'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AgentSettingsPage), findsOneWidget);
     });
 
     testWidgets('an agent in no channel cannot be stopped', (tester) async {
@@ -197,6 +273,9 @@ class _FakeUsers extends UserCacheNotifier {
 class _RecordingSend implements SendMessage {
   final calls = <(String, String, String)>[];
 
+  /// When set, sends wait for it.
+  Completer<void>? gate;
+
   @override
   Future<void> call({
     required String channelId,
@@ -209,6 +288,7 @@ class _RecordingSend implements SendMessage {
     dynamic quote,
   }) async {
     calls.add((channelId, content, (mentionPubkeys ?? const []).join(',')));
+    await gate?.future;
   }
 
   @override

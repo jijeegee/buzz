@@ -3980,6 +3980,29 @@ async fn run_harness(
                                 // Not from owner — fall through to normal prompt handling.
                             }
 
+                            // The owner's !start is addressed to the desktop app
+                            // that hosts this agent (it starts a stopped agent
+                            // from another device). A running agent, or one
+                            // whose startup replay reaches it, has nothing to
+                            // do: consume it so it never becomes a prompt.
+                            let is_start = is_owner_control_command(
+                                &kuzz_event.event,
+                                kind_u32,
+                                "!start",
+                                &pubkey_hex,
+                            );
+                            if is_start
+                                && owner_cache.get().is_some_and(|owner| {
+                                    kuzz_event.event.pubkey.to_hex() == *owner
+                                })
+                            {
+                                tracing::debug!(
+                                    channel_id = %kuzz_event.channel_id,
+                                    "!start from owner — already running, ignored"
+                                );
+                                continue;
+                            }
+
                             // Coarse security policy: drop events from disallowed
                             // authors before they reach subscription rules or the
                             // agent. Must be AFTER !shutdown (owner can always

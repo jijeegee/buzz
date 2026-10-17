@@ -50,6 +50,7 @@ import { useAgentsDataRefresh } from "@/features/agents/lib/useAgentsDataRefresh
 import { useManagedAgentRuntimeReconciliation } from "@/features/agents/useManagedAgentRuntimeReconciliation";
 import { useAutoRestartPolicy } from "@/features/agents/lib/useAutoRestartPolicy";
 import { usePersonaSync } from "@/features/agents/lib/usePersonaSync";
+import { useRemoteStartListener } from "@/features/agents/lib/useRemoteStartListener";
 import { useAgentObserverIngestion } from "@/features/agents/useAgentObserverIngestion";
 import { AgentManagementDialogs } from "@/features/agents/ui/AgentManagementDialogs";
 import { RequestedAgentCreateDialogs } from "@/features/agents/ui/RequestedAgentCreateDialogs";
@@ -215,6 +216,10 @@ export function AppShell() {
     communitiesHook.activeCommunity?.relayUrl,
   );
   usePersonaSync(
+    identityQuery.data?.pubkey,
+    communitiesHook.activeCommunity?.relayUrl,
+  );
+  useRemoteStartListener(
     identityQuery.data?.pubkey,
     communitiesHook.activeCommunity?.relayUrl,
   );

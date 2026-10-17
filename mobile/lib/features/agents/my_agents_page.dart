@@ -16,12 +16,14 @@ import '../../shared/widgets/modal_presentation.dart';
 import '../channels/send_message_provider.dart';
 import '../channels/small_avatar.dart';
 import '../profile/presence_cache_provider.dart';
+import 'agent_settings_page.dart';
 import 'my_agents.dart';
 
 /// The signed-in user's agents on their computers: where each runs, whether
-/// it is online, and Stop. Stop sends the owner's `!shutdown` command in a
-/// channel the agent is in, like desktop's remote stop; the agent exits on
-/// its computer and stays stopped until started there again.
+/// it is online, Start and Stop, and (tap a row) its settings. Stop and Start
+/// send the owner's `!shutdown` / `!start` command in a channel the agent is
+/// in, like desktop's remote stop; the Kuzz app on the agent's computer acts
+/// on it, so that app must be open.
 class MyAgentsPage extends HookConsumerWidget {
   const MyAgentsPage({super.key});
 
@@ -34,6 +36,7 @@ class MyAgentsPage extends HookConsumerWidget {
     final currentDevice = ref.watch(currentAccountDeviceIdProvider);
     final robots = ref.watch(deviceRobotOverridesProvider);
     final stopping = useState<Set<String>>(const {});
+    final starting = useState<Set<String>>(const {});
 
     final pubkeys = [for (final agent in agents) agent.pubkey];
     final pubkeysKey = pubkeys.join(',');
@@ -88,6 +91,47 @@ class MyAgentsPage extends HookConsumerWidget {
       }
     }
 
+    Future<void> start(MyAgent agent, String name, String computer) async {
+      final channelId = agent.commandChannelId;
+      if (channelId == null || starting.value.contains(agent.pubkey)) return;
+      starting.value = {...starting.value, agent.pubkey};
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        await ref
+            .read(sendMessageProvider)
+            .call(
+              channelId: channelId,
+              content: '!start',
+              mentionPubkeys: [agent.pubkey],
+            );
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Start requested. $name starts on $computer when that '
+              'computer’s Kuzz app is open.',
+            ),
+          ),
+        );
+      } catch (failure) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Couldn’t start $name: $failure')),
+        );
+      } finally {
+        if (context.mounted) {
+          starting.value = {...starting.value}..remove(agent.pubkey);
+        }
+      }
+    }
+
+    void openSettings(MyAgent agent, String name) => unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              AgentSettingsPage(agentPubkey: agent.pubkey, fallbackName: name),
+        ),
+      ),
+    );
+
     return Scaffold(
       appBar: AppBar(title: const Text('My agents')),
       body: SafeArea(
@@ -109,8 +153,8 @@ class MyAgentsPage extends HookConsumerWidget {
             else
               AppListCard(
                 description:
-                    'Stopped agents start again from the computer they run '
-                    'on.',
+                    'Start and Stop run on the computer each agent lives on. '
+                    'That computer’s Kuzz app must be open.',
                 children: [
                   for (final agent in sorted)
                     _MyAgentRow(
@@ -128,7 +172,19 @@ class MyAgentsPage extends HookConsumerWidget {
                         override: robots[agent.deviceId],
                       ),
                       stopping: stopping.value.contains(agent.pubkey),
+                      starting: starting.value.contains(agent.pubkey),
                       onStop: () => unawaited(stop(agent, nameOf(agent))),
+                      onStart: () => unawaited(
+                        start(
+                          agent,
+                          nameOf(agent),
+                          _computerName(
+                            deviceNames[agent.deviceId],
+                            current: currentDevice == agent.deviceId,
+                          ),
+                        ),
+                      ),
+                      onTap: () => openSettings(agent, nameOf(agent)),
                     ),
                 ],
               ),
@@ -149,7 +205,10 @@ class _MyAgentRow extends StatelessWidget {
     required this.hostLabel,
     required this.robot,
     required this.stopping,
+    required this.starting,
     required this.onStop,
+    required this.onStart,
+    required this.onTap,
   });
 
   final MyAgent agent;
@@ -159,7 +218,10 @@ class _MyAgentRow extends StatelessWidget {
   final String hostLabel;
   final DeviceRobotVariant? robot;
   final bool stopping;
+  final bool starting;
   final VoidCallback onStop;
+  final VoidCallback onStart;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +233,9 @@ class _MyAgentRow extends StatelessWidget {
       _ => 'Checking…',
     };
     final canStop = running && agent.commandChannelId != null && !stopping;
+    final canStart = presence == 'offline' && agent.commandChannelId != null;
     return AppListRowRaw(
+      onTap: onTap,
       leading: SmallAvatar(pubkey: agent.pubkey, userCache: users, size: 36),
       title: Text(name, style: context.textTheme.bodyLarge),
       subtitle: Row(
@@ -211,6 +275,12 @@ class _MyAgentRow extends StatelessWidget {
               onPressed: canStop ? onStop : null,
               child: Text(stopping ? 'Stopping…' : 'Stop'),
             )
+          : canStart
+          ? TextButton(
+              key: ValueKey('my-agent-start-${agent.pubkey}'),
+              onPressed: starting ? null : onStart,
+              child: Text(starting ? 'Starting…' : 'Start'),
+            )
           : null,
     );
   }
@@ -244,4 +314,11 @@ Future<bool> _confirmStop(BuildContext context, String name) async {
 String? _nonEmpty(String? value) {
   final trimmed = value?.trim() ?? '';
   return trimmed.isEmpty ? null : trimmed;
+}
+
+/// The computer named in the row's host label, for sentences.
+String _computerName(String? deviceName, {required bool current}) {
+  final name = deviceName?.trim() ?? '';
+  if (current) return name.isEmpty ? 'this device' : 'this device ($name)';
+  return name.isEmpty ? 'its computer' : name;
 }

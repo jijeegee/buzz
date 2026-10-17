@@ -29,7 +29,7 @@ class AgentsSettings extends ConsumerWidget {
           key: const ValueKey('settings-my-agents'),
           icon: LucideIcons.bot,
           title: 'My agents',
-          subtitle: 'See where your agents run and stop them',
+          subtitle: 'Where your agents run: start, stop and edit them',
           trailing: const Icon(LucideIcons.chevronRight, size: 18),
           onTap: () => Navigator.of(
             context,
