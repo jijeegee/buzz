@@ -91,6 +91,9 @@ mod artifact_query;
 mod artifact_postgres_tests;
 
 #[cfg(test)]
+mod blocks_postgres_tests;
+
+#[cfg(test)]
 mod channel_history_postgres_tests;
 
 #[cfg(test)]

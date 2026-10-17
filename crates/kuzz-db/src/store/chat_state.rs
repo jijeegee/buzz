@@ -368,7 +368,8 @@ async fn apply_reply(
     Ok(true)
 }
 
-/// A new message in a DM brings it back for every other member who hid it.
+/// A new message in a DM brings it back for every other member who hid it,
+/// except members who blocked the author (silent block).
 async fn unhide_dm_for_recipients(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -382,6 +383,9 @@ async fn unhide_dm_for_recipients(
             AND c.channel_type = 'dm' \
             AND cm.community_id = $1 AND cm.channel_id = $2 AND cm.pubkey <> $3 \
             AND cm.removed_at IS NULL AND cm.hidden_at IS NOT NULL \
+            AND NOT EXISTS (SELECT 1 FROM user_blocks ub \
+                             WHERE ub.community_id = cm.community_id \
+                               AND ub.blocker = cm.pubkey AND ub.blocked = $3) \
          RETURNING cm.pubkey",
     )
     .bind(community)

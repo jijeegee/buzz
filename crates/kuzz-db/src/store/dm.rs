@@ -180,12 +180,19 @@ pub async fn create_dm(
     .execute(&mut *tx)
     .await?;
 
-    // Add all participants as members with role='member'.
+    // Add all participants as members with role='member'. A participant who
+    // blocked the creator starts hidden (silent block): the DM opens normally
+    // for the creator but never appears in the blocker's list.
     for pk in participants {
         sqlx::query(
             r#"
-            INSERT INTO channel_members (community_id, channel_id, pubkey, role, invited_by)
-            VALUES ($1, $2, $3, 'member', $4)
+            INSERT INTO channel_members
+                (community_id, channel_id, pubkey, role, invited_by, hidden_at)
+            VALUES ($1, $2, $3, 'member', $4,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM user_blocks ub
+                        WHERE ub.community_id = $1 AND ub.blocker = $3 AND ub.blocked = $4
+                    ) THEN NOW() END)
             ON CONFLICT (community_id, channel_id, pubkey) DO UPDATE SET
                 removed_at = NULL,
                 removed_by = NULL,
