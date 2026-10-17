@@ -810,6 +810,7 @@ export function AppShell() {
             getThreadReadAt,
             markThreadRead,
             markThreadUnread: chatState.markThreadUnread,
+            mirrorThreadRead: chatState.mirrorThreadRead,
             getMessageReadAt,
             getChannelActivityItemReadAt,
             markMessageRead,
