@@ -42,6 +42,8 @@ export function useThreadHeaderBar({
   threadMessages: readonly TimelineMessage[];
 }): {
   closedLine: React.ReactNode;
+  /** The close marker the closed line stands for, while closed. */
+  closedMarkerId: string | null;
   /** The bar, around the panel's existing Goals chip and Show in channel. */
   renderHeaderActions: (
     goalChip: React.ReactNode,
@@ -61,6 +63,7 @@ export function useThreadHeaderBar({
   if (!threadHead) {
     return {
       closedLine: null,
+      closedMarkerId: null,
       isClosed: false,
       renderHeaderActions: () => null,
     };
@@ -129,5 +132,10 @@ export function useThreadHeaderBar({
     />
   ) : null;
 
-  return { closedLine, isClosed: closeState.closed, renderHeaderActions };
+  return {
+    closedLine,
+    closedMarkerId: closeState.marker?.id ?? null,
+    isClosed: closeState.closed,
+    renderHeaderActions,
+  };
 }

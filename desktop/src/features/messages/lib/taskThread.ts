@@ -22,12 +22,27 @@ export function hasThreadClosedTag(
   );
 }
 
-function hasThreadReopenedTag(
+export function hasThreadReopenedTag(
   tags: readonly (readonly string[])[] | null | undefined,
 ): boolean {
   return (
     tags?.some((tag) => tag[0] === THREAD_REOPENED_TAG && Boolean(tag[1])) ??
     false
+  );
+}
+
+/**
+ * A Close or Reopen marker reply. It is shown as a system line, not a
+ * bubble, and is not counted as a reply (spec 4.2). The same tag on a
+ * top-level message (a `kuzz threads close` result) is a normal message.
+ */
+export function isThreadMarkerReply(message: {
+  parentId?: string | null;
+  tags?: readonly (readonly string[])[] | null;
+}): boolean {
+  return (
+    Boolean(message.parentId) &&
+    (hasThreadClosedTag(message.tags) || hasThreadReopenedTag(message.tags))
   );
 }
 

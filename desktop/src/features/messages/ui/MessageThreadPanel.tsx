@@ -16,6 +16,7 @@ import {
 import type { MessageComposerEditTarget } from "@/features/messages/ui/MessageComposer.types";
 import { canManageMessageForCurrentUser } from "@/features/messages/lib/canManageMessage";
 import { canReplyInThread } from "@/features/messages/lib/threadDepth";
+import { isThreadMarkerReply } from "@/features/messages/lib/taskThread";
 import { handleTimelineMentionCopy } from "@/features/messages/lib/timelineMentionCopy";
 import type { TimelineMessage } from "@/features/messages/types";
 import type { VideoReviewPresentation } from "@/features/messages/lib/videoReviewContext";
@@ -60,6 +61,7 @@ import {
 import { ThreadGoalHeaderChip } from "@/features/goals/ui/GoalChips";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
+import { ThreadMarkerLine } from "./ThreadMarkerLine";
 import { useThreadHeaderBar } from "./useThreadHeaderBar";
 
 type MessageThreadPanelProps = ThreadPanelLayoutProps & {
@@ -389,6 +391,7 @@ export function MessageThreadPanel({
   );
   const {
     closedLine,
+    closedMarkerId,
     isClosed: isClosedTaskThread,
     renderHeaderActions,
   } = useThreadHeaderBar({
@@ -758,6 +761,20 @@ export function MessageThreadPanel({
                       index,
                       isContinuation,
                     } = item;
+                    if (
+                      threadHeaderActions &&
+                      !isHuddleTranscript &&
+                      isThreadMarkerReply(entry.message)
+                    ) {
+                      // The closed line below stands for the current close.
+                      return entry.message.id === closedMarkerId ? null : (
+                        <ThreadMarkerLine
+                          currentPubkey={currentPubkey}
+                          key={entry.message.renderKey ?? entry.message.id}
+                          message={entry.message}
+                        />
+                      );
+                    }
                     const showUnreadDivider =
                       index > 0 && entry.message.id === firstUnreadReplyId;
                     const highlight = selectThreadRowHighlight({

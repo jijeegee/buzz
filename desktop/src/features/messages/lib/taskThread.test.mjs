@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   hasThreadClosedTag,
   isTaskThreadClosed,
+  isThreadMarkerReply,
   threadCloseState,
 } from "./taskThread.ts";
 
@@ -67,4 +68,19 @@ test("a plain reply and a close marker in one second: the later in order wins", 
   // Agent's final reply, then `kuzz threads close` in the same second.
   assert.equal(threadCloseState([reply, closed(2)]).closed, true);
   assert.equal(threadCloseState([closed(2), reply]).closed, false);
+});
+
+test("only marker replies are thread markers, not a top-level close result", () => {
+  const closed = [["buzz:thread-closed", "root"]];
+  assert.equal(isThreadMarkerReply({ parentId: "root", tags: closed }), true);
+  assert.equal(
+    isThreadMarkerReply({
+      parentId: "root",
+      tags: [["buzz:thread-reopened", "root"]],
+    }),
+    true,
+  );
+  // `kuzz threads close` also tags its result on the main timeline.
+  assert.equal(isThreadMarkerReply({ parentId: null, tags: closed }), false);
+  assert.equal(isThreadMarkerReply({ parentId: "root", tags: [] }), false);
 });
