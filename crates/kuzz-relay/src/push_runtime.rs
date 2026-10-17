@@ -798,4 +798,58 @@ mod tests {
         assert_eq!(bodies[0]["request_id"], request_id.to_string());
         assert_eq!(bodies[1]["request_id"], request_id.to_string());
     }
+
+    #[test]
+    fn blocked_author_never_wakes_the_blocker() {
+        let blocker = nostr::Keys::generate();
+        let other = nostr::Keys::generate();
+        let blocked = nostr::Keys::generate();
+        let stranger = nostr::Keys::generate();
+        let channel = uuid::Uuid::new_v4();
+        let lease = |keys: &nostr::Keys| kuzz_db::push::MatchLease {
+            author: keys.public_key().to_bytes().to_vec(),
+            installation_id: format!("install-{}", keys.public_key().to_hex()),
+            generation: 1,
+            subscriptions: serde_json::json!([{ "filter": { "kinds": [9] }, "class": "alert" }]),
+            expires_at: Utc::now().timestamp() + 3600,
+        };
+        let context = MatchContext {
+            leases: vec![lease(&blocker), lease(&other)],
+            memberships: [&blocker, &other]
+                .into_iter()
+                .map(|keys| (channel, keys.public_key().to_bytes().to_vec()))
+                .collect(),
+            blocked_pairs: [(
+                blocker.public_key().to_bytes().to_vec(),
+                blocked.public_key().to_bytes().to_vec(),
+            )]
+            .into_iter()
+            .collect(),
+        };
+        let job = |author: &nostr::Keys| kuzz_db::push::BatchedMatch {
+            event: kuzz_core::StoredEvent::new(
+                EventBuilder::new(Kind::Custom(9), "hi")
+                    .tag(Tag::parse(["h", &channel.to_string()]).unwrap())
+                    .sign_with_keys(author)
+                    .unwrap(),
+                Some(channel),
+            ),
+            attempt: 1,
+        };
+        let woken = |author: &nostr::Keys| -> Vec<Vec<u8>> {
+            match_job(&job(author), &context)
+                .unwrap()
+                .into_iter()
+                .map(|wake| wake.author)
+                .collect()
+        };
+
+        // The blocked person's message wakes only the member who did not block them.
+        assert_eq!(
+            woken(&blocked),
+            vec![other.public_key().to_bytes().to_vec()]
+        );
+        // Anyone else still wakes both members.
+        assert_eq!(woken(&stranger).len(), 2);
+    }
 }
