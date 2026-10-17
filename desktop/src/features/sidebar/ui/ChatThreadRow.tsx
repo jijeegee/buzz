@@ -17,7 +17,7 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurnsStore";
 import { ChatRowLines } from "./ChatRowLines";
-import { ChatWorkingLine } from "./SidebarSection";
+import { ChannelWorkingBadge } from "./SidebarSection";
 import {
   ChatThreadRowMenuItems,
   type ChatThreadRowActions,
@@ -145,21 +145,22 @@ export function ChatThreadRow({
               <span className="min-w-0 truncate">{title}</span>
             </>
           }
-          working={
-            working ? (
-              <ChatWorkingLine
-                summary={working}
-                testId={`chat-thread-working-${rootId}`}
-              />
-            ) : undefined
-          }
           titleExtras={
-            isPinned ? (
-              <span className="shrink-0">
-                <Pin aria-hidden="true" className="h-3 w-3" />
-                <span className="sr-only">Pinned for you</span>
-              </span>
-            ) : null
+            <>
+              {isPinned ? (
+                <span className="shrink-0">
+                  <Pin aria-hidden="true" className="h-3 w-3" />
+                  <span className="sr-only">Pinned for you</span>
+                </span>
+              ) : null}
+              {working ? (
+                <ChannelWorkingBadge
+                  channelName={`thread-${rootId}`}
+                  isActive={false}
+                  summary={working}
+                />
+              ) : null}
+            </>
           }
         />
       </SidebarMenuButton>

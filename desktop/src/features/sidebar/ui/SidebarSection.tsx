@@ -130,7 +130,7 @@ export function formatWorkingTooltip(
   return `${leadName} and ${formatAgentCount(remainingAgentCount)} working`;
 }
 
-function ChannelWorkingBadge({
+export function ChannelWorkingBadge({
   channelName,
   isActive,
   summary,
@@ -158,29 +158,6 @@ function ChannelWorkingBadge({
       title={title}
     >
       {label}
-    </span>
-  );
-}
-
-/**
- * "Fizz working · 0:42" on the second line of a Chats row, in place of the
- * latest message, while agents work in that room or thread.
- */
-export function ChatWorkingLine({
-  summary,
-  testId,
-}: {
-  summary: ActiveChannelTurnSummary;
-  testId: string;
-}) {
-  const now = useNow(1000);
-  const elapsed = formatElapsed(now - summary.anchorAt);
-  return (
-    <span
-      className="min-w-0 flex-1 truncate text-xs font-medium text-primary tabular-nums motion-safe:animate-pulse"
-      data-testid={testId}
-    >
-      {formatWorkingTooltip(summary)} · {elapsed}
     </span>
   );
 }
@@ -430,15 +407,14 @@ export function ChannelMenuButton({
                 className="h-3 w-3 shrink-0 text-sidebar-foreground/40"
               />
             ) : null}
+            {activeWorking ? (
+              <ChannelWorkingBadge
+                channelName={channel.name}
+                isActive={isActive}
+                summary={activeWorking}
+              />
+            ) : null}
           </>
-        }
-        working={
-          activeWorking ? (
-            <ChatWorkingLine
-              summary={activeWorking}
-              testId={`channel-working-${channel.name}`}
-            />
-          ) : undefined
         }
       />
     </SidebarMenuButton>
