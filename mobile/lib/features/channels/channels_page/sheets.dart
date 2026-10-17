@@ -471,10 +471,12 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
     final selectedPubkeys = selectedUsers.value
         .map((user) => user.pubkey.toLowerCase())
         .toSet();
+    final blockedPubkeys = ref.watch(blockedPubkeysProvider);
     final availableResults =
         directoryAsync.asData?.value.where((user) {
           final normalizedPubkey = user.pubkey.toLowerCase();
           if (selectedPubkeys.contains(normalizedPubkey) ||
+              blockedPubkeys.contains(normalizedPubkey) ||
               normalizedPubkey == currentPubkey?.toLowerCase()) {
             return false;
           }

@@ -46,6 +46,7 @@ import 'jump_to_latest_switcher.dart';
 import 'local_message_send_animation_provider.dart';
 import 'local_message_send_transition.dart';
 import 'channel_management_provider.dart';
+import '../people/blocked_message_gate.dart';
 import '../profile/user_profile_sheet.dart';
 import '../goals/thread_goal_chip.dart';
 import 'message_actions.dart';
