@@ -10,13 +10,18 @@ import {
   THREAD_REOPENED_CONTENT,
   THREAD_REOPENED_TAG,
 } from "@/features/messages/lib/taskThread";
+import {
+  sendThreadMarker,
+  type ThreadMarker,
+  type ThreadMarkerScope,
+} from "@/features/messages/lib/threadMarkerSend";
 import { buildReplyTags } from "@/features/messages/lib/threading";
+import { normalizeRelayUrl } from "@/features/communities/communityStorage";
+import { useCommunities } from "@/features/communities/useCommunities";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { sendChannelMessage } from "@/shared/api/tauriMessages";
 import type { RelayEvent } from "@/shared/api/types";
 import { KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
-
-export type ThreadMarker = "closed" | "reopened";
 
 /**
  * The thread Close toggle: a marker reply in the thread, the same one
@@ -39,35 +44,35 @@ export function useThreadCloseToggle(): {
   const pubkey = identityQuery.data?.pubkey;
   const [pending, setPending] = React.useState(false);
 
+  const { activeCommunity } = useCommunities();
+  const relayUrl = activeCommunity?.relayUrl
+    ? normalizeRelayUrl(activeCommunity.relayUrl)
+    : null;
+
   const send = React.useCallback(
-    async (channelId: string, rootId: string, marker: ThreadMarker) => {
-      if (!pubkey) throw new Error("No identity available.");
+    async (
+      channelId: string,
+      rootId: string,
+      marker: ThreadMarker,
+      scope: ThreadMarkerScope,
+    ) => {
+      const signer = scope.signerPubkey;
+      const result = await sendThreadMarker(sendChannelMessage, {
+        channelId,
+        marker,
+        rootId,
+        scope,
+      });
+      if (!signer) return;
       const content =
         marker === "closed" ? THREAD_CLOSED_CONTENT : THREAD_REOPENED_CONTENT;
-      const result = await sendChannelMessage(
-        channelId,
-        content,
-        rootId,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        rootId,
-        undefined,
-        marker,
-      );
       const event: RelayEvent = {
         id: result.eventId,
-        pubkey,
+        pubkey: signer,
         created_at: result.createdAt,
         kind: KIND_STREAM_MESSAGE,
         tags: [
-          ...buildReplyTags(channelId, pubkey, rootId, rootId),
+          ...buildReplyTags(channelId, signer, rootId, rootId),
           [
             marker === "closed" ? THREAD_CLOSED_TAG : THREAD_REOPENED_TAG,
             rootId,
@@ -81,7 +86,7 @@ export function useThreadCloseToggle(): {
         (current = []) => mergeMessages(current, event),
       );
     },
-    [pubkey, queryClient],
+    [queryClient],
   );
 
   const setThreadClosed = React.useCallback(
@@ -96,8 +101,11 @@ export function useThreadCloseToggle(): {
       closed: boolean;
       onSent?: () => void;
     }) => {
+      // Bound to the account active now; Undo reuses the same binding, so a
+      // switch in between makes it fail instead of signing as the new one.
+      const scope: ThreadMarkerScope = { relayUrl, signerPubkey: pubkey };
       setPending(true);
-      send(channelId, rootId, closed ? "closed" : "reopened")
+      send(channelId, rootId, closed ? "closed" : "reopened", scope)
         .then(() => {
           onSent?.();
           if (!closed) return;
@@ -105,7 +113,7 @@ export function useThreadCloseToggle(): {
             action: {
               label: "Undo",
               onClick: () => {
-                send(channelId, rootId, "reopened")
+                send(channelId, rootId, "reopened", scope)
                   .then(() => onSent?.())
                   .catch(reportFailure);
               },
@@ -115,7 +123,7 @@ export function useThreadCloseToggle(): {
         .catch(reportFailure)
         .finally(() => setPending(false));
     },
-    [send],
+    [pubkey, relayUrl, send],
   );
 
   return { pending, setThreadClosed };
