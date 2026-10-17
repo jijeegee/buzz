@@ -115,6 +115,25 @@ const { deviceRobotTag } = await import("../../../shared/lib/deviceRobot.ts");
 const { GoogleSignInButton } = await import(
   "../../onboarding/ui/GoogleSignInButton.tsx"
 );
+const { BROWSER_RETURN_GRACE_MS } = await import(
+  "../../../shared/hooks/useReturnedToApp.ts"
+);
+// The user clicks from a focused Kuzz window; jsdom reports no focus.
+document.hasFocus = () => true;
+
+/** Leave Kuzz for the browser, come back, and let the grace pass. */
+async function returnFromBrowser() {
+  await act(async () => {
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  await act(
+    () =>
+      new Promise((resolve) =>
+        setTimeout(resolve, BROWSER_RETURN_GRACE_MS + 50),
+      ),
+  );
+}
 
 function baseStatus(overrides) {
   return {
@@ -398,7 +417,7 @@ test("previously signed-out token users have an explicit existing-account route"
   }
 });
 
-test("cancel ends the native wait and onboarding can immediately retry", async () => {
+test("returning to Kuzz ends the native wait and onboarding can immediately retry", async () => {
   status = baseStatus();
   let rejectLogin;
   loginBehavior = () =>
@@ -418,11 +437,13 @@ test("cancel ends the native wait and onboarding can immediately retry", async (
     const first = calls.find((c) => c.command === "login_with_google").args
       .attemptId;
     assert.ok(first);
-    const cancel = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent === "Cancel sign-in",
+    assert.equal(
+      [...container.querySelectorAll("button")].some(
+        (b) => b.textContent === "Cancel sign-in",
+      ),
+      false,
     );
-    assert.ok(cancel);
-    await act(async () => fireEvent.click(cancel));
+    await returnFromBrowser();
     assert.equal(button.disabled, false);
     assert.equal(container.querySelector("[role='alert']"), null);
     assert.equal(
@@ -434,9 +455,8 @@ test("cancel ends the native wait and onboarding can immediately retry", async (
       .args.attemptId;
     assert.notEqual(first, second);
     await act(async () => progress(first, "completing"));
-    assert.match(container.textContent, /Cancel sign-in/);
+    assert.match(container.textContent, /Finish signing in in your browser/);
     await act(async () => progress(second, "completing"));
-    assert.doesNotMatch(container.textContent, /Cancel sign-in/);
     assert.match(container.textContent, /Finishing sign-in in Kuzz/);
   } finally {
     await unmount();
@@ -462,7 +482,7 @@ test("native failure stays visible and releases the settings sign-in button", as
   }
 });
 
-test("completion winning cancellation finishes without restarting Google", async () => {
+test("completion winning the return cancellation finishes without restarting Google", async () => {
   status = baseStatus();
   let resolveLogin;
   let completed = 0;
@@ -482,12 +502,8 @@ test("completion winning cancellation finishes without restarting Google", async
         container.querySelector("[data-testid='onboarding-google-sign-in']"),
       ),
     );
-    const cancel = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent === "Cancel sign-in",
-    );
-    await act(async () => fireEvent.click(cancel));
+    await returnFromBrowser();
     assert.match(container.textContent, /Finishing sign-in in Kuzz/);
-    assert.doesNotMatch(container.textContent, /Cancel sign-in/);
     await act(async () => resolveLogin(baseStatus({ state: "active" })));
     assert.equal(completed, 1);
     assert.equal(
