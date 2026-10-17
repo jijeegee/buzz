@@ -19,6 +19,9 @@ class _MessageList extends HookConsumerWidget {
   /// still out of sight; [onPositioned] reports when it has.
   final bool isPositioning;
   final VoidCallback? onPositioned;
+
+  /// Where this room's reading position is kept; null keeps none.
+  final RoomPositionStore? roomPositions;
   final String channelId;
   final String? currentPubkey;
   final bool isMember;
@@ -45,6 +48,7 @@ class _MessageList extends HookConsumerWidget {
     this.openedAt,
     this.isPositioning = false,
     this.onPositioned,
+    this.roomPositions,
     required this.channelId,
     required this.currentPubkey,
     required this.isMember,
@@ -119,9 +123,8 @@ class _MessageList extends HookConsumerWidget {
         index: targetIndex ?? 0,
         alignment: targetIndex == null || targetIndex == 0
             ? 0
-            : openedAt!.isUnread
-            ? topLine - 0.15
-            : 0.35,
+            : openedAt!.edge ??
+                  (openedAt!.isUnread ? topLine - 0.15 : 0.35),
       );
       holdsNewerRows.value = false;
       awaitingPlacementLayout.value = true;
@@ -977,6 +980,22 @@ class _MessageList extends HookConsumerWidget {
       return null;
     }, [latestEntryId, localSendAnimations, windowGeneration]);
 
+    final saveRoomPosition = useRoomPositionSaving(
+      store: roomPositions,
+      roomKey: channelId,
+      read: () {
+        if (isPositioningRef.value) return null;
+        final positions = itemPositionsListener.itemPositions.value;
+        if (positions.isEmpty || displayEntriesRef.value.isEmpty) return null;
+        if (latestIsAtBoundary()) return const RoomPositionReading.atLatest();
+        return _readingPosition(
+          positions,
+          displayEntriesRef.value,
+          bottom: latestAlignment(),
+        );
+      },
+    );
+
     if (entries.isEmpty) {
       return Center(
         child: Column(
@@ -1041,6 +1060,7 @@ class _MessageList extends HookConsumerWidget {
               } else if (notification is ScrollEndNotification) {
                 isUserScrolling.value = false;
                 releaseHeldRows();
+                saveRoomPosition();
               }
               timelineViewportHeight.value =
                   notification.metrics.viewportDimension;
@@ -1168,7 +1188,7 @@ class _MessageList extends HookConsumerWidget {
                               stickyDayTimestamp: stickyDayTimestamp,
                             ),
                           if (index == newMessagesIndex)
-                            const _NewMessagesDivider(
+                            const NewMessagesDivider(
                               key: ValueKey('channel-new-messages-divider'),
                             ),
                           if (message.isSystem)
@@ -1396,31 +1416,32 @@ _ListPlacement? _reanchoredPlacement(
   );
 }
 
-/// Marks where the unread messages start in a window opened at them.
-class _NewMessagesDivider extends StatelessWidget {
-  const _NewMessagesDivider({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = context.colors.primary;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Grid.xxs),
-      child: Row(
-        children: [
-          Expanded(child: Divider(height: 1, color: color)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Grid.xs),
-            child: Text(
-              'New messages',
-              style: context.textTheme.labelSmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(child: Divider(height: 1, color: color)),
-        ],
-      ),
-    );
-  }
+/// The row a reader is on: the lowest one wholly above the timeline's
+/// [bottom] boundary, or the lowest one in sight.
+RoomPositionReading? _readingPosition(
+  Iterable<ItemPosition> positions,
+  List<List<MainTimelineEntry>> groups, {
+  required double bottom,
+}) {
+  final visible = positions
+      .where(
+        (position) =>
+            position.index < groups.length &&
+            position.itemLeadingEdge < 1 &&
+            position.itemTrailingEdge > 0,
+      )
+      .toList();
+  if (visible.isEmpty) return null;
+  final above = visible
+      .where((position) => position.itemLeadingEdge >= bottom - 0.01)
+      .toList();
+  final reading = (above.isEmpty ? visible : above).reduce(
+    (a, b) => a.index < b.index ? a : b,
+  );
+  final message = groups[groups.length - 1 - reading.index].first.message;
+  return RoomPositionReading.at(
+    id: message.id,
+    createdAt: message.createdAt,
+    edge: reading.itemLeadingEdge,
+  );
 }

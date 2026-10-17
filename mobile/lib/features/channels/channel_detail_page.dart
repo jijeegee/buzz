@@ -78,12 +78,14 @@ import 'message_long_press_region.dart';
 import 'message_content.dart';
 import 'message_quote.dart';
 import 'message_quote_header.dart';
+import 'new_messages_divider.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
 import 'reaction_row.dart';
 import 'recent_emoji_provider.dart';
+import 'room_position_store.dart';
 import 'send_message_provider.dart';
 import '../profile/user_profile_sheet.dart';
 import 'small_avatar.dart';
@@ -297,11 +299,15 @@ class _OpenTarget {
     required this.ids,
     required this.isUnread,
     this.knownCreatedAt = const {},
+    this.edge,
   });
 
   final Set<String> ids;
   final bool isUnread;
   final Map<String, int> knownCreatedAt;
+
+  /// Where a saved position had its row, when the target is one.
+  final double? edge;
 }
 
 /// The message the timeline window was opened at.
@@ -310,6 +316,7 @@ class _OpenedAt {
     required this.messageId,
     required this.createdAt,
     required this.isUnread,
+    this.edge,
   });
 
   final String messageId;
@@ -318,6 +325,10 @@ class _OpenedAt {
   /// The first unread message: it gets the "New messages" divider and sits
   /// at the top of the timeline rather than near its middle.
   final bool isUnread;
+
+  /// A saved position's row goes back where it was: its bottom edge as a
+  /// fraction of the timeline's height from the bottom.
+  final double? edge;
 }
 
 /// Channel pages on screen or under other routes, oldest first.
@@ -636,9 +647,17 @@ class ChannelDetailPage extends HookConsumerWidget {
           : null,
     );
 
-    // A link or notification opens at its message, and unread messages at
-    // the first of them, instead of the newest row. The list waits for that
-    // window rather than drawing the newest rows first.
+    // The account this page opened under keeps its positions, even if the
+    // account changes while the page is open.
+    final roomPositions = useMemoized(
+      () => channel.isForum ? null : ref.read(roomPositionStoreProvider),
+    );
+    final savedPosition = useMemoized(() => roomPositions?.read(channel.id));
+
+    // A link or notification opens at its message, unread messages at the
+    // first of them, and otherwise a saved position at its row, instead of
+    // the newest row. The list waits for that window rather than drawing the
+    // newest rows first.
     final openTarget = useMemoized(
       () => channel.isForum || initialThreadRootId != null
           ? null
@@ -656,6 +675,15 @@ class ChannelDetailPage extends HookConsumerWidget {
                 ?initialOldestOrdinaryUnreadMessageId:
                     initialOldestOrdinaryUnreadCreatedAtRef.value!,
               },
+            )
+          // Unread messages are only known once the read state is: until
+          // then a saved position could hide them.
+          : readState.isReady && savedPosition != null
+          ? _OpenTarget(
+              ids: {savedPosition.id},
+              isUnread: false,
+              knownCreatedAt: {savedPosition.id: savedPosition.createdAt},
+              edge: savedPosition.edge,
             )
           : null,
     );
@@ -721,6 +749,7 @@ class ChannelDetailPage extends HookConsumerWidget {
           messageId: anchor.id,
           createdAt: anchor.createdAt,
           isUnread: target.isUnread,
+          edge: target.edge,
         );
         opening = messagesNotifier.openAt(
           createdAt: anchor.createdAt,
@@ -731,6 +760,14 @@ class ChannelDetailPage extends HookConsumerWidget {
       unawaited(
         opening.catchError((Object _) => false).then((opened) {
           if (!context.mounted) return;
+          final saved = target?.edge != null ? openedAt.value : null;
+          if (opened && saved != null) {
+            // A saved row deleted since is not remembered any longer.
+            final events = ref.read(channelMessagesProvider(channel.id)).value;
+            if (events?.any((event) => event.id == saved.messageId) != true) {
+              roomPositions?.clear(channel.id);
+            }
+          }
           openPhase.value = opened ? _OpenPhase.positioning : _OpenPhase.none;
         }),
       );
@@ -1066,6 +1103,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                                   openPhase.value = _OpenPhase.opened;
                                 }
                               },
+                              roomPositions: roomPositions,
                               hasInitialUnread:
                                   !isOpenedAtMessage &&
                                   readState.isReady &&
@@ -1158,6 +1196,8 @@ class ChannelDetailPage extends HookConsumerWidget {
                               mentionPubkeys, {
                               mediaTags = const <List<String>>[],
                             }) async {
+                              // Sending returns the reader to the newest row.
+                              roomPositions?.clear(channel.id);
                               // Main timeline: top-level message (no thread
                               // tags) plus the optional quote reference.
                               await sendMessage.call(

@@ -51,6 +51,7 @@ import 'package:kuzz/features/channels/thread_detail_page.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/features/channels/thread_window.dart';
 import 'package:kuzz/features/channels/timeline_message.dart';
+import 'package:kuzz/features/channels/room_position_store.dart';
 import 'package:kuzz/features/channels/window_anchor.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
