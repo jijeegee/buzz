@@ -112,6 +112,7 @@ import { AppShellTrayMenu } from "@/app/useAppShellTrayMenu";
 import { AppProfilePanelProvider } from "@/app/AppProfilePanelProvider";
 import { AppWorkflowEditorOverlayProvider } from "@/app/AppWorkflowEditorOverlayProvider";
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
+import { useChatStateWiring } from "@/app/useChatStateWiring";
 import {
   toggleInboxPanel,
   useInboxPanelOpen,
@@ -408,6 +409,7 @@ export function AppShell() {
     getChannelAndThreadContexts: getReadContexts,
     readStateVersion,
     setContextParentResolver,
+    setReadStateServerMirror,
     participatedRootIds,
     authoredRootIds,
     recordThreadInteraction,
@@ -506,20 +508,36 @@ export function AppShell() {
     [followedRootIds, mutedRootIds, participatedRootIds, authoredRootIds],
   );
 
+  const openChatThread = React.useCallback(
+    (channelId: string, rootId: string) =>
+      void goChannel(channelId, { thread: rootId }),
+    [goChannel],
+  );
+  const chatState = useChatStateWiring({
+    getOwnReadAt,
+    openThread: openChatThread,
+    pubkey: identityQuery.data?.pubkey,
+    readStateVersion,
+    relayUrl: communitiesHook.activeCommunity?.relayUrl,
+    setReadStateServerMirror,
+  });
+  const { mirrorFollow } = chatState;
   const handleFollowThread = React.useCallback(
     (rootId: string) => {
       followThread(rootId);
       unmuteThread(rootId);
+      mirrorFollow(rootId, "followed");
     },
-    [followThread, unmuteThread],
+    [followThread, unmuteThread, mirrorFollow],
   );
 
   const handleUnfollowThread = React.useCallback(
     (rootId: string) => {
       unfollowThread(rootId);
       muteThread(rootId);
+      mirrorFollow(rootId, "unfollowed");
     },
-    [unfollowThread, muteThread],
+    [unfollowThread, muteThread, mirrorFollow],
   );
 
   const createChannelMutation = useCreateChannelMutation(),
@@ -980,6 +998,7 @@ export function AppShell() {
                           starredChannelIds={starredChannelIds}
                           onStarChannel={starChannel}
                           onUnstarChannel={unstarChannel}
+                          serverChats={chatState.serverChats}
                         />
                       ) : null}
                       <TerminalContextOverrideProvider

@@ -3,6 +3,7 @@ import type { LeaveCommunityResult } from "@/features/communities/leaveCommunity
 import type { Community } from "@/features/communities/types";
 import type { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
+import type { ServerChats } from "@/features/sidebar/ui/ChatList";
 import type { UserStatusInput } from "@/features/user-status/types";
 import type {
   Channel,
@@ -120,4 +121,6 @@ export type AppSidebarProps = {
   starredChannelIds?: ReadonlySet<string>;
   onStarChannel?: (channelId: string) => void;
   onUnstarChannel?: (channelId: string) => void;
+  /** The relay's chats list; undefined keeps today's device-local list. */
+  serverChats?: ServerChats;
 };

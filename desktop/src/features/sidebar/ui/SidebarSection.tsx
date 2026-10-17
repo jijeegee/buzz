@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type * as React from "react";
 import { BellOff, ChevronDown, CircleDot, Pin, X } from "lucide-react";
 
@@ -381,12 +382,22 @@ export function ChannelMenuButton({
   );
 }
 
+/** A row of a section that mixes channel rows with other rows (Chats threads). */
+export type SidebarSectionRow =
+  | { kind: "channel"; channel: Channel }
+  | { kind: "custom"; key: string; node: React.ReactNode };
+
+function channelRow(channel: Channel): SidebarSectionRow {
+  return { kind: "channel", channel };
+}
+
 export function SidebarSection({
   action,
   activeWorkingByChannelId,
   dmParticipantsByChannelId,
   emptyState,
   items,
+  rows,
   channelLabels,
   isCollapsed,
   isActiveChannel,
@@ -416,6 +427,8 @@ export function SidebarSection({
   dmParticipantsByChannelId?: Record<string, SidebarDmParticipant[]>;
   emptyState?: React.ReactNode;
   items: Channel[];
+  /** Render these rows in this order instead of `items` (channel rows still use `items`' props). */
+  rows?: readonly SidebarSectionRow[];
   channelLabels?: Record<string, string>;
   isCollapsed?: boolean;
   isActiveChannel: boolean;
@@ -443,7 +456,8 @@ export function SidebarSection({
   onDeleteChannel?: (channel: Channel) => void;
   onLeaveChannel?: (channel: Channel) => void;
 }) {
-  if (items.length === 0 && !action && !emptyState) {
+  const sectionRows = rows ?? items.map(channelRow);
+  if (sectionRows.length === 0 && !action && !emptyState) {
     return null;
   }
 
@@ -484,9 +498,13 @@ export function SidebarSection({
       </div>
       {!isCollapsed ? (
         <SidebarGroupContent id={contentId}>
-          {items.length > 0 ? (
+          {sectionRows.length > 0 ? (
             <SidebarMenu data-testid={testId}>
-              {items.map((channel) => {
+              {sectionRows.map((row) => {
+                if (row.kind === "custom") {
+                  return <Fragment key={row.key}>{row.node}</Fragment>;
+                }
+                const { channel } = row;
                 const menuItem = (
                   <SidebarMenuItem
                     key={onMarkChannelUnread ? undefined : channel.id}

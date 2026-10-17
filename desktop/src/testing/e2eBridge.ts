@@ -15767,6 +15767,12 @@ export function maybeInstallE2eTauriMocks() {
         }
         return null;
       }
+      // Chats server state: the mock relay keeps none, so the app keeps
+      // today's device-local Chats list (`chat_state_unavailable`).
+      case "get_chat_list":
+      case "chat_mark_read":
+      case "chat_thread_follow":
+        throw new Error("chat_state_unavailable");
       default: {
         const goals = handleGoalsMockCommand(command, payload);
         if (goals) return goals.value;

@@ -132,6 +132,7 @@ export function AppSidebar({
   starredChannelIds,
   onStarChannel,
   onUnstarChannel,
+  serverChats,
 }: AppSidebarProps) {
   const activeWorkingByChannelId = useActiveWorkingChannelsById();
   const { status: updateStatus } = useUpdaterContext();
@@ -495,6 +496,7 @@ export function AppSidebar({
                     onMarkChannelRead={onMarkChannelRead}
                     onMarkChannelUnread={onMarkChannelUnread}
                     onSelectChannel={onSelectChannel}
+                    serverChats={serverChats}
                     onToggleCollapsed={() => toggleCollapsedGroup("channels")}
                     presenceByChannelId={dmPresenceByChannelId}
                     selectedChannelId={selectedChannelId}
