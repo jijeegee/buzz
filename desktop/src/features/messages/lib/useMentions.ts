@@ -9,6 +9,7 @@ import {
   useChannelMembersQuery,
   useChannelsQuery,
 } from "@/features/channels/hooks";
+import { useRemoteOwnedAgents } from "@/features/agents/useRemoteOwnedAgents";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import type { MentionSuggestion } from "@/features/messages/ui/MentionAutocomplete";
 import {
@@ -133,26 +134,26 @@ export function useMentions(
       ),
     [managedAgentsQuery.data],
   );
-  const managedAgentPersonaIdsByPubkey = React.useMemo(
-    () =>
-      new Map(
-        (managedAgentsQuery.data ?? [])
-          .filter((agent) => Boolean(agent.personaId))
-          .map((agent) => [
-            normalizePubkey(agent.pubkey),
-            agent.personaId as string,
-          ]),
-      ),
-    [managedAgentsQuery.data],
-  );
+  // The owner's agents on their other computers count as this persona's
+  // agent too: offering the persona would mint a second same-name agent.
+  const remoteOwnedAgents = useRemoteOwnedAgents();
+  const managedAgentPersonaIdsByPubkey = React.useMemo(() => {
+    const byPubkey = new Map<string, string>();
+    for (const agent of managedAgentsQuery.data ?? []) {
+      if (agent.personaId) {
+        byPubkey.set(normalizePubkey(agent.pubkey), agent.personaId);
+      }
+    }
+    for (const agent of remoteOwnedAgents) {
+      if (agent.localPersonaId && !byPubkey.has(agent.pubkey)) {
+        byPubkey.set(agent.pubkey, agent.localPersonaId);
+      }
+    }
+    return byPubkey;
+  }, [managedAgentsQuery.data, remoteOwnedAgents]);
   const managedAgentPersonaIds = React.useMemo(
-    () =>
-      new Set(
-        (managedAgentsQuery.data ?? [])
-          .map((agent) => agent.personaId)
-          .filter((personaId): personaId is string => Boolean(personaId)),
-      ),
-    [managedAgentsQuery.data],
+    () => new Set(managedAgentPersonaIdsByPubkey.values()),
+    [managedAgentPersonaIdsByPubkey],
   );
   const managedAgentPubkeys = React.useMemo(
     () =>

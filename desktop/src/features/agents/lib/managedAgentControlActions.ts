@@ -148,6 +148,35 @@ export async function stopManagedAgentWithRules({
   return {};
 }
 
+/**
+ * Ask an agent running on another of the owner's computers to stop: the
+ * owner's `!shutdown` in a channel it is in makes its harness exit, and the
+ * hosting desktop leaves a cleanly exited agent stopped.
+ */
+export async function stopRemoteOwnedAgent({
+  pubkey,
+  channels,
+  preferredChannelId,
+  relayAgents,
+}: {
+  pubkey: string;
+} & ManagedAgentChannelContext): Promise<ManagedAgentActionResult> {
+  const channelId = resolveManagedAgentChannelId(
+    { pubkey },
+    { channels, preferredChannelId, relayAgents },
+  );
+  if (!channelId) {
+    throw new Error("Cannot stop: agent is not in any channel");
+  }
+  await sendChannelMessage(channelId, "!shutdown", undefined, undefined, [
+    pubkey,
+  ]);
+  return {
+    noticeMessage:
+      "Stop requested. The agent stops on the computer it runs on.",
+  };
+}
+
 export async function deleteManagedAgentWithRules({
   agent,
   channels,

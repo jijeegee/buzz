@@ -16,6 +16,9 @@ import {
   listManagedAgents,
   updateManagedAgent,
 } from "@/shared/api/tauri";
+import { fetchRemoteOwnedAgents } from "@/shared/api/agentNameGuard";
+import { remoteAgentPersonaId } from "@/shared/api/remoteOwnedAgents";
+import { getIdentity } from "@/shared/api/tauriIdentity";
 import { listPersonas } from "@/shared/api/tauriPersonas";
 import { startManagedAgent } from "@/shared/api/tauriManagedAgents";
 import type {
@@ -123,6 +126,11 @@ export type CreateChannelManagedAgentBatchFailure = {
 export type CreateChannelManagedAgentsResult = {
   successes: CreateChannelManagedAgentResult[];
   failures: CreateChannelManagedAgentBatchFailure[];
+  /**
+   * Persona inputs whose agent runs on another of the owner's computers: that
+   * agent was added to the channel instead of minting a same-name copy here.
+   */
+  remoteAttached?: { name: string; pubkey: string }[];
 };
 
 export type CreateChannelManagedAgentsOptions = {
@@ -491,6 +499,12 @@ export async function createChannelManagedAgents(
     );
   }
 
+  const remoteByPersonaId = await remoteAgentsForPersonaInputs(
+    inputs,
+    managedAgents,
+  );
+  const remoteAttached: { name: string; pubkey: string }[] = [];
+
   // Sequential loop: each agent must be fully created and its relay membership
   // written before the next starts. Concurrent writes to the replaceable
   // kind:39002 membership event cause last-write-wins data loss.
@@ -499,7 +513,20 @@ export async function createChannelManagedAgents(
 
   for (let i = 0; i < inputs.length; i++) {
     const input = inputs[i];
+    const remote = input.personaId
+      ? remoteByPersonaId.get(input.personaId)
+      : undefined;
     try {
+      if (remote) {
+        const pubkey = await attachRemoteAgentToChannel(
+          channelId,
+          remote,
+          input.role ?? "bot",
+          channelMemberPubkeys,
+        );
+        remoteAttached.push({ name: input.name.trim() || "agent", pubkey });
+        continue;
+      }
       const result = await createChannelManagedAgent(channelId, input, context);
       successes.push(result);
     } catch (error) {
@@ -512,5 +539,66 @@ export async function createChannelManagedAgents(
     }
   }
 
-  return { successes, failures };
+  return { successes, failures, remoteAttached };
+}
+
+/**
+ * Persona id → the owner's agent of that persona on another computer, for
+ * the persona inputs this computer has no agent for. Empty when none qualify
+ * or the relay cannot be read (creation then proceeds and the name check
+ * reports the clash).
+ */
+async function remoteAgentsForPersonaInputs(
+  inputs: readonly CreateChannelManagedAgentInput[],
+  managedAgents: readonly ManagedAgent[],
+): Promise<Map<string, string>> {
+  const localPersonaIds = new Set(
+    managedAgents.map((agent) => agent.personaId).filter(Boolean),
+  );
+  const wanted = inputs.filter(
+    (input) =>
+      input.personaId &&
+      !input.forceNewInstance &&
+      !localPersonaIds.has(input.personaId),
+  );
+  const byPersonaId = new Map<string, string>();
+  if (wanted.length === 0) return byPersonaId;
+  try {
+    const [identity, personas] = await Promise.all([
+      getIdentity(),
+      listPersonas(),
+    ]);
+    const remote = await fetchRemoteOwnedAgents(
+      identity.pubkey,
+      managedAgents.map((agent) => agent.pubkey),
+    );
+    for (const agent of remote) {
+      const personaId = remoteAgentPersonaId(agent, personas);
+      if (personaId && !byPersonaId.has(personaId)) {
+        byPersonaId.set(personaId, agent.pubkey);
+      }
+    }
+  } catch {
+    return new Map();
+  }
+  return byPersonaId;
+}
+
+async function attachRemoteAgentToChannel(
+  channelId: string,
+  pubkey: string,
+  role: Exclude<ChannelRole, "owner">,
+  channelMemberPubkeys: ReadonlySet<string>,
+): Promise<string> {
+  if (channelMemberPubkeys.has(normalizePubkey(pubkey))) return pubkey;
+  const result = await addChannelMembers({
+    channelId,
+    pubkeys: [pubkey],
+    role,
+  });
+  const error = result.errors.find(
+    (entry) => normalizePubkey(entry.pubkey) === normalizePubkey(pubkey),
+  );
+  if (error) throw new Error(error.error);
+  return pubkey;
 }

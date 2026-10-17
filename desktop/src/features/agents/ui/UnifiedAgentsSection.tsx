@@ -8,9 +8,13 @@ import {
 import { resolveAgentCardModelLabel } from "@/features/agents/lib/agentCardModelLabel";
 import { effectiveAgentDescription } from "@/features/agents/lib/agentDescription";
 import { friendlyAgentLastError } from "@/features/agents/lib/friendlyAgentLastError";
-import type { AgentAvailabilityReader } from "@/features/agents/lib/useAgentAvailability";
+import {
+  type AgentAvailabilityReader,
+  useAgentAvailabilityLookup,
+} from "@/features/agents/lib/useAgentAvailability";
 import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
 import { pickProfileAgent } from "@/features/agents/lib/pickProfileAgent";
+import { useRemoteOwnedAgents } from "@/features/agents/useRemoteOwnedAgents";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import type { AgentPersona, ManagedAgent } from "@/shared/api/types";
@@ -27,6 +31,7 @@ import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
 import { StandaloneAgentActionsMenu } from "./AgentStartOnLaunchMenuItem";
 import { CreateIdentityCard } from "./CreateIdentityCard";
 import { PersonaActionsMenu } from "./PersonaActionsMenu";
+import { RemoteAgentCard } from "./RemoteAgentCard";
 import { buildUnifiedGroups } from "./unifiedAgentGroups";
 
 type UnifiedAgentsSectionProps = {
@@ -115,6 +120,28 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
     () => buildUnifiedGroups(personas, agents, isArchived),
     [personas, agents, isArchived],
   );
+  const remoteAgents = useRemoteOwnedAgents();
+  const { getAvailability: getRemoteAvailability } = useAgentAvailabilityLookup(
+    React.useMemo(
+      () => remoteAgents.map((agent) => agent.pubkey),
+      [remoteAgents],
+    ),
+  );
+  // A persona whose only agent runs on another computer shows that agent,
+  // never a Start that would mint a second same-name agent here.
+  const { remoteByPersonaId, remoteWithoutPersona } = React.useMemo(() => {
+    const byPersona = new Map<string, (typeof remoteAgents)[number]>();
+    const without: typeof remoteAgents = [];
+    for (const agent of remoteAgents) {
+      if (isArchived(agent.pubkey)) continue;
+      if (agent.localPersonaId && !byPersona.has(agent.localPersonaId)) {
+        byPersona.set(agent.localPersonaId, agent);
+      } else {
+        without.push(agent);
+      }
+    }
+    return { remoteByPersonaId: byPersona, remoteWithoutPersona: without };
+  }, [remoteAgents, isArchived]);
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   function toggle(key: string) {
     setCollapsed((prev) => {
@@ -147,6 +174,21 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
             />
             {groups.map((group) => {
               const profileAgent = pickProfileAgent(group.agents, isArchived);
+              const remoteAgent = remoteByPersonaId.get(group.persona.id);
+              if (!profileAgent && remoteAgent) {
+                return (
+                  <RemoteAgentCard
+                    agent={remoteAgent}
+                    getAvailability={getRemoteAvailability}
+                    isPending={isActionPending || isPersonasPending}
+                    key={group.persona.id}
+                    persona={group.persona}
+                    onDuplicatePersona={onDuplicatePersona}
+                    onEditPersona={onEditPersona}
+                    onOpenAgentProfile={onOpenAgentProfile}
+                  />
+                );
+              }
               return (
                 <AgentPersonaCard
                   actions={(effectiveAvatarUrl, isEffectiveAvatarLoading) => (
@@ -185,6 +227,18 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
                 />
               );
             })}
+            {remoteWithoutPersona.map((agent) => (
+              <RemoteAgentCard
+                agent={agent}
+                getAvailability={getRemoteAvailability}
+                isPending={isActionPending}
+                key={agent.pubkey}
+                persona={null}
+                onDuplicatePersona={onDuplicatePersona}
+                onEditPersona={onEditPersona}
+                onOpenAgentProfile={onOpenAgentProfile}
+              />
+            ))}
           </div>
 
           {unknown.length > 0 ? (

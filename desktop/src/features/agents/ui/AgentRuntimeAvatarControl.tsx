@@ -22,6 +22,11 @@ type AgentRuntimeAvatarControlProps = {
   avatarUrl?: string | null;
   errorLabel?: string | null;
   errorTestId?: string;
+  /**
+   * Set when the agent runs on another of the owner's computers: this one
+   * cannot start it, so the badge shows its availability with this label.
+   */
+  hostedElsewhereLabel?: string | null;
   /** Lifecycle bookkeeping controls actions, not the availability dot. */
   isActive: boolean;
   availability?: PresenceStatus;
@@ -139,6 +144,7 @@ export function AgentRuntimeAvatarControl({
   availability,
   errorLabel,
   errorTestId,
+  hostedElsewhereLabel = null,
   isActive,
   isRestarting = false,
   isStarting,
@@ -163,10 +169,9 @@ export function AgentRuntimeAvatarControl({
   const availabilityLabel = availability
     ? getPresenceLabel(availability)
     : "Availability unknown";
-  const startBlockReason = agentPresenceStartBlockReason(
-    isActive,
-    availability,
-  );
+  const startBlockReason =
+    hostedElsewhereLabel ??
+    agentPresenceStartBlockReason(isActive, availability);
   // A present identity need not be a process this supervisor owns. Replace
   // Start (even a stale Restart/error badge) without inventing Stop authority.
   const showStatusDot =
