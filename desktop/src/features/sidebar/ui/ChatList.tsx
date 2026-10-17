@@ -170,6 +170,7 @@ function buildServerChatRows(
             count={entry.count}
             expanded={entry.expanded}
             isMuted={props.mutedChannelIds?.has(entry.channelId) ?? false}
+            marked={entry.marked}
             mentions={entry.mentions}
             onToggle={byChannel.onToggleExpanded}
             unread={entry.unread}

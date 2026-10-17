@@ -46,6 +46,8 @@ export type ChatGroupEntry =
       unread: number;
       unreadOverflow: boolean;
       mentions: number;
+      /** A hidden thread is marked unread with nothing to count. */
+      marked: boolean;
     };
 
 type Group = {
@@ -155,12 +157,14 @@ function appendGroup(
   let unread = 0;
   let unreadOverflow = false;
   let mentions = 0;
+  let marked = false;
   if (!expanded) {
     for (const row of threads.slice(limit)) {
       const counts = unreadOf(row);
       unread += counts.count;
       unreadOverflow ||= counts.overflow;
       mentions += counts.mentions;
+      marked ||= counts.marked;
     }
   }
   entries.push({
@@ -171,5 +175,6 @@ function appendGroup(
     unread,
     unreadOverflow,
     mentions,
+    marked,
   });
 }

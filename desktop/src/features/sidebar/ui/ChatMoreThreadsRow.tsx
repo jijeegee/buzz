@@ -5,6 +5,7 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
 /**
  * By channel: "+ N more threads" under a channel's first threads, with the
  * hidden threads' summed unread and @, so hidden unread is never invisible.
+ * A hidden thread marked unread with nothing to count shows a dot.
  * Expanded, the same line reads "Show less".
  */
 export function ChatMoreThreadsRow({
@@ -12,6 +13,7 @@ export function ChatMoreThreadsRow({
   count,
   expanded,
   isMuted,
+  marked,
   mentions,
   onToggle,
   unread,
@@ -21,6 +23,8 @@ export function ChatMoreThreadsRow({
   count: number;
   expanded: boolean;
   isMuted: boolean;
+  /** A hidden thread is marked unread with nothing to count. */
+  marked: boolean;
   mentions: number;
   onToggle: (channelId: string) => void;
   unread: number;
@@ -68,6 +72,13 @@ export function ChatMoreThreadsRow({
               {" "}
               unread message{unread === 1 ? "" : "s"}
             </span>
+          </span>
+        ) : marked && mentions === 0 ? (
+          <span
+            className="ml-auto h-2 w-2 shrink-0 rounded-full bg-primary"
+            data-testid={`chat-more-threads-unread-dot-${channelId}`}
+          >
+            <span className="sr-only">unread</span>
           </span>
         ) : null}
       </SidebarMenuButton>

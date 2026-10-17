@@ -36,7 +36,7 @@ const unreadOf = (row) => ({
   overflow: false,
   mentions: row.unread_mentions ?? 0,
   mentionsOverflow: false,
-  marked: false,
+  marked: row.unread_mark === true && !row.unread,
 });
 const none = () => false;
 
@@ -164,4 +164,31 @@ test("the view choice is stored per device and defaults to All chats", () => {
   assert.equal(readChatsViewMode(storage), "by-channel");
   assert.equal(parseChatsViewMode("bogus"), "all");
   assert.equal(readChatsViewMode(undefined), "all");
+});
+
+test("a hidden thread marked unread with no count still marks the more line", () => {
+  const marked = { ...thread("c1", "t1", 10), unread_mark: true };
+  const rows = [
+    room("c1", 50),
+    thread("c1", "t4", 40),
+    thread("c1", "t3", 30),
+    thread("c1", "t2", 20),
+    marked,
+  ];
+  const options = {
+    expandedChannelIds: new Set(),
+    isPinnedRoom: none,
+    isPinnedThread: none,
+    unreadOf,
+  };
+  const more = groupChatRowsByChannel(rows, options).entries.at(-1);
+  assert.equal(more.kind, "more");
+  assert.equal(more.unread, 0);
+  assert.equal(more.marked, true);
+  // Without the mark, nothing is flagged.
+  const plain = groupChatRowsByChannel(
+    [...rows.slice(0, 4), thread("c1", "t1", 10)],
+    options,
+  ).entries.at(-1);
+  assert.equal(plain.marked, false);
 });
