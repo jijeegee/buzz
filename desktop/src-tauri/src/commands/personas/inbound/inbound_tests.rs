@@ -133,6 +133,28 @@ fn inbound_quad_edit_applies_to_existing_matched_record() {
 }
 
 #[test]
+fn inbound_rename_reports_old_name_for_linked_agents() {
+    // A rename from another device must reach this computer's agents of the
+    // persona: the apply reports the old name so they can follow it.
+    let mut personas = vec![local_in_app()];
+    let old_name = personas[0].display_name.clone();
+    let change = apply_inbound_persona(&mut personas, inbound_for(UUID, "Remote"))
+        .expect("a matched record reports its identity change");
+    assert_eq!(change.old_display_name.as_deref(), Some(old_name.as_str()));
+
+    // The same event again changes nothing about the identity.
+    let change =
+        apply_inbound_persona(&mut personas, inbound_for(UUID, "Remote")).expect("matched");
+    assert_eq!(change.old_display_name, None);
+    assert!(!change.avatar_changed);
+    assert!(!change.about_changed);
+
+    // An insert has no linked agents to update.
+    let other = "99999999-8888-7777-6666-555555555555";
+    assert!(apply_inbound_persona(&mut personas, inbound_for(other, "New")).is_none());
+}
+
+#[test]
 fn re_received_in_app_persona_is_idempotent_no_duplicate() {
     let mut personas = vec![local_in_app()];
     apply_inbound_persona(&mut personas, inbound_for(UUID, "Remote"));

@@ -796,7 +796,23 @@ export async function listAllManagedAgents(): Promise<ManagedAgent[]> {
     fromRawManagedAgent,
   );
 }
+/**
+ * `agentNameGuard` reads the agent list through this module, so it is loaded
+ * on first use instead of imported (no import cycle).
+ */
+async function assertAgentNameAvailableLazy(
+  claim: import("./agentNameConflict").AgentNameClaim,
+) {
+  const { assertAgentNameAvailable } = await import("./agentNameGuard");
+  await assertAgentNameAvailable(claim);
+}
+
 export async function createManagedAgent(input: CreateManagedAgentInput) {
+  await assertAgentNameAvailableLazy({
+    kind: "agent",
+    name: input.name,
+    personaId: input.personaId ?? null,
+  });
   const response = await invokeTauri<RawCreateManagedAgentResponse>(
     "create_managed_agent",
     {
@@ -1042,6 +1058,13 @@ type RawUpdateManagedAgentResponse = {
 export async function updateManagedAgent(
   input: UpdateManagedAgentInput,
 ): Promise<{ agent: ManagedAgent; profileSyncError: string | null }> {
+  if (input.name !== undefined) {
+    await assertAgentNameAvailableLazy({
+      kind: "agent",
+      name: input.name,
+      selfPubkey: input.pubkey,
+    });
+  }
   const response = await invokeTauri<RawUpdateManagedAgentResponse>(
     "update_managed_agent",
     { input },

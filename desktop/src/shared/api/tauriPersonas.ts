@@ -94,9 +94,16 @@ export async function listPersonas(): Promise<AgentPersona[]> {
   return (await invokeTauri<RawPersona[]>("list_personas")).map(fromRawPersona);
 }
 
+/** See `assertAgentNameAvailableLazy` in `tauri.ts`. */
+async function assertPersonaNameAvailable(name: string, selfId?: string) {
+  const { assertAgentNameAvailable } = await import("./agentNameGuard");
+  await assertAgentNameAvailable({ kind: "persona", name, selfId });
+}
+
 export async function createPersona(
   input: CreatePersonaInput,
 ): Promise<AgentPersona> {
+  await assertPersonaNameAvailable(input.displayName);
   return fromRawPersona(
     await invokeTauri<RawPersona>("create_persona", {
       input: {
@@ -146,6 +153,7 @@ function updatePersonaPayload(input: UpdatePersonaInput) {
 export async function updatePersona(
   input: UpdatePersonaInput,
 ): Promise<AgentPersona> {
+  await assertPersonaNameAvailable(input.displayName, input.id);
   const raw = await invokeTauri<RawPersona>("update_persona", {
     input: updatePersonaPayload(input),
   });
@@ -168,6 +176,7 @@ export async function updatePersona(
 export async function updatePersonaAndPublish(
   input: UpdatePersonaInput,
 ): Promise<PersonaSharePublicationResult> {
+  await assertPersonaNameAvailable(input.displayName, input.id);
   return fromRawPublicationResult(
     await invokeTauri<RawPersonaSharePublicationResult>(
       "update_persona_and_publish",

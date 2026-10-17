@@ -27,6 +27,12 @@ abstract final class EventKind {
   static const huddleReaction = 24810;
   static const readState = 30078;
 
+  /// Kind:30175 owner-authored agent definition ("persona"); `d` is its slug.
+  static const persona = 30175;
+
+  /// Kind:30177 owner-authored managed agent; `d` is the agent's pubkey.
+  static const managedAgent = 30177;
+
   /// Kind:30180 owner-authored map of one relay device (`d`) to the agents it
   /// runs; see `shared/devices/agent_host_devices.dart`.
   static const agentHostDevices = 30180;

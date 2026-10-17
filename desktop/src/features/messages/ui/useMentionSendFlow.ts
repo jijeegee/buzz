@@ -228,6 +228,14 @@ export function useMentionSendFlow({
           const result = shouldProvisionForDm
             ? await provisionPersonaAgentMutation.mutateAsync(input)
             : await createPersonaAgentMutation.mutateAsync(input);
+          if ("remoteAgent" in result) {
+            // Runs on another of the owner's computers: already in the
+            // channel, nothing to start here.
+            const pubkey = normalizePubkey(result.remoteAgent.pubkey);
+            pubkeys.push(pubkey);
+            mentionRefs.push({ displayName, pubkey, isAgent: true });
+            continue;
+          }
           const pubkey = normalizePubkey(result.agent.pubkey);
           agents.push(result.agent);
           pubkeys.push(pubkey);

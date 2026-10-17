@@ -8,9 +8,13 @@ import {
 import { resolveAgentCardModelLabel } from "@/features/agents/lib/agentCardModelLabel";
 import { effectiveAgentDescription } from "@/features/agents/lib/agentDescription";
 import { friendlyAgentLastError } from "@/features/agents/lib/friendlyAgentLastError";
-import type { AgentAvailabilityReader } from "@/features/agents/lib/useAgentAvailability";
+import {
+  type AgentAvailabilityReader,
+  useAgentAvailabilityLookup,
+} from "@/features/agents/lib/useAgentAvailability";
 import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
 import { pickProfileAgent } from "@/features/agents/lib/pickProfileAgent";
+import { useRemoteOwnedAgents } from "@/features/agents/useRemoteOwnedAgents";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import type { AgentPersona, ManagedAgent } from "@/shared/api/types";
@@ -27,6 +31,7 @@ import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
 import { StandaloneAgentActionsMenu } from "./AgentStartOnLaunchMenuItem";
 import { CreateIdentityCard } from "./CreateIdentityCard";
 import { PersonaActionsMenu } from "./PersonaActionsMenu";
+import { RemoteAgentCard } from "./RemoteAgentCard";
 import { buildUnifiedGroups } from "./unifiedAgentGroups";
 
 type UnifiedAgentsSectionProps = {
@@ -115,6 +120,55 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
     () => buildUnifiedGroups(personas, agents, isArchived),
     [personas, agents, isArchived],
   );
+  const { agents: remoteAgents, settling: remoteSettling } =
+    useRemoteOwnedAgents();
+  const { getAvailability: getRemoteAvailability } = useAgentAvailabilityLookup(
+    React.useMemo(
+      () => remoteAgents.map((agent) => agent.pubkey),
+      [remoteAgents],
+    ),
+  );
+  // A persona whose only agent runs on another computer shows that agent,
+  // never a Start that would mint a second same-name agent here. Every other
+  // remote agent (no persona here, an inactive one, or a persona that also
+  // has an agent here) gets a card of its own.
+  const { remoteByPersonaId, remoteStandalone, personasWithoutLocalAgent } =
+    React.useMemo(() => {
+      const withoutLocal = new Set(
+        groups
+          .filter((group) => !pickProfileAgent(group.agents, isArchived))
+          .map((group) => group.persona.id),
+      );
+      const byPersona = new Map<string, (typeof remoteAgents)[number]>();
+      const standalone: typeof remoteAgents = [];
+      for (const agent of remoteAgents) {
+        if (isArchived(agent.pubkey)) continue;
+        const personaId = agent.localPersonaId;
+        if (
+          personaId &&
+          withoutLocal.has(personaId) &&
+          !byPersona.has(personaId)
+        ) {
+          byPersona.set(personaId, agent);
+        } else {
+          standalone.push(agent);
+        }
+      }
+      return {
+        remoteByPersonaId: byPersona,
+        remoteStandalone: standalone,
+        personasWithoutLocalAgent: withoutLocal,
+      };
+    }, [groups, remoteAgents, isArchived]);
+  // While that is still being read, a persona with no agent here shows as
+  // busy instead of offering Start.
+  const effectiveStartingPersonaIds = React.useMemo(
+    () =>
+      remoteSettling
+        ? new Set([...startingPersonaIds, ...personasWithoutLocalAgent])
+        : startingPersonaIds,
+    [remoteSettling, startingPersonaIds, personasWithoutLocalAgent],
+  );
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   function toggle(key: string) {
     setCollapsed((prev) => {
@@ -147,6 +201,21 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
             />
             {groups.map((group) => {
               const profileAgent = pickProfileAgent(group.agents, isArchived);
+              const remoteAgent = remoteByPersonaId.get(group.persona.id);
+              if (!profileAgent && remoteAgent) {
+                return (
+                  <RemoteAgentCard
+                    agent={remoteAgent}
+                    getAvailability={getRemoteAvailability}
+                    isPending={isActionPending || isPersonasPending}
+                    key={group.persona.id}
+                    persona={group.persona}
+                    onDuplicatePersona={onDuplicatePersona}
+                    onEditPersona={onEditPersona}
+                    onOpenAgentProfile={onOpenAgentProfile}
+                  />
+                );
+              }
               return (
                 <AgentPersonaCard
                   actions={(effectiveAvatarUrl, isEffectiveAvatarLoading) => (
@@ -176,7 +245,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
                   persona={group.persona}
                   restartingAgentPubkey={restartingAgentPubkey}
                   startingAgentPubkey={startingAgentPubkey}
-                  startingPersonaIds={startingPersonaIds}
+                  startingPersonaIds={effectiveStartingPersonaIds}
                   onOpenAgentProfile={onOpenAgentProfile}
                   onOpenPersonaProfile={onOpenPersonaProfile}
                   onRestartAgent={onRestartAgent}
@@ -185,6 +254,22 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
                 />
               );
             })}
+            {remoteStandalone.map((agent) => (
+              <RemoteAgentCard
+                agent={agent}
+                getAvailability={getRemoteAvailability}
+                isPending={isActionPending}
+                key={agent.pubkey}
+                persona={
+                  personas.find(
+                    (persona) => persona.id === agent.localPersonaId,
+                  ) ?? null
+                }
+                onDuplicatePersona={onDuplicatePersona}
+                onEditPersona={onEditPersona}
+                onOpenAgentProfile={onOpenAgentProfile}
+              />
+            ))}
           </div>
 
           {unknown.length > 0 ? (

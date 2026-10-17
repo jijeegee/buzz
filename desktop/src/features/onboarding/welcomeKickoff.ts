@@ -13,6 +13,7 @@ import { welcomeKickoffMarker } from "@/features/onboarding/devFreshOnboarding";
 import { resolveAgentReadiness } from "@/features/onboarding/ui/agentReadiness";
 import {
   ensureWelcomeTeam,
+  WelcomeTeamElsewhereError,
   pickWelcomeTeamStarterAgentForRelay,
   WELCOME_TEAM_STARTERS,
   type WelcomeTeamStarterDefinition,
@@ -807,6 +808,8 @@ export function useWelcomeKickoff(
         );
         if (!isCancelled()) onKickoffOpenerPosted?.(openerResult.eventId);
       } catch (error) {
+        // Kicked off from the computer that runs the team.
+        if (error instanceof WelcomeTeamElsewhereError) return;
         reportWelcomeKickoffFailure(
           "Couldn't start the Welcome team kickoff.",
           error,

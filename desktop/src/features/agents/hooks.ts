@@ -93,6 +93,7 @@ import type {
   EnsureChannelAgentPresetInput,
   EnsureChannelAgentPresetResult,
   ProvisionChannelManagedAgentResult,
+  RemoteAttachedChannelAgent,
 } from "@/features/agents/channelAgents";
 export { findReusableAgent } from "@/features/agents/agentReuse";
 export {
@@ -815,7 +816,10 @@ export function useCreateChannelManagedAgentMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async (
       input: CreateChannelManagedAgentInput & { channelId?: string },
-    ): Promise<CreateChannelManagedAgentResult> => {
+    ): Promise<
+      | CreateChannelManagedAgentResult
+      | { remoteAgent: RemoteAttachedChannelAgent }
+    > => {
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
@@ -829,6 +833,12 @@ export function useCreateChannelManagedAgentMutation(channelId: string | null) {
       if (success) {
         return success;
       }
+      // The persona's agent runs on another of the owner's computers: it was
+      // added to the channel instead of making a same-name copy here.
+      const remoteAgent = result.remoteAttached?.[0];
+      if (remoteAgent) {
+        return { remoteAgent };
+      }
 
       const failure = result.failures[0];
       throw new Error(failure?.error ?? "Could not create agent.");
@@ -839,12 +849,16 @@ export function useCreateChannelManagedAgentMutation(channelId: string | null) {
         return;
       }
 
+      const member =
+        "remoteAgent" in result
+          ? { membershipAdded: true, ...result.remoteAgent }
+          : {
+              membershipAdded: result.membershipAdded,
+              name: result.agent.name,
+              pubkey: result.agent.pubkey,
+            };
       queryClient.setQueryData<Channel[]>(channelsQueryKey, (current) =>
-        upsertCachedChannelMember(current, effectiveChannelId, {
-          membershipAdded: result.membershipAdded,
-          name: result.agent.name,
-          pubkey: result.agent.pubkey,
-        }),
+        upsertCachedChannelMember(current, effectiveChannelId, member),
       );
     },
     onSettled: (_data, _err, variables) => {
